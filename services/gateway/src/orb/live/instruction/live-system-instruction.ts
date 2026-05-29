@@ -562,6 +562,13 @@ export function buildLiveSystemInstruction(
   // comment for the full rationale. Only LiveKit callers pass true —
   // Vertex still needs it because Gemini Live generates the greeting.
   omitGreetingPolicy?: boolean,
+  // Per-surface persona switch. Derived from session.surface in orb-live.ts
+  // session bootstrap (see deriveSurfaceFromRoute). When 'command-hub', the
+  // dev_orb voice_* fields overlay voice_live so the Command Hub voice
+  // assistant speaks as the engineering co-pilot instead of the community
+  // wellness companion. Default (undefined or 'vitanaland') is unchanged
+  // behavior — the existing community persona.
+  surface?: string | null,
 ): string {
   const languageNames: Record<string, string> = {
     'en': 'English',
@@ -574,8 +581,45 @@ export function buildLiveSystemInstruction(
     'sr': 'Serbian'
   };
 
-  // Load personality config from service (uses cached values or hardcoded defaults)
-  const voiceLiveConfig = getPersonalityConfigSync('voice_live') as Record<string, any>;
+  // Load personality config from service (uses cached values or hardcoded defaults).
+  // Shallow-clone so the dev_orb overlay below does not mutate the cached
+  // defaults object — that would leak the developer persona into subsequent
+  // community sessions.
+  const voiceLiveConfig: Record<string, any> = { ...(getPersonalityConfigSync('voice_live') as Record<string, any>) };
+
+  // Per-surface persona overlay. When the session is on the Command Hub
+  // (developer surface), pull voice_* fields from dev_orb so the assistant
+  // speaks as the engineering co-pilot instead of the community wellness
+  // companion. Missing fields fall back to voice_live defaults — a partial
+  // dev_orb override (e.g. only voice_tools_section set in the DB) is safe.
+  //
+  // Resolution mirrors the role-override logic in orb-live.ts session
+  // bootstrap (~14327): mobile is always community, /command-hub/* is the
+  // developer surface, /admin/* is the admin surface (no overlay yet —
+  // behaves as community). An explicit `surface` param wins over the
+  // heuristic so voice-lab eval and tests can force a surface.
+  const resolveSurface = (): string => {
+    if (typeof surface === 'string' && surface.trim()) return surface.trim();
+    if (clientContext?.isMobile) return 'vitanaland';
+    const route = (currentRoute || '').toLowerCase();
+    if (route.startsWith('/command-hub')) return 'command-hub';
+    if (route.startsWith('/admin')) return 'admin';
+    return 'vitanaland';
+  };
+  const resolvedSurface = resolveSurface();
+  const isCommandHubSurface = resolvedSurface === 'command-hub';
+  let identityLockRoleLine = "the user's life companion and instruction manual";
+  if (isCommandHubSurface) {
+    const devOrbConfig = getPersonalityConfigSync('dev_orb') as Record<string, any>;
+    if (devOrbConfig.voice_base_identity) voiceLiveConfig.base_identity = devOrbConfig.voice_base_identity;
+    if (devOrbConfig.voice_general_behavior) voiceLiveConfig.general_behavior = devOrbConfig.voice_general_behavior;
+    if (devOrbConfig.voice_greeting_rules) voiceLiveConfig.greeting_rules = devOrbConfig.voice_greeting_rules;
+    if (devOrbConfig.voice_tools_section) voiceLiveConfig.tools_section = devOrbConfig.voice_tools_section;
+    if (devOrbConfig.voice_important_section) voiceLiveConfig.important_section = devOrbConfig.voice_important_section;
+    if (typeof devOrbConfig.voice_identity_lock_role === 'string' && devOrbConfig.voice_identity_lock_role.trim()) {
+      identityLockRoleLine = devOrbConfig.voice_identity_lock_role;
+    }
+  }
 
   // VTID-01225-ROLE + BOOTSTRAP-ORB-ROLE-CLARITY: Build role-aware context
   // section. The authoritative role declaration is also prepended to the very
@@ -643,7 +687,7 @@ Do NOT substitute an internal UUID under any circumstance.
   // utterances ("Hi I'm Devon") and continue speaking as them in her voice.
   const VITANA_IDENTITY_LOCK = `=== IDENTITY LOCK ===
 YOU ARE Vitana.
-Your role is the user's life companion and instruction manual.
+Your role is ${identityLockRoleLine}.
 
 You speak EXCLUSIVELY as Vitana. You NEVER:
   - introduce yourself as another persona ("Hi, this is Devon" — only Devon ever says that)
@@ -695,7 +739,7 @@ ${voiceLiveConfig.tools_section || '- Use search_memory to recall information th
 - Use set_reminder when the user asks to be reminded ("remind me at 8pm to take my magnesium", "erinnere mich um 20 Uhr"). Compute the absolute UTC ISO timestamp from their words + their local timezone. Confirm verbally afterwards using the returned human_time.
 - Use find_reminders to look up reminders before deleting, OR to read back the count when the user says "delete all my reminders".
 - Use delete_reminder to cancel reminders. CRITICAL: ALWAYS verbally ask "Are you sure?" first and only call with confirmed=true after the user explicitly says yes.
-- You ARE the instruction manual. The Knowledge Hub has 92 chapters of platform docs (Vitana Index, Five Pillars, Life Compass, autopilot, diary, biomarkers, wallet, sharing, community, etc.). Anything that is "how does X work", "what is X", "explain X", "tell me about X", "show me how X", "teach me X", "I am new", "first time" — answer it inline using search_knowledge. NEVER call report_to_specialist for instruction-manual questions, even if the user uses words that sound like "support". A first-time user asking how to use the diary is a TEACHING MOMENT, not a customer-support ticket. Specialists handle BROKEN STATE only.
+${isCommandHubSurface ? '' : `- You ARE the instruction manual. The Knowledge Hub has 92 chapters of platform docs (Vitana Index, Five Pillars, Life Compass, autopilot, diary, biomarkers, wallet, sharing, community, etc.). Anything that is "how does X work", "what is X", "explain X", "tell me about X", "show me how X", "teach me X", "I am new", "first time" — answer it inline using search_knowledge. NEVER call report_to_specialist for instruction-manual questions, even if the user uses words that sound like "support". A first-time user asking how to use the diary is a TEACHING MOMENT, not a customer-support ticket. Specialists handle BROKEN STATE only.
 - Use report_to_specialist ONLY when the user has described a CONCRETE PROBLEM (bug, broken state, refund, account lockout, claim) AND has EXPLICITLY agreed to be connected after you proposed it. Always propose before calling: "Shall I bring in Devon to file this?" Wait for yes. Implicit consent does not count. The backend gate re-checks the user's actual recent words (not your summary). If the gate returns STAY_INLINE or the forward budget is exhausted, silently answer inline — never mention the routing decision.
 - HARD RULE — handoff truthfulness (VTID-03033): NEVER say you are connecting the user to Devon, NEVER speak a bridge sentence ("let me connect you to…", "ich verbinde dich mit…", "passing you to…"), and NEVER imply Devon has joined, UNLESS the most recent report_to_specialist call returned a tool message that begins with "STATUS: handoff_created." Any other STATUS (stay_inline / vague / failed / failed_network / ticket_filed_no_handoff) means the handoff did NOT happen — follow that branch's ACTION line and stay with the user yourself. Saying you are connecting them when STATUS is not "handoff_created" is a critical failure.
 - HARD RULE — message-send truthfulness (VTID-03043): NEVER say the message has been sent, NEVER say "I sent it" / "es ist raus" / "ich habe die Nachricht abgeschickt", and NEVER imply the recipient has it, UNLESS the most recent send_chat_message call returned a tool message that begins with "STATUS: sent." Any other STATUS (missing_recipient / missing_body / recipient_not_uuid / recipient_not_resolved / rate_limited / self_message / failed / failed_network) means the message did NOT go through — follow that branch's ACTION line and tell the user the truth. To pass a recipient_user_id you MUST first call resolve_recipient and read its STATUS — only "resolved" (one high-confidence candidate) or an explicit user pick from "ambiguous" gives you a real UUID. The display name is NEVER a valid recipient_user_id. Claiming a message was sent when STATUS is not "sent" is a critical failure.
@@ -711,7 +755,7 @@ EVENT LINK SHARING (CRITICAL — voice-friendly):
 - CORRECT: "There's a yoga morning flow session in Vienna this Saturday at 9am. I've sent the link to your chat — tap it for the full details!"
 - WRONG: "The link is vitanaland.com/e/yoga-morning-flow" (never say URLs)
 - WRONG: "h-t-t-p-s colon slash slash..." (never spell URLs)
-- The URL will be included in the text output transcription automatically — you don't need to say it for it to appear in chat.
+- The URL will be included in the text output transcription automatically — you don't need to say it for it to appear in chat.`}
 
 IMPORTANT:
 ${voiceLiveConfig.important_section || '- This is a real-time voice conversation\n- Listen actively and respond naturally'}`;

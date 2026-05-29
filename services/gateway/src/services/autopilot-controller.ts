@@ -148,6 +148,81 @@ interface StateTransition {
   metadata?: Record<string, unknown>;
 }
 
+/**
+ * Structured failure context (Session 4 / autopilot-error-capture).
+ *
+ * Previously the `allocated → failed` transition emitted a hardcoded
+ * `unknown_error` trigger whenever no errorCode was threaded through,
+ * which swallowed the real reason. This carries the actual error name,
+ * message, and a stack prefix onto the OASIS event payload so the feed
+ * surfaces *why* a run failed instead of "unknown_error".
+ */
+export interface FailureContext {
+  error_name?: string;
+  error_message?: string;
+  stack_prefix?: string;
+  source_event_type?: string;
+}
+
+/**
+ * Normalize an arbitrary thrown value (or structured metadata) into a
+ * FailureContext. Captures err.name, err.message, and the first few lines
+ * of the stack so the OASIS payload is diagnosable without a redeploy.
+ */
+export function extractErrorContext(
+  err: unknown,
+  fallbackMessage?: string
+): FailureContext {
+  if (err instanceof Error) {
+    return {
+      error_name: err.name || 'Error',
+      error_message: err.message || fallbackMessage,
+      stack_prefix: err.stack
+        ? err.stack.split('\n').slice(0, 4).join('\n')
+        : undefined,
+    };
+  }
+  if (err && typeof err === 'object') {
+    const o = err as Record<string, unknown>;
+    const stack = typeof o.stack === 'string' ? o.stack : undefined;
+    return {
+      error_name: (o.error_name || o.errorName || o.name) as string | undefined,
+      error_message: (o.error_message ||
+        o.message ||
+        o.error ||
+        fallbackMessage) as string | undefined,
+      stack_prefix: stack ? stack.split('\n').slice(0, 4).join('\n') : undefined,
+    };
+  }
+  if (typeof err === 'string' && err.length > 0) {
+    return { error_message: err };
+  }
+  return fallbackMessage ? { error_message: fallbackMessage } : {};
+}
+
+/**
+ * Derive a non-empty, human-meaningful trigger slug for a failure event.
+ * Order: explicit errorCode → error name → sanitized message → source event
+ * type. Deliberately avoids the literal "unknown_error" unless we genuinely
+ * have nothing — and even then prefers "unspecified_failure" so the feed is
+ * never silently masked by the old hardcoded default.
+ */
+export function deriveFailureTrigger(
+  errorCode: string | undefined,
+  ctx: FailureContext | undefined
+): string {
+  if (errorCode && errorCode.trim()) return errorCode.trim();
+  if (ctx?.error_name && ctx.error_name.trim()) return ctx.error_name.trim();
+  if (ctx?.error_message && ctx.error_message.trim()) {
+    // Compact the message into a slug-ish trigger (first ~60 chars, no newlines).
+    return ctx.error_message.trim().replace(/\s+/g, ' ').slice(0, 60);
+  }
+  if (ctx?.source_event_type && ctx.source_event_type.trim()) {
+    return ctx.source_event_type.trim();
+  }
+  return 'unspecified_failure';
+}
+
 // =============================================================================
 // In-Memory State
 // =============================================================================
@@ -728,12 +803,26 @@ export async function markCompleted(
 
 /**
  * Mark as failed (terminal failure)
+ *
+ * Session 4 (autopilot-error-capture): `context` carries the structured
+ * err.name / err.message / stack-prefix from the originating failure so the
+ * OASIS `autopilot.state.failed` payload surfaces the real reason instead of
+ * the old hardcoded `unknown_error` trigger.
  */
 export async function markFailed(
   vtid: string,
   error: string,
-  errorCode?: string
+  errorCode?: string,
+  context?: FailureContext
 ): Promise<boolean> {
+  // Backfill structured context from the error string when the caller did
+  // not supply one, so the payload always carries at least a message.
+  const ctx: FailureContext = {
+    ...extractErrorContext(error, error),
+    ...(context || {}),
+  };
+  const trigger = deriveFailureTrigger(errorCode, ctx);
+
   const run = activeRuns.get(vtid);
   if (!run) {
     // Create a minimal run record for tracking
@@ -759,8 +848,19 @@ export async function markFailed(
       run_id: failedRun.id,
       from_state: 'allocated',
       to_state: 'failed',
-      trigger: errorCode || 'unknown_error',
-      metadata: { error },
+      trigger,
+      metadata: {
+        error,
+        error_code: errorCode,
+        error_name: ctx.error_name,
+        error_message: ctx.error_message,
+        stack_prefix: ctx.stack_prefix,
+        source_event_type: ctx.source_event_type,
+        // Flag the legacy no-run path so we can tell (in the feed/Phase 2
+        // backlog analysis) that this VTID failed without an in-memory run —
+        // typically a gateway restart wiping activeRuns.
+        no_active_run: true,
+      },
     });
 
     return true;
@@ -772,7 +872,14 @@ export async function markFailed(
   // Update ledger to terminal state
   await updateLedgerTerminal(vtid, 'failed');
 
-  return transitionState(run, 'failed', errorCode || 'error', { error });
+  return transitionState(run, 'failed', trigger, {
+    error,
+    error_code: errorCode,
+    error_name: ctx.error_name,
+    error_message: ctx.error_message,
+    stack_prefix: ctx.stack_prefix,
+    source_event_type: ctx.source_event_type,
+  });
 }
 
 // =============================================================================

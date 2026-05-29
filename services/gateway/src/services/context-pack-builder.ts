@@ -39,9 +39,24 @@ import {
   RetrievalSource,
   ConversationChannel,
 } from '../types/conversation';
+// VTID-03158 (CPB-7/8/9): typed readers own all direct Supabase
+// access for the ledger, OASIS event, and autopilot-recommendation
+// surfaces. CPB just receives shaped results.
+import { getActiveVTIDs } from './vtid-ledger-reader';
+import {
+  getDeveloperOasisContext,
+  getCommunityOasisContext,
+} from './oasis-context-reader';
 import { searchKnowledge, KnowledgeSearchRequest } from './knowledge-hub';
-import { getCurrentFacts } from './memory-facts-service';
-import { generateEmbedding } from './embedding-service';
+import {
+  getCurrentFacts,
+  searchFactsSemantic,
+  listFactsByConfidence,
+} from './memory-facts-service';
+// VTID-03145 (PR 2): DIARY + NETWORK blocks now route through the
+// memory-broker boundary instead of raw Supabase fetches. See
+// fetchDiaryHits / fetchRelationshipContext below.
+import { getMemoryContext, type DiaryBlock, type NetworkBlock } from './memory-broker';
 import { ContextLens } from '../types/context-lens';
 // VTID-01230: Session buffer for Tier 0 short-term memory
 import { formatSessionBufferForLLM, getSessionContext } from './session-memory-buffer';
@@ -120,11 +135,18 @@ function fetchWithTimeout(timeoutMs: number = CONTEXT_PACK_CONFIG.FETCH_TIMEOUT_
 // =============================================================================
 
 /**
- * VTID-01230: Fetch memory hits using semantic search (primary) with REST fallback.
+ * Fetch episodic memory hits.
  *
- * Previous approach: REST query sorted by importance+recency, then keyword scoring.
- * New approach: Generate embedding for query → pgvector cosine similarity search.
- * Falls back to REST if embedding generation fails or query is too short.
+ * VTID-03156 (CPB-1/2): all episodic memory reads — including the
+ * legacy semantic + REST fallbacks — now live behind the memory
+ * broker. CPB no longer constructs Supabase REST/RPC requests for
+ * this path; it just asks the broker for the EPISODIC block and
+ * maps the returned hits.
+ *
+ * The broker owns the full fallback ladder (mem_episodes_semantic →
+ * mem_episodes recency → legacy semantic → legacy REST)
+ * and returns pre-ranked hits; the position-based relevance score
+ * here preserves the broker's ordering.
  */
 async function fetchMemoryHits(
   lens: ContextLens,
@@ -132,45 +154,17 @@ async function fetchMemoryHits(
   limit: number
 ): Promise<{ hits: MemoryHit[]; latency_ms: number }> {
   const startTime = Date.now();
-
   try {
-    const SUPABASE_URL = process.env.SUPABASE_URL;
-    const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
-
-    if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
-      console.warn('[VTID-01216] Supabase not configured for memory retrieval');
-      return { hits: [], latency_ms: Date.now() - startTime };
-    }
-
     if (!lens.tenant_id || !lens.user_id) {
       console.warn('[VTID-01216] Missing tenant_id or user_id in lens');
       return { hits: [], latency_ms: Date.now() - startTime };
     }
-
-    // VTID-02058 Phase 6c: when memory_broker_enabled is on, route the
-    // EPISODIC read through getMemoryContext (which reads mem_episodes via
-    // mem_episodes_semantic_search RPC). Falls back to the legacy
-    // memory_semantic_search path on disabled-flag, error, or empty result.
     const brokerHits = await fetchMemoryHitsViaBroker(lens, query, limit);
-    if (brokerHits.length > 0) {
-      console.log(`[VTID-02058] Broker EPISODIC: ${brokerHits.length} hits (${Date.now() - startTime}ms)`);
-      return { hits: brokerHits, latency_ms: Date.now() - startTime };
-    }
-
-    // VTID-01230: Legacy semantic search over memory_items for meaningful queries
-    if (query && query.trim().length > 5) {
-      const semanticHits = await fetchMemoryHitsSemantic(
-        SUPABASE_URL, SUPABASE_SERVICE_ROLE, lens, query, limit
-      );
-      if (semanticHits.length > 0) {
-        console.log(`[VTID-01230] Semantic memory_items: ${semanticHits.length} hits (${Date.now() - startTime}ms)`);
-        return { hits: semanticHits, latency_ms: Date.now() - startTime };
-      }
-      // Fall through to REST if semantic search returned nothing
-    }
-
-    // Fallback: REST query with importance+recency sort
-    return await fetchMemoryHitsREST(SUPABASE_URL, SUPABASE_SERVICE_ROLE, lens, query, limit, startTime);
+    console.log(
+      `[VTID-03156] Broker EPISODIC: ${brokerHits.length} hits ` +
+      `(${Date.now() - startTime}ms)`
+    );
+    return { hits: brokerHits, latency_ms: Date.now() - startTime };
   } catch (error: any) {
     console.error(`[VTID-01216] Memory retrieval error: ${error.message}`);
     return { hits: [], latency_ms: Date.now() - startTime };
@@ -231,190 +225,32 @@ async function fetchMemoryHitsViaBroker(
   }
 }
 
-/**
- * VTID-01230 / VTID-01980: Semantic search path for memory_items.
- *
- * Generates query embedding → calls memory_semantic_search RPC (VTID-01184,
- * type-fixed in VTID-01978).
- *
- * Historical note (VTID-01980): the prior version called a non-existent RPC
- * `semantic_memory_search` whose migration (20260221000000_fix_embedding_dimensions_768)
- * was authored but never applied. The 404 was caught, the function returned [],
- * and callers silently fell through to the importance+recency REST fallback —
- * which performs no semantic matching. End result: ORB never recalled anything,
- * even when the user asked direct questions about facts already in memory.
- */
-async function fetchMemoryHitsSemantic(
-  supabaseUrl: string,
-  serviceRole: string,
-  lens: ContextLens,
-  query: string,
-  limit: number,
-): Promise<MemoryHit[]> {
-  const timeout = fetchWithTimeout();
-  try {
-    const embResult = await generateEmbedding(query);
-    if (!embResult.ok || !embResult.embedding) {
-      console.warn(`[VTID-01230] Embedding generation failed for memory_items semantic search: ${embResult.error}`);
-      return [];
-    }
-
-    const resp = await fetch(`${supabaseUrl}/rest/v1/rpc/memory_semantic_search`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        apikey: serviceRole,
-        Authorization: `Bearer ${serviceRole}`,
-      },
-      body: JSON.stringify({
-        p_query_embedding: '[' + embResult.embedding.join(',') + ']',
-        p_top_k: limit * 2,
-        p_tenant_id: lens.tenant_id,
-        p_user_id: lens.user_id,
-        p_workspace_scope: lens.workspace_scope ?? null,
-        p_active_role: lens.active_role ?? null,
-        p_categories: lens.allowed_categories ?? null,
-        p_visibility_scope: lens.visibility_scope ?? 'private',
-        p_max_age_hours: lens.max_age_hours ?? null,
-        p_recency_boost: true,
-      }),
-      signal: timeout.signal,
-    });
-
-    if (!resp.ok) {
-      if (resp.status === 404) {
-        console.log(`[VTID-01230] memory_semantic_search RPC not found — using REST fallback`);
-      } else {
-        console.warn(`[VTID-01230] memory_semantic_search RPC failed: ${resp.status}`);
-      }
-      return [];
-    }
-
-    const results = await resp.json() as Array<{
-      id: string;
-      category_key: string;
-      content: string;
-      content_json: Record<string, unknown> | null;
-      source: string;
-      importance: number;
-      occurred_at: string;
-      created_at: string;
-      similarity_score: number;
-      recency_score: number;
-      combined_score: number;
-    }>;
-
-    return results.map((r) => ({
-      id: r.id,
-      category_key: r.category_key,
-      content: r.content.substring(0, CONTEXT_PACK_CONFIG.MAX_CONTENT_LENGTH),
-      importance: r.importance,
-      occurred_at: r.occurred_at || r.created_at,
-      source: r.source,
-      // The RPC already produces a 0.7*similarity + 0.3*recency combined_score.
-      // Blend in importance for our final ranking.
-      relevance_score: Math.min(1,
-        r.similarity_score * 0.5 +
-        (r.importance / 100) * 0.3 +
-        r.recency_score * 0.2
-      ),
-    })).slice(0, Math.min(limit, CONTEXT_PACK_CONFIG.MAX_MEMORY_HITS));
-  } catch (err: any) {
-    if (err.name === 'AbortError') {
-      console.warn(`[VTID-01230] memory_semantic_search timed out`);
-    } else {
-      console.warn(`[VTID-01230] memory_semantic_search error: ${err.message}`);
-    }
-    return [];
-  } finally {
-    timeout.clear();
-  }
-}
+// VTID-03156 (CPB-1/2): the legacy `fetchMemoryHitsSemantic`,
+// `fetchMemoryHitsREST`, and unused `computeRecencyBoost` helpers
+// were deleted from this file. The broker now owns the full episodic
+// fallback ladder. See `services/gateway/src/services/memory-broker.ts`
+// → `fetchEpisodicBlock` for the canonical implementation. CPB no
+// longer references the legacy tables / RPCs or constructs Supabase
+// credentials for the episodic memory path; that contract is locked
+// by `test/services/context-pack-episodic-boundary.test.ts`.
 
 /**
- * Compute a 0-1 recency boost (exponential decay, 7-day half-life).
- */
-function computeRecencyBoost(occurred_at: string): number {
-  const ageHours = (Date.now() - new Date(occurred_at).getTime()) / (1000 * 60 * 60);
-  return Math.exp(-ageHours / 168);
-}
-
-/**
- * Original REST-based memory_items retrieval (fallback).
- */
-async function fetchMemoryHitsREST(
-  supabaseUrl: string,
-  serviceRole: string,
-  lens: ContextLens,
-  query: string,
-  limit: number,
-  startTime: number,
-): Promise<{ hits: MemoryHit[]; latency_ms: number }> {
-  const fetchLimit = limit * 3;
-
-  let url = `${supabaseUrl}/rest/v1/memory_items?select=id,category_key,content,importance,occurred_at,source&tenant_id=eq.${lens.tenant_id}&user_id=eq.${lens.user_id}&order=importance.desc,occurred_at.desc&limit=${fetchLimit}`;
-
-  if (lens.allowed_categories && lens.allowed_categories.length > 0) {
-    url += `&category_key=in.(${lens.allowed_categories.join(',')})`;
-  }
-
-  const timeout = fetchWithTimeout();
-  try {
-    const response = await fetch(url, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-        apikey: serviceRole,
-        Authorization: `Bearer ${serviceRole}`,
-      },
-      signal: timeout.signal,
-    });
-
-    if (!response.ok) {
-      console.warn(`[VTID-01216] Memory REST retrieval failed: ${response.status}`);
-      return { hits: [], latency_ms: Date.now() - startTime };
-    }
-
-    const results = await response.json() as Array<{
-      id: string;
-      category_key: string;
-      content: string;
-      importance: number;
-      occurred_at: string;
-      source: string;
-    }>;
-
-    const hits: MemoryHit[] = results.map((r, index) => ({
-      id: r.id,
-      category_key: r.category_key,
-      content: r.content.substring(0, CONTEXT_PACK_CONFIG.MAX_CONTENT_LENGTH),
-      importance: r.importance,
-      occurred_at: r.occurred_at,
-      source: r.source,
-      relevance_score: computeRelevanceScore(r, query, index),
-    }));
-
-    hits.sort((a, b) => b.relevance_score - a.relevance_score);
-
-    return {
-      hits: hits.slice(0, Math.min(limit, CONTEXT_PACK_CONFIG.MAX_MEMORY_HITS)),
-      latency_ms: Date.now() - startTime,
-    };
-  } finally {
-    timeout.clear();
-  }
-}
-
-/**
- * Fetch structured facts from memory_facts table using two-tier approach:
+ * Fetch structured facts for the context pack using a three-tier approach.
  *
- * Tier 1 (Identity Core): Always fetched via getCurrentFacts() RPC with IDENTITY_CORE_KEYS.
- *   These are pinned facts (user_name, user_birthday, etc.) that must always be in context.
+ * VTID-03155 (CPB-3 boundary): the table + RPC names live in
+ * `memory-facts-service.ts` now. This function owns only the
+ * context-pack mapping + merge order (Identity → Semantic → General),
+ * which is context-pack-specific (relevance-score formulas tuned for
+ * the LLM ranker).
  *
- * Tier 2 (General facts): Fetched via REST with confidence+recency sort and limit.
- *   Fills remaining context budget with other extracted facts.
+ *   Tier 1 (Identity Core): always fetched via `getCurrentFacts()` —
+ *     pinned facts (user_name, user_birthday, …) at relevance 1.0.
+ *   Tier 2 (Semantic): `searchFactsSemantic()` cosine-similarity
+ *     against the query (skipped for empty/bootstrap queries).
+ *   Tier 3 (General): `listFactsByConfidence()` ordered by
+ *     confidence + recency.
  *
- * Results are merged and deduplicated by fact ID.
+ * Results are merged and deduplicated by fact ID, in tier order.
  */
 async function fetchMemoryFacts(
   lens: ContextLens,
@@ -453,111 +289,42 @@ async function fetchMemoryFacts(
       console.warn(`[VTID-01216] Identity Core fetch failed (falling back to REST): ${coreErr.message}`);
     }
 
-    // --- Tier 2: Semantic search via memory_facts_semantic_search() RPC ---
-    // Only when a meaningful query is provided (skip for empty/bootstrap queries)
+    // --- Tier 2: Semantic search ---
+    // VTID-03155: routed through `searchFactsSemantic`. The service
+    // owns the embedding gen, RPC call, timeout, and query-length gate.
     let semanticFacts: MemoryHit[] = [];
-    const SUPABASE_URL = process.env.SUPABASE_URL;
-    const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
-
-    if (SUPABASE_URL && SUPABASE_SERVICE_ROLE && query && query.trim().length > 3) {
-      // VTID-01224-FIX: Add timeout to semantic search (embedding + RPC)
-      const semTimeout = fetchWithTimeout();
-      try {
-        const embResult = await generateEmbedding(query);
-        if (embResult.ok && embResult.embedding) {
-          const semResp = await fetch(`${SUPABASE_URL}/rest/v1/rpc/memory_facts_semantic_search`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              apikey: SUPABASE_SERVICE_ROLE,
-              Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`,
-            },
-            body: JSON.stringify({
-              p_query_embedding: JSON.stringify(embResult.embedding),
-              p_top_k: 20,
-              p_tenant_id: lens.tenant_id,
-              p_user_id: lens.user_id,
-              p_min_confidence: 0.5,
-            }),
-            signal: semTimeout.signal,
-          });
-
-          if (semResp.ok) {
-            const semResults = await semResp.json() as Array<{
-              id: string;
-              fact_key: string;
-              fact_value: string;
-              entity: string;
-              provenance_confidence: number;
-              provenance_source: string;
-              similarity_score: number;
-            }>;
-
-            semanticFacts = semResults.map((r) => ({
-              id: r.id,
-              category_key: `fact:${r.entity || 'general'}`,
-              content: `${r.fact_key}: ${r.fact_value}`,
-              importance: Math.round(r.provenance_confidence * 100),
-              occurred_at: new Date().toISOString(),
-              source: r.provenance_source || 'cognee_extraction',
-              relevance_score: Math.min(1, 0.7 + r.similarity_score * 0.3),
-            }));
-            console.log(`[VTID-01216] Semantic search: ${semanticFacts.length} facts matched query`);
-          } else {
-            console.warn(`[VTID-01216] Semantic search RPC failed: ${semResp.status}`);
-          }
-        }
-      } catch (semErr: any) {
-        console.warn(`[VTID-01216] Semantic search failed (non-fatal): ${semErr.message}`);
-      } finally {
-        semTimeout.clear();
-      }
+    const semResult = await searchFactsSemantic(lens, query);
+    if (semResult.ok && semResult.facts.length > 0) {
+      semanticFacts = semResult.facts.map((r) => ({
+        id: r.id,
+        category_key: `fact:${r.entity || 'general'}`,
+        content: `${r.fact_key}: ${r.fact_value}`,
+        importance: Math.round(r.provenance_confidence * 100),
+        occurred_at: new Date().toISOString(),
+        source: r.provenance_source || 'cognee_extraction',
+        relevance_score: Math.min(1, 0.7 + r.similarity_score * 0.3),
+      }));
+      console.log(`[VTID-01216] Semantic search: ${semanticFacts.length} facts matched query`);
+    } else if (!semResult.ok && semResult.error && semResult.error !== 'missing_lens') {
+      console.warn(`[VTID-01216] Semantic search failed (non-fatal): ${semResult.error}`);
     }
 
-    // --- Tier 3: General facts via REST (confidence + recency sorted) ---
+    // --- Tier 3: General facts (confidence + recency sorted) ---
+    // VTID-03155: routed through `listFactsByConfidence`.
     let generalFacts: MemoryHit[] = [];
-
-    if (SUPABASE_URL && SUPABASE_SERVICE_ROLE) {
-      const url = `${SUPABASE_URL}/rest/v1/memory_facts?select=id,fact_key,fact_value,entity,provenance_confidence,provenance_source&tenant_id=eq.${lens.tenant_id}&user_id=eq.${lens.user_id}&superseded_by=is.null&order=provenance_confidence.desc,extracted_at.desc&limit=${limit}`;
-
-      // VTID-01224-FIX: Add timeout to general facts fetch
-      const factsTimeout = fetchWithTimeout();
-      try {
-        const response = await fetch(url, {
-          method: 'GET',
-          headers: {
-            'Content-Type': 'application/json',
-            apikey: SUPABASE_SERVICE_ROLE,
-            Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`,
-          },
-          signal: factsTimeout.signal,
-        });
-
-        if (response.ok) {
-          const results = await response.json() as Array<{
-            id: string;
-            fact_key: string;
-            fact_value: string;
-            entity: string;
-            provenance_confidence: number;
-            provenance_source: string;
-          }>;
-
-          generalFacts = results.map((r) => ({
-            id: r.id,
-            category_key: `fact:${r.entity || 'general'}`,
-            content: `${r.fact_key}: ${r.fact_value}`,
-            importance: Math.round(r.provenance_confidence * 100),
-            occurred_at: new Date().toISOString(),
-            source: r.provenance_source || 'cognee_extraction',
-            relevance_score: Math.min(1, 0.85 + r.provenance_confidence * 0.15),
-          }));
-        } else {
-          console.warn(`[VTID-01216] memory_facts REST retrieval failed: ${response.status}`);
-        }
-      } finally {
-        factsTimeout.clear();
-      }
+    const generalResult = await listFactsByConfidence(lens, { limit });
+    if (generalResult.ok && generalResult.facts.length > 0) {
+      generalFacts = generalResult.facts.map((r) => ({
+        id: r.id,
+        category_key: `fact:${r.entity || 'general'}`,
+        content: `${r.fact_key}: ${r.fact_value}`,
+        importance: Math.round(r.provenance_confidence * 100),
+        occurred_at: new Date().toISOString(),
+        source: r.provenance_source || 'cognee_extraction',
+        relevance_score: Math.min(1, 0.85 + r.provenance_confidence * 0.15),
+      }));
+    } else if (!generalResult.ok && generalResult.error && generalResult.error !== 'missing_lens') {
+      console.warn(`[VTID-01216] general facts retrieval failed: ${generalResult.error}`);
     }
 
     // --- Merge: Identity Core → Semantic → General (deduplicated by ID) ---
@@ -567,22 +334,29 @@ async function fetchMemoryFacts(
     const dedupedGeneral = generalFacts.filter(f => !seenIds.has(f.id));
     const facts = [...identityCoreFacts, ...dedupedSemantic, ...dedupedGeneral];
 
-    console.log(`[VTID-01216] memory_facts: ${identityCoreFacts.length} identity core + ${dedupedSemantic.length} semantic + ${dedupedGeneral.length} general = ${facts.length} total`);
+    console.log(`[VTID-01216] structured facts: ${identityCoreFacts.length} identity core + ${dedupedSemantic.length} semantic + ${dedupedGeneral.length} general = ${facts.length} total`);
 
     return {
       facts,
       latency_ms: Date.now() - startTime,
     };
   } catch (error: any) {
-    console.error(`[VTID-01216] memory_facts retrieval error: ${error.message}`);
+    console.error(`[VTID-01216] structured facts retrieval error: ${error.message}`);
     return { facts: [], latency_ms: Date.now() - startTime };
   }
 }
 
 /**
- * VTID-01224-FIX: Fetch diary entries from memory_diary_entries and diary_entries tables.
- * Diary data lives in separate tables (not memory_items), so without this function
- * the search_memory tool cannot find diary content during live ORB sessions.
+ * VTID-01224-FIX: Fetch diary entries to surface in the LLM context pack.
+ *
+ * VTID-03145 (PR 2): routed through the memory-broker DIARY block —
+ * raw table reads no longer live in this file. The broker owns the
+ * canonical diary stream.
+ *
+ * VTID-03153 (CPB-4 anti-regression): forbidden table names are
+ * intentionally absent from this file. Reintroducing them is caught
+ * by `test/services/context-pack-broker-boundary.test.ts`.
+ *
  * Results are returned as MemoryHit[] to merge with other memory hits.
  */
 async function fetchDiaryHits(
@@ -593,105 +367,50 @@ async function fetchDiaryHits(
   const startTime = Date.now();
 
   try {
-    const SUPABASE_URL = process.env.SUPABASE_URL;
-    const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
-
-    if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
-      return { hits: [], latency_ms: Date.now() - startTime };
-    }
-
     if (!lens.tenant_id || !lens.user_id) {
       return { hits: [], latency_ms: Date.now() - startTime };
     }
 
-    const headers = {
-      'Content-Type': 'application/json',
-      apikey: SUPABASE_SERVICE_ROLE,
-      Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`,
-    };
+    // VTID-03145 (PR 2): DIARY routed through the memory-broker. The
+    // broker owns the canonical diary store. The legacy alternative
+    // diary store (voice tool_save_diary_entry write path) is no
+    // longer mirrored into the context pack here; that bridge moves
+    // when the write path is unified upstream.
+    const pack = await getMemoryContext({
+      tenant_id: lens.tenant_id,
+      user_id: lens.user_id,
+      intent: 'recall_history',
+      required_blocks: ['DIARY'],
+      query: query || undefined,
+    });
 
-    // Fetch from both diary tables in parallel with timeout
-    const timeout = fetchWithTimeout();
-    try {
-      const diaryUrl = `${SUPABASE_URL}/rest/v1/memory_diary_entries?select=id,raw_text,tags,entry_date,created_at,entry_type&tenant_id=eq.${lens.tenant_id}&user_id=eq.${lens.user_id}&order=created_at.desc&limit=${limit}`;
-      const lovableUrl = `${SUPABASE_URL}/rest/v1/diary_entries?select=id,text,source,tags,created_at&user_id=eq.${lens.user_id}&order=created_at.desc&limit=${limit}`;
-
-      const [diaryResp, lovableResp] = await Promise.all([
-        fetch(diaryUrl, { method: 'GET', headers, signal: timeout.signal }),
-        fetch(lovableUrl, { method: 'GET', headers, signal: timeout.signal }).catch(() => null),
-      ]);
-
-      const hits: MemoryHit[] = [];
-
-      // Process memory_diary_entries
-      if (diaryResp.ok) {
-        const diaryData = await diaryResp.json() as Array<{
-          id: string;
-          raw_text: string;
-          tags: string[];
-          entry_date: string;
-          created_at: string;
-          entry_type: string;
-        }>;
-
-        for (const d of diaryData) {
-          const content = d.raw_text || '';
-          hits.push({
-            id: d.id,
-            category_key: d.tags?.[0]?.replace(/-/g, '_') || 'diary',
-            content: content.substring(0, CONTEXT_PACK_CONFIG.MAX_CONTENT_LENGTH),
-            importance: 60,
-            occurred_at: d.entry_date ? new Date(d.entry_date).toISOString() : d.created_at,
-            source: 'diary',
-            relevance_score: computeRelevanceScore(
-              { importance: 60, occurred_at: d.entry_date || d.created_at, content },
-              query, hits.length
-            ),
-          });
-        }
-      }
-
-      // Process diary_entries (Lovable) — table may not exist
-      if (lovableResp && lovableResp.ok) {
-        const lovableData = await lovableResp.json() as Array<{
-          id: string;
-          text: string;
-          source: string;
-          tags: string[];
-          created_at: string;
-        }>;
-
-        // Deduplicate by ID (in case same entry exists in both tables)
-        const seenIds = new Set(hits.map(h => h.id));
-        for (const d of lovableData) {
-          if (seenIds.has(d.id)) continue;
-          const content = d.text || '';
-          hits.push({
-            id: d.id,
-            category_key: d.tags?.[0]?.replace(/-/g, '_') || 'diary',
-            content: content.substring(0, CONTEXT_PACK_CONFIG.MAX_CONTENT_LENGTH),
-            importance: 60,
-            occurred_at: d.created_at,
-            source: d.source || 'diary',
-            relevance_score: computeRelevanceScore(
-              { importance: 60, occurred_at: d.created_at, content },
-              query, hits.length
-            ),
-          });
-        }
-      }
-
-      // Sort by relevance and cap
-      hits.sort((a, b) => b.relevance_score - a.relevance_score);
-      console.log(`[VTID-01224-FIX] fetchDiaryHits: ${hits.length} diary entries found`);
-
+    const diaryBlock = pack.blocks.DIARY as DiaryBlock | undefined;
+    const entries = diaryBlock?.entries ?? [];
+    const hits: MemoryHit[] = entries.map((e, idx) => {
+      const content = e.content ?? '';
       return {
-        hits: hits.slice(0, limit),
-        latency_ms: Date.now() - startTime,
+        id: e.id,
+        category_key: e.category_key || 'diary',
+        content: content.substring(0, CONTEXT_PACK_CONFIG.MAX_CONTENT_LENGTH),
+        importance: 60,
+        occurred_at: e.occurred_at,
+        source: 'diary',
+        relevance_score: computeRelevanceScore(
+          { importance: 60, occurred_at: e.occurred_at, content },
+          query,
+          idx,
+        ),
       };
-    } finally {
-      timeout.clear();
-    }
+    });
+
+    // Sort by relevance and cap (same as legacy behaviour).
+    hits.sort((a, b) => b.relevance_score - a.relevance_score);
+    console.log(`[VTID-01224-FIX] fetchDiaryHits: ${hits.length} diary entries found`);
+
+    return {
+      hits: hits.slice(0, limit),
+      latency_ms: Date.now() - startTime,
+    };
   } catch (error: any) {
     console.error(`[VTID-01224-FIX] diary retrieval error: ${error.message}`);
     return { hits: [], latency_ms: Date.now() - startTime };
@@ -699,8 +418,19 @@ async function fetchDiaryHits(
 }
 
 /**
- * Fetch relationship graph context from relationship_nodes and relationship_edges tables
- * (written by cognee extraction pipeline). Returns human-readable relationship strings.
+ * Fetch relationship graph context. Returns human-readable strings
+ * describing the user's closest connections.
+ *
+ * VTID-03145 (PR 2): NETWORK routed through the memory-broker NETWORK
+ * block. The broker owns the canonical graph traversal; this file
+ * does not name graph tables anymore. The output array shape
+ * (string[]) is unchanged; each string is now centred on the user-
+ * vs-other-side of an edge (the broker resolves the "other side"
+ * already).
+ *
+ * VTID-03153 (CPB-5 anti-regression): forbidden table names are
+ * intentionally absent from this file; see
+ * `test/services/context-pack-broker-boundary.test.ts`.
  */
 async function fetchRelationshipContext(
   lens: ContextLens,
@@ -709,74 +439,26 @@ async function fetchRelationshipContext(
   const startTime = Date.now();
 
   try {
-    const SUPABASE_URL = process.env.SUPABASE_URL;
-    const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
-
-    if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
-      return { context: [], latency_ms: Date.now() - startTime };
-    }
-
     if (!lens.tenant_id || !lens.user_id) {
       return { context: [], latency_ms: Date.now() - startTime };
     }
 
-    const headers = {
-      'Content-Type': 'application/json',
-      apikey: SUPABASE_SERVICE_ROLE,
-      Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`,
-    };
+    const pack = await getMemoryContext({
+      tenant_id: lens.tenant_id,
+      user_id: lens.user_id,
+      intent: 'social_query',
+      required_blocks: ['NETWORK'],
+    });
 
-    // Fetch nodes and edges in parallel
-    const nodesUrl = `${SUPABASE_URL}/rest/v1/relationship_nodes?select=id,title,node_type,domain,metadata&tenant_id=eq.${lens.tenant_id}&order=created_at.desc&limit=${limit}`;
-    const edgesUrl = `${SUPABASE_URL}/rest/v1/relationship_edges?select=from_node_id,to_node_id,relationship_type,strength&tenant_id=eq.${lens.tenant_id}&user_id=eq.${lens.user_id}&order=strength.desc&limit=20`;
+    const networkBlock = pack.blocks.NETWORK as NetworkBlock | undefined;
+    const people = networkBlock?.people ?? [];
+    const context: string[] = people.slice(0, limit).map(p => {
+      const edge = p.edge_type || 'connected to';
+      const name = p.display_name || p.node_id;
+      return `User ${edge}: ${name} (${p.node_type})`;
+    });
 
-    // VTID-01224-FIX: Add timeout to relationship graph fetch
-    const relTimeout = fetchWithTimeout();
-    const [nodesResponse, edgesResponse] = await Promise.all([
-      fetch(nodesUrl, { method: 'GET', headers, signal: relTimeout.signal }),
-      fetch(edgesUrl, { method: 'GET', headers, signal: relTimeout.signal }),
-    ]);
-
-    if (!nodesResponse.ok || !edgesResponse.ok) {
-      console.warn(`[VTID-01216] relationship retrieval failed: nodes=${nodesResponse.status}, edges=${edgesResponse.status}`);
-      return { context: [], latency_ms: Date.now() - startTime };
-    }
-
-    const nodes = await nodesResponse.json() as Array<{
-      id: string;
-      title: string;
-      node_type: string;
-      domain: string;
-      metadata: Record<string, unknown>;
-    }>;
-
-    const edges = await edgesResponse.json() as Array<{
-      from_node_id: string;
-      to_node_id: string;
-      relationship_type: string;
-      strength: number;
-    }>;
-
-    // Build node lookup map
-    const nodeMap = new Map<string, { title: string; node_type: string }>();
-    for (const node of nodes) {
-      nodeMap.set(node.id, { title: node.title, node_type: node.node_type });
-    }
-
-    // Map edges to human-readable strings
-    const context: string[] = edges
-      .map((edge) => {
-        const fromNode = nodeMap.get(edge.from_node_id);
-        const toNode = nodeMap.get(edge.to_node_id);
-        if (!fromNode || !toNode) return null;
-
-        return `${fromNode.node_type}: ${fromNode.title} (${edge.relationship_type}) → connected to → ${toNode.title} (${toNode.node_type})`;
-      })
-      .filter((s): s is string => s !== null);
-
-    console.log(`[VTID-01216] relationship graph returned ${context.length} connections from ${nodes.length} nodes`);
-
-    relTimeout.clear();
+    console.log(`[VTID-01216] relationship graph returned ${context.length} connections (NETWORK block)`);
     return {
       context,
       latency_ms: Date.now() - startTime,
@@ -1020,61 +702,11 @@ async function checkToolHealth(): Promise<ToolHealthStatus[]> {
 // Active VTIDs Retrieval
 // =============================================================================
 
-/**
- * Fetch active VTIDs for context
- */
-async function fetchActiveVTIDs(
-  tenant_id: string,
-  limit: number = 5
-): Promise<ActiveVTID[]> {
-  try {
-    const SUPABASE_URL = process.env.SUPABASE_URL;
-    const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
-
-    if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
-      return [];
-    }
-
-    // Fetch recent active tasks from vtid_ledger
-    // VTID-01224-FIX: Add timeout
-    const vtidTimeout = fetchWithTimeout();
-    try {
-      const response = await fetch(
-        `${SUPABASE_URL}/rest/v1/vtid_ledger?status=in.(in-progress,scheduled,planned)&order=created_at.desc&limit=${limit}`,
-        {
-          headers: {
-            apikey: SUPABASE_SERVICE_ROLE,
-            Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`,
-          },
-          signal: vtidTimeout.signal,
-        }
-      );
-
-      if (!response.ok) {
-        return [];
-      }
-
-      const results = await response.json() as Array<{
-        vtid: string;
-        title: string;
-        status: string;
-        priority?: string;
-      }>;
-
-      return results.map(r => ({
-        vtid: r.vtid,
-        title: r.title || r.vtid,
-        status: r.status,
-        priority: r.priority,
-      }));
-    } finally {
-      vtidTimeout.clear();
-    }
-  } catch (error: any) {
-    console.warn(`[VTID-01216] Failed to fetch active VTIDs: ${error.message}`);
-    return [];
-  }
-}
+// VTID-03158 (CPB-7): the ledger read lives behind the typed
+// `vtid-ledger-reader` boundary now. CPB no longer constructs Supabase
+// REST URLs for the ledger here. See
+// `test/services/context-pack-oasis-boundary.test.ts` for the
+// anti-regression contract.
 
 // =============================================================================
 // Context Pack Builder
@@ -1206,7 +838,7 @@ export async function buildContextPack(
     );
   }
 
-  // VTID-01224-FIX: Diary entries retrieval (stored in separate tables, not memory_items)
+  // VTID-01224-FIX: Diary entries retrieval (stored in their own dedicated tables, broker-owned)
   let diaryHits: MemoryHit[] = [];
   if (input.router_decision.sources_to_query.includes('memory_garden')) {
     retrievalPromises.push(
@@ -1254,73 +886,51 @@ export async function buildContextPack(
     checkToolHealth().then(result => { toolHealth = result; })
   );
   retrievalPromises.push(
-    fetchActiveVTIDs(input.lens.tenant_id).then(result => { activeVtids = result; })
+    getActiveVTIDs(input.lens.tenant_id).then(result => { activeVtids = result; })
   );
 
   // VITANA-BRAIN: Fetch OASIS system awareness context (role-gated)
+  //
+  // VTID-03158 (CPB-8 / CPB-9): all direct Supabase access for this
+  // block now lives behind `oasis-context-reader`. CPB owns only the
+  // role-routing decision; the reader owns table names, URLs, env
+  // reads, and the parallel-fan-out shape.
   let oasisContext: ContextPack['oasis_context'] | undefined;
   const oasisRole = input.role || 'community';
-  if (oasisRole === 'developer' || oasisRole === 'admin' || oasisRole === 'super_admin' || oasisRole === 'DEV' || oasisRole === 'infra') {
+  if (
+    oasisRole === 'developer' ||
+    oasisRole === 'admin' ||
+    oasisRole === 'super_admin' ||
+    oasisRole === 'DEV' ||
+    oasisRole === 'infra'
+  ) {
     retrievalPromises.push(
       (async () => {
         try {
-          const SUPABASE_URL_ENV = process.env.SUPABASE_URL;
-          const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE;
-          if (!SUPABASE_URL_ENV || !SUPABASE_KEY) return;
-          const headers = { 'Content-Type': 'application/json', apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` };
-
-          // Parallel: active tasks, recent deploys, pending approvals, self-healing alerts
-          const [tasksResp, deploysResp, approvalsResp, healingResp] = await Promise.all([
-            // Active VTIDs from ledger (in_progress + scheduled, limit 5)
-            fetch(`${SUPABASE_URL_ENV}/rest/v1/vtid_ledger?select=vtid,title,status&status=in.(in_progress,scheduled,allocated)&is_terminal=is.false&order=updated_at.desc&limit=5`, { headers }),
-            // Recent deploys (last 3 from oasis_events)
-            fetch(`${SUPABASE_URL_ENV}/rest/v1/oasis_events?select=service,status,created_at&topic=like.cicd.deploy.service.*&order=created_at.desc&limit=3`, { headers }),
-            // Pending approvals count
-            fetch(`${SUPABASE_URL_ENV}/rest/v1/oasis_events?select=id&topic=eq.cicd.github.safe_merge.evaluated&status=eq.info&order=created_at.desc&limit=20`, { headers }),
-            // Self-healing alerts (last 24h)
-            fetch(`${SUPABASE_URL_ENV}/rest/v1/oasis_events?select=id&topic=like.self-healing.*&status=eq.error&created_at=gte.${new Date(Date.now() - 86400000).toISOString()}&limit=50`, { headers }),
-          ]);
-
-          const tasks = tasksResp.ok ? await tasksResp.json() as Array<{ vtid: string; title: string; status: string }> : [];
-          const deploys = deploysResp.ok ? await deploysResp.json() as Array<{ service: string; status: string; created_at: string }> : [];
-          const approvals = approvalsResp.ok ? await approvalsResp.json() as Array<{ id: string }> : [];
-          const healing = healingResp.ok ? await healingResp.json() as Array<{ id: string }> : [];
-
-          oasisContext = {
-            active_tasks: tasks.map(t => ({ vtid: t.vtid, title: t.title, status: t.status })),
-            recent_deploys: deploys.map(d => ({ service: d.service || 'unknown', status: d.status, created_at: d.created_at })),
-            pending_approvals_count: approvals.length,
-            self_healing_alerts: healing.length,
-            recent_recommendations: [],
-          };
-          console.log(`[OASIS-CTX] Fetched: ${tasks.length} tasks, ${deploys.length} deploys, ${approvals.length} approvals, ${healing.length} healing alerts`);
+          const block = await getDeveloperOasisContext({
+            tenantId: input.lens.tenant_id,
+          });
+          if (block) {
+            oasisContext = block;
+            console.log(
+              `[OASIS-CTX] Fetched: ${block.active_tasks.length} tasks, ` +
+              `${block.recent_deploys.length} deploys, ` +
+              `${block.pending_approvals_count} approvals, ` +
+              `${block.self_healing_alerts} healing alerts`,
+            );
+          }
         } catch (oasisErr: any) {
           console.warn(`[OASIS-CTX] OASIS context fetch failed (non-fatal): ${oasisErr.message}`);
         }
       })()
     );
   } else {
-    // Community role: fetch recent recommendation activations only
+    // Community role: surface recent recommendation activations only.
     retrievalPromises.push(
       (async () => {
         try {
-          const SUPABASE_URL_ENV = process.env.SUPABASE_URL;
-          const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE;
-          if (!SUPABASE_URL_ENV || !SUPABASE_KEY || !input.lens.user_id) return;
-          const headers = { 'Content-Type': 'application/json', apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` };
-          const recsResp = await fetch(`${SUPABASE_URL_ENV}/rest/v1/autopilot_recommendations?select=title,status&user_id=eq.${input.lens.user_id}&status=in.(activated,completed)&order=updated_at.desc&limit=3`, { headers });
-          if (recsResp.ok) {
-            const recs = await recsResp.json() as Array<{ title: string; status: string }>;
-            if (recs.length > 0) {
-              oasisContext = {
-                active_tasks: [],
-                recent_deploys: [],
-                pending_approvals_count: 0,
-                self_healing_alerts: 0,
-                recent_recommendations: recs,
-              };
-            }
-          }
+          const block = await getCommunityOasisContext(input.lens.user_id);
+          if (block) oasisContext = block;
         } catch {}
       })()
     );

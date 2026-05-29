@@ -1604,6 +1604,13 @@ router.get(
           wakeOrigin:
             (envContext as { wakeOrigin?: 'orb_tap' | 'wake_word' | 'push_tap' | 'proactive_opener' | 'deep_link' | 'unknown' } | undefined)
               ?.wakeOrigin ?? 'unknown',
+          // VTID-03164: forward timezone for the new-day-return provider.
+          // LiveKit envelope carries it under clientContext.timezone OR
+          // (legacy) envelope.timezone — try both.
+          timezone:
+            (envContext as { timezone?: string } | undefined)?.timezone
+              ?? (envContext as { clientContext?: { timezone?: string } } | undefined)?.clientContext?.timezone
+              ?? null,
           recordEmission: true,
         });
         // VTID-03081: bump sessions_today_count. Fire-and-forget; never

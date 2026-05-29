@@ -71,6 +71,44 @@ interface ProductRow extends FilterableProduct {
   ingredients_primary: string[];
 }
 
+// VTID-03138 (Phase C.7): marketplace weights resolved via PolicyResolver.
+// Literals below are the cache-cold safety net; production source of
+// truth is `decision_policy` rows under `ranker.marketplace.*`.
+import { getPolicyResolver } from '../../decision-contract/policy-resolver';
+import { POLICY_KEYS } from '../../decision-contract/policy-keys';
+
+interface MarketplaceWeights {
+  topPicksPerUser: number;
+  productCandidateLimit: number;
+  ingredientRankBase: number;
+  ingredientRankDecay: number;
+  evidenceMultipliers: { strong: number; moderate: number; weak: number };
+  goalMatchBoost: number;
+  sameRegionBonus: number;
+  ratingBoostCap: number;
+  pastPurchasePenalty: number;
+}
+
+function getMarketplaceWeights(): MarketplaceWeights {
+  const r = getPolicyResolver();
+  return {
+    topPicksPerUser:       r.getValue<number>(POLICY_KEYS.RANKER_MARKETPLACE_TOP_PICKS_PER_USER,       { defaultValue: 5 }),
+    productCandidateLimit: r.getValue<number>(POLICY_KEYS.RANKER_MARKETPLACE_PRODUCT_CANDIDATE_LIMIT, { defaultValue: 100 }),
+    ingredientRankBase:    r.getValue<number>(POLICY_KEYS.RANKER_MARKETPLACE_INGREDIENT_RANK_BASE,    { defaultValue: 0.5 }),
+    ingredientRankDecay:   r.getValue<number>(POLICY_KEYS.RANKER_MARKETPLACE_INGREDIENT_RANK_DECAY,   { defaultValue: 0.08 }),
+    evidenceMultipliers:   r.getValue<{ strong: number; moderate: number; weak: number }>(
+      POLICY_KEYS.RANKER_MARKETPLACE_EVIDENCE_MULTIPLIERS,
+      { defaultValue: { strong: 1.0, moderate: 0.8, weak: 0.5 } },
+    ),
+    goalMatchBoost:        r.getValue<number>(POLICY_KEYS.RANKER_MARKETPLACE_GOAL_MATCH_BOOST,        { defaultValue: 0.2 }),
+    sameRegionBonus:       r.getValue<number>(POLICY_KEYS.RANKER_MARKETPLACE_SAME_REGION_BONUS,      { defaultValue: 0.15 }),
+    ratingBoostCap:        r.getValue<number>(POLICY_KEYS.RANKER_MARKETPLACE_RATING_BOOST_CAP,       { defaultValue: 0.1 }),
+    pastPurchasePenalty:   r.getValue<number>(POLICY_KEYS.RANKER_MARKETPLACE_PAST_PURCHASE_PENALTY,   { defaultValue: -1.0 }),
+  };
+}
+
+// Legacy const exports preserved for any tests/inspectors that read them.
+// The hot path uses `getMarketplaceWeights()` via the resolver-backed snapshot.
 const TOP_PICKS_PER_USER = 5;
 const PRODUCT_CANDIDATE_LIMIT = 100;
 
@@ -109,7 +147,7 @@ async function fetchCandidateProducts(
       'id, title, merchant_id, price_cents, currency, rating, origin_country, origin_region, health_goals, ingredients_primary, dietary_tags, contains_allergens, contraindicated_with_conditions, contraindicated_with_medications, ships_to_countries, ships_to_regions, excluded_from_regions'
     )
     .eq('is_active', true)
-    .limit(PRODUCT_CANDIDATE_LIMIT);
+    .limit(getMarketplaceWeights().productCandidateLimit);
 
   // Narrow by mapping ingredients if available — via GIN-indexed ingredients_primary
   if (mapping?.recommended_ingredients.length) {
@@ -141,14 +179,19 @@ function scoreProduct(
 ): { score: number; reasons: Array<{ kind: string; text: string }> } {
   const reasons: Array<{ kind: string; text: string }> = [];
   let score = 0;
+  // VTID-03138 (Phase C.7): per-scoring-call snapshot.
+  const w = getMarketplaceWeights();
 
   // Ingredient-fit (0..0.5) — highest-rank-match wins
   if (mapping?.recommended_ingredients.length) {
     const productIngs = new Set(p.ingredients_primary.map((x) => x.toLowerCase()));
     for (const rec of mapping.recommended_ingredients) {
       if (productIngs.has(rec.ingredient.toLowerCase())) {
-        const rankBoost = Math.max(0, 0.5 - (rec.rank - 1) * 0.08);
-        const evidenceBoost = rec.evidence === 'strong' ? 1.0 : rec.evidence === 'moderate' ? 0.8 : 0.5;
+        const rankBoost = Math.max(0, w.ingredientRankBase - (rec.rank - 1) * w.ingredientRankDecay);
+        const evidenceBoost =
+          rec.evidence === 'strong' ? w.evidenceMultipliers.strong
+          : rec.evidence === 'moderate' ? w.evidenceMultipliers.moderate
+          : w.evidenceMultipliers.weak;
         score += rankBoost * evidenceBoost;
         reasons.push({
           kind: 'condition',
@@ -164,20 +207,20 @@ function scoreProduct(
     const hg = new Set(p.health_goals.map((g) => g.toLowerCase()));
     const match = mapping.recommended_health_goals.find((g) => hg.has(g.toLowerCase()));
     if (match) {
-      score += 0.2;
+      score += w.goalMatchBoost;
       reasons.push({ kind: 'goal', text: `Supports ${match}` });
     }
   }
 
   // Origin-proximity (0..0.15) — same-region gets the full boost
   if (userRegion && p.origin_region === userRegion) {
-    score += 0.15;
+    score += w.sameRegionBonus;
     reasons.push({ kind: 'origin', text: `Ships from ${p.origin_country ?? 'your region'}` });
   }
 
   // Rating (0..0.1)
   if (p.rating !== null && p.rating > 0) {
-    const ratingBoost = Math.max(0, Math.min(0.1, ((p.rating - 3) / 2) * 0.1));
+    const ratingBoost = Math.max(0, Math.min(w.ratingBoostCap, ((p.rating - 3) / 2) * w.ratingBoostCap));
     if (ratingBoost > 0.02) {
       score += ratingBoost;
       reasons.push({ kind: 'rating', text: `Rated ${p.rating.toFixed(1)}/5` });
@@ -186,7 +229,7 @@ function scoreProduct(
 
   // Penalty: past purchase (don't re-recommend)
   if (pastPurchaseIds.has(p.id)) {
-    score -= 1.0;
+    score += w.pastPurchasePenalty;
   }
 
   return { score: Math.max(0, Math.min(1, score)), reasons };
@@ -228,7 +271,7 @@ export async function analyzeMarketplaceForUser(
     })
     .filter((s) => s.score > 0.15)
     .sort((a, b) => b.score - a.score)
-    .slice(0, TOP_PICKS_PER_USER);
+    .slice(0, getMarketplaceWeights().topPicksPerUser);
 
   return scored.map((s) => ({
     user_id,
@@ -298,7 +341,7 @@ export async function analyzeMarketplace(opts: {
     summary: {
       users_analyzed: userIds.length,
       products_scored: productsScored,
-      top_picks_per_user: TOP_PICKS_PER_USER,
+      top_picks_per_user: getMarketplaceWeights().topPicksPerUser,
       duration_ms: duration,
     },
   };

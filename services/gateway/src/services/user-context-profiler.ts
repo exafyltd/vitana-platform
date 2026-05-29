@@ -325,6 +325,16 @@ export interface LifeCompassSnapshot {
   primary_goal: string;
   category: string;
   confidence_score?: number | null;
+  /** Goal deadline (ISO date) — drives the My Journey days-to-deadline North Star. */
+  target_date?: string | null;
+  /** Optional quantified target, e.g. 10 for "lose 10 kg". */
+  target_value?: number | null;
+  /** Optional unit for the target, e.g. "kg". */
+  target_unit?: string | null;
+  /** Optional baseline measurement, reserved for later metric-progress. */
+  starting_value?: number | null;
+  /** When the goal was set (life_compass.created_at). */
+  set_at?: string | null;
 }
 
 /**
@@ -375,19 +385,46 @@ export async function fetchLifeCompass(
   userId: string,
 ): Promise<LifeCompassSnapshot | null> {
   try {
-    const { data, error } = await client
-      .from('life_compass')
-      .select('primary_goal, category, confidence_score')
-      .eq('user_id', userId)
-      .eq('is_active', true)
-      .order('created_at', { ascending: false })
-      .limit(1);
+    // Try the goal-target columns first. They land in a separate migration that
+    // may lag this gateway deploy, so on a "column does not exist" error we fall
+    // back to the base columns rather than dropping the compass entirely.
+    const extendedCols =
+      'primary_goal, category, confidence_score, target_date, target_value, target_unit, starting_value, created_at';
+    const queryCols = async (cols: string) =>
+      client
+        .from('life_compass')
+        .select(cols)
+        .eq('user_id', userId)
+        .eq('is_active', true)
+        .order('created_at', { ascending: false })
+        .limit(1);
+
+    let data: any[] | null;
+    let error: any;
+    ({ data, error } = await queryCols(extendedCols));
+    if (error) {
+      ({ data, error } = await queryCols('primary_goal, category, confidence_score, created_at'));
+    }
     if (error || !data || data.length === 0) return null;
-    const row = data[0] as { primary_goal: string; category: string; confidence_score?: number | null };
+    const row = data[0] as {
+      primary_goal: string;
+      category: string;
+      confidence_score?: number | null;
+      target_date?: string | null;
+      target_value?: number | null;
+      target_unit?: string | null;
+      starting_value?: number | null;
+      created_at?: string | null;
+    };
     return {
       primary_goal: row.primary_goal,
       category: row.category,
       confidence_score: row.confidence_score ?? null,
+      target_date: row.target_date ?? null,
+      target_value: row.target_value ?? null,
+      target_unit: row.target_unit ?? null,
+      starting_value: row.starting_value ?? null,
+      set_at: row.created_at ?? null,
     };
   } catch {
     return null;

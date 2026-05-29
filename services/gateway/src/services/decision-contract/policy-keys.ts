@@ -60,6 +60,165 @@ export const POLICY_KEYS = {
   // `{stt_provider, stt_model, llm_provider, llm_model, tts_provider,
   //   tts_model}` — same 6 fields the Python agent expected.
   VOICE_CASCADE_DEFAULT: 'voice.cascade.default',
+
+  // ---- Phase C.2 (VTID-03131) — pillar weighter ----------------
+  // The 21 numeric thresholds + weights currently hard-coded inside
+  // `services/gateway/src/services/recommendation-engine/ranking/index-pillar-weighter.ts`.
+  // Phase C.3 will implement `PillarWeighterStrategy` reading these
+  // through PolicyResolver with the same values as `defaultValue`.
+  RANKER_PILLAR_ALPHA_PILLAR: 'ranker.pillar_weighter.alpha_pillar',
+  RANKER_PILLAR_ALPHA_WAVE: 'ranker.pillar_weighter.alpha_wave',
+  RANKER_PILLAR_COMPASS_BOOST: 'ranker.pillar_weighter.compass_boost',
+  RANKER_PILLAR_QUOTA_MAX: 'ranker.pillar_weighter.pillar_quota_max',
+  RANKER_PILLAR_WEAKEST_QUOTA_MAX: 'ranker.pillar_weighter.weakest_quota_max',
+  RANKER_PILLAR_COMPLETION_DAMPENER: 'ranker.pillar_weighter.completion_dampener',
+  RANKER_PILLAR_PLAN_DAMPENER: 'ranker.pillar_weighter.plan_dampener',
+  RANKER_PILLAR_REJECTION_DAMPENER_ALPHA: 'ranker.pillar_weighter.rejection_dampener_alpha',
+  RANKER_PILLAR_STREAK_REINFORCEMENT: 'ranker.pillar_weighter.streak_reinforcement',
+  RANKER_PILLAR_COMMUNITY_MOMENTUM_BOOST: 'ranker.pillar_weighter.community_momentum_boost',
+  RANKER_PILLAR_BALANCE_UNBALANCED_AT: 'ranker.pillar_weighter.balance_unbalanced_at',
+  RANKER_PILLAR_BALANCE_AMPLIFY_AT: 'ranker.pillar_weighter.balance_amplify_at',
+  RANKER_PILLAR_BALANCE_AMPLIFY_FACTOR: 'ranker.pillar_weighter.balance_amplify_factor',
+  RANKER_PILLAR_JOURNEY_MODE_DAY_BREAK_1: 'ranker.pillar_weighter.journey_mode_day_break_1',
+  RANKER_PILLAR_JOURNEY_MODE_DAY_BREAK_2: 'ranker.pillar_weighter.journey_mode_day_break_2',
+  RANKER_PILLAR_JOURNEY_MODE_DAY_BREAK_3: 'ranker.pillar_weighter.journey_mode_day_break_3',
+  RANKER_PILLAR_JOURNEY_MODE_DECAY_1TO2: 'ranker.pillar_weighter.journey_mode_decay_1to2',
+  RANKER_PILLAR_JOURNEY_MODE_DECAY_2TO3: 'ranker.pillar_weighter.journey_mode_decay_2to3',
+  RANKER_PILLAR_JOURNEY_MODE_TERMINAL: 'ranker.pillar_weighter.journey_mode_terminal',
+  RANKER_PILLAR_COMPASS_DECAY_SUBTRACT: 'ranker.pillar_weighter.compass_decay_subtract',
+  RANKER_PILLAR_SCORE_CAP: 'ranker.pillar_weighter.pillar_score_cap',
+
+  // ---- Phase D.3.b-e (VTID-03134) — voice mapping tables -------
+  // The remaining 4 voice-mapping Records from orb-live.ts:
+  //   - LIVE_LANGUAGE_VOICES  → voice.live_language.<lang>   (string)
+  //   - GEMINI_TTS_VOICES     → voice.gemini_tts.<lang>      ({name, languageCode})
+  //   - NEURAL2_TTS_VOICES    → voice.neural2_tts.<lang>     ({name, languageCode})
+  //   - NEURAL2_ENABLED_LANGUAGES → voice.neural2.enabled_languages (string[])
+  // Per-lang keys are looked up via helper builders in voice-mapping.ts;
+  // only the array key needs a direct POLICY_KEYS entry.
+  VOICE_NEURAL2_ENABLED_LANGUAGES: 'voice.neural2.enabled_languages',
+
+  // ---- Phase B.5 (VTID-03135) — temporal-bucket motivation -----
+  SESSION_MOTIVATION_COOLING_TO_ABSENT_DAYS:
+    'session.motivation.cooling_to_absent_days',
+
+  // ---- Phase B.6 (VTID-03135) — D32 time-of-day windows --------
+  SITUATIONAL_TIME_OF_DAY_EARLY_MORNING_START_HOUR:
+    'situational.time_of_day.early_morning_start_hour',
+  SITUATIONAL_TIME_OF_DAY_MORNING_START_HOUR:
+    'situational.time_of_day.morning_start_hour',
+  SITUATIONAL_TIME_OF_DAY_AFTERNOON_START_HOUR:
+    'situational.time_of_day.afternoon_start_hour',
+  SITUATIONAL_TIME_OF_DAY_EVENING_START_HOUR:
+    'situational.time_of_day.evening_start_hour',
+  SITUATIONAL_TIME_OF_DAY_LATE_EVENING_START_HOUR:
+    'situational.time_of_day.late_evening_start_hour',
+
+  // ---- Phase B.7 (VTID-03136) — D33 readiness thresholds -------
+  // The 11 thresholds that previously lived as `export const D33_THRESHOLDS`
+  // in `services/gateway/src/types/availability-readiness.ts`. The const
+  // becomes a proxy (via `getD33Thresholds()` accessor) that reads via
+  // PolicyResolver with these literal values as cache-cold defaults.
+  SITUATIONAL_READINESS_MONETIZATION_MIN:
+    'situational.readiness.monetization_min',
+  SITUATIONAL_READINESS_DEEP_FLOW_MIN:
+    'situational.readiness.deep_flow_min',
+  SITUATIONAL_READINESS_LIGHT_FLOW_MIN:
+    'situational.readiness.light_flow_min',
+  SITUATIONAL_TIME_WINDOW_IMMEDIATE_MAX_MINUTES:
+    'situational.time_window.immediate_max_minutes',
+  SITUATIONAL_TIME_WINDOW_SHORT_MAX_MINUTES:
+    'situational.time_window.short_max_minutes',
+  SITUATIONAL_CONFIDENCE_MIN_FOR_ACTION:
+    'situational.confidence.min_for_action',
+  SITUATIONAL_RESPONSE_TIME_FAST_THRESHOLD_SECONDS:
+    'situational.response_time.fast_threshold_seconds',
+  SITUATIONAL_RESPONSE_TIME_SLOW_THRESHOLD_SECONDS:
+    'situational.response_time.slow_threshold_seconds',
+  SITUATIONAL_SESSION_LENGTH_SHORT_THRESHOLD_MINUTES:
+    'situational.session_length.short_threshold_minutes',
+  SITUATIONAL_SESSION_LENGTH_LONG_THRESHOLD_MINUTES:
+    'situational.session_length.long_threshold_minutes',
+  SITUATIONAL_OVERRIDE_EXPIRY_MINUTES:
+    'situational.override.expiry_minutes',
+
+  // ---- Phase C.5 (VTID-03137) — feed-ranker weights ------------
+  // The 12 weight/threshold literals in
+  // `services/gateway/src/services/feed-ranker.ts`. Accessor
+  // `getFeedRankerConfig()` reads via PolicyResolver with the literals
+  // as cache-cold defaults so behaviour is byte-identical at rollout.
+  RANKER_FEED_PW_ONBOARDING:
+    'ranker.feed.personalization_weight.onboarding',
+  RANKER_FEED_PW_EARLY:
+    'ranker.feed.personalization_weight.early',
+  RANKER_FEED_PW_ESTABLISHED:
+    'ranker.feed.personalization_weight.established',
+  RANKER_FEED_PW_MATURE:
+    'ranker.feed.personalization_weight.mature',
+  RANKER_FEED_PW_DEFAULT:
+    'ranker.feed.personalization_weight.default',
+  RANKER_FEED_FEATURED_BOOST: 'ranker.feed.featured_boost',
+  RANKER_FEED_RATING_SCORE_MAX: 'ranker.feed.rating_score_max',
+  RANKER_FEED_CATEGORY_MIX_WEIGHT: 'ranker.feed.category_mix_weight',
+  RANKER_FEED_TOPIC_AFFINITY_CAP: 'ranker.feed.topic_affinity_cap',
+  RANKER_FEED_CONDITION_MATCH_BOOST: 'ranker.feed.condition_match_boost',
+  RANKER_FEED_SAME_REGION_BONUS: 'ranker.feed.same_region_bonus',
+  RANKER_FEED_HIGH_RATING_THRESHOLD: 'ranker.feed.high_rating_threshold',
+  RANKER_FEED_HIGH_RATING_BONUS: 'ranker.feed.high_rating_bonus',
+  RANKER_FEED_BUDGET_FIT_BONUS: 'ranker.feed.budget_fit_bonus',
+
+  // ---- Phase C.7 (VTID-03138) — marketplace-analyzer -----------
+  RANKER_MARKETPLACE_TOP_PICKS_PER_USER:
+    'ranker.marketplace.top_picks_per_user',
+  RANKER_MARKETPLACE_PRODUCT_CANDIDATE_LIMIT:
+    'ranker.marketplace.product_candidate_limit',
+  RANKER_MARKETPLACE_INGREDIENT_RANK_BASE:
+    'ranker.marketplace.ingredient_rank_base',
+  RANKER_MARKETPLACE_INGREDIENT_RANK_DECAY:
+    'ranker.marketplace.ingredient_rank_decay',
+  RANKER_MARKETPLACE_EVIDENCE_MULTIPLIERS:
+    'ranker.marketplace.evidence_multipliers',
+  RANKER_MARKETPLACE_GOAL_MATCH_BOOST:
+    'ranker.marketplace.goal_match_boost',
+  RANKER_MARKETPLACE_SAME_REGION_BONUS:
+    'ranker.marketplace.same_region_bonus',
+  RANKER_MARKETPLACE_RATING_BOOST_CAP:
+    'ranker.marketplace.rating_boost_cap',
+  RANKER_MARKETPLACE_PAST_PURCHASE_PENALTY:
+    'ranker.marketplace.past_purchase_penalty',
+
+  // ---- Phase C.8 (VTID-03138) — community-user-analyzer --------
+  ANALYZER_COMMUNITY_PILLAR_WEAKNESS_THRESHOLD:
+    'analyzer.community.pillar_weakness_threshold',
+  ANALYZER_COMMUNITY_DECLINE_TREND_DROP_POINTS:
+    'analyzer.community.decline_trend_drop_points',
+  ANALYZER_COMMUNITY_STAGE_DAY1_AFTER_DAYS:
+    'analyzer.community.onboarding_stage.day1_after_days',
+  ANALYZER_COMMUNITY_STAGE_DAY3_AFTER_DAYS:
+    'analyzer.community.onboarding_stage.day3_after_days',
+  ANALYZER_COMMUNITY_STAGE_DAY7_AFTER_DAYS:
+    'analyzer.community.onboarding_stage.day7_after_days',
+  ANALYZER_COMMUNITY_STAGE_DAY14_AFTER_DAYS:
+    'analyzer.community.onboarding_stage.day14_after_days',
+  ANALYZER_COMMUNITY_STAGE_DAY30PLUS_AFTER_DAYS:
+    'analyzer.community.onboarding_stage.day30plus_after_days',
+
+  // ---- Phase C.6 (VTID-03140) — signal→impact maps -------------
+  // Per-signal-type impact catalogues from `recommendation-generator.ts`.
+  // One JSONB row per signal_type. Shape:
+  //   { version: 1, impacts: { <signal_key>: { impact, weight, rationale } } }
+  // The `weight` field is reserved (currently 1 for every entry) — leaves
+  // room to introduce per-key fan-in weighting without another schema bump.
+  // Codebase/OASIS/health are categorical maps; LLM/marketplace/wearable
+  // encode the existing 3-tier ladders as named keys ('high'/'mid'/'low').
+  RECOMMENDATION_SIGNAL_IMPACT_CODEBASE: 'recommendation.signal_impact.codebase',
+  RECOMMENDATION_SIGNAL_IMPACT_OASIS: 'recommendation.signal_impact.oasis',
+  RECOMMENDATION_SIGNAL_IMPACT_HEALTH: 'recommendation.signal_impact.health',
+  RECOMMENDATION_SIGNAL_IMPACT_LLM: 'recommendation.signal_impact.llm',
+  RECOMMENDATION_SIGNAL_IMPACT_MARKETPLACE:
+    'recommendation.signal_impact.marketplace',
+  RECOMMENDATION_SIGNAL_IMPACT_WEARABLE:
+    'recommendation.signal_impact.wearable',
 } as const;
 
 export type PolicyKey = (typeof POLICY_KEYS)[keyof typeof POLICY_KEYS];

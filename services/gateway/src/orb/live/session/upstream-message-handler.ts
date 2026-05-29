@@ -271,6 +271,33 @@ export function createUpstreamLiveMessageHandler(
             const isGreetingTurn = session.greetingSent && session.turn_count === (session.greetingTurnIndex ?? 0) + 1;
             console.log(`[VTID-01219] Turn complete for session ${session.sessionId} (turn ${session.turn_count}, isGreeting=${isGreetingTurn}, consecutiveModelTurns=${session.consecutiveModelTurns})`);
 
+            // VTID-03143: snapshot the just-completed assistant transcript
+            // into the recent-turns ring buffer (capped at 3) so the NEXT
+            // turn can detect and suppress duplication. Skip the snapshot
+            // when the audio was suppressed (we don't want to keep a
+            // suppressed duplicate as a comparison anchor — that would
+            // re-trigger suppression on every retry forever). Snapshot
+            // also skipped on too-short transcripts (less signal).
+            const completedTranscript = (session.outputTranscriptBuffer || '').trim();
+            const wasSuppressed = (session as any).suppressCurrentTurnAudio === true;
+            const droppedChunks = (session as any).currentTurnAudioChunksDropped || 0;
+            if (wasSuppressed) {
+              console.log(
+                `[VTID-03143] Turn complete with suppression — session ${session.sessionId}, dropped ${droppedChunks} duplicate chunks. transcript_chars=${completedTranscript.length}`,
+              );
+              ctx.deps.emitDiag(session, 'duplicate_turn_suppressed_at_complete', {
+                dropped_chunks: droppedChunks,
+                transcript_chars: completedTranscript.length,
+              });
+            } else if (completedTranscript.length >= 30) {
+              const recent: string[] = ((session as any).recentAssistantTexts as string[]) || [];
+              recent.push(completedTranscript);
+              while (recent.length > 3) recent.shift();
+              (session as any).recentAssistantTexts = recent;
+            }
+            (session as any).suppressCurrentTurnAudio = false;
+            (session as any).currentTurnAudioChunksDropped = 0;
+
             // VTID-ANON-SIGNUP-INTENT + VTID-ANON-NUDGE: Detect signup intent and enforce turn limits.
             // CRITICAL: No client_content injections — those cause double responses.
             // All nudging is done via the system instruction (see buildAnonymousSystemInstruction).
@@ -835,7 +862,31 @@ export function createUpstreamLiveMessageHandler(
                 if (session.audioOutChunks % 50 === 1) {
                   console.log(`[VTID-01219] Audio chunk ${session.audioOutChunks}, size: ${audioB64.length}`);
                 }
-                ctx.callbacks.onAudioResponse(audioB64);
+                // VTID-03143: duplicate-turn suppression. Gemini Live
+                // occasionally re-emits the same response after a long
+                // Say-exactly directive — the user hears the same intro
+                // twice or three times. The duplication is detected by
+                // comparing the new turn's early output transcript
+                // prefix to the last 3 completed assistant turns
+                // (recentAssistantTexts). On match, suppressCurrentTurnAudio
+                // is set and all REMAINING audio chunks for this turn
+                // are dropped. The first ~30-60 chars before detection
+                // still reach the user — better than nothing-suppressed.
+                // The model continues generating; we just stop forwarding.
+                if ((session as any).suppressCurrentTurnAudio === true) {
+                  (session as any).currentTurnAudioChunksDropped =
+                    ((session as any).currentTurnAudioChunksDropped || 0) + 1;
+                  // Log every 25th dropped chunk so we don't spam the log
+                  // for a long duplicated turn.
+                  if ((session as any).currentTurnAudioChunksDropped % 25 === 1) {
+                    console.warn(
+                      `[VTID-03143] Suppressing duplicate-turn audio chunk for session ${session.sessionId} (dropped=${(session as any).currentTurnAudioChunksDropped} so far this turn)`,
+                    );
+                  }
+                  // Don't forward to client.
+                } else {
+                  ctx.callbacks.onAudioResponse(audioB64);
+                }
 
                 // VTID-STREAM-KEEPALIVE: Removed per-chunk OASIS event emission.
                 // emitLiveSessionEvent fires an HTTP call to Supabase on every audio chunk
@@ -938,6 +989,39 @@ export function createUpstreamLiveMessageHandler(
               }
               // VTID-01225: Accumulate output transcription chunks in buffer (will be written on turnComplete)
               session.outputTranscriptBuffer += outputTranscription;
+
+              // VTID-03143: duplicate-turn detection. Once we have ~30
+              // chars of output transcript for this turn, compare its
+              // early prefix to the last few completed assistant turns.
+              // If the new turn STARTS with the same content as a
+              // recent one, Gemini is repeating — flip the audio
+              // suppression flag so subsequent chunks are dropped.
+              // Pure string comparison after normalization; no LLM call.
+              const SUPPRESS_PREFIX_CHARS = 30;
+              const recent: string[] = ((session as any).recentAssistantTexts as string[]) || [];
+              if (
+                !(session as any).suppressCurrentTurnAudio
+                && session.outputTranscriptBuffer.length >= SUPPRESS_PREFIX_CHARS
+                && recent.length > 0
+              ) {
+                const norm = (s: string) =>
+                  s.toLowerCase().replace(/[^\p{L}\p{N} ]+/gu, ' ').replace(/\s+/g, ' ').trim();
+                const currentPrefix = norm(session.outputTranscriptBuffer).slice(0, SUPPRESS_PREFIX_CHARS);
+                for (const prevText of recent) {
+                  const prevPrefix = norm(prevText).slice(0, SUPPRESS_PREFIX_CHARS);
+                  if (prevPrefix.length >= 20 && prevPrefix === currentPrefix) {
+                    (session as any).suppressCurrentTurnAudio = true;
+                    console.warn(
+                      `[VTID-03143] Duplicate turn detected for session ${session.sessionId} — suppressing audio for the rest of this turn. matched_prefix="${currentPrefix.slice(0, 60)}"`,
+                    );
+                    ctx.deps.emitDiag(session, 'duplicate_turn_detected', {
+                      matched_prefix_chars: currentPrefix.length,
+                      buffer_len: session.outputTranscriptBuffer.length,
+                    });
+                    break;
+                  }
+                }
+              }
             }
           }
         }

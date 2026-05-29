@@ -19,6 +19,19 @@
  * companion uses to choose how warmly to acknowledge an absence.
  */
 
+// VTID-03135 (Phase B.5): the cooling↔absent day boundary is now sourced
+// from `session.motivation.cooling_to_absent_days` in `decision_policy`.
+// The accessor below preserves the literal 14 as the cache-cold fallback.
+import { getPolicyResolver } from '../decision-contract/policy-resolver';
+import { POLICY_KEYS } from '../decision-contract/policy-keys';
+
+function getCoolingToAbsentDays(): number {
+  return getPolicyResolver().getValue<number>(
+    POLICY_KEYS.SESSION_MOTIVATION_COOLING_TO_ABSENT_DAYS,
+    { defaultValue: 14 },
+  );
+}
+
 export type TemporalBucket =
   | 'reconnect'
   | 'recent'
@@ -133,8 +146,10 @@ export function deriveMotivationSignal(bucket: TemporalBucket, daysSinceLast: nu
     return 'fresh';
   }
   if (bucket === 'yesterday' || bucket === 'week') return 'engaged';
-  if (bucket === 'long' && daysSinceLast <= 14) return 'cooling';
-  if (bucket === 'long' && daysSinceLast > 14) return 'absent';
+  // VTID-03135 (Phase B.5): 14-day boundary now policy-driven.
+  const coolingMax = getCoolingToAbsentDays();
+  if (bucket === 'long' && daysSinceLast <= coolingMax) return 'cooling';
+  if (bucket === 'long' && daysSinceLast > coolingMax) return 'absent';
   // 'first' — defer to tenure stage; treat as fresh by default
   return 'fresh';
 }

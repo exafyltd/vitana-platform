@@ -137,6 +137,16 @@ const TYPE_META: Record<string, TypeMeta> = {
   // Admin Companion (BOOTSTRAP-ADMIN-EE)
   admin_insight_urgent:        { channel: 'push_and_inapp', priority: 'p0', category: 'system' },
   admin_insight_action_needed: { channel: 'inapp',          priority: 'p1', category: 'system' },
+  // Billing lifecycle (VTID-03107) — Duolingo-style trial / cancel / win-back
+  trial_welcome:               { channel: 'push_and_inapp', priority: 'p1', category: 'system' },
+  trial_midpoint:              { channel: 'inapp',          priority: 'p2', category: 'system' },
+  trial_ending_2d:             { channel: 'push_and_inapp', priority: 'p1', category: 'system' },
+  trial_ending_1d:             { channel: 'push_and_inapp', priority: 'p1', category: 'system' },
+  trial_cancelled_winback:     { channel: 'inapp',          priority: 'p2', category: 'system' },
+  trial_winback_one_shot:      { channel: 'inapp',          priority: 'p3', category: 'system' },
+  founding_midpoint:           { channel: 'inapp',          priority: 'p2', category: 'system' },
+  founding_ending_2d:          { channel: 'push_and_inapp', priority: 'p1', category: 'system' },
+  founding_ending_1d:          { channel: 'push_and_inapp', priority: 'p1', category: 'system' },
   // Wallet & Business (VTID-01250)
   wallet_credits_earned:       { channel: 'push_and_inapp', priority: 'p1', category: 'offer' },
   wallet_payout_received:      { channel: 'push_and_inapp', priority: 'p1', category: 'offer' },
@@ -269,34 +279,39 @@ export async function sendAppilixPush(
   if (!appKey || !apiKey) return false;
 
   try {
-    const params = new URLSearchParams({
-      app_key: appKey,
-      api_key: apiKey,
-      notification_title: payload.title,
-      notification_body: payload.body,
-      user_identity: userId,
-    });
+    // Appilix API does NOT decode open_link_url (confirmed by their support),
+    // so that field must be sent raw. However, notification_title and
+    // notification_body CAN contain user input with &, =, + etc. which would
+    // corrupt the form body. Encode those fields to keep the body well-formed;
+    // Appilix decodes standard display fields normally for the push text.
+    const safeTitle = encodeURIComponent(payload.title);
+    const safeBody = encodeURIComponent(payload.body);
+    const bodyParts = [
+      `app_key=${appKey}`,
+      `api_key=${apiKey}`,
+      `notification_title=${safeTitle}`,
+      `notification_body=${safeBody}`,
+      `user_identity=${userId}`,
+    ];
     const url = payload.data?.url;
     let resolvedOpenLink: string | undefined;
     if (url) {
       const baseUrl = process.env.APPILIX_APP_URL || 'https://vitanaland.com';
       resolvedOpenLink = url.startsWith('http') ? url : `${baseUrl}${url}`;
-      params.set('open_link_url', resolvedOpenLink);
+      bodyParts.push(`open_link_url=${resolvedOpenLink}`);
     }
 
-    // BOOTSTRAP-NOTIF-MESSENGER-DIAG: log the exact open_link_url so we can
-    // correlate Appilix delivery with the [NotifDiag] beacons fired from the
-    // WebView when the deep-link page either loads or fails to load.
     console.log(
-      `[Appilix] push request user=${userId.slice(0, 8)}… ` +
+      `[Appilix] push user=${userId.slice(0, 8)}… ` +
       `title=${JSON.stringify(payload.title)} ` +
+      `body_len=${payload.body.length} ` +
       `open_link_url=${JSON.stringify(resolvedOpenLink ?? null)}`
     );
 
     const res = await fetch('https://appilix.com/api/push-notification', {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: params.toString(),
+      body: bodyParts.join('&'),
     });
 
     const text = await res.text().catch(() => '');

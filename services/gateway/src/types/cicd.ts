@@ -856,7 +856,41 @@ export type CicdEventType =
   // BOOTSTRAP-ARCH-INV: Architecture investigator hypothesis events
   | 'architecture.investigation.started'
   | 'architecture.investigation.completed'
-  | 'architecture.investigation.failed';
+  | 'architecture.investigation.failed'
+  // Phase 0 staging build (handoff brief P0.4 + P0.7 + P0.8):
+  // STAGE-DEPLOY workflow, publish/revert API, isolation smokes.
+  | 'staging.deploy.completed'
+  | 'staging.deploy.failed'
+  | 'staging.metrics.snapshot'
+  | 'staging.revert.completed'
+  | 'production.publish.requested'
+  | 'production.publish.completed'
+  | 'production.publish.failed'
+  | 'production.revert.completed'
+  // Voice-first canary publish (added post-Phase 0). Sequence on a canary run:
+  //   .requested   — operator clicked "Publish canary"; EXEC-DEPLOY dispatched
+  //                  with canary=true.  No traffic shift yet.
+  //   .started     — EXEC-DEPLOY finished; canary revision is at 10%, prior
+  //                  revision at 90%.  Operator is now watching metrics.
+  //   .promoted    — operator clicked "Promote to 100%"; canary revision is
+  //                  now serving 100% traffic.
+  //   .aborted     — operator clicked "Discard canary"; traffic shifted back
+  //                  to the prior revision at 100%, canary revision idle.
+  | 'production.canary.requested'
+  | 'production.canary.started'
+  | 'production.canary.promoted'
+  | 'production.canary.aborted'
+  // Phase 1 W1 (VTID-03177 PROFILE): latency + eval + dataset + fine-tune telemetry.
+  // All emitted with env=staging|production via env-tagging in emitOasisEvent().
+  // Inert in prod until FEATURE_LATENCY_TELEMETRY_ENV is flipped on.
+  | 'voice.latency.measured'        // per-turn phased latency: audio_in_first_byte..audio_out_first_chunk
+  | 'screen.latency.measured'       // per-route TTFB / Server-Timing breakdown from gateway
+  | 'eval.shadow.compared'          // shadow harness compared primary vs candidate model on one eval input
+  | 'eval.coverage.report'          // periodic golden-corpus coverage report (replay-runner output)
+  | 'dataset.extraction.completed'  // dataset-extraction cron finished one slice; metadata.rows / .target
+  | 'finetune.training.completed'   // Vertex Custom Training job ended; metadata.job_id / .status / .target
+  | 'auto_promote.proposed'         // auto-promoter chose to bump a staging tier; metadata.from / .to
+  | 'auto_promote.rejected';        // auto-promoter declined to bump; metadata.reason
 
 export interface CicdOasisEvent {
   vtid: string;
@@ -877,6 +911,10 @@ export interface CicdOasisEvent {
   // Auto-resolved from actor_id if omitted by caller (cached lookup in
   // emitOasisEvent). Null when the event has no human actor (system/cron).
   vitana_id?: string | null;
+  // Phase 0 staging build: explicit env tag. When unset, emitOasisEvent
+  // defaults to the running process's VITANA_ENV. Embedded in metadata.env
+  // (no oasis_events schema change required).
+  env?: 'production' | 'staging';
 }
 
 // ==================== Allowed Services for Deploy ====================

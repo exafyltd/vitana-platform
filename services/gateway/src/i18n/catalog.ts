@@ -35,6 +35,7 @@ export type GatewayI18nKey =
   | 'notif.recommendation_expiring.body'
   | 'notif.signal_expired.title'
   | 'notif.signal_expired.body'
+  | 'notif.reminder.title'
   | 'notif.fallback_app_name'
   // Notification-category labels surfaced on Settings → Notifications page.
   // Mapped from notification_categories.slug (display_name + description).
@@ -84,6 +85,7 @@ const DE: LocaleCatalog = {
   'notif.recommendation_expiring.body': '"{title}" läuft bald ab. Jetzt handeln!',
   'notif.signal_expired.title': 'Signal abgelaufen',
   'notif.signal_expired.body': 'Ein prädiktives Signal ist abgelaufen.',
+  'notif.reminder.title': '🔔 Erinnerung',
   'notif.fallback_app_name': 'Vitana',
   // Notification-category labels (Settings → Benachrichtigungen)
   'notif.category.chat.direct_messages.label': 'Direktnachrichten',
@@ -131,6 +133,7 @@ const EN: LocaleCatalog = {
   'notif.recommendation_expiring.body': '"{title}" expires soon. Act now!',
   'notif.signal_expired.title': 'Signal Expired',
   'notif.signal_expired.body': 'A predictive signal has expired.',
+  'notif.reminder.title': '🔔 Reminder',
   'notif.fallback_app_name': 'Vitana',
   // Notification-category labels (Settings → Notifications)
   'notif.category.chat.direct_messages.label': 'Direct Messages',

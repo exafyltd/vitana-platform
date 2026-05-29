@@ -66,6 +66,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const boardAdapter = require('./routes/board-adapter').default;
   const { commandhub } = require('./routes/commandhub');
   const { vtidRouter } = require('./routes/vtid');
+  // VTID-03177 (PROFILE): RUM beacon receiver from vitana-v1 frontend
+  const { rumBeaconRouter } = require('./routes/rum-beacon');
   const { router: tasksRouter } = require('./routes/tasks');
   const { router: eventsRouter } = require('./routes/events');
   const eventsApiRouter = require('./routes/gateway-events-api').default;
@@ -95,6 +97,10 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   // same OASIS pipeline the gateway uses.
   const oasisEmitRouter = require('./routes/oasis-emit').default;
   const vitanaIndexRouter = require('./routes/vitana-index').default;
+  // VTID-03152 Slice B + J: unified my-journey payload + landing-route resolver.
+  const myJourneyRouter = require('./routes/my-journey').default;
+  const goalPlannerRouter = require('./routes/goal-planner').default;
+  const landingRouteRouter = require('./routes/landing-route').default;
   const orbToolRouter = require('./routes/orb-tool').default;
   const orbAgentTraceRouter = require('./routes/orb-agent-trace').default;
   const awarenessConfigRouter = require('./routes/awareness-config').default;
@@ -300,6 +306,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   // VTID-01231: Stripe Connect Express Backend
   const creatorsRouter = require('./routes/creators').default;
   const stripeConnectWebhookRouter = require('./routes/stripe-connect-webhook').default;
+  // VTID-03107: Billing v1 — customer-side Stripe subscriptions + credit packs + redemption
+  const billingRouter = require('./routes/billing').default;
   // Notification System — FCM push + in-app notification history
   const notificationsRouter = require('./routes/notifications').default;
   // Chat — User-to-user direct messaging
@@ -309,6 +317,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   // VTID-01967: Vitana ID — voice resolver, admin lookup, onboarding pick
   const usersResolveRouter = require('./routes/users-resolve').default;
   const adminUsersLookupRouter = require('./routes/admin-users-lookup').default;
+  // Phase 0 staging build (P0.3): /admin/health + /admin/build-info diagnostics.
+  const adminHealthRouter = require('./routes/admin-health').default;
   const usersVitanaIdRouter = require('./routes/users-vitana-id').default;
   // VTID-01973: Vitana Intent Engine (P2-A). Voice-dictated intent registry +
   // kind-aware matcher. Behind FEATURE_INTENT_ENGINE_A — disabled by default.
@@ -414,8 +424,10 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   setupCors(app);
   app.use(sseHeaders);
 
-  // VTID-01230: Raw body parser for Stripe webhooks (MUST come BEFORE express.json())
+  // VTID-01230: Raw body parser for Stripe Connect webhooks (MUST come BEFORE express.json())
   app.use('/api/v1/stripe/webhook', express.raw({ type: 'application/json' }));
+  // VTID-03107: Raw body parser for customer-side Stripe billing webhook (separate signing secret)
+  app.use('/api/v1/billing/webhooks/stripe', express.raw({ type: 'application/json' }));
 
   // Middleware - IMPORTANT: JSON body parser must come before route handlers
   app.use(express.json({ limit: '2mb' }));
@@ -582,6 +594,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
     owner: 'presence-did-you-know',
   });
   mountRouterSync(app, '/api/v1/vtid', vtidRouter, { owner: 'vtid' });
+  // VTID-03177 (PROFILE): RUM beacon — POST /api/v1/rum/beacon
+  mountRouterSync(app, '/api/v1/rum', rumBeaconRouter, { owner: 'rum-beacon' });
 
   // VTID-0516: Autonomous Safe-Merge Layer - CICD routes
   // Note: Same router mounted at multiple paths is allowed (different effective routes)
@@ -696,6 +710,11 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   // (get_vitana_index, get_index_improvement_suggestions). Lifted from the
   // inline case bodies in orb-live.ts so both pipelines share the helper layer.
   mountRouterSync(app, '/api/v1/vitana-index', vitanaIndexRouter, { owner: 'vitana-index' });
+
+  // VTID-03152: journey-foundation endpoints.
+  mountRouterSync(app, '/api/v1/my-journey', myJourneyRouter, { owner: 'my-journey' });
+  mountRouterSync(app, '/api/v1/goal-plan', goalPlannerRouter, { owner: 'goal-planner' });
+  mountRouterSync(app, '/api/v1/landing-route', landingRouteRouter, { owner: 'landing-route' });
 
   // VTID-LIVEKIT-TOOLS: dispatcher endpoint that wraps every tool whose Vertex
   // implementation is inline-only in orb-live.ts. Single POST /api/v1/orb/tool
@@ -985,6 +1004,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   // VTID-01231: Stripe Connect Express Backend
   mountRouterSync(app, '/api/v1/creators', creatorsRouter, { owner: 'creators' });
   mountRouterSync(app, '/api/v1/stripe', stripeConnectWebhookRouter, { owner: 'stripe-connect-webhook' });
+  // VTID-03107: Billing v1 — customer-side Stripe + redemption codes + admin code mgmt
+  mountRouterSync(app, '/api/v1/billing', billingRouter, { owner: 'billing' });
 
   // Notification System — FCM push notifications + in-app history
   mountRouterSync(app, '/api/v1/notifications', notificationsRouter, { owner: 'notifications' });
@@ -1000,6 +1021,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   mountRouterSync(app, '/api/v1/users', usersResolveRouter, { owner: 'users-resolve' });
   mountRouterSync(app, '/api/v1/users', usersVitanaIdRouter, { owner: 'users-vitana-id' });
   mountRouterSync(app, '/api/v1/admin', adminUsersLookupRouter, { owner: 'admin-users-lookup' });
+  // Phase 0 staging build (P0.3): /admin/health + /admin/build-info — auth-free
+  // env-identity probes used by the STAGE-DEPLOY smoke and isolation checks.
+  mountRouterSync(app, '/api/v1/admin', adminHealthRouter, { owner: 'admin-health' });
 
   // VTID-01973: Vitana Intent Engine (P2-A) — gated by FEATURE_INTENT_ENGINE_A.
   if (intentsRouter) mountRouterSync(app, '/api/v1/intents', intentsRouter, { owner: 'intents' });
@@ -1348,6 +1372,15 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
         console.warn('⚠️ Autopilot heartbeat loop initialization failed (non-fatal):', error);
       }
 
+      // VTID-03107: Billing v1 — trial lifecycle notification worker.
+      // Polls lifecycle_notification_state every 5min, fans out via notifyUserAsync.
+      try {
+        const { startLifecycleNotificationWorker } = require('./services/lifecycle-notification-worker');
+        startLifecycleNotificationWorker();
+      } catch (error) {
+        console.warn('⚠️ Lifecycle notification worker startup failed (non-fatal):', error);
+      }
+
       // VTID-01185: Initialize recommendation scheduler (autonomous self-improvement)
       try {
         const { startScheduler } = require('./services/recommendation-engine/scheduler');
@@ -1494,6 +1527,17 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
         console.log('📜 PolicyResolver cache pre-warmed (decision-contract Phase B.3)');
       } catch (error) {
         console.warn('⚠️ PolicyResolver cache warm failed (non-fatal, using defaults):', error);
+      }
+
+      // VTID-03142 (Phase D42): pre-warm the ConflictPairResolver cache so
+      // the fusion engine's first conflict check sync-reads from
+      // decision_conflict_pair. Warm failure falls back to literals.
+      try {
+        const { warmConflictPairCache } = require('./services/decision-contract/conflict-pair-resolver');
+        await warmConflictPairCache();
+        console.log('📜 ConflictPairResolver cache pre-warmed (decision-contract D42)');
+      } catch (error) {
+        console.warn('⚠️ ConflictPairResolver cache warm failed (non-fatal, using fallback literals):', error);
       }
 
       // VTID-NAV-02: Pre-warm Navigator catalog DB cache + start periodic refresh

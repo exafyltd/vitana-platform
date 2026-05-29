@@ -7,6 +7,7 @@ import { randomUUID } from 'crypto';
 import { CicdEventType, CicdOasisEvent } from '../types/cicd';
 import { projectOasisEventToTimeline } from './timeline-projector';
 import { resolveVitanaId } from '../middleware/auth-supabase-jwt';
+import { VITANA_ENV } from '../env';
 
 /**
  * VTID-01874: Infer task_stage from event type when not explicitly set.
@@ -53,6 +54,16 @@ export async function emitOasisEvent(event: CicdOasisEvent): Promise<{ ok: boole
     vitanaId = await resolveVitanaId(event.actor_id);
   }
 
+  // Phase 0 staging build: auto-tag every event with VITANA_ENV so the same
+  // oasis_events table can carry both stacks without ambiguity. The Supabase
+  // `env` field on event.env wins if a caller sets it explicitly.
+  const envTag = event.env ?? VITANA_ENV;
+  const callerMetadata = event.payload || {};
+  const metadataWithEnv: Record<string, unknown> = {
+    ...callerMetadata,
+    env: (callerMetadata as Record<string, unknown>).env ?? envTag,
+  };
+
   const payload: Record<string, unknown> = {
     id: eventId,
     created_at: timestamp,
@@ -64,7 +75,7 @@ export async function emitOasisEvent(event: CicdOasisEvent): Promise<{ ok: boole
     status: event.status,
     message: event.message,
     link: null,
-    metadata: event.payload || {},
+    metadata: metadataWithEnv,
     // VTID-01260: Actor identification and surface tracking
     ...(event.actor_id && { actor_id: event.actor_id }),
     ...(event.actor_email && { actor_email: event.actor_email }),

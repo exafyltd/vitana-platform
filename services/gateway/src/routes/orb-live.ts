@@ -46,6 +46,9 @@ import { randomUUID } from 'crypto';
 import { TextToSpeechClient, protos } from '@google-cloud/text-to-speech';
 import { processWithGemini, setThreadIdentity } from '../services/gemini-operator';
 import { emitOasisEvent } from '../services/oasis-event-service';
+// VTID-03177 (PROFILE): per-turn latency telemetry. The middleware is a no-op
+// when FEATURE_LATENCY_TELEMETRY_ENV is off; safe to wire on every route.
+import { withLatencyTracker } from '../orb/live/latency-tracker';
 // VTID-02917 (B0d.3): wake reliability timeline — emit + record only,
 // never block the wake path. The recorder is best-effort by design.
 import { defaultWakeTimelineRecorder } from '../services/wake-timeline/wake-timeline-recorder';
@@ -745,20 +748,12 @@ const orbTranscripts = new Map<string, OrbSessionTranscript>();
 // VTID-01155: Gemini Live Multimodal Session Types & Stores
 // =============================================================================
 
-/**
- * VTID-01155: Supported languages for Live sessions and TTS
- * Voice map uses female voices per spec
- */
-const LIVE_LANGUAGE_VOICES: Record<string, string> = {
-  'en': 'Callirrhoe',
-  'de': 'Achernar',
-  'fr': 'Leda',
-  'es': 'Aoede',
-  'ar': 'Sulafat',
-  'zh': 'Laomedeia',
-  'sr': 'Vindemiatrix',
-  'ru': 'Gacrux'
-};
+// VTID-03134 (Phase D.3.b-e): LIVE_LANGUAGE_VOICES Record moved out of
+// this file. See `services/gateway/src/orb/live/voice/voice-mapping.ts`
+// for the PolicyResolver-backed accessor (`getLiveLanguageVoice`).
+// Seeded rows live under `voice.live_language.<lang>` in
+// `decision_policy`; byte-identical literal kept in voice-mapping.ts
+// as the cache-cold safety net.
 
 // A2 (orb-live-refactor): SUPPORTED_LIVE_LANGUAGES lifted to orb/live/config.ts.
 import { SUPPORTED_LIVE_LANGUAGES } from '../orb/live/config';
@@ -1178,6 +1173,14 @@ import { createUpstreamLiveMessageHandler } from '../orb/live/session/upstream-m
 // VTID-03126 (Phase D.3): Live API voice resolver — externalizes the
 // LIVE_API_VOICES Record + adds telemetry on silent fallbacks.
 import { getLiveApiVoice } from '../orb/live/voice/live-api-voice';
+// VTID-03134 (Phase D.3.b-e): voice mapping table accessors.
+import {
+  getLiveLanguageVoice,
+  getGeminiTtsVoice,
+  getNeural2TtsVoice,
+  getNeural2EnabledLanguages,
+  isNeural2EnabledFor,
+} from '../orb/live/voice/voice-mapping';
 // A8.3b.1 (VTID-02971): connectToLiveAPI now uses the A7 UpstreamLiveClient
 // boundary via VertexLiveClient. The orb-specific persona/tools/context
 // envelope is supplied through the new `customSetupMessage` option so the
@@ -1247,39 +1250,12 @@ try {
 }
 
 // VTID-01155: Gemini TTS voice mapping for each language
-// Uses Google Cloud TTS with Gemini model
-const GEMINI_TTS_VOICES: Record<string, { name: string; languageCode: string }> = {
-  'en': { name: 'Kore', languageCode: 'en-US' },
-  'de': { name: 'Kore', languageCode: 'de-DE' },
-  'fr': { name: 'Kore', languageCode: 'fr-FR' },
-  'es': { name: 'Kore', languageCode: 'es-ES' },
-  'ar': { name: 'Kore', languageCode: 'ar-XA' },
-  'zh': { name: 'Kore', languageCode: 'cmn-CN' },
-  'sr': { name: 'Kore', languageCode: 'sr-RS' },
-  'ru': { name: 'Kore', languageCode: 'ru-RU' }
-};
-
-// VTID-01219: TTS voices for ALL languages
-// Neural2 voices provide lower latency and more natural speech synthesis
-// Gemini TTS "Kore" voice DOES NOT WORK due to @google-cloud/text-to-speech
-// library stripping modelName field during protobuf serialization.
-// Female voices selected per specification
-// Neural2 available: de, en, fr, es
-// WaveNet fallback: ar, zh, ru (Neural2 not available)
-// Standard fallback: sr (neither Neural2 nor WaveNet available)
-const NEURAL2_TTS_VOICES: Record<string, { name: string; languageCode: string }> = {
-  'de': { name: 'de-DE-Neural2-G', languageCode: 'de-DE' },  // Female German - Neural2
-  'en': { name: 'en-US-Neural2-H', languageCode: 'en-US' },  // Female English - Neural2
-  'fr': { name: 'fr-FR-Neural2-A', languageCode: 'fr-FR' },  // Female French - Neural2
-  'es': { name: 'es-ES-Neural2-A', languageCode: 'es-ES' },  // Female Spanish - Neural2
-  'ar': { name: 'ar-XA-Wavenet-D', languageCode: 'ar-XA' },  // Female Arabic - WaveNet (Neural2 N/A)
-  'zh': { name: 'cmn-CN-Wavenet-A', languageCode: 'cmn-CN' }, // Female Chinese - WaveNet (Neural2 N/A)
-  'ru': { name: 'ru-RU-Wavenet-A', languageCode: 'ru-RU' },  // Female Russian - WaveNet (Neural2 N/A)
-  'sr': { name: 'sr-RS-Standard-A', languageCode: 'sr-RS' }, // Female Serbian - Standard (Neural2/WaveNet N/A)
-};
-
-// ALL languages use best available voice (Neural2 > WaveNet > Standard)
-const NEURAL2_ENABLED_LANGUAGES = ['en', 'de', 'fr', 'es', 'ar', 'zh', 'ru', 'sr'];
+// VTID-03134 (Phase D.3.b-e): GEMINI_TTS_VOICES + NEURAL2_TTS_VOICES +
+// NEURAL2_ENABLED_LANGUAGES moved to
+// `services/gateway/src/orb/live/voice/voice-mapping.ts`. Per-lang rows
+// seeded under `voice.gemini_tts.<lang>`, `voice.neural2_tts.<lang>`,
+// `voice.neural2.enabled_languages`. Byte-identical fallbacks retained
+// in the accessor module for cache-cold safety.
 
 // =============================================================================
 // VTID-01219: Gemini Live API WebSocket Implementation
@@ -5809,6 +5785,22 @@ async function connectToLiveAPI(
                           // live-session-controller.ts:VTID-03101 for the
                           // write side. Empty when no override is active.
                           + (session.wakeBriefOverrideBlock || '')
+                          // VTID-03162: VTID-03154's journeyGreetingBlock
+                          // injection removed here. Block coexisting with
+                          // the Teacher Mode block caused Gemini to follow
+                          // ambiguous turn-1 instructions and the comp-
+                          // rehension check-in language (added in
+                          // VTID-03157) made it worse — Vitana started
+                          // looping on the same capability and calling
+                          // end_teaching_session unprompted. Until the
+                          // journey-greeting vs Teacher-Mode integration
+                          // is designed properly (upstream wake-brief
+                          // suppression, not post-hoc block clearing),
+                          // we do NOT inject the journey-greeting block
+                          // into the system instruction. The controller
+                          // may still set the field on the session for
+                          // diagnostic/log purposes; it is intentionally
+                          // unread here.
                           // VTID-03112 (T1): Teacher Mode block. Empty
                           // when the wake-brief winner wasn't the
                           // Teacher OR the manual resolver failed.
@@ -6795,6 +6787,86 @@ function sendReconnectRecoveryPromptToLiveAPI(ws: WebSocket, session: GeminiLive
   const lang = session.lang;
   const stage = ((session as any).reconnectStage as string) || 'idle';
   const reconnectCount = ((session as any)._reconnectCount || 0);
+
+  // VTID-03128: Teacher-aware recovery. When session.teacherModeContent
+  // is set, the generic "what were you asking?" prompt below makes
+  // Vitana lose the Teacher thread — user complained that after a
+  // disconnect during "Want me to show you Autopilot?", Vitana came
+  // back saying "Sorry, what were you asking?" instead of continuing
+  // the Teacher flow. The Teacher Mode block stays in system_instruction
+  // across the reconnect (because session.teacherModeContent is
+  // preserved on attemptTransparentReconnect); the recovery prompt was
+  // the only thing fighting against it. This branch tells Gemini to
+  // resume the Teacher flow explicitly: acknowledge the blip briefly,
+  // then continue from where the Teacher Mode block + transcript
+  // history place the conversation.
+  const teacherMode = (session as any).teacherModeContent as
+    | {
+        active_capability_key: string;
+        active_display_name: string;
+        active_teacher_intro_script: string | null;
+      }
+    | undefined;
+  if (teacherMode && teacherMode.active_capability_key) {
+    const ackByLang: Record<string, string> = {
+      en: 'Sorry, the connection blipped for a moment.',
+      de: 'Entschuldige, die Verbindung war kurz weg.',
+      fr: 'Désolé, la connexion a sauté un instant.',
+      es: 'Perdón, se cortó la conexión un momento.',
+      sr: 'Извини, веза је на тренутак отпала.',
+    };
+    const ack = ackByLang[lang] || ackByLang.en;
+
+    const teacherRecoveryPrompt = [
+      'You are recovering from a brief connection blip in the middle of a Teacher Mode session.',
+      '',
+      `The active capability is "${teacherMode.active_display_name}" (key: ${teacherMode.active_capability_key}).`,
+      'Your Teacher Mode block + the conversation history are in your system instruction. Read them to know exactly where the conversation was when the connection dropped.',
+      '',
+      'Recovery shape — speak exactly ONE acknowledgment sentence first, then RESUME the Teacher flow from where you left off:',
+      '',
+      `1. Open with: "${ack}"`,
+      '',
+      '2. Then look at what was happening BEFORE the disconnect (in the conversation history):',
+      `   - If you had JUST OFFERED the capability ("Want me to show you ${teacherMode.active_display_name}?") and the user had not yet responded → briefly re-offer in a slightly different wording, e.g. "Sind wir noch in der Frage, ob ich dir ${teacherMode.active_display_name} vorstellen darf?" / "Are we still on whether to walk through ${teacherMode.active_display_name}?"`,
+      `   - If you were IN THE MIDDLE OF the intro for ${teacherMode.active_display_name} → continue from where you stopped, picking up the unfinished sentence. Do NOT start the intro over.`,
+      `   - If you had JUST FINISHED the intro and were about to ask the user's next preference → ask the named-next question now ("Möchtest du noch mehr dazu wissen, oder soll ich dir ${teacherMode.active_display_name} jetzt im Detail zeigen?").`,
+      `   - If the user was responding when the connection dropped → paraphrase what they were saying (from history) in 3-6 words and invite them to continue ("Du warst gerade bei <kurz paraphrasieren> — sprich ruhig weiter.").`,
+      '',
+      'CRITICAL RULES:',
+      '- Do NOT say "Hello" / "Hi" / "Welcome back" / the user\'s name — this is a recovery, not a fresh start.',
+      '- Do NOT ask generic "What would you like to talk about?" — you ALREADY KNOW you were in Teacher Mode for ' + teacherMode.active_display_name + '.',
+      '- Do NOT restart the offer or the intro from scratch — continue.',
+      '- Do NOT use the word "Internet" / "network" / "Wi-Fi" — say "connection" / "Verbindung".',
+      '- Speak in the user\'s language (set in your system instruction).',
+      '- Use "Sorry" / equivalent ONCE only.',
+      '- Speak immediately when this prompt arrives.',
+      '- The Teacher Mode behavior rules (3-4 sentence intros, named-next, awareness-event tool calls) ALL still apply once you have resumed.',
+    ].join('\n');
+
+    const message = {
+      client_content: {
+        turns: [{ role: 'user', parts: [{ text: teacherRecoveryPrompt }] }],
+        turn_complete: true,
+      },
+    };
+    ws.send(JSON.stringify(message));
+    session.greetingSent = true;
+    session.greetingTurnIndex = session.turn_count;
+    console.log(
+      `[VTID-03128] Teacher-aware recovery sent — capability=${teacherMode.active_capability_key} lang=${lang} stage=${stage} reconnectCount=${reconnectCount} transcriptTurns=${session.transcriptTurns?.length || 0}`,
+    );
+    emitDiag(session, 'recovery_prompt_sent', {
+      lang,
+      stage,
+      reconnect_count: reconnectCount,
+      transcript_turns: session.transcriptTurns?.length || 0,
+      recovery_mode: 'teacher_resume',
+      capability_key: teacherMode.active_capability_key,
+    });
+    startResponseWatchdog(session, getGreetingResponseTimeoutMs(), 'recovery_timeout');
+    return true;
+  }
 
   // VTID-02715 — neutral disconnect copy.
   //  - Words "internet" / "network" never appear: the user's Wi-Fi is fine,
@@ -8333,7 +8405,7 @@ router.post('/stop', (req: Request, res: Response) => {
  *   "meta": { "provider": "vertex", "model": "gemini-*", "mode": "orb_voice" }
  * }
  */
-router.post('/chat', optionalAuth, async (req: AuthenticatedRequest, res: Response) => {
+router.post('/chat', withLatencyTracker('text'), optionalAuth, async (req: AuthenticatedRequest, res: Response) => {
   const body = req.body as OrbChatRequest;
 
   // VTID-01186: Extract identity from authenticated request or fallback to DEV_IDENTITY
@@ -10047,7 +10119,7 @@ router.get('/debug/tts', async (req: Request, res: Response) => {
 
   const testText = (req.query.text as string) || 'Hello, this is a TTS test.';
   const lang = normalizeLang((req.query.lang as string) || 'en');
-  const voiceConfig = GEMINI_TTS_VOICES[lang] || GEMINI_TTS_VOICES['en'];
+  const voiceConfig = getGeminiTtsVoice(lang);
 
   const debugResult: Record<string, unknown> = {
     timestamp: new Date().toISOString(),
@@ -10434,7 +10506,7 @@ function normalizeLang(lang: string): string {
  */
 function getVoiceForLang(lang: string): string {
   const normalized = normalizeLang(lang);
-  return LIVE_LANGUAGE_VOICES[normalized] || LIVE_LANGUAGE_VOICES['en'];
+  return getLiveLanguageVoice(normalized);
 }
 
 /**
@@ -10978,10 +11050,11 @@ router.post('/tts', optionalAuth, async (req: AuthenticatedRequest, res: Respons
   const lang = normalizeLang(body.lang || 'en');
 
   // VTID-01219: Use Neural2 voices for German and English, Gemini for others
-  const useNeural2 = NEURAL2_ENABLED_LANGUAGES.includes(lang);
+  // VTID-03134 (Phase D.3.b-e): both branches now read through accessors.
+  const useNeural2 = isNeural2EnabledFor(lang);
   const voiceConfig = useNeural2
-    ? (NEURAL2_TTS_VOICES[lang] || GEMINI_TTS_VOICES['en'])
-    : (GEMINI_TTS_VOICES[lang] || GEMINI_TTS_VOICES['en']);
+    ? getNeural2TtsVoice(lang)
+    : getGeminiTtsVoice(lang);
   const voiceType = useNeural2 ? 'Neural2' : 'Gemini';
 
   // Emit request event
@@ -11193,10 +11266,10 @@ router.post('/live/chat-tts', optionalAuth, async (req: AuthenticatedRequest, re
     let audioB64 = '';
     let audioMime = '';
     if (ttsClient) {
-      const useNeural2 = NEURAL2_ENABLED_LANGUAGES.includes(lang);
+      const useNeural2 = isNeural2EnabledFor(lang);
       const voiceConfig = useNeural2
-        ? (NEURAL2_TTS_VOICES[lang] || NEURAL2_TTS_VOICES['en'])
-        : (GEMINI_TTS_VOICES[lang] || GEMINI_TTS_VOICES['en']);
+        ? (getNeural2TtsVoice(lang))
+        : (getGeminiTtsVoice(lang));
 
       const voiceParams: any = {
         languageCode: voiceConfig.languageCode,
@@ -11320,19 +11393,20 @@ router.get('/health', (_req: Request, res: Response) => {
       video_format: 'JPEG 768x768 @ 1 FPS'
     },
     // VTID-01219: Neural2 TTS voice configuration (ALL languages)
+    // VTID-03134 (Phase D.3.b-e): now reads via accessors.
     neural2_tts: {
       enabled: true,
       vtid: 'VTID-01219',
-      enabled_languages: NEURAL2_ENABLED_LANGUAGES,
+      enabled_languages: getNeural2EnabledLanguages(),
       voices: {
-        de: NEURAL2_TTS_VOICES['de']?.name,
-        en: NEURAL2_TTS_VOICES['en']?.name,
-        fr: NEURAL2_TTS_VOICES['fr']?.name,
-        es: NEURAL2_TTS_VOICES['es']?.name,
-        ar: NEURAL2_TTS_VOICES['ar']?.name,
-        zh: NEURAL2_TTS_VOICES['zh']?.name,
-        ru: NEURAL2_TTS_VOICES['ru']?.name,
-        sr: NEURAL2_TTS_VOICES['sr']?.name
+        de: getNeural2TtsVoice('de')?.name,
+        en: getNeural2TtsVoice('en')?.name,
+        fr: getNeural2TtsVoice('fr')?.name,
+        es: getNeural2TtsVoice('es')?.name,
+        ar: getNeural2TtsVoice('ar')?.name,
+        zh: getNeural2TtsVoice('zh')?.name,
+        ru: getNeural2TtsVoice('ru')?.name,
+        sr: getNeural2TtsVoice('sr')?.name
       },
       note: 'Gemini TTS disabled - modelName stripped by protobuf serialization'
     },

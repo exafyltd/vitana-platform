@@ -49,6 +49,18 @@ import {
   getForwardingAckTimeoutMs,
 } from '../../upstream/constants';
 import { destroySessionBuffer } from '../../../services/session-memory-buffer';
+// VTID-03107: Live AI voice quota check at session start + per-minute meter.
+import {
+  reserveVoiceQuotaAtSessionStart,
+  recordVoiceMinute,
+  triggerDowngrade,
+} from '../../../services/voice-quota-guard';
+import { recordPaywallEvent } from '../../../services/entitlement-service';
+
+// VTID-03107: per-session voice-meter intervals. Keyed by session_id so cleanup
+// in handleLiveSessionStop can tear down without touching GeminiLiveSession's type.
+const voiceMeterIntervals: Map<string, NodeJS.Timeout> = new Map();
+const VOICE_METER_INTERVAL_MS = 60_000; // 1 minute
 import {
   deduplicatedExtract,
   clearExtractionState,
@@ -418,17 +430,28 @@ export async function handleLiveStreamEndTurn(
  * Trailing punctuation + quote escaping is handled inline so the
  * line can't accidentally close the prompt block.
  */
-/** Sentinel marker — used by buildLiveSystemInstruction to suppress
- *  the SHORT-GAP GREETING PHRASES pool when an override is active.
- *  Must match the literal substring exactly in both places. */
-export const VERTEX_WAKE_BRIEF_OVERRIDE_MARKER =
-  '<<VERTEX_WAKE_BRIEF_OVERRIDE_ACTIVE>>';
+/** Sentinel marker — re-exported from wake-brief-marker.ts (extracted
+ *  to break circular imports per VTID-03167). */
+export { VERTEX_WAKE_BRIEF_OVERRIDE_MARKER } from '../instruction/wake-brief-marker';
+import { VERTEX_WAKE_BRIEF_OVERRIDE_MARKER } from '../instruction/wake-brief-marker';
+
+// VTID-03167: sentinel prefix that providers can use to ship a fully-
+// formed structural block in `userFacingLine`. When present, the
+// wake-brief override block IS the line content (already includes the
+// VERTEX_WAKE_BRIEF_OVERRIDE_MARKER + its own structural directives).
+// We do NOT wrap with the Say-exactly template in that case.
+const STRUCTURED_BLOCK_PREFIX = '__VTID_03167_STRUCTURED_BLOCK__\n';
 
 export function buildVertexWakeBriefBlock(
   line: string,
   _lang: string,
   dedupeKey: string | null,
 ): string {
+  // VTID-03167: structured-block bypass. The provider already built a
+  // complete block (with marker + structural directives). Use it as-is.
+  if (line.startsWith(STRUCTURED_BLOCK_PREFIX)) {
+    return line.slice(STRUCTURED_BLOCK_PREFIX.length);
+  }
   // Escape backticks + close-quotes so a renderer-produced line with
   // quotes in it can't break the surrounding instruction block.
   const safe = line.replace(/`/g, "'").replace(/\r?\n/g, ' ').trim();
@@ -489,6 +512,70 @@ export async function handleLiveSessionStart(
       error: 'AUTH_TOKEN_INVALID',
       message: 'Session expired or invalid — please re-authenticate',
     });
+  }
+
+  // VTID-03107: Live AI voice quota gate (authenticated sessions only).
+  // Anonymous sessions skip the gate (no user to bill). For authenticated
+  // users we reserve quota up front; if exhausted with degrade behavior, we
+  // allow the session to start but mark `voice_quota_exhausted` in the
+  // response meta so the frontend can flip to Standard tier mode.
+  //
+  // Failures inside the guard never block a legitimate session — they log
+  // and fall through to normal start. The cashflow guardrail is best-effort;
+  // never trade availability for metering accuracy.
+  const _earlyAuthHeader = req.headers.authorization;
+  const _earlyAuthToken =
+    _earlyAuthHeader && _earlyAuthHeader.startsWith('Bearer ')
+      ? _earlyAuthHeader.slice(7)
+      : undefined;
+  let voiceQuotaReservation: Awaited<ReturnType<typeof reserveVoiceQuotaAtSessionStart>> | null = null;
+  if (req.identity?.user_id && req.identity?.tenant_id) {
+    try {
+      voiceQuotaReservation = await reserveVoiceQuotaAtSessionStart(
+        req.identity.user_id,
+        req.identity.tenant_id,
+        { authToken: _earlyAuthToken }
+      );
+    } catch (err: unknown) {
+      console.warn(
+        `[VTID-03107] voice quota reservation failed (failing open): ${err instanceof Error ? err.message : String(err)}`
+      );
+    }
+
+    if (
+      voiceQuotaReservation &&
+      (voiceQuotaReservation.paywall_action === 'paywall' ||
+        voiceQuotaReservation.paywall_action === 'hard_block')
+    ) {
+      // Quota exhausted AND the user's plan configures this feature as hard_block
+      // (no PAYG path open at all). Record event + return 402 with paywall body.
+      recordPaywallEvent(
+        req.identity.user_id,
+        req.identity.tenant_id,
+        'voice_live_minutes',
+        'shown',
+        { context: 'session_start_blocked', vtid: 'VTID-03107' }
+      ).catch(() => {});
+      return res.status(402).json({
+        ok: false,
+        error: 'payment_required',
+        paywall: {
+          feature: 'voice_live_minutes',
+          tier: 'unknown',
+          quota: voiceQuotaReservation.quota,
+          used: voiceQuotaReservation.used,
+          remaining: voiceQuotaReservation.remaining,
+          reset_at: voiceQuotaReservation.reset_at,
+          credit_cost_per_unit: 0,
+          user_credit_balance: 0,
+          allowed_burn_buckets: ['purchased_credits'],
+          credit_option: null,
+          upgrade_url: '/api/v1/billing/checkout/subscription',
+          paywall_action: voiceQuotaReservation.paywall_action,
+        },
+        vtid: 'VTID-03107',
+      });
+    }
   }
 
   const body = req.body as LiveSessionStartRequest;
@@ -766,6 +853,70 @@ export async function handleLiveSessionStart(
   // Store session
   liveSessions.set(sessionId, session);
 
+  // VTID-03107: arm the per-minute voice meter for authenticated sessions
+  // whose quota gate is in 'allow' or 'degrade' state. 'deferred' sessions
+  // do NOT advance the meter (D36 protection). Anonymous sessions skip
+  // (no user to bill).
+  if (
+    voiceQuotaReservation &&
+    req.identity?.user_id &&
+    req.identity?.tenant_id &&
+    voiceQuotaReservation.paywall_action !== 'deferred' &&
+    voiceQuotaReservation.paywall_action !== 'hard_block' &&
+    voiceQuotaReservation.paywall_action !== 'paywall'
+  ) {
+    const meterUserId = req.identity.user_id;
+    const meterTenantId = req.identity.tenant_id;
+    const startedRemaining = voiceQuotaReservation.remaining;
+    let degradeAlreadyFired = voiceQuotaReservation.paywall_action === 'degrade';
+    const timer = setInterval(async () => {
+      const currentSession = liveSessions.get(sessionId);
+      if (!currentSession || !currentSession.active) {
+        // Session already ended; tear down ourselves as a belt-and-suspenders cleanup
+        const handle = voiceMeterIntervals.get(sessionId);
+        if (handle) {
+          clearInterval(handle);
+          voiceMeterIntervals.delete(sessionId);
+        }
+        return;
+      }
+      try {
+        const newUsed = await recordVoiceMinute(meterUserId, meterTenantId, false);
+        if (newUsed === null) return;
+        // If we've now exceeded the start-of-session remaining, the user has
+        // burned through their daily Live quota mid-call. Emit the dedicated
+        // downgrade SSE event ONCE. The frontend's OrbDegradeBanner +
+        // OrbTierBadge will flip on their own.
+        const consumed = Math.max(0, newUsed - (voiceQuotaReservation!.used));
+        if (!degradeAlreadyFired && consumed >= startedRemaining) {
+          degradeAlreadyFired = true;
+          const sseWriter = (_eventName: string, dataJson: string) => {
+            const sseResponse = liveSessions.get(sessionId)?.sseResponse;
+            if (sseResponse) {
+              try {
+                sseResponse.write(`data: ${dataJson}\n\n`);
+              } catch {
+                // SSE may have closed; non-blocking.
+              }
+            }
+          };
+          try {
+            await triggerDowngrade(meterUserId, meterTenantId, sseWriter, 'session_quota');
+          } catch (err) {
+            console.warn(
+              `[VTID-03107] triggerDowngrade failed for session ${sessionId}: ${err instanceof Error ? err.message : String(err)}`
+            );
+          }
+        }
+      } catch (err) {
+        console.warn(
+          `[VTID-03107] voice-meter tick failed for session ${sessionId}: ${err instanceof Error ? err.message : String(err)}`
+        );
+      }
+    }, VOICE_METER_INTERVAL_MS);
+    voiceMeterIntervals.set(sessionId, timer);
+  }
+
   // VTID-02917 (B0d.3): wake-timeline session_start_received event
   try {
     defaultWakeTimelineRecorder.startSession({
@@ -914,6 +1065,11 @@ export async function handleLiveSessionStart(
       // name-aware greeting pool. LiveKit always passed this; Vertex never
       // did — that's why `firstname_len=0` showed on every Teacher pick.
       firstName,
+      // VTID-03164: forward timezone from the client envelope so the
+      // new-day-return provider can detect "first session of new calendar
+      // day in user TZ". Missing → provider suppresses with reason
+      // 'no_timezone' and falls through to wake-brief, same as before.
+      timezone: session.clientContext?.timezone ?? null,
       // wake_origin is not yet plumbed from the client envelope on
       // Vertex; default 'unknown' so the B1 policy doesn't fire the
       // push_tap nudge. When the envelope ships this field through
@@ -1019,6 +1175,104 @@ export async function handleLiveSessionStart(
     );
   }
 
+  // VTID-03154 Slices C + D: journey-greeting block.
+  // Resolves the persistent user_journey row (Slice A) and decides whether
+  // this session should open with the one-time first-session welcome
+  // (is_first_session=true) or the daily-morning greeting (new calendar
+  // day in user TZ). Anonymous and missing-user sessions are skipped.
+  // Best-effort: any failure leaves journeyGreetingBlock empty and the
+  // session falls back to today's behavior. Self-contained scope — uses
+  // its own supabase handle so wake-brief failures upstream don't
+  // suppress the journey greeting.
+  try {
+    if (orbIdentity?.user_id) {
+      const { getSupabase: getSupa } = await import('../../../lib/supabase');
+      const supa = getSupa();
+      if (supa) {
+        const [
+          { getJourneyState, updateSessionEndState },
+          { buildJourneyGreetingBlock, todayInTimezone },
+          { fetchLifeCompass },
+        ] = await Promise.all([
+          import('../../../services/journey/user-journey-service'),
+          import('../instruction/journey-greeting'),
+          import('../../../services/user-context-profiler'),
+        ]);
+        const journey = await getJourneyState(supa, orbIdentity.user_id);
+        if (journey) {
+          const lifeCompass = await fetchLifeCompass(supa, orbIdentity.user_id).catch(() => null);
+          const tz = (session as any).clientContext?.timezone ?? null;
+          const todayDateIso = todayInTimezone(new Date(), tz);
+          // Best-effort first-name read for the contract. The wake-brief
+          // resolves firstName upstream; we read app_users.display_name
+          // here as a self-contained fallback so this block does not
+          // depend on the wake-brief try-block scope.
+          let nameForGreeting: string | null = null;
+          try {
+            const { data: prof } = await supa
+              .from('app_users')
+              .select('display_name')
+              .eq('user_id', orbIdentity.user_id)
+              .maybeSingle();
+            const dn = (prof?.display_name as string | undefined) ?? null;
+            if (dn) nameForGreeting = dn.split(/\s+/)[0] || null;
+          } catch { /* leave nameForGreeting null */ }
+          const result = buildJourneyGreetingBlock({
+            journey,
+            lifeCompassGoalText: lifeCompass?.primary_goal ?? null,
+            firstName: nameForGreeting,
+            lang,
+            todayDateIso,
+          });
+          if (result.block && result.meta) {
+            (session as any).journeyGreetingBlock = result.block;
+            (session as any).journeyGreetingMeta = result.meta;
+            // VTID-03160 REVERT: VTID-03154 cleared wakeBriefOverrideBlock
+            // and VTID-03157 cleared teacherModeContent so the journey
+            // greeting could own turn 1. Both clearings broke the Teacher
+            // flow in production: with teacherModeContent null, the
+            // Teacher's permission-asking opener still fired (via the
+            // wake-brief Say-exactly OR via Gemini's general prompt
+            // memory) but there were no turn-2+ instructions to guide
+            // what to teach, so Gemini fell back to the
+            // end_teaching_session tool and closed the overlay the
+            // moment the user said yes.
+            //
+            // Restoring the working Teacher experience is more important
+            // than the journey-greeting framing right now. The greeting
+            // block is still set on the session (orb-live.ts appends it
+            // into the system instruction), so the LLM sees the
+            // journey-day context, but it does NOT pre-empt the existing
+            // wake-brief or Teacher Mode pathways. Proper journey-vs-
+            // Teacher integration is a follow-up slice that requires
+            // either (a) reordering the concat so journeyGreetingBlock
+            // gets recency primacy AND adding journey-aware preamble to
+            // the Teacher Mode block so it cedes turn 1 cleanly, or (b)
+            // suppressing the wake-brief's Teacher-winner selection
+            // upstream when journey-greeting will fire.
+            console.log(
+              `[VTID-03154] Journey greeting prepared for ${sessionId}: kind=${result.meta.kind} day=${journey.day_in_journey}/${journey.total_days} phase=${journey.current_wave?.id ?? 'none'} life_compass=${lifeCompass ? 'set' : 'unset'}`,
+            );
+            // Fire-and-forget update: clear is_first_session for Slice C,
+            // advance last_session_date for both kinds so same-day repeat
+            // sessions don't re-fire the morning greeting.
+            const userIdForUpdate = orbIdentity.user_id;
+            updateSessionEndState(supa, userIdForUpdate, {
+              last_session_date: result.meta.today_date_iso,
+              clear_first_session: result.meta.kind === 'first_session',
+            }).catch((err: any) =>
+              console.warn(`[VTID-03154] update after fire failed (non-fatal): ${err.message}`),
+            );
+          }
+        }
+      }
+    }
+  } catch (e) {
+    console.warn(
+      `[VTID-03154] journey-greeting resolution failed (non-fatal) for ${sessionId}: ${(e as Error).message}`,
+    );
+  }
+
   // Emit OASIS event with identity context
   await deps.emitLiveSessionEvent('vtid.live.session.start', {
     session_id: sessionId,
@@ -1048,6 +1302,20 @@ export async function handleLiveSessionStart(
       voice: deps.getVoiceForLang(lang),
       modalities: responseModalities,
       model: VERTEX_LIVE_MODEL,
+      // VTID-03107: voice quota snapshot at session start. Frontend reads
+      // this to know whether to display the Standard-tier badge from the
+      // get-go (start_on_standard_tier=true) and how much quota remains.
+      voice_quota: voiceQuotaReservation
+        ? {
+            tier: voiceQuotaReservation.start_on_standard_tier ? 'standard' : 'live',
+            quota: voiceQuotaReservation.quota,
+            used: voiceQuotaReservation.used,
+            remaining: voiceQuotaReservation.remaining,
+            reset_at: voiceQuotaReservation.reset_at,
+            deferred_for_vulnerability: voiceQuotaReservation.deferred_for_vulnerability,
+            paywall_action: voiceQuotaReservation.paywall_action,
+          }
+        : null,
       context_bootstrap: {
         latency_ms: contextBootstrapLatencyMs ?? null,
         context_chars: null,
@@ -1145,6 +1413,13 @@ export async function handleLiveSessionStop(
   }
 
   session.active = false;
+
+  // VTID-03107: tear down the per-minute voice meter
+  const voiceMeterHandle = voiceMeterIntervals.get(session_id);
+  if (voiceMeterHandle) {
+    clearInterval(voiceMeterHandle);
+    voiceMeterIntervals.delete(session_id);
+  }
 
   // VTID-STREAM-KEEPALIVE: Clear upstream ping interval on session stop
   if (session.upstreamPingInterval) {

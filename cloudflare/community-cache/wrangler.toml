@@ -1,0 +1,43 @@
+# Community cache (staging) — Phase 1 W1 (VTID-03180 CACHE)
+#
+# Sits in front of community-app-staging.vitanaland.com / preview.vitanaland.com
+# and the gateway-staging origin. Uses Cloudflare KV (free tier) with
+# stale-while-revalidate to serve cacheable read endpoints.
+#
+# Staging-only in W1; production variant ships via canary PUBLISH after a
+# 48h soak (W3+ per the 40-day plan). DNS for preview-cache.vitanaland.com
+# is managed in the Cloudflare zone via the existing DNS API; until that's
+# set up, the worker is reachable directly at
+# vitana-community-cache-staging.workers.dev.
+
+name = "vitana-community-cache-staging"
+main = "worker.js"
+compatibility_date = "2026-05-26"
+
+# Routes attach the Worker to the staging preview hostname. Production
+# variant (community-cache, no -staging suffix) attaches to
+# community.vitanaland.com via a separate wrangler.toml shipped when the
+# W3 canary PUBLISH fires.
+routes = [
+  { pattern = "preview-cache.vitanaland.com/*", zone_name = "vitanaland.com" },
+]
+
+# KV namespace for cached responses. The first deploy creates the namespace
+# via `wrangler kv:namespace create COMMUNITY_CACHE_KV --env staging`; the
+# resulting id is pasted in here.
+[[kv_namespaces]]
+binding = "COMMUNITY_CACHE_KV"
+id = "REPLACE_WITH_KV_ID_AFTER_FIRST_DEPLOY"
+
+[vars]
+GATEWAY_ORIGIN = "https://gateway-staging-q74ibpv6ia-uc.a.run.app"
+ENVIRONMENT = "staging"
+# Stale-while-revalidate window (seconds) per route family. Personalized
+# routes get a short window; pure catalog reads get longer.
+SWR_DEFAULT_S = "30"
+SWR_CATALOG_S = "300"
+# Hard cap on cached response size; larger responses bypass cache.
+MAX_CACHEABLE_BYTES = "65536"
+
+[observability]
+enabled = true

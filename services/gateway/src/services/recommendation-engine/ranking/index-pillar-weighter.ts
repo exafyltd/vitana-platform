@@ -57,6 +57,21 @@ export interface RankInputRec {
   economic_axis?: EconomicAxis | string | null;
 }
 
+// Phase C.3.b (VTID-03141): structured per-path breakdown of the
+// `feedback_mult` composite. Each field is the multiplicative factor
+// the path contributed (e.g. 0.3 for a fired completion dampener, 1.2
+// for a fired community-momentum boost). A field is `undefined` when
+// the path did not fire. Used by PillarWeighterStrategy to emit one
+// `feedback_*` provenance component per fired path instead of a single
+// fused `feedback_mult` multiplier.
+export interface FeedbackBreakdown {
+  completion?: number;
+  plan?: number;
+  community?: number;
+  streak?: number;
+  rejection?: number;
+}
+
 export interface RankedRec<T extends RankInputRec = RankInputRec> {
   rec: T;
   rank_score: number;
@@ -64,6 +79,7 @@ export interface RankedRec<T extends RankInputRec = RankInputRec> {
   compass_boost: number;
   economic_boost: number;
   journey_mode: number;
+  feedback_breakdown: FeedbackBreakdown;
   explanation: string;
 }
 
@@ -102,6 +118,20 @@ export interface RankerConfig {
   rejection_dampener_alpha: number; // 0.5 — impact × (1 - alpha × dismiss_rate)
   streak_reinforcement: number;    // 1.3 — when streak ≥ 3 days
   community_momentum_boost: number; // 1.2 — when ≥ 3 community completions/7d
+  // VTID-03132 (Phase C.3): the 11 thresholds that previously lived as
+  // inline literals in scoreRec/rankBatch/computeJourneyMode. Externalized
+  // so PillarWeighterStrategy can override them via PolicyResolver.
+  balance_unbalanced_at: number;       // 0.7 — rankBatch quota flip threshold
+  balance_amplify_at: number;          // 0.9 — scoreRec weakest-pillar amplify threshold
+  balance_amplify_factor: number;      // 1.2 — scoreRec weakest-pillar weight when amplified
+  journey_mode_day_break_1: number;    // 7   — computeJourneyMode onramp ceiling
+  journey_mode_day_break_2: number;    // 30  — computeJourneyMode mid-mode ceiling
+  journey_mode_day_break_3: number;    // 90  — computeJourneyMode terminal-mode start
+  journey_mode_decay_1to2: number;     // 0.5 — mode decay from 1.0 → 0.5 between breaks 1 and 2
+  journey_mode_decay_2to3: number;     // 0.3 — mode decay from 0.5 → 0.2 between breaks 2 and 3
+  journey_mode_terminal: number;       // 0.2 — mode after break 3 (Index-led)
+  compass_decay_subtract: number;      // 0.1 — active_goal_category bonus subtraction
+  pillar_score_cap: number;            // 200 — Vitana Index per-pillar cap (gap normalizer)
 }
 
 export const DEFAULT_RANKER_CONFIG: RankerConfig = {
@@ -116,6 +146,18 @@ export const DEFAULT_RANKER_CONFIG: RankerConfig = {
   rejection_dampener_alpha: 0.5,
   streak_reinforcement: 1.3,
   community_momentum_boost: 1.2,
+  // VTID-03132 (Phase C.3) — byte-identical to previous inline literals.
+  balance_unbalanced_at: 0.7,
+  balance_amplify_at: 0.9,
+  balance_amplify_factor: 1.2,
+  journey_mode_day_break_1: 7,
+  journey_mode_day_break_2: 30,
+  journey_mode_day_break_3: 90,
+  journey_mode_decay_1to2: 0.5,
+  journey_mode_decay_2to3: 0.3,
+  journey_mode_terminal: 0.2,
+  compass_decay_subtract: 0.1,
+  pillar_score_cap: 200,
 };
 
 /**
@@ -269,21 +311,40 @@ export async function buildRankerContext(
  * Index-led ongoing practice. Data-coverage gate pins at 1.0 until the user
  * has taken the baseline AND completed at least one action in 14 days.
  */
-export function computeJourneyMode(ctx: RankerContext): number {
+export function computeJourneyMode(
+  ctx: RankerContext,
+  cfg: RankerConfig = DEFAULT_RANKER_CONFIG,
+): number {
   // Data-coverage gate: no baseline OR no recent completions → onramp.
   if (!ctx.has_baseline || !ctx.has_recent_completions) return 1.0;
 
   const d = ctx.days_since_start;
   if (d === null) return 1.0;
 
-  let mode: number;
-  if (d <= 7)          mode = 1.0;
-  else if (d <= 30)    mode = 1.0 - ((d - 7) / 23) * 0.5;     // 1.0 → 0.5
-  else if (d <= 90)    mode = 0.5 - ((d - 30) / 60) * 0.3;    // 0.5 → 0.2
-  else                 mode = 0.2;
+  // VTID-03132 (Phase C.3): break-points + decay factors now sourced
+  // from cfg so PolicyResolver-backed callers can tune the curve
+  // without a redeploy. Pre-C.3 inline literals: 7, 30, 90, 0.5, 0.3, 0.2.
+  const break1 = cfg.journey_mode_day_break_1;
+  const break2 = cfg.journey_mode_day_break_2;
+  const break3 = cfg.journey_mode_day_break_3;
 
-  // Compass override: goal-directed users ramp faster (−0.1, clamped).
-  if (ctx.active_goal_category) mode = Math.max(0.1, mode - 0.1);
+  let mode: number;
+  if (d <= break1) {
+    mode = 1.0;
+  } else if (d <= break2) {
+    mode = 1.0 - ((d - break1) / (break2 - break1)) * cfg.journey_mode_decay_1to2;
+  } else if (d <= break3) {
+    mode = (1.0 - cfg.journey_mode_decay_1to2)
+         - ((d - break2) / (break3 - break2)) * cfg.journey_mode_decay_2to3;
+  } else {
+    mode = cfg.journey_mode_terminal;
+  }
+
+  // Compass override: goal-directed users ramp faster (subtraction
+  // clamped to 0.1 floor — preserves the pre-C.3 max(0.1, …) clamp).
+  if (ctx.active_goal_category) {
+    mode = Math.max(0.1, mode - cfg.compass_decay_subtract);
+  }
   return mode;
 }
 
@@ -304,11 +365,19 @@ export function scoreRec<T extends RankInputRec>(
     let maxSum = 0;
     for (const p of PILLAR_KEYS) {
       const cv = Number((rec.contribution_vector as any)[p] ?? 0);
-      const gap = Math.max(0, Math.min(1, (200 - ctx.pillars[p]) / 200));
+      // VTID-03132 (Phase C.3): pillar score cap (default 200, Vitana
+      // Index per-pillar) now sourced from cfg.
+      const cap = cfg.pillar_score_cap;
+      const gap = Math.max(0, Math.min(1, (cap - ctx.pillars[p]) / cap));
       let weight = 1.0;
-      // G6 balance guard: when unbalanced, amplify contribution to the weakest pillar.
-      if (ctx.balance_factor !== null && ctx.balance_factor <= 0.9 && p === ctx.weakest_pillar) {
-        weight = 1.2;
+      // G6 balance guard: when unbalanced, amplify contribution to the
+      // weakest pillar. Threshold + factor now sourced from cfg.
+      if (
+        ctx.balance_factor !== null &&
+        ctx.balance_factor <= cfg.balance_amplify_at &&
+        p === ctx.weakest_pillar
+      ) {
+        weight = cfg.balance_amplify_factor;
       }
       boostSum += cv * gap * weight;
       maxSum += cv;
@@ -339,7 +408,9 @@ export function scoreRec<T extends RankInputRec>(
   }
 
   // Journey mode — decays over 90 days, gated on data coverage.
-  const journey_mode = computeJourneyMode(ctx);
+  // VTID-03132 (Phase C.3): cfg threaded through so the decay curve is
+  // tunable via PolicyResolver.
+  const journey_mode = computeJourneyMode(ctx, cfg);
 
   // G7 — feedback-loop multipliers.
   // 1. Completion dampener: if the primary pillar of this rec has a recent
@@ -356,22 +427,29 @@ export function scoreRec<T extends RankInputRec>(
   const primary = primaryPillar(rec);
   let feedback_mult = 1.0;
   let feedback_reason = '';
+  // VTID-03141 (C.3.b): per-path breakdown to feed provenance components.
+  // Only populated for paths that actually fire on this row.
+  const feedback_breakdown: FeedbackBreakdown = {};
   if (primary && ctx.recent_activity[primary]) {
     const act = ctx.recent_activity[primary]!;
     if (act.completions_24h > 0) {
       feedback_mult *= cfg.completion_dampener;
+      feedback_breakdown.completion = cfg.completion_dampener;
       feedback_reason += ' completion_dampened';
     } else if (act.plan_events_24h > 0) {
       feedback_mult *= cfg.plan_dampener;
+      feedback_breakdown.plan = cfg.plan_dampener;
       feedback_reason += ' voice_plan_dampened';
     }
     if (act.completions_7d >= 3 && primary === 'mental') {
       feedback_mult *= cfg.community_momentum_boost;
+      feedback_breakdown.community = cfg.community_momentum_boost;
       feedback_reason += ' community_momentum';
     }
     // Streak reinforcement — rec that encourages continuing the streak
     if (act.completions_7d >= 3 && rec.source_ref === 'start_streak') {
       feedback_mult *= cfg.streak_reinforcement;
+      feedback_breakdown.streak = cfg.streak_reinforcement;
       feedback_reason += ' streak_reinforcement';
     }
   }
@@ -379,7 +457,12 @@ export function scoreRec<T extends RankInputRec>(
   if (rec.domain) {
     const rate = ctx.rejection_rate_by_domain[rec.domain] ?? 0;
     if (rate > 0) {
-      feedback_mult *= Math.max(0.2, 1 - cfg.rejection_dampener_alpha * rate);
+      const rejectionFactor = Math.max(
+        0.2,
+        1 - cfg.rejection_dampener_alpha * rate,
+      );
+      feedback_mult *= rejectionFactor;
+      feedback_breakdown.rejection = rejectionFactor;
       feedback_reason += ` rej_rate_${rate.toFixed(2)}`;
     }
   }
@@ -394,6 +477,7 @@ export function scoreRec<T extends RankInputRec>(
     compass_boost,
     economic_boost,
     journey_mode,
+    feedback_breakdown,
     explanation: `base=${base.toFixed(1)} × (1 + ${cfg.alpha_pillar}·pillarBoost=${pillar_boost.toFixed(2)}·(1−jm=${journey_mode.toFixed(2)})) × compass=${compass_boost.toFixed(2)} × econ=${economic_boost.toFixed(2)} × fb=${feedback_mult.toFixed(2)}${feedback_reason} = ${rank_score.toFixed(2)}`,
   };
 }
@@ -430,7 +514,11 @@ export function rankBatch<T extends RankInputRec>(
 
   const pillarQuota = Math.max(1, Math.floor(total * cfg.pillar_quota_max));
   const weakestQuota = Math.max(1, Math.floor(total * cfg.weakest_quota_max));
-  const unbalanced = ctx.balance_factor !== null && ctx.balance_factor <= 0.7 && ctx.weakest_pillar !== null;
+  // VTID-03132 (Phase C.3): balance threshold now sourced from cfg.
+  const unbalanced =
+    ctx.balance_factor !== null &&
+    ctx.balance_factor <= cfg.balance_unbalanced_at &&
+    ctx.weakest_pillar !== null;
 
   const counts: Record<PillarKey, number> = { nutrition: 0, hydration: 0, exercise: 0, sleep: 0, mental: 0 };
   const kept: RankedRec<T>[] = [];
