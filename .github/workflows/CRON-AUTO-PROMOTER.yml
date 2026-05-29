@@ -1,0 +1,72 @@
+name: Cron Auto-Promoter
+
+# Phase 1 W1 (VTID-03179 FINETUNES) — hourly auto-promoter. Reads rolling
+# 24h eval.shadow.compared events from STAGING, computes per-feature
+# rollups, emits auto_promote.proposed / auto_promote.rejected events.
+#
+# W1 runs in DRY mode (AUTO_PROMOTER_DRY_RUN=1 default): emits events but
+# does NOT open a PR to flip FEATURE_*_ENV. W2+ flips to AUTO_PROMOTER_DRY_RUN=0
+# once the first auto-promotion has been reviewed by a human and the
+# promoter has demonstrated sane decisions for >=48h.
+
+on:
+  schedule:
+    # Hourly on the half-hour.
+    - cron: '30 * * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry mode (emit events only, no PR)'
+        required: false
+        default: 'true'
+        type: choice
+        options: [ 'true', 'false' ]
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: cron-auto-promoter
+  cancel-in-progress: false
+
+env:
+  GCP_PROJECT: lovable-vitana-vers1
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: services/gateway/package-lock.json
+      - working-directory: services/gateway
+        run: npm ci --no-audit --no-fund
+
+      - name: Auth to GCP (WIF)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_WIF_SA_EMAIL }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Resolve STAGING Supabase creds
+        run: |
+          set -euo pipefail
+          STAGING_URL=$(gcloud secrets versions access latest --secret=STAGING_SUPABASE_URL --project="${GCP_PROJECT}")
+          STAGING_KEY=$(gcloud secrets versions access latest --secret=STAGING_SUPABASE_SERVICE_ROLE_KEY --project="${GCP_PROJECT}")
+          echo "::add-mask::$STAGING_URL"
+          echo "::add-mask::$STAGING_KEY"
+          echo "STAGING_SUPABASE_URL=$STAGING_URL" >> "$GITHUB_ENV"
+          echo "STAGING_SUPABASE_SERVICE_ROLE_KEY=$STAGING_KEY" >> "$GITHUB_ENV"
+
+      - name: Run auto-promoter
+        working-directory: services/gateway
+        env:
+          AUTO_PROMOTER_DRY_RUN: ${{ inputs.dry_run == 'false' && '0' || '1' }}
+        run: npx tsx scripts/auto-promoter.ts

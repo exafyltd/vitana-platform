@@ -353,16 +353,31 @@ export async function buildBrainSystemInstruction(input: {
   // Block contains Guardrail A (authoritative identity) + Guardrail B (anti-drift)
   // and is injected at the TOP of the system prompt (highest attention weight)
   // so memory blocks below cannot poison identity recall (Maria → Kemal fix).
+  // VTID-03183: Per-surface gate. The Life Compass goal block and the
+  // proactive guide block are both authored around the community wellness
+  // surface — the goal block emits "every suggestion MUST visibly connect
+  // to [longevity goal]" and the proactive guide block emits "Vitanaland
+  // is a longevity platform — its mission is to help people improve
+  // quality of life and extend lifespan". On the Command Hub voice
+  // surface (role=developer/admin), those blocks override the outer
+  // dev_orb persona by recency primacy and the user hears community
+  // recommendations even though the identity says "engineering co-pilot".
+  // Skipping both blocks for non-community roles is the structural fix.
+  const isCommunitySurface = mapRoleForGuide(input.role) === 'community';
   const [contextPack, lifeCompassBlock, proactiveGuideBlock, identityGuardrailBlock] = await Promise.all([
     buildContextPack(contextPackInput),
-    buildLifeCompassGoalBlock({ user_id: input.user_id }),
-    buildProactiveGuideBlock({
-      user_id: input.user_id,
-      tenant_id: input.tenant_id,
-      role: input.role,
-      channel: input.channel,
-      user_timezone: input.user_timezone,
-    }),
+    isCommunitySurface
+      ? buildLifeCompassGoalBlock({ user_id: input.user_id })
+      : Promise.resolve(''),
+    isCommunitySurface
+      ? buildProactiveGuideBlock({
+          user_id: input.user_id,
+          tenant_id: input.tenant_id,
+          role: input.role,
+          channel: input.channel,
+          user_timezone: input.user_timezone,
+        })
+      : Promise.resolve(''),
     buildIdentityGuardrailBlock({ user_id: input.user_id, tenant_id: input.tenant_id }),
   ]);
   const contextForLLM = formatContextPackForLLM(contextPack, { userTimezone: input.user_timezone });
@@ -502,8 +517,19 @@ export async function buildProactiveGuideBlock(input: {
     return '';
   }
 
-  const channel: 'voice' | 'text' = input.channel === 'orb' ? 'voice' : 'text';
+  // VTID-03183: The proactive opener is community-flavored end-to-end —
+  // every candidate source (Life Compass goal, wave-aware journey, autopilot
+  // recommendation pool) is authored for the community wellness surface.
+  // Returning empty for developer/admin keeps the dev_orb persona's
+  // voice_greeting_rules in charge of the first utterance. Defense in depth:
+  // buildBrainSystemInstruction also gates this call site, but skipping
+  // inside the function guards any future caller too.
   const guideRole = mapRoleForGuide(input.role);
+  if (guideRole !== 'community') {
+    return '';
+  }
+
+  const channel: 'voice' | 'text' = input.channel === 'orb' ? 'voice' : 'text';
 
   // Compute the unified awareness picture ONCE — every downstream signal flows from it
   // VTID-02019: pass the user's tz through so HH:MM in the awareness block
