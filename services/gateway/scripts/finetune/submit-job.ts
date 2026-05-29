@@ -66,37 +66,50 @@ async function main(): Promise<void> {
   const runId = `${cfg.vertex_custom_job.display_name_prefix}-${new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)}-${randomUUID().slice(0, 8)}`;
   const outputUri = `${cfg.vertex_custom_job.output_uri_prefix}${runId}/`;
 
-  const workerPoolSpec = JSON.stringify({
-    machine_spec: {
-      machine_type: cfg.vertex_custom_job.worker_pool.machine_type,
-      accelerator_type: cfg.vertex_custom_job.worker_pool.accelerator_type,
-      accelerator_count: cfg.vertex_custom_job.worker_pool.accelerator_count,
-    },
-    replica_count: cfg.vertex_custom_job.worker_pool.replica_count,
-    python_package_spec: {
-      executor_image_uri: cfg.vertex_custom_job.container_image,
-      package_uris: [`${cfg.vertex_custom_job.output_uri_prefix}trainer/finetune-trainer-0.1.0.tar.gz`],
-      python_module: cfg.vertex_custom_job.python_module,
-      args: [
-        `--target=${cfg.target}`,
-        `--base-model=${cfg.base_model}`,
-        `--dataset-prefix=${cfg.dataset.gcs_prefix}`,
-        `--output-uri=${outputUri}`,
-        ...Object.entries(cfg.training).map(([k, v]) => `--${k.replace(/_/g, '-')}=${v}`),
-      ],
-    },
-  });
+  // gcloud ai custom-jobs --worker-pool-spec accepts comma-separated
+  // key=value pairs, NOT JSON. For nested specs (python_package_spec) the
+  // canonical workaround is a YAML/JSON config passed via --config; this
+  // also keeps shell-quoting sane.
+  const jobConfig = {
+    workerPoolSpecs: [
+      {
+        machineSpec: {
+          machineType: cfg.vertex_custom_job.worker_pool.machine_type,
+          acceleratorType: cfg.vertex_custom_job.worker_pool.accelerator_type,
+          acceleratorCount: cfg.vertex_custom_job.worker_pool.accelerator_count,
+        },
+        replicaCount: cfg.vertex_custom_job.worker_pool.replica_count,
+        pythonPackageSpec: {
+          executorImageUri: cfg.vertex_custom_job.container_image,
+          packageUris: [`${cfg.vertex_custom_job.output_uri_prefix}trainer/finetune-trainer-0.1.0.tar.gz`],
+          pythonModule: cfg.vertex_custom_job.python_module,
+          args: [
+            `--target=${cfg.target}`,
+            `--base-model=${cfg.base_model}`,
+            `--dataset-prefix=${cfg.dataset.gcs_prefix}`,
+            `--output-uri=${outputUri}`,
+            ...Object.entries(cfg.training).map(([k, v]) => `--${k.replace(/_/g, '-')}=${v}`),
+          ],
+        },
+      },
+    ],
+  };
+
+  const tmpConfigPath = `/tmp/finetune-job-${runId}.yaml`;
+  const jsYaml = await import('js-yaml');
+  await fs.writeFile(tmpConfigPath, jsYaml.dump(jobConfig), 'utf-8');
 
   const args = [
     'ai', 'custom-jobs', 'create',
     `--project=${cfg.vertex_custom_job.project}`,
     `--region=${cfg.vertex_custom_job.region}`,
     `--display-name=${runId}`,
-    `--worker-pool-spec=${workerPoolSpec}`,
+    `--config=${tmpConfigPath}`,
   ];
 
   console.log(`[submit-job] job: ${runId}`);
   console.log(`[submit-job] output_uri: ${outputUri}`);
+  console.log(`[submit-job] config file: ${tmpConfigPath}`);
   console.log(`[submit-job] command: gcloud ${args.join(' ')}`);
 
   if (DRY_RUN) {
@@ -110,6 +123,8 @@ async function main(): Promise<void> {
   } catch (err) {
     console.error('[submit-job] gcloud failed:', err);
     process.exit(1);
+  } finally {
+    try { await fs.unlink(tmpConfigPath); } catch { /* ignore */ }
   }
 }
 
