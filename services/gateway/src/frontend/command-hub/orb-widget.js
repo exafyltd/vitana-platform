@@ -936,24 +936,33 @@
         src.start(_s.lastScheduledEnd);
 
         _s.scheduledSources.push(src);
-        src.onended = function () {
-          var idx = _s.scheduledSources.indexOf(src);
-          if (idx !== -1) _s.scheduledSources.splice(idx, 1);
-          if (_s.scheduledSources.length === 0) {
-            // Grace period before clearing audioPlaying. Covers inter-chunk
-            // scheduling gaps (~50-100ms). Previously 1000ms to prevent
-            // greeting flicker, but mic is now off during greeting so 400ms
-            // is enough. _waitForAudioEnd also checks scheduledSources +
-            // audioQueue directly, so LISTENING only shows when truly done.
-            clearTimeout(_s.audioEndGraceTimer);
-            _s.audioEndGraceTimer = setTimeout(function () {
-              if (_s.scheduledSources.length === 0 && _s.audioQueue.length === 0) {
-                _s.audioPlaying = false;
-                _s.lastAudioEndTime = Date.now();
-              }
-            }, 400);
-          }
-        };
+        // VTID-03185 — Phase 0 of ORB Recovery: wrap onended in an IIFE that
+        // captures the *specific* AudioBufferSource for this iteration. The
+        // bug was that `src` is `var`-scoped (function-scoped, not block-
+        // scoped), so every onended closure pointed at the LAST `src` the
+        // loop assigned. Earlier chunks could not remove themselves from
+        // _s.scheduledSources, leaving stale entries → the widget stayed in
+        // "Vitana speaking..." after audio had ended, gating the mic.
+        (function (endedSrc) {
+          src.onended = function () {
+            var idx = _s.scheduledSources.indexOf(endedSrc);
+            if (idx !== -1) _s.scheduledSources.splice(idx, 1);
+            if (_s.scheduledSources.length === 0) {
+              // Grace period before clearing audioPlaying. Covers inter-chunk
+              // scheduling gaps (~50-100ms). Previously 1000ms to prevent
+              // greeting flicker, but mic is now off during greeting so 400ms
+              // is enough. _waitForAudioEnd also checks scheduledSources +
+              // audioQueue directly, so LISTENING only shows when truly done.
+              clearTimeout(_s.audioEndGraceTimer);
+              _s.audioEndGraceTimer = setTimeout(function () {
+                if (_s.scheduledSources.length === 0 && _s.audioQueue.length === 0) {
+                  _s.audioPlaying = false;
+                  _s.lastAudioEndTime = Date.now();
+                }
+              }, 400);
+            }
+          };
+        })(src);
 
         _s.lastScheduledEnd += buf.duration;
         _s.audioPlaying = true;

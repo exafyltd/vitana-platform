@@ -15,7 +15,8 @@
     "typecheck": "tsc --noEmit",
     "validate:dev-frontend-spec": "node ./scripts/validate-dev-frontend-spec.mjs",
     "nav:sync": "tsx scripts/sync-nav-catalog-from-manifest.ts",
-    "nav:check": "tsx scripts/sync-nav-catalog-from-manifest.ts --check"
+    "nav:check": "tsx scripts/sync-nav-catalog-from-manifest.ts --check",
+    "smoke:orb-widget": "node ./scripts/orb-widget-stop-regression.mjs && node ./scripts/orb-widget-audio-playback-regression.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.90.0",
