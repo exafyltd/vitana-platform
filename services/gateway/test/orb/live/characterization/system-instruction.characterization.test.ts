@@ -111,5 +111,34 @@ describe('A0.1 characterization: buildLiveSystemInstruction', () => {
       );
       expect(mobileCmdhub).toContain("Your role is the user's life companion and instruction manual.");
     });
+
+    // VTID-03183: the trailing community-flavored prose (EVENT LINK SHARING,
+    // report_to_specialist / Devon handoff, switch_persona, Knowledge Hub
+    // instruction-manual framing) must be GATED OUT of the Command Hub
+    // prompt. Locking it here so a future refactor cannot accidentally
+    // re-include it.
+    it('Command Hub route drops the EVENT LINK SHARING and Devon-handoff trailing blocks', () => {
+      const cmdhub = buildLiveSystemInstruction(...baseArgs, '/command-hub', [], undefined, '@x');
+      // The community trailing prose in live-system-instruction.ts is gated
+      // out for the Command Hub surface. (Note: the tool catalog rendered
+      // by renderAvailableToolsSection still mentions report_to_specialist
+      // and Devon as tool descriptions — gating the tool catalog itself is
+      // a separate slice. The big community-flavored example block
+      // "I found a great event!" / EVENT LINK SHARING / "You ARE the
+      // instruction manual" is what the user heard and is now gone.)
+      expect(cmdhub).not.toContain('EVENT LINK SHARING');
+      expect(cmdhub).not.toContain('I found a great event!');
+      expect(cmdhub).not.toContain('You ARE the instruction manual');
+      expect(cmdhub).not.toContain('HARD RULE — handoff truthfulness');
+      expect(cmdhub).not.toContain('HARD RULE — message-send truthfulness');
+    });
+
+    it('Community route STILL contains the trailing community blocks (no regression)', () => {
+      const community = buildLiveSystemInstruction(...baseArgs, '/', [], undefined, '@x');
+      expect(community).toContain('EVENT LINK SHARING');
+      expect(community).toContain('report_to_specialist');
+      expect(community).toContain('switch_persona');
+      expect(community).toContain('You ARE the instruction manual');
+    });
   });
 });

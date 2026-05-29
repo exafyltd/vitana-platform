@@ -1,0 +1,78 @@
+name: Cron Graduation Recommender
+
+# Phase 1 W1 (VTID-03179 FINETUNES) — daily at 09:00 CET. Scans recent
+# auto-promote events, identifies features that have been at promote for
+# >=5 consecutive days, emits an auto_promote.proposed event to PROD
+# oasis_events with action='graduate_to_prod' (the operator's FCM digest
+# pipeline picks that up).
+
+on:
+  schedule:
+    # 09:00 CET = 08:00 UTC (winter) / 07:00 UTC (summer). We use 08:00 UTC
+    # year-round and accept the DST drift.
+    - cron: '0 8 * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Skip FCM digest emit'
+        required: false
+        default: 'false'
+        type: choice
+        options: [ 'true', 'false' ]
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: cron-graduation-recommender
+  cancel-in-progress: false
+
+env:
+  GCP_PROJECT: lovable-vitana-vers1
+
+jobs:
+  recommend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: services/gateway/package-lock.json
+      - working-directory: services/gateway
+        run: npm ci --no-audit --no-fund
+
+      - name: Auth to GCP (WIF)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_WIF_SA_EMAIL }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Resolve STAGING + PROD Supabase creds
+        run: |
+          set -euo pipefail
+          STAGING_URL=$(gcloud secrets versions access latest --secret=STAGING_SUPABASE_URL --project="${GCP_PROJECT}")
+          STAGING_KEY=$(gcloud secrets versions access latest --secret=STAGING_SUPABASE_SERVICE_ROLE_KEY --project="${GCP_PROJECT}")
+          PROD_URL=$(gcloud secrets versions access latest --secret=SUPABASE_URL --project="${GCP_PROJECT}")
+          PROD_KEY=$(gcloud secrets versions access latest --secret=SUPABASE_SERVICE_ROLE --project="${GCP_PROJECT}")
+          echo "::add-mask::$STAGING_URL"
+          echo "::add-mask::$STAGING_KEY"
+          echo "::add-mask::$PROD_URL"
+          echo "::add-mask::$PROD_KEY"
+          {
+            echo "STAGING_SUPABASE_URL=$STAGING_URL"
+            echo "STAGING_SUPABASE_SERVICE_ROLE_KEY=$STAGING_KEY"
+            echo "SUPABASE_URL=$PROD_URL"
+            echo "SUPABASE_SERVICE_ROLE=$PROD_KEY"
+          } >> "$GITHUB_ENV"
+
+      - name: Run graduation recommender
+        working-directory: services/gateway
+        env:
+          GRADUATION_DRY_RUN: ${{ inputs.dry_run == 'true' && '1' || '0' }}
+        run: npx tsx scripts/graduation-recommender.ts
