@@ -1,7 +1,7 @@
 {
-  "version": "0.1",
-  "last_updated": "2025-12-03T00:00:00Z",
-  "commit": "654c542667c45e741bc47cfc85e817ca4f5db9f8",
+  "version": "0.2",
+  "last_updated": "2026-05-29T00:00:00Z",
+  "commit": "36c263ba3db3dbb94996427d04914def6798cead",
   "categories": [
     {
       "code": "MIGRATION",
@@ -32,6 +32,26 @@
       "code": "API",
       "name": "API Governance",
       "description": "Rules enforcing API standards, traceability, and health monitoring"
+    },
+    {
+      "code": "INTEL",
+      "name": "Task Discovery Governance",
+      "description": "Rules enforcing OASIS as the single source of truth for task state"
+    },
+    {
+      "code": "MEMORY",
+      "name": "Memory Governance",
+      "description": "Rules enforcing memory data privacy, access control, and portability"
+    },
+    {
+      "code": "CONTROLS",
+      "name": "System Controls Governance",
+      "description": "Rules enforcing audit trails and access control for system control operations"
+    },
+    {
+      "code": "SPEC",
+      "name": "Spec Governance",
+      "description": "Rules enforcing immutability and integrity of VTID specifications"
     }
   ],
   "rules": [
@@ -498,6 +518,126 @@
       ],
       "vtid": ["VTID-0510"],
       "commit": "654c542667c45e741bc47cfc85e817ca4f5db9f8"
+    },
+    {
+      "id": "GOV-INTEL-R.1",
+      "level": "L1",
+      "title": "OASIS_ONLY_TASK_TRUTH",
+      "description": "All task state queries MUST source from OASIS. Non-OASIS sources are blocked.",
+      "enforcement": ["runtime"],
+      "status": "active",
+      "sources": [
+        "services/gateway/src/validator-core/task-discovery-validator.ts"
+      ],
+      "vtid": ["VTID-01160"],
+      "commit": "36c263ba3db3dbb94996427d04914def6798cead"
+    },
+    {
+      "id": "GOV-MEMORY-001",
+      "level": "L1",
+      "title": "RLS on Memory Governance Tables",
+      "description": "RLS enabled on memory_visibility_prefs, memory_locks, memory_deletions, memory_exports with user+tenant isolation.",
+      "enforcement": ["DB"],
+      "status": "active",
+      "sources": [
+        "supabase/migrations/20251231100000_vtid_01099_memory_governance_v1.sql"
+      ],
+      "vtid": ["VTID-01099"],
+      "commit": "36c263ba3db3dbb94996427d04914def6798cead"
+    },
+    {
+      "id": "GOV-MEMORY-002",
+      "level": "L1",
+      "title": "User-Only Memory Access",
+      "description": "Users can only access their own memory governance settings. RLS enforces user_id = auth.uid() AND tenant_id = current_tenant_id().",
+      "enforcement": ["DB", "backend"],
+      "status": "active",
+      "sources": [
+        "supabase/migrations/20251231100000_vtid_01099_memory_governance_v1.sql"
+      ],
+      "vtid": ["VTID-01099"],
+      "commit": "36c263ba3db3dbb94996427d04914def6798cead"
+    },
+    {
+      "id": "GOV-MEMORY-003",
+      "level": "L2",
+      "title": "Memory Export Data Portability",
+      "description": "Users can request exports of their memory data in JSON or CSV format with 24-hour expiry.",
+      "enforcement": ["backend"],
+      "status": "active",
+      "sources": [
+        "supabase/migrations/20251231100000_vtid_01099_memory_governance_v1.sql",
+        "services/gateway/src/routes/memory-governance.ts"
+      ],
+      "vtid": ["VTID-01099"],
+      "commit": "36c263ba3db3dbb94996427d04914def6798cead"
+    },
+    {
+      "id": "GOV-CONTROLS-001",
+      "level": "L1",
+      "title": "System Controls Audit Trail",
+      "description": "All system control changes (arm/disarm) MUST be recorded in immutable audit log with reason, actor, and timestamp.",
+      "enforcement": ["DB", "backend"],
+      "status": "active",
+      "sources": [
+        "supabase/migrations/20260117150000_vtid_01181_governance_controls.sql",
+        "services/gateway/src/routes/governance-controls.ts"
+      ],
+      "vtid": ["VTID-01181"],
+      "commit": "36c263ba3db3dbb94996427d04914def6798cead"
+    },
+    {
+      "id": "GOV-CONTROLS-002",
+      "level": "L1",
+      "title": "Admin-Only Control Modification",
+      "description": "Only users with exafy_admin JWT privilege can modify system controls. JWT authentication required.",
+      "enforcement": ["backend"],
+      "status": "active",
+      "sources": [
+        "services/gateway/src/routes/governance-controls.ts"
+      ],
+      "vtid": ["VTID-01181"],
+      "commit": "36c263ba3db3dbb94996427d04914def6798cead"
+    },
+    {
+      "id": "GOV-SPEC-001",
+      "level": "L1",
+      "title": "Immutable VTID Specs",
+      "description": "VTID specs are immutable after lock. Checksum mismatch = hard fail. No VTID may execute without a persisted spec.",
+      "enforcement": ["DB", "backend", "CI"],
+      "status": "active",
+      "sources": [
+        "supabase/migrations/20260119000000_vtid_01190_persistent_vtid_specs.sql"
+      ],
+      "vtid": ["VTID-01190"],
+      "commit": "36c263ba3db3dbb94996427d04914def6798cead"
+    },
+    {
+      "id": "GOV-AUTH-001",
+      "level": "L1",
+      "title": "JWT Authentication on Governance Routes",
+      "description": "All governance API endpoints require valid Supabase JWT. Write operations require exafy_admin privilege.",
+      "enforcement": ["backend"],
+      "status": "active",
+      "sources": [
+        "services/gateway/src/routes/governance.ts",
+        "services/gateway/src/routes/governance-controls.ts"
+      ],
+      "vtid": ["GOV-SEC-FIX-2026"],
+      "commit": "36c263ba3db3dbb94996427d04914def6798cead"
+    },
+    {
+      "id": "GOV-AUTH-002",
+      "level": "L1",
+      "title": "Fail-Closed Governance Evaluation",
+      "description": "Governance evaluation must fail-closed. If backend unavailable or errored, deploys are BLOCKED, not silently allowed.",
+      "enforcement": ["backend"],
+      "status": "active",
+      "sources": [
+        "services/gateway/src/controllers/governance-controller.ts"
+      ],
+      "vtid": ["GOV-SEC-FIX-2026"],
+      "commit": "36c263ba3db3dbb94996427d04914def6798cead"
     }
   ]
 }

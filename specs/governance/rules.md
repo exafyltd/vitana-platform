@@ -1,10 +1,10 @@
-# Vitana Governance Catalog v0.1
+# Vitana Governance Catalog v0.2
 
 This file lists all active governance rules (L1–L4) enforced across Vitana.
 
-**Last Updated:** 2025-12-03
-**Commit:** 654c542667c45e741bc47cfc85e817ca4f5db9f8
-**Total Rules:** 35
+**Last Updated:** 2026-05-29
+**Commit:** 36c263ba3db3dbb94996427d04914def6798cead
+**Total Rules:** 44
 
 ---
 
@@ -18,6 +18,10 @@ This file lists all active governance rules (L1–L4) enforced across Vitana.
 | DB | Database Governance | Rules enforcing database security, RLS, and tenant isolation |
 | AGENT | Agent Governance | Rules enforcing autonomous agent behavior and operational protocols |
 | API | API Governance | Rules enforcing API standards, traceability, and health monitoring |
+| INTEL | Task Discovery Governance | Rules enforcing OASIS as the single source of truth for task state |
+| MEMORY | Memory Governance | Rules enforcing memory data privacy, access control, and portability |
+| CONTROLS | System Controls Governance | Rules enforcing audit trails and access control for system control operations |
+| SPEC | Spec Governance | Rules enforcing immutability and integrity of VTID specifications |
 
 ---
 
@@ -60,6 +64,15 @@ This file lists all active governance rules (L1–L4) enforced across Vitana.
 | GOV-API-001 | L2 | VTID Required in API Requests | Active | DEV-API-GOVERNANCE | backend | X-VTID header required for traceability |
 | GOV-API-002 | L2 | Health Endpoint Requirement | Active | DEV-CICDL-DEPLOY | backend, CI | Services MUST expose /alive or /health |
 | GOV-API-003 | L2 | Deployment Version Recording | Active | VTID-0510 | CI, backend | Deployments MUST record version in OASIS |
+| GOV-AUTH-001 | L1 | JWT Authentication on Governance Routes | Active | GOV-SEC-FIX-2026 | backend | All governance endpoints require valid JWT |
+| GOV-AUTH-002 | L1 | Fail-Closed Governance Evaluation | Active | GOV-SEC-FIX-2026 | backend | Governance eval fails-closed on errors |
+| GOV-INTEL-R.1 | L1 | OASIS_ONLY_TASK_TRUTH | Active | VTID-01160 | runtime | All task state queries MUST source from OASIS |
+| GOV-MEMORY-001 | L1 | RLS on Memory Governance Tables | Active | VTID-01099 | DB | RLS on memory tables with user+tenant isolation |
+| GOV-MEMORY-002 | L1 | User-Only Memory Access | Active | VTID-01099 | DB, backend | Users can only access own memory settings |
+| GOV-MEMORY-003 | L2 | Memory Export Data Portability | Active | VTID-01099 | backend | Memory data export in JSON/CSV with 24h expiry |
+| GOV-CONTROLS-001 | L1 | System Controls Audit Trail | Active | VTID-01181 | DB, backend | Control changes recorded in immutable audit log |
+| GOV-CONTROLS-002 | L1 | Admin-Only Control Modification | Active | VTID-01181 | backend | Only exafy_admin can modify system controls |
+| GOV-SPEC-001 | L1 | Immutable VTID Specs | Active | VTID-01190 | DB, backend, CI | VTID specs immutable after lock, checksum enforced |
 
 ---
 
@@ -411,13 +424,114 @@ This file lists all active governance rules (L1–L4) enforced across Vitana.
   - .github/workflows/EXEC-DEPLOY.yml
 - **VTIDs:** VTID-0510
 
+#### GOV-AUTH-001: JWT Authentication on Governance Routes
+- **Level:** L1
+- **Status:** Active
+- **Description:** All governance API endpoints require valid Supabase JWT. Write operations require exafy_admin privilege.
+- **Enforcement:** backend
+- **Sources:**
+  - services/gateway/src/routes/governance.ts
+  - services/gateway/src/routes/governance-controls.ts
+- **VTIDs:** GOV-SEC-FIX-2026
+
+#### GOV-AUTH-002: Fail-Closed Governance Evaluation
+- **Level:** L1
+- **Status:** Active
+- **Description:** Governance evaluation must fail-closed. If backend unavailable or errored, deploys are BLOCKED, not silently allowed.
+- **Enforcement:** backend
+- **Sources:**
+  - services/gateway/src/controllers/governance-controller.ts
+- **VTIDs:** GOV-SEC-FIX-2026
+
+---
+
+### Task Discovery Governance (L1)
+
+#### GOV-INTEL-R.1: OASIS_ONLY_TASK_TRUTH
+- **Level:** L1
+- **Status:** Active
+- **Description:** All task state queries MUST source from OASIS. Non-OASIS sources are blocked.
+- **Enforcement:** runtime
+- **Sources:**
+  - services/gateway/src/validator-core/task-discovery-validator.ts
+- **VTIDs:** VTID-01160
+
+---
+
+### Memory Governance (L1-L2)
+
+#### GOV-MEMORY-001: RLS on Memory Governance Tables
+- **Level:** L1
+- **Status:** Active
+- **Description:** RLS enabled on memory_visibility_prefs, memory_locks, memory_deletions, memory_exports with user+tenant isolation.
+- **Enforcement:** DB
+- **Sources:**
+  - supabase/migrations/20251231100000_vtid_01099_memory_governance_v1.sql
+- **VTIDs:** VTID-01099
+
+#### GOV-MEMORY-002: User-Only Memory Access
+- **Level:** L1
+- **Status:** Active
+- **Description:** Users can only access their own memory governance settings. RLS enforces user_id = auth.uid() AND tenant_id = current_tenant_id().
+- **Enforcement:** DB, backend
+- **Sources:**
+  - supabase/migrations/20251231100000_vtid_01099_memory_governance_v1.sql
+- **VTIDs:** VTID-01099
+
+#### GOV-MEMORY-003: Memory Export Data Portability
+- **Level:** L2
+- **Status:** Active
+- **Description:** Users can request exports of their memory data in JSON or CSV format with 24-hour expiry.
+- **Enforcement:** backend
+- **Sources:**
+  - supabase/migrations/20251231100000_vtid_01099_memory_governance_v1.sql
+  - services/gateway/src/routes/memory-governance.ts
+- **VTIDs:** VTID-01099
+
+---
+
+### System Controls Governance (L1)
+
+#### GOV-CONTROLS-001: System Controls Audit Trail
+- **Level:** L1
+- **Status:** Active
+- **Description:** All system control changes (arm/disarm) MUST be recorded in immutable audit log with reason, actor, and timestamp.
+- **Enforcement:** DB, backend
+- **Sources:**
+  - supabase/migrations/20260117150000_vtid_01181_governance_controls.sql
+  - services/gateway/src/routes/governance-controls.ts
+- **VTIDs:** VTID-01181
+
+#### GOV-CONTROLS-002: Admin-Only Control Modification
+- **Level:** L1
+- **Status:** Active
+- **Description:** Only users with exafy_admin JWT privilege can modify system controls. JWT authentication required.
+- **Enforcement:** backend
+- **Sources:**
+  - services/gateway/src/routes/governance-controls.ts
+- **VTIDs:** VTID-01181
+
+---
+
+### Spec Governance (L1)
+
+#### GOV-SPEC-001: Immutable VTID Specs
+- **Level:** L1
+- **Status:** Active
+- **Description:** VTID specs are immutable after lock. Checksum mismatch = hard fail. No VTID may execute without a persisted spec.
+- **Enforcement:** DB, backend, CI
+- **Sources:**
+  - supabase/migrations/20260119000000_vtid_01190_persistent_vtid_specs.sql
+- **VTIDs:** VTID-01190
+
 ---
 
 ## Statistics
 
-- **Total Rules:** 35
-- **L1 (Database Security):** 6 rules
-- **L2 (Standards & Conventions):** 14 rules
+- **Total Rules:** 44
+- **Total Categories:** 10
+- **L1 (Critical Security):** 14 rules
+- **L2 (Standards & Conventions):** 15 rules
 - **L3 (Migration & Source Control):** 8 rules
 - **L4 (Agent Governance):** 7 rules
 
@@ -427,6 +541,7 @@ This file lists all active governance rules (L1–L4) enforced across Vitana.
 
 | Date | Version | Changes |
 |------|---------|---------|
+| 2026-05-29 | 0.2 | Added 9 rules across 4 new categories (INTEL, MEMORY, CONTROLS, SPEC) and 2 API auth rules. Total: 44 rules, 10 categories |
 | 2025-12-03 | 0.1 | Initial catalog extraction from codebase |
 
 ---
