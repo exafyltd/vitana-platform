@@ -3792,6 +3792,7 @@ const state = {
         systemStatusMessage: '',
         healthChecks: [],
         deployments: [],
+        deploymentsError: null,
         deploySuccessRate7d: null,
         orbHealth: null,
         orbSessionStats: null,
@@ -5821,24 +5822,29 @@ function renderHeader() {
 
     // Score-based pill: shows green/red counts at a glance
     const statusPill = document.createElement('button');
+    // Trailing label so the bare count isn't cryptic — it's a service-health score.
+    const svcLabel = '<span class="pill-score-label">svc</span>';
     if (capsTotal === 0) {
         statusPill.className = 'header-pill header-pill--neutral';
-        statusPill.innerHTML = '<span class="header-pill__dot"></span>...';
+        statusPill.innerHTML = '<span class="header-pill__dot"></span>...' + svcLabel;
     } else if (capsFailing === 0) {
         statusPill.className = 'header-pill header-pill--live';
-        statusPill.innerHTML = '<span class="header-pill__dot"></span><span class="pill-score pill-score--green">' + capsHealthy + '</span>';
+        statusPill.innerHTML = '<span class="header-pill__dot"></span><span class="pill-score pill-score--green">' + capsHealthy + '</span>' + svcLabel;
     } else if (capsHealthy === 0) {
         statusPill.className = 'header-pill header-pill--offline';
-        statusPill.innerHTML = '<span class="header-pill__dot"></span><span class="pill-score pill-score--red">' + capsFailing + '</span>';
+        statusPill.innerHTML = '<span class="header-pill__dot"></span><span class="pill-score pill-score--red">' + capsFailing + '</span>' + svcLabel;
     } else {
         // Mixed: show green count / red count
         const pillClass = capsFailing <= 4 ? 'header-pill--warning' : 'header-pill--offline';
         statusPill.className = 'header-pill ' + pillClass;
         statusPill.innerHTML = '<span class="pill-score pill-score--green">' + capsHealthy + '</span>' +
             '<span class="pill-score-sep">/</span>' +
-            '<span class="pill-score pill-score--red">' + capsFailing + '</span>';
+            '<span class="pill-score pill-score--red">' + capsFailing + '</span>' + svcLabel;
     }
-    statusPill.title = capsTotal ? (capsHealthy + ' healthy, ' + capsFailing + ' down of ' + capsTotal + ' services') : 'Loading health...';
+    statusPill.title = capsTotal
+        ? (capsHealthy + ' of ' + capsTotal + ' services healthy' + (capsFailing ? ', ' + capsFailing + ' down' : '') + ' — click for details')
+        : 'Loading service health…';
+    statusPill.setAttribute('aria-label', statusPill.title);
     statusPill.onclick = (e) => {
         e.stopPropagation();
         state.cicdHealthTooltipOpen = !state.cicdHealthTooltipOpen;
@@ -29078,6 +29084,7 @@ async function fetchOverviewDashboard() {
     var isInitialLoad = !state.overviewDashboard.fetched;
     state.overviewDashboard.loading = true;
     state.overviewDashboard.error = null;
+    state.overviewDashboard.deploymentsError = null;
     if (isInitialLoad) renderApp();
 
     // Reuse shared serviceHealth data if fresh (< 90s), otherwise fetch fresh
@@ -29121,8 +29128,9 @@ async function fetchOverviewDashboard() {
         var results = await Promise.allSettled([
             // 0: Health checks (shared or fresh)
             healthCheckPromise,
-            // 1: Deployments
-            fetchWT('/api/v1/operator/deployments?limit=10').then(function (r) { return r.ok ? r.json() : []; }).catch(function () { return []; }),
+            // 1: Deployments — surface failures (do NOT swallow) so the panel
+            // can show a fetch error instead of a silent blank body.
+            fetchWT('/api/v1/operator/deployments?limit=10').then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); }),
             // 2: Deploy events (OASIS)
             fetchWT('/api/v1/oasis/events?topic=cicd.deploy&limit=50').then(function (r) { return r.ok ? r.json() : []; }).catch(function () { return []; }),
             // 3: ORB events (OASIS) — both vtid.live and voice.live
@@ -29151,9 +29159,12 @@ async function fetchOverviewDashboard() {
 
         // Parse deployments
         var deployments = [];
+        var deploymentsError = null;
         if (results[1].status === 'fulfilled') {
             var dVal = results[1].value;
             deployments = Array.isArray(dVal) ? dVal : (dVal && dVal.data ? dVal.data : []);
+        } else {
+            deploymentsError = (results[1].reason && results[1].reason.message) || 'Failed to load deployments';
         }
 
         // Parse deploy events
@@ -29225,6 +29236,7 @@ async function fetchOverviewDashboard() {
         state.overviewDashboard.systemStatus = systemStatusResult.status;
         state.overviewDashboard.systemStatusMessage = systemStatusResult.message;
         state.overviewDashboard.deployments = deployments;
+        state.overviewDashboard.deploymentsError = deploymentsError;
         state.overviewDashboard.deploySuccessRate7d = deploySuccessRate;
         state.overviewDashboard.orbHealth = orbHealthDetails;
         state.overviewDashboard.orbSessionStats = orbSessionStats;
@@ -29323,6 +29335,17 @@ async function fetchOverviewHealth() {
 // ---------------------------------------------------------------------------
 // 2. VTID-01864: renderOverviewSystemView — Supervisor Dashboard
 // ---------------------------------------------------------------------------
+// Shared health-badge latency tier. A probe can report "healthy" while still
+// being slow; a >1s response should not look perfectly green. Tiers:
+//   • green  — under 500ms (only this band is "good")
+//   • amber  — 500ms and up (slow; ≥800ms is the strong-warning band)
+// Returns null for unknown/missing latency so we don't override status colour.
+function healthLatencyTier(latencyMs) {
+    if (typeof latencyMs !== 'number' || latencyMs < 0) return null;
+    if (latencyMs < 500) return 'green';
+    return 'amber';
+}
+
 function renderOverviewSystemView() {
     var container = document.createElement('div');
     container.className = 'overview-dashboard';
@@ -29736,12 +29759,16 @@ function renderOverviewSystemView() {
                     var dotClass = (s.status === 'ok' || s.status === 'healthy' || s.healthy) ? 'green'
                         : (s.status === 'degraded' || s.status === 'warning' || s.status === 'ok_governance_limited') ? 'yellow'
                         : 'red';
+                    // A healthy-but-slow probe should warn amber, not stay green.
+                    var latTier = healthLatencyTier(s.latency_ms);
+                    if (dotClass === 'green' && latTier === 'amber') dotClass = 'yellow';
+                    var latClass = 'health-pill-latency' + (latTier === 'amber' ? ' health-pill-latency--amber' : '');
                     var chip = document.createElement('span');
                     chip.className = 'health-pill';
                     chip.title = s.name + ': ' + s.status + (s.latency_ms >= 0 ? ' (' + s.latency_ms + 'ms)' : '');
                     chip.innerHTML = '<span class="health-dot health-dot-' + dotClass + '"></span>' +
                         '<span class="health-pill-name">' + escapeHtml(s.name) + '</span>' +
-                        (s.latency_ms >= 0 ? '<span class="health-pill-latency">' + s.latency_ms + 'ms</span>' : '');
+                        (s.latency_ms >= 0 ? '<span class="' + latClass + '">' + s.latency_ms + 'ms</span>' : '');
                     svcList.appendChild(chip);
                 });
                 groupBox.appendChild(svcList);
@@ -29762,7 +29789,11 @@ function renderOverviewSystemView() {
                         var hdot = 'green';
                         if (hsvc.status === 'degraded' || hsvc.status === 'warning' || hsvc.status === 'ok_governance_limited') hdot = 'yellow';
                         if (hsvc.status === 'down' || hsvc.status === 'error' || hsvc.status === 'unhealthy') hdot = 'red';
-                        var hlatency = hsvc.latency_ms >= 0 ? '<div class="health-grid-card-latency">' + hsvc.latency_ms + 'ms</div>' : '';
+                        // A healthy-but-slow probe should warn amber, not stay green.
+                        var hLatTier = healthLatencyTier(hsvc.latency_ms);
+                        if (hdot === 'green' && hLatTier === 'amber') hdot = 'yellow';
+                        var hLatClass = 'health-grid-card-latency' + (hLatTier === 'amber' ? ' health-grid-card-latency--amber' : '');
+                        var hlatency = hsvc.latency_ms >= 0 ? '<div class="' + hLatClass + '">' + hsvc.latency_ms + 'ms</div>' : '';
                         healthHTML += '<td style="padding:2px;vertical-align:top;">' +
                             '<div class="health-grid-card" title="' + hsvc.name + ': ' + hsvc.status + '">' +
                             '<div class="health-grid-card-name">' +
@@ -29925,11 +29956,17 @@ function renderOverviewSystemView() {
     }
     deployPanel.appendChild(deployHeader);
 
-    if (db.deployments.length === 0) {
-        var noDep = document.createElement('div');
-        noDep.className = 'placeholder-content';
-        noDep.textContent = 'No recent deployments';
-        deployPanel.appendChild(noDep);
+    if (db.deploymentsError) {
+        // Surface the fetch error instead of rendering a silent blank body.
+        var deplErr = document.createElement('div');
+        deplErr.className = 'overview-no-failures overview-deploy-error';
+        deplErr.textContent = '⚠️ Could not load deployments: ' + db.deploymentsError;
+        deployPanel.appendChild(deplErr);
+        container.appendChild(deployPanel);
+    } else if (db.deployments.length === 0) {
+        // Nothing to show and no error — hide the whole panel rather than
+        // leave an empty body under a lone header (reads as broken).
+        // (deployPanel is intentionally NOT appended)
     } else {
         var deployListWrap = document.createElement('div');
         deployListWrap.className = 'overview-list-wrap';
@@ -29963,8 +30000,8 @@ function renderOverviewSystemView() {
             deployListWrap.appendChild(row);
         });
         deployPanel.appendChild(deployListWrap);
+        container.appendChild(deployPanel);
     }
-    container.appendChild(deployPanel);
 
     // ═══════════════════════════════════════════════════════════════════════
     // SECTION 7: Attention Center (full width)

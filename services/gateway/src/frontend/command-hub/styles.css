@@ -1206,6 +1206,16 @@ body {
   margin: 0 1px;
 }
 
+/* Visible affordance for the service-health score pill (top-right) */
+.pill-score-label {
+  color: var(--color-text-secondary);
+  font-weight: 600;
+  font-size: 0.6rem;
+  letter-spacing: 0.5px;
+  margin-left: 3px;
+  opacity: 0.75;
+}
+
 /* SPEC-01 DEPRECATED: Publish pill (accent blue) - Now uses header-pill--neutral */
 /* DO NOT USE - Violates SPEC-01 Global Top Navigation Standard */
 .header-pill--publish {
@@ -18493,6 +18503,8 @@ border-bottom: 1px solid var(--color-border, #333);
     font-family: 'JetBrains Mono', 'Fira Code', monospace;
     padding-left: 13px;
 }
+/* Slow probe (>=500ms): amber so it doesn't read as fine. */
+.health-grid-card-latency--amber { color: #f59e0b; font-weight: 600; }
 .health-dot { width:7px; height:7px; border-radius:50%; flex-shrink:0; display:inline-block; }
 .health-dot-green { background:#10b981; box-shadow:0 0 6px rgba(16,185,129,0.4); }
 .health-dot-yellow { background:#f59e0b; box-shadow:0 0 6px rgba(245,158,11,0.4); }
@@ -18573,6 +18585,8 @@ border-bottom: 1px solid var(--color-border, #333);
     margin-left: 2px;
     flex-shrink: 0;
 }
+/* Slow probe (>=500ms): amber so it doesn't read as fine. */
+.health-pill-latency--amber { color: #f59e0b; font-weight: 600; }
 
 /* ORB Communication Panel */
 .overview-orb-panel {
