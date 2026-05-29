@@ -376,6 +376,11 @@ describe('POST /daily-pace-notifications route', () => {
       notifyUserAsync: jest.fn(),
       sendPushToUser: jest.fn(async () => 0),
       sendAppilixPush: jest.fn(async () => false),
+      // Mirror the production TYPE_META entry so the route's metadata
+      // lookup doesn't throw under the mocked module.
+      TYPE_META: {
+        daily_pace_check: { channel: 'push_and_inapp', priority: 'p2', category: 'calendar' },
+      },
     }));
 
     process.env.SUPABASE_URL = 'http://localhost:54321';

@@ -46,7 +46,7 @@ interface TypeMeta { channel: Channel; priority: Priority; category: Category }
 // ── Server-side notification type metadata ────────────────────
 // Mirrors the frontend registry but only the fields needed for routing.
 
-const TYPE_META: Record<string, TypeMeta> = {
+export const TYPE_META: Record<string, TypeMeta> = {
   // Matchmaking
   new_daily_matches:         { channel: 'push_and_inapp', priority: 'p1', category: 'match' },
   person_match_suggested:    { channel: 'push_and_inapp', priority: 'p1', category: 'match' },

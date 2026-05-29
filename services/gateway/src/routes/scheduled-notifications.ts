@@ -18,7 +18,7 @@
  */
 
 import { Router, Request, Response } from 'express';
-import { notifyUserAsync, sendPushToUser, sendAppilixPush } from '../services/notification-service';
+import { notifyUserAsync, sendPushToUser, sendAppilixPush, TYPE_META } from '../services/notification-service';
 import { generatePersonalRecommendations } from '../services/recommendation-engine';
 import { LangCode, resolveLanguage } from '../services/recommendation-engine/analyzers/community-user-analyzer';
 import { tt, type GatewayI18nKey } from '../i18n/catalog';
@@ -463,14 +463,67 @@ router.post('/daily-pace-notifications', async (req: Request, res: Response) => 
       const tone = decision.tone!;
       const { titleKey, bodyKey } = paceToneKeys(tone);
       const lc = locales.get(user_id);
+      const titleStr = tt(titleKey as GatewayI18nKey, lc);
+      const bodyStr = tt(bodyKey as GatewayI18nKey, lc);
 
+      // Pre-write the dedup row FIRST (synchronously), THEN dispatch.
+      // If we did this in the other order, a same-second retry could land
+      // between the async notifyUserAsync start and the pre-insert returning
+      // — leaving alreadySentToday seeing nothing and double-firing.
+      // Read TYPE_META so the pre-insert's channel/priority/category never
+      // drift from the canonical notifyUser row if TYPE_META is later tuned.
+      // Defensive: defaults are aligned with the canonical TYPE_META entry,
+      // so a missing or partial import in test contexts still produces a
+      // sane pre-insert.
+      const meta = TYPE_META?.['daily_pace_check'];
+      try {
+        // push_sent_at is set so the /push-dispatch cron (which scans for
+        // push_sent_at IS NULL within the last 5 min) ignores this row.
+        // Without it, the dispatch cron would deliver a second push within
+        // 30 seconds. notifyUserAsync below writes its own canonical row;
+        // /push-dispatch skips both.
+        await supa.from('user_notifications').insert({
+          user_id,
+          tenant_id: tenantId,
+          type: 'daily_pace_check',
+          title: titleStr,
+          body: bodyStr,
+          // Stringify numeric metric fields to match notifyUser's
+          // Record<string, string> data shape — analytics queries on
+          // data->tone / data->url see the same shape on both rows.
+          data: {
+            type: 'daily_pace_check',
+            tone,
+            url: '/autopilot',
+            deeplink: '/autopilot',
+            ratio: String(decision.ratio ?? ''),
+            surfaced_7d: String(decision.surfaced7d ?? ''),
+            activated_7d: String(decision.activated7d ?? ''),
+            local_date: decision.userLocalDate ?? '',
+          },
+          channel: meta?.channel ?? 'push_and_inapp',
+          priority: meta?.priority ?? 'p2',
+          category: meta?.category ?? 'calendar',
+          push_sent_at: new Date().toISOString(),
+        });
+      } catch (insErr: any) {
+        // notifyUser() inside notifyUserAsync will still write its own row
+        // via the canonical pipeline; this is a best-effort dedup hint.
+        console.warn(
+          `[Scheduled] daily_pace pre-insert failed for ${user_id.slice(0, 8)}: ${insErr?.message || insErr}`,
+        );
+      }
+
+      // Now dispatch via the canonical pipeline (writes its own user_notifications
+      // row + sends FCM/Appilix). Fire-and-forget; metrics on per-user delivery
+      // outcomes are owned by notifyUser.
       notifyUserAsync(
         user_id,
         tenantId,
         'daily_pace_check',
         {
-          title: tt(titleKey as GatewayI18nKey, lc),
-          body: tt(bodyKey as GatewayI18nKey, lc),
+          title: titleStr,
+          body: bodyStr,
           data: {
             type: 'daily_pace_check',
             tone,
@@ -484,47 +537,6 @@ router.post('/daily-pace-notifications', async (req: Request, res: Response) => 
         },
         supa,
       );
-
-      // Pre-write a deterministic dedup row so a same-second second cron
-      // invocation can't double-fire. notifyUserAsync would write one too
-      // but it's async; this is the synchronous "I've decided to send"
-      // marker. Failing this insert is non-fatal (unique constraints may
-      // not exist) — we log and continue.
-      try {
-        // CRITICAL: set push_sent_at on the pre-insert row so the
-        // /push-dispatch cron (which scans for push_sent_at IS NULL within
-        // the last 5 min) skips this row. Without this, the dispatch cron
-        // would deliver a SECOND push within 30 seconds — duplicate delivery.
-        // notifyUserAsync below writes its own canonical row via notifyUser
-        // (which also sets push_sent_at); push-dispatch ignores both.
-        await supa.from('user_notifications').insert({
-          user_id,
-          tenant_id: tenantId,
-          type: 'daily_pace_check',
-          title: tt(titleKey as GatewayI18nKey, lc),
-          body: tt(bodyKey as GatewayI18nKey, lc),
-          data: {
-            type: 'daily_pace_check',
-            tone,
-            url: '/autopilot',
-            deeplink: '/autopilot',
-            ratio: decision.ratio,
-            surfaced_7d: decision.surfaced7d,
-            activated_7d: decision.activated7d,
-            local_date: decision.userLocalDate,
-          },
-          channel: 'push_and_inapp',
-          priority: 'p2',
-          category: 'calendar',
-          push_sent_at: new Date().toISOString(),
-        });
-      } catch (insErr: any) {
-        // notifyUser() inside notifyUserAsync will still write its own row
-        // via the canonical pipeline; this is a best-effort dedup hint.
-        console.warn(
-          `[Scheduled] daily_pace pre-insert failed for ${user_id.slice(0, 8)}: ${insErr?.message || insErr}`,
-        );
-      }
 
       dispatched++;
     } catch (err: any) {
@@ -549,10 +561,13 @@ router.post('/daily-pace-notifications', async (req: Request, res: Response) => 
     await emitOasisEvent({
       type: 'notification.daily_pace.dispatched' as any,
       source: 'gateway',
-      vtid: 'VTID-DAILY-PACE',
+      // VTID format is VTID-\d{4,5} per CLAUDE.md §4; no real VTID is bound
+      // to this feature yet, so use the BOOTSTRAP- prefix accepted by the
+      // OASIS validator and the AUTO-DEPLOY regex.
+      vtid: 'BOOTSTRAP-DAILY-PACE',
       status: 'info',
-      message: `daily_pace_check fan-out: ${dispatched} dispatched, ${errors} errors`,
-      payload: { tenant_id: tenantId, dispatched, errors, skipped, total_users: users.length },
+      message: `daily_pace_check fan-out: ${dispatched} dispatched, ${errors.length} errors`,
+      payload: { tenant_id: tenantId, dispatched, errors: errors.length, skipped, total_users: users.length },
     });
   } catch (oasisErr: any) {
     console.warn(`[Scheduled] daily_pace_check OASIS emit failed: ${oasisErr?.message || oasisErr}`);

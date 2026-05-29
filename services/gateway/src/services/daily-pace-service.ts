@@ -136,42 +136,43 @@ export function userLocalHour(nowUtc: Date, tz: string): number {
 export async function getUserTimezone(
   supa: SupabaseClient<any, any, any>,
   userId: string,
+  tenantId?: string,
 ): Promise<string> {
   if (!userId) return resolveUserTimezone(null);
 
-  // 1. app_users.timezone
+  // 1. app_users.timezone (scope by tenant when supplied — the service-role
+  // client bypasses RLS, so an unscoped lookup could pick up the same
+  // user_id from another tenant if the same UUID is used cross-tenant).
   try {
-    const { data } = await supa
-      .from('app_users')
-      .select('timezone')
-      .eq('user_id', userId)
-      .maybeSingle();
+    let q = supa.from('app_users').select('timezone').eq('user_id', userId);
+    if (tenantId) q = q.eq('tenant_id', tenantId);
+    const { data } = await q.maybeSingle();
     const tz = (data as { timezone?: string | null } | null)?.timezone ?? null;
     if (tz && isValidTimezone(tz)) return tz;
   } catch {
     // column or table may not exist on older snapshots — fall through
   }
 
-  // 2. user_preferences.timezone
+  // 2. user_preferences.timezone (tenant-scoped same as above)
   try {
-    const { data } = await supa
-      .from('user_preferences')
-      .select('timezone')
-      .eq('user_id', userId)
-      .maybeSingle();
+    let q = supa.from('user_preferences').select('timezone').eq('user_id', userId);
+    if (tenantId) q = q.eq('tenant_id', tenantId);
+    const { data } = await q.maybeSingle();
     const tz = (data as { timezone?: string | null } | null)?.timezone ?? null;
     if (tz && isValidTimezone(tz)) return tz;
   } catch {
     // fall through
   }
 
-  // 3. memory_facts where fact_key='timezone'
+  // 3. memory_facts where fact_key='timezone' (tenant-scoped same as above)
   try {
-    const { data } = await supa
+    let q = supa
       .from('memory_facts')
       .select('fact_value')
       .eq('user_id', userId)
-      .eq('fact_key', 'timezone')
+      .eq('fact_key', 'timezone');
+    if (tenantId) q = q.eq('tenant_id', tenantId);
+    const { data } = await q
       .order('updated_at', { ascending: false, nullsFirst: false })
       .limit(1)
       .maybeSingle();
@@ -249,7 +250,7 @@ export async function computePaceDecision(
 ): Promise<PaceDecision> {
   // 1. Resolve tz. Invalid strings fall through to Europe/Berlin via
   //    getUserTimezone's isValidTimezone guard, so this never throws.
-  const tz = await getUserTimezone(supa, userId);
+  const tz = await getUserTimezone(supa, userId, tenantId);
 
   let localHour: number;
   let localDate: string;
@@ -298,7 +299,12 @@ export async function computePaceDecision(
     .eq('user_id', userId)
     .eq('tenant_id', tenantId)
     .maybeSingle();
-  if (prefs && (prefs as { push_enabled?: boolean }).push_enabled === false) {
+  // Treat anything falsy as muted to mirror notifyUser's semantics
+  // (notification-service.ts: `!prefs.push_enabled`). Without this, a user
+  // with prefs row but push_enabled=NULL would be counted as dispatched here
+  // and then silently suppressed downstream — leaving a dedup row written
+  // for a notification that never went out and corrupting the metrics.
+  if (prefs && !(prefs as { push_enabled?: boolean | null }).push_enabled) {
     return {
       shouldNotify: false,
       skipReason: 'muted',
