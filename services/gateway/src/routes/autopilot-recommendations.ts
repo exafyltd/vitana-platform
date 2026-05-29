@@ -1643,118 +1643,82 @@ router.post('/:id/complete', async (req: Request, res: Response) => {
     }
 
     const recId = req.params.id;
-    const supabaseUrl = process.env.SUPABASE_URL;
-    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE;
-    if (!supabaseUrl || !supabaseKey) {
-      return res.status(500).json({ ok: false, error: 'Missing Supabase credentials' });
+    const role = getActiveRole(req);
+    console.log(`${LOG_PREFIX} Completing recommendation ${recId.slice(0, 8)}... (role: ${role || 'none'})`);
+
+    // VTID-03180: route delegates to the canonical RPC so the state transition
+    // (status, completed_at) and the reward credit happen in a single
+    // transaction. Previously this route PATCHed a `metadata` column that
+    // doesn't exist on autopilot_recommendations, so every POST returned 400
+    // and the row stayed 'activated' forever.
+    const result = await callRpc<any>('complete_autopilot_recommendation', {
+      p_recommendation_id: recId,
+      p_user_id: userId,
+    });
+
+    if (!result.ok) {
+      console.error(`${LOG_PREFIX} complete RPC transport error:`, result.error);
+      return res.status(500).json({ ok: false, error: result.error });
     }
 
-    // Fetch the recommendation
-    const fetchResp = await fetch(
-      `${supabaseUrl}/rest/v1/autopilot_recommendations?id=eq.${recId}&user_id=eq.${userId}&select=id,status,source_ref,title`,
-      {
-        headers: {
-          'apikey': supabaseKey,
-          'Authorization': `Bearer ${supabaseKey}`,
-        },
-      },
-    );
-    const recs = await fetchResp.json() as any[];
-    const rec = recs?.[0];
-    if (!rec) {
-      return res.status(404).json({ ok: false, error: 'Recommendation not found' });
+    const response = result.data;
+    if (!response?.ok) {
+      const errStr = String(response?.error || '');
+      const statusCode =
+        errStr.includes('not found') ? 404 :
+        errStr.includes('belongs to another user') ? 403 :
+        errStr.includes('system-wide') ? 403 :
+        400;
+      return res.status(statusCode).json({ ok: false, error: errStr || 'Failed to complete' });
     }
 
-    if (rec.status !== 'activated') {
-      return res.status(400).json({ ok: false, error: `Cannot complete recommendation in status: ${rec.status}` });
-    }
+    const sourceRef: string | null = response.source_ref || null;
+    const alreadyCompleted: boolean = response.already_completed === true;
 
-    // Update status to 'completed' with completion timestamp in metadata
-    const patchResp = await fetch(
-      `${supabaseUrl}/rest/v1/autopilot_recommendations?id=eq.${recId}`,
-      {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          'apikey': supabaseKey,
-          'Authorization': `Bearer ${supabaseKey}`,
-          'Prefer': 'return=minimal',
-        },
-        body: JSON.stringify({
-          status: 'completed',
-          metadata: {
-            completed_at: new Date().toISOString(),
-            completed_by: userId,
-          },
-        }),
-      },
-    );
-
-    if (!patchResp.ok) {
-      console.error(`${LOG_PREFIX} Community complete PATCH failed:`, await patchResp.text());
-      return res.status(500).json({ ok: false, error: 'Failed to mark as completed' });
-    }
-
-    // Emit OASIS event
+    // OASIS event — visibility only, never block the response on this.
     try {
       await emitOasisEvent({
         vtid: 'VTID-01180',
         type: 'autopilot.recommendation.completed' as any,
         source: 'autopilot-recommendations',
         status: 'info',
-        message: `Community recommendation completed: ${rec.title}`,
+        message: `Community recommendation completed: ${response.title}`,
         payload: {
           recommendation_id: recId,
           user_id: userId,
-          source_ref: rec.source_ref,
-          title: rec.title,
+          source_ref: sourceRef,
+          title: response.title,
+          reward: response.reward ?? 0,
+          already_completed: alreadyCompleted,
         },
       });
     } catch (e) {
       console.warn(`${LOG_PREFIX} Failed to emit completion event:`, e);
     }
 
-    // Look up tenant for notification
-    const { createClient } = await import('@supabase/supabase-js');
-    const supabase = createClient(supabaseUrl, supabaseKey);
-    const { data: tenantRow } = await supabase
-      .from('user_tenants')
-      .select('tenant_id')
-      .eq('user_id', userId)
-      .eq('is_primary', true)
-      .maybeSingle();
-
-    // Check if user earned a reward for this action
-    const signalType = rec.source_ref;
-    const isOnboardingAction = signalType?.startsWith('onboarding_');
-    if (isOnboardingAction && tenantRow?.tenant_id) {
-      // Credit small reward for completing onboarding tasks
+    // Milestone fan-out: only on first-time completion of an onboarding rec.
+    if (!alreadyCompleted && sourceRef?.startsWith?.('onboarding_')) {
       try {
-        await supabase.rpc('credit_wallet', {
-          p_tenant_id: tenantRow.tenant_id,
-          p_user_id: userId,
-          p_amount: 10,
-          p_type: 'reward',
-          p_source: 'recommendation_complete',
-          p_source_event_id: `rec_complete_${recId}`,
-          p_description: `Completed: ${rec.title}`,
-        });
-      } catch {
-        // Best-effort; may fail if duplicate
-      }
-    }
+        const supabaseUrl = process.env.SUPABASE_URL!;
+        const supabaseKey = process.env.SUPABASE_SERVICE_ROLE!;
+        const { createClient } = await import('@supabase/supabase-js');
+        const supabase = createClient(supabaseUrl, supabaseKey);
 
-    // Emit milestone event if all day-0 onboarding tasks are completed
-    if (isOnboardingAction && tenantRow?.tenant_id) {
-      const { data: remaining } = await supabase
-        .from('autopilot_recommendations')
-        .select('id')
-        .eq('user_id', userId)
-        .eq('status', 'activated')
-        .like('source_ref', 'onboarding_%');
+        const { data: tenantRow } = await supabase
+          .from('user_tenants')
+          .select('tenant_id')
+          .eq('user_id', userId)
+          .eq('is_primary', true)
+          .maybeSingle();
 
-      if (!remaining || remaining.length === 0) {
-        try {
+        const { data: remaining } = await supabase
+          .from('autopilot_recommendations')
+          .select('id')
+          .eq('user_id', userId)
+          .eq('status', 'activated')
+          .like('source_ref', 'onboarding_%');
+
+        if ((!remaining || remaining.length === 0) && tenantRow?.tenant_id) {
           await emitOasisEvent({
             vtid: 'VTID-01180',
             type: 'user.milestone.reached' as any,
@@ -1767,17 +1731,20 @@ router.post('/:id/complete', async (req: Request, res: Response) => {
               tenant_id: tenantRow.tenant_id,
             },
           });
-        } catch {
-          // Best-effort
         }
+      } catch (e) {
+        console.warn(`${LOG_PREFIX} Milestone check failed (non-fatal):`, e);
       }
     }
 
     return res.status(200).json({
       ok: true,
+      recommendation_id: recId,
+      title: response.title,
       status: 'completed',
-      completed_at: new Date().toISOString(),
-      reward: isOnboardingAction ? 10 : 0,
+      completed_at: response.completed_at,
+      reward: response.reward ?? 0,
+      already_completed: alreadyCompleted,
     });
 
   } catch (err: any) {
