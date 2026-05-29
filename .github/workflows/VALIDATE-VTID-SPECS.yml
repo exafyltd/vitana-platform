@@ -1,0 +1,69 @@
+name: VALIDATE-VTID-SPECS
+run-name: 'VTID Spec Validation [GOV-CICD-002] [${{ github.head_ref || github.ref_name }}]'
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize]
+    paths:
+      - 'specs/**/*.json'
+      - '**/vtid-spec*.json'
+
+jobs:
+  validate-specs:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install ajv-cli
+        run: npm install -g ajv-cli ajv-formats
+
+      - name: Find changed spec files
+        id: specs
+        run: |
+          BASE="${{ github.event.pull_request.base.sha }}"
+          HEAD="${{ github.event.pull_request.head.sha }}"
+
+          git diff --name-only --diff-filter=ACM "$BASE" "$HEAD" \
+            | grep -E '(^specs/.*\.json$|vtid-spec.*\.json$)' \
+            | grep -v 'vtid-spec-schema' \
+            > /tmp/changed_specs.txt || true
+
+          COUNT="$(wc -l < /tmp/changed_specs.txt | tr -d ' ')"
+          echo "count=$COUNT" >> "$GITHUB_OUTPUT"
+          echo "Found $COUNT changed spec file(s):"
+          cat /tmp/changed_specs.txt
+
+      - name: Validate specs against schema
+        if: steps.specs.outputs.count != '0'
+        run: |
+          SCHEMA="specs/governance/vtid-spec-schema-v1.json"
+          PASS=0
+          FAIL=0
+
+          while IFS= read -r specfile; do
+            [ -f "$specfile" ] || continue
+            echo "--- Validating: $specfile"
+            if ajv validate -s "$SCHEMA" --spec=draft2020 -d "$specfile" 2>&1; then
+              echo "PASS: $specfile"
+              PASS=$((PASS + 1))
+            else
+              echo "FAIL: $specfile"
+              FAIL=$((FAIL + 1))
+            fi
+          done < /tmp/changed_specs.txt
+
+          echo ""
+          echo "=== Results: $PASS passed, $FAIL failed ==="
+
+          if [ "$FAIL" -gt 0 ]; then
+            exit 1
+          fi
+
+      - name: No spec files changed
+        if: steps.specs.outputs.count == '0'
+        run: echo "No VTID spec files changed in this PR. Skipping validation."
