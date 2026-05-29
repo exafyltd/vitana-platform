@@ -506,7 +506,8 @@ function computeRelevanceScore(
  */
 async function fetchKnowledgeHits(
   query: string,
-  limit: number
+  limit: number,
+  userId?: string,
 ): Promise<{ hits: KnowledgeHit[]; latency_ms: number }> {
   const startTime = Date.now();
 
@@ -514,6 +515,9 @@ async function fetchKnowledgeHits(
     const request: KnowledgeSearchRequest = {
       query,
       maxResults: limit,
+      // Pass userId so the answer is generated in the user's preferred
+      // language (German by default — community is German-first).
+      userId,
     };
 
     const result = await searchKnowledge(request);
@@ -797,7 +801,7 @@ export async function buildContextPack(
   // Knowledge Hub retrieval
   if (input.router_decision.sources_to_query.includes('knowledge_hub')) {
     retrievalPromises.push(
-      fetchKnowledgeHits(input.query, input.router_decision.limits.knowledge_hub)
+      fetchKnowledgeHits(input.query, input.router_decision.limits.knowledge_hub, input.lens.user_id ?? undefined)
         .then(result => {
           knowledgeHits = result.hits;
           hitCounts.knowledge_hub = result.hits.length;
