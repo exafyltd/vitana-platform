@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import { getSupabase } from '../lib/supabase';
 import { RuleMatcher, EvaluationEngine, EnforcementExecutor, ViolationGenerator, OasisPipeline } from '../validator-core';
-import { RuleDTO, EvaluationDTO, ViolationDTO, ProposalDTO, FeedEntry, EvaluationSummary, ProposalTimelineEvent } from '../types/governance';
+import { RuleDTO, EvaluationDTO, ViolationDTO, ProposalDTO, FeedEntry, EvaluationSummary, ProposalTimelineEvent, ProposalApproval, ApprovalCheckResult } from '../types/governance';
 import { getGovernanceHistory, GovernanceHistoryEvent, GOVERNANCE_EVENT_TYPES } from '../services/oasis-event-service';
 import { AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
 
@@ -963,6 +963,350 @@ export class GovernanceController {
         } catch (error: any) {
             console.error('Error in updateProposalStatus:', error);
             res.status(500).json({ error: error.message });
+        }
+    }
+
+    /**
+     * POST /api/v1/governance/proposals/:proposalId/approve
+     * Body: { decision: 'approve'|'reject'|'request_changes', comment?: string }
+     *
+     * Records an approval decision and auto-transitions to 'Approved' if enough approvals.
+     */
+    async approveProposal(req: Request, res: Response) {
+        try {
+            const tenantId = this.getTenantId(req);
+            const authReq = req as AuthenticatedRequest;
+            const { proposalId } = req.params;
+            const { decision, comment } = req.body;
+
+            const supabase = getSupabase();
+            if (!supabase) {
+                console.warn('[GovernanceController] Supabase not configured - proposal approval unavailable');
+                return res.status(503).json({
+                    ok: false,
+                    error: 'SUPABASE_CONFIG_ERROR',
+                    message: 'Governance storage is temporarily unavailable'
+                });
+            }
+
+            // Validate decision
+            const validDecisions = ['approve', 'reject', 'request_changes'];
+            if (!decision || !validDecisions.includes(decision)) {
+                return res.status(400).json({
+                    ok: false,
+                    error: `Invalid decision. Must be one of: ${validDecisions.join(', ')}`
+                });
+            }
+
+            // Get approver identity from JWT
+            const approverId = authReq.identity?.user_id;
+            const approverEmail = authReq.identity?.email || null;
+
+            if (!approverId) {
+                return res.status(401).json({
+                    ok: false,
+                    error: 'UNAUTHENTICATED',
+                    message: 'Could not determine approver identity'
+                });
+            }
+
+            // Fetch proposal by proposal_id (text field)
+            const { data: proposal, error: fetchError } = await supabase
+                .from('governance_proposals')
+                .select('*')
+                .eq('tenant_id', tenantId)
+                .eq('proposal_id', proposalId)
+                .single();
+
+            if (fetchError || !proposal) {
+                return res.status(404).json({
+                    ok: false,
+                    error: `Proposal ${proposalId} not found`
+                });
+            }
+
+            // Check proposal is in 'Under Review' status
+            if (proposal.status !== 'Under Review') {
+                return res.status(400).json({
+                    ok: false,
+                    error: `Proposal is not in Under Review status (current: ${proposal.status})`
+                });
+            }
+
+            // Insert approval (UNIQUE constraint will prevent duplicate votes)
+            const { data: approval, error: insertError } = await supabase
+                .from('governance_proposal_approvals')
+                .insert({
+                    proposal_id: proposal.id,
+                    approver_id: approverId,
+                    approver_email: approverEmail,
+                    decision,
+                    comment: comment || null
+                })
+                .select()
+                .single();
+
+            if (insertError) {
+                // Handle unique constraint violation (duplicate vote)
+                if (insertError.code === '23505') {
+                    return res.status(409).json({
+                        ok: false,
+                        error: 'You have already submitted a decision for this proposal'
+                    });
+                }
+                console.error('Error inserting approval:', insertError);
+                return res.status(500).json({
+                    ok: false,
+                    error: insertError.message
+                });
+            }
+
+            // Update proposal timeline
+            const newTimeline = [
+                ...(proposal.timeline || []),
+                {
+                    event: `${decision} by ${approverEmail || approverId}`,
+                    timestamp: new Date().toISOString(),
+                    actor: approverEmail || approverId
+                }
+            ];
+
+            await supabase
+                .from('governance_proposals')
+                .update({ timeline: newTimeline })
+                .eq('id', proposal.id);
+
+            // If decision is 'reject', auto-transition proposal to 'Rejected'
+            if (decision === 'reject') {
+                const rejectTimeline = [
+                    ...newTimeline,
+                    {
+                        event: 'Status changed to Rejected',
+                        timestamp: new Date().toISOString(),
+                        actor: 'System'
+                    }
+                ];
+
+                await supabase
+                    .from('governance_proposals')
+                    .update({
+                        status: 'Rejected',
+                        timeline: rejectTimeline
+                    })
+                    .eq('id', proposal.id);
+
+                // Emit OASIS event for rejection
+                await this.emitOasisEvent(tenantId, 'governance.proposal.rejected', {
+                    proposalId,
+                    ruleCode: proposal.rule_code || '(new)',
+                    rejectedBy: approverEmail || approverId,
+                    comment: comment || null
+                });
+            }
+
+            // If decision is 'approve', check if we have enough approvals to auto-transition
+            if (decision === 'approve') {
+                const { data: checkResult } = await supabase
+                    .rpc('governance_check_proposal_approval', { p_proposal_id: proposal.id });
+
+                if (checkResult && checkResult.ok === true) {
+                    const approveTimeline = [
+                        ...newTimeline,
+                        {
+                            event: 'Status changed to Approved',
+                            timestamp: new Date().toISOString(),
+                            actor: 'System'
+                        }
+                    ];
+
+                    await supabase
+                        .from('governance_proposals')
+                        .update({
+                            status: 'Approved',
+                            timeline: approveTimeline
+                        })
+                        .eq('id', proposal.id);
+
+                    // Emit OASIS event for approval
+                    await this.emitOasisEvent(tenantId, 'governance.proposal.approved', {
+                        proposalId,
+                        ruleCode: proposal.rule_code || '(new)',
+                        approvalsCount: checkResult.approvals_count,
+                        required: checkResult.required
+                    });
+                }
+            }
+
+            // Emit OASIS event for the decision
+            await this.emitOasisEvent(tenantId, 'governance.proposal.decision', {
+                proposalId,
+                ruleCode: proposal.rule_code || '(new)',
+                decision,
+                approver: approverEmail || approverId,
+                comment: comment || null
+            });
+
+            const approvalResponse: ProposalApproval = {
+                id: approval.id,
+                proposal_id: approval.proposal_id,
+                approver_id: approval.approver_id,
+                approver_email: approval.approver_email,
+                decision: approval.decision,
+                comment: approval.comment,
+                created_at: approval.created_at
+            };
+
+            res.status(201).json({
+                ok: true,
+                data: approvalResponse
+            });
+        } catch (error: any) {
+            console.error('Error in approveProposal:', error);
+            res.status(500).json({
+                ok: false,
+                error: error.message
+            });
+        }
+    }
+
+    /**
+     * GET /api/v1/governance/proposals/:proposalId/approvals
+     * Returns list of approvals for a proposal.
+     */
+    async getProposalApprovals(req: Request, res: Response) {
+        try {
+            const tenantId = this.getTenantId(req);
+            const { proposalId } = req.params;
+
+            const supabase = getSupabase();
+            if (!supabase) {
+                console.warn('[GovernanceController] Supabase not configured - approvals fetch unavailable');
+                return res.status(503).json({
+                    ok: false,
+                    error: 'SUPABASE_CONFIG_ERROR',
+                    message: 'Governance storage is temporarily unavailable'
+                });
+            }
+
+            // Fetch proposal by proposal_id (text field) to get UUID
+            const { data: proposal, error: fetchError } = await supabase
+                .from('governance_proposals')
+                .select('id')
+                .eq('tenant_id', tenantId)
+                .eq('proposal_id', proposalId)
+                .single();
+
+            if (fetchError || !proposal) {
+                return res.status(404).json({
+                    ok: false,
+                    error: `Proposal ${proposalId} not found`
+                });
+            }
+
+            // Fetch approvals
+            const { data: approvals, error: approvalsError } = await supabase
+                .from('governance_proposal_approvals')
+                .select('*')
+                .eq('proposal_id', proposal.id)
+                .order('created_at', { ascending: true });
+
+            if (approvalsError) {
+                console.error('Error fetching approvals:', approvalsError);
+                return res.status(500).json({
+                    ok: false,
+                    error: approvalsError.message
+                });
+            }
+
+            const approvalDTOs: ProposalApproval[] = (approvals || []).map((a: any) => ({
+                id: a.id,
+                proposal_id: a.proposal_id,
+                approver_id: a.approver_id,
+                approver_email: a.approver_email,
+                decision: a.decision,
+                comment: a.comment,
+                created_at: a.created_at
+            }));
+
+            res.json({
+                ok: true,
+                data: approvalDTOs
+            });
+        } catch (error: any) {
+            console.error('Error in getProposalApprovals:', error);
+            res.status(500).json({
+                ok: false,
+                error: error.message
+            });
+        }
+    }
+
+    /**
+     * GET /api/v1/governance/proposals/:proposalId/approval-status
+     * Calls governance_check_proposal_approval RPC and returns approval status.
+     */
+    async getApprovalStatus(req: Request, res: Response) {
+        try {
+            const tenantId = this.getTenantId(req);
+            const { proposalId } = req.params;
+
+            const supabase = getSupabase();
+            if (!supabase) {
+                console.warn('[GovernanceController] Supabase not configured - approval status unavailable');
+                return res.status(503).json({
+                    ok: false,
+                    error: 'SUPABASE_CONFIG_ERROR',
+                    message: 'Governance storage is temporarily unavailable'
+                });
+            }
+
+            // Fetch proposal by proposal_id (text field) to get UUID
+            const { data: proposal, error: fetchError } = await supabase
+                .from('governance_proposals')
+                .select('id')
+                .eq('tenant_id', tenantId)
+                .eq('proposal_id', proposalId)
+                .single();
+
+            if (fetchError || !proposal) {
+                return res.status(404).json({
+                    ok: false,
+                    error: `Proposal ${proposalId} not found`
+                });
+            }
+
+            // Call the RPC function
+            const { data: checkResult, error: rpcError } = await supabase
+                .rpc('governance_check_proposal_approval', { p_proposal_id: proposal.id });
+
+            if (rpcError) {
+                console.error('Error calling governance_check_proposal_approval:', rpcError);
+                return res.status(500).json({
+                    ok: false,
+                    error: rpcError.message
+                });
+            }
+
+            const result: ApprovalCheckResult = {
+                ok: checkResult.ok,
+                can_approve: checkResult.can_approve,
+                approvals_count: checkResult.approvals_count,
+                required: checkResult.required,
+                hours_in_review: checkResult.hours_in_review,
+                min_hours: checkResult.min_hours,
+                errors: checkResult.errors || []
+            };
+
+            res.json({
+                ok: true,
+                data: result
+            });
+        } catch (error: any) {
+            console.error('Error in getApprovalStatus:', error);
+            res.status(500).json({
+                ok: false,
+                error: error.message
+            });
         }
     }
 

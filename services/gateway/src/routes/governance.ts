@@ -26,6 +26,11 @@ router.get('/proposals', requireAuth, (req, res) => controller.getProposals(req,
 router.post('/proposals', requireAdminAuth, (req, res) => controller.createProposal(req, res));
 router.patch('/proposals/:proposalId/status', requireAdminAuth, (req, res) => controller.updateProposalStatus(req, res));
 
+// Proposal approvals: require admin auth
+router.post('/proposals/:proposalId/approve', requireAdminAuth, (req, res) => controller.approveProposal(req, res));
+router.get('/proposals/:proposalId/approvals', requireAuth, (req, res) => controller.getProposalApprovals(req, res));
+router.get('/proposals/:proposalId/approval-status', requireAuth, (req, res) => controller.getApprovalStatus(req, res));
+
 // VTID-0408: Governance History endpoint
 router.get('/history', requireAuth, (req, res) => controller.getHistory(req, res));
 

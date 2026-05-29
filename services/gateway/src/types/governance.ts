@@ -123,6 +123,26 @@ export interface ProposalDTO {
     timeline: ProposalTimelineEvent[];
 }
 
+export interface ProposalApproval {
+    id: string;
+    proposal_id: string;
+    approver_id: string;
+    approver_email: string | null;
+    decision: 'approve' | 'reject' | 'request_changes';
+    comment: string | null;
+    created_at: string;
+}
+
+export interface ApprovalCheckResult {
+    ok: boolean;
+    can_approve: boolean;
+    approvals_count: number;
+    required: number;
+    hours_in_review: number;
+    min_hours: number;
+    errors: string[];
+}
+
 export interface FeedEntry {
     id: string;
     message: string;
