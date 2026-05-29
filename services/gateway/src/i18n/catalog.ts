@@ -37,6 +37,13 @@ export type GatewayI18nKey =
   | 'notif.signal_expired.body'
   | 'notif.reminder.title'
   | 'notif.fallback_app_name'
+  // Daily pace check (claude/daily-pace-notifications)
+  | 'notif.daily_pace.on_track.title'
+  | 'notif.daily_pace.on_track.body'
+  | 'notif.daily_pace.slightly_behind.title'
+  | 'notif.daily_pace.slightly_behind.body'
+  | 'notif.daily_pace.falling_behind.title'
+  | 'notif.daily_pace.falling_behind.body'
   // Notification-category labels surfaced on Settings → Notifications page.
   // Mapped from notification_categories.slug (display_name + description).
   | 'notif.category.chat.direct_messages.label'
@@ -87,6 +94,13 @@ const DE: LocaleCatalog = {
   'notif.signal_expired.body': 'Ein prädiktives Signal ist abgelaufen.',
   'notif.reminder.title': '🔔 Erinnerung',
   'notif.fallback_app_name': 'Vitana',
+  // Daily pace check
+  'notif.daily_pace.on_track.title': 'Auf Kurs ✨',
+  'notif.daily_pace.on_track.body': 'Du bist auf einem guten Weg. Schließ heute noch deinen Tagesplan ab — dein Ziel kommt näher.',
+  'notif.daily_pace.slightly_behind.title': 'Heute geht noch was',
+  'notif.daily_pace.slightly_behind.body': 'Ein, zwei Schritte vom Tagesplan reichen, um wieder mit deinem Ziel im Gleichschritt zu sein.',
+  'notif.daily_pace.falling_behind.title': 'Dein Ziel wartet',
+  'notif.daily_pace.falling_behind.body': 'Wir kommen vom Kurs ab. Ein kleiner Schritt heute — und du bist wieder dabei.',
   // Notification-category labels (Settings → Benachrichtigungen)
   'notif.category.chat.direct_messages.label': 'Direktnachrichten',
   'notif.category.chat.direct_messages.desc': 'Neue Nachrichten von Personen und Gruppen',
@@ -135,6 +149,13 @@ const EN: LocaleCatalog = {
   'notif.signal_expired.body': 'A predictive signal has expired.',
   'notif.reminder.title': '🔔 Reminder',
   'notif.fallback_app_name': 'Vitana',
+  // Daily pace check
+  'notif.daily_pace.on_track.title': 'On track ✨',
+  'notif.daily_pace.on_track.body': "You're moving well. Wrap up today's plan — your goal is getting closer.",
+  'notif.daily_pace.slightly_behind.title': "Today's still open",
+  'notif.daily_pace.slightly_behind.body': "One or two steps from today's plan are enough to fall back in step with your goal.",
+  'notif.daily_pace.falling_behind.title': 'Your goal is waiting',
+  'notif.daily_pace.falling_behind.body': "We're drifting off course. One small step today — and you're back in.",
   // Notification-category labels (Settings → Notifications)
   'notif.category.chat.direct_messages.label': 'Direct Messages',
   'notif.category.chat.direct_messages.desc': 'New messages from people and groups',
