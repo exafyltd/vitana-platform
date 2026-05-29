@@ -424,6 +424,8 @@ router.post('/morning-briefing', async (req: Request, res: Response) => {
 // fractional offsets like Asia/Kathmandu UTC+5:45).
 // =============================================================================
 router.post('/daily-pace-notifications', async (req: Request, res: Response) => {
+  // public-route — called by Cloud Scheduler (no JWT); protected by GCP IAM
+  // at the scheduler layer, same pattern as the other entries in this file.
   const tenantId = getTenantId(req);
   if (!tenantId) return res.status(400).json({ ok: false, error: 'tenant_id required' });
 
@@ -489,6 +491,12 @@ router.post('/daily-pace-notifications', async (req: Request, res: Response) => 
       // marker. Failing this insert is non-fatal (unique constraints may
       // not exist) — we log and continue.
       try {
+        // CRITICAL: set push_sent_at on the pre-insert row so the
+        // /push-dispatch cron (which scans for push_sent_at IS NULL within
+        // the last 5 min) skips this row. Without this, the dispatch cron
+        // would deliver a SECOND push within 30 seconds — duplicate delivery.
+        // notifyUserAsync below writes its own canonical row via notifyUser
+        // (which also sets push_sent_at); push-dispatch ignores both.
         await supa.from('user_notifications').insert({
           user_id,
           tenant_id: tenantId,
@@ -508,6 +516,7 @@ router.post('/daily-pace-notifications', async (req: Request, res: Response) => 
           channel: 'push_and_inapp',
           priority: 'p2',
           category: 'calendar',
+          push_sent_at: new Date().toISOString(),
         });
       } catch (insErr: any) {
         // notifyUser() inside notifyUserAsync will still write its own row
@@ -531,6 +540,24 @@ router.post('/daily-pace-notifications', async (req: Request, res: Response) => 
     `[Scheduled] daily_pace_check → dispatched=${dispatched} ` +
       `skipped=${JSON.stringify(skipped)} total_users=${users.length}`,
   );
+
+  // Record the dispatch as a state transition (push fan-out is a real action,
+  // not a poll). Matches the OASIS emit pattern used by other handlers in
+  // this file. Best-effort — never fail the response if OASIS write fails.
+  try {
+    const { emitOasisEvent } = await import('../services/oasis-event-service');
+    await emitOasisEvent({
+      type: 'notification.daily_pace.dispatched' as any,
+      source: 'gateway',
+      vtid: 'VTID-DAILY-PACE',
+      status: 'info',
+      message: `daily_pace_check fan-out: ${dispatched} dispatched, ${errors} errors`,
+      payload: { tenant_id: tenantId, dispatched, errors, skipped, total_users: users.length },
+    });
+  } catch (oasisErr: any) {
+    console.warn(`[Scheduled] daily_pace_check OASIS emit failed: ${oasisErr?.message || oasisErr}`);
+  }
+
   return res.status(200).json({ ok: true, dispatched, skipped, errors });
 });
 

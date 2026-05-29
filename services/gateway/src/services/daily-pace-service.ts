@@ -226,9 +226,12 @@ async function alreadySentToday(
       if (rowDate === todayLocal) return true;
     }
     return false;
-  } catch {
-    // If we can't read the table, fail safe — don't double-send.
-    return true;
+  } catch (err: any) {
+    // Propagate read failures so the route's per-user try/catch surfaces them
+    // as `errors`, distinct from real already_sent dedupes. Silently returning
+    // true on a transient blip would suppress the user's notification for the
+    // whole day with the WRONG metric — making real send failures invisible.
+    throw new Error(`alreadySentToday read failed: ${err?.message || err}`);
   }
 }
 
