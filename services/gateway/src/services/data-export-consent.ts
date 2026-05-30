@@ -39,7 +39,9 @@ let _client: SupabaseClient | null | undefined;
 function getServiceClient(): SupabaseClient | null {
   if (_client !== undefined) return _client;
   const url = process.env.SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE;
+  // SUPABASE_SERVICE_ROLE is the canonical var bound on every gateway deploy
+  // (CLAUDE.md §8); use it directly so we introduce no unbound env reference.
+  const key = process.env.SUPABASE_SERVICE_ROLE;
   if (!url || !key) {
     console.warn(`${LOG_PREFIX} missing SUPABASE_URL / SUPABASE_SERVICE_ROLE; consent stays off`);
     _client = null;
