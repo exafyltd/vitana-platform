@@ -144,8 +144,8 @@ curl -sS https://gateway.vitanaland.com/command-hub/orb-widget.js | grep -c VTID
 
 | Phase | VTID | Stream | Status | Branch | PR | Deploy SHA | Notes |
 |---|---|---|---|---|---|---|---|
-| Re-Apply VTID-03184 | new | Memory | pending | — | — | — | revert was misdiagnosis; original work is sound |
-| Re-Apply i18n-llm-locale | new | Memory | pending | — | — | — | same |
+| Re-Apply VTID-03184 | VTID-03184 | Memory | code-complete (pending merge + deploy) | reapply/VTID-03184-plan-phase | #2400 | — | cherry-pick of 6f37bcdd; build+jest green (29 tests) |
+| Re-Apply i18n-llm-locale | BOOTSTRAP-i18n-llm-locale | Memory | code-complete (pending merge + deploy) | reapply/i18n-llm-locale | #2401 | — | cherry-pick of 8e7570e3; build green |
 | A — Bootstrap context cap | new | Memory | pending | — | — | — | the safety net |
 | B — Relevance-ranked retrieval | new | Memory | pending | — | — | — | quality improvement |
 | C — RAG-only memory architecture | new | Memory | pending | — | — | — | STOP-AND-ASK before code |
@@ -169,7 +169,7 @@ curl -sS https://gateway.vitanaland.com/command-hub/orb-widget.js | grep -c VTID
 
 ### PHASE Re-Apply — restore VTID-03184 and BOOTSTRAP-i18n-llm-locale
 
-**Status**: pending
+**Status**: code-complete (pending merge + deploy)
 **Stream**: Memory
 **Estimated effort**: 30 min total (two small PRs)
 
@@ -199,6 +199,17 @@ For each:
 #### 4.Re-A.4 Rollback
 
 If either re-apply causes a regression (dragan3 mobile breaks again), revert that specific PR, open a follow-up issue, mark phase status `blocked` with notes, continue with Phase A.
+
+#### 4.Re-A.5 Run log
+
+- 2026-05-30 14:05 UTC — code-complete; both reverts re-applied as clean cherry-picks. VTID-03184 → PR #2400 (draft), build+jest green (29 tests, 4 suites). BOOTSTRAP-i18n-llm-locale → PR #2401 (draft), build green. Sandbox cannot merge/deploy.
+
+#### 4.Re-A.6 Pending human actions
+
+- Merge PR #2400 and PR #2401 (either order — they touch disjoint files: VTID-03184 = `new-day-overview-*.ts`; i18n = `i18n/llm-locale.ts` + knowledge-hub/session-summaries/context-pack-builder/orb-tools-shared).
+- Both commit subjects carry their markers (VTID-03184 / BOOTSTRAP-i18n-llm-locale) so EXEC-DEPLOY dispatches on merge.
+- After EXEC-DEPLOY SUCCESS for each: verify `/alive` 200 JSON, then smoke dragan3 mobile audio (expect: works).
+- See aggregation file `docs/superpowers/plans/2026-05-29-pending-human-actions.md`.
 
 ---
 
