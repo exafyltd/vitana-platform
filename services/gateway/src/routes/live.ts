@@ -1659,6 +1659,8 @@ router.post('/rooms/:id/sessions', sessionCreateLimiter, async (req: Request, re
           created_by: userId,
           status: streamStatus,
           stream_type: 'audio',
+          cover_image_url: validation.data.metadata?.cover_image_url || null,
+          description: validation.data.metadata?.description || null,
           started_at: streamStatus === 'live' ? new Date().toISOString() : null,
           scheduled_for: validation.data.starts_at,
           access_level: validation.data.access_level || 'public',
