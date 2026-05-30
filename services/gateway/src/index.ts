@@ -319,6 +319,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const adminUsersLookupRouter = require('./routes/admin-users-lookup').default;
   // Phase 0 staging build (P0.3): /admin/health + /admin/build-info diagnostics.
   const adminHealthRouter = require('./routes/admin-health').default;
+  // Phase D (DEV-COMHU voice budget watch): admin observability for the Vertex
+  // system_instruction budget. See services/voice-budget-watch.ts.
+  const voiceBudgetWatchRouter = require('./routes/voice-budget-watch').default;
   const usersVitanaIdRouter = require('./routes/users-vitana-id').default;
   // VTID-01973: Vitana Intent Engine (P2-A). Voice-dictated intent registry +
   // kind-aware matcher. Behind FEATURE_INTENT_ENGINE_A — disabled by default.

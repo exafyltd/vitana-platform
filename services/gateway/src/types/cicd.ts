@@ -510,6 +510,10 @@ export type CicdEventType =
   // BOOTSTRAP-ORB-HOTFIX-1: pre-greeting latency gauge (time from session-start
   // request to first greeting audio chunk forwarded to client)
   | 'orb.live.greeting.delivered'
+  // Phase D (DEV-COMHU voice budget watch): voice instruction budget observability
+  | 'voice.instruction.budget_trimmed'
+  | 'voice.instruction.budget_at_risk'
+  | 'voice.instruction.budget_overflow'
   // BOOTSTRAP-ADMIN-BB-CC: admin insight lifecycle
   | 'admin.insight.approved'
   | 'admin.insight.rejected'
