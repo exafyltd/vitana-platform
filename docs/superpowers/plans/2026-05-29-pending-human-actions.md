@@ -43,3 +43,19 @@ Legend: each box is a ~30-second click or a copy-paste command, not an engineeri
 - [ ] Apply orb-agent LiveKit parity patch in a full checkout:
   `docs/patches/orb-agent/phaseA-bootstrap-cap.py` → `services/agents/orb-agent/session.py`
 - [ ] (Phase D follow-up) Promote the stdout `[voice.instruction.budget_trimmed]` signal to the typed `voice.instruction.budget_trimmed` OASIS topic.
+
+---
+
+## Phase D — Observability + hygiene
+
+- [ ] Merge PR #2404 — https://github.com/exafyltd/vitana-platform/pull/2404 (DEV-COMHU-voice-budget-watch)
+- [ ] **Verify `exec_sql(query, params)` RPC exists in Supabase** before relying on live data (route + cron depend on it).
+- [ ] After EXEC-DEPLOY SUCCESS:
+  ```bash
+  curl -sS https://gateway-86804897789.us-central1.run.app/alive
+  curl -sS "https://gateway-86804897789.us-central1.run.app/api/v1/admin/voice-budget-watch?limit=50&min_pct=10" -H "Authorization: Bearer <ADMIN_JWT>"
+  ```
+- [ ] Load `/command-hub/voice-budget.html` as admin → dragan1 ≈190%, dragan3 ≈17.6%, sortable, red highlight ≥70%.
+- [ ] Confirm first nightly (03:00 UTC) run emits ≥1 `voice.instruction.budget_at_risk` OASIS event.
+
+> NOTE: `Gateway Service Tests` CI runs against live Supabase/Gemini secrets and is intermittently flaky. A lone failure on that check is usually a flake — re-trigger (push an empty commit) before investigating.

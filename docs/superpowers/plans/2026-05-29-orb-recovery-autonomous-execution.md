@@ -146,10 +146,10 @@ curl -sS https://gateway.vitanaland.com/command-hub/orb-widget.js | grep -c VTID
 |---|---|---|---|---|---|---|---|
 | Re-Apply VTID-03184 | VTID-03184 | Memory | code-complete (pending merge + deploy) | reapply/VTID-03184-plan-phase | #2400 | — | cherry-pick of 6f37bcdd; build+jest green (29 tests) |
 | Re-Apply i18n-llm-locale | BOOTSTRAP-i18n-llm-locale | Memory | code-complete (pending merge + deploy) | reapply/i18n-llm-locale | #2401 | — | cherry-pick of 8e7570e3; build green |
-| A — Bootstrap context cap | BOOTSTRAP-orb-bootstrap-cap | Memory | code-complete (pending merge + deploy) | fix/BOOTSTRAP-orb-bootstrap-cap | #2403 | — | 12KB hard cap; build+jest green (6 tests) |
+| A — Bootstrap context cap | BOOTSTRAP-orb-bootstrap-cap | Memory | code-complete (pending merge + deploy) | fix/BOOTSTRAP-orb-bootstrap-cap | #2403 | — | 12KB hard cap; ALL CI GREEN incl Gateway Service Tests (initial fail was a flake, re-triggered) |
 | B — Relevance-ranked retrieval | new | Memory | pending | — | — | — | quality improvement |
 | C — RAG-only memory architecture | new | Memory | pending | — | — | — | STOP-AND-ASK before code |
-| D — Observability + hygiene | new | Memory | pending | — | — | — | parallel with A |
+| D — Observability + hygiene | DEV-COMHU-voice-budget-watch | Memory | code-complete (pending merge + deploy) | feat/DEV-COMHU-voice-budget-watch | #2404 | — | route+cron+CHub panel+typed topics; typecheck+build+jest(13) green |
 | ORB-0.1 — Cross-provider watchdog | new | Recovery | pending | — | — | — | DEV-COMHU required |
 | ORB-1 — Auth contract | new | Recovery | pending | — | — | — | biggest UX lever |
 | ORB-2+3 — Continuity + cadence | new | Recovery | pending | — | — | — | one combined PR |
@@ -368,7 +368,7 @@ curl -sS https://gateway-86804897789.us-central1.run.app/alive
 
 ### PHASE D — Observability + hygiene (parallel with A)
 
-**Status**: pending
+**Status**: code-complete (pending merge + deploy)
 **Stream**: Memory
 **VTID**: allocate at start.
 **Estimated effort**: 2 days. Can run parallel to Phase A.
@@ -453,6 +453,18 @@ assembly that should also be audited; tracked as VTID-XXXXX follow-up).
 - [ ] Route ships, panel renders, cron runs nightly.
 - [ ] dragan1 shows on the panel at ~190% of cap (was pruned to 22 KB which is < cap, so actually he'll show as ~190% if you measure against the cap of 12K — adjust min_pct query accordingly).
 - [ ] First nightly run after deploy emits at least one `voice.instruction.budget_at_risk` event (for whichever heaviest community user exists).
+
+#### 4.D.5 Run log
+
+- 2026-05-30 15:45 UTC — code-complete. Admin route `GET /api/v1/admin/voice-budget-watch`, pure service `voice-budget-watch.ts`, nightly cron `voice-instruction-budget-watch-cron.ts` (at_risk>=70 / overflow>=100 OASIS events), CSP-compliant Command Hub panel `voice-budget.{html,css,js}`, typed topics in `types/cicd.ts`, wired in `index.ts`. PR #2404 (draft). typecheck + build + jest (13/13) green.
+- 2026-05-30 15:10 UTC — NOTE on CI flakes: the `Gateway Service Tests` CI job runs against LIVE Supabase/Gemini secrets and is intermittently flaky. Phase A #2403 failed it once, passed clean on a no-op re-trigger. typecheck/build/full-jest are all green locally (4737 tests). If a draft shows a single Gateway Service Tests failure, re-trigger before investigating.
+
+#### 4.D.6 Pending human actions
+
+- Merge PR #2404 (markers DEV-COMHU-voice-budget-watch + BOOTSTRAP-orb-voice-budget present).
+- **Confirm the `exec_sql(query, params)` Supabase RPC exists** (route/cron use it for parameterised SQL); if not, point `fetchVoiceBudgetWatch` at the project's standard SQL path. The one functional dependency to verify before live data flows.
+- After EXEC-DEPLOY SUCCESS: `/alive` 200; load `/command-hub/voice-budget.html` as admin → dragan1 ≈190%, dragan3 ≈17.6%; confirm first nightly run emits >=1 `voice.instruction.budget_at_risk`.
+- Deferred (separate VTID, post-Phase C): memory-consolidation cron.
 
 ---
 
