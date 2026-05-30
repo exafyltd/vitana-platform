@@ -5601,10 +5601,21 @@ function renderHeader() {
     autopilotBtn.className = 'header-pill header-pill--neutral';
     autopilotBtn.textContent = 'AUTOPILOT';
     // VTID-01180: Add badge if there are new recommendations
+    // Phase 3 (autopilot-error-capture): the AUTOPILOT backlog is human-gated —
+    // these are scanner/impact findings awaiting a go/no-go decision, drained
+    // only by human approval (or the auto-exec triage rule). With autonomy off
+    // the queue is an expected standby pile, not an unbounded alarm. Bound the
+    // display at 99+ and label it "awaiting approval" (with an exact-count
+    // tooltip / aria-label) so a steady-state standby queue reads as standby.
     if (state.autopilotRecommendationsCount > 0) {
+        const n = state.autopilotRecommendationsCount;
         const badge = document.createElement('span');
         badge.className = 'header-pill-badge';
-        badge.textContent = state.autopilotRecommendationsCount > 99 ? '99+' : state.autopilotRecommendationsCount;
+        badge.textContent = n > 99 ? '99+' : String(n);
+        const approvalLabel = n + ' finding' + (n === 1 ? '' : 's') + ' awaiting approval';
+        badge.setAttribute('aria-label', approvalLabel);
+        autopilotBtn.title = approvalLabel;
+        autopilotBtn.setAttribute('aria-label', 'AUTOPILOT — ' + approvalLabel);
         autopilotBtn.appendChild(badge);
     }
     autopilotBtn.onclick = async () => {
