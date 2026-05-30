@@ -52,6 +52,10 @@ import { buildNavigatorPolicySection } from '../../../routes/orb-live';
 // structured function_declarations via the BidiGenerate setup message —
 // redundancy is harmless for Vertex and load-bearing for LiveKit.
 import { renderAvailableToolsSection } from '../tools/live-tool-catalog';
+import {
+  capBootstrapContext,
+  BOOTSTRAP_CONTEXT_MAX_CHARS,
+} from './bootstrap-cap';
 
 type TemporalBucket = 'reconnect' | 'recent' | 'same_day' | 'today' | 'yesterday' | 'week' | 'long' | 'first';
 
@@ -794,7 +798,25 @@ ${voiceLiveConfig.important_section || '- This is a real-time voice conversation
     effectiveBootstrap = stripBrainOpenerSections(effectiveBootstrap);
   }
   if (effectiveBootstrap) {
-    instruction += `\n\n${effectiveBootstrap}`;
+    // Phase A safety net (BOOTSTRAP-orb-bootstrap-cap): hard-cap the bootstrap
+    // contribution so heavy users can never overflow the ~32 KB Vertex setup
+    // budget and silently break TTS. Trims older trailing content; keeps the
+    // identity/role/recent-activity head and the wake-brief override sentinel.
+    const { text: cappedBootstrap, trimmedChars } = capBootstrapContext(effectiveBootstrap);
+    if (trimmedChars > 0) {
+      // Fire-and-forget structured telemetry — never block instruction assembly.
+      // (Cloud Logging ingests stdout; Phase D adds the budget-watch route + cron
+      // and the typed `voice.instruction.budget_trimmed` OASIS topic.)
+      console.warn(
+        '[voice.instruction.budget_trimmed]',
+        JSON.stringify({
+          vitana_id: vitanaId ?? null,
+          chars_trimmed: trimmedChars,
+          cap: BOOTSTRAP_CONTEXT_MAX_CHARS,
+        }),
+      );
+    }
+    instruction += `\n\n${cappedBootstrap}`;
   }
 
   // VTID-01225 + VTID-STREAM-KEEPALIVE: Append conversation history for reconnect continuity.
@@ -802,6 +824,19 @@ ${voiceLiveConfig.important_section || '- This is a real-time voice conversation
   // Vertex AI setup message limit is ~32k chars; 4k for history leaves ample room.
   if (conversationHistory) {
     const MAX_HISTORY_CHARS = 4000;
+    if (conversationHistory.length > MAX_HISTORY_CHARS) {
+      // Phase A parity signal: conversation history already capped at 4 KB; surface
+      // when it actually trims so the budget-watch (Phase D) sees the full picture.
+      console.warn(
+        '[voice.instruction.budget_trimmed]',
+        JSON.stringify({
+          vitana_id: vitanaId ?? null,
+          kind: 'conversation_history',
+          chars_trimmed: conversationHistory.length - MAX_HISTORY_CHARS,
+          cap: MAX_HISTORY_CHARS,
+        }),
+      );
+    }
     const trimmedHistory = conversationHistory.length > MAX_HISTORY_CHARS
       ? '...' + conversationHistory.slice(-MAX_HISTORY_CHARS)
       : conversationHistory;
