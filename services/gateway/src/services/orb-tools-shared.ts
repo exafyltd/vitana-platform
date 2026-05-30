@@ -1524,7 +1524,7 @@ export async function tool_ask_pillar_agent(
   }
 }
 
-export async function tool_explain_feature(args: OrbToolArgs, id?: OrbToolIdentity): Promise<OrbToolResult> {
+export async function tool_explain_feature(args: OrbToolArgs): Promise<OrbToolResult> {
   // Accept either `topic` (Vertex's canonical key) or legacy `feature`.
   // Both pipelines must work — the LiveKit Python tool sends `feature`, the
   // Vertex-side function-tool schema declares `topic`.
@@ -1560,9 +1560,7 @@ export async function tool_explain_feature(args: OrbToolArgs, id?: OrbToolIdenti
     let knowledgeDocs: Array<Record<string, unknown>> = [];
     try {
       const { searchKnowledge } = await import('./knowledge-hub');
-      // Pass userId so the generated answer respects the user's preferred
-      // language (German by default — community is German-first).
-      const kb = await searchKnowledge({ query: topic, maxResults: 5, userId: id?.user_id });
+      const kb = await searchKnowledge({ query: topic, maxResults: 5 });
       if (kb.ok && Array.isArray(kb.docs) && kb.docs.length > 0) {
         knowledgeAnswer = (kb.answer ?? '').trim();
         knowledgeDocs = (kb.docs as unknown) as Array<Record<string, unknown>>;
@@ -3832,7 +3830,7 @@ export const ORB_TOOL_REGISTRY: Record<string, OrbToolHandler> = {
   consult_external_ai: tool_consult_external_ai,
   create_index_improvement_plan: tool_create_index_improvement_plan,
   ask_pillar_agent: tool_ask_pillar_agent,
-  explain_feature: (args, id) => tool_explain_feature(args, id),
+  explain_feature: (args) => tool_explain_feature(args),
   resolve_recipient: tool_resolve_recipient,
   send_chat_message: tool_send_chat_message,
   share_link: tool_share_link,
