@@ -52,7 +52,9 @@ import { emitOasisEvent } from '../services/oasis-event-service';
 import { dataExportConsentTag } from '../services/data-export-consent';
 // VTID-03177 (PROFILE): per-turn latency telemetry. The middleware is a no-op
 // when FEATURE_LATENCY_TELEMETRY_ENV is off; safe to wire on every route.
-import { withLatencyTracker } from '../orb/live/latency-tracker';
+// Phase 1 W2 (BOOTSTRAP-PHASE1-W2-VOICE-LATENCY-WIRE): the LatencyTracker class +
+// LatencyPhase are also used directly to instrument the voice WS/SSE turn timeline.
+import { withLatencyTracker, LatencyTracker, type LatencyPhase } from '../orb/live/latency-tracker';
 // VTID-02917 (B0d.3): wake reliability timeline — emit + record only,
 // never block the wake path. The recorder is best-effort by design.
 import { defaultWakeTimelineRecorder } from '../services/wake-timeline/wake-timeline-recorder';
@@ -800,6 +802,13 @@ export interface GeminiLiveSession {
   audioInChunks: number;
   videoInFrames: number;
   audioOutChunks: number;
+  // Phase 1 W2 (BOOTSTRAP-PHASE1-W2-VOICE-LATENCY-WIRE): per-turn voice latency
+  // tracker. Created on the first real mic chunk of a user turn and finalized at
+  // turn_complete / interrupted. No-op (emits nothing) when
+  // FEATURE_LATENCY_TELEMETRY_ENV is off. latencyTurnIndex is the 1-based turn
+  // counter passed to the tracker context.
+  latencyTracker?: LatencyTracker | null;
+  latencyTurnIndex?: number;
   // VTID-02637: Idempotency flag for connection_issue emission. The upstream
   // WS error handler and close handler both fire on a real disconnect, and
   // both used to emit connection_issue — producing the user-visible "internet
@@ -1975,6 +1984,8 @@ async function executeLiveApiTool(
   args: Record<string, unknown>
 ): Promise<{ success: boolean; result: string; error?: string }> {
   const startTime = Date.now();
+  // Phase 1 W2: mark the tool boundary on the active voice turn (no-op off-flag).
+  markVoiceLatency(session, 'tool_dispatch', { tool: toolName });
   // VTID-01224-FIX: Default 3 s budget. Gemini Live API has its own internal
   // timeout for function_response (~3-4s); taking longer stalls the session.
   //
@@ -2000,6 +2011,8 @@ async function executeLiveApiTool(
 
   const result = await executeWithTimeout();
   const elapsed = Date.now() - startTime;
+  // Phase 1 W2: tool returned — close the tool_dispatch→tool_response interval.
+  markVoiceLatency(session, 'tool_response', { tool: toolName, ms: elapsed, success: result.success });
   if (elapsed > TOOL_TIMEOUT_MS) {
     console.warn(`[VTID-STREAM-KEEPALIVE] Tool ${toolName} timed out (${elapsed}ms > ${TOOL_TIMEOUT_MS}ms)`);
   }
@@ -5952,6 +5965,8 @@ async function connectToLiveAPI(
         sendFunctionResponseToLiveAPI,
         sendWsMessage,
         startResponseWatchdog,
+        markVoiceLatency,
+        finalizeVoiceTurnLatency,
       },
     });
 
@@ -7237,6 +7252,52 @@ async function emitOrbSessionEnded(orbSessionId: string, conversationId: string,
       ...(await dataExportConsentTag({ userId }))
     }
   }).catch(err => console.warn('[VTID-0135] Failed to emit orb.session.ended:', err.message));
+}
+
+// =============================================================================
+// Phase 1 W2 (BOOTSTRAP-PHASE1-W2-VOICE-LATENCY-WIRE): voice per-turn latency
+// =============================================================================
+// Five canonical phase marks per voice user-turn (audio_in_first_byte →
+// transcript_ready → tool_dispatch → tool_response → audio_out_first_chunk),
+// emitted as ONE voice.latency.measured event on turn finalize. Every helper is
+// a no-op when FEATURE_LATENCY_TELEMETRY_ENV is off (LatencyTracker self-gates),
+// so this is safe to leave wired on the hot path. No raw session objects ever
+// reach prompt assembly — only the canonical marks are recorded.
+
+/**
+ * Start a fresh per-turn latency tracker on the first real mic chunk of a user
+ * turn. Idempotent within a turn: subsequent chunks no-op until the turn is
+ * finalized. Marks audio_in_first_byte at creation.
+ */
+function startVoiceTurnLatency(session: GeminiLiveSession): void {
+  if (session.latencyTracker) return; // turn already in flight
+  session.latencyTurnIndex = (session.latencyTurnIndex || 0) + 1;
+  const tracker = new LatencyTracker({
+    session_id: session.sessionId,
+    surface: 'voice',
+    actor_id: session.identity?.user_id,
+    turn: session.latencyTurnIndex,
+    provider: `vertex/${GEMINI_MODEL}`,
+  });
+  session.latencyTracker = tracker;
+  tracker.mark('audio_in_first_byte');
+}
+
+/** Record a phase mark on the active turn tracker (no-op if no turn in flight). */
+function markVoiceLatency(session: GeminiLiveSession, phase: LatencyPhase, detail?: Record<string, unknown>): void {
+  session.latencyTracker?.mark(phase, detail);
+}
+
+/**
+ * Finalize the active turn tracker (emits voice.latency.measured) and clear it
+ * so the next user audio chunk starts a fresh turn. Fire-and-forget; never
+ * blocks the WS message loop on the OASIS write.
+ */
+function finalizeVoiceTurnLatency(session: GeminiLiveSession, status: 'success' | 'error' = 'success'): void {
+  const tracker = session.latencyTracker;
+  if (!tracker) return;
+  session.latencyTracker = null;
+  void tracker.finalize(status);
 }
 
 /**
@@ -12302,6 +12363,10 @@ async function handleWsAudioMessage(clientSession: WsClientSession, message: WsC
 
   liveSession.audioInChunks++;
   liveSession.lastActivity = new Date();
+  // Phase 1 W2: this is real user mic audio (passed all drop gates). Start the
+  // per-turn latency tracker on the first such chunk (audioInChunks 0→1 within
+  // the turn); subsequent chunks no-op until the turn finalizes.
+  startVoiceTurnLatency(liveSession);
 
   // Telemetry: emit at most once per 10s window (was per-100-chunks ~1-2s)
   const now = Date.now();
