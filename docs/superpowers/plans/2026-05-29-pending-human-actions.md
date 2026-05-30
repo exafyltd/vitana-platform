@@ -26,3 +26,20 @@ Legend: each box is a ~30-second click or a copy-paste command, not an engineeri
   - dragan3 mobile audio still works after VTID-03184 deploy.
   - dragan3 mobile audio still works after i18n deploy.
   - No regression in characterization snapshots (CI covers).
+
+---
+
+## Phase A — Bootstrap context hard cap
+
+- [ ] Merge PR #2403 — https://github.com/exafyltd/vitana-platform/pull/2403 (`BOOTSTRAP-orb-bootstrap-cap`)
+- [ ] After EXEC-DEPLOY SUCCESS:
+  ```bash
+  curl -sS https://gateway-86804897789.us-central1.run.app/alive
+  ```
+- [ ] Real-account acceptance:
+  - dragan3 (under cap) mobile audio plays normally.
+  - dragan1 (pruned to 200 items) mobile audio plays normally.
+  - Synthetic 50 KB bootstrap → `[voice.instruction.budget_trimmed]` appears in Cloud Logging.
+- [ ] Apply orb-agent LiveKit parity patch in a full checkout:
+  `docs/patches/orb-agent/phaseA-bootstrap-cap.py` → `services/agents/orb-agent/session.py`
+- [ ] (Phase D follow-up) Promote the stdout `[voice.instruction.budget_trimmed]` signal to the typed `voice.instruction.budget_trimmed` OASIS topic.

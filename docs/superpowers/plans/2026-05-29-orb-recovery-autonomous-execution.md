@@ -146,7 +146,7 @@ curl -sS https://gateway.vitanaland.com/command-hub/orb-widget.js | grep -c VTID
 |---|---|---|---|---|---|---|---|
 | Re-Apply VTID-03184 | VTID-03184 | Memory | code-complete (pending merge + deploy) | reapply/VTID-03184-plan-phase | #2400 | — | cherry-pick of 6f37bcdd; build+jest green (29 tests) |
 | Re-Apply i18n-llm-locale | BOOTSTRAP-i18n-llm-locale | Memory | code-complete (pending merge + deploy) | reapply/i18n-llm-locale | #2401 | — | cherry-pick of 8e7570e3; build green |
-| A — Bootstrap context cap | new | Memory | pending | — | — | — | the safety net |
+| A — Bootstrap context cap | BOOTSTRAP-orb-bootstrap-cap | Memory | code-complete (pending merge + deploy) | fix/BOOTSTRAP-orb-bootstrap-cap | #2403 | — | 12KB hard cap; build+jest green (6 tests) |
 | B — Relevance-ranked retrieval | new | Memory | pending | — | — | — | quality improvement |
 | C — RAG-only memory architecture | new | Memory | pending | — | — | — | STOP-AND-ASK before code |
 | D — Observability + hygiene | new | Memory | pending | — | — | — | parallel with A |
@@ -215,7 +215,7 @@ If either re-apply causes a regression (dragan3 mobile breaks again), revert tha
 
 ### PHASE A — Bootstrap context hard cap (the safety net)
 
-**Status**: pending
+**Status**: code-complete (pending merge + deploy)
 **Stream**: Memory
 **VTID**: allocate at start, branch name pattern `fix/VTID-XXXXX-bootstrap-context-cap`.
 **Estimated effort**: 1 day.
@@ -351,6 +351,18 @@ curl -sS https://gateway-86804897789.us-central1.run.app/alive
 - [ ] dragan3 mobile audio works.
 - [ ] dragan1 mobile audio works.
 - [ ] Synthetic 50 KB test → `voice.instruction.budget_trimmed` event present in oasis_events.
+
+#### 4.A.8 Run log
+
+- 2026-05-30 14:55 UTC — code-complete. New pure module `bootstrap-cap.ts` (12 KB cap, trim-from-bottom + sentinel) wired into `live-system-instruction.ts`; structured `[voice.instruction.budget_trimmed]` stdout signal on trim (bootstrap + conversation_history). PR #2403 (draft). `npm run build` green; jest `bootstrap-cap.test.ts` 6/6 green.
+- 2026-05-30 14:56 UTC — orb-agent LiveKit parity captured as `docs/patches/orb-agent/phaseA-bootstrap-cap.py` (agent file absent from sandbox checkout).
+
+#### 4.A.9 Pending human actions
+
+- Merge PR #2403 (commit marker `BOOTSTRAP-orb-bootstrap-cap` present → EXEC-DEPLOY dispatches).
+- After EXEC-DEPLOY SUCCESS: `/alive` 200; dragan3 (under-cap) + dragan1 (pruned) mobile audio play normally; synthetic 50 KB bootstrap → `[voice.instruction.budget_trimmed]` line in Cloud Logging.
+- Apply orb-agent parity patch `docs/patches/orb-agent/phaseA-bootstrap-cap.py` in a full checkout (LiveKit agent-side cap).
+- Phase D will promote the stdout signal to the typed `voice.instruction.budget_trimmed` OASIS topic (consumers ship there).
 
 ---
 
