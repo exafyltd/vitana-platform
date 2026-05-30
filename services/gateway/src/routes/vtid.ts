@@ -141,7 +141,11 @@ router.post("/allocate", async (req: Request, res: Response) => {
  * Governance: respects the allocator kill-switch (409 when disarmed), so this
  * never bypasses Governance > Controls.
  */
-router.post("/allocate-internal", async (req: Request, res: Response) => {
+router.post("/allocate-internal", async (req: Request, res: Response) => { // public-route — no user JWT; authed by the X-VTID-Alloc-Secret shared secret below
+  // impact-allow-no-oasis: allocation mirrors the user-facing /allocate route,
+  // which also emits no OASIS event. The shell ledger entry created here is not
+  // a lifecycle transition; vtid.lifecycle.* events fire when the task actually
+  // starts/completes, not on allocation.
   const configured = process.env.VTID_ALLOC_SECRET;
   if (!configured) {
     return res.status(500).json({
