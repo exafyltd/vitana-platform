@@ -148,7 +148,7 @@ curl -sS https://gateway.vitanaland.com/command-hub/orb-widget.js | grep -c VTID
 | Re-Apply i18n-llm-locale | BOOTSTRAP-i18n-llm-locale | Memory | code-complete (pending merge + deploy) | reapply/i18n-llm-locale | #2401 | — | cherry-pick of 8e7570e3; build green |
 | A — Bootstrap context cap | BOOTSTRAP-orb-bootstrap-cap | Memory | code-complete (pending merge + deploy) | fix/BOOTSTRAP-orb-bootstrap-cap | #2403 | — | 12KB hard cap; ALL CI GREEN incl Gateway Service Tests (initial fail was a flake, re-triggered) |
 | B — Relevance-ranked retrieval | BOOTSTRAP-orb-memory-ranker | Memory | code-complete (pending merge + deploy) | feat/BOOTSTRAP-orb-memory-ranker | #2405 | — | pure ranker + flag-gated cpb integration; typecheck+build+full jest(4755) green |
-| C — RAG-only memory architecture | new | Memory | pending | — | — | — | STOP-AND-ASK before code |
+| C — RAG-only memory architecture | BOOTSTRAP-orb-rag-only-memory | Memory | DESIGN DOC SHIPPED — awaiting founder approval (gate) | docs/voice-rag-only-memory-design | #2406 | — | design doc only; NO code until approved |
 | D — Observability + hygiene | DEV-COMHU-voice-budget-watch | Memory | code-complete (pending merge + deploy) | feat/DEV-COMHU-voice-budget-watch | #2404 | — | route+cron+CHub panel+typed topics; typecheck+build+jest(13) green |
 | ORB-0.1 — Cross-provider watchdog | new | Recovery | pending | — | — | — | DEV-COMHU required |
 | ORB-1 — Auth contract | new | Recovery | pending | — | — | — | biggest UX lever |
@@ -549,7 +549,7 @@ Before flipping the flag in prod, ship a `voice-ranking-shadow` mode that runs B
 
 ### PHASE C — RAG-only memory architecture (STOP-AND-ASK before code)
 
-**Status**: pending (gated on design doc approval)
+**Status**: DESIGN DOC SHIPPED (PR #2406) — awaiting founder approval; NO code until approved
 **Stream**: Memory
 **VTID**: allocate at design-doc commit time.
 **Estimated effort**: 1-2 weeks of engineering, ~1 day for the design doc.

@@ -69,3 +69,12 @@ Legend: each box is a ~30-second click or a copy-paste command, not an engineeri
 - [ ] Confirm shadow `compareSelections`: ranked overlap ≥80% with most-important naive selection AND ≥40% char drop on heavy users.
 - [ ] Canary `BOOTSTRAP_CONTEXT_RANKED_RETRIEVAL` on dragan1 for 24h, verify audio + greeting quality, then expand.
 - [ ] (Optional) thread an intent embedding into `selectMemoryHits` to activate the similarity term.
+
+---
+
+## Phase C — RAG-only memory (DESIGN GATE — founder approval required)
+
+- [ ] **Founder: review & approve** design doc PR #2406 — https://github.com/exafyltd/vitana-platform/pull/2406 (`docs/architecture/voice-rag-only-memory.md`)
+  - Answer §10: (1) facts+digest-in-setup / bulk-on-demand split OK for greeting richness? (2) +100–300 ms on recall turns OK? (3) any source to keep inlined?
+- [ ] Only after approval: implement Phase C behind `MEMORY_ON_DEMAND_RAG` per design §7 (shadow → dragan1 canary → cohort).
+- [ ] **No code merges for Phase C until this gate clears.**
