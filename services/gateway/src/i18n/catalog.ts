@@ -37,6 +37,9 @@ export type GatewayI18nKey =
   | 'notif.signal_expired.body'
   | 'notif.reminder.title'
   | 'notif.fallback_app_name'
+  // Live room goes live → notify everyone who tapped "Notify me" on the scheduled session.
+  | 'notif.live_going_live.title'
+  | 'notif.live_going_live.body'
   // Daily pace check (claude/daily-pace-notifications)
   | 'notif.daily_pace.on_track.title'
   | 'notif.daily_pace.on_track.body'
@@ -94,6 +97,8 @@ const DE: LocaleCatalog = {
   'notif.signal_expired.body': 'Ein prädiktives Signal ist abgelaufen.',
   'notif.reminder.title': '🔔 Erinnerung',
   'notif.fallback_app_name': 'Vitana',
+  'notif.live_going_live.title': '🔴 Jetzt live!',
+  'notif.live_going_live.body': '„{title}" hat gerade begonnen. Schau jetzt rein.',
   // Daily pace check
   'notif.daily_pace.on_track.title': 'Auf Kurs ✨',
   'notif.daily_pace.on_track.body': 'Du bist auf einem guten Weg. Schließ heute noch deinen Tagesplan ab — dein Ziel kommt näher.',
@@ -149,6 +154,8 @@ const EN: LocaleCatalog = {
   'notif.signal_expired.body': 'A predictive signal has expired.',
   'notif.reminder.title': '🔔 Reminder',
   'notif.fallback_app_name': 'Vitana',
+  'notif.live_going_live.title': '🔴 Now live!',
+  'notif.live_going_live.body': '"{title}" just started. Tune in now.',
   // Daily pace check
   'notif.daily_pace.on_track.title': 'On track ✨',
   'notif.daily_pace.on_track.body': "You're moving well. Wrap up today's plan — your goal is getting closer.",
