@@ -46,6 +46,10 @@ import { randomUUID } from 'crypto';
 import { TextToSpeechClient, protos } from '@google-cloud/text-to-speech';
 import { processWithGemini, setThreadIdentity } from '../services/gemini-operator';
 import { emitOasisEvent } from '../services/oasis-event-service';
+// Phase 1 W2 (BOOTSTRAP-PHASE1-W2-CONSENT-METADATA): tag events with
+// data_export_ok ONLY where tenant export consent is established, so the
+// dataset-extraction PII gate can ingest them. Default off / fail-closed.
+import { dataExportConsentTag } from '../services/data-export-consent';
 // VTID-03177 (PROFILE): per-turn latency telemetry. The middleware is a no-op
 // when FEATURE_LATENCY_TELEMETRY_ENV is off; safe to wire on every route.
 import { withLatencyTracker } from '../orb/live/latency-tracker';
@@ -7153,7 +7157,8 @@ async function emitOrbSessionStarted(orbSessionId: string, conversationId: strin
     payload: {
       orb_session_id: orbSessionId,
       conversation_id: conversationId,
-      metadata: { mode: 'orb_voice' }
+      metadata: { mode: 'orb_voice' },
+      ...(await dataExportConsentTag({ userId }))
     }
   }).catch(err => console.warn('[VTID-0135] Failed to emit orb.session.started:', err.message));
 }
@@ -7179,7 +7184,8 @@ async function emitOrbTurnReceived(
       conversation_id: conversationId,
       input_length: inputText.length,
       input_preview: inputText.slice(0, 140),
-      metadata: { mode: 'orb_voice' }
+      metadata: { mode: 'orb_voice' },
+      ...(await dataExportConsentTag({ userId }))
     }
   }).catch(err => console.warn('[VTID-0135] Failed to emit orb.turn.received:', err.message));
 }
@@ -7207,7 +7213,8 @@ async function emitOrbTurnResponded(
       reply_length: replyText.length,
       reply_preview: replyText.slice(0, 140),
       provider,
-      metadata: { mode: 'orb_voice' }
+      metadata: { mode: 'orb_voice' },
+      ...(await dataExportConsentTag({ userId }))
     }
   }).catch(err => console.warn('[VTID-0135] Failed to emit orb.turn.responded:', err.message));
 }
@@ -7226,7 +7233,8 @@ async function emitOrbSessionEnded(orbSessionId: string, conversationId: string,
     payload: {
       orb_session_id: orbSessionId,
       conversation_id: conversationId,
-      metadata: { mode: 'orb_voice' }
+      metadata: { mode: 'orb_voice' },
+      ...(await dataExportConsentTag({ userId }))
     }
   }).catch(err => console.warn('[VTID-0135] Failed to emit orb.session.ended:', err.message));
 }
@@ -7295,13 +7303,19 @@ async function emitMemoryWriteEvent(
   eventType: 'memory.write.user_message' | 'memory.write.assistant_message',
   payload: Record<string, unknown>
 ): Promise<void> {
+  // Phase 1 W2: consent gate keyed on the tenant/user already carried in the
+  // payload. Untagged events stay filtered out of the pillar-classification corpus.
+  const consentTag = await dataExportConsentTag({
+    tenantId: typeof payload.tenant_id === 'string' ? payload.tenant_id : undefined,
+    userId: typeof payload.user_id === 'string' ? payload.user_id : undefined,
+  });
   await emitOasisEvent({
     vtid: 'VTID-01105',
     type: eventType as any,
     source: 'orb-memory-auto',
     status: 'success',
     message: `ORB ${eventType.includes('user') ? 'user' : 'assistant'} message written to memory`,
-    payload
+    payload: { ...payload, ...consentTag }
   }).catch(err => console.warn(`[VTID-01105] Failed to emit ${eventType}:`, err.message));
 }
 
@@ -9292,7 +9306,11 @@ router.post('/end-session', async (req: Request, res: Response) => {
           bullets: summaryContent.bullets,
           actions: summaryContent.actions
         },
-        metadata: { mode: 'orb_voice' }
+        metadata: { mode: 'orb_voice' },
+        ...(await dataExportConsentTag({
+          tenantId: transcript.tenant_id ?? undefined,
+          userId: transcript.user_id ?? undefined,
+        }))
       }
     }).catch(err => console.warn('[VTID-01039] Failed to emit orb.session.summary:', err.message));
 
@@ -9595,7 +9613,11 @@ router.post('/session/finalize', async (req: Request, res: Response) => {
         bullets: summaryContent.bullets,
         actions: summaryContent.actions
       },
-      metadata: { mode: 'orb_voice' }
+      metadata: { mode: 'orb_voice' },
+      ...(await dataExportConsentTag({
+        tenantId: transcript.tenant_id ?? undefined,
+        userId: transcript.user_id ?? undefined,
+      }))
     }
   }).catch(err => console.warn('[VTID-01039] Failed to emit orb.session.summary:', err.message));
 
