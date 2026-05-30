@@ -8,6 +8,11 @@ name: Mirror Artifacts to S3 (dormant)
 # When live, mirrors gs://vitana-artifacts-staging/finetune-current/<target>/weights.tar.gz
 # to s3://<AWS_BUCKET>/finetune-current/<target>/weights.tar.gz so the
 # Bedrock canary path has a portable copy.
+#
+# Phase 1 W2 Track A (VTID-03200): the mirror job ALSO carries NON-WEIGHT
+# artifacts — eval-coverage reports and dataset manifests — so the GCS -> S3
+# wiring proves itself end-to-end before any weights exist (W3 Bedrock work).
+# Setup / secrets: scripts/aws/README.md.
 
 on:
   schedule:
@@ -82,4 +87,43 @@ jobs:
             aws s3 cp "${TMP}" "s3://${AWS_BUCKET}/finetune-current/${TARGET}/weights.tar.gz"
             rm -f "${TMP}"
             echo "${TARGET}: mirrored"
+          done
+
+      # --- Non-weight artifacts (VTID-03200) — prove the wiring early ---
+      - name: Mirror eval-coverage reports GCS -> S3
+        env:
+          AWS_BUCKET: ${{ secrets.AWS_BUCKET }}
+          AWS_REGION: ${{ secrets.AWS_REGION || 'us-east-1' }}
+        run: |
+          set -euo pipefail
+          SRC="${STAGING_BUCKET}/eval-reports/"
+          if ! gsutil -q ls "${SRC}" 2>/dev/null; then
+            echo "eval-reports: none present; skipping"
+            exit 0
+          fi
+          LOCAL="/tmp/eval-reports"
+          mkdir -p "${LOCAL}"
+          gsutil -m rsync -r "${SRC}" "${LOCAL}/"
+          aws s3 sync "${LOCAL}/" "s3://${AWS_BUCKET}/eval-reports/" --region "${AWS_REGION}"
+          rm -rf "${LOCAL}"
+          echo "eval-reports: mirrored"
+
+      - name: Mirror dataset manifests GCS -> S3
+        env:
+          AWS_BUCKET: ${{ secrets.AWS_BUCKET }}
+          AWS_REGION: ${{ secrets.AWS_REGION || 'us-east-1' }}
+        run: |
+          set -euo pipefail
+          MANIFESTS=$(gsutil ls "${STAGING_BUCKET}/datasets/*/manifest.json" 2>/dev/null || true)
+          if [ -z "$MANIFESTS" ]; then
+            echo "dataset manifests: none present; skipping"
+            exit 0
+          fi
+          for M in $MANIFESTS; do
+            NAME=$(echo "$M" | sed -E 's#.*/datasets/([^/]+)/manifest.json#\1#')
+            TMP="/tmp/${NAME}-manifest.json"
+            gsutil cp "$M" "$TMP"
+            aws s3 cp "$TMP" "s3://${AWS_BUCKET}/datasets/${NAME}/manifest.json" --region "${AWS_REGION}"
+            rm -f "$TMP"
+            echo "dataset ${NAME}: manifest mirrored"
           done
