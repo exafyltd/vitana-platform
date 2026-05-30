@@ -55,6 +55,11 @@ import { dataExportConsentTag } from '../services/data-export-consent';
 // Phase 1 W2 (BOOTSTRAP-PHASE1-W2-VOICE-LATENCY-WIRE): the LatencyTracker class +
 // LatencyPhase are also used directly to instrument the voice WS/SSE turn timeline.
 import { withLatencyTracker, LatencyTracker, type LatencyPhase } from '../orb/live/latency-tracker';
+// Phase 1 W2 (BOOTSTRAP-PHASE1-W2-SHADOW-RUNTIME-WIRE): shadow-compare the
+// voice tool-routing decision against a candidate model. No-op (candidate never
+// invoked) when FEATURE_SHADOW_TOOL_ROUTER_ENV is off.
+import { runWithShadow } from '../services/llm-router-shadow';
+import { predictVoiceToolRoute } from '../services/voice-tool-router-candidate';
 // VTID-02917 (B0d.3): wake reliability timeline — emit + record only,
 // never block the wake path. The recorder is best-effort by design.
 import { defaultWakeTimelineRecorder } from '../services/wake-timeline/wake-timeline-recorder';
@@ -1986,6 +1991,19 @@ async function executeLiveApiTool(
   const startTime = Date.now();
   // Phase 1 W2: mark the tool boundary on the active voice turn (no-op off-flag).
   markVoiceLatency(session, 'tool_dispatch', { tool: toolName });
+  // Phase 1 W2: shadow-compare the tool-routing decision. Primary = the tool
+  // Vertex already chose (toolName); candidate = the W2 stub (echoes it until a
+  // fine-tune is served). Fire-and-forget — never blocks or alters execution,
+  // and runWithShadow doesn't even invoke the candidate unless the flag is on.
+  const shadowTranscript = (session.inputTranscriptBuffer || '').slice(0, 2000);
+  void runWithShadow<{ transcript: string; primaryTool: string }, string>({
+    feature: 'voice-tool-router',
+    input: { transcript: shadowTranscript, primaryTool: toolName },
+    primary: async () => toolName,
+    candidate: async () => predictVoiceToolRoute({ transcript: shadowTranscript, primaryTool: toolName }),
+    extractKey: (tool) => tool,
+    context: { actor_id: session.identity?.user_id, session_id: session.sessionId },
+  });
   // VTID-01224-FIX: Default 3 s budget. Gemini Live API has its own internal
   // timeout for function_response (~3-4s); taking longer stalls the session.
   //
