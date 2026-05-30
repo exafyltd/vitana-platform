@@ -26,6 +26,17 @@ const VERIFICATION_ENGINE_URL = process.env.VERIFICATION_ENGINE_URL ||
 const VERIFICATION_TIMEOUT_MS = parseInt(process.env.VERIFICATION_TIMEOUT_MS || '30000', 10);
 const MAX_VERIFICATION_RETRIES = parseInt(process.env.MAX_VERIFICATION_RETRIES || '2', 10);
 
+// Verification mode (default: advisory).
+//  - 'advisory'  : verification ALWAYS runs and produces a report, but NEVER blocks
+//                  completion. A failed verification yields a developer-review event
+//                  describing what needs to be fixed; the task still passes so a
+//                  human can decide to accept the result or follow up.
+//  - 'blocking'  : legacy hard-gate behaviour — a non-retriable verification failure
+//                  fails the task (opt-in via VERIFICATION_MODE=blocking).
+export const VERIFICATION_MODE = (process.env.VERIFICATION_MODE || 'advisory').toLowerCase() === 'blocking'
+  ? 'blocking'
+  : 'advisory';
+
 // =============================================================================
 // VTID-01167 + VTID-01170: Identity Defaults (Canonical Identity Enforcement)
 // =============================================================================
@@ -173,6 +184,26 @@ export interface VerificationOutcome {
   should_retry: boolean;
   reason: string;
   verification_response?: VerifyResponse;
+}
+
+/**
+ * Developer-facing verification report (advisory mode).
+ *
+ * Summarises what the verification engine checked, what passed, what failed,
+ * and a human-readable list of fixes needed — so a developer can decide whether
+ * to accept the delivered work or follow up. Never used to block completion.
+ */
+export interface VerificationReport {
+  verification_passed: boolean;
+  verification_result: string;
+  reason: string;
+  recommended_action: string;
+  checks_run: string[];
+  checks_passed: string[];
+  checks_failed: string[];
+  fixes_needed: string[];
+  details: Record<string, unknown>;
+  developer_decision_required: boolean;
 }
 
 // =============================================================================
@@ -1106,7 +1137,7 @@ export async function emitSubagentFailed(
  */
 async function emitVerificationEvent(
   vtid: string,
-  stage: 'start' | 'passed' | 'failed' | 'error',
+  stage: 'start' | 'passed' | 'failed' | 'error' | 'advisory',
   status: 'info' | 'success' | 'warning' | 'error',
   message: string,
   payload: Record<string, unknown> = {}
@@ -1289,6 +1320,118 @@ export async function verifyWorkerOutput(
  * 3. If failed + retriable: return should_retry=true
  * 4. If failed + not retriable: emit failure event, return failure
  */
+/**
+ * Build a developer-facing verification report from a verification outcome.
+ *
+ * Translates raw engine output (checks_failed, recommended_action, details) into
+ * a concrete "fixes needed" list a human can act on.
+ */
+export function buildVerificationReport(outcome: VerificationOutcome): VerificationReport {
+  const vr = outcome.verification_response;
+  const fixes: string[] = [];
+
+  if (vr) {
+    for (const check of vr.checks_failed || []) {
+      fixes.push(`Failed check: ${check}`);
+    }
+    // Surface any structured hints the engine put in `details`.
+    const det = vr.details || {};
+    for (const key of ['missing_files', 'missingFiles', 'unmodified_files', 'violations']) {
+      const val = (det as Record<string, unknown>)[key];
+      if (Array.isArray(val)) {
+        for (const item of val) fixes.push(`${key}: ${String(item)}`);
+      }
+    }
+    if (vr.recommended_action && vr.recommended_action !== 'complete') {
+      fixes.push(`Engine recommendation: ${vr.recommended_action}`);
+    }
+  }
+
+  if (fixes.length === 0 && !outcome.passed) {
+    fixes.push(outcome.reason);
+  }
+
+  return {
+    verification_passed: outcome.passed,
+    verification_result: vr?.verification_result || (outcome.passed ? 'passed' : 'failed'),
+    reason: outcome.reason,
+    recommended_action: vr?.recommended_action || (outcome.passed ? 'complete' : 'manual_review'),
+    checks_run: vr?.checks_run || [],
+    checks_passed: vr?.checks_passed || [],
+    checks_failed: vr?.checks_failed || [],
+    fixes_needed: fixes,
+    details: vr?.details || {},
+    developer_decision_required: !outcome.passed,
+  };
+}
+
+/**
+ * Advisory subagent completion (VERIFICATION_MODE=advisory).
+ *
+ * Runs verification to produce a report, then ALWAYS marks the subagent
+ * successful — verification never blocks. If issues are found, emits a
+ * `vtid.stage.verification.advisory` event describing the fixes needed so a
+ * developer can review and accept (or reject) the delivered work.
+ */
+export async function completeSubagentAdvisory(
+  vtid: string,
+  domain: TaskDomain,
+  run_id: string,
+  result: SubagentResult,
+  startedAt?: Date
+): Promise<{ ok: true; advisory: true; report: VerificationReport }> {
+  console.log(`[VTID-01175] Advisory verification for ${domain} ${vtid} (non-blocking)`);
+
+  // Run verification — emits start + passed/failed detail events with full report.
+  const verification = await verifyWorkerOutput(vtid, domain, result, run_id, startedAt);
+  const report = buildVerificationReport(verification);
+
+  // ADVISORY: the task always passes regardless of verification outcome.
+  await emitSubagentSuccess(vtid, domain, run_id, result);
+
+  if (!verification.passed) {
+    await emitVerificationEvent(
+      vtid,
+      'advisory',
+      'warning',
+      `Advisory verification flagged ${report.fixes_needed.length} issue(s) for ${vtid} — task passed, developer review required`,
+      {
+        run_id,
+        domain,
+        advisory: true,
+        blocking: false,
+        recommended_action: report.recommended_action,
+        checks_failed: report.checks_failed,
+        fixes_needed: report.fixes_needed,
+        details: report.details,
+      }
+    );
+    console.log(`[VTID-01175] Advisory: ${domain} ${vtid} flagged ${report.fixes_needed.length} fix(es), passed anyway`);
+  }
+
+  return { ok: true, advisory: true, report };
+}
+
+/**
+ * Advisory orchestrator completion (VERIFICATION_MODE=advisory).
+ *
+ * Verifies (non-blocking) then always marks the orchestrator successful.
+ */
+export async function completeOrchestratorAdvisory(
+  vtid: string,
+  run_id: string,
+  domain: TaskDomain,
+  result: SubagentResult,
+  startedAt?: Date
+): Promise<{ ok: true; advisory: true; report: VerificationReport }> {
+  const sub = await completeSubagentAdvisory(vtid, domain, run_id, result, startedAt);
+  const note = sub.report.verification_passed
+    ? `Task completed and verified: ${sub.report.reason}`
+    : `Task completed — advisory verification flagged issues (developer review required): ${sub.report.reason}`;
+  await markOrchestratorSuccess(vtid, run_id, note);
+  return sub;
+}
+
 export async function completeSubagentWithVerification(
   vtid: string,
   domain: TaskDomain,

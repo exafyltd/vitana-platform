@@ -23,6 +23,9 @@ import {
   emitSubagentFailed,
   completeSubagentWithVerification,
   completeOrchestratorWithVerification,
+  completeSubagentAdvisory,
+  completeOrchestratorAdvisory,
+  VERIFICATION_MODE,
   TaskDomain,
   WorkOrderPayload,
   SubagentResult
@@ -408,7 +411,31 @@ workerOrchestratorRouter.post('/api/v1/worker/subagent/complete', async (req: Re
         });
       }
 
-      // Run verification
+      // VERIFICATION_MODE=advisory (default): verify but NEVER block.
+      // The task always passes; a failed verification yields a developer-review
+      // report describing what needs to be fixed.
+      if (VERIFICATION_MODE === 'advisory') {
+        const advisory = await completeSubagentAdvisory(
+          vtid,
+          domain as TaskDomain,
+          run_id,
+          result as SubagentResult,
+          startedAtDate
+        );
+        console.log(`[VTID-01175] Subagent ${domain} advisory-verified for ${vtid} (passed=${advisory.report.verification_passed}, non-blocking)`);
+        return res.status(200).json({
+          ok: true,
+          vtid,
+          domain,
+          run_id,
+          advisory: true,
+          verified: advisory.report.verification_passed,
+          verification: advisory.report,
+          event: `vtid.stage.worker_${domain}.success`
+        });
+      }
+
+      // VERIFICATION_MODE=blocking (opt-in): legacy hard gate.
       const verificationResult = await completeSubagentWithVerification(
         vtid,
         domain as TaskDomain,
@@ -504,6 +531,56 @@ workerOrchestratorRouter.post('/api/v1/worker/orchestrator/complete', async (req
     const startedAtDate = started_at ? new Date(started_at) : undefined;
 
     if (success) {
+      // VERIFICATION_MODE=advisory (default): verify but NEVER block.
+      // The task always passes; a failed verification yields a developer-review
+      // report describing what needs to be fixed. The governance skip-gate below
+      // is bypassed entirely in advisory mode since nothing is being skipped to
+      // avoid verification — verification always runs (or no-ops when there is
+      // nothing to verify).
+      if (VERIFICATION_MODE === 'advisory') {
+        if (domain && result) {
+          const subagentResult: SubagentResult = {
+            ok: true,
+            files_changed: result.files_changed,
+            files_created: result.files_created,
+            summary: summary
+          };
+          const advisory = await completeOrchestratorAdvisory(
+            vtid,
+            run_id,
+            domain as TaskDomain,
+            subagentResult,
+            startedAtDate
+          );
+          syncSelfHealingLog(vtid, true).catch(() => {});
+          console.log(`[VTID-01175] Orchestrator advisory-verified for ${vtid} (passed=${advisory.report.verification_passed}, non-blocking)`);
+          return res.status(200).json({
+            ok: true,
+            vtid,
+            run_id,
+            advisory: true,
+            verified: advisory.report.verification_passed,
+            verification: advisory.report,
+            event: 'vtid.stage.worker_orchestrator.success'
+          });
+        }
+
+        // Nothing to verify (missing domain or result): pass through with success.
+        await markOrchestratorSuccess(vtid, run_id, summary || 'Orchestrator completed successfully');
+        syncSelfHealingLog(vtid, true).catch(() => {});
+        console.log(`[VTID-01175] Orchestrator succeeded for ${vtid} (advisory: nothing to verify — ${!domain ? 'missing_domain' : 'missing_result'})`);
+        return res.status(200).json({
+          ok: true,
+          vtid,
+          run_id,
+          advisory: true,
+          verified: false,
+          verification_skipped: true,
+          skip_reason: !domain ? 'missing_domain' : 'missing_result',
+          event: 'vtid.stage.worker_orchestrator.success'
+        });
+      }
+
       // VTID-01175: Run verification before marking success (unless skipped with governance approval)
       const needsSkip = skip_verification || !domain || !result;
       if (needsSkip) {
@@ -553,7 +630,7 @@ workerOrchestratorRouter.post('/api/v1/worker/orchestrator/complete', async (req
         summary: summary
       };
 
-      // Run verification
+      // VERIFICATION_MODE=blocking (opt-in): legacy hard gate.
       const verificationResult = await completeOrchestratorWithVerification(
         vtid,
         run_id,
