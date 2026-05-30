@@ -59,3 +59,13 @@ Legend: each box is a ~30-second click or a copy-paste command, not an engineeri
 - [ ] Confirm first nightly (03:00 UTC) run emits ≥1 `voice.instruction.budget_at_risk` OASIS event.
 
 > NOTE: `Gateway Service Tests` CI runs against live Supabase/Gemini secrets and is intermittently flaky. A lone failure on that check is usually a flake — re-trigger (push an empty commit) before investigating.
+
+---
+
+## Phase B — Relevance-ranked retrieval
+
+- [ ] Merge PR #2405 — https://github.com/exafyltd/vitana-platform/pull/2405 (BOOTSTRAP-orb-memory-ranker)
+- [ ] Enable `VOICE_RANKING_SHADOW` (DB/env flag), run 48h on prod traffic.
+- [ ] Confirm shadow `compareSelections`: ranked overlap ≥80% with most-important naive selection AND ≥40% char drop on heavy users.
+- [ ] Canary `BOOTSTRAP_CONTEXT_RANKED_RETRIEVAL` on dragan1 for 24h, verify audio + greeting quality, then expand.
+- [ ] (Optional) thread an intent embedding into `selectMemoryHits` to activate the similarity term.

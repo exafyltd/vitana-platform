@@ -147,7 +147,7 @@ curl -sS https://gateway.vitanaland.com/command-hub/orb-widget.js | grep -c VTID
 | Re-Apply VTID-03184 | VTID-03184 | Memory | code-complete (pending merge + deploy) | reapply/VTID-03184-plan-phase | #2400 | — | cherry-pick of 6f37bcdd; build+jest green (29 tests) |
 | Re-Apply i18n-llm-locale | BOOTSTRAP-i18n-llm-locale | Memory | code-complete (pending merge + deploy) | reapply/i18n-llm-locale | #2401 | — | cherry-pick of 8e7570e3; build green |
 | A — Bootstrap context cap | BOOTSTRAP-orb-bootstrap-cap | Memory | code-complete (pending merge + deploy) | fix/BOOTSTRAP-orb-bootstrap-cap | #2403 | — | 12KB hard cap; ALL CI GREEN incl Gateway Service Tests (initial fail was a flake, re-triggered) |
-| B — Relevance-ranked retrieval | new | Memory | pending | — | — | — | quality improvement |
+| B — Relevance-ranked retrieval | BOOTSTRAP-orb-memory-ranker | Memory | code-complete (pending merge + deploy) | feat/BOOTSTRAP-orb-memory-ranker | #2405 | — | pure ranker + flag-gated cpb integration; typecheck+build+full jest(4755) green |
 | C — RAG-only memory architecture | new | Memory | pending | — | — | — | STOP-AND-ASK before code |
 | D — Observability + hygiene | DEV-COMHU-voice-budget-watch | Memory | code-complete (pending merge + deploy) | feat/DEV-COMHU-voice-budget-watch | #2404 | — | route+cron+CHub panel+typed topics; typecheck+build+jest(13) green |
 | ORB-0.1 — Cross-provider watchdog | new | Recovery | pending | — | — | — | DEV-COMHU required |
@@ -470,7 +470,7 @@ assembly that should also be audited; tracked as VTID-XXXXX follow-up).
 
 ### PHASE B — Relevance-ranked retrieval
 
-**Status**: pending
+**Status**: code-complete (pending merge + deploy)
 **Stream**: Memory
 **VTID**: allocate at start.
 **Estimated effort**: 2 days.
@@ -533,6 +533,17 @@ Before flipping the flag in prod, ship a `voice-ranking-shadow` mode that runs B
 - [ ] Shadow harness logs both selections for 100+ sessions.
 - [ ] Shadow comparison shows ranked selection has ≥80% overlap with the most-important naive selection AND drops 40%+ of total chars on heavy users.
 - [ ] Flag flipped on for `dragan1` first (canary), verified for 24h, then expanded.
+
+#### 4.B.6 Run log
+
+- 2026-05-30 16:05 UTC — code-complete. Pure `memory-ranker.ts` (rankMemory 0.4 imp + 0.4 recency + 0.2 sim, recencyDecay, cosineSimilarity, compareSelections shadow primitive). `context-pack-builder.ts`: both memory-hit selection sites routed through flag-gated `selectMemoryHits` (flag OFF = byte-identical naive slice; ON = ranked top-K; lookup failure = naive fallback). Flags BOOTSTRAP_CONTEXT_RANKED_RETRIEVAL + VOICE_RANKING_SHADOW already existed (default false). PR #2405. typecheck + build + FULL jest (4755 passed) green. 18 ranker unit tests.
+
+#### 4.B.7 Pending human actions
+
+- Merge PR #2405 (marker BOOTSTRAP-orb-memory-ranker).
+- Enable `VOICE_RANKING_SHADOW`, run 48h on prod; confirm via `compareSelections` overlap >=80% with most-important naive selection AND >=40% char drop on heavy users.
+- Canary `BOOTSTRAP_CONTEXT_RANKED_RETRIEVAL` on dragan1 24h, then expand.
+- (Optional deeper integration) thread an intent embedding into the selection site to activate the 0.2 similarity term.
 
 ---
 
