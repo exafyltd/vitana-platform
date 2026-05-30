@@ -1,8 +1,17 @@
 # CLAUDE.md - Vitana Platform Development Guide
-**CANONICAL REFERENCE - Last Updated: 2026-01-21**
+**CANONICAL REFERENCE - Last Updated: 2026-05-30**
 
 This file contains critical information for AI assistants working on the Vitana platform.
 **READ THIS BEFORE MAKING ANY CHANGES.**
+
+> **Repo at a glance:** `vitana-platform` is the **backend** monorepo — a
+> pnpm workspace (`pnpm@9`) of TypeScript services deployed to **Google
+> Cloud Run** (`lovable-vitana-vers1` / `us-central1`), backed by
+> **Supabase** (Postgres + pgvector + RLS), governed by the **OASIS/VTID**
+> task system. The companion **frontend** repo is `exafyltd/vitana-v1`
+> (React/Vite SPA, branded "MAXINA - Longevity Community"). Both repos
+> should be available in every Claude Code session. See PART 2 for the
+> technical reference; PART 1 for the non-negotiable behavioral rules.
 
 ---
 
@@ -293,25 +302,83 @@ gcloud run deploy <service> \
 
 ## 2. SERVICES ARCHITECTURE
 
+This is a **pnpm workspace monorepo** (`pnpm@9.0.0`, see root `package.json`
++ `pnpm-lock.yaml`). Services live under `services/`; shared libraries under
+`packages/`. The canonical mapping of source path → Cloud Run service →
+deployable flag is `config/service-path-map.json` (validated against
+`config/service-path-map.schema.json`) — **trust that file over this table**
+if they ever disagree.
+
 ### Deployable Services (Cloud Run)
 | Service | Source Path | Cloud Run Name |
 |---------|-------------|----------------|
-| Gateway | `services/gateway/` | `gateway` |
+| Gateway (API + Command Hub + ORB) | `services/gateway/` | `gateway` |
 | OASIS Operator | `services/oasis-operator/` | `oasis-operator` |
 | OASIS Projector | `services/oasis-projector/` | `oasis-projector` |
 | Verification Engine | `services/agents/vitana-orchestrator/` | `vitana-verification-engine` |
 | Worker Runner | `services/worker-runner/` | `worker-runner` |
+| VAEA (autonomous economic actor) | `services/vaea/` | `vaea` |
+| OpenClaw Bridge | `services/openclaw-bridge/` | `openclaw-bridge` |
 
-### Non-Deployable Services (Libraries/Local)
-- `services/agents/` - Agent implementations
+> **`gateway` is the heart of the platform** — it serves the `/api/v1/*`
+> REST API, the Command Hub static UI, ORB voice (Gemini Live + LiveKit),
+> server-side i18n, and the memory/intelligence stack. Most backend work
+> lands here.
+
+### Newer Services (added since the last revision)
+- **`services/vaea/`** (`VTID-02401`) — Vitana Autonomous Economic Actor.
+  Phase-1 observe-mode: detects buying intent, matches the catalog, drafts
+  shadow responses (no posting). Has a `manifest.json` (layer/module/port).
+- **`services/openclaw-bridge/`** — connects OpenClaw skills + heartbeat
+  into the OASIS governance pipeline for Autopilot.
+- **`services/autopilot-worker/`** — a small Node process that runs the Dev
+  Autopilot's LLM calls through a Claude Code CLI subscription session
+  (polls `dev_autopilot_worker_queue` in Supabase, shells out to
+  `claude -p`, writes results back). Local/queue worker, not a web service.
+
+### Non-Deployable Services (Libraries/Local Workers)
+- `services/agents/` - Agent implementations (incl. `vitana-orchestrator/`)
+- `services/autopilot-worker/` - Dev Autopilot subscription LLM worker
 - `services/mcp/` - MCP protocol
 - `services/mcp-gateway/` - MCP gateway
 - `services/deploy-watcher/` - Deploy watcher
 - `services/oasis/` - OASIS core
 - `services/validators/` - Validators
 
+### Shared Packages (`packages/`)
+- `packages/llm-router/` - Python LLM routing (`router.py`)
+- `packages/openapi/` - Shared OpenAPI spec/tooling (enforced in CI)
+- `packages/py/` - Shared Python helpers
+- `packages/agent-heartbeat.ts` - Agent heartbeat helper
+
 ### Service Path Map
 Located at: `config/service-path-map.json`
+
+---
+
+## 2b. LOCAL DEVELOPMENT
+
+```bash
+pnpm install                       # workspace install (root, pnpm@9)
+docker compose up -d               # Postgres 16 on :5432 (vitana_dev)
+docker compose --profile tools up  # also start pgAdmin on :5050
+docker compose down                # stop
+
+# Prisma (root package.json) — schema at prisma/schema.prisma
+pnpm prisma generate
+pnpm prisma migrate dev            # local migration workflow
+
+# Per-service (most are standalone packages with their own scripts)
+cd services/<service>
+npm install && npm run build       # tsc compile; npm start runs dist/index.js
+```
+
+- **Production schema** is managed via **Supabase SQL migrations** in
+  `supabase/migrations/` (filename pattern
+  `YYYYMMDDHHMMSS_VTID_XXXXX_description.sql`), applied through the
+  `RUN-MIGRATION.yml` / `RUN-STAGING-MIGRATION.yml` workflows — **not** via
+  `prisma migrate` against prod. Prisma is primarily for local/typed access.
+- Health endpoint convention for every service: `GET /alive` on port `8080`.
 
 ---
 
@@ -321,6 +388,8 @@ Located at: `config/service-path-map.json`
 1. **PostgreSQL tables MUST use `snake_case`** (vtid_ledger, oasis_events)
 2. **TypeScript code MUST reference EXACT table names**
 3. **Check DATABASE_SCHEMA.md before creating any table**
+4. **Prod schema changes ship as `supabase/migrations/*.sql`** (VTID-named),
+   applied via the `RUN-MIGRATION` workflows — keep `DATABASE_SCHEMA.md` in sync.
 
 ### Core Tables
 | Table | Purpose |
@@ -484,16 +553,32 @@ OPENAI_API_KEY=xxx
 
 ## 9. CI/CD WORKFLOWS
 
+There are **60+ workflows** in `.github/workflows/`. The important ones:
+
 ### Key Workflows
 | File | Purpose |
 |------|---------|
-| `EXEC-DEPLOY.yml` | Canonical deployment (VTID governance) |
+| `AUTO-DEPLOY.yml` | Detects pushes to `main`, dispatches `EXEC-DEPLOY` **only if a VTID is in the commit message** (see §16) |
+| `EXEC-DEPLOY.yml` | Canonical deployment (VTID governance) — does the real `gcloud run deploy` |
+| `STAGE-DEPLOY.yml` | Staging deploy |
+| `CICDL-GATEWAY-CI.yml` | Gateway CI (build/test) |
+| `CICDL-CORE-LINT-SERVICES.yml` | Lint across services |
+| `CICDL-CORE-OPENAPI-ENFORCE.yml` | Enforce OpenAPI spec contract |
+| `UNIT.yml` / `E2E-TEST-RUN.yml` | Unit + E2E test runs |
+| `RUN-MIGRATION.yml` / `RUN-STAGING-MIGRATION.yml` | Apply Supabase SQL migrations (fails loudly on psql errors) |
+| `ENFORCE-FRONTEND-CANONICAL-SOURCE.yml` | Guard the canonical frontend source |
 | `MCP-GATEWAY-CI.yml` | MCP Gateway CI |
+
+Naming convention: `CICDL-*` = CI/lint gates, `EXEC-*`/`STAGE-*`/`DEPLOY-*` =
+deployment, `CRON-*` = scheduled jobs, `BOOTSTRAP-*` = one-shot provisioning,
+`VTID-*` = task-specific migrations/backfills.
 
 ### Deployment Requirements
 1. VTID must exist in OASIS ledger before deploy (VTID-0542)
 2. Governance evaluation must pass (VTID-0416)
 3. All deploys go through governed CI pipeline
+4. Commit message MUST carry a VTID (or `BOOTSTRAP-*`) or `AUTO-DEPLOY`
+   silently skips deployment — see §16 for the full checklist.
 
 ---
 
@@ -992,6 +1077,7 @@ Use these PATs with the GitHub REST API (`api.github.com`) for all PR and deploy
 
 | Date | Change | VTID |
 |------|--------|------|
+| 2026-05-30 | Refreshed services architecture (added VAEA, OpenClaw Bridge, autopilot-worker, `packages/`), documented pnpm-monorepo + docker-compose + Prisma local dev, expanded CI/CD workflow map, added repo-at-a-glance header | docs-refresh |
 | 2026-04-14 | Replaced broad visual verification with targeted protocol: screenshot what you changed, interact with it, verify it works | VTID-01917 |
 | 2026-03-19 | Added CI/CD deployment pipeline critical lessons (Auto Deploy ≠ actual deploy) | BOOTSTRAP-OPERATOR-NAV-FIX |
 | 2026-02-13 | Added Deployment Verification Protocol section + rules | VTID-01228 |
