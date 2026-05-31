@@ -13,6 +13,30 @@ import {
 } from '../../../../../src/services/assistant-continuation/providers/teacher/feature-discovery-teacher';
 import type { ContinuationDecisionContext } from '../../../../../src/services/assistant-continuation/types';
 
+// VTID-03218 (R3): the provider now resolves Teacher Mode content atomically
+// inside produce() (dynamic import). Mock the resolver so produce() tests
+// control whether content resolves, fails, or throws. jest.mock intercepts
+// the provider's dynamic import() of this module.
+jest.mock('../../../../../src/orb/teacher/teacher-content-resolver', () => ({
+  resolveTeacherModeContent: jest.fn(),
+}));
+import { resolveTeacherModeContent } from '../../../../../src/orb/teacher/teacher-content-resolver';
+import type { TeacherModeContent } from '../../../../../src/orb/teacher/teacher-content-resolver';
+const mockResolveTeacherMode = resolveTeacherModeContent as jest.Mock;
+
+function makeTeacherMode(over: Partial<TeacherModeContent> = {}): TeacherModeContent {
+  return {
+    active_capability_key: 'life_compass',
+    active_display_name: 'Life Compass',
+    active_description: 'desc',
+    active_manual_path: '/manuals/maxina/00-concepts/life-compass',
+    active_manual_content: 'manual chapter text',
+    active_teacher_intro_script: null,
+    remaining_capabilities: [],
+    ...over,
+  };
+}
+
 const NOW_ISO = '2026-05-19T08:00:00Z';
 const NOW_MS = Date.parse(NOW_ISO);
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -259,6 +283,13 @@ function ctxWith(extra: Record<string, unknown>): ContinuationDecisionContext {
 }
 
 describe('VTID-03093 — provider produce()', () => {
+  // VTID-03218: default the resolver to a successful content payload so the
+  // pre-existing "returned" assertions hold. Individual tests override it.
+  beforeEach(() => {
+    mockResolveTeacherMode.mockReset();
+    mockResolveTeacherMode.mockResolvedValue(makeTeacherMode());
+  });
+
   test('missing inputs → skipped', async () => {
     const provider = makeFeatureDiscoveryTeacherProvider();
     const r = await provider.produce(ctxWith({}));
@@ -328,6 +359,72 @@ describe('VTID-03093 — provider produce()', () => {
     );
     expect(r.status).toBe('suppressed');
     if (r.status === 'suppressed') expect(r.reason).toBe('empty_catalog');
+  });
+
+  // VTID-03218 (R3): atomic selection + content. The candidate carries its
+  // Teacher Mode content; content failure means the Teacher does NOT fire.
+  test('returned candidate carries bundled teacherMode content', async () => {
+    mockResolveTeacherMode.mockResolvedValue(
+      makeTeacherMode({ active_capability_key: 'life_compass' }),
+    );
+    const provider = makeFeatureDiscoveryTeacherProvider({ rng: () => 0 });
+    const r = await provider.produce(
+      ctxWith({
+        [TEACHER_EXTRA_KEY]: {
+          supabase: fakeSb({ catalog: [cat()] }),
+          tenantId: 't1',
+          userId: 'u1',
+          lang: 'de',
+          greetingPolicy: 'fresh_intro',
+        },
+      }),
+    );
+    expect(r.status).toBe('returned');
+    if (r.status !== 'returned') return;
+    const tm = (r.candidate as { teacherMode?: TeacherModeContent }).teacherMode;
+    expect(tm).toBeDefined();
+    expect(tm?.active_capability_key).toBe('life_compass');
+    expect(mockResolveTeacherMode).toHaveBeenCalledTimes(1);
+  });
+
+  test('content resolution returns null → errored (Teacher does not fire)', async () => {
+    mockResolveTeacherMode.mockResolvedValue(null);
+    const provider = makeFeatureDiscoveryTeacherProvider({ rng: () => 0 });
+    const r = await provider.produce(
+      ctxWith({
+        [TEACHER_EXTRA_KEY]: {
+          supabase: fakeSb({ catalog: [cat()] }),
+          tenantId: 't1',
+          userId: 'u1',
+          lang: 'de',
+          greetingPolicy: 'fresh_intro',
+        },
+      }),
+    );
+    expect(r.status).toBe('errored');
+    if (r.status === 'errored') {
+      expect(r.reason).toBe('teacher_content_resolution_failed');
+    }
+  });
+
+  test('content resolution throws → errored (Teacher does not fire)', async () => {
+    mockResolveTeacherMode.mockRejectedValue(new Error('knowledge_docs down'));
+    const provider = makeFeatureDiscoveryTeacherProvider({ rng: () => 0 });
+    const r = await provider.produce(
+      ctxWith({
+        [TEACHER_EXTRA_KEY]: {
+          supabase: fakeSb({ catalog: [cat()] }),
+          tenantId: 't1',
+          userId: 'u1',
+          lang: 'de',
+          greetingPolicy: 'fresh_intro',
+        },
+      }),
+    );
+    expect(r.status).toBe('errored');
+    if (r.status === 'errored') {
+      expect(r.reason).toMatch(/teacher_content_resolution_failed/);
+    }
   });
 
   test('catalog error → errored', async () => {
