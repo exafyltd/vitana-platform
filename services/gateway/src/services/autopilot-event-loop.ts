@@ -945,10 +945,16 @@ async function runLoopIteration(): Promise<void> {
 let lastStuckCheckTime = 0;
 const STUCK_CHECK_INTERVAL_MS = 5 * 60 * 1000; // Every 5 minutes
 const STUCK_THRESHOLD_MS = 60 * 60 * 1000; // 1 hour without progress
+// VTID-03231: anything in_progress + unclaimed for >24h is a zombie
+// (no worker ever picked it up — non-loop path put it there). Audit on
+// 2026-05-31 found 54 such rows, all with zero OASIS events, sitting forever.
+const ZOMBIE_THRESHOLD_MS = 24 * 60 * 60 * 1000;
+const ZOMBIE_REVERT_BATCH = 50;
 
 /**
  * Check for tasks stuck in in_progress with no recent OASIS events.
- * Emits alert events for stuck tasks.
+ * Emits alert events for stuck tasks AND (VTID-03231) reverts unclaimed
+ * zombies back to scheduled so the work can be picked up again.
  */
 async function checkForStuckTasks(): Promise<void> {
   const now = Date.now();
@@ -959,10 +965,9 @@ async function checkForStuckTasks(): Promise<void> {
   const supabaseKey = process.env.SUPABASE_SERVICE_ROLE;
   if (!supabaseUrl || !supabaseKey) return;
 
+  // Warning probe: anything in_progress for >1h gets a warning event.
   try {
     const stuckThreshold = new Date(now - STUCK_THRESHOLD_MS).toISOString();
-
-    // Find tasks in_progress that haven't been updated in over 1 hour
     const resp = await fetch(
       `${supabaseUrl}/rest/v1/vtid_ledger?status=eq.in_progress&updated_at=lt.${encodeURIComponent(stuckThreshold)}&is_terminal=eq.false&select=vtid,title,updated_at&limit=20`,
       {
@@ -973,32 +978,112 @@ async function checkForStuckTasks(): Promise<void> {
       }
     );
 
-    if (!resp.ok) return;
+    if (resp.ok) {
+      const stuckTasks = await resp.json() as { vtid: string; title: string; updated_at: string }[];
+      if (stuckTasks.length > 0) {
+        console.warn(`${LOG_PREFIX} STUCK TASKS DETECTED: ${stuckTasks.length} tasks in_progress for >1 hour`);
 
-    const stuckTasks = await resp.json() as { vtid: string; title: string; updated_at: string }[];
-    if (stuckTasks.length === 0) return;
+        for (const task of stuckTasks) {
+          const stuckMinutes = Math.round((now - new Date(task.updated_at).getTime()) / 60000);
+          console.warn(`${LOG_PREFIX}   - ${task.vtid}: "${task.title}" stuck for ${stuckMinutes} minutes`);
 
-    console.warn(`${LOG_PREFIX} STUCK TASKS DETECTED: ${stuckTasks.length} tasks in_progress for >1 hour`);
-
-    for (const task of stuckTasks) {
-      const stuckMinutes = Math.round((now - new Date(task.updated_at).getTime()) / 60000);
-      console.warn(`${LOG_PREFIX}   - ${task.vtid}: "${task.title}" stuck for ${stuckMinutes} minutes`);
-
-      await emitOasisEvent({
-        vtid: task.vtid,
-        type: 'autopilot.health.stuck_task' as any,
-        source: 'autopilot-event-loop',
-        status: 'warning',
-        message: `Task ${task.vtid} stuck in_progress for ${stuckMinutes} minutes`,
-        payload: {
-          vtid: task.vtid,
-          stuck_minutes: stuckMinutes,
-          last_updated: task.updated_at,
-        },
-      });
+          await emitOasisEvent({
+            vtid: task.vtid,
+            type: 'autopilot.health.stuck_task' as any,
+            source: 'autopilot-event-loop',
+            status: 'warning',
+            message: `Task ${task.vtid} stuck in_progress for ${stuckMinutes} minutes`,
+            payload: {
+              vtid: task.vtid,
+              stuck_minutes: stuckMinutes,
+              last_updated: task.updated_at,
+            },
+          });
+        }
+      }
     }
   } catch (err) {
-    console.warn(`${LOG_PREFIX} Stuck task check error: ${err}`);
+    console.warn(`${LOG_PREFIX} Stuck task warning probe error: ${err}`);
+  }
+
+  // VTID-03231: Zombie reverter. Rows with status=in_progress + claimed_by IS NULL
+  // for >24h are dead — no worker holds them, no events have fired against them.
+  // Revert to scheduled so they re-enter the claim queue. Without this, rows that
+  // landed in in_progress via a non-loop path (manual SQL, defunct dispatcher)
+  // sit forever — 54 such rows existed at the time of fix.
+  try {
+    const zombieThreshold = new Date(now - ZOMBIE_THRESHOLD_MS).toISOString();
+    const zResp = await fetch(
+      `${supabaseUrl}/rest/v1/vtid_ledger?status=eq.in_progress&is_terminal=eq.false&claimed_by=is.null&updated_at=lt.${encodeURIComponent(zombieThreshold)}&select=vtid,title,updated_at,metadata&limit=${ZOMBIE_REVERT_BATCH}`,
+      {
+        headers: {
+          apikey: supabaseKey,
+          Authorization: `Bearer ${supabaseKey}`,
+        },
+      }
+    );
+
+    if (zResp.ok) {
+      const zombies = await zResp.json() as {
+        vtid: string;
+        title: string;
+        updated_at: string;
+        metadata: Record<string, unknown> | null;
+      }[];
+      if (zombies.length > 0) {
+        console.warn(`${LOG_PREFIX} ZOMBIES DETECTED: ${zombies.length} unclaimed in_progress >24h — reverting to scheduled`);
+        const revertTs = new Date(now).toISOString();
+        for (const z of zombies) {
+          const stuckHours = Math.round((now - new Date(z.updated_at).getTime()) / 3600000);
+          const mergedMeta: Record<string, unknown> = {
+            ...(z.metadata || {}),
+            zombie_reverted_at: revertTs,
+            zombie_previous_status: 'in_progress',
+            zombie_stuck_hours: stuckHours,
+            zombie_reverter: 'autopilot-event-loop',
+          };
+          const patchResp = await fetch(
+            `${supabaseUrl}/rest/v1/vtid_ledger?vtid=eq.${encodeURIComponent(z.vtid)}`,
+            {
+              method: 'PATCH',
+              headers: {
+                'Content-Type': 'application/json',
+                apikey: supabaseKey,
+                Authorization: `Bearer ${supabaseKey}`,
+                Prefer: 'return=minimal',
+              },
+              body: JSON.stringify({
+                status: 'scheduled',
+                metadata: mergedMeta,
+                updated_at: revertTs,
+              }),
+            }
+          );
+          if (patchResp.ok) {
+            console.warn(`${LOG_PREFIX}   - ${z.vtid}: "${z.title}" reverted (was stuck ${stuckHours}h)`);
+            await emitOasisEvent({
+              vtid: z.vtid,
+              type: 'autopilot.zombie.reverted' as any,
+              source: 'autopilot-event-loop',
+              status: 'info',
+              message: `Zombie ${z.vtid} reverted in_progress → scheduled after ${stuckHours}h unclaimed`,
+              payload: {
+                vtid: z.vtid,
+                stuck_hours: stuckHours,
+                previous_status: 'in_progress',
+                reverted_at: revertTs,
+              },
+            });
+          } else {
+            console.warn(`${LOG_PREFIX}   - ${z.vtid} revert PATCH failed: HTTP ${patchResp.status}`);
+          }
+        }
+      }
+    } else {
+      console.warn(`${LOG_PREFIX} Zombie probe SELECT failed: HTTP ${zResp.status}`);
+    }
+  } catch (err) {
+    console.warn(`${LOG_PREFIX} Zombie reverter error: ${err}`);
   }
 }
 
