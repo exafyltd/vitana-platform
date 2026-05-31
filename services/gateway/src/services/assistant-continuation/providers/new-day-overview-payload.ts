@@ -39,20 +39,59 @@ import { fetchLifeCompass, fetchVitanaIndexForProfiler } from '../../user-contex
 
 export type SignalSetupState = 'set' | 'not_set';
 
+/**
+ * VTID-03184 — the journey is endless. The "default 90-day plan" is a
+ * scaffolding for users without a personalized goal. Once a Life Compass
+ * goal is set, the user is on their own arc — wave/total_days framing
+ * drops. plan_phase discriminates the three voice-greeting cases:
+ *
+ *   - default_active            → user is in waves 1-N of the default plan
+ *                                  (day <= total_days, no Life Compass).
+ *                                  Voice anchors on wave + "Tag X von 90".
+ *
+ *   - default_finished_no_goal  → user reached end of default plan but
+ *                                  never set a Life Compass. The default
+ *                                  is done; voice invites the first
+ *                                  personalized goal as the next step.
+ *
+ *   - on_personalized_goal      → user has an active Life Compass goal,
+ *                                  regardless of plan_type or day count.
+ *                                  Voice drops the 90-day frame and
+ *                                  anchors on "Tag X mit Vitana, wir
+ *                                  arbeiten gerade an [goal]". The arc
+ *                                  is endless — goal-by-goal.
+ *
+ * VTID-03184 ships A+B+C. Goal-completion (case D — "Du hast dein Ziel
+ * erreicht, magst du das nächste setzen?") is the Phase 2 follow-up; it
+ * needs a goal-completion-inquiry continuation provider, not just a
+ * payload field, so it's intentionally NOT plumbed here yet.
+ */
+export type JourneyPlanPhase =
+  | 'default_active'
+  | 'default_finished_no_goal'
+  | 'on_personalized_goal';
+
 export interface OverviewPayload {
-  // -- JOURNEY (same source as /api/v1/my-journey) --
+  // -- JOURNEY (same source as /api/v1/my-journey, enriched with plan_phase) --
   journey: {
-    day_in_journey: number;
-    total_days: number;
-    days_left: number;
+    plan_phase: JourneyPlanPhase;
+    day_in_journey: number;            // monotonic since started_at; never resets
     is_first_session: boolean;
     plan_type: 'default' | 'personalized';
+    /** Only meaningful when plan_phase === 'default_active'. */
+    default_plan_total_days: number | null;
     current_wave: {
       name: string;
       description: string;
       day_in_wave: number;
       days_to_next_wave: number | null;
     } | null;
+    /** Days since the active Life Compass was set (when plan_phase === 'on_personalized_goal'). */
+    current_goal_day: number | null;
+    /** Positive integer when goal target_date is in the past; null otherwise. */
+    days_past_deadline: number | null;
+    /** Count of historical (non-active) life_compass rows for this user — the user's goal arc length. */
+    previous_goals_count: number;
   } | null;
 
   // -- VITANA INDEX (same source as /api/v1/my-journey + AutopilotDashboard NowCard) --
@@ -205,6 +244,7 @@ export async function gatherOverviewPayload(args: AggregateArgs): Promise<Overvi
     journeyState,
     indexSnapshot,
     lcSnapshot,
+    previousGoalsCount,
     calToday,
     calPassed,
     autopilot,
@@ -216,6 +256,7 @@ export async function gatherOverviewPayload(args: AggregateArgs): Promise<Overvi
     getJourneyState(args.supabase, args.userId).catch(() => null),
     fetchVitanaIndexForProfiler(args.supabase, args.userId).catch(() => null),
     fetchLifeCompass(args.supabase, args.userId).catch(() => null),
+    fetchPreviousGoalsCount(args.supabase, args.userId),
     fetchCalendarToday(args.supabase, args.userId, nowIso, endUtc),
     fetchCalendarPassed(args.supabase, args.userId, lookbackIso, nowIso),
     fetchAutopilotForVoice(args.supabase, args.userId),
@@ -225,10 +266,11 @@ export async function gatherOverviewPayload(args: AggregateArgs): Promise<Overvi
     fetchDiaryLast7Days(args.supabase, args.userId, args.now),
   ]);
 
+  const lifeCompass = projectLifeCompass(lcSnapshot);
   return {
-    journey: projectJourney(journeyState),
+    journey: projectJourney(journeyState, lifeCompass, previousGoalsCount, args.now),
     vitana_index: projectIndex(indexSnapshot),
-    life_compass: projectLifeCompass(lcSnapshot),
+    life_compass: lifeCompass,
     calendar_today: calToday,
     calendar_passed: calPassed,
     autopilot,
@@ -244,9 +286,45 @@ export async function gatherOverviewPayload(args: AggregateArgs): Promise<Overvi
 // Projections — narrow the shared-service shapes into the voice contract
 // ---------------------------------------------------------------------------
 
-function projectJourney(s: JourneyState | null): OverviewPayload['journey'] {
+/**
+ * Compute the plan_phase discriminator + the fields each phase needs.
+ *
+ * Branching rules (the user's mental model — see VTID-03184 header):
+ *
+ *   - life_compass.state === 'set'
+ *       → 'on_personalized_goal'. The 90-day frame drops; greeting
+ *         anchors on "Tag X mit Vitana, wir arbeiten an [goal]". The
+ *         arc is endless, goal-by-goal.
+ *
+ *   - life_compass.state === 'not_set' AND day_in_journey <= total_days
+ *       → 'default_active'. User is still in the scaffolding plan;
+ *         greeting includes wave name + "Tag X von Y in deinem Start-Plan".
+ *
+ *   - life_compass.state === 'not_set' AND day_in_journey > total_days
+ *       → 'default_finished_no_goal'. Scaffolding plan is complete but
+ *         no personalized goal yet — greeting invites the first goal as
+ *         the next step in the endless journey.
+ */
+function projectJourney(
+  s: JourneyState | null,
+  lifeCompass: OverviewPayload['life_compass'],
+  previousGoalsCount: number,
+  now: Date,
+): OverviewPayload['journey'] {
   if (!s) return null;
-  const wave = s.current_wave
+
+  // Phase resolution.
+  let plan_phase: JourneyPlanPhase;
+  if (lifeCompass.state === 'set') {
+    plan_phase = 'on_personalized_goal';
+  } else if (s.day_in_journey > s.total_days) {
+    plan_phase = 'default_finished_no_goal';
+  } else {
+    plan_phase = 'default_active';
+  }
+
+  // current_wave only meaningful while the default plan is active.
+  const wave = plan_phase === 'default_active' && s.current_wave
     ? {
         name: s.current_wave.name,
         description: s.current_wave.description,
@@ -254,14 +332,54 @@ function projectJourney(s: JourneyState | null): OverviewPayload['journey'] {
         days_to_next_wave: Math.max(0, s.current_wave.end_day - s.day_in_journey),
       }
     : null;
+
+  // Goal-anchored fields populate only when on a personalized goal.
+  let current_goal_day: number | null = null;
+  let days_past_deadline: number | null = null;
+  if (plan_phase === 'on_personalized_goal') {
+    if (lifeCompass.set_at) {
+      const setAtMs = Date.parse(lifeCompass.set_at);
+      if (Number.isFinite(setAtMs)) {
+        current_goal_day = Math.max(1, Math.floor((now.getTime() - setAtMs) / 86_400_000) + 1);
+      }
+    }
+    if (lifeCompass.target_date) {
+      const deadlineMs = Date.parse(`${lifeCompass.target_date}T23:59:59Z`);
+      if (Number.isFinite(deadlineMs) && deadlineMs < now.getTime()) {
+        days_past_deadline = Math.max(1, Math.floor((now.getTime() - deadlineMs) / 86_400_000));
+      }
+    }
+  }
+
   return {
+    plan_phase,
     day_in_journey: s.day_in_journey,
-    total_days: s.total_days,
-    days_left: s.days_left,
     is_first_session: s.is_first_session,
     plan_type: s.plan_type,
+    default_plan_total_days: plan_phase === 'default_active' ? s.total_days : null,
     current_wave: wave,
+    current_goal_day,
+    days_past_deadline,
+    previous_goals_count: previousGoalsCount,
   };
+}
+
+/**
+ * Count the user's non-active life_compass rows — the "previous goals"
+ * arc length. Active row is excluded. Best-effort: returns 0 on error.
+ */
+async function fetchPreviousGoalsCount(sb: SupabaseClient, userId: string): Promise<number> {
+  try {
+    const { count, error } = await sb
+      .from('life_compass')
+      .select('id', { head: true, count: 'exact' })
+      .eq('user_id', userId)
+      .eq('is_active', false);
+    if (error) return 0;
+    return Number(count ?? 0);
+  } catch {
+    return 0;
+  }
 }
 
 function projectIndex(snap: any | null): OverviewPayload['vitana_index'] {
