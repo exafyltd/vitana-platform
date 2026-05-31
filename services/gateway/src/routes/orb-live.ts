@@ -1192,6 +1192,10 @@ import { createUpstreamLiveMessageHandler } from '../orb/live/session/upstream-m
 // reconnects (Vertex 5-min close / watchdog recovery) don't fire a loud
 // "internet issues" alert.
 import { classifyUpstreamClose } from '../orb/live/session/upstream-close-classifier';
+// VTID-03234 (report finding #3): restore the upstream ping + silence
+// keepalive that the VertexLiveClient refactor left unreachable (it lived in
+// the now-dead setup_complete branch of the message handler).
+import { armUpstreamKeepalive } from '../orb/live/session/upstream-keepalive';
 // VTID-03126 (Phase D.3): Live API voice resolver — externalizes the
 // LIVE_API_VOICES Record + adds telemetry on silent fallbacks.
 import { getLiveApiVoice } from '../orb/live/voice/live-api-voice';
@@ -5956,6 +5960,14 @@ async function connectToLiveAPI(
       return;
     }
     ws = socket;
+
+    // VTID-03234 (report finding #3): arm the upstream ping + silence keepalive
+    // HERE. It used to start in the message handler's `setup_complete` branch,
+    // but VertexLiveClient now consumes setup_complete (A8.3b.1), so that branch
+    // never runs on the Vertex path — the keepalive silently stopped arming and
+    // quiet pauses caused upstream closes surfaced to users as "internet
+    // issues." The close/error handlers below already clear these intervals.
+    armUpstreamKeepalive(ws, session, { sendAudioToLiveAPI });
 
     // A8.3a.2 (VTID-02968): the upstream message handler lives in
     // orb/live/session/upstream-message-handler.ts. After A8.3b.1 the
