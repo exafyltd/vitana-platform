@@ -147,6 +147,13 @@
     // Watchdogs
     clientWatchdogInterval: null,
     clientLastActivityAt: 0,
+    // DEV-COMHU-0501 — ORB Recovery 0.1: cross-provider speaking-state watchdog.
+    // lastAudioReceivedAt is stamped on every inbound audio frame (any source);
+    // the watchdog clears a stuck audioPlaying when frames stop arriving AND
+    // nothing is scheduled/queued, regardless of transport (Vertex SSE today,
+    // LiveKit WebRTC on the community surface tomorrow).
+    lastAudioReceivedAt: 0,
+    speakingWatchdogInterval: null,
     stuckGuardTimer: null,
     thinkingDelayTimer: null, // Delayed thinking state — only show if response takes > 1.5s
     thinkingProgressTimer: null, // Progress updates during long thinking
@@ -858,6 +865,9 @@
     // playbackCtx, so without this guard any late SSE audio (e.g. from a racy
     // _sessionStart that resolved after _sessionStop) plays in the background.
     if (_s._userInitiatedStop || !_s.overlayVisible) return;
+    // DEV-COMHU-0501: stamp the moment of the most recent inbound audio frame
+    // (transport-agnostic — every provider funnels playback through here).
+    _s.lastAudioReceivedAt = Date.now();
     _s.audioQueue.push({ data: base64Data, mime: mimeType });
     _processQueue();
   }
@@ -1166,6 +1176,17 @@
       es.onopen = function () {
         console.log('[VTOrb] SSE connected');
         _startWatchdog();
+        // DEV-COMHU-0501: arm the cross-provider speaking-state watchdog + emit
+        // a one-line session-shape diagnostic so stuck-speaking reports are
+        // debuggable from console logs alone.
+        _startSpeakingWatchdog();
+        console.log(
+          '[VTOrb] session diagnostics: ACstate=' +
+          (_s.playbackCtx ? _s.playbackCtx.state : 'none') +
+          ', queueLen=' + _s.audioQueue.length +
+          ', sourcesLen=' + _s.scheduledSources.length +
+          ', audioPlaying=' + _s.audioPlaying
+        );
       };
       es.onmessage = function (event) {
         try {
@@ -1211,6 +1232,7 @@
     // setTimeout reconnect callbacks) must see this flag and bail.
     _s._userInitiatedStop = true;
     _stopWatchdog();
+    _stopSpeakingWatchdog(); // DEV-COMHU-0501
     clearTimeout(_s._listeningIdleTimer);
 
     // VTID-03098: always cancel the disconnect-recovery probe, even when
@@ -2082,6 +2104,56 @@
 
   function _resetWatchdog() {
     _s.clientLastActivityAt = Date.now();
+  }
+
+  // ============================================================
+  // DEV-COMHU-0501 — ORB Recovery 0.1: cross-provider speaking-state watchdog
+  // ============================================================
+  //
+  // VTID-03185 fixed the Vertex-path closure bug in _processQueue that left
+  // _s.scheduledSources with stale entries → "Vitana speaking..." stuck on,
+  // mic gated. LiveKit (community surface) uses WebRTC tracks rather than
+  // scheduled BufferSources — a different lifecycle, but the SAME end-user
+  // symptom can still occur through different mechanics (e.g. a subscribed
+  // track that stops delivering frames without firing onended).
+  //
+  // This watchdog is transport-agnostic. It ticks every 500ms while
+  // audioPlaying is true, and force-clears the speaking state when:
+  //   - it has been >= QUIET_MS since the last inbound audio frame, AND
+  //   - no BufferSources are still scheduled, AND
+  //   - the playback queue is empty.
+  // Under healthy multi-chunk TTS, frames keep arriving (lastAudioReceivedAt
+  // refreshes) or sources stay scheduled, so the watchdog does NOT fire.
+  var SPEAKING_WATCHDOG_QUIET_MS = 2000;
+  var SPEAKING_WATCHDOG_TICK_MS = 500;
+
+  function _speakingStateWatchdog() {
+    if (!_s.audioPlaying) return;
+    var quietFor = Date.now() - (_s.lastAudioReceivedAt || 0);
+    var nothingScheduled = _s.scheduledSources.length === 0;
+    var queueEmpty = _s.audioQueue.length === 0;
+    if (quietFor >= SPEAKING_WATCHDOG_QUIET_MS && nothingScheduled && queueEmpty) {
+      console.warn(
+        '[VTOrb] speaking-state watchdog: forcing audioPlaying=false ' +
+        '(quietFor=' + quietFor + 'ms, scheduled=0, queue=0)'
+      );
+      clearTimeout(_s.audioEndGraceTimer);
+      _s.audioPlaying = false;
+      _s.lastAudioEndTime = Date.now();
+      try { _updateUI(); } catch (e) { /* UI optional during teardown */ }
+    }
+  }
+
+  function _startSpeakingWatchdog() {
+    _stopSpeakingWatchdog();
+    _s.speakingWatchdogInterval = setInterval(_speakingStateWatchdog, SPEAKING_WATCHDOG_TICK_MS);
+  }
+
+  function _stopSpeakingWatchdog() {
+    if (_s.speakingWatchdogInterval) {
+      clearInterval(_s.speakingWatchdogInterval);
+      _s.speakingWatchdogInterval = null;
+    }
   }
 
   // ============================================================
