@@ -58,6 +58,19 @@
     } catch (e) { return true; } // Can't decode — treat as expired
   }
 
+  // DEV-COMHU-0502 (review fix): extract the JWT subject (user id) so setAuth
+  // can detect an ACCOUNT SWITCH (sub changes) versus a same-user silent
+  // refresh (sub unchanged). Returns null when unparseable/absent.
+  function _jwtSub(token) {
+    try {
+      if (!token) return null;
+      var parts = token.split('.');
+      if (parts.length !== 3) return null;
+      var payload = JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/')));
+      return payload && payload.sub ? String(payload.sub) : null;
+    } catch (e) { return null; }
+  }
+
   // Auto-detect auth token from localStorage (read-only, never writes/deletes)
   // Priority: Supabase native key (managed by auth SDK) > vitana.authToken (legacy)
   var _autoToken = (function () {
@@ -2372,6 +2385,20 @@
   // Only skip if init() explicitly passed authToken (tracked by _tokenSetByInit).
   var _tokenSetByInit = false;
 
+  // DEV-COMHU-0502 (review fix): last authenticated JWT subject seen by
+  // setAuth, used to detect account switches. Null until first authed setAuth.
+  var _lastAuthSub = null;
+
+  // DEV-COMHU-0502 (review fix): wipe all identity-bound in-memory continuity
+  // so it cannot leak across a logout or account switch. Shared by setAuth
+  // (on detected identity change) and clearAuth (on logout).
+  function _wipeIdentityBoundState() {
+    _s._transcriptHistory = [];
+    _s.conversationId = null;
+    _s._preDisconnectStage = null;
+    _s._reconnectCount = 0;
+  }
+
   function _refreshToken() {
     if (_tokenSetByInit) return; // Explicit init() token — don't override
     try {
@@ -2728,6 +2755,9 @@
       if (opts.authToken !== undefined && opts.authToken !== null) {
         _cfg.token = opts.authToken || '';
         _cfg.forceAnonymous = false;
+        // DEV-COMHU-0502 (review fix): seed the identity baseline so the first
+        // post-init setAuth (same user) is NOT misread as an account switch.
+        _lastAuthSub = _jwtSub(_cfg.token);
       } else {
         // No authToken passed → anonymous. Clear any auto-detected token.
         // Also lock anonymous mode — setAuth() calls will be ignored until
@@ -2789,25 +2819,51 @@
         VitanaOrb.clearAuth();
         return;
       }
+      // DEV-COMHU-0502 (review fix): distinguish a same-user silent refresh
+      // (sub unchanged — keep continuity, that's the whole point of ORB-1)
+      // from an ACCOUNT SWITCH (sub changes — must NOT carry the prior user's
+      // transcript/conversation into the new identity's session).
+      var newSub = _jwtSub(token);
+      var prevSub = _lastAuthSub;
+      var identityChanged = !!prevSub && !!newSub && newSub !== prevSub;
+
       _cfg.token = token;
       _cfg.forceAnonymous = false; // a real token always lifts the anon lock
       _tokenSetByInit = true;      // caller now owns auth; stop localStorage auto-detect
-      console.log('[VTOrb] setAuth: hasToken=true (reactive)');
+      _lastAuthSub = newSub;
+
+      if (identityChanged) {
+        // Account switch: tear down the old-identity live session (if any) and
+        // wipe identity-bound continuity BEFORE the next _sessionStart, so the
+        // prior user's conversation/greeting state cannot leak under the new
+        // token even if the host did not call clearAuth() first.
+        _wipeIdentityBoundState();
+        if (_s.active || _s.overlayVisible) {
+          try { _sessionStop(); } catch (e) { /* best-effort teardown */ }
+        }
+        console.log('[VTOrb] setAuth: account switch detected — continuity wiped, prior session stopped');
+      } else {
+        console.log('[VTOrb] setAuth: hasToken=true (reactive)');
+      }
     },
 
-    // DEV-COMHU-0502: explicit logout / account-switch / "start over". Clears
-    // the token AND any identity-bound session continuity so the next session
-    // cannot leak the previous user's conversation or greeting state. Hosts
-    // MUST call this on logout and before switching accounts.
+    // DEV-COMHU-0502: explicit logout / account-switch / "start over". Tears
+    // down the active live session (created under the OLD identity — otherwise
+    // post-logout turns keep being handled/persisted against the prior
+    // session.identity), then clears the token AND identity-bound continuity so
+    // the next session cannot leak the previous user's state.
     clearAuth: function () {
+      // Stop the backend/SSE session FIRST, while the old token is still set,
+      // so the stop request authenticates as the departing identity.
+      if (_s.active || _s.overlayVisible || _s.sessionId) {
+        try { _sessionStop(); } catch (e) { /* best-effort teardown */ }
+      }
       _cfg.token = '';
       _cfg.forceAnonymous = false; // not locked-anonymous; just unauthenticated now
       _tokenSetByInit = true;
-      _s._transcriptHistory = [];
-      _s.conversationId = null;
-      _s._preDisconnectStage = null;
-      _s._reconnectCount = 0;
-      console.log('[VTOrb] clearAuth: token + identity-bound continuity cleared');
+      _lastAuthSub = null;
+      _wipeIdentityBoundState();
+      console.log('[VTOrb] clearAuth: live session stopped, token + identity-bound continuity cleared');
     },
 
     show: _show,
