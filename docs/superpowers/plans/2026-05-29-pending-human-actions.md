@@ -97,3 +97,15 @@ Legend: each box is a ~30-second click or a copy-paste command, not an engineeri
 - [ ] After EXEC-DEPLOY SUCCESS: `/alive` 200.
 - [ ] Acceptance: login dragan3 → `orb.session.identity.resolved` shows is_anonymous=false + memory/cadence; logout → no silent authenticated drift; dragan1↔dragan3 switch → no leak; verify both Vertex + LiveKit canary.
 - [ ] **DECISION:** add the flag-gated "refuse anonymous on authenticated surface (401)" hard rule? Deferred so it can't break legitimately-anonymous public sessions; the identity event makes the drift observable first.
+
+---
+
+## Phase ORB-2+3 — Close/reopen continuity + cadence
+
+- [ ] **Apply migration** `supabase/migrations/20260606000000_DEV_COMHU_0503_orb_session_state.sql` (creates orb_session_state + orb_session_state_gc()).
+- [ ] Merge PR #2435 — https://github.com/exafyltd/vitana-platform/pull/2435 (DEV-COMHU-0503)
+- [ ] Apply orb-agent patch: `docs/patches/orb-agent/ORB-2-3-continuity-greeting.py` (honor skip/brief_resume + continuity hydration).
+- [ ] Apply vitana-v1 patch: `docs/patches/vitana-v1/ORB-2-3-continuity-cadence.md` (cache-bust + reset() on logout).
+- [ ] **Follow-up (needs live session):** wire handleLiveSessionStart hydration from orb_session_state (conversationId / transcript / lastTurnAt) + decideGreetingPolicyAuthoritative refactor; call recordWakeTurn on each meaningful turn.
+- [ ] After EXEC-DEPLOY SUCCESS: `/alive` 200.
+- [ ] Acceptance: close+reopen <60s → never `first`; reopen <15min → no repeat daily summary; logout → no leak (dragan1↔dragan3); LiveKit honors decisions.

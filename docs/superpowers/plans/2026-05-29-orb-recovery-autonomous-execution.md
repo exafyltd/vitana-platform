@@ -152,7 +152,7 @@ curl -sS https://gateway.vitanaland.com/command-hub/orb-widget.js | grep -c VTID
 | D — Observability + hygiene | DEV-COMHU-voice-budget-watch | Memory | code-complete (pending merge + deploy) | feat/DEV-COMHU-voice-budget-watch | #2408 | — | route+cron+CHub panel+typed topics; typecheck+build+jest(13) green |
 | ORB-0.1 — Cross-provider watchdog | DEV-COMHU-0501 | Recovery | code-complete (pending merge + deploy) | feat/DEV-COMHU-0501-orb-speaking-watchdog | #2431 | — | watchdog+diagnostics+regression+jest; typecheck/build/smoke/jest green |
 | ORB-1 — Auth contract | DEV-COMHU-0502 | Recovery | code-complete (pending merge + deploy) | feat/DEV-COMHU-0502-orb-auth-contract | #2432 | — | reactive setAuth+clearAuth, identity OASIS event; anti-leak preserved; surface-refusal deferred to flag (see PR) |
-| ORB-2+3 — Continuity + cadence | new | Recovery | pending | — | — | — | one combined PR |
+| ORB-2+3 — Continuity + cadence | DEV-COMHU-0503 | Recovery | code-complete (pending merge + deploy) | feat/DEV-COMHU-0503-orb-continuity-cadence | #2435 | — | migration+session-state helper+last_turn_at writer+continuity endpoints+widget reset; hydration wiring deferred to patch (needs live session) |
 | ORB-4 — Audio-ready handshake | new | Recovery | pending | — | — | — | depends on shared state from 2+3 |
 | ORB-5 — Autopilot CTA | new | Recovery | pending | — | — | — | depends on shared state from 2+3 |
 | ORB-6 — E2E regression + observability | new | Recovery | pending | — | — | — | parallel with 5 |
