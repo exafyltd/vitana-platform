@@ -1009,6 +1009,36 @@
     // only meant to guard the teardown window between _sessionStop and the
     // next intentional _sessionStart.
     _s._userInitiatedStop = false;
+
+    // DEV-COMHU-0503 (review fix): hydrate persisted continuity on a fresh
+    // reopen. _hide() persisted continuity then _sessionStop cleared the
+    // in-memory fields, so without this the reconnect-context builder below
+    // would start "first-time" even though a saved conversation exists. Only
+    // hydrate when in-memory continuity is empty (don't clobber a live
+    // reconnect that still has its transcript) and only for authed sessions.
+    if (_cfg.token && (!_s._transcriptHistory || _s._transcriptHistory.length === 0) && !_s.conversationId) {
+      try {
+        var contHeaders = { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + _cfg.token };
+        var contResp = await fetch(_cfg.gw + '/api/v1/orb/session/continuity', {
+          method: 'GET', headers: contHeaders, cache: 'no-store'
+        });
+        if (contResp && contResp.ok) {
+          var contData = await contResp.json();
+          var c = contData && contData.continuity;
+          if (c && typeof c === 'object') {
+            if (c.conversation_id) _s.conversationId = c.conversation_id;
+            if (Array.isArray(c.transcript_history) && c.transcript_history.length) {
+              _s._transcriptHistory = c.transcript_history.slice(-20);
+            }
+            if (c.last_turn_at) _s._lastTurnAt = c.last_turn_at;
+            if (c.last_greeting_at) _s._lastGreetingAt = c.last_greeting_at;
+            console.log('[VTOrb] continuity hydrated: conversation_id=' + (_s.conversationId || '<none>')
+              + ', transcript=' + ((_s._transcriptHistory && _s._transcriptHistory.length) || 0) + ' turns');
+          }
+        }
+      } catch (e) { /* continuity is an optimization — never block session start */ }
+    }
+
     _s.greetingAudioReceived = false;
     // VTID-01988: greetingComplete gates the post-greeting _startAudioCapture()
     // call. It used to only get reset in _sessionStop (full session teardown),
@@ -2537,6 +2567,10 @@
   // (anonymous has no durable identity — the gateway returns ok:false).
   function _persistContinuity(reason, ttlMinutes) {
     if (!_cfg.token) return; // anonymous → nothing durable to key on
+    // DEV-COMHU-0503 (review fix): during an intentional forget (_reset), the
+    // DELETE from _clearContinuity must NOT be raced by a _hide()-triggered
+    // POST that recreates the row. _reset sets this flag before calling _hide.
+    if (_s._suppressContinuityPersist) return;
     try {
       var headers = { 'Content-Type': 'application/json' };
       headers['Authorization'] = 'Bearer ' + _cfg.token;
@@ -2591,12 +2625,17 @@
   // DEV-COMHU-0503: intentional forget — logout / account switch / "start over".
   // Clears durable continuity, wipes in-memory identity-bound state, and closes.
   function _reset() {
-    _clearContinuity();
+    // DEV-COMHU-0503 (review fix): suppress the _hide()-path continuity POST so
+    // the DELETE below is not immediately raced by a fresh persist that would
+    // recreate the row — the intentional-forget path must end with NO row.
+    _s._suppressContinuityPersist = true;
     _s._transcriptHistory = [];
     _s.conversationId = null;
     _s._preDisconnectStage = null;
     _s._reconnectCount = 0;
     _hide();
+    _clearContinuity(); // DELETE last, after _hide's (now-suppressed) persist
+    _s._suppressContinuityPersist = false;
   }
 
   // VTID-NAV: Returns true when the widget is in any close-pending state.

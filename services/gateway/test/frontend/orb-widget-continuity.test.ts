@@ -52,6 +52,31 @@ describe('orb-widget close/reopen continuity (DEV-COMHU-0503)', () => {
     expect(body).toMatch(/_s\.conversationId = null/);
   });
 
+  it('_reset suppresses the _hide persist so DELETE is not raced by a POST (review fix)', () => {
+    const body = extractFunctionBody(source, 'function _reset()');
+    expect(body).toMatch(/_s\._suppressContinuityPersist = true/);
+    expect(body).toMatch(/_s\._suppressContinuityPersist = false/);
+    // Match statements (leading whitespace), not the words inside comments:
+    // suppression set → _hide() call → _clearContinuity() DELETE, in that order.
+    const iSuppress = body.indexOf('_s._suppressContinuityPersist = true');
+    const iHide = body.search(/\n\s*_hide\(\);/);
+    const iClear = body.search(/\n\s*_clearContinuity\(\);/);
+    expect(iSuppress).toBeLessThan(iHide);
+    expect(iHide).toBeLessThan(iClear);
+  });
+
+  it('_persistContinuity honors the suppression flag (review fix)', () => {
+    const body = extractFunctionBody(source, 'function _persistContinuity(reason, ttlMinutes)');
+    expect(body).toMatch(/if \(_s\._suppressContinuityPersist\) return;/);
+  });
+
+  it('_sessionStart hydrates persisted continuity on a fresh reopen (review fix)', () => {
+    const body = extractFunctionBody(source, 'async function _sessionStart()');
+    expect(body).toMatch(/\/api\/v1\/orb\/session\/continuity/);
+    expect(body).toMatch(/method: 'GET'/);
+    expect(body).toMatch(/_s\.conversationId = c\.conversation_id/);
+  });
+
   it('exposes reset on the public API', () => {
     expect(source).toMatch(/reset: _reset/);
   });
