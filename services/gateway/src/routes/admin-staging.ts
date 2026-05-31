@@ -443,6 +443,25 @@ router.post(
       const primaryDelay = 80 + hashIdx(`${seed}:p-delay`, i, 100);
       const candidateDelay = 60 + hashIdx(`${seed}:c-delay`, i, 160);
 
+      // VTID-03221 (Phase 1 W3-B1): dual-emit reliability.
+      //
+      // W3-B0 observed that runWithShadow's `void (async () => {...})()`
+      // candidate-await + emit chain doesn't reliably flush on Cloud Run
+      // staging with --min-instances=0. CPU throttling on idle drops the
+      // detached promise before the emit completes; only the explicit
+      // rollup event landed (2 events per 2 exerciser dispatches instead
+      // of 30+2).
+      //
+      // Fix: still invoke runWithShadow so the wrapper code path is
+      // exercised (it's the real voice-traffic path), but ALSO emit one
+      // awaited per-prompt eval.shadow.compared event from the exerciser
+      // itself. The awaited emit guarantees evidence lands regardless of
+      // detached-promise behavior. Per-prompt event is tagged
+      // metadata.exerciser_via='dual_emit_await' so consumers can tell
+      // it apart from organic events. Real voice traffic doesn't hit
+      // this — active sessions keep CPU allocated, so the IIFE flushes.
+
+      const runStart = Date.now();
       const result = await runWithShadow({
         feature,
         input: { text: input, exerciser_source: exerciserSource } as Record<string, unknown>,
@@ -458,6 +477,34 @@ router.post(
         extractKey: (out) => (out as { tool_name?: string }).tool_name ?? null,
         context: {
           session_id: `${sessionPrefix}-${i}`,
+        },
+      });
+      const wrapperMs = Date.now() - runStart;
+
+      // Awaited per-prompt emit — the guaranteed evidence path.
+      // Shape mirrors runWithShadow's emit payload (services/llm-router-shadow.ts)
+      // so the shadow-comparison report's rollup logic groups it correctly.
+      const agreement = !candidateWillError && primaryTool === candidateTool;
+      await emitOasisEvent({
+        vtid: 'VTID-03221',
+        type: 'eval.shadow.compared',
+        source: 'gateway/admin-staging-exerciser',
+        status: candidateWillError ? 'warning' : 'success',
+        message: candidateWillError
+          ? `exerciser ${feature}: candidate errored (idx=${i})`
+          : `exerciser ${feature}: primary=${primaryTool} candidate=${candidateTool} agree=${agreement}`,
+        payload: {
+          feature,
+          session_id: `${sessionPrefix}-${i}`,
+          primary_key: primaryTool,
+          candidate_key: candidateWillError ? null : candidateTool,
+          agreement: candidateWillError ? null : agreement,
+          primary_ms: primaryDelay,
+          candidate_ms: candidateDelay,
+          candidate_error: candidateWillError ? 'synthetic candidate error (exerciser)' : null,
+          exerciser_source: exerciserSource,
+          exerciser_via: 'dual_emit_await',
+          wrapper_ms: wrapperMs,
         },
       });
 
