@@ -219,4 +219,21 @@ describe('DEV-COMHU-0505 — autopilot CTA carries an executable on-yes tool', (
       recommendation_id: 'rec-cta',
     });
   });
+
+  // DEV-COMHU-0505 (review fix): the CTA metadata must reach a RUNTIME consumer,
+  // not just the type/contract. wake-brief-wiring persists the selected
+  // continuation's ask_permission+onYesTool into orb_session_state ('pending_cta')
+  // so a later "yes" resolves deterministically. Static check that the wiring
+  // exists (full provider-selection integration is covered by wake-brief-wiring).
+  test('wake-brief-wiring persists the pending CTA into orb_session_state', () => {
+    const fs = require('fs') as typeof import('fs');
+    const path = require('path') as typeof import('path');
+    const wiring = fs.readFileSync(
+      path.resolve(__dirname, '../../../../../src/services/wake-brief-wiring.ts'),
+      'utf8',
+    );
+    expect(wiring).toMatch(/writeOrbSessionState\(/);
+    expect(wiring).toMatch(/'pending_cta'/);
+    expect(wiring).toMatch(/onYesTool/);
+  });
 });
