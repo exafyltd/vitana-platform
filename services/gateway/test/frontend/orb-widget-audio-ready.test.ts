@@ -51,4 +51,11 @@ describe('orb-widget audio-ready handshake (DEV-COMHU-0504)', () => {
   it('re-arms the ack flag on session stop', () => {
     expect(source).toMatch(/_s\._audioReadySignaled = false;.*re-arm|_audioReadySignaled = false; \/\/ DEV-COMHU-0504/);
   });
+
+  it('re-arms the ack flag at the top of _sessionStart so reconnect paths re-ack (review fix)', () => {
+    // _attemptReconnect/_resetAndReconnect call _sessionStart without _sessionStop;
+    // the reset must live in _sessionStart to cover those recovery paths.
+    const body = extractFunctionBody(source, 'async function _sessionStart()');
+    expect(body).toMatch(/_s\._audioReadySignaled = false/);
+  });
 });

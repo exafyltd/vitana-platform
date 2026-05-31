@@ -10802,6 +10802,12 @@ router.post('/session/continuity', optionalAuth, async (req: AuthenticatedReques
       surface: 'orb',
     }).catch(() => {});
     return res.json({ ok: r.ok, reason: r.reason });
+  } catch (e) {
+    return res.status(200).json({ ok: false, reason: e instanceof Error ? e.message : String(e) });
+  }
+});
+
+/**
  * DEV-COMHU-0504 — ORB Recovery 4: audio-ready handshake.
  *
  * The client posts this as soon as its audio pipeline is genuinely ready

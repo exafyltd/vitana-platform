@@ -1044,6 +1044,12 @@
     // only meant to guard the teardown window between _sessionStop and the
     // next intentional _sessionStart.
     _s._userInitiatedStop = false;
+    // DEV-COMHU-0504 (review fix): re-arm the audio-ready ack for EVERY fresh
+    // _sessionStart, including reconnect paths (_attemptReconnect /
+    // _resetAndReconnect) that bypass _sessionStop. Without this, a recovered
+    // session keeps the prior session's _audioReadySignaled=true and never
+    // acks its new session_id, forcing the greeting gate to the 3s timeout.
+    _s._audioReadySignaled = false;
 
     // DEV-COMHU-0503 (review fix): hydrate persisted continuity on a fresh
     // reopen. _hide() persisted continuity then _sessionStop cleared the
