@@ -148,14 +148,24 @@ $check_triggers$;
 -- §2  Cascade & constraint behavior  (operating as service_role / superuser)
 -- ============================================================
 
--- Seed two synthetic test users in app_users (rolled back at end)
+-- Seed two synthetic test users in app_users (rolled back at end).
+-- VTID-03205 patch: app_users.email is `TEXT UNIQUE NOT NULL` per the
+-- VTID-01101 phase-A bootstrap migration. The original VTID-03186 ops
+-- script seeded only user_id, which would raise not_null_violation on
+-- email before any of the RLS / cascade assertions run. @example.invalid
+-- is RFC 6761 reserved for test use; the VTID-03186 prefix keeps email
+-- values unique even on re-run. display_name is nullable per the bootstrap
+-- migration but we set it for log readability.
 DO $seed_users$
 DECLARE
   user_a CONSTANT UUID := '00000000-0000-4000-a000-000000000a01';
   user_b CONSTANT UUID := '00000000-0000-4000-a000-000000000b01';
 BEGIN
-  INSERT INTO public.app_users (user_id) VALUES (user_a) ON CONFLICT DO NOTHING;
-  INSERT INTO public.app_users (user_id) VALUES (user_b) ON CONFLICT DO NOTHING;
+  INSERT INTO public.app_users (user_id, email, display_name)
+  VALUES
+    (user_a, 'vtid-03186-user-a@example.invalid', 'VTID-03186 User A'),
+    (user_b, 'vtid-03186-user-b@example.invalid', 'VTID-03186 User B')
+  ON CONFLICT (user_id) DO NOTHING;
 END
 $seed_users$;
 
