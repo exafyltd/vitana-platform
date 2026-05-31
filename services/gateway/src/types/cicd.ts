@@ -868,6 +868,11 @@ export type CicdEventType =
   // prefix in the same PR.
   | 'staging.migration.completed'
   | 'staging.migration.failed'
+  // VTID-03204 (Phase 1 W2 acceptance helper): one-off endpoint that flips
+  // tenant_settings.feature_flags.data_export_ok on staging tenants so the
+  // dataset-extraction PII gate can produce real rows. Staging-only by hard
+  // guard.
+  | 'staging.tenant_consent.flipped'
   | 'production.publish.requested'
   | 'production.publish.completed'
   | 'production.publish.failed'
