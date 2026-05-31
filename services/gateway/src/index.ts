@@ -226,6 +226,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const domainRoutingRouter = require('./routes/domain-routing').default;
   // VTID-01119: User Preference & Constraint Modeling Engine
   const userPreferencesRouter = require('./routes/user-preferences').default;
+  // VTID-03213: Universal Cart Phase 1 gateway slice (universal_carts / universal_cart_items / universal_cart_events)
+  const universalCartRouter = require('./routes/universal-cart').default;
   // VTID-01126: D32 Situational Awareness Engine - situation understanding layer
   const situationalAwarenessRouter = require('./routes/situational-awareness').default;
   // VTID-01127: D33 Availability, Time-Window & Readiness Engine
@@ -1179,6 +1181,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
 
   // VTID-01119: User Preference & Constraint Modeling Engine
   mountRouterSync(app, '/api/v1/user-preferences', userPreferencesRouter, { owner: 'user-preferences' });
+
+  // VTID-03213: Universal Cart Phase 1 gateway slice — community-role-gated cart over universal_* tables
+  mountRouterSync(app, '/api/v1/universal-cart', universalCartRouter, { owner: 'universal-cart' });
 
   // VTID-01126: D32 Situational Awareness Engine - situation understanding layer
   mountRouterSync(app, '/api/v1/situational', situationalAwarenessRouter, { owner: 'situational-awareness' });
