@@ -238,6 +238,14 @@ export async function emitCartEvent(args: {
   }
 }
 
+function isNoRowsError(error: any): boolean {
+  return error?.code === 'PGRST116';
+}
+
+function isUniqueViolation(error: any): boolean {
+  return error?.code === '23505';
+}
+
 // =============================================================================
 // Request schemas
 // =============================================================================
@@ -299,7 +307,7 @@ router.post('/', async (req: Request, res: Response) => {
   if (existing.data) {
     return res.status(200).json({ ok: true, cart: existing.data, created: false });
   }
-  if (existing.error && existing.error.code && existing.error.code !== 'PGRST116') {
+  if (existing.error && existing.error.code && !isNoRowsError(existing.error)) {
     return res.status(500).json({
       ok: false,
       error: 'cart_lookup_failed',
@@ -324,6 +332,26 @@ router.post('/', async (req: Request, res: Response) => {
     })
     .select('*')
     .single();
+
+  if (created.error && isUniqueViolation(created.error)) {
+    const racedExisting = await supabase
+      .from('universal_carts')
+      .select('*')
+      .eq('user_id', id.user_id)
+      .eq('status', 'active')
+      .maybeSingle();
+
+    if (racedExisting.data) {
+      return res.status(200).json({ ok: true, cart: racedExisting.data, created: false });
+    }
+    if (racedExisting.error && !isNoRowsError(racedExisting.error)) {
+      return res.status(500).json({
+        ok: false,
+        error: 'cart_lookup_failed',
+        detail: racedExisting.error.message,
+      });
+    }
+  }
 
   if (created.error) {
     return res.status(500).json({
@@ -360,7 +388,7 @@ router.get('/', async (req: Request, res: Response) => {
     .eq('status', 'active')
     .maybeSingle();
 
-  if (cartRes.error && cartRes.error.code !== 'PGRST116') {
+  if (cartRes.error && !isNoRowsError(cartRes.error)) {
     return res.status(500).json({
       ok: false,
       error: 'cart_lookup_failed',
@@ -422,7 +450,7 @@ router.post('/items', async (req: Request, res: Response) => {
     .eq('status', 'active')
     .maybeSingle();
 
-  if (cartLookup.error && cartLookup.error.code !== 'PGRST116') {
+  if (cartLookup.error && !isNoRowsError(cartLookup.error)) {
     return res.status(500).json({
       ok: false,
       error: 'cart_lookup_failed',
@@ -444,21 +472,48 @@ router.post('/items', async (req: Request, res: Response) => {
       })
       .select('id')
       .single();
-    if (newCart.error || !newCart.data) {
+    if (newCart.error && isUniqueViolation(newCart.error)) {
+      const racedCart = await supabase
+        .from('universal_carts')
+        .select('id')
+        .eq('user_id', id.user_id)
+        .eq('status', 'active')
+        .maybeSingle();
+
+      if (racedCart.error && !isNoRowsError(racedCart.error)) {
+        return res.status(500).json({
+          ok: false,
+          error: 'cart_lookup_failed',
+          detail: racedCart.error.message,
+        });
+      }
+      if (racedCart.data?.id) {
+        cartId = racedCart.data.id as string;
+      }
+    } else if (newCart.error || !newCart.data) {
       return res.status(500).json({
         ok: false,
         error: 'cart_create_failed',
         detail: newCart.error?.message,
       });
     }
-    cartId = newCart.data.id as string;
-    cartCreatedThisRequest = true;
-    await emitCartEvent({
-      cart_id: cartId,
-      user_id: id.user_id,
-      event_type: 'cart.created',
-      event_payload: {},
-    });
+    if (!cartId && newCart.data?.id) {
+      cartId = newCart.data.id as string;
+      cartCreatedThisRequest = true;
+      await emitCartEvent({
+        cart_id: cartId,
+        user_id: id.user_id,
+        event_type: 'cart.created',
+        event_payload: {},
+      });
+    }
+    if (!cartId) {
+      return res.status(500).json({
+        ok: false,
+        error: 'cart_create_failed',
+        detail: newCart.error?.message,
+      });
+    }
   }
 
   // 2. Check whether the product is already in the cart with status='active'.
@@ -470,7 +525,7 @@ router.post('/items', async (req: Request, res: Response) => {
     .eq('status', 'active')
     .maybeSingle();
 
-  if (existingItem.error && existingItem.error.code !== 'PGRST116') {
+  if (existingItem.error && !isNoRowsError(existingItem.error)) {
     return res.status(500).json({
       ok: false,
       error: 'item_lookup_failed',
@@ -608,7 +663,7 @@ router.patch('/items/:itemId', async (req: Request, res: Response) => {
     .eq('id', itemId)
     .maybeSingle();
 
-  if (current.error && current.error.code !== 'PGRST116') {
+  if (current.error && !isNoRowsError(current.error)) {
     return res.status(500).json({
       ok: false,
       error: 'item_lookup_failed',
@@ -684,7 +739,7 @@ router.delete('/items/:itemId', async (req: Request, res: Response) => {
     .eq('id', itemId)
     .maybeSingle();
 
-  if (current.error && current.error.code !== 'PGRST116') {
+  if (current.error && !isNoRowsError(current.error)) {
     return res.status(500).json({
       ok: false,
       error: 'item_lookup_failed',
@@ -748,7 +803,7 @@ router.post('/items/:itemId/complete', async (req: Request, res: Response) => {
     .eq('id', itemId)
     .maybeSingle();
 
-  if (current.error && current.error.code !== 'PGRST116') {
+  if (current.error && !isNoRowsError(current.error)) {
     return res.status(500).json({
       ok: false,
       error: 'item_lookup_failed',
@@ -821,7 +876,7 @@ router.get('/events', async (req: Request, res: Response) => {
     .eq('status', 'active')
     .maybeSingle();
 
-  if (cartRes.error && cartRes.error.code !== 'PGRST116') {
+  if (cartRes.error && !isNoRowsError(cartRes.error)) {
     return res.status(500).json({
       ok: false,
       error: 'cart_lookup_failed',

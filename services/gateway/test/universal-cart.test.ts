@@ -329,6 +329,35 @@ describe(`${'VTID-03213'} §3 active-cart behavior`, () => {
     expect(mockSupabase.__insertsFor('universal_cart_events')).toHaveLength(0);
   });
 
+  test('POST / recovers when a concurrent request creates the active cart first', async () => {
+    seedAuth({ role: 'community' });
+    // initial universal_carts SELECT → no existing
+    mockSupabase.__seed({ data: null, error: null });
+    // universal_carts INSERT → unique conflict from the partial active-cart index
+    mockSupabase.__seed({
+      data: null,
+      error: {
+        code: '23505',
+        message: 'duplicate key value violates unique constraint "universal_carts_one_active_per_user"',
+      },
+    });
+    // follow-up SELECT after the conflict → cart created by the racing request
+    mockSupabase.__seed({
+      data: { id: CART_A, user_id: USER_A, status: 'active', tenant_id: TENANT_1 },
+      error: null,
+    });
+
+    const res = await request(buildApp())
+      .post('/api/v1/universal-cart')
+      .set('Authorization', BEARER_A);
+
+    expect(res.status).toBe(200);
+    expect(res.body.created).toBe(false);
+    expect(res.body.cart.id).toBe(CART_A);
+    expect(mockSupabase.__insertsFor('universal_carts')).toHaveLength(1);
+    expect(mockSupabase.__insertsFor('universal_cart_events')).toHaveLength(0);
+  });
+
   test('GET / returns null cart + empty items when none exists', async () => {
     seedAuth({ role: 'community' });
     mockSupabase.__seed({ data: null, error: null }); // no cart
@@ -445,6 +474,54 @@ describe(`${'VTID-03213'} §4 item mutation + §5 event emission`, () => {
     expect(eventInserts[0].event_payload.cart_item_id).toBe(ITEM_A);
     // Sanitizer must drop disallowed keys like product_id wait — product_id IS allowed.
     expect(eventInserts[0].event_payload.product_id).toBe(PRODUCT_A);
+  });
+
+  test('POST /items — recovers active-cart unique conflict and still inserts item', async () => {
+    seedAuth({ role: 'community' });
+    // cart lookup → none
+    mockSupabase.__seed({ data: null, error: null });
+    // cart insert → concurrent creator won the unique race
+    mockSupabase.__seed({
+      data: null,
+      error: {
+        code: '23505',
+        message: 'duplicate key value violates unique constraint "universal_carts_one_active_per_user"',
+      },
+    });
+    // raced-cart lookup → existing active cart
+    mockSupabase.__seed({ data: { id: CART_A }, error: null });
+    // existing-item lookup → none
+    mockSupabase.__seed({ data: null, error: null });
+    // item insert
+    mockSupabase.__seed({
+      data: { id: ITEM_A, cart_id: CART_A, product_id: PRODUCT_A, quantity: 1, status: 'active' },
+      error: null,
+    });
+    // item.added event insert
+    mockSupabase.__seed({ data: null, error: null });
+
+    const res = await request(buildApp())
+      .post('/api/v1/universal-cart/items')
+      .set('Authorization', BEARER_A)
+      .send({
+        product_id: PRODUCT_A,
+        item_type: 'supplement',
+        quantity: 1,
+        source_surface: 'web',
+      });
+
+    expect(res.status).toBe(201);
+    expect(res.body.cart_id).toBe(CART_A);
+    expect(res.body.cart_created).toBe(false);
+    expect(res.body.action).toBe('created');
+
+    const itemInserts = mockSupabase.__insertsFor('universal_cart_items');
+    expect(itemInserts).toHaveLength(1);
+    expect(itemInserts[0].cart_id).toBe(CART_A);
+
+    const eventInserts = mockSupabase.__insertsFor('universal_cart_events');
+    expect(eventInserts).toHaveLength(1);
+    expect(eventInserts[0].event_type).toBe('item.added');
   });
 
   test('POST /items — bumps quantity on duplicate product and emits item.added with before/after', async () => {
