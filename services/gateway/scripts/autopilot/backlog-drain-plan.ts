@@ -64,7 +64,7 @@ const PHASE_1_KEYWORDS: Record<string, RegExp> = {
 interface VtidLedgerRow {
   vtid: string;
   title: string | null;
-  description_md: string | null;
+  description: string | null;
   summary: string | null;
   layer: string | null;
   module: string | null;
@@ -185,7 +185,7 @@ async function fetchPendingLedger(): Promise<VtidLedgerRow[]> {
     + '&is_terminal=eq.false'
     + '&status=in.(pending,scheduled,planned,planning,blocked)'
     + '&order=created_at.asc&limit=5000'
-    + '&select=vtid,title,description_md,summary,layer,module,status,is_terminal,created_at,updated_at,metadata';
+    + '&select=vtid,title,description,summary,layer,module,status,is_terminal,created_at,updated_at,metadata';
   const resp = await fetch(url, {
     headers: { apikey: PROD_SUPABASE_KEY, Authorization: `Bearer ${PROD_SUPABASE_KEY}` },
   });
@@ -210,7 +210,7 @@ function classify(row: VtidLedgerRow): Candidate {
     || (row.status ?? '').toLowerCase() === 'scheduled';
   const prior_pr_open = getBool(meta, 'prior_pr_open', 'pr_open') === true;
   const age_days = ageDays(row.created_at);
-  const text = `${row.title ?? ''} ${row.summary ?? ''} ${row.description_md ?? ''}`;
+  const text = `${row.title ?? ''} ${row.summary ?? ''} ${row.description ?? ''}`;
   const phase1_buckets = phase1BucketsFor(text);
 
   const block_reasons: string[] = [];
