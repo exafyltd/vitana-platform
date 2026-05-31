@@ -173,6 +173,7 @@
     thinkingStartTime: 0,    // When thinking started — for elapsed time display
     greetingAudioReceived: false,
     greetingComplete: false,  // True after first turn_complete — mic opens only after this
+    _audioReadySignaled: false, // DEV-COMHU-0504: audio-ready ack posted once per session
 
     // UI state
     voiceState: 'IDLE', // IDLE | LISTENING | THINKING | SPEAKING | MUTED
@@ -872,6 +873,38 @@
   // 5. AUDIO PLAYBACK PIPELINE
   // ============================================================
 
+  // DEV-COMHU-0504 — ORB Recovery 4: audio-ready handshake.
+  // POST once per session when the playback pipeline is genuinely ready
+  // (AudioContext exists + running). The backend records the ack so it can
+  // release the greeting on ack-or-3s. Idempotent + best-effort.
+  function _signalAudioReady() {
+    if (_s._audioReadySignaled) return;
+    if (!_s.sessionId) return;
+    // Ensure a playback context exists; if it's suspended, kick a resume so the
+    // pipeline reaches 'running' (the canonical "ready" state).
+    try {
+      if (!_s.playbackCtx || _s.playbackCtx.state === 'closed') {
+        _s.playbackCtx = new (window.AudioContext || window.webkitAudioContext)();
+      }
+      var ctx = _s.playbackCtx;
+      if (ctx.state === 'suspended' && ctx.resume) {
+        ctx.resume().catch(function () {});
+      }
+      if (ctx.state !== 'running') return; // not ready yet; will retry on resume
+    } catch (e) {
+      return; // no audio context available — let the server 3s timeout cover it
+    }
+    _s._audioReadySignaled = true;
+    try {
+      var headers = { 'Content-Type': 'application/json' };
+      if (_cfg.token) headers['Authorization'] = 'Bearer ' + _cfg.token;
+      fetch(_cfg.gw + '/api/v1/orb/session/' + encodeURIComponent(_s.sessionId) + '/audio-ready', {
+        method: 'POST', headers: headers, cache: 'no-store', keepalive: true, body: '{}'
+      }).catch(function () { /* greeting falls back to the 3s server timeout */ });
+      console.log('[VTOrb] audio-ready signaled for session ' + _s.sessionId);
+    } catch (e) { /* best-effort */ }
+  }
+
   function _playAudio(base64Data, mimeType) {
     // Belt-and-suspenders: drop chunks that arrive after a user-initiated stop
     // or while the overlay is hidden. _processQueue auto-recreates a closed
@@ -910,6 +943,8 @@
       }
       ctx.resume().then(function () {
         _s._resumeRetryStartedAt = 0;
+        // DEV-COMHU-0504: ctx just reached 'running' → pipeline now ready.
+        _signalAudioReady();
         // Re-enter on next tick so any pending chunks drain.
         setTimeout(_processQueue, 0);
       }).catch(function (e) {
@@ -1009,6 +1044,12 @@
     // only meant to guard the teardown window between _sessionStop and the
     // next intentional _sessionStart.
     _s._userInitiatedStop = false;
+    // DEV-COMHU-0504 (review fix): re-arm the audio-ready ack for EVERY fresh
+    // _sessionStart, including reconnect paths (_attemptReconnect /
+    // _resetAndReconnect) that bypass _sessionStop. Without this, a recovered
+    // session keeps the prior session's _audioReadySignaled=true and never
+    // acks its new session_id, forcing the greeting gate to the 3s timeout.
+    _s._audioReadySignaled = false;
 
     // DEV-COMHU-0503 (review fix): hydrate persisted continuity on a fresh
     // reopen. _hide() persisted continuity then _sessionStop cleared the
@@ -1200,6 +1241,10 @@
 
       _s.sessionId = data.session_id;
       _s.active = true;
+      // DEV-COMHU-0504 — ORB Recovery 4: as soon as we have a session id, try to
+      // signal audio-pipeline readiness so the backend can release the greeting
+      // the moment the client can actually play it (ack-or-3s gate server-side).
+      _signalAudioReady();
       // VTID-02020: pin the conversation_id returned by the backend so future
       // reconnects can re-thread the same conversation. The backend will
       // either echo back the one we sent or mint a fresh UUID on first start.
@@ -1317,6 +1362,7 @@
     clearTimeout(_s.stuckGuardTimer);
     _s.stuckGuardTimer = null;
     _s.greetingAudioReceived = false;
+    _s._audioReadySignaled = false; // DEV-COMHU-0504: re-arm ack for next session
     _s.lastScheduledEnd = 0;
 
     // Close SSE — VTID-03098: detach handlers FIRST so the manual close
