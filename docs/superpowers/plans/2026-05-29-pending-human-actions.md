@@ -200,3 +200,42 @@ ready) and `#2438`/`#2439` consume the `orb_session_state` substrate from `#2435
 Re-Apply (#2400, #2401) · A (#2403) · D (#2408) · B (#2411) · C design-gate (#2412) · ORB-0.1 (#2431) · ORB-1 (#2432) · ORB-2+3 (#2435) · ORB-4 (#2437) · ORB-5 (#2438) · ORB-6 (#2439). Tracking PR: #2402.
 
 **Phase C remains a founder STOP-AND-ASK gate — no code until the design doc (#2412) is approved.**
+
+---
+
+## MERGE STATUS — 2026-05-31 (all 12 PRs merged to main by the autonomous run)
+
+Memory stream: #2400 #2401 #2403 #2408 #2411 — merged.
+Recovery stream: #2431 #2432 #2435 #2437 #2438 #2439 — merged.
+Phase C (#2412) — design-doc gate, unmerged by design (founder approval).
+
+Merge auto-triggered AUTO-DEPLOY → EXEC-DEPLOY per commit marker. Sandbox cannot
+observe EXEC-DEPLOY runs or curl prod (egress blocked) — verify deploy + /alive
+from an environment with access.
+
+Codex review caught real bugs that were fixed forward before merge:
+- #2432: setAuth account-switch leak + clearAuth not stopping the live session.
+- #2435: continuity never hydrated on reopen; reset re-persist race; last-turn
+  writer never wired (now called on every Vertex turn_complete).
+- #2437: audio-ready ack not re-armed on reconnect-created sessions. (Also
+  repaired a CRLF/EOL corruption an earlier rebase introduced into orb-live.ts.)
+- #2438: onYesTool never reached a runtime consumer → now persisted to
+  orb_session_state ('pending_cta', 5-min TTL) in wake-brief-wiring.
+
+### STILL REQUIRED (out of sandbox reach — must be done with prod/DB/repo access)
+1. **Apply migration** supabase/migrations/20260606000000_DEV_COMHU_0503_orb_session_state.sql
+   — continuity (#2435), audio-ready ack (#2437), pending-CTA (#2438) all read/write
+   orb_session_state. Code degrades safely without it, but the features are inert
+   until applied.
+2. **Verify exec_sql(query,params) RPC** exists for the voice-budget route/cron (#2408).
+3. **Apply cross-repo patches** (cannot reach those repos from here):
+   - vitana-v1: docs/patches/vitana-v1/ORB-0.1-speaking-watchdog.md, ORB-1-auth-contract.md,
+     ORB-2-3-continuity-cadence.md, ORB-4-audio-ready.md (each = cache-bust + LiveKit wiring).
+   - orb-agent: docs/patches/orb-agent/{phaseA-bootstrap-cap,ORB-2-3-continuity-greeting,ORB-4-audio-ready,ORB-5-autopilot-cta}.py
+4. **Runtime-read follow-ups (need live-session verification):**
+   - #2437: greeting-release gate waits on audio-ready ack-or-3s in connectToLiveAPI.
+   - #2438: turn handler READS pending_cta on an affirmative turn (write side shipped).
+   - #2435: handleLiveSessionStart hydration + decideGreetingPolicyAuthoritative refactor.
+5. **Phase B (#2411) rollout:** VOICE_RANKING_SHADOW 48h → dragan1 canary → expand.
+6. **Phase C (#2412):** founder approval of the design doc before any code.
+7. Prod smokes (dragan3 + dragan1, Vertex + LiveKit canary) per each phase block above.
