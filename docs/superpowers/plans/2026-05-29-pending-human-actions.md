@@ -129,3 +129,19 @@ Legend: each box is a ~30-second click or a copy-paste command, not an engineeri
 - [ ] Apply orb-agent patch: `docs/patches/orb-agent/ORB-5-autopilot-cta.py` (declare activate_recommendation + pending-CTA preference).
 - [ ] **Follow-up (needs live session):** persist pending_cta in orb_session_state for cross-transport "yes" resolution.
 - [ ] Acceptance: every permission offer carries executable CTA; "yes" → activate_recommendation(id); unauthorized → truthful fallback; both providers.
+
+---
+
+## Phase ORB-6 — E2E regression + observability
+
+- [ ] Merge PR #2439 — https://github.com/exafyltd/vitana-platform/pull/2439 (DEV-COMHU-0506)
+- [ ] Implement `GET /api/v1/admin/orb-recovery-health` + cockpit card (Command Hub edit) per `docs/superpowers/plans/orb-recovery-observability-and-e2e.md`.
+- [ ] Run the synthetic Playwright flow on vitanaland.com (Vertex + LiveKit canary) per the same doc.
+
+---
+
+## ALL 10 PHASES CODE-COMPLETE (2026-05-31)
+
+Re-Apply (#2400, #2401) · A (#2403) · D (#2408) · B (#2411) · C design-gate (#2412) · ORB-0.1 (#2431) · ORB-1 (#2432) · ORB-2+3 (#2435) · ORB-4 (#2437) · ORB-5 (#2438) · ORB-6 (#2439). Tracking PR: #2402.
+
+**Phase C remains a founder STOP-AND-ASK gate — no code until the design doc (#2412) is approved.**
