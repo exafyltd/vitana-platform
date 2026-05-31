@@ -94,10 +94,14 @@ jobs:
           echo "HTTP $HTTP_CODE"
           echo "Response: $BODY_RESP"
 
-          # Pretty-print summary into the GH step summary.
-          python3 <<PY
+          # Pretty-print summary into the GH step summary. Single-quoted
+          # heredoc so bash doesn't try to interpret backticks/${} inside
+          # the Python source. Values are passed via env to keep the
+          # heredoc body literal.
+          BODY_RESP="$BODY_RESP" HTTP_CODE="$HTTP_CODE" python3 <<'PY'
           import json, os
-          body = '''${BODY_RESP}'''
+          body = os.environ.get('BODY_RESP', '')
+          http_code = os.environ.get('HTTP_CODE', '?')
           try:
               d = json.loads(body)
           except Exception as e:
@@ -107,25 +111,25 @@ jobs:
           lines = []
           lines.append('## Staging tenant consent flip')
           lines.append('')
-          lines.append(f"- HTTP: `${HTTP_CODE}`")
-          lines.append(f"- ok: `{d.get('ok')}`")
-          lines.append(f"- dry_run: `{d.get('dry_run')}`")
-          lines.append(f"- scanned: `{d.get('scanned')}`")
-          lines.append(f"- already_consented: `{d.get('already_consented')}`")
+          lines.append(f'- HTTP: {http_code}')
+          lines.append(f'- ok: {d.get("ok")}')
+          lines.append(f'- dry_run: {d.get("dry_run")}')
+          lines.append(f'- scanned: {d.get("scanned")}')
+          lines.append(f'- already_consented: {d.get("already_consented")}')
           if d.get('dry_run'):
-              lines.append(f"- to_flip: `{d.get('to_flip')}`")
+              lines.append(f'- to_flip: {d.get("to_flip")}')
               sample = d.get('sample_to_flip', [])
               if sample:
-                  lines.append(f"- sample_to_flip: {', '.join('`'+s+'`' for s in sample[:5])}")
+                  lines.append('- sample_to_flip: ' + ', '.join(sample[:5]))
           else:
-              lines.append(f"- flipped: `{d.get('flipped')}`")
-              lines.append(f"- failed: `{d.get('failed')}`")
+              lines.append(f'- flipped: {d.get("flipped")}')
+              lines.append(f'- failed: {d.get("failed")}')
               fids = d.get('flipped_tenant_ids', [])
               if fids:
                   lines.append('')
                   lines.append('### Flipped tenants')
                   for t in fids[:20]:
-                      lines.append(f'  - `{t}`')
+                      lines.append('  - ' + t)
 
           summary_path = os.environ.get('GITHUB_STEP_SUMMARY')
           if summary_path:
