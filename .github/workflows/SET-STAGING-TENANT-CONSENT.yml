@@ -1,26 +1,19 @@
-name: Set staging tenant consent flag (one-off helper)
+name: Set staging tenant consent flag (one-off helper, v2 curl path)
 
-# VTID-03202 — Phase 1 W2 acceptance helper. The Track C C1 commit
-# (98d2f4f1, #2415) introduced services/data-export-consent.ts which reads
-# tenant_settings.feature_flags.data_export_ok and defaults OFF. Until a
-# staging tenant has the flag set, every producing surface (orb-live,
-# intent emitter, memory writer) emits OASIS events WITHOUT
-# data_export_ok, and the dataset-extraction PII gate keeps filtering
-# them out. This workflow flips that flag on selected staging tenants so
-# CRON-DATASET-EXTRACTION starts yielding real rows.
+# VTID-03206 — rewrite of the original VTID-03202 workflow.
 #
-# HARD GUARDS (in order):
-#   1. Confirm phrase must equal literal 'I-mean-staging-consent'
-#   2. STAGING_SUPABASE_URL must contain staging project_ref
-#      (rsdakjqpvcpgomltdmxu) AND must NOT contain prod project_ref
-#      (inmkhvwdcuyhnxkgfvsb)
-#   3. dry_run defaults to 'true' — first run prints what WOULD change
-#      without writing; operator re-runs with dry_run=false to actually
-#      flip the flag
+# The original tried to resolve STAGING_SUPABASE_URL +
+# STAGING_SUPABASE_SERVICE_ROLE_KEY from GCP Secret Manager via the WIF SA.
+# That path is blocked: the W1 grants for those two secrets went to the
+# Cloud Run runtime SA (vitana-vertex-ai-service@), not the GitHub
+# Actions WIF SA. The WIF SA also lacks secretmanager.secrets.getIamPolicy
+# on those secrets, so even the self-grant workflow
+# (GRANT-WIF-STAGING-SECRETS.yml) fails with PERMISSION_DENIED.
 #
-# Prereqs:
-#   - WIF SA has secretmanager.secretAccessor on STAGING_SUPABASE_URL +
-#     STAGING_SUPABASE_SERVICE_ROLE_KEY (granted in W1)
+# v2 path: VTID-03204 shipped POST /api/v1/admin/staging/tenant-consent/flip
+# on gateway-staging, gated by GATEWAY_SERVICE_TOKEN + staging-only env
+# guard. This workflow just curls that endpoint with the repo secret.
+# No Supabase access from this workflow, no IAM grant needed.
 
 on:
   workflow_dispatch:
@@ -30,11 +23,11 @@ on:
         required: true
         default: ''
       tenant_id:
-        description: "Tenant id to flip (or 'ALL' for every staging tenant). Staging has ~11 test users; ALL is the expected default."
+        description: "Tenant id to flip (or 'ALL' for every staging tenant)"
         required: true
         default: 'ALL'
       dry_run:
-        description: "true = preview rows that WOULD change (no writes). false = actually flip the flag."
+        description: "true = preview (no writes). false = apply."
         required: true
         default: 'true'
         type: choice
@@ -42,17 +35,14 @@ on:
 
 permissions:
   contents: read
-  id-token: write
 
 env:
-  STAGING_PROJECT_REF: rsdakjqpvcpgomltdmxu
-  PROD_PROJECT_REF: inmkhvwdcuyhnxkgfvsb
-  GCP_PROJECT: lovable-vitana-vers1
+  STAGING_GATEWAY_URL: https://gateway-staging-q74ibpv6ia-uc.a.run.app
 
 jobs:
   set-consent:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 5
     steps:
       - name: Confirm staging intent
         run: |
@@ -61,138 +51,90 @@ jobs:
             echo "::error::confirm input must be exactly 'I-mean-staging-consent' (got: '${{ inputs.confirm }}')"
             exit 1
           fi
-          echo "Confirm phrase OK."
 
-      - name: Auth to GCP (WIF)
-        uses: google-github-actions/auth@v2
-        with:
-          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
-          service_account: ${{ secrets.GCP_WIF_SA_EMAIL }}
-
-      - uses: google-github-actions/setup-gcloud@v2
-
-      - name: Resolve STAGING Supabase creds + HARD GUARD project_ref
-        run: |
-          set -euo pipefail
-          URL=$(gcloud secrets versions access latest --secret=STAGING_SUPABASE_URL --project="${GCP_PROJECT}")
-          KEY=$(gcloud secrets versions access latest --secret=STAGING_SUPABASE_SERVICE_ROLE_KEY --project="${GCP_PROJECT}")
-          if [ -z "$URL" ] || [ -z "$KEY" ]; then
-            echo "::error::STAGING_SUPABASE_URL or STAGING_SUPABASE_SERVICE_ROLE_KEY empty"
-            exit 1
-          fi
-          if ! printf '%s' "$URL" | grep -q "${STAGING_PROJECT_REF}"; then
-            echo "::error::STAGING_SUPABASE_URL does not contain staging project_ref (${STAGING_PROJECT_REF})"
-            exit 1
-          fi
-          if printf '%s' "$URL" | grep -q "${PROD_PROJECT_REF}"; then
-            echo "::error::STAGING_SUPABASE_URL contains PROD project_ref (${PROD_PROJECT_REF}). HARD STOP."
-            exit 1
-          fi
-          echo "::add-mask::$URL"
-          echo "::add-mask::$KEY"
-          {
-            echo "STAGING_SUPABASE_URL=$URL"
-            echo "STAGING_SUPABASE_SERVICE_ROLE_KEY=$KEY"
-          } >> "$GITHUB_ENV"
-          echo "STAGING_SUPABASE_URL targets ${STAGING_PROJECT_REF} — OK."
-
-      - name: Flip data_export_ok on staging tenant_settings
+      - name: Call gateway-staging consent flip endpoint
         env:
-          TENANT_FILTER: ${{ inputs.tenant_id }}
+          GATEWAY_SERVICE_TOKEN: ${{ secrets.GATEWAY_SERVICE_TOKEN }}
+          TENANT_ID: ${{ inputs.tenant_id }}
           DRY_RUN: ${{ inputs.dry_run }}
         run: |
-          node <<'NODE'
-          const URL = process.env.STAGING_SUPABASE_URL;
-          const KEY = process.env.STAGING_SUPABASE_SERVICE_ROLE_KEY;
-          const TENANT_FILTER = process.env.TENANT_FILTER || 'ALL';
-          const DRY_RUN = process.env.DRY_RUN !== 'false';
+          set -euo pipefail
+          if [ -z "${GATEWAY_SERVICE_TOKEN:-}" ]; then
+            echo "::error::GATEWAY_SERVICE_TOKEN repo secret is missing"
+            exit 1
+          fi
 
-          const headers = {
-            apikey: KEY,
-            Authorization: `Bearer ${KEY}`,
-            'Content-Type': 'application/json',
-          };
+          # First, sanity-check the staging gateway is healthy + on the right env.
+          HEALTH=$(curl -sS --max-time 10 "${STAGING_GATEWAY_URL}/api/v1/admin/health")
+          ENV=$(printf '%s' "$HEALTH" | python3 -c "import sys, json; print(json.load(sys.stdin).get('env',''))")
+          if [ "$ENV" != "staging" ]; then
+            echo "::error::staging gateway health did not return env=staging (got '$ENV'): $HEALTH"
+            exit 1
+          fi
+          echo "Staging gateway healthy: $HEALTH"
 
-          async function fetchTenants() {
-            const filter = TENANT_FILTER === 'ALL' ? '' : `&tenant_id=eq.${encodeURIComponent(TENANT_FILTER)}`;
-            const resp = await fetch(`${URL}/rest/v1/tenant_settings?select=tenant_id,feature_flags${filter}&limit=200`, { headers });
-            if (!resp.ok) {
-              console.error(`fetch tenant_settings failed: ${resp.status} ${await resp.text()}`);
-              process.exit(1);
-            }
-            return await resp.json();
-          }
+          # Build body.
+          BODY=$(python3 -c "
+          import json, os
+          body = {'tenant_id': os.environ['TENANT_ID'], 'dry_run': os.environ['DRY_RUN'].lower() != 'false'}
+          print(json.dumps(body))
+          ")
+          echo "Body: $BODY"
 
-          async function flipOne(tenantId, currentFlags) {
-            const flags = { ...(currentFlags || {}), data_export_ok: true };
-            const resp = await fetch(
-              `${URL}/rest/v1/tenant_settings?tenant_id=eq.${encodeURIComponent(tenantId)}`,
-              {
-                method: 'PATCH',
-                headers: { ...headers, Prefer: 'return=minimal' },
-                body: JSON.stringify({ feature_flags: flags }),
-              },
-            );
-            if (!resp.ok) {
-              throw new Error(`PATCH ${tenantId} failed: ${resp.status} ${await resp.text()}`);
-            }
-          }
+          # Call the endpoint.
+          RESP=$(curl -sS --max-time 30 -w "\n__HTTP__%{http_code}" \
+            -X POST "${STAGING_GATEWAY_URL}/api/v1/admin/staging/tenant-consent/flip" \
+            -H "Authorization: Bearer ${GATEWAY_SERVICE_TOKEN}" \
+            -H "Content-Type: application/json" \
+            -d "$BODY")
 
-          (async () => {
-            const tenants = await fetchTenants();
-            console.log(`Found ${tenants.length} tenant_settings row(s) matching filter='${TENANT_FILTER}'`);
+          BODY_RESP=$(printf '%s' "$RESP" | sed -E '$d')
+          HTTP_CODE=$(printf '%s' "$RESP" | tail -n1 | sed 's/__HTTP__//')
 
-            const already = tenants.filter((t) => t.feature_flags?.data_export_ok === true);
-            const toFlip = tenants.filter((t) => t.feature_flags?.data_export_ok !== true);
+          echo "HTTP $HTTP_CODE"
+          echo "Response: $BODY_RESP"
 
-            console.log(`Already consented: ${already.length}`);
-            console.log(`Will flip:         ${toFlip.length}`);
-            console.log('');
-            for (const t of toFlip) {
-              console.log(`  ${t.tenant_id} : ${JSON.stringify(t.feature_flags || {})} -> +{data_export_ok:true}`);
-            }
+          # Pretty-print summary into the GH step summary.
+          python3 <<PY
+          import json, os
+          body = '''${BODY_RESP}'''
+          try:
+              d = json.loads(body)
+          except Exception as e:
+              print(f'(could not parse response as JSON: {e})')
+              d = {}
 
-            if (DRY_RUN) {
-              console.log('');
-              console.log('DRY RUN — no writes performed. Re-run with dry_run=false to apply.');
-              process.exit(0);
-            }
+          lines = []
+          lines.append('## Staging tenant consent flip')
+          lines.append('')
+          lines.append(f"- HTTP: `${HTTP_CODE}`")
+          lines.append(f"- ok: `{d.get('ok')}`")
+          lines.append(f"- dry_run: `{d.get('dry_run')}`")
+          lines.append(f"- scanned: `{d.get('scanned')}`")
+          lines.append(f"- already_consented: `{d.get('already_consented')}`")
+          if d.get('dry_run'):
+              lines.append(f"- to_flip: `{d.get('to_flip')}`")
+              sample = d.get('sample_to_flip', [])
+              if sample:
+                  lines.append(f"- sample_to_flip: {', '.join('`'+s+'`' for s in sample[:5])}")
+          else:
+              lines.append(f"- flipped: `{d.get('flipped')}`")
+              lines.append(f"- failed: `{d.get('failed')}`")
+              fids = d.get('flipped_tenant_ids', [])
+              if fids:
+                  lines.append('')
+                  lines.append('### Flipped tenants')
+                  for t in fids[:20]:
+                      lines.append(f'  - `{t}`')
 
-            console.log('');
-            console.log('Applying flips...');
-            let ok = 0, failed = 0;
-            for (const t of toFlip) {
-              try {
-                await flipOne(t.tenant_id, t.feature_flags);
-                ok++;
-                console.log(`  ✓ ${t.tenant_id}`);
-              } catch (err) {
-                failed++;
-                console.error(`  ✗ ${t.tenant_id} : ${err.message}`);
-              }
-            }
+          summary_path = os.environ.get('GITHUB_STEP_SUMMARY')
+          if summary_path:
+              with open(summary_path, 'a') as f:
+                  f.write('\n'.join(lines) + '\n')
+          PY
 
-            const summary = `Flipped ${ok}/${toFlip.length} tenants (${failed} failures, ${already.length} were already consented).`;
-            console.log('');
-            console.log(summary);
-
-            // Write GitHub step summary
-            const fs = require('fs');
-            const summaryPath = process.env.GITHUB_STEP_SUMMARY;
-            if (summaryPath) {
-              fs.appendFileSync(summaryPath,
-                `## Staging tenant consent flip\n\n` +
-                `- Filter: \`${TENANT_FILTER}\`\n` +
-                `- Already consented: ${already.length}\n` +
-                `- Flipped this run: ${ok}\n` +
-                `- Failed: ${failed}\n` +
-                (failed > 0 ? '\n**Some PATCHes failed — see logs.**\n' : '\nAll target rows updated.\n')
-              );
-            }
-
-            if (failed > 0) process.exit(1);
-          })().catch((err) => {
-            console.error('FATAL:', err);
-            process.exit(1);
-          });
-          NODE
+          # Fail the workflow if HTTP wasn't 2xx.
+          case "$HTTP_CODE" in
+            2*) echo "OK" ;;
+            *) echo "::error::endpoint returned HTTP $HTTP_CODE"; exit 1 ;;
+          esac
