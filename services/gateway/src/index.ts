@@ -308,6 +308,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const stripeConnectWebhookRouter = require('./routes/stripe-connect-webhook').default;
   // VTID-03107: Billing v1 — customer-side Stripe subscriptions + credit packs + redemption
   const billingRouter = require('./routes/billing').default;
+  // VTID-03201: Stripe-funded wallet deposits (EUR + USD fiat ledger, ships in parallel with Billing v1)
+  const walletRouter = require('./routes/wallet').default;
+  const walletStripeWebhookRouter = require('./routes/wallet-stripe-webhook').default;
   // Notification System — FCM push + in-app notification history
   const notificationsRouter = require('./routes/notifications').default;
   // Chat — User-to-user direct messaging
@@ -1006,6 +1009,11 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   mountRouterSync(app, '/api/v1/stripe', stripeConnectWebhookRouter, { owner: 'stripe-connect-webhook' });
   // VTID-03107: Billing v1 — customer-side Stripe + redemption codes + admin code mgmt
   mountRouterSync(app, '/api/v1/billing', billingRouter, { owner: 'billing' });
+  // VTID-03201: Wallet deposit webhook (raw body already applied to /api/v1/stripe/webhook).
+  // Mounted under /api/v1/stripe so the route resolves to /api/v1/stripe/webhook/wallet.
+  mountRouterSync(app, '/api/v1/stripe', walletStripeWebhookRouter, { owner: 'wallet-stripe-webhook' });
+  // VTID-03201: Wallet user-facing routes (EUR + USD fiat). Path-scoped requireAuth inside router.
+  mountRouterSync(app, '/api/v1', walletRouter, { owner: 'wallet' });
 
   // Notification System — FCM push notifications + in-app history
   mountRouterSync(app, '/api/v1/notifications', notificationsRouter, { owner: 'notifications' });
