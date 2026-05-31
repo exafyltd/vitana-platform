@@ -210,6 +210,8 @@ export type CicdEventType =
   // DEV-COMHU-0503 — ORB Recovery 2+3: close/reopen continuity state transitions
   | 'orb.session.continuity.persisted'
   | 'orb.session.continuity.cleared'
+  // DEV-COMHU-0504 — ORB Recovery 4: audio-ready handshake ack
+  | 'orb.session.audio_ready.acked'
   // VTID-01032: Multi-service deploy selection event
   | 'cicd.deploy.selection'
   // VTID-01033: CICD Concurrency Lock Events

@@ -10802,6 +10802,47 @@ router.post('/session/continuity', optionalAuth, async (req: AuthenticatedReques
       surface: 'orb',
     }).catch(() => {});
     return res.json({ ok: r.ok, reason: r.reason });
+ * DEV-COMHU-0504 — ORB Recovery 4: audio-ready handshake.
+ *
+ * The client posts this as soon as its audio pipeline is genuinely ready
+ * (AudioContext unlocked + output device available + player initialized). The
+ * gateway records the ack in orb_session_state keyed by session_id so the
+ * greeting trigger can wait for ack-or-3s-timeout instead of wasting the one
+ * important greeting before the client can play it.
+ *
+ *   POST /api/v1/orb/session/:id/audio-ready
+ *
+ * Authenticated only (anonymous still works — the gate falls back to the 3s
+ * timeout). Fails soft.
+ */
+router.post('/session/:id/audio-ready', optionalAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const userId = req.identity?.user_id;
+  const sessionId = String(req.params.id || '');
+  if (!sessionId) return res.status(400).json({ ok: false, error: 'missing_session_id' });
+  if (!userId) return res.status(200).json({ ok: false, reason: 'anonymous_no_ack' });
+  const supabase = getSupabase();
+  if (!supabase) return res.status(503).json({ ok: false, error: 'supabase_unavailable' });
+  try {
+    const { writeOrbSessionState } = await import('../services/orb/orb-session-state');
+    // Short TTL: the ack is only meaningful within the session-start window.
+    const r = await writeOrbSessionState(
+      supabase,
+      userId,
+      'audio_ready_ack',
+      { session_id: sessionId, ready_at: new Date().toISOString() },
+      10, // minutes
+    );
+    void emitOasisEvent({
+      vtid: 'DEV-COMHU-0504',
+      type: 'orb.session.audio_ready.acked',
+      source: 'orb-live',
+      status: 'info',
+      message: `audio pipeline ready ack for session ${sessionId}`,
+      payload: { session_id: sessionId, user_id: userId, ok: r.ok },
+      actor_id: userId,
+      surface: 'orb',
+    }).catch(() => {});
+    return res.json({ ok: r.ok });
   } catch (e) {
     return res.status(200).json({ ok: false, reason: e instanceof Error ? e.message : String(e) });
   }
