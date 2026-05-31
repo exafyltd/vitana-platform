@@ -12,6 +12,64 @@ These are **non-negotiable behavioral rules** for developing the Vitana platform
 
 ---
 
+## ALWAYS: Run The Full Pipeline To Terminal Completion
+
+For implementation tasks, the agent owns the full process end-to-end.
+
+Done does not mean "code written," "branch pushed," "draft PR opened," or "ready for human merge/deploy."
+
+Done means:
+
+1. The required task identity is present.
+2. The required spec exists and is valid.
+3. Code is implemented.
+4. Tests and checks pass.
+5. Branch is pushed.
+6. PR is opened and driven to merge.
+7. Main is deployed through the required deployment pipeline.
+8. Deployment succeeds.
+9. Production is verified with /alive 200 and required smoke checks.
+10. The task is terminalized with evidence of merge, deploy, and verification.
+
+The agent must run the complete pipeline, including any missing prerequisite steps.
+
+## Missing Inputs Are Pipeline Steps, Not Stop Conditions
+
+Never stop because a required pipeline artifact is missing.
+
+If the VTID is missing, inspect the VTID ledger, recover the correct VTID, or create/claim the required VTID using the established ledger process.
+
+If the spec is missing, generate the spec using the established spec pipeline, attach it to the task, and continue.
+
+If the spec status is missing, invalid, or not approved, run the required spec validation/approval pipeline step and continue once the pipeline has produced the required approved state.
+
+If deployment metadata, CI state, branch state, PR state, or verification state is missing, discover it from the repo, CI system, deploy system, logs, ledger, or task records, then continue the pipeline.
+
+A missing prerequisite means: go to the pipeline step that produces it, produce it, then resume forward progress.
+
+## NEVER: Hand Back Intermediate Work
+
+Never say "ready for you to merge," "ready for you to deploy," "please approve the spec," or "over to you" merely because the task reached an intermediate state.
+
+The agent owns merge, deploy, verification, and terminalization unless the user explicitly instructs otherwise in the current task.
+
+Draft PRs are not terminal states. Passing local tests is not a terminal state. A pushed branch is not a terminal state. A generated spec is not a terminal state.
+
+The only terminal success state is: merged, deployed, production-verified, and terminalized.
+
+## Failure Handling
+
+If any pipeline step fails, the agent must debug, patch, rerun, and continue.
+
+CI failure means fix CI.
+Deploy failure means debug deploy and redeploy.
+Smoke failure means debug production behavior and patch forward.
+Missing process state means reconstruct or regenerate it from the source of truth.
+
+Do not stop at the first failed or missing step. Continue operating the pipeline until it reaches terminal success.
+
+---
+
 ## ✅ ALWAYS RULES
 
 Claude must **always** do the following:
@@ -992,6 +1050,7 @@ Use these PATs with the GitHub REST API (`api.github.com`) for all PR and deploy
 
 | Date | Change | VTID |
 |------|--------|------|
+| 2026-05-31 | Added top-of-PART-1 hard rule: agent owns full pipeline to terminal completion (merge + deploy + prod-verify + terminalize); missing inputs are pipeline steps not stop conditions; never hand back intermediate work | BOOTSTRAP-orb-tracking |
 | 2026-04-14 | Replaced broad visual verification with targeted protocol: screenshot what you changed, interact with it, verify it works | VTID-01917 |
 | 2026-03-19 | Added CI/CD deployment pipeline critical lessons (Auto Deploy ≠ actual deploy) | BOOTSTRAP-OPERATOR-NAV-FIX |
 | 2026-02-13 | Added Deployment Verification Protocol section + rules | VTID-01228 |
