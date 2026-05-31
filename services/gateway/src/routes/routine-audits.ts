@@ -575,3 +575,95 @@ routineAuditsRouter.get(
     }
   }
 );
+
+// =============================================================================
+// GET /api/v1/routines/audits/mobile-screen-latency
+// Used by: mobile-screen-latency-rollup
+//
+// Rolls up the `screen.latency.measured` OASIS events (emitted by the
+// vitana-v1 RUM beacon, see vitana-v1/src/lib/rum.ts) into a per-screen,
+// per-metric p75 over the requested window. The rum-beacon receiver is a
+// thin pipe with no aggregation — this is where "dashboards do that
+// downstream" actually happens, so the rollup routine can threshold-check
+// each mobile surface instead of drowning in the raw beacon firehose.
+//
+// Each beacon lands in oasis_events as:
+//   topic    = 'screen.latency.measured'
+//   metadata = { screen, metric, value, rating, session, captured_at, ... }
+// =============================================================================
+
+// p75 of a numeric sample (nearest-rank). Mobile perf is judged on the
+// tail, not the mean — a fast median hides the users who actually complain.
+function percentile(values: number[], p: number): number | null {
+  if (!values.length) return null;
+  const sorted = [...values].sort((a, b) => a - b);
+  const rank = Math.ceil((p / 100) * sorted.length);
+  return sorted[Math.min(rank, sorted.length) - 1];
+}
+
+routineAuditsRouter.get(
+  '/api/v1/routines/audits/mobile-screen-latency',
+  requireRoutineToken,
+  async (req: Request, res: Response) => {
+    try {
+      const sinceHours = Math.min(parseInt(req.query.window_hours as string) || 24, 24 * 14);
+      const since = hoursAgoIso(sinceHours);
+
+      // Pull a bounded sample of recent latency beacons. limit=5000 keeps the
+      // response well under PostgREST's hard cap while covering a normal day's
+      // volume; if a screen ever exceeds this the p75 is still representative.
+      const sample = await supaFetch<Array<{ metadata: Record<string, any> | null }>>(
+        `/rest/v1/oasis_events?topic=eq.screen.latency.measured` +
+          `&created_at=gte.${since}` +
+          `&select=metadata&order=created_at.desc&limit=5000`
+      );
+
+      if (sample === null) {
+        // Supabase creds absent (e.g. local) — let the routine treat this as
+        // a soft "no data" rather than a breach.
+        return res.json({ ok: true, window_hours: sinceHours, sample_size: 0, screens: [] });
+      }
+
+      // Bucket raw values by screen → metric.
+      type Bucket = Record<string, Record<string, number[]>>;
+      const buckets: Bucket = {};
+      let worstRatingBy: Record<string, string> = {};
+      for (const row of sample) {
+        const m = row.metadata || {};
+        const screen = typeof m.screen === 'string' ? m.screen : null;
+        const metric = typeof m.metric === 'string' ? m.metric : null;
+        const value = typeof m.value === 'number' ? m.value : Number(m.value);
+        if (!screen || !metric || !Number.isFinite(value)) continue;
+        (buckets[screen] ??= {})[metric] ??= [];
+        buckets[screen][metric].push(value);
+        if (m.rating === 'poor') worstRatingBy[`${screen}|${metric}`] = 'poor';
+      }
+
+      const screens = Object.entries(buckets).map(([screen, metrics]) => ({
+        screen,
+        samples: Object.values(metrics).reduce((n, arr) => n + arr.length, 0),
+        metrics: Object.fromEntries(
+          Object.entries(metrics).map(([metric, values]) => [
+            metric,
+            {
+              p75: percentile(values, 75),
+              p95: percentile(values, 95),
+              count: values.length,
+              worst_rating: worstRatingBy[`${screen}|${metric}`] ?? null,
+            },
+          ])
+        ),
+      }));
+
+      return res.json({
+        ok: true,
+        window_hours: sinceHours,
+        sample_size: sample.length,
+        screens,
+      });
+    } catch (e: any) {
+      console.error(`${LOG_PREFIX} mobile-screen-latency error:`, e);
+      return res.status(500).json({ ok: false, error: e.message });
+    }
+  }
+);
