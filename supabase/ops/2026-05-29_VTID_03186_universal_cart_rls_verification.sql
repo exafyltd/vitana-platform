@@ -16,11 +16,11 @@
 --   §3  RLS — authenticated user A sees own cart, cannot see user B's cart, cannot insert into user B's cart.
 --   §4  RLS — authenticated user cannot INSERT into universal_cart_events; can only SELECT events for carts they own.
 --
--- Test fixtures: a synthetic merchant + product are inserted at the head of §2
--- so the script tests every assertion regardless of whether the target DB has
--- any real products. All fixture rows (merchants, products, app_users,
--- universal_carts, universal_cart_items, universal_cart_events) are rolled
--- back at the end.
+-- Test fixtures: the script selects two existing app_users as rollback-only
+-- cart owners and inserts a synthetic merchant + product at the head of §2 so
+-- every assertion runs regardless of whether the target DB has real products.
+-- All universal_carts, universal_cart_items, universal_cart_events, merchants,
+-- and products inserted by this script are rolled back at the end.
 --
 -- Invocation (psql, with a service-role connection string):
 --   psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/ops/2026-05-29_VTID_03186_universal_cart_rls_verification.sql
@@ -148,74 +148,37 @@ $check_triggers$;
 -- §2  Cascade & constraint behavior  (operating as service_role / superuser)
 -- ============================================================
 
--- Seed two synthetic test users in app_users (rolled back at end).
--- VTID-03205 patch: app_users.email is `TEXT UNIQUE NOT NULL` per the
--- VTID-01101 phase-A bootstrap migration. The original VTID-03186 ops
--- script seeded only user_id, which would raise not_null_violation on
--- email before any of the RLS / cascade assertions run. @example.invalid
--- is RFC 6761 reserved for test use; the VTID-03186 prefix keeps email
--- values unique even on re-run. display_name is nullable per the bootstrap
--- migration but we set it for log readability.
---
--- VTID-03206 patch: production app_users.tenant_id is also NOT NULL. Use an
--- existing tenant id as the synthetic users' tenant; this script still rolls
--- back all inserted app_users / universal_cart rows at the end.
-DO $seed_users$
+-- Select two existing app_users as fixture owners. Production app_users is
+-- constrained by auth.users and tenant requirements, so the verification must
+-- not invent app_users rows. The script only creates universal_cart rows for
+-- these users inside this transaction, then rolls those rows back.
+DO $select_fixture_users$
 DECLARE
-  user_a CONSTANT UUID := '00000000-0000-4000-a000-000000000a01';
-  user_b CONSTANT UUID := '00000000-0000-4000-a000-000000000b01';
-  app_users_tenant_attnum SMALLINT;
-  tenant_ref_col TEXT;
-  fixture_tenant_id UUID;
+  fixture_user_a UUID;
+  fixture_user_b UUID;
 BEGIN
-  SELECT attnum INTO app_users_tenant_attnum
-    FROM pg_attribute
-   WHERE attrelid = 'public.app_users'::regclass
-     AND attname = 'tenant_id'
-     AND NOT attisdropped;
-
-  SELECT ref_att.attname
-    INTO tenant_ref_col
-    FROM pg_constraint con
-    JOIN unnest(con.conkey) WITH ORDINALITY AS src(attnum, ord) ON true
-    JOIN unnest(con.confkey) WITH ORDINALITY AS ref(attnum, ord) ON ref.ord = src.ord
-    JOIN pg_attribute ref_att
-      ON ref_att.attrelid = con.confrelid
-     AND ref_att.attnum = ref.attnum
-   WHERE con.conrelid = 'public.app_users'::regclass
-     AND con.confrelid = 'public.tenants'::regclass
-     AND con.contype = 'f'
-     AND src.attnum = app_users_tenant_attnum
+  SELECT user_id
+    INTO fixture_user_a
+    FROM public.app_users
+   ORDER BY created_at ASC NULLS LAST, user_id ASC
    LIMIT 1;
 
-  IF tenant_ref_col IS NULL THEN
-    SELECT CASE
-      WHEN EXISTS (
-        SELECT 1 FROM information_schema.columns
-         WHERE table_schema = 'public'
-           AND table_name = 'tenants'
-           AND column_name = 'tenant_id'
-      ) THEN 'tenant_id'
-      ELSE 'id'
-    END INTO tenant_ref_col;
+  SELECT user_id
+    INTO fixture_user_b
+    FROM public.app_users
+   WHERE user_id <> fixture_user_a
+   ORDER BY created_at ASC NULLS LAST, user_id ASC
+   LIMIT 1;
+
+  IF fixture_user_a IS NULL OR fixture_user_b IS NULL THEN
+    RAISE EXCEPTION
+      '§2 select_fixture_users: need at least two existing public.app_users rows for RLS verification';
   END IF;
 
-  EXECUTE format(
-    'SELECT %I FROM public.tenants ORDER BY created_at ASC LIMIT 1',
-    tenant_ref_col
-  ) INTO fixture_tenant_id;
-
-  IF fixture_tenant_id IS NULL THEN
-    RAISE EXCEPTION '§2 seed_users: no public.tenants row available for app_users.tenant_id fixture';
-  END IF;
-
-  INSERT INTO public.app_users (user_id, tenant_id, email, display_name)
-  VALUES
-    (user_a, fixture_tenant_id, 'vtid-03186-user-a@example.invalid', 'VTID-03186 User A'),
-    (user_b, fixture_tenant_id, 'vtid-03186-user-b@example.invalid', 'VTID-03186 User B')
-  ON CONFLICT (user_id) DO NOTHING;
+  PERFORM set_config('vtid_03186.user_a', fixture_user_a::text, true);
+  PERFORM set_config('vtid_03186.user_b', fixture_user_b::text, true);
 END
-$seed_users$;
+$select_fixture_users$;
 
 -- Seed a synthetic merchant + product so §2.3 / §2.4 / §3.2 always have a
 -- valid FK target. Without this, an empty-products staging DB would either
@@ -247,11 +210,11 @@ DECLARE
   caught BOOLEAN := FALSE;
 BEGIN
   INSERT INTO public.universal_carts (user_id, status)
-    VALUES ('00000000-0000-4000-a000-000000000a01', 'active')
+    VALUES (current_setting('vtid_03186.user_a')::uuid, 'active')
     RETURNING id INTO cart_a;
   BEGIN
     INSERT INTO public.universal_carts (user_id, status)
-      VALUES ('00000000-0000-4000-a000-000000000a01', 'active');
+      VALUES (current_setting('vtid_03186.user_a')::uuid, 'active');
   EXCEPTION WHEN unique_violation THEN
     caught := TRUE;
   END;
@@ -268,7 +231,7 @@ DECLARE
 BEGIN
   BEGIN
     INSERT INTO public.universal_carts (user_id, status)
-      VALUES ('00000000-0000-4000-a000-000000000b01', 'banana');
+      VALUES (current_setting('vtid_03186.user_b')::uuid, 'banana');
   EXCEPTION WHEN check_violation THEN
     caught := TRUE;
   END;
@@ -286,7 +249,7 @@ DECLARE
   caught    BOOLEAN := FALSE;
 BEGIN
   SELECT id INTO cart_id_a FROM public.universal_carts
-   WHERE user_id = '00000000-0000-4000-a000-000000000a01' AND status = 'active' LIMIT 1;
+   WHERE user_id = current_setting('vtid_03186.user_a')::uuid AND status = 'active' LIMIT 1;
   BEGIN
     INSERT INTO public.universal_cart_items (cart_id, item_type, product_id, source_surface)
       VALUES (cart_id_a, 'supplement', fx_product_id, 'sms');
@@ -307,7 +270,7 @@ DECLARE
   remaining INT;
 BEGIN
   SELECT id INTO cart_id_a FROM public.universal_carts
-   WHERE user_id = '00000000-0000-4000-a000-000000000a01' AND status = 'active' LIMIT 1;
+   WHERE user_id = current_setting('vtid_03186.user_a')::uuid AND status = 'active' LIMIT 1;
   INSERT INTO public.universal_cart_items (cart_id, item_type, product_id, source_surface)
     VALUES (cart_id_a, 'supplement', fx_product_id, 'web');
   DELETE FROM public.universal_carts WHERE id = cart_id_a;
@@ -328,9 +291,9 @@ DECLARE
   cart_b UUID;
 BEGIN
   INSERT INTO public.universal_carts (user_id, status)
-    VALUES ('00000000-0000-4000-a000-000000000a01', 'active') RETURNING id INTO cart_a;
+    VALUES (current_setting('vtid_03186.user_a')::uuid, 'active') RETURNING id INTO cart_a;
   INSERT INTO public.universal_carts (user_id, status)
-    VALUES ('00000000-0000-4000-a000-000000000b01', 'active') RETURNING id INTO cart_b;
+    VALUES (current_setting('vtid_03186.user_b')::uuid, 'active') RETURNING id INTO cart_b;
 END
 $rebuild_carts$;
 
@@ -342,15 +305,15 @@ DECLARE
 BEGIN
   PERFORM set_config('role', 'authenticated', true);
   PERFORM set_config('request.jwt.claims',
-    json_build_object('sub','00000000-0000-4000-a000-000000000a01','role','authenticated')::text,
+    json_build_object('sub',current_setting('vtid_03186.user_a')::uuid,'role','authenticated')::text,
     true);
 
   SET LOCAL ROLE authenticated;
 
   SELECT count(*) INTO visible_a
-    FROM public.universal_carts WHERE user_id = '00000000-0000-4000-a000-000000000a01';
+    FROM public.universal_carts WHERE user_id = current_setting('vtid_03186.user_a')::uuid;
   SELECT count(*) INTO visible_b
-    FROM public.universal_carts WHERE user_id = '00000000-0000-4000-a000-000000000b01';
+    FROM public.universal_carts WHERE user_id = current_setting('vtid_03186.user_b')::uuid;
 
   IF visible_a <> 1 THEN
     RAISE EXCEPTION '§3.1 user A should see own universal_cart (1), saw %', visible_a;
@@ -372,10 +335,10 @@ DECLARE
 BEGIN
   -- Resolve cart_b while still service_role (RLS would hide it from user A)
   SELECT id INTO cart_b FROM public.universal_carts
-   WHERE user_id = '00000000-0000-4000-a000-000000000b01' AND status = 'active' LIMIT 1;
+   WHERE user_id = current_setting('vtid_03186.user_b')::uuid AND status = 'active' LIMIT 1;
 
   PERFORM set_config('request.jwt.claims',
-    json_build_object('sub','00000000-0000-4000-a000-000000000a01','role','authenticated')::text,
+    json_build_object('sub',current_setting('vtid_03186.user_a')::uuid,'role','authenticated')::text,
     true);
   SET LOCAL ROLE authenticated;
 
@@ -403,16 +366,16 @@ DECLARE
   caught BOOLEAN := FALSE;
 BEGIN
   SELECT id INTO cart_a FROM public.universal_carts
-   WHERE user_id = '00000000-0000-4000-a000-000000000a01' AND status = 'active' LIMIT 1;
+   WHERE user_id = current_setting('vtid_03186.user_a')::uuid AND status = 'active' LIMIT 1;
 
   PERFORM set_config('request.jwt.claims',
-    json_build_object('sub','00000000-0000-4000-a000-000000000a01','role','authenticated')::text,
+    json_build_object('sub',current_setting('vtid_03186.user_a')::uuid,'role','authenticated')::text,
     true);
   SET LOCAL ROLE authenticated;
 
   BEGIN
     INSERT INTO public.universal_cart_events (cart_id, user_id, event_type, event_payload)
-      VALUES (cart_a, '00000000-0000-4000-a000-000000000a01', 'cart.created', '{}'::jsonb);
+      VALUES (cart_a, current_setting('vtid_03186.user_a')::uuid, 'cart.created', '{}'::jsonb);
   EXCEPTION WHEN insufficient_privilege THEN
     caught := TRUE;
   END;
@@ -439,23 +402,23 @@ DECLARE
   visible_via_b INT;
 BEGIN
   SELECT id INTO cart_a FROM public.universal_carts
-   WHERE user_id = '00000000-0000-4000-a000-000000000a01' AND status = 'active' LIMIT 1;
+   WHERE user_id = current_setting('vtid_03186.user_a')::uuid AND status = 'active' LIMIT 1;
   SELECT id INTO cart_b FROM public.universal_carts
-   WHERE user_id = '00000000-0000-4000-a000-000000000b01' AND status = 'active' LIMIT 1;
+   WHERE user_id = current_setting('vtid_03186.user_b')::uuid AND status = 'active' LIMIT 1;
 
   -- still service_role: write three rows
   INSERT INTO public.universal_cart_events (cart_id, user_id, event_type, event_payload)
-    VALUES (cart_a, '00000000-0000-4000-a000-000000000a01', 'cart.created', '{}'::jsonb);
+    VALUES (cart_a, current_setting('vtid_03186.user_a')::uuid, 'cart.created', '{}'::jsonb);
   INSERT INTO public.universal_cart_events (cart_id, user_id, event_type, event_payload)
-    VALUES (cart_b, '00000000-0000-4000-a000-000000000b01', 'cart.created', '{}'::jsonb);
+    VALUES (cart_b, current_setting('vtid_03186.user_b')::uuid, 'cart.created', '{}'::jsonb);
   -- Spoof: row on user B's cart with user_id falsely set to user A.
   -- The OLD policy (USING user_id = auth.uid()) would have leaked this row to A.
   -- The NEW policy (parent-cart ownership) must NOT.
   INSERT INTO public.universal_cart_events (cart_id, user_id, event_type, event_payload)
-    VALUES (cart_b, '00000000-0000-4000-a000-000000000a01', 'cart.spoofed', '{}'::jsonb);
+    VALUES (cart_b, current_setting('vtid_03186.user_a')::uuid, 'cart.spoofed', '{}'::jsonb);
 
   PERFORM set_config('request.jwt.claims',
-    json_build_object('sub','00000000-0000-4000-a000-000000000a01','role','authenticated')::text,
+    json_build_object('sub',current_setting('vtid_03186.user_a')::uuid,'role','authenticated')::text,
     true);
   SET LOCAL ROLE authenticated;
 
