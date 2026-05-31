@@ -156,15 +156,63 @@ $check_triggers$;
 -- is RFC 6761 reserved for test use; the VTID-03186 prefix keeps email
 -- values unique even on re-run. display_name is nullable per the bootstrap
 -- migration but we set it for log readability.
+--
+-- VTID-03206 patch: production app_users.tenant_id is also NOT NULL. Use an
+-- existing tenant id as the synthetic users' tenant; this script still rolls
+-- back all inserted app_users / universal_cart rows at the end.
 DO $seed_users$
 DECLARE
   user_a CONSTANT UUID := '00000000-0000-4000-a000-000000000a01';
   user_b CONSTANT UUID := '00000000-0000-4000-a000-000000000b01';
+  app_users_tenant_attnum SMALLINT;
+  tenant_ref_col TEXT;
+  fixture_tenant_id UUID;
 BEGIN
-  INSERT INTO public.app_users (user_id, email, display_name)
+  SELECT attnum INTO app_users_tenant_attnum
+    FROM pg_attribute
+   WHERE attrelid = 'public.app_users'::regclass
+     AND attname = 'tenant_id'
+     AND NOT attisdropped;
+
+  SELECT ref_att.attname
+    INTO tenant_ref_col
+    FROM pg_constraint con
+    JOIN unnest(con.conkey) WITH ORDINALITY AS src(attnum, ord) ON true
+    JOIN unnest(con.confkey) WITH ORDINALITY AS ref(attnum, ord) ON ref.ord = src.ord
+    JOIN pg_attribute ref_att
+      ON ref_att.attrelid = con.confrelid
+     AND ref_att.attnum = ref.attnum
+   WHERE con.conrelid = 'public.app_users'::regclass
+     AND con.confrelid = 'public.tenants'::regclass
+     AND con.contype = 'f'
+     AND src.attnum = app_users_tenant_attnum
+   LIMIT 1;
+
+  IF tenant_ref_col IS NULL THEN
+    SELECT CASE
+      WHEN EXISTS (
+        SELECT 1 FROM information_schema.columns
+         WHERE table_schema = 'public'
+           AND table_name = 'tenants'
+           AND column_name = 'tenant_id'
+      ) THEN 'tenant_id'
+      ELSE 'id'
+    END INTO tenant_ref_col;
+  END IF;
+
+  EXECUTE format(
+    'SELECT %I FROM public.tenants ORDER BY created_at ASC LIMIT 1',
+    tenant_ref_col
+  ) INTO fixture_tenant_id;
+
+  IF fixture_tenant_id IS NULL THEN
+    RAISE EXCEPTION '§2 seed_users: no public.tenants row available for app_users.tenant_id fixture';
+  END IF;
+
+  INSERT INTO public.app_users (user_id, tenant_id, email, display_name)
   VALUES
-    (user_a, 'vtid-03186-user-a@example.invalid', 'VTID-03186 User A'),
-    (user_b, 'vtid-03186-user-b@example.invalid', 'VTID-03186 User B')
+    (user_a, fixture_tenant_id, 'vtid-03186-user-a@example.invalid', 'VTID-03186 User A'),
+    (user_b, fixture_tenant_id, 'vtid-03186-user-b@example.invalid', 'VTID-03186 User B')
   ON CONFLICT (user_id) DO NOTHING;
 END
 $seed_users$;
