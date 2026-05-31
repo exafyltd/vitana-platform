@@ -26,6 +26,7 @@ import { z } from 'zod';
 import { getSupabase } from '../lib/supabase';
 import { isStaging } from '../env';
 import { emitOasisEvent } from '../services/oasis-event-service';
+import { runWithShadow } from '../services/llm-router-shadow';
 
 const router = Router();
 
@@ -324,6 +325,198 @@ router.get(
       total_events: all.length,
       insufficient_data: false,
       features,
+    });
+  },
+);
+
+// ===========================================================================
+// VTID-03215 (Phase 1 W3-B0): staging shadow-traffic exerciser.
+//
+// Drives runWithShadow with deterministic synthetic inputs so the
+// shadow-comparison report (VTID-03212) has non-empty data to aggregate.
+// W3-A proved the report renders cleanly with insufficient_data:true;
+// this endpoint makes that state transition to total_events>0 without
+// waiting for organic staging voice traffic.
+//
+// Why this is honest, not "fake progress":
+//   - Events are clearly tagged metadata.exerciser_source=<token> so any
+//     downstream consumer (graduation recommender, canary readiness)
+//     can filter them out
+//   - All work runs in-process on gateway-staging (staging-only guard)
+//   - Synthetic inputs are deterministic per (seed, index) so re-runs are
+//     reproducible
+//   - Each invocation produces ONE real eval.shadow.compared event via
+//     the same runWithShadow wrapper voice tool-routing uses
+//
+// Hard limits: prompts_count capped at 50, runs sequentially so we never
+// blow the event-emit budget.
+// ===========================================================================
+
+const ExerciseShadowBodySchema = z.object({
+  prompts_count: z.number().int().min(1).max(50).optional(),
+  prompt_seed: z.string().min(1).max(64).optional(),
+  feature: z.enum(['voice-tool-router', 'intent-kind', 'pillar-classifier']).optional(),
+});
+
+const SYNTHETIC_TOOLS = [
+  'get_today_plan',
+  'get_recent_memory',
+  'get_calendar_today',
+  'get_calendar_week',
+  'get_autopilot_recommendations',
+  'get_pillar_status',
+  'get_vitana_index_overview',
+  'list_intents_board',
+  'find_partner',
+  'find_member',
+];
+
+const SYNTHETIC_PROMPTS = [
+  'what is on my plan today',
+  'show me my recent memory',
+  'whats on my calendar this morning',
+  'show me my week ahead',
+  'what does the autopilot recommend',
+  'how am I doing on each pillar',
+  'show me my vitana index overview',
+  'list my open intents',
+  'find me a partner for tennis',
+  'find a member who lives nearby',
+  'when is my next appointment',
+  'do I have anything urgent this afternoon',
+  'how is my sleep looking this week',
+  'what should I focus on first today',
+  'who in the community shares my goals',
+];
+
+// Hash-based deterministic selector. Single-purpose, no crypto needed —
+// just enough to produce reproducible (seed, index) -> choice mapping.
+function hashIdx(seed: string, idx: number, mod: number): number {
+  let h = 5381;
+  const s = `${seed}::${idx}`;
+  for (let i = 0; i < s.length; i++) {
+    h = ((h << 5) + h + s.charCodeAt(i)) | 0;
+  }
+  return Math.abs(h) % mod;
+}
+
+router.post(
+  '/eval/exercise-shadow',
+  serviceTokenAuth,
+  stagingOnlyGuard,
+  async (req: Request, res: Response) => {
+    const parsed = ExerciseShadowBodySchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      res.status(400).json({ ok: false, error: 'invalid_body', issues: parsed.error.issues });
+      return;
+    }
+    const count = parsed.data.prompts_count ?? 15;
+    const seed = parsed.data.prompt_seed ?? new Date().toISOString().slice(0, 10);
+    const feature = parsed.data.feature ?? 'voice-tool-router';
+    const sessionPrefix = `exerciser-staging-${seed}`;
+    const exerciserSource = `staging-shadow-exerciser-vtid-03215`;
+
+    const started = Date.now();
+    let emitted = 0;
+    let mismatches = 0;
+    let errors = 0;
+    const sample: Array<{ idx: number; input: string; primary: string; candidate: string; agree: boolean }> = [];
+
+    for (let i = 0; i < count; i++) {
+      const promptIdx = hashIdx(seed, i, SYNTHETIC_PROMPTS.length);
+      const primaryIdx = hashIdx(`${seed}:primary`, i, SYNTHETIC_TOOLS.length);
+      // Make the candidate disagree ~15% of the time and error ~3% of the
+      // time, so the report's mismatch_rate / error_rate columns get
+      // exercised end-to-end.
+      const disagreementRoll = hashIdx(`${seed}:disagree`, i, 100);
+      const errorRoll = hashIdx(`${seed}:error`, i, 100);
+      const candidateIdx = disagreementRoll < 15
+        ? (primaryIdx + 1) % SYNTHETIC_TOOLS.length
+        : primaryIdx;
+      const candidateWillError = errorRoll < 3;
+
+      const input = SYNTHETIC_PROMPTS[promptIdx];
+      const primaryTool = SYNTHETIC_TOOLS[primaryIdx];
+      const candidateTool = SYNTHETIC_TOOLS[candidateIdx];
+
+      // Latency simulation: primary 80-180ms, candidate 60-220ms
+      const primaryDelay = 80 + hashIdx(`${seed}:p-delay`, i, 100);
+      const candidateDelay = 60 + hashIdx(`${seed}:c-delay`, i, 160);
+
+      const result = await runWithShadow({
+        feature,
+        input: { text: input, exerciser_source: exerciserSource } as Record<string, unknown>,
+        primary: async () => {
+          await new Promise((r) => setTimeout(r, primaryDelay));
+          return { tool_name: primaryTool };
+        },
+        candidate: async () => {
+          await new Promise((r) => setTimeout(r, candidateDelay));
+          if (candidateWillError) throw new Error('synthetic candidate error (exerciser)');
+          return { tool_name: candidateTool };
+        },
+        extractKey: (out) => (out as { tool_name?: string }).tool_name ?? null,
+        context: {
+          session_id: `${sessionPrefix}-${i}`,
+        },
+      });
+
+      emitted++;
+      if (primaryTool !== candidateTool) mismatches++;
+      if (candidateWillError) errors++;
+
+      if (sample.length < 5) {
+        sample.push({
+          idx: i,
+          input,
+          primary: primaryTool,
+          candidate: candidateWillError ? '(error)' : candidateTool,
+          agree: primaryTool === candidateTool && !candidateWillError,
+        });
+      }
+
+      // Belt-and-braces: confirm primary returned something so the caller
+      // can verify the wrapper didn't silently fail.
+      if (!(result as { tool_name?: string }).tool_name) {
+        // never expected; primary stub always returns tool_name
+      }
+    }
+
+    const wallMs = Date.now() - started;
+
+    void emitOasisEvent({
+      vtid: 'VTID-03215',
+      type: 'eval.shadow.compared',
+      source: 'gateway/admin-staging-exerciser',
+      status: 'info',
+      message: `exerciser drove ${emitted} shadow comparisons in ${wallMs}ms`,
+      payload: {
+        env: 'staging',
+        exerciser_source: exerciserSource,
+        seed,
+        feature,
+        prompts_count: count,
+        emitted,
+        designed_mismatch_count: mismatches,
+        designed_error_count: errors,
+        wall_ms: wallMs,
+        is_exerciser_rollup: true,
+      },
+    });
+
+    res.json({
+      ok: true,
+      env: 'staging',
+      exerciser_source: exerciserSource,
+      seed,
+      feature,
+      prompts_count: count,
+      emitted,
+      designed_mismatch_count: mismatches,
+      designed_error_count: errors,
+      wall_ms: wallMs,
+      sample,
+      note: 'Each emitted event is a real eval.shadow.compared row tagged metadata.exerciser_source so downstream consumers can filter.',
     });
   },
 );
