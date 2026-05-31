@@ -6870,6 +6870,16 @@ function renderTasksView() {
             // VTID-01055: Suppress deleted/voided tasks (client-side safety net)
             if (!isTaskRenderable(t)) return false;
 
+            // VTID-03229: hide auto-allocated artifact rows. Phase 1 W3 / EXEC-DEPLOY
+            // style flows grab a VTID purely for gating and never assign a title,
+            // so the ledger row lands with the RPC's default literal. Without this
+            // filter, >50% of "Completed" is workflow scratch tokens (330 of 603 at
+            // time of fix), drowning real work. Backend fix lives in the allocator
+            // (VTID-03230); this is the client-side belt-and-suspenders so already-
+            // landed legacy rows fall off the board immediately.
+            const _t03229 = (t.title || '').trim();
+            if (_t03229 === 'Allocated - Pending Title' || _t03229 === 'Pending Title') return false;
+
             // VTID-01005: Use OASIS-derived column as authoritative source
             if (mapStatusToColumnWithOverride(t.vtid, t.status, t.oasisColumn) !== colName) return false;
 
