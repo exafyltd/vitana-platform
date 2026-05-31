@@ -68,6 +68,11 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const { vtidRouter } = require('./routes/vtid');
   // VTID-03177 (PROFILE): RUM beacon receiver from vitana-v1 frontend
   const { rumBeaconRouter } = require('./routes/rum-beacon');
+  // VTID-03204 (Phase 1 W2): one-off staging-only admin endpoint for the
+  // tenant_settings.data_export_ok consent flip. Hard-gated on isStaging
+  // inside the router; mounted unconditionally because route registration
+  // is cheap and the guard runs per-request.
+  const { adminStagingRouter } = require('./routes/admin-staging');
   const { router: tasksRouter } = require('./routes/tasks');
   const { router: eventsRouter } = require('./routes/events');
   const eventsApiRouter = require('./routes/gateway-events-api').default;
@@ -599,6 +604,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   mountRouterSync(app, '/api/v1/vtid', vtidRouter, { owner: 'vtid' });
   // VTID-03177 (PROFILE): RUM beacon — POST /api/v1/rum/beacon
   mountRouterSync(app, '/api/v1/rum', rumBeaconRouter, { owner: 'rum-beacon' });
+  // VTID-03204 (Phase 1 W2): POST /api/v1/admin/staging/tenant-consent/flip
+  mountRouterSync(app, '/api/v1/admin/staging', adminStagingRouter, { owner: 'admin-staging' });
 
   // VTID-0516: Autonomous Safe-Merge Layer - CICD routes
   // Note: Same router mounted at multiple paths is allowed (different effective routes)
