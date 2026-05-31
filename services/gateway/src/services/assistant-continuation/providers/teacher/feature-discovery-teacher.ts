@@ -45,6 +45,21 @@ import type {
   ProviderResult,
 } from '../../types';
 import type { GreetingPolicy } from '../../../../orb/live/instruction/greeting-policy';
+// VTID-03218 (R3): bundled Teacher Mode content type. Type-only import —
+// erased at compile, so it does NOT create a runtime cycle with the
+// resolver (which imports pickCapability from this file at runtime). The
+// resolver itself is dynamically imported inside produce() for the same
+// reason.
+import type { TeacherModeContent } from '../../../../orb/teacher/teacher-content-resolver';
+
+/**
+ * VTID-03218: a Teacher candidate carries its resolved Teacher Mode content
+ * inline. The base AssistantContinuation stays teacher-agnostic; only the
+ * teacher provider + its consumers know about this field (read via cast).
+ */
+export type TeacherContinuation = AssistantContinuation & {
+  teacherMode: TeacherModeContent;
+};
 import {
   pickTeacherGreeting,
   pickTeacherGreetingMeta,
@@ -438,12 +453,56 @@ export function makeFeatureDiscoveryTeacherProvider(
         + `rendered="${userFacingLine.replace(/"/g, '\\"').slice(0, 240)}"`,
       );
 
-      const candidate: AssistantContinuation = {
+      // VTID-03218 (R3): resolve Teacher Mode content ATOMICALLY here so the
+      // candidate carries BOTH the permission line AND the turn-2+ content as
+      // one unit. Previously the controller resolved content in a separate
+      // post-win fetch; if that failed, the permission line still fired with
+      // no content and the LLM closed the overlay the moment the user said
+      // yes. Now: if content can't be resolved, the provider returns
+      // 'errored' and the ranker falls through to voice_wake_brief — the
+      // Teacher never fires without content. Dynamic import avoids the
+      // runtime cycle (resolver imports pickCapability from this file).
+      let teacherMode: TeacherModeContent | null = null;
+      try {
+        const { resolveTeacherModeContent } = await import(
+          '../../../../orb/teacher/teacher-content-resolver'
+        );
+        teacherMode = await resolveTeacherModeContent({
+          supabase: inputs.supabase,
+          tenantId: inputs.tenantId,
+          userId: inputs.userId,
+          activeCapabilityKey: picked.row.capability_key,
+          lang: inputs.lang,
+          nowIso: inputs.nowIso ?? undefined,
+        });
+      } catch (err) {
+        return {
+          providerKey: TEACHER_PROVIDER_KEY,
+          status: 'errored',
+          latencyMs: Math.max(0, now() - t0),
+          reason: `teacher_content_resolution_failed: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        };
+      }
+      if (!teacherMode || !teacherMode.active_capability_key) {
+        return {
+          providerKey: TEACHER_PROVIDER_KEY,
+          status: 'errored',
+          latencyMs: Math.max(0, now() - t0),
+          reason: 'teacher_content_resolution_failed',
+        };
+      }
+
+      const candidate: TeacherContinuation = {
         id: `teacher-${newId()}`,
         surface: 'orb_wake',
         kind: 'feature_discovery',
         priority,
         userFacingLine,
+        // VTID-03218: bundled content — the controller reads this off the
+        // winning candidate instead of doing its own resolver call.
+        teacherMode,
         cta: {
           type: 'offer_demo',
           payload: {
