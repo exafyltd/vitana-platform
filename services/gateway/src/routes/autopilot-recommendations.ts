@@ -116,7 +116,7 @@ interface CommunityAction {
   };
 }
 
-const COMMUNITY_ACTIONS: Record<string, CommunityAction> = {
+export const COMMUNITY_ACTIONS: Record<string, CommunityAction> = {
   // Onboarding
   onboarding_profile:           { action_type: 'navigate', target: '/profile/edit', completion_message: 'Let\'s complete your profile!' },
   onboarding_avatar:            { action_type: 'navigate', target: '/profile/edit', completion_message: 'Add a photo so others can recognize you!' },
@@ -139,6 +139,14 @@ const COMMUNITY_ACTIONS: Record<string, CommunityAction> = {
   // Advanced
   share_expertise:      { action_type: 'navigate', target: '/groups', completion_message: 'Share your knowledge in a group!' },
   start_streak:         { action_type: 'navigate', target: '/diary', completion_message: 'Start your wellness streak!', calendar_event: { title_template: 'Start a wellness streak', duration_minutes: 15, event_type: 'health', wellness_tags: ['wellness'] } },
+  try_live_room:        { action_type: 'navigate', target: '/events', completion_message: 'Drop into a live room!', calendar_event: { title_template: 'Try a live room', duration_minutes: 15, event_type: 'community', wellness_tags: ['social', 'mental'] } },
+  // Index-gap pillar templates (index-gap-analyzer fallback) — schedulable wellness blocks.
+  // source_ref === `pillar_template_${pillar}`; MUST stay in sync with index-gap-analyzer.ts.
+  pillar_template_nutrition: { action_type: 'navigate', target: '/health', completion_message: 'Plan a balanced meal block.', calendar_event: { title_template: 'Meal planning block', duration_minutes: 15, event_type: 'nutrition', wellness_tags: ['nutrition'] } },
+  pillar_template_hydration: { action_type: 'navigate', target: '/health', completion_message: 'Time for a hydration check-in.', calendar_event: { title_template: 'Hydration check-in', duration_minutes: 10, event_type: 'health', wellness_tags: ['hydration'] } },
+  pillar_template_exercise:  { action_type: 'navigate', target: '/health', completion_message: 'Time to move.', calendar_event: { title_template: '30-minute movement block', duration_minutes: 30, event_type: 'workout', wellness_tags: ['movement'] } },
+  pillar_template_sleep:     { action_type: 'navigate', target: '/health', completion_message: 'Set up your wind-down.', calendar_event: { title_template: 'Wind-down block', duration_minutes: 30, event_type: 'health', wellness_tags: ['sleep'] } },
+  pillar_template_mental:    { action_type: 'navigate', target: '/chat', completion_message: 'A few minutes for your mind.', calendar_event: { title_template: 'Meditation / breathwork', duration_minutes: 10, event_type: 'health', wellness_tags: ['mindfulness', 'mental'] } },
   // mentor_new and organize_meetup removed — not automatable by autopilot
   // Weakness-driven
   weakness_movement:    { action_type: 'navigate', target: '/health', completion_message: 'Let\'s get moving!', calendar_event: { title_template: 'Exercise session', duration_minutes: 30, event_type: 'workout', wellness_tags: ['movement'] } },
@@ -252,6 +260,9 @@ export async function queryRecommendationsByRole(
 
   // Exclude snoozed recs
   params.append('or', '(snoozed_until.is.null,snoozed_until.lt.now())');
+  // Exclude expired recs (VTID-03201): stale rows must not surface in the
+  // popup/count. Repeated `or` params are ANDed by PostgREST.
+  params.append('or', '(expires_at.is.null,expires_at.gt.now())');
 
   if (role === 'community') {
     // Community role: only personal recs from community analyzer
@@ -314,6 +325,7 @@ async function queryRecommendationsFallback(
   params.set('limit', String(limit));
   params.set('offset', String(offset));
   params.append('or', '(snoozed_until.is.null,snoozed_until.lt.now())');
+  params.append('or', '(expires_at.is.null,expires_at.gt.now())');
   params.set('user_id', `eq.${userId}`);
 
   try {
