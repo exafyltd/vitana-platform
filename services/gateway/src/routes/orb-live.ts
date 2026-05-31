@@ -1188,6 +1188,10 @@ import {
 // / resolve) via onSetupComplete + isSetupComplete callbacks, and forwards
 // every orb-live.ts-local helper through the deps bag.
 import { createUpstreamLiveMessageHandler } from '../orb/live/session/upstream-message-handler';
+// VTID-03234 (report finding #2): classify upstream WS closes so transparent
+// reconnects (Vertex 5-min close / watchdog recovery) don't fire a loud
+// "internet issues" alert.
+import { classifyUpstreamClose } from '../orb/live/session/upstream-close-classifier';
 // VTID-03126 (Phase D.3): Live API voice resolver — externalizes the
 // LIVE_API_VOICES Record + adds telemetry on silent fallbacks.
 import { getLiveApiVoice } from '../orb/live/voice/live-api-voice';
@@ -6049,16 +6053,43 @@ async function connectToLiveAPI(
       const reasonStr = reason?.toString() || '';
       const isPersonaSwap = reasonStr === 'persona_swap' || !!(session as any)._personaSwapInFlight;
 
-      // BOOTSTRAP-ORB-DISCONNECT-ALERT: Tell the client *immediately* that the
-      // upstream went away. The existing `reconnecting` message is only sent
-      // once attemptTransparentReconnect runs (after deduplicated extraction
-      // and other bookkeeping), which can be 100ms-1s+ later. Closing that gap
-      // lets the widget stop the user mid-sentence with a spoken cue instead
-      // of letting them talk into a dead socket.
-      if (session.active && setupComplete) {
-        const alertMsg = isPersonaSwap
-          ? { type: 'persona_swap_reconnecting', reason: 'persona_swap' }
-          : { type: 'connection_alert', reason: 'upstream_ws_close' };
+      // VTID-03234 (report finding #2): CLASSIFY the close before announcing it.
+      // Transparent reconnects — Vertex's normal ~5-min session close
+      // (code=1000) and watchdog stall-recovery (_stallRecoveryPending) — are
+      // handled fully server-side below (attemptTransparentReconnect): the
+      // client's SSE/WS to the gateway stays open while we reconnect the
+      // upstream Vertex WS in place. Firing "connection_alert" for these made
+      // healthy sessions surface "internet issues" every time Vertex recycled
+      // or the watchdog fired — the 5-10x/min loop users reported. The
+      // transparent path already resumes SILENTLY on success and emits its own
+      // alert ONLY if the reconnect actually fails (see the !reconnected branch
+      // below). So the loud alert here fires ONLY for a genuine disconnect.
+      const closeAction = classifyUpstreamClose({
+        code,
+        active: !!session.active,
+        setupComplete,
+        stallRecoveryPending: !!(session as any)._stallRecoveryPending,
+        isPersonaSwap,
+      });
+
+      // BOOTSTRAP-ORB-DISCONNECT-ALERT: tell the client immediately, but ONLY
+      // when it must react (genuine disconnect, or persona swap — silent cue).
+      if (closeAction === 'persona_swap') {
+        const alertMsg = { type: 'persona_swap_reconnecting', reason: 'persona_swap' };
+        if (session.sseResponse) {
+          try { session.sseResponse.write(`data: ${JSON.stringify(alertMsg)}\n\n`); } catch (_e) { /* SSE may be closed */ }
+        } else if (session.clientWs && session.clientWs.readyState === WebSocket.OPEN) {
+          try { session.clientWs.send(JSON.stringify(alertMsg)); } catch (_e) { /* WS may be closed */ }
+        }
+      } else if (closeAction === 'transparent_reconnect') {
+        // Suppress the loud "internet issues" alert — the reconnect is
+        // transparent. Internal diagnostic only; the client keeps listening.
+        emitDiag(session, 'transparent_reconnect_alert_suppressed', {
+          code,
+          stall_recovery: !!(session as any)._stallRecoveryPending,
+        });
+      } else if (closeAction === 'genuine_disconnect') {
+        const alertMsg = { type: 'connection_alert', reason: 'upstream_ws_close' };
         if (session.sseResponse) {
           try { session.sseResponse.write(`data: ${JSON.stringify(alertMsg)}\n\n`); } catch (_e) { /* SSE may be closed */ }
         } else if (session.clientWs && session.clientWs.readyState === WebSocket.OPEN) {
