@@ -37,9 +37,9 @@ export const RECENCY_HALFLIFE_DAYS = 30;
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 export function clamp01(n: number): number {
-  if (!Number.isFinite(n)) return 0;
-  if (n < 0) return 0;
-  if (n > 1) return 1;
+  if (Number.isNaN(n)) return 0; // NaN has no position on the line → treat as 0
+  if (n < 0) return 0; // catches -Infinity
+  if (n > 1) return 1; // catches +Infinity
   return n;
 }
 
