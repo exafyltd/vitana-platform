@@ -109,3 +109,14 @@ Legend: each box is a ~30-second click or a copy-paste command, not an engineeri
 - [ ] **Follow-up (needs live session):** wire handleLiveSessionStart hydration from orb_session_state (conversationId / transcript / lastTurnAt) + decideGreetingPolicyAuthoritative refactor; call recordWakeTurn on each meaningful turn.
 - [ ] After EXEC-DEPLOY SUCCESS: `/alive` 200.
 - [ ] Acceptance: close+reopen <60s → never `first`; reopen <15min → no repeat daily summary; logout → no leak (dragan1↔dragan3); LiveKit honors decisions.
+
+---
+
+## Phase ORB-4 — Audio-ready handshake
+
+- [ ] Depends on ORB-2+3 migration (orb_session_state) applied.
+- [ ] Merge PR #2437 — https://github.com/exafyltd/vitana-platform/pull/2437 (DEV-COMHU-0504)
+- [ ] **Follow-up (needs live session):** implement the greeting-release gate in connectToLiveAPI/wake-brief trigger (wait ack-or-3s) per patch; LiveKit agent wait_for_audio_ready.
+- [ ] Apply orb-agent patch: `docs/patches/orb-agent/ORB-4-audio-ready.py`.
+- [ ] Apply vitana-v1 patch: `docs/patches/vitana-v1/ORB-4-audio-ready.md` (cache-bust + optional LiveKit ack).
+- [ ] Acceptance: delayed unlock → greeting waits for ack; 3s timeout → greeting proceeds; reconnect <15min → no re-send.
