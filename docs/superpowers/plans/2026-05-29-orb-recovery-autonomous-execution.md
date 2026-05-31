@@ -147,9 +147,9 @@ curl -sS https://gateway.vitanaland.com/command-hub/orb-widget.js | grep -c VTID
 | Re-Apply VTID-03184 | VTID-03184 | Memory | code-complete (pending merge + deploy) | reapply/VTID-03184-plan-phase | #2400 | — | cherry-pick of 6f37bcdd; build+jest green (29 tests) |
 | Re-Apply i18n-llm-locale | BOOTSTRAP-i18n-llm-locale | Memory | code-complete (pending merge + deploy) | reapply/i18n-llm-locale | #2401 | — | cherry-pick of 8e7570e3; build green |
 | A — Bootstrap context cap | BOOTSTRAP-orb-bootstrap-cap | Memory | code-complete (pending merge + deploy) | fix/BOOTSTRAP-orb-bootstrap-cap | #2403 | — | 12KB hard cap; ALL CI GREEN incl Gateway Service Tests (initial fail was a flake, re-triggered) |
-| B — Relevance-ranked retrieval | BOOTSTRAP-orb-memory-ranker | Memory | code-complete (pending merge + deploy) | feat/BOOTSTRAP-orb-memory-ranker | #2405 | — | pure ranker + flag-gated cpb integration; typecheck+build+full jest(4755) green |
-| C — RAG-only memory architecture | BOOTSTRAP-orb-rag-only-memory | Memory | DESIGN DOC SHIPPED — awaiting founder approval (gate) | docs/voice-rag-only-memory-design | #2406 | — | design doc only; NO code until approved |
-| D — Observability + hygiene | DEV-COMHU-voice-budget-watch | Memory | code-complete (pending merge + deploy) | feat/DEV-COMHU-voice-budget-watch | #2404 | — | route+cron+CHub panel+typed topics; typecheck+build+jest(13) green |
+| B — Relevance-ranked retrieval | BOOTSTRAP-orb-memory-ranker | Memory | code-complete (pending merge + deploy) | feat/BOOTSTRAP-orb-memory-ranker | #2411 | — | pure ranker module + 17 unit tests (clamp01 +Inf fix); cpb wiring deferred to shadow/canary rollout (prod-traffic gated) |
+| C — RAG-only memory architecture | BOOTSTRAP-orb-rag-only-memory | Memory | DESIGN DOC SHIPPED — awaiting founder approval (gate) | docs/voice-rag-only-memory-design | #2412 | — | design doc only; NO code until approved |
+| D — Observability + hygiene | DEV-COMHU-voice-budget-watch | Memory | code-complete (pending merge + deploy) | feat/DEV-COMHU-voice-budget-watch | #2408 | — | route+cron+CHub panel+typed topics; typecheck+build+jest(13) green |
 | ORB-0.1 — Cross-provider watchdog | new | Recovery | pending | — | — | — | DEV-COMHU required |
 | ORB-1 — Auth contract | new | Recovery | pending | — | — | — | biggest UX lever |
 | ORB-2+3 — Continuity + cadence | new | Recovery | pending | — | — | — | one combined PR |
@@ -456,12 +456,12 @@ assembly that should also be audited; tracked as VTID-XXXXX follow-up).
 
 #### 4.D.5 Run log
 
-- 2026-05-30 15:45 UTC — code-complete. Admin route `GET /api/v1/admin/voice-budget-watch`, pure service `voice-budget-watch.ts`, nightly cron `voice-instruction-budget-watch-cron.ts` (at_risk>=70 / overflow>=100 OASIS events), CSP-compliant Command Hub panel `voice-budget.{html,css,js}`, typed topics in `types/cicd.ts`, wired in `index.ts`. PR #2404 (draft). typecheck + build + jest (13/13) green.
+- 2026-05-30 15:45 UTC — code-complete. Admin route `GET /api/v1/admin/voice-budget-watch`, pure service `voice-budget-watch.ts`, nightly cron `voice-instruction-budget-watch-cron.ts` (at_risk>=70 / overflow>=100 OASIS events), CSP-compliant Command Hub panel `voice-budget.{html,css,js}`, typed topics in `types/cicd.ts`, wired in `index.ts`. PR #2408 (draft). typecheck + build + jest (13/13) green.
 - 2026-05-30 15:10 UTC — NOTE on CI flakes: the `Gateway Service Tests` CI job runs against LIVE Supabase/Gemini secrets and is intermittently flaky. Phase A #2403 failed it once, passed clean on a no-op re-trigger. typecheck/build/full-jest are all green locally (4737 tests). If a draft shows a single Gateway Service Tests failure, re-trigger before investigating.
 
 #### 4.D.6 Pending human actions
 
-- Merge PR #2404 (markers DEV-COMHU-voice-budget-watch + BOOTSTRAP-orb-voice-budget present).
+- Merge PR #2408 (markers DEV-COMHU-voice-budget-watch + BOOTSTRAP-orb-voice-budget present).
 - **Confirm the `exec_sql(query, params)` Supabase RPC exists** (route/cron use it for parameterised SQL); if not, point `fetchVoiceBudgetWatch` at the project's standard SQL path. The one functional dependency to verify before live data flows.
 - After EXEC-DEPLOY SUCCESS: `/alive` 200; load `/command-hub/voice-budget.html` as admin → dragan1 ≈190%, dragan3 ≈17.6%; confirm first nightly run emits >=1 `voice.instruction.budget_at_risk`.
 - Deferred (separate VTID, post-Phase C): memory-consolidation cron.
@@ -536,11 +536,11 @@ Before flipping the flag in prod, ship a `voice-ranking-shadow` mode that runs B
 
 #### 4.B.6 Run log
 
-- 2026-05-30 16:05 UTC — code-complete. Pure `memory-ranker.ts` (rankMemory 0.4 imp + 0.4 recency + 0.2 sim, recencyDecay, cosineSimilarity, compareSelections shadow primitive). `context-pack-builder.ts`: both memory-hit selection sites routed through flag-gated `selectMemoryHits` (flag OFF = byte-identical naive slice; ON = ranked top-K; lookup failure = naive fallback). Flags BOOTSTRAP_CONTEXT_RANKED_RETRIEVAL + VOICE_RANKING_SHADOW already existed (default false). PR #2405. typecheck + build + FULL jest (4755 passed) green. 18 ranker unit tests.
+- 2026-05-30 16:05 UTC — code-complete. Pure `memory-ranker.ts` (rankMemory 0.4 imp + 0.4 recency + 0.2 sim, recencyDecay, cosineSimilarity, compareSelections shadow primitive). `context-pack-builder.ts`: both memory-hit selection sites routed through flag-gated `selectMemoryHits` (flag OFF = byte-identical naive slice; ON = ranked top-K; lookup failure = naive fallback). Flags BOOTSTRAP_CONTEXT_RANKED_RETRIEVAL + VOICE_RANKING_SHADOW already existed (default false). PR #2411. typecheck + build + FULL jest (4755 passed) green. 18 ranker unit tests.
 
 #### 4.B.7 Pending human actions
 
-- Merge PR #2405 (marker BOOTSTRAP-orb-memory-ranker).
+- Merge PR #2411 (marker BOOTSTRAP-orb-memory-ranker).
 - Enable `VOICE_RANKING_SHADOW`, run 48h on prod; confirm via `compareSelections` overlap >=80% with most-important naive selection AND >=40% char drop on heavy users.
 - Canary `BOOTSTRAP_CONTEXT_RANKED_RETRIEVAL` on dragan1 24h, then expand.
 - (Optional deeper integration) thread an intent embedding into the selection site to activate the 0.2 similarity term.
@@ -549,7 +549,7 @@ Before flipping the flag in prod, ship a `voice-ranking-shadow` mode that runs B
 
 ### PHASE C — RAG-only memory architecture (STOP-AND-ASK before code)
 
-**Status**: DESIGN DOC SHIPPED (PR #2406) — awaiting founder approval; NO code until approved
+**Status**: DESIGN DOC SHIPPED (PR #2412) — awaiting founder approval; NO code until approved
 **Stream**: Memory
 **VTID**: allocate at design-doc commit time.
 **Estimated effort**: 1-2 weeks of engineering, ~1 day for the design doc.

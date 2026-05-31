@@ -48,7 +48,7 @@ Legend: each box is a ~30-second click or a copy-paste command, not an engineeri
 
 ## Phase D — Observability + hygiene
 
-- [ ] Merge PR #2404 — https://github.com/exafyltd/vitana-platform/pull/2404 (DEV-COMHU-voice-budget-watch)
+- [ ] Merge PR #2408 — https://github.com/exafyltd/vitana-platform/pull/2408 (DEV-COMHU-voice-budget-watch)
 - [ ] **Verify `exec_sql(query, params)` RPC exists in Supabase** before relying on live data (route + cron depend on it).
 - [ ] After EXEC-DEPLOY SUCCESS:
   ```bash
@@ -64,7 +64,7 @@ Legend: each box is a ~30-second click or a copy-paste command, not an engineeri
 
 ## Phase B — Relevance-ranked retrieval
 
-- [ ] Merge PR #2405 — https://github.com/exafyltd/vitana-platform/pull/2405 (BOOTSTRAP-orb-memory-ranker)
+- [ ] Merge PR #2411 — https://github.com/exafyltd/vitana-platform/pull/2411 (BOOTSTRAP-orb-memory-ranker)
 - [ ] Enable `VOICE_RANKING_SHADOW` (DB/env flag), run 48h on prod traffic.
 - [ ] Confirm shadow `compareSelections`: ranked overlap ≥80% with most-important naive selection AND ≥40% char drop on heavy users.
 - [ ] Canary `BOOTSTRAP_CONTEXT_RANKED_RETRIEVAL` on dragan1 for 24h, verify audio + greeting quality, then expand.
@@ -74,7 +74,7 @@ Legend: each box is a ~30-second click or a copy-paste command, not an engineeri
 
 ## Phase C — RAG-only memory (DESIGN GATE — founder approval required)
 
-- [ ] **Founder: review & approve** design doc PR #2406 — https://github.com/exafyltd/vitana-platform/pull/2406 (`docs/architecture/voice-rag-only-memory.md`)
+- [ ] **Founder: review & approve** design doc PR #2412 — https://github.com/exafyltd/vitana-platform/pull/2412 (`docs/architecture/voice-rag-only-memory.md`)
   - Answer §10: (1) facts+digest-in-setup / bulk-on-demand split OK for greeting richness? (2) +100–300 ms on recall turns OK? (3) any source to keep inlined?
 - [ ] Only after approval: implement Phase C behind `MEMORY_ON_DEMAND_RAG` per design §7 (shadow → dragan1 canary → cohort).
 - [ ] **No code merges for Phase C until this gate clears.**
