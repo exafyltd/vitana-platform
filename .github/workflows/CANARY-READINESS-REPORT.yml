@@ -78,7 +78,7 @@ jobs:
         id: ftstatus
         run: |
           set +e
-          TARGET='${{ inputs.target || ''voice-tool-router'' }}'
+          TARGET="${{ inputs.target || 'voice-tool-router' }}"
           PREFIX="${TARGET}-ft-"
           # Latest job with this prefix; success state = JOB_STATE_SUCCEEDED.
           OUT=$(gcloud ai custom-jobs list --region=us-central1 --project="${GCP_PROJECT}" \
