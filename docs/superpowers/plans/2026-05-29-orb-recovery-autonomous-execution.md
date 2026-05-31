@@ -150,7 +150,7 @@ curl -sS https://gateway.vitanaland.com/command-hub/orb-widget.js | grep -c VTID
 | B — Relevance-ranked retrieval | BOOTSTRAP-orb-memory-ranker | Memory | code-complete (pending merge + deploy) | feat/BOOTSTRAP-orb-memory-ranker | #2411 | — | pure ranker module + 17 unit tests (clamp01 +Inf fix); cpb wiring deferred to shadow/canary rollout (prod-traffic gated) |
 | C — RAG-only memory architecture | BOOTSTRAP-orb-rag-only-memory | Memory | DESIGN DOC SHIPPED — awaiting founder approval (gate) | docs/voice-rag-only-memory-design | #2412 | — | design doc only; NO code until approved |
 | D — Observability + hygiene | DEV-COMHU-voice-budget-watch | Memory | code-complete (pending merge + deploy) | feat/DEV-COMHU-voice-budget-watch | #2408 | — | route+cron+CHub panel+typed topics; typecheck+build+jest(13) green |
-| ORB-0.1 — Cross-provider watchdog | new | Recovery | pending | — | — | — | DEV-COMHU required |
+| ORB-0.1 — Cross-provider watchdog | DEV-COMHU-0501 | Recovery | code-complete (pending merge + deploy) | feat/DEV-COMHU-0501-orb-speaking-watchdog | #2431 | — | watchdog+diagnostics+regression+jest; typecheck/build/smoke/jest green |
 | ORB-1 — Auth contract | new | Recovery | pending | — | — | — | biggest UX lever |
 | ORB-2+3 — Continuity + cadence | new | Recovery | pending | — | — | — | one combined PR |
 | ORB-4 — Audio-ready handshake | new | Recovery | pending | — | — | — | depends on shared state from 2+3 |

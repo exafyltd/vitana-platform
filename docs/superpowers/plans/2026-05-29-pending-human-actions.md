@@ -78,3 +78,12 @@ Legend: each box is a ~30-second click or a copy-paste command, not an engineeri
   - Answer §10: (1) facts+digest-in-setup / bulk-on-demand split OK for greeting richness? (2) +100–300 ms on recall turns OK? (3) any source to keep inlined?
 - [ ] Only after approval: implement Phase C behind `MEMORY_ON_DEMAND_RAG` per design §7 (shadow → dragan1 canary → cohort).
 - [ ] **No code merges for Phase C until this gate clears.**
+
+---
+
+## Phase ORB-0.1 — Cross-provider speaking-state watchdog
+
+- [ ] Merge PR #2431 — https://github.com/exafyltd/vitana-platform/pull/2431 (DEV-COMHU-0501)
+- [ ] After EXEC-DEPLOY SUCCESS: `/alive` 200; confirm `orb-widget.js?v=20260531-DEV-COMHU-0501-speaking-watchdog` served.
+- [ ] Apply vitana-v1 companion patch: `docs/patches/vitana-v1/ORB-0.1-speaking-watchdog.md` (cache-bust bump + LiveKit frame-stamp audit).
+- [ ] Community smoke: multi-chunk Vertex turn → watchdog silent; simulated stalled LiveKit subscription → "Vitana speaking" clears within ~2s.
