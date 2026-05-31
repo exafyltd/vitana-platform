@@ -394,3 +394,13 @@ Otherwise: silent, continuous, autonomous. Begin.
 ```
 
 End of plan.
+
+---
+
+## 9. EXECUTION LOG (autonomous takeover)
+
+### 2026-05-31 — Audit complete + PR-1 (observability) code-complete
+- **Audit**: written to `docs/superpowers/plans/2026-05-31-orb-communication-audit.md` (sections A–G with file:line evidence). Confirmed: context wiring is SCATTERED (no unified awareness object); Teacher selection/content is SPLIT (permission line fires without content on resolver failure); Vertex/LiveKit share the decider but diverge on delivery, with a Vertex-only missing accept/dismiss telemetry gap masked by the LiveKit canary allowlist; the third companion plan doc does not exist on main.
+- **PR-1 (VTID-03210)** — turn-1 wake-decision observability, ZERO behavior change. New `orb/live/instruction/wake-decision-snapshot.ts` emits one structured `[wake-decision]` JSON line per session, identically on Vertex (`live-session-controller.ts`) and LiveKit (`orb-livekit.ts`): winner + provider key, per-provider suppress reasons, `turn1_collision` (≥2 turn-1 blocks co-present), firstName source, transport. This is recommendation G.1 — the smallest change that makes the turn-1 state machine observable and disambiguates R0 (allowlist-masking vs prompt-collision) from production logs. 11 unit tests + 232 touched-area orb tests green; `tsc` clean. Out-of-sandbox items logged in `2026-05-29-pending-human-actions.md`.
+- **Branch base decision**: all recovery work branches off `origin/main` (not the diverged `ops/autopilot-diagnose`).
+- **R0 status**: deferred — the observability line is the safe precursor; live R0 diagnosis (prod log pull / test accounts) runs after PR-1 ships so the logs exist to read.

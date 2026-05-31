@@ -72,6 +72,11 @@ import {
 import { emitOasisEvent } from '../../../services/oasis-event-service';
 import { defaultWakeTimelineRecorder } from '../../../services/wake-timeline/wake-timeline-recorder';
 import { decideWakeBriefForSession } from '../../../services/wake-brief-wiring';
+// VTID-03210: single structured turn-1 wake-decision observability line.
+import {
+  logWakeDecisionSnapshot,
+  type FirstNameSource,
+} from '../instruction/wake-decision-snapshot';
 import { recordAgentHeartbeat } from '../../../routes/agents-registry';
 import {
   fetchAdminBriefingBlock,
@@ -982,8 +987,16 @@ export async function handleLiveSessionStart(
   }
   (session as any).decisionContext = decisionContextVertex;
 
+  // VTID-03210: hoisted out of the wake-brief try below so the single
+  // turn-1 wake-decision snapshot (emitted after the journey-greeting
+  // block) can read them outside that try's scope.
+  let firstName: string | null = null;
+  let firstNameSource: FirstNameSource = 'none';
+  let wakeBucketForSnapshot: string | null = null;
+
   try {
     const temporal = deps.describeTimeSince(session.lastSessionInfo);
+    wakeBucketForSnapshot = temporal.bucket;
     const { getSupabase } = await import('../../../lib/supabase');
     const supabaseClient = getSupabase() ?? undefined;
     const { fetchWakeCadenceSignals } = await import('../../../services/wake-cadence-signals');
@@ -1001,7 +1014,10 @@ export async function handleLiveSessionStart(
     //      name in the email handle, e.g. "dragan@..." → "dragan").
     // Best-effort: every fetch failure leaves firstName null, which sends
     // the Teacher to the no-name pool (still correct, just less personal).
-    let firstName: string | null = null;
+    // VTID-03210: firstName + firstNameSource are declared in the outer
+    // scope (above this try). firstNameSource tracks which source resolved
+    // the name (memory_facts -> app_users -> email) so the documented
+    // multi-source name-disagreement risk is observable in the snapshot.
     if (supabaseClient && orbIdentity?.tenant_id && orbIdentity?.user_id) {
       const [cadenceResult, factResult, profileResult] = await Promise.allSettled([
         fetchWakeCadenceSignals({
@@ -1025,22 +1041,33 @@ export async function handleLiveSessionStart(
         cadenceSignals = cadenceResult.value;
       }
       let fullName = '';
+      let fullNameSource: FirstNameSource = 'none';
       if (factResult.status === 'fulfilled' && factResult.value && !factResult.value.error) {
         const v = (factResult.value.data as { fact_value?: string | null } | null)?.fact_value;
-        if (typeof v === 'string' && v.trim().length > 0) fullName = v.trim();
+        if (typeof v === 'string' && v.trim().length > 0) {
+          fullName = v.trim();
+          fullNameSource = 'memory_facts';
+        }
       }
       if (!fullName && profileResult.status === 'fulfilled' && profileResult.value && !profileResult.value.error) {
         const v = (profileResult.value.data as { display_name?: string | null } | null)?.display_name;
-        if (typeof v === 'string' && v.trim().length > 0) fullName = v.trim();
+        if (typeof v === 'string' && v.trim().length > 0) {
+          fullName = v.trim();
+          fullNameSource = 'app_users';
+        }
       }
       if (fullName) {
         firstName = fullName.split(/\s+/)[0] || null;
+        firstNameSource = firstName ? fullNameSource : 'none';
       } else if (orbIdentity.email && orbIdentity.email.includes('@')) {
         // Last-resort: take the email local part. Strip digits / underscores
         // so "dragan1" → "dragan", "d_stevanovic" → "stevanovic" (best effort).
         const local = orbIdentity.email.split('@')[0] || '';
         const stripped = local.replace(/[0-9_.+\-]+/g, '').trim();
-        if (stripped.length >= 2) firstName = stripped[0].toUpperCase() + stripped.slice(1);
+        if (stripped.length >= 2) {
+          firstName = stripped[0].toUpperCase() + stripped.slice(1);
+          firstNameSource = 'email';
+        }
       }
     }
     wakeBriefDecision = await decideWakeBriefForSession({
@@ -1272,6 +1299,26 @@ export async function handleLiveSessionStart(
       `[VTID-03154] journey-greeting resolution failed (non-fatal) for ${sessionId}: ${(e as Error).message}`,
     );
   }
+
+  // VTID-03210: emit ONE structured turn-1 wake-decision snapshot. Runs
+  // after both the wake-brief and journey-greeting blocks are resolved so
+  // turn1_collision can see all three turn-1 blocks at once. Observability
+  // only — never throws, mutates nothing.
+  logWakeDecisionSnapshot({
+    transport: 'vertex',
+    sessionId,
+    decision: wakeBriefDecision,
+    blocks: {
+      wakeBriefOverride: !!session.wakeBriefOverrideBlock,
+      teacherModeContent: !!(session as any).teacherModeContent,
+      journeyGreeting: !!(session as any).journeyGreetingBlock,
+    },
+    firstName: { value: firstName, source: firstNameSource },
+    lang,
+    bucket: wakeBucketForSnapshot,
+    isReconnect: isReconnectStart,
+    timezonePresent: !!session.clientContext?.timezone,
+  });
 
   // Emit OASIS event with identity context
   await deps.emitLiveSessionEvent('vtid.live.session.start', {

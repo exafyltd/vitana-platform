@@ -38,6 +38,13 @@ import { AccessToken } from 'livekit-server-sdk';
 import * as jose from 'jose';
 import { emitOasisEvent } from '../services/oasis-event-service';
 import { getSupabase } from '../lib/supabase';
+// VTID-03210: single structured turn-1 wake-decision snapshot — emitted
+// identically on Vertex (live-session-controller) and here on LiveKit so
+// the turn-1 state machine is observable across both transports.
+import {
+  logWakeDecisionSnapshot,
+  type FirstNameSource,
+} from '../orb/live/instruction/wake-decision-snapshot';
 // VTID-02855: reuse Vertex's geo-IP + UA-parse + format helpers so the
 // LiveKit bootstrap injects the same ENVIRONMENT CONTEXT block (city,
 // country, timezone, localTime, UTC, device) that Vertex's authenticated
@@ -1345,6 +1352,13 @@ router.get(
     const userNameFact = identityFacts.find((f) => f.fact_key === 'user_name');
     const fullName = (userNameFact?.fact_value || displayName || '').trim();
     const firstName = fullName ? fullName.split(/\s+/)[0] : null;
+    // VTID-03210: label the source the same way the Vertex path does so the
+    // wake-decision snapshot's first_name.source is comparable across both.
+    const firstNameSource: FirstNameSource = !firstName
+      ? 'none'
+      : (userNameFact?.fact_value || '').trim()
+        ? 'memory_facts'
+        : 'app_users';
 
     // VTID-02855: ENVIRONMENT CONTEXT — geo-IP + UA + local time, mirrors
     // Vertex's orb-live.ts:14026 path. The fetch itself was moved INTO
@@ -1539,6 +1553,9 @@ router.get(
     // is not yet routed into the spoken first words (deferred per the
     // B0d.4 design rule until timeline data confirms the path is healthy).
     let wakeBriefDecision: Awaited<ReturnType<typeof decideWakeBriefForSession>> | null = null;
+    // VTID-03210: hoisted to handler scope so the wake-decision snapshot
+    // (emitted below, after the override re-render) can read the bucket.
+    let wakeBucketForSnapshot: string | null = null;
     if (userId && tenantId) {
       try {
         // LiveKit bootstrap has no long-lived session_id at this point —
@@ -1552,6 +1569,7 @@ router.get(
         // bootstrap, same value reaches both buildLiveSystemInstruction call
         // sites and the wake-brief decision.
         const temporal = describeTimeSince(lastSessionInfo);
+        wakeBucketForSnapshot = temporal.bucket;
         // VTID-03081 (B1 wiring): read cadence signals from
         // user_assistant_state so decideGreetingPolicy() can apply the
         // 15-min greet-once cap, same-style downgrade, and heavy-day
@@ -1641,10 +1659,12 @@ router.get(
     // live-system-instruction.ts detects the marker and removes the
     // competing vitana-brain opener sections so the override actually
     // owns the first turn.
+    let wakeOverrideApplied = false;
     try {
       const picked = wakeBriefDecision?.selectedContinuation ?? null;
       const line = picked?.userFacingLine?.trim();
       if (picked && line && line.length > 0 && !isReconnect) {
+        wakeOverrideApplied = true;
         const { buildVertexWakeBriefBlock } = await import(
           '../orb/live/session/live-session-controller'
         );
@@ -1685,6 +1705,31 @@ router.get(
         `[${VTID}/VTID-03100] override re-render failed (non-fatal — falls back to pre-override system_instruction): ${(exc as Error).message}`,
       );
     }
+
+    // VTID-03210: emit the SAME structured turn-1 wake-decision snapshot as
+    // the Vertex path (live-session-controller). LiveKit composes the first
+    // turn differently — the wake-brief override is the only turn-1 block in
+    // this handler (teacher-mode / journey-greeting blocks are Vertex-session
+    // constructs), so those flags are false here. The shared shape makes the
+    // Vertex/LiveKit asymmetry directly comparable in logs.
+    logWakeDecisionSnapshot({
+      transport: 'livekit',
+      sessionId: `livekit-bootstrap-${agentId}`,
+      decision: wakeBriefDecision,
+      blocks: {
+        wakeBriefOverride: wakeOverrideApplied,
+        teacherModeContent: false,
+        journeyGreeting: false,
+      },
+      firstName: { value: firstName, source: firstNameSource },
+      lang,
+      bucket: wakeBucketForSnapshot,
+      isReconnect,
+      timezonePresent: !!(
+        (envContext as { timezone?: string } | undefined)?.timezone ??
+        (envContext as { clientContext?: { timezone?: string } } | undefined)?.clientContext?.timezone
+      ),
+    });
 
     const responsePayload: Record<string, unknown> = {
       ok: true,
