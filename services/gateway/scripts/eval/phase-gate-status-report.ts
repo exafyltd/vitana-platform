@@ -306,6 +306,7 @@ interface PhaseGateReport {
     gates_unknown: number;
     ready_for_w3_b_to_g: boolean;
     first_blocker: string | null;
+    blocked_by_priority: string[];
   };
   gates: GateResult[];
 }
@@ -321,7 +322,37 @@ async function generate(): Promise<PhaseGateReport> {
   const open = gates.filter((g) => g.status === 'open').length;
   const blocked = gates.filter((g) => g.status === 'blocked').length;
   const unknown = gates.filter((g) => g.status === 'unknown').length;
-  const firstBlocker = gates.find((g) => g.status === 'blocked');
+
+  // VTID-03222 (Phase 1 W3-B1): deterministic first_blocker ordering.
+  // Previously `gates.find(blocked)` returned whichever blocked gate
+  // happened to be first in array order. Operators iterating "unblock
+  // them in order" need a stable priority so the same gate appears
+  // first across runs even as gate state changes. Priority reflects
+  // dependency order — prod_consent unblocks dataset_rows; vertex_iam
+  // unblocks fine-tune training; aws_mirror unblocks W3-D; shadow
+  // traffic + dataset_rows are downstream gates whose state depends on
+  // the upstream ones being open.
+  const GATE_PRIORITY = [
+    'prod_consent',
+    'vertex_iam',
+    'aws_mirror',
+    'shadow_traffic',
+    'dataset_rows',
+  ] as const;
+  const blockedByPriority: GateResult[] = [];
+  for (const name of GATE_PRIORITY) {
+    const g = gates.find((x) => x.name === name);
+    if (g && g.status === 'blocked') blockedByPriority.push(g);
+  }
+  // Any gates blocked but NOT in the priority list (future additions)
+  // append at the end, preserving the explicit order for the known ones.
+  for (const g of gates) {
+    if (g.status === 'blocked' && !GATE_PRIORITY.includes(g.name as typeof GATE_PRIORITY[number])) {
+      blockedByPriority.push(g);
+    }
+  }
+  const firstBlocker = blockedByPriority[0];
+
   return {
     generated_at: new Date().toISOString(),
     overall: {
@@ -331,6 +362,7 @@ async function generate(): Promise<PhaseGateReport> {
       gates_unknown: unknown,
       ready_for_w3_b_to_g: blocked === 0 && unknown === 0,
       first_blocker: firstBlocker?.name ?? null,
+      blocked_by_priority: blockedByPriority.map((g) => g.name),
     },
     gates,
   };
