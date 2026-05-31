@@ -13,6 +13,57 @@ Legend: each box is a ~30-second click or a copy-paste command, not an engineeri
 
 ---
 
+# RELEASE RUNBOOK (read first)
+
+Status: **integration-ready, NOT production-complete.** The remaining risk is
+sequencing, deploy gates, and live-provider parity — not unwritten code. Work the three
+buckets below in order. Do **not** let "click to merge" swallow a migration / patch /
+live-smoke prerequisite.
+
+## Strict merge + deploy order
+
+Merge and let EXEC-DEPLOY finish (verify `/alive` 200) **one at a time**, in this order:
+
+```
+#2400 → #2401 → #2403 → #2408 → #2411      (Memory stream)
+  then
+#2431 → #2432 → #2435 → #2437 → #2438 → #2439   (Recovery stream)
+```
+
+Rationale: Recovery PRs touch the shared widget + `live-system-instruction.ts` lineage;
+landing serially keeps the cache-bust + instruction contract coherent. `#2437` (audio-
+ready) and `#2438`/`#2439` consume the `orb_session_state` substrate from `#2435`.
+
+## Bucket 1 — MERGE BLOCKERS (must be true *before* the merge of that PR)
+
+- [ ] **#2438 / #2439:** the in-progress `Gateway Service Tests` jobs are **truly green**, not just historically flaky. Confirm the latest run is `success` before merging. (Re-trigger once if it flakes; if it fails twice on real content, stop and investigate.)
+- [ ] **#2408 merge blocker:** confirm the `exec_sql(query, params)` RPC exists in the target Supabase project (the voice-budget route + cron depend on it). If absent, repoint `fetchVoiceBudgetWatch` to the project's standard parameterised-SQL path *before* merge.
+- [ ] **#2435 merge blocker:** apply migration `supabase/migrations/20260606000000_DEV_COMHU_0503_orb_session_state.sql` to the target Supabase project **before** merging #2435 (and therefore before #2437/#2438 which depend on the table). Creates `orb_session_state` + `orb_session_state_gc()`.
+- [ ] **Phase C (#2412):** HARD founder gate. Docs-only PR may merge, but **no Phase C code branch starts** until §10 is answered. Not in the deploy sequence above.
+
+## Bucket 2 — PROD DEPLOY TASKS (do as part of each phase's rollout, post-merge)
+
+- [ ] After **every** merge: confirm EXEC-DEPLOY SUCCESS, then `curl /alive` → 200 JSON.
+- [ ] Apply the **`vitana-v1` patches** before claiming cross-provider parity in prod:
+  `ORB-0.1-speaking-watchdog.md`, `ORB-1-auth-contract.md`, `ORB-2-3-continuity-cadence.md`, `ORB-4-audio-ready.md` (each includes the matching `orb-widget.js?v=` cache-bust bump).
+- [ ] Apply the **`orb-agent` patches** before claiming LiveKit parity in prod:
+  `ORB-2-3-continuity-greeting.py`, `ORB-4-audio-ready.py`, `ORB-5-autopilot-cta.py`, `phaseA-bootstrap-cap.py`.
+- [ ] Live smokes per phase (dragan3 + dragan1, Vertex **and** LiveKit canary) — see each phase block below.
+
+## Bucket 3 — POST-MERGE FOLLOW-UPS (tracked engineering, not release blockers)
+
+- [ ] **#2435:** wire `handleLiveSessionStart` hydration from `orb_session_state` + `decideGreetingPolicyAuthoritative` refactor + call `recordWakeTurn` on each meaningful turn (needs live session).
+- [ ] **#2437:** implement the greeting-release gate (`connectToLiveAPI`/wake-brief waits ack-or-3s; LiveKit `wait_for_audio_ready`) — needs live-session timing.
+- [ ] **#2438:** persist `pending_cta` in `orb_session_state` for cross-transport "yes" resolution.
+- [ ] **#2439:** build `GET /api/v1/admin/orb-recovery-health` + cockpit card; run the synthetic Playwright flow on vitanaland.com (both providers).
+- [ ] **#2432 DECISION:** add the flag-gated "refuse anonymous on authenticated surface (401)" rule once the `orb.session.identity.resolved` metric confirms drift is gone.
+- [ ] **Phase B (#2411):** `VOICE_RANKING_SHADOW` 48h → verify overlap/char-drop → canary `BOOTSTRAP_CONTEXT_RANKED_RETRIEVAL` on dragan1 24h → expand.
+- [ ] **Phase A → D:** promote the stdout `[voice.instruction.budget_trimmed]` signal to the typed OASIS topic (the topic already exists from #2408).
+
+---
+
+# PER-PHASE DETAIL (reference)
+
 ## Phase Re-Apply
 
 - [ ] Merge PR #2400 — https://github.com/exafyltd/vitana-platform/pull/2400 (VTID-03184 plan_phase branching re-apply)
