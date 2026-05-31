@@ -24,6 +24,17 @@ on:
         default: 'false'
         type: choice
         options: [ 'true', 'false' ]
+      synthetic_bootstrap:
+        description: 'Manual smoke only: generate PII-free synthetic voice-tool-router rows before submit'
+        required: false
+        default: 'false'
+        type: choice
+        options: [ 'true', 'false' ]
+      base_model_override:
+        description: 'Optional manual smoke override (example: Qwen/Qwen2.5-0.5B-Instruct)'
+        required: false
+        default: ''
+        type: string
 
 permissions:
   contents: read
@@ -62,8 +73,20 @@ jobs:
 
       - uses: google-github-actions/setup-gcloud@v2
 
+      - name: Package Vertex trainer
+        working-directory: services/gateway
+        run: npx tsx scripts/finetune/package-trainer.ts ${{ matrix.target }}
+
+      - name: Bootstrap synthetic voice-tool-router dataset
+        if: ${{ inputs.synthetic_bootstrap == 'true' && matrix.target == 'voice-tool-router' }}
+        working-directory: services/gateway
+        env:
+          SYNTHETIC_ROWS: '1200'
+        run: npx tsx scripts/finetune/bootstrap-synthetic-voice-tool-routing.ts
+
       - name: Submit ${{ matrix.target }}
         working-directory: services/gateway
         env:
           FINETUNE_DRY_RUN: ${{ inputs.dry_run == 'true' && '1' || '0' }}
+          FINETUNE_BASE_MODEL_OVERRIDE: ${{ inputs.base_model_override || '' }}
         run: npx tsx scripts/finetune/submit-job.ts ${{ matrix.target }}
