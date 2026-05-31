@@ -41,12 +41,16 @@ ready) and `#2438`/`#2439` consume the `orb_session_state` substrate from `#2435
 - [ ] **#2435 merge blocker:** apply migration `supabase/migrations/20260606000000_DEV_COMHU_0503_orb_session_state.sql` to the target Supabase project **before** merging #2435 (and therefore before #2437/#2438 which depend on the table). Creates `orb_session_state` + `orb_session_state_gc()`.
 - [ ] **Phase C (#2412):** HARD founder gate. Docs-only PR may merge, but **no Phase C code branch starts** until §10 is answered. Not in the deploy sequence above.
 
-## Bucket 2 — PROD DEPLOY TASKS (do as part of each phase's rollout, post-merge)
+## Bucket 2 — POST-MERGE VERIFICATION + CROSS-REPO (after each merge)
 
-- [ ] After **every** merge: confirm EXEC-DEPLOY SUCCESS, then `curl /alive` → 200 JSON.
-- [ ] Apply the **`vitana-v1` patches** before claiming cross-provider parity in prod:
+> Deploy is **automatic**: merging to `main` with a VTID/BOOTSTRAP marker triggers
+> Auto Deploy → EXEC-DEPLOY → Cloud Run. Nobody hand-deploys. These items are
+> *verify the auto-deploy* + the cross-repo work the pipeline doesn't cover.
+
+- [ ] After **every** merge: confirm EXEC-DEPLOY dispatched and finished SUCCESS, then `curl /alive` → 200 JSON. (If Auto Deploy didn't dispatch EXEC-DEPLOY, the commit marker was missing — see CLAUDE.md §16.)
+- [ ] Apply the **`vitana-v1` patches** before claiming cross-provider parity (separate repo, not covered by this pipeline):
   `ORB-0.1-speaking-watchdog.md`, `ORB-1-auth-contract.md`, `ORB-2-3-continuity-cadence.md`, `ORB-4-audio-ready.md` (each includes the matching `orb-widget.js?v=` cache-bust bump).
-- [ ] Apply the **`orb-agent` patches** before claiming LiveKit parity in prod:
+- [ ] Apply the **`orb-agent` patches** before claiming LiveKit parity:
   `ORB-2-3-continuity-greeting.py`, `ORB-4-audio-ready.py`, `ORB-5-autopilot-cta.py`, `phaseA-bootstrap-cap.py`.
 - [ ] Live smokes per phase (dragan3 + dragan1, Vertex **and** LiveKit canary) — see each phase block below.
 
