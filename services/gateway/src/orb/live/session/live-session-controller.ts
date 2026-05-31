@@ -632,6 +632,47 @@ export async function handleLiveSessionStart(
   console.log(`[VTID-ANON] Session ${sessionId}: hasJwtIdentity=${hasJwtIdentity}, isAnonymous=${isAnonymousSession}, req.identity.user_id=${req.identity?.user_id || 'none'}, orbIdentity.user_id=${orbIdentity?.user_id || 'none'}, bootstrapIdentity=${bootstrapIdentity ? bootstrapIdentity.user_id.substring(0, 8) : 'null'}`);
   console.log(`[VTID-CONTEXT] Client context: city=${clientContext.city || 'unknown'}, country=${clientContext.country || 'unknown'}, time=${clientContext.localTime || 'unknown'}, device=${clientContext.device || 'unknown'}, anonymous=${isAnonymousSession}`);
 
+  // DEV-COMHU-0502 — ORB Recovery 1 (auth contract): structured identity
+  // resolution telemetry. This is the OASIS signal that lets the Phase D
+  // cockpit count "anonymous sessions on an authenticated surface" — the
+  // metric that exposes the widget-side anonymous-drift bug from the outside.
+  // Fire-and-forget: never block session start on telemetry.
+  {
+    const idResolvedRoute =
+      typeof (body as any).current_route === 'string' ? (body as any).current_route : '';
+    const idResolvedSurface = clientContext.isMobile
+      ? 'vitanaland'
+      : idResolvedRoute.startsWith('/command-hub')
+        ? 'command-hub'
+        : idResolvedRoute.startsWith('/admin')
+          ? 'admin'
+          : 'vitanaland';
+    emitOasisEvent({
+      vtid: 'DEV-COMHU-0502',
+      type: 'orb.session.identity.resolved',
+      source: 'orb-live',
+      status: isAnonymousSession ? 'warning' : 'info',
+      message: isAnonymousSession
+        ? `session_start_anonymous (surface=${idResolvedSurface})`
+        : `session_start_authenticated (surface=${idResolvedSurface})`,
+      payload: {
+        session_id: sessionId,
+        surface: idResolvedSurface,
+        has_authorization_header: !!req.headers.authorization,
+        auth_valid: hasJwtIdentity,
+        is_anonymous: isAnonymousSession,
+        tenant_id: req.identity?.tenant_id ?? null,
+        user_id: req.identity?.user_id ?? null,
+        active_role: (req.identity as any)?.active_role ?? null,
+        // Flag the drift case explicitly: an authenticated surface running anonymous.
+        anonymous_on_authenticated_surface:
+          isAnonymousSession && (idResolvedSurface === 'command-hub' || idResolvedSurface === 'admin'),
+      },
+      actor_id: req.identity?.user_id ?? undefined,
+      surface: 'orb',
+    }).catch(() => {});
+  }
+
   // Resolve language priority:
   // 1. Client-requested lang
   // 2. Stored preference (parallel fetch)

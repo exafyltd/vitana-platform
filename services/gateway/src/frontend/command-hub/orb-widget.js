@@ -2769,17 +2769,45 @@
       console.log('[VTOrb] Initialized — gateway: ' + _cfg.gw + ', lang: ' + _cfg.lang + ', showFab: ' + _cfg.showFab + ', hasToken: ' + !!_cfg.token + ', forceAnonymous: ' + _cfg.forceAnonymous);
     },
 
-    // Update auth token after login/logout — call this when auth state changes.
-    // Ignored if init() was called without authToken (forceAnonymous mode).
-    // To switch from anonymous to authenticated, call init() again with authToken.
+    // Update auth token after login/logout — call this on EVERY token-state
+    // change (login, silent refresh, account switch).
+    //
+    // DEV-COMHU-0502 — ORB Recovery 1 (auth contract): setAuth is now REACTIVE.
+    // The previous implementation hard-ignored every setAuth call once init()
+    // ran without a token (`forceAnonymous`), which meant a host that called
+    // init() early (before login resolved) then setAuth(token) on login stayed
+    // anonymous forever — skipping memory, cadence, last-session, and tools.
+    // That single bug produced the "I have no access" + missing-memory +
+    // "first-time greeting every reopen" cluster.
+    //
+    // A non-empty token always lifts the widget into authenticated mode and
+    // clears the anonymous lock. setAuth('') / null is treated as a logout and
+    // routed through clearAuth so identity-bound continuity is wiped
+    // (preserving the VTID-AUTH-FIX anti-leak guarantee).
     setAuth: function (token) {
-      if (_cfg.forceAnonymous) {
-        console.log('[VTOrb] setAuth ignored — forceAnonymous mode. Call init({ authToken }) to authenticate.');
+      if (!token) {
+        VitanaOrb.clearAuth();
         return;
       }
-      _cfg.token = token || '';
+      _cfg.token = token;
+      _cfg.forceAnonymous = false; // a real token always lifts the anon lock
+      _tokenSetByInit = true;      // caller now owns auth; stop localStorage auto-detect
+      console.log('[VTOrb] setAuth: hasToken=true (reactive)');
+    },
+
+    // DEV-COMHU-0502: explicit logout / account-switch / "start over". Clears
+    // the token AND any identity-bound session continuity so the next session
+    // cannot leak the previous user's conversation or greeting state. Hosts
+    // MUST call this on logout and before switching accounts.
+    clearAuth: function () {
+      _cfg.token = '';
+      _cfg.forceAnonymous = false; // not locked-anonymous; just unauthenticated now
       _tokenSetByInit = true;
-      console.log('[VTOrb] setAuth: hasToken=' + !!_cfg.token);
+      _s._transcriptHistory = [];
+      _s.conversationId = null;
+      _s._preDisconnectStage = null;
+      _s._reconnectCount = 0;
+      console.log('[VTOrb] clearAuth: token + identity-bound continuity cleared');
     },
 
     show: _show,
