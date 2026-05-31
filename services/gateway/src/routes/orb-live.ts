@@ -10719,6 +10719,72 @@ router.post('/live/session/stop', optionalAuth, async (req: AuthenticatedRequest
 });
 
 /**
+ * DEV-COMHU-0503 — ORB Recovery 2+3: close/reopen continuity.
+ *
+ * The widget persists short-lived continuity on UI close (reason='hide', 15min)
+ * or transient transport loss (reason='connection', 5min), and clears it on
+ * intentional forget (logout / account switch / reset). On reopen the session
+ * hydrates from here so a brief close does not look "first-time".
+ *
+ * Authenticated only — anonymous sessions have no durable identity to key on.
+ * Fails soft: continuity is an optimization, never a hard dependency.
+ *
+ *   POST /api/v1/orb/session/continuity   { reason, ttl_minutes, value }
+ *   GET  /api/v1/orb/session/continuity   → { ok, continuity|null }
+ *   DELETE /api/v1/orb/session/continuity → clear
+ */
+router.post('/session/continuity', optionalAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const userId = req.identity?.user_id;
+  if (!userId) return res.status(200).json({ ok: false, reason: 'anonymous_no_continuity' });
+  const supabase = getSupabase();
+  if (!supabase) return res.status(503).json({ ok: false, error: 'supabase_unavailable' });
+  try {
+    const { writeOrbSessionState, clearOrbSessionState } = await import('../services/orb/orb-session-state');
+    const body = (req.body || {}) as { reason?: string; ttl_minutes?: number; value?: unknown; clear?: boolean };
+    if (body.clear) {
+      const r = await clearOrbSessionState(supabase, userId, 'continuity');
+      return res.json({ ok: r.ok });
+    }
+    const ttl = typeof body.ttl_minutes === 'number' ? body.ttl_minutes : 15;
+    const r = await writeOrbSessionState(supabase, userId, 'continuity', {
+      ...(body.value && typeof body.value === 'object' ? body.value : {}),
+      reason: body.reason || 'hide',
+    }, ttl);
+    return res.json({ ok: r.ok, reason: r.reason });
+  } catch (e) {
+    return res.status(200).json({ ok: false, reason: e instanceof Error ? e.message : String(e) });
+  }
+});
+
+router.get('/session/continuity', optionalAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const userId = req.identity?.user_id;
+  if (!userId) return res.json({ ok: true, continuity: null });
+  const supabase = getSupabase();
+  if (!supabase) return res.json({ ok: true, continuity: null });
+  try {
+    const { readOrbSessionState } = await import('../services/orb/orb-session-state');
+    const rec = await readOrbSessionState(supabase, userId, 'continuity');
+    return res.json({ ok: true, continuity: rec ? rec.value : null });
+  } catch {
+    return res.json({ ok: true, continuity: null });
+  }
+});
+
+router.delete('/session/continuity', optionalAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const userId = req.identity?.user_id;
+  if (!userId) return res.json({ ok: true });
+  const supabase = getSupabase();
+  if (!supabase) return res.json({ ok: true });
+  try {
+    const { clearOrbSessionState } = await import('../services/orb/orb-session-state');
+    const r = await clearOrbSessionState(supabase, userId, 'continuity');
+    return res.json({ ok: r.ok });
+  } catch {
+    return res.json({ ok: true });
+  }
+});
+
+/**
  * VTID-01155: GET /live/stream - SSE endpoint for bidirectional streaming
  * VTID-01226: Added token validation from query param for multi-tenant auth
  *

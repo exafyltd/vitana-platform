@@ -2531,7 +2531,52 @@
     _s._soundscapeWasPlaying = false;
   }
 
+  // DEV-COMHU-0503 — ORB Recovery 2+3: persist short-lived continuity to the
+  // gateway so a brief UI close / transient disconnect does not look
+  // "first-time" on reopen. Fire-and-forget; authenticated sessions only
+  // (anonymous has no durable identity — the gateway returns ok:false).
+  function _persistContinuity(reason, ttlMinutes) {
+    if (!_cfg.token) return; // anonymous → nothing durable to key on
+    try {
+      var headers = { 'Content-Type': 'application/json' };
+      headers['Authorization'] = 'Bearer ' + _cfg.token;
+      var transcript = (_s._transcriptHistory || []).slice(-10);
+      fetch(_cfg.gw + '/api/v1/orb/session/continuity', {
+        method: 'POST',
+        headers: headers,
+        cache: 'no-store',
+        keepalive: true, // survive the overlay/page teardown
+        body: JSON.stringify({
+          reason: reason,
+          ttl_minutes: ttlMinutes,
+          value: {
+            conversation_id: _s.conversationId || null,
+            transcript_history: transcript,
+            last_turn_at: _s._lastTurnAt || null,
+            last_greeting_at: _s._lastGreetingAt || null
+          }
+        })
+      }).catch(function () { /* continuity is best-effort */ });
+    } catch (e) { /* never block close on continuity */ }
+  }
+
+  // DEV-COMHU-0503: clear durable continuity on intentional forget.
+  function _clearContinuity() {
+    if (!_cfg.token) return;
+    try {
+      var headers = { 'Content-Type': 'application/json' };
+      headers['Authorization'] = 'Bearer ' + _cfg.token;
+      fetch(_cfg.gw + '/api/v1/orb/session/continuity', {
+        method: 'DELETE', headers: headers, cache: 'no-store', keepalive: true
+      }).catch(function () {});
+    } catch (e) { /* noop */ }
+  }
+
   function _hide() {
+    // DEV-COMHU-0503: UI close preserves short-lived continuity (15 min) BEFORE
+    // teardown, so reopening within the window resumes instead of greeting
+    // first-time. _sessionStop still tears down media/SSE exactly as before.
+    _persistContinuity('hide', 15);
     _sessionStop();
     _restoreSoundscape();
     _s.overlayVisible = false;
@@ -2541,6 +2586,17 @@
     }
     _updateUI();
     if (_cfg.onClose) try { _cfg.onClose(); } catch (e) { /* ignore */ }
+  }
+
+  // DEV-COMHU-0503: intentional forget — logout / account switch / "start over".
+  // Clears durable continuity, wipes in-memory identity-bound state, and closes.
+  function _reset() {
+    _clearContinuity();
+    _s._transcriptHistory = [];
+    _s.conversationId = null;
+    _s._preDisconnectStage = null;
+    _s._reconnectCount = 0;
+    _hide();
   }
 
   // VTID-NAV: Returns true when the widget is in any close-pending state.
@@ -2868,6 +2924,8 @@
 
     show: _show,
     hide: _hide,
+    // DEV-COMHU-0503: intentional forget (logout / account switch / start over).
+    reset: _reset,
 
     toggle: function () {
       if (_s.overlayVisible) _hide(); else _show();
