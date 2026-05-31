@@ -78,22 +78,31 @@ jobs:
         id: vertex
         run: |
           set +e
-          # Cheapest read against Vertex to detect aiplatform.user. If the WIF
-          # SA has aiplatform.user OR aiplatform.viewer, this returns 0.
-          gcloud ai operations list --region=us-central1 --project="${GCP_PROJECT}" --limit=1 > /tmp/vertex-probe.txt 2>&1
+          # VTID-03222 (Phase 1 W3-B1): broadened IAM detection.
+          # Switched from `gcloud ai operations list` to `gcloud ai
+          # custom-jobs list` — the latter is the exact API surface
+          # CRON-FINETUNE-TRAINER hits, so a denial here is a true
+          # blocker. The grep also widened: case-insensitive +
+          # additional terms (permission, denied, 403, aiplatform,
+          # forbidden, insufficient, customJobs) so any reasonable
+          # gcloud error variant resolves to `denied` not `skipped`.
+          gcloud ai custom-jobs list \
+            --region=us-central1 --project="${GCP_PROJECT}" --limit=1 \
+            > /tmp/vertex-probe.txt 2>&1
           RC=$?
           if [ $RC -eq 0 ]; then
             echo "VERTEX_IAM_CHECK_RESULT=ok" >> "$GITHUB_ENV"
             echo "Vertex IAM probe: ok"
           else
-            if grep -qE "PERMISSION_DENIED|403" /tmp/vertex-probe.txt; then
+            if grep -qiE "permission|denied|403|aiplatform|forbidden|insufficient|customjobs|role/iam" /tmp/vertex-probe.txt; then
               echo "VERTEX_IAM_CHECK_RESULT=denied" >> "$GITHUB_ENV"
               echo "Vertex IAM probe: denied"
             else
               echo "VERTEX_IAM_CHECK_RESULT=skipped" >> "$GITHUB_ENV"
-              echo "Vertex IAM probe: skipped (other gcloud error)"
-              head -5 /tmp/vertex-probe.txt || true
+              echo "Vertex IAM probe: skipped (non-IAM gcloud error)"
             fi
+            echo '--- gcloud stderr (head) ---'
+            head -10 /tmp/vertex-probe.txt 2>/dev/null || true
           fi
 
       - name: Probe AWS mirror
