@@ -35,6 +35,7 @@
 import WebSocket from 'ws';
 import { randomUUID } from 'crypto';
 import type { GeminiLiveSession } from '../../../routes/orb-live';
+import type { LatencyPhase } from '../latency-tracker';
 import type { MemoryIdentity } from '../../../services/orb-memory-bridge';
 import { writeSseEvent } from '../transport/sse-handler';
 import {
@@ -85,6 +86,17 @@ export interface UpstreamMessageHandlerDeps {
   ) => boolean;
   sendFunctionResponseToLiveAPI: (...args: any[]) => boolean;
   sendWsMessage: (ws: WebSocket, message: Record<string, unknown>) => void;
+  // Phase 1 W2 (BOOTSTRAP-PHASE1-W2-VOICE-LATENCY-WIRE): per-turn latency marks.
+  // No-op when FEATURE_LATENCY_TELEMETRY_ENV is off.
+  markVoiceLatency: (
+    session: GeminiLiveSession,
+    phase: LatencyPhase,
+    detail?: Record<string, unknown>,
+  ) => void;
+  finalizeVoiceTurnLatency: (
+    session: GeminiLiveSession,
+    status?: 'success' | 'error',
+  ) => void;
   startResponseWatchdog: (
     session: GeminiLiveSession,
     timeoutMs: number,
@@ -217,6 +229,9 @@ export function createUpstreamLiveMessageHandler(
             }
             // Notify WS client via callback
             ctx.callbacks.onInterrupted?.();
+            // Phase 1 W2: the user barged in — finalize the (incomplete) turn so
+            // the next user audio chunk starts a fresh latency turn.
+            ctx.deps.finalizeVoiceTurnLatency(session, 'error');
             return;
           }
 
@@ -233,6 +248,9 @@ export function createUpstreamLiveMessageHandler(
             session.turnCompleteAt = Date.now();
             console.log(`[VTID-VOICE-INIT] Model stopped speaking for session ${session.sessionId} — mic audio ungated (cooldown ${getPostTurnCooldownMs()}ms)`);
             ctx.deps.emitDiag(session, 'turn_complete');
+            // Phase 1 W2: turn finished cleanly — emit voice.latency.measured and
+            // clear the tracker so the next user audio starts a fresh turn.
+            ctx.deps.finalizeVoiceTurnLatency(session, 'success');
 
             // VTID-02047 voice channel-swap: if a persona swap was queued by
             // the report_to_specialist tool, Vitana has just finished speaking
@@ -824,6 +842,8 @@ export function createUpstreamLiveMessageHandler(
                   // session in the middle of Vertex computing a follow-up turn.
                   session.vertexHasShownLife = true;
                   console.log(`[VTID-VOICE-INIT] Model started speaking for session ${session.sessionId} — mic audio gated`);
+                  // Phase 1 W2: first TTS chunk forwarded to the client.
+                  ctx.deps.markVoiceLatency(session, 'audio_out_first_chunk');
                   ctx.deps.emitDiag(session, 'model_start_speaking');
                   // BOOTSTRAP-ORB-HOTFIX-1: If this is the greeting (no turns yet
                   // and greeting was sent), emit the pre-greeting latency gauge.
@@ -930,6 +950,12 @@ export function createUpstreamLiveMessageHandler(
               // was destroying healthy sessions when first-turn inference exceeded
               // 15 s). Real WS failures are still caught by native handlers.
               session.vertexHasShownLife = true;
+              // Phase 1 W2: first STT fragment of the turn = transcript_ready.
+              // inputTranscriptBuffer is still empty until the append below, so
+              // an empty buffer marks the leading fragment exactly once per turn.
+              if (!session.inputTranscriptBuffer) {
+                ctx.deps.markVoiceLatency(session, 'transcript_ready', { chars: inputTranscription.length });
+              }
               ctx.deps.emitDiag(session, 'input_transcription', { text_preview: inputTranscription.substring(0, 80) });
               if (session.sseResponse) {
                 writeSseEvent(session.sseResponse, { type: 'input_transcript', text: inputTranscription });
