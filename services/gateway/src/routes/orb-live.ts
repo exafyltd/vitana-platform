@@ -10743,6 +10743,16 @@ router.post('/session/continuity', optionalAuth, async (req: AuthenticatedReques
     const body = (req.body || {}) as { reason?: string; ttl_minutes?: number; value?: unknown; clear?: boolean };
     if (body.clear) {
       const r = await clearOrbSessionState(supabase, userId, 'continuity');
+      void emitOasisEvent({
+        vtid: 'DEV-COMHU-0503',
+        type: 'orb.session.continuity.cleared',
+        source: 'orb-live',
+        status: 'info',
+        message: 'orb continuity cleared (intentional forget)',
+        payload: { user_id: userId, via: 'post_clear' },
+        actor_id: userId,
+        surface: 'orb',
+      }).catch(() => {});
       return res.json({ ok: r.ok });
     }
     const ttl = typeof body.ttl_minutes === 'number' ? body.ttl_minutes : 15;
@@ -10750,6 +10760,16 @@ router.post('/session/continuity', optionalAuth, async (req: AuthenticatedReques
       ...(body.value && typeof body.value === 'object' ? body.value : {}),
       reason: body.reason || 'hide',
     }, ttl);
+    void emitOasisEvent({
+      vtid: 'DEV-COMHU-0503',
+      type: 'orb.session.continuity.persisted',
+      source: 'orb-live',
+      status: 'info',
+      message: `orb continuity persisted (reason=${body.reason || 'hide'}, ttl=${ttl}m)`,
+      payload: { user_id: userId, reason: body.reason || 'hide', ttl_minutes: ttl, ok: r.ok },
+      actor_id: userId,
+      surface: 'orb',
+    }).catch(() => {});
     return res.json({ ok: r.ok, reason: r.reason });
   } catch (e) {
     return res.status(200).json({ ok: false, reason: e instanceof Error ? e.message : String(e) });
@@ -10778,6 +10798,16 @@ router.delete('/session/continuity', optionalAuth, async (req: AuthenticatedRequ
   try {
     const { clearOrbSessionState } = await import('../services/orb/orb-session-state');
     const r = await clearOrbSessionState(supabase, userId, 'continuity');
+    void emitOasisEvent({
+      vtid: 'DEV-COMHU-0503',
+      type: 'orb.session.continuity.cleared',
+      source: 'orb-live',
+      status: 'info',
+      message: 'orb continuity cleared (intentional forget)',
+      payload: { user_id: userId, via: 'delete' },
+      actor_id: userId,
+      surface: 'orb',
+    }).catch(() => {});
     return res.json({ ok: r.ok });
   } catch {
     return res.json({ ok: true });

@@ -207,6 +207,9 @@ export type CicdEventType =
   | 'orb.session.summary'
   // DEV-COMHU-0502 — ORB Recovery 1: auth-contract identity resolution telemetry
   | 'orb.session.identity.resolved'
+  // DEV-COMHU-0503 — ORB Recovery 2+3: close/reopen continuity state transitions
+  | 'orb.session.continuity.persisted'
+  | 'orb.session.continuity.cleared'
   // VTID-01032: Multi-service deploy selection event
   | 'cicd.deploy.selection'
   // VTID-01033: CICD Concurrency Lock Events
