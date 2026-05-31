@@ -872,6 +872,62 @@ export function createUpstreamLiveMessageHandler(
                     });
                     console.log(`[BOOTSTRAP-ORB-HOTFIX-1] pre_greeting_ms=${preGreetingMs} for session ${session.sessionId}`);
                   }
+
+                  // BOOTSTRAP-ORB-GREETING-REEMIT: Gemini Live occasionally
+                  // auto-continues after a "Say exactly: …" greeting directive
+                  // and re-speaks the SAME opener / "My Journey" summary as a
+                  // brand-new model turn — with NO user input in between. This
+                  // is the user-reported "greeting spoken 3 times, again and
+                  // again" symptom.
+                  //
+                  // VTID-03143 (transcript-prefix suppression below) only
+                  // catches this AFTER ~30 chars of OUTPUT TRANSCRIPTION match a
+                  // prior turn, so the first words still leak, and it does
+                  // nothing when output transcription is sparse/absent. Here we
+                  // catch it STRUCTURALLY, from the very first audio chunk, with
+                  // no dependency on transcription:
+                  //
+                  //   greetingSent              → the only thing the model was
+                  //                               ever told to produce so far is
+                  //                               the opener.
+                  //   turn_count >= 1           → the greeting already completed
+                  //                               at least once.
+                  //   consecutiveModelTurns
+                  //     >= turn_count           → the user has NEVER spoken. The
+                  //                               counter resets to 0 the instant
+                  //                               a user transcription arrives
+                  //                               (see input-transcription path),
+                  //                               so equality means every turn so
+                  //                               far was a consecutive model
+                  //                               turn — i.e. the opener + its
+                  //                               re-emits, nothing else.
+                  //   inputTranscriptBuffer
+                  //     empty                   → no user utterance mid-flight.
+                  //
+                  // When all hold, this NEW model turn can only be an unsolicited
+                  // re-emit of the opener. Flip the audio-suppression flag BEFORE
+                  // the forward decision below so the entire turn is dropped (no
+                  // first-word leak). The loopguard further down pauses the
+                  // silence keepalive so Vertex idles the loop out naturally; a
+                  // real user utterance resets consecutiveModelTurns and lifts
+                  // the suppression on the next turn.
+                  if (
+                    session.greetingSent
+                    && session.turn_count >= 1
+                    && session.consecutiveModelTurns >= session.turn_count
+                    && (session.inputTranscriptBuffer || '').trim().length === 0
+                    && (session as any).suppressCurrentTurnAudio !== true
+                  ) {
+                    (session as any).suppressCurrentTurnAudio = true;
+                    console.warn(
+                      `[BOOTSTRAP-ORB-GREETING-REEMIT] Suppressing unsolicited greeting re-emit for session ${session.sessionId} ` +
+                      `(turn_count=${session.turn_count}, consecutiveModelTurns=${session.consecutiveModelTurns}) — user has not spoken yet`,
+                    );
+                    ctx.deps.emitDiag(session, 'greeting_reemit_suppressed', {
+                      turn_count: session.turn_count,
+                      consecutive_model_turns: session.consecutiveModelTurns,
+                    });
+                  }
                 }
                 // VTID-WATCHDOG: Model is sending audio — restart watchdog.
                 // If audio stops mid-stream (no turn_complete), watchdog fires.
