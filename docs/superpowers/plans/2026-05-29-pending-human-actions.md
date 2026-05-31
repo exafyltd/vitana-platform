@@ -87,3 +87,13 @@ Legend: each box is a ~30-second click or a copy-paste command, not an engineeri
 - [ ] After EXEC-DEPLOY SUCCESS: `/alive` 200; confirm `orb-widget.js?v=20260531-DEV-COMHU-0501-speaking-watchdog` served.
 - [ ] Apply vitana-v1 companion patch: `docs/patches/vitana-v1/ORB-0.1-speaking-watchdog.md` (cache-bust bump + LiveKit frame-stamp audit).
 - [ ] Community smoke: multi-chunk Vertex turn → watchdog silent; simulated stalled LiveKit subscription → "Vitana speaking" clears within ~2s.
+
+---
+
+## Phase ORB-1 — Auth contract
+
+- [ ] Merge PR #2432 — https://github.com/exafyltd/vitana-platform/pull/2432 (DEV-COMHU-0502)
+- [ ] Apply vitana-v1 companion patch: `docs/patches/vitana-v1/ORB-1-auth-contract.md` (reactive setAuth in useOrbVoiceClient + useLiveKitVoice; clearAuth on logout; cache-bust).
+- [ ] After EXEC-DEPLOY SUCCESS: `/alive` 200.
+- [ ] Acceptance: login dragan3 → `orb.session.identity.resolved` shows is_anonymous=false + memory/cadence; logout → no silent authenticated drift; dragan1↔dragan3 switch → no leak; verify both Vertex + LiveKit canary.
+- [ ] **DECISION:** add the flag-gated "refuse anonymous on authenticated surface (401)" hard rule? Deferred so it can't break legitimately-anonymous public sessions; the identity event makes the drift observable first.
