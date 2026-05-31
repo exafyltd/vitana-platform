@@ -191,3 +191,32 @@ describe('produceAutopilotRecommendation source', () => {
     expect(r.candidate?.confidence).toBe('low');
   });
 });
+
+describe('DEV-COMHU-0505 — autopilot CTA carries an executable on-yes tool', () => {
+  test('candidate CTA wires activate_recommendation with the recommendation id', async () => {
+    const r = await produceAutopilotRecommendation(
+      ctxWith(
+        fakeSupabase([
+          {
+            id: 'rec-cta',
+            title: 'Schedule a focus block',
+            summary: 'Protect 90 minutes tomorrow morning.',
+            confidence: 'high',
+            last_seen_at: '2026-05-17T20:00:00Z',
+            created_at: '2026-05-15T00:00:00Z',
+            domain: 'productivity',
+          },
+        ]),
+      ),
+    );
+    const cta = r.candidate?.cta;
+    expect(cta?.type).toBe('ask_permission');
+    // The fix: every spoken permission offer now carries a deterministic on-yes
+    // tool + the id, so "yes" invokes activate_recommendation (not a guess).
+    expect((cta as { onYesTool?: string }).onYesTool).toBe('activate_recommendation');
+    expect((cta as { payload?: Record<string, unknown> }).payload).toMatchObject({
+      id: 'rec-cta',
+      recommendation_id: 'rec-cta',
+    });
+  });
+});
