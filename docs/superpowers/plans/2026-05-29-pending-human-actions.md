@@ -120,3 +120,12 @@ Legend: each box is a ~30-second click or a copy-paste command, not an engineeri
 - [ ] Apply orb-agent patch: `docs/patches/orb-agent/ORB-4-audio-ready.py`.
 - [ ] Apply vitana-v1 patch: `docs/patches/vitana-v1/ORB-4-audio-ready.md` (cache-bust + optional LiveKit ack).
 - [ ] Acceptance: delayed unlock → greeting waits for ack; 3s timeout → greeting proceeds; reconnect <15min → no re-send.
+
+---
+
+## Phase ORB-5 — Autopilot CTA contract
+
+- [ ] Merge PR #2438 — https://github.com/exafyltd/vitana-platform/pull/2438 (DEV-COMHU-0505)
+- [ ] Apply orb-agent patch: `docs/patches/orb-agent/ORB-5-autopilot-cta.py` (declare activate_recommendation + pending-CTA preference).
+- [ ] **Follow-up (needs live session):** persist pending_cta in orb_session_state for cross-transport "yes" resolution.
+- [ ] Acceptance: every permission offer carries executable CTA; "yes" → activate_recommendation(id); unauthorized → truthful fallback; both providers.

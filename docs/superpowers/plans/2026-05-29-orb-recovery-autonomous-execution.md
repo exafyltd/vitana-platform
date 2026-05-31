@@ -154,7 +154,7 @@ curl -sS https://gateway.vitanaland.com/command-hub/orb-widget.js | grep -c VTID
 | ORB-1 — Auth contract | DEV-COMHU-0502 | Recovery | code-complete (pending merge + deploy) | feat/DEV-COMHU-0502-orb-auth-contract | #2432 | — | reactive setAuth+clearAuth, identity OASIS event; anti-leak preserved; surface-refusal deferred to flag (see PR) |
 | ORB-2+3 — Continuity + cadence | DEV-COMHU-0503 | Recovery | code-complete (pending merge + deploy) | feat/DEV-COMHU-0503-orb-continuity-cadence | #2435 | — | migration+session-state helper+last_turn_at writer+continuity endpoints+widget reset; hydration wiring deferred to patch (needs live session) |
 | ORB-4 — Audio-ready handshake | DEV-COMHU-0504 | Recovery | code-complete (pending merge + deploy) | feat/DEV-COMHU-0504-orb-audio-ready | #2437 | — | ack endpoint+widget signal+state; greeting-release gate deferred to patch (needs live session) |
-| ORB-5 — Autopilot CTA | new | Recovery | pending | — | — | — | depends on shared state from 2+3 |
+| ORB-5 — Autopilot CTA | DEV-COMHU-0505 | Recovery | code-complete (pending merge + deploy) | feat/DEV-COMHU-0505-orb-autopilot-cta | #2438 | — | CTA onYesTool=activate_recommendation; shared activator already truthful; pending_cta persistence deferred to patch |
 | ORB-6 — E2E regression + observability | new | Recovery | pending | — | — | — | parallel with 5 |
 
 **Suggested fan-out for the Workflows harness:**
