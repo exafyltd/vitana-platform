@@ -420,6 +420,39 @@ export async function decideWakeBriefForSession(
     });
   }
 
+  // DEV-COMHU-0505 (review fix): persist the selected continuation's executable
+  // pending CTA so a later "yes" resolves deterministically. The wake path only
+  // injects userFacingLine into the model prompt, dropping CTA metadata — so on
+  // its own onYesTool would never reach a runtime consumer. Writing it to
+  // orb_session_state ('pending_cta', 5-min TTL) lets the turn handler / tool
+  // layer read the exact tool + payload when the user accepts, instead of the
+  // model guessing. Fire-and-forget; authed sessions only.
+  {
+    const sel = decision.selectedContinuation;
+    const selCta = sel?.cta;
+    if (
+      args.supabase &&
+      args.userId &&
+      selCta &&
+      selCta.type === 'ask_permission' &&
+      typeof (selCta as { onYesTool?: unknown }).onYesTool === 'string'
+    ) {
+      const onYesTool = (selCta as { onYesTool: string }).onYesTool;
+      const ctaPayload = (selCta as { payload?: Record<string, unknown> }).payload ?? {};
+      void import('./orb/orb-session-state')
+        .then(({ writeOrbSessionState }) =>
+          writeOrbSessionState(
+            args.supabase!,
+            args.userId!,
+            'pending_cta',
+            { tool: onYesTool, payload: ctaPayload, offered_at: new Date().toISOString() },
+            5, // minutes — the offer is only live for the immediate follow-up
+          ),
+        )
+        .catch(() => { /* pending-CTA persistence is best-effort */ });
+    }
+  }
+
   return decision;
 }
 
