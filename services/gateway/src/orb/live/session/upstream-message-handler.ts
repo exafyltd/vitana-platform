@@ -248,6 +248,23 @@ export function createUpstreamLiveMessageHandler(
             session.turnCompleteAt = Date.now();
             console.log(`[VTID-VOICE-INIT] Model stopped speaking for session ${session.sessionId} — mic audio ungated (cooldown ${getPostTurnCooldownMs()}ms)`);
             ctx.deps.emitDiag(session, 'turn_complete');
+            // DEV-COMHU-0503 (review fix): record wake_cadence:last_turn_at on
+            // every completed turn so fetchWakeCadenceSignals can compute
+            // seconds_since_last_turn_anywhere next session — this is what makes
+            // the greeting-decay policy suppress repeated wake greetings on
+            // quick reopens. Fire-and-forget; never blocks the turn.
+            if (session.identity?.tenant_id && session.identity?.user_id) {
+              const _cadenceSb = getSupabase();
+              if (_cadenceSb) {
+                const _cadTenant = session.identity.tenant_id;
+                const _cadUser = session.identity.user_id;
+                void import('../../../services/wake-cadence-signals')
+                  .then(({ recordWakeTurn }) =>
+                    recordWakeTurn({ supabase: _cadenceSb, tenantId: _cadTenant, userId: _cadUser }),
+                  )
+                  .catch(() => { /* cadence write is best-effort */ });
+              }
+            }
             // Phase 1 W2: turn finished cleanly — emit voice.latency.measured and
             // clear the tracker so the next user audio starts a fresh turn.
             ctx.deps.finalizeVoiceTurnLatency(session, 'success');

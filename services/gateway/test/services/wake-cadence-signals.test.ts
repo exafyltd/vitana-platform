@@ -13,6 +13,7 @@
 import {
   fetchWakeCadenceSignals,
   recordWakeBriefEmitted,
+  recordWakeTurn,
   pickIso,
   pickGreetingStyle,
   pickSessionsTodayCount,
@@ -229,6 +230,29 @@ describe('VTID-03081 — recordWakeBriefEmitted', () => {
       userId: 'u1',
       style: 'warm_return',
     });
+    expect(out.ok).toBe(false);
+    expect(out.reason).toBe('missing_identity');
+  });
+});
+
+describe('DEV-COMHU-0503 — recordWakeTurn (the missing last_turn_at writer)', () => {
+  test('upserts wake_cadence:last_turn_at with an iso value', async () => {
+    const { sb, getCapturedUpsert } = fakeSb([]);
+    const out = await recordWakeTurn({
+      supabase: sb,
+      tenantId: 't1',
+      userId: 'u1',
+      nowIso: '2026-05-31T12:00:00.000Z',
+    });
+    expect(out.ok).toBe(true);
+    const row = getCapturedUpsert() as { signal_name: string; value: { iso: string } };
+    expect(row.signal_name).toBe('wake_cadence:last_turn_at');
+    expect(row.value.iso).toBe('2026-05-31T12:00:00.000Z');
+  });
+
+  test('returns missing_identity when tenant/user absent', async () => {
+    const { sb } = fakeSb([]);
+    const out = await recordWakeTurn({ supabase: sb, tenantId: '', userId: 'u1' });
     expect(out.ok).toBe(false);
     expect(out.reason).toBe('missing_identity');
   });
