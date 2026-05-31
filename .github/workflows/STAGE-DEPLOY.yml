@@ -107,6 +107,13 @@ jobs:
           # Env vars: VITANA_ENV is the load-bearing switch (P0.3). Anything else
           # the staging gateway needs MUST be additive — staging code is the same
           # main branch as prod; behavior diverges only by env.
+          #
+          # VTID-03214 (Phase 1 W3-A): GATEWAY_SERVICE_TOKEN must be in the
+          # set-env-vars list. --set-env-vars REPLACES, not merges; any prior
+          # --update-env-vars bindings of this key (e.g. via the W2
+          # BIND-STAGING-SERVICE-TOKEN.yml one-off) get wiped on every
+          # STAGE-DEPLOY run, breaking the admin-staging service-token auth
+          # path. Adding it here is the permanent fix.
           ENV_VARS=(
             "VITANA_ENV=staging"
             "ENVIRONMENT=staging"
@@ -115,6 +122,7 @@ jobs:
             "GIT_COMMIT_SHA=${GIT_COMMIT_SHA}"
             "COMMIT_SHA=${GIT_COMMIT_SHA}"
             "BUILD_INFO_MARKER=${{ steps.commit.outputs.short }}"
+            "GATEWAY_SERVICE_TOKEN=${{ secrets.GATEWAY_SERVICE_TOKEN }}"
           )
 
           # Comma-joined for --set-env-vars (replaces, not merges — we want the
