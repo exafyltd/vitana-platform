@@ -1457,6 +1457,60 @@ export function buildLiveApiTools(
           },
         },
         {
+          name: 'get_autopilot_recommendations',
+          description: [
+            'Read out what is prepared in the user\'s Autopilot — the SAME',
+            'list shown in the Autopilot popup. Call this when the user asks',
+            '"what\'s in my Autopilot?", "what has Autopilot prepared?",',
+            '"what do you suggest I do today?", "read my recommendations",',
+            'or "was hat der Autopilot für mich?".',
+            '',
+            'Returns { ok, count, spoken, items:[{id,title}] }. Speak the',
+            '`spoken` summary verbatim (it is already ordered and concise).',
+            'The user can then say "activate those" / "do the first two" and',
+            'you call activate_autopilot_recommendations — the ids are',
+            'remembered from THIS call, so you never need to pass them back.',
+          ].join('\n'),
+          parameters: {
+            type: 'object',
+            properties: {
+              limit: {
+                type: 'number',
+                description: 'Max actions to read out. Defaults to 5. Keep small for voice.',
+              },
+            },
+            required: [],
+          },
+        },
+        {
+          name: 'activate_autopilot_recommendations',
+          description: [
+            'Activate one or more Autopilot recommendations on the user\'s',
+            'behalf — the same full activation the popup performs (schedules',
+            'a calendar slot where applicable, notifies, and replenishes the',
+            'queue). Use ONLY after the user has explicitly agreed to act',
+            '("yes, do those", "activate the first one", "los geht\'s").',
+            '',
+            'You normally call this with NO arguments right after',
+            'get_autopilot_recommendations — it activates the actions you',
+            'just read aloud. To activate a subset, pass `ids` with the',
+            'specific recommendation ids from the items list (never guess an',
+            'id). Returns { ok, activated, spoken }; speak `spoken` verbatim.',
+          ].join('\n'),
+          parameters: {
+            type: 'object',
+            properties: {
+              ids: {
+                type: 'array',
+                items: { type: 'string' },
+                description:
+                  'OPTIONAL — specific recommendation ids to activate. Omit to activate everything just read aloud by get_autopilot_recommendations.',
+              },
+            },
+            required: [],
+          },
+        },
+        {
           name: 'share_link',
           description: [
             'Share a link with another Vitana user as a chat message with a',

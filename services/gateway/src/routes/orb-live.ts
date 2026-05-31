@@ -829,6 +829,10 @@ export interface GeminiLiveSession {
   thread_id?: string;
   conversation_id?: string;
   turn_count: number;
+  // VTID-03201: ids of the Autopilot recommendations most recently read aloud
+  // by get_autopilot_recommendations, so a follow-up "activate those" resolves
+  // to exactly what Vitana just listed (in order).
+  lastListedAutopilotIds?: { ids: string[]; ts: number };
   // VTID-01224: Bootstrap context (injected into system instruction)
   contextInstruction?: string;
   contextPack?: ContextPack;
@@ -2016,7 +2020,15 @@ async function executeLiveApiTool(
   // (OpenAI/Anthropic/Google AI). The delegation executor already hard-caps
   // at 15 s internally (orb/delegation/execute.ts), so we mirror that here
   // as the outer tool budget. All other tools keep the 3 s budget.
-  const TOOL_TIMEOUT_MS = toolName === 'consult_external_ai' ? 16_000 : 3_000;
+  // VTID-03201: the Autopilot tools do a Supabase query + G4 re-rank (list) or
+  // several sequential activations with calendar-slot computation (activate),
+  // which can exceed the default 3 s. Replenishment is skipped inline for voice
+  // (the popup auto-generates on next open) so these stay bounded.
+  const AUTOPILOT_VOICE_TOOLS = new Set(['get_autopilot_recommendations', 'activate_autopilot_recommendations']);
+  const TOOL_TIMEOUT_MS =
+    toolName === 'consult_external_ai' ? 16_000 :
+    AUTOPILOT_VOICE_TOOLS.has(toolName) ? 12_000 :
+    3_000;
 
   const executeWithTimeout = async (): Promise<{ success: boolean; result: string; error?: string }> => {
     return Promise.race([
@@ -4211,6 +4223,97 @@ async function executeLiveApiToolInner(
           },
           supabase,
         );
+      }
+
+      // VTID-03201: read + activate the user's Autopilot queue by voice, via
+      // the SAME shared service the popup uses (listCommunity… / activateCommunity…),
+      // so the spoken list and the visual list never diverge.
+      case 'get_autopilot_recommendations': {
+        const userId = lens.user_id;
+        if (!userId) {
+          return { success: false, result: '', error: 'NOT_SIGNED_IN' };
+        }
+        const { listCommunityAutopilotRecommendations, summarizeAutopilotForVoice } = await import('./autopilot-recommendations');
+        const limit = typeof args?.limit === 'number' && args.limit > 0 ? Math.min(args.limit, 10) : 5;
+        const recs = await listCommunityAutopilotRecommendations(userId, limit);
+        const summary = summarizeAutopilotForVoice(recs);
+        // Remember exactly what we read aloud so "activate those" resolves to it.
+        session.lastListedAutopilotIds = { ids: summary.ids, ts: Date.now() };
+        return {
+          success: true,
+          result: JSON.stringify({
+            ok: true,
+            count: summary.count,
+            spoken: summary.spoken,
+            items: recs.map(r => ({ id: r.id, title: r.title })),
+          }),
+        };
+      }
+
+      case 'activate_autopilot_recommendations': {
+        const userId = lens.user_id;
+        if (!userId) {
+          return { success: false, result: '', error: 'NOT_SIGNED_IN' };
+        }
+        const { activateCommunityAutopilotRecommendation } = await import('./autopilot-recommendations');
+
+        // Resolve target ids: explicit `ids` arg, else the last-listed set.
+        const explicit: string[] = Array.isArray(args?.ids)
+          ? (args.ids as unknown[]).filter((x): x is string => typeof x === 'string')
+          : [];
+        const listed = session.lastListedAutopilotIds?.ids ?? [];
+        const targetIds = explicit.length > 0 ? explicit : listed;
+
+        if (targetIds.length === 0) {
+          return {
+            success: true,
+            result: JSON.stringify({
+              ok: false,
+              activated: 0,
+              spoken: "I don't have any prepared actions queued to activate yet — ask me what's in your Autopilot first.",
+            }),
+          };
+        }
+
+        // Activate sequentially (calendar slotting reads the live calendar, so
+        // parallel runs could double-book the same slot). Replenishment is
+        // skipped inline for voice latency — the popup refills on next open.
+        const tenantId = lens.tenant_id ?? '';
+        const activated: string[] = [];
+        const failed: string[] = [];
+        for (const id of targetIds) {
+          try {
+            const r = await activateCommunityAutopilotRecommendation(userId, id, {
+              tenantId: tenantId || undefined,
+              skipReplenish: true,
+            });
+            if (r.ok) activated.push(r.title || id);
+            else failed.push(id);
+          } catch {
+            failed.push(id);
+          }
+        }
+
+        let spoken: string;
+        if (activated.length === 0) {
+          spoken = "I couldn't activate those — they may have already been done or aren't yours to action.";
+        } else if (activated.length === 1) {
+          spoken = `Done — I've activated "${activated[0]}".`;
+        } else {
+          spoken = `Done — I've activated ${activated.length} actions: ${activated.join('; ')}.`;
+        }
+        // Clear the remembered list so a stray repeat call can't re-activate.
+        session.lastListedAutopilotIds = { ids: [], ts: Date.now() };
+
+        return {
+          success: true,
+          result: JSON.stringify({
+            ok: activated.length > 0,
+            activated: activated.length,
+            failed: failed.length,
+            spoken,
+          }),
+        };
       }
 
       case 'share_link': {
