@@ -55,6 +55,8 @@
     { "name": "send_chat_message",            "implementations": ["vertex"], "safety_critical": true,  "owner_vtid": null,         "notes": "Step 3 of send_message flow." },
 
     { "name": "activate_recommendation",      "implementations": ["vertex"], "safety_critical": false, "owner_vtid": "VTID-01180" },
+    { "name": "get_autopilot_recommendations", "implementations": ["vertex"], "safety_critical": false, "owner_vtid": "VTID-03201", "notes": "Read the user's Autopilot queue aloud — same list as the popup. Session-state-coupled (remembers listed ids)." },
+    { "name": "activate_autopilot_recommendations", "implementations": ["vertex"], "safety_critical": false, "owner_vtid": "VTID-03201", "notes": "Activate Autopilot recommendations on the user's behalf via the shared popup flow. Resolves 'activate those' to the last listed ids." },
     { "name": "share_link",                   "implementations": ["vertex"], "safety_critical": false, "owner_vtid": null },
 
     { "name": "post_intent",                  "implementations": ["vertex"], "safety_critical": true,  "owner_vtid": "VTID-01975" },
