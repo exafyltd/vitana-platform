@@ -87,13 +87,18 @@ jobs:
             --format='value(state)' 2>&1)
           RC=$?
           if [ $RC -ne 0 ]; then
-            if echo "$OUT" | grep -qE "PERMISSION_DENIED|403"; then
-              echo "FINETUNE_STATUS=skipped" >> "$GITHUB_ENV"
-              echo "Vertex IAM denied (expected if W3 gate (A) not yet open)"
+            # VTID-03225 (Phase 1 W3-C0): parity with PHASE-GATE-STATUS-REPORT
+            # widened grep. Detects IAM denial across more gcloud error
+            # variants and reports it as iam_blocked (a true FAIL signal)
+            # rather than skipped (which the canary script treats as
+            # unknown). Keeps the two reports aligned on the Vertex gate.
+            if echo "$OUT" | grep -qiE "permission|denied|403|aiplatform|forbidden|insufficient|customjobs|role/iam"; then
+              echo "FINETUNE_STATUS=iam_blocked" >> "$GITHUB_ENV"
+              echo "Vertex IAM denied — operator must grant roles/aiplatform.user on the WIF SA"
             else
               echo "FINETUNE_STATUS=skipped" >> "$GITHUB_ENV"
-              echo "Vertex probe other-error (treating as skipped):"
-              echo "$OUT" | head -5
+              echo "Vertex probe non-IAM error (treating as skipped):"
+              echo "$OUT" | head -10
             fi
           else
             # OUT is the JOB_STATE string or empty

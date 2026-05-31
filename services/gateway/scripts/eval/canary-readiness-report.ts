@@ -28,7 +28,7 @@
  *   PROD_SUPABASE_SERVICE_ROLE   (required — same)
  *   STAGING_SUPABASE_URL         (optional — for latency events when staging-flag is on)
  *   STAGING_SUPABASE_SERVICE_ROLE_KEY (optional — same)
- *   FINETUNE_STATUS              (passed by workflow — ok|failed|none|skipped)
+ *   FINETUNE_STATUS              (passed by workflow — ok|iam_blocked|failed|none|skipped)
  *   REPORT_MARKDOWN_PATH         (optional)
  *
  * Output:
@@ -236,14 +236,24 @@ async function generate(): Promise<CanaryReadinessReport> {
   }
 
   // Fine-tune status — must have a successful run
+  // VTID-03225 (Phase 1 W3-C0): explicit iam_blocked case so this report
+  // agrees with PHASE-GATE-STATUS-REPORT's Vertex gate verdict instead
+  // of reporting 'skipped' (which reads as "we don't know") when the
+  // real state is "WIF SA lacks aiplatform.user".
   if (FINETUNE_STATUS === 'ok') {
     reasons.push(reason('finetune_run', true, 'At least one voice-tool-router Vertex training run has completed.'));
+  } else if (FINETUNE_STATUS === 'iam_blocked') {
+    reasons.push(reason(
+      'finetune_run',
+      false,
+      'Vertex IAM blocked: WIF SA lacks roles/aiplatform.user; CRON-FINETUNE-TRAINER cannot queue. See PHASE-GATE-STATUS-REPORT for the gcloud unblock command.',
+    ));
   } else if (FINETUNE_STATUS === 'failed') {
     reasons.push(reason('finetune_run', false, 'Most recent Vertex training run failed; investigate before canary.'));
   } else if (FINETUNE_STATUS === 'none') {
     reasons.push(reason('finetune_run', false, 'No Vertex training runs found; the candidate path is a stub. Submit CRON-FINETUNE-TRAINER.'));
   } else {
-    reasons.push(reason('finetune_run', false, `Fine-tune status unknown (${FINETUNE_STATUS}); workflow should pass FINETUNE_STATUS env from the Vertex probe.`));
+    reasons.push(reason('finetune_run', false, `Fine-tune status unknown (${FINETUNE_STATUS}); workflow probe did not classify cleanly.`));
   }
 
   // Dataset rows — need consented corpus to train
