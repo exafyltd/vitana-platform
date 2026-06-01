@@ -9,6 +9,58 @@ Branch: `claude/funny-carson-DMTJh`.
 
 ---
 
+## ✅ UPDATE 2026-06-01 — validation RAN, Track A SHIPPED
+
+A later session reached the VITANA Supabase via the **Supabase MCP server**
+(it routes outside the container's network allowlist, so the
+`Host not in allowlist` block that stopped `voice-validation.py` from the
+sandbox did not apply). Q1–Q4 were run against live production data. Results:
+
+- **Q1 (validates #2397) — confirmed strongly.** Last 24h, 206 `session.stop`
+  events. Audio-in-zero **before** filter = 172/206 = **83.5%**; **after**
+  excluding phantoms (81 `expired_ttl` + 75 `superseded_by_new_session`) =
+  **20/50 = 40.0%**. The headline was ~2× inflated by lifecycle double-counting.
+
+- **Q2 — handoff source was MIS-ATTRIBUTED (corrected).** There are **zero**
+  `self_healing_log` `rolled_back` rows (7d). The score's **3 criticals are the
+  3 open quarantines** — the `healing_quarantine` source in
+  `voice-improvement-aggregator.ts` marks each `severity:'critical'`
+  (`3 × −15 = −45`). The *conclusion* (model_under_responds is the lever) was
+  right; the table was wrong. `self_healing_log` 7d had 5 `escalated`
+  (2× model_under_responds, 2× low_turn_progression, 1× autopilot) and 0 critical.
+
+- **Q3 (validates Track A) — confirmed.** Of 50 real sessions, 36 responded;
+  avg `audio_in` 241.8 vs `audio_out` 90.3; **12/36 ratio ≥3, 8/36 ≥5**.
+  Concrete responded-yet-inflated cases: `864/285 t14`, `505/73 t8 (6.9)`,
+  `368/14 t4 (26.3)`.
+
+- **Q4 — smoking gun.** Exactly 3 quarantined rows, all
+  `voice.model_under_responds`, reason `failed_fix_threshold`, signatures
+  `model_under_responds_r5to10 / _r10to20 / _r20to100` — i.e. **audio_in/out
+  ratio buckets**. Echo inflates exactly that ratio (Q3), so the classifier
+  quarantined healthy talkative sessions.
+
+**Track A is now implemented on this branch** (VTID-VOICE-FWD): a forwarded-only
+counter `audioInForwarded` increments solely in the real `sendAudioToLiveAPI`
+forward path (WS in `orb-live.ts`, SSE in `live-session-controller.ts`), is
+emitted on `session.stop` as `audio_in_forwarded_chunks`, and the
+`model_under_responds` classifier now computes its ratio from
+`audio_in_forwarded` (falling back to raw `audio_in_chunks` for old events).
+`npx tsc --noEmit` clean; `jest voice-failure-taxonomy` 49/49 (5 new) and
+`jest voice-improvement-aggregator` 22/22 green.
+
+**Script bug fixed:** `voice-validation.py` filtered `oasis_events?type=eq.…`,
+but the event name lives in **`topic`** (no `type` column). Fixed to
+`topic=eq.vtid.live.session.stop`; Q2 corrected to read quarantines; Q3 now
+prints the `fwd_ratio` column.
+
+**Still TODO:** Track B (release the 3 quarantines — needs a gateway/admin
+token, NOT the Supabase key) and Track C (the warnings). Verify Track A
+post-deploy: once traffic flows, `fwd_ratio` should pull these sessions below
+the classifier's ≥5 threshold so the class stops re-quarantining.
+
+---
+
 ## 0. First thing to do in the new session
 
 Confirm Supabase is reachable and creds are present as **env secrets**

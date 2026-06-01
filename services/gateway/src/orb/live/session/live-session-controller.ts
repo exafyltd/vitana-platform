@@ -790,6 +790,7 @@ export async function handleLiveSessionStart(
     createdAt: new Date(),
     lastActivity: new Date(),
     audioInChunks: 0,
+    audioInForwarded: 0, // VTID-VOICE-FWD: only ++ when a chunk is actually sent upstream
     videoInFrames: 0,
     audioOutChunks: 0,
     turn_count: 0,
@@ -1441,6 +1442,7 @@ export async function handleLiveSessionStop(
     user_id: session.identity?.user_id || null,
     tenant_id: session.identity?.tenant_id || null,
     audio_in_chunks: session.audioInChunks,
+    audio_in_forwarded_chunks: session.audioInForwarded, // VTID-VOICE-FWD (Track A)
     video_in_frames: session.videoInFrames,
     audio_out_chunks: session.audioOutChunks,
     duration_ms: Date.now() - session.createdAt.getTime(),
@@ -1457,6 +1459,7 @@ export async function handleLiveSessionStop(
     metadata: { synthetic: (session as any).synthetic === true },
     sessionMetrics: {
       audio_in_chunks: session.audioInChunks,
+      audio_in_forwarded: session.audioInForwarded, // VTID-VOICE-FWD (Track A)
       audio_out_chunks: session.audioOutChunks,
       duration_ms: Date.now() - session.createdAt.getTime(),
       turn_count: session.turn_count,
@@ -1678,6 +1681,10 @@ export async function handleLiveStreamSend(
           body.mime || 'audio/pcm;rate=16000',
         );
         if (sent) {
+          // VTID-VOICE-FWD (Track A): forwarded-only count (SSE path mirror of
+          // the WS path in orb-live.ts). Only chunks the model actually
+          // received; the three drop gates above return before reaching here.
+          session.audioInForwarded++;
           session.lastAudioForwardedTime = Date.now();
           // VTID-FORWARDING-WATCHDOG + VTID-01984 (R5) sliding logic
           if (!session.isModelSpeaking) {

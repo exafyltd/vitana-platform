@@ -7,11 +7,17 @@ Run from the next session once Supabase is reachable:
     SUPABASE_URL=...  SUPABASE_SERVICE_ROLE=...  python3 scripts/voice-validation.py
 
 Or rely on env secrets already set in the environment config. Everything here
-is SELECT-only via PostgREST — it writes nothing. It produces the three
-validations the previous session was blocked on:
+is SELECT-only via PostgREST — it writes nothing.
+
+NOTE (fixed 2026-06-01): the event name lives in oasis_events.`topic`, not a
+`type` column (the table has no `type` column). The earlier draft filtered on
+`type=eq.…` and returned nothing. All session-stop queries now use
+`topic=eq.vtid.live.session.stop`.
+
+It produces the four validations the previous session was blocked on:
 
   Q1  Phantom vs real "audio-in-zero" (validates merged PR #2397)
-  Q2  The 3 `model_under_responds` criticals dragging the score (self_healing_log rolled_back)
+  Q2  The criticals dragging the score (open quarantines; NOT rolled_back rows — corrected)
   Q3  model_under_responds quarantine rows + recent session metrics (validates Track A before code)
   Q4  Open quarantines = Track B release candidates
 
@@ -73,7 +79,7 @@ since_7d = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
 hr("Q1  Phantom vs real audio-in-zero (last 24h) — validates PR #2397")
 q = urllib.parse.quote(since_24h, safe="")
 rows = rest(
-    f"oasis_events?type=eq.vtid.live.session.stop&created_at=gte.{q}"
+    f"oasis_events?topic=eq.vtid.live.session.stop&created_at=gte.{q}"
     f"&select=created_at,metadata&order=created_at.desc&limit=2000"
 )
 reason_counts = Counter()
@@ -104,22 +110,36 @@ print("  -> The gap between these two numbers is the phantom inflation PR #2397 
 
 
 # ---------------------------------------------------------------------------
-# Q2 — The criticals dragging the score (self_healing_log rolled_back)
+# Q2 — The criticals dragging the score
+#
+# CORRECTION (validated 2026-06-01 against live data): the score's criticals
+# come from the OPEN QUARANTINES, not self_healing_log rolled_back rows.
+# composeQualityScore (voice-improvement-aggregator.ts:141-147) does
+# 100 −15·critical −5·warning −1·info; the `healing_quarantine` source
+# (same file ~155-180) marks every quarantined row severity='critical'.
+# There were ZERO rolled_back rows in the last 7d — the earlier handoff
+# mis-attributed the source table. self_healing_log escalated/rolled_back is
+# still shown below as supporting context (warnings + heal history).
 # ---------------------------------------------------------------------------
-hr("Q2  Criticals behind the score: self_healing_log rolled_back/escalated (7d)")
+hr("Q2  Criticals behind the score: open quarantines + self_healing_log (7d)")
+quar = rest(
+    "voice_healing_quarantine?status=eq.quarantined"
+    "&select=class,normalized_signature&order=quarantined_at.desc&limit=50"
+)
+print(f"  open quarantines (=critical, -15 each): {len(quar)}  -> score hit -{15 * len(quar)}")
+mur = [r for r in quar if (r.get("class") or "") == "voice.model_under_responds"]
+print(f"    of those, class=voice.model_under_responds: {len(mur)}  (Track A target)")
+print()
 q = urllib.parse.quote(since_7d, safe="")
 rows = rest(
     f"self_healing_log?outcome=in.(escalated,rolled_back)&created_at=gte.{q}"
     f"&select=vtid,endpoint,failure_class,outcome,created_at&order=created_at.desc&limit=50"
 )
 crit = [r for r in rows if r.get("outcome") == "rolled_back"]
-print(f"  rolled_back (=critical, -15 each): {len(crit)}")
-print(f"  escalated   (=warning,  -5 each):  {len(rows) - len(crit)}")
-ur = [r for r in rows if (r.get("failure_class") or "") == "model_under_responds"]
-print(f"  of those, failure_class=model_under_responds: {len(ur)}")
+print(f"  self_healing_log rolled_back (7d): {len(crit)}   escalated (7d): {len(rows) - len(crit)}")
 for r in rows[:20]:
-    print(f"    {r['outcome']:11s}  {r.get('failure_class') or '(none)':22s}"
-          f"  {r['endpoint']:28s}  {r['vtid']}  {r['created_at'][:19]}")
+    print(f"    {r['outcome']:11s}  {r.get('failure_class') or '(none)':28s}"
+          f"  {r['endpoint']:34s}  {r['vtid']}  {r['created_at'][:19]}")
 
 
 # ---------------------------------------------------------------------------
@@ -128,29 +148,40 @@ for r in rows[:20]:
 hr("Q3  Track A evidence: recent session metrics (audio_in vs audio_out vs turns)")
 q = urllib.parse.quote(since_24h, safe="")
 rows = rest(
-    f"oasis_events?type=eq.vtid.live.session.stop&created_at=gte.{q}"
+    f"oasis_events?topic=eq.vtid.live.session.stop&created_at=gte.{q}"
     f"&select=created_at,metadata&order=created_at.desc&limit=500"
 )
 print("  Sessions that PRODUCED output (audio_out>0 AND turns>0) but have a high")
-print("  audio_in/audio_out ratio are the false 'under-responds' — audio_in is")
-print("  inflated by echo chunks counted at orb-live.ts:12253/12268/12276 but")
-print("  never forwarded to Gemini. (No forwarded-only counter exists yet = Track A.)\n")
-print(f"    {'audio_in':>9} {'audio_out':>10} {'turns':>6} {'ratio':>7}  reason")
+print("  audio_in/audio_out ratio are the false 'under-responds' — raw audio_in is")
+print("  inflated by echo chunks counted at the orb-live drop gates but never")
+print("  forwarded to the model.")
+print("  Track A SHIPPED a forwarded-only counter (audio_in_forwarded_chunks).")
+print("  For events that carry it, the 'fwd_ratio' column is the echo-robust")
+print("  ratio the classifier now uses; compare it to the raw 'ratio'.\n")
+print(f"    {'audio_in':>9} {'fwd_in':>8} {'audio_out':>10} {'turns':>6} {'ratio':>7} {'fwd_ratio':>9}  reason")
 suspicious = 0
 real_rows = [r for r in rows if (r.get('metadata') or {}).get('reason') not in PHANTOM_REASONS]
 for r in real_rows[:40]:
     m = r.get("metadata") or {}
     ai = int(m.get("audio_in_chunks") or 0)
+    fwd = m.get("audio_in_forwarded_chunks")
+    fwd = int(fwd) if fwd is not None else None
     ao = int(m.get("audio_out_chunks") or 0)
     tc = int(m.get("turn_count") or 0)
     ratio = (ai / ao) if ao else float("inf")
+    fwd_ratio = (fwd / ao) if (fwd is not None and ao) else None
     flag = ""
     if ao > 0 and tc > 0 and ratio >= 3:
-        flag = "  <- responded but high in/out ratio (echo-inflated?)"
+        flag = "  <- responded but high RAW ratio (echo-inflated?)"
         suspicious += 1
     rstr = f"{ratio:7.1f}" if ao else "    inf"
-    print(f"    {ai:9d} {ao:10d} {tc:6d} {rstr}  {m.get('reason') or '(normal)'}{flag}")
-print(f"\n  suspicious (responded yet high ratio): {suspicious}/{min(len(real_rows),40)} shown")
+    fstr = (f"{fwd_ratio:9.1f}" if fwd_ratio is not None else "        -")
+    fwdstr = (f"{fwd:8d}" if fwd is not None else "       -")
+    print(f"    {ai:9d} {fwdstr} {ao:10d} {tc:6d} {rstr} {fstr}  {m.get('reason') or '(normal)'}{flag}")
+print(f"\n  suspicious (responded yet high RAW ratio): {suspicious}/{min(len(real_rows),40)} shown")
+print("  Once Track A is deployed and traffic flows, fwd_ratio should drop these")
+print("  below the classifier's >=5 threshold — the under-responds class stops")
+print("  re-quarantining and Track B releases can hold.")
 
 
 # ---------------------------------------------------------------------------
