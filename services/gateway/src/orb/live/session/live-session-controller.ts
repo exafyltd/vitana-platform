@@ -77,6 +77,8 @@ import {
   logWakeDecisionSnapshot,
   type FirstNameSource,
 } from '../instruction/wake-decision-snapshot';
+// VTID-03248 (R1 slice 1): single canonical spoken-first-name resolver.
+import { resolveSpokenFirstName } from '../../../services/awareness-unified-context';
 import { recordAgentHeartbeat } from '../../../routes/agents-registry';
 import {
   fetchAdminBriefingBlock,
@@ -1082,35 +1084,26 @@ export async function handleLiveSessionStart(
       if (cadenceResult.status === 'fulfilled') {
         cadenceSignals = cadenceResult.value;
       }
-      let fullName = '';
-      let fullNameSource: FirstNameSource = 'none';
-      if (factResult.status === 'fulfilled' && factResult.value && !factResult.value.error) {
-        const v = (factResult.value.data as { fact_value?: string | null } | null)?.fact_value;
-        if (typeof v === 'string' && v.trim().length > 0) {
-          fullName = v.trim();
-          fullNameSource = 'memory_facts';
-        }
-      }
-      if (!fullName && profileResult.status === 'fulfilled' && profileResult.value && !profileResult.value.error) {
-        const v = (profileResult.value.data as { display_name?: string | null } | null)?.display_name;
-        if (typeof v === 'string' && v.trim().length > 0) {
-          fullName = v.trim();
-          fullNameSource = 'app_users';
-        }
-      }
-      if (fullName) {
-        firstName = fullName.split(/\s+/)[0] || null;
-        firstNameSource = firstName ? fullNameSource : 'none';
-      } else if (orbIdentity.email && orbIdentity.email.includes('@')) {
-        // Last-resort: take the email local part. Strip digits / underscores
-        // so "dragan1" → "dragan", "d_stevanovic" → "stevanovic" (best effort).
-        const local = orbIdentity.email.split('@')[0] || '';
-        const stripped = local.replace(/[0-9_.+\-]+/g, '').trim();
-        if (stripped.length >= 2) {
-          firstName = stripped[0].toUpperCase() + stripped.slice(1);
-          firstNameSource = 'email';
-        }
-      }
+      // VTID-03248 (R1 slice 1): resolve the spoken first name through the
+      // single canonical resolver. Behavior-identical to the previous inline
+      // logic (memory_facts → app_users → email local-part), now shared so
+      // LiveKit + every other call site resolve the SAME name with the SAME
+      // precedence (the audit found this field diverging 3-4× per session).
+      const factValue =
+        factResult.status === 'fulfilled' && factResult.value && !factResult.value.error
+          ? (factResult.value.data as { fact_value?: string | null } | null)?.fact_value ?? null
+          : null;
+      const profileValue =
+        profileResult.status === 'fulfilled' && profileResult.value && !profileResult.value.error
+          ? (profileResult.value.data as { display_name?: string | null } | null)?.display_name ?? null
+          : null;
+      const resolvedName = resolveSpokenFirstName({
+        memoryFactUserName: factValue,
+        displayName: profileValue,
+        email: orbIdentity.email ?? null,
+      });
+      firstName = resolvedName.firstName;
+      firstNameSource = resolvedName.source;
     }
     wakeBriefDecision = await decideWakeBriefForSession({
       sessionId,

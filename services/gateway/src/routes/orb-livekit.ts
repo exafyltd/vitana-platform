@@ -41,10 +41,9 @@ import { getSupabase } from '../lib/supabase';
 // VTID-03210: single structured turn-1 wake-decision snapshot — emitted
 // identically on Vertex (live-session-controller) and here on LiveKit so
 // the turn-1 state machine is observable across both transports.
-import {
-  logWakeDecisionSnapshot,
-  type FirstNameSource,
-} from '../orb/live/instruction/wake-decision-snapshot';
+import { logWakeDecisionSnapshot } from '../orb/live/instruction/wake-decision-snapshot';
+// VTID-03248 (R1 slice 1): single canonical spoken-first-name resolver.
+import { resolveSpokenFirstName } from '../services/awareness-unified-context';
 // VTID-02855: reuse Vertex's geo-IP + UA-parse + format helpers so the
 // LiveKit bootstrap injects the same ENVIRONMENT CONTEXT block (city,
 // country, timezone, localTime, UTC, device) that Vertex's authenticated
@@ -1346,19 +1345,17 @@ router.get(
       ctxParts.push(historyContextPack.contextInstruction);
     }
 
-    // Extract first name from display_name OR memory_facts.user_name fact.
-    // app_users.display_name commonly stores the full name ("Dragan Alexander"),
-    // but the agent should address the user by their first name only.
+    // VTID-03248 (R1 slice 1): resolve the spoken first name through the SAME
+    // canonical resolver as the Vertex path so both transports use identical
+    // precedence (memory_facts → app_users → email). Gains the email
+    // last-resort the inline logic lacked. first_name_source stays comparable
+    // across transports for the wake-decision snapshot (VTID-03210).
     const userNameFact = identityFacts.find((f) => f.fact_key === 'user_name');
-    const fullName = (userNameFact?.fact_value || displayName || '').trim();
-    const firstName = fullName ? fullName.split(/\s+/)[0] : null;
-    // VTID-03210: label the source the same way the Vertex path does so the
-    // wake-decision snapshot's first_name.source is comparable across both.
-    const firstNameSource: FirstNameSource = !firstName
-      ? 'none'
-      : (userNameFact?.fact_value || '').trim()
-        ? 'memory_facts'
-        : 'app_users';
+    const { firstName, source: firstNameSource } = resolveSpokenFirstName({
+      memoryFactUserName: userNameFact?.fact_value ?? null,
+      displayName,
+      email: (req.identity as { email?: string | null } | undefined)?.email ?? null,
+    });
 
     // VTID-02855: ENVIRONMENT CONTEXT — geo-IP + UA + local time, mirrors
     // Vertex's orb-live.ts:14026 path. The fetch itself was moved INTO
