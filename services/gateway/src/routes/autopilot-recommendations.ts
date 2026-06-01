@@ -794,6 +794,7 @@ export interface CommunityRecommendationView {
 export async function listCommunityAutopilotRecommendations(
   userId: string,
   limit = 5,
+  opts: { autoGenerate?: boolean } = {},
 ): Promise<CommunityRecommendationView[]> {
   try {
     if (!userId) return [];
@@ -802,11 +803,56 @@ export async function listCommunityAutopilotRecommendations(
     // GET handler's fetchLimit heuristic.
     const fetchLimit = Math.max((clamped + 1) * 4, 40);
     const result = await queryRecommendationsByRole('community', userId, ['new'], fetchLimit, 0);
-    if (!result.ok || !result.data) return [];
+    if (!result.ok) return [];
+    let rows: any[] = result.data || [];
+
+    // Parity with the popup's list handler: when the canonical query yields
+    // no NEW recs, the popup does NOT return empty — it falls back to the
+    // no-source_type query and then auto-generates + refetches. The voice READ
+    // tool opts into this (autoGenerate) so "what's in my Autopilot?" matches
+    // exactly what opening the popup would show, including for first-time users,
+    // expired queues, and users whose recs were all activated. The proactive
+    // OFFER deliberately does NOT opt in — it must stay latency-cheap at session
+    // bootstrap and simply not offer when the queue is genuinely empty.
+    if (rows.length === 0 && opts.autoGenerate) {
+      const fb = await queryRecommendationsFallback(userId, ['new'], fetchLimit, 0);
+      if (fb.ok && (fb.data?.length ?? 0) > 0) {
+        rows = fb.data!;
+      } else {
+        try {
+          const supabaseUrl = process.env.SUPABASE_URL;
+          const svcKey = process.env.SUPABASE_SERVICE_ROLE;
+          if (supabaseUrl && svcKey) {
+            const { createClient } = await import('@supabase/supabase-js');
+            const supa = createClient(supabaseUrl, svcKey);
+            const { data: tenantRow } = await supa
+              .from('user_tenants')
+              .select('tenant_id')
+              .eq('user_id', userId)
+              .eq('is_primary', true)
+              .maybeSingle();
+            // Community users always have a primary tenant; if none, skip
+            // generation rather than depend on a DEFAULT_TENANT_ID fallback.
+            const tenantId = tenantRow?.tenant_id;
+            if (tenantId) {
+              const genResult = await generatePersonalRecommendations(userId, tenantId, { trigger_type: 'auto_replenish' });
+              if (genResult.generated > 0) {
+                const fresh = await queryRecommendationsByRole('community', userId, ['new'], fetchLimit, 0);
+                if (fresh.ok && (fresh.data?.length ?? 0) > 0) rows = fresh.data!;
+              }
+            }
+          }
+        } catch (genErr: any) {
+          console.warn(`${LOG_PREFIX} listCommunity auto-generation failed (non-fatal): ${genErr?.message}`);
+        }
+      }
+    }
+
+    if (rows.length === 0) return [];
 
     // Dedup by source_ref then title (same rules as the popup).
     const seen = new Map<string, any>();
-    for (const rec of result.data) {
+    for (const rec of rows) {
       const key = rec.source_ref || rec.title;
       if (!seen.has(key)) seen.set(key, rec);
     }
@@ -879,6 +925,63 @@ export function summarizeAutopilotForVoice(
     ? 'You have one Autopilot action prepared:'
     : `You have ${recs.length} Autopilot actions prepared:`;
   return { spoken: `${lead} ${titles.join('; ')}.`, ids, count: recs.length };
+}
+
+/**
+ * Render the system-instruction block that tells the voice assistant (Vitana)
+ * to PROACTIVELY offer to read the user's Autopilot. Pure function over an
+ * already-fetched list. Returns '' for an empty queue, so the caller can append
+ * unconditionally without gating on count. VTID-03201.
+ *
+ * This is the "Vitana says: you have Autopilot recommendations, want me to look?"
+ * half of the feature — the read (`get_autopilot_recommendations`) and the
+ * activation (`activate_autopilot_recommendations`) tools already exist; this
+ * block is what makes Vitana raise it unprompted instead of waiting to be asked.
+ *
+ * Instruction text is intentionally English: it is read by the model, which
+ * responds in the user's language per the "Respond ONLY in {language}" rule.
+ */
+export function renderAutopilotOfferBlock(recs: CommunityRecommendationView[]): string {
+  if (recs.length === 0) return '';
+
+  const count = recs.length;
+  const teaser = recs.slice(0, 2).map(r => r.title).join('; ');
+  const countPhrase = count === 1 ? 'one action' : `${count} actions`;
+
+  return [
+    '## AUTOPILOT — PROACTIVE OFFER (this session)',
+    `The user has ${countPhrase} prepared and waiting in their Autopilot${teaser ? ` (for example: ${teaser})` : ''}.`,
+    '',
+    'EARLY in the conversation — right after your greeting, or at the first',
+    'natural pause — proactively offer ONCE, in one short warm sentence, to go',
+    'through them. For example: "By the way, your Autopilot has a few things',
+    'ready for you — want me to run through them?"',
+    '',
+    'Rules for this proactive offer:',
+    '- Offer FIRST. Do NOT read the list unprompted.',
+    '- If the user agrees ("yes", "go ahead", "what\'s in there?", "was hat der',
+    '  Autopilot?"), call the tool get_autopilot_recommendations and then read',
+    '  its `spoken` summary verbatim.',
+    '- If the user then agrees to act ("activate them", "do the first one",',
+    '  "los geht\'s", "yes do it"), call activate_autopilot_recommendations.',
+    '- Make this proactive offer AT MOST ONCE per conversation. If the user',
+    '  declines or changes the subject, drop it gracefully and never raise it again.',
+    '- This is an offer, not a script — phrase it naturally in the user\'s language.',
+  ].join('\n');
+}
+
+/** Async wrapper: fetch the user's queue, then render the offer block. Never throws. */
+export async function buildAutopilotOfferBlock(userId: string): Promise<string> {
+  try {
+    if (!userId) return '';
+    // Same canonical list the popup + get_autopilot_recommendations use, so the
+    // offer's count matches what Vitana will actually read aloud.
+    const recs = await listCommunityAutopilotRecommendations(userId, 5);
+    return renderAutopilotOfferBlock(recs);
+  } catch (err: any) {
+    console.warn(`${LOG_PREFIX} buildAutopilotOfferBlock failed (non-fatal): ${err?.message}`);
+    return '';
+  }
 }
 
 /** Structured result for community activation, mapped to HTTP by the route and to speech by voice. */
