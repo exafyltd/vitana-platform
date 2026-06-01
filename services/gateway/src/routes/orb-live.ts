@@ -89,6 +89,15 @@ import { compileAssistantDecisionContext } from '../orb/context/compile-assistan
 import { renderDecisionContract } from '../orb/live/instruction/decision-contract-renderer';
 // VTID-03252: ENVIRONMENT block formatter, extracted for testability.
 import { formatClientContextForInstruction } from '../orb/live/instruction/client-context-format';
+// BOOTSTRAP-ORB-R0-INSTRUCTION-CAP: aggregate byte-budget guard for the final
+// Vertex Live `system_instruction`. Phase A (bootstrap-cap) caps only the
+// bootstrap sub-component; this enforces the AGGREGATE limit at the send site
+// so the assembled instruction can never exceed the ~32 KB Vertex Live setup
+// budget (which otherwise closes the handshake with WS 1009 → silent ORB).
+import {
+  enforceInstructionBudget,
+  type InstructionSection,
+} from '../orb/live/instruction/instruction-budget';
 // BOOTSTRAP-VOICE-DEMO: real heartbeats from voice call sites so the agents
 // dashboard reflects live usage instead of fake startup status.
 import { recordAgentHeartbeat } from './agents-registry';
@@ -6162,6 +6171,101 @@ async function connectToLiveAPI(
           )
         }
       };
+
+      // BOOTSTRAP-ORB-R0-INSTRUCTION-CAP: AGGREGATE byte-budget guard.
+      //
+      // R0 root cause: the assembled `system_instruction` has NO total-size
+      // guard before it is sent. Phase A caps only the bootstrap sub-component;
+      // for heavy users the AGGREGATE (scaffold + bootstrap + history +
+      // specialist/teacher + override) can still exceed the ~32 KB Vertex Live
+      // `setup` budget → Vertex closes the handshake (WS 1009 / 1007) or never
+      // sends `setup_complete` → no TTS frames → "Vitana won't talk".
+      //
+      // We split the FINAL instruction text into ordered sections using the
+      // stable, builder-emitted `<conversation_history>` delimiter (the single
+      // largest reliably-delimited trimmable block) so the budget guard can
+      // drop conversation history before touching anything else, then enforce
+      // the aggregate byte budget. The static scaffold (the prompt skeleton)
+      // and the turn-1 wake-brief override — which live OUTSIDE the history
+      // wrapper and are therefore in the preserved `scaffold`/`override`
+      // sections — are kept intact as long as possible.
+      try {
+        const siParts = (setupMessage.setup as any)?.system_instruction?.parts;
+        const finalText: string | undefined =
+          Array.isArray(siParts) && typeof siParts[0]?.text === 'string'
+            ? (siParts[0].text as string)
+            : undefined;
+        if (typeof finalText === 'string' && finalText.length > 0) {
+          // Decompose the assembled text into ordered, labeled sections.
+          // `<conversation_history>...</conversation_history>` is emitted
+          // verbatim by buildLiveSystemInstruction / buildAnonymousSystemInstruction.
+          const HISTORY_OPEN = '<conversation_history>';
+          const HISTORY_CLOSE = '</conversation_history>';
+          const sections: InstructionSection[] = [];
+          const hOpen = finalText.indexOf(HISTORY_OPEN);
+          if (hOpen >= 0) {
+            const hCloseEnd =
+              finalText.indexOf(HISTORY_CLOSE, hOpen) >= 0
+                ? finalText.indexOf(HISTORY_CLOSE, hOpen) + HISTORY_CLOSE.length
+                : finalText.length;
+            const head = finalText.slice(0, hOpen);
+            const history = finalText.slice(hOpen, hCloseEnd);
+            const tail = finalText.slice(hCloseEnd);
+            // head = scaffold + bootstrap region (preserved structurally);
+            // history = trimmable; tail = navigator policy + temporal +
+            // wake-brief/proactive override (preserved). The bootstrap-FIRST
+            // trim ordering is encoded in the helper; here the largest
+            // user-accumulated trimmable block reachable from the final text
+            // is the conversation history.
+            sections.push({ kind: 'scaffold', text: head });
+            sections.push({ kind: 'history', text: history });
+            sections.push({ kind: 'override', text: tail });
+          } else {
+            // No history wrapper present — the whole text is the preserved
+            // scaffold+override. The guard becomes a no-op unless the
+            // scaffold-only assembly somehow exceeds budget, in which case it
+            // returns the over-budget text and we log loudly below.
+            sections.push({ kind: 'scaffold', text: finalText });
+          }
+
+          const budgetResult = enforceInstructionBudget(sections);
+
+          if (
+            budgetResult.trimmedSections.length > 0 ||
+            budgetResult.totalBytesAfter > budgetResult.totalBytesBefore
+          ) {
+            // Apply the trimmed text back onto the envelope.
+            siParts[0].text = budgetResult.text;
+            // Fail loudly + observably: structured warning with byte accounting
+            // and per-section sizes so the R0 overflow is greppable in logs.
+            console.warn(
+              '[voice.instruction.budget_overflow]',
+              JSON.stringify({
+                sessionId: session.sessionId,
+                vitana_id: session.identity?.vitana_id ?? null,
+                isAnonymous: !!session.isAnonymous,
+                totalBytesBefore: budgetResult.totalBytesBefore,
+                totalBytesAfter: budgetResult.totalBytesAfter,
+                budget: 30_720,
+                trimmedSections: budgetResult.trimmedSections,
+                sectionBytes: budgetResult.sectionBytes,
+              }),
+            );
+          } else {
+            // Under budget — emit a low-noise diagnostic so the aggregate size
+            // is observable even on the happy path (helps tune the budget).
+            console.log(
+              `[voice.instruction.budget_ok] session=${session.sessionId} bytes=${budgetResult.totalBytesBefore} budget=30720`,
+            );
+          }
+        }
+      } catch (e) {
+        // Never let the guard break the handshake — fail open with a log.
+        console.warn(
+          '[voice.instruction.budget_overflow] guard_error',
+          (e as Error)?.message ?? String(e),
+        );
+      }
 
       // VTID-NAV-DIAG: Explicit log of whether navigate_to_screen is in the
       // tool declarations for this session. Helps diagnose "redirect not
