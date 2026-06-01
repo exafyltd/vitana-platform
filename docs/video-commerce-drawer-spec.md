@@ -8,14 +8,14 @@ Turns the TikTok-style video-commerce vision into a concrete, build-ready design
 - **Universal Wallet** — `user_wallets` balances surfaced by `useWallet` (`currency_type` ∈ `USD | VTNA | CREDITS`) + Stripe deposits (`POST /api/v1/wallet/deposits/create`, currency `EUR | USD`). VTID work-tracking lives in `vtid_ledger` (governance, not money). Reused for checkout; we only add sale attribution.
 - **Business Hub** — `vitana-v1/src/pages/BusinessHub.tsx`; sellers attach products to videos here.
 - **Discover Marketplace** — `products` / `product_orders` (VTID-02000) + Universal Cart (`universal_carts` / `universal_cart_items` / `universal_cart_events`, VTID-03186). The shop video feed is a NEW surface over the SAME catalog. A product is buyable from the drawer only if it is an active marketplace product (`products.is_active = true`).
-- **OASIS event sourcing** (`oasis_events`) — the analytics funnel is recorded as OASIS events, not a bespoke table. NOTE: `oasis_events` columns are `id, type, source, vtid, topic, service, status, message, payload (jsonb), metadata (jsonb), created_at` — there is **no** `aggregate_type` / `aggregate_id`. Use `type` for the event name and `payload`/`metadata` for `{ video_id, anchor_id, product_id, ... }`.
+- **Telemetry vs OASIS (governance)** — the high-volume video **view funnel** (impression, hold_2s, anchor_tap, drawer_open, drawer_expand, variant_change, save, share, drawer_close) is **telemetry**, not OASIS. Per the hard rule "Polling ≠ progress. Heartbeat ≠ event." and `telemetry.* → NEVER to OASIS`, the funnel firehose is ingested via the existing telemetry path and lands in a dedicated analytics/telemetry store — **NOT** `oasis_events`. **OASIS events** (`emitOasisEvent` → `oasis_events`) are reserved for true commerce **state transitions/decisions** only — order/purchase creation (and creator payout in V1.2). Conversion-relevant signals (add_to_cart / checkout_start / purchase) may ALSO be recorded for ranking, but the funnel itself does not go to OASIS. For OASIS commerce events: `oasis_events` columns are `id, type, source, vtid, topic, service, status, message, payload (jsonb), metadata (jsonb), created_at` — there is **no** `aggregate_type` / `aggregate_id`; use `type` for the event name and `payload`/`metadata` for `{ video_id, anchor_id, product_id, ... }`.
 - **Multi-tenant**: every new table carries `tenant_id`; gateway routes resolve `req.identity.{user_id, tenant_id}` via the Supabase-JWT middleware (`requireAuth` / `optionalAuth` in `services/gateway/src/middleware/auth-supabase-jwt.ts`); Supabase RLS enforces isolation.
 
 Design principle: catalog, Universal Cart, checkout, and wallet do NOT fork. We add a presentation + binding + analytics layer (`shop_videos`, `shop_video_anchors`, `shop_saved_products`) and thread sale attribution through the existing cart/order path.
 
 ## 1. Scope
 
-V1: vertical short-video feed; one primary product anchor per video; single-product drawer (Vaul bottom sheet — the existing `components/ui/drawer.tsx` wraps `vaul`) over the paused video with snap points; expand to full PDP (reuse `ProductDetailsDrawer` + `useMarketplaceFeed`/`useMarketplace` product shape); add-to-cart / buy-now via Universal Cart (`useUniversalCart` → `/api/v1/universal-cart/*`) + wallet/Stripe checkout; sale attribution to source video + creator; OASIS event funnel; minimal seller studio (create video, attach anchor, publish→moderation).
+V1: vertical short-video feed; one primary product anchor per video; single-product drawer (Vaul bottom sheet — the existing `components/ui/drawer.tsx` wraps `vaul`) over the paused video with snap points; expand to full PDP (reuse `ProductDetailsDrawer` + `useMarketplaceFeed`/`useMarketplace` product shape); add-to-cart / buy-now via Universal Cart (`useUniversalCart` → `/api/v1/universal-cart/*`) + wallet/Stripe checkout; sale attribution to source video + creator; telemetry view-funnel + OASIS commerce-state events; minimal seller studio (create video, attach anchor, publish→moderation).
 
 Out of scope (later): multi-product cards, live shopping (LiveKit/Daily — note `orb-livekit.ts` exists today only for ORB voice, not video), countdown stickers, affiliate payout calculation (only persist attribution now).
 
@@ -24,7 +24,8 @@ Out of scope (later): multi-product cards, live shopping (LiveKit/Daily — note
 - New gateway route module(s) under `services/gateway/src/routes/` following the `universal-cart.ts` conventions: `/api/v1/shop-feed/*` and `/api/v1/shop-studio/*`. Register in the gateway router exactly like the existing `universal-cart.ts` / `discover-feed.ts` / `creators.ts` modules. Zod validation, `{ ok: true, ... }` / `{ ok: false, error, detail }` envelope, Supabase-JWT auth via `requireAuth` / `optionalAuth`, `req.identity` for `user_id` / `tenant_id`. Cart-coupled writes reuse the universal-cart community-role gate pattern (`getUserContext` via `me_context` RPC + `getActiveRole` from `user_tenants.active_role`; 403 `cart_unavailable_for_role` for non-community).
 - New Supabase tables created via SQL migration in `supabase/migrations/` (Supabase is the source of truth; Prisma here is only `@prisma/client` for event-sourcing models — DDL is SQL, not Prisma schema) with RLS policies keyed on `tenant_id` / `auth.uid()`, mirroring the VTID-03186 and VTID-02000 patterns. Update `DATABASE_SCHEMA.md` in the same commit (canonical-schema rule).
 - Short videos: store the clip and serve via `playback_url` (HLS/MP4 from Supabase Storage or a stream provider e.g. Cloudflare Stream/Mux). LiveKit/Daily remain for LIVE only. Keep provider-agnostic via `playback_url` + `poster_url`.
-- Analytics funnel = OASIS events emitted through the existing `emitOasisEvent` service (`services/gateway/src/services/oasis-event-service.ts`), `type` e.g. `shop.video.impression`, `source: 'shop-feed-gateway'`, `payload: { video_id, anchor_id, product_id, ... }`. A projection/worker reads OASIS to recompute ranking.
+- View-funnel analytics = **telemetry**, ingested via the existing telemetry path (the gateway already exposes `POST /api/v1/telemetry/event` + `/batch` in `services/gateway/src/routes/telemetry.ts`, and the RUM beacon pattern in `rum-beacon.ts`); funnel events land in the dedicated analytics/telemetry store, **NOT** `oasis_events`. Per the hard rule `telemetry.* → NEVER to OASIS`. A projection/worker reads that telemetry/analytics store to recompute ranking.
+- Commerce-state events = OASIS, emitted through the existing `emitOasisEvent` service (`services/gateway/src/services/oasis-event-service.ts`) ONLY for real state transitions — `type` e.g. `shop.order.created` / `shop.purchase` (and `shop.payout.created` in V1.2), `source: 'shop-feed-gateway'`, `payload: { video_id, anchor_id, product_id, order_id, source_creator_id, ... }`. These mirror order/purchase creation, not the funnel firehose.
 
 ## 3. Database schema (Supabase SQL DDL + RLS)
 
@@ -95,8 +96,8 @@ CREATE TABLE public.shop_saved_products (
 CREATE INDEX shop_saved_products_user_idx ON public.shop_saved_products (user_id, created_at DESC);
 ```
 
-### ANALYTICS: reuse `oasis_events` — no new table
-Funnel events are emitted via `emitOasisEvent`. There is no `aggregate_*` column; carry IDs in `payload`. Example row: `type='shop.video.add_to_cart'`, `source='shop-feed-gateway'`, `payload={ video_id, anchor_id, product_id, source_creator_id }`.
+### ANALYTICS: view funnel → telemetry store (NOT `oasis_events`)
+The high-volume view funnel is **telemetry**, ingested through the existing telemetry path (`POST /api/v1/telemetry/event` + `/batch` in `telemetry.ts`, mirroring the `rum-beacon.ts` pattern) and landing in the dedicated analytics/telemetry store — never `oasis_events` (hard rule `telemetry.* → NEVER to OASIS`). Only true commerce **state transitions** emit OASIS via `emitOasisEvent` (order/purchase creation; payout in V1.2). There is no `aggregate_*` column on `oasis_events`; carry IDs in `payload`. Example OASIS commerce row: `type='shop.order.created'`, `source='shop-feed-gateway'`, `payload={ video_id, anchor_id, product_id, order_id, source_creator_id }`.
 
 ### ADDITIVE attribution columns (nullable → non-breaking)
 ```sql
@@ -112,7 +113,7 @@ NOTE: `universal_cart_items` already carries `source_surface` (`web|mobile|voice
 ### RLS notes (mirror VTID-03186 / VTID-02000)
 - `shop_videos`, `shop_video_anchors`: `authenticated` `SELECT` only for rows where `status='active' AND moderation_status='approved'` (the public feed); creators get full CRUD on their own rows via `creator_user_id = auth.uid()` (videos) and parent-video ownership (anchors), exactly like the cart→cart_items parent-ownership policy. `service_role` `ALL` (gateway writes / moderation).
 - `shop_saved_products`: owner-only (`user_id = auth.uid()`) for SELECT/INSERT/DELETE; `service_role` `ALL`.
-- Funnel writes to `oasis_events` go through `service_role` only (consistent with `universal_cart_events` and the events ingest path).
+- View-funnel telemetry writes go through `service_role` only (consistent with `universal_cart_events` and the existing telemetry ingest path); they land in the telemetry/analytics store, never `oasis_events`. OASIS commerce-state writes also go through `service_role` via `emitOasisEvent`.
 - `GRANT SELECT` to `authenticated`; `GRANT ALL` to `service_role` on all three new tables (defense-in-depth alongside RLS, matching the VTID-03186 grants block).
 
 ## 4. API endpoints (all `/api/v1`, `{ ok }` envelope, Zod, Supabase-JWT auth)
@@ -133,8 +134,9 @@ Cart/checkout (REUSE universal-cart routes, extend body — do NOT fork):
 Saved:
 - `POST /api/v1/shop-feed/saved { product_id, video_id? }`, `DELETE /api/v1/shop-feed/saved/:product_id`, `GET /api/v1/shop-feed/saved`.
 
-Events:
-- `POST /api/v1/shop-feed/events` (single or batch) → emits OASIS events via `emitOasisEvent`: `shop.video.impression`, `shop.video.hold_2s`, `shop.anchor.tap`, `shop.drawer.open`, `shop.drawer.expand`, `shop.variant.change`, `shop.add_to_cart`, `shop.buy_now`, `shop.checkout.start`, `shop.purchase`, `shop.save`, `shop.share`, `shop.drawer.close`.
+Events (split by governance — see header):
+- `POST /api/v1/shop-feed/events` (single or batch) → **view-funnel telemetry**, written to the telemetry/analytics store (NOT `oasis_events`): `shop.video.impression`, `shop.video.hold_2s`, `shop.anchor.tap`, `shop.drawer.open`, `shop.drawer.expand`, `shop.add_to_cart`, `shop.buy_now`, `shop.checkout.start`, `shop.save`, `shop.share`, `shop.drawer.close`. This is the high-frequency firehose; it does not touch OASIS.
+- **OASIS commerce-state events** are emitted server-side by the checkout/order path (not this client endpoint) via `emitOasisEvent` — only on real transitions: `shop.order.created` / `shop.purchase` (and `shop.payout.created` in V1.2). Conversion signals (add_to_cart/checkout_start/purchase) are ALSO captured in telemetry for ranking, but the authoritative purchase state transition is the OASIS event.
 
 Seller studio (role-gated — reuse `creators.ts` + community/seller role checks):
 - `POST /api/v1/shop-studio/videos` (create draft + return upload target),
@@ -176,11 +178,11 @@ Every drawer/PDP shows a health disclaimer (reuse `AffiliateDisclosure` + a heal
 
 ## 7. Ranking & events pipeline
 
-Client emits OASIS events; a projection/worker recomputes `shop_videos.rank_score = w1·watch_completion + w2·anchor_ctr + w3·atc_rate + w4·conv_rate + w5·health_relevance − w6·report_rate`. Shop and Discover share product-level signals via the existing `product_outcome_rollup` materialized view and `product_clicks` / `product_orders`. The worker reads `oasis_events` (filtered by `type LIKE 'shop.%'` + `payload->>'video_id'`) — consistent with the OASIS-as-source-of-truth rule; polling/heartbeats are NOT emitted as events.
+The client emits the **view funnel as telemetry** (`POST /api/v1/shop-feed/events`); a projection/worker reads the telemetry/analytics store (filtered to `shop.*` events, grouped by `video_id`) and recomputes `shop_videos.rank_score = w1·watch_completion + w2·anchor_ctr + w3·atc_rate + w4·conv_rate + w5·health_relevance − w6·report_rate`. Conversion-side truth (purchases) is cross-checked against the OASIS commerce events and `product_orders`. Shop and Discover share product-level signals via the existing `product_outcome_rollup` materialized view and `product_clicks` / `product_orders`. Per the hard rule, the funnel firehose is telemetry — it is NOT written to `oasis_events`; only commerce state transitions are.
 
 ## 8. Build sequence
 
-- V1: feed + single-product drawer + ATC/buy-now (Universal Cart + wallet/Stripe) + PDP + OASIS events.
+- V1: feed + single-product drawer + ATC/buy-now (Universal Cart + wallet/Stripe) + PDP + view-funnel telemetry + OASIS commerce-state events.
 - V1.1: seller studio + Shopify catalog import into `products` (reuse `catalog-ingest.ts` / `internal-marketplace-sync.ts`).
 - V1.2: affiliate — compute commission from `product_orders.source_creator_id`, pay via the wallet ledger to the creator wallet on fulfillment.
 - V1.3: live shopping with pinned anchor over LiveKit/Daily (extend the `orb-livekit.ts` token pattern to a video room).
@@ -190,4 +192,4 @@ Client emits OASIS events; a projection/worker recomputes `shop_videos.rank_scor
 1) Commission model for V1.2 (flat % / per-category from `merchants.commission_rate` / per-creator).
 2) Can creators anchor other businesses' products in V1 or only affiliate-enabled merchants?
 3) `VTNA` / `CREDITS` usage in video checkout — same offsets as Discover, or `USD`/Stripe only at launch?
-4) Short-video storage/transcode provider (Supabase Storage vs Cloudflare Stream/Mux) + OASIS event retention for the funnel.
+4) Short-video storage/transcode provider (Supabase Storage vs Cloudflare Stream/Mux), and the concrete telemetry/analytics sink + retention for the view funnel (existing telemetry store vs a dedicated table).
