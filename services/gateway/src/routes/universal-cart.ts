@@ -988,6 +988,12 @@ router.post('/checkout', async (req: Request, res: Response) => {
     });
   }
 
+  // impact-allow-no-oasis: commerce state for this slice is recorded in
+  // product_orders + shop_video_events (the non-OASIS funnel sink), not
+  // oasis_events. oasis_events is the VTID lifecycle/governance log (CLAUDE.md
+  // §6), not an end-user commerce ledger — consistent with VTID-03237's
+  // declared OASIS_IMPACT: none (#2470). The cart audit trail lives in
+  // universal_cart_events; the wallet movement is logged in wallet_ledger_entries.
   const result = await checkoutUniversalCart({
     userId: id.user_id,
     tenantId: id.tenant_id,
