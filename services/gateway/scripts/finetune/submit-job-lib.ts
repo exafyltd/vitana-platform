@@ -38,11 +38,33 @@ interface BuildJobConfigInput {
   trainerPackageUri: string;
 }
 
+export const DEFAULT_SYNTHETIC_SMOKE_BASE_MODEL = 'Qwen/Qwen2.5-0.5B-Instruct';
+
+const KNOWN_GATED_MODEL_PREFIXES = [
+  'google/gemma-',
+  'meta-llama/',
+];
+
 export function buildTrainerPackageUri(config: FinetuneConfig): string {
   // VTID-03244: bumped to 0.1.1 — drops torch from install_requires so it
   // doesn't shadow the container's pre-installed PyTorch (root cause of
   // CustomJob 3154255301083922432 failure 2026-06-01).
   return `${config.vertex_custom_job.output_uri_prefix}trainer/finetune-trainer-0.1.1.tar.gz`;
+}
+
+export function isKnownGatedBaseModel(baseModel: string): boolean {
+  return KNOWN_GATED_MODEL_PREFIXES.some((prefix) => baseModel.startsWith(prefix));
+}
+
+export function assertBaseModelSubmitSafe(config: FinetuneConfig): void {
+  if (!isKnownGatedBaseModel(config.base_model)) return;
+  if (process.env.FINETUNE_ALLOW_GATED_BASE_MODEL === '1') return;
+
+  throw new Error(
+    `Base model ${config.base_model} is a known gated Hugging Face repo. ` +
+    'Vertex workers cannot access it without an HF-authenticated trainer path, so this job would fail at from_pretrained(). ' +
+    `Use an ungated override such as ${DEFAULT_SYNTHETIC_SMOKE_BASE_MODEL}, or implement the gated-model HF token path first.`,
+  );
 }
 
 export function buildTrainingArgs(config: FinetuneConfig, outputUri: string): string[] {

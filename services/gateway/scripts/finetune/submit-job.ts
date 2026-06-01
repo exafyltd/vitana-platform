@@ -20,6 +20,7 @@ import path from 'path';
 import { randomUUID } from 'crypto';
 import {
   assertDatasetReady,
+  assertBaseModelSubmitSafe,
   assertGcsObjectExists,
   buildJobConfig,
   buildTrainerPackageUri,
@@ -74,6 +75,8 @@ async function main(): Promise<void> {
   console.log(`[submit-job] trainer_package: ${trainerPackageUri}`);
   console.log(`[submit-job] config file: ${tmpConfigPath}`);
   console.log(`[submit-job] command: gcloud ${args.join(' ')}`);
+
+  assertBaseModelSubmitSafe(cfg);
 
   if (DRY_RUN) {
     console.log('[submit-job] dry run — not invoking gcloud');
