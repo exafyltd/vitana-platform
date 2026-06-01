@@ -67,6 +67,11 @@ import { isTier0RedisEnabled } from './system-controls-service';
 import { auditMemoryRead } from './memory-audit';
 // VTID-02000: Marketplace context primitive
 import { getUserHealthContext } from './user-health-context';
+// Phase B (ORB Memory Resilience): relevance-ranked memory selection, gated
+// OFF-by-default behind FEATURE_BOOTSTRAP_CONTEXT_RANKED_RETRIEVAL_ENV with a
+// FEATURE_VOICE_RANKING_SHADOW_ENV shadow-compare log. See memory-ranker.ts.
+import { isFeatureLive } from './feature-flags';
+import { rankMemoryHits, shadowCompareHits } from './memory-hit-ranking';
 
 // =============================================================================
 // Identity Core — fact keys that are ALWAYS loaded regardless of limits
@@ -998,6 +1003,54 @@ export async function buildContextPack(
     memoryHits.sort((a, b) => b.relevance_score - a.relevance_score);
     memoryHits = memoryHits.slice(0, CONTEXT_PACK_CONFIG.MAX_MEMORY_HITS);
     hitCounts.memory_garden = memoryHits.length;
+  }
+
+  // ===========================================================================
+  // Phase B (ORB Memory Resilience): relevance-ranked memory selection.
+  //
+  // At this point `memoryHits` is the NAIVE selection: merged, relevance_score
+  // desc, sliced to MAX_MEMORY_HITS. Phase B replaces "first N by relevance_score"
+  // with a relevance-RANKED top-N (importance + recency + optional similarity)
+  // so the content that survives the cap is the most useful.
+  //
+  // Behavior-safe:
+  //   - When neither flag is live, this block is a no-op — `memoryHits` ships
+  //     byte-for-byte as the naive path produced it.
+  //   - VOICE_RANKING_SHADOW: compute the ranked set, log a structured
+  //     [memory.retrieval.shadow] comparison, but ship the naive set unchanged.
+  //   - BOOTSTRAP_CONTEXT_RANKED_RETRIEVAL: ship the ranked set (same budget).
+  // Both flags default OFF (FEATURE_<NAME>_ENV unset → 'off').
+  // ===========================================================================
+  const rankedRetrievalLive = isFeatureLive('BOOTSTRAP_CONTEXT_RANKED_RETRIEVAL');
+  const rankingShadowLive = isFeatureLive('VOICE_RANKING_SHADOW');
+  if (rankedRetrievalLive || rankingShadowLive) {
+    const rankInputs = {
+      hits: memoryHits,
+      topK: CONTEXT_PACK_CONFIG.MAX_MEMORY_HITS,
+      now: new Date(),
+      // MemoryHit carries no embedding column today, so similarity degrades to 0
+      // and ranking reduces to importance + recency. Seam left open for later.
+      intentEmbedding: undefined as number[] | undefined,
+    };
+    if (rankingShadowLive) {
+      const { ranked, comparison } = shadowCompareHits(memoryHits, rankInputs);
+      // Structured shadow log: old order vs new order, char totals, overlap.
+      console.log(
+        `[memory.retrieval.shadow] ${JSON.stringify({
+          user_id: input.lens.user_id ?? null,
+          query: input.query,
+          applied: rankedRetrievalLive ? 'ranked' : 'naive',
+          ...comparison,
+        })}`,
+      );
+      if (rankedRetrievalLive) {
+        memoryHits = ranked;
+        hitCounts.memory_garden = memoryHits.length;
+      }
+    } else if (rankedRetrievalLive) {
+      memoryHits = rankMemoryHits(rankInputs);
+      hitCounts.memory_garden = memoryHits.length;
+    }
   }
 
   // VTID-01230: Session buffer — inject recent turns from Tier 0
