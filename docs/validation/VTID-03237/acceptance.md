@@ -34,3 +34,27 @@ AC-6 — Universal Cart accepts video_shop + attribution and validates the ancho
 AC-7 — Gateway typecheck, full test suite, and build are green
   TEST: npm run typecheck (0 errors) && npm test (286 suites / 4939 passing) && npm run build (exit 0)
   See ./commands.log and ./outputs/ for captured results.
+
+# ---------------------------------------------------------------------------
+# V1.2 — Checkout bridge (POST /api/v1/universal-cart/checkout)
+# ---------------------------------------------------------------------------
+
+ROUTE_MOUNT: services/gateway/src/routes/universal-cart.ts → router.post('/checkout'); mounted in src/index.ts at /api/v1/universal-cart
+FINAL_URL: POST {gateway}/api/v1/universal-cart/checkout
+CURL_PROOF: curl -sS -X POST "$GATEWAY/api/v1/universal-cart/checkout" -H "Authorization: Bearer $JWT" -H "Content-Type: application/json" -d '{"idempotency_key":"<uuid>"}'
+
+AC-8 — Checkout routes each cart line by product source (hybrid)
+  TEST: services/gateway/test/checkout-service.test.ts (11 passing)
+  RULE: products.source_network ∈ {manual,partner} → first-party (wallet); else affiliate (click-out)
+  CURL: first-party line → wallet_order:{currency,amount_minor,balance_minor,order_ids[]}; affiliate line → affiliate_redirects:[{product_id,affiliate_url,order_id}]
+
+AC-9 — First-party checkout debits the wallet exactly once and is idempotent
+  TEST: debit_wallet_for_spend called with reference_type='cart_checkout', reference_id=checkout_id; duplicate=true on replay
+  CURL: re-POST with the same idempotency_key → same checkout_id, no second debit, no duplicate orders
+
+AC-10 — Money-safety: pending orders precede the debit; failure never leaves money-without-record
+  TEST: INSUFFICIENT_BALANCE → 402, zero cart items completed; PRODUCT_UNAVAILABLE/out_of_stock → 409 before any debit or order write
+  CURL: insufficient balance → 402 { error:"INSUFFICIENT_BALANCE", balance_minor, required_minor }
+
+AC-11 — Purchase funnel events land in shop_video_events (non-OASIS), never oasis_events
+  TEST: settled first-party video lines emit event_type='purchase'; affiliate video lines emit 'checkout_start'
