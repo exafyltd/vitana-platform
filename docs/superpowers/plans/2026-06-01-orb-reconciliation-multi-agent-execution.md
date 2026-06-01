@@ -20,6 +20,20 @@ The two source plans remain the single source of truth for *what* to build:
 Each lane agent re-fetches its source plan(s) before every phase. This file tells the
 harness who owns which phase, which files, in what order, and where the contention is.
 
+### 0.1 Program boundary (READ FIRST)
+
+There are **two separate programs** in flight; this harness covers **only the first**:
+
+| Program | Scope | Owner session | Master doc |
+|---|---|---|---|
+| **R0–R9** (THIS harness) | ORB contextual-awareness + voice communication | **this session** | the two plans in §0 above |
+| **35-day plan** | Google Cloud train/improve of the Vitanaland system (Phase 1 W1→Wn: datasets, fine-tunes, role registry, context source/quality, Intelligence Cockpit, Vertex CustomJobs) | **parallel session** | `.claude/plans/yes-make-a-week-by-week-wild-shore.md` (not in this repo) |
+
+**The one file both programs touch** is `services/gateway/src/services/awareness-unified-context.ts`
+(R1). Per operator decision (2026-06-01): **the R0–R9 session owns it**; the 35-day
+session **consumes the frozen `UnifiedAwarenessContext` interface read-only** for its
+role-aware context pack and never writes the builder. This is the only cross-program seam.
+
 ---
 
 ## 1. CURRENT STATE (do not re-do shipped work)
@@ -34,9 +48,17 @@ Carried forward from the reconciliation plan's Execution Log + `2026-05-29-pendi
 | Vertex turn-1 collision (was "PR-3") | — | — | **retired** as no-op (journey block is set-but-unread) |
 | Greeting-policy decay floor (dragan1 reopen-silence) | VTID-03226 | #2440? | **shipped** |
 | dragan3 double-greeting (LiveKit double-injection §E) | — | — | **OPEN — next** |
+| **R1 slice 1** — canonical spoken-first-name resolver | VTID-03248 | #2484 | **shipped** by the 35-day session; **R1 ownership now transfers to this session** for the remaining slices |
 
-**Net effect on the DAG**: R3 is effectively done (verify in CI gate only). Everything
-else below is open.
+**Net effect on the DAG**: R3 is effectively done (verify in CI gate only). R1 slice 1
+(first-name resolver) is shipped — remaining R1 slices (journey / life_compass /
+vitana_index / cadence + collapsing the duplicate fetches) are **this session's** work.
+Everything else below is open.
+
+**Consumed (not owned) from the 35-day program** — read-only dependencies, do NOT edit:
+`assistant-role-registry.ts` (VTID-03240), `role-aware-context-pack-shadow.ts`
+(VTID-03241), `context-source-health.ts` / context-source inventory (VTID-03238). If R1
+needs a field these expose, consume it through their interface; never fork it.
 
 ---
 
@@ -101,10 +123,16 @@ code-complete; it is the coordinator's post-merge gate.
 - **Shared-file touch**: none on the two hubs.
 - **Start gate**: immediate (Wave 0). Almost entirely additive — best early lane.
 
-### Lane AW — Unified Awareness (the serialization hub)
-- **Phases**: reconciliation **R1** (new `awareness-unified-context.ts`) → **R2** (delete
-  legacy greeting-policy block).
-- **Owns (new)**: `services/gateway/src/services/awareness-unified-context.ts`.
+### Lane AW — Unified Awareness (the serialization hub + cross-program seam)
+- **Phases**: reconciliation **R1** — slice 1 (first-name resolver, VTID-03248) **already
+  shipped**; this lane now drives the **remaining slices** (journey / life_compass /
+  vitana_index / cadence + collapsing the duplicate fetches) → then **R2** (delete legacy
+  greeting-policy block).
+- **Owns (existing file, ownership transferred here)**:
+  `services/gateway/src/services/awareness-unified-context.ts`. This is the **only file the
+  35-day program also depends on** — it consumes the exported `UnifiedAwarenessContext`
+  interface **read-only**. Before changing the interface's shape, announce it so the 35-day
+  session can re-pin; never break their role-aware-context-pack consumer silently.
 - **Owns (edit)**: `services/gateway/src/orb/live/session/live-session-controller.ts`
   (collapse 4 legacy fetches), `services/gateway/src/orb/live/instruction/live-system-instruction.ts:413-528`
   (delete), `voice-wake-brief.ts` (absorb temporal fallback pools).
