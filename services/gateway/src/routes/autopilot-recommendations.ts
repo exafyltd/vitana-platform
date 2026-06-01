@@ -794,6 +794,7 @@ export interface CommunityRecommendationView {
 export async function listCommunityAutopilotRecommendations(
   userId: string,
   limit = 5,
+  opts: { autoGenerate?: boolean } = {},
 ): Promise<CommunityRecommendationView[]> {
   try {
     if (!userId) return [];
@@ -802,11 +803,56 @@ export async function listCommunityAutopilotRecommendations(
     // GET handler's fetchLimit heuristic.
     const fetchLimit = Math.max((clamped + 1) * 4, 40);
     const result = await queryRecommendationsByRole('community', userId, ['new'], fetchLimit, 0);
-    if (!result.ok || !result.data) return [];
+    if (!result.ok) return [];
+    let rows: any[] = result.data || [];
+
+    // Parity with the popup's list handler: when the canonical query yields
+    // no NEW recs, the popup does NOT return empty — it falls back to the
+    // no-source_type query and then auto-generates + refetches. The voice READ
+    // tool opts into this (autoGenerate) so "what's in my Autopilot?" matches
+    // exactly what opening the popup would show, including for first-time users,
+    // expired queues, and users whose recs were all activated. The proactive
+    // OFFER deliberately does NOT opt in — it must stay latency-cheap at session
+    // bootstrap and simply not offer when the queue is genuinely empty.
+    if (rows.length === 0 && opts.autoGenerate) {
+      const fb = await queryRecommendationsFallback(userId, ['new'], fetchLimit, 0);
+      if (fb.ok && (fb.data?.length ?? 0) > 0) {
+        rows = fb.data!;
+      } else {
+        try {
+          const supabaseUrl = process.env.SUPABASE_URL;
+          const svcKey = process.env.SUPABASE_SERVICE_ROLE;
+          if (supabaseUrl && svcKey) {
+            const { createClient } = await import('@supabase/supabase-js');
+            const supa = createClient(supabaseUrl, svcKey);
+            const { data: tenantRow } = await supa
+              .from('user_tenants')
+              .select('tenant_id')
+              .eq('user_id', userId)
+              .eq('is_primary', true)
+              .maybeSingle();
+            // Community users always have a primary tenant; if none, skip
+            // generation rather than depend on a DEFAULT_TENANT_ID fallback.
+            const tenantId = tenantRow?.tenant_id;
+            if (tenantId) {
+              const genResult = await generatePersonalRecommendations(userId, tenantId, { trigger_type: 'auto_replenish' });
+              if (genResult.generated > 0) {
+                const fresh = await queryRecommendationsByRole('community', userId, ['new'], fetchLimit, 0);
+                if (fresh.ok && (fresh.data?.length ?? 0) > 0) rows = fresh.data!;
+              }
+            }
+          }
+        } catch (genErr: any) {
+          console.warn(`${LOG_PREFIX} listCommunity auto-generation failed (non-fatal): ${genErr?.message}`);
+        }
+      }
+    }
+
+    if (rows.length === 0) return [];
 
     // Dedup by source_ref then title (same rules as the popup).
     const seen = new Map<string, any>();
-    for (const rec of result.data) {
+    for (const rec of rows) {
       const key = rec.source_ref || rec.title;
       if (!seen.has(key)) seen.set(key, rec);
     }

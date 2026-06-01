@@ -4248,7 +4248,10 @@ async function executeLiveApiToolInner(
         }
         const { listCommunityAutopilotRecommendations, summarizeAutopilotForVoice } = await import('./autopilot-recommendations');
         const limit = typeof args?.limit === 'number' && args.limit > 0 ? Math.min(args.limit, 10) : 5;
-        const recs = await listCommunityAutopilotRecommendations(userId, limit);
+        // autoGenerate: explicit "what's in my Autopilot?" must match opening the
+        // popup, which generates recs for first-time/expired/all-activated users
+        // rather than returning empty. VTID-03201 (Codex review #2486).
+        const recs = await listCommunityAutopilotRecommendations(userId, limit, { autoGenerate: true });
         const summary = summarizeAutopilotForVoice(recs);
         // Remember exactly what we read aloud so "activate those" resolves to it.
         session.lastListedAutopilotIds = { ids: summary.ids, ts: Date.now() };
