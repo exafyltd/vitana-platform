@@ -1687,10 +1687,33 @@ router.get(
       const line = picked?.userFacingLine?.trim();
       if (picked && line && line.length > 0 && !isReconnect) {
         wakeOverrideApplied = true;
-        // LiveKit suppression block: sentinel marker (drives the brain-opener
-        // strip + SHORT-GAP pool suppression) WITHOUT the verbatim-speak
-        // directive that would make the model double the agent's session.say().
-        const suppressionBlock = `\n\n${VERTEX_WAKE_BRIEF_OVERRIDE_MARKER}
+        // LiveKit first-turn suppression — split into TWO parts so the bootstrap
+        // cap (capBootstrapContext, 12 KB, trims the BOTTOM of the bootstrap)
+        // can never strip the load-bearing directive:
+        //
+        //   1. SENTINEL MARKER — placed at the HEAD of the augmented bootstrap.
+        //      buildLiveSystemInstruction passes the bootstrap through
+        //      capBootstrapContext, which PRESERVES the head and trims the
+        //      tail. Keeping the marker at the head guarantees it survives, so
+        //      stripBrainOpenerSections() + the wakeBriefOverrideActive
+        //      detection (both read the marker out of bootstrapContext) keep
+        //      firing for heavy-context users. The marker alone produces NO
+        //      greeting (it's a sentinel), so it cannot create a rival opener.
+        //
+        //   2. "DO NOT SPEAK FIRST" DIRECTIVE — appended to the RETURNED
+        //      system_instruction, AFTER buildLiveSystemInstruction (i.e.
+        //      OUTSIDE the bootstrap region that the cap can trim). This is the
+        //      directive that actually silences the model's first turn. Placing
+        //      it last also gives it recency primacy over the generic
+        //      "you MUST speak first" GREETING RULES higher in the prompt.
+        //
+        // BOOTSTRAP-ORB-RCV-DOUBLEGREET (P2 fix): previously this whole block
+        // was appended to the END of the bootstrap, so when an authenticated
+        // user's bootstrapContext + behavioral rule exceeded 12 KB the
+        // directive was trimmed off the final system_instruction while the
+        // generic "speak first" rule survived → the double-greeting returned
+        // for heavy-context users.
+        const firstTurnSuppressionDirective = `
 
 ## FIRST TURN — DO NOT SPEAK FIRST (LiveKit transport — BOOTSTRAP-ORB-RCV-DOUBLEGREET)
 
@@ -1704,10 +1727,12 @@ WAIT for the user to speak. Only then respond normally.
 This block OVERRIDES every other greeting rule in this prompt for the
 first turn only. Subsequent turns follow the normal conversation flow.`;
         const vitanaBehavioralRule = buildPersonaBehavioralRule('vitana');
+        // Marker at the HEAD so capBootstrapContext (head-preserving) can never
+        // trim it away, regardless of bootstrap size.
         const augmentedContext =
+          `${VERTEX_WAKE_BRIEF_OVERRIDE_MARKER}\n\n` +
           (bootstrapContext ? `${bootstrapContext}\n\n` : '') +
-          `${vitanaBehavioralRule}` +
-          suppressionBlock;
+          `${vitanaBehavioralRule}`;
         const voiceStyle =
           (voiceConfig as { voice_style?: string } | null)?.voice_style?.trim() ||
           'friendly, calm, empathetic';
@@ -1726,8 +1751,11 @@ first turn only. Subsequent turns follow the normal conversation flow.`;
           req.identity?.vitana_id ?? null,
           true,
         );
+        // Append the directive OUTSIDE the bootstrap-cap region — this is what
+        // keeps it from ever being trimmed for heavy-context users.
+        systemInstruction += firstTurnSuppressionDirective;
         console.log(
-          `[${VTID}/BOOTSTRAP-ORB-RCV-DOUBLEGREET] systemInstruction re-rendered with LiveKit first-turn SUPPRESSION (kind=${picked.kind}, decision_id=${wakeBriefDecision?.decisionId}, lang=${lang}) — session.say() owns the first turn, model stays silent`,
+          `[${VTID}/BOOTSTRAP-ORB-RCV-DOUBLEGREET] systemInstruction re-rendered with LiveKit first-turn SUPPRESSION (kind=${picked.kind}, decision_id=${wakeBriefDecision?.decisionId}, lang=${lang}) — session.say() owns the first turn, model stays silent; directive appended post-cap so it survives heavy bootstrap`,
         );
       }
     } catch (exc) {
