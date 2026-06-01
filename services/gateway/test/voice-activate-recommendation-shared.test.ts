@@ -45,9 +45,34 @@ function makeStubSupabase(opts: {
   updateError?: { message: string } | null;
   fetchError?: { message: string } | null;
   updates: CapturedUpdate[];
+  // DEV-COMHU-0505: optional persisted pending CTA (orb_session_state row).
+  pendingCta?: { value: unknown; expires_at: string } | null;
+  pendingCtaDeletes?: string[];
 }) {
   return {
     from(table: string) {
+      if (table === 'orb_session_state') {
+        // Minimal chain used by readOrbSessionState / clearOrbSessionState:
+        //   .select(...).eq(user_id).eq(key).maybeSingle()
+        //   .delete().eq(user_id).eq(key)
+        return {
+          select: () => ({
+            eq: () => ({
+              eq: () => ({
+                maybeSingle: async () => ({ data: opts.pendingCta ?? null, error: null }),
+              }),
+            }),
+          }),
+          delete: () => ({
+            eq: () => ({
+              eq: async () => {
+                opts.pendingCtaDeletes?.push('pending_cta');
+                return { error: null };
+              },
+            }),
+          }),
+        } as unknown;
+      }
       if (table !== 'autopilot_recommendations') {
         return {} as never;
       }
@@ -222,6 +247,55 @@ describe('VTID-02975 — activate_recommendation lifted to shared dispatcher', (
       sb,
     );
 
+    expect(result.ok).toBe(false);
+    if (result.ok === false) {
+      expect(result.error).toBe('id is required');
+    }
+  });
+
+  // DEV-COMHU-0505 (review follow-up): "yes" with no id falls back to the
+  // persisted pending CTA so the affirmative turn resolves deterministically.
+  test('6b. empty id → resolves rec from persisted pending_cta + consumes it', async () => {
+    const updates: CapturedUpdate[] = [];
+    const pendingCtaDeletes: string[] = [];
+    const sb = makeStubSupabase({
+      updates,
+      pendingCtaDeletes,
+      recs: {
+        [REC_UUID_NEW]: {
+          id: REC_UUID_NEW,
+          title: 'Schedule a focus block',
+          summary: null,
+          status: 'new',
+          user_id: SENDER_UUID,
+        },
+      },
+      pendingCta: {
+        value: { tool: 'activate_recommendation', payload: { id: REC_UUID_NEW } },
+        expires_at: new Date(Date.now() + 5 * 60_000).toISOString(),
+      },
+    });
+
+    const result = await tool_activate_recommendation(
+      { id: '' }, // model said "yes" — no id in context
+      { user_id: SENDER_UUID, tenant_id: 'tenant-1', role: 'user', vitana_id: 'vit_send' },
+      sb,
+    );
+
+    expect(result.ok).toBe(true);
+    expect(updates).toHaveLength(1);
+    expect(updates[0]).toMatchObject({ recId: REC_UUID_NEW, patch: { status: 'activated' } });
+    // pending CTA consumed so it can't re-fire on a later turn.
+    expect(pendingCtaDeletes).toContain('pending_cta');
+  });
+
+  test('6c. empty id + no pending_cta → still "id is required"', async () => {
+    const sb = makeStubSupabase({ updates: [], recs: {}, pendingCta: null });
+    const result = await tool_activate_recommendation(
+      { id: '' },
+      { user_id: SENDER_UUID, tenant_id: 'tenant-1', role: 'user', vitana_id: 'vit_send' },
+      sb,
+    );
     expect(result.ok).toBe(false);
     if (result.ok === false) {
       expect(result.error).toBe('id is required');
