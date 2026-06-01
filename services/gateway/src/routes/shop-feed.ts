@@ -247,35 +247,55 @@ router.get('/videos', async (req: Request, res: Response) => {
   const limit = clampLimit(req.query.limit);
   const offset = decodeCursor(req.query.cursor);
 
-  // Over-fetch by one to compute next_cursor.
-  const videos = await svc
-    .from('shop_videos')
-    .select('id, title, caption, creator_id, video_url, poster_url, thumbnail_url, duration_ms, aspect_ratio, rank_score, created_at')
-    .eq('status', 'active')
-    .eq('moderation_status', 'approved')
-    .order('rank_score', { ascending: false })
-    .order('created_at', { ascending: false })
-    .range(offset, offset + limit); // inclusive → fetches limit+1
-  if (videos.error) {
-    return res.status(500).json({ ok: false, error: 'feed_lookup_failed', detail: videos.error.message });
+  // Scan the ranked active+approved videos forward in batches, surfacing only
+  // those with a live, purchasable primary anchor. We keep scanning past
+  // unanchored/OOS rows (bounded by MAX_SCAN) so the page fills to `limit`
+  // whenever enough valid items exist further down the ranking — otherwise an
+  // early cluster of unanchored videos would return an empty/underfilled page
+  // with a non-null cursor and break clients that stop on an empty page. The
+  // cursor stays an offset into the ranked shop_videos list (wire format
+  // unchanged); next_cursor is null only once the ranked set is exhausted.
+  const FETCH_BATCH = Math.max(limit * 3, 30);
+  const MAX_SCAN = Math.max(limit * 10, 100);
+  const items: Record<string, unknown>[] = [];
+  let scanOffset = offset;
+  let exhausted = false;
+
+  while (items.length < limit && scanOffset - offset < MAX_SCAN) {
+    const batch = await svc
+      .from('shop_videos')
+      .select('id, title, caption, creator_id, video_url, poster_url, thumbnail_url, duration_ms, aspect_ratio, rank_score, created_at')
+      .eq('status', 'active')
+      .eq('moderation_status', 'approved')
+      .order('rank_score', { ascending: false })
+      .order('created_at', { ascending: false })
+      .range(scanOffset, scanOffset + FETCH_BATCH - 1); // inclusive → up to FETCH_BATCH rows
+    if (batch.error) {
+      return res.status(500).json({ ok: false, error: 'feed_lookup_failed', detail: batch.error.message });
+    }
+    const rows = batch.data || [];
+    if (rows.length === 0) { exhausted = true; break; }
+
+    const anchorMap = await loadPrimaryAnchors(svc, rows.map((v: any) => v.id));
+    let filledEarly = false;
+    for (const v of rows) {
+      scanOffset += 1; // advance the cursor per row consumed (never skips a row)
+      const bound = anchorMap.get(v.id);
+      if (bound) {
+        items.push(shapeVideoItem(v, bound.anchor, bound.product));
+        if (items.length === limit) { filledEarly = true; break; }
+      }
+    }
+    // Exhausted only when the whole (short) batch was consumed without stopping
+    // early — a short batch we broke out of may still hold unscanned rows.
+    if (filledEarly) break;
+    if (rows.length < FETCH_BATCH) { exhausted = true; break; }
   }
-
-  const page = (videos.data || []).slice(0, limit);
-  const hasMore = (videos.data || []).length > limit;
-  const anchorMap = await loadPrimaryAnchors(svc, page.map((v: any) => v.id));
-
-  // Only surface videos that have a live, purchasable primary anchor.
-  const items = page
-    .filter((v: any) => anchorMap.has(v.id))
-    .map((v: any) => {
-      const bound = anchorMap.get(v.id)!;
-      return shapeVideoItem(v, bound.anchor, bound.product);
-    });
 
   return res.status(200).json({
     ok: true,
     videos: items,
-    next_cursor: hasMore ? encodeCursor(offset + limit) : null,
+    next_cursor: exhausted ? null : encodeCursor(scanOffset),
   });
 });
 
@@ -316,6 +336,22 @@ router.get('/videos/:id/anchor', async (req: Request, res: Response) => {
 
   const svc = getSupabase();
   if (!svc) return res.status(500).json({ ok: false, error: 'service_unavailable' });
+
+  // Gate on the parent video being live (active + approved), mirroring /videos
+  // and /videos/:id — otherwise the drawer could surface an anchor for an
+  // inactive or moderation-rejected video. Collapse to the same opaque
+  // 'anchor_unavailable' response so video state isn't leaked to the client.
+  const video = await svc
+    .from('shop_videos')
+    .select('id, status, moderation_status')
+    .eq('id', videoId)
+    .maybeSingle();
+  if (video.error) {
+    return res.status(500).json({ ok: false, error: 'video_lookup_failed', detail: video.error.message });
+  }
+  if (!video.data || video.data.status !== 'active' || video.data.moderation_status !== 'approved') {
+    return res.status(404).json({ ok: false, error: 'anchor_unavailable' });
+  }
 
   const anchorMap = await loadPrimaryAnchors(svc, [videoId]);
   const bound = anchorMap.get(videoId);
