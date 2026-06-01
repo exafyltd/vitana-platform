@@ -93,6 +93,40 @@ const DEFAULT_PRIORITY = 85;
 const DEFAULT_LOOKBACK_INTRODUCED_DAYS = 7;
 const MAX_DISMISS_BEFORE_PERMANENT = 3;
 
+// ---------------------------------------------------------------------------
+// R4 (BOOTSTRAP-ORB-R4-GRADUATED-TEACHER) — graduated-user Teacher track.
+//
+// When the linear curriculum is EXHAUSTED (every enabled capability is
+// introduced/tried/completed/mastered within its cooldown → pickCapability
+// returns null) the Teacher used to suppress and fall through to the bare
+// voice-wake-brief. R4 makes it RE-ENGAGE:
+//   1. DEEPENING REFRESH — re-introduce a `tried` capability with next-level
+//      framing IF its refresh schedule is due (per-user × capability,
+//      90-day default cadence, tracked in teacher_capability_refresh_schedule).
+//   2. GRACEFUL PAUSE — if nothing is refresh-eligible, speak ONE gentle line
+//      then stay silent on subsequent same-day opens.
+// ---------------------------------------------------------------------------
+
+/** Default cadence (days) between deepening refreshes of the same capability. */
+export const TEACHER_REFRESH_INTERVAL_DAYS = 90;
+
+/** Reserved capability_key for the graceful-pause same-day silence sentinel. */
+export const GRACEFUL_PAUSE_KEY = '__graceful_pause__' as const;
+
+/** A row from teacher_capability_refresh_schedule for one (user, capability). */
+export interface RefreshScheduleRow {
+  capability_key: string;
+  /** ISO 8601 — refresh/pause allowed again on or after this instant. */
+  next_refresh_ok_at: string;
+  refresh_count?: number | null;
+}
+
+export interface PickedRefresh {
+  row: CapabilityCatalogRow;
+  /** How many times this capability has already been refreshed (0 = first). */
+  refreshCount: number;
+}
+
 export interface TeacherInputs {
   /** Supabase service-role client. Required — DB-backed selection. */
   supabase: SupabaseClient;
@@ -120,6 +154,13 @@ export interface TeacherInputs {
   /** ISO 8601 server-side now. Used for the introduced-within-N-days
    *  filter so a candidate isn't re-introduced too soon. */
   nowIso?: string;
+  /**
+   * R4: minutes offset from UTC for the user's local timezone (e.g. +120 for
+   * CEST). Used ONLY to compute "start of next local day" for the graceful-pause
+   * sentinel so the pause line repeats at most once per local day. Defaults to 0
+   * (UTC) when unknown — a safe fallback (pause may reset at UTC midnight).
+   */
+  tzOffsetMinutes?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -275,6 +316,167 @@ export function renderTeacherLine(args: {
 }
 
 // ---------------------------------------------------------------------------
+// R4 — graduated-track pure helpers (exported for tests)
+// ---------------------------------------------------------------------------
+
+/**
+ * R4 deepening-refresh picker (deterministic, pure).
+ *
+ * Runs ONLY when the linear `pickCapability` returned null (curriculum
+ * exhausted). Selects ONE `tried` capability whose deepening refresh is due:
+ *   1. Capability must be enabled AND its ledger state must be exactly `tried`
+ *      (the user engaged once but hasn't completed/mastered — the right
+ *      surface for a "let's go deeper" re-introduction). completed/mastered
+ *      are intentionally terminal and never re-offered.
+ *   2. Refresh is "due" when there is NO schedule row for it (never refreshed)
+ *      OR the row's `next_refresh_ok_at` is <= now.
+ *   3. Among due candidates, prefer the one refreshed longest ago (oldest
+ *      next_refresh_ok_at first; never-refreshed rows sort first), then
+ *      pedagogical_order asc, then capability_key alphabetical.
+ *
+ * Returns null when nothing is refresh-eligible → caller falls to graceful pause.
+ */
+export function pickRefreshCapability(
+  catalog: CapabilityCatalogRow[],
+  ledger: AwarenessLedgerRow[],
+  schedule: RefreshScheduleRow[],
+  nowIso: string,
+): PickedRefresh | null {
+  const nowMs = Date.parse(nowIso);
+  if (!Number.isFinite(nowMs)) return null;
+
+  const ledgerByKey = new Map<string, AwarenessLedgerRow>();
+  for (const row of ledger) ledgerByKey.set(row.capability_key, row);
+
+  const schedByKey = new Map<string, RefreshScheduleRow>();
+  for (const row of schedule) schedByKey.set(row.capability_key, row);
+
+  interface Cand {
+    row: CapabilityCatalogRow;
+    refreshCount: number;
+    /** Sort key: ms of next_refresh_ok_at; -Infinity when never refreshed. */
+    nextOkMs: number;
+  }
+  const eligible: Cand[] = [];
+  for (const cap of catalog) {
+    if (!cap.enabled) continue;
+    const lr = ledgerByKey.get(cap.capability_key);
+    // Only `tried` capabilities are deepening-refresh candidates.
+    if (!lr || lr.awareness_state !== 'tried') continue;
+
+    const sched = schedByKey.get(cap.capability_key);
+    let nextOkMs = -Infinity;
+    if (sched) {
+      const parsed = Date.parse(sched.next_refresh_ok_at);
+      if (Number.isFinite(parsed)) {
+        if (parsed > nowMs) continue; // not due yet
+        nextOkMs = parsed;
+      }
+    }
+    eligible.push({
+      row: cap,
+      refreshCount: sched?.refresh_count ?? 0,
+      nextOkMs,
+    });
+  }
+
+  if (eligible.length === 0) return null;
+
+  eligible.sort((a, b) => {
+    // Oldest-due / never-refreshed first.
+    if (a.nextOkMs !== b.nextOkMs) return a.nextOkMs - b.nextOkMs;
+    const aOrder = typeof a.row.pedagogical_order === 'number' ? a.row.pedagogical_order : Number.POSITIVE_INFINITY;
+    const bOrder = typeof b.row.pedagogical_order === 'number' ? b.row.pedagogical_order : Number.POSITIVE_INFINITY;
+    if (aOrder !== bOrder) return aOrder - bOrder;
+    return a.row.capability_key.localeCompare(b.row.capability_key);
+  });
+
+  const top = eligible[0];
+  return { row: top.row, refreshCount: top.refreshCount };
+}
+
+/**
+ * Decide whether the graceful-pause line may be SPOKEN this open.
+ *
+ * The pause line fires at most once per local day. The same-day silence is
+ * enforced by a `__graceful_pause__` sentinel row whose `next_refresh_ok_at`
+ * is the start of the next local day. So:
+ *   - no sentinel row, OR sentinel due (next_refresh_ok_at <= now) → SPEAK.
+ *   - sentinel still in the future (already spoke today) → STAY SILENT.
+ */
+export function gracefulPauseAllowed(
+  schedule: RefreshScheduleRow[],
+  nowIso: string,
+): boolean {
+  const nowMs = Date.parse(nowIso);
+  if (!Number.isFinite(nowMs)) return false;
+  const sentinel = schedule.find((s) => s.capability_key === GRACEFUL_PAUSE_KEY);
+  if (!sentinel) return true;
+  const okMs = Date.parse(sentinel.next_refresh_ok_at);
+  if (!Number.isFinite(okMs)) return true;
+  return okMs <= nowMs;
+}
+
+/** Start of the user's NEXT local day, as an ISO instant, given an offset in
+ *  minutes from UTC (e.g. +120 for CEST). Used to stamp the pause sentinel so
+ *  the line can fire again tomorrow but stays silent for the rest of today. */
+export function startOfNextLocalDayIso(nowIso: string, tzOffsetMinutes = 0): string {
+  const nowMs = Date.parse(nowIso);
+  if (!Number.isFinite(nowMs)) return nowIso;
+  const offsetMs = tzOffsetMinutes * 60 * 1000;
+  const local = new Date(nowMs + offsetMs);
+  // Compute next local midnight in UTC terms.
+  const y = local.getUTCFullYear();
+  const m = local.getUTCMonth();
+  const d = local.getUTCDate();
+  const nextLocalMidnightUtcMs = Date.UTC(y, m, d + 1, 0, 0, 0, 0) - offsetMs;
+  return new Date(nextLocalMidnightUtcMs).toISOString();
+}
+
+/** Now + 90 days (default refresh cadence), as ISO. */
+export function nextRefreshOkIso(
+  nowIso: string,
+  intervalDays = TEACHER_REFRESH_INTERVAL_DAYS,
+): string {
+  const nowMs = Date.parse(nowIso);
+  if (!Number.isFinite(nowMs)) return nowIso;
+  return new Date(nowMs + intervalDays * 24 * 60 * 60 * 1000).toISOString();
+}
+
+/**
+ * Deepening-refresh invitation clause — language-aware, next-level framing.
+ * Escalates wording by refreshCount so a second refresh doesn't repeat the
+ * first verbatim. Names the capability so the user knows what's being revisited.
+ */
+export function renderRefreshInvitation(args: {
+  lang: string;
+  displayName: string;
+  refreshCount: number;
+}): string {
+  const de = args.lang.toLowerCase().startsWith('de');
+  const name = args.displayName;
+  if (args.refreshCount >= 1) {
+    return de
+      ? `Lass uns bei ${name} noch eine Stufe tiefer gehen — darf ich dir fortgeschrittene Wege zeigen?`
+      : `Let's take ${name} one level deeper — may I show you some advanced ways to use it?`;
+  }
+  return de
+    ? `Erinnerst du dich an ${name}? Lass uns das nochmal aufgreifen — darf ich dir zeigen, was du als Nächstes damit machen kannst?`
+    : `Remember ${name}? Let's revisit it — may I show you what you can do next with it?`;
+}
+
+/**
+ * The graceful-pause line (operator-fixed copy, per R4 strategy). Spoken once
+ * per local day when there is nothing new to teach and nothing to refresh.
+ */
+export function renderGracefulPauseLine(lang: string): string {
+  const de = lang.toLowerCase().startsWith('de');
+  return de
+    ? 'Du hast das meiste von dem, was Vitana zu bieten hat, schon erkundet. Ich melde mich, sobald es Neues gibt. Soll ich kurz zusammenfassen, was du diesen Monat gelernt hast?'
+    : "You've explored most of what Vitana offers. I'll surface new things as they ship. Want me to summarize what you've learned this month?";
+}
+
+// ---------------------------------------------------------------------------
 // Provider factory
 // ---------------------------------------------------------------------------
 
@@ -401,12 +603,22 @@ export function makeFeatureDiscoveryTeacherProvider(
       const nowIso = inputs.nowIso ?? new Date().toISOString();
       const picked = pickCapability(catalog, ledger, nowIso);
       if (!picked) {
-        return {
-          providerKey: TEACHER_PROVIDER_KEY,
-          status: 'suppressed',
-          latencyMs: Math.max(0, now() - t0),
-          reason: 'all_capabilities_known_or_dismissed',
-        };
+        // R4 (BOOTSTRAP-ORB-R4-GRADUATED-TEACHER): the linear curriculum is
+        // exhausted. Instead of suppressing → falling to the bare wake-brief,
+        // re-engage: attempt a deepening refresh, else a once-per-day graceful
+        // pause. Bundled/atomic like the R3 design — the candidate carries its
+        // content (or the provider errors/suppresses cleanly).
+        return await produceGraduatedTrack({
+          inputs,
+          catalog,
+          ledger,
+          nowIso,
+          priority,
+          newId,
+          now,
+          rng,
+          t0,
+        });
       }
 
       // ---- Render the two-clause line ----
@@ -579,6 +791,225 @@ function readInputs(ctx: ContinuationDecisionContext): TeacherInputs | null {
         ? obj.skipReason
         : null,
     nowIso: typeof obj.nowIso === 'string' && obj.nowIso ? obj.nowIso : undefined,
+    tzOffsetMinutes:
+      typeof obj.tzOffsetMinutes === 'number' && Number.isFinite(obj.tzOffsetMinutes)
+        ? obj.tzOffsetMinutes
+        : undefined,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// R4 — graduated-track producer (curriculum exhausted → refresh OR pause)
+// ---------------------------------------------------------------------------
+
+interface GraduatedTrackArgs {
+  inputs: TeacherInputs;
+  catalog: CapabilityCatalogRow[];
+  ledger: AwarenessLedgerRow[];
+  nowIso: string;
+  priority: number;
+  newId: () => string;
+  now: () => number;
+  rng: () => number;
+  t0: number;
+}
+
+/**
+ * R4: the linear curriculum is exhausted. Re-engage instead of suppressing.
+ *
+ *   1. Fetch the per-user refresh schedule.
+ *   2. DEEPENING REFRESH — if a `tried` capability is refresh-due, re-introduce
+ *      it with next-level framing. Resolve its Teacher Mode content atomically
+ *      (same R3 contract: null/throw → errored, never fire empty). Record the
+ *      refresh (advances the 90-day cadence). Returns a bundled candidate.
+ *   3. GRACEFUL PAUSE — else, if the once-per-day pause is allowed, speak the
+ *      fixed pause line and stamp the same-day silence sentinel. Returns a
+ *      content-free `check_in` candidate.
+ *   4. If the pause already fired today → suppress cleanly (silent).
+ *
+ * Schedule writes are best-effort (fire-and-forget on the RPC): a write failure
+ * must NOT block the spoken turn. We await the RPC but swallow its error.
+ */
+async function produceGraduatedTrack(
+  args: GraduatedTrackArgs,
+): Promise<ProviderResult> {
+  const { inputs, catalog, ledger, nowIso, priority, newId, now, rng, t0 } = args;
+
+  // ---- Fetch the refresh schedule (degrade to empty on error) ----
+  let schedule: RefreshScheduleRow[] = [];
+  try {
+    const sched = await inputs.supabase
+      .from('teacher_capability_refresh_schedule')
+      .select('capability_key, next_refresh_ok_at, refresh_count')
+      .eq('tenant_id', inputs.tenantId)
+      .eq('user_id', inputs.userId);
+    if (!sched.error && Array.isArray(sched.data)) {
+      schedule = sched.data as RefreshScheduleRow[];
+    }
+  } catch {
+    // Missing table / RLS / transient error → treat as no schedule. Every
+    // `tried` capability is then refresh-due (never-refreshed sorts first).
+    schedule = [];
+  }
+
+  // ---- 1. DEEPENING REFRESH ----
+  const refresh = pickRefreshCapability(catalog, ledger, schedule, nowIso);
+  if (refresh) {
+    // Atomic content resolution — identical R3 contract.
+    let teacherMode: TeacherModeContent | null = null;
+    try {
+      const { resolveTeacherModeContent } = await import(
+        '../../../../orb/teacher/teacher-content-resolver'
+      );
+      teacherMode = await resolveTeacherModeContent({
+        supabase: inputs.supabase,
+        tenantId: inputs.tenantId,
+        userId: inputs.userId,
+        activeCapabilityKey: refresh.row.capability_key,
+        lang: inputs.lang,
+        nowIso: inputs.nowIso ?? undefined,
+      });
+    } catch (err) {
+      return {
+        providerKey: TEACHER_PROVIDER_KEY,
+        status: 'errored',
+        latencyMs: Math.max(0, now() - t0),
+        reason: `teacher_refresh_content_resolution_failed: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      };
+    }
+    if (!teacherMode || !teacherMode.active_capability_key) {
+      return {
+        providerKey: TEACHER_PROVIDER_KEY,
+        status: 'errored',
+        latencyMs: Math.max(0, now() - t0),
+        reason: 'teacher_refresh_content_resolution_failed',
+      };
+    }
+
+    // Greeting clause reuses the name-aware pool; invitation uses the
+    // deepening framing instead of the abstract "may I show you something".
+    const greetingPick = pickTeacherGreetingMeta({
+      lang: inputs.lang,
+      firstName: inputs.firstName ?? null,
+      rng,
+      greetingPolicy: inputs.greetingPolicy,
+    });
+    const invitation = renderRefreshInvitation({
+      lang: inputs.lang,
+      displayName: refresh.row.display_name,
+      refreshCount: refresh.refreshCount,
+    });
+    const userFacingLine = renderTeacherLine({
+      greeting: greetingPick.text,
+      invitation,
+    });
+
+    console.log(
+      `[BOOTSTRAP-ORB-R4 TEACHER-REFRESH] tenant=${inputs.tenantId} user=${inputs.userId.slice(0, 8)} `
+      + `lang=${inputs.lang} capability=${refresh.row.capability_key} refresh_count=${refresh.refreshCount} `
+      + `rendered="${userFacingLine.replace(/"/g, '\\"').slice(0, 240)}"`,
+    );
+
+    // Record the refresh (advance the 90-day cadence). Best-effort.
+    try {
+      await inputs.supabase.rpc('record_teacher_refresh', {
+        p_tenant_id: inputs.tenantId,
+        p_user_id: inputs.userId,
+        p_capability_key: refresh.row.capability_key,
+        p_next_ok_at: nextRefreshOkIso(nowIso),
+        p_is_refresh: true,
+      });
+    } catch {
+      // Schedule write failure must not block the spoken turn.
+    }
+
+    const candidate: TeacherContinuation = {
+      id: `teacher-refresh-${newId()}`,
+      surface: 'orb_wake',
+      kind: 'feature_discovery',
+      priority,
+      userFacingLine,
+      teacherMode,
+      cta: {
+        type: 'offer_demo',
+        payload: {
+          capability_key: refresh.row.capability_key,
+          manual_path: refresh.row.manual_path ?? null,
+          display_name: refresh.row.display_name,
+          refresh: true,
+          refresh_count: refresh.refreshCount,
+        },
+      },
+      evidence: [
+        { kind: 'capability:refresh_eligible', detail: refresh.row.capability_key },
+        { kind: 'refresh_count', detail: String(refresh.refreshCount) },
+        { kind: 'graduated_track', detail: 'deepening_refresh' },
+      ],
+      dedupeKey: `teacher:refresh:${refresh.row.capability_key}`,
+      privacyMode: 'safe_to_speak',
+    };
+    return {
+      providerKey: TEACHER_PROVIDER_KEY,
+      status: 'returned',
+      latencyMs: Math.max(0, now() - t0),
+      candidate,
+    };
+  }
+
+  // ---- 2. GRACEFUL PAUSE (once per local day) ----
+  if (!gracefulPauseAllowed(schedule, nowIso)) {
+    // Already spoke the pause line today → stay silent on this same-day open.
+    return {
+      providerKey: TEACHER_PROVIDER_KEY,
+      status: 'suppressed',
+      latencyMs: Math.max(0, now() - t0),
+      reason: 'graceful_pause_already_spoken_today',
+    };
+  }
+
+  const pauseLine = renderGracefulPauseLine(inputs.lang);
+  console.log(
+    `[BOOTSTRAP-ORB-R4 TEACHER-PAUSE] tenant=${inputs.tenantId} user=${inputs.userId.slice(0, 8)} `
+    + `lang=${inputs.lang} rendered="${pauseLine.replace(/"/g, '\\"').slice(0, 240)}"`,
+  );
+
+  // Stamp the same-day silence sentinel: next allowed at start of next local day.
+  try {
+    await inputs.supabase.rpc('record_teacher_refresh', {
+      p_tenant_id: inputs.tenantId,
+      p_user_id: inputs.userId,
+      p_capability_key: GRACEFUL_PAUSE_KEY,
+      p_next_ok_at: startOfNextLocalDayIso(nowIso, inputs.tzOffsetMinutes ?? 0),
+      p_is_refresh: false,
+    });
+  } catch {
+    // Best-effort — a write failure means the pause might repeat; acceptable.
+  }
+
+  const candidate: AssistantContinuation = {
+    id: `teacher-pause-${newId()}`,
+    surface: 'orb_wake',
+    kind: 'check_in',
+    priority,
+    userFacingLine: pauseLine,
+    cta: {
+      type: 'explain',
+      payload: { graceful_pause: true, offer: 'summarize_month' },
+    },
+    evidence: [
+      { kind: 'graduated_track', detail: 'graceful_pause' },
+      { kind: 'catalog_size', detail: String(catalog.length) },
+    ],
+    dedupeKey: 'teacher:graceful_pause',
+    privacyMode: 'safe_to_speak',
+  };
+  return {
+    providerKey: TEACHER_PROVIDER_KEY,
+    status: 'returned',
+    latencyMs: Math.max(0, now() - t0),
+    candidate,
   };
 }
 
