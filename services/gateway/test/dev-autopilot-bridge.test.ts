@@ -11,6 +11,7 @@
 import {
   decideBridgeAction,
   resolveRetryThreshold,
+  parseThreshold,
   CHILD_SPAWN_CONFIDENCE_THRESHOLD,
   RETRY_THRESHOLD_BY_STAGE,
 } from '../src/services/dev-autopilot-bridge';
@@ -152,6 +153,18 @@ describe('resolveRetryThreshold + per-stage calibration', () => {
     // 0.3 ≥ ci bar (0.25) → spawn; 0.3 < verification bar (0.5) → escalate.
     expect(decideBridgeAction({ ...base, failure_stage: 'ci' })).toEqual({ action: 'spawn_child' });
     expect(decideBridgeAction({ ...base, failure_stage: 'verification' })).toEqual({ action: 'escalate', reason: 'low_confidence' });
+  });
+
+  it('parseThreshold falls back to the default for non-finite / missing overrides (Codex P2)', () => {
+    // A non-numeric override must NOT become NaN — otherwise `confidence < NaN`
+    // is always false and the stage retries regardless of confidence.
+    expect(parseThreshold('false', 0.5)).toBe(0.5);
+    expect(parseThreshold('', 0.5)).toBe(0.5);
+    expect(parseThreshold(undefined, 0.5)).toBe(0.5);
+    expect(parseThreshold('not-a-number', 0.5)).toBe(0.5);
+    // Valid numeric overrides are honoured.
+    expect(parseThreshold('0.4', 0.5)).toBe(0.4);
+    expect(parseThreshold('0', 0.5)).toBe(0);
   });
 
   it('depth cap and kill switch still take precedence over the per-stage bar', () => {

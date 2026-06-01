@@ -58,8 +58,22 @@ const GITHUB_REPO =
 // the autopilot retries more aggressively by default — the user goal is
 // "self-improving + self-healing autonomously." Failed retries still
 // escalate at the depth cap.
-const CHILD_SPAWN_CONFIDENCE_THRESHOLD = Number.parseFloat(
-  process.env.AUTOPILOT_RETRY_CONFIDENCE_THRESHOLD || '0.3',
+/**
+ * Parse a confidence-threshold env override, falling back to `fallback` for
+ * missing, empty, or non-finite values. Without the finite guard a typo like
+ * `AUTOPILOT_RETRY_CONFIDENCE_VERIFICATION=false` parses to NaN, and since
+ * `confidence < NaN` is always false the stage would spawn retries regardless
+ * of confidence — silently defeating the calibration. Exported for tests.
+ */
+export function parseThreshold(raw: string | undefined, fallback: number): number {
+  if (raw === undefined || raw.trim() === '') return fallback;
+  const n = Number.parseFloat(raw);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+const CHILD_SPAWN_CONFIDENCE_THRESHOLD = parseThreshold(
+  process.env.AUTOPILOT_RETRY_CONFIDENCE_THRESHOLD,
+  0.3,
 );
 
 /**
@@ -75,9 +89,9 @@ const CHILD_SPAWN_CONFIDENCE_THRESHOLD = Number.parseFloat(
  * Each is overridable via env; unknown stages fall back to the global default.
  */
 const RETRY_THRESHOLD_BY_STAGE: Record<FailureStage, number> = {
-  ci: Number.parseFloat(process.env.AUTOPILOT_RETRY_CONFIDENCE_CI || '0.25'),
-  deploy: Number.parseFloat(process.env.AUTOPILOT_RETRY_CONFIDENCE_DEPLOY || '0.35'),
-  verification: Number.parseFloat(process.env.AUTOPILOT_RETRY_CONFIDENCE_VERIFICATION || '0.5'),
+  ci: parseThreshold(process.env.AUTOPILOT_RETRY_CONFIDENCE_CI, 0.25),
+  deploy: parseThreshold(process.env.AUTOPILOT_RETRY_CONFIDENCE_DEPLOY, 0.35),
+  verification: parseThreshold(process.env.AUTOPILOT_RETRY_CONFIDENCE_VERIFICATION, 0.5),
 };
 
 /**
