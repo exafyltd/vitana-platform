@@ -35,9 +35,12 @@ export function hitToCandidate(
   embeddingOf?: (hit: MemoryHit) => number[] | undefined,
 ): MemoryCandidate {
   const rawImportance = typeof hit.importance === 'number' ? hit.importance : 0;
-  // MemoryHit importance is 0..100; clamp01 in the ranker handles the >1 → 1
-  // case, but normalize here so 30 ranks as 0.30 rather than saturating to 1.
-  const importance = rawImportance > 1 ? rawImportance / 100 : rawImportance;
+  // MemoryHit importance is ALWAYS on a 0..100 scale (routes/memory.ts validates
+  // 1..100; the mapper defaults to 30). Normalize the WHOLE range by /100 so a
+  // stored importance of 1 maps to 0.01 — NOT 1.0. Special-casing ">1 looks
+  // already normalized" was wrong: it let the lowest-importance memories (1)
+  // score as MAXIMALLY important and push genuinely important hits out.
+  const importance = Math.max(0, Math.min(1, rawImportance / 100));
   return {
     id: hit.id,
     content: hit.content ?? '',

@@ -996,12 +996,26 @@ export async function buildContextPack(
 
   // Merge structured facts + diary hits into memory hits (prepend - higher priority)
   // VTID-01224-FIX: Include diary entries so search_memory tool can find diary data
+  //
+  // Phase B (Finding 2): keep an UNSLICED candidate pool. The naive path slices
+  // to MAX_MEMORY_HITS here by relevance_score; the ranked path must instead get
+  // to choose its top-N from the FULL merged pool, so a high-importance/recent
+  // candidate sitting just below the old relevance_score cutoff can still be
+  // selected. We compute the naive result exactly as before (byte-for-byte for
+  // the flag-OFF path) AND retain the unsliced pool for the ranker.
   const mergeItems = [...structuredFacts, ...diaryHits];
+  // `memoryPool` is the full, unsliced candidate set in relevance_score order
+  // when merges happened, or the raw fetch result otherwise (mirrors the
+  // original control flow where the merge block was skipped with no merges).
+  let memoryPool: MemoryHit[] = memoryHits;
   if (mergeItems.length > 0) {
-    memoryHits = [...mergeItems, ...memoryHits];
-    // Re-sort by relevance and enforce limit
-    memoryHits.sort((a, b) => b.relevance_score - a.relevance_score);
-    memoryHits = memoryHits.slice(0, CONTEXT_PACK_CONFIG.MAX_MEMORY_HITS);
+    memoryPool = [...mergeItems, ...memoryHits];
+    // Re-sort by relevance (full pool, NO slice — slice deferred to the naive
+    // computation below so the ranker can see every candidate).
+    memoryPool.sort((a, b) => b.relevance_score - a.relevance_score);
+    // Naive selection: relevance_score desc, sliced to the budget. This is the
+    // exact output the old code produced and what ships when both flags are OFF.
+    memoryHits = memoryPool.slice(0, CONTEXT_PACK_CONFIG.MAX_MEMORY_HITS);
     hitCounts.memory_garden = memoryHits.length;
   }
 
@@ -1012,6 +1026,12 @@ export async function buildContextPack(
   // desc, sliced to MAX_MEMORY_HITS. Phase B replaces "first N by relevance_score"
   // with a relevance-RANKED top-N (importance + recency + optional similarity)
   // so the content that survives the cap is the most useful.
+  //
+  // Finding 2: the ranker is fed the UNSLICED `memoryPool`, not the naive
+  // (already-sliced) `memoryHits`. This lets ranking SELECT the true top-N by
+  // the new formula from the full candidate set instead of merely REORDERING
+  // the naive survivors. `topK` still caps the output at MAX_MEMORY_HITS, so the
+  // size budget is unchanged.
   //
   // Behavior-safe:
   //   - When neither flag is live, this block is a no-op — `memoryHits` ships
@@ -1025,7 +1045,8 @@ export async function buildContextPack(
   const rankingShadowLive = isFeatureLive('VOICE_RANKING_SHADOW');
   if (rankedRetrievalLive || rankingShadowLive) {
     const rankInputs = {
-      hits: memoryHits,
+      // UNSLICED pool: ranker selects top-`topK` from every candidate.
+      hits: memoryPool,
       topK: CONTEXT_PACK_CONFIG.MAX_MEMORY_HITS,
       now: new Date(),
       // MemoryHit carries no embedding column today, so similarity degrades to 0
@@ -1033,6 +1054,9 @@ export async function buildContextPack(
       intentEmbedding: undefined as number[] | undefined,
     };
     if (rankingShadowLive) {
+      // Shadow compares the NAIVE sliced set (what ships when flag is off)
+      // against the ranked set, so the diff reflects exactly what flipping the
+      // flag would change.
       const { ranked, comparison } = shadowCompareHits(memoryHits, rankInputs);
       // Structured shadow log: old order vs new order, char totals, overlap.
       console.log(
