@@ -46,6 +46,9 @@ import { randomUUID } from 'crypto';
 import { TextToSpeechClient, protos } from '@google-cloud/text-to-speech';
 import { processWithGemini, setThreadIdentity } from '../services/gemini-operator';
 import { emitOasisEvent } from '../services/oasis-event-service';
+// VTID-03250: prefer the browser's own timezone over rate-limit-prone geo-IP
+// so the assistant never loses the user's local time (context integrity).
+import { resolveSessionTimezone } from '../services/awareness-unified-context';
 // Phase 1 W2 (BOOTSTRAP-PHASE1-W2-CONSENT-METADATA): tag events with
 // data_export_ok ONLY where tenant export consent is established, so the
 // dataset-extraction PII gate can ingest them. Default off / fail-closed.
@@ -4248,7 +4251,10 @@ async function executeLiveApiToolInner(
         }
         const { listCommunityAutopilotRecommendations, summarizeAutopilotForVoice } = await import('./autopilot-recommendations');
         const limit = typeof args?.limit === 'number' && args.limit > 0 ? Math.min(args.limit, 10) : 5;
-        const recs = await listCommunityAutopilotRecommendations(userId, limit);
+        // autoGenerate: explicit "what's in my Autopilot?" must match opening the
+        // popup, which generates recs for first-time/expired/all-activated users
+        // rather than returning empty. VTID-03201 (Codex review #2486).
+        const recs = await listCommunityAutopilotRecommendations(userId, limit, { autoGenerate: true });
         const summary = summarizeAutopilotForVoice(recs);
         // Remember exactly what we read aloud so "activate those" resolves to it.
         session.lastListedAutopilotIds = { ids: summary.ids, ts: Date.now() };
@@ -7709,13 +7715,25 @@ export async function buildClientContext(req: Request): Promise<ClientContext> {
     Promise.resolve(parseUserAgent(ua)),
   ]);
 
-  const timeCtx = getLocalTimeContext(geo.timezone);
+  // VTID-03250: prefer the browser's own IANA timezone (sent in the
+  // session-start body / x-client-timezone header) over geo-IP, which
+  // rate-limits (HTTP 429) and then yields no zone — that loss was making the
+  // assistant hallucinate the user's local time (e.g. "8:30 PM" at 15:44).
+  const clientTimezone =
+    (req.body && (req.body.client_timezone || req.body.client_context?.timezone)) ||
+    req.get('x-client-timezone') ||
+    null;
+  const resolvedTimezone = resolveSessionTimezone({
+    clientTimezone,
+    geoTimezone: geo.timezone ?? null,
+  });
+  const timeCtx = getLocalTimeContext(resolvedTimezone ?? undefined);
 
   return {
     ip,
     city: geo.city,
     country: geo.country,
-    timezone: geo.timezone,
+    timezone: resolvedTimezone ?? undefined,
     localTime: timeCtx.localTime,
     timeOfDay: timeCtx.timeOfDay,
     device: uaParsed.device,
@@ -12251,12 +12269,20 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
     console.log(`[VTID-01224] Building bootstrap context for session ${sessionId} user=${effectiveBootstrapIdentity.user_id.substring(0, 8)}...${usingDevFallbackWs ? ' (DEV_IDENTITY fallback)' : ''}`);
 
     // Fetch role, context, and last session info in parallel for minimal latency
-    const [bootstrapResult, fetchedRole, fetchedWsSessionInfo] = await Promise.all([
+    const [bootstrapResult, fetchedRole, fetchedWsSessionInfo, wsAutopilotOffer] = await Promise.all([
       buildBootstrapContextPack(effectiveBootstrapIdentity, sessionId),
       usingDevFallbackWs
         ? Promise.resolve(DEV_IDENTITY.ACTIVE_ROLE)
         : resolveEffectiveRole(effectiveBootstrapIdentity.user_id, effectiveBootstrapIdentity.tenant_id || ''),
       fetchLastSessionInfo(effectiveBootstrapIdentity.user_id),
+      // VTID-03201: proactive Autopilot offer, fetched in parallel (no added
+      // critical-path latency). Appended only for community sessions below.
+      import('./autopilot-recommendations')
+        .then((m) => m.buildAutopilotOfferBlock(effectiveBootstrapIdentity.user_id))
+        .catch((err: any) => {
+          console.warn(`[VTID-03201] WS autopilot offer fetch failed: ${err?.message}`);
+          return '';
+        }),
     ]);
     activeRole = fetchedRole;
     wsLastSessionInfo = fetchedWsSessionInfo;
@@ -12272,6 +12298,16 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
     contextPack = bootstrapResult.contextPack;
     contextBootstrapLatencyMs = bootstrapResult.latencyMs;
     contextBootstrapSkippedReason = bootstrapResult.skippedReason;
+
+    // VTID-03201: community WS sessions get the proactive Autopilot offer so
+    // Vitana raises it unprompted ("you have things waiting — want me to run
+    // through them?"). Empty string for users with nothing queued.
+    if (activeRole === 'community' && wsAutopilotOffer) {
+      contextInstruction = contextInstruction
+        ? `${contextInstruction}\n\n${wsAutopilotOffer}`
+        : wsAutopilotOffer;
+      console.log(`[VTID-03201] Autopilot proactive offer injected into WS session ${sessionId} (${wsAutopilotOffer.length} chars)`);
+    }
 
     // BOOTSTRAP-ADMIN-EE: admin-role WS sessions get a proactive briefing too.
     if (isAdminRole(activeRole) && effectiveBootstrapIdentity.tenant_id) {
