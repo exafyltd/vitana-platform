@@ -1,6 +1,62 @@
-# Vitana Wallet — Stripe Deposits
+# Vitana Wallet — Stripe Deposits + Spend / Earning
 
-VTID-03200 (schema) + VTID-03201 (gateway). Multi-currency (EUR primary, USD allowed). Stripe Checkout is the only money-in rail. The internal `wallet_ledger_entries` table is the source of truth; `wallet_accounts.balance_minor` is a cached projection.
+VTID-03200 (schema) + VTID-03201 (gateway) + **VTID-03249 (spend + earning RPCs)**. Multi-currency (EUR primary, USD allowed). Stripe Checkout is the money-in rail; cart and Vitanaland Marketplace are the money-out and money-back-in rails respectively. The internal `wallet_ledger_entries` table is the source of truth; `wallet_accounts.balance_minor` is a cached projection.
+
+## Cart / Marketplace integration contract (VTID-03249)
+
+Cart and marketplace services in this gateway codebase should **import the service module directly** instead of going over HTTP:
+
+```ts
+import {
+  debitWalletForSpend,
+  creditWalletForEarning,
+} from '../services/wallet/spend-earning-service';
+
+// buyer-side cart checkout
+const result = await debitWalletForSpend({
+  account_id: buyerAccountId,
+  amount_minor: 2500,
+  currency: 'EUR',
+  reference_type: 'cart_checkout',  // or 'marketplace_order' for marketplace
+  reference_id: orderId,             // YOUR business id — drives idempotency
+  description: 'Cart checkout #42',
+  metadata: { items: cartLineCount },
+});
+if (!result.ok) {
+  // 'INSUFFICIENT_BALANCE' → redirect user to top-up flow
+  // 'CURRENCY_MISMATCH'    → present in the user's account currency
+  // 'ACCOUNT_NOT_FOUND'    → wallet not provisioned yet (very rare; trigger missed)
+  // 'ACCOUNT_NOT_ACTIVE'   → wallet frozen — do not retry
+  return handle(result);
+}
+// result.balance_minor is the new cached balance
+// result.duplicate=true means a previous call already wrote this entry; safe
+
+// seller-side marketplace earning
+const earning = await creditWalletForEarning({
+  account_id: sellerAccountId,
+  amount_minor: payoutAmountMinor,
+  currency: 'EUR',
+  reference_type: 'marketplace_earning',
+  reference_id: orderId,             // same reference_id as the buyer debit is fine
+  description: 'Sale #42 payout',
+});
+```
+
+The `(reference_type, reference_id, entry_type)` unique constraint on `wallet_ledger_entries` makes both functions idempotent — replay the same call and you get `duplicate: true` with the current balance, no double-write. The cart/marketplace teams pick `reference_id` (their own order ID); a single business event yields one debit + one credit even if either call retries.
+
+**Out-of-process callers** (services in other Cloud Run instances) hit the gateway:
+
+| Endpoint | Body | Auth |
+|---|---|---|
+| `POST /api/v1/wallet/admin/spend` | `{account_id, amount_minor, currency, reference_type, reference_id, description?, metadata?}` | `requireExafyAdmin` |
+| `POST /api/v1/wallet/admin/credit` | same shape | `requireExafyAdmin` |
+
+HTTP status codes mirror the service: `400` invalid input, `404` ACCOUNT_NOT_FOUND, `409` INSUFFICIENT_BALANCE / CURRENCY_MISMATCH / ACCOUNT_NOT_ACTIVE, `500` GATEWAY_MISCONFIGURED / RPC_FAILED.
+
+### Allowed `reference_type` values
+
+`cart_checkout`, `marketplace_order`, `marketplace_earning`, `live_room_tip`, `manual`. New surfaces add their value to `SpendEarningReferenceType` + the `ALLOWED_REFERENCE_TYPES` set in `wallet-admin.ts` in the same PR.
 
 ## Architecture (one screen)
 
