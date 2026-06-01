@@ -23,6 +23,7 @@
 import githubService from './github-service';
 import { emitOasisEvent } from './oasis-event-service';
 import { bridgeFailureToSelfHealing, FailureStage } from './dev-autopilot-bridge';
+import { probeEndpoint, isJsonHealthy, resolveProbeTarget } from './self-healing-probe';
 import { applyExecTerminalSideEffects } from './dev-autopilot-execute';
 
 const LOG_PREFIX = '[dev-autopilot-watcher]';
@@ -157,6 +158,27 @@ async function loadExecutions(s: SupaConfig, status: string): Promise<ExecutionR
     `/rest/v1/dev_autopilot_executions?status=eq.${status}&select=id,finding_id,status,branch,pr_url,pr_number,updated_at,metadata&limit=50`,
   );
   return r.ok && r.data ? r.data : [];
+}
+
+/**
+ * Resolve the HTTP target to re-probe for an execution's original finding.
+ * Checks the finding's spec_snapshot for an endpoint-like field, in priority
+ * order, and returns the first that is an actual HTTP target. Returns null when
+ * the finding has no probeable endpoint (e.g. a source-file code fix) — the
+ * caller then falls back to blast-radius-only verification.
+ */
+async function loadFindingProbeTarget(s: SupaConfig, findingId: string): Promise<string | null> {
+  const r = await supa<Array<{ spec_snapshot: Record<string, unknown> | null }>>(
+    s,
+    `/rest/v1/autopilot_recommendations?id=eq.${findingId}&select=spec_snapshot&limit=1`,
+  );
+  const snap = r.ok && r.data && r.data[0] ? r.data[0].spec_snapshot : null;
+  if (!snap) return null;
+  for (const key of ['probe_endpoint', 'endpoint', 'file_path']) {
+    const target = resolveProbeTarget(typeof snap[key] === 'string' ? (snap[key] as string) : null);
+    if (target) return target;
+  }
+  return null;
 }
 
 // =============================================================================
@@ -737,7 +759,43 @@ export async function verificationWatcherTick(): Promise<void> {
       continue;
     }
 
-    // pass
+    // Blast radius is clean — but "no new errors" is not the same as "the
+    // original failure is gone". If the finding has a probeable HTTP endpoint,
+    // re-hit it now and require it healthy (2xx + JSON) before declaring the
+    // fix verified. A fix that deploys cleanly but doesn't actually resolve the
+    // original failure must NOT pass. Findings without a probeable endpoint
+    // (source-file code fixes) fall back to the blast-radius verdict above.
+    const probeTarget = await loadFindingProbeTarget(s, exec.finding_id);
+    if (probeTarget) {
+      const probe = await probeEndpoint(probeTarget);
+      if (!isJsonHealthy(probe)) {
+        await transitionStatus(s, exec.id, 'verifying', 'failed', {
+          metadata: {
+            ...(exec.metadata || {}),
+            verification_reprobe: {
+              endpoint: probeTarget,
+              http_status: probe.http_status,
+              healthy: false,
+            },
+          },
+        });
+        const reason = `original endpoint still failing after deploy (${probeTarget} → ${probe.http_status ?? 'no response'})`;
+        await emitOasisEvent({
+          vtid: WATCHER_VTID,
+          type: 'dev_autopilot.execution.verification_failed',
+          source: 'dev-autopilot-watcher',
+          status: 'error',
+          message: `Execution ${exec.id.slice(0, 8)} verification failed: ${reason}`,
+          payload: { execution_id: exec.id, pr_url: exec.pr_url, reprobe: { endpoint: probeTarget, http_status: probe.http_status } },
+        });
+        await bridgeFailure(exec.id, 'verification', reason, {
+          verification_result: { state: 'fail', reason: 'reprobe_unhealthy', endpoint: probeTarget, http_status: probe.http_status },
+        });
+        continue;
+      }
+    }
+
+    // pass — blast radius clean AND (re-probe healthy OR no probeable endpoint)
     await transitionStatus(s, exec.id, 'verifying', 'completed', {
       completed_at: new Date().toISOString(),
     });
@@ -746,8 +804,10 @@ export async function verificationWatcherTick(): Promise<void> {
       type: 'dev_autopilot.execution.completed',
       source: 'dev-autopilot-watcher',
       status: 'success',
-      message: `Execution ${exec.id.slice(0, 8)} completed — verification window clean`,
-      payload: { execution_id: exec.id, pr_url: exec.pr_url },
+      message: probeTarget
+        ? `Execution ${exec.id.slice(0, 8)} completed — verification clean + ${probeTarget} healthy`
+        : `Execution ${exec.id.slice(0, 8)} completed — verification window clean`,
+      payload: { execution_id: exec.id, pr_url: exec.pr_url, reprobed: probeTarget || null },
     });
 
     // If this was a self-heal child, also mark the parent self_healed.

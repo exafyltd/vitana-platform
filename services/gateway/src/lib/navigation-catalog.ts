@@ -1146,6 +1146,10 @@ export const NAVIGATION_CATALOG: ReadonlyArray<NavCatalogEntry> = [
   {
     screen_id: 'INBOX.REMINDERS',
     route: '/inbox/reminder',
+    // BOOTSTRAP-MOBILE-NAV-CONTAINMENT: same surface as REMINDERS.OVERVIEW — on
+    // mobile open the Calendar popup's Reminders tab in place rather than landing
+    // on the desktop /reminders full page.
+    mobile_route: '/reminders?open=calendar&tab=reminders',
     category: 'inbox',
     access: 'authenticated',
     anonymous_safe: false,
@@ -1300,6 +1304,10 @@ export const NAVIGATION_CATALOG: ReadonlyArray<NavCatalogEntry> = [
   },
   {
     screen_id: 'INBOX.ARCHIVED', route: '/inbox/archived', category: 'inbox',
+    // BOOTSTRAP-MOBILE-NAV-CONTAINMENT: desktop-only master/detail layout (two
+    // fixed-width w-80 panes side by side); no mobile rendering exists. Gate it so
+    // the ORB never route-changes a mobile user here — it stays in voice instead.
+    viewport_only: 'desktop',
     access: 'authenticated', anonymous_safe: false,
     i18n: {
       en: { title: 'Archived Messages', description: 'Messages you have archived.', when_to_visit: 'When the user asks for archived messages, old messages, or messages they saved or dismissed.' },
@@ -1712,6 +1720,12 @@ export const NAVIGATION_CATALOG: ReadonlyArray<NavCatalogEntry> = [
   // ── REMINDERS / MESSAGES / DAILY DIARY ──────────────────────────────────
   {
     screen_id: 'REMINDERS.OVERVIEW', route: '/reminders', category: 'inbox',
+    // BOOTSTRAP-MOBILE-NAV-CONTAINMENT: the /reminders page is a desktop full-list
+    // view; on mobile the reminders surface is the Calendar popup's Reminders tab.
+    // Emit the overlay marker so the ORB opens the popup in place instead of
+    // route-changing to a dead-end full page. The frontend intercepts ?open=calendar
+    // and dispatches `calendar:open` (with tab=reminders) without navigating.
+    mobile_route: '/reminders?open=calendar&tab=reminders',
     access: 'authenticated', anonymous_safe: false,
     aliases: ['reminders', 'reminder-list', 'all-reminders', 'meine-erinnerungen'],
     i18n: {

@@ -39,6 +39,7 @@ import {
 } from './self-healing-triage-service';
 import { emitOasisEvent } from './oasis-event-service';
 import { isEnvironmentalBlocker } from './dev-autopilot-self-heal-log';
+import { createRevertPullRequest, mergePullRequest } from './github-service';
 
 const LOG_PREFIX = '[dev-autopilot-bridge]';
 const BRIDGE_VTID = 'VTID-DEV-AUTOPILOT';
@@ -283,13 +284,33 @@ export async function revertExecutionPR(
       return { ok: true, revert_pr_url: `${exec.pr_url}#closed` };
     }
 
-    // deploy / verification stage: PR already merged → open a revert PR.
-    // We don't have full repo write tooling wired here yet; emit a marker
-    // URL and let the execution agent (PR-9) + a follow-up pass open the
-    // actual revert PR. For now the bridge records intent.
-    const markerUrl = `https://github.com/${GITHUB_REPO}/pull/REVERT-${exec.id.slice(0, 8)}`;
-    console.warn(`${LOG_PREFIX} live revert for ${stage} stage not fully wired — emitting marker ${markerUrl}`);
-    return { ok: true, revert_pr_url: markerUrl };
+    // deploy / verification stage: PR already merged → open a revert PR and
+    // auto-merge it to restore the last-good state. createRevertPullRequest
+    // builds a reverse-tree revert based on the CURRENT main HEAD (it only
+    // overrides the merge's changed files back to their pre-merge blobs), so it
+    // stays correct even if other commits landed after the merge.
+    const mergeSha = (exec.metadata as { merge_sha?: string } | null | undefined)?.merge_sha;
+    if (!mergeSha) {
+      console.warn(`${LOG_PREFIX} cannot auto-revert ${exec.id.slice(0, 8)} (${stage}): no merge_sha on execution metadata`);
+      return { ok: false, error: 'no merge_sha on execution metadata — cannot revert merged PR' };
+    }
+    const revertBranch = `revert/auto-${exec.id.slice(0, 8)}-${Date.now()}`;
+    const title = `Revert: auto-fix ${exec.id.slice(0, 8)} failed ${stage} verification`;
+    const body =
+      `Automated rollback. Execution \`${exec.id}\` (${exec.pr_url}) failed ${stage} ` +
+      `verification after merge; reverting merge commit \`${mergeSha}\` to restore the ` +
+      `last-good state.`;
+    const revertPr = await createRevertPullRequest(GITHUB_REPO, mergeSha, revertBranch, title, body);
+    const merged = await mergePullRequest(GITHUB_REPO, revertPr.number, title, 'squash');
+    if (!merged.merged) {
+      // Revert PR is open but couldn't auto-merge (e.g. required checks pending
+      // or branch protection). Leave it for a human and report its URL — the
+      // rollback is staged, not silently dropped.
+      console.warn(`${LOG_PREFIX} revert PR #${revertPr.number} for ${exec.id.slice(0, 8)} created but auto-merge failed: ${merged.message}`);
+      return { ok: true, revert_pr_url: revertPr.html_url, error: `revert PR open but auto-merge failed: ${merged.message}` };
+    }
+    console.log(`${LOG_PREFIX} auto-reverted ${exec.id.slice(0, 8)} via PR #${revertPr.number} (merged ${merged.sha?.slice(0, 8) || '?'})`);
+    return { ok: true, revert_pr_url: revertPr.html_url };
   } catch (err) {
     return { ok: false, error: String(err) };
   }
