@@ -10,6 +10,7 @@ setup(
         "google-cloud-storage>=2.16.0",
         "peft>=0.12.0",
         "sentencepiece>=0.2.0",
+        "torch>=2.3.0",
         "transformers>=4.44.0",
     ],
 )
