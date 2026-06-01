@@ -1003,6 +1003,12 @@ export const NAVIGATION_CATALOG: ReadonlyArray<NavCatalogEntry> = [
   {
     screen_id: 'MEMORY.DIARY',
     route: '/memory/diary',
+    // BOOTSTRAP-MOBILE-NAV-CONTAINMENT: /memory/diary renders the desktop Memory
+    // hub (tabbed Overview/Timeline/Daily-Diary/Recall view) which is a desktop
+    // layout. On mobile the real diary surface is MobileDailyDiary at /daily-diary,
+    // so redirect there — otherwise "open my daily diary" strands mobile users on
+    // the read-only activity-timeline hub.
+    mobile_route: '/daily-diary',
     category: 'memory',
     access: 'authenticated',
     anonymous_safe: false,
