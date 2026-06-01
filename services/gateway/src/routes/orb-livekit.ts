@@ -69,6 +69,12 @@ import {
 // now returns the rendered Vertex instruction verbatim under a new
 // `system_instruction` field; the agent reads it directly.
 import { buildLiveSystemInstruction } from '../orb/live/instruction/live-system-instruction';
+// BOOTSTRAP-ORB-RCV-DOUBLEGREET: the wake-brief override sentinel. On LiveKit
+// the marker is injected to STRIP the competing brain-opener sections, but —
+// unlike Vertex — it is NOT paired with a "speak this verbatim" directive. The
+// Python agent's session.say(user_facing_line) is the single source of truth
+// for the LiveKit first turn; the LLM must stay silent until the user replies.
+import { VERTEX_WAKE_BRIEF_OVERRIDE_MARKER } from '../orb/live/instruction/wake-brief-marker';
 import {
   optionalAuth,
   requireAuthWithTenant,
@@ -1645,36 +1651,63 @@ router.get(
       }
     }
 
-    // VTID-03100: re-render systemInstruction with the wake-brief
-    // override block when a candidate has a non-empty userFacingLine.
-    // The earlier buildLiveSystemInstruction call (line ~1431) ran
-    // BEFORE wakeBriefDecision was computed, so the override block
-    // had nowhere to go. Now we know the picked line (Teacher's
-    // two-clause greeting or voice_wake_brief's policy line), so we
-    // build the block, prepend the sentinel marker to bootstrapContext,
-    // and re-call buildLiveSystemInstruction. The strip helper in
-    // live-system-instruction.ts detects the marker and removes the
-    // competing vitana-brain opener sections so the override actually
-    // owns the first turn.
+    // VTID-03100 / BOOTSTRAP-ORB-RCV-DOUBLEGREET: re-render systemInstruction
+    // with the wake-brief SUPPRESSION block when a candidate has a non-empty
+    // userFacingLine. The earlier buildLiveSystemInstruction call (line ~1517)
+    // ran BEFORE wakeBriefDecision was computed, so the sentinel marker had
+    // nowhere to go.
+    //
+    // *** LiveKit first-turn single-source-of-truth (double-greeting fix) ***
+    // On Vertex the LLM speaks the first turn from the system instruction, so
+    // the Vertex path injects a "## SPOKEN FIRST UTTERANCE — REQUIRED VERBATIM"
+    // block (buildVertexWakeBriefBlock) telling the model to speak the line.
+    //
+    // On LiveKit the model does NOT own the first turn: the Python agent plays
+    // the line deterministically via session.say(user_facing_line) at
+    // room-join (see services/agents/orb-agent/src/orb_agent/session.py — the
+    // greeting block that reads bootstrap.wake_brief_decision). If we ALSO
+    // injected the "speak this verbatim" directive here, the model would speak
+    // the same line a second time → the dragan3 double greeting.
+    //
+    // Fix: on LiveKit we inject ONLY the sentinel marker + a hard "do NOT
+    // open / stay silent until the user speaks" directive. The marker still
+    // triggers stripBrainOpenerSections() in live-system-instruction.ts (so
+    // the competing OPENING SHAPE MATRIX / PROACTIVE OPENER CANDIDATE brain
+    // sections + the SHORT-GAP pool are suppressed and can't produce a rival
+    // opener), but there is no verbatim-speak instruction — session.say() is
+    // the single source of truth for the LiveKit first turn.
+    //
+    // The proactive-offer path is unaffected: the agent still receives the
+    // wake_brief_decision (user_facing_line + decision_id + dedupe_key) in the
+    // response payload below and decides add_to_chat_ctx based on
+    // is_proactive_offer — gateway behavior here does not touch that.
     let wakeOverrideApplied = false;
     try {
       const picked = wakeBriefDecision?.selectedContinuation ?? null;
       const line = picked?.userFacingLine?.trim();
       if (picked && line && line.length > 0 && !isReconnect) {
         wakeOverrideApplied = true;
-        const { buildVertexWakeBriefBlock } = await import(
-          '../orb/live/session/live-session-controller'
-        );
-        const overrideBlock = buildVertexWakeBriefBlock(
-          line,
-          lang,
-          picked.dedupeKey ?? null,
-        );
+        // LiveKit suppression block: sentinel marker (drives the brain-opener
+        // strip + SHORT-GAP pool suppression) WITHOUT the verbatim-speak
+        // directive that would make the model double the agent's session.say().
+        const suppressionBlock = `\n\n${VERTEX_WAKE_BRIEF_OVERRIDE_MARKER}
+
+## FIRST TURN — DO NOT SPEAK FIRST (LiveKit transport — BOOTSTRAP-ORB-RCV-DOUBLEGREET)
+
+The client app plays the opening line for this session before you receive
+control. You MUST NOT produce an opening utterance, greeting, or
+proactive offer on your first turn — the user has already heard it.
+Do NOT introduce yourself, do NOT list features, do NOT ask "How can I
+help?", and do NOT repeat or paraphrase any greeting. Remain silent and
+WAIT for the user to speak. Only then respond normally.
+
+This block OVERRIDES every other greeting rule in this prompt for the
+first turn only. Subsequent turns follow the normal conversation flow.`;
         const vitanaBehavioralRule = buildPersonaBehavioralRule('vitana');
         const augmentedContext =
           (bootstrapContext ? `${bootstrapContext}\n\n` : '') +
           `${vitanaBehavioralRule}` +
-          overrideBlock;
+          suppressionBlock;
         const voiceStyle =
           (voiceConfig as { voice_style?: string } | null)?.voice_style?.trim() ||
           'friendly, calm, empathetic';
@@ -1694,12 +1727,12 @@ router.get(
           true,
         );
         console.log(
-          `[${VTID}/VTID-03100] systemInstruction re-rendered with wake-brief override (kind=${picked.kind}, decision_id=${wakeBriefDecision?.decisionId}, lang=${lang})`,
+          `[${VTID}/BOOTSTRAP-ORB-RCV-DOUBLEGREET] systemInstruction re-rendered with LiveKit first-turn SUPPRESSION (kind=${picked.kind}, decision_id=${wakeBriefDecision?.decisionId}, lang=${lang}) — session.say() owns the first turn, model stays silent`,
         );
       }
     } catch (exc) {
       console.warn(
-        `[${VTID}/VTID-03100] override re-render failed (non-fatal — falls back to pre-override system_instruction): ${(exc as Error).message}`,
+        `[${VTID}/BOOTSTRAP-ORB-RCV-DOUBLEGREET] suppression re-render failed (non-fatal — falls back to pre-override system_instruction): ${(exc as Error).message}`,
       );
     }
 
