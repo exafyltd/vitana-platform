@@ -14,6 +14,8 @@ import { resolvePriorityMessage } from './priority-rules';
 import { canSurfaceProactively } from './presence-pacer';
 import type { NotificationPayload } from '../notification-service';
 import { getSupabase } from '../../lib/supabase';
+import { tt, GATEWAY_DEFAULT_LOCALE } from '../../i18n/catalog';
+import { getUserLocale } from '../../i18n/server-locale';
 import { fetchLifeCompass } from '../user-context-profiler';
 import { tierForScore, projectDay90 } from '../../lib/vitana-pillars';
 import { buildRankerContext, rankBatch } from '../recommendation-engine/ranking/index-pillar-weighter';
@@ -149,7 +151,13 @@ export async function buildMorningBrief(
   if (parts.length > 0) {
     body = parts.join(' · ');
   } else {
-    body = priority.message;
+    // Localize the priority fallback to the user's language (the rule engine
+    // returns a catalog key + params, not a baked English sentence).
+    const supabase = getSupabase();
+    const locale = supabase
+      ? await getUserLocale(supabase, input.user_id)
+      : GATEWAY_DEFAULT_LOCALE;
+    body = tt(priority.message_key, locale, priority.message_params);
   }
   if (body.length > 140) body = body.slice(0, 137) + '…';
 
