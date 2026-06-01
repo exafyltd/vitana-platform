@@ -36,6 +36,7 @@ import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { createUserSupabaseClient } from '../lib/supabase-user';
 import { getSupabase } from '../lib/supabase';
+import { checkoutUniversalCart, CHECKOUT_ERROR_STATUS } from '../services/checkout/checkout-service';
 
 export const VTID = 'VTID-03213';
 
@@ -958,6 +959,53 @@ router.get('/events', async (req: Request, res: Response) => {
   }
 
   return res.status(200).json({ ok: true, events: eventsRes.data ?? [] });
+});
+
+/**
+ * POST /checkout — VTID-03237 (V1.2) hybrid checkout bridge.
+ *
+ * Settles the caller's active cart, routing each line by product source:
+ * first-party SKUs debit the Vitana wallet and become converted orders; affiliate
+ * SKUs return merchant redirect targets (no debit) and become pending orders.
+ * Idempotent on the optional `idempotency_key` (also used as the checkout_id).
+ * The heavy lifting + money-safety ordering live in checkout-service.ts.
+ */
+const CheckoutBody = z.object({
+  idempotency_key: z.string().uuid().optional(),
+  session_id: z.string().min(1).max(200).optional(),
+});
+
+router.post('/checkout', async (req: Request, res: Response) => {
+  const id = await authorizeCommunityCaller(req, res);
+  if (!id) return;
+
+  const parsed = CheckoutBody.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    return res.status(400).json({
+      ok: false,
+      error: 'invalid_request',
+      detail: parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`),
+    });
+  }
+
+  // impact-allow-no-oasis: commerce state for this slice is recorded in
+  // product_orders + shop_video_events (the non-OASIS funnel sink), not
+  // oasis_events. oasis_events is the VTID lifecycle/governance log (CLAUDE.md
+  // §6), not an end-user commerce ledger — consistent with VTID-03237's
+  // declared OASIS_IMPACT: none (#2470). The cart audit trail lives in
+  // universal_cart_events; the wallet movement is logged in wallet_ledger_entries.
+  const result = await checkoutUniversalCart({
+    userId: id.user_id,
+    tenantId: id.tenant_id,
+    idempotencyKey: parsed.data.idempotency_key ?? null,
+    sessionId: parsed.data.session_id ?? null,
+  });
+
+  if (!result.ok) {
+    const status = CHECKOUT_ERROR_STATUS[result.error] ?? 500;
+    return res.status(status).json(result);
+  }
+  return res.status(200).json(result);
 });
 
 export default router;
