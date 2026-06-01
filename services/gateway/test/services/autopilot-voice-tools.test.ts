@@ -36,7 +36,10 @@ describe('summarizeAutopilotForVoice', () => {
     const s = summarizeAutopilotForVoice([]);
     expect(s.count).toBe(0);
     expect(s.ids).toEqual([]);
-    expect(s.spoken).toMatch(/no Autopilot actions/i);
+    // VTID-03245 (#2480) reworded the empty-queue line for offer-integrity:
+    // "You don't have any Autopilot actions prepared yet …". Assert the
+    // "no actions" meaning without pinning the exact marketing copy.
+    expect(s.spoken).toMatch(/don't have any Autopilot actions/i);
   });
 
   it('uses the singular form for exactly one action', () => {
