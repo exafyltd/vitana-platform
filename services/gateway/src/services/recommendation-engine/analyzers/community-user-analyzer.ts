@@ -732,7 +732,9 @@ export async function gatherUserContext(
 // Recommendation Templates (key-based, resolved via t())
 // =============================================================================
 
-interface RecommendationTemplate {
+// Exported alongside STAGE_TEMPLATES so the emitted .d.ts can name the type
+// (declaration:true would otherwise fail with TS4025 on the exported const).
+export interface RecommendationTemplate {
   key: string;
   domain: string;
   priority: 'low' | 'medium' | 'high';

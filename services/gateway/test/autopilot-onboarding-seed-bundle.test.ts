@@ -74,22 +74,22 @@ describe('BOOTSTRAP-ONBOARDING-AUTOPILOT-SEED — DB seed mirrors analyzer day0'
     expect(actual).toEqual(expected);
   });
 
-  test.each(STAGE_TEMPLATES.day0.map((tpl) => [tpl.signal_type, tpl] as const))(
-    'day0 template %s matches the seeded row field-for-field',
-    (sourceRef, tpl) => {
-      const row = seeded.get(sourceRef);
+  for (const tpl of STAGE_TEMPLATES.day0) {
+    test(`day0 template ${tpl.signal_type} matches the seeded row field-for-field`, () => {
+      const row = seeded.get(tpl.signal_type);
       expect(row).toBeDefined();
+      if (!row) return;
       const copy = t(tpl.key, 'en');
       // convertCommunityUserSignal() maps risk_level = priority for non-critical.
-      expect(row!.title).toBe(copy.title);
-      expect(row!.summary).toBe(copy.summary);
-      expect(row!.domain).toBe(tpl.domain);
-      expect(row!.risk_level).toBe(tpl.priority);
-      expect(row!.impact_score).toBe(tpl.impact_score);
-      expect(row!.effort_score).toBe(tpl.effort_score);
-      expect(row!.time_estimate_seconds).toBe(tpl.time_estimate_seconds);
-    },
-  );
+      expect(row.title).toBe(copy.title);
+      expect(row.summary).toBe(copy.summary);
+      expect(row.domain).toBe(tpl.domain);
+      expect(row.risk_level).toBe(tpl.priority);
+      expect(row.impact_score).toBe(tpl.impact_score);
+      expect(row.effort_score).toBe(tpl.effort_score);
+      expect(row.time_estimate_seconds).toBe(tpl.time_estimate_seconds);
+    });
+  }
 
   test('every seeded row carries source_type=community + status new via the seed function', () => {
     // The INSERT hard-codes 'community' and 'new'; assert the migration still does.
