@@ -140,6 +140,18 @@ BEGIN
 END;
 $$;
 
+-- Lock down the SECURITY DEFINER write RPC. By default Postgres grants EXECUTE
+-- to PUBLIC, which would let any authenticated/anon client call
+-- /rpc/record_teacher_refresh with an arbitrary p_tenant_id/p_user_id and upsert
+-- ANOTHER user's schedule rows (push deepening refreshes / pause sentinel into the
+-- future), bypassing the table's owner-read-only RLS. Service-role only — the
+-- gateway must use the admin Supabase client. Matches
+-- scheduler_vitana_index_compute_daily / health_compute_vitana_index_for_user.
+REVOKE ALL ON FUNCTION record_teacher_refresh(UUID, UUID, TEXT, TIMESTAMPTZ, BOOLEAN) FROM PUBLIC;
+REVOKE ALL ON FUNCTION record_teacher_refresh(UUID, UUID, TEXT, TIMESTAMPTZ, BOOLEAN) FROM authenticated;
+REVOKE ALL ON FUNCTION record_teacher_refresh(UUID, UUID, TEXT, TIMESTAMPTZ, BOOLEAN) FROM anon;
+GRANT EXECUTE ON FUNCTION record_teacher_refresh(UUID, UUID, TEXT, TIMESTAMPTZ, BOOLEAN) TO service_role;
+
 COMMENT ON TABLE teacher_capability_refresh_schedule IS
   'BOOTSTRAP-ORB-R4: per (user, capability) deepening-refresh gate for the graduated-user Teacher track. capability_key=__graceful_pause__ is the reserved same-day pause sentinel. 90-day default cadence.';
 COMMENT ON FUNCTION record_teacher_refresh IS
