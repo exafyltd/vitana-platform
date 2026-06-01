@@ -285,7 +285,10 @@ describe('VTID-02975 — activate_recommendation lifted to shared dispatcher', (
     expect(result.ok).toBe(true);
     expect(updates).toHaveLength(1);
     expect(updates[0]).toMatchObject({ recId: REC_UUID_NEW, patch: { status: 'activated' } });
-    // pending CTA consumed so it can't re-fire on a later turn.
+    // pending CTA consumed ONLY after activation succeeds — the clear is a
+    // fire-and-forget dynamic import on the success path, so let pending
+    // microtasks/timers drain before asserting the delete happened.
+    await new Promise((r) => setTimeout(r, 20));
     expect(pendingCtaDeletes).toContain('pending_cta');
   });
 
