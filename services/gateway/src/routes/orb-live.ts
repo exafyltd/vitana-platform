@@ -1329,9 +1329,31 @@ try {
 
 /**
  * VTID-01219: Get access token for Vertex AI Live API
- * Uses Application Default Credentials (ADC) - automatic on Cloud Run
+ * Uses Application Default Credentials (ADC) - automatic on Cloud Run.
+ *
+ * ORB-CONVERSATION-LATENCY: `getAccessToken` sits on the live-connect critical
+ * path — `VertexLiveClient.connect()` awaits it before opening the upstream WS
+ * (vertex-live-client.ts). A naive call does `getClient()` (first call hits the
+ * GCE metadata server) + `getAccessToken()` (refreshes when inside the expiry
+ * skew) on every session, serialising a network round-trip ahead of the Live
+ * API handshake. We keep an in-process token cache with proactive background
+ * refresh so the hot path returns a warm token synchronously, and we prewarm it
+ * at boot (see the prewarm block right after this function) so the very first
+ * session also skips the metadata round-trip.
  */
-async function getAccessToken(): Promise<string> {
+interface CachedAccessToken {
+  token: string;
+  expiresAt: number; // epoch ms when the token actually expires
+}
+let cachedAccessToken: CachedAccessToken | null = null;
+let tokenRefreshInFlight: Promise<string> | null = null;
+// Refresh this far ahead of real expiry so connect() always reads a valid token
+// and the refresh never lands on the critical path.
+const TOKEN_REFRESH_SKEW_MS = 5 * 60 * 1000;
+// ADC access tokens live ~1h; used only when the client doesn't expose expiry.
+const TOKEN_DEFAULT_TTL_MS = 55 * 60 * 1000;
+
+async function fetchFreshAccessToken(): Promise<string> {
   if (!googleAuth) {
     throw new Error('Google Auth client not initialized');
   }
@@ -1340,7 +1362,55 @@ async function getAccessToken(): Promise<string> {
   if (!tokenResponse.token) {
     throw new Error('Failed to get access token');
   }
+  // google-auth-library stores the real expiry on the client credentials for
+  // OAuth2/Compute clients; fall back to a conservative TTL if absent.
+  const expiryDate = (client as { credentials?: { expiry_date?: number } }).credentials?.expiry_date;
+  cachedAccessToken = {
+    token: tokenResponse.token,
+    expiresAt: typeof expiryDate === 'number' ? expiryDate : Date.now() + TOKEN_DEFAULT_TTL_MS,
+  };
   return tokenResponse.token;
+}
+
+async function getAccessToken(): Promise<string> {
+  if (!googleAuth) {
+    throw new Error('Google Auth client not initialized');
+  }
+  const now = Date.now();
+
+  // Warm path: token comfortably valid → return it immediately, no I/O.
+  if (cachedAccessToken && now < cachedAccessToken.expiresAt - TOKEN_REFRESH_SKEW_MS) {
+    return cachedAccessToken.token;
+  }
+
+  // Soon-to-expire but still valid: kick off a deduped background refresh and
+  // return the still-valid cached token without blocking the connect path.
+  if (cachedAccessToken && now < cachedAccessToken.expiresAt) {
+    if (!tokenRefreshInFlight) {
+      tokenRefreshInFlight = fetchFreshAccessToken().finally(() => { tokenRefreshInFlight = null; });
+      tokenRefreshInFlight.catch((err) =>
+        console.warn('[VTID-01219] background access-token refresh failed:', (err as Error).message));
+    }
+    return cachedAccessToken.token;
+  }
+
+  // Cold or expired: must fetch now, deduped across concurrent connects.
+  if (!tokenRefreshInFlight) {
+    tokenRefreshInFlight = fetchFreshAccessToken().finally(() => { tokenRefreshInFlight = null; });
+  }
+  return tokenRefreshInFlight;
+}
+
+// ORB-CONVERSATION-LATENCY: prewarm the ADC access token at boot so the first
+// ORB session skips the metadata-server round-trip on its live-connect critical
+// path. Placed after getAccessToken (and its cache bindings) so it runs free of
+// the temporal dead zone. Best-effort — failures fall back to a lazy fetch on
+// first use.
+if (googleAuth && VERTEX_PROJECT_ID) {
+  void getAccessToken()
+    .then(() => console.log('[VTID-01219] ORB Voice access token prewarmed'))
+    .catch((err: any) =>
+      console.warn('[VTID-01219] ORB Voice access-token prewarm failed (will fetch lazily):', err?.message));
 }
 
 // VTID-03126 (Phase D.3): LIVE_API_VOICES Record moved out of this file
