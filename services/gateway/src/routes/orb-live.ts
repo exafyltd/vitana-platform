@@ -46,6 +46,9 @@ import { randomUUID } from 'crypto';
 import { TextToSpeechClient, protos } from '@google-cloud/text-to-speech';
 import { processWithGemini, setThreadIdentity } from '../services/gemini-operator';
 import { emitOasisEvent } from '../services/oasis-event-service';
+// VTID-03250: prefer the browser's own timezone over rate-limit-prone geo-IP
+// so the assistant never loses the user's local time (context integrity).
+import { resolveSessionTimezone } from '../services/awareness-unified-context';
 // Phase 1 W2 (BOOTSTRAP-PHASE1-W2-CONSENT-METADATA): tag events with
 // data_export_ok ONLY where tenant export consent is established, so the
 // dataset-extraction PII gate can ingest them. Default off / fail-closed.
@@ -7712,13 +7715,25 @@ export async function buildClientContext(req: Request): Promise<ClientContext> {
     Promise.resolve(parseUserAgent(ua)),
   ]);
 
-  const timeCtx = getLocalTimeContext(geo.timezone);
+  // VTID-03250: prefer the browser's own IANA timezone (sent in the
+  // session-start body / x-client-timezone header) over geo-IP, which
+  // rate-limits (HTTP 429) and then yields no zone — that loss was making the
+  // assistant hallucinate the user's local time (e.g. "8:30 PM" at 15:44).
+  const clientTimezone =
+    (req.body && (req.body.client_timezone || req.body.client_context?.timezone)) ||
+    req.get('x-client-timezone') ||
+    null;
+  const resolvedTimezone = resolveSessionTimezone({
+    clientTimezone,
+    geoTimezone: geo.timezone ?? null,
+  });
+  const timeCtx = getLocalTimeContext(resolvedTimezone ?? undefined);
 
   return {
     ip,
     city: geo.city,
     country: geo.country,
-    timezone: geo.timezone,
+    timezone: resolvedTimezone ?? undefined,
     localTime: timeCtx.localTime,
     timeOfDay: timeCtx.timeOfDay,
     device: uaParsed.device,

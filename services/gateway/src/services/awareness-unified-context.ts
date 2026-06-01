@@ -85,6 +85,50 @@ export function resolveSpokenFirstName(
   return { firstName: null, source: 'none' };
 }
 
+// ---------------------------------------------------------------------------
+// VTID-03250 — session timezone resolution (location/time integrity).
+//
+// The ENVIRONMENT block (city + local time the assistant reads) used to derive
+// the timezone ONLY from geo-IP. geo-IP rate-limits (ipapi.co HTTP 429) and
+// then returns no timezone → the assistant lost the user's local time and
+// hallucinated (e.g. "Berlin, 8:30 PM" when the user was in Cologne at 15:44).
+// The browser KNOWS its IANA timezone reliably (Intl) — prefer it; geo-IP is
+// only the fallback. This makes the spoken local time correct even when the
+// geo provider is unavailable.
+// ---------------------------------------------------------------------------
+
+/** True iff `tz` is a usable IANA timezone (Intl validates it). */
+export function isValidIanaTimezone(tz: string | null | undefined): boolean {
+  if (typeof tz !== 'string' || tz.trim().length === 0) return false;
+  try {
+    // Throws RangeError on an unknown zone.
+    new Intl.DateTimeFormat('en-US', { timeZone: tz.trim() });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export interface ResolveSessionTimezoneInput {
+  /** The browser's own IANA zone (Intl), sent in the session-start body. */
+  clientTimezone?: string | null;
+  /** The geo-IP-derived zone (rate-limit-prone). */
+  geoTimezone?: string | null;
+}
+
+/**
+ * Canonical session timezone: prefer the client/browser zone, fall back to
+ * geo-IP, else null. Invalid client zones fall through to geo. Pure.
+ */
+export function resolveSessionTimezone(input: ResolveSessionTimezoneInput): string | null {
+  const client = typeof input.clientTimezone === 'string' ? input.clientTimezone.trim() : '';
+  if (client && isValidIanaTimezone(client)) return client;
+  const geo = typeof input.geoTimezone === 'string' ? input.geoTimezone.trim() : '';
+  if (geo && isValidIanaTimezone(geo)) return geo;
+  if (geo) return geo; // tolerate a geo zone Intl can't validate in this runtime
+  return null;
+}
+
 /**
  * Target shape for the unified awareness context (populated incrementally by
  * later R1 slices). Documented now so consumers + reviewers see the endpoint;
