@@ -140,7 +140,7 @@ Events (split by governance — see header):
 
 Seller studio (role-gated — reuse `creators.ts` + community/seller role checks):
 - `POST /api/v1/shop-studio/videos` (create draft + return upload target),
-- `POST /api/v1/shop-studio/videos/:id/anchors`, `PATCH`/`DELETE /api/v1/shop-studio/anchors/:id` (enforce single primary via the partial-unique index),
+- `POST /api/v1/shop-studio/videos/:id/anchors`, `PATCH`/`DELETE /api/v1/shop-studio/anchors/:id` (enforce single primary via the partial-unique index). **Anchor scope = open affiliate:** any creator may anchor ANY active marketplace product (`products.is_active = true`), not only their own merchant's — but the anchor is created in `pending` and only becomes feed-visible after the AI-agent supervisor approves it against Vitanaland longevity policy (see §6). Out-of-policy products/services are auto-rejected.
 - `GET /api/v1/shop-studio/videos/:id/preview` (anchor simulator),
 - `POST /api/v1/shop-studio/videos/:id/publish` (validate has primary anchor + active product + processed video → moderation queue, status `processing`→`active` after `moderation_status='approved'`).
 
@@ -174,7 +174,9 @@ Loading/empty/error per state: pill data comes inline from the feed so the peek 
 
 ## 6. Trust, compliance & moderation (longevity)
 
-Every drawer/PDP shows a health disclaimer (reuse `AffiliateDisclosure` + a health-claims disclaimer block) + seller-verification badge (from `merchants` / creator profile). Age/region gating resolved server-side from `app_users` geo (`country_code` / `delivery_country_code` / `region_group`) + `geo_policy` + `user_limitations` (allergies, contraindications, medications) — the same limitations-filter substrate the marketplace feed already applies. Publish runs through moderation (`moderation_status='pending'` → admin review of video claims + product claims + creator disclosure) before going `active`; restricted longevity categories (via `products.contraindicated_with_*` / `condition_product_mappings`) require manual approval.
+Every drawer/PDP shows a health disclaimer (reuse `AffiliateDisclosure` + a health-claims disclaimer block) + seller-verification badge (from `merchants` / creator profile). Age/region gating resolved server-side from `app_users` geo (`country_code` / `delivery_country_code` / `region_group`) + `geo_policy` + `user_limitations` (allergies, contraindications, medications) — the same limitations-filter substrate the marketplace feed already applies.
+
+**AI-agent supervised listing (open affiliate + policy gate).** Anchoring is open — any creator can anchor any active product — but nothing reaches the feed without passing the supervisor. On `publish`/anchor-create, an **AI moderation agent** evaluates the video claims + the anchored product/service against Vitanaland longevity policy (allowed categories, evidence/claims rules, restricted/prescription-adjacent classes via `products.contraindicated_with_*` / `condition_product_mappings`, regional legality). Outcome → `moderation_status`: `approved` (goes `active`), `rejected` (with reason, not feed-visible), or escalated to a human moderation queue for borderline cases. Per `CLAUDE.md` AI-routing rules the supervisor uses Gemini for the bulk screen with **Claude as the validation pass**, and every decision logs provider/model/latency. This makes "anyone can sell" true while keeping the surface longevity-safe.
 
 ## 7. Ranking & events pipeline
 
@@ -190,6 +192,6 @@ The client emits the **view funnel as telemetry** (`POST /api/v1/shop-feed/event
 ## 9. Open questions
 
 1) Commission model for V1.2 (flat % / per-category from `merchants.commission_rate` / per-creator).
-2) Can creators anchor other businesses' products in V1 or only affiliate-enabled merchants?
+2) **RESOLVED** — Open affiliate: any creator may anchor any active marketplace product, gated by AI-agent moderation against Vitanaland longevity policy (approve/reject/escalate). Open follow-up: the exact policy ruleset + escalation thresholds for human review.
 3) `VTNA` / `CREDITS` usage in video checkout — same offsets as Discover, or `USD`/Stripe only at launch?
 4) Short-video storage/transcode provider (Supabase Storage vs Cloudflare Stream/Mux), and the concrete telemetry/analytics sink + retention for the view funnel (existing telemetry store vs a dedicated table).
