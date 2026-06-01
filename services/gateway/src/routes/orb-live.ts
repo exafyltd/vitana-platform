@@ -76,6 +76,8 @@ import { decideWakeBriefForSession } from '../services/wake-brief-wiring';
 // distills. NO raw rows cross this boundary.
 import { compileAssistantDecisionContext } from '../orb/context/compile-assistant-decision-context';
 import { renderDecisionContract } from '../orb/live/instruction/decision-contract-renderer';
+// VTID-03252: ENVIRONMENT block formatter, extracted for testability.
+import { formatClientContextForInstruction } from '../orb/live/instruction/client-context-format';
 // BOOTSTRAP-VOICE-DEMO: real heartbeats from voice call sites so the agents
 // dashboard reflects live usage instead of fake startup status.
 import { recordAgentHeartbeat } from './agents-registry';
@@ -5590,23 +5592,11 @@ backend when you say the appropriate goodbye per the sections above — just spe
 naturally, never call a tool.`;
 }
 
-/**
- * VTID-CONTEXT: Format client context into a context section for the system instruction.
- * Used for both anonymous and authenticated sessions.
- */
-export function formatClientContextForInstruction(ctx: ClientContext): string {
-  const parts: string[] = [];
-  if (ctx.city && ctx.country) parts.push(`User location: ${ctx.city}, ${ctx.country}`);
-  else if (ctx.country) parts.push(`User location: ${ctx.country}`);
-  if (ctx.timezone) parts.push(`Timezone: ${ctx.timezone}`);
-  if (ctx.localTime) parts.push(`Local time: ${ctx.localTime}`);
-  // Always include UTC reference so the model can accurately calculate any timezone
-  parts.push(`Current UTC time: ${new Date().toISOString()}`);
-  if (ctx.device) parts.push(`Device: ${ctx.device}`);
-  if (ctx.os) parts.push(`OS: ${ctx.os}`);
-  if (parts.length === 0) return '';
-  return `\nENVIRONMENT CONTEXT:\n${parts.join('\n')}\nWhen asked about the time in any city or timezone, calculate from the UTC time above — do NOT guess UTC offsets from memory, as DST rules change. Use this context naturally — e.g. time-appropriate greetings, location-relevant suggestions.`;
-}
+// VTID-03252: formatClientContextForInstruction was extracted to
+// orb/live/instruction/client-context-format.ts (imported at the top of this
+// file) so the context-integrity gate can unit-test the ENVIRONMENT block
+// contract. Re-exported here so existing importers (orb-livekit) keep working.
+export { formatClientContextForInstruction };
 
 /**
  * VTID-01219: Connect to Vertex AI Live API WebSocket
