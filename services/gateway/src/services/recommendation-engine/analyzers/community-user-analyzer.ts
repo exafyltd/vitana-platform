@@ -454,8 +454,10 @@ const T: Record<string, Partial<Record<LangCode, { title: string; summary: strin
   },
 };
 
-/** Resolve translation with optional variable substitution. Fallback: English → key. */
-function t(key: string, lang: LangCode, vars?: Record<string, string | number>): { title: string; summary: string } {
+/** Resolve translation with optional variable substitution. Fallback: English → key.
+ *  Exported so the onboarding-seed parity test can assert the DB seed copy
+ *  matches the canonical day0 strings. */
+export function t(key: string, lang: LangCode, vars?: Record<string, string | number>): { title: string; summary: string } {
   const entry = T[key]?.[lang] ?? T[key]?.['en'] ?? { title: key, summary: '' };
   if (!vars) return { ...entry };
   let { title, summary } = entry;
@@ -741,7 +743,12 @@ interface RecommendationTemplate {
   condition?: (ctx: UserContext) => boolean;
 }
 
-const STAGE_TEMPLATES: Record<OnboardingStage, RecommendationTemplate[]> = {
+// Exported so the DB onboarding-seed migration
+// (supabase/migrations/..._seed_community_onboarding_autopilot.sql) can be
+// parity-checked against day0 here — see
+// test/autopilot-onboarding-seed-bundle.test.ts. The seed mirrors day0 and the
+// test fails if the two ever drift.
+export const STAGE_TEMPLATES: Record<OnboardingStage, RecommendationTemplate[]> = {
   day0: [
     { key: 'onboarding_profile', domain: 'community', priority: 'high', impact_score: 9, effort_score: 2, time_estimate_seconds: 120, signal_type: 'onboarding_profile' },
     { key: 'onboarding_avatar', domain: 'community', priority: 'high', impact_score: 9, effort_score: 1, time_estimate_seconds: 60, signal_type: 'onboarding_avatar' },
