@@ -1972,6 +1972,9 @@ router.post("/api/v1/vtid/lifecycle/backfill", async (req: Request, res: Respons
  *   { vtid, domain, outcome, recommended_action, checks_failed, fixes_needed,
  *     reason, run_id, created_at }
  */
+// public-route: read-only oasis_events query, consistent with the other
+// /api/v1/events/* handlers in this file (anonymous). Command Hub access is
+// gated at the page route, not per data endpoint.
 router.get("/api/v1/events/verification-advisory", async (req: Request, res: Response) => {
   try {
     const supabaseUrl = process.env.SUPABASE_URL;
