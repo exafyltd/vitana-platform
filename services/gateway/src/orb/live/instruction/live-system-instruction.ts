@@ -23,6 +23,7 @@
 import type { ClientContext } from '../types';
 import { getPersonalityConfigSync } from '../../../services/ai-personality-service';
 import { getAwarenessConfigSync } from '../../../services/awareness-registry';
+import { isFeatureLive } from '../../../services/feature-flags';
 import {
   getContent as getNavContent,
   lookupByRoute as lookupNavByRoute,
@@ -861,6 +862,23 @@ ${trimmedHistory}
   const wakeBriefOverrideActive =
     typeof bootstrapContext === 'string' &&
     bootstrapContext.includes('<<VERTEX_WAKE_BRIEF_OVERRIDE_ACTIVE>>');
+  // ORB-CONVERSATION-LATENCY: lean system_instruction experiment (ship-dark,
+  // flag-gated, fully reversible). When FEATURE_LEAN_SYSTEM_INSTRUCTION is live
+  // AND this is a first connect (not a reconnect), drop the ~20-25 KB
+  // greeting-policy stack (GREETING POLICY time-buckets + HARD ANTI-PATTERNS)
+  // from the Vertex prompt — the SAME stack LiveKit already omits in production
+  // via omitGreetingPolicy. The hypothesis under test: Vertex's Gemini still
+  // opens well from TONE RULES + the explicit greeting prompt
+  // (sendGreetingPromptToLiveAPI), trading prompt-ingestion time for a faster
+  // first token. Reconnect ALWAYS keeps the full stack so the RECONNECT FINAL
+  // OVERRIDE (silence-on-transparent-resume) is never dropped. LiveKit callers
+  // already pass omitGreetingPolicy=true, so the flag is a no-op for them.
+  // Flag off (default) => byte-identical to current behavior.
+  const leanGreetingActive =
+    !omitGreetingPolicy &&
+    !isReconnect &&
+    isFeatureLive('LEAN_SYSTEM_INSTRUCTION');
+  const effectiveOmitGreetingPolicy = !!omitGreetingPolicy || leanGreetingActive;
   instruction += buildTemporalJourneyContextSection(
     lang,
     lastSessionInfo,
@@ -868,7 +886,7 @@ ${trimmedHistory}
     recentRoutes,
     !!isReconnect,
     clientContext?.timeOfDay,
-    omitGreetingPolicy,
+    effectiveOmitGreetingPolicy,
     wakeBriefOverrideActive,
   );
 
