@@ -15,13 +15,44 @@
  *      `injectIntoAutopilotPipeline`.
  */
 
-import { probeEndpoint, isJsonHealthy } from '../src/services/self-healing-probe';
+import { probeEndpoint, isJsonHealthy, resolveProbeTarget } from '../src/services/self-healing-probe';
 
 const ORIGINAL_FETCH = global.fetch;
 
 afterEach(() => {
   global.fetch = ORIGINAL_FETCH;
   jest.resetModules();
+});
+
+describe('resolveProbeTarget (post-deploy verify gate)', () => {
+  // Step 3 verify-and-rollback: the watcher only re-probes the original failure
+  // when the finding has an actual HTTP target. Source-file code fixes and
+  // lifecycle markers must fall through to blast-radius-only verification.
+  it('returns full http(s) URLs as-is', () => {
+    expect(resolveProbeTarget('https://gateway.vitanaland.com/api/v1/x')).toBe(
+      'https://gateway.vitanaland.com/api/v1/x',
+    );
+    expect(resolveProbeTarget('http://localhost:8080/alive')).toBe('http://localhost:8080/alive');
+  });
+
+  it('returns absolute "/path" endpoints (probed against the gateway base)', () => {
+    expect(resolveProbeTarget('/api/v1/live/rooms')).toBe('/api/v1/live/rooms');
+    expect(resolveProbeTarget('  /alive  ')).toBe('/alive');
+  });
+
+  it('returns null for source file paths (dev_autopilot code/scanner findings)', () => {
+    expect(resolveProbeTarget('services/gateway/src/foo.ts')).toBeNull();
+    expect(resolveProbeTarget('supabase/migrations/20260101_x.sql')).toBeNull();
+  });
+
+  it('returns null for lifecycle markers, voice-synthetic, and empty/nullish input', () => {
+    expect(resolveProbeTarget('autopilot.approve_safety')).toBeNull();
+    expect(resolveProbeTarget('voice-error://no_audio_in')).toBeNull();
+    expect(resolveProbeTarget('')).toBeNull();
+    expect(resolveProbeTarget('   ')).toBeNull();
+    expect(resolveProbeTarget(null)).toBeNull();
+    expect(resolveProbeTarget(undefined)).toBeNull();
+  });
 });
 
 describe('probeEndpoint (shared helper)', () => {

@@ -77,6 +77,8 @@ import {
   logWakeDecisionSnapshot,
   type FirstNameSource,
 } from '../instruction/wake-decision-snapshot';
+// VTID-03248 (R1 slice 1): single canonical spoken-first-name resolver.
+import { resolveSpokenFirstName } from '../../../services/awareness-unified-context';
 import { recordAgentHeartbeat } from '../../../routes/agents-registry';
 import {
   fetchAdminBriefingBlock,
@@ -753,10 +755,21 @@ export async function handleLiveSessionStart(
             return null;
           })
         : Promise.resolve(null),
+      // VTID-03201: proactive Autopilot offer. Fetched in parallel (no critical-path
+      // cost) so Vitana can offer "you have things waiting in your Autopilot, want me
+      // to run through them?" Only appended for community sessions (gated in .then).
+      // Returns '' for users with an empty queue, so non-community users cost just one
+      // empty query and no re-rank.
+      import('../../../routes/autopilot-recommendations')
+        .then((m) => m.buildAutopilotOfferBlock(bootstrapIdentity.user_id))
+        .catch((err) => {
+          console.warn(`[VTID-03201] SSE autopilot offer fetch failed: ${err?.message}`);
+          return '';
+        }),
     ]);
 
     contextReadyPromise = bootstrapWork
-      .then(async ([bootstrapResult, fetchedSseRole, fetchedSessionInfo, storedLangResult, adminBriefing]) => {
+      .then(async ([bootstrapResult, fetchedSseRole, fetchedSessionInfo, storedLangResult, adminBriefing, autopilotOffer]) => {
         let resolvedRole = fetchedSseRole;
         const sseRoute = typeof (body as any).current_route === 'string' ? (body as any).current_route : '';
         if (sseRoute.startsWith('/command-hub') && (!resolvedRole || resolvedRole === 'community')) {
@@ -769,6 +782,12 @@ export async function handleLiveSessionStart(
         }
 
         let finalContext = bootstrapResult.contextInstruction || '';
+        // VTID-03201: community sessions get the proactive Autopilot offer so
+        // Vitana raises it unprompted. resolvedRole already folds mobile → community.
+        if (resolvedRole === 'community' && autopilotOffer) {
+          finalContext = finalContext ? `${finalContext}\n\n${autopilotOffer}` : autopilotOffer;
+          console.log(`[VTID-03201] Autopilot proactive offer injected into SSE session ${sessionId} (${autopilotOffer.length} chars)`);
+        }
         if (isAdminRole(resolvedRole) && adminBriefing) {
           finalContext = finalContext ? `${finalContext}\n\n${adminBriefing}` : adminBriefing;
           emitOasisEvent({
@@ -836,6 +855,7 @@ export async function handleLiveSessionStart(
     createdAt: new Date(),
     lastActivity: new Date(),
     audioInChunks: 0,
+    audioInForwarded: 0, // VTID-VOICE-FWD: only ++ when a chunk is actually sent upstream
     videoInFrames: 0,
     audioOutChunks: 0,
     turn_count: 0,
@@ -1081,35 +1101,26 @@ export async function handleLiveSessionStart(
       if (cadenceResult.status === 'fulfilled') {
         cadenceSignals = cadenceResult.value;
       }
-      let fullName = '';
-      let fullNameSource: FirstNameSource = 'none';
-      if (factResult.status === 'fulfilled' && factResult.value && !factResult.value.error) {
-        const v = (factResult.value.data as { fact_value?: string | null } | null)?.fact_value;
-        if (typeof v === 'string' && v.trim().length > 0) {
-          fullName = v.trim();
-          fullNameSource = 'memory_facts';
-        }
-      }
-      if (!fullName && profileResult.status === 'fulfilled' && profileResult.value && !profileResult.value.error) {
-        const v = (profileResult.value.data as { display_name?: string | null } | null)?.display_name;
-        if (typeof v === 'string' && v.trim().length > 0) {
-          fullName = v.trim();
-          fullNameSource = 'app_users';
-        }
-      }
-      if (fullName) {
-        firstName = fullName.split(/\s+/)[0] || null;
-        firstNameSource = firstName ? fullNameSource : 'none';
-      } else if (orbIdentity.email && orbIdentity.email.includes('@')) {
-        // Last-resort: take the email local part. Strip digits / underscores
-        // so "dragan1" → "dragan", "d_stevanovic" → "stevanovic" (best effort).
-        const local = orbIdentity.email.split('@')[0] || '';
-        const stripped = local.replace(/[0-9_.+\-]+/g, '').trim();
-        if (stripped.length >= 2) {
-          firstName = stripped[0].toUpperCase() + stripped.slice(1);
-          firstNameSource = 'email';
-        }
-      }
+      // VTID-03248 (R1 slice 1): resolve the spoken first name through the
+      // single canonical resolver. Behavior-identical to the previous inline
+      // logic (memory_facts → app_users → email local-part), now shared so
+      // LiveKit + every other call site resolve the SAME name with the SAME
+      // precedence (the audit found this field diverging 3-4× per session).
+      const factValue =
+        factResult.status === 'fulfilled' && factResult.value && !factResult.value.error
+          ? (factResult.value.data as { fact_value?: string | null } | null)?.fact_value ?? null
+          : null;
+      const profileValue =
+        profileResult.status === 'fulfilled' && profileResult.value && !profileResult.value.error
+          ? (profileResult.value.data as { display_name?: string | null } | null)?.display_name ?? null
+          : null;
+      const resolvedName = resolveSpokenFirstName({
+        memoryFactUserName: factValue,
+        displayName: profileValue,
+        email: orbIdentity.email ?? null,
+      });
+      firstName = resolvedName.firstName;
+      firstNameSource = resolvedName.source;
     }
     wakeBriefDecision = await decideWakeBriefForSession({
       sessionId,
@@ -1503,6 +1514,7 @@ export async function handleLiveSessionStop(
     user_id: session.identity?.user_id || null,
     tenant_id: session.identity?.tenant_id || null,
     audio_in_chunks: session.audioInChunks,
+    audio_in_forwarded_chunks: session.audioInForwarded, // VTID-VOICE-FWD (Track A)
     video_in_frames: session.videoInFrames,
     audio_out_chunks: session.audioOutChunks,
     duration_ms: Date.now() - session.createdAt.getTime(),
@@ -1519,6 +1531,7 @@ export async function handleLiveSessionStop(
     metadata: { synthetic: (session as any).synthetic === true },
     sessionMetrics: {
       audio_in_chunks: session.audioInChunks,
+      audio_in_forwarded: session.audioInForwarded, // VTID-VOICE-FWD (Track A)
       audio_out_chunks: session.audioOutChunks,
       duration_ms: Date.now() - session.createdAt.getTime(),
       turn_count: session.turn_count,
@@ -1740,6 +1753,10 @@ export async function handleLiveStreamSend(
           body.mime || 'audio/pcm;rate=16000',
         );
         if (sent) {
+          // VTID-VOICE-FWD (Track A): forwarded-only count (SSE path mirror of
+          // the WS path in orb-live.ts). Only chunks the model actually
+          // received; the three drop gates above return before reaching here.
+          session.audioInForwarded++;
           session.lastAudioForwardedTime = Date.now();
           // VTID-FORWARDING-WATCHDOG + VTID-01984 (R5) sliding logic
           if (!session.isModelSpeaking) {

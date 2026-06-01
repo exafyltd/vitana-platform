@@ -228,6 +228,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const userPreferencesRouter = require('./routes/user-preferences').default;
   // VTID-03213: Universal Cart Phase 1 gateway slice (universal_carts / universal_cart_items / universal_cart_events)
   const universalCartRouter = require('./routes/universal-cart').default;
+  // VTID-03237: Video Shop (Vitanaland) backend slice — feed/anchor/saved/events over products + Universal Cart
+  const shopFeedRouter = require('./routes/shop-feed').default;
   // VTID-01126: D32 Situational Awareness Engine - situation understanding layer
   const situationalAwarenessRouter = require('./routes/situational-awareness').default;
   // VTID-01127: D33 Availability, Time-Window & Readiness Engine
@@ -318,6 +320,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   // VTID-03201: Stripe-funded wallet deposits (EUR + USD fiat ledger, ships in parallel with Billing v1)
   const walletRouter = require('./routes/wallet').default;
   const walletStripeWebhookRouter = require('./routes/wallet-stripe-webhook').default;
+  // VTID-03249: Wallet spend + earning admin endpoints (cart / marketplace integration contract)
+  const walletAdminRouter = require('./routes/wallet-admin').default;
   // Notification System — FCM push + in-app notification history
   const notificationsRouter = require('./routes/notifications').default;
   // Chat — User-to-user direct messaging
@@ -1026,6 +1030,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   mountRouterSync(app, '/api/v1/stripe', walletStripeWebhookRouter, { owner: 'wallet-stripe-webhook' });
   // VTID-03201: Wallet user-facing routes (EUR + USD fiat). Path-scoped requireAuth inside router.
   mountRouterSync(app, '/api/v1', walletRouter, { owner: 'wallet' });
+  // VTID-03249: Wallet admin spend/credit routes (cart / marketplace integration).
+  // Path-scoped requireAuth + requireExafyAdmin inside router.
+  mountRouterSync(app, '/api/v1', walletAdminRouter, { owner: 'wallet-admin' });
 
   // Notification System — FCM push notifications + in-app history
   mountRouterSync(app, '/api/v1/notifications', notificationsRouter, { owner: 'notifications' });
@@ -1184,6 +1191,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
 
   // VTID-03213: Universal Cart Phase 1 gateway slice — community-role-gated cart over universal_* tables
   mountRouterSync(app, '/api/v1/universal-cart', universalCartRouter, { owner: 'universal-cart' });
+
+  // VTID-03237: Video Shop (Vitanaland) — community-role-gated feed/anchor/saved/events over products + Universal Cart
+  mountRouterSync(app, '/api/v1/shop-feed', shopFeedRouter, { owner: 'shop-feed' });
 
   // VTID-01126: D32 Situational Awareness Engine - situation understanding layer
   mountRouterSync(app, '/api/v1/situational', situationalAwarenessRouter, { owner: 'situational-awareness' });

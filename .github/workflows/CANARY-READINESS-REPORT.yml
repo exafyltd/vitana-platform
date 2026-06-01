@@ -101,11 +101,13 @@ jobs:
               echo "$OUT" | head -10
             fi
           else
-            # OUT is the JOB_STATE string or empty
-            STATE=$(echo "$OUT" | tr -d '[:space:]')
+            # gcloud can print an endpoint banner before the value; extract
+            # only the JOB_STATE token so active jobs don't get mislabeled.
+            STATE=$(echo "$OUT" | grep -oE 'JOB_STATE_[A-Z_]+' | tail -1)
             case "$STATE" in
               JOB_STATE_SUCCEEDED) echo "FINETUNE_STATUS=ok" >> "$GITHUB_ENV" ;;
               JOB_STATE_FAILED|JOB_STATE_CANCELLED) echo "FINETUNE_STATUS=failed" >> "$GITHUB_ENV" ;;
+              JOB_STATE_PENDING|JOB_STATE_RUNNING|JOB_STATE_QUEUED) echo "FINETUNE_STATUS=running" >> "$GITHUB_ENV" ;;
               "") echo "FINETUNE_STATUS=none" >> "$GITHUB_ENV" ;;
               *) echo "FINETUNE_STATUS=skipped" >> "$GITHUB_ENV"; echo "Unknown JOB_STATE='$STATE'" ;;
             esac
