@@ -755,10 +755,21 @@ export async function handleLiveSessionStart(
             return null;
           })
         : Promise.resolve(null),
+      // VTID-03201: proactive Autopilot offer. Fetched in parallel (no critical-path
+      // cost) so Vitana can offer "you have things waiting in your Autopilot, want me
+      // to run through them?" Only appended for community sessions (gated in .then).
+      // Returns '' for users with an empty queue, so non-community users cost just one
+      // empty query and no re-rank.
+      import('../../../routes/autopilot-recommendations')
+        .then((m) => m.buildAutopilotOfferBlock(bootstrapIdentity.user_id))
+        .catch((err) => {
+          console.warn(`[VTID-03201] SSE autopilot offer fetch failed: ${err?.message}`);
+          return '';
+        }),
     ]);
 
     contextReadyPromise = bootstrapWork
-      .then(async ([bootstrapResult, fetchedSseRole, fetchedSessionInfo, storedLangResult, adminBriefing]) => {
+      .then(async ([bootstrapResult, fetchedSseRole, fetchedSessionInfo, storedLangResult, adminBriefing, autopilotOffer]) => {
         let resolvedRole = fetchedSseRole;
         const sseRoute = typeof (body as any).current_route === 'string' ? (body as any).current_route : '';
         if (sseRoute.startsWith('/command-hub') && (!resolvedRole || resolvedRole === 'community')) {
@@ -771,6 +782,12 @@ export async function handleLiveSessionStart(
         }
 
         let finalContext = bootstrapResult.contextInstruction || '';
+        // VTID-03201: community sessions get the proactive Autopilot offer so
+        // Vitana raises it unprompted. resolvedRole already folds mobile → community.
+        if (resolvedRole === 'community' && autopilotOffer) {
+          finalContext = finalContext ? `${finalContext}\n\n${autopilotOffer}` : autopilotOffer;
+          console.log(`[VTID-03201] Autopilot proactive offer injected into SSE session ${sessionId} (${autopilotOffer.length} chars)`);
+        }
         if (isAdminRole(resolvedRole) && adminBriefing) {
           finalContext = finalContext ? `${finalContext}\n\n${adminBriefing}` : adminBriefing;
           emitOasisEvent({

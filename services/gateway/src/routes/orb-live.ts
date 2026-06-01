@@ -12251,12 +12251,20 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
     console.log(`[VTID-01224] Building bootstrap context for session ${sessionId} user=${effectiveBootstrapIdentity.user_id.substring(0, 8)}...${usingDevFallbackWs ? ' (DEV_IDENTITY fallback)' : ''}`);
 
     // Fetch role, context, and last session info in parallel for minimal latency
-    const [bootstrapResult, fetchedRole, fetchedWsSessionInfo] = await Promise.all([
+    const [bootstrapResult, fetchedRole, fetchedWsSessionInfo, wsAutopilotOffer] = await Promise.all([
       buildBootstrapContextPack(effectiveBootstrapIdentity, sessionId),
       usingDevFallbackWs
         ? Promise.resolve(DEV_IDENTITY.ACTIVE_ROLE)
         : resolveEffectiveRole(effectiveBootstrapIdentity.user_id, effectiveBootstrapIdentity.tenant_id || ''),
       fetchLastSessionInfo(effectiveBootstrapIdentity.user_id),
+      // VTID-03201: proactive Autopilot offer, fetched in parallel (no added
+      // critical-path latency). Appended only for community sessions below.
+      import('./autopilot-recommendations')
+        .then((m) => m.buildAutopilotOfferBlock(effectiveBootstrapIdentity.user_id))
+        .catch((err: any) => {
+          console.warn(`[VTID-03201] WS autopilot offer fetch failed: ${err?.message}`);
+          return '';
+        }),
     ]);
     activeRole = fetchedRole;
     wsLastSessionInfo = fetchedWsSessionInfo;
@@ -12272,6 +12280,16 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
     contextPack = bootstrapResult.contextPack;
     contextBootstrapLatencyMs = bootstrapResult.latencyMs;
     contextBootstrapSkippedReason = bootstrapResult.skippedReason;
+
+    // VTID-03201: community WS sessions get the proactive Autopilot offer so
+    // Vitana raises it unprompted ("you have things waiting — want me to run
+    // through them?"). Empty string for users with nothing queued.
+    if (activeRole === 'community' && wsAutopilotOffer) {
+      contextInstruction = contextInstruction
+        ? `${contextInstruction}\n\n${wsAutopilotOffer}`
+        : wsAutopilotOffer;
+      console.log(`[VTID-03201] Autopilot proactive offer injected into WS session ${sessionId} (${wsAutopilotOffer.length} chars)`);
+    }
 
     // BOOTSTRAP-ADMIN-EE: admin-role WS sessions get a proactive briefing too.
     if (isAdminRole(activeRole) && effectiveBootstrapIdentity.tenant_id) {

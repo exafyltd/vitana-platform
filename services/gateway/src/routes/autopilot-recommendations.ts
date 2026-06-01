@@ -881,6 +881,63 @@ export function summarizeAutopilotForVoice(
   return { spoken: `${lead} ${titles.join('; ')}.`, ids, count: recs.length };
 }
 
+/**
+ * Render the system-instruction block that tells the voice assistant (Vitana)
+ * to PROACTIVELY offer to read the user's Autopilot. Pure function over an
+ * already-fetched list. Returns '' for an empty queue, so the caller can append
+ * unconditionally without gating on count. VTID-03201.
+ *
+ * This is the "Vitana says: you have Autopilot recommendations, want me to look?"
+ * half of the feature — the read (`get_autopilot_recommendations`) and the
+ * activation (`activate_autopilot_recommendations`) tools already exist; this
+ * block is what makes Vitana raise it unprompted instead of waiting to be asked.
+ *
+ * Instruction text is intentionally English: it is read by the model, which
+ * responds in the user's language per the "Respond ONLY in {language}" rule.
+ */
+export function renderAutopilotOfferBlock(recs: CommunityRecommendationView[]): string {
+  if (recs.length === 0) return '';
+
+  const count = recs.length;
+  const teaser = recs.slice(0, 2).map(r => r.title).join('; ');
+  const countPhrase = count === 1 ? 'one action' : `${count} actions`;
+
+  return [
+    '## AUTOPILOT — PROACTIVE OFFER (this session)',
+    `The user has ${countPhrase} prepared and waiting in their Autopilot${teaser ? ` (for example: ${teaser})` : ''}.`,
+    '',
+    'EARLY in the conversation — right after your greeting, or at the first',
+    'natural pause — proactively offer ONCE, in one short warm sentence, to go',
+    'through them. For example: "By the way, your Autopilot has a few things',
+    'ready for you — want me to run through them?"',
+    '',
+    'Rules for this proactive offer:',
+    '- Offer FIRST. Do NOT read the list unprompted.',
+    '- If the user agrees ("yes", "go ahead", "what\'s in there?", "was hat der',
+    '  Autopilot?"), call the tool get_autopilot_recommendations and then read',
+    '  its `spoken` summary verbatim.',
+    '- If the user then agrees to act ("activate them", "do the first one",',
+    '  "los geht\'s", "yes do it"), call activate_autopilot_recommendations.',
+    '- Make this proactive offer AT MOST ONCE per conversation. If the user',
+    '  declines or changes the subject, drop it gracefully and never raise it again.',
+    '- This is an offer, not a script — phrase it naturally in the user\'s language.',
+  ].join('\n');
+}
+
+/** Async wrapper: fetch the user's queue, then render the offer block. Never throws. */
+export async function buildAutopilotOfferBlock(userId: string): Promise<string> {
+  try {
+    if (!userId) return '';
+    // Same canonical list the popup + get_autopilot_recommendations use, so the
+    // offer's count matches what Vitana will actually read aloud.
+    const recs = await listCommunityAutopilotRecommendations(userId, 5);
+    return renderAutopilotOfferBlock(recs);
+  } catch (err: any) {
+    console.warn(`${LOG_PREFIX} buildAutopilotOfferBlock failed (non-fatal): ${err?.message}`);
+    return '';
+  }
+}
+
 /** Structured result for community activation, mapped to HTTP by the route and to speech by voice. */
 export interface ActivateCommunityResult {
   ok: boolean;
