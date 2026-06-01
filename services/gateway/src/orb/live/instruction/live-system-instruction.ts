@@ -23,22 +23,22 @@
 import type { ClientContext } from '../types';
 import { getPersonalityConfigSync } from '../../../services/ai-personality-service';
 import { getAwarenessConfigSync } from '../../../services/awareness-registry';
-import { isFeatureLive } from '../../../services/feature-flags';
 import {
   getContent as getNavContent,
   lookupByRoute as lookupNavByRoute,
 } from '../../../lib/navigation-catalog';
-import { pickShortGapGreetings } from '../../instruction/greeting-pools';
-// VTID-03118 (Phase B.4): bucket thresholds + greeting-bucket prompt
-// fragments come from PolicyResolver instead of inline literals/switch-case
-// lines. Resolver returns byte-identical content for the seeded defaults
-// (Phase B.2 / VTID-03114); the consumer below substitutes
-// {{greeting_time_of_day}} and {{short_gap_phrase_menu}} tokens to
-// reproduce the pre-B.4 output exactly.
+// VTID-03118 (Phase B.4): bucket thresholds come from PolicyResolver instead
+// of inline literals. Resolver returns byte-identical values for the seeded
+// defaults (Phase B.2 / VTID-03114).
+//
+// R2 (BOOTSTRAP-ORB-R2-GREETING-POLICY): the greeting-bucket prompt fragments
+// (RENDER_BLOCK_KEYS) and the short-gap phrase pool (pickShortGapGreetings)
+// are no longer consumed here — the legacy `## GREETING POLICY` fallback stack
+// moved to the voice-wake-brief provider. Only the time-since threshold
+// lookups (POLICY_KEYS) remain.
 import {
   getPolicyResolver,
   POLICY_KEYS,
-  RENDER_BLOCK_KEYS,
 } from '../../../services/decision-contract';
 // A3: buildNavigatorPolicySection stays in orb-live.ts (still consumed by
 // the route handler too); the instruction builder calls it back across the
@@ -60,111 +60,15 @@ import {
 
 type TemporalBucket = 'reconnect' | 'recent' | 'same_day' | 'today' | 'yesterday' | 'week' | 'long' | 'first';
 
-// VTID-03118 (Phase B.4): map TemporalBucket → policy_render_block key so
-// the consumer below can fetch the seeded template by enum.
-const BUCKET_TO_BLOCK_KEY: Record<TemporalBucket, string> = {
-  reconnect: RENDER_BLOCK_KEYS.GREETING_BUCKET_RECONNECT,
-  recent: RENDER_BLOCK_KEYS.GREETING_BUCKET_RECENT,
-  same_day: RENDER_BLOCK_KEYS.GREETING_BUCKET_SAME_DAY,
-  today: RENDER_BLOCK_KEYS.GREETING_BUCKET_TODAY,
-  yesterday: RENDER_BLOCK_KEYS.GREETING_BUCKET_YESTERDAY,
-  week: RENDER_BLOCK_KEYS.GREETING_BUCKET_WEEK,
-  long: RENDER_BLOCK_KEYS.GREETING_BUCKET_LONG,
-  first: RENDER_BLOCK_KEYS.GREETING_BUCKET_FIRST,
-};
-
-// VTID-03118 (Phase B.4): safety-net fallbacks. Byte-identical to the
-// Phase B.2 seed content. The resolver returns the DB row in production;
-// these defaults activate only when the seed migration hasn't been run
-// (e.g. early boot in a fresh environment). Placeholder tokens match the
-// seed migration (see supabase/migrations/20260527020000_...).
-const BUCKET_DEFAULT_TEMPLATES: Record<TemporalBucket, string> = {
-  reconnect:
-`- BUCKET = reconnect (transparent server-side resume — the user did NOT perceive any pause).
-  • DO NOT speak. DO NOT greet. DO NOT acknowledge any "interruption", "reconnection", "resume", "where were we", "I'm back", "I'm listening", "picking up", or anything similar. Saying any of these creates a perceived apology that the user reads as a bug.
-  • Wait for the user to speak. Your next message must be a direct response to the user's next utterance — nothing else.
-  • If the user says nothing, you say nothing. Silence is correct here.`,
-  recent:
-`- BUCKET = recent (2–15 min since last session).
-  • Do NOT use a formal greeting. NO "Hello <name>!", NO "Hi there!", NO self-introduction. NO user name.
-  • Open with ONE single short phrase. NEVER use two-part sentences joined by dashes or commas.
-{{short_gap_phrase_menu}}
-  • Max ONE short phrase. Warm but direct.`,
-  same_day:
-`- BUCKET = same_day (15 min – 8 h since last session).
-  • Light re-engagement. NOT a formal greeting. No user name. NEVER "Hello <name>!" as if you've never met.
-  • Open with ONE single short phrase. NEVER use two-part sentences joined by dashes or commas.
-{{short_gap_phrase_menu}}
-  • Max ONE short phrase. Warm and direct.`,
-  today:
-`- BUCKET = today (8–24 h since last session — this is a NEW-DAY greeting).
-  • ALWAYS open with "Good {{greeting_time_of_day}}, [Name]." using the user's name from memory context.
-  • If no name is available in memory, just say "Good {{greeting_time_of_day}}."
-  • LEGACY-FALLBACK ONLY (use the brain context's candidate when available).
-  • Example follow-up if no candidate exists (pick ONE or skip):
-      "What's on your mind today?"
-      "Where would you like to focus today?"
-  • Max TWO short sentences total: the time-of-day greeting + optionally one question.`,
-  yesterday:
-`- BUCKET = yesterday (this is a NEW-DAY greeting).
-  • ALWAYS open with "Good {{greeting_time_of_day}}, [Name]." using the user's name from memory context.
-  • If no name is available in memory, just say "Good {{greeting_time_of_day}}."
-  • LEGACY-FALLBACK ONLY (use the brain context's candidate when available).
-  • Example follow-up if no candidate exists (pick ONE or skip):
-      "What would you like to explore today?"
-      "Picking up where we left off?"
-  • Max TWO short sentences total: the time-of-day greeting + optionally one question.`,
-  week:
-`- BUCKET = week (2–7 days since last session — this is a NEW-DAY greeting).
-  • ALWAYS open with "Good {{greeting_time_of_day}}, [Name]." using the user's name from memory context.
-  • If no name is available in memory, just say "Good {{greeting_time_of_day}}."
-  • LEGACY-FALLBACK ONLY (use the brain context's candidate when available).
-  • Example follow-up if no candidate exists (pick ONE or skip):
-      "Good to hear from you again — what's been on your mind?"
-      "What would you like to explore today?"
-  • Max TWO short sentences total: the time-of-day greeting + optionally one question.`,
-  long:
-`- BUCKET = long (> 7 days since last session — this is a NEW-DAY greeting).
-  • ALWAYS open with "Good {{greeting_time_of_day}}, [Name]." using the user's name from memory context.
-  • If no name is available in memory, just say "Good {{greeting_time_of_day}}."
-  • LEGACY-FALLBACK ONLY (use the brain context's candidate when available — for >7-day absences the candidate should explicitly acknowledge the gap).
-  • Example follow-up if no candidate exists (pick ONE or skip):
-      "It's been a few days — happy you're back. What's been on your mind?"
-      "What would you like to focus on today?"
-  • Max TWO short sentences total: the time-of-day greeting + optionally one question.`,
-  first:
-`- BUCKET = first (telemetry lookup found no prior session — usually treat as RETURNING with NEW-DAY greeting).
-  • ALWAYS open with "Good {{greeting_time_of_day}}, [Name]." using the user's name from memory context.
-  • If no name is available in memory, just say "Good {{greeting_time_of_day}}."
-  • EXCEPTION: when the brain context's USER AWARENESS shows tenure.stage="day0", the user is genuinely new. Use the FULL INTRODUCTION shape from the brain context's OPENING SHAPE MATRIX — that overrides this fallback.
-  • LEGACY-FALLBACK ONLY (use the brain context's candidate when available).
-  • Example follow-up if no candidate exists (pick ONE or skip):
-      "What's on your mind today?"
-      "Where would you like to focus today?"
-  • Max TWO short sentences total: the time-of-day greeting + optionally one question.`,
-};
-
-// VTID-03118 (Phase B.4): the `{{short_gap_phrase_menu}}` placeholder
-// inside the `recent` and `same_day` templates expands to this multi-line
-// block. Identical line-for-line to the pre-B.4 `appendShortGapPhraseMenu`
-// closure that used to live inside `buildTemporalJourneyContextSection`.
-function expandShortGapPhraseMenu(
-  lang: string,
-  wakeBriefOverrideActive?: boolean,
-): string {
-  if (wakeBriefOverrideActive) {
-    return '  • SHORT-GAP PHRASE LIST SUPPRESSED — a VERTEX WAKE BRIEF override is active later in this prompt. Speak the override line verbatim instead of any phrase here.';
-  }
-  const examples = pickShortGapGreetings(lang, 6);
-  const out: string[] = [
-    '  • Pick ONE of these example phrasings (use them VERBATIM — they are already in the user\'s language; pick a different one than last time):',
-  ];
-  for (const p of examples) {
-    out.push(`      "${p}"`);
-  }
-  out.push('  • Rotate across sessions — the user notices repetition. If the previous session used one of these, pick a different one.');
-  return out.join('\n');
-}
+// R2 (BOOTSTRAP-ORB-R2-GREETING-POLICY): the legacy 8-bucket greeting-policy
+// fallback pools (`BUCKET_TO_BLOCK_KEY`, `BUCKET_DEFAULT_TEMPLATES`,
+// `expandShortGapPhraseMenu`) were removed from this module. The Central
+// Continuation Contract owns the first spoken line in production; the
+// temporal fallback pools now live on the priority-80 voice-wake-brief
+// provider (see WAKE_BRIEF_BUCKET_TEMPLATES / renderWakeBriefFallbackBlock in
+// services/assistant-continuation/providers/voice-wake-brief.ts). `TemporalBucket`
+// is retained here — `describeTimeSince` still classifies session recency for
+// the TEMPORAL AND JOURNEY CONTEXT block and the continuation decider.
 
 // Exported for characterization testing (A0.2, orb-live-refactor).
 // No behavior change — same function, externally addressable so the refactor
@@ -391,141 +295,40 @@ function buildTemporalJourneyContextSection(
     lines.push('- Journey before opening ORB: (no prior screens reported this session)');
   }
 
-  // VTID-03046 step 2: skip the entire greeting-policy stack on LiveKit
-  // (caller passes omitGreetingPolicy=true). The early-return jumps over
-  // the GREETING POLICY block (until ## TONE RULES below), the RECONNECT
-  // FINAL OVERRIDE block, and the HARD ANTI-PATTERNS block — all of which
-  // exist solely to constrain the LLM's FIRST utterance. LiveKit's
-  // pre-rendered session.say() greeting bypasses them entirely.
-  if (omitGreetingPolicy) {
-    lines.push('');
-    lines.push('## TONE RULES (CRITICAL)');
-    lines.push('- Your voice must always be WARM, POLITE, and KIND. Never cold, never curt, never robotic.');
-    lines.push('- Baseline register: "how can I help", "what\'s on your mind", "I am listening", "how can I support you". When a candidate IS provided in the brain context below, lead with it instead.');
-    lines.push('- NEVER use filler phrases as greeting openers: NO "of course", NO "happy to", NO "lovely to hear from you", NO "sure". Get straight to the point with warmth.');
-    lines.push('- Even your shortest responses must feel genuinely kind. A single phrase can still be warm.');
-    lines.push('');
-    lines.push('## JOURNEY AWARENESS (CRITICAL — how to answer "where am I?" correctly)');
-    lines.push('- The "Current screen" field above is a SNAPSHOT from session start. It can become stale the moment any navigation happens (including navigation YOU just triggered via navigate_to_screen).');
-    lines.push('- Whenever the user asks any form of "where am I?" / "which screen is this?" / "what page am I on?" / "what am I looking at?" / "wo bin ich?" / "welcher Bildschirm ist das?", you MUST call the `get_current_screen` tool to get the FRESH answer. Never answer from memory or from the snapshot above — always call the tool.');
-    lines.push('- The get_current_screen tool is also the right call for any follow-up like "what is this screen for?" or "what can I do here?" — it returns a short description of the screen in the user\'s language.');
-    lines.push('- If the user asks "where was I before?" or similar, you may list the journey trail above in a natural sentence, OR call get_current_screen which also returns recent_screens.');
-    lines.push('- NEVER tell the user "I don\'t know which screen you\'re on" without calling get_current_screen first. That is always wrong.');
-    lines.push('- NEVER read raw URL paths aloud. Always speak the friendly screen title instead.');
-    return '\n\n' + lines.join('\n');
-  }
-
-  lines.push('');
-  lines.push('## GREETING POLICY — TIME AND JOURNEY AWARE (CRITICAL, overrides generic GREETING RULES above)');
-  lines.push('');
-  lines.push('Pick your opening line based on the bucket below. Follow it literally.');
-  lines.push('');
-  // VTID-01929: When the brain context (appended after this section) contains
-  // a USER AWARENESS block + Proactive Opener Candidate, that block's OPENING
-  // SHAPE MATRIX (tenure × last_interaction) is the authority — IGNORE the
-  // example follow-up phrasings below. The example phrasings are the LEGACY
-  // FALLBACK for sessions where the proactive guide has no candidate to surface.
-  lines.push('PROACTIVE OVERRIDE: If the brain context appended below contains a "PROACTIVE OPENER CANDIDATE" or "USER AWARENESS" block, IGNORE the example follow-up phrasings in this section. Use the OPENING SHAPE MATRIX from the brain context instead. The phrasings below are LEGACY FALLBACKS only.');
-  lines.push('');
-
-  // Map 'night' to 'evening' for greetings ("Good night" is a farewell, not a greeting)
-  const greetingTimeOfDay = timeOfDay === 'night' ? 'evening' : (timeOfDay || 'day');
-
-  const bucket = isReconnect ? 'reconnect' : temporal.bucket;
-  // VTID-03097: caller signals when a wake-brief override block is
-  // active. When yes, the SHORT-GAP GREETING PHRASES pool is
-  // suppressed so Gemini doesn't see two competing "speak this
-  // verbatim" lists.
-  // VTID-GREETING-VARIETY: for short-gap buckets, inject a freshly-shuffled
-  // subset of the language-specific phrase pool so Gemini rotates openers
-  // instead of converging on the same translation every time.
-  // VTID-03118 (Phase B.4): the bucket-to-prompt mapping (8 templates × 8
-  // languages) is the policy_render_block table seeded in Phase B.2. The
-  // resolver returns each bucket's full multi-line template; the consumer
-  // here substitutes the two dynamic tokens that survive into seed text:
+  // R2 (BOOTSTRAP-ORB-R2-GREETING-POLICY): the legacy `## GREETING POLICY`
+  // 8-bucket × multi-language fallback stack has been DELETED from this
+  // builder. It used to render the opening-line policy (bucket templates +
+  // short-gap phrase menu + HARD ANTI-PATTERNS) only on the Vertex path;
+  // LiveKit already omitted it via `omitGreetingPolicy=true`. In production
+  // the Central Continuation Contract (voice-wake-brief / teacher / new-day)
+  // owns the first spoken line, so the legacy block was a soft Vertex/LiveKit
+  // conflict — Vertex rendered dead text the override always superseded while
+  // LiveKit skipped it entirely. The temporal/bucketed fallback pools now
+  // live in the priority-80 `voice-wake-brief` provider (the pure-fallback
+  // producer), so the fallback greeting content still exists where it
+  // belongs.
   //
-  //   {{greeting_time_of_day}}  -> the local `greetingTimeOfDay` value
-  //                                (morning | afternoon | evening | day).
-  //   {{short_gap_phrase_menu}} -> the locale-specific menu produced by
-  //                                `expandShortGapPhraseMenu()` below
-  //                                (1 line under wake-brief override,
-  //                                multiple lines otherwise).
-  //
-  // BUCKET_DEFAULT_TEMPLATES below is byte-identical to the seed content
-  // — it exists ONLY as a safety net for the "resolver cold + cache miss"
-  // case. In production, the resolver returns the DB row.
-  const shortGapPhraseMenu = expandShortGapPhraseMenu(
-    lang,
-    wakeBriefOverrideActive,
-  );
-  const template = getPolicyResolver().getRenderBlock(
-    BUCKET_TO_BLOCK_KEY[bucket],
-    lang,
-    { defaultValue: BUCKET_DEFAULT_TEMPLATES[bucket] },
-  );
-  const rendered = template
-    .replace(/\{\{greeting_time_of_day\}\}/g, greetingTimeOfDay)
-    .replace(/\{\{short_gap_phrase_menu\}\}/g, shortGapPhraseMenu);
-  for (const line of rendered.split('\n')) {
-    lines.push(line);
-  }
-
-  // VTID-02637: wasFailure means the PREVIOUS session ended with no audio
-  // delivered (turn_count=0 or audio_out=0). For 'recent' bucket (true new
-  // user-initiated session 2-15min after a failed one), an apology is the
-  // right behavior. For 'reconnect' bucket (transparent server-side WS
-  // recycle that the user never perceived), an apology is the bug — the
-  // user is still in the same conversation. Restrict the override to
-  // 'recent' only.
-  if (temporal.wasFailure && bucket === 'recent') {
-    lines.push('- OVERRIDE: The previous session FAILED (you did not actually reach the user last time). Acknowledge it warmly and sincerely, e.g. "I\'m so sorry about earlier — I\'m here now. How can I help?" Still ONE short sentence.');
-  }
-
-  // VTID-02637: when this is a transparent reconnect (isReconnect=true) we
-  // also want to suppress the ## TONE RULES baseline phrasings below ("how
-  // can I help", "I am listening", etc.) because they leak into the model's
-  // first utterance after reconnect even when bucket says "stay silent".
-  // Append a final hard override that wins on recency.
-  if (isReconnect) {
-    lines.push('');
-    lines.push('## RECONNECT FINAL OVERRIDE — VTID-02637 (HIGHEST PRIORITY, OVERRIDES EVERYTHING ABOVE)');
-    lines.push('This entire turn is a transparent server-side resume. The user did not perceive any pause.');
-    lines.push('- DO NOT speak first. Output zero audio. Output zero text. Wait for the user to speak.');
-    lines.push('- Even short phrases are forbidden: NO "I\'m here", NO "I\'m listening", NO "I\'m back", NO "go ahead", NO "yes?", NO "mhm", NO "hello again". NONE.');
-    lines.push('- Ignore any "open with one phrase", "baseline register", or "FALLBACK" instructions above. They do NOT apply on reconnect.');
-    lines.push('- The very first audio/text you emit MUST be a direct response to whatever the user says next, with no prefix acknowledgment of any pause or interruption.');
-    lines.push('- If the user says nothing, you say nothing. Silence is the correct behavior here.');
-  }
-
+  // Both transports now render the SAME lean stack below: TONE RULES +
+  // JOURNEY AWARENESS. Reconnect silence is still enforced upstream by the
+  // top-level GREETING RULES (`VTID-02637 RECONNECT SILENCE RULE`) and by
+  // `decideGreetingPolicy()` returning `'skip'` on reconnect — neither
+  // depends on the deleted block. The `omitGreetingPolicy` parameter is now
+  // dead (kept on the signature for caller compatibility; both `true` and
+  // `false` produce identical output) and `bucket`/`greetingTimeOfDay` /
+  // the policy-resolver render call are no longer consumed here.
+  void omitGreetingPolicy;
+  void wakeBriefOverrideActive;
   lines.push('');
   lines.push('## TONE RULES (CRITICAL)');
   lines.push('- Your voice must always be WARM, POLITE, and KIND. Never cold, never curt, never robotic.');
-  // VTID-01927: When the brain context appends a Proactive Opener Candidate, that candidate's
-  // opening shape OVERRIDES the baseline below. The baseline only applies as a true fallback
-  // when no candidate is provided. The phrase "what can I do for you" was previously here and
-  // overrode the proactive opener — removed as a forbidden opening per the proactive guide rules.
-  lines.push('- Baseline register (FALLBACK ONLY — when no Proactive Opener Candidate is provided): "how can I help", "what\'s on your mind", "I am listening", "how can I support you". When a candidate IS provided in the brain context below, lead with it instead.');
+  lines.push('- Baseline register: "how can I help", "what\'s on your mind", "I am listening", "how can I support you". When a candidate IS provided in the brain context below, lead with it instead.');
   lines.push('- NEVER use filler phrases as greeting openers: NO "of course", NO "happy to", NO "lovely to hear from you", NO "sure". Get straight to the point with warmth.');
-  lines.push('- NEVER use two-part sentences in greetings. NO dashes, NO "X — Y" patterns. Each greeting is ONE single direct phrase or sentence.');
   lines.push('- Even your shortest responses must feel genuinely kind. A single phrase can still be warm.');
-
-  lines.push('');
-  lines.push('## HARD ANTI-PATTERNS (NEVER DO THESE)');
-  lines.push('- For SHORT-GAP sessions (reconnect, recent, same_day): NEVER open with "Hello <name>!" or "Hi <name>!" or the user\'s name at all. They were just here — using their name sounds like a goldfish that forgot the last conversation.');
-  lines.push('- For NEW-DAY sessions (today, yesterday, week, long, first): ALWAYS open with "Good [morning/afternoon/evening], [Name]." — this is the ONLY greeting pattern allowed UNLESS the brain context specifies a tenure-aware opening shape (see PROACTIVE OPENER OVERRIDE at the very end of this prompt). Use the user\'s name from memory context. If no name is available, just say "Good [morning/afternoon/evening]."');
-  // VTID-01927: introductions are now allowed for true Day-0 newcomers (tenure.stage='day0')
-  lines.push('- NEVER introduce yourself ("My name is Vitana...", "I\'m Vitana...") on RETURNING-user sessions. EXCEPTION: when the brain context\'s USER AWARENESS shows tenure stage = "day0", you SHOULD deliver a one-time introduction covering mission, capabilities, and agency offer — that user is brand new to Vitanaland and needs orientation.');
-  lines.push('- NEVER recite remembered facts back as a greeting ("Hello Dragan from Vienna, born 1969..."). You KNOW these facts — use them only when relevant.');
-  lines.push('- NEVER ignore the current screen. If you know where the user is, your greeting may reference it but must not read the route path aloud.');
-  // VTID-01927: rephrased to be tenure-aware
-  lines.push('- NEVER deliver a "first impression" platform-introduction on a RETURNING-user session (tenure.stage in day1/day3/day7/day14/day30plus). Returning users already know who you are. ONLY tenure.stage="day0" gets the full introduction shape.');
-  lines.push('- NEVER use two-part compound sentences in greetings. NO "Yes, of course — how can I help?" NO "Happy to help — what\'s on your mind?" Just say the question directly.');
   lines.push('');
   lines.push('## JOURNEY AWARENESS (CRITICAL — how to answer "where am I?" correctly)');
   lines.push('- The "Current screen" field above is a SNAPSHOT from session start. It can become stale the moment any navigation happens (including navigation YOU just triggered via navigate_to_screen).');
   lines.push('- Whenever the user asks any form of "where am I?" / "which screen is this?" / "what page am I on?" / "what am I looking at?" / "wo bin ich?" / "welcher Bildschirm ist das?", you MUST call the `get_current_screen` tool to get the FRESH answer. Never answer from memory or from the snapshot above — always call the tool.');
   lines.push('- The get_current_screen tool is also the right call for any follow-up like "what is this screen for?" or "what can I do here?" — it returns a short description of the screen in the user\'s language.');
-  lines.push('- You already know the screen the user just arrived on if you navigated them via navigate_to_screen on the PREVIOUS turn (the tool result told you the destination title). You may reference that from conversation memory without re-calling get_current_screen, but if in doubt, call the tool — it is cheap.');
   lines.push('- If the user asks "where was I before?" or similar, you may list the journey trail above in a natural sentence, OR call get_current_screen which also returns recent_screens.');
   lines.push('- NEVER tell the user "I don\'t know which screen you\'re on" without calling get_current_screen first. That is always wrong.');
   lines.push('- NEVER read raw URL paths aloud. Always speak the friendly screen title instead.');
@@ -855,30 +658,19 @@ ${trimmedHistory}
   // VTID-NAV-TIMEJOURNEY: Append the temporal + journey context block LAST so
   // its greeting policy overrides the generic GREETING RULES higher up. This
   // is what stops Vitana from saying "Hello <name>!" every single session.
-  // VTID-03097: detect VERTEX WAKE BRIEF override here at the
-  // top-level buildLiveSystemInstruction (which has bootstrapContext)
-  // and pass the boolean down so the temporal section can suppress
-  // the SHORT-GAP GREETING PHRASES pool when needed.
-  const wakeBriefOverrideActive =
-    typeof bootstrapContext === 'string' &&
-    bootstrapContext.includes('<<VERTEX_WAKE_BRIEF_OVERRIDE_ACTIVE>>');
-  // ORB-CONVERSATION-LATENCY: lean system_instruction experiment (ship-dark,
-  // flag-gated, fully reversible). When FEATURE_LEAN_SYSTEM_INSTRUCTION is live
-  // AND this is a first connect (not a reconnect), drop the ~20-25 KB
-  // greeting-policy stack (GREETING POLICY time-buckets + HARD ANTI-PATTERNS)
-  // from the Vertex prompt — the SAME stack LiveKit already omits in production
-  // via omitGreetingPolicy. The hypothesis under test: Vertex's Gemini still
-  // opens well from TONE RULES + the explicit greeting prompt
-  // (sendGreetingPromptToLiveAPI), trading prompt-ingestion time for a faster
-  // first token. Reconnect ALWAYS keeps the full stack so the RECONNECT FINAL
-  // OVERRIDE (silence-on-transparent-resume) is never dropped. LiveKit callers
-  // already pass omitGreetingPolicy=true, so the flag is a no-op for them.
-  // Flag off (default) => byte-identical to current behavior.
-  const leanGreetingActive =
-    !omitGreetingPolicy &&
-    !isReconnect &&
-    isFeatureLive('LEAN_SYSTEM_INSTRUCTION');
-  const effectiveOmitGreetingPolicy = !!omitGreetingPolicy || leanGreetingActive;
+  // R2 (BOOTSTRAP-ORB-R2-GREETING-POLICY): the legacy greeting-policy stack
+  // that this call used to render (gated by `omitGreetingPolicy` and the
+  // FEATURE_LEAN_SYSTEM_INSTRUCTION experiment) has been deleted from
+  // `buildTemporalJourneyContextSection`. Both transports now emit the same
+  // lean TONE RULES + JOURNEY AWARENESS stack, so:
+  //   - the lean experiment flag (FEATURE_LEAN_SYSTEM_INSTRUCTION) is dead and
+  //     no longer consulted here;
+  //   - the `wakeBriefOverrideActive` signal — which only suppressed the
+  //     deleted SHORT-GAP GREETING PHRASES pool — is no longer needed.
+  // The trailing `omitGreetingPolicy` / `wakeBriefOverrideActive` parameters
+  // are kept on the section signature for caller compatibility but are inert.
+  // (Note: the `<<VERTEX_WAKE_BRIEF_OVERRIDE_ACTIVE>>` sentinel is still
+  // load-bearing above where it strips competing brain-side opener sections.)
   instruction += buildTemporalJourneyContextSection(
     lang,
     lastSessionInfo,
@@ -886,8 +678,8 @@ ${trimmedHistory}
     recentRoutes,
     !!isReconnect,
     clientContext?.timeOfDay,
-    effectiveOmitGreetingPolicy,
-    wakeBriefOverrideActive,
+    !!omitGreetingPolicy,
+    false,
   );
 
   // BOOTSTRAP-AWARENESS-REGISTRY: gate the override blocks below on admin
