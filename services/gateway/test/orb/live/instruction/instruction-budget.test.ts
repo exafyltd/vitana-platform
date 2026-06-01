@@ -15,13 +15,25 @@
 
 import {
   enforceInstructionBudget,
+  decomposeInstructionSections,
   byteLength,
   INSTRUCTION_TOTAL_BYTE_BUDGET,
+  BOOTSTRAP_CONTEXT_START_MARKER,
+  INSTRUCTION_MARKERS,
   SECTION_TRIM_SENTINEL,
   type InstructionSection,
+  type InstructionSectionKind,
 } from '../../../../src/orb/live/instruction/instruction-budget';
 
 const rep = (s: string, n: number): string => s.repeat(n);
+
+/** Concatenate decomposed sections back to a single string. */
+const reassemble = (sections: InstructionSection[]): string =>
+  sections.map((s) => s.text).join('');
+
+/** Sum of bytes for sections of a given kind. */
+const bytesOfKind = (sections: InstructionSection[], kind: InstructionSectionKind): number =>
+  sections.filter((s) => s.kind === kind).reduce((n, s) => n + byteLength(s.text), 0);
 
 describe('byteLength', () => {
   it('counts ASCII as 1 byte per char', () => {
@@ -193,5 +205,221 @@ describe('enforceInstructionBudget — byte accounting + immutability', () => {
       { kind: 'bootstrap', text: rep('B', 40_000) },
     ]);
     expect(over.trimmedSections).toEqual(['bootstrap']);
+  });
+});
+
+// ──────────────────────────────────────────────────────────────────────────
+// decomposeInstructionSections — the R0 send-site fix.
+//
+// Builds realistic assembled-instruction fixtures from the SAME stable markers
+// the builders emit, then asserts the decomposition makes bootstrap + specialist
+// individually trimmable while scaffold + override stay preserved.
+// ──────────────────────────────────────────────────────────────────────────
+
+const M = INSTRUCTION_MARKERS;
+
+/** A static scaffold head: role headers, persona, tools, greeting rules. */
+const scaffoldHead = (n = 200): string =>
+  `=== AUTHORITATIVE USER ROLE ===\nROLE: community\n===\n\nYou are Vitana.\n\nTOOLS:\n${rep('t', n)}\n\nIMPORTANT:\n- real-time voice.`;
+
+/** The navigator + temporal + proactive tail (preserved scaffold). */
+const scaffoldTail = (n = 200): string =>
+  `\n\n${M.NAVIGATOR_PREFIX} NAVIGATION GUIDE MODE ===\n${rep('n', n)}\n\n## TEMPORAL AND JOURNEY CONTEXT\n${rep('j', n)}\n\n## PROACTIVE OPENER OVERRIDE\n${rep('p', n)}`;
+
+const historyBlock = (n = 100): string =>
+  `\n\n${M.HISTORY_OPEN}\nrecent turns:\n${rep('h', n)}\n${M.HISTORY_CLOSE}`;
+
+const specialistBlock = (n = 100): string =>
+  `\n\n${M.SPECIALIST_CONTEXT}\nName: Test\n${rep('s', n)}`;
+
+const overrideBlock = (n = 60): string =>
+  `\n\n${M.WAKE_BRIEF_OVERRIDE}\n## SPOKEN FIRST UTTERANCE\n${rep('o', n)}`;
+
+const teacherBlock = (n = 80): string =>
+  `\n\n${M.TEACHER_MODE_OPEN}\nteach...\n${rep('T', n)}\n${M.TEACHER_MODE_CLOSE}`;
+
+/** Brain bootstrap proper — appended right after the bootstrap-start marker. */
+const brainBootstrap = (n = 100): string =>
+  `\n\n## USER CONTEXT PROFILE\n[ACTIVITY_14D] ...\n${rep('b', n)}`;
+
+describe('decomposeInstructionSections — structure', () => {
+  it('marks the bootstrap region trimmable instead of lumping it into scaffold (R0 fix)', () => {
+    // Full authenticated assembly: head · MARKER · brain · specialist ·
+    // override · teacher · history · tail. NO conversation history needed to
+    // make the bootstrap trimmable.
+    const text =
+      scaffoldHead() +
+      `\n\n${BOOTSTRAP_CONTEXT_START_MARKER}` +
+      brainBootstrap() +
+      specialistBlock() +
+      overrideBlock() +
+      teacherBlock() +
+      historyBlock() +
+      scaffoldTail();
+
+    const sections = decomposeInstructionSections(text);
+
+    // Byte-for-byte round-trip: decomposition must lose nothing.
+    expect(reassemble(sections)).toBe(text);
+
+    // Bootstrap is now its OWN trimmable kind (the R0 bug had it inside scaffold).
+    expect(bytesOfKind(sections, 'bootstrap')).toBeGreaterThan(0);
+    // Specialist (USER CONTEXT + teacher) is trimmable.
+    expect(bytesOfKind(sections, 'specialist')).toBeGreaterThan(0);
+    // History is trimmable.
+    expect(bytesOfKind(sections, 'history')).toBeGreaterThan(0);
+    // Override (wake-brief) is preserved.
+    expect(bytesOfKind(sections, 'override')).toBeGreaterThan(0);
+    // Scaffold head + tail are preserved.
+    expect(bytesOfKind(sections, 'scaffold')).toBeGreaterThan(0);
+  });
+
+  it('keeps the bootstrap-start marker on the preserved scaffold (never a lone survivor)', () => {
+    const text =
+      scaffoldHead() + `\n\n${BOOTSTRAP_CONTEXT_START_MARKER}` + brainBootstrap() + scaffoldTail();
+    const sections = decomposeInstructionSections(text);
+    // The marker rides with a scaffold section, not the bootstrap section.
+    const scaffoldText = sections.filter((s) => s.kind === 'scaffold').map((s) => s.text).join('');
+    const bootstrapText = sections.filter((s) => s.kind === 'bootstrap').map((s) => s.text).join('');
+    expect(scaffoldText).toContain(BOOTSTRAP_CONTEXT_START_MARKER);
+    expect(bootstrapText).not.toContain(BOOTSTRAP_CONTEXT_START_MARKER);
+  });
+
+  it('assigns specialist (USER CONTEXT) and teacher to the specialist kind, override to override', () => {
+    const text =
+      scaffoldHead() +
+      `\n\n${BOOTSTRAP_CONTEXT_START_MARKER}` +
+      brainBootstrap() +
+      specialistBlock() +
+      overrideBlock() +
+      teacherBlock() +
+      scaffoldTail();
+    const sections = decomposeInstructionSections(text);
+    const specialistText = sections.filter((s) => s.kind === 'specialist').map((s) => s.text).join('');
+    const overrideText = sections.filter((s) => s.kind === 'override').map((s) => s.text).join('');
+    expect(specialistText).toContain(M.SPECIALIST_CONTEXT);
+    expect(specialistText).toContain(M.TEACHER_MODE_OPEN);
+    expect(overrideText).toContain(M.WAKE_BRIEF_OVERRIDE);
+    // The override must NOT be lumped into specialist (it is preserved).
+    expect(specialistText).not.toContain(M.WAKE_BRIEF_OVERRIDE);
+  });
+
+  it('round-trips when there is no history block (bootstrap still trimmable)', () => {
+    const text =
+      scaffoldHead() + `\n\n${BOOTSTRAP_CONTEXT_START_MARKER}` + brainBootstrap(500) + scaffoldTail();
+    const sections = decomposeInstructionSections(text);
+    expect(reassemble(sections)).toBe(text);
+    expect(bytesOfKind(sections, 'bootstrap')).toBeGreaterThan(0);
+    expect(bytesOfKind(sections, 'history')).toBe(0);
+  });
+
+  it('falls back to all-scaffold + history when no bootstrap-start marker is present (anonymous path)', () => {
+    // Anonymous / persona-override sessions never emit the bootstrap marker.
+    const text = scaffoldHead() + historyBlock() + scaffoldTail();
+    const sections = decomposeInstructionSections(text);
+    expect(reassemble(sections)).toBe(text);
+    expect(bytesOfKind(sections, 'bootstrap')).toBe(0);
+    expect(bytesOfKind(sections, 'specialist')).toBe(0);
+    // History stays trimmable even on the fallback path.
+    expect(bytesOfKind(sections, 'history')).toBeGreaterThan(0);
+  });
+
+  it('returns [] for empty input', () => {
+    expect(decomposeInstructionSections('')).toEqual([]);
+    // @ts-expect-error defensive null path
+    expect(decomposeInstructionSections(undefined)).toEqual([]);
+  });
+});
+
+describe('decomposeInstructionSections + enforceInstructionBudget — R0 end-to-end', () => {
+  it('trims the bootstrap when it ALONE pushes the aggregate over budget (no history present)', () => {
+    // This is the exact R0 scenario Codex flagged: a heavy user whose ~12 KB
+    // bootstrap + scaffold exceeds budget BEFORE any conversation history
+    // exists. Pre-fix the bootstrap lived inside the preserved scaffold and was
+    // un-trimmable → oversized setup sent → silent ORB.
+    const budget = 5_000;
+    const heavyBootstrap = brainBootstrap(20_000); // ~20 KB bootstrap alone
+    const text =
+      scaffoldHead() +
+      `\n\n${BOOTSTRAP_CONTEXT_START_MARKER}` +
+      heavyBootstrap +
+      overrideBlock() +
+      scaffoldTail();
+
+    const sections = decomposeInstructionSections(text);
+    expect(byteLength(reassemble(sections))).toBeGreaterThan(budget); // genuinely over
+
+    const result = enforceInstructionBudget(sections, budget);
+    // Bootstrap is dropped first and that brings the assembly under budget.
+    expect(result.trimmedSections).toEqual(['bootstrap']);
+    expect(result.totalBytesAfter).toBeLessThanOrEqual(budget);
+    // Preserved scaffold + the turn-1 wake-brief override survive verbatim.
+    expect(result.text).toContain(M.WAKE_BRIEF_OVERRIDE);
+    expect(result.text).toContain(M.NAVIGATOR_PREFIX);
+    expect(result.text).toContain('=== AUTHORITATIVE USER ROLE ===');
+    expect(result.text).toContain(SECTION_TRIM_SENTINEL('bootstrap'));
+    // The heavy bootstrap body is gone.
+    expect(result.text).not.toContain(rep('b', 20_000));
+  });
+
+  it('drops bootstrap → history → specialist in order, keeping override + scaffold', () => {
+    const budget = 4_000;
+    const text =
+      scaffoldHead(300) +
+      `\n\n${BOOTSTRAP_CONTEXT_START_MARKER}` +
+      brainBootstrap(6_000) +
+      specialistBlock(6_000) +
+      overrideBlock(200) +
+      historyBlock(6_000) +
+      scaffoldTail(300);
+
+    const sections = decomposeInstructionSections(text);
+    const result = enforceInstructionBudget(sections, budget);
+
+    // bootstrap first, then history, then specialist — until it fits.
+    expect(result.trimmedSections).toEqual(['bootstrap', 'history', 'specialist']);
+    expect(result.totalBytesAfter).toBeLessThanOrEqual(budget);
+    // Override + scaffold tail/head preserved.
+    expect(result.text).toContain(M.WAKE_BRIEF_OVERRIDE);
+    expect(result.text).toContain(M.NAVIGATOR_PREFIX);
+  });
+
+  it('fails open (best-effort send) when even preserved-only exceeds budget', () => {
+    // Pathological: scaffold + override alone blow the budget. Nothing trimmable
+    // can help — the guard returns the over-budget text so the caller logs
+    // loudly and sends best-effort rather than corrupting the scaffold.
+    const budget = 1_000;
+    const text =
+      scaffoldHead(5_000) + // huge static scaffold
+      `\n\n${BOOTSTRAP_CONTEXT_START_MARKER}` +
+      brainBootstrap(100) +
+      overrideBlock(5_000) + // huge preserved override
+      scaffoldTail(5_000);
+
+    const sections = decomposeInstructionSections(text);
+    const result = enforceInstructionBudget(sections, budget);
+
+    // Bootstrap is the only trimmable section here and dropping it is not enough.
+    expect(result.trimmedSections).toEqual(['bootstrap']);
+    expect(result.totalBytesAfter).toBeGreaterThan(budget); // observable failure → caller logs
+    // Override + scaffold never dropped even though we are still over budget.
+    expect(result.text).toContain(M.WAKE_BRIEF_OVERRIDE);
+    expect(result.text).toContain('=== AUTHORITATIVE USER ROLE ===');
+    expect(result.text).toContain(M.NAVIGATOR_PREFIX);
+  });
+
+  it('is a no-op when the full assembly is comfortably under budget', () => {
+    const text =
+      scaffoldHead() +
+      `\n\n${BOOTSTRAP_CONTEXT_START_MARKER}` +
+      brainBootstrap() +
+      specialistBlock() +
+      overrideBlock() +
+      historyBlock() +
+      scaffoldTail();
+    const sections = decomposeInstructionSections(text);
+    const result = enforceInstructionBudget(sections); // default 30 KB budget
+    expect(result.trimmedSections).toEqual([]);
+    expect(result.text).toBe(text); // byte-identical, nothing touched
   });
 });

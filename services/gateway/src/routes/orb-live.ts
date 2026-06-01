@@ -96,7 +96,8 @@ import { formatClientContextForInstruction } from '../orb/live/instruction/clien
 // budget (which otherwise closes the handshake with WS 1009 → silent ORB).
 import {
   enforceInstructionBudget,
-  type InstructionSection,
+  decomposeInstructionSections,
+  INSTRUCTION_TOTAL_BYTE_BUDGET,
 } from '../orb/live/instruction/instruction-budget';
 // BOOTSTRAP-VOICE-DEMO: real heartbeats from voice call sites so the agents
 // dashboard reflects live usage instead of fake startup status.
@@ -6181,14 +6182,17 @@ async function connectToLiveAPI(
       // `setup` budget → Vertex closes the handshake (WS 1009 / 1007) or never
       // sends `setup_complete` → no TTS frames → "Vitana won't talk".
       //
-      // We split the FINAL instruction text into ordered sections using the
-      // stable, builder-emitted `<conversation_history>` delimiter (the single
-      // largest reliably-delimited trimmable block) so the budget guard can
-      // drop conversation history before touching anything else, then enforce
-      // the aggregate byte budget. The static scaffold (the prompt skeleton)
-      // and the turn-1 wake-brief override — which live OUTSIDE the history
-      // wrapper and are therefore in the preserved `scaffold`/`override`
-      // sections — are kept intact as long as possible.
+      // We decompose the FINAL instruction text into ordered, individually-
+      // trimmable sections via `decomposeInstructionSections`, which anchors on
+      // the stable markers the builders already emit (bootstrap-start delimiter,
+      // `=== USER CONTEXT …`, `<<VERTEX_WAKE_BRIEF_OVERRIDE_ACTIVE>>`,
+      // `=== TEACHER MODE …`, `<conversation_history>`, `=== VITANA NAVIGATOR —`).
+      // This is the R0 fix: the previous split used ONLY the history delimiter,
+      // so the ~12 KB bootstrap + specialist were lumped into the preserved
+      // scaffold and the guard could not trim them. Now the budget guard drops
+      // in priority order bootstrap → history → specialist while the static
+      // scaffold (persona, tools, navigator, greeting rules) AND the turn-1
+      // wake-brief override are preserved as long as possible.
       try {
         const siParts = (setupMessage.setup as any)?.system_instruction?.parts;
         const finalText: string | undefined =
@@ -6196,37 +6200,7 @@ async function connectToLiveAPI(
             ? (siParts[0].text as string)
             : undefined;
         if (typeof finalText === 'string' && finalText.length > 0) {
-          // Decompose the assembled text into ordered, labeled sections.
-          // `<conversation_history>...</conversation_history>` is emitted
-          // verbatim by buildLiveSystemInstruction / buildAnonymousSystemInstruction.
-          const HISTORY_OPEN = '<conversation_history>';
-          const HISTORY_CLOSE = '</conversation_history>';
-          const sections: InstructionSection[] = [];
-          const hOpen = finalText.indexOf(HISTORY_OPEN);
-          if (hOpen >= 0) {
-            const hCloseEnd =
-              finalText.indexOf(HISTORY_CLOSE, hOpen) >= 0
-                ? finalText.indexOf(HISTORY_CLOSE, hOpen) + HISTORY_CLOSE.length
-                : finalText.length;
-            const head = finalText.slice(0, hOpen);
-            const history = finalText.slice(hOpen, hCloseEnd);
-            const tail = finalText.slice(hCloseEnd);
-            // head = scaffold + bootstrap region (preserved structurally);
-            // history = trimmable; tail = navigator policy + temporal +
-            // wake-brief/proactive override (preserved). The bootstrap-FIRST
-            // trim ordering is encoded in the helper; here the largest
-            // user-accumulated trimmable block reachable from the final text
-            // is the conversation history.
-            sections.push({ kind: 'scaffold', text: head });
-            sections.push({ kind: 'history', text: history });
-            sections.push({ kind: 'override', text: tail });
-          } else {
-            // No history wrapper present — the whole text is the preserved
-            // scaffold+override. The guard becomes a no-op unless the
-            // scaffold-only assembly somehow exceeds budget, in which case it
-            // returns the over-budget text and we log loudly below.
-            sections.push({ kind: 'scaffold', text: finalText });
-          }
+          const sections = decomposeInstructionSections(finalText);
 
           const budgetResult = enforceInstructionBudget(sections);
 
@@ -6246,7 +6220,10 @@ async function connectToLiveAPI(
                 isAnonymous: !!session.isAnonymous,
                 totalBytesBefore: budgetResult.totalBytesBefore,
                 totalBytesAfter: budgetResult.totalBytesAfter,
-                budget: 30_720,
+                budget: INSTRUCTION_TOTAL_BYTE_BUDGET,
+                // Whether the preserved-only assembly STILL exceeds budget
+                // (nothing left to trim → best-effort send / fail-open).
+                stillOverBudget: budgetResult.totalBytesAfter > INSTRUCTION_TOTAL_BYTE_BUDGET,
                 trimmedSections: budgetResult.trimmedSections,
                 sectionBytes: budgetResult.sectionBytes,
               }),
@@ -6255,7 +6232,7 @@ async function connectToLiveAPI(
             // Under budget — emit a low-noise diagnostic so the aggregate size
             // is observable even on the happy path (helps tune the budget).
             console.log(
-              `[voice.instruction.budget_ok] session=${session.sessionId} bytes=${budgetResult.totalBytesBefore} budget=30720`,
+              `[voice.instruction.budget_ok] session=${session.sessionId} bytes=${budgetResult.totalBytesBefore} budget=${INSTRUCTION_TOTAL_BYTE_BUDGET}`,
             );
           }
         }
