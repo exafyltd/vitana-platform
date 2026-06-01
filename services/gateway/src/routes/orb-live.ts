@@ -826,6 +826,12 @@ export interface GeminiLiveSession {
   // counter passed to the tracker context.
   latencyTracker?: LatencyTracker | null;
   latencyTurnIndex?: number;
+  // ORB-CONVERSATION-LATENCY: turn-0 establishment tracker. Spans upstream
+  // connect → context await → setup → greeting → first audio-out chunk, then
+  // finalizes (emitting time_to_first_audio_ms as voice.latency.measured).
+  // Separate from latencyTracker so the greeting's audio-out — which has no
+  // preceding user turn — doesn't collide with per-turn tracking.
+  establishLatency?: LatencyTracker | null;
   // VTID-02637: Idempotency flag for connection_issue emission. The upstream
   // WS error handler and close handler both fire on a real disconnect, and
   // both used to emit connection_issue — producing the user-visible "internet
@@ -1343,9 +1349,31 @@ try {
 
 /**
  * VTID-01219: Get access token for Vertex AI Live API
- * Uses Application Default Credentials (ADC) - automatic on Cloud Run
+ * Uses Application Default Credentials (ADC) - automatic on Cloud Run.
+ *
+ * ORB-CONVERSATION-LATENCY: `getAccessToken` sits on the live-connect critical
+ * path — `VertexLiveClient.connect()` awaits it before opening the upstream WS
+ * (vertex-live-client.ts). A naive call does `getClient()` (first call hits the
+ * GCE metadata server) + `getAccessToken()` (refreshes when inside the expiry
+ * skew) on every session, serialising a network round-trip ahead of the Live
+ * API handshake. We keep an in-process token cache with proactive background
+ * refresh so the hot path returns a warm token synchronously, and we prewarm it
+ * at boot (see the prewarm block right after this function) so the very first
+ * session also skips the metadata round-trip.
  */
-async function getAccessToken(): Promise<string> {
+interface CachedAccessToken {
+  token: string;
+  expiresAt: number; // epoch ms when the token actually expires
+}
+let cachedAccessToken: CachedAccessToken | null = null;
+let tokenRefreshInFlight: Promise<string> | null = null;
+// Refresh this far ahead of real expiry so connect() always reads a valid token
+// and the refresh never lands on the critical path.
+const TOKEN_REFRESH_SKEW_MS = 5 * 60 * 1000;
+// ADC access tokens live ~1h; used only when the client doesn't expose expiry.
+const TOKEN_DEFAULT_TTL_MS = 55 * 60 * 1000;
+
+async function fetchFreshAccessToken(): Promise<string> {
   if (!googleAuth) {
     throw new Error('Google Auth client not initialized');
   }
@@ -1354,7 +1382,55 @@ async function getAccessToken(): Promise<string> {
   if (!tokenResponse.token) {
     throw new Error('Failed to get access token');
   }
+  // google-auth-library stores the real expiry on the client credentials for
+  // OAuth2/Compute clients; fall back to a conservative TTL if absent.
+  const expiryDate = (client as { credentials?: { expiry_date?: number } }).credentials?.expiry_date;
+  cachedAccessToken = {
+    token: tokenResponse.token,
+    expiresAt: typeof expiryDate === 'number' ? expiryDate : Date.now() + TOKEN_DEFAULT_TTL_MS,
+  };
   return tokenResponse.token;
+}
+
+async function getAccessToken(): Promise<string> {
+  if (!googleAuth) {
+    throw new Error('Google Auth client not initialized');
+  }
+  const now = Date.now();
+
+  // Warm path: token comfortably valid → return it immediately, no I/O.
+  if (cachedAccessToken && now < cachedAccessToken.expiresAt - TOKEN_REFRESH_SKEW_MS) {
+    return cachedAccessToken.token;
+  }
+
+  // Soon-to-expire but still valid: kick off a deduped background refresh and
+  // return the still-valid cached token without blocking the connect path.
+  if (cachedAccessToken && now < cachedAccessToken.expiresAt) {
+    if (!tokenRefreshInFlight) {
+      tokenRefreshInFlight = fetchFreshAccessToken().finally(() => { tokenRefreshInFlight = null; });
+      tokenRefreshInFlight.catch((err) =>
+        console.warn('[VTID-01219] background access-token refresh failed:', (err as Error).message));
+    }
+    return cachedAccessToken.token;
+  }
+
+  // Cold or expired: must fetch now, deduped across concurrent connects.
+  if (!tokenRefreshInFlight) {
+    tokenRefreshInFlight = fetchFreshAccessToken().finally(() => { tokenRefreshInFlight = null; });
+  }
+  return tokenRefreshInFlight;
+}
+
+// ORB-CONVERSATION-LATENCY: prewarm the ADC access token at boot so the first
+// ORB session skips the metadata-server round-trip on its live-connect critical
+// path. Placed after getAccessToken (and its cache bindings) so it runs free of
+// the temporal dead zone. Best-effort — failures fall back to a lazy fetch on
+// first use.
+if (googleAuth && VERTEX_PROJECT_ID) {
+  void getAccessToken()
+    .then(() => console.log('[VTID-01219] ORB Voice access token prewarmed'))
+    .catch((err: any) =>
+      console.warn('[VTID-01219] ORB Voice access-token prewarm failed (will fetch lazily):', err?.message));
 }
 
 // VTID-03126 (Phase D.3): LIVE_API_VOICES Record moved out of this file
@@ -5776,6 +5852,10 @@ async function connectToLiveAPI(
     // arrives.
     const buildOrbVertexSetupEnvelope = async (): Promise<Record<string, unknown>> => {
       console.log(`[VTID-01219] Live API WebSocket connected for session ${session.sessionId}`);
+      // ORB-CONVERSATION-LATENCY: upstream WS open + handshake done. The gap
+      // before context_awaited is how much the context build over-ran the
+      // handshake (the residual the parallelization could not hide).
+      session.establishLatency?.mark('upstream_connected');
 
       // BOOTSTRAP-ORB-CRITICAL-PATH: If /live/session/start kicked off a
       // background context-assembly promise (Brain/bootstrap + role + last
@@ -5791,7 +5871,12 @@ async function connectToLiveAPI(
         } catch (e) {
           // Promise's own .catch already logged; proceed with whatever session fields are populated.
         }
-        console.log(`[BOOTSTRAP-ORB-CRITICAL-PATH] Awaited contextReadyPromise for ${Date.now() - awaitStart}ms before Gemini setup for session ${session.sessionId}`);
+        const ctxAwaitMs = Date.now() - awaitStart;
+        // ORB-CONVERSATION-LATENCY: residual context-build time that did NOT
+        // overlap the handshake. This is the number a context-slim (D.2) would
+        // move; if it's already ~0, the win is in the model's first-token time.
+        session.establishLatency?.mark('context_awaited', { awaited_ms: ctxAwaitMs });
+        console.log(`[BOOTSTRAP-ORB-CRITICAL-PATH] Awaited contextReadyPromise for ${ctxAwaitMs}ms before Gemini setup for session ${session.sessionId}`);
       }
 
       // Send setup message with model and configuration
@@ -6023,6 +6108,12 @@ async function connectToLiveAPI(
       console.log(`[VTID-01224] Setup includes: tools=${session.identity ? 3 : 0}, contextChars=${session.contextInstruction?.length || 0}`);
       console.log(`[VTID-RESPONSE-DELAY] VAD silence_duration_ms=${session.vadSilenceMs}`);
       console.log(`[VTID-01219] Setup envelope built for session ${session.sessionId} — VertexLiveClient will send`);
+      // ORB-CONVERSATION-LATENCY: envelope (incl. system_instruction) handed to
+      // VertexLiveClient to send. detail carries the instruction size so a slim
+      // (D.2) can be correlated against the gap to greeting_sent/first audio.
+      session.establishLatency?.mark('setup_sent', {
+        context_chars: session.contextInstruction?.length || 0,
+      });
       return setupMessage as unknown as Record<string, unknown>;
     };
 
@@ -11196,10 +11287,29 @@ router.get('/live/stream', optionalAuth, async (req: AuthenticatedRequest, res: 
   // (chime) while this connection establishes in the background.
   console.log(`[VTID-ORBC] Live API check: googleAuth=${!!googleAuth}, VERTEX_PROJECT_ID=${VERTEX_PROJECT_ID || 'EMPTY'}, sessionId=${sessionId}`);
   if (googleAuth && VERTEX_PROJECT_ID) {
+    // ORB-CONVERSATION-LATENCY: start the turn-0 establishment tracker here —
+    // the earliest gateway-owned point of the click-to-first-audio path. The
+    // tracker self-gates on FEATURE_LATENCY_TELEMETRY_ENV (no-op when off).
+    session.establishLatency = new LatencyTracker({
+      session_id: session.sessionId,
+      surface: 'voice',
+      actor_id: session.identity?.user_id,
+      turn: 0,
+      provider: `vertex/${VERTEX_LIVE_MODEL}`,
+    });
     const liveApiPromise = connectToLiveAPI(
       session,
       // Audio response handler - forward to client via SSE
       (audioB64: string) => {
+        // ORB-CONVERSATION-LATENCY: the first audio chunk out is the greeting —
+        // it finalizes the establishment tracker (total = time_to_first_audio).
+        // The greeting has no preceding user turn, so the per-turn tracker never
+        // fires for it; this is the only place that closes turn 0.
+        if (session.establishLatency) {
+          session.establishLatency.mark('audio_out_first_chunk', { source: 'greeting' });
+          void session.establishLatency.finalize('success');
+          session.establishLatency = null;
+        }
         if (session.sseResponse) {
           try {
             session.sseResponse.write(`data: ${JSON.stringify({
@@ -11291,7 +11401,16 @@ router.get('/live/stream', optionalAuth, async (req: AuthenticatedRequest, res: 
       } else {
         sendGreetingPromptToLiveAPI(ws, session);
       }
+      // ORB-CONVERSATION-LATENCY: opener dispatched upstream — the remaining
+      // gap to audio_out_first_chunk is the model's first-token time.
+      session.establishLatency?.mark('greeting_sent', { reconnect: isReconnectGreetingSkip });
     }).catch((err: any) => {
+      // ORB-CONVERSATION-LATENCY: connect failed before any audio — close the
+      // establishment tracker as an error so it isn't left dangling.
+      if (session.establishLatency) {
+        void session.establishLatency.finalize('error', err?.message);
+        session.establishLatency = null;
+      }
       console.error(`[VTID-01219] Failed to connect Live API for session ${sessionId}:`, err.message);
       emitLiveSessionEvent('orb.live.connection_failed', {
         session_id: sessionId,
