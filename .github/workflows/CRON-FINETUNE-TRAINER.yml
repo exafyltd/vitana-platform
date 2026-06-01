@@ -88,5 +88,5 @@ jobs:
         working-directory: services/gateway
         env:
           FINETUNE_DRY_RUN: ${{ inputs.dry_run == 'true' && '1' || '0' }}
-          FINETUNE_BASE_MODEL_OVERRIDE: ${{ inputs.base_model_override || '' }}
+          FINETUNE_BASE_MODEL_OVERRIDE: ${{ inputs.base_model_override || (inputs.synthetic_bootstrap == 'true' && matrix.target == 'voice-tool-router' && 'Qwen/Qwen2.5-0.5B-Instruct') || '' }}
         run: npx tsx scripts/finetune/submit-job.ts ${{ matrix.target }}

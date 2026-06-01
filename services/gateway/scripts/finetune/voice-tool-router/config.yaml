@@ -1,9 +1,11 @@
 # Voice tool router fine-tune config — Phase 1 W1 (VTID-03179 FINETUNES)
 # Trained first in W1 (per the 40-day plan); ~$4k Vertex AI Custom Training.
-# Output: HF-format LoRA adapter merged with Gemma-2 2B base for shadow eval.
+# Output: HF-format LoRA adapter. Keep the default base model ungated so
+# unattended weekly Vertex jobs do not fail before training starts. Gated
+# Gemma runs require a separate HF-authenticated trainer path.
 
 target: voice-tool-router
-base_model: google/gemma-2-2b-it
+base_model: Qwen/Qwen2.5-1.5B-Instruct
 adapter_method: lora
 lora_r: 16
 lora_alpha: 32
