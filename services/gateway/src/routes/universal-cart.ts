@@ -46,8 +46,12 @@ export const VTID = 'VTID-03213';
 /** item_type CHECK: must match cart_items_item_type_check. */
 const ALLOWED_ITEM_TYPES = ['supplement', 'partner_product'] as const;
 
-/** source_surface CHECK: must match cart_items_source_surface_check. NULL is also allowed. */
-const ALLOWED_SOURCE_SURFACES = ['web', 'mobile', 'voice', 'autopilot', 'community'] as const;
+/**
+ * source_surface CHECK: must match cart_items_source_surface_check. NULL is also allowed.
+ * 'video_shop' added in VTID-03237 (Video Shop) — kept in sync with the widened
+ * CHECK in 20260607000000_VTID_03237_video_shop_schema.sql.
+ */
+const ALLOWED_SOURCE_SURFACES = ['web', 'mobile', 'voice', 'autopilot', 'community', 'video_shop'] as const;
 
 /**
  * Whitelist of keys permitted inside `universal_cart_events.event_payload`.
@@ -260,6 +264,10 @@ const AddItemBody = z.object({
   unit_price_cents_snapshot: z.number().int().nonnegative().optional(),
   currency_snapshot: z.string().length(3).optional(),
   autopilot_rec_id: z.string().uuid().optional(),
+  // VTID-03237 — Video Shop attribution. Structured companions to source_ref;
+  // copied onto product_orders at order time by the future checkout bridge.
+  source_video_id: z.string().uuid().optional(),
+  source_creator_id: z.string().uuid().optional(),
   metadata: z.record(z.unknown()).optional(),
 });
 
@@ -442,6 +450,45 @@ router.post('/items', async (req: Request, res: Response) => {
 
   const supabase = createUserSupabaseClient(id.token);
 
+  // 0. VTID-03237 — Video Shop integrity check.
+  // Adds attributed to the video feed must point at a product that is actually
+  // purchasable (active + in stock) and, when a source_video_id is supplied,
+  // genuinely anchored to that live video. This guards the new surface only;
+  // existing web/mobile/voice/autopilot/community adds are unchanged.
+  if (body.source_surface === 'video_shop') {
+    const svc = getSupabase();
+    const product = await svc
+      .from('products')
+      .select('id, is_active, availability')
+      .eq('id', body.product_id)
+      .maybeSingle();
+    if (product.error) {
+      return res.status(500).json({ ok: false, error: 'product_lookup_failed', detail: product.error.message });
+    }
+    if (!product.data || product.data.is_active !== true) {
+      return res.status(409).json({ ok: false, error: 'product_unavailable' });
+    }
+    if (product.data.availability !== 'in_stock') {
+      return res.status(409).json({ ok: false, error: 'product_out_of_stock' });
+    }
+    if (body.source_video_id) {
+      const anchor = await svc
+        .from('shop_video_anchors')
+        .select('id, shop_videos!inner(id, status, moderation_status)')
+        .eq('video_id', body.source_video_id)
+        .eq('product_id', body.product_id)
+        .eq('shop_videos.status', 'active')
+        .eq('shop_videos.moderation_status', 'approved')
+        .maybeSingle();
+      if (anchor.error) {
+        return res.status(500).json({ ok: false, error: 'anchor_lookup_failed', detail: anchor.error.message });
+      }
+      if (!anchor.data) {
+        return res.status(409).json({ ok: false, error: 'product_not_anchored_to_video' });
+      }
+    }
+  }
+
   // 1. Resolve or create the active cart.
   const cartLookup = await supabase
     .from('universal_carts')
@@ -595,6 +642,8 @@ router.post('/items', async (req: Request, res: Response) => {
   if (body.currency_snapshot !== undefined) insertPayload.currency_snapshot = body.currency_snapshot;
   if (body.source_surface !== undefined) insertPayload.source_surface = body.source_surface;
   if (body.source_ref !== undefined) insertPayload.source_ref = body.source_ref;
+  if (body.source_video_id !== undefined) insertPayload.source_video_id = body.source_video_id;
+  if (body.source_creator_id !== undefined) insertPayload.source_creator_id = body.source_creator_id;
 
   const inserted = await supabase
     .from('universal_cart_items')
