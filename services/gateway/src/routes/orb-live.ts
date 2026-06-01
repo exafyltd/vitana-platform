@@ -805,6 +805,13 @@ export interface GeminiLiveSession {
   createdAt: Date;
   lastActivity: Date;
   audioInChunks: number;
+  // VTID-VOICE-FWD (Track A): mic chunks actually forwarded to the model.
+  // audioInChunks counts every chunk including the ones dropped at the
+  // echo-prevention / cooldown / navigation gates below; this counts only the
+  // chunks that passed all gates AND were accepted by sendAudioToLiveAPI.
+  // The quality classifier reads this (not raw audioInChunks) so mic-recaptured
+  // speaker echo can't inflate the under-responds ratio.
+  audioInForwarded: number;
   videoInFrames: number;
   audioOutChunks: number;
   // Phase 1 W2 (BOOTSTRAP-PHASE1-W2-VOICE-LATENCY-WIRE): per-turn voice latency
@@ -1031,6 +1038,7 @@ setInterval(() => {
         metadata: { synthetic: (s as any).synthetic === true },
         sessionMetrics: {
           audio_in_chunks: s.audioInChunks,
+          audio_in_forwarded: s.audioInForwarded, // VTID-VOICE-FWD (Track A)
           audio_out_chunks: s.audioOutChunks,
           duration_ms: Date.now() - s.createdAt.getTime(),
           turn_count: s.turn_count,
@@ -1125,6 +1133,7 @@ function terminateExistingSessionsForUser(userId: string, excludeSessionId?: str
       metadata: { synthetic: (existingSession as any).synthetic === true },
       sessionMetrics: {
         audio_in_chunks: existingSession.audioInChunks,
+        audio_in_forwarded: existingSession.audioInForwarded, // VTID-VOICE-FWD (Track A)
         audio_out_chunks: existingSession.audioOutChunks,
         duration_ms: Date.now() - existingSession.createdAt.getTime(),
         turn_count: existingSession.turn_count,
@@ -12356,6 +12365,7 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
     createdAt: new Date(),
     lastActivity: new Date(),
     audioInChunks: 0,
+    audioInForwarded: 0, // VTID-VOICE-FWD: only ++ when a chunk is actually sent upstream
     videoInFrames: 0,
     audioOutChunks: 0,
     // VTID-01224: Identity and context (use effective identity for dev-sandbox fallback)
@@ -12697,6 +12707,11 @@ async function handleWsAudioMessage(clientSession: WsClientSession, message: WsC
     );
 
     if (sent) {
+      // VTID-VOICE-FWD (Track A): count only chunks the model actually received.
+      // This is the lone increment site for audioInForwarded — the three drop
+      // gates above (navigation, echo-prevention, post-turn cooldown) bump
+      // audioInChunks but return early, so they never reach here.
+      liveSession.audioInForwarded++;
       liveSession.lastAudioForwardedTime = Date.now(); // VTID-STREAM-SILENCE: reset idle timer
       // VTID-FORWARDING-WATCHDOG / BOOTSTRAP-ORB-RELIABILITY-R4: sliding
       // watchdog. See SSE path for full rationale — mirrored here so the
@@ -12900,6 +12915,9 @@ function handleWsStopSession(clientSession: WsClientSession): void {
       user_id: liveSession.identity?.user_id || null,
       tenant_id: liveSession.identity?.tenant_id || null,
       audio_in_chunks: liveSession.audioInChunks,
+      // VTID-VOICE-FWD (Track A): forwarded-only count for echo-robust quality
+      // classification. Kept alongside raw audio_in_chunks for back-compat.
+      audio_in_forwarded_chunks: liveSession.audioInForwarded,
       audio_out_chunks: liveSession.audioOutChunks,
       video_frames: liveSession.videoInFrames,
       transport: 'websocket',
@@ -12915,6 +12933,8 @@ function handleWsStopSession(clientSession: WsClientSession): void {
       metadata: { synthetic: (liveSession as any).synthetic === true },
       sessionMetrics: {
         audio_in_chunks: liveSession.audioInChunks,
+        // VTID-VOICE-FWD (Track A): classifier reads this for the under-responds ratio.
+        audio_in_forwarded: liveSession.audioInForwarded,
         audio_out_chunks: liveSession.audioOutChunks,
         duration_ms: Date.now() - liveSession.createdAt.getTime(),
         turn_count: liveSession.turn_count,

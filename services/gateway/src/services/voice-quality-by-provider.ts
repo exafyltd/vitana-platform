@@ -13,6 +13,7 @@
  */
 
 import { getSupabase } from '../lib/supabase';
+import { isLifecycleArtifactStop } from './voice-improvement-aggregator';
 
 export interface ProviderQualityRow {
   provider: string;
@@ -80,6 +81,11 @@ export async function getProviderQualityRollup(windowDays = 7): Promise<Provider
 
   for (const row of data as Array<{ topic: string; metadata: any; occurred_at: string }>) {
     const meta = row.metadata || {};
+    // BOOTSTRAP-VOICE-AUDIO-IN-ZERO-METRIC: exclude session-management
+    // bookkeeping stops (superseded_by_new_session / expired_ttl) — same
+    // rationale as fetchVoiceSessionHealth. They are not real conversations
+    // and would inflate the per-provider audio-in-zero ratio.
+    if (isLifecycleArtifactStop(meta)) continue;
     const provider = attributeProvider(meta);
     const ai = Number(meta.audio_in_chunks ?? meta.audio_in ?? 0);
     const ao = Number(meta.audio_out_chunks ?? meta.audio_out ?? 0);
