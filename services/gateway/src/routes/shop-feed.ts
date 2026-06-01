@@ -417,7 +417,7 @@ router.get('/saved', async (req: Request, res: Response) => {
   const productById = new Map<string, any>();
   if (svc && productIds.length) {
     const products = await svc.from('products').select(PRODUCT_COLUMNS).in('id', productIds);
-    for (const p of products.data || []) productById.set(p.id, p);
+    for (const p of (products.data || []) as any[]) productById.set(p.id, p);
   }
 
   return res.status(200).json({

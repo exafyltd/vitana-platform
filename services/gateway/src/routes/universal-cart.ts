@@ -457,6 +457,9 @@ router.post('/items', async (req: Request, res: Response) => {
   // existing web/mobile/voice/autopilot/community adds are unchanged.
   if (body.source_surface === 'video_shop') {
     const svc = getSupabase();
+    if (!svc) {
+      return res.status(500).json({ ok: false, error: 'service_unavailable' });
+    }
     const product = await svc
       .from('products')
       .select('id, is_active, availability')
