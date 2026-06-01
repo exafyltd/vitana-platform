@@ -63,6 +63,39 @@ const CHILD_SPAWN_CONFIDENCE_THRESHOLD = Number.parseFloat(
 );
 
 /**
+ * Per-stage retry confidence thresholds (Step 4 calibration). A single global
+ * gate is miscalibrated: the odds that an autonomous retry actually fixes the
+ * problem vary a lot by WHERE the fix failed.
+ *   - ci: lint/test/typecheck failures are usually a productive code retry →
+ *     retry aggressively (low bar).
+ *   - deploy: often flaky / infra-ish → medium bar.
+ *   - verification: the fix already deployed but didn't clear the original
+ *     failure (or regressed production) — the riskiest case to retry blindly,
+ *     so demand higher agent confidence before spending another attempt.
+ * Each is overridable via env; unknown stages fall back to the global default.
+ */
+const RETRY_THRESHOLD_BY_STAGE: Record<FailureStage, number> = {
+  ci: Number.parseFloat(process.env.AUTOPILOT_RETRY_CONFIDENCE_CI || '0.25'),
+  deploy: Number.parseFloat(process.env.AUTOPILOT_RETRY_CONFIDENCE_DEPLOY || '0.35'),
+  verification: Number.parseFloat(process.env.AUTOPILOT_RETRY_CONFIDENCE_VERIFICATION || '0.5'),
+};
+
+/**
+ * Resolve the confidence bar a triage report must clear to earn an autonomous
+ * retry, given the failure stage/class. Environmental blockers never retry
+ * (defense-in-depth — they are normally short-circuited before triage). When no
+ * stage is supplied we fall back to the global CHILD_SPAWN_CONFIDENCE_THRESHOLD
+ * so prior behavior is preserved. Pure — exported for tests.
+ */
+export function resolveRetryThreshold(failureStage?: FailureStage, failureClass?: string): number {
+  if (failureClass === 'environmental_blocker') return Number.POSITIVE_INFINITY;
+  if (failureStage && Object.prototype.hasOwnProperty.call(RETRY_THRESHOLD_BY_STAGE, failureStage)) {
+    return RETRY_THRESHOLD_BY_STAGE[failureStage];
+  }
+  return CHILD_SPAWN_CONFIDENCE_THRESHOLD;
+}
+
+/**
  * Write a row into self_healing_log so the Self-Healing UI surfaces this
  * autopilot failure alongside the system-level health probes. Without this,
  * the bridge's escalation only updates dev_autopilot_executions and the
@@ -562,11 +595,19 @@ export async function bridgeFailureToSelfHealing(input: BridgeInput): Promise<Br
     });
   }
 
-  // 3. Decide next action: spawn child vs escalate.
-  const canRetry =
-    report.confidence_numeric >= CHILD_SPAWN_CONFIDENCE_THRESHOLD &&
-    (exec.auto_fix_depth || 0) < maxDepth &&
-    !(cfg?.kill_switch);
+  // 3. Decide next action: spawn child vs escalate. Route through the pure
+  //    decideBridgeAction with the failure stage so the per-stage confidence
+  //    bar (Step 4) actually applies in production — previously the live path
+  //    inlined a single global threshold and the helper was only unit-tested.
+  const retryThreshold = resolveRetryThreshold(input.failure_stage);
+  const decision = decideBridgeAction({
+    confidence_numeric: report.confidence_numeric,
+    auto_fix_depth: exec.auto_fix_depth || 0,
+    max_auto_fix_depth: maxDepth,
+    kill_switch: !!cfg?.kill_switch,
+    failure_stage: input.failure_stage,
+  });
+  const canRetry = decision.action === 'spawn_child';
 
   const patchBase: Record<string, unknown> = {
     failure_stage: input.failure_stage,
@@ -709,7 +750,7 @@ export async function bridgeFailureToSelfHealing(input: BridgeInput): Promise<Br
     diagnosis: {
       summary: `Escalated: ${cfg?.kill_switch ? 'kill switch armed'
         : (exec.auto_fix_depth || 0) >= maxDepth ? `max retries reached (${exec.auto_fix_depth}/${maxDepth})`
-        : `confidence ${report.confidence_numeric.toFixed(2)} below threshold ${CHILD_SPAWN_CONFIDENCE_THRESHOLD}`}`,
+        : `confidence ${report.confidence_numeric.toFixed(2)} below ${input.failure_stage} threshold ${retryThreshold}`}`,
       execution_id: exec.id,
       finding_id: exec.finding_id,
       stage: input.failure_stage,
@@ -762,6 +803,10 @@ export interface DecisionInput {
   auto_fix_depth: number;
   max_auto_fix_depth: number;
   kill_switch: boolean;
+  /** Where the fix failed — selects the per-stage confidence bar (Step 4). */
+  failure_stage?: FailureStage;
+  /** Optional class override (e.g. 'environmental_blocker' never retries). */
+  failure_class?: string;
 }
 
 export type BridgeDecision =
@@ -771,8 +816,9 @@ export type BridgeDecision =
 export function decideBridgeAction(input: DecisionInput): BridgeDecision {
   if (input.kill_switch) return { action: 'escalate', reason: 'kill_switch_armed' };
   if (input.auto_fix_depth >= input.max_auto_fix_depth) return { action: 'escalate', reason: 'depth_cap_reached' };
-  if (input.confidence_numeric < CHILD_SPAWN_CONFIDENCE_THRESHOLD) return { action: 'escalate', reason: 'low_confidence' };
+  const threshold = resolveRetryThreshold(input.failure_stage, input.failure_class);
+  if (input.confidence_numeric < threshold) return { action: 'escalate', reason: 'low_confidence' };
   return { action: 'spawn_child' };
 }
 
-export { CHILD_SPAWN_CONFIDENCE_THRESHOLD, LOG_PREFIX, DRY_RUN };
+export { CHILD_SPAWN_CONFIDENCE_THRESHOLD, RETRY_THRESHOLD_BY_STAGE, LOG_PREFIX, DRY_RUN };
