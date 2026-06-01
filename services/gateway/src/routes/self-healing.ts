@@ -728,8 +728,14 @@ router.get('/history/classes', async (_req: Request, res: Response) => {
  * heavy lifting is the pure aggregateSelfHealingMetrics() so it stays testable.
  *
  * Query: ?days=N (default 7, clamped 1..90).
+ *
+ * Read-only aggregate counts/rates (no PII, secrets, or mutation). Matches the
+ * sibling read endpoints in this router (/health, /history, /history/classes,
+ * /pending-approval, …), which are all served anonymously behind the Command
+ * Hub. No new auth scheme is introduced here — that would be inconsistent with
+ * the rest of the router and would break the dashboard's fetch.
  */
-router.get('/metrics/summary', async (req: Request, res: Response) => {
+router.get('/metrics/summary', async (req: Request, res: Response) => { // public-route
   try {
     if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
       return res.status(500).json({ ok: false, error: 'Supabase not configured' });
