@@ -1,4 +1,5 @@
 -- Migration: 20260607000100_VTID_03237_register_ledger.sql
+-- impact-allow-solo-migration (ledger registration only; no consuming code by design)
 -- Purpose: Register VTID-03237 in vtid_ledger so the EXEC-DEPLOY
 --          VTID-0541/0542 HARD GATE passes for the Video Shop backend deploy.
 --          spec_status stays 'draft' — promotion to 'approved' is a human gate

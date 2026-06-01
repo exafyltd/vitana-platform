@@ -1,5 +1,11 @@
 -- VTID-03237 — Video Shop (Vitanaland TikTok-style commerce), backend slice.
 --
+-- impact-allow-solo-migration
+-- Intentional solo migration: the consuming gateway code (shop-feed routes +
+-- universal-cart attribution) ships in the paired gateway PR #2470, split out so
+-- each PR stays single-domain for the VALIDATOR-CHECK path-ownership gate. The new
+-- tables/columns are additive and inert until that code lands.
+--
 -- A NEW SURFACE over the EXISTING commerce graph — not a second commerce system.
 -- It reuses the Discover `products` catalog (VTID-02000), the Universal Cart
 -- (VTID-03186 / VTID-03213) for staging + attribution, and the EUR/USD wallet
