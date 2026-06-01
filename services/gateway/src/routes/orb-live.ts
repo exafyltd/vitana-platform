@@ -814,6 +814,12 @@ export interface GeminiLiveSession {
   // counter passed to the tracker context.
   latencyTracker?: LatencyTracker | null;
   latencyTurnIndex?: number;
+  // ORB-CONVERSATION-LATENCY: turn-0 establishment tracker. Spans upstream
+  // connect → context await → setup → greeting → first audio-out chunk, then
+  // finalizes (emitting time_to_first_audio_ms as voice.latency.measured).
+  // Separate from latencyTracker so the greeting's audio-out — which has no
+  // preceding user turn — doesn't collide with per-turn tracking.
+  establishLatency?: LatencyTracker | null;
   // VTID-02637: Idempotency flag for connection_issue emission. The upstream
   // WS error handler and close handler both fire on a real disconnect, and
   // both used to emit connection_issue — producing the user-visible "internet
@@ -5841,6 +5847,10 @@ async function connectToLiveAPI(
     // arrives.
     const buildOrbVertexSetupEnvelope = async (): Promise<Record<string, unknown>> => {
       console.log(`[VTID-01219] Live API WebSocket connected for session ${session.sessionId}`);
+      // ORB-CONVERSATION-LATENCY: upstream WS open + handshake done. The gap
+      // before context_awaited is how much the context build over-ran the
+      // handshake (the residual the parallelization could not hide).
+      session.establishLatency?.mark('upstream_connected');
 
       // BOOTSTRAP-ORB-CRITICAL-PATH: If /live/session/start kicked off a
       // background context-assembly promise (Brain/bootstrap + role + last
@@ -5856,7 +5866,12 @@ async function connectToLiveAPI(
         } catch (e) {
           // Promise's own .catch already logged; proceed with whatever session fields are populated.
         }
-        console.log(`[BOOTSTRAP-ORB-CRITICAL-PATH] Awaited contextReadyPromise for ${Date.now() - awaitStart}ms before Gemini setup for session ${session.sessionId}`);
+        const ctxAwaitMs = Date.now() - awaitStart;
+        // ORB-CONVERSATION-LATENCY: residual context-build time that did NOT
+        // overlap the handshake. This is the number a context-slim (D.2) would
+        // move; if it's already ~0, the win is in the model's first-token time.
+        session.establishLatency?.mark('context_awaited', { awaited_ms: ctxAwaitMs });
+        console.log(`[BOOTSTRAP-ORB-CRITICAL-PATH] Awaited contextReadyPromise for ${ctxAwaitMs}ms before Gemini setup for session ${session.sessionId}`);
       }
 
       // Send setup message with model and configuration
@@ -6088,6 +6103,12 @@ async function connectToLiveAPI(
       console.log(`[VTID-01224] Setup includes: tools=${session.identity ? 3 : 0}, contextChars=${session.contextInstruction?.length || 0}`);
       console.log(`[VTID-RESPONSE-DELAY] VAD silence_duration_ms=${session.vadSilenceMs}`);
       console.log(`[VTID-01219] Setup envelope built for session ${session.sessionId} — VertexLiveClient will send`);
+      // ORB-CONVERSATION-LATENCY: envelope (incl. system_instruction) handed to
+      // VertexLiveClient to send. detail carries the instruction size so a slim
+      // (D.2) can be correlated against the gap to greeting_sent/first audio.
+      session.establishLatency?.mark('setup_sent', {
+        context_chars: session.contextInstruction?.length || 0,
+      });
       return setupMessage as unknown as Record<string, unknown>;
     };
 
@@ -11230,10 +11251,29 @@ router.get('/live/stream', optionalAuth, async (req: AuthenticatedRequest, res: 
   // (chime) while this connection establishes in the background.
   console.log(`[VTID-ORBC] Live API check: googleAuth=${!!googleAuth}, VERTEX_PROJECT_ID=${VERTEX_PROJECT_ID || 'EMPTY'}, sessionId=${sessionId}`);
   if (googleAuth && VERTEX_PROJECT_ID) {
+    // ORB-CONVERSATION-LATENCY: start the turn-0 establishment tracker here —
+    // the earliest gateway-owned point of the click-to-first-audio path. The
+    // tracker self-gates on FEATURE_LATENCY_TELEMETRY_ENV (no-op when off).
+    session.establishLatency = new LatencyTracker({
+      session_id: session.sessionId,
+      surface: 'voice',
+      actor_id: session.identity?.user_id,
+      turn: 0,
+      provider: `vertex/${VERTEX_LIVE_MODEL}`,
+    });
     const liveApiPromise = connectToLiveAPI(
       session,
       // Audio response handler - forward to client via SSE
       (audioB64: string) => {
+        // ORB-CONVERSATION-LATENCY: the first audio chunk out is the greeting —
+        // it finalizes the establishment tracker (total = time_to_first_audio).
+        // The greeting has no preceding user turn, so the per-turn tracker never
+        // fires for it; this is the only place that closes turn 0.
+        if (session.establishLatency) {
+          session.establishLatency.mark('audio_out_first_chunk', { source: 'greeting' });
+          void session.establishLatency.finalize('success');
+          session.establishLatency = null;
+        }
         if (session.sseResponse) {
           try {
             session.sseResponse.write(`data: ${JSON.stringify({
@@ -11325,7 +11365,16 @@ router.get('/live/stream', optionalAuth, async (req: AuthenticatedRequest, res: 
       } else {
         sendGreetingPromptToLiveAPI(ws, session);
       }
+      // ORB-CONVERSATION-LATENCY: opener dispatched upstream — the remaining
+      // gap to audio_out_first_chunk is the model's first-token time.
+      session.establishLatency?.mark('greeting_sent', { reconnect: isReconnectGreetingSkip });
     }).catch((err: any) => {
+      // ORB-CONVERSATION-LATENCY: connect failed before any audio — close the
+      // establishment tracker as an error so it isn't left dangling.
+      if (session.establishLatency) {
+        void session.establishLatency.finalize('error', err?.message);
+        session.establishLatency = null;
+      }
       console.error(`[VTID-01219] Failed to connect Live API for session ${sessionId}:`, err.message);
       emitLiveSessionEvent('orb.live.connection_failed', {
         session_id: sessionId,
