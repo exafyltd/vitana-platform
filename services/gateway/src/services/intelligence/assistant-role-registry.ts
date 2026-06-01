@@ -17,7 +17,15 @@
  * behind FEATURE_ROLE_AWARE_ASSISTANT_ENV.
  */
 
-import type { ContextSourceSpec } from '../../../scripts/intelligence/context-source-inventory';
+// VTID-03240 ships independently from VTID-03238 (context-source-inventory).
+// To keep the PRs landable in any order, the registry accepts the minimum
+// structural shape it needs (just the `id` field). Once both have merged,
+// PR 5 (cockpit spine) passes the full ContextSourceSpec into
+// filterContextSourcesForRole; structural typing lets that work without any
+// further code change.
+interface MinContextSourceSpec {
+  id: string;
+}
 
 export type AssistantRole =
   | 'community'
@@ -510,13 +518,17 @@ export function isContextSourceAllowed(
 }
 
 /**
- * Helper: validate that a ContextSourceSpec is actually reachable from
- * a given role. Returns the spec if allowed, null otherwise. Used by
- * PR 4 (role-aware context pack shadow) to filter the inventory.
+ * Helper: validate that a context source spec is actually reachable from
+ * a given role. Returns the filtered subset. Used by PR 4 (role-aware
+ * context pack shadow) to filter the inventory.
+ *
+ * Generic over the source shape — callers pass either the full
+ * ContextSourceSpec (from W3-D1 PR 1 once merged) or anything that
+ * structurally has an `id: string`. Keeps this PR independent of PR 1.
  */
-export function filterContextSourcesForRole(
+export function filterContextSourcesForRole<T extends MinContextSourceSpec>(
   profile: AssistantRoleProfile,
-  sources: readonly ContextSourceSpec[],
-): ContextSourceSpec[] {
+  sources: readonly T[],
+): T[] {
   return sources.filter((s) => isContextSourceAllowed(profile, s.id));
 }
