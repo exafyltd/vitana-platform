@@ -332,6 +332,11 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   // Phase D (DEV-COMHU voice budget watch): admin observability for the Vertex
   // system_instruction budget. See services/voice-budget-watch.ts.
   const voiceBudgetWatchRouter = require('./routes/voice-budget-watch').default;
+  // Phase 1 W3-D1 PR 5 (VTID-03247): Intelligence Cockpit spine — backs the
+  // single-page Command Hub cockpit at /command-hub/intelligence-cockpit.html.
+  // Read-only; one live panel (training+dataset workflow status); rest are
+  // placeholders pointing at planned follow-up endpoints.
+  const adminCockpitRouter = require('./routes/admin-cockpit').default;
   const usersVitanaIdRouter = require('./routes/users-vitana-id').default;
   // VTID-01973: Vitana Intent Engine (P2-A). Voice-dictated intent registry +
   // kind-aware matcher. Behind FEATURE_INTENT_ENGINE_A — disabled by default.
@@ -1044,6 +1049,10 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   // Phase 0 staging build (P0.3): /admin/health + /admin/build-info — auth-free
   // env-identity probes used by the STAGE-DEPLOY smoke and isolation checks.
   mountRouterSync(app, '/api/v1/admin', adminHealthRouter, { owner: 'admin-health' });
+  // Phase 1 W3-D1 PR 5 (VTID-03247): Intelligence Cockpit spine endpoint.
+  // Mounted at /api/v1/admin/cockpit so route paths read naturally
+  // (/training-status, /context-quality, etc. in follow-ups).
+  mountRouterSync(app, '/api/v1/admin/cockpit', adminCockpitRouter, { owner: 'admin-cockpit' });
 
   // VTID-01973: Vitana Intent Engine (P2-A) — gated by FEATURE_INTENT_ENGINE_A.
   if (intentsRouter) mountRouterSync(app, '/api/v1/intents', intentsRouter, { owner: 'intents' });
