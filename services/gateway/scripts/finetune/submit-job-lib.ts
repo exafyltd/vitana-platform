@@ -39,7 +39,10 @@ interface BuildJobConfigInput {
 }
 
 export function buildTrainerPackageUri(config: FinetuneConfig): string {
-  return `${config.vertex_custom_job.output_uri_prefix}trainer/finetune-trainer-0.1.0.tar.gz`;
+  // VTID-03244: bumped to 0.1.1 — drops torch from install_requires so it
+  // doesn't shadow the container's pre-installed PyTorch (root cause of
+  // CustomJob 3154255301083922432 failure 2026-06-01).
+  return `${config.vertex_custom_job.output_uri_prefix}trainer/finetune-trainer-0.1.1.tar.gz`;
 }
 
 export function buildTrainingArgs(config: FinetuneConfig, outputUri: string): string[] {

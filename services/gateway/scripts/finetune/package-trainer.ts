@@ -29,7 +29,8 @@ async function main(): Promise<void> {
   const cfg = await parseYaml(configPath);
   const trainerDir = path.join(__dirname, 'trainer-package');
   const trainerUri = buildTrainerPackageUri(cfg);
-  const archivePath = path.join(os.tmpdir(), 'finetune-trainer-0.1.0.tar.gz');
+  // VTID-03244: bumped to 0.1.1 — see trainer-package/setup.py for root cause.
+  const archivePath = path.join(os.tmpdir(), 'finetune-trainer-0.1.1.tar.gz');
 
   await fs.access(path.join(trainerDir, 'setup.py'));
   execFileSync('tar', ['-czf', archivePath, '-C', trainerDir, '.'], { stdio: 'inherit' });
