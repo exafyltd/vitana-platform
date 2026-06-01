@@ -7575,7 +7575,10 @@ function getClientIP(req: Request): string {
 
 // Simple in-memory cache for IP geolocation (avoids hitting external API repeatedly)
 const ipGeoCache = new Map<string, { data: any; ts: number }>();
-const IP_GEO_CACHE_TTL_MS = 3600_000; // 1 hour
+// VTID-03251: 6h (was 1h). A user's geo barely changes within a day, and
+// fewer upstream lookups = fewer provider 429s. On total provider failure we
+// also serve the last-known entry regardless of age (stale > hallucinated).
+const IP_GEO_CACHE_TTL_MS = 21_600_000; // 6 hours
 
 /**
  * Lightweight IP geolocation using ip-api.com (free, no key needed, 45 req/min).
@@ -7611,6 +7614,13 @@ async function geolocateIP(ip: string): Promise<{ city?: string; country?: strin
       url: `http://ip-api.com/json/${ip}?fields=status,message,city,country,timezone`,
       parse: (json: any) => json.status === 'success' ? { city: json.city, country: json.country, timezone: json.timezone } : null,
     },
+    {
+      // VTID-03251: third HTTPS provider (free, no key) so a single rate-limit
+      // doesn't blank out location/time. timezone is an object here (.id).
+      name: 'ipwho.is',
+      url: `https://ipwho.is/${ip}`,
+      parse: (json: any) => json && json.success ? { city: json.city, country: json.country, timezone: json.timezone?.id } : null,
+    },
   ];
 
   for (const provider of providers) {
@@ -7633,7 +7643,16 @@ async function geolocateIP(ip: string): Promise<{ city?: string; country?: strin
       console.warn(`[VTID-CONTEXT] ${provider.name} failed for ${ip}: ${(err as Error).message}`);
     }
   }
-  console.warn(`[VTID-CONTEXT] All geo providers failed for IP ${ip}`);
+  // VTID-03251: every provider failed (commonly ipapi.co / ip-api.com 429
+  // rate limits). Serve the LAST-KNOWN geo for this IP regardless of age —
+  // stale location/time is far better than none, which made the assistant
+  // lose context and hallucinate ("Berlin, 8:30 PM" in Cologne at 15:44).
+  if (cached?.data && (cached.data.city || cached.data.timezone)) {
+    const ageMin = Math.round((Date.now() - cached.ts) / 60000);
+    console.warn(`[VTID-CONTEXT] All providers failed for ${ip} — serving stale cached geo (${ageMin}m old): ${cached.data.city}, ${cached.data.country}`);
+    return cached.data;
+  }
+  console.warn(`[VTID-CONTEXT] All geo providers failed for IP ${ip} (no cache to fall back on)`);
   return {};
 }
 
