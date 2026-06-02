@@ -72,7 +72,20 @@
     { "name": "find_perfect_product",         "implementations": ["vertex", "livekit"], "safety_critical": false, "owner_vtid": "VTID-03048", "notes": "Recommends a product (supplement/gear/food) fusing weakest pillar + Life Compass goal. Shared dispatcher tool_find_perfect_product. Surfaced to LiveKit in VTID-03048 (previously Vertex-only catalog despite shared impl)." },
     { "name": "find_perfect_practitioner",    "implementations": ["vertex", "livekit"], "safety_critical": false, "owner_vtid": "VTID-03048", "notes": "Recommends a practitioner/coach/doctor (specialty + language + telehealth + price). Shared dispatcher tool_find_perfect_practitioner. Surfaced to LiveKit in VTID-03048 (previously Vertex-only catalog despite shared impl)." },
 
-    { "name": "navigate_to_screen",           "implementations": ["vertex"], "safety_critical": true,  "owner_vtid": null,         "notes": "Surface-aware navigation. Cross-surface routes (vitanaland→/admin or /command-hub) MUST be rejected per feedback_navigator_surface_scoping memory rule." }
+    { "name": "navigate",                     "implementations": ["vertex", "livekit"], "safety_critical": true,  "owner_vtid": null,        "notes": "Unified surface-aware navigation tool exposed to the model (VTID-NAV-UNIFIED — replaces the old navigator_consult + navigate_to_screen dance). Cross-surface routes (vitanaland→/admin or /command-hub) MUST be rejected per feedback_navigator_surface_scoping memory rule. Vertex dispatches via toolName if-chain (not a switch), so the ts-morph extractor cannot see it; LiveKit declares it as @function_tool navigate." },
+    { "name": "get_current_screen",           "implementations": ["vertex", "livekit"], "safety_critical": false, "owner_vtid": "VTID-NAV-TIMEJOURNEY", "notes": "Identity-free read of session.current_route — safe for anonymous sessions. Vertex dispatches via toolName if-chain (not extracted by ts-morph); LiveKit declares it as @function_tool get_current_screen." },
+    { "name": "navigate_to_screen",           "implementations": ["vertex"], "safety_critical": true,  "owner_vtid": "VTID-02770",  "notes": "INTENTIONALLY ONE-SIDED (Vertex-only): catalog-aware navigation taking a screen_id/alias, preserving parameterized routes (intent_id, match_id) and overlay support that the free-text `navigate` tool does not. LiveKit exposes only `navigate`. Cross-surface routes MUST be rejected per feedback_navigator_surface_scoping memory rule." },
+    { "name": "navigator_consult",            "implementations": ["vertex"], "safety_critical": false, "owner_vtid": null,         "notes": "INTENTIONALLY ONE-SIDED (Vertex-only): legacy consult-then-narrate path that predates the unified `navigate` tool. Still routed to handleNavigate for in-flight sessions that cached the old tool declarations. No LiveKit equivalent. Declared in BOOTSTRAP-VOICE-TOOL-PARITY audit." },
+
+    { "name": "find_community_member",        "implementations": ["vertex", "livekit"], "safety_critical": false, "owner_vtid": null, "notes": "Shared dispatcher tool — implemented on both sides. Declared in BOOTSTRAP-VOICE-TOOL-PARITY parity-scan audit (was undeclared)." },
+    { "name": "log_water",                    "implementations": ["vertex", "livekit"], "safety_critical": false, "owner_vtid": null, "notes": "Diary quick-log: water. Shared dispatcher tool, both sides. Declared in BOOTSTRAP-VOICE-TOOL-PARITY audit." },
+    { "name": "log_sleep",                    "implementations": ["vertex", "livekit"], "safety_critical": false, "owner_vtid": null, "notes": "Diary quick-log: sleep. Shared dispatcher tool, both sides. Declared in BOOTSTRAP-VOICE-TOOL-PARITY audit." },
+    { "name": "log_exercise",                 "implementations": ["vertex", "livekit"], "safety_critical": false, "owner_vtid": null, "notes": "Diary quick-log: exercise. Shared dispatcher tool, both sides. Declared in BOOTSTRAP-VOICE-TOOL-PARITY audit." },
+    { "name": "log_meditation",               "implementations": ["vertex", "livekit"], "safety_critical": false, "owner_vtid": null, "notes": "Diary quick-log: meditation. Shared dispatcher tool, both sides. Declared in BOOTSTRAP-VOICE-TOOL-PARITY audit." },
+    { "name": "get_pillar_subscores",         "implementations": ["vertex", "livekit"], "safety_critical": false, "owner_vtid": "VTID-01983", "notes": "Returns per-pillar Vitana Index subscores. Shared dispatcher tool, both sides. Declared in BOOTSTRAP-VOICE-TOOL-PARITY audit." },
+
+    { "name": "teacher_event",                "implementations": ["vertex"], "safety_critical": false, "owner_vtid": null, "notes": "INTENTIONALLY ONE-SIDED (Vertex-only): teaching-session telemetry event. No LiveKit @function_tool equivalent has shipped. Declared in BOOTSTRAP-VOICE-TOOL-PARITY audit." },
+    { "name": "end_teaching_session",         "implementations": ["vertex"], "safety_critical": false, "owner_vtid": null, "notes": "INTENTIONALLY ONE-SIDED (Vertex-only): closes an active teaching session. No LiveKit @function_tool equivalent has shipped. Declared in BOOTSTRAP-VOICE-TOOL-PARITY audit." }
   ],
 
   "oasis_topics": [
@@ -100,10 +113,23 @@
     { "topic": "orb.intent.debug_result",            "implementations": ["vertex"] },
     { "topic": "orb.task_state_query.completed",     "implementations": ["vertex"] },
 
+    { "topic": "orb.session.continuity.cleared",     "implementations": ["vertex"] },
+    { "topic": "orb.session.continuity.persisted",   "implementations": ["vertex"] },
+    { "topic": "orb.session.audio_ready.acked",      "implementations": ["vertex"] },
+
     { "topic": "admin.briefing.injected",            "implementations": ["vertex"] },
     { "topic": "calendar.event.created",             "implementations": ["vertex"] },
     { "topic": "feedback.ticket.created",            "implementations": ["vertex"] },
-    { "topic": "voice.message.sent",                 "implementations": ["vertex"] }
+    { "topic": "voice.message.sent",                 "implementations": ["vertex"] },
+
+    { "topic": "orb.livekit.tool.switch_persona.called",       "implementations": ["livekit"], "notes": "INTENTIONALLY ONE-SIDED (LiveKit-only): per-tool call/result telemetry namespace. Vertex emits the unified orb.live.tool.executed instead. Declared in BOOTSTRAP-VOICE-TOOL-PARITY audit." },
+    { "topic": "orb.livekit.tool.switch_persona.result",       "implementations": ["livekit"] },
+    { "topic": "orb.livekit.tool.report_to_specialist.called", "implementations": ["livekit"] },
+    { "topic": "orb.livekit.tool.report_to_specialist.result", "implementations": ["livekit"] },
+    { "topic": "orb.livekit.tool.resolve_recipient.called",    "implementations": ["livekit"] },
+    { "topic": "orb.livekit.tool.resolve_recipient.result",    "implementations": ["livekit"] },
+    { "topic": "orb.livekit.tool.send_chat_message.called",    "implementations": ["livekit"] },
+    { "topic": "orb.livekit.tool.send_chat_message.result",    "implementations": ["livekit"] }
   ],
 
   "watchdogs": [
@@ -111,7 +137,7 @@
     { "name": "max_session_age_ms",         "value": 1800000,  "description": "30 min, equal to session_timeout_ms", "implementations": ["vertex"] },
     { "name": "conversation_timeout_ms",    "value": 86400000, "description": "24 h",   "implementations": ["vertex"] },
     { "name": "transcript_retention_ms",    "value": 3600000,  "description": "1 h",    "implementations": ["vertex"] },
-    { "name": "ip_geo_cache_ttl_ms",        "value": 3600000,  "description": "1 h",    "implementations": ["vertex"] },
+    { "name": "ip_geo_cache_ttl_ms",        "value": 21600000, "description": "6 h — IP_GEO_CACHE_TTL_MS in orb-live.ts (`// 6 hours`) is canonical; spec previously claimed 1 h (BOOTSTRAP-VOICE-TOOL-PARITY value_mismatch fix). LiveKit's watchdogs.py uses 1 h but does not gate this constant via the spec (implementations: vertex only).", "implementations": ["vertex"] },
     { "name": "max_connections_per_ip",     "value": 5,        "description": "DoS guard", "implementations": ["vertex"] },
     { "name": "max_reconnects",             "value": 10,       "description": "Max reconnects per session (~50 min total). VTID-STREAM-RECONNECT.", "implementations": ["vertex"] },
     { "name": "max_tool_response_chars",    "value": 4000,     "description": "Default cap; some sites use 2000/3000", "implementations": ["vertex"] },
@@ -152,7 +178,19 @@
       "conversationHistory",
       "isReconnect"
     ],
-    "notes": "These are the parameter NAMES, not the prompt template. Each implementation owns its own template; only the parameter list must match across implementations. Drift in either signature is a parity violation; drift in the template is not (the system_instruction golden-file test catches template drift separately, on the same fixed input)."
+    "impl_specific_optional": {
+      "description": "Trailing OPTIONAL parameters that exist on only one implementation and are intentionally NOT part of the shared contract. The scanner strips these (after case-normalisation) before comparing signatures, so they do not register as drift. Adding a new name here is an explicit declaration that a parameter is one-sided on purpose.",
+      "authenticated": {
+        "vertex": ["omitGreetingPolicy", "surface"],
+        "livekit": ["firstName", "displayName"]
+      },
+      "anonymous": {
+        "vertex": [],
+        "livekit": []
+      }
+    },
+    "case_convention": "snake_case",
+    "notes": "These are the parameter NAMES, not the prompt template. Each implementation owns its own template; only the shared parameter list must match across implementations. Cross-language case convention is NOT drift: the scanner normalises every name to `case_convention` (snake_case) before comparing, so TS `voiceStyle` and Python `voice_style` are considered equal. Names listed in `impl_specific_optional` are stripped before comparison (intentional one-sided params). Drift in any remaining shared name is a parity violation; drift in the template is not (the system_instruction golden-file test catches template drift separately, on the same fixed input)."
   },
 
   "supported_languages": ["en", "de", "fr", "es", "ar", "zh", "ru", "sr"],
@@ -179,7 +217,8 @@
       "ship voice-pipeline-spec/ folder + extractor + CI in this PR",
       "extract real arg JSON Schemas for each tool from orb-live.ts (this v0.1 has names + flags but not arg schemas)",
       "wire the LiveKit-side codegen target once services/agents/orb-agent/ ships",
-      "promote the CI from report-only to merge gate once 30 days of green runs are recorded"
+      "promote the CI from report-only to merge gate once 30 days of green runs are recorded",
+      "EXTRACTOR GAP (BOOTSTRAP-VOICE-TOOL-PARITY): extract-ts.ts only walks orb-live.ts. The 11 remaining `missing_in_vertex` items are false negatives — they ARE implemented on the Vertex side, just outside that single file: (a) OASIS topics orb.live.tool.executed (orb/live/session/upstream-message-handler.ts), orb.navigator.requested/dispatched/blocked (services/orb-tools-shared.ts, upstream-message-handler.ts), feedback.ticket.created (services/report-to-specialist-core.ts); (b) watchdogs session_timeout_ms, conversation_timeout_ms, max_connections_per_ip, max_reconnects, max_history_chars, extraction_throttle_ms — all imported from ../orb/live/config. Fix is to widen the extractor's file set to the orb/live module tree (separate PR — out of scope for the spec-reconciliation pass). These stay declared as vertex because they are genuinely implemented."
     ],
     "owners": "ORB Voice team",
     "related_memory": [
