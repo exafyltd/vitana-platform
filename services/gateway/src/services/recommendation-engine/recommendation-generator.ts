@@ -65,6 +65,13 @@ import {
   WearableSignal,
   generateWearableFingerprint,
 } from './analyzers/wearable-analyzer';
+// BOOTSTRAP-AUTOPILOT-EXPANSION: calendar prep analyzer (flag-gated, OFF by default).
+import {
+  analyzeCalendarPrep,
+  CalendarPrepSignal,
+  generateCalendarPrepFingerprint,
+} from './analyzers/calendar-prep-analyzer';
+import { isFeatureLive } from '../feature-flags';
 // VTID-03140 (Phase C.6): per-signal-type impact maps live in
 // `decision_policy` now; this module owns the typed lookups.
 import {
@@ -82,7 +89,7 @@ const LOG_PREFIX = '[VTID-01185:Generator]';
 // Types
 // =============================================================================
 
-export type SourceType = 'codebase' | 'oasis' | 'health' | 'roadmap' | 'llm' | 'behavior' | 'community' | 'marketplace' | 'wearable';
+export type SourceType = 'codebase' | 'oasis' | 'health' | 'roadmap' | 'llm' | 'behavior' | 'community' | 'marketplace' | 'wearable' | 'calendar_prep';
 
 export interface GeneratedRecommendation {
   title: string;
@@ -322,6 +329,35 @@ function convertWearableSignal(signal: WearableSignal): GeneratedRecommendation 
     source_type: 'wearable',
     source_ref: `wearable:${signal.condition_key}:${signal.user_id}`,
     fingerprint: generateWearableFingerprint(signal),
+    suggested_files: [],
+    suggested_endpoints: [],
+    suggested_tests: [],
+    user_id: signal.user_id,
+  };
+}
+
+/**
+ * BOOTSTRAP-AUTOPILOT-EXPANSION: map a calendar-prep signal into a community
+ * recommendation. source_ref reuses the existing `pillar_template_<pillar>`
+ * keys so COMMUNITY_ACTIONS already knows how to schedule a wellness prep block
+ * on activation — no new action wiring required.
+ */
+function convertCalendarPrepSignal(signal: CalendarPrepSignal): GeneratedRecommendation {
+  const severityToImpact: Record<CalendarPrepSignal['severity'], number> = {
+    low: 45,
+    medium: 60,
+    high: 72,
+  };
+  return {
+    title: signal.summary.substring(0, 100),
+    summary: signal.summary,
+    domain: 'health',
+    impact_score: severityToImpact[signal.severity],
+    effort_score: 2,
+    risk_level: 'low',
+    source_type: 'calendar_prep',
+    source_ref: `pillar_template_${signal.pillar}`,
+    fingerprint: generateCalendarPrepFingerprint(signal),
     suggested_files: [],
     suggested_endpoints: [],
     suggested_tests: [],
@@ -605,6 +641,32 @@ export async function generateRecommendations(
             }
           } catch (err) {
             errors.push({ source: 'wearable', error: String(err) });
+          }
+        })()
+      );
+    }
+
+    // BOOTSTRAP-AUTOPILOT-EXPANSION: Calendar Prep analyzer.
+    // Double-gated: must be in the requested sources AND the feature flag must
+    // be live (FEATURE_AUTOPILOT_CALENDAR_PREP_ENV). Default = OFF, and
+    // 'calendar_prep' is not in DEFAULT_CONFIG.sources, so there is no behavior
+    // change unless an operator both requests the source and flips the flag.
+    if (fullConfig.sources.includes('calendar_prep') && isFeatureLive('AUTOPILOT_CALENDAR_PREP')) {
+      analyzerPromises.push(
+        (async () => {
+          try {
+            const result = await analyzeCalendarPrep({});
+            analysisSummary.calendar_prep = result.summary;
+            if (result.ok) {
+              const cap = Math.ceil(fullConfig.limit / 2);
+              for (const signal of result.signals.slice(0, cap)) {
+                recommendations.push(convertCalendarPrepSignal(signal));
+              }
+            } else {
+              errors.push({ source: 'calendar_prep', error: result.error || 'Unknown error' });
+            }
+          } catch (err) {
+            errors.push({ source: 'calendar_prep', error: String(err) });
           }
         })()
       );
