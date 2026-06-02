@@ -11,21 +11,31 @@
  *
  * Run: `npx tsx services/gateway/scripts/datasets/voice-tool-routing.ts`
  * Env: SUPABASE_URL, SUPABASE_SERVICE_ROLE, optional DATASET_GCS_BUCKET,
- *      optional DATASET_DRY_RUN=1 to skip GCS upload + event emit.
+ *      optional DATASET_DRY_RUN=1 to skip GCS upload + event emit,
+ *      optional DATASET_PREVIEW=1 to count + sample projected rows WITHOUT
+ *      writing any dataset (Phase 1 W2 readiness — BOOTSTRAP-DATASET-READINESS).
  */
 
 import {
+  PREVIEW_MODE,
   dedupeBySourceId,
   defaultSinceIso,
   emitExtractionEvent,
   generateRunId,
   queryOasisEvents,
+  summarizePreview,
   uploadToGcs,
   writeJsonl,
 } from './lib';
-import type { DatasetExtractionRun, DatasetRow } from './types';
+import type {
+  DatasetExtractionPreview,
+  DatasetExtractionRun,
+  DatasetRow,
+  OasisEventRow,
+} from './types';
 
 const TARGET = 'voice-tool-routing' as const;
+const SOURCE_QUERY = 'topic=eq.orb.turn.responded';
 const DAYS_BACK = Number(process.env.DATASET_DAYS_BACK || 30);
 const LIMIT = Number(process.env.DATASET_MAX_ROWS || 50_000);
 const DRY_RUN = process.env.DATASET_DRY_RUN === '1';
@@ -40,21 +50,12 @@ interface ToolResponseMetadata {
   [k: string]: unknown;
 }
 
-async function extract(): Promise<DatasetExtractionRun> {
-  const startedAt = new Date().toISOString();
-  const runId = generateRunId(TARGET);
-  const since = defaultSinceIso(DAYS_BACK);
-
-  console.log(`[${TARGET}] querying oasis_events since ${since} (limit=${LIMIT})`);
-
-  const events = await queryOasisEvents(
-    'topic=eq.orb.turn.responded',
-    since,
-    LIMIT,
-  );
-
-  console.log(`[${TARGET}] fetched ${events.length} candidate events`);
-
+/**
+ * Pure projection: oasis_events rows → dataset rows. Single source of truth for
+ * "which events become training rows", so the preview path counts EXACTLY what
+ * the real extractor would write.
+ */
+export function projectRows(events: OasisEventRow[]): DatasetRow[] {
   const rows: DatasetRow[] = [];
   for (const e of events) {
     const meta = (e.metadata ?? {}) as ToolResponseMetadata;
@@ -72,6 +73,37 @@ async function extract(): Promise<DatasetExtractionRun> {
       },
     });
   }
+  return rows;
+}
+
+/**
+ * Read-only preview — same query + same projection, writes nothing.
+ * Does NOT touch the consent gate (still SQL-filtered to data_export_ok=true).
+ */
+async function preview(): Promise<DatasetExtractionPreview> {
+  const since = defaultSinceIso(DAYS_BACK);
+  console.log(`[${TARGET}] PREVIEW querying oasis_events since ${since} (limit=${LIMIT})`);
+  const events = await queryOasisEvents(SOURCE_QUERY, since, LIMIT);
+  console.log(`[${TARGET}] PREVIEW fetched ${events.length} candidate events`);
+  const summary = summarizePreview(TARGET, events, projectRows(events));
+  console.log(`[${TARGET}] PREVIEW would extract ${summary.rows_after_dedup} rows (nothing written)`);
+  return summary;
+}
+
+async function extract(): Promise<DatasetExtractionRun | DatasetExtractionPreview> {
+  if (PREVIEW_MODE) return preview();
+
+  const startedAt = new Date().toISOString();
+  const runId = generateRunId(TARGET);
+  const since = defaultSinceIso(DAYS_BACK);
+
+  console.log(`[${TARGET}] querying oasis_events since ${since} (limit=${LIMIT})`);
+
+  const events = await queryOasisEvents(SOURCE_QUERY, since, LIMIT);
+
+  console.log(`[${TARGET}] fetched ${events.length} candidate events`);
+
+  const rows = projectRows(events);
 
   const deduped = dedupeBySourceId(rows);
   const outputPath = await writeJsonl(deduped, TARGET, runId);
