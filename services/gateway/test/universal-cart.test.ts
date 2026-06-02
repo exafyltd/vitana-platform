@@ -716,6 +716,150 @@ describe(`${'VTID-03213'} §4 item mutation + §5 event emission`, () => {
 });
 
 // =============================================================================
+// VTID-03260 Phase 2 — GET /budget
+// =============================================================================
+
+describe(`${'VTID-03260'} GET /budget`, () => {
+  test('401 without Bearer', async () => {
+    const res = await request(buildApp()).get('/api/v1/universal-cart/budget');
+    expect(res.status).toBe(401);
+    expect(res.body.error).toBe('UNAUTHENTICATED');
+  });
+
+  test('403 cart_unavailable_for_role for non-community', async () => {
+    seedAuth({ role: 'admin' });
+    const res = await request(buildApp())
+      .get('/api/v1/universal-cart/budget')
+      .set('Authorization', BEARER_A);
+    expect(res.status).toBe(403);
+    expect(res.body.error).toBe('cart_unavailable_for_role');
+  });
+
+  /** Seed the budget reads in handler order: app_users, user_limitations,
+   * product_orders (getMonthlySpend), universal_carts, universal_cart_items. */
+  function seedBudget(opts: {
+    currency?: string;
+    capCents?: number | null;
+    spendRows?: Array<{ amount_cents: number }>;
+    cartId?: string | null;
+    itemRows?: Array<{ unit_price_cents_snapshot: number | null; quantity: number | null }>;
+  }) {
+    mockSupabase.__seed({ data: { currency_preference: opts.currency ?? 'EUR' }, error: null });
+    mockSupabase.__seed({ data: { budget_monthly_cap_cents: opts.capCents ?? null }, error: null });
+    mockSupabase.__seed({ data: opts.spendRows ?? [], error: null });
+    mockSupabase.__seed({ data: opts.cartId ? { id: opts.cartId } : null, error: null });
+    if (opts.cartId) {
+      mockSupabase.__seed({ data: opts.itemRows ?? [], error: null });
+    }
+  }
+
+  test('status under — null cap → always under', async () => {
+    seedAuth({ role: 'community' });
+    seedBudget({
+      capCents: null,
+      spendRows: [{ amount_cents: 99999 }],
+      cartId: CART_A,
+      itemRows: [{ unit_price_cents_snapshot: 5000, quantity: 2 }],
+    });
+
+    const res = await request(buildApp())
+      .get('/api/v1/universal-cart/budget')
+      .set('Authorization', BEARER_A);
+
+    expect(res.status).toBe(200);
+    expect(res.body.ok).toBe(true);
+    expect(res.body.monthly_cap_cents).toBeNull();
+    expect(res.body.spent_this_month_cents).toBe(99999);
+    expect(res.body.cart_active_subtotal_cents).toBe(10000); // 5000 * 2
+    expect(res.body.currency).toBe('EUR');
+    expect(res.body.status).toBe('under'); // null cap → under regardless
+  });
+
+  test('status under — projected well below cap', async () => {
+    seedAuth({ role: 'community' });
+    seedBudget({
+      capCents: 100000,
+      spendRows: [{ amount_cents: 1000 }],
+      cartId: CART_A,
+      itemRows: [{ unit_price_cents_snapshot: 2000, quantity: 1 }],
+    });
+
+    const res = await request(buildApp())
+      .get('/api/v1/universal-cart/budget')
+      .set('Authorization', BEARER_A);
+
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe('under'); // projected 3000 < 0.85*100000
+  });
+
+  test('status near — projected >= 0.85*cap but <= cap', async () => {
+    seedAuth({ role: 'community' });
+    // cap=10000; spend=8000; cart subtotal=1000 → projected=9000 = 0.9*cap → near
+    seedBudget({
+      capCents: 10000,
+      spendRows: [{ amount_cents: 8000 }],
+      cartId: CART_A,
+      itemRows: [{ unit_price_cents_snapshot: 1000, quantity: 1 }],
+    });
+
+    const res = await request(buildApp())
+      .get('/api/v1/universal-cart/budget')
+      .set('Authorization', BEARER_A);
+
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe('near');
+  });
+
+  test('status over — projected > cap', async () => {
+    seedAuth({ role: 'community' });
+    // cap=10000; spend=9000; cart subtotal=2000 → projected=11000 > cap → over
+    seedBudget({
+      capCents: 10000,
+      spendRows: [{ amount_cents: 9000 }],
+      cartId: CART_A,
+      itemRows: [{ unit_price_cents_snapshot: 2000, quantity: 1 }],
+    });
+
+    const res = await request(buildApp())
+      .get('/api/v1/universal-cart/budget')
+      .set('Authorization', BEARER_A);
+
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe('over');
+  });
+
+  test('no active cart → subtotal 0', async () => {
+    seedAuth({ role: 'community' });
+    seedBudget({
+      capCents: 10000,
+      spendRows: [{ amount_cents: 5000 }],
+      cartId: null,
+    });
+
+    const res = await request(buildApp())
+      .get('/api/v1/universal-cart/budget')
+      .set('Authorization', BEARER_A);
+
+    expect(res.status).toBe(200);
+    expect(res.body.cart_active_subtotal_cents).toBe(0);
+    expect(res.body.spent_this_month_cents).toBe(5000);
+    expect(res.body.status).toBe('under'); // 5000 < 0.85*10000
+  });
+
+  test('currency follows currency_preference (USD)', async () => {
+    seedAuth({ role: 'community' });
+    seedBudget({ currency: 'USD', capCents: null, cartId: null });
+
+    const res = await request(buildApp())
+      .get('/api/v1/universal-cart/budget')
+      .set('Authorization', BEARER_A);
+
+    expect(res.status).toBe(200);
+    expect(res.body.currency).toBe('USD');
+  });
+});
+
+// =============================================================================
 // §2  Owner isolation
 // =============================================================================
 

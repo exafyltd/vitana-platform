@@ -37,8 +37,15 @@ import { z } from 'zod';
 import { createUserSupabaseClient } from '../lib/supabase-user';
 import { getSupabase } from '../lib/supabase';
 import { checkoutUniversalCart, CHECKOUT_ERROR_STATUS } from '../services/checkout/checkout-service';
+import { getMonthlySpend } from '../services/budget/spend-service';
 
 export const VTID = 'VTID-03213';
+
+/** Default currency fallback (matches the rest of the gateway's commerce code). */
+const DEFAULT_CURRENCY = 'EUR';
+
+/** Near-cap advisory ratio — projected spend within 15% of the cap → 'near'. */
+const NEAR_CAP_RATIO = 0.85;
 
 // =============================================================================
 // Constants — keep in sync with supabase/migrations/20260605000000_VTID_03186_universal_cart_schema.sql
@@ -425,6 +432,119 @@ router.get('/', async (req: Request, res: Response) => {
   }
 
   return res.status(200).json({ ok: true, cart: cartRes.data, items: itemsRes.data ?? [] });
+});
+
+/**
+ * GET /budget — VTID-03260 (Phase 2) standing-budget read.
+ *
+ * Read-only budget summary for the caller, in their currency_preference (per
+ * currency, never mixed). ADVISORY ONLY: never blocks or charges anything.
+ *
+ * Response:
+ *   { ok, monthly_cap_cents, spent_this_month_cents, cart_active_subtotal_cents,
+ *     currency, status: 'under'|'near'|'over' }
+ *
+ * status: null/0 cap → 'under'. Else projected = spent + cart subtotal;
+ *   'over' if projected > cap; 'near' if projected >= 0.85*cap; else 'under'.
+ */
+router.get('/budget', async (req: Request, res: Response) => {
+  const id = await authorizeCommunityCaller(req, res);
+  if (!id) return;
+
+  const svc = getSupabase();
+
+  // Currency + monthly cap from the user's profile/limitations (service-role read,
+  // consistent with the spend read). currency_preference falls back to the same
+  // default the rest of the commerce code uses.
+  let currency = DEFAULT_CURRENCY;
+  let monthly_cap_cents: number | null = null;
+
+  if (svc) {
+    const userRow = await svc
+      .from('app_users')
+      .select('currency_preference')
+      .eq('user_id', id.user_id)
+      .maybeSingle();
+    if (!userRow.error && userRow.data?.currency_preference) {
+      currency = userRow.data.currency_preference as string;
+    }
+
+    const limRow = await svc
+      .from('user_limitations')
+      .select('budget_monthly_cap_cents')
+      .eq('user_id', id.user_id)
+      .maybeSingle();
+    if (!limRow.error && limRow.data) {
+      monthly_cap_cents = (limRow.data.budget_monthly_cap_cents as number | null) ?? null;
+    }
+  }
+
+  // Month-to-date CONVERTED spend in this currency.
+  const spent_this_month_cents = await getMonthlySpend(svc, id.user_id, currency);
+
+  // Active-cart subtotal = sum(coalesce(unit_price_cents_snapshot,0) * quantity)
+  // over the caller's active cart items. RLS-scoped user client.
+  const userClient = createUserSupabaseClient(id.token);
+  let cart_active_subtotal_cents = 0;
+
+  const cartRes = await userClient
+    .from('universal_carts')
+    .select('id')
+    .eq('user_id', id.user_id)
+    .eq('status', 'active')
+    .maybeSingle();
+
+  if (cartRes.error && !isNoRowsError(cartRes.error)) {
+    return res.status(500).json({
+      ok: false,
+      error: 'cart_lookup_failed',
+      detail: cartRes.error.message,
+    });
+  }
+
+  if (cartRes.data?.id) {
+    const itemsRes = await userClient
+      .from('universal_cart_items')
+      .select('unit_price_cents_snapshot, quantity')
+      .eq('cart_id', cartRes.data.id)
+      .eq('status', 'active');
+
+    if (itemsRes.error) {
+      return res.status(500).json({
+        ok: false,
+        error: 'cart_items_lookup_failed',
+        detail: itemsRes.error.message,
+      });
+    }
+
+    for (const row of (itemsRes.data ?? []) as Array<{ unit_price_cents_snapshot: number | null; quantity: number | null }>) {
+      const unit = Number(row?.unit_price_cents_snapshot ?? 0);
+      const qty = Number(row?.quantity ?? 0);
+      if (Number.isFinite(unit) && Number.isFinite(qty)) {
+        cart_active_subtotal_cents += unit * qty;
+      }
+    }
+  }
+
+  // Status (ADVISORY ONLY).
+  let status: 'under' | 'near' | 'over' = 'under';
+  if (monthly_cap_cents && monthly_cap_cents > 0) {
+    const projected = spent_this_month_cents + cart_active_subtotal_cents;
+    if (projected > monthly_cap_cents) {
+      status = 'over';
+    } else if (projected >= monthly_cap_cents * NEAR_CAP_RATIO) {
+      status = 'near';
+    }
+  }
+
+  return res.status(200).json({
+    ok: true,
+    monthly_cap_cents,
+    spent_this_month_cents,
+    cart_active_subtotal_cents,
+    currency,
+    status,
+  });
 });
 
 /**

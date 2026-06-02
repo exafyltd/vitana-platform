@@ -111,6 +111,12 @@ export interface RunProposeArgs {
   insertPick: InsertPickFn;
   /** Stable run id (uuid) tying every proposed item together. */
   runId: string;
+  /**
+   * Phase 2 — standing month-to-date CONVERTED spend (in ctx.currency), used to
+   * compute the near/over monthly-cap advisories against (spend + proposed
+   * subtotal). ADVISORY ONLY; defaults to 0 for back-compatibility.
+   */
+  monthly_spend_cents?: number;
 }
 
 // =============================================================================
@@ -440,6 +446,7 @@ const NEAR_CAP_RATIO = 0.85;
 
 export async function runPropose(args: RunProposeArgs): Promise<ProposeResult> {
   const { prompt, maxItems, ctx, supabase, insertPick, runId } = args;
+  const monthlySpendCents = args.monthly_spend_cents ?? 0;
   const advisory: string[] = [];
 
   // Brain empty / stale → advisory (still degrade gracefully).
@@ -487,10 +494,15 @@ export async function runPropose(args: RunProposeArgs): Promise<ProposeResult> {
   const top = candidates.slice(0, maxItems);
   const annotated = top.map((p) => annotatePick(p, ctx));
 
-  // Advisory: near monthly cap (ADVISORY ONLY — never enforced in the money path).
+  // Advisory: monthly-cap proximity (ADVISORY ONLY — never enforced in the money
+  // path). Phase 2: compare standing month-to-date spend PLUS this run's proposed
+  // subtotal against the cap, so the advisory reflects total projected spend.
   if (ctx.budget_monthly_cap_cents && ctx.budget_monthly_cap_cents > 0) {
     const subtotal = annotated.reduce((sum, a) => sum + (a.unit_price_cents_snapshot ?? 0), 0);
-    if (subtotal >= ctx.budget_monthly_cap_cents * NEAR_CAP_RATIO) {
+    const projected = monthlySpendCents + subtotal;
+    if (projected > ctx.budget_monthly_cap_cents) {
+      advisory.push('over_monthly_cap');
+    } else if (projected >= ctx.budget_monthly_cap_cents * NEAR_CAP_RATIO) {
       advisory.push('near_monthly_cap');
     }
   }
