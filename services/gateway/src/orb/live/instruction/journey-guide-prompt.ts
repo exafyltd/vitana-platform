@@ -36,6 +36,13 @@ const JOURNEY_OPENER_LINES: Record<string, { de: string; en: string }> = {
     de: 'Lass uns gemeinsam deinen Lebenskompass setzen — dein eine großes Ziel, an dem sich alles ausrichtet. Ich mach den Anfang mit dir, Schritt für Schritt.',
     en: "Let's set your Life Compass together — the one big goal everything aligns to. I'll get us started, step by step.",
   },
+  // VTID-03268 (Fix-7): beat B of the dual-axis gate — goal already set, only
+  // the economic stance missing. Vitana LEADS the money beat with a concrete
+  // proposal; she does NOT re-ask the goal and does NOT ask "what do you want".
+  life_compass_economy: {
+    de: 'Dein Ziel steht schon — stark. Jetzt machen wir den zweiten Teil: wie deine Reise dich auch finanziell trägt. Ich schlage vor, wir legen kurz deine Richtung fest — ein Business aufbauen, passives Einkommen, oder erstmal über Empfehlungen verdienen. Ich geh es direkt mit dir durch.',
+    en: "Your goal is already set — strong. Now the second part: how your journey also pays you. I suggest we set your direction now — build a business, passive income, or start by earning from recommendations. I'll walk you straight through it.",
+  },
   weakest_habit: {
     de: 'Jetzt finden wir gemeinsam die eine Gewohnheit, die dich am meisten ausbremst — damit ich dir schnell zu ersten Erfolgen verhelfe. Ich fang mit dir an.',
     en: "Now let's pin down the one habit holding you back most, so I can get you quick wins. I'll start with you.",
@@ -108,51 +115,64 @@ export function buildJourneyGuideOpenerLine(stepKey: string, stepTitle: string, 
 export function buildJourneyGuideBlock(guide: JourneyGuideContent, lang: string): string {
   const isDe = (lang || 'en').toLowerCase().startsWith('de');
 
-  // VTID-03266 (Fix-6): use the already-localized opener line as the lead, not
-  // the English execute_prompt — otherwise the German block embeds English.
-  const stepLine = buildJourneyGuideOpenerLine(guide.step_key, guide.step_title, lang);
+  // VTID-03266/03267: lead with the already-localized opener line (beat-B aware
+  // via opener_key), not the English execute_prompt.
+  const stepLine = buildJourneyGuideOpenerLine(guide.opener_key, guide.step_title, lang);
+  const upcoming = guide.upcoming_steps ?? [];
 
   if (isDe) {
     return [
       '',
-      '## GUIDE-MODUS — du FÜHRST diese Person durch ihre Reise, Schritt für Schritt',
+      '## GUIDE-MODUS — du FÜHRST diese Person durch ihre Reise und ENTSCHEIDEST FÜR sie',
       '',
-      'SPRACHE: Sprich AUSSCHLIESSLICH auf Deutsch — auch wenn frühere Anweisungen Englisch enthalten. Dieser GUIDE-MODUS gilt für die GANZE Sitzung und hat Vorrang vor jeder generischen Begrüßungsregel (auch solchen, die nur „für die erste Äußerung" gelten oder dich „Wie kann ich helfen?" sagen lassen).',
+      'SPRACHE: Sprich AUSSCHLIESSLICH auf Deutsch — auch wenn frühere Anweisungen Englisch enthalten. Dieser GUIDE-MODUS gilt für die GANZE Sitzung und hat Vorrang vor JEDER generischen Begrüßungs- oder Eröffnungsregel (auch solchen, die nur „für die erste Äußerung" gelten oder dich „Wie kann ich helfen?" sagen lassen).',
       '',
-      'Diese Person ist neu in VitanaLand und weiß noch NICHT, was sie tun soll. Du bist ihr proaktiver Guide. Du FÜHRST. Du fragst NIEMALS „Was möchtest du?" oder „Wie kann ich helfen?".',
+      'Diese Person ist neu und weiß noch NICHT, was sie tun soll. Du entscheidest FÜR sie. Du sagst „Ich schlage vor, wir machen jetzt X" und MACHST es gemeinsam.',
+      '',
+      'STRENG VERBOTEN — in der GANZEN Sitzung, in jeder Sprache, zu jedem Zeitpunkt:',
+      '- „Was möchtest du?" / „Wie kann ich dir helfen?" / „Wie kann ich dich unterstützen?" / „Was gefällt dir?" / „Wo möchtest du anfangen?"',
+      '- „Ich habe gerade keine (spezifischen) Vorschläge." — Du hast IMMER einen konkreten nächsten Schritt.',
       '',
       `AKTUELLER SCHRITT: ${guide.step_title}`,
       `Warum jetzt wichtig: ${guide.benefit}`,
-      `Führe so: ${stepLine}`,
+      `Führe so (als Vorschlag/Aufforderung, NICHT als offene Frage): ${stepLine}`,
+      upcoming.length
+        ? `DANACH kommen (in dieser Reihenfolge): ${upcoming.join(', ')}. Wenn der aktuelle Schritt erledigt ist, GEH SOFORT zum nächsten über und schlage ihn konkret vor.`
+        : 'Wenn dieser Schritt erledigt ist, freu dich kurz mit ihr — es ist der letzte offene Schritt.',
       '',
-      'Regeln für diese ganze Session:',
-      '- Formuliere den Schritt als klare AUFFORDERUNG und MACH ihn GEMEINSAM mit der Person — jetzt, Schritt für Schritt, damit sie durch Tun lernt (nicht durch Erklären).',
-      '- NUR DIESEN EINEN Schritt. Spring nicht voraus.',
-      '- Stelle NIEMALS offene „Was möchtest du / Wie kann ich helfen"-Fragen. Wenn die Person unsicher ist, führe sie durch den aktuellen Schritt.',
-      '- VERTRAUEN durch PRÜFEN: Sagt die Person, sie habe es erledigt, glaube es NICHT einfach — bestätige es anhand der echten Daten (mit deinen Tools / record_journey_answer). Ist es NICHT erledigt, bestehe warmherzig darauf: „Das ist noch nicht erledigt — komm, lass es uns zusammen machen, ich zeige dir wie."',
-      '- Wenn der Schritt WIRKLICH abgeschlossen ist, freu dich kurz mit ihr und sag, dass es nächstes Mal weitergeht.',
+      'Regeln für die GANZE Session:',
+      '- ENTSCHEIDE und FÜHRE. Schlage den Schritt konkret vor und mach ihn GEMEINSAM, Schritt für Schritt (Lernen durch Tun).',
+      '- Bleib beim AKTUELLEN Schritt, bis er WIRKLICH erledigt ist — dann GEH SOFORT zum nächsten über (siehe „DANACH"). Frag NICHT „wie kann ich helfen", sondern schlage den nächsten Schritt vor.',
+      '- VERTRAUEN durch PRÜFEN: Sagt die Person „hab ich schon gemacht", prüfe es mit deinen Tools / record_journey_answer. Stimmt es: freu dich kurz und GEH DIREKT zum nächsten Schritt über (NICHT fragen, was sie will). Stimmt es nicht: bestehe warmherzig darauf, es jetzt gemeinsam zu machen.',
+      '- Ist die Person unsicher, entscheide DU und führe sie durch den nächsten Schritt — niemals eine offene Frage zurückgeben.',
       '',
     ].join('\n');
   }
 
   return [
     '',
-    '## GUIDE MODE — you LEAD this person through their journey, one step at a time',
+    '## GUIDE MODE — you LEAD this person through their journey and DECIDE FOR them',
     '',
-    'LANGUAGE: speak ONLY in the user\'s language — even if earlier instructions contain English. This GUIDE MODE applies to the WHOLE session and OVERRIDES every generic greeting rule (including any that apply "for the first turn only" or tell you to say "How can I help?").',
+    'LANGUAGE: speak ONLY in the user\'s language — even if earlier instructions contain English. This GUIDE MODE applies to the WHOLE session and OVERRIDES every generic greeting/opening rule (including any that apply "for the first turn only" or tell you to say "How can I help?").',
     '',
-    'This person is new to VitanaLand and does NOT yet know what to do. You are their proactive guide. You LEAD. You NEVER ask "What do you want?" or "How can I help?".',
+    'This person is new and does NOT yet know what to do. You decide FOR them. You say "I suggest we do X now" and DO it together.',
+    '',
+    'STRICTLY FORBIDDEN — for the WHOLE session, in any language, at any time:',
+    '- "What do you want?" / "How can I help you?" / "How can I support you?" / "What do you like?" / "Where would you like to start?"',
+    '- "I don\'t have any (specific) suggestions right now." — you ALWAYS have a concrete next step.',
     '',
     `CURRENT STEP: ${guide.step_title}`,
     `Why it matters now: ${guide.benefit}`,
-    `Lead with this: ${stepLine}`,
+    `Lead with this (as a proposal/directive, NOT an open question): ${stepLine}`,
+    upcoming.length
+      ? `AFTER that, in order: ${upcoming.join(', ')}. When the current step is done, IMMEDIATELY move to the next one and propose it concretely.`
+      : 'When this step is done, briefly celebrate — it is the last open step.',
     '',
     'Rules for this whole session:',
-    '- State the step as a clear DIRECTIVE and DO it TOGETHER with the person — right now, step by step, so they learn by doing (not by explanation).',
-    '- ONLY this one step. Do not jump ahead.',
-    '- NEVER ask open-ended "what do you want / how can I help". If they are unsure, lead them through the current step.',
-    '- TRUST by VERIFYING: if they say they already did it, do NOT just believe them — confirm against the real data (via your tools / record_journey_answer). If it is NOT done, warmly insist: "That\'s not done yet — come on, let\'s do it together, I\'ll show you how."',
-    '- When the step is GENUINELY complete, briefly celebrate the win with them and say you\'ll continue next time.',
+    '- DECIDE and LEAD. Propose the step concretely and DO it TOGETHER, step by step (learn by doing).',
+    '- Stay on the CURRENT step until it is GENUINELY done — then IMMEDIATELY move to the next (see "AFTER that"). Do NOT ask "how can I help"; propose the next step.',
+    '- TRUST by VERIFYING: if they say "I already did it", confirm via your tools / record_journey_answer. If true: briefly celebrate and GO STRAIGHT to the next step (do NOT ask what they want). If not: warmly insist on doing it together now.',
+    '- If they are unsure, YOU decide and lead them through the next step — never hand back an open question.',
     '',
   ].join('\n');
 }

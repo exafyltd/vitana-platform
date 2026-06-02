@@ -42,7 +42,23 @@ export interface JourneyGuideContent {
   /** action = do-it-together task; teacher = walk-through explanation. */
   step_type: string;
   navigation_route: string | null;
+  /**
+   * VTID-03268 (Fix-7): the key used to pick the localized opener LINE. Usually
+   * == step_key, but for the dual-axis gate when the health goal is already set
+   * and only the economic stance is missing, this is 'life_compass_economy' so
+   * Vitana leads the MONEY beat instead of re-asking the goal the user already
+   * set (the "I already did that → how can I help?" revert spiral).
+   */
+  opener_key: string;
+  /**
+   * VTID-03268: titles of the next steps after this one (not yet satisfied), so
+   * the GUIDE-MODE block can tell the model what to advance to — it must NEVER
+   * say "I have no suggestions" or ask "how can I help"; there is always a next.
+   */
+  upcoming_steps: string[];
 }
+
+const GATE_KEY = 'life_compass';
 
 interface JourneyGuideInputs {
   supabase: SupabaseClient;
@@ -106,6 +122,25 @@ export function makeJourneyGuideProvider(): ContinuationProvider {
         return { providerKey: JOURNEY_GUIDE_PROVIDER_KEY, status: 'suppressed', latencyMs: 0, reason: 'no_next_step' };
       }
 
+      // VTID-03268 (Fix-7): dual-axis gate nuance. If the health goal is already
+      // set and only the economic stance is missing, DON'T re-ask the goal —
+      // lead the MONEY beat. This is what caused the "I already set my goal →
+      // Vitana asks how can I help" revert. Data-driven, not model-dependent.
+      const goalSet = !!snapshot.active_goal?.primary_goal;
+      const economicIntentSet = snapshot.economic_intent != null;
+      const openerKey =
+        step.key === GATE_KEY && goalSet && !economicIntentSet
+          ? 'life_compass_economy'
+          : step.key;
+
+      // The forward chain: the next not-yet-satisfied steps, so the GUIDE-MODE
+      // block can tell the model exactly what to advance to (it must never run
+      // out of a concrete next step and fall back to "no suggestions").
+      const upcoming = snapshot.foundation_steps
+        .filter((v) => v.key !== step.key && v.status !== 'done' && v.status !== 'active')
+        .slice(0, 3)
+        .map((v) => v.title);
+
       const guide: JourneyGuideContent = {
         step_key: step.key,
         step_title: step.title,
@@ -113,6 +148,8 @@ export function makeJourneyGuideProvider(): ContinuationProvider {
         benefit: stepDef.benefit,
         step_type: step.type,
         navigation_route: step.navigation_route,
+        opener_key: openerKey,
+        upcoming_steps: upcoming,
       };
 
       // VTID-03266 (Fix-6): the spoken opener is an ALREADY-LOCALIZED short
@@ -123,7 +160,7 @@ export function makeJourneyGuideProvider(): ContinuationProvider {
       // contract lives in the GUIDE-MODE block (buildJourneyGuideBlock), which
       // is injected as a system instruction on BOTH transports (turns 2+).
       const { buildJourneyGuideOpenerLine } = await import('../../../orb/live/instruction/journey-guide-prompt');
-      const openerLine = buildJourneyGuideOpenerLine(step.key, step.title, inputs.lang);
+      const openerLine = buildJourneyGuideOpenerLine(openerKey, step.title, inputs.lang);
       const candidate = {
         id: `journey-guide-${step.key}`,
         surface: 'orb_wake',

@@ -113,7 +113,7 @@ describe('VTID-03257 makeJourneyGuideProvider', () => {
   });
 
   it('LEADS turn 1: directive opener + bundled guide, priority 91', async () => {
-    mockBuildSnapshot.mockResolvedValue({ graduated: false, current_next_step: NEXT_STEP });
+    mockBuildSnapshot.mockResolvedValue({ graduated: false, current_next_step: NEXT_STEP, foundation_steps: [], active_goal: null, economic_intent: null });
     mockGetStepDef.mockReturnValue(STEP_DEF);
     const p = makeJourneyGuideProvider();
     const r = await p.produce(makeCtx());
@@ -143,7 +143,7 @@ describe('VTID-03257 makeJourneyGuideProvider', () => {
   });
 
   it('VTID-03266: opener line is already in the session language (de → German, en → English)', async () => {
-    mockBuildSnapshot.mockResolvedValue({ graduated: false, current_next_step: NEXT_STEP });
+    mockBuildSnapshot.mockResolvedValue({ graduated: false, current_next_step: NEXT_STEP, foundation_steps: [], active_goal: null, economic_intent: null });
     mockGetStepDef.mockReturnValue(STEP_DEF);
     const p = makeJourneyGuideProvider();
     // de: spoken line must BE German (LiveKit session.say does not translate).
@@ -157,7 +157,7 @@ describe('VTID-03257 makeJourneyGuideProvider', () => {
   });
 
   it('VTID-03266: opener line carries NO instruction/marker text (LiveKit speaks it verbatim)', async () => {
-    mockBuildSnapshot.mockResolvedValue({ graduated: false, current_next_step: NEXT_STEP });
+    mockBuildSnapshot.mockResolvedValue({ graduated: false, current_next_step: NEXT_STEP, foundation_steps: [], active_goal: null, economic_intent: null });
     mockGetStepDef.mockReturnValue(STEP_DEF);
     const p = makeJourneyGuideProvider();
     const line = (await p.produce(makeCtx({ lang: 'de' })) as any).candidate.userFacingLine as string;
@@ -167,8 +167,48 @@ describe('VTID-03257 makeJourneyGuideProvider', () => {
     }
   });
 
+  it('VTID-03268: gate beat-B — goal already set, economic stance missing → leads the MONEY beat, NOT re-asking the goal', async () => {
+    mockBuildSnapshot.mockResolvedValue({
+      graduated: false,
+      current_next_step: NEXT_STEP, // life_compass (the gate)
+      foundation_steps: [],
+      active_goal: { primary_goal: 'Sleep 8h', category: 'health' }, // goal IS set
+      economic_intent: null, // economy axis NOT set
+    });
+    mockGetStepDef.mockReturnValue(STEP_DEF);
+    const p = makeJourneyGuideProvider();
+    const de = (await p.produce(makeCtx({ lang: 'de' })) as any).candidate;
+    expect(de.journeyGuide.opener_key).toBe('life_compass_economy');
+    // German money-beat directive — does NOT re-ask the goal, does NOT ask "what do you want".
+    expect(de.userFacingLine).toMatch(/Dein Ziel steht schon/);
+    expect(de.userFacingLine).toMatch(/finanziell/);
+    expect(de.userFacingLine).not.toMatch(/Lass uns gemeinsam deinen Lebenskompass setzen/);
+    expect(de.userFacingLine).not.toMatch(/wie kann ich (dir )?helfen|was möchtest du/i);
+  });
+
+  it('VTID-03268: forward chain — upcoming step titles are bundled for the guide block', async () => {
+    mockBuildSnapshot.mockResolvedValue({
+      graduated: false,
+      current_next_step: NEXT_STEP,
+      active_goal: null,
+      economic_intent: null,
+      foundation_steps: [
+        { key: 'life_compass', title: 'Life Compass', status: 'open' },
+        { key: 'weakest_habit', title: 'Weakest habit', status: 'open' },
+        { key: 'reminder', title: 'Reminder', status: 'open' },
+        { key: 'diary', title: 'Diary', status: 'done' }, // satisfied → excluded
+      ],
+    });
+    mockGetStepDef.mockReturnValue(STEP_DEF);
+    const p = makeJourneyGuideProvider();
+    const c = (await p.produce(makeCtx()) as any).candidate;
+    expect(c.journeyGuide.upcoming_steps).toEqual(['Weakest habit', 'Reminder']);
+    expect(c.journeyGuide.upcoming_steps).not.toContain('Diary'); // done excluded
+    expect(c.journeyGuide.upcoming_steps).not.toContain('Life Compass'); // current excluded
+  });
+
   it('priority beats new_day_return (90) and Teacher (85)', async () => {
-    mockBuildSnapshot.mockResolvedValue({ graduated: false, current_next_step: NEXT_STEP });
+    mockBuildSnapshot.mockResolvedValue({ graduated: false, current_next_step: NEXT_STEP, foundation_steps: [], active_goal: null, economic_intent: null });
     mockGetStepDef.mockReturnValue(STEP_DEF);
     const p = makeJourneyGuideProvider();
     const r = await p.produce(makeCtx());
@@ -183,7 +223,7 @@ describe('VTID-03257 makeJourneyGuideProvider', () => {
   // the journey never drove the conversation. This test runs the SAME validator
   // the ranker runs, so an invalid candidate can never pass CI green again.
   it('produces a candidate that passes validateContinuationCandidate (the ranker invariant)', async () => {
-    mockBuildSnapshot.mockResolvedValue({ graduated: false, current_next_step: NEXT_STEP });
+    mockBuildSnapshot.mockResolvedValue({ graduated: false, current_next_step: NEXT_STEP, foundation_steps: [], active_goal: null, economic_intent: null });
     mockGetStepDef.mockReturnValue(STEP_DEF);
     const p = makeJourneyGuideProvider();
     const r = await p.produce(makeCtx());
@@ -193,7 +233,7 @@ describe('VTID-03257 makeJourneyGuideProvider', () => {
   });
 
   it('suppresses when the step has no definition (defensive)', async () => {
-    mockBuildSnapshot.mockResolvedValue({ graduated: false, current_next_step: NEXT_STEP });
+    mockBuildSnapshot.mockResolvedValue({ graduated: false, current_next_step: NEXT_STEP, foundation_steps: [], active_goal: null, economic_intent: null });
     mockGetStepDef.mockReturnValue(undefined);
     const p = makeJourneyGuideProvider();
     const r = await p.produce(makeCtx());
@@ -212,22 +252,32 @@ describe('VTID-03257 buildJourneyGuideBlock', () => {
     benefit: 'Define the one goal your whole journey is built around.',
     step_type: 'action',
     navigation_route: '/life-compass',
+    opener_key: 'life_compass',
+    upcoming_steps: ['Weakest habit', 'Reminder'],
   };
 
-  it('English block leads, forbids "what do you want", demands verify-on-claim', () => {
+  it('English block: decide-for-user, bans passive openers + "no suggestions", advances, verifies', () => {
     const block = buildJourneyGuideBlock(guide, 'en');
     expect(block).toMatch(/GUIDE MODE/);
-    expect(block).toMatch(/you LEAD/);
+    expect(block).toMatch(/DECIDE FOR them/);
     expect(block).toMatch(/Set your Life Compass/);
-    expect(block).toMatch(/NEVER ask/i);
+    expect(block).toMatch(/STRICTLY FORBIDDEN/);
+    expect(block).toMatch(/How can I (help|support)/i);
+    expect(block).toMatch(/don't have any.*suggestions/i);
+    expect(block).toMatch(/ALWAYS have a concrete next step/);
     expect(block).toMatch(/TRUST by VERIFYING/);
-    expect(block).toMatch(/let's do it together/i);
+    // forward chain present
+    expect(block).toMatch(/AFTER that[\s\S]*Weakest habit, Reminder/);
+    expect(block).toMatch(/move to the next/i);
   });
 
-  it('German block renders for de lang', () => {
+  it('German block: entscheidet für den Nutzer, verbietet passive Eröffnungen + "keine Vorschläge"', () => {
     const block = buildJourneyGuideBlock(guide, 'de');
     expect(block).toMatch(/GUIDE-MODUS/);
-    expect(block).toMatch(/du FÜHRST/);
-    expect(block).toMatch(/NIEMALS/);
+    expect(block).toMatch(/ENTSCHEIDEST FÜR sie/);
+    expect(block).toMatch(/STRENG VERBOTEN/);
+    expect(block).toMatch(/Wie kann ich dich unterstützen/);
+    expect(block).toMatch(/keine .*Vorschläge/i);
+    expect(block).toMatch(/DANACH kommen[\s\S]*Weakest habit, Reminder/);
   });
 });
