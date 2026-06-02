@@ -412,6 +412,7 @@ export async function decideWakeBriefForSession(
         supabase: args.supabase,
         userId: args.userId,
         isReconnect: args.isReconnect,
+        lang: args.lang,
       };
     }
   }

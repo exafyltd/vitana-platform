@@ -122,9 +122,14 @@ describe('VTID-03257 makeJourneyGuideProvider', () => {
     expect(c.priority).toBe(91);
     expect(c.surface).toBe('orb_wake');
     expect(c.kind).toBe('wake_brief');
-    // The spoken opener IS the step's directive — never "what do you want?".
-    expect(c.userFacingLine).toBe(STEP_DEF.execute_prompt);
-    expect(c.userFacingLine).not.toMatch(/what (do|can) you/i);
+    // VTID-03266 (Fix-6): the spoken opener is a CLEAN, already-localized
+    // directive line (LiveKit session.say plays it verbatim — no instruction
+    // block, no marker, no structured prefix). en default here.
+    expect(c.userFacingLine).toMatch(/Let's set your Life Compass together/);
+    expect(c.userFacingLine).not.toContain('__VTID_03167_STRUCTURED_BLOCK__');
+    expect(c.userFacingLine).not.toContain('<<VERTEX_WAKE_BRIEF_OVERRIDE_ACTIVE>>');
+    // The opener LEADS — it is not an open-ended "what do you want / how can I help".
+    expect(c.userFacingLine).not.toMatch(/what (do|can) you|how can i help/i);
     expect(c.dedupeKey).toBe('journey_guide:life_compass');
     // GUIDE-MODE content bundled on the candidate for the controller.
     expect(c.journeyGuide).toMatchObject({
@@ -135,6 +140,31 @@ describe('VTID-03257 makeJourneyGuideProvider', () => {
       step_type: 'action',
       navigation_route: '/life-compass',
     });
+  });
+
+  it('VTID-03266: opener line is already in the session language (de → German, en → English)', async () => {
+    mockBuildSnapshot.mockResolvedValue({ graduated: false, current_next_step: NEXT_STEP });
+    mockGetStepDef.mockReturnValue(STEP_DEF);
+    const p = makeJourneyGuideProvider();
+    // de: spoken line must BE German (LiveKit session.say does not translate).
+    const de = (await p.produce(makeCtx({ lang: 'de' })) as any).candidate.userFacingLine as string;
+    expect(de).toMatch(/Lass uns gemeinsam deinen Lebenskompass setzen/);
+    expect(de).not.toMatch(/Let's set your Life Compass/);
+    expect(de).not.toMatch(/what (do|can) you|wie kann ich (dir )?helfen/i);
+    // en: English line.
+    const en = (await p.produce(makeCtx({ lang: 'en' })) as any).candidate.userFacingLine as string;
+    expect(en).toMatch(/Let's set your Life Compass together/);
+  });
+
+  it('VTID-03266: opener line carries NO instruction/marker text (LiveKit speaks it verbatim)', async () => {
+    mockBuildSnapshot.mockResolvedValue({ graduated: false, current_next_step: NEXT_STEP });
+    mockGetStepDef.mockReturnValue(STEP_DEF);
+    const p = makeJourneyGuideProvider();
+    const line = (await p.produce(makeCtx({ lang: 'de' })) as any).candidate.userFacingLine as string;
+    // None of these may appear in a string that gets spoken aloud by session.say().
+    for (const forbidden of ['##', 'VERTEX_WAKE_BRIEF', '__VTID_', 'FORBIDDEN', 'OVERRIDE', 'execute_prompt']) {
+      expect(line).not.toContain(forbidden);
+    }
   });
 
   it('priority beats new_day_return (90) and Teacher (85)', async () => {
