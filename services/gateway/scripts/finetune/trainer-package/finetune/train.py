@@ -62,6 +62,18 @@ def main() -> None:
         TrainingArguments,
     )
 
+    # Env banner (v0.1.2): print resolved torch/numpy/transformers versions as
+    # the first lines after import so env drift (e.g. NumPy 2.x shadowing the
+    # container's torch 2.3) is visible immediately instead of as an opaque
+    # "PyTorch not found" failure later. See setup.py failure history.
+    import numpy as _np
+    import transformers as _tf
+    print(
+        f"[env] torch={torch.__version__} numpy={_np.__version__} "
+        f"transformers={_tf.__version__} cuda_available={torch.cuda.is_available()}",
+        flush=True,
+    )
+
     hf_token = os.environ.get("HF_TOKEN") or None
     tokenizer = AutoTokenizer.from_pretrained(args.base_model, token=hf_token, trust_remote_code=True)
     if tokenizer.pad_token is None:
