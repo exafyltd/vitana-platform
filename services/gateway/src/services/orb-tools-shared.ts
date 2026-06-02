@@ -27,6 +27,8 @@
 
 import { SupabaseClient } from '@supabase/supabase-js';
 import { shouldBlockTool } from './intelligence/role-policy-enforcer';
+// VTID-03255 — Journey Foundation voice tool: writes every answer + returns next move.
+import { tool_record_journey_answer } from './journey-foundation/record-journey-answer-tool';
 import { fetchVitanaIndexForProfiler } from './user-context-profiler';
 import { resolvePillarKey } from '../lib/vitana-pillars';
 import {
@@ -3863,6 +3865,10 @@ export const ORB_TOOL_REGISTRY: Record<string, OrbToolHandler> = {
   // the LLM can answer "what is my Life Compass goal?" / "remind me what I'm
   // working toward" with the canonical value instead of inventing one.
   get_life_compass: tool_get_life_compass,
+  // VTID-03255 — Journey Foundation: records every voice answer, writes the real
+  // fact (life_compass goal / economy stance / focus / teacher ack), re-verifies,
+  // and returns the next move. Reachable from Vertex, LiveKit, and /api/v1/orb/tool.
+  record_journey_answer: tool_record_journey_answer,
 };
 
 export const ORB_TOOL_NAMES = Object.keys(ORB_TOOL_REGISTRY);

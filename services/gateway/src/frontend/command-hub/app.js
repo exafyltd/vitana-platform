@@ -3818,6 +3818,15 @@ const state = {
         error: null
     },
 
+    // BOOTSTRAP-35DAY-TRACKER: Training cycle tracker (System Overview "Training" section)
+    trainingStatus: {
+        data: null,
+        lastRefreshed: null,
+        loading: false,
+        fetched: false,
+        error: null
+    },
+
     // Operator module — Supervision Dashboard
     operatorDashboard: { data: null, loading: false, error: null, fetched: false },
     operatorTaskQueue: { items: [], loading: false, error: null, fetched: false, statusFilter: 'all' },
@@ -29377,6 +29386,10 @@ function renderOverviewSystemView() {
     if (!state.actionRequired.fetched && !state.actionRequired.loading) {
         fetchActionRequired();
     }
+    // BOOTSTRAP-35DAY-TRACKER: load the active training cycle for the Training section
+    if (!state.trainingStatus.fetched && !state.trainingStatus.loading) {
+        fetchTrainingStatus();
+    }
     // Auto-refresh every 30s while the Overview is mounted. Use a single
     // timer keyed on the state to avoid stacking duplicates across renders.
     if (!state._actionRequiredTimer) {
@@ -29488,6 +29501,17 @@ function renderOverviewSystemView() {
     banner.appendChild(bannerLeft);
     banner.appendChild(bannerRight);
     container.appendChild(banner);
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // SECTION: Training — the multi-day training cycle tracker (goal in,
+    // verified outcome out). BOOTSTRAP-35DAY-TRACKER.
+    // Defensive: this section must never be able to break the whole Overview.
+    // ═══════════════════════════════════════════════════════════════════════
+    try {
+        container.appendChild(renderTrainingCycleSection());
+    } catch (trErr) {
+        if (typeof console !== 'undefined') console.warn('[training-section] render failed:', trErr);
+    }
 
     // ═══════════════════════════════════════════════════════════════════════
     // SECTION 2: Key Metrics Grid
@@ -30353,6 +30377,201 @@ async function fetchActionRequired(silentRefresh) {
     if (state.activeModule === 'overview' && state.activeTab === 'system-overview') {
         renderApp();
     }
+}
+
+// BOOTSTRAP-35DAY-TRACKER: fetch the active training cycle + per-day goals/outcomes.
+async function fetchTrainingStatus(silentRefresh) {
+    if (state.trainingStatus.loading) return;
+    var isInitialLoad = !state.trainingStatus.fetched;
+    state.trainingStatus.loading = true;
+    state.trainingStatus.error = null;
+    if (isInitialLoad && !silentRefresh) renderApp();
+
+    try {
+        var r = await fetchWT('/api/v1/training/status', {
+            headers: (typeof buildContextHeaders === 'function') ? buildContextHeaders({ Accept: 'application/json' }) : { Accept: 'application/json' }
+        });
+        if (!r.ok) {
+            state.trainingStatus.error = 'HTTP ' + r.status;
+        } else {
+            state.trainingStatus.data = await r.json();
+        }
+    } catch (err) {
+        state.trainingStatus.error = (err && err.message) ? err.message : String(err);
+    }
+    state.trainingStatus.lastRefreshed = new Date().toISOString();
+    state.trainingStatus.loading = false;
+    state.trainingStatus.fetched = true;
+    if (state.activeModule === 'overview' && state.activeTab === 'system-overview') {
+        renderApp();
+    }
+}
+
+// BOOTSTRAP-35DAY-TRACKER: render the "Training" section for System Overview.
+// Generic across cycles — header adapts to cycle.label / length_days.
+function renderTrainingCycleSection() {
+    var ts = state.trainingStatus;
+    var section = document.createElement('div');
+    section.style.cssText = 'margin:0.85rem 0;border:1px solid rgba(99,102,241,0.35);border-radius:10px;' +
+        'background:linear-gradient(180deg,rgba(49,46,129,0.18),rgba(15,23,42,0.25));overflow:hidden;';
+
+    // ── Header ──
+    var head = document.createElement('div');
+    head.style.cssText = 'display:flex;align-items:center;gap:0.6rem;padding:0.7rem 0.95rem;' +
+        'border-bottom:1px solid rgba(99,102,241,0.25);';
+    var hIcon = document.createElement('span'); hIcon.textContent = '🎓'; hIcon.style.cssText = 'font-size:1.05rem;';
+    var hTitle = document.createElement('strong'); hTitle.style.cssText = 'color:#c7d2fe;font-size:0.95rem;';
+    var hSpacer = document.createElement('span'); hSpacer.style.flex = '1';
+    var hMeta = document.createElement('span'); hMeta.style.cssText = 'font-size:0.72rem;color:rgba(199,210,254,0.65);';
+    var hRefresh = document.createElement('button');
+    hRefresh.className = 'btn btn-sm'; hRefresh.textContent = 'Refresh';
+    hRefresh.style.cssText = 'padding:1px 8px;font-size:0.72rem;';
+    hRefresh.onclick = function () { state.trainingStatus.fetched = false; fetchTrainingStatus(); };
+    head.appendChild(hIcon); head.appendChild(hTitle); head.appendChild(hSpacer); head.appendChild(hMeta); head.appendChild(hRefresh);
+    section.appendChild(head);
+
+    var body = document.createElement('div');
+    body.style.cssText = 'padding:0.85rem 0.95rem;';
+
+    if (ts.error && !ts.data) {
+        hTitle.textContent = 'Training';
+        var err = document.createElement('div');
+        err.style.cssText = 'font-size:0.8rem;color:#fca5a5;';
+        err.textContent = '⚠️ Could not load training status: ' + ts.error;
+        body.appendChild(err);
+        section.appendChild(body);
+        return section;
+    }
+    if (!ts.data) {
+        hTitle.textContent = 'Training';
+        var load = document.createElement('div');
+        load.style.cssText = 'font-size:0.8rem;color:#93c5fd;';
+        load.textContent = 'Loading training cycle…';
+        body.appendChild(load);
+        section.appendChild(body);
+        return section;
+    }
+
+    var data = ts.data;
+    var cycle = data.cycle || {};
+    var live = data.live || {};
+    var today = data.today || null;
+    var days = Array.isArray(data.days) ? data.days : [];
+
+    hTitle.textContent = (cycle.label || 'Training') + ' · Day ' + (cycle.current_day || 1) + ' of ' + (cycle.length_days || '—');
+    hMeta.textContent = (data.source === 'db' ? '' : 'bootstrap · ') + (ts.lastRefreshed ? dashboardRelativeTime(ts.lastRefreshed) : '');
+
+    var statusColors = {
+        success: { fg: '#86efac', bg: 'rgba(34,197,94,0.14)', dot: '#22c55e' },
+        running: { fg: '#fcd34d', bg: 'rgba(245,158,11,0.14)', dot: '#f59e0b' },
+        failure: { fg: '#fca5a5', bg: 'rgba(239,68,68,0.14)', dot: '#ef4444' },
+        partial: { fg: '#fdba74', bg: 'rgba(249,115,22,0.14)', dot: '#f97316' },
+        pending: { fg: '#cbd5e1', bg: 'rgba(148,163,184,0.12)', dot: '#94a3b8' }
+    };
+    function colorFor(s) { return statusColors[s] || statusColors.pending; }
+
+    // ── Today's goal card ──
+    var goalCard = document.createElement('div');
+    var tc = colorFor(today ? today.status : 'pending');
+    goalCard.style.cssText = 'border:1px solid ' + tc.dot + '55;background:' + tc.bg + ';border-radius:8px;padding:0.7rem 0.85rem;margin-bottom:0.75rem;';
+    var gLabel = document.createElement('div');
+    gLabel.style.cssText = 'font-size:0.68rem;text-transform:uppercase;letter-spacing:0.08em;color:rgba(226,232,240,0.6);margin-bottom:0.3rem;';
+    gLabel.textContent = "Today's Goal — End of Day";
+    goalCard.appendChild(gLabel);
+    var gText = document.createElement('div');
+    gText.style.cssText = 'font-size:0.9rem;color:#f1f5f9;line-height:1.45;';
+    gText.textContent = today && today.goal ? today.goal : 'No goal set for today yet.';
+    goalCard.appendChild(gText);
+
+    var gStatus = document.createElement('span');
+    gStatus.style.cssText = 'display:inline-block;margin-top:0.5rem;font-size:0.7rem;font-weight:700;border-radius:999px;padding:2px 9px;color:' + tc.fg + ';background:rgba(0,0,0,0.25);';
+    gStatus.textContent = (today ? today.status : 'pending').toUpperCase();
+    goalCard.appendChild(gStatus);
+
+    if (today && today.outcome) {
+        var gOut = document.createElement('div');
+        gOut.style.cssText = 'margin-top:0.5rem;font-size:0.8rem;color:#cbd5e1;line-height:1.4;';
+        gOut.innerHTML = '<strong style="color:#e2e8f0;">Outcome:</strong> ';
+        gOut.appendChild(document.createTextNode(today.outcome + (today.evidence ? ' — ' + today.evidence : '')));
+        goalCard.appendChild(gOut);
+    }
+    body.appendChild(goalCard);
+
+    // ── Initiated-today list ──
+    if (today && Array.isArray(today.initiated) && today.initiated.length) {
+        var initWrap = document.createElement('div');
+        initWrap.style.cssText = 'margin-bottom:0.75rem;';
+        var initLabel = document.createElement('div');
+        initLabel.style.cssText = 'font-size:0.68rem;text-transform:uppercase;letter-spacing:0.08em;color:rgba(226,232,240,0.6);margin-bottom:0.35rem;';
+        initLabel.textContent = 'Initiated Today';
+        initWrap.appendChild(initLabel);
+        today.initiated.forEach(function (it) {
+            var row = document.createElement('div');
+            row.style.cssText = 'display:flex;align-items:flex-start;gap:0.5rem;padding:0.28rem 0;font-size:0.82rem;color:#e2e8f0;';
+            var dot = document.createElement('span');
+            var ic = colorFor(it.status === 'done' ? 'success' : (it.status || 'pending'));
+            dot.style.cssText = 'flex:0 0 auto;width:8px;height:8px;border-radius:50%;margin-top:0.45rem;background:' + ic.dot + ';';
+            var txt = document.createElement('span');
+            txt.textContent = it.label + (it.detail ? ' — ' + it.detail : '');
+            row.appendChild(dot); row.appendChild(txt);
+            initWrap.appendChild(row);
+        });
+        body.appendChild(initWrap);
+    }
+
+    // ── Live tiles: training job · gateway revision · flags ──
+    var tiles = document.createElement('div');
+    tiles.style.cssText = 'display:flex;flex-wrap:wrap;gap:0.5rem;margin-bottom:0.75rem;';
+    function tile(label, value, valColor) {
+        var t = document.createElement('div');
+        t.style.cssText = 'flex:1 1 160px;min-width:140px;border:1px solid rgba(148,163,184,0.2);border-radius:7px;padding:0.5rem 0.65rem;background:rgba(15,23,42,0.3);';
+        var l = document.createElement('div');
+        l.style.cssText = 'font-size:0.64rem;text-transform:uppercase;letter-spacing:0.06em;color:rgba(148,163,184,0.8);';
+        l.textContent = label;
+        var v = document.createElement('div');
+        v.style.cssText = 'font-size:0.82rem;color:' + (valColor || '#e2e8f0') + ';margin-top:0.2rem;word-break:break-all;';
+        v.textContent = value;
+        t.appendChild(l); t.appendChild(v);
+        return t;
+    }
+    var job = live.training_job || {};
+    var jobColor = job.state === 'JOB_STATE_SUCCEEDED' ? '#86efac'
+        : (job.state === 'JOB_STATE_FAILED' ? '#fca5a5' : '#fcd34d');
+    tiles.appendChild(tile('Training Job', (job.state || 'unknown') + (job.job_id ? ' · ' + job.job_id : ''), jobColor));
+    tiles.appendChild(tile('Gateway Revision', live.gateway_revision || '—', '#93c5fd'));
+    var flags = live.flags || {};
+    var onCount = Object.keys(flags).filter(function (k) { return flags[k]; }).length;
+    tiles.appendChild(tile('Wave-0 Flags', onCount + ' of ' + Object.keys(flags).length + ' ON', onCount === 0 ? '#86efac' : '#fcd34d'));
+    body.appendChild(tiles);
+
+    // ── 35-day strip ──
+    var stripLabel = document.createElement('div');
+    stripLabel.style.cssText = 'font-size:0.68rem;text-transform:uppercase;letter-spacing:0.08em;color:rgba(226,232,240,0.6);margin-bottom:0.35rem;';
+    stripLabel.textContent = cycle.length_days + '-Day Track';
+    body.appendChild(stripLabel);
+
+    var strip = document.createElement('div');
+    strip.style.cssText = 'display:flex;flex-wrap:wrap;gap:4px;';
+    var byNum = {};
+    days.forEach(function (d) { byNum[d.day_number] = d; });
+    for (var i = 1; i <= (cycle.length_days || 35); i++) {
+        var cell = document.createElement('div');
+        var d = byNum[i];
+        var cc = d ? colorFor(d.status) : statusColors.pending;
+        var isCurrent = i === cycle.current_day;
+        cell.style.cssText = 'width:24px;height:24px;border-radius:5px;display:flex;align-items:center;justify-content:center;' +
+            'font-size:0.62rem;color:' + (d ? cc.fg : 'rgba(148,163,184,0.6)') + ';' +
+            'background:' + (d ? cc.bg : 'rgba(148,163,184,0.08)') + ';' +
+            'border:1px solid ' + (isCurrent ? cc.dot : 'rgba(148,163,184,0.18)') + ';' +
+            (isCurrent ? 'box-shadow:0 0 0 1px ' + cc.dot + ';font-weight:700;' : '');
+        cell.textContent = String(i);
+        if (d && d.goal) cell.title = 'Day ' + i + ': ' + d.goal + ' [' + d.status + ']';
+        strip.appendChild(cell);
+    }
+    body.appendChild(strip);
+
+    section.appendChild(body);
+    return section;
 }
 
 // VTID-02031: Render "Action Required" panel — pinned at the top of the

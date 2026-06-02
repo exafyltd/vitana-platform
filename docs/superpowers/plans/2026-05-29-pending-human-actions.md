@@ -18,3 +18,14 @@ Items the autonomous session cannot do, or that are in-flight. Each is logged he
 - [ ] **gcloud reauth** — `gcloud auth login` (interactive) needed for direct Cloud Run log pulls; otherwise logs come via the `DEBUG-GATEWAY-LOGS.yml` workflow.
 
 This PR changes NO spoken behavior, so code tests suffice for code-complete; the production smoke is the *purpose* of the PR (it produces the R0-diagnostic log), not a merge gate.
+
+## R0 — Vertex post-login diagnosis live verification (2026-06-01)
+
+Diagnosis written to `docs/superpowers/plans/2026-06-01-R0-vertex-postlogin-diagnosis.md`
+(root cause: no total-size guard on the Vertex `system_instruction`; aggregate can exceed
+the ~32 KB Live setup budget → silent setup failure → no audio; LiveKit allowlist masked it).
+The following confirmations are out-of-sandbox:
+
+- [ ] Open ORB as synthetic user `a27552a3-0257-4305-8ed0-351a80fd3701` (NOT allowlisted) → confirm Vertex silence; capture whether gateway logs `Live API closed during handshake (code=1009)` or `Live API connection timeout`.
+- [ ] Log `Buffer.byteLength(systemInstructionText,'utf8')` at the send site for dragan1 (heavy) vs dragan3 (clean) → confirm dragan1 crosses ~32 KB. If dragan1 is UNDER 32 KB yet silent, the size hypothesis is wrong → reopen R0 toward generic Vertex setup/auth.
+- [ ] `gcloud` log pull (needs reauth) filtered to `Live API closed during handshake` / `Live API connection timeout`, last 14 days, to quantify affected sessions.

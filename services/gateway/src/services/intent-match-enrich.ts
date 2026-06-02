@@ -30,6 +30,24 @@ function normalizeGender(raw: unknown): 'male' | 'female' | null {
   return null;
 }
 
+/**
+ * Whole-years age from a `date_of_birth` value (DATE column → 'YYYY-MM-DD'
+ * string, or a Date). Returns null for missing/invalid/future dates and
+ * clamps to a sane 13–120 band so a typo'd birth year never surfaces a
+ * nonsense age on the card or skews the age filter.
+ */
+function computeAge(dob: unknown): number | null {
+  if (dob == null) return null;
+  const birth = dob instanceof Date ? dob : new Date(String(dob));
+  if (Number.isNaN(birth.getTime())) return null;
+  const now = new Date();
+  let age = now.getFullYear() - birth.getFullYear();
+  const m = now.getMonth() - birth.getMonth();
+  if (m < 0 || (m === 0 && now.getDate() < birth.getDate())) age -= 1;
+  if (age < 13 || age > 120) return null;
+  return age;
+}
+
 function pickCounterpartyVid(
   match: RedactedMatch,
   readerOwnsA: boolean,
@@ -127,12 +145,13 @@ export async function enrichMatchesWithCounterpartyProfiles(
     full_name: string | null;
     avatar_url: string | null;
     gender: string | null;
+    date_of_birth: string | null;
   };
   const profileByVid = new Map<string, ProfileRow>();
   if (counterpartyVids.size > 0) {
     const { data: profiles } = await supabase
       .from('profiles')
-      .select('user_id, vitana_id, display_name, full_name, avatar_url, gender')
+      .select('user_id, vitana_id, display_name, full_name, avatar_url, gender, date_of_birth')
       .in('vitana_id', Array.from(counterpartyVids));
     for (const p of (profiles ?? []) as ProfileRow[]) {
       if (p.vitana_id) profileByVid.set(p.vitana_id, p);
@@ -162,6 +181,7 @@ export async function enrichMatchesWithCounterpartyProfiles(
         partner_display_name: null,
         partner_avatar_url: null,
         partner_gender: null,
+        partner_age: null,
         ...EMPTY_COUNTERPARTY_INTENT_FIELDS,
       };
     }
@@ -185,6 +205,7 @@ export async function enrichMatchesWithCounterpartyProfiles(
         partner_display_name: null,
         partner_avatar_url: null,
         partner_gender: null,
+        partner_age: null,
         ...intentFields,
       };
     }
@@ -195,6 +216,7 @@ export async function enrichMatchesWithCounterpartyProfiles(
         partner_display_name: null,
         partner_avatar_url: null,
         partner_gender: null,
+        partner_age: null,
         ...intentFields,
       };
     }
@@ -207,6 +229,7 @@ export async function enrichMatchesWithCounterpartyProfiles(
         partner_display_name: null,
         partner_avatar_url: null,
         partner_gender: null,
+        partner_age: null,
         ...intentFields,
       };
     }
@@ -215,6 +238,7 @@ export async function enrichMatchesWithCounterpartyProfiles(
       partner_display_name: profile.display_name ?? profile.full_name ?? null,
       partner_avatar_url: profile.avatar_url ?? null,
       partner_gender: normalizeGender(profile.gender),
+      partner_age: computeAge(profile.date_of_birth),
       ...intentFields,
     };
   });

@@ -1105,6 +1105,64 @@ export function buildLiveApiTools(
             required: ['raw_text'],
           },
         },
+        // ─── VTID-03255 — record_journey_answer: drive the guided journey ───
+        {
+          name: 'record_journey_answer',
+          description: [
+            "Record the user's answer to a Journey Foundation step and get the",
+            'next move back. The journey is a goal-gated, guided onboarding path:',
+            'you lead it, the My Journey screen mirrors it. CALL THIS every time',
+            'the user answers a journey question, so the real record is written and',
+            'the screen updates instantly.',
+            '',
+            'Pass `step` = the step being answered:',
+            '  - "life_compass"  -> their main goal. Put the goal sentence in',
+            '     `value`; if they give a measurable target + timeframe, also pass',
+            '     `target_value`, `target_unit`, `target_date` (YYYY-MM-DD).',
+            '  - "economic_intent" -> their stance on earning in the longevity',
+            '     economy. Put their words in `value` (build a business / passive',
+            '     income / earn from recommendations / just curious). "curious" is',
+            '     a valid answer - never pressure them.',
+            '  - "weakest_habit" -> the habit blocking their health most. Put it in',
+            '     `value` (food / water / exercise / sleep / stress).',
+            '  - "understand_economy", "autopilot", "business_live_media" -> these',
+            '     are teaching moments; call with `acknowledged: true` once the',
+            '     user understands.',
+            '',
+            'The tool returns the exact next sentence to say (in `text`) and the',
+            'next step + navigation in `result`. Speak the returned `text`, then',
+            'continue. Set `teach_mode: true` when the user is not in the mood to',
+            'do tasks and just wants to understand.',
+          ].join('\n'),
+          parameters: {
+            type: 'object',
+            properties: {
+              step: {
+                type: 'string',
+                description:
+                  'The journey step being answered: life_compass, economic_intent, weakest_habit, understand_economy, autopilot, business_live_media, economic_aspiration.',
+              },
+              value: {
+                type: 'string',
+                description: "The user's answer in their own words (goal sentence, pillar, intent).",
+              },
+              category: { type: 'string', description: 'Optional life domain for the goal.' },
+              target_value: { type: 'number', description: 'Optional measurable target (e.g. 5).' },
+              target_unit: { type: 'string', description: 'Optional unit for the target (e.g. kg).' },
+              target_date: { type: 'string', description: 'Optional deadline, YYYY-MM-DD.' },
+              starting_value: { type: 'number', description: 'Optional starting value for the goal.' },
+              acknowledged: {
+                type: 'boolean',
+                description: 'For teaching steps - true once the user understands.',
+              },
+              teach_mode: {
+                type: 'boolean',
+                description: 'True when the user wants to learn rather than execute a task now.',
+              },
+            },
+            required: ['step'],
+          },
+        },
         // ─── VTID-02601 — set_reminder: voice-create a one-shot reminder ───
         {
           name: 'set_reminder',
