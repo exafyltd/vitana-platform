@@ -29505,8 +29505,13 @@ function renderOverviewSystemView() {
     // ═══════════════════════════════════════════════════════════════════════
     // SECTION: Training — the multi-day training cycle tracker (goal in,
     // verified outcome out). BOOTSTRAP-35DAY-TRACKER.
+    // Defensive: this section must never be able to break the whole Overview.
     // ═══════════════════════════════════════════════════════════════════════
-    container.appendChild(renderTrainingCycleSection());
+    try {
+        container.appendChild(renderTrainingCycleSection());
+    } catch (trErr) {
+        if (typeof console !== 'undefined') console.warn('[training-section] render failed:', trErr);
+    }
 
     // ═══════════════════════════════════════════════════════════════════════
     // SECTION 2: Key Metrics Grid
