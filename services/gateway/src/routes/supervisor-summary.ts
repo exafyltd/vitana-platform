@@ -34,7 +34,16 @@ import { VITANA_ENV } from '../env';
 
 const router = Router();
 
-function serviceTokenAuth(req: Request, res: Response, next: () => void): void {
+/**
+ * Service-token bearer guard. Named `requireServiceRole` so the route-auth
+ * impact scanner (scripts/ci/impact-rules/new-route-without-auth-middleware.mjs)
+ * recognizes this handler as guarded — its AUTH_NAMES allowlist includes
+ * `requireServiceRole`, matching the canonical in-handler token-guard shape
+ * used elsewhere (e.g. dev-autopilot.ts's `requireScanToken`). Behavior is
+ * unchanged: validates a bearer token against GATEWAY_SERVICE_TOKEN and
+ * returns 401 on a missing or invalid token.
+ */
+function requireServiceRole(req: Request, res: Response, next: () => void): void {
   const header = req.header('authorization') ?? req.header('Authorization');
   if (!header || !header.toLowerCase().startsWith('bearer ')) {
     res.status(401).json({ ok: false, error: 'missing bearer token' });
@@ -306,10 +315,7 @@ async function buildSummary(
   };
 }
 
-router.get(
-  '/summary',
-  serviceTokenAuth,
-  async (req: Request, res: Response) => {
+router.get('/summary', requireServiceRole, async (req: Request, res: Response) => {
     const windowHours = Math.max(1, Math.min(168, Number(req.query.window_hours ?? 24)));
     const supabase = getSupabase();
     if (!supabase) {
