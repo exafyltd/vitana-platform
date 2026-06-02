@@ -24,7 +24,11 @@ from setuptools import find_packages, setup
 
 setup(
     name="finetune-trainer",
-    version="0.1.2",
+    # v0.1.3 (BOOTSTRAP-35DAY-TRACKER): train.py now saves the PEFT adapter with
+    # safe_serialization=False. v0.1.2 (numpy<2) let training COMPLETE, but the
+    # safetensors save tripped on Qwen2.5's tied embeddings/LM-head
+    # (CustomJob 3932080612898242560). Dependency pins are unchanged from v0.1.2.
+    version="0.1.3",
     packages=find_packages(),
     install_requires=[
         # CRITICAL: torch 2.3 (container) is incompatible with numpy>=2.

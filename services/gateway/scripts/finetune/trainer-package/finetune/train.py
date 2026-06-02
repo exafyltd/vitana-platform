@@ -131,7 +131,13 @@ def main() -> None:
     trainer.train()
 
     final_dir = Path(output_dir) / "final"
-    model.save_pretrained(final_dir)
+    # safe_serialization=False (v0.1.3): Qwen2.5 ties the input embeddings to the
+    # LM head, so safetensors' shared-tensor scan (_find_shared_tensors) hits
+    # "Attempted to access the data pointer on an invalid python storage" and the
+    # save aborts AFTER training completes (CustomJob 3932080612898242560,
+    # 2026-06-02). Writing the PEFT adapter as a pickle .bin sidesteps the tied-
+    # tensor check; fine for a LoRA adapter artifact.
+    model.save_pretrained(final_dir, safe_serialization=False)
     tokenizer.save_pretrained(final_dir)
     write_manifest(final_dir, args, len(rows))
     upload_directory(final_dir, args.output_uri)
