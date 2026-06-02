@@ -53,6 +53,10 @@ import { resolveSessionTimezone } from '../services/awareness-unified-context';
 // data_export_ok ONLY where tenant export consent is established, so the
 // dataset-extraction PII gate can ingest them. Default off / fail-closed.
 import { dataExportConsentTag } from '../services/data-export-consent';
+import {
+  buildOrbTurnRespondedPayload,
+  type OrbTurnToolSignal,
+} from './orb-turn-event-payload';
 // VTID-03177 (PROFILE): per-turn latency telemetry. The middleware is a no-op
 // when FEATURE_LATENCY_TELEMETRY_ENV is off; safe to wire on every route.
 // Phase 1 W2 (BOOTSTRAP-PHASE1-W2-VOICE-LATENCY-WIRE): the LatencyTracker class +
@@ -908,6 +912,11 @@ export interface GeminiLiveSession {
   // VTID-01225-THROTTLE: Buffer for accumulating user input transcription.
   // Written to memory_items once per turn_complete instead of per-fragment.
   inputTranscriptBuffer: string;
+  // BOOTSTRAP-VOICE-DATASET-EMITTER: tool/function the model selected on the
+  // current turn (set in executeLiveApiTool). Read once at turn_complete to
+  // carry the voice-tool-routing signal into the orb.turn.responded event,
+  // then cleared. Undefined when the turn dispatched no tool.
+  pendingTurnToolSignal?: { toolName: string; toolArguments?: Record<string, unknown> };
   // VTID-STREAM-KEEPALIVE: Interval handle for upstream Vertex WS ping
   upstreamPingInterval?: ReturnType<typeof setInterval>;
   // VTID-STREAM-SILENCE: Interval handle for sending silence audio to Vertex
@@ -2093,6 +2102,14 @@ async function executeLiveApiTool(
   const startTime = Date.now();
   // Phase 1 W2: mark the tool boundary on the active voice turn (no-op off-flag).
   markVoiceLatency(session, 'tool_dispatch', { tool: toolName });
+  // BOOTSTRAP-VOICE-DATASET-EMITTER: record the tool the model chose for this
+  // turn so emitOrbTurnResponded can carry the voice-tool-routing signal. This
+  // is just an in-memory note on the session — consent gating happens at emit
+  // time (buildOrbTurnRespondedPayload), so recording here leaks nothing.
+  session.pendingTurnToolSignal = {
+    toolName,
+    ...(args && Object.keys(args).length > 0 ? { toolArguments: args } : {}),
+  };
   // Phase 1 W2: shadow-compare the tool-routing decision. Primary = the tool
   // Vertex already chose (toolName); candidate = the W2 stub (echoes it until a
   // fine-tune is served). Fire-and-forget — never blocks or alters execution,
@@ -7473,8 +7490,15 @@ async function emitOrbTurnResponded(
   conversationId: string,
   replyText: string,
   provider: string,
-  userId?: string
+  userId?: string,
+  // BOOTSTRAP-VOICE-DATASET-EMITTER: tool-routing signal for the voice-tool-routing
+  // dataset extractor. Carried into the event metadata ONLY when export consent is
+  // established AND the turn is not guardrail-excluded (PII gate in
+  // buildOrbTurnRespondedPayload). When omitted, the emitter behaves exactly as
+  // before (envelope-only).
+  opts?: { toolSignal?: OrbTurnToolSignal; guardrailExcluded?: boolean }
 ): Promise<void> {
+  const consentTag = await dataExportConsentTag({ userId });
   await emitOasisEvent({
     vtid: 'VTID-0135',
     type: 'orb.turn.responded',
@@ -7482,15 +7506,15 @@ async function emitOrbTurnResponded(
     status: 'success',
     message: `ORB turn responded via ${provider}`,
     ...(userId && { actor_id: userId, surface: 'orb' as const }),
-    payload: {
-      orb_session_id: orbSessionId,
-      conversation_id: conversationId,
-      reply_length: replyText.length,
-      reply_preview: replyText.slice(0, 140),
+    payload: buildOrbTurnRespondedPayload({
+      orbSessionId,
+      conversationId,
+      replyText,
       provider,
-      metadata: { mode: 'orb_voice' },
-      ...(await dataExportConsentTag({ userId }))
-    }
+      consentTag,
+      toolSignal: opts?.toolSignal,
+      guardrailExcluded: opts?.guardrailExcluded,
+    }),
   }).catch(err => console.warn('[VTID-0135] Failed to emit orb.turn.responded:', err.message));
 }
 
@@ -12668,13 +12692,45 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
       },
       // Turn complete handler - forward to WS client so it knows when response ends
       () => {
+        const isGreetingTurn = liveSession.greetingSent && liveSession.turn_count === (liveSession.greetingTurnIndex ?? 0) + 1;
         if (clientWs.readyState === WebSocket.OPEN) {
-          const isGreetingTurn = liveSession.greetingSent && liveSession.turn_count === (liveSession.greetingTurnIndex ?? 0) + 1;
           sendWsMessage(clientWs, {
             type: 'turn_complete',
             is_greeting: isGreetingTurn
           });
           console.log(`[VTID-VOICE-INIT] Forwarded turn_complete to WS client ${sessionId} (isGreeting=${isGreetingTurn})`);
+        }
+        // BOOTSTRAP-VOICE-DATASET-EMITTER: emit orb.turn.responded with the
+        // voice-tool-routing signal so the dataset extractor sees real rows.
+        // Skip greeting turns (no user input). The transcript/tool fields are
+        // attached ONLY under export consent + no guardrail (gating lives in
+        // buildOrbTurnRespondedPayload); the consent read is cached per-tenant.
+        const toolSignal = liveSession.pendingTurnToolSignal;
+        liveSession.pendingTurnToolSignal = undefined;
+        if (!isGreetingTurn) {
+          const replyText = liveSession.outputTranscriptBuffer || '';
+          const userInput = liveSession.inputTranscriptBuffer || '';
+          if (replyText.length > 0) {
+            void emitOrbTurnResponded(
+              liveSession.sessionId,
+              liveSession.conversation_id || liveSession.sessionId,
+              replyText,
+              'vertex',
+              liveSession.identity?.user_id,
+              {
+                toolSignal: toolSignal
+                  ? {
+                      toolName: toolSignal.toolName,
+                      inputText: userInput,
+                      toolCall: {
+                        name: toolSignal.toolName,
+                        ...(toolSignal.toolArguments ? { arguments: toolSignal.toolArguments } : {}),
+                      },
+                    }
+                  : { inputText: userInput },
+              },
+            );
+          }
         }
       },
       // Interrupted handler - forward to WS client so it can clear audio queue
