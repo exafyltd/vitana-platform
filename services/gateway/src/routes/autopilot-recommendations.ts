@@ -23,7 +23,7 @@
 import { Router, Request, Response } from 'express';
 import { createHash } from 'crypto';
 import { emitOasisEvent } from '../services/oasis-event-service';
-import { generateRecommendations, generatePersonalRecommendations, SourceType } from '../services/recommendation-engine';
+import { generateRecommendations, generatePersonalRecommendations, regenerateCommunityRecommendations, SourceType } from '../services/recommendation-engine';
 import { notifyUserAsync } from '../services/notification-service';
 import { DEFAULT_WAVE_CONFIG, buildTemplateToWaveMap } from '../services/wave-defaults';
 import { derivePillarImpact } from '../services/recommendation-engine/pillar-impact';
@@ -99,6 +99,69 @@ function annotateWithPillarImpact<T extends { contribution_vector?: unknown }>(r
 const router = Router();
 
 const LOG_PREFIX = '[VTID-01180]';
+
+/**
+ * Build the full community recommendation rows for an API response body
+ * (dedup → retired-action filter → wave/horizon enrichment → pillar_impact).
+ * Mirrors the GET / handler's community enrichment. The GET / handler remains
+ * the canonical "which recs does this user see" surface and the FE refetches it
+ * after a forced /generate, so this is a convenience projection for the
+ * /generate response (VTID-03301). Defined after COMMUNITY_ACTIONS so the
+ * retired-action filter can reference it.
+ */
+async function buildCommunityRecsResponse(
+  userId: string,
+  statuses: string[],
+  limit: number,
+): Promise<Array<Record<string, any>>> {
+  const fetchLimit = Math.max((limit + 1) * 4, 80);
+  const result = await queryRecommendationsByRole('community', userId, statuses, fetchLimit, 0);
+  let recommendations = result.ok ? (result.data || []) : [];
+
+  // Dedup by source_ref then title, preferring 'new' status (same rules as GET /).
+  const seen = new Map<string, any>();
+  for (const rec of recommendations) {
+    const k = rec.source_ref || rec.title;
+    const ex = seen.get(k);
+    if (!ex) seen.set(k, rec);
+    else if (rec.status === 'new' && ex.status !== 'new') seen.set(k, rec);
+  }
+  const seenTitles = new Set<string>();
+  recommendations = [];
+  for (const rec of seen.values()) {
+    if (seenTitles.has(rec.title)) continue;
+    seenTitles.add(rec.title);
+    recommendations.push(rec);
+  }
+
+  // Retired-action filter: only keep refs that map to a real community action.
+  recommendations = recommendations.filter((rec) => !rec.source_ref || COMMUNITY_ACTIONS[rec.source_ref]);
+
+  // Wave/horizon enrichment (mirrors GET /).
+  const templateToWave = buildTemplateToWaveMap();
+  for (const rec of recommendations) {
+    if (rec.source_ref) {
+      const waveId = templateToWave.get(rec.source_ref);
+      if (waveId) {
+        rec.wave_id = waveId;
+        rec.wave_order = DEFAULT_WAVE_CONFIG.find((w) => w.id === waveId)?.order ?? 99;
+      }
+    }
+    if (!rec.wave_id) {
+      rec.wave_id = 'wave-1';
+      rec.wave_order = 1;
+    }
+    const waveDef = DEFAULT_WAVE_CONFIG.find((w) => w.id === rec.wave_id);
+    const startDay = waveDef?.timeline.start_day ?? 0;
+    rec.horizon =
+      startDay <= 0  ? 'today'    :
+      startDay <= 3  ? 'next3'    :
+      startDay <= 7  ? 'thisWeek' :
+      startDay <= 30 ? 'month'    : 'future';
+  }
+
+  return annotateWithPillarImpact(recommendations).slice(0, limit);
+}
 
 // =============================================================================
 // Community Action Map — signal_type → action for community user activation
@@ -1527,6 +1590,8 @@ router.post('/:id/reject', async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const { reason } = req.body;
+    const userId = getUserId(req);
+    const role = getActiveRole(req);
 
     if (!id) {
       return res.status(400).json({ ok: false, error: 'Recommendation ID required' });
@@ -1546,6 +1611,16 @@ router.post('/:id/reject', async (req: Request, res: Response) => {
     const response = result.data;
     if (!response?.ok) {
       return res.status(400).json({ ok: false, error: response?.error || 'Failed to reject' });
+    }
+
+    // VTID-03301: dismissing the last rec also empties the queue — kick the
+    // same guarded regeneration the /complete path uses. Community only;
+    // fire-and-forget so reject stays fast.
+    if (role === 'community' && userId) {
+      regenerateCommunityRecommendations(userId, {
+        requireEmptyQueue: true,
+        trigger_type: 'auto_replenish',
+      }).catch((e: any) => console.warn(`${LOG_PREFIX} post-reject regen error (non-fatal): ${e?.message}`));
     }
 
     return res.status(200).json({
@@ -1636,6 +1711,49 @@ router.post('/generate', async (req: Request, res: Response) => {
 
   try {
     const userId = getUserId(req);
+    const role = getActiveRole(req);
+
+    // =========================================================================
+    // VTID-03301: Community on-demand regeneration.
+    // POST /recommendations/generate?role=community
+    //   → 200 { ok, generated, recommendations }            (fresh batch)
+    //   → 200 { ok, generated: 0, reason }                  (guard fired)
+    // Same guards as the queue-empty auto-trigger; the cooldown makes a
+    // double-tap idempotent so a force-refresh can't double-generate.
+    // =========================================================================
+    if (role === 'community') {
+      if (!userId) {
+        return res.status(401).json({ ok: false, error: 'User ID required' });
+      }
+      const tenantId = req.get('X-Vitana-Tenant') || undefined;
+      const regen = await regenerateCommunityRecommendations(userId, {
+        trigger_type: 'manual',
+        tenantId,
+      });
+      if (!regen.ok) {
+        return res.status(500).json({ ok: false, error: regen.error || 'Generation failed' });
+      }
+      if (regen.generated === 0) {
+        return res.status(200).json({
+          ok: true,
+          generated: 0,
+          reason: regen.reason || 'no_signals',
+          recommendations: [],
+          vtid: 'VTID-03301',
+          timestamp: new Date().toISOString(),
+        });
+      }
+      const recommendations = await buildCommunityRecsResponse(userId, ['new', 'activated'], 20);
+      return res.status(200).json({
+        ok: true,
+        generated: regen.generated,
+        recommendations,
+        run_id: regen.run_id,
+        vtid: 'VTID-03301',
+        timestamp: new Date().toISOString(),
+      });
+    }
+
     const {
       sources = ['codebase', 'oasis', 'health', 'roadmap'],
       limit = 20,
@@ -2051,6 +2169,17 @@ router.post('/:id/complete', async (req: Request, res: Response) => {
         }
       }
     }
+
+    // VTID-03301: queue-empty → regenerate immediately. Fire-and-forget so
+    // Complete returns fast; the guard re-checks the active (new + activated)
+    // count and only generates when it has actually hit 0 (and honors the
+    // daily cap / cooldown / consent / enabled gates). The FE's poll/refetch
+    // surfaces the fresh batch.
+    regenerateCommunityRecommendations(userId, {
+      requireEmptyQueue: true,
+      tenantId: tenantRow?.tenant_id || undefined,
+      trigger_type: 'auto_replenish',
+    }).catch((e: any) => console.warn(`${LOG_PREFIX} post-complete regen error (non-fatal): ${e?.message}`));
 
     return res.status(200).json({
       ok: true,
