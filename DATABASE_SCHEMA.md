@@ -991,5 +991,38 @@ CREATE TABLE shop_video_events (
 
 ---
 
+## Training Cycle Tracker (BOOTSTRAP-35DAY-TRACKER)
+
+Backs the "Training" section on the Command Hub System Overview page
+(`/command-hub/overview/system-overview/`). Generic across cycles — 35-day now,
+30/60/90-day later. Read via `GET /api/v1/training/status` (gateway service role;
+endpoint falls back to an embedded bootstrap snapshot if these tables are absent).
+
+```sql
+training_cycles (
+  id UUID PK, label TEXT, length_days INT, start_date DATE,
+  status TEXT,                       -- active | completed | aborted
+  training_job_id TEXT,              -- Vertex CustomJob id
+  training_job_state TEXT,           -- last recorded job state
+  training_job_updated_at TIMESTAMPTZ,
+  notes TEXT, created_at, updated_at
+);
+
+training_cycle_days (
+  id UUID PK, cycle_id UUID FK -> training_cycles(id) ON DELETE CASCADE,
+  day_number INT, day_date DATE,
+  goal TEXT,                         -- set each morning by the operator
+  status TEXT,                       -- pending | running | success | failure | partial
+  outcome TEXT, evidence TEXT,
+  initiated JSONB,                   -- [{ label, status, detail }]
+  set_by TEXT, created_at, updated_at,
+  UNIQUE (cycle_id, day_number)
+);
+```
+
+**Auth model:** RLS-on, `service_role` bypass; no anon/community access (ops table).
+
+---
+
 **Remember:** This file is the SINGLE SOURCE OF TRUTH for table names.
 When in doubt, CHECK HERE FIRST!
