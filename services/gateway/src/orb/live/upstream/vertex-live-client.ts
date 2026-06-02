@@ -262,6 +262,35 @@ export class VertexLiveClient implements UpstreamLiveClient {
         if (!settled) {
           settled = true;
           this.clearConnectTimeout();
+          // BOOTSTRAP-ORB-R0-INSTRUCTION-CAP: classify the close codes that
+          // signal an oversized `setup` envelope so the R0 failure mode is
+          // OBSERVABLE rather than hiding behind the generic handshake-close
+          // message. WS 1009 = "message too big"; WS 1007 = "invalid frame
+          // payload data" — both are how Vertex Live rejects a setup frame
+          // that exceeds the ~32 KB budget. We emit a distinct structured
+          // error/log condition and keep the existing reject behavior.
+          if (code === 1009 || code === 1007) {
+            const reasonText = reason?.toString?.() || undefined;
+            console.error(
+              '[vertex.live.setup.too_large]',
+              JSON.stringify({
+                code,
+                reason: reasonText ?? null,
+                hint:
+                  'Vertex closed the handshake before setup_complete — the system_instruction setup envelope likely exceeds the ~32 KB Vertex Live budget. See instruction-budget guard (BOOTSTRAP-ORB-R0-INSTRUCTION-CAP).',
+              }),
+            );
+            this.emitError({
+              code: 'vertex.live.setup.too_large',
+              message: `Live API closed during handshake (code=${code}); setup envelope likely exceeds the Vertex Live setup budget`,
+            });
+            reject(
+              new Error(
+                `Live API setup too large — closed during handshake (code=${code})`,
+              ),
+            );
+            return;
+          }
           reject(new Error(`Live API closed during handshake (code=${code})`));
         }
       });

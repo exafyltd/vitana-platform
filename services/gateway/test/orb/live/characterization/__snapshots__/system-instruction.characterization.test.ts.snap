@@ -328,6 +328,7 @@ PREVIOUS CONVERSATION CONTEXT:
 Last session: discussed magnesium reminder timing and logged a diary entry about energy.
 You may briefly reference this context naturally, but do NOT recite it back to the user.
 
+<!--VITANA_BOOTSTRAP_CONTEXT_START-->
 [ACTIVITY_14D] 14 active days, 8 calendar entries, 27 discovery interactions, 5 songs played.
 [ROUTINES] Most active afternoons (14:00-18:00).
 [PREFERENCES] Music: 80s pop, classical evenings.
@@ -1521,6 +1522,7 @@ PREVIOUS CONVERSATION CONTEXT:
 We discussed the 5-pillar Vitana Index tier ladder and your Really good tier status. You mentioned wanting to maintain consistency over the holidays.
 You may briefly reference this context naturally, but do NOT recite it back to the user.
 
+<!--VITANA_BOOTSTRAP_CONTEXT_START-->
 [ACTIVITY_14D] 2 active days in last 14 (returning user).
 [ROUTINES] Historically morning-active; recent gap.
 [PREFERENCES] Music: ambient, jazz. Long-form podcasts.

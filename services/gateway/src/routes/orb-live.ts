@@ -89,6 +89,16 @@ import { compileAssistantDecisionContext } from '../orb/context/compile-assistan
 import { renderDecisionContract } from '../orb/live/instruction/decision-contract-renderer';
 // VTID-03252: ENVIRONMENT block formatter, extracted for testability.
 import { formatClientContextForInstruction } from '../orb/live/instruction/client-context-format';
+// BOOTSTRAP-ORB-R0-INSTRUCTION-CAP: aggregate byte-budget guard for the final
+// Vertex Live `system_instruction`. Phase A (bootstrap-cap) caps only the
+// bootstrap sub-component; this enforces the AGGREGATE limit at the send site
+// so the assembled instruction can never exceed the ~32 KB Vertex Live setup
+// budget (which otherwise closes the handshake with WS 1009 → silent ORB).
+import {
+  enforceInstructionBudget,
+  decomposeInstructionSections,
+  INSTRUCTION_TOTAL_BYTE_BUDGET,
+} from '../orb/live/instruction/instruction-budget';
 // BOOTSTRAP-VOICE-DEMO: real heartbeats from voice call sites so the agents
 // dashboard reflects live usage instead of fake startup status.
 import { recordAgentHeartbeat } from './agents-registry';
@@ -6162,6 +6172,77 @@ async function connectToLiveAPI(
           )
         }
       };
+
+      // BOOTSTRAP-ORB-R0-INSTRUCTION-CAP: AGGREGATE byte-budget guard.
+      //
+      // R0 root cause: the assembled `system_instruction` has NO total-size
+      // guard before it is sent. Phase A caps only the bootstrap sub-component;
+      // for heavy users the AGGREGATE (scaffold + bootstrap + history +
+      // specialist/teacher + override) can still exceed the ~32 KB Vertex Live
+      // `setup` budget → Vertex closes the handshake (WS 1009 / 1007) or never
+      // sends `setup_complete` → no TTS frames → "Vitana won't talk".
+      //
+      // We decompose the FINAL instruction text into ordered, individually-
+      // trimmable sections via `decomposeInstructionSections`, which anchors on
+      // the stable markers the builders already emit (bootstrap-start delimiter,
+      // `=== USER CONTEXT …`, `<<VERTEX_WAKE_BRIEF_OVERRIDE_ACTIVE>>`,
+      // `=== TEACHER MODE …`, `<conversation_history>`, `=== VITANA NAVIGATOR —`).
+      // This is the R0 fix: the previous split used ONLY the history delimiter,
+      // so the ~12 KB bootstrap + specialist were lumped into the preserved
+      // scaffold and the guard could not trim them. Now the budget guard drops
+      // in priority order bootstrap → history → specialist while the static
+      // scaffold (persona, tools, navigator, greeting rules) AND the turn-1
+      // wake-brief override are preserved as long as possible.
+      try {
+        const siParts = (setupMessage.setup as any)?.system_instruction?.parts;
+        const finalText: string | undefined =
+          Array.isArray(siParts) && typeof siParts[0]?.text === 'string'
+            ? (siParts[0].text as string)
+            : undefined;
+        if (typeof finalText === 'string' && finalText.length > 0) {
+          const sections = decomposeInstructionSections(finalText);
+
+          const budgetResult = enforceInstructionBudget(sections);
+
+          if (
+            budgetResult.trimmedSections.length > 0 ||
+            budgetResult.totalBytesAfter > budgetResult.totalBytesBefore
+          ) {
+            // Apply the trimmed text back onto the envelope.
+            siParts[0].text = budgetResult.text;
+            // Fail loudly + observably: structured warning with byte accounting
+            // and per-section sizes so the R0 overflow is greppable in logs.
+            console.warn(
+              '[voice.instruction.budget_overflow]',
+              JSON.stringify({
+                sessionId: session.sessionId,
+                vitana_id: session.identity?.vitana_id ?? null,
+                isAnonymous: !!session.isAnonymous,
+                totalBytesBefore: budgetResult.totalBytesBefore,
+                totalBytesAfter: budgetResult.totalBytesAfter,
+                budget: INSTRUCTION_TOTAL_BYTE_BUDGET,
+                // Whether the preserved-only assembly STILL exceeds budget
+                // (nothing left to trim → best-effort send / fail-open).
+                stillOverBudget: budgetResult.totalBytesAfter > INSTRUCTION_TOTAL_BYTE_BUDGET,
+                trimmedSections: budgetResult.trimmedSections,
+                sectionBytes: budgetResult.sectionBytes,
+              }),
+            );
+          } else {
+            // Under budget — emit a low-noise diagnostic so the aggregate size
+            // is observable even on the happy path (helps tune the budget).
+            console.log(
+              `[voice.instruction.budget_ok] session=${session.sessionId} bytes=${budgetResult.totalBytesBefore} budget=${INSTRUCTION_TOTAL_BYTE_BUDGET}`,
+            );
+          }
+        }
+      } catch (e) {
+        // Never let the guard break the handshake — fail open with a log.
+        console.warn(
+          '[voice.instruction.budget_overflow] guard_error',
+          (e as Error)?.message ?? String(e),
+        );
+      }
 
       // VTID-NAV-DIAG: Explicit log of whether navigate_to_screen is in the
       // tool declarations for this session. Helps diagnose "redirect not

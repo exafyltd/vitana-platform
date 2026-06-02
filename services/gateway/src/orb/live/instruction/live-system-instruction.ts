@@ -57,6 +57,12 @@ import {
   capBootstrapContext,
   BOOTSTRAP_CONTEXT_MAX_CHARS,
 } from './bootstrap-cap';
+// BOOTSTRAP-ORB-R0-INSTRUCTION-CAP: stable, model-ignored delimiter emitted at
+// the start of the bootstrap region so the send-site budget guard can make the
+// bootstrap individually trimmable. Shared from instruction-budget so producer
+// (this builder) and consumer (orb-live.ts decomposeInstructionSections) agree
+// on one constant.
+import { BOOTSTRAP_CONTEXT_START_MARKER } from './instruction-budget';
 
 type TemporalBucket = 'reconnect' | 'recent' | 'same_day' | 'today' | 'yesterday' | 'week' | 'long' | 'first';
 
@@ -620,7 +626,21 @@ ${voiceLiveConfig.important_section || '- This is a real-time voice conversation
         }),
       );
     }
-    instruction += `\n\n${cappedBootstrap}`;
+    // BOOTSTRAP-ORB-R0-INSTRUCTION-CAP: emit a stable, model-ignored
+    // HTML-comment delimiter at the START of the bootstrap region. The
+    // bootstrap text itself has NO fixed leading marker (it varies per user:
+    // brain context, USER AWARENESS, USER CONTEXT PROFILE, wake-brief
+    // sentinel, …), so the send-site (orb-live.ts buildOrbVertexSetupEnvelope)
+    // cannot reliably tell where the static scaffold ends and the trimmable
+    // bootstrap begins WITHOUT this anchor. With it, the aggregate byte-budget
+    // guard can make the bootstrap individually trimmable (priority
+    // bootstrap → history → specialist) instead of lumping the whole head into
+    // the preserved scaffold — which is the R0 root cause: for heavy users a
+    // ~12 KB bootstrap could push the setup envelope past the ~32 KB Vertex
+    // budget BEFORE any history existed, so the guard had nothing to trim and
+    // the oversized setup was still sent (WS 1009/1007 → silent ORB).
+    // It is an HTML comment so Gemini ignores it as prompt content.
+    instruction += `\n\n${BOOTSTRAP_CONTEXT_START_MARKER}\n${cappedBootstrap}`;
   }
 
   // VTID-01225 + VTID-STREAM-KEEPALIVE: Append conversation history for reconnect continuity.
