@@ -72,6 +72,7 @@ import { buildLiveSystemInstruction } from '../orb/live/instruction/live-system-
 import {
   optionalAuth,
   requireAuthWithTenant,
+  requireAdminAuth,
   AuthenticatedRequest,
   SupabaseIdentity,
 } from '../middleware/auth-supabase-jwt';
@@ -751,12 +752,18 @@ router.get('/orb/livekit/health', async (_req: Request, res: Response) => {
 // does NOT touch the voice hot path. The summary math lives in the pure,
 // unit-tested `summariseLiveKitSessionHealth` helper.
 //
-// Auth: requires an authenticated caller and the exafy_admin role — this is an
-// operator surface that returns user_ids across the tenant. Optional query:
+// Auth: requires an authenticated caller AND the exafy_admin role — this is an
+// operator surface that returns user_ids across tenants, so it MUST be
+// admin-only. Gated by the canonical `requireAdminAuth` middleware (the same
+// auth+admin guard used by admin-navigator / admin-intent-engine / media-hub),
+// which (a) rejects unauthenticated callers with 401 and (b) rejects
+// non-admins with 403 before the handler runs. The in-handler exafy_admin
+// check below is kept as defense-in-depth (CLAUDE.md ALWAYS rule #8).
+// Optional query:
 //   ?stale_minutes=<n>  override the idle-stuck threshold (default 10 min)
 router.get(
   '/orb/livekit/sessions/health',
-  requireAuthWithTenant,
+  requireAdminAuth,
   async (req: AuthenticatedRequest, res: Response) => {
     if (!req.identity?.exafy_admin) {
       return res.status(403).json({
