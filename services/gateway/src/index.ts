@@ -73,6 +73,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   // inside the router; mounted unconditionally because route registration
   // is cheap and the guard runs per-request.
   const { adminStagingRouter } = require('./routes/admin-staging');
+  // BOOTSTRAP-SUPERVISOR-SUMMARY: read-only consolidated program-state summary.
+  const { supervisorSummaryRouter } = require('./routes/supervisor-summary');
   const { router: tasksRouter } = require('./routes/tasks');
   const { router: eventsRouter } = require('./routes/events');
   const eventsApiRouter = require('./routes/gateway-events-api').default;
@@ -615,6 +617,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   mountRouterSync(app, '/api/v1/rum', rumBeaconRouter, { owner: 'rum-beacon' });
   // VTID-03204 (Phase 1 W2): POST /api/v1/admin/staging/tenant-consent/flip
   mountRouterSync(app, '/api/v1/admin/staging', adminStagingRouter, { owner: 'admin-staging' });
+  // BOOTSTRAP-SUPERVISOR-SUMMARY: GET /api/v1/supervisor/summary — one read-only
+  // call aggregating the latest dataset/shadow/finetune/canary/auto-promote/backlog state.
+  mountRouterSync(app, '/api/v1/supervisor', supervisorSummaryRouter, { owner: 'supervisor-summary' });
 
   // VTID-0516: Autonomous Safe-Merge Layer - CICD routes
   // Note: Same router mounted at multiple paths is allowed (different effective routes)
