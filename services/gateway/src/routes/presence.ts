@@ -17,6 +17,9 @@ import {
   recordTouch,
 } from '../services/guide';
 import { resolvePriorityMessage } from '../services/guide/priority-rules';
+import { tt, GATEWAY_DEFAULT_LOCALE } from '../i18n/catalog';
+import { getUserLocale } from '../i18n/server-locale';
+import { getSupabase } from '../lib/supabase';
 
 const router = Router();
 
@@ -101,6 +104,12 @@ router.get('/priority', async (req: Request, res: Response) => {
       user_name: identity.user_name,
     });
 
+    // Localize the banner copy server-side: the rule engine returns a catalog
+    // key + params, and the frontend renders the resolved string verbatim.
+    const supa = getSupabase();
+    const locale = supa ? await getUserLocale(supa, identity.user_id) : GATEWAY_DEFAULT_LOCALE;
+    const message = tt(priority.message_key, locale, priority.message_params);
+
     // Fire-and-forget telemetry touch (doesn't count toward daily cap because
     // we bypassed it — but log for dashboard visibility).
     recordTouch({
@@ -113,7 +122,7 @@ router.get('/priority', async (req: Request, res: Response) => {
     return res.json({
       ok: true,
       suppressed: false,
-      message: priority.message,
+      message,
       cta_url: priority.cta_url,
       reason_tag: priority.reason_tag,
       variant: priority.variant,
