@@ -739,6 +739,79 @@ router.get('/orb/livekit/health', async (_req: Request, res: Response) => {
 });
 
 // ---------------------------------------------------------------------------
+// BOOTSTRAP-LIVEKIT-CONTROL — read-only LiveKit session-health summary.
+// ---------------------------------------------------------------------------
+// Control-plane diagnostic over the shared `orb_session_state` continuity rows
+// (the cross-transport session ledger written by the close/reopen path). It
+// reports active vs expired session counts and flags "stuck" sessions — active
+// rows that have gone idle (no turn/greeting) past a staleness threshold while
+// still inside their TTL window, i.e. rooms a client never closed cleanly.
+//
+// Strictly read-only: no token mint, no provider flip, no continuity write. It
+// does NOT touch the voice hot path. The summary math lives in the pure,
+// unit-tested `summariseLiveKitSessionHealth` helper.
+//
+// Auth: requires an authenticated caller and the exafy_admin role — this is an
+// operator surface that returns user_ids across the tenant. Optional query:
+//   ?stale_minutes=<n>  override the idle-stuck threshold (default 10 min)
+router.get(
+  '/orb/livekit/sessions/health',
+  requireAuthWithTenant,
+  async (req: AuthenticatedRequest, res: Response) => {
+    if (!req.identity?.exafy_admin) {
+      return res.status(403).json({
+        ok: false,
+        error: 'exafy_admin role required for session-health summary',
+        vtid: VTID,
+      });
+    }
+
+    const sb = getSupabase();
+    if (!sb) {
+      return res.status(503).json({
+        ok: false,
+        error: 'supabase_unavailable',
+        vtid: VTID,
+      });
+    }
+
+    const staleMinutesRaw = Number(req.query.stale_minutes);
+    const staleAfterMs =
+      Number.isFinite(staleMinutesRaw) && staleMinutesRaw > 0
+        ? staleMinutesRaw * 60_000
+        : undefined;
+
+    try {
+      const { summariseLiveKitSessionHealth } = await import(
+        '../services/orb/livekit-session-health'
+      );
+      const { data, error } = await sb
+        .from('orb_session_state')
+        .select('user_id, key, value, expires_at, updated_at')
+        .eq('key', 'continuity');
+      if (error) {
+        // Migration not applied yet / transient — degrade gracefully, never 500.
+        return res.json({
+          ok: true,
+          vtid: VTID,
+          note: `orb_session_state read failed: ${error.message}`,
+          summary: summariseLiveKitSessionHealth([], { staleAfterMs }),
+        });
+      }
+      const rows = (data ?? []) as Parameters<
+        typeof summariseLiveKitSessionHealth
+      >[0];
+      const summary = summariseLiveKitSessionHealth(rows, { staleAfterMs });
+      return res.json({ ok: true, vtid: VTID, summary });
+    } catch (e) {
+      return res
+        .status(500)
+        .json({ ok: false, error: (e as Error).message, vtid: VTID });
+    }
+  },
+);
+
+// ---------------------------------------------------------------------------
 // Shared context bootstrap
 // ---------------------------------------------------------------------------
 
