@@ -951,6 +951,53 @@ async def save_diary_entry(context: RunContext, text: str) -> str:
     return summarize(body)
 
 
+@function_tool
+async def record_journey_answer(
+    context: RunContext,
+    step: str,
+    value: str = "",
+    target_value: float | None = None,
+    target_unit: str = "",
+    target_date: str = "",
+    category: str = "",
+    acknowledged: bool = True,
+    teach_mode: bool = False,
+) -> str:
+    """Record the user's answer to a Journey Foundation step and get the next move (VTID-03255).
+
+    The journey is a goal-gated, guided onboarding path that you lead and the
+    My Journey screen mirrors. Call this EVERY time the user answers a journey
+    question so the real record is written and the screen updates instantly.
+
+    step = the step being answered:
+      - "life_compass"     -> main goal; goal sentence in `value`, plus optional
+        `target_value` / `target_unit` / `target_date` (YYYY-MM-DD).
+      - "economic_intent"  -> their stance on earning in the longevity economy
+        (build a business / passive income / earn from recommendations / just
+        curious). "curious" is valid — never pressure them.
+      - "weakest_habit"    -> the habit blocking their health most (food / water
+        / exercise / sleep / stress) in `value`.
+      - "understand_economy", "autopilot", "business_live_media" -> teaching
+        moments; call with acknowledged=True once the user understands.
+
+    The return value's text is the next sentence to say. Set teach_mode=True
+    when the user wants to learn rather than do a task right now.
+    """
+    args: dict[str, Any] = {"step": step, "acknowledged": acknowledged, "teach_mode": teach_mode}
+    if value:
+        args["value"] = value
+    if category:
+        args["category"] = category
+    if target_value is not None:
+        args["target_value"] = target_value
+    if target_unit:
+        args["target_unit"] = target_unit
+    if target_date:
+        args["target_date"] = target_date
+    body = await _dispatch(context, "record_journey_answer", args)
+    return summarize(body)
+
+
 # ---------------------------------------------------------------------------
 # Reminders
 # ---------------------------------------------------------------------------
@@ -1883,6 +1930,8 @@ def all_tool_names() -> list[str]:
         "consult_external_ai",
         # Life Compass (1) — VTID-03010 (L2.2b.6)
         "get_life_compass",
+        # Journey Foundation (1) — VTID-03255: guided goal-gated dual-axis journey
+        "record_journey_answer",
         # Vitana Index (3)
         "get_vitana_index", "get_index_improvement_suggestions", "create_index_improvement_plan",
         # Diary (1)

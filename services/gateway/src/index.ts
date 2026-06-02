@@ -104,6 +104,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   // same OASIS pipeline the gateway uses.
   const oasisEmitRouter = require('./routes/oasis-emit').default;
   const vitanaIndexRouter = require('./routes/vitana-index').default;
+  // VTID-03255: Journey Foundation read path — shared snapshot for voice + Meine Reise + /autopilot.
+  const journeyFoundationRouter = require('./routes/journey-foundation').default;
   // VTID-03152 Slice B + J: unified my-journey payload + landing-route resolver.
   const myJourneyRouter = require('./routes/my-journey').default;
   const goalPlannerRouter = require('./routes/goal-planner').default;
@@ -738,6 +740,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   // (get_vitana_index, get_index_improvement_suggestions). Lifted from the
   // inline case bodies in orb-live.ts so both pipelines share the helper layer.
   mountRouterSync(app, '/api/v1/vitana-index', vitanaIndexRouter, { owner: 'vitana-index' });
+
+  // VTID-03255: Journey Foundation — shared goal-gated, dual-axis journey snapshot.
+  mountRouterSync(app, '/api/v1/journey-foundation', journeyFoundationRouter, { owner: 'journey-foundation' });
 
   // VTID-03152: journey-foundation endpoints.
   mountRouterSync(app, '/api/v1/my-journey', myJourneyRouter, { owner: 'my-journey' });

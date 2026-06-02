@@ -72,6 +72,10 @@ import {
 import { emitOasisEvent } from '../../../services/oasis-event-service';
 import { defaultWakeTimelineRecorder } from '../../../services/wake-timeline/wake-timeline-recorder';
 import { decideWakeBriefForSession } from '../../../services/wake-brief-wiring';
+// VTID-03255 — write a Journey Foundation session summary at session end.
+import { createClient as createJourneySupabaseClient } from '@supabase/supabase-js';
+import { recordJourneySessionSummary } from '../../../services/journey-foundation/session-summary-writer';
+import { buildJourneyFoundationSnapshot } from '../../../services/journey-foundation/journey-foundation-state';
 // VTID-03210: single structured turn-1 wake-decision observability line.
 import {
   logWakeDecisionSnapshot,
@@ -1270,12 +1274,25 @@ export async function handleLiveSessionStart(
             const dn = (prof?.display_name as string | undefined) ?? null;
             if (dn) nameForGreeting = dn.split(/\s+/)[0] || null;
           } catch { /* leave nameForGreeting null */ }
+          // VTID-03255 — the one guided next move, so the morning greeting
+          // drives the journey. Best-effort: never block the greeting on it.
+          let journeyNextMove: { title: string; benefit: string } | null = null;
+          try {
+            const jfSnap = await buildJourneyFoundationSnapshot(supa, orbIdentity.user_id);
+            if (jfSnap.current_next_step) {
+              journeyNextMove = {
+                title: jfSnap.current_next_step.title,
+                benefit: jfSnap.current_next_step.benefit,
+              };
+            }
+          } catch { /* leave journeyNextMove null */ }
           const result = buildJourneyGreetingBlock({
             journey,
             lifeCompassGoalText: lifeCompass?.primary_goal ?? null,
             firstName: nameForGreeting,
             lang,
             todayDateIso,
+            nextMove: journeyNextMove,
           });
           if (result.block && result.meta) {
             (session as any).journeyGreetingBlock = result.block;
@@ -1532,6 +1549,20 @@ export async function handleLiveSessionStop(
     user_turns: session.transcriptTurns.filter((t) => t.role === 'user').length,
     model_turns: session.transcriptTurns.filter((t) => t.role === 'assistant').length,
   });
+
+  // VTID-03255: write a Journey Foundation session summary (fire-and-forget).
+  // Feeds the "since we last spoke" line + morning greeting on next open. Never
+  // allowed to affect teardown — failures are swallowed inside the writer.
+  if (session.identity?.user_id) {
+    const jfUrl = process.env.SUPABASE_URL;
+    const jfKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE;
+    if (jfUrl && jfKey) {
+      const jfClient = createJourneySupabaseClient(jfUrl, jfKey, {
+        auth: { autoRefreshToken: false, persistSession: false },
+      });
+      void recordJourneySessionSummary(jfClient, session.identity.user_id, session_id);
+    }
+  }
 
   // VTID-01959: voice self-healing dispatch (mode-gated for /report path).
   // VTID-01994: pass session metrics for mode-independent quality classifier.

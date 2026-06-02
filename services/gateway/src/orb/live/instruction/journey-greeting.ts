@@ -45,6 +45,13 @@ interface BuildJourneyGreetingBlockArgs {
   lang: string;
   /** YYYY-MM-DD in the user's local TZ (derived from clientContext.timezone or UTC fallback). */
   todayDateIso: string;
+  /**
+   * VTID-03255 — the single Journey Foundation next move. When present it
+   * becomes the daily-morning "concrete pointer to today", so the greeting
+   * always drives the one guided step. Optional → omitting it keeps the prior
+   * behavior unchanged.
+   */
+  nextMove?: { title: string; benefit: string } | null;
 }
 
 export interface JourneyGreetingResult {
@@ -167,6 +174,11 @@ same opening on two consecutive days.
     ? `Current phase: "${phaseName}". You may name the phase naturally, but do not lecture about it.`
     : `No active phase identified for today.`;
 
+  // VTID-03255 — the one guided next move becomes today's concrete pointer.
+  const pointerClause = args.nextMove
+    ? `End with the ONE next move in the journey: ${args.nextMove.title} — ${args.nextMove.benefit} Name only this single move (not a menu), and offer to start it.`
+    : `End with ONE concrete pointer to today — either name the next planned action (if you know one) OR reference the user's last meaningful step (whichever is more useful given context). NOT a menu of options.`;
+
   return {
     block: `
 
@@ -180,7 +192,7 @@ REQUIRED — your greeting MUST:
 - ${nameClause}
 - State **"day ${dayInJourney}"** of the journey explicitly (DE: "Tag ${dayInJourney}"). The journey is ${totalDays} days total.
 - ${purposeClause}
-- End with ONE concrete pointer to today — either name the next planned action (if you know one) OR reference the user's last meaningful step (whichever is more useful given context). NOT a menu of options.
+- ${pointerClause}
 
 CONTEXT:
 - ${phaseClause}
