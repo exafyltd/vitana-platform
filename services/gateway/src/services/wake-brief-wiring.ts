@@ -81,6 +81,13 @@ import {
   GOAL_COMPLETION_EXTRA_KEY,
   GOAL_COMPLETION_PROVIDER_KEY,
 } from './assistant-continuation/providers/goal-completion-inquiry';
+// VTID-03257 (Fix-1): journey-guide — for non-graduated users the Foundation
+// checklist LEADS turn-1 (priority 91, above new-day-return + Teacher).
+import {
+  makeJourneyGuideProvider,
+  JOURNEY_GUIDE_EXTRA_KEY,
+  JOURNEY_GUIDE_PROVIDER_KEY,
+} from './assistant-continuation/providers/journey-guide';
 // VTID-03061 (B0d-real Xf.1): auto-emit OASIS next_action.suggested/
 // .suppressed events when a wake-brief decision lands. Fire-and-forget;
 // never blocks the voice path.
@@ -147,6 +154,13 @@ export function ensureWakeBriefProviderRegistered(): void {
   // completed and otherwise yields to new-day-return / Teacher / wake-brief.
   if (!defaultProviderRegistry.get(GOAL_COMPLETION_PROVIDER_KEY)) {
     defaultProviderRegistry.register(makeGoalCompletionInquiryProvider());
+  }
+  // VTID-03257 (Fix-1): journey-guide at priority 91 — for users still on the
+  // Journey Foundation (not graduated), the checklist LEADS the conversation
+  // (above new_day_return 90 + Teacher 85). Suppresses cleanly when graduated
+  // or no next step, so it never blocks the returning-user providers.
+  if (!defaultProviderRegistry.get(JOURNEY_GUIDE_PROVIDER_KEY)) {
+    defaultProviderRegistry.register(makeJourneyGuideProvider());
   }
   _registered = true;
 }
@@ -390,6 +404,14 @@ export async function decideWakeBriefForSession(
         userId: args.userId,
         lang: args.lang,
         firstName: args.firstName ?? null,
+      };
+      // VTID-03257 (Fix-1): journey-guide inputs. Provider suppresses when the
+      // user has graduated the Foundation or has no next step, so passing the
+      // extra always is safe — when active it LEADS (priority 91).
+      extra[JOURNEY_GUIDE_EXTRA_KEY] = {
+        supabase: args.supabase,
+        userId: args.userId,
+        isReconnect: args.isReconnect,
       };
     }
   }

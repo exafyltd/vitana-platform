@@ -1307,6 +1307,8 @@ export { buildLiveApiTools } from '../orb/live/tools/live-tool-catalog';
 // content resolver succeeded. Drives multi-turn teaching via prompt +
 // tools rather than a TS-side state machine.
 import { buildTeacherModeBlock } from '../orb/teacher/teacher-mode-prompt';
+// VTID-03257 (Fix-1): GUIDE MODE block — Vitana leads the Foundation checklist.
+import { buildJourneyGuideBlock } from '../orb/live/instruction/journey-guide-prompt';
 // A6.2 (orb-live-refactor): SessionContext + SessionMutator + first
 // lifted navigator handler. orb-live.ts keeps compat shims that build
 // the typed views and forward to handlers under orb/live/tools/handlers/.
@@ -6133,6 +6135,16 @@ async function connectToLiveAPI(
                                   lang: session.lang,
                                   firstName: (session as any).teacherModeFirstName ?? null,
                                 })
+                              : '')
+                          // VTID-03257 (Fix-1): GUIDE MODE — when the journey
+                          // guide won turn 1, inject the lead-the-journey block
+                          // so the whole session is hand-held through the
+                          // current Foundation step (no "what do you want?").
+                          + ((session as any).journeyGuideContent
+                              ? buildJourneyGuideBlock(
+                                  (session as any).journeyGuideContent,
+                                  session.lang,
+                                )
                               : ''),
                         session.active_role,
                         session.conversationSummary,

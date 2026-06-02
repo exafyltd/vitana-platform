@@ -75,6 +75,8 @@ import { buildLiveSystemInstruction } from '../orb/live/instruction/live-system-
 // Python agent's session.say(user_facing_line) is the single source of truth
 // for the LiveKit first turn; the LLM must stay silent until the user replies.
 import { VERTEX_WAKE_BRIEF_OVERRIDE_MARKER } from '../orb/live/instruction/wake-brief-marker';
+// VTID-03257 (Fix-1) — GUIDE-MODE block for LiveKit parity (turns 2+).
+import { buildJourneyGuideBlock } from '../orb/live/instruction/journey-guide-prompt';
 import {
   optionalAuth,
   requireAuthWithTenant,
@@ -1809,10 +1811,19 @@ first turn only. Subsequent turns follow the normal conversation flow.`;
         const vitanaBehavioralRule = buildPersonaBehavioralRule('vitana');
         // Marker at the HEAD so capBootstrapContext (head-preserving) can never
         // trim it away, regardless of bootstrap size.
+        // VTID-03257 (Fix-1): LiveKit parity — when the journey guide won, the
+        // GUIDE-MODE block must govern turns 2+ here too (the directive opener
+        // itself is spoken by the agent via wake_brief_decision.user_facing_line).
+        const journeyGuide = (picked as {
+          journeyGuide?:
+            | import('../services/assistant-continuation/providers/journey-guide').JourneyGuideContent
+            | null;
+        }).journeyGuide ?? null;
         const augmentedContext =
           `${VERTEX_WAKE_BRIEF_OVERRIDE_MARKER}\n\n` +
           (bootstrapContext ? `${bootstrapContext}\n\n` : '') +
-          `${vitanaBehavioralRule}`;
+          `${vitanaBehavioralRule}` +
+          (journeyGuide ? buildJourneyGuideBlock(journeyGuide, lang) : '');
         const voiceStyle =
           (voiceConfig as { voice_style?: string } | null)?.voice_style?.trim() ||
           'friendly, calm, empathetic';
