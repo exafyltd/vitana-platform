@@ -314,6 +314,8 @@ describe(`${'VTID-03260'} request validation`, () => {
 describe(`${'VTID-03260'} (e) llm_unavailable`, () => {
   test('router failure → 502 llm_unavailable, no fabricated picks, no cart writes', async () => {
     seedAuth({ role: 'community' });
+    // getMonthlySpend product_orders read (runs before cart resolution)
+    mockSupabase.__seed({ data: [], error: null });
     // cart resolution: existing active cart
     mockSupabase.__seed({ data: { id: CART_A }, error: null });
     mockCallViaRouter.mockResolvedValue({ ok: false, error: 'Provider has no credentials configured' });
@@ -337,6 +339,8 @@ describe(`${'VTID-03260'} (e) llm_unavailable`, () => {
 describe(`${'VTID-03260'} (a) safety invariant + (c) proposal shape`, () => {
   test('allergen-conflicting product is filtered out and never proposed; safe product is', async () => {
     seedAuth({ role: 'community' });
+    // getMonthlySpend product_orders read (runs before cart resolution)
+    mockSupabase.__seed({ data: [], error: null });
     // cart resolution → existing active cart
     mockSupabase.__seed({ data: { id: CART_A }, error: null });
     seedPlannerOk();
@@ -398,8 +402,10 @@ describe(`${'VTID-03260'} (a) safety invariant + (c) proposal shape`, () => {
 // =============================================================================
 
 describe(`${'VTID-03260'} (d) no checkout/charge path`, () => {
-  test('propose never touches checkout/product_orders/wallet tables', async () => {
+  test('propose never touches checkout/charge tables (product_orders is READ-only for budget)', async () => {
     seedAuth({ role: 'community' });
+    // getMonthlySpend product_orders read (runs before cart resolution)
+    mockSupabase.__seed({ data: [], error: null });
     mockSupabase.__seed({ data: { id: CART_A }, error: null });
     seedPlannerOk();
     mockSupabase.__seed({ data: [SAFE_ROW], error: null });
@@ -412,12 +418,14 @@ describe(`${'VTID-03260'} (d) no checkout/charge path`, () => {
       .send({ prompt: 'help me sleep' });
 
     expect(res.status).toBe(200);
-    // Money-path tables must never be touched.
-    expect(mockSupabase.__sawFrom('product_orders')).toBe(false);
+    // Charge/checkout tables must never be touched at all.
     expect(mockSupabase.__sawFrom('checkout_sessions')).toBe(false);
     expect(mockSupabase.__sawFrom('user_wallets')).toBe(false);
     expect(mockSupabase.__sawFrom('wallet_ledger_entries')).toBe(false);
-    // Only the proposal write surface (universal_cart_items) is used.
+    // Phase 2: product_orders may be READ for the standing-spend advisory, but
+    // NEVER written (no insert/update) — proposing is not charging.
+    expect(mockSupabase.__insertsFor('product_orders')).toHaveLength(0);
+    // Only the proposal write surface (universal_cart_items) is written.
     expect(mockSupabase.__sawFrom('universal_cart_items')).toBe(true);
   });
 });
@@ -430,6 +438,8 @@ describe(`${'VTID-03260'} (f) empty brain`, () => {
   test('empty/stale brain → advisory no_health_profile, still proposes', async () => {
     seedAuth({ role: 'community' });
     mockGetUserHealthContext.mockResolvedValue(emptyCtx());
+    // getMonthlySpend product_orders read (runs before cart resolution)
+    mockSupabase.__seed({ data: [], error: null });
     mockSupabase.__seed({ data: { id: CART_A }, error: null });
     seedPlannerOk();
     mockSupabase.__seed({ data: [SAFE_ROW], error: null });
@@ -449,6 +459,8 @@ describe(`${'VTID-03260'} (f) empty brain`, () => {
 
   test('LLM ok but zero candidates pass filters → 200 proposed:[] with explanatory advisory', async () => {
     seedAuth({ role: 'community' });
+    // getMonthlySpend product_orders read (runs before cart resolution)
+    mockSupabase.__seed({ data: [], error: null });
     mockSupabase.__seed({ data: { id: CART_A }, error: null });
     seedPlannerOk();
     // search returns only the allergen product → filtered to empty.
@@ -463,5 +475,212 @@ describe(`${'VTID-03260'} (f) empty brain`, () => {
     expect(res.body.proposed).toEqual([]);
     expect(res.body.advisory).toContain('no_candidates_passed_filters');
     expect(mockSupabase.__insertsFor('universal_cart_items')).toHaveLength(0);
+  });
+});
+
+// =============================================================================
+// Phase 2 — over_monthly_cap advisory (spend + subtotal > cap)
+// =============================================================================
+
+describe(`${'VTID-03260'} Phase 2 over_monthly_cap advisory`, () => {
+  test('standing spend + proposed subtotal over cap → advisory over_monthly_cap', async () => {
+    // cap = 5000; one SAFE pick at 1999; standing month-to-date spend = 4000.
+    // projected = 4000 + 1999 = 5999 > 5000 → over_monthly_cap.
+    seedAuth({ role: 'community' });
+    mockGetUserHealthContext.mockResolvedValue(makeCtx({ budget_monthly_cap_cents: 5000 }));
+    // getMonthlySpend product_orders read (runs BEFORE cart resolution) → 4000 converted
+    mockSupabase.__seed({ data: [{ amount_cents: 4000 }], error: null });
+    // cart resolution → existing active cart
+    mockSupabase.__seed({ data: { id: CART_A }, error: null });
+    seedPlannerOk();
+    mockSupabase.__seed({ data: [SAFE_ROW], error: null });
+    mockSupabase.__seed({ data: { id: ITEM_1 }, error: null });
+    mockSupabase.__seed({ data: null, error: null });
+
+    const res = await request(buildApp())
+      .post('/api/v1/shopping-agent/propose')
+      .set('Authorization', BEARER_A)
+      .send({ prompt: 'help me sleep' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.advisory).toContain('over_monthly_cap');
+    expect(res.body.advisory).not.toContain('near_monthly_cap');
+  });
+
+  test('low standing spend + small subtotal under cap → no cap advisory', async () => {
+    seedAuth({ role: 'community' });
+    mockGetUserHealthContext.mockResolvedValue(makeCtx({ budget_monthly_cap_cents: 100000 }));
+    mockSupabase.__seed({ data: [{ amount_cents: 1000 }], error: null }); // tiny standing spend (read first)
+    mockSupabase.__seed({ data: { id: CART_A }, error: null });
+    seedPlannerOk();
+    mockSupabase.__seed({ data: [SAFE_ROW], error: null });
+    mockSupabase.__seed({ data: { id: ITEM_1 }, error: null });
+    mockSupabase.__seed({ data: null, error: null });
+
+    const res = await request(buildApp())
+      .post('/api/v1/shopping-agent/propose')
+      .set('Authorization', BEARER_A)
+      .send({ prompt: 'help me sleep' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.advisory).not.toContain('over_monthly_cap');
+    expect(res.body.advisory).not.toContain('near_monthly_cap');
+  });
+});
+
+// =============================================================================
+// Phase 2 — POST /reorder
+// =============================================================================
+
+const REORDER_PRODUCT_1 = '88888888-8888-4000-f000-000000000f08';
+const REORDER_PRODUCT_2 = '99999999-9999-4000-f000-000000000f09';
+
+/** An in-stock active product row (reorder hydrate shape). */
+const IN_STOCK_ROW = {
+  id: REORDER_PRODUCT_1,
+  title: 'Vitamin D3',
+  category: 'supplement',
+  price_cents: 1299,
+  currency: 'EUR',
+  safety_notes: null,
+  is_active: true,
+  availability: 'in_stock',
+};
+
+/** An out-of-stock product row — must be dropped. */
+const OUT_OF_STOCK_ROW = {
+  id: REORDER_PRODUCT_2,
+  title: 'Discontinued Blend',
+  category: 'partner_product',
+  price_cents: 999,
+  currency: 'EUR',
+  safety_notes: null,
+  is_active: true,
+  availability: 'out_of_stock',
+};
+
+function ctxWithPastPurchases(productIds: string[]): UserHealthContext {
+  return makeCtx({
+    past_purchases: productIds.map((pid, i) => ({
+      product_id: pid,
+      purchased_at: `2026-0${i + 1}-15T00:00:00.000Z`,
+      reordered: false,
+    })),
+  });
+}
+
+describe(`${'VTID-03260'} Phase 2 reorder role gating`, () => {
+  test('POST /reorder without Bearer → 401', async () => {
+    const res = await request(buildApp()).post('/api/v1/shopping-agent/reorder').send({});
+    expect(res.status).toBe(401);
+    expect(res.body.error).toBe('UNAUTHENTICATED');
+  });
+
+  test('POST /reorder with role=admin → 403 cart_unavailable_for_role', async () => {
+    seedAuth({ role: 'admin' });
+    const res = await request(buildApp())
+      .post('/api/v1/shopping-agent/reorder')
+      .set('Authorization', BEARER_A)
+      .send({});
+    expect(res.status).toBe(403);
+    expect(res.body.error).toBe('cart_unavailable_for_role');
+  });
+});
+
+describe(`${'VTID-03260'} Phase 2 reorder behavior`, () => {
+  test('empty past purchases → proposed:[] + advisory no_reorderable_items, no inserts', async () => {
+    seedAuth({ role: 'community' });
+    mockGetUserHealthContext.mockResolvedValue(makeCtx({ past_purchases: [] }));
+    // cart resolution → existing active cart
+    mockSupabase.__seed({ data: { id: CART_A }, error: null });
+
+    const res = await request(buildApp())
+      .post('/api/v1/shopping-agent/reorder')
+      .set('Authorization', BEARER_A)
+      .send({});
+
+    expect(res.status).toBe(200);
+    expect(res.body.proposed).toEqual([]);
+    expect(res.body.advisory).toContain('no_reorderable_items');
+    expect(mockSupabase.__insertsFor('universal_cart_items')).toHaveLength(0);
+  });
+
+  test('drops out-of-stock/inactive products, writes origin=reorder with re-snapshotted price', async () => {
+    seedAuth({ role: 'community' });
+    mockGetUserHealthContext.mockResolvedValue(
+      ctxWithPastPurchases([REORDER_PRODUCT_1, REORDER_PRODUCT_2])
+    );
+    // cart resolution → existing active cart
+    mockSupabase.__seed({ data: { id: CART_A }, error: null });
+    // products hydrate (.in) → one in-stock, one out-of-stock
+    mockSupabase.__seed({ data: [IN_STOCK_ROW, OUT_OF_STOCK_ROW], error: null });
+    // insert of the single in-stock pick
+    mockSupabase.__seed({ data: { id: ITEM_1 }, error: null });
+    // item.added event insert (best-effort)
+    mockSupabase.__seed({ data: null, error: null });
+
+    const res = await request(buildApp())
+      .post('/api/v1/shopping-agent/reorder')
+      .set('Authorization', BEARER_A)
+      .send({ max_items: 6 });
+
+    expect(res.status).toBe(200);
+    expect(res.body.ok).toBe(true);
+    expect(typeof res.body.run_id).toBe('string');
+
+    // Only the in-stock product is reordered; the out-of-stock SKU is dropped.
+    const proposedIds = res.body.proposed.map((p: any) => p.product_id);
+    expect(proposedIds).toEqual([REORDER_PRODUCT_1]);
+
+    const itemInserts = mockSupabase.__insertsFor('universal_cart_items');
+    expect(itemInserts).toHaveLength(1);
+    expect(itemInserts[0].product_id).toBe(REORDER_PRODUCT_1);
+    expect(itemInserts[0].source_surface).toBe('autopilot');
+    expect(itemInserts[0].metadata.origin).toBe('reorder');
+    expect(itemInserts[0].metadata.run_id).toBe(res.body.run_id);
+    expect(typeof itemInserts[0].metadata.proposed_at).toBe('string');
+    expect(itemInserts[0].metadata.previously_purchased_at).toBe('2026-01-15T00:00:00.000Z');
+    // Re-snapshotted CURRENT price + currency.
+    expect(itemInserts[0].unit_price_cents_snapshot).toBe(1299);
+    expect(itemInserts[0].currency_snapshot).toBe('EUR');
+  });
+
+  test('all past purchases out-of-stock → proposed:[] + no_reorderable_items', async () => {
+    seedAuth({ role: 'community' });
+    mockGetUserHealthContext.mockResolvedValue(ctxWithPastPurchases([REORDER_PRODUCT_2]));
+    mockSupabase.__seed({ data: { id: CART_A }, error: null });
+    mockSupabase.__seed({ data: [OUT_OF_STOCK_ROW], error: null });
+
+    const res = await request(buildApp())
+      .post('/api/v1/shopping-agent/reorder')
+      .set('Authorization', BEARER_A)
+      .send({});
+
+    expect(res.status).toBe(200);
+    expect(res.body.proposed).toEqual([]);
+    expect(res.body.advisory).toContain('no_reorderable_items');
+    expect(mockSupabase.__insertsFor('universal_cart_items')).toHaveLength(0);
+  });
+
+  test('reorder never touches checkout/charge tables', async () => {
+    seedAuth({ role: 'community' });
+    mockGetUserHealthContext.mockResolvedValue(ctxWithPastPurchases([REORDER_PRODUCT_1]));
+    mockSupabase.__seed({ data: { id: CART_A }, error: null });
+    mockSupabase.__seed({ data: [IN_STOCK_ROW], error: null });
+    mockSupabase.__seed({ data: { id: ITEM_1 }, error: null });
+    mockSupabase.__seed({ data: null, error: null });
+
+    const res = await request(buildApp())
+      .post('/api/v1/shopping-agent/reorder')
+      .set('Authorization', BEARER_A)
+      .send({});
+
+    expect(res.status).toBe(200);
+    expect(mockSupabase.__sawFrom('product_orders')).toBe(false);
+    expect(mockSupabase.__sawFrom('checkout_sessions')).toBe(false);
+    expect(mockSupabase.__sawFrom('user_wallets')).toBe(false);
+    expect(mockSupabase.__sawFrom('wallet_ledger_entries')).toBe(false);
+    // Only the proposal write surface is used.
+    expect(mockSupabase.__sawFrom('universal_cart_items')).toBe(true);
   });
 });

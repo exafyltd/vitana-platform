@@ -33,6 +33,11 @@ import { getSupabase } from '../lib/supabase';
 import { authorizeCommunityCaller, emitCartEvent } from './universal-cart';
 import { getUserHealthContext } from '../services/user-health-context';
 import { runPropose, type AnnotatedPick, type InsertPickFn } from '../services/shopping-agent/agent-core';
+import { getMonthlySpend } from '../services/budget/spend-service';
+import { buildReorderPicks } from '../services/shopping-agent/reorder-core';
+
+/** Default currency fallback (matches the rest of the gateway's commerce code). */
+const DEFAULT_CURRENCY = 'EUR';
 
 export const VTID = 'VTID-03260';
 
@@ -51,6 +56,16 @@ const ProposeBody = z.object({
 function clampMaxItems(raw: number | undefined): number {
   if (raw === undefined || !Number.isFinite(raw)) return 4;
   return Math.max(1, Math.min(6, Math.floor(raw)));
+}
+
+const ReorderBody = z.object({
+  max_items: z.number().int().optional(),
+});
+
+/** Clamp reorder max_items to 1..10, default 6. */
+function clampReorderMaxItems(raw: number | undefined): number {
+  if (raw === undefined || !Number.isFinite(raw)) return 6;
+  return Math.max(1, Math.min(10, Math.floor(raw)));
 }
 
 function isNoRowsError(error: any): boolean {
@@ -99,6 +114,12 @@ router.post('/propose', async (req: Request, res: Response) => {
 
   // Read-only product search uses the service-role client (same as discover-search).
   const searchClient = getSupabase();
+
+  // Phase 2: standing month-to-date CONVERTED spend (per the user's currency) so
+  // the near/over monthly-cap advisory reflects total projected spend. READ-ONLY;
+  // advisory only — never blocks the proposal.
+  const proposeCurrency = ctx.currency ?? DEFAULT_CURRENCY;
+  const monthlySpendCents = await getMonthlySpend(searchClient, id.user_id, proposeCurrency);
 
   // Cart writes use the RLS-scoped user client (owner isolation enforced by RLS).
   const userClient = createUserSupabaseClient(id.token);
@@ -172,6 +193,7 @@ router.post('/propose', async (req: Request, res: Response) => {
     supabase: searchClient,
     insertPick,
     runId,
+    monthly_spend_cents: monthlySpendCents,
   });
 
   // Fail loud when no LLM provider is configured/reachable. NEVER fabricate picks.
@@ -187,6 +209,142 @@ router.post('/propose', async (req: Request, res: Response) => {
     run_id: result.run_id,
     proposed: result.proposed ?? [],
     advisory: result.advisory ?? [],
+  });
+});
+
+/**
+ * POST /reorder — build reorder picks from the caller's past purchases and write
+ * them into the active cart via the SAME insertPick path /propose uses, tagged
+ * metadata.origin='reorder'. NEVER checks out, never charges. Out-of-stock /
+ * inactive SKUs are dropped (buildReorderPicks), and CURRENT price/currency is
+ * re-snapshotted at proposal time.
+ */
+router.post('/reorder', async (req: Request, res: Response) => {
+  const id = await authorizeCommunityCaller(req, res);
+  if (!id) return;
+
+  // impact-allow-no-oasis: each reordered item emits an item.added cart event to
+  // universal_cart_events via emitCartEvent (the end-user commerce sink), not
+  // oasis_events. oasis_events is the VTID lifecycle/governance log (CLAUDE.md
+  // §6), not a commerce ledger — identical to the /propose slice's handler. No
+  // state transition here belongs in OASIS; this endpoint only fills a cart and
+  // never charges.
+
+  const parsed = ReorderBody.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    return res.status(400).json({
+      ok: false,
+      error: 'invalid_request',
+      detail: parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`),
+    });
+  }
+  const maxItems = clampReorderMaxItems(parsed.data.max_items);
+
+  // Brain: carries past_purchases (converted product_orders, newest-first).
+  const ctx = await getUserHealthContext(id.user_id);
+
+  // Read-only product hydrate uses the service-role client (same as /propose).
+  const searchClient = getSupabase();
+
+  // Cart writes use the RLS-scoped user client (owner isolation enforced by RLS).
+  const userClient = createUserSupabaseClient(id.token);
+
+  const cartResolution = await resolveActiveCartId(userClient, id.user_id, id.tenant_id);
+  if (!cartResolution.ok) {
+    return res.status(500).json({ ok: false, error: cartResolution.error });
+  }
+  const cartId = cartResolution.cartId;
+
+  const runId = randomUUID();
+  const proposedAt = new Date().toISOString();
+
+  // Build reorder picks (dedupe → hydrate → drop non-in-stock/inactive → re-snapshot).
+  const picks = await buildReorderPicks(searchClient, ctx, maxItems);
+
+  if (picks.length === 0) {
+    return res.status(200).json({
+      ok: true,
+      run_id: runId,
+      proposed: [],
+      advisory: ['no_reorderable_items'],
+    });
+  }
+
+  // SAME insert path as /propose: one universal_cart_items row per pick, with the
+  // agent metadata blob (origin='reorder') + price lock + source_surface 'autopilot'.
+  const proposed: Array<{
+    item_id: string;
+    product_id: string;
+    title: string;
+    rationale: string;
+    safety_flags: string[];
+    confidence: number;
+  }> = [];
+
+  for (const pick of picks) {
+    const insertPayload: Record<string, unknown> = {
+      cart_id: cartId,
+      item_type: pick.item_type,
+      product_id: pick.product_id,
+      quantity: 1,
+      status: 'active',
+      source_surface: 'autopilot',
+      metadata: {
+        origin: 'reorder',
+        rationale: pick.rationale,
+        safety_flags: pick.safety_flags,
+        confidence: pick.confidence,
+        run_id: runId,
+        proposed_at: proposedAt,
+        previously_purchased_at: pick.previously_purchased_at,
+      },
+    };
+    // Price lock: snapshot CURRENT unit price + currency at proposal time.
+    if (pick.unit_price_cents_snapshot !== null) insertPayload.unit_price_cents_snapshot = pick.unit_price_cents_snapshot;
+    if (pick.currency_snapshot !== null) insertPayload.currency_snapshot = pick.currency_snapshot;
+
+    const inserted = await userClient
+      .from('universal_cart_items')
+      .insert(insertPayload)
+      .select('id')
+      .single();
+
+    if (inserted.error || !inserted.data) {
+      console.error(`[${VTID}] reorder insert failed for product ${pick.product_id}: ${inserted.error?.message}`);
+      continue; // best-effort: a single failed insert must not sink the whole run
+    }
+
+    const itemId = inserted.data.id as string;
+
+    // Audit: same item.added event the cart emits on a manual add.
+    await emitCartEvent({
+      cart_id: cartId,
+      user_id: id.user_id,
+      event_type: 'item.added',
+      event_payload: {
+        cart_item_id: itemId,
+        product_id: pick.product_id,
+        quantity_before: 0,
+        quantity_after: 1,
+        source_surface: 'autopilot',
+      },
+    });
+
+    proposed.push({
+      item_id: itemId,
+      product_id: pick.product_id,
+      title: pick.title,
+      rationale: pick.rationale,
+      safety_flags: pick.safety_flags,
+      confidence: pick.confidence,
+    });
+  }
+
+  return res.status(200).json({
+    ok: true,
+    run_id: runId,
+    proposed,
+    advisory: [],
   });
 });
 
