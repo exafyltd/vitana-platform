@@ -43,6 +43,12 @@ import { getSupabase } from '../lib/supabase';
 import { getSystemControl } from './system-controls-service';
 // VTID-01952 Phase 0 — Identity Lock guardrail block (canonical name/DOB/etc from app_users)
 import { buildIdentityGuardrailBlock } from './identity-guardrail-block';
+// VTID-03259 (Fix-3): sentinels wrapping the V2 proactive-initiative block so
+// the live-instruction stripper removes it as one unit when an override wins.
+import {
+  BRAIN_OPENER_V2_START,
+  BRAIN_OPENER_V2_END,
+} from '../orb/live/instruction/brain-opener-sentinels';
 import {
   pickOpenerCandidate,
   getAwarenessContext,
@@ -1045,8 +1051,13 @@ async function buildProactiveInitiativeOffer(
      Splice tool-result fields ({index_delta}, {pillar_value}, etc.)
      naturally where the template uses them.`;
 
+  // VTID-03259 (Fix-3): wrap the whole V2 block (incl. nested STEP 1 / ON NO /
+  // ON HARDER REFUSAL subsections) in opaque sentinels so the live-instruction
+  // stripper can remove it as ONE unit when a wake-brief / journey-guide
+  // override owns turn 1 — otherwise STEP 1's "speak this verbatim" directive
+  // survives the heading-based strip and competes with the override.
   return `
-
+${BRAIN_OPENER_V2_START}
 === PROACTIVE INITIATIVE OFFER (V2 — HIGHEST-PRIORITY OPENER FOR THIS SESSION) ===
 
 This block OVERRIDES the PROACTIVE OPENER CANDIDATE block above and
@@ -1087,7 +1098,8 @@ ${afterConsentBlock}
 
 Once you have offered this initiative in this session, do NOT re-offer
 it. If the user wants to talk about something else first, give them the
-floor — you can come back to the initiative naturally if it fits.`;
+floor — you can come back to the initiative naturally if it fits.
+${BRAIN_OPENER_V2_END}`;
 }
 
 
