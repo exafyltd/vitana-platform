@@ -161,7 +161,7 @@ function denyForRole(res: Response, callerRole: string | null): Response {
  * Combined auth + role gate. Returns the resolved identity on success, or sends
  * a 401/403 response and returns null so callers can early-exit.
  */
-async function authorizeCommunityCaller(
+export async function authorizeCommunityCaller(
   req: Request,
   res: Response
 ): Promise<{ token: string; user_id: string; tenant_id: string | null } | null> {
