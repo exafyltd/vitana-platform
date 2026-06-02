@@ -61,8 +61,8 @@ const BOOTSTRAP_CYCLE: Cycle = {
   start_date: '2026-06-02',
   status: 'active',
   training_job_id: '3932080612898242560',
-  training_job_state: 'JOB_STATE_PENDING',
-  training_job_updated_at: '2026-06-02T18:13:19Z',
+  training_job_state: 'JOB_STATE_FAILED',
+  training_job_updated_at: '2026-06-02T20:20:03Z',
 };
 
 const BOOTSTRAP_DAYS: CycleDay[] = [
@@ -83,17 +83,22 @@ const BOOTSTRAP_DAYS: CycleDay[] = [
       { label: 'Deployed gateway to production (/alive green)', status: 'done' },
       {
         label:
-          'Attempt 1 — Vertex CustomJob 3852431990582149120 (A100, Qwen2.5-0.5B): FAILED — NumPy 2.x broke container torch 2.3 (import torch: "PyTorch not found")',
+          'Attempt 1 (job 3852431990582149120): FAILED at import torch — NumPy 2.x vs container torch 2.3',
         status: 'failure',
       },
       {
         label:
-          'Trainer fix merged to main (PR #2545): setup.py v0.1.2 pins numpy<2 + bounds transformers/datasets/peft/accelerate; train.py prints torch/numpy/transformers env banner',
+          'Trainer fix #2545 (setup.py v0.1.2): pin numpy<2 + bound deps + startup env banner',
         status: 'done',
       },
       {
         label:
-          'Attempt 2 SUBMITTED — Vertex CustomJob 3932080612898242560 (A100 a2-highgpu-1g, us-central1, Qwen2.5-0.5B, 6,000 synthetic rows, dataset preflight OK) with fixed v0.1.2 trainer tarball',
+          'Attempt 2 (job 3932080612898242560, A100): training COMPLETED but FAILED at adapter save — safetensors tripped on Qwen2.5 tied weights. Confirms the numpy fix works end-to-end.',
+        status: 'failure',
+      },
+      {
+        label:
+          'Save fix v0.1.3: PEFT save_pretrained(safe_serialization=False). Attempt 3 resubmit pending PR merge.',
         status: 'running',
       },
     ],

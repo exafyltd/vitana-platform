@@ -49,11 +49,10 @@ export function buildTrainerPackageUri(config: FinetuneConfig): string {
   // This governs BOTH the GCS object the trainer tarball is uploaded to
   // (package-trainer.ts) and the packageUris the Vertex job installs from, so
   // the version here must stay in lock-step with trainer-package/setup.py.
-  // v0.1.2 (PR #2545): pins numpy<2 + bounds transformers/datasets/peft/
-  // accelerate to torch-2.3-era ranges so the worker's pip install can't drag
-  // NumPy 2.x onto the container and break `import torch` (root cause of
-  // CustomJob 3852431990582149120 failure 2026-06-02; see setup.py history).
-  return `${config.vertex_custom_job.output_uri_prefix}trainer/finetune-trainer-0.1.2.tar.gz`;
+  // History: v0.1.2 pinned numpy<2 so `import torch` works (job 3852431990582149120);
+  // v0.1.3 saves the PEFT adapter with safe_serialization=False so the post-training
+  // save no longer trips on Qwen2.5's tied embeddings (job 3932080612898242560).
+  return `${config.vertex_custom_job.output_uri_prefix}trainer/finetune-trainer-0.1.3.tar.gz`;
 }
 
 export function isKnownGatedBaseModel(baseModel: string): boolean {
