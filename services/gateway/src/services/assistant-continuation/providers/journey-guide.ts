@@ -122,7 +122,15 @@ export function makeJourneyGuideProvider(): ContinuationProvider {
         kind: 'wake_brief',
         priority: JOURNEY_GUIDE_PRIORITY,
         userFacingLine: stepDef.execute_prompt,
-        cta: { type: 'guide_step', payload: { step_key: step.key, route: step.navigation_route } },
+        // VTID-03264 (Fix-5 hotfix): MUST be a KNOWN_CTA_TYPES value or
+        // validateContinuationCandidate rejects the candidate (the provider
+        // then errors out and never wins — which is exactly what happened with
+        // the invented 'guide_step' type: journey_guide errored every session
+        // and Teacher (priority 85) led turn 1). 'explain' carries no required
+        // fields; the actual lead-the-step behavior comes from userFacingLine +
+        // the bundled GUIDE-MODE block, not this cta. step_key/route ride along
+        // in payload for the client/telemetry.
+        cta: { type: 'explain', payload: { step_key: step.key, route: step.navigation_route } },
         evidence: [
           { kind: 'source:journey_guide', detail: step.key },
           { kind: 'journey_step_tier', detail: String(step.tier) },
