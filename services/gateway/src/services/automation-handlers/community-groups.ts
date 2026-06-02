@@ -89,6 +89,148 @@ async function runNewMemberWelcome(ctx: AutomationContext) {
   return { usersAffected: 2, actionsTaken: 2 };
 }
 
+// ── AP-0212: "Welcome Squad" New-Member Activation ──────────
+// Multi-step orchestration fired on community.member.joined:
+//   1. Introduce the newcomer to up to 3 existing group members ("the squad")
+//   2. Suggest related groups (topic overlap) + an upcoming meetup
+//   3. Send the newcomer a warm welcome with the intros + suggestions
+//   4. Notify the group host their Welcome Squad went out (auto-fire,
+//      in-platform members only, attributed "via Autopilot")
+//   5. Seed Autopilot recommendation cards so the newcomer's Autopilot
+//      page is populated with one-tap "approve" actions
+// Guardrails: intros capped at SQUAD_SIZE; all sends are in-platform
+// member notifications (no external channels); messages are attributed.
+const SQUAD_SIZE = 3;
+
+async function runWelcomeSquad(ctx: AutomationContext) {
+  const payload = ctx.run.metadata as any;
+  const { user_id, group_id } = payload || {};
+  if (!user_id || !group_id) return { usersAffected: 0, actionsTaken: 0 };
+
+  const { supabase, tenantId } = ctx;
+  let usersAffected = 0;
+  let actionsTaken = 0;
+
+  const { data: group } = await supabase
+    .from('community_groups')
+    .select('name, description, created_by, topic_keys')
+    .eq('id', group_id)
+    .maybeSingle();
+  if (!group) return { usersAffected: 0, actionsTaken: 0 };
+
+  const { data: newMember } = await supabase
+    .from('app_users')
+    .select('display_name')
+    .eq('id', user_id)
+    .maybeSingle();
+  const newMemberName = newMember?.display_name || 'A new member';
+
+  // Step 1 — pick the squad: up to 3 existing members of this group
+  // (excluding the newcomer and the host, who is notified separately).
+  const { data: members } = await supabase
+    .from('community_memberships')
+    .select('user_id')
+    .eq('group_id', group_id)
+    .neq('user_id', user_id)
+    .limit(50);
+
+  const squad: string[] = [];
+  for (const m of members || []) {
+    if (m.user_id === group.created_by) continue;
+    squad.push(m.user_id);
+    if (squad.length >= SQUAD_SIZE) break;
+  }
+
+  // Step 2 — suggest related groups (topic overlap) + an upcoming meetup.
+  let suggestedGroups: Array<{ id: string; name: string }> = [];
+  if (Array.isArray(group.topic_keys) && group.topic_keys.length > 0) {
+    const { data: related } = await supabase
+      .from('community_groups')
+      .select('id, name')
+      .eq('tenant_id', tenantId)
+      .neq('id', group_id)
+      .overlaps('topic_keys', group.topic_keys)
+      .limit(2);
+    suggestedGroups = related || [];
+  }
+
+  const { data: upcomingMeetup } = await supabase
+    .from('community_meetups')
+    .select('id, title')
+    .eq('tenant_id', tenantId)
+    .eq('group_id', group_id)
+    .gte('starts_at', new Date().toISOString())
+    .order('starts_at', { ascending: true })
+    .limit(1)
+    .maybeSingle();
+
+  // Step 3 — warm welcome to the newcomer with the squad + suggestions.
+  const squadLine = squad.length
+    ? `Meet ${squad.length} member${squad.length > 1 ? 's' : ''} to connect with`
+    : 'Say hi to the group';
+  const extras: string[] = [];
+  if (suggestedGroups.length) {
+    extras.push(`${suggestedGroups.length} related group${suggestedGroups.length > 1 ? 's' : ''} you'll like`);
+  }
+  if (upcomingMeetup) extras.push(`"${upcomingMeetup.title}" coming up`);
+
+  ctx.notify(user_id, 'orb_proactive_message', {
+    title: `Welcome to ${group.name}! Your squad is ready 👋`,
+    body: [squadLine, ...extras].join(' · '),
+    data: {
+      url: `/community/groups/${group_id}`,
+      group_id,
+      squad_user_ids: squad.join(','),
+      suggested_group_ids: suggestedGroups.map((g) => g.id).join(','),
+      meetup_id: upcomingMeetup?.id || '',
+      via: 'autopilot',
+      automation_id: 'AP-0212',
+    },
+  });
+  usersAffected++;
+  actionsTaken++;
+
+  // Step 4 — notify the host their Welcome Squad went out (auto-fire,
+  // in-platform member, attributed).
+  if (group.created_by && group.created_by !== user_id) {
+    ctx.notify(group.created_by, 'someone_joined_your_group', {
+      title: `Welcome Squad sent for ${newMemberName} 🎉`,
+      body: `Autopilot introduced them to ${squad.length} member${squad.length === 1 ? '' : 's'} in ${group.name} and shared what to do next.`,
+      data: {
+        url: `/community/groups/${group_id}`,
+        group_id,
+        new_member_id: user_id,
+        via: 'autopilot',
+        automation_id: 'AP-0212',
+      },
+    });
+    usersAffected++;
+    actionsTaken++;
+  }
+
+  // Step 5 — seed Autopilot recommendation cards for the newcomer so the
+  // Autopilot page has one-tap "approve" actions waiting.
+  try {
+    const { generatePersonalRecommendations } = await import('../recommendation-engine');
+    await generatePersonalRecommendations(user_id, tenantId, {
+      trigger_type: 'auto_replenish',
+    });
+    actionsTaken++;
+  } catch (err: any) {
+    ctx.log(`AP-0212: recommendation seeding skipped (${err?.message || err})`);
+  }
+
+  await ctx.emitEvent('autopilot.welcome_squad.sent', {
+    user_id,
+    group_id,
+    squad_size: squad.length,
+    suggested_groups: suggestedGroups.length,
+    has_meetup: !!upcomingMeetup,
+  });
+
+  return { usersAffected, actionsTaken };
+}
+
 // ── AP-0207: Meetup RSVP Encouragement ──────────────────────
 async function runMeetupRsvpEncouragement(ctx: AutomationContext) {
   const { supabase, tenantId } = ctx;
@@ -217,6 +359,7 @@ async function runCommunityCreatorDigest(ctx: AutomationContext) {
 export function registerCommunityGroupsHandlers(): void {
   registerHandler('runGroupInviteFollowUp', runGroupInviteFollowUp);
   registerHandler('runNewMemberWelcome', runNewMemberWelcome);
+  registerHandler('runWelcomeSquad', runWelcomeSquad);
   registerHandler('runMeetupRsvpEncouragement', runMeetupRsvpEncouragement);
   registerHandler('runPostMeetupConnect', runPostMeetupConnect);
   registerHandler('runCommunityCreatorDigest', runCommunityCreatorDigest);

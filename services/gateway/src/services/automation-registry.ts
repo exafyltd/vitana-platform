@@ -199,9 +199,10 @@ const COMMUNITY_GROUPS: AutomationDefinition[] = [
   },
   {
     id: 'AP-0212', name: '"Welcome Squad" New-Member Activation', domain: 'community-groups',
-    status: 'PLANNED', priority: 'P1', triggerType: 'event',
+    status: 'IMPLEMENTED', priority: 'P1', triggerType: 'event',
     triggerConfig: { eventTopic: 'community.member.joined' },
     targetRoles: [...MEMBER_ROLES],
+    handler: 'runWelcomeSquad',
     requires: ['AP-0203', 'AP-0103'],
   },
 ];
