@@ -122,3 +122,75 @@ keep
     expect(second).toBe(first);
   });
 });
+
+describe('VTID-03259 (Fix-3) — V2 sentinel region (nested STEP 1) is fully stripped', () => {
+  // The realistic V2 block: nested === subsections (STEP 1 / ON NO / ON HARDER
+  // REFUSAL) inside one sentinel-wrapped region. Pre-fix, the heading regex
+  // stopped at STEP 1, so its competing "speak this verbatim" first utterance
+  // SURVIVED and fought the wake-brief/journey-guide override. The sentinel
+  // strip must remove the whole region — STEP 1 included.
+  const v2Block = `
+<<BRAIN_OPENER_V2_START>>
+=== PROACTIVE INITIATIVE OFFER (V2 — HIGHEST-PRIORITY OPENER FOR THIS SESSION) ===
+
+Initiative key: log_meal
+
+=== STEP 1 — YOUR VERY FIRST UTTERANCE (sanctioned, do NOT paraphrase) ===
+
+  "Let's log your breakfast — ready?"
+
+=== ON NO (any decline) ===
+  Call pause_proactive_guidance.
+
+=== ON HARDER REFUSAL ("not today") ===
+  Call pause_proactive_guidance scope=all.
+<<BRAIN_OPENER_V2_END>>`;
+
+  test('removes the entire V2 region including the nested STEP 1 verbatim line', () => {
+    const input = `
+## USER CONTEXT PROFILE
+Dragan, day0.
+${v2Block}
+
+=== ACTIVITY 14D ===
+keep me
+`.trim();
+    const out = stripBrainOpenerSections(input);
+    // The competing first-utterance MUST be gone.
+    expect(out).not.toContain('STEP 1 — YOUR VERY FIRST UTTERANCE');
+    expect(out).not.toContain("Let's log your breakfast");
+    expect(out).not.toContain('PROACTIVE INITIATIVE OFFER');
+    expect(out).not.toContain('ON HARDER REFUSAL');
+    expect(out).not.toContain('BRAIN_OPENER_V2');
+    // Non-opener grounding survives.
+    expect(out).toContain('USER CONTEXT PROFILE');
+    expect(out).toContain('ACTIVITY 14D');
+    expect(out).toContain('keep me');
+  });
+
+  test('belt-and-suspenders: STEP 1 heading is stripped even without sentinels (older brain build)', () => {
+    const input = `
+HEADER
+=== PROACTIVE INITIATIVE OFFER (V2 — HIGHEST-PRIORITY OPENER FOR THIS SESSION) ===
+Initiative key: log_meal
+=== STEP 1 — YOUR VERY FIRST UTTERANCE (sanctioned, do NOT paraphrase) ===
+  "Verbatim opener here"
+=== ACTIVITY 14D ===
+keep me
+`.trim();
+    const out = stripBrainOpenerSections(input);
+    expect(out).not.toContain('STEP 1 — YOUR VERY FIRST UTTERANCE');
+    expect(out).not.toContain('Verbatim opener here');
+    expect(out).not.toContain('PROACTIVE INITIATIVE OFFER');
+    expect(out).toContain('ACTIVITY 14D');
+    expect(out).toContain('keep me');
+  });
+
+  test('no override (sentinels present, no nested leak): idempotent + clean', () => {
+    const out1 = stripBrainOpenerSections(`x\n${v2Block}\n=== KEEP ===\ny`);
+    const out2 = stripBrainOpenerSections(out1);
+    expect(out2).toBe(out1);
+    expect(out1).not.toMatch(/\n{3,}/);
+    expect(out1).toContain('KEEP');
+  });
+});
