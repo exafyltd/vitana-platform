@@ -173,8 +173,18 @@ export function generateRunId(target: DatasetTarget): string {
  */
 export const PREVIEW_MODE = process.env.DATASET_PREVIEW === '1';
 
-/** How many sample rows the preview surfaces. Kept small — this is a readiness check, not an export. */
-export const PREVIEW_SAMPLE_LIMIT = Number(process.env.DATASET_PREVIEW_SAMPLES || 5);
+/**
+ * How many sample rows the preview surfaces. Kept small — this is a readiness
+ * check, not an export. Defaults to 5 and is intentionally unbound in any
+ * workflow/deploy config: it ONLY affects preview mode, so a missing env var is
+ * the normal case. Parsed defensively — a non-numeric / empty value falls back
+ * to the default rather than producing NaN (which would silently surface 0 rows).
+ */
+const PREVIEW_SAMPLE_DEFAULT = 5;
+export const PREVIEW_SAMPLE_LIMIT = (() => {
+  const parsed = Number.parseInt(process.env.DATASET_PREVIEW_SAMPLES ?? '5', 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : PREVIEW_SAMPLE_DEFAULT;
+})();
 
 /**
  * Pull a tenant identifier out of an event's metadata for preview grouping.
