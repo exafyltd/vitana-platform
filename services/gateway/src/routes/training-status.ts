@@ -60,9 +60,9 @@ const BOOTSTRAP_CYCLE: Cycle = {
   length_days: 35,
   start_date: '2026-06-02',
   status: 'active',
-  training_job_id: '3852431990582149120',
-  training_job_state: 'SUBMITTED',
-  training_job_updated_at: '2026-06-02T07:52:17Z',
+  training_job_id: '3932080612898242560',
+  training_job_state: 'JOB_STATE_PENDING',
+  training_job_updated_at: '2026-06-02T18:13:19Z',
 };
 
 const BOOTSTRAP_DAYS: CycleDay[] = [
@@ -76,11 +76,24 @@ const BOOTSTRAP_DAYS: CycleDay[] = [
     outcome: null,
     evidence: null,
     initiated: [
-      { label: 'Merged 23 PRs to main (R0–R9 ORB recovery + 35-day Wave-0)', status: 'done' },
-      { label: 'Deployed gateway to production (rev gateway-03855-r9b, /alive green)', status: 'done' },
+      {
+        label: 'Merged 24 PRs to main (R0–R9 ORB recovery + 35-day Wave-0 + Training tracker)',
+        status: 'done',
+      },
+      { label: 'Deployed gateway to production (/alive green)', status: 'done' },
       {
         label:
-          'Launched first GPU training run — Vertex CustomJob 3852431990582149120 (A100, Qwen2.5-0.5B, 4,800 synthetic rows)',
+          'Attempt 1 — Vertex CustomJob 3852431990582149120 (A100, Qwen2.5-0.5B): FAILED — NumPy 2.x broke container torch 2.3 (import torch: "PyTorch not found")',
+        status: 'failure',
+      },
+      {
+        label:
+          'Trainer fix merged to main (PR #2545): setup.py v0.1.2 pins numpy<2 + bounds transformers/datasets/peft/accelerate; train.py prints torch/numpy/transformers env banner',
+        status: 'done',
+      },
+      {
+        label:
+          'Attempt 2 SUBMITTED — Vertex CustomJob 3932080612898242560 (A100 a2-highgpu-1g, us-central1, Qwen2.5-0.5B, 6,000 synthetic rows, dataset preflight OK) with fixed v0.1.2 trainer tarball',
         status: 'running',
       },
     ],

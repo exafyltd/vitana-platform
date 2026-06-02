@@ -43,7 +43,7 @@ const config: FinetuneConfig = {
 describe('finetune submit job config', () => {
   test('builds the trainer package URI from the configured output prefix', () => {
     expect(buildTrainerPackageUri(config)).toBe(
-      'gs://vitana-artifacts-staging/finetune-runs/voice-tool-router/trainer/finetune-trainer-0.1.1.tar.gz',
+      'gs://vitana-artifacts-staging/finetune-runs/voice-tool-router/trainer/finetune-trainer-0.1.2.tar.gz',
     );
   });
 
@@ -68,7 +68,7 @@ describe('finetune submit job config', () => {
     });
 
     expect(jobConfig.workerPoolSpecs[0].pythonPackageSpec.packageUris).toEqual([
-      'gs://vitana-artifacts-staging/finetune-runs/voice-tool-router/trainer/finetune-trainer-0.1.1.tar.gz',
+      'gs://vitana-artifacts-staging/finetune-runs/voice-tool-router/trainer/finetune-trainer-0.1.2.tar.gz',
     ]);
     expect(jobConfig.workerPoolSpecs[0].pythonPackageSpec.pythonModule).toBe('finetune.train');
   });

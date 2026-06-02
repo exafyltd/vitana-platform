@@ -29,8 +29,11 @@ async function main(): Promise<void> {
   const cfg = await parseYaml(configPath);
   const trainerDir = path.join(__dirname, 'trainer-package');
   const trainerUri = buildTrainerPackageUri(cfg);
-  // VTID-03244: bumped to 0.1.1 — see trainer-package/setup.py for root cause.
-  const archivePath = path.join(os.tmpdir(), 'finetune-trainer-0.1.1.tar.gz');
+  // Keep this label in lock-step with the version in trainer-package/setup.py.
+  // v0.1.2 (PR #2545): pin numpy<2 + bound transformers/datasets/peft/accelerate
+  // to torch-2.3-era ranges so the worker's `pip install` can't drag NumPy 2.x
+  // onto the container and break `import torch`. See setup.py for failure history.
+  const archivePath = path.join(os.tmpdir(), 'finetune-trainer-0.1.2.tar.gz');
 
   await fs.access(path.join(trainerDir, 'setup.py'));
   execFileSync('tar', ['-czf', archivePath, '-C', trainerDir, '.'], { stdio: 'inherit' });

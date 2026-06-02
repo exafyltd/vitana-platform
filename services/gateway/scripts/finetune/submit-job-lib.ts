@@ -46,10 +46,14 @@ const KNOWN_GATED_MODEL_PREFIXES = [
 ];
 
 export function buildTrainerPackageUri(config: FinetuneConfig): string {
-  // VTID-03244: bumped to 0.1.1 — drops torch from install_requires so it
-  // doesn't shadow the container's pre-installed PyTorch (root cause of
-  // CustomJob 3154255301083922432 failure 2026-06-01).
-  return `${config.vertex_custom_job.output_uri_prefix}trainer/finetune-trainer-0.1.1.tar.gz`;
+  // This governs BOTH the GCS object the trainer tarball is uploaded to
+  // (package-trainer.ts) and the packageUris the Vertex job installs from, so
+  // the version here must stay in lock-step with trainer-package/setup.py.
+  // v0.1.2 (PR #2545): pins numpy<2 + bounds transformers/datasets/peft/
+  // accelerate to torch-2.3-era ranges so the worker's pip install can't drag
+  // NumPy 2.x onto the container and break `import torch` (root cause of
+  // CustomJob 3852431990582149120 failure 2026-06-02; see setup.py history).
+  return `${config.vertex_custom_job.output_uri_prefix}trainer/finetune-trainer-0.1.2.tar.gz`;
 }
 
 export function isKnownGatedBaseModel(baseModel: string): boolean {
