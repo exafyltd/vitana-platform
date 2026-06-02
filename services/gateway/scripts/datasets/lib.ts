@@ -14,7 +14,13 @@
 import { promises as fs } from 'fs';
 import path from 'path';
 import { execFileSync } from 'child_process';
-import type { DatasetExtractionRun, DatasetRow, DatasetTarget } from './types';
+import type {
+  DatasetExtractionPreview,
+  DatasetExtractionRun,
+  DatasetRow,
+  DatasetTarget,
+  OasisEventRow,
+} from './types';
 
 const PROD_SUPABASE_URL = process.env.SUPABASE_URL;
 const PROD_SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE;
@@ -37,7 +43,7 @@ export async function queryOasisEvents(
   where: string,
   sinceIso: string,
   limit = 50_000,
-): Promise<Array<{ id: string; created_at: string; topic: string; metadata: Record<string, unknown> | null; message: string | null }>> {
+): Promise<OasisEventRow[]> {
   if (!PROD_SUPABASE_URL || !PROD_SUPABASE_KEY) return [];
 
   // PII guards encoded as PostgREST filters (independent query params,
@@ -63,7 +69,7 @@ export async function queryOasisEvents(
   if (!resp.ok) {
     throw new Error(`oasis_events query failed: ${resp.status} ${await resp.text()}`);
   }
-  return (await resp.json()) as Array<{ id: string; created_at: string; topic: string; metadata: Record<string, unknown> | null; message: string | null }>;
+  return (await resp.json()) as OasisEventRow[];
 }
 
 export async function writeJsonl(rows: DatasetRow[], target: DatasetTarget, runId: string): Promise<string> {
@@ -149,4 +155,79 @@ export function defaultSinceIso(daysBack: number): string {
 export function generateRunId(target: DatasetTarget): string {
   const ts = new Date().toISOString().replace(/[:.]/g, '-');
   return `${target}-${ts}`;
+}
+
+/**
+ * PREVIEW / DRY-RUN mode flag — Phase 1 W2 readiness (BOOTSTRAP-DATASET-READINESS).
+ *
+ * When `DATASET_PREVIEW=1` the extractors run the SAME consent-gated query and
+ * the SAME row projection, then COUNT + SAMPLE the projected rows instead of
+ * writing JSONL / uploading to GCS / emitting the completion event. This is a
+ * strict superset of the legacy `DATASET_DRY_RUN=1` behavior (which still wrote
+ * the local JSONL): preview writes NOTHING.
+ *
+ * This does NOT relax the consent gate. The query in `queryOasisEvents` still
+ * carries `metadata->>data_export_ok=eq.true`, so preview over an unconsented
+ * prod correctly reports 0 — and reports a non-zero, correct count the instant
+ * an operator flips consent, with no data written either way.
+ */
+export const PREVIEW_MODE = process.env.DATASET_PREVIEW === '1';
+
+/** How many sample rows the preview surfaces. Kept small — this is a readiness check, not an export. */
+export const PREVIEW_SAMPLE_LIMIT = Number(process.env.DATASET_PREVIEW_SAMPLES || 5);
+
+/**
+ * Pull a tenant identifier out of an event's metadata for preview grouping.
+ * oasis_events has no top-level tenant_id column (it's a global log), so the
+ * tenant — when present — lives in metadata. We check the common keys the
+ * producing surfaces use; falls back to "unknown" so every projected row is
+ * still counted.
+ */
+export function tenantKeyFromEvent(event: OasisEventRow | undefined): string {
+  const meta = event?.metadata;
+  if (!meta || typeof meta !== 'object') return 'unknown';
+  const m = meta as Record<string, unknown>;
+  const candidate =
+    m.tenant_id ?? m.tenantId ?? m.tenant ?? (m.identity as Record<string, unknown> | undefined)?.tenant_id;
+  return typeof candidate === 'string' && candidate.length > 0 ? candidate : 'unknown';
+}
+
+/**
+ * Build a read-only preview summary from the query result and the projected
+ * rows. `events` is the raw consent-gated query output (defines rows_total and
+ * carries metadata for tenant grouping); `projected` is what the target's own
+ * projector produced (i.e. exactly the rows that WOULD be written, pre-dedup).
+ *
+ * Writes nothing. Pure function — unit-testable without prod access.
+ */
+export function summarizePreview(
+  target: DatasetTarget,
+  events: OasisEventRow[],
+  projected: DatasetRow[],
+): DatasetExtractionPreview {
+  const eventById = new Map<string, OasisEventRow>();
+  for (const e of events) eventById.set(e.id, e);
+
+  const byTenant: Record<string, number> = {};
+  const bySource: Record<string, number> = {};
+  for (const row of projected) {
+    const event = eventById.get(row.source_id);
+    const tenant = tenantKeyFromEvent(event);
+    const source = event?.topic ?? 'unknown';
+    byTenant[tenant] = (byTenant[tenant] ?? 0) + 1;
+    bySource[source] = (bySource[source] ?? 0) + 1;
+  }
+
+  const deduped = dedupeBySourceId(projected);
+
+  return {
+    target,
+    preview: true,
+    rows_total: events.length,
+    rows_projected: projected.length,
+    rows_after_dedup: deduped.length,
+    by_tenant: byTenant,
+    by_source: bySource,
+    samples: deduped.slice(0, Math.max(0, PREVIEW_SAMPLE_LIMIT)),
+  };
 }
