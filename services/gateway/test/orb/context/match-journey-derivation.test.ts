@@ -84,6 +84,122 @@ describe('BOOTSTRAP-MATCHMAKING-INDEX — deriveMatchJourneyContext (pure)', () 
     expect(ctx.pendingUserDecision).toBeUndefined();
   });
 
+  // ---- Real intent_matches.state values (the bug this PR fixes) ----
+
+  it('real state "new" → pre_interest with show_interest (not browsing)', () => {
+    expect(normaliseMatchState('new')).toBe('new');
+    const ctx = deriveMatchJourneyContext({
+      latestMatch: {
+        matchId: 'm-new',
+        intentId: 'i-new',
+        state: 'new',
+        stateChangedAt: '2026-05-11T18:00:00Z',
+      },
+      indexScoreTotal: 500,
+      nowMs: FIXED_NOW,
+    });
+    expect(ctx.journeyStage).toBe('pre_interest');
+    expect(ctx.pendingUserDecision).toBe('show_interest');
+    expect(ctx.recommendedNextMove).toBe('ask_should_i_show_interest');
+  });
+
+  it('real state "responded_by_b" → pre_interest with reply_to_match (other side replied, our turn)', () => {
+    expect(normaliseMatchState('responded_by_b')).toBe('responded_by_b');
+    const ctx = deriveMatchJourneyContext({
+      latestMatch: {
+        matchId: 'm-rbb',
+        intentId: 'i-rbb',
+        state: 'responded_by_b',
+        stateChangedAt: '2026-05-11T18:00:00Z',
+      },
+      indexScoreTotal: 500,
+      nowMs: FIXED_NOW,
+    });
+    expect(ctx.journeyStage).toBe('pre_interest');
+    expect(ctx.pendingUserDecision).toBe('reply_to_match');
+    expect(ctx.recommendedNextMove).toBe('ask_should_i_show_interest');
+  });
+
+  it('real state "responded_by_a" → interest_sent, no pending decision (waiting on the other side)', () => {
+    expect(normaliseMatchState('responded_by_a')).toBe('responded_by_a');
+    const ctx = deriveMatchJourneyContext({
+      latestMatch: {
+        matchId: 'm-rba',
+        intentId: 'i-rba',
+        state: 'responded_by_a',
+        stateChangedAt: '2026-05-11T18:00:00Z',
+      },
+      indexScoreTotal: 500,
+      nowMs: FIXED_NOW,
+    });
+    expect(ctx.journeyStage).toBe('interest_sent');
+    expect(ctx.pendingUserDecision).toBeUndefined();
+    expect(ctx.recommendedNextMove).toBeUndefined();
+  });
+
+  it('real state "mutual_interest" → mutual_match with send_opener', () => {
+    expect(normaliseMatchState('mutual_interest')).toBe('mutual_interest');
+    const ctx = deriveMatchJourneyContext({
+      latestMatch: {
+        matchId: 'm-mi',
+        intentId: 'i-mi',
+        state: 'mutual_interest',
+        stateChangedAt: '2026-05-11T17:00:00Z',
+      },
+      indexScoreTotal: 600,
+      nowMs: FIXED_NOW,
+    });
+    expect(ctx.journeyStage).toBe('mutual_match');
+    expect(ctx.pendingUserDecision).toBe('send_opener');
+    expect(ctx.recommendedNextMove).toBe('stage_opener');
+  });
+
+  it('real state "declined" → browsing (back to pool)', () => {
+    expect(normaliseMatchState('declined')).toBe('declined');
+    const ctx = deriveMatchJourneyContext({
+      latestMatch: {
+        matchId: 'm-dec',
+        intentId: 'i-dec',
+        state: 'declined',
+        stateChangedAt: '2026-05-10T10:00:00Z',
+      },
+      indexScoreTotal: 700,
+      nowMs: FIXED_NOW,
+    });
+    expect(ctx.journeyStage).toBe('browsing');
+    expect(ctx.pendingUserDecision).toBeUndefined();
+  });
+
+  it('real "mutual_interest" with >3d silence flips next move to nudge_reply + match_silence warning', () => {
+    const fourDaysAgo = new Date(FIXED_NOW - 4 * 24 * 60 * 60 * 1000).toISOString();
+    const ctx = deriveMatchJourneyContext({
+      latestMatch: { matchId: 'm', intentId: 'i', state: 'mutual_interest', stateChangedAt: fourDaysAgo },
+      indexScoreTotal: 600,
+      nowMs: FIXED_NOW,
+    });
+    expect(ctx.journeyStage).toBe('mutual_match');
+    expect(ctx.recommendedNextMove).toBe('nudge_reply');
+    expect(ctx.warnings).toContain('match_silence');
+  });
+
+  it('real states never collapse to "browsing" when actionable (regression guard)', () => {
+    const actionable: Array<'new' | 'responded_by_b' | 'responded_by_a' | 'mutual_interest'> = [
+      'new',
+      'responded_by_b',
+      'responded_by_a',
+      'mutual_interest',
+    ];
+    for (const s of actionable) {
+      const ctx = deriveMatchJourneyContext({
+        latestMatch: { matchId: 'm', intentId: 'i', state: s, stateChangedAt: null },
+        indexScoreTotal: 400,
+        nowMs: FIXED_NOW,
+      });
+      expect(ctx.journeyStage).not.toBe('browsing');
+      expect(ctx.journeyStage).not.toBe('none');
+    }
+  });
+
   it('low Index tier (foundation) surfaces a vitana_index_tier warning', () => {
     const ctx = deriveMatchJourneyContext({
       latestMatch: { matchId: 'm', intentId: 'i', state: 'suggested', stateChangedAt: null },
@@ -125,7 +241,16 @@ describe('BOOTSTRAP-MATCHMAKING-INDEX — deriveMatchJourneyContext (pure)', () 
   });
 
   it('never emits the "none" sentinel — that is reserved for the flag-OFF stub', () => {
-    const states: Array<'suggested' | 'accepted' | 'dismissed'> = ['suggested', 'accepted', 'dismissed'];
+    const states: Array<
+      | 'new'
+      | 'responded_by_a'
+      | 'responded_by_b'
+      | 'mutual_interest'
+      | 'declined'
+      | 'suggested'
+      | 'accepted'
+      | 'dismissed'
+    > = ['new', 'responded_by_a', 'responded_by_b', 'mutual_interest', 'declined', 'suggested', 'accepted', 'dismissed'];
     for (const s of states) {
       const ctx = deriveMatchJourneyContext({
         latestMatch: { matchId: 'm', intentId: 'i', state: s, stateChangedAt: null },
@@ -155,7 +280,7 @@ describe('BOOTSTRAP-MATCHMAKING-INDEX — compileMatchJourneyContext flag gate',
   // us prove the flag-OFF path never touches the fetcher.
   const liveFetcher: MatchJourneyFetcher = {
     fetch: jest.fn().mockResolvedValue({
-      latestMatch: { matchId: 'm', intentId: 'i', state: 'suggested', stateChangedAt: null },
+      latestMatch: { matchId: 'm', intentId: 'i', state: 'new', stateChangedAt: null },
       indexScoreTotal: 400,
       sourceHealth: {
         profiles: { ok: true },

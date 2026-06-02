@@ -14,11 +14,22 @@
  *   - NO OASIS topic literals (the grep guard at
  *     scripts/ci/match-journey-topics-guard.mjs enforces this).
  *
- * Stage mapping (intent_matches.state → journeyStage):
+ * Stage mapping (intent_matches.state → journeyStage). The fetcher
+ * always reads the user as side A (filters on `vitana_id_a`), so the
+ * "other side" is always B. This mirrors the canonical classifier in
+ * `services/.../next-action/sources/match-activity-plan.ts`:
  *   - no match rows at all           → 'browsing'
- *   - latest state = 'suggested'     → 'pre_interest'
- *   - latest state = 'accepted'      → 'mutual_match'
- *   - latest state = 'dismissed'     → 'browsing' (back to the pool)
+ *   - 'new'                          → 'pre_interest' (fresh, show interest)
+ *   - 'responded_by_b'               → 'pre_interest' (B replied → our turn
+ *                                       to decide, pendingUserDecision=reply)
+ *   - 'responded_by_a'               → 'interest_sent' (we replied, waiting
+ *                                       on the other side — not our turn)
+ *   - 'mutual_interest'              → 'mutual_match' (both engaged)
+ *   - 'declined'                     → 'browsing' (back to the pool)
+ *   Legacy states (kept for back-compat):
+ *   - 'suggested'                    → 'pre_interest'
+ *   - 'accepted'                     → 'mutual_match'
+ *   - 'dismissed'                    → 'browsing'
  *
  * Vitana Index tier anchors the *confidence* of the recommended next
  * move and surfaces a low-momentum warning so matchmaking can lean on
@@ -29,8 +40,27 @@ import type { MatchJourneyContext } from './match-journey-context-provider';
 import type { VitanaIndexTier } from '../../../services/journey-stage/types';
 import { tierFromScore } from '../../../services/journey-stage/compile-journey-stage-context';
 
-/** Canonical match lifecycle states (intent_matches.match_state enum). */
-export type MatchLifecycleState = 'suggested' | 'accepted' | 'dismissed';
+/**
+ * Canonical match lifecycle states (intent_matches.state enum).
+ *
+ * The real `intent_matches` rows use the `new` / `responded_by_a` /
+ * `responded_by_b` / `mutual_interest` / `declined` set (see
+ * `match-activity-plan.ts` + `orb-tools-shared.ts`). The earlier
+ * `suggested` / `accepted` / `dismissed` triple never existed in the
+ * table; it is retained only as a legacy alias so any historical caller
+ * keeps deriving a sensible stage instead of collapsing to 'browsing'.
+ */
+export type MatchLifecycleState =
+  // Real states (intent_matches.state)
+  | 'new'
+  | 'responded_by_a'
+  | 'responded_by_b'
+  | 'mutual_interest'
+  | 'declined'
+  // Legacy aliases (back-compat only)
+  | 'suggested'
+  | 'accepted'
+  | 'dismissed';
 
 /**
  * Distilled latest-match observation. The fetcher reduces the raw
@@ -64,8 +94,23 @@ const SILENCE_WARN_MS = 3 * 24 * 60 * 60 * 1000; // 3 days
  * strings collapse to null so the derivation degrades to 'browsing'
  * rather than emitting an invalid stage.
  */
+const KNOWN_STATES: ReadonlySet<MatchLifecycleState> = new Set<MatchLifecycleState>([
+  // Real intent_matches.state values.
+  'new',
+  'responded_by_a',
+  'responded_by_b',
+  'mutual_interest',
+  'declined',
+  // Legacy aliases.
+  'suggested',
+  'accepted',
+  'dismissed',
+]);
+
 export function normaliseMatchState(raw: unknown): MatchLifecycleState | null {
-  if (raw === 'suggested' || raw === 'accepted' || raw === 'dismissed') return raw;
+  if (typeof raw === 'string' && KNOWN_STATES.has(raw as MatchLifecycleState)) {
+    return raw as MatchLifecycleState;
+  }
   return null;
 }
 
@@ -84,15 +129,9 @@ export function deriveMatchJourneyContext(
   const state = latest?.state ?? null;
 
   // ----- Stage from match lifecycle -----
-  let journeyStage: MatchJourneyContext['journeyStage'];
-  if (!latest || state === null || state === 'dismissed') {
-    journeyStage = 'browsing';
-  } else if (state === 'suggested') {
-    journeyStage = 'pre_interest';
-  } else {
-    // state === 'accepted'
-    journeyStage = 'mutual_match';
-  }
+  // The fetcher always reads the user as side A (filters on vitana_id_a),
+  // so "the other side" is always B. Mirrors match-activity-plan.ts.
+  const journeyStage: MatchJourneyContext['journeyStage'] = stageForState(state);
 
   const ctx: MatchJourneyContext = { journeyStage };
 
@@ -108,15 +147,28 @@ export function deriveMatchJourneyContext(
     ctx.silenceDuration = silence;
   }
 
-  // ----- Pending decision + recommended next move (stage-driven) -----
+  // ----- Pending decision + recommended next move (state-driven) -----
+  // We key off the raw state (not just the stage) so 'new' vs.
+  // 'responded_by_b' produce the right pending decision even though both
+  // map to the 'pre_interest' stage.
   switch (journeyStage) {
     case 'pre_interest':
-      ctx.pendingUserDecision = 'show_interest';
+      // 'responded_by_b' = the other side replied and it's our turn to
+      // respond; 'new'/'suggested' = a fresh match awaiting first interest.
+      if (state === 'responded_by_b') {
+        ctx.pendingUserDecision = 'reply_to_match';
+      } else {
+        ctx.pendingUserDecision = 'show_interest';
+      }
       ctx.recommendedNextMove = 'ask_should_i_show_interest';
       break;
     case 'mutual_match':
       ctx.pendingUserDecision = 'send_opener';
       ctx.recommendedNextMove = 'stage_opener';
+      break;
+    case 'interest_sent':
+      // We've responded ('responded_by_a'); the ball is in the other
+      // side's court, so there is no pending decision for this user yet.
       break;
     case 'browsing':
     default:
@@ -142,6 +194,33 @@ export function deriveMatchJourneyContext(
   if (warnings.length > 0) ctx.warnings = warnings;
 
   return ctx;
+}
+
+/**
+ * Map a (normalised) lifecycle state to a journey stage, from the
+ * user-as-side-A perspective the fetcher always uses. No match row, an
+ * unknown state, or a declined/dismissed match all fall back to the
+ * browsing pool. Mirrors classifyStage() in match-activity-plan.ts.
+ */
+function stageForState(
+  state: MatchLifecycleState | null,
+): MatchJourneyContext['journeyStage'] {
+  switch (state) {
+    case 'mutual_interest':
+    case 'accepted': // legacy alias
+      return 'mutual_match';
+    case 'new':
+    case 'responded_by_b': // other side replied → our turn to decide
+    case 'suggested': // legacy alias
+      return 'pre_interest';
+    case 'responded_by_a': // we replied → waiting on the other side
+      return 'interest_sent';
+    case 'declined':
+    case 'dismissed': // legacy alias
+    case null:
+    default:
+      return 'browsing';
+  }
 }
 
 /** Foundation/building tiers (and unknown) signal a user still warming up. */
