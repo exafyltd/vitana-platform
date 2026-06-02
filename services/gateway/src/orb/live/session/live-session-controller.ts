@@ -1303,6 +1303,16 @@ export async function handleLiveSessionStart(
             // the Teacher Mode block so it cedes turn 1 cleanly, or (b)
             // suppressing the wake-brief's Teacher-winner selection
             // upstream when journey-greeting will fire.
+            // TODO(R1 slice): migrate the plan_phase + life_compass-state
+            // derivation onto resolveJourneyPlanPhase / resolveLifeCompassState
+            // (services/awareness-unified-context.ts). NOT done here because it
+            // is NOT a no-op: the live derivation in new-day-overview-payload.ts
+            // is 3-way (it folds a past target_date into on_personalized_goal +
+            // a separate days_past_deadline), whereas the canonical resolver is
+            // the §1.4 4-way that promotes a past target_date to 'goal_completed'.
+            // The 'set'/'unset' below is also object-presence, not the canonical
+            // primary_goal/set_at rule. Migrating either changes behavior, so it
+            // waits for the R7 goal-completion provider that consumes the 4th phase.
             console.log(
               `[VTID-03154] Journey greeting prepared for ${sessionId}: kind=${result.meta.kind} day=${journey.day_in_journey}/${journey.total_days} phase=${journey.current_wave?.id ?? 'none'} life_compass=${lifeCompass ? 'set' : 'unset'}`,
             );
