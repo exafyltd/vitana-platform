@@ -408,3 +408,5 @@ async function resolveActiveCartId(
 }
 
 export default router;
+
+// Deploy marker: governed redeploy for VTID-03260 (universal cart agent phases 0-2).
