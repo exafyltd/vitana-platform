@@ -5,7 +5,8 @@
  *   (a) hard-filtered products NEVER appear in proposals — the agent selects
  *       only through the limitations-filtered search path, so an allergen/
  *       contraindication/medication-conflicting product cannot be proposed.
- *   (b) role gate returns the cart's 403 cart_unavailable_for_role on non-community.
+ *   (b) auth gate: 401 when unauthenticated; ANY authenticated caller is allowed
+ *       (commerce is no longer role-gated — the community-role wall was removed).
  *   (c) metadata shape { origin:'agent', ... } + source_surface 'autopilot' on inserts.
  *   (d) NO checkout/charge side effect — never touches checkout/product_orders/wallet.
  *   (e) llm_unavailable → HTTP 502 (router mocked to fail).
@@ -136,17 +137,18 @@ const ALLERGEN_PRODUCT = '77777777-7777-4000-f000-000000000f02';
 
 const BEARER_A = 'Bearer fake-jwt-user-a';
 
-/** Seed me_context + active_role lookups (mirrors universal-cart.test.ts seedAuth). */
-function seedAuth(opts: { user_id?: string; tenant_id?: string | null; role: string | null }) {
+/**
+ * Seed the me_context auth lookup (mirrors universal-cart.test.ts seedAuth).
+ *
+ * The shared commerce gate (`authorizeCommunityCaller`) is AUTH-ONLY now — it no
+ * longer queries `user_tenants.active_role` — so we seed ONLY the me_context
+ * response. `role` is accepted for call-site compatibility but ignored.
+ */
+function seedAuth(opts: { user_id?: string; tenant_id?: string | null; role?: string | null }) {
   mockSupabase.__seed({
     data: { user_id: opts.user_id ?? USER_A, tenant_id: opts.tenant_id === undefined ? TENANT_1 : opts.tenant_id },
     error: null,
   });
-  if (opts.role !== null && opts.tenant_id !== null) {
-    mockSupabase.__seed({ data: { active_role: opts.role }, error: null });
-  } else if (opts.tenant_id !== null) {
-    mockSupabase.__seed({ data: null, error: null });
-  }
 }
 
 /** A populated brain with a peanut allergy (used to prove hard-filter). */
@@ -247,7 +249,7 @@ beforeEach(() => {
 // (b) Role gate
 // =============================================================================
 
-describe(`${'VTID-03260'} (b) role gating`, () => {
+describe(`${'VTID-03260'} (b) auth gating`, () => {
   test('GET /health is open', async () => {
     const res = await request(buildApp()).get('/api/v1/shopping-agent/health');
     expect(res.status).toBe(200);
@@ -260,25 +262,51 @@ describe(`${'VTID-03260'} (b) role gating`, () => {
     expect(res.body.error).toBe('UNAUTHENTICATED');
   });
 
-  test('POST /propose with role=admin → 403 cart_unavailable_for_role', async () => {
+  test('POST /propose with role=admin is NOT role-blocked (commerce is open to any authed caller)', async () => {
+    // The community-role wall was removed: an 'admin' caller must proceed through
+    // the gate. Seed the standard success path (same as the (a) proposal test).
     seedAuth({ role: 'admin' });
+    // getMonthlySpend product_orders read (runs before cart resolution)
+    mockSupabase.__seed({ data: [], error: null });
+    // cart resolution → existing active cart
+    mockSupabase.__seed({ data: { id: CART_A }, error: null });
+    seedPlannerOk();
+    // products search → one safe row
+    mockSupabase.__seed({ data: [SAFE_ROW], error: null });
+    // insert of the safe pick
+    mockSupabase.__seed({ data: { id: ITEM_1 }, error: null });
+    // item.added event insert (best-effort)
+    mockSupabase.__seed({ data: null, error: null });
+
     const res = await request(buildApp())
       .post('/api/v1/shopping-agent/propose')
       .set('Authorization', BEARER_A)
       .send({ prompt: 'sleep help' });
-    expect(res.status).toBe(403);
-    expect(res.body.error).toBe('cart_unavailable_for_role');
-    expect(res.body.role).toBe('admin');
+
+    expect(res.status).toBe(200);
+    expect(res.body.ok).toBe(true);
+    expect(res.body.error).not.toBe('cart_unavailable_for_role');
   });
 
-  test('POST /propose with no active_role → 403', async () => {
+  test('POST /propose with no active_role is NOT role-blocked (proceeds)', async () => {
     seedAuth({ role: null });
+    // getMonthlySpend product_orders read (runs before cart resolution)
+    mockSupabase.__seed({ data: [], error: null });
+    // cart resolution → existing active cart
+    mockSupabase.__seed({ data: { id: CART_A }, error: null });
+    seedPlannerOk();
+    mockSupabase.__seed({ data: [SAFE_ROW], error: null });
+    mockSupabase.__seed({ data: { id: ITEM_1 }, error: null });
+    mockSupabase.__seed({ data: null, error: null });
+
     const res = await request(buildApp())
       .post('/api/v1/shopping-agent/propose')
       .set('Authorization', BEARER_A)
       .send({ prompt: 'sleep help' });
-    expect(res.status).toBe(403);
-    expect(res.body.error).toBe('cart_unavailable_for_role');
+
+    expect(res.status).toBe(200);
+    expect(res.body.ok).toBe(true);
+    expect(res.body.error).not.toBe('cart_unavailable_for_role');
   });
 });
 
@@ -569,21 +597,30 @@ function ctxWithPastPurchases(productIds: string[]): UserHealthContext {
   });
 }
 
-describe(`${'VTID-03260'} Phase 2 reorder role gating`, () => {
+describe(`${'VTID-03260'} Phase 2 reorder auth gating`, () => {
   test('POST /reorder without Bearer → 401', async () => {
     const res = await request(buildApp()).post('/api/v1/shopping-agent/reorder').send({});
     expect(res.status).toBe(401);
     expect(res.body.error).toBe('UNAUTHENTICATED');
   });
 
-  test('POST /reorder with role=admin → 403 cart_unavailable_for_role', async () => {
+  test('POST /reorder with role=admin is NOT role-blocked (proceeds)', async () => {
+    // No community-role wall anymore. An 'admin' caller with no reorderable
+    // history simply proceeds and gets the standard empty-history advisory.
     seedAuth({ role: 'admin' });
+    mockGetUserHealthContext.mockResolvedValue(makeCtx({ past_purchases: [] }));
+    // cart resolution → existing active cart
+    mockSupabase.__seed({ data: { id: CART_A }, error: null });
+
     const res = await request(buildApp())
       .post('/api/v1/shopping-agent/reorder')
       .set('Authorization', BEARER_A)
       .send({});
-    expect(res.status).toBe(403);
-    expect(res.body.error).toBe('cart_unavailable_for_role');
+
+    expect(res.status).toBe(200);
+    expect(res.body.ok).toBe(true);
+    expect(res.body.error).not.toBe('cart_unavailable_for_role');
+    expect(res.body.advisory).toContain('no_reorderable_items');
   });
 });
 
