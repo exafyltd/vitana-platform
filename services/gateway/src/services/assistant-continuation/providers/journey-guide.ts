@@ -48,6 +48,7 @@ interface JourneyGuideInputs {
   supabase: SupabaseClient;
   userId: string;
   isReconnect?: boolean;
+  lang: string;
 }
 
 function readInputs(ctx: ContinuationDecisionContext): JourneyGuideInputs | null {
@@ -59,6 +60,7 @@ function readInputs(ctx: ContinuationDecisionContext): JourneyGuideInputs | null
     supabase: obj.supabase as SupabaseClient,
     userId: obj.userId,
     isReconnect: obj.isReconnect === true,
+    lang: typeof obj.lang === 'string' && obj.lang ? obj.lang : 'en',
   };
 }
 
@@ -113,15 +115,21 @@ export function makeJourneyGuideProvider(): ContinuationProvider {
         navigation_route: step.navigation_route,
       };
 
-      // The spoken opener IS the step's directive — Vitana leads, never asks
-      // "what do you want?". The GUIDE-MODE block (bundled below) governs the
-      // rest of the session.
+      // VTID-03266 (Fix-6): the spoken opener is an ALREADY-LOCALIZED short
+      // directive line — NOT the raw English execute_prompt. On LiveKit the
+      // agent plays this verbatim via session.say() (no translation step); on
+      // Vertex it is wrapped "speak verbatim". So it MUST be in the session
+      // language. The whole-session "never ask what-do-you-want / lead / verify"
+      // contract lives in the GUIDE-MODE block (buildJourneyGuideBlock), which
+      // is injected as a system instruction on BOTH transports (turns 2+).
+      const { buildJourneyGuideOpenerLine } = await import('../../../orb/live/instruction/journey-guide-prompt');
+      const openerLine = buildJourneyGuideOpenerLine(step.key, step.title, inputs.lang);
       const candidate = {
         id: `journey-guide-${step.key}`,
         surface: 'orb_wake',
         kind: 'wake_brief',
         priority: JOURNEY_GUIDE_PRIORITY,
-        userFacingLine: stepDef.execute_prompt,
+        userFacingLine: openerLine,
         // VTID-03264 (Fix-5 hotfix): MUST be a KNOWN_CTA_TYPES value or
         // validateContinuationCandidate rejects the candidate (the provider
         // then errors out and never wins — which is exactly what happened with
