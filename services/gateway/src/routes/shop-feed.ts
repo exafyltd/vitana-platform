@@ -31,11 +31,10 @@ import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { createUserSupabaseClient } from '../lib/supabase-user';
 import { getSupabase } from '../lib/supabase';
-import { getBearerToken, getUserContext, getActiveRole } from './universal-cart';
+import { getBearerToken, getUserContext } from './universal-cart';
 
 export const VTID = 'VTID-03237';
 
-const COMMUNITY_ROLE = 'community';
 const DEFAULT_LIMIT = 20;
 const MAX_LIMIT = 50;
 
@@ -77,11 +76,9 @@ async function authorizeCommunityCaller(
     res.status(401).json({ ok: false, error: 'UNAUTHENTICATED', detail: ctx.error });
     return null;
   }
-  const role = await getActiveRole(ctx.user_id, ctx.tenant_id);
-  if (role !== COMMUNITY_ROLE) {
-    res.status(403).json({ ok: false, error: 'shop_unavailable_for_role', role });
-    return null;
-  }
+  // Mobile-app audience is entirely community users — the video shop is open to
+  // every authenticated caller. Do NOT gate on active_role (it is null/unset for
+  // app users and was blocking everyone). Authenticate only.
   return { token, user_id: ctx.user_id, tenant_id: ctx.tenant_id };
 }
 

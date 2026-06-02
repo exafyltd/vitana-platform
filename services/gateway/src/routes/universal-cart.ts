@@ -18,8 +18,10 @@
  *   - No checkout, no Stripe, no wallet waterfall, no autopilot bridge, no matchmaking.
  *
  * Access control:
- *   - Community-role-only. Non-community sessions get HTTP 403 with `error: 'cart_unavailable_for_role'`.
- *   - Role is read from `user_tenants.active_role` via the service-role client.
+ *   - Authenticated-user-only (any role). The mobile app's entire audience is
+ *     community users, so commerce is open to every signed-in caller; we do NOT
+ *     gate on `active_role` (doing so blocked every user whose active_role was
+ *     null/unset). 401 only when the bearer token is missing/invalid.
  *   - Cart + cart_items mutations use the user-JWT-scoped client so RLS enforces owner isolation.
  *   - cart_events INSERTs use the service-role client (RLS blocks `authenticated` writes; audit
  *     emission is the gateway's responsibility).
@@ -79,8 +81,6 @@ const ALLOWED_EVENT_PAYLOAD_KEYS = new Set([
 
 /** Soft cap on event-payload string fields to prevent accidental PII leakage via metadata blob. */
 const EVENT_PAYLOAD_STRING_MAX = 200;
-
-const COMMUNITY_ROLE = 'community';
 
 const router = Router();
 
@@ -154,19 +154,9 @@ export async function getActiveRole(
 }
 
 /**
- * Standardized 403 response for non-community sessions.
- */
-function denyForRole(res: Response, callerRole: string | null): Response {
-  return res.status(403).json({
-    ok: false,
-    error: 'cart_unavailable_for_role',
-    role: callerRole, // for client-side diagnostics; not PII
-  });
-}
-
-/**
- * Combined auth + role gate. Returns the resolved identity on success, or sends
- * a 401/403 response and returns null so callers can early-exit.
+ * Auth gate. Returns the resolved identity for any authenticated caller, or
+ * sends a 401 and returns null so callers can early-exit. Intentionally does
+ * NOT gate on role — see the "Access control" note in the file header.
  */
 export async function authorizeCommunityCaller(
   req: Request,
@@ -182,11 +172,11 @@ export async function authorizeCommunityCaller(
     res.status(401).json({ ok: false, error: 'UNAUTHENTICATED', detail: ctx.error });
     return null;
   }
-  const role = await getActiveRole(ctx.user_id, ctx.tenant_id);
-  if (role !== COMMUNITY_ROLE) {
-    denyForRole(res, role);
-    return null;
-  }
+  // The mobile app has a single audience — every user IS a community user —
+  // so commerce must be available to any authenticated caller. The previous
+  // `active_role === 'community'` wall blocked everyone whose user_tenants
+  // active_role wasn't exactly that string (null/unset for app users), which
+  // broke the cart for all of them. Authenticate only; never gate on role.
   return { token, user_id: ctx.user_id, tenant_id: ctx.tenant_id };
 }
 
