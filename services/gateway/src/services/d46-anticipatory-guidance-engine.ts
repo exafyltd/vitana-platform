@@ -575,7 +575,12 @@ export function calculateRelevanceScore(
 export function selectGuidanceMode(
   window: PredictiveWindow,
   signals: PatternSignal[],
-  userPreferences: GuidancePreferences
+  userPreferences: GuidancePreferences,
+  // Reference time (ms since epoch). Injected so the function is deterministic
+  // given its inputs — identical input + identical nowMs => identical output.
+  // Production callers omit this and get wall-clock behavior (Date.now()).
+  // Tests pass a fixed value so two calls cannot straddle a window boundary.
+  nowMs: number = Date.now()
 ): GuidanceMode {
   // Reinforcement: For positive momentum windows
   if (window.type === 'peak' || window.type === 'recovery') {
@@ -590,7 +595,7 @@ export function selectGuidanceMode(
   // Preparation: For upcoming risk or opportunity windows
   if (window.type === 'risk' || window.type === 'opportunity') {
     const windowStart = new Date(window.starts_at);
-    const hoursUntilWindow = (windowStart.getTime() - Date.now()) / (1000 * 60 * 60);
+    const hoursUntilWindow = (windowStart.getTime() - nowMs) / (1000 * 60 * 60);
 
     // If window is 24-72 hours away, suggest preparation
     if (hoursUntilWindow >= 24 && hoursUntilWindow <= 72) {
