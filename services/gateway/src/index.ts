@@ -232,6 +232,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const userPreferencesRouter = require('./routes/user-preferences').default;
   // VTID-03213: Universal Cart Phase 1 gateway slice (universal_carts / universal_cart_items / universal_cart_events)
   const universalCartRouter = require('./routes/universal-cart').default;
+  // VTID-03260: Propose-then-approve shopping agent Phase 1 (proposes into the Universal Cart; never checks out)
+  const shoppingAgentRouter = require('./routes/shopping-agent').default;
   // VTID-03237: Video Shop (Vitanaland) backend slice — feed/anchor/saved/events over products + Universal Cart
   const shopFeedRouter = require('./routes/shop-feed').default;
   // VTID-01126: D32 Situational Awareness Engine - situation understanding layer
@@ -440,6 +442,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const canaryTargetRouter = require('./routes/canary-target').default;
   // VTID-02031: Ops "Action Required" — pull surface mirroring Gchat pings
   const opsActionRequiredRouter = require('./routes/ops-action-required').default;
+  // BOOTSTRAP-35DAY-TRACKER: Training cycle tracker for System Overview
+  const trainingStatusRouter = require('./routes/training-status').default;
 
   // CORS setup - DEV-OASIS-0101
   setupCors(app);
@@ -1161,6 +1165,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   // VTID-02031: Ops Action Required — pull surface for Command Hub Overview
   mountRouterSync(app, '/api/v1/ops/action-required', opsActionRequiredRouter, { owner: 'ops-action-required' });
 
+  // BOOTSTRAP-35DAY-TRACKER: Training cycle tracker — Command Hub Overview "Training" section
+  mountRouterSync(app, '/api/v1/training', trainingStatusRouter, { owner: 'training-status' });
+
   // VTID-01097: Diary Templates - guided diary templates for memory quality
   mountRouterSync(app, '/api/v1/diary', diaryRouter, { owner: 'diary' });
 
@@ -1201,6 +1208,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
 
   // VTID-03213: Universal Cart Phase 1 gateway slice — community-role-gated cart over universal_* tables
   mountRouterSync(app, '/api/v1/universal-cart', universalCartRouter, { owner: 'universal-cart' });
+
+  // VTID-03260: Propose-then-approve shopping agent — community-role-gated; proposes items into the Universal Cart (never checks out)
+  mountRouterSync(app, '/api/v1/shopping-agent', shoppingAgentRouter, { owner: 'shopping-agent' });
 
   // VTID-03237: Video Shop (Vitanaland) — community-role-gated feed/anchor/saved/events over products + Universal Cart
   mountRouterSync(app, '/api/v1/shop-feed', shopFeedRouter, { owner: 'shop-feed' });
