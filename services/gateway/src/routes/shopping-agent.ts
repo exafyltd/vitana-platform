@@ -77,6 +77,13 @@ router.post('/propose', async (req: Request, res: Response) => {
   const id = await authorizeCommunityCaller(req, res);
   if (!id) return;
 
+  // impact-allow-no-oasis: each proposed item emits an item.added cart event to
+  // universal_cart_events via emitCartEvent (the end-user commerce sink), not
+  // oasis_events. oasis_events is the VTID lifecycle/governance log (CLAUDE.md
+  // §6), not a commerce ledger — identical to the universal-cart slice's
+  // handlers (see universal-cart.ts checkout). No state transition here belongs
+  // in OASIS; this endpoint only fills a cart and never charges.
+
   const parsed = ProposeBody.safeParse(req.body ?? {});
   if (!parsed.success) {
     return res.status(400).json({
