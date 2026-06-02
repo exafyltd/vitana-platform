@@ -1,0 +1,139 @@
+/**
+ * VTID-03257 (Fix-1) — Journey Guide provider.
+ *
+ * THE PRODUCT CONTRACT: for users who are still on the onboarding journey
+ * (not yet graduated from the Journey Foundation), Vitana is a PROACTIVE,
+ * hand-holding guide — NOT a passive assistant. She drives the Foundation
+ * checklist ONE step at a time, states the step as a DIRECTIVE (never "what do
+ * you want?"), does the task WITH the user, and verifies completion against
+ * real data before advancing.
+ *
+ * This provider makes that real at turn 1. It outranks new_day_return (90) and
+ * Teacher (85) so the journey leads; it SUPPRESSES once the user has graduated,
+ * handing the floor back to the normal ladder. The directive line is the
+ * step's own `execute_prompt`; a GUIDE-MODE block (bundled on the candidate)
+ * governs turns 2+.
+ */
+
+import type {
+  AssistantContinuation,
+  ContinuationDecisionContext,
+  ContinuationProvider,
+  ProviderResult,
+} from '../types';
+import type { SupabaseClient } from '@supabase/supabase-js';
+import type { JourneyFoundationSnapshot } from '../../journey-foundation/types';
+
+export const JOURNEY_GUIDE_PROVIDER_KEY = 'journey_guide';
+export const JOURNEY_GUIDE_EXTRA_KEY = 'journey_guide';
+
+// Above new_day_return (90) + Teacher (85): the checklist leads. Below
+// first_time_welcome (95, the one-time intro) + goal_completion (92).
+const JOURNEY_GUIDE_PRIORITY = 91;
+
+/** Bundled GUIDE-MODE content the controller reads off the winning candidate. */
+export interface JourneyGuideContent {
+  step_key: string;
+  step_title: string;
+  /** The step's directive execute_prompt (what Vitana leads with). */
+  execute_prompt: string;
+  /** One-line "why this matters now". */
+  benefit: string;
+  /** action = do-it-together task; teacher = walk-through explanation. */
+  step_type: string;
+  navigation_route: string | null;
+}
+
+interface JourneyGuideInputs {
+  supabase: SupabaseClient;
+  userId: string;
+  isReconnect?: boolean;
+}
+
+function readInputs(ctx: ContinuationDecisionContext): JourneyGuideInputs | null {
+  const raw = ctx.extra?.[JOURNEY_GUIDE_EXTRA_KEY];
+  if (!raw || typeof raw !== 'object') return null;
+  const obj = raw as Record<string, unknown>;
+  if (!obj.supabase || typeof obj.userId !== 'string' || !obj.userId) return null;
+  return {
+    supabase: obj.supabase as SupabaseClient,
+    userId: obj.userId,
+    isReconnect: obj.isReconnect === true,
+  };
+}
+
+export function makeJourneyGuideProvider(): ContinuationProvider {
+  return {
+    key: JOURNEY_GUIDE_PROVIDER_KEY,
+    surfaces: ['orb_wake'],
+    async produce(ctx: ContinuationDecisionContext): Promise<ProviderResult> {
+      const inputs = readInputs(ctx);
+      if (!inputs) {
+        return { providerKey: JOURNEY_GUIDE_PROVIDER_KEY, status: 'skipped', latencyMs: 0, reason: 'no_journey_guide_inputs' };
+      }
+      // Transparent reconnect: the previous turn is still alive — don't open.
+      if (inputs.isReconnect) {
+        return { providerKey: JOURNEY_GUIDE_PROVIDER_KEY, status: 'suppressed', latencyMs: 0, reason: 'forced_skip_reconnect' };
+      }
+
+      let snapshot: JourneyFoundationSnapshot;
+      let stepDef: { execute_prompt: string; benefit: string } | undefined;
+      try {
+        const [{ buildJourneyFoundationSnapshot }, { getStepDef }] = await Promise.all([
+          import('../../journey-foundation/journey-foundation-state'),
+          import('../../journey-foundation/foundation-steps'),
+        ]);
+        snapshot = await buildJourneyFoundationSnapshot(inputs.supabase, inputs.userId);
+        const key = snapshot.current_next_step?.key;
+        stepDef = key ? getStepDef(key) : undefined;
+      } catch (err) {
+        return {
+          providerKey: JOURNEY_GUIDE_PROVIDER_KEY,
+          status: 'errored',
+          latencyMs: 0,
+          reason: `journey_guide_snapshot_failed: ${err instanceof Error ? err.message : String(err)}`,
+        };
+      }
+
+      // Graduated → the journey is done; hand the floor to the normal ladder.
+      if (snapshot.graduated) {
+        return { providerKey: JOURNEY_GUIDE_PROVIDER_KEY, status: 'suppressed', latencyMs: 0, reason: 'journey_graduated' };
+      }
+      const step = snapshot.current_next_step;
+      if (!step || !stepDef) {
+        return { providerKey: JOURNEY_GUIDE_PROVIDER_KEY, status: 'suppressed', latencyMs: 0, reason: 'no_next_step' };
+      }
+
+      const guide: JourneyGuideContent = {
+        step_key: step.key,
+        step_title: step.title,
+        execute_prompt: stepDef.execute_prompt,
+        benefit: stepDef.benefit,
+        step_type: step.type,
+        navigation_route: step.navigation_route,
+      };
+
+      // The spoken opener IS the step's directive — Vitana leads, never asks
+      // "what do you want?". The GUIDE-MODE block (bundled below) governs the
+      // rest of the session.
+      const candidate = {
+        id: `journey-guide-${step.key}`,
+        surface: 'orb_wake',
+        kind: 'wake_brief',
+        priority: JOURNEY_GUIDE_PRIORITY,
+        userFacingLine: stepDef.execute_prompt,
+        cta: { type: 'guide_step', payload: { step_key: step.key, route: step.navigation_route } },
+        evidence: [
+          { kind: 'source:journey_guide', detail: step.key },
+          { kind: 'journey_step_tier', detail: String(step.tier) },
+        ],
+        dedupeKey: `journey_guide:${step.key}`,
+        privacyMode: 'safe_to_speak',
+        // Bundled — controller reads candidate.journeyGuide (cast), like teacherMode.
+        journeyGuide: guide,
+      } as unknown as AssistantContinuation;
+
+      return { providerKey: JOURNEY_GUIDE_PROVIDER_KEY, status: 'returned', latencyMs: 0, candidate };
+    },
+  };
+}

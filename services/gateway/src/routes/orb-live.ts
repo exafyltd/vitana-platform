@@ -1307,6 +1307,8 @@ export { buildLiveApiTools } from '../orb/live/tools/live-tool-catalog';
 // content resolver succeeded. Drives multi-turn teaching via prompt +
 // tools rather than a TS-side state machine.
 import { buildTeacherModeBlock } from '../orb/teacher/teacher-mode-prompt';
+// VTID-03257 (Fix-1): GUIDE MODE block — Vitana leads the Foundation checklist.
+import { buildJourneyGuideBlock } from '../orb/live/instruction/journey-guide-prompt';
 // A6.2 (orb-live-refactor): SessionContext + SessionMutator + first
 // lifted navigator handler. orb-live.ts keeps compat shims that build
 // the typed views and forward to handlers under orb/live/tools/handlers/.
@@ -5207,6 +5209,40 @@ async function executeLiveApiToolInner(
         };
       }
 
+      case 'record_journey_answer': {
+        // VTID-03257 (Fix-1): Vertex parity for the journey-answer tool.
+        // record_journey_answer was added to ORB_TOOL_REGISTRY by VTID-03255
+        // (so LiveKit's tools.py wrapper can call it) but never got a Vertex
+        // case — so on Vertex it fell through to `Unknown tool`. The GUIDE-MODE
+        // block (buildJourneyGuideBlock) instructs the model to VERIFY a
+        // completion claim via record_journey_answer, so it MUST work on both
+        // transports. Delegate to the shared dispatcher (lifted pattern).
+        const SUPABASE_URL = process.env.SUPABASE_URL;
+        const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
+        if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
+          return { success: false, result: '', error: 'Service unavailable — Supabase creds not configured' };
+        }
+        const { createClient } = await import('@supabase/supabase-js');
+        const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE);
+        const { dispatchOrbToolForVertex } = await import('../services/orb-tools-shared');
+        return await dispatchOrbToolForVertex(
+          'record_journey_answer',
+          args ?? {},
+          {
+            user_id: lens.user_id,
+            tenant_id: lens.tenant_id ?? null,
+            role: session.identity?.role ?? null,
+            vitana_id: session.identity?.vitana_id ?? null,
+            session_id: session.sessionId,
+            thread_id: session.thread_id || session.sessionId,
+            turn_number: session.turn_count,
+            session_started_iso: session.createdAt.toISOString(),
+            lang: session.lang ?? null,
+          },
+          supabase,
+        );
+      }
+
       default: {
         // BOOTSTRAP-ADMIN-DD: route admin voice tools through their handlers.
         // The handlers re-check role server-side, so a community session that
@@ -6133,6 +6169,16 @@ async function connectToLiveAPI(
                                   lang: session.lang,
                                   firstName: (session as any).teacherModeFirstName ?? null,
                                 })
+                              : '')
+                          // VTID-03257 (Fix-1): GUIDE MODE — when the journey
+                          // guide won turn 1, inject the lead-the-journey block
+                          // so the whole session is hand-held through the
+                          // current Foundation step (no "what do you want?").
+                          + ((session as any).journeyGuideContent
+                              ? buildJourneyGuideBlock(
+                                  (session as any).journeyGuideContent,
+                                  session.lang,
+                                )
                               : ''),
                         session.active_role,
                         session.conversationSummary,
