@@ -13,6 +13,7 @@ import {
   JOURNEY_GUIDE_PROVIDER_KEY,
   JOURNEY_GUIDE_EXTRA_KEY,
 } from '../../../../src/services/assistant-continuation/providers/journey-guide';
+import { validateContinuationCandidate } from '../../../../src/services/assistant-continuation/types';
 
 // The provider reaches the journey-foundation modules via dynamic import().
 const mockBuildSnapshot = jest.fn();
@@ -143,6 +144,22 @@ describe('VTID-03257 makeJourneyGuideProvider', () => {
     const r = await p.produce(makeCtx());
     expect((r as any).candidate.priority).toBeGreaterThan(90);
     expect((r as any).candidate.priority).toBeGreaterThan(85);
+  });
+
+  // VTID-03264 (Fix-5 regression lock): the produced candidate MUST pass the
+  // ranker's invariant validator. Fix-1 shipped with cta.type='guide_step'
+  // (not in KNOWN_CTA_TYPES) so validateContinuationCandidate rejected it and
+  // the provider errored on EVERY production session — Teacher led turn 1 and
+  // the journey never drove the conversation. This test runs the SAME validator
+  // the ranker runs, so an invalid candidate can never pass CI green again.
+  it('produces a candidate that passes validateContinuationCandidate (the ranker invariant)', async () => {
+    mockBuildSnapshot.mockResolvedValue({ graduated: false, current_next_step: NEXT_STEP });
+    mockGetStepDef.mockReturnValue(STEP_DEF);
+    const p = makeJourneyGuideProvider();
+    const r = await p.produce(makeCtx());
+    expect(r.status).toBe('returned');
+    const verdict = validateContinuationCandidate((r as any).candidate);
+    expect(verdict).toEqual({ ok: true });
   });
 
   it('suppresses when the step has no definition (defensive)', async () => {
