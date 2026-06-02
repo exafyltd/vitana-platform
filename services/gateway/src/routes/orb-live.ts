@@ -62,6 +62,13 @@ import {
 // Phase 1 W2 (BOOTSTRAP-PHASE1-W2-VOICE-LATENCY-WIRE): the LatencyTracker class +
 // LatencyPhase are also used directly to instrument the voice WS/SSE turn timeline.
 import { withLatencyTracker, LatencyTracker, type LatencyPhase } from '../orb/live/latency-tracker';
+// BOOTSTRAP-VOICE-LATENCY-SPECULATION: speculative persona-voice resolution to
+// remove the registry round-trip from the turn-0 critical path. Flag-gated
+// (FEATURE_VOICE_SPECULATION), default OFF → no-op (see voice-speculation.ts).
+import { beginVoiceSpeculation, consumeSpeculatedVoice } from '../orb/live/voice-speculation';
+// Conservative typical inline persona-voice registry-lookup cost (warm cache),
+// used only as the baseline for the speculation-savings telemetry.
+const INLINE_VOICE_LOOKUP_BASELINE_MS = 8;
 // Phase 1 W2 (BOOTSTRAP-PHASE1-W2-SHADOW-RUNTIME-WIRE): shadow-compare the
 // voice tool-routing decision against a candidate model. No-op (candidate never
 // invoked) when FEATURE_SHADOW_TOOL_ROUTER_ENV is off.
@@ -5849,6 +5856,37 @@ async function connectToLiveAPI(
   // path. Error/close handlers continue to register on the raw socket
   // returned by `vertex.getSocket()`, preserving the transparent-reconnect
   // path and all VTID-02637 connection-issue dedupe behavior.
+  // BOOTSTRAP-VOICE-LATENCY-SPECULATION: begin resolving the persona voice
+  // SPECULATIVELY here, at connect-START, so the registry round-trip overlaps
+  // the upstream WS handshake + context build instead of running serially
+  // inside buildOrbVertexSetupEnvelope (between context_awaited and setup_sent).
+  // The (persona, tenant) inputs are known now and fully determine the voice,
+  // so the speculated value is identical to the inline lookup. Returns null
+  // when FEATURE_VOICE_SPECULATION is off → the envelope builder takes its
+  // exact pre-existing inline path (byte-for-byte unchanged). See
+  // orb/live/voice-speculation.ts for the safety/no-op contract.
+  const _specPersona = (session as any).activePersona || RECEPTIONIST_PERSONA_KEY;
+  const _specTenantId = session.identity?.tenant_id;
+  const voiceSpeculation = beginVoiceSpeculation(
+    {
+      session_id: session.sessionId,
+      actor_id: session.identity?.user_id,
+      persona: _specPersona,
+      tenant_id: _specTenantId,
+      provider: `vertex/${VERTEX_LIVE_MODEL}`,
+    },
+    // Same registry calls, same arguments as the inline path below. Returns
+    // undefined on empty/failed lookup so the consumer falls back inline.
+    async () => {
+      if ((session as any).personaVoiceOverride) {
+        return (session as any).personaVoiceOverride as string;
+      }
+      return _specTenantId
+        ? await registryGetPersonaVoiceForTenant(_specPersona, _specTenantId)
+        : await registryGetPersonaVoice(_specPersona);
+    },
+  );
+
   return new Promise<WebSocket>(async (resolve, reject) => {
     const vertex = new VertexLiveClient();
 
@@ -5909,15 +5947,29 @@ async function connectToLiveAPI(
       const _persona = (session as any).activePersona || RECEPTIONIST_PERSONA_KEY;
       let _personaVoice = (session as any).personaVoiceOverride;
       if (!_personaVoice) {
-        try {
-          // VTID-02653: tenant-aware lookup when session has tenant context.
-          const _setupTenantId = session.identity?.tenant_id;
-          const fromRegistry = _setupTenantId
-            ? await registryGetPersonaVoiceForTenant(_persona, _setupTenantId)
-            : await registryGetPersonaVoice(_persona);
-          if (fromRegistry) _personaVoice = fromRegistry;
-        } catch (e) {
-          console.warn(`[VTID-02651] persona registry lookup failed for ${_persona}:`, e);
+        // BOOTSTRAP-VOICE-LATENCY-SPECULATION: when the flag is ON, the persona
+        // voice was resolved speculatively at connect-start (overlapping the
+        // handshake). Consume it here — already settled in the common case so
+        // this is ~0ms on the hot path instead of a serial registry round-trip.
+        // Returns undefined when the flag is OFF (handle is null) → we fall
+        // through to the EXACT pre-existing inline lookup below, unchanged.
+        // INLINE_VOICE_LOOKUP_BASELINE_MS: a conservative typical cost for the
+        // inline registry round-trip on a warm cache; used only as the baseline
+        // for the savings telemetry, never to gate behaviour.
+        const _speculated = await consumeSpeculatedVoice(voiceSpeculation, INLINE_VOICE_LOOKUP_BASELINE_MS);
+        if (_speculated) {
+          _personaVoice = _speculated;
+        } else {
+          try {
+            // VTID-02653: tenant-aware lookup when session has tenant context.
+            const _setupTenantId = session.identity?.tenant_id;
+            const fromRegistry = _setupTenantId
+              ? await registryGetPersonaVoiceForTenant(_persona, _setupTenantId)
+              : await registryGetPersonaVoice(_persona);
+            if (fromRegistry) _personaVoice = fromRegistry;
+          } catch (e) {
+            console.warn(`[VTID-02651] persona registry lookup failed for ${_persona}:`, e);
+          }
         }
       }
       _personaVoice = _personaVoice || getLiveApiVoice(session.lang);
