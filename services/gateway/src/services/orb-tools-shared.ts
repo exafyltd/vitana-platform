@@ -26,6 +26,7 @@
  */
 
 import { SupabaseClient } from '@supabase/supabase-js';
+import { shouldBlockTool } from './intelligence/role-policy-enforcer';
 import { fetchVitanaIndexForProfiler } from './user-context-profiler';
 import { resolvePillarKey } from '../lib/vitana-pillars';
 import {
@@ -3881,6 +3882,24 @@ export async function dispatchOrbTool(
   if (!handler) {
     return { ok: false, error: `unknown tool: ${name}` };
   }
+
+  // BOOTSTRAP-ROLE-AUTH-ENFORCER — role-policy shadow hook (deny-by-default).
+  //
+  // Non-invasive: with FEATURE_ROLE_POLICY_ENFORCE off (default) this only
+  // LOGS a violation (shadow) and NEVER blocks. With the flag on it would
+  // return a deny result before dispatch.
+  //
+  // INTEGRATION TODO: the ORB tool registry names here (e.g. 'search_memory',
+  // 'play_music') are NOT yet 1:1 with the assistant-role-registry tool
+  // allowlist names (e.g. 'get_recent_memory'). A name-mapping table
+  // (orb-tool-name -> registry-tool-name) must land BEFORE the enforce flag
+  // is flipped to staging+prod, otherwise legitimate tools would be denied.
+  // Until that mapping exists this hook is shadow-only telemetry; do NOT
+  // enable FEATURE_ROLE_POLICY_ENFORCE in prod. See role-policy-enforcer.ts.
+  if (shouldBlockTool(identity.role, name, { surface: 'orb-tool', session_id: identity.session_id ?? undefined, actor_id: identity.user_id })) {
+    return { ok: false, error: `tool '${name}' not permitted for role '${identity.role ?? '(null)'}'` };
+  }
+
   try {
     return await handler(args, identity, sb);
   } catch (e: unknown) {
