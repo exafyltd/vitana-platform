@@ -268,9 +268,10 @@ const EVENTS_LIVE_ROOMS: AutomationDefinition[] = [
   },
   {
     id: 'AP-0309', name: '"Host Night" Concierge', domain: 'events-live-rooms',
-    status: 'PLANNED', priority: 'P0', triggerType: 'heartbeat',
-    triggerConfig: { intervalMinutes: 1440 }, // daily interest-cluster scan
+    status: 'IMPLEMENTED', priority: 'P0', triggerType: 'heartbeat',
+    triggerConfig: { intervalMinutes: 1440 }, // daily upcoming-event concierge scan
     targetRoles: [...MEMBER_ROLES],
+    handler: 'runHostNightConcierge',
     requires: ['AP-0301', 'AP-0302', 'AP-0403', 'AP-0405'],
   },
   {
