@@ -65,8 +65,10 @@ jobs:
             SRC="${STAGING_BUCKET}/finetune-runs/${TARGET}/"
             DST="${STAGING_BUCKET}/finetune-current/${TARGET}/"
             echo "=== ${TARGET} ==="
-            # List existing runs newest-first; take the first that has a
-            # weights.tar.gz at its root.
+            # List existing runs newest-first. The trainer currently uploads
+            # adapter/tokenizer files as a directory; older staging expected a
+            # prebuilt weights.tar.gz. Support both shapes and publish the
+            # canonical tarball either way.
             LATEST=$(gsutil ls "${SRC}" 2>/dev/null || true)
             LATEST=$(printf "%s\n" "${LATEST}" | sort -r | head -10)
             if [ -z "$LATEST" ]; then
@@ -79,6 +81,19 @@ jobs:
                 echo "selecting ${RUN}weights.tar.gz -> ${DST}weights.tar.gz"
                 gsutil -m cp "${RUN}weights.tar.gz" "${DST}weights.tar.gz"
                 echo "${RUN}" | gsutil -m cp - "${DST}LATEST_RUN.txt"
+                STAGED=1
+                break
+              fi
+              if gsutil -q stat "${RUN}vitana_training_manifest.json" 2>/dev/null; then
+                echo "packaging ${RUN} -> ${DST}weights.tar.gz"
+                WORKDIR="$(mktemp -d)"
+                DOWNLOAD_DIR="${WORKDIR}/artifact"
+                mkdir -p "${DOWNLOAD_DIR}"
+                gsutil -m cp -r "${RUN}*" "${DOWNLOAD_DIR}/"
+                tar -czf "${WORKDIR}/weights.tar.gz" -C "${DOWNLOAD_DIR}" .
+                gsutil -m cp "${WORKDIR}/weights.tar.gz" "${DST}weights.tar.gz"
+                echo "${RUN}" | gsutil -m cp - "${DST}LATEST_RUN.txt"
+                rm -rf "${WORKDIR}"
                 STAGED=1
                 break
               fi
