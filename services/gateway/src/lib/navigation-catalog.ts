@@ -1003,6 +1003,12 @@ export const NAVIGATION_CATALOG: ReadonlyArray<NavCatalogEntry> = [
   {
     screen_id: 'MEMORY.DIARY',
     route: '/memory/diary',
+    // BOOTSTRAP-MOBILE-NAV-CONTAINMENT: /memory/diary renders the desktop Memory
+    // hub (tabbed Overview/Timeline/Daily-Diary/Recall view) which is a desktop
+    // layout. On mobile the real diary surface is MobileDailyDiary at /daily-diary,
+    // so redirect there — otherwise "open my daily diary" strands mobile users on
+    // the read-only activity-timeline hub.
+    mobile_route: '/daily-diary',
     category: 'memory',
     access: 'authenticated',
     anonymous_safe: false,
@@ -1146,6 +1152,10 @@ export const NAVIGATION_CATALOG: ReadonlyArray<NavCatalogEntry> = [
   {
     screen_id: 'INBOX.REMINDERS',
     route: '/inbox/reminder',
+    // BOOTSTRAP-MOBILE-NAV-CONTAINMENT: same surface as REMINDERS.OVERVIEW — on
+    // mobile open the Calendar popup's Reminders tab in place rather than landing
+    // on the desktop /reminders full page.
+    mobile_route: '/reminders?open=calendar&tab=reminders',
     category: 'inbox',
     access: 'authenticated',
     anonymous_safe: false,
@@ -1300,6 +1310,10 @@ export const NAVIGATION_CATALOG: ReadonlyArray<NavCatalogEntry> = [
   },
   {
     screen_id: 'INBOX.ARCHIVED', route: '/inbox/archived', category: 'inbox',
+    // BOOTSTRAP-MOBILE-NAV-CONTAINMENT: desktop-only master/detail layout (two
+    // fixed-width w-80 panes side by side); no mobile rendering exists. Gate it so
+    // the ORB never route-changes a mobile user here — it stays in voice instead.
+    viewport_only: 'desktop',
     access: 'authenticated', anonymous_safe: false,
     i18n: {
       en: { title: 'Archived Messages', description: 'Messages you have archived.', when_to_visit: 'When the user asks for archived messages, old messages, or messages they saved or dismissed.' },
@@ -1712,6 +1726,12 @@ export const NAVIGATION_CATALOG: ReadonlyArray<NavCatalogEntry> = [
   // ── REMINDERS / MESSAGES / DAILY DIARY ──────────────────────────────────
   {
     screen_id: 'REMINDERS.OVERVIEW', route: '/reminders', category: 'inbox',
+    // BOOTSTRAP-MOBILE-NAV-CONTAINMENT: the /reminders page is a desktop full-list
+    // view; on mobile the reminders surface is the Calendar popup's Reminders tab.
+    // Emit the overlay marker so the ORB opens the popup in place instead of
+    // route-changing to a dead-end full page. The frontend intercepts ?open=calendar
+    // and dispatches `calendar:open` (with tab=reminders) without navigating.
+    mobile_route: '/reminders?open=calendar&tab=reminders',
     access: 'authenticated', anonymous_safe: false,
     aliases: ['reminders', 'reminder-list', 'all-reminders', 'meine-erinnerungen'],
     i18n: {
@@ -2251,7 +2271,10 @@ export function lookupByRoute(route: string | undefined | null): NavCatalogEntry
  * Suggest catalog entries with similar ids (for tool-call hallucination recovery).
  * Uses substring + token-overlap scoring; cheap and good enough for ~40 entries.
  */
-export function suggestSimilar(attemptedId: string, limit = 5): NavCatalogEntry[] {
+export function suggestSimilarScored(
+  attemptedId: string,
+  limit = 5,
+): Array<{ entry: NavCatalogEntry; score: number }> {
   if (!attemptedId) return [];
   const target = attemptedId.toLowerCase();
   const targetTokens = new Set(target.split(/[\.\-_\s]+/).filter(Boolean));
@@ -2278,7 +2301,28 @@ export function suggestSimilar(attemptedId: string, limit = 5): NavCatalogEntry[
   }
 
   scored.sort((a, b) => b.score - a.score);
-  return scored.slice(0, limit).map(s => s.entry);
+  return scored.slice(0, limit);
+}
+
+/**
+ * VTID-NAV-CONFIDENCE (VTID-03258): the minimum suggestSimilar score at which a fuzzy
+ * resolution is trustworthy enough to auto-navigate without confirmation.
+ * Scoring units (see suggestSimilarScored): exact id +100, substring +30,
+ * per shared id-token +10, per shared title-word +3. A score >= 10 means the
+ * attempt shares at least one whole id token OR is a substring of a real
+ * screen_id — a real lexical anchor. Below that (title-word-only overlaps of
+ * 3/6/9, or pure noise) we MUST NOT silently teleport the user to "the nearest
+ * thing"; that was the wrong-screen-redirect class. The navigate_to_screen
+ * gate rejects sub-floor fuzzy matches and tells the model to be specific.
+ */
+export const FUZZY_NAV_MIN_SCORE = 10;
+
+/**
+ * Suggest catalog entries with similar ids (for tool-call hallucination recovery).
+ * Uses substring + token-overlap scoring; cheap and good enough for ~40 entries.
+ */
+export function suggestSimilar(attemptedId: string, limit = 5): NavCatalogEntry[] {
+  return suggestSimilarScored(attemptedId, limit).map((s) => s.entry);
 }
 
 /**

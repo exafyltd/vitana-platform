@@ -303,8 +303,13 @@ export async function processFailingService(
     diagnosis.auto_fixable = false;
   }
 
+  // Level 4 (FULL_AUTO): the injector relaxes the auto-approve floor to 0.5 via
+  // autoApproveFloor(), so confidence in [0.5, 0.8) auto-runs instead of waiting
+  // for a human. The <0.5 escalation above still applies. The autonomy level is
+  // passed through so the injector can pick the correct floor.
+
   // Inject into autopilot pipeline
-  const injection = await injectIntoAutopilotPipeline(vtid, diagnosis, spec, spec_hash);
+  const injection = await injectIntoAutopilotPipeline(vtid, diagnosis, spec, spec_hash, autonomyLevel);
   if (!injection.success) {
     console.error(`[self-healing] Failed to inject ${vtid}: ${injection.error}`);
     return { action: 'escalated', vtid, reason: `Injection failed: ${injection.error}` };
@@ -314,10 +319,11 @@ export async function processFailingService(
   // which the autopilot event loop picks up and dispatches through the
   // standard pipeline (enforceSpecRequirement → worker-runner → completion).
 
-  // Gchat notification ONLY when a human decision is required.
-  // Auto-approved tasks run silently — the team sees them in the
-  // Command Hub if they look, but we don't ping for in-progress work.
-  if (diagnosis.confidence < 0.8) {
+  // Gchat notification ONLY when a human decision is required. Use the injector's
+  // actual approval decision (which honours the per-level floor) instead of a
+  // hardcoded 0.8 — otherwise FULL_AUTO would auto-run a 0.6 fix yet still ping
+  // the team to "approve" it.
+  if (!injection.autoApproved) {
     await notifyGChat(
       `⏳ *Self-Healing AWAITING APPROVAL*\n` +
       `Task: ${vtid}\n` +

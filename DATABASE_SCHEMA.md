@@ -412,6 +412,8 @@ CREATE TABLE my_new_table (
 | 2026-05-21 | Seeded 1 `decision_policy` row under `voice.cascade.default` with the 6-field cascade shape (stt/llm/tts × provider+model). Gateway `/orb/context-bootstrap` now returns this when no per-agent `agent_voice_configs` row exists — kills the silent Python all-Google fallback in `orb-agent/providers.py`. Phase D.4.a of decision-contract refactor. | Claude | VTID-03127 |
 | 2026-05-21 | Added `provenance` JSONB column to `autopilot_recommendations` (nullable). Carries the `RankProvenance` trail (strategy_id + version + computed_at + tenant_id + components[] + final_score) Phase C strategies will emit. Schema + types only in this slice — Phase C.2 seeds ranker weights, C.3 implements `PillarWeighterStrategy`, C.4 wires `rankBatch()` to persist provenance. | Claude | VTID-03130 |
 | 2026-05-21 | Seeded 21 ranker policy rows in `decision_policy` under `ranker.pillar_weighter.*` — 10 weights/dampeners, 3 balance thresholds, 6 journey-mode decay curve points, 2 misc (compass decay, pillar score cap). Phase C.2 of decision-contract refactor. Values byte-identical to `DEFAULT_RANKER_CONFIG` + inline literals in `index-pillar-weighter.ts`. Consumers land in Phase C.3 / C.5+. | Claude | VTID-03131 |
+| 2026-06-01 | Added `seed_community_onboarding_autopilot(uuid)` function + `seed_onboarding_autopilot_on_primary_membership` AFTER INSERT trigger on `user_tenants` (WHEN `is_primary=true`). Seeds the day0 community onboarding Autopilot bundle (8 `onboarding_*` rows in `autopilot_recommendations`) on signup — bypass-proof, since vitana-v1 authenticates directly via Supabase Auth and never hit the gateway `/auth/login` first-login hook (same root cause + trigger pattern as VTID-03089 welcome chat). Mirrors `STAGE_TEMPLATES.day0` in `community-user-analyzer.ts` (drift-guarded by `autopilot-onboarding-seed-bundle.test.ts`); fingerprints match the TS generator so the cron/lazy-gen dedupe against the seed. Idempotent + fail-soft. Includes a 7-day backfill of recent zero-rec community members. | Claude | BOOTSTRAP-ONBOARDING-AUTOPILOT-SEED |
+| 2026-06-07 | Added Video Shop (Vitanaland) backend slice: `shop_videos`, `shop_video_anchors` (single-primary index), `shop_saved_products`, `shop_video_events` (non-OASIS funnel sink). Threaded `source_video_id`/`source_creator_id` attribution onto `universal_cart_items` + `product_orders` and widened the `source_surface` CHECK to admit `video_shop`. New surface over `products` + Universal Cart — no second commerce system; no wallet buy-now in V1. | Claude | VTID-03237 |
 
 ---
 
@@ -875,6 +877,150 @@ CREATE INDEX policy_render_block_lookup_idx
 4. B.4 — vertical proof: migrate `live-system-instruction.ts` greeting block to read via the resolver.
 
 See `docs/decision-contract/phase-b-brief.md` for the full plan.
+
+---
+
+## VTID-03237 — Video Shop (Vitanaland)
+
+A NEW SURFACE over the existing `products` catalog + Universal Cart + (later) the
+EUR/USD wallet. It forks nothing: the drawer's add-to-cart calls
+`/api/v1/universal-cart/items` with `source_surface='video_shop'`. V1 = curated/admin
+videos, single anchor, drawer, add-to-cart, save, share, PDP — **no** wallet buy-now
+(no checkout bridge yet), **no** open seller upload, **no** affiliate payout math.
+**Migration:** `supabase/migrations/20260607000000_VTID_03237_video_shop_schema.sql`
+**Used by:** `services/gateway/src/routes/shop-feed.ts` (+ `universal-cart.ts` attribution)
+
+### shop_videos
+**Purpose:** Curated vertical short clips that back the Video Shop feed. Feed-eligible only when `status='active'` AND `moderation_status='approved'` AND it has a primary anchor whose product is active/in_stock.
+
+**Schema:**
+```sql
+CREATE TABLE shop_videos (
+  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  creator_id        UUID REFERENCES app_users(user_id) ON DELETE SET NULL,
+  tenant_id         UUID,
+  title             TEXT,
+  caption           TEXT,
+  video_url         TEXT NOT NULL,
+  poster_url        TEXT,
+  thumbnail_url     TEXT,
+  duration_ms       INT NOT NULL DEFAULT 0,
+  aspect_ratio      TEXT NOT NULL DEFAULT '9:16',
+  status            TEXT NOT NULL DEFAULT 'draft'   CHECK (status IN ('draft','processing','active','paused','removed')),
+  moderation_status TEXT NOT NULL DEFAULT 'pending' CHECK (moderation_status IN ('pending','approved','rejected')),
+  is_curated        BOOLEAN NOT NULL DEFAULT TRUE,
+  rank_score        NUMERIC NOT NULL DEFAULT 0,
+  metadata          JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at        TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+```
+**Auth model:** RLS on. `authenticated` SELECTs live (active+approved) rows only; `service_role` full access (curated seeding + studio in V1.1).
+
+### shop_video_anchors
+**Purpose:** Binds a `products` row to a `shop_video`. V1 ships a single PRIMARY anchor (the tappable pill) per video — enforced by the partial unique index `shop_video_anchors_one_primary`.
+
+**Schema:**
+```sql
+CREATE TABLE shop_video_anchors (
+  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  video_id          UUID NOT NULL REFERENCES shop_videos(id) ON DELETE CASCADE,
+  product_id        UUID NOT NULL REFERENCES products(id),
+  is_primary        BOOLEAN NOT NULL DEFAULT TRUE,
+  label             TEXT NOT NULL DEFAULT 'Shop now',
+  badge_price_cents INT,
+  currency          CHAR(3),
+  appear_at_ms      INT NOT NULL DEFAULT 0,
+  pos_x             NUMERIC NOT NULL DEFAULT 0.5,
+  pos_y             NUMERIC NOT NULL DEFAULT 0.82,
+  metadata          JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at        TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX shop_video_anchors_one_primary ON shop_video_anchors (video_id) WHERE is_primary = TRUE;
+```
+**Auth model:** RLS on. `authenticated` SELECTs anchors of live videos; `service_role` full access.
+
+### shop_saved_products
+**Purpose:** Per-user product saves (wishlist) from the drawer; `video_id` records the source video for attribution. Owner-scoped via RLS.
+
+**Schema:**
+```sql
+CREATE TABLE shop_saved_products (
+  id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id    UUID NOT NULL REFERENCES app_users(user_id) ON DELETE CASCADE,
+  product_id UUID NOT NULL REFERENCES products(id),
+  video_id   UUID REFERENCES shop_videos(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (user_id, product_id)
+);
+```
+
+### shop_video_events
+**Purpose:** Video Shop view/commerce funnel sink. **DELIBERATELY SEPARATE from `oasis_events`** (CLAUDE.md §6: `telemetry.*` never to OASIS). Written by the gateway via `service_role`. Repointable to ClickHouse/BigQuery later without changing the API contract.
+
+**Schema:**
+```sql
+CREATE TABLE shop_video_events (
+  id          BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  video_id    UUID NOT NULL REFERENCES shop_videos(id) ON DELETE CASCADE,
+  anchor_id   UUID,
+  user_id     UUID,
+  session_id  TEXT NOT NULL,
+  event_type  TEXT NOT NULL CHECK (event_type IN (
+                'impression','hold_2s','anchor_tap','drawer_open','drawer_expand','pdp_view',
+                'variant_change','add_to_cart','buy_now','checkout_start','purchase',
+                'save','unsave','share','drawer_close')),
+  product_id  UUID REFERENCES products(id) ON DELETE SET NULL,
+  dwell_ms    INT,
+  metadata    JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+```
+**Auth model:** RLS on, **no** `authenticated` policy → `service_role`-only (ingestion + analytics).
+
+### Attribution thread (additive columns on existing tables)
+- `universal_cart_items.source_video_id` (FK `shop_videos`, SET NULL) + `source_creator_id` (FK `app_users`, SET NULL).
+- `product_orders.source_video_id` + `source_creator_id` — attribution snapshot copied at order time by the future checkout bridge (V1.2 payout basis); affiliate-postback orders leave them NULL.
+- `universal_cart_items.source_surface` CHECK widened to admit `'video_shop'` (kept in sync with `ALLOWED_SOURCE_SURFACES` in `universal-cart.ts`).
+
+**API Endpoints (mounted at `/api/v1/shop-feed`, community-role-gated):**
+- `GET /videos`, `GET /videos/:id`, `GET /videos/:id/anchor`
+- `POST /videos/:id/events`, `POST /events/batch`
+- `GET /saved`, `POST /saved`, `DELETE /saved/:productId`
+
+---
+
+## Training Cycle Tracker (BOOTSTRAP-35DAY-TRACKER)
+
+Backs the "Training" section on the Command Hub System Overview page
+(`/command-hub/overview/system-overview/`). Generic across cycles — 35-day now,
+30/60/90-day later. Read via `GET /api/v1/training/status` (gateway service role;
+endpoint falls back to an embedded bootstrap snapshot if these tables are absent).
+
+```sql
+training_cycles (
+  id UUID PK, label TEXT, length_days INT, start_date DATE,
+  status TEXT,                       -- active | completed | aborted
+  training_job_id TEXT,              -- Vertex CustomJob id
+  training_job_state TEXT,           -- last recorded job state
+  training_job_updated_at TIMESTAMPTZ,
+  notes TEXT, created_at, updated_at
+);
+
+training_cycle_days (
+  id UUID PK, cycle_id UUID FK -> training_cycles(id) ON DELETE CASCADE,
+  day_number INT, day_date DATE,
+  goal TEXT,                         -- set each morning by the operator
+  status TEXT,                       -- pending | running | success | failure | partial
+  outcome TEXT, evidence TEXT,
+  initiated JSONB,                   -- [{ label, status, detail }]
+  set_by TEXT, created_at, updated_at,
+  UNIQUE (cycle_id, day_number)
+);
+```
+
+**Auth model:** RLS-on, `service_role` bypass; no anon/community access (ops table).
 
 ---
 

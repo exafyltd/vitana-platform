@@ -58,6 +58,19 @@
     } catch (e) { return true; } // Can't decode — treat as expired
   }
 
+  // DEV-COMHU-0502 (review fix): extract the JWT subject (user id) so setAuth
+  // can detect an ACCOUNT SWITCH (sub changes) versus a same-user silent
+  // refresh (sub unchanged). Returns null when unparseable/absent.
+  function _jwtSub(token) {
+    try {
+      if (!token) return null;
+      var parts = token.split('.');
+      if (parts.length !== 3) return null;
+      var payload = JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/')));
+      return payload && payload.sub ? String(payload.sub) : null;
+    } catch (e) { return null; }
+  }
+
   // Auto-detect auth token from localStorage (read-only, never writes/deletes)
   // Priority: Supabase native key (managed by auth SDK) > vitana.authToken (legacy)
   var _autoToken = (function () {
@@ -147,12 +160,20 @@
     // Watchdogs
     clientWatchdogInterval: null,
     clientLastActivityAt: 0,
+    // DEV-COMHU-0501 — ORB Recovery 0.1: cross-provider speaking-state watchdog.
+    // lastAudioReceivedAt is stamped on every inbound audio frame (any source);
+    // the watchdog clears a stuck audioPlaying when frames stop arriving AND
+    // nothing is scheduled/queued, regardless of transport (Vertex SSE today,
+    // LiveKit WebRTC on the community surface tomorrow).
+    lastAudioReceivedAt: 0,
+    speakingWatchdogInterval: null,
     stuckGuardTimer: null,
     thinkingDelayTimer: null, // Delayed thinking state — only show if response takes > 1.5s
     thinkingProgressTimer: null, // Progress updates during long thinking
     thinkingStartTime: 0,    // When thinking started — for elapsed time display
     greetingAudioReceived: false,
     greetingComplete: false,  // True after first turn_complete — mic opens only after this
+    _audioReadySignaled: false, // DEV-COMHU-0504: audio-ready ack posted once per session
 
     // UI state
     voiceState: 'IDLE', // IDLE | LISTENING | THINKING | SPEAKING | MUTED
@@ -852,12 +873,47 @@
   // 5. AUDIO PLAYBACK PIPELINE
   // ============================================================
 
+  // DEV-COMHU-0504 — ORB Recovery 4: audio-ready handshake.
+  // POST once per session when the playback pipeline is genuinely ready
+  // (AudioContext exists + running). The backend records the ack so it can
+  // release the greeting on ack-or-3s. Idempotent + best-effort.
+  function _signalAudioReady() {
+    if (_s._audioReadySignaled) return;
+    if (!_s.sessionId) return;
+    // Ensure a playback context exists; if it's suspended, kick a resume so the
+    // pipeline reaches 'running' (the canonical "ready" state).
+    try {
+      if (!_s.playbackCtx || _s.playbackCtx.state === 'closed') {
+        _s.playbackCtx = new (window.AudioContext || window.webkitAudioContext)();
+      }
+      var ctx = _s.playbackCtx;
+      if (ctx.state === 'suspended' && ctx.resume) {
+        ctx.resume().catch(function () {});
+      }
+      if (ctx.state !== 'running') return; // not ready yet; will retry on resume
+    } catch (e) {
+      return; // no audio context available — let the server 3s timeout cover it
+    }
+    _s._audioReadySignaled = true;
+    try {
+      var headers = { 'Content-Type': 'application/json' };
+      if (_cfg.token) headers['Authorization'] = 'Bearer ' + _cfg.token;
+      fetch(_cfg.gw + '/api/v1/orb/session/' + encodeURIComponent(_s.sessionId) + '/audio-ready', {
+        method: 'POST', headers: headers, cache: 'no-store', keepalive: true, body: '{}'
+      }).catch(function () { /* greeting falls back to the 3s server timeout */ });
+      console.log('[VTOrb] audio-ready signaled for session ' + _s.sessionId);
+    } catch (e) { /* best-effort */ }
+  }
+
   function _playAudio(base64Data, mimeType) {
     // Belt-and-suspenders: drop chunks that arrive after a user-initiated stop
     // or while the overlay is hidden. _processQueue auto-recreates a closed
     // playbackCtx, so without this guard any late SSE audio (e.g. from a racy
     // _sessionStart that resolved after _sessionStop) plays in the background.
     if (_s._userInitiatedStop || !_s.overlayVisible) return;
+    // DEV-COMHU-0501: stamp the moment of the most recent inbound audio frame
+    // (transport-agnostic — every provider funnels playback through here).
+    _s.lastAudioReceivedAt = Date.now();
     _s.audioQueue.push({ data: base64Data, mime: mimeType });
     _processQueue();
   }
@@ -887,6 +943,8 @@
       }
       ctx.resume().then(function () {
         _s._resumeRetryStartedAt = 0;
+        // DEV-COMHU-0504: ctx just reached 'running' → pipeline now ready.
+        _signalAudioReady();
         // Re-enter on next tick so any pending chunks drain.
         setTimeout(_processQueue, 0);
       }).catch(function (e) {
@@ -986,6 +1044,42 @@
     // only meant to guard the teardown window between _sessionStop and the
     // next intentional _sessionStart.
     _s._userInitiatedStop = false;
+    // DEV-COMHU-0504 (review fix): re-arm the audio-ready ack for EVERY fresh
+    // _sessionStart, including reconnect paths (_attemptReconnect /
+    // _resetAndReconnect) that bypass _sessionStop. Without this, a recovered
+    // session keeps the prior session's _audioReadySignaled=true and never
+    // acks its new session_id, forcing the greeting gate to the 3s timeout.
+    _s._audioReadySignaled = false;
+
+    // DEV-COMHU-0503 (review fix): hydrate persisted continuity on a fresh
+    // reopen. _hide() persisted continuity then _sessionStop cleared the
+    // in-memory fields, so without this the reconnect-context builder below
+    // would start "first-time" even though a saved conversation exists. Only
+    // hydrate when in-memory continuity is empty (don't clobber a live
+    // reconnect that still has its transcript) and only for authed sessions.
+    if (_cfg.token && (!_s._transcriptHistory || _s._transcriptHistory.length === 0) && !_s.conversationId) {
+      try {
+        var contHeaders = { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + _cfg.token };
+        var contResp = await fetch(_cfg.gw + '/api/v1/orb/session/continuity', {
+          method: 'GET', headers: contHeaders, cache: 'no-store'
+        });
+        if (contResp && contResp.ok) {
+          var contData = await contResp.json();
+          var c = contData && contData.continuity;
+          if (c && typeof c === 'object') {
+            if (c.conversation_id) _s.conversationId = c.conversation_id;
+            if (Array.isArray(c.transcript_history) && c.transcript_history.length) {
+              _s._transcriptHistory = c.transcript_history.slice(-20);
+            }
+            if (c.last_turn_at) _s._lastTurnAt = c.last_turn_at;
+            if (c.last_greeting_at) _s._lastGreetingAt = c.last_greeting_at;
+            console.log('[VTOrb] continuity hydrated: conversation_id=' + (_s.conversationId || '<none>')
+              + ', transcript=' + ((_s._transcriptHistory && _s._transcriptHistory.length) || 0) + ' turns');
+          }
+        }
+      } catch (e) { /* continuity is an optimization — never block session start */ }
+    }
+
     _s.greetingAudioReceived = false;
     // VTID-01988: greetingComplete gates the post-greeting _startAudioCapture()
     // call. It used to only get reset in _sessionStop (full session teardown),
@@ -1064,6 +1158,13 @@
         response_modalities: ['audio', 'text'],
         vad_silence_ms: 850 // VTID-03019: trimmed 1200→850 to cut ~350ms off end-of-turn latency; constants.ts mirrors
       };
+      // VTID-03250: send the browser's OWN IANA timezone so the gateway has a
+      // reliable local time even when geo-IP rate-limits (HTTP 429). Without
+      // this the assistant lost the user's time and hallucinated it.
+      try {
+        var _tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+        if (_tz) startPayload.client_timezone = _tz;
+      } catch (e) { /* Intl unavailable — gateway falls back to geo-IP */ }
       if (_s.currentRoute) startPayload.current_route = _s.currentRoute;
       if (_s.recentRoutes && _s.recentRoutes.length) startPayload.recent_routes = _s.recentRoutes.slice(0, 5);
 
@@ -1147,6 +1248,10 @@
 
       _s.sessionId = data.session_id;
       _s.active = true;
+      // DEV-COMHU-0504 — ORB Recovery 4: as soon as we have a session id, try to
+      // signal audio-pipeline readiness so the backend can release the greeting
+      // the moment the client can actually play it (ack-or-3s gate server-side).
+      _signalAudioReady();
       // VTID-02020: pin the conversation_id returned by the backend so future
       // reconnects can re-thread the same conversation. The backend will
       // either echo back the one we sent or mint a fresh UUID on first start.
@@ -1166,6 +1271,17 @@
       es.onopen = function () {
         console.log('[VTOrb] SSE connected');
         _startWatchdog();
+        // DEV-COMHU-0501: arm the cross-provider speaking-state watchdog + emit
+        // a one-line session-shape diagnostic so stuck-speaking reports are
+        // debuggable from console logs alone.
+        _startSpeakingWatchdog();
+        console.log(
+          '[VTOrb] session diagnostics: ACstate=' +
+          (_s.playbackCtx ? _s.playbackCtx.state : 'none') +
+          ', queueLen=' + _s.audioQueue.length +
+          ', sourcesLen=' + _s.scheduledSources.length +
+          ', audioPlaying=' + _s.audioPlaying
+        );
       };
       es.onmessage = function (event) {
         try {
@@ -1211,6 +1327,7 @@
     // setTimeout reconnect callbacks) must see this flag and bail.
     _s._userInitiatedStop = true;
     _stopWatchdog();
+    _stopSpeakingWatchdog(); // DEV-COMHU-0501
     clearTimeout(_s._listeningIdleTimer);
 
     // VTID-03098: always cancel the disconnect-recovery probe, even when
@@ -1252,6 +1369,7 @@
     clearTimeout(_s.stuckGuardTimer);
     _s.stuckGuardTimer = null;
     _s.greetingAudioReceived = false;
+    _s._audioReadySignaled = false; // DEV-COMHU-0504: re-arm ack for next session
     _s.lastScheduledEnd = 0;
 
     // Close SSE — VTID-03098: detach handlers FIRST so the manual close
@@ -2085,6 +2203,56 @@
   }
 
   // ============================================================
+  // DEV-COMHU-0501 — ORB Recovery 0.1: cross-provider speaking-state watchdog
+  // ============================================================
+  //
+  // VTID-03185 fixed the Vertex-path closure bug in _processQueue that left
+  // _s.scheduledSources with stale entries → "Vitana speaking..." stuck on,
+  // mic gated. LiveKit (community surface) uses WebRTC tracks rather than
+  // scheduled BufferSources — a different lifecycle, but the SAME end-user
+  // symptom can still occur through different mechanics (e.g. a subscribed
+  // track that stops delivering frames without firing onended).
+  //
+  // This watchdog is transport-agnostic. It ticks every 500ms while
+  // audioPlaying is true, and force-clears the speaking state when:
+  //   - it has been >= QUIET_MS since the last inbound audio frame, AND
+  //   - no BufferSources are still scheduled, AND
+  //   - the playback queue is empty.
+  // Under healthy multi-chunk TTS, frames keep arriving (lastAudioReceivedAt
+  // refreshes) or sources stay scheduled, so the watchdog does NOT fire.
+  var SPEAKING_WATCHDOG_QUIET_MS = 2000;
+  var SPEAKING_WATCHDOG_TICK_MS = 500;
+
+  function _speakingStateWatchdog() {
+    if (!_s.audioPlaying) return;
+    var quietFor = Date.now() - (_s.lastAudioReceivedAt || 0);
+    var nothingScheduled = _s.scheduledSources.length === 0;
+    var queueEmpty = _s.audioQueue.length === 0;
+    if (quietFor >= SPEAKING_WATCHDOG_QUIET_MS && nothingScheduled && queueEmpty) {
+      console.warn(
+        '[VTOrb] speaking-state watchdog: forcing audioPlaying=false ' +
+        '(quietFor=' + quietFor + 'ms, scheduled=0, queue=0)'
+      );
+      clearTimeout(_s.audioEndGraceTimer);
+      _s.audioPlaying = false;
+      _s.lastAudioEndTime = Date.now();
+      try { _updateUI(); } catch (e) { /* UI optional during teardown */ }
+    }
+  }
+
+  function _startSpeakingWatchdog() {
+    _stopSpeakingWatchdog();
+    _s.speakingWatchdogInterval = setInterval(_speakingStateWatchdog, SPEAKING_WATCHDOG_TICK_MS);
+  }
+
+  function _stopSpeakingWatchdog() {
+    if (_s.speakingWatchdogInterval) {
+      clearInterval(_s.speakingWatchdogInterval);
+      _s.speakingWatchdogInterval = null;
+    }
+  }
+
+  // ============================================================
   // 10. UI RENDERING
   // ============================================================
 
@@ -2300,6 +2468,20 @@
   // Only skip if init() explicitly passed authToken (tracked by _tokenSetByInit).
   var _tokenSetByInit = false;
 
+  // DEV-COMHU-0502 (review fix): last authenticated JWT subject seen by
+  // setAuth, used to detect account switches. Null until first authed setAuth.
+  var _lastAuthSub = null;
+
+  // DEV-COMHU-0502 (review fix): wipe all identity-bound in-memory continuity
+  // so it cannot leak across a logout or account switch. Shared by setAuth
+  // (on detected identity change) and clearAuth (on logout).
+  function _wipeIdentityBoundState() {
+    _s._transcriptHistory = [];
+    _s.conversationId = null;
+    _s._preDisconnectStage = null;
+    _s._reconnectCount = 0;
+  }
+
   function _refreshToken() {
     if (_tokenSetByInit) return; // Explicit init() token — don't override
     try {
@@ -2432,7 +2614,56 @@
     _s._soundscapeWasPlaying = false;
   }
 
+  // DEV-COMHU-0503 — ORB Recovery 2+3: persist short-lived continuity to the
+  // gateway so a brief UI close / transient disconnect does not look
+  // "first-time" on reopen. Fire-and-forget; authenticated sessions only
+  // (anonymous has no durable identity — the gateway returns ok:false).
+  function _persistContinuity(reason, ttlMinutes) {
+    if (!_cfg.token) return; // anonymous → nothing durable to key on
+    // DEV-COMHU-0503 (review fix): during an intentional forget (_reset), the
+    // DELETE from _clearContinuity must NOT be raced by a _hide()-triggered
+    // POST that recreates the row. _reset sets this flag before calling _hide.
+    if (_s._suppressContinuityPersist) return;
+    try {
+      var headers = { 'Content-Type': 'application/json' };
+      headers['Authorization'] = 'Bearer ' + _cfg.token;
+      var transcript = (_s._transcriptHistory || []).slice(-10);
+      fetch(_cfg.gw + '/api/v1/orb/session/continuity', {
+        method: 'POST',
+        headers: headers,
+        cache: 'no-store',
+        keepalive: true, // survive the overlay/page teardown
+        body: JSON.stringify({
+          reason: reason,
+          ttl_minutes: ttlMinutes,
+          value: {
+            conversation_id: _s.conversationId || null,
+            transcript_history: transcript,
+            last_turn_at: _s._lastTurnAt || null,
+            last_greeting_at: _s._lastGreetingAt || null
+          }
+        })
+      }).catch(function () { /* continuity is best-effort */ });
+    } catch (e) { /* never block close on continuity */ }
+  }
+
+  // DEV-COMHU-0503: clear durable continuity on intentional forget.
+  function _clearContinuity() {
+    if (!_cfg.token) return;
+    try {
+      var headers = { 'Content-Type': 'application/json' };
+      headers['Authorization'] = 'Bearer ' + _cfg.token;
+      fetch(_cfg.gw + '/api/v1/orb/session/continuity', {
+        method: 'DELETE', headers: headers, cache: 'no-store', keepalive: true
+      }).catch(function () {});
+    } catch (e) { /* noop */ }
+  }
+
   function _hide() {
+    // DEV-COMHU-0503: UI close preserves short-lived continuity (15 min) BEFORE
+    // teardown, so reopening within the window resumes instead of greeting
+    // first-time. _sessionStop still tears down media/SSE exactly as before.
+    _persistContinuity('hide', 15);
     _sessionStop();
     _restoreSoundscape();
     _s.overlayVisible = false;
@@ -2442,6 +2673,22 @@
     }
     _updateUI();
     if (_cfg.onClose) try { _cfg.onClose(); } catch (e) { /* ignore */ }
+  }
+
+  // DEV-COMHU-0503: intentional forget — logout / account switch / "start over".
+  // Clears durable continuity, wipes in-memory identity-bound state, and closes.
+  function _reset() {
+    // DEV-COMHU-0503 (review fix): suppress the _hide()-path continuity POST so
+    // the DELETE below is not immediately raced by a fresh persist that would
+    // recreate the row — the intentional-forget path must end with NO row.
+    _s._suppressContinuityPersist = true;
+    _s._transcriptHistory = [];
+    _s.conversationId = null;
+    _s._preDisconnectStage = null;
+    _s._reconnectCount = 0;
+    _hide();
+    _clearContinuity(); // DELETE last, after _hide's (now-suppressed) persist
+    _s._suppressContinuityPersist = false;
   }
 
   // VTID-NAV: Returns true when the widget is in any close-pending state.
@@ -2656,6 +2903,9 @@
       if (opts.authToken !== undefined && opts.authToken !== null) {
         _cfg.token = opts.authToken || '';
         _cfg.forceAnonymous = false;
+        // DEV-COMHU-0502 (review fix): seed the identity baseline so the first
+        // post-init setAuth (same user) is NOT misread as an account switch.
+        _lastAuthSub = _jwtSub(_cfg.token);
       } else {
         // No authToken passed → anonymous. Clear any auto-detected token.
         // Also lock anonymous mode — setAuth() calls will be ignored until
@@ -2697,21 +2947,77 @@
       console.log('[VTOrb] Initialized — gateway: ' + _cfg.gw + ', lang: ' + _cfg.lang + ', showFab: ' + _cfg.showFab + ', hasToken: ' + !!_cfg.token + ', forceAnonymous: ' + _cfg.forceAnonymous);
     },
 
-    // Update auth token after login/logout — call this when auth state changes.
-    // Ignored if init() was called without authToken (forceAnonymous mode).
-    // To switch from anonymous to authenticated, call init() again with authToken.
+    // Update auth token after login/logout — call this on EVERY token-state
+    // change (login, silent refresh, account switch).
+    //
+    // DEV-COMHU-0502 — ORB Recovery 1 (auth contract): setAuth is now REACTIVE.
+    // The previous implementation hard-ignored every setAuth call once init()
+    // ran without a token (`forceAnonymous`), which meant a host that called
+    // init() early (before login resolved) then setAuth(token) on login stayed
+    // anonymous forever — skipping memory, cadence, last-session, and tools.
+    // That single bug produced the "I have no access" + missing-memory +
+    // "first-time greeting every reopen" cluster.
+    //
+    // A non-empty token always lifts the widget into authenticated mode and
+    // clears the anonymous lock. setAuth('') / null is treated as a logout and
+    // routed through clearAuth so identity-bound continuity is wiped
+    // (preserving the VTID-AUTH-FIX anti-leak guarantee).
     setAuth: function (token) {
-      if (_cfg.forceAnonymous) {
-        console.log('[VTOrb] setAuth ignored — forceAnonymous mode. Call init({ authToken }) to authenticate.');
+      if (!token) {
+        VitanaOrb.clearAuth();
         return;
       }
-      _cfg.token = token || '';
+      // DEV-COMHU-0502 (review fix): distinguish a same-user silent refresh
+      // (sub unchanged — keep continuity, that's the whole point of ORB-1)
+      // from an ACCOUNT SWITCH (sub changes — must NOT carry the prior user's
+      // transcript/conversation into the new identity's session).
+      var newSub = _jwtSub(token);
+      var prevSub = _lastAuthSub;
+      var identityChanged = !!prevSub && !!newSub && newSub !== prevSub;
+
+      _cfg.token = token;
+      _cfg.forceAnonymous = false; // a real token always lifts the anon lock
+      _tokenSetByInit = true;      // caller now owns auth; stop localStorage auto-detect
+      _lastAuthSub = newSub;
+
+      if (identityChanged) {
+        // Account switch: tear down the old-identity live session (if any) and
+        // wipe identity-bound continuity BEFORE the next _sessionStart, so the
+        // prior user's conversation/greeting state cannot leak under the new
+        // token even if the host did not call clearAuth() first.
+        _wipeIdentityBoundState();
+        if (_s.active || _s.overlayVisible) {
+          try { _sessionStop(); } catch (e) { /* best-effort teardown */ }
+        }
+        console.log('[VTOrb] setAuth: account switch detected — continuity wiped, prior session stopped');
+      } else {
+        console.log('[VTOrb] setAuth: hasToken=true (reactive)');
+      }
+    },
+
+    // DEV-COMHU-0502: explicit logout / account-switch / "start over". Tears
+    // down the active live session (created under the OLD identity — otherwise
+    // post-logout turns keep being handled/persisted against the prior
+    // session.identity), then clears the token AND identity-bound continuity so
+    // the next session cannot leak the previous user's state.
+    clearAuth: function () {
+      // Stop the backend/SSE session FIRST, while the old token is still set,
+      // so the stop request authenticates as the departing identity.
+      if (_s.active || _s.overlayVisible || _s.sessionId) {
+        try { _sessionStop(); } catch (e) { /* best-effort teardown */ }
+      }
+      _cfg.token = '';
+      _cfg.forceAnonymous = false; // not locked-anonymous; just unauthenticated now
       _tokenSetByInit = true;
-      console.log('[VTOrb] setAuth: hasToken=' + !!_cfg.token);
+      _lastAuthSub = null;
+      _wipeIdentityBoundState();
+      console.log('[VTOrb] clearAuth: live session stopped, token + identity-bound continuity cleared');
     },
 
     show: _show,
     hide: _hide,
+    // DEV-COMHU-0503: intentional forget (logout / account switch / start over).
+    reset: _reset,
 
     toggle: function () {
       if (_s.overlayVisible) _hide(); else _show();

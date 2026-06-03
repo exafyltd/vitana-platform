@@ -115,7 +115,9 @@ export async function recordSessionSummary(
   }
 
   // VTID-01990: prefer Gemini Flash summary, fall back to heuristic on any failure
-  let summary = await summarizeWithGeminiFlash(input.transcript_turns);
+  // Pass user id so the summarizer can resolve preferred locale and respond
+  // in the user's language (German by default — community is German-first).
+  let summary = await summarizeWithGeminiFlash(input.transcript_turns, input.user_id, supabase);
   let summarySource: 'llm' | 'heuristic' = 'llm';
   if (!summary || summary.length === 0) {
     summary = buildSummary(input.transcript_turns);
@@ -170,6 +172,8 @@ export async function recordSessionSummary(
  */
 export async function summarizeWithGeminiFlash(
   turns: Array<{ role: 'user' | 'assistant'; text: string }>,
+  userId?: string,
+  supabase?: any,
 ): Promise<string | null> {
   if (!turns || turns.length === 0) return null;
 
@@ -178,12 +182,26 @@ export async function summarizeWithGeminiFlash(
     .map((t) => `${t.role === 'user' ? 'User' : 'Assistant'}: ${truncate(t.text.trim(), 400)}`)
     .join('\n');
 
+  // Resolve user locale so the summary is in the user's language. Falls
+  // back gracefully if userId or supabase isn't provided (older callers).
+  let localizedPrompt = SUMMARY_SYSTEM_PROMPT;
+  if (userId && supabase) {
+    try {
+      const { getUserLocale } = await import('../../i18n/server-locale');
+      const { buildLocalizedSystemPrompt } = await import('../../i18n/llm-locale');
+      const locale = await getUserLocale(supabase, userId);
+      localizedPrompt = buildLocalizedSystemPrompt(SUMMARY_SYSTEM_PROMPT, locale);
+    } catch (e) {
+      console.warn(`${LOG_PREFIX} locale resolution failed, using base prompt:`, (e as Error).message);
+    }
+  }
+
   if (summaryVertexAI) {
     try {
       const model = summaryVertexAI.getGenerativeModel({
         model: SUMMARY_MODEL,
         generationConfig: { temperature: 0.2, maxOutputTokens: 200, topP: 0.8 },
-        systemInstruction: { role: 'system', parts: [{ text: SUMMARY_SYSTEM_PROMPT }] },
+        systemInstruction: { role: 'system', parts: [{ text: localizedPrompt }] },
       });
       const response = await model.generateContent({
         contents: [{ role: 'user', parts: [{ text: transcript }] }],
@@ -206,7 +224,7 @@ export async function summarizeWithGeminiFlash(
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             contents: [{ parts: [{ text: transcript }] }],
-            systemInstruction: { parts: [{ text: SUMMARY_SYSTEM_PROMPT }] },
+            systemInstruction: { parts: [{ text: localizedPrompt }] },
             generationConfig: { temperature: 0.2, maxOutputTokens: 200 },
           }),
         },

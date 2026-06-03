@@ -488,6 +488,72 @@ describe('A7 characterization: VertexLiveClient', () => {
     });
   });
 
+  // BOOTSTRAP-ORB-R0-INSTRUCTION-CAP: setup-too-large close classification.
+  describe('6b. Setup-too-large handshake-close classification (R0)', () => {
+    it('classifies WS 1009 (message too big) as vertex.live.setup.too_large', async () => {
+      const socket = new MockSocket();
+      const client = new VertexLiveClient({ createSocket: () => socket });
+      const errors: any[] = [];
+      client.onError((e) => errors.push(e));
+      const warnSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+
+      const p = client.connect(baseOptions());
+      await new Promise((resolve) => setImmediate(resolve));
+      socket.fireClose(1009, 'message too big');
+
+      // Existing reject behavior preserved, with a distinct too-large message.
+      await expect(p).rejects.toThrow(/setup too large/i);
+      await expect(p).rejects.toThrow(/code=1009/);
+
+      // Distinct, observable error condition emitted.
+      expect(errors).toHaveLength(1);
+      expect(errors[0].code).toBe('vertex.live.setup.too_large');
+
+      // Structured log emitted under the greppable tag.
+      const logged = warnSpy.mock.calls.find(
+        (c) => c[0] === '[vertex.live.setup.too_large]',
+      );
+      expect(logged).toBeDefined();
+      const payload = JSON.parse(logged![1] as string);
+      expect(payload.code).toBe(1009);
+      expect(payload.reason).toBe('message too big');
+
+      warnSpy.mockRestore();
+    });
+
+    it('classifies WS 1007 (invalid frame payload) as vertex.live.setup.too_large', async () => {
+      const socket = new MockSocket();
+      const client = new VertexLiveClient({ createSocket: () => socket });
+      const errors: any[] = [];
+      client.onError((e) => errors.push(e));
+      const errSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+
+      const p = client.connect(baseOptions());
+      await new Promise((resolve) => setImmediate(resolve));
+      socket.fireClose(1007, 'invalid payload');
+
+      await expect(p).rejects.toThrow(/setup too large/i);
+      expect(errors[0].code).toBe('vertex.live.setup.too_large');
+      errSpy.mockRestore();
+    });
+
+    it('does NOT classify generic close codes (1006) as setup-too-large', async () => {
+      const socket = new MockSocket();
+      const client = new VertexLiveClient({ createSocket: () => socket });
+      const errors: any[] = [];
+      client.onError((e) => errors.push(e));
+
+      const p = client.connect(baseOptions());
+      await new Promise((resolve) => setImmediate(resolve));
+      socket.fireClose(1006, 'abnormal');
+
+      // Falls through to the original generic handshake-close reject.
+      await expect(p).rejects.toThrow(/closed during handshake/);
+      await expect(p).rejects.not.toThrow(/setup too large/i);
+      expect(errors).toHaveLength(0);
+    });
+  });
+
   describe('7. Close/finalize behavior', () => {
     it('close() transitions to closed and emits onClose exactly once', async () => {
       const socket = new MockSocket();

@@ -1,0 +1,87 @@
+name: Describe Vertex Custom Job
+
+# VTID-03243 — Phase 1 W3-D1/E1 PR 6 part 1.
+#
+# One-off describe utility for a failed Vertex AI Custom Job. The
+# operator pastes the job_id; the workflow runs `gcloud ai custom-jobs
+# describe` against the WIF SA (which now has aiplatform.user) and
+# uploads the full YAML output as an artifact + step summary.
+#
+# Existence reason: the W3-D1 plan calls for the exact CustomJob
+# failure to drive the trainer/package/runtime patch. Without describe
+# output the patch is guesswork.
+
+on:
+  workflow_dispatch:
+    inputs:
+      job_id:
+        description: 'Vertex Custom Job numeric id (e.g. 3154255301083922432)'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  GCP_PROJECT: lovable-vitana-vers1
+  GCP_REGION: us-central1
+
+jobs:
+  describe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_WIF_SA_EMAIL }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Describe Vertex CustomJob
+        env:
+          JOB_ID: ${{ inputs.job_id }}
+        run: |
+          set +e
+          # Project NUMBER (not project ID) is part of the resource name
+          # used by `gcloud ai custom-jobs describe`. The describe call
+          # accepts either the numeric id OR the full resource path; we
+          # use the short form so the workflow input is just digits.
+          gcloud ai custom-jobs describe "${JOB_ID}" \
+            --project="${GCP_PROJECT}" \
+            --region="${GCP_REGION}" \
+            --format="yaml(displayName,state,createTime,startTime,endTime,error,jobSpec.workerPoolSpecs)" \
+            > /tmp/customjob-describe.yaml 2> /tmp/customjob-describe.err
+          RC=$?
+          echo "Exit: $RC"
+          if [ $RC -ne 0 ]; then
+            echo '::error::gcloud describe failed — stderr below'
+            cat /tmp/customjob-describe.err || true
+          fi
+          {
+            echo "## Vertex CustomJob ${JOB_ID}"
+            echo ''
+            echo '### Describe output (yaml)'
+            echo '```yaml'
+            cat /tmp/customjob-describe.yaml 2>/dev/null || echo '(empty)'
+            echo '```'
+            if [ $RC -ne 0 ]; then
+              echo ''
+              echo '### stderr'
+              echo '```'
+              cat /tmp/customjob-describe.err 2>/dev/null || echo '(empty)'
+              echo '```'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: customjob-describe-${{ inputs.job_id }}-${{ github.run_id }}
+          path: |
+            /tmp/customjob-describe.yaml
+            /tmp/customjob-describe.err
+          if-no-files-found: warn
+          retention-days: 30

@@ -46,9 +46,34 @@ import { randomUUID } from 'crypto';
 import { TextToSpeechClient, protos } from '@google-cloud/text-to-speech';
 import { processWithGemini, setThreadIdentity } from '../services/gemini-operator';
 import { emitOasisEvent } from '../services/oasis-event-service';
+// VTID-03250: prefer the browser's own timezone over rate-limit-prone geo-IP
+// so the assistant never loses the user's local time (context integrity).
+import { resolveSessionTimezone } from '../services/awareness-unified-context';
+// Phase 1 W2 (BOOTSTRAP-PHASE1-W2-CONSENT-METADATA): tag events with
+// data_export_ok ONLY where tenant export consent is established, so the
+// dataset-extraction PII gate can ingest them. Default off / fail-closed.
+import { dataExportConsentTag } from '../services/data-export-consent';
+import {
+  buildOrbTurnRespondedPayload,
+  type OrbTurnToolSignal,
+} from './orb-turn-event-payload';
 // VTID-03177 (PROFILE): per-turn latency telemetry. The middleware is a no-op
 // when FEATURE_LATENCY_TELEMETRY_ENV is off; safe to wire on every route.
-import { withLatencyTracker } from '../orb/live/latency-tracker';
+// Phase 1 W2 (BOOTSTRAP-PHASE1-W2-VOICE-LATENCY-WIRE): the LatencyTracker class +
+// LatencyPhase are also used directly to instrument the voice WS/SSE turn timeline.
+import { withLatencyTracker, LatencyTracker, type LatencyPhase } from '../orb/live/latency-tracker';
+// BOOTSTRAP-VOICE-LATENCY-SPECULATION: speculative persona-voice resolution to
+// remove the registry round-trip from the turn-0 critical path. Flag-gated
+// (FEATURE_VOICE_SPECULATION), default OFF → no-op (see voice-speculation.ts).
+import { beginVoiceSpeculation, consumeSpeculatedVoice } from '../orb/live/voice-speculation';
+// Conservative typical inline persona-voice registry-lookup cost (warm cache),
+// used only as the baseline for the speculation-savings telemetry.
+const INLINE_VOICE_LOOKUP_BASELINE_MS = 8;
+// Phase 1 W2 (BOOTSTRAP-PHASE1-W2-SHADOW-RUNTIME-WIRE): shadow-compare the
+// voice tool-routing decision against a candidate model. No-op (candidate never
+// invoked) when FEATURE_SHADOW_TOOL_ROUTER_ENV is off.
+import { runWithShadow } from '../services/llm-router-shadow';
+import { predictVoiceToolRoute } from '../services/voice-tool-router-candidate';
 // VTID-02917 (B0d.3): wake reliability timeline — emit + record only,
 // never block the wake path. The recorder is best-effort by design.
 import { defaultWakeTimelineRecorder } from '../services/wake-timeline/wake-timeline-recorder';
@@ -62,6 +87,18 @@ import { decideWakeBriefForSession } from '../services/wake-brief-wiring';
 // distills. NO raw rows cross this boundary.
 import { compileAssistantDecisionContext } from '../orb/context/compile-assistant-decision-context';
 import { renderDecisionContract } from '../orb/live/instruction/decision-contract-renderer';
+// VTID-03252: ENVIRONMENT block formatter, extracted for testability.
+import { formatClientContextForInstruction } from '../orb/live/instruction/client-context-format';
+// BOOTSTRAP-ORB-R0-INSTRUCTION-CAP: aggregate byte-budget guard for the final
+// Vertex Live `system_instruction`. Phase A (bootstrap-cap) caps only the
+// bootstrap sub-component; this enforces the AGGREGATE limit at the send site
+// so the assembled instruction can never exceed the ~32 KB Vertex Live setup
+// budget (which otherwise closes the handshake with WS 1009 → silent ORB).
+import {
+  enforceInstructionBudget,
+  decomposeInstructionSections,
+  INSTRUCTION_TOTAL_BYTE_BUDGET,
+} from '../orb/live/instruction/instruction-budget';
 // BOOTSTRAP-VOICE-DEMO: real heartbeats from voice call sites so the agents
 // dashboard reflects live usage instead of fake startup status.
 import { recordAgentHeartbeat } from './agents-registry';
@@ -794,8 +831,28 @@ export interface GeminiLiveSession {
   createdAt: Date;
   lastActivity: Date;
   audioInChunks: number;
+  // VTID-VOICE-FWD (Track A): mic chunks actually forwarded to the model.
+  // audioInChunks counts every chunk including the ones dropped at the
+  // echo-prevention / cooldown / navigation gates below; this counts only the
+  // chunks that passed all gates AND were accepted by sendAudioToLiveAPI.
+  // The quality classifier reads this (not raw audioInChunks) so mic-recaptured
+  // speaker echo can't inflate the under-responds ratio.
+  audioInForwarded: number;
   videoInFrames: number;
   audioOutChunks: number;
+  // Phase 1 W2 (BOOTSTRAP-PHASE1-W2-VOICE-LATENCY-WIRE): per-turn voice latency
+  // tracker. Created on the first real mic chunk of a user turn and finalized at
+  // turn_complete / interrupted. No-op (emits nothing) when
+  // FEATURE_LATENCY_TELEMETRY_ENV is off. latencyTurnIndex is the 1-based turn
+  // counter passed to the tracker context.
+  latencyTracker?: LatencyTracker | null;
+  latencyTurnIndex?: number;
+  // ORB-CONVERSATION-LATENCY: turn-0 establishment tracker. Spans upstream
+  // connect → context await → setup → greeting → first audio-out chunk, then
+  // finalizes (emitting time_to_first_audio_ms as voice.latency.measured).
+  // Separate from latencyTracker so the greeting's audio-out — which has no
+  // preceding user turn — doesn't collide with per-turn tracking.
+  establishLatency?: LatencyTracker | null;
   // VTID-02637: Idempotency flag for connection_issue emission. The upstream
   // WS error handler and close handler both fire on a real disconnect, and
   // both used to emit connection_issue — producing the user-visible "internet
@@ -811,6 +868,10 @@ export interface GeminiLiveSession {
   thread_id?: string;
   conversation_id?: string;
   turn_count: number;
+  // VTID-03201: ids of the Autopilot recommendations most recently read aloud
+  // by get_autopilot_recommendations, so a follow-up "activate those" resolves
+  // to exactly what Vitana just listed (in order).
+  lastListedAutopilotIds?: { ids: string[]; ts: number };
   // VTID-01224: Bootstrap context (injected into system instruction)
   contextInstruction?: string;
   contextPack?: ContextPack;
@@ -868,6 +929,11 @@ export interface GeminiLiveSession {
   // VTID-01225-THROTTLE: Buffer for accumulating user input transcription.
   // Written to memory_items once per turn_complete instead of per-fragment.
   inputTranscriptBuffer: string;
+  // BOOTSTRAP-VOICE-DATASET-EMITTER: tool/function the model selected on the
+  // current turn (set in executeLiveApiTool). Read once at turn_complete to
+  // carry the voice-tool-routing signal into the orb.turn.responded event,
+  // then cleared. Undefined when the turn dispatched no tool.
+  pendingTurnToolSignal?: { toolName: string; toolArguments?: Record<string, unknown> };
   // VTID-STREAM-KEEPALIVE: Interval handle for upstream Vertex WS ping
   upstreamPingInterval?: ReturnType<typeof setInterval>;
   // VTID-STREAM-SILENCE: Interval handle for sending silence audio to Vertex
@@ -1009,6 +1075,7 @@ setInterval(() => {
         metadata: { synthetic: (s as any).synthetic === true },
         sessionMetrics: {
           audio_in_chunks: s.audioInChunks,
+          audio_in_forwarded: s.audioInForwarded, // VTID-VOICE-FWD (Track A)
           audio_out_chunks: s.audioOutChunks,
           duration_ms: Date.now() - s.createdAt.getTime(),
           turn_count: s.turn_count,
@@ -1103,6 +1170,7 @@ function terminateExistingSessionsForUser(userId: string, excludeSessionId?: str
       metadata: { synthetic: (existingSession as any).synthetic === true },
       sessionMetrics: {
         audio_in_chunks: existingSession.audioInChunks,
+        audio_in_forwarded: existingSession.audioInForwarded, // VTID-VOICE-FWD (Track A)
         audio_out_chunks: existingSession.audioOutChunks,
         duration_ms: Date.now() - existingSession.createdAt.getTime(),
         turn_count: existingSession.turn_count,
@@ -1170,6 +1238,14 @@ import {
 // / resolve) via onSetupComplete + isSetupComplete callbacks, and forwards
 // every orb-live.ts-local helper through the deps bag.
 import { createUpstreamLiveMessageHandler } from '../orb/live/session/upstream-message-handler';
+// VTID-03234 (report finding #2): classify upstream WS closes so transparent
+// reconnects (Vertex 5-min close / watchdog recovery) don't fire a loud
+// "internet issues" alert.
+import { classifyUpstreamClose } from '../orb/live/session/upstream-close-classifier';
+// VTID-03234 (report finding #3): restore the upstream ping + silence
+// keepalive that the VertexLiveClient refactor left unreachable (it lived in
+// the now-dead setup_complete branch of the message handler).
+import { armUpstreamKeepalive } from '../orb/live/session/upstream-keepalive';
 // VTID-03126 (Phase D.3): Live API voice resolver — externalizes the
 // LIVE_API_VOICES Record + adds telemetry on silent fallbacks.
 import { getLiveApiVoice } from '../orb/live/voice/live-api-voice';
@@ -1231,6 +1307,8 @@ export { buildLiveApiTools } from '../orb/live/tools/live-tool-catalog';
 // content resolver succeeded. Drives multi-turn teaching via prompt +
 // tools rather than a TS-side state machine.
 import { buildTeacherModeBlock } from '../orb/teacher/teacher-mode-prompt';
+// VTID-03257 (Fix-1): GUIDE MODE block — Vitana leads the Foundation checklist.
+import { buildJourneyGuideBlock } from '../orb/live/instruction/journey-guide-prompt';
 // A6.2 (orb-live-refactor): SessionContext + SessionMutator + first
 // lifted navigator handler. orb-live.ts keeps compat shims that build
 // the typed views and forward to handlers under orb/live/tools/handlers/.
@@ -1299,9 +1377,31 @@ try {
 
 /**
  * VTID-01219: Get access token for Vertex AI Live API
- * Uses Application Default Credentials (ADC) - automatic on Cloud Run
+ * Uses Application Default Credentials (ADC) - automatic on Cloud Run.
+ *
+ * ORB-CONVERSATION-LATENCY: `getAccessToken` sits on the live-connect critical
+ * path — `VertexLiveClient.connect()` awaits it before opening the upstream WS
+ * (vertex-live-client.ts). A naive call does `getClient()` (first call hits the
+ * GCE metadata server) + `getAccessToken()` (refreshes when inside the expiry
+ * skew) on every session, serialising a network round-trip ahead of the Live
+ * API handshake. We keep an in-process token cache with proactive background
+ * refresh so the hot path returns a warm token synchronously, and we prewarm it
+ * at boot (see the prewarm block right after this function) so the very first
+ * session also skips the metadata round-trip.
  */
-async function getAccessToken(): Promise<string> {
+interface CachedAccessToken {
+  token: string;
+  expiresAt: number; // epoch ms when the token actually expires
+}
+let cachedAccessToken: CachedAccessToken | null = null;
+let tokenRefreshInFlight: Promise<string> | null = null;
+// Refresh this far ahead of real expiry so connect() always reads a valid token
+// and the refresh never lands on the critical path.
+const TOKEN_REFRESH_SKEW_MS = 5 * 60 * 1000;
+// ADC access tokens live ~1h; used only when the client doesn't expose expiry.
+const TOKEN_DEFAULT_TTL_MS = 55 * 60 * 1000;
+
+async function fetchFreshAccessToken(): Promise<string> {
   if (!googleAuth) {
     throw new Error('Google Auth client not initialized');
   }
@@ -1310,7 +1410,55 @@ async function getAccessToken(): Promise<string> {
   if (!tokenResponse.token) {
     throw new Error('Failed to get access token');
   }
+  // google-auth-library stores the real expiry on the client credentials for
+  // OAuth2/Compute clients; fall back to a conservative TTL if absent.
+  const expiryDate = (client as { credentials?: { expiry_date?: number } }).credentials?.expiry_date;
+  cachedAccessToken = {
+    token: tokenResponse.token,
+    expiresAt: typeof expiryDate === 'number' ? expiryDate : Date.now() + TOKEN_DEFAULT_TTL_MS,
+  };
   return tokenResponse.token;
+}
+
+async function getAccessToken(): Promise<string> {
+  if (!googleAuth) {
+    throw new Error('Google Auth client not initialized');
+  }
+  const now = Date.now();
+
+  // Warm path: token comfortably valid → return it immediately, no I/O.
+  if (cachedAccessToken && now < cachedAccessToken.expiresAt - TOKEN_REFRESH_SKEW_MS) {
+    return cachedAccessToken.token;
+  }
+
+  // Soon-to-expire but still valid: kick off a deduped background refresh and
+  // return the still-valid cached token without blocking the connect path.
+  if (cachedAccessToken && now < cachedAccessToken.expiresAt) {
+    if (!tokenRefreshInFlight) {
+      tokenRefreshInFlight = fetchFreshAccessToken().finally(() => { tokenRefreshInFlight = null; });
+      tokenRefreshInFlight.catch((err) =>
+        console.warn('[VTID-01219] background access-token refresh failed:', (err as Error).message));
+    }
+    return cachedAccessToken.token;
+  }
+
+  // Cold or expired: must fetch now, deduped across concurrent connects.
+  if (!tokenRefreshInFlight) {
+    tokenRefreshInFlight = fetchFreshAccessToken().finally(() => { tokenRefreshInFlight = null; });
+  }
+  return tokenRefreshInFlight;
+}
+
+// ORB-CONVERSATION-LATENCY: prewarm the ADC access token at boot so the first
+// ORB session skips the metadata-server round-trip on its live-connect critical
+// path. Placed after getAccessToken (and its cache bindings) so it runs free of
+// the temporal dead zone. Best-effort — failures fall back to a lazy fetch on
+// first use.
+if (googleAuth && VERTEX_PROJECT_ID) {
+  void getAccessToken()
+    .then(() => console.log('[VTID-01219] ORB Voice access token prewarmed'))
+    .catch((err: any) =>
+      console.warn('[VTID-01219] ORB Voice access-token prewarm failed (will fetch lazily):', err?.message));
 }
 
 // VTID-03126 (Phase D.3): LIVE_API_VOICES Record moved out of this file
@@ -1971,6 +2119,29 @@ async function executeLiveApiTool(
   args: Record<string, unknown>
 ): Promise<{ success: boolean; result: string; error?: string }> {
   const startTime = Date.now();
+  // Phase 1 W2: mark the tool boundary on the active voice turn (no-op off-flag).
+  markVoiceLatency(session, 'tool_dispatch', { tool: toolName });
+  // BOOTSTRAP-VOICE-DATASET-EMITTER: record the tool the model chose for this
+  // turn so emitOrbTurnResponded can carry the voice-tool-routing signal. This
+  // is just an in-memory note on the session — consent gating happens at emit
+  // time (buildOrbTurnRespondedPayload), so recording here leaks nothing.
+  session.pendingTurnToolSignal = {
+    toolName,
+    ...(args && Object.keys(args).length > 0 ? { toolArguments: args } : {}),
+  };
+  // Phase 1 W2: shadow-compare the tool-routing decision. Primary = the tool
+  // Vertex already chose (toolName); candidate = the W2 stub (echoes it until a
+  // fine-tune is served). Fire-and-forget — never blocks or alters execution,
+  // and runWithShadow doesn't even invoke the candidate unless the flag is on.
+  const shadowTranscript = (session.inputTranscriptBuffer || '').slice(0, 2000);
+  void runWithShadow<{ transcript: string; primaryTool: string }, string>({
+    feature: 'voice-tool-router',
+    input: { transcript: shadowTranscript, primaryTool: toolName },
+    primary: async () => toolName,
+    candidate: async () => predictVoiceToolRoute({ transcript: shadowTranscript, primaryTool: toolName }),
+    extractKey: (tool) => tool,
+    context: { actor_id: session.identity?.user_id, session_id: session.sessionId },
+  });
   // VTID-01224-FIX: Default 3 s budget. Gemini Live API has its own internal
   // timeout for function_response (~3-4s); taking longer stalls the session.
   //
@@ -1979,7 +2150,15 @@ async function executeLiveApiTool(
   // (OpenAI/Anthropic/Google AI). The delegation executor already hard-caps
   // at 15 s internally (orb/delegation/execute.ts), so we mirror that here
   // as the outer tool budget. All other tools keep the 3 s budget.
-  const TOOL_TIMEOUT_MS = toolName === 'consult_external_ai' ? 16_000 : 3_000;
+  // VTID-03201: the Autopilot tools do a Supabase query + G4 re-rank (list) or
+  // several sequential activations with calendar-slot computation (activate),
+  // which can exceed the default 3 s. Replenishment is skipped inline for voice
+  // (the popup auto-generates on next open) so these stay bounded.
+  const AUTOPILOT_VOICE_TOOLS = new Set(['get_autopilot_recommendations', 'activate_autopilot_recommendations']);
+  const TOOL_TIMEOUT_MS =
+    toolName === 'consult_external_ai' ? 16_000 :
+    AUTOPILOT_VOICE_TOOLS.has(toolName) ? 12_000 :
+    3_000;
 
   const executeWithTimeout = async (): Promise<{ success: boolean; result: string; error?: string }> => {
     return Promise.race([
@@ -1996,6 +2175,8 @@ async function executeLiveApiTool(
 
   const result = await executeWithTimeout();
   const elapsed = Date.now() - startTime;
+  // Phase 1 W2: tool returned — close the tool_dispatch→tool_response interval.
+  markVoiceLatency(session, 'tool_response', { tool: toolName, ms: elapsed, success: result.success });
   if (elapsed > TOOL_TIMEOUT_MS) {
     console.warn(`[VTID-STREAM-KEEPALIVE] Tool ${toolName} timed out (${elapsed}ms > ${TOOL_TIMEOUT_MS}ms)`);
   }
@@ -4174,6 +4355,100 @@ async function executeLiveApiToolInner(
         );
       }
 
+      // VTID-03201: read + activate the user's Autopilot queue by voice, via
+      // the SAME shared service the popup uses (listCommunity… / activateCommunity…),
+      // so the spoken list and the visual list never diverge.
+      case 'get_autopilot_recommendations': {
+        const userId = lens.user_id;
+        if (!userId) {
+          return { success: false, result: '', error: 'NOT_SIGNED_IN' };
+        }
+        const { listCommunityAutopilotRecommendations, summarizeAutopilotForVoice } = await import('./autopilot-recommendations');
+        const limit = typeof args?.limit === 'number' && args.limit > 0 ? Math.min(args.limit, 10) : 5;
+        // autoGenerate: explicit "what's in my Autopilot?" must match opening the
+        // popup, which generates recs for first-time/expired/all-activated users
+        // rather than returning empty. VTID-03201 (Codex review #2486).
+        const recs = await listCommunityAutopilotRecommendations(userId, limit, { autoGenerate: true });
+        const summary = summarizeAutopilotForVoice(recs);
+        // Remember exactly what we read aloud so "activate those" resolves to it.
+        session.lastListedAutopilotIds = { ids: summary.ids, ts: Date.now() };
+        return {
+          success: true,
+          result: JSON.stringify({
+            ok: true,
+            count: summary.count,
+            spoken: summary.spoken,
+            items: recs.map(r => ({ id: r.id, title: r.title })),
+          }),
+        };
+      }
+
+      case 'activate_autopilot_recommendations': {
+        const userId = lens.user_id;
+        if (!userId) {
+          return { success: false, result: '', error: 'NOT_SIGNED_IN' };
+        }
+        const { activateCommunityAutopilotRecommendation } = await import('./autopilot-recommendations');
+
+        // Resolve target ids: explicit `ids` arg, else the last-listed set.
+        const explicit: string[] = Array.isArray(args?.ids)
+          ? (args.ids as unknown[]).filter((x): x is string => typeof x === 'string')
+          : [];
+        const listed = session.lastListedAutopilotIds?.ids ?? [];
+        const targetIds = explicit.length > 0 ? explicit : listed;
+
+        if (targetIds.length === 0) {
+          return {
+            success: true,
+            result: JSON.stringify({
+              ok: false,
+              activated: 0,
+              spoken: "I don't have any prepared actions queued to activate yet — ask me what's in your Autopilot first.",
+            }),
+          };
+        }
+
+        // Activate sequentially (calendar slotting reads the live calendar, so
+        // parallel runs could double-book the same slot). Replenishment is
+        // skipped inline for voice latency — the popup refills on next open.
+        const tenantId = lens.tenant_id ?? '';
+        const activated: string[] = [];
+        const failed: string[] = [];
+        for (const id of targetIds) {
+          try {
+            const r = await activateCommunityAutopilotRecommendation(userId, id, {
+              tenantId: tenantId || undefined,
+              skipReplenish: true,
+            });
+            if (r.ok) activated.push(r.title || id);
+            else failed.push(id);
+          } catch {
+            failed.push(id);
+          }
+        }
+
+        let spoken: string;
+        if (activated.length === 0) {
+          spoken = "I couldn't activate those — they may have already been done or aren't yours to action.";
+        } else if (activated.length === 1) {
+          spoken = `Done — I've activated "${activated[0]}".`;
+        } else {
+          spoken = `Done — I've activated ${activated.length} actions: ${activated.join('; ')}.`;
+        }
+        // Clear the remembered list so a stray repeat call can't re-activate.
+        session.lastListedAutopilotIds = { ids: [], ts: Date.now() };
+
+        return {
+          success: true,
+          result: JSON.stringify({
+            ok: activated.length > 0,
+            activated: activated.length,
+            failed: failed.length,
+            spoken,
+          }),
+        };
+      }
+
       case 'share_link': {
         // PR B-5: lifted to services/orb-tools-shared.ts. Same quota guard,
         // same chat_messages insert, same metadata shape — both pipelines
@@ -4934,6 +5209,40 @@ async function executeLiveApiToolInner(
         };
       }
 
+      case 'record_journey_answer': {
+        // VTID-03257 (Fix-1): Vertex parity for the journey-answer tool.
+        // record_journey_answer was added to ORB_TOOL_REGISTRY by VTID-03255
+        // (so LiveKit's tools.py wrapper can call it) but never got a Vertex
+        // case — so on Vertex it fell through to `Unknown tool`. The GUIDE-MODE
+        // block (buildJourneyGuideBlock) instructs the model to VERIFY a
+        // completion claim via record_journey_answer, so it MUST work on both
+        // transports. Delegate to the shared dispatcher (lifted pattern).
+        const SUPABASE_URL = process.env.SUPABASE_URL;
+        const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
+        if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
+          return { success: false, result: '', error: 'Service unavailable — Supabase creds not configured' };
+        }
+        const { createClient } = await import('@supabase/supabase-js');
+        const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE);
+        const { dispatchOrbToolForVertex } = await import('../services/orb-tools-shared');
+        return await dispatchOrbToolForVertex(
+          'record_journey_answer',
+          args ?? {},
+          {
+            user_id: lens.user_id,
+            tenant_id: lens.tenant_id ?? null,
+            role: session.identity?.role ?? null,
+            vitana_id: session.identity?.vitana_id ?? null,
+            session_id: session.sessionId,
+            thread_id: session.thread_id || session.sessionId,
+            turn_number: session.turn_count,
+            session_started_iso: session.createdAt.toISOString(),
+            lang: session.lang ?? null,
+          },
+          supabase,
+        );
+      }
+
       default: {
         // BOOTSTRAP-ADMIN-DD: route admin voice tools through their handlers.
         // The handlers re-check role server-side, so a community session that
@@ -5429,23 +5738,11 @@ backend when you say the appropriate goodbye per the sections above — just spe
 naturally, never call a tool.`;
 }
 
-/**
- * VTID-CONTEXT: Format client context into a context section for the system instruction.
- * Used for both anonymous and authenticated sessions.
- */
-export function formatClientContextForInstruction(ctx: ClientContext): string {
-  const parts: string[] = [];
-  if (ctx.city && ctx.country) parts.push(`User location: ${ctx.city}, ${ctx.country}`);
-  else if (ctx.country) parts.push(`User location: ${ctx.country}`);
-  if (ctx.timezone) parts.push(`Timezone: ${ctx.timezone}`);
-  if (ctx.localTime) parts.push(`Local time: ${ctx.localTime}`);
-  // Always include UTC reference so the model can accurately calculate any timezone
-  parts.push(`Current UTC time: ${new Date().toISOString()}`);
-  if (ctx.device) parts.push(`Device: ${ctx.device}`);
-  if (ctx.os) parts.push(`OS: ${ctx.os}`);
-  if (parts.length === 0) return '';
-  return `\nENVIRONMENT CONTEXT:\n${parts.join('\n')}\nWhen asked about the time in any city or timezone, calculate from the UTC time above — do NOT guess UTC offsets from memory, as DST rules change. Use this context naturally — e.g. time-appropriate greetings, location-relevant suggestions.`;
-}
+// VTID-03252: formatClientContextForInstruction was extracted to
+// orb/live/instruction/client-context-format.ts (imported at the top of this
+// file) so the context-integrity gate can unit-test the ENVIRONMENT block
+// contract. Re-exported here so existing importers (orb-livekit) keep working.
+export { formatClientContextForInstruction };
 
 /**
  * VTID-01219: Connect to Vertex AI Live API WebSocket
@@ -5605,6 +5902,37 @@ async function connectToLiveAPI(
   // path. Error/close handlers continue to register on the raw socket
   // returned by `vertex.getSocket()`, preserving the transparent-reconnect
   // path and all VTID-02637 connection-issue dedupe behavior.
+  // BOOTSTRAP-VOICE-LATENCY-SPECULATION: begin resolving the persona voice
+  // SPECULATIVELY here, at connect-START, so the registry round-trip overlaps
+  // the upstream WS handshake + context build instead of running serially
+  // inside buildOrbVertexSetupEnvelope (between context_awaited and setup_sent).
+  // The (persona, tenant) inputs are known now and fully determine the voice,
+  // so the speculated value is identical to the inline lookup. Returns null
+  // when FEATURE_VOICE_SPECULATION is off → the envelope builder takes its
+  // exact pre-existing inline path (byte-for-byte unchanged). See
+  // orb/live/voice-speculation.ts for the safety/no-op contract.
+  const _specPersona = (session as any).activePersona || RECEPTIONIST_PERSONA_KEY;
+  const _specTenantId = session.identity?.tenant_id;
+  const voiceSpeculation = beginVoiceSpeculation(
+    {
+      session_id: session.sessionId,
+      actor_id: session.identity?.user_id,
+      persona: _specPersona,
+      tenant_id: _specTenantId,
+      provider: `vertex/${VERTEX_LIVE_MODEL}`,
+    },
+    // Same registry calls, same arguments as the inline path below. Returns
+    // undefined on empty/failed lookup so the consumer falls back inline.
+    async () => {
+      if ((session as any).personaVoiceOverride) {
+        return (session as any).personaVoiceOverride as string;
+      }
+      return _specTenantId
+        ? await registryGetPersonaVoiceForTenant(_specPersona, _specTenantId)
+        : await registryGetPersonaVoice(_specPersona);
+    },
+  );
+
   return new Promise<WebSocket>(async (resolve, reject) => {
     const vertex = new VertexLiveClient();
 
@@ -5625,6 +5953,10 @@ async function connectToLiveAPI(
     // arrives.
     const buildOrbVertexSetupEnvelope = async (): Promise<Record<string, unknown>> => {
       console.log(`[VTID-01219] Live API WebSocket connected for session ${session.sessionId}`);
+      // ORB-CONVERSATION-LATENCY: upstream WS open + handshake done. The gap
+      // before context_awaited is how much the context build over-ran the
+      // handshake (the residual the parallelization could not hide).
+      session.establishLatency?.mark('upstream_connected');
 
       // BOOTSTRAP-ORB-CRITICAL-PATH: If /live/session/start kicked off a
       // background context-assembly promise (Brain/bootstrap + role + last
@@ -5640,7 +5972,12 @@ async function connectToLiveAPI(
         } catch (e) {
           // Promise's own .catch already logged; proceed with whatever session fields are populated.
         }
-        console.log(`[BOOTSTRAP-ORB-CRITICAL-PATH] Awaited contextReadyPromise for ${Date.now() - awaitStart}ms before Gemini setup for session ${session.sessionId}`);
+        const ctxAwaitMs = Date.now() - awaitStart;
+        // ORB-CONVERSATION-LATENCY: residual context-build time that did NOT
+        // overlap the handshake. This is the number a context-slim (D.2) would
+        // move; if it's already ~0, the win is in the model's first-token time.
+        session.establishLatency?.mark('context_awaited', { awaited_ms: ctxAwaitMs });
+        console.log(`[BOOTSTRAP-ORB-CRITICAL-PATH] Awaited contextReadyPromise for ${ctxAwaitMs}ms before Gemini setup for session ${session.sessionId}`);
       }
 
       // Send setup message with model and configuration
@@ -5656,15 +5993,29 @@ async function connectToLiveAPI(
       const _persona = (session as any).activePersona || RECEPTIONIST_PERSONA_KEY;
       let _personaVoice = (session as any).personaVoiceOverride;
       if (!_personaVoice) {
-        try {
-          // VTID-02653: tenant-aware lookup when session has tenant context.
-          const _setupTenantId = session.identity?.tenant_id;
-          const fromRegistry = _setupTenantId
-            ? await registryGetPersonaVoiceForTenant(_persona, _setupTenantId)
-            : await registryGetPersonaVoice(_persona);
-          if (fromRegistry) _personaVoice = fromRegistry;
-        } catch (e) {
-          console.warn(`[VTID-02651] persona registry lookup failed for ${_persona}:`, e);
+        // BOOTSTRAP-VOICE-LATENCY-SPECULATION: when the flag is ON, the persona
+        // voice was resolved speculatively at connect-start (overlapping the
+        // handshake). Consume it here — already settled in the common case so
+        // this is ~0ms on the hot path instead of a serial registry round-trip.
+        // Returns undefined when the flag is OFF (handle is null) → we fall
+        // through to the EXACT pre-existing inline lookup below, unchanged.
+        // INLINE_VOICE_LOOKUP_BASELINE_MS: a conservative typical cost for the
+        // inline registry round-trip on a warm cache; used only as the baseline
+        // for the savings telemetry, never to gate behaviour.
+        const _speculated = await consumeSpeculatedVoice(voiceSpeculation, INLINE_VOICE_LOOKUP_BASELINE_MS);
+        if (_speculated) {
+          _personaVoice = _speculated;
+        } else {
+          try {
+            // VTID-02653: tenant-aware lookup when session has tenant context.
+            const _setupTenantId = session.identity?.tenant_id;
+            const fromRegistry = _setupTenantId
+              ? await registryGetPersonaVoiceForTenant(_persona, _setupTenantId)
+              : await registryGetPersonaVoice(_persona);
+            if (fromRegistry) _personaVoice = fromRegistry;
+          } catch (e) {
+            console.warn(`[VTID-02651] persona registry lookup failed for ${_persona}:`, e);
+          }
         }
       }
       _personaVoice = _personaVoice || getLiveApiVoice(session.lang);
@@ -5818,6 +6169,16 @@ async function connectToLiveAPI(
                                   lang: session.lang,
                                   firstName: (session as any).teacherModeFirstName ?? null,
                                 })
+                              : '')
+                          // VTID-03257 (Fix-1): GUIDE MODE — when the journey
+                          // guide won turn 1, inject the lead-the-journey block
+                          // so the whole session is hand-held through the
+                          // current Foundation step (no "what do you want?").
+                          + ((session as any).journeyGuideContent
+                              ? buildJourneyGuideBlock(
+                                  (session as any).journeyGuideContent,
+                                  session.lang,
+                                )
                               : ''),
                         session.active_role,
                         session.conversationSummary,
@@ -5858,6 +6219,77 @@ async function connectToLiveAPI(
         }
       };
 
+      // BOOTSTRAP-ORB-R0-INSTRUCTION-CAP: AGGREGATE byte-budget guard.
+      //
+      // R0 root cause: the assembled `system_instruction` has NO total-size
+      // guard before it is sent. Phase A caps only the bootstrap sub-component;
+      // for heavy users the AGGREGATE (scaffold + bootstrap + history +
+      // specialist/teacher + override) can still exceed the ~32 KB Vertex Live
+      // `setup` budget → Vertex closes the handshake (WS 1009 / 1007) or never
+      // sends `setup_complete` → no TTS frames → "Vitana won't talk".
+      //
+      // We decompose the FINAL instruction text into ordered, individually-
+      // trimmable sections via `decomposeInstructionSections`, which anchors on
+      // the stable markers the builders already emit (bootstrap-start delimiter,
+      // `=== USER CONTEXT …`, `<<VERTEX_WAKE_BRIEF_OVERRIDE_ACTIVE>>`,
+      // `=== TEACHER MODE …`, `<conversation_history>`, `=== VITANA NAVIGATOR —`).
+      // This is the R0 fix: the previous split used ONLY the history delimiter,
+      // so the ~12 KB bootstrap + specialist were lumped into the preserved
+      // scaffold and the guard could not trim them. Now the budget guard drops
+      // in priority order bootstrap → history → specialist while the static
+      // scaffold (persona, tools, navigator, greeting rules) AND the turn-1
+      // wake-brief override are preserved as long as possible.
+      try {
+        const siParts = (setupMessage.setup as any)?.system_instruction?.parts;
+        const finalText: string | undefined =
+          Array.isArray(siParts) && typeof siParts[0]?.text === 'string'
+            ? (siParts[0].text as string)
+            : undefined;
+        if (typeof finalText === 'string' && finalText.length > 0) {
+          const sections = decomposeInstructionSections(finalText);
+
+          const budgetResult = enforceInstructionBudget(sections);
+
+          if (
+            budgetResult.trimmedSections.length > 0 ||
+            budgetResult.totalBytesAfter > budgetResult.totalBytesBefore
+          ) {
+            // Apply the trimmed text back onto the envelope.
+            siParts[0].text = budgetResult.text;
+            // Fail loudly + observably: structured warning with byte accounting
+            // and per-section sizes so the R0 overflow is greppable in logs.
+            console.warn(
+              '[voice.instruction.budget_overflow]',
+              JSON.stringify({
+                sessionId: session.sessionId,
+                vitana_id: session.identity?.vitana_id ?? null,
+                isAnonymous: !!session.isAnonymous,
+                totalBytesBefore: budgetResult.totalBytesBefore,
+                totalBytesAfter: budgetResult.totalBytesAfter,
+                budget: INSTRUCTION_TOTAL_BYTE_BUDGET,
+                // Whether the preserved-only assembly STILL exceeds budget
+                // (nothing left to trim → best-effort send / fail-open).
+                stillOverBudget: budgetResult.totalBytesAfter > INSTRUCTION_TOTAL_BYTE_BUDGET,
+                trimmedSections: budgetResult.trimmedSections,
+                sectionBytes: budgetResult.sectionBytes,
+              }),
+            );
+          } else {
+            // Under budget — emit a low-noise diagnostic so the aggregate size
+            // is observable even on the happy path (helps tune the budget).
+            console.log(
+              `[voice.instruction.budget_ok] session=${session.sessionId} bytes=${budgetResult.totalBytesBefore} budget=${INSTRUCTION_TOTAL_BYTE_BUDGET}`,
+            );
+          }
+        }
+      } catch (e) {
+        // Never let the guard break the handshake — fail open with a log.
+        console.warn(
+          '[voice.instruction.budget_overflow] guard_error',
+          (e as Error)?.message ?? String(e),
+        );
+      }
+
       // VTID-NAV-DIAG: Explicit log of whether navigate_to_screen is in the
       // tool declarations for this session. Helps diagnose "redirect not
       // working" reports by showing whether Gemini even had the tool to call.
@@ -5872,6 +6304,12 @@ async function connectToLiveAPI(
       console.log(`[VTID-01224] Setup includes: tools=${session.identity ? 3 : 0}, contextChars=${session.contextInstruction?.length || 0}`);
       console.log(`[VTID-RESPONSE-DELAY] VAD silence_duration_ms=${session.vadSilenceMs}`);
       console.log(`[VTID-01219] Setup envelope built for session ${session.sessionId} — VertexLiveClient will send`);
+      // ORB-CONVERSATION-LATENCY: envelope (incl. system_instruction) handed to
+      // VertexLiveClient to send. detail carries the instruction size so a slim
+      // (D.2) can be correlated against the gap to greeting_sent/first audio.
+      session.establishLatency?.mark('setup_sent', {
+        context_chars: session.contextInstruction?.length || 0,
+      });
       return setupMessage as unknown as Record<string, unknown>;
     };
 
@@ -5918,6 +6356,14 @@ async function connectToLiveAPI(
     }
     ws = socket;
 
+    // VTID-03234 (report finding #3): arm the upstream ping + silence keepalive
+    // HERE. It used to start in the message handler's `setup_complete` branch,
+    // but VertexLiveClient now consumes setup_complete (A8.3b.1), so that branch
+    // never runs on the Vertex path — the keepalive silently stopped arming and
+    // quiet pauses caused upstream closes surfaced to users as "internet
+    // issues." The close/error handlers below already clear these intervals.
+    armUpstreamKeepalive(ws, session, { sendAudioToLiveAPI });
+
     // A8.3a.2 (VTID-02968): the upstream message handler lives in
     // orb/live/session/upstream-message-handler.ts. After A8.3b.1 the
     // setup_complete branch inside it is unreachable (VertexLiveClient
@@ -5948,6 +6394,8 @@ async function connectToLiveAPI(
         sendFunctionResponseToLiveAPI,
         sendWsMessage,
         startResponseWatchdog,
+        markVoiceLatency,
+        finalizeVoiceTurnLatency,
       },
     });
 
@@ -6012,16 +6460,43 @@ async function connectToLiveAPI(
       const reasonStr = reason?.toString() || '';
       const isPersonaSwap = reasonStr === 'persona_swap' || !!(session as any)._personaSwapInFlight;
 
-      // BOOTSTRAP-ORB-DISCONNECT-ALERT: Tell the client *immediately* that the
-      // upstream went away. The existing `reconnecting` message is only sent
-      // once attemptTransparentReconnect runs (after deduplicated extraction
-      // and other bookkeeping), which can be 100ms-1s+ later. Closing that gap
-      // lets the widget stop the user mid-sentence with a spoken cue instead
-      // of letting them talk into a dead socket.
-      if (session.active && setupComplete) {
-        const alertMsg = isPersonaSwap
-          ? { type: 'persona_swap_reconnecting', reason: 'persona_swap' }
-          : { type: 'connection_alert', reason: 'upstream_ws_close' };
+      // VTID-03234 (report finding #2): CLASSIFY the close before announcing it.
+      // Transparent reconnects — Vertex's normal ~5-min session close
+      // (code=1000) and watchdog stall-recovery (_stallRecoveryPending) — are
+      // handled fully server-side below (attemptTransparentReconnect): the
+      // client's SSE/WS to the gateway stays open while we reconnect the
+      // upstream Vertex WS in place. Firing "connection_alert" for these made
+      // healthy sessions surface "internet issues" every time Vertex recycled
+      // or the watchdog fired — the 5-10x/min loop users reported. The
+      // transparent path already resumes SILENTLY on success and emits its own
+      // alert ONLY if the reconnect actually fails (see the !reconnected branch
+      // below). So the loud alert here fires ONLY for a genuine disconnect.
+      const closeAction = classifyUpstreamClose({
+        code,
+        active: !!session.active,
+        setupComplete,
+        stallRecoveryPending: !!(session as any)._stallRecoveryPending,
+        isPersonaSwap,
+      });
+
+      // BOOTSTRAP-ORB-DISCONNECT-ALERT: tell the client immediately, but ONLY
+      // when it must react (genuine disconnect, or persona swap — silent cue).
+      if (closeAction === 'persona_swap') {
+        const alertMsg = { type: 'persona_swap_reconnecting', reason: 'persona_swap' };
+        if (session.sseResponse) {
+          try { session.sseResponse.write(`data: ${JSON.stringify(alertMsg)}\n\n`); } catch (_e) { /* SSE may be closed */ }
+        } else if (session.clientWs && session.clientWs.readyState === WebSocket.OPEN) {
+          try { session.clientWs.send(JSON.stringify(alertMsg)); } catch (_e) { /* WS may be closed */ }
+        }
+      } else if (closeAction === 'transparent_reconnect') {
+        // Suppress the loud "internet issues" alert — the reconnect is
+        // transparent. Internal diagnostic only; the client keeps listening.
+        emitDiag(session, 'transparent_reconnect_alert_suppressed', {
+          code,
+          stall_recovery: !!(session as any)._stallRecoveryPending,
+        });
+      } else if (closeAction === 'genuine_disconnect') {
+        const alertMsg = { type: 'connection_alert', reason: 'upstream_ws_close' };
         if (session.sseResponse) {
           try { session.sseResponse.write(`data: ${JSON.stringify(alertMsg)}\n\n`); } catch (_e) { /* SSE may be closed */ }
         } else if (session.clientWs && session.clientWs.readyState === WebSocket.OPEN) {
@@ -7153,7 +7628,8 @@ async function emitOrbSessionStarted(orbSessionId: string, conversationId: strin
     payload: {
       orb_session_id: orbSessionId,
       conversation_id: conversationId,
-      metadata: { mode: 'orb_voice' }
+      metadata: { mode: 'orb_voice' },
+      ...(await dataExportConsentTag({ userId }))
     }
   }).catch(err => console.warn('[VTID-0135] Failed to emit orb.session.started:', err.message));
 }
@@ -7179,7 +7655,8 @@ async function emitOrbTurnReceived(
       conversation_id: conversationId,
       input_length: inputText.length,
       input_preview: inputText.slice(0, 140),
-      metadata: { mode: 'orb_voice' }
+      metadata: { mode: 'orb_voice' },
+      ...(await dataExportConsentTag({ userId }))
     }
   }).catch(err => console.warn('[VTID-0135] Failed to emit orb.turn.received:', err.message));
 }
@@ -7192,8 +7669,15 @@ async function emitOrbTurnResponded(
   conversationId: string,
   replyText: string,
   provider: string,
-  userId?: string
+  userId?: string,
+  // BOOTSTRAP-VOICE-DATASET-EMITTER: tool-routing signal for the voice-tool-routing
+  // dataset extractor. Carried into the event metadata ONLY when export consent is
+  // established AND the turn is not guardrail-excluded (PII gate in
+  // buildOrbTurnRespondedPayload). When omitted, the emitter behaves exactly as
+  // before (envelope-only).
+  opts?: { toolSignal?: OrbTurnToolSignal; guardrailExcluded?: boolean }
 ): Promise<void> {
+  const consentTag = await dataExportConsentTag({ userId });
   await emitOasisEvent({
     vtid: 'VTID-0135',
     type: 'orb.turn.responded',
@@ -7201,14 +7685,15 @@ async function emitOrbTurnResponded(
     status: 'success',
     message: `ORB turn responded via ${provider}`,
     ...(userId && { actor_id: userId, surface: 'orb' as const }),
-    payload: {
-      orb_session_id: orbSessionId,
-      conversation_id: conversationId,
-      reply_length: replyText.length,
-      reply_preview: replyText.slice(0, 140),
+    payload: buildOrbTurnRespondedPayload({
+      orbSessionId,
+      conversationId,
+      replyText,
       provider,
-      metadata: { mode: 'orb_voice' }
-    }
+      consentTag,
+      toolSignal: opts?.toolSignal,
+      guardrailExcluded: opts?.guardrailExcluded,
+    }),
   }).catch(err => console.warn('[VTID-0135] Failed to emit orb.turn.responded:', err.message));
 }
 
@@ -7226,9 +7711,56 @@ async function emitOrbSessionEnded(orbSessionId: string, conversationId: string,
     payload: {
       orb_session_id: orbSessionId,
       conversation_id: conversationId,
-      metadata: { mode: 'orb_voice' }
+      metadata: { mode: 'orb_voice' },
+      ...(await dataExportConsentTag({ userId }))
     }
   }).catch(err => console.warn('[VTID-0135] Failed to emit orb.session.ended:', err.message));
+}
+
+// =============================================================================
+// Phase 1 W2 (BOOTSTRAP-PHASE1-W2-VOICE-LATENCY-WIRE): voice per-turn latency
+// =============================================================================
+// Five canonical phase marks per voice user-turn (audio_in_first_byte →
+// transcript_ready → tool_dispatch → tool_response → audio_out_first_chunk),
+// emitted as ONE voice.latency.measured event on turn finalize. Every helper is
+// a no-op when FEATURE_LATENCY_TELEMETRY_ENV is off (LatencyTracker self-gates),
+// so this is safe to leave wired on the hot path. No raw session objects ever
+// reach prompt assembly — only the canonical marks are recorded.
+
+/**
+ * Start a fresh per-turn latency tracker on the first real mic chunk of a user
+ * turn. Idempotent within a turn: subsequent chunks no-op until the turn is
+ * finalized. Marks audio_in_first_byte at creation.
+ */
+function startVoiceTurnLatency(session: GeminiLiveSession): void {
+  if (session.latencyTracker) return; // turn already in flight
+  session.latencyTurnIndex = (session.latencyTurnIndex || 0) + 1;
+  const tracker = new LatencyTracker({
+    session_id: session.sessionId,
+    surface: 'voice',
+    actor_id: session.identity?.user_id,
+    turn: session.latencyTurnIndex,
+    provider: `vertex/${GEMINI_MODEL}`,
+  });
+  session.latencyTracker = tracker;
+  tracker.mark('audio_in_first_byte');
+}
+
+/** Record a phase mark on the active turn tracker (no-op if no turn in flight). */
+function markVoiceLatency(session: GeminiLiveSession, phase: LatencyPhase, detail?: Record<string, unknown>): void {
+  session.latencyTracker?.mark(phase, detail);
+}
+
+/**
+ * Finalize the active turn tracker (emits voice.latency.measured) and clear it
+ * so the next user audio chunk starts a fresh turn. Fire-and-forget; never
+ * blocks the WS message loop on the OASIS write.
+ */
+function finalizeVoiceTurnLatency(session: GeminiLiveSession, status: 'success' | 'error' = 'success'): void {
+  const tracker = session.latencyTracker;
+  if (!tracker) return;
+  session.latencyTracker = null;
+  void tracker.finalize(status);
 }
 
 /**
@@ -7295,13 +7827,19 @@ async function emitMemoryWriteEvent(
   eventType: 'memory.write.user_message' | 'memory.write.assistant_message',
   payload: Record<string, unknown>
 ): Promise<void> {
+  // Phase 1 W2: consent gate keyed on the tenant/user already carried in the
+  // payload. Untagged events stay filtered out of the pillar-classification corpus.
+  const consentTag = await dataExportConsentTag({
+    tenantId: typeof payload.tenant_id === 'string' ? payload.tenant_id : undefined,
+    userId: typeof payload.user_id === 'string' ? payload.user_id : undefined,
+  });
   await emitOasisEvent({
     vtid: 'VTID-01105',
     type: eventType as any,
     source: 'orb-memory-auto',
     status: 'success',
     message: `ORB ${eventType.includes('user') ? 'user' : 'assistant'} message written to memory`,
-    payload
+    payload: { ...payload, ...consentTag }
   }).catch(err => console.warn(`[VTID-01105] Failed to emit ${eventType}:`, err.message));
 }
 
@@ -7321,7 +7859,10 @@ function getClientIP(req: Request): string {
 
 // Simple in-memory cache for IP geolocation (avoids hitting external API repeatedly)
 const ipGeoCache = new Map<string, { data: any; ts: number }>();
-const IP_GEO_CACHE_TTL_MS = 3600_000; // 1 hour
+// VTID-03251: 6h (was 1h). A user's geo barely changes within a day, and
+// fewer upstream lookups = fewer provider 429s. On total provider failure we
+// also serve the last-known entry regardless of age (stale > hallucinated).
+const IP_GEO_CACHE_TTL_MS = 21_600_000; // 6 hours
 
 /**
  * Lightweight IP geolocation using ip-api.com (free, no key needed, 45 req/min).
@@ -7357,6 +7898,13 @@ async function geolocateIP(ip: string): Promise<{ city?: string; country?: strin
       url: `http://ip-api.com/json/${ip}?fields=status,message,city,country,timezone`,
       parse: (json: any) => json.status === 'success' ? { city: json.city, country: json.country, timezone: json.timezone } : null,
     },
+    {
+      // VTID-03251: third HTTPS provider (free, no key) so a single rate-limit
+      // doesn't blank out location/time. timezone is an object here (.id).
+      name: 'ipwho.is',
+      url: `https://ipwho.is/${ip}`,
+      parse: (json: any) => json && json.success ? { city: json.city, country: json.country, timezone: json.timezone?.id } : null,
+    },
   ];
 
   for (const provider of providers) {
@@ -7379,7 +7927,16 @@ async function geolocateIP(ip: string): Promise<{ city?: string; country?: strin
       console.warn(`[VTID-CONTEXT] ${provider.name} failed for ${ip}: ${(err as Error).message}`);
     }
   }
-  console.warn(`[VTID-CONTEXT] All geo providers failed for IP ${ip}`);
+  // VTID-03251: every provider failed (commonly ipapi.co / ip-api.com 429
+  // rate limits). Serve the LAST-KNOWN geo for this IP regardless of age —
+  // stale location/time is far better than none, which made the assistant
+  // lose context and hallucinate ("Berlin, 8:30 PM" in Cologne at 15:44).
+  if (cached?.data && (cached.data.city || cached.data.timezone)) {
+    const ageMin = Math.round((Date.now() - cached.ts) / 60000);
+    console.warn(`[VTID-CONTEXT] All providers failed for ${ip} — serving stale cached geo (${ageMin}m old): ${cached.data.city}, ${cached.data.country}`);
+    return cached.data;
+  }
+  console.warn(`[VTID-CONTEXT] All geo providers failed for IP ${ip} (no cache to fall back on)`);
   return {};
 }
 
@@ -7461,13 +8018,25 @@ export async function buildClientContext(req: Request): Promise<ClientContext> {
     Promise.resolve(parseUserAgent(ua)),
   ]);
 
-  const timeCtx = getLocalTimeContext(geo.timezone);
+  // VTID-03250: prefer the browser's own IANA timezone (sent in the
+  // session-start body / x-client-timezone header) over geo-IP, which
+  // rate-limits (HTTP 429) and then yields no zone — that loss was making the
+  // assistant hallucinate the user's local time (e.g. "8:30 PM" at 15:44).
+  const clientTimezone =
+    (req.body && (req.body.client_timezone || req.body.client_context?.timezone)) ||
+    req.get('x-client-timezone') ||
+    null;
+  const resolvedTimezone = resolveSessionTimezone({
+    clientTimezone,
+    geoTimezone: geo.timezone ?? null,
+  });
+  const timeCtx = getLocalTimeContext(resolvedTimezone ?? undefined);
 
   return {
     ip,
     city: geo.city,
     country: geo.country,
-    timezone: geo.timezone,
+    timezone: resolvedTimezone ?? undefined,
     localTime: timeCtx.localTime,
     timeOfDay: timeCtx.timeOfDay,
     device: uaParsed.device,
@@ -9292,7 +9861,11 @@ router.post('/end-session', async (req: Request, res: Response) => {
           bullets: summaryContent.bullets,
           actions: summaryContent.actions
         },
-        metadata: { mode: 'orb_voice' }
+        metadata: { mode: 'orb_voice' },
+        ...(await dataExportConsentTag({
+          tenantId: transcript.tenant_id ?? undefined,
+          userId: transcript.user_id ?? undefined,
+        }))
       }
     }).catch(err => console.warn('[VTID-01039] Failed to emit orb.session.summary:', err.message));
 
@@ -9595,7 +10168,11 @@ router.post('/session/finalize', async (req: Request, res: Response) => {
         bullets: summaryContent.bullets,
         actions: summaryContent.actions
       },
-      metadata: { mode: 'orb_voice' }
+      metadata: { mode: 'orb_voice' },
+      ...(await dataExportConsentTag({
+        tenantId: transcript.tenant_id ?? undefined,
+        userId: transcript.user_id ?? undefined,
+      }))
     }
   }).catch(err => console.warn('[VTID-01039] Failed to emit orb.session.summary:', err.message));
 
@@ -10618,6 +11195,149 @@ router.post('/live/session/stop', optionalAuth, async (req: AuthenticatedRequest
 });
 
 /**
+ * DEV-COMHU-0503 — ORB Recovery 2+3: close/reopen continuity.
+ *
+ * The widget persists short-lived continuity on UI close (reason='hide', 15min)
+ * or transient transport loss (reason='connection', 5min), and clears it on
+ * intentional forget (logout / account switch / reset). On reopen the session
+ * hydrates from here so a brief close does not look "first-time".
+ *
+ * Authenticated only — anonymous sessions have no durable identity to key on.
+ * Fails soft: continuity is an optimization, never a hard dependency.
+ *
+ *   POST /api/v1/orb/session/continuity   { reason, ttl_minutes, value }
+ *   GET  /api/v1/orb/session/continuity   → { ok, continuity|null }
+ *   DELETE /api/v1/orb/session/continuity → clear
+ */
+router.post('/session/continuity', optionalAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const userId = req.identity?.user_id;
+  if (!userId) return res.status(200).json({ ok: false, reason: 'anonymous_no_continuity' });
+  const supabase = getSupabase();
+  if (!supabase) return res.status(503).json({ ok: false, error: 'supabase_unavailable' });
+  try {
+    const { writeOrbSessionState, clearOrbSessionState } = await import('../services/orb/orb-session-state');
+    const body = (req.body || {}) as { reason?: string; ttl_minutes?: number; value?: unknown; clear?: boolean };
+    if (body.clear) {
+      const r = await clearOrbSessionState(supabase, userId, 'continuity');
+      void emitOasisEvent({
+        vtid: 'DEV-COMHU-0503',
+        type: 'orb.session.continuity.cleared',
+        source: 'orb-live',
+        status: 'info',
+        message: 'orb continuity cleared (intentional forget)',
+        payload: { user_id: userId, via: 'post_clear' },
+        actor_id: userId,
+        surface: 'orb',
+      }).catch(() => {});
+      return res.json({ ok: r.ok });
+    }
+    const ttl = typeof body.ttl_minutes === 'number' ? body.ttl_minutes : 15;
+    const r = await writeOrbSessionState(supabase, userId, 'continuity', {
+      ...(body.value && typeof body.value === 'object' ? body.value : {}),
+      reason: body.reason || 'hide',
+    }, ttl);
+    void emitOasisEvent({
+      vtid: 'DEV-COMHU-0503',
+      type: 'orb.session.continuity.persisted',
+      source: 'orb-live',
+      status: 'info',
+      message: `orb continuity persisted (reason=${body.reason || 'hide'}, ttl=${ttl}m)`,
+      payload: { user_id: userId, reason: body.reason || 'hide', ttl_minutes: ttl, ok: r.ok },
+      actor_id: userId,
+      surface: 'orb',
+    }).catch(() => {});
+    return res.json({ ok: r.ok, reason: r.reason });
+  } catch (e) {
+    return res.status(200).json({ ok: false, reason: e instanceof Error ? e.message : String(e) });
+  }
+});
+
+/**
+ * DEV-COMHU-0504 — ORB Recovery 4: audio-ready handshake.
+ *
+ * The client posts this as soon as its audio pipeline is genuinely ready
+ * (AudioContext unlocked + output device available + player initialized). The
+ * gateway records the ack in orb_session_state keyed by session_id so the
+ * greeting trigger can wait for ack-or-3s-timeout instead of wasting the one
+ * important greeting before the client can play it.
+ *
+ *   POST /api/v1/orb/session/:id/audio-ready
+ *
+ * Authenticated only (anonymous still works — the gate falls back to the 3s
+ * timeout). Fails soft.
+ */
+router.post('/session/:id/audio-ready', optionalAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const userId = req.identity?.user_id;
+  const sessionId = String(req.params.id || '');
+  if (!sessionId) return res.status(400).json({ ok: false, error: 'missing_session_id' });
+  if (!userId) return res.status(200).json({ ok: false, reason: 'anonymous_no_ack' });
+  const supabase = getSupabase();
+  if (!supabase) return res.status(503).json({ ok: false, error: 'supabase_unavailable' });
+  try {
+    const { writeOrbSessionState } = await import('../services/orb/orb-session-state');
+    // Short TTL: the ack is only meaningful within the session-start window.
+    const r = await writeOrbSessionState(
+      supabase,
+      userId,
+      'audio_ready_ack',
+      { session_id: sessionId, ready_at: new Date().toISOString() },
+      10, // minutes
+    );
+    void emitOasisEvent({
+      vtid: 'DEV-COMHU-0504',
+      type: 'orb.session.audio_ready.acked',
+      source: 'orb-live',
+      status: 'info',
+      message: `audio pipeline ready ack for session ${sessionId}`,
+      payload: { session_id: sessionId, user_id: userId, ok: r.ok },
+      actor_id: userId,
+      surface: 'orb',
+    }).catch(() => {});
+    return res.json({ ok: r.ok });
+  } catch (e) {
+    return res.status(200).json({ ok: false, reason: e instanceof Error ? e.message : String(e) });
+  }
+});
+
+router.get('/session/continuity', optionalAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const userId = req.identity?.user_id;
+  if (!userId) return res.json({ ok: true, continuity: null });
+  const supabase = getSupabase();
+  if (!supabase) return res.json({ ok: true, continuity: null });
+  try {
+    const { readOrbSessionState } = await import('../services/orb/orb-session-state');
+    const rec = await readOrbSessionState(supabase, userId, 'continuity');
+    return res.json({ ok: true, continuity: rec ? rec.value : null });
+  } catch {
+    return res.json({ ok: true, continuity: null });
+  }
+});
+
+router.delete('/session/continuity', optionalAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const userId = req.identity?.user_id;
+  if (!userId) return res.json({ ok: true });
+  const supabase = getSupabase();
+  if (!supabase) return res.json({ ok: true });
+  try {
+    const { clearOrbSessionState } = await import('../services/orb/orb-session-state');
+    const r = await clearOrbSessionState(supabase, userId, 'continuity');
+    void emitOasisEvent({
+      vtid: 'DEV-COMHU-0503',
+      type: 'orb.session.continuity.cleared',
+      source: 'orb-live',
+      status: 'info',
+      message: 'orb continuity cleared (intentional forget)',
+      payload: { user_id: userId, via: 'delete' },
+      actor_id: userId,
+      surface: 'orb',
+    }).catch(() => {});
+    return res.json({ ok: r.ok });
+  } catch {
+    return res.json({ ok: true });
+  }
+});
+
+/**
  * VTID-01155: GET /live/stream - SSE endpoint for bidirectional streaming
  * VTID-01226: Added token validation from query param for multi-tenant auth
  *
@@ -10770,10 +11490,29 @@ router.get('/live/stream', optionalAuth, async (req: AuthenticatedRequest, res: 
   // (chime) while this connection establishes in the background.
   console.log(`[VTID-ORBC] Live API check: googleAuth=${!!googleAuth}, VERTEX_PROJECT_ID=${VERTEX_PROJECT_ID || 'EMPTY'}, sessionId=${sessionId}`);
   if (googleAuth && VERTEX_PROJECT_ID) {
+    // ORB-CONVERSATION-LATENCY: start the turn-0 establishment tracker here —
+    // the earliest gateway-owned point of the click-to-first-audio path. The
+    // tracker self-gates on FEATURE_LATENCY_TELEMETRY_ENV (no-op when off).
+    session.establishLatency = new LatencyTracker({
+      session_id: session.sessionId,
+      surface: 'voice',
+      actor_id: session.identity?.user_id,
+      turn: 0,
+      provider: `vertex/${VERTEX_LIVE_MODEL}`,
+    });
     const liveApiPromise = connectToLiveAPI(
       session,
       // Audio response handler - forward to client via SSE
       (audioB64: string) => {
+        // ORB-CONVERSATION-LATENCY: the first audio chunk out is the greeting —
+        // it finalizes the establishment tracker (total = time_to_first_audio).
+        // The greeting has no preceding user turn, so the per-turn tracker never
+        // fires for it; this is the only place that closes turn 0.
+        if (session.establishLatency) {
+          session.establishLatency.mark('audio_out_first_chunk', { source: 'greeting' });
+          void session.establishLatency.finalize('success');
+          session.establishLatency = null;
+        }
         if (session.sseResponse) {
           try {
             session.sseResponse.write(`data: ${JSON.stringify({
@@ -10865,7 +11604,16 @@ router.get('/live/stream', optionalAuth, async (req: AuthenticatedRequest, res: 
       } else {
         sendGreetingPromptToLiveAPI(ws, session);
       }
+      // ORB-CONVERSATION-LATENCY: opener dispatched upstream — the remaining
+      // gap to audio_out_first_chunk is the model's first-token time.
+      session.establishLatency?.mark('greeting_sent', { reconnect: isReconnectGreetingSkip });
     }).catch((err: any) => {
+      // ORB-CONVERSATION-LATENCY: connect failed before any audio — close the
+      // establishment tracker as an error so it isn't left dangling.
+      if (session.establishLatency) {
+        void session.establishLatency.finalize('error', err?.message);
+        session.establishLatency = null;
+      }
       console.error(`[VTID-01219] Failed to connect Live API for session ${sessionId}:`, err.message);
       emitLiveSessionEvent('orb.live.connection_failed', {
         session_id: sessionId,
@@ -11852,12 +12600,20 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
     console.log(`[VTID-01224] Building bootstrap context for session ${sessionId} user=${effectiveBootstrapIdentity.user_id.substring(0, 8)}...${usingDevFallbackWs ? ' (DEV_IDENTITY fallback)' : ''}`);
 
     // Fetch role, context, and last session info in parallel for minimal latency
-    const [bootstrapResult, fetchedRole, fetchedWsSessionInfo] = await Promise.all([
+    const [bootstrapResult, fetchedRole, fetchedWsSessionInfo, wsAutopilotOffer] = await Promise.all([
       buildBootstrapContextPack(effectiveBootstrapIdentity, sessionId),
       usingDevFallbackWs
         ? Promise.resolve(DEV_IDENTITY.ACTIVE_ROLE)
         : resolveEffectiveRole(effectiveBootstrapIdentity.user_id, effectiveBootstrapIdentity.tenant_id || ''),
       fetchLastSessionInfo(effectiveBootstrapIdentity.user_id),
+      // VTID-03201: proactive Autopilot offer, fetched in parallel (no added
+      // critical-path latency). Appended only for community sessions below.
+      import('./autopilot-recommendations')
+        .then((m) => m.buildAutopilotOfferBlock(effectiveBootstrapIdentity.user_id))
+        .catch((err: any) => {
+          console.warn(`[VTID-03201] WS autopilot offer fetch failed: ${err?.message}`);
+          return '';
+        }),
     ]);
     activeRole = fetchedRole;
     wsLastSessionInfo = fetchedWsSessionInfo;
@@ -11873,6 +12629,16 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
     contextPack = bootstrapResult.contextPack;
     contextBootstrapLatencyMs = bootstrapResult.latencyMs;
     contextBootstrapSkippedReason = bootstrapResult.skippedReason;
+
+    // VTID-03201: community WS sessions get the proactive Autopilot offer so
+    // Vitana raises it unprompted ("you have things waiting — want me to run
+    // through them?"). Empty string for users with nothing queued.
+    if (activeRole === 'community' && wsAutopilotOffer) {
+      contextInstruction = contextInstruction
+        ? `${contextInstruction}\n\n${wsAutopilotOffer}`
+        : wsAutopilotOffer;
+      console.log(`[VTID-03201] Autopilot proactive offer injected into WS session ${sessionId} (${wsAutopilotOffer.length} chars)`);
+    }
 
     // BOOTSTRAP-ADMIN-EE: admin-role WS sessions get a proactive briefing too.
     if (isAdminRole(activeRole) && effectiveBootstrapIdentity.tenant_id) {
@@ -11966,6 +12732,7 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
     createdAt: new Date(),
     lastActivity: new Date(),
     audioInChunks: 0,
+    audioInForwarded: 0, // VTID-VOICE-FWD: only ++ when a chunk is actually sent upstream
     videoInFrames: 0,
     audioOutChunks: 0,
     // VTID-01224: Identity and context (use effective identity for dev-sandbox fallback)
@@ -12104,13 +12871,45 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
       },
       // Turn complete handler - forward to WS client so it knows when response ends
       () => {
+        const isGreetingTurn = liveSession.greetingSent && liveSession.turn_count === (liveSession.greetingTurnIndex ?? 0) + 1;
         if (clientWs.readyState === WebSocket.OPEN) {
-          const isGreetingTurn = liveSession.greetingSent && liveSession.turn_count === (liveSession.greetingTurnIndex ?? 0) + 1;
           sendWsMessage(clientWs, {
             type: 'turn_complete',
             is_greeting: isGreetingTurn
           });
           console.log(`[VTID-VOICE-INIT] Forwarded turn_complete to WS client ${sessionId} (isGreeting=${isGreetingTurn})`);
+        }
+        // BOOTSTRAP-VOICE-DATASET-EMITTER: emit orb.turn.responded with the
+        // voice-tool-routing signal so the dataset extractor sees real rows.
+        // Skip greeting turns (no user input). The transcript/tool fields are
+        // attached ONLY under export consent + no guardrail (gating lives in
+        // buildOrbTurnRespondedPayload); the consent read is cached per-tenant.
+        const toolSignal = liveSession.pendingTurnToolSignal;
+        liveSession.pendingTurnToolSignal = undefined;
+        if (!isGreetingTurn) {
+          const replyText = liveSession.outputTranscriptBuffer || '';
+          const userInput = liveSession.inputTranscriptBuffer || '';
+          if (replyText.length > 0) {
+            void emitOrbTurnResponded(
+              liveSession.sessionId,
+              liveSession.conversation_id || liveSession.sessionId,
+              replyText,
+              'vertex',
+              liveSession.identity?.user_id,
+              {
+                toolSignal: toolSignal
+                  ? {
+                      toolName: toolSignal.toolName,
+                      inputText: userInput,
+                      toolCall: {
+                        name: toolSignal.toolName,
+                        ...(toolSignal.toolArguments ? { arguments: toolSignal.toolArguments } : {}),
+                      },
+                    }
+                  : { inputText: userInput },
+              },
+            );
+          }
         }
       },
       // Interrupted handler - forward to WS client so it can clear audio queue
@@ -12280,6 +13079,10 @@ async function handleWsAudioMessage(clientSession: WsClientSession, message: WsC
 
   liveSession.audioInChunks++;
   liveSession.lastActivity = new Date();
+  // Phase 1 W2: this is real user mic audio (passed all drop gates). Start the
+  // per-turn latency tracker on the first such chunk (audioInChunks 0→1 within
+  // the turn); subsequent chunks no-op until the turn finalizes.
+  startVoiceTurnLatency(liveSession);
 
   // Telemetry: emit at most once per 10s window (was per-100-chunks ~1-2s)
   const now = Date.now();
@@ -12303,6 +13106,11 @@ async function handleWsAudioMessage(clientSession: WsClientSession, message: WsC
     );
 
     if (sent) {
+      // VTID-VOICE-FWD (Track A): count only chunks the model actually received.
+      // This is the lone increment site for audioInForwarded — the three drop
+      // gates above (navigation, echo-prevention, post-turn cooldown) bump
+      // audioInChunks but return early, so they never reach here.
+      liveSession.audioInForwarded++;
       liveSession.lastAudioForwardedTime = Date.now(); // VTID-STREAM-SILENCE: reset idle timer
       // VTID-FORWARDING-WATCHDOG / BOOTSTRAP-ORB-RELIABILITY-R4: sliding
       // watchdog. See SSE path for full rationale — mirrored here so the
@@ -12506,6 +13314,9 @@ function handleWsStopSession(clientSession: WsClientSession): void {
       user_id: liveSession.identity?.user_id || null,
       tenant_id: liveSession.identity?.tenant_id || null,
       audio_in_chunks: liveSession.audioInChunks,
+      // VTID-VOICE-FWD (Track A): forwarded-only count for echo-robust quality
+      // classification. Kept alongside raw audio_in_chunks for back-compat.
+      audio_in_forwarded_chunks: liveSession.audioInForwarded,
       audio_out_chunks: liveSession.audioOutChunks,
       video_frames: liveSession.videoInFrames,
       transport: 'websocket',
@@ -12521,6 +13332,8 @@ function handleWsStopSession(clientSession: WsClientSession): void {
       metadata: { synthetic: (liveSession as any).synthetic === true },
       sessionMetrics: {
         audio_in_chunks: liveSession.audioInChunks,
+        // VTID-VOICE-FWD (Track A): classifier reads this for the under-responds ratio.
+        audio_in_forwarded: liveSession.audioInForwarded,
         audio_out_chunks: liveSession.audioOutChunks,
         duration_ms: Date.now() - liveSession.createdAt.getTime(),
         turn_count: liveSession.turn_count,
