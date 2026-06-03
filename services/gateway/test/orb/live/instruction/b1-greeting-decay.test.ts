@@ -42,12 +42,42 @@ describe('B1 acceptance check #1: repeated greetings decay', () => {
     expect(r.policy).toBe('warm_return');
   });
 
-  it('brief_resume twice in a row → downgrades to skip', () => {
+  // VTID-03226: style decay now FLOORS at brief_resume — stylistic
+  // repetition must never produce total silence. (Previously this returned
+  // 'skip', which caused dead air on same-day reopens.)
+  it('brief_resume twice in a row → stays brief_resume (decay floor, no silence)', () => {
     const r = decideGreetingPolicyWithEvidence({
       bucket: 'same_day',
       greeting_style_last_used: 'brief_resume',
     });
+    expect(r.policy).toBe('brief_resume');
+    expect(r.reason).toBe('bucket_with_decay_layer');
+  });
+
+  // VTID-03226: the exact production scenario that made dragan1 silent on a
+  // same-day reopen — heavy day (12 sessions) dampens fresh_intro →
+  // brief_resume, then same-style decay would have dropped it to skip. With
+  // the floor, the user still hears a light continuity line.
+  it('heavy day + same brief_resume style + past greet-once window → brief_resume, NOT skip', () => {
+    const r = decideGreetingPolicyWithEvidence({
+      bucket: 'first',
+      sessions_today_count: 12,
+      greeting_style_last_used: 'brief_resume',
+      time_since_last_greeting_today_ms: 4 * 60 * 60 * 1000, // ~4h, past the 15-min cap
+    });
+    expect(r.policy).toBe('brief_resume');
+    expect(r.policy).not.toBe('skip');
+  });
+
+  // Guard: the floor must NOT swallow the forced-skip safety rules.
+  it('still skips inside the 15-min greet-once window (forced skip unaffected by floor)', () => {
+    const r = decideGreetingPolicyWithEvidence({
+      bucket: 'first',
+      greeting_style_last_used: 'brief_resume',
+      time_since_last_greeting_today_ms: 2 * 60 * 1000, // 2 min — within window
+    });
     expect(r.policy).toBe('skip');
+    expect(r.reason).toBe('greeted_recently_within_window');
   });
 
   it('skip → stays skip when last_used was also skip (no flip up)', () => {

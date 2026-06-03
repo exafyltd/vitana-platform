@@ -763,8 +763,12 @@ describe('D46 Determinism', () => {
       max_daily_guidance: 3
     };
 
-    const mode1 = selectGuidanceMode(window, signals, prefs);
-    const mode2 = selectGuidanceMode(window, signals, prefs);
+    // Freeze the reference clock so both calls evaluate the same time-of-day
+    // window boundary. Without this, the two calls read Date.now() at slightly
+    // different instants and can straddle the 24h preparation boundary.
+    const frozenNow = Date.now();
+    const mode1 = selectGuidanceMode(window, signals, prefs, frozenNow);
+    const mode2 = selectGuidanceMode(window, signals, prefs, frozenNow);
 
     expect(mode1).toBe(mode2);
   });

@@ -22,6 +22,11 @@
  */
 
 import type { ClientContextEnvelope } from '../client-context-envelope';
+import {
+  defaultMatchJourneyFetcher,
+  type MatchJourneyFetcher,
+} from './match-journey-fetcher';
+import { deriveMatchJourneyContext } from './match-journey-derivation';
 
 // ---------------------------------------------------------------------------
 // Output type — the distilled match-journey snapshot.
@@ -110,6 +115,25 @@ export interface MatchJourneyContextProviderInput {
   userId: string | null;
   tenantId: string | null;
   envelope: ClientContextEnvelope | null;
+  /**
+   * BOOTSTRAP-MATCHMAKING-INDEX — injected fetcher (defaults to the
+   * Supabase-backed one). Exists for tests; production omits it.
+   */
+  fetcher?: MatchJourneyFetcher;
+  /** Injected clock for deterministic derivation in tests. */
+  nowMs?: number;
+}
+
+/** The stub the provider returns when the feature flag is OFF. */
+const STUB_CONTEXT: MatchJourneyContext = { journeyStage: 'none' };
+
+/**
+ * Feature flag — default OFF. When unset/anything-but-'true' the
+ * provider returns the historical `{ journeyStage: 'none' }` stub, so
+ * the change is fully additive and reversible at runtime.
+ */
+export function isMatchJourneyContextEnabled(): boolean {
+  return process.env.FEATURE_MATCH_JOURNEY_CONTEXT === 'true';
 }
 
 // ---------------------------------------------------------------------------
@@ -138,7 +162,28 @@ export interface MatchJourneyContextProviderInput {
  * will need awaits for memory-broker reads.
  */
 export async function compileMatchJourneyContext(
-  _input: MatchJourneyContextProviderInput,
+  input: MatchJourneyContextProviderInput,
 ): Promise<MatchJourneyContext> {
-  return { journeyStage: 'none' };
+  // Flag OFF (default) → historical stub. Fully additive.
+  if (!isMatchJourneyContextEnabled()) return STUB_CONTEXT;
+
+  // Need an authenticated user + tenant to anchor on real journey/Index
+  // state. Without them there is nothing to derive — degrade to the stub.
+  if (!input.userId || !input.tenantId) return STUB_CONTEXT;
+
+  const fetcher = input.fetcher ?? defaultMatchJourneyFetcher;
+  try {
+    const fetched = await fetcher.fetch({
+      userId: input.userId,
+      tenantId: input.tenantId,
+    });
+    return deriveMatchJourneyContext({
+      latestMatch: fetched.latestMatch,
+      indexScoreTotal: fetched.indexScoreTotal,
+      nowMs: input.nowMs,
+    });
+  } catch {
+    // Fail safe — never break context compilation over match-journey.
+    return STUB_CONTEXT;
+  }
 }

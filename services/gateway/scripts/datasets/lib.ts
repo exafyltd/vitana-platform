@@ -14,7 +14,13 @@
 import { promises as fs } from 'fs';
 import path from 'path';
 import { execFileSync } from 'child_process';
-import type { DatasetExtractionRun, DatasetRow, DatasetTarget } from './types';
+import type {
+  DatasetExtractionPreview,
+  DatasetExtractionRun,
+  DatasetRow,
+  DatasetTarget,
+  OasisEventRow,
+} from './types';
 
 const PROD_SUPABASE_URL = process.env.SUPABASE_URL;
 const PROD_SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE;
@@ -37,16 +43,22 @@ export async function queryOasisEvents(
   where: string,
   sinceIso: string,
   limit = 50_000,
-): Promise<Array<{ id: string; created_at: string; topic: string; metadata: Record<string, unknown> | null; message: string | null }>> {
+): Promise<OasisEventRow[]> {
   if (!PROD_SUPABASE_URL || !PROD_SUPABASE_KEY) return [];
 
-  // PII guards encoded as PostgREST filters:
-  //   - NOT topic.like.safety.guardrail.%
-  //   - metadata->data_export_ok=eq.true
-  // The `and=(...)` wrapper lets us combine these with the caller's `where`.
-  const piiFilter = 'and=(not.topic.like.safety.guardrail.*,metadata->data_export_ok.eq.true)';
+  // PII guards encoded as PostgREST filters (independent query params,
+  // implicitly AND-ed by PostgREST). The earlier `and=(not.topic.like...,
+  // metadata->data_export_ok.eq.true)` form failed to parse — PostgREST's
+  // `and=(...)` doesn't accept the `->` JSON-path operator inside the
+  // grouping. Splitting them outside the group works on both row-level
+  // columns and JSONB paths.
+  //
+  //   1. topic must NOT match safety.guardrail.* (`%` is the SQL LIKE wildcard)
+  //   2. metadata.data_export_ok must equal true
+  const piiTopicFilter = 'topic=not.like.safety.guardrail.%25';
+  const piiConsentFilter = 'metadata->>data_export_ok=eq.true';
   const baseFilter = `created_at=gte.${encodeURIComponent(sinceIso)}`;
-  const url = `${PROD_SUPABASE_URL}/rest/v1/oasis_events?${baseFilter}&${where}&${piiFilter}&order=created_at.asc&limit=${limit}&select=id,created_at,topic,metadata,message`;
+  const url = `${PROD_SUPABASE_URL}/rest/v1/oasis_events?${baseFilter}&${where}&${piiTopicFilter}&${piiConsentFilter}&order=created_at.asc&limit=${limit}&select=id,created_at,topic,metadata,message`;
 
   const resp = await fetch(url, {
     headers: {
@@ -57,7 +69,7 @@ export async function queryOasisEvents(
   if (!resp.ok) {
     throw new Error(`oasis_events query failed: ${resp.status} ${await resp.text()}`);
   }
-  return (await resp.json()) as Array<{ id: string; created_at: string; topic: string; metadata: Record<string, unknown> | null; message: string | null }>;
+  return (await resp.json()) as OasisEventRow[];
 }
 
 export async function writeJsonl(rows: DatasetRow[], target: DatasetTarget, runId: string): Promise<string> {
@@ -143,4 +155,89 @@ export function defaultSinceIso(daysBack: number): string {
 export function generateRunId(target: DatasetTarget): string {
   const ts = new Date().toISOString().replace(/[:.]/g, '-');
   return `${target}-${ts}`;
+}
+
+/**
+ * PREVIEW / DRY-RUN mode flag — Phase 1 W2 readiness (BOOTSTRAP-DATASET-READINESS).
+ *
+ * When `DATASET_PREVIEW=1` the extractors run the SAME consent-gated query and
+ * the SAME row projection, then COUNT + SAMPLE the projected rows instead of
+ * writing JSONL / uploading to GCS / emitting the completion event. This is a
+ * strict superset of the legacy `DATASET_DRY_RUN=1` behavior (which still wrote
+ * the local JSONL): preview writes NOTHING.
+ *
+ * This does NOT relax the consent gate. The query in `queryOasisEvents` still
+ * carries `metadata->>data_export_ok=eq.true`, so preview over an unconsented
+ * prod correctly reports 0 — and reports a non-zero, correct count the instant
+ * an operator flips consent, with no data written either way.
+ */
+export const PREVIEW_MODE = process.env.DATASET_PREVIEW === '1';
+
+/**
+ * How many sample rows the preview surfaces. Kept small — this is a readiness
+ * check, not an export. Defaults to 5 and is intentionally unbound in any
+ * workflow/deploy config: it ONLY affects preview mode, so a missing env var is
+ * the normal case. Parsed defensively — a non-numeric / empty value falls back
+ * to the default rather than producing NaN (which would silently surface 0 rows).
+ */
+const PREVIEW_SAMPLE_DEFAULT = 5;
+export const PREVIEW_SAMPLE_LIMIT = (() => {
+  const parsed = Number.parseInt(process.env.DATASET_PREVIEW_SAMPLES ?? '5', 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : PREVIEW_SAMPLE_DEFAULT;
+})();
+
+/**
+ * Pull a tenant identifier out of an event's metadata for preview grouping.
+ * oasis_events has no top-level tenant_id column (it's a global log), so the
+ * tenant — when present — lives in metadata. We check the common keys the
+ * producing surfaces use; falls back to "unknown" so every projected row is
+ * still counted.
+ */
+export function tenantKeyFromEvent(event: OasisEventRow | undefined): string {
+  const meta = event?.metadata;
+  if (!meta || typeof meta !== 'object') return 'unknown';
+  const m = meta as Record<string, unknown>;
+  const candidate =
+    m.tenant_id ?? m.tenantId ?? m.tenant ?? (m.identity as Record<string, unknown> | undefined)?.tenant_id;
+  return typeof candidate === 'string' && candidate.length > 0 ? candidate : 'unknown';
+}
+
+/**
+ * Build a read-only preview summary from the query result and the projected
+ * rows. `events` is the raw consent-gated query output (defines rows_total and
+ * carries metadata for tenant grouping); `projected` is what the target's own
+ * projector produced (i.e. exactly the rows that WOULD be written, pre-dedup).
+ *
+ * Writes nothing. Pure function — unit-testable without prod access.
+ */
+export function summarizePreview(
+  target: DatasetTarget,
+  events: OasisEventRow[],
+  projected: DatasetRow[],
+): DatasetExtractionPreview {
+  const eventById = new Map<string, OasisEventRow>();
+  for (const e of events) eventById.set(e.id, e);
+
+  const byTenant: Record<string, number> = {};
+  const bySource: Record<string, number> = {};
+  for (const row of projected) {
+    const event = eventById.get(row.source_id);
+    const tenant = tenantKeyFromEvent(event);
+    const source = event?.topic ?? 'unknown';
+    byTenant[tenant] = (byTenant[tenant] ?? 0) + 1;
+    bySource[source] = (bySource[source] ?? 0) + 1;
+  }
+
+  const deduped = dedupeBySourceId(projected);
+
+  return {
+    target,
+    preview: true,
+    rows_total: events.length,
+    rows_projected: projected.length,
+    rows_after_dedup: deduped.length,
+    by_tenant: byTenant,
+    by_source: bySource,
+    samples: deduped.slice(0, Math.max(0, PREVIEW_SAMPLE_LIMIT)),
+  };
 }

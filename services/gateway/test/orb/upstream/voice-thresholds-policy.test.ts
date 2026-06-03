@@ -66,12 +66,15 @@ describe('VTID-03124 Phase D.1 voice-threshold accessors', () => {
       expect(getSilenceIdleThresholdMs()).toBe(3000);
     });
 
-    it('greeting response timeout falls back to byte-identical 8000 ms', () => {
-      expect(getGreetingResponseTimeoutMs()).toBe(8000);
+    // VTID-03234 (report #4): raised above the real first-turn compute window
+    // (was 8000 — fired inside the 8-12s heavy-greeting inference and killed
+    // healthy sessions, causing the "first minute" disconnect loop).
+    it('greeting response timeout falls back to 30000 ms (above first-turn compute)', () => {
+      expect(getGreetingResponseTimeoutMs()).toBe(30000);
     });
 
-    it('turn response timeout falls back to byte-identical 10000 ms', () => {
-      expect(getTurnResponseTimeoutMs()).toBe(10000);
+    it('turn response timeout falls back to 20000 ms (tolerates tool turns)', () => {
+      expect(getTurnResponseTimeoutMs()).toBe(20000);
     });
 
     it('forwarding ack timeout falls back to byte-identical 45000 ms', () => {

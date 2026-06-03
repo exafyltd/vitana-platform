@@ -262,7 +262,10 @@ export async function reportSubagentComplete(
         vtid,
         domain,
         run_id: runId,
-        skip_verification: true, // For worker-runner, we trust the LLM result
+        // Let the gateway run verification (advisory mode: never blocks, emits a
+        // developer-review report of fixes needed). Previously this was hardcoded
+        // to skip_verification:true, which bypassed the verification engine for
+        // every autonomous execution.
         result: {
           ok: result.ok,
           files_changed: result.files_changed || [],
@@ -309,7 +312,9 @@ export async function reportOrchestratorComplete(
         success,
         summary: summary || (success ? 'Task completed successfully' : 'Task failed'),
         error,
-        skip_verification: true, // For worker-runner, we trust the LLM result
+        // Let the gateway run verification (advisory mode: never blocks, emits a
+        // developer-review report of fixes needed). Previously hardcoded to
+        // skip_verification:true, bypassing the verification engine entirely.
         result: result
           ? {
               files_changed: result.files_changed || [],

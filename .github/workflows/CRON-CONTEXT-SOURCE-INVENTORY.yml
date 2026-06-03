@@ -1,0 +1,87 @@
+name: Cron Context Source Inventory
+
+# VTID-03238 — Phase 1 W3-D1 PR 1. Daily inventory of the context
+# sources Vitana's brain pulls from. Read-only. No production behavior
+# change. Output feeds the W3-D1 PR 2 quality score and the W3-D1 PR 5
+# cockpit spine.
+
+on:
+  schedule:
+    # Daily at 09:30 UTC — 15 min after the backlog conversion plan
+    # (09:15 UTC), so the operator sees queue diagnostics first, then
+    # context health.
+    - cron: '30 9 * * *'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: cron-context-source-inventory
+  cancel-in-progress: false
+
+env:
+  GCP_PROJECT: lovable-vitana-vers1
+
+jobs:
+  inventory:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: services/gateway/package-lock.json
+      - working-directory: services/gateway
+        run: npm ci --no-audit --no-fund
+
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_WIF_SA_EMAIL }}
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Resolve prod Supabase creds
+        run: |
+          set -euo pipefail
+          PROD_URL=$(gcloud secrets versions access latest --secret=SUPABASE_URL --project="${GCP_PROJECT}" 2>/dev/null || echo '')
+          PROD_KEY=$(gcloud secrets versions access latest --secret=SUPABASE_SERVICE_ROLE --project="${GCP_PROJECT}" 2>/dev/null || echo '')
+          if [ -z "$PROD_URL" ] || [ -z "$PROD_KEY" ]; then
+            echo "::error::Could not resolve prod Supabase creds."
+            exit 1
+          fi
+          echo "::add-mask::$PROD_URL"
+          echo "::add-mask::$PROD_KEY"
+          {
+            echo "PROD_SUPABASE_URL=$PROD_URL"
+            echo "PROD_SUPABASE_SERVICE_ROLE=$PROD_KEY"
+          } >> "$GITHUB_ENV"
+
+      - name: Run context source inventory
+        working-directory: services/gateway
+        env:
+          REPORT_MARKDOWN_PATH: /tmp/context-source-inventory.md
+        run: |
+          set -euo pipefail
+          npx tsx scripts/intelligence/context-source-inventory.ts > /tmp/context-source-inventory.json
+          echo "JSON written: $(wc -c < /tmp/context-source-inventory.json) bytes"
+
+      - name: Append summary
+        if: always()
+        run: |
+          if [ -f /tmp/context-source-inventory.md ]; then
+            cat /tmp/context-source-inventory.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: context-source-inventory-${{ github.run_id }}
+          path: |
+            /tmp/context-source-inventory.json
+            /tmp/context-source-inventory.md
+          if-no-files-found: warn
+          retention-days: 90
