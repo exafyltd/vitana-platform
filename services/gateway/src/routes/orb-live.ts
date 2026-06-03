@@ -1016,6 +1016,11 @@ export interface GeminiLiveSession {
   // hook in the session start payload + every updateContext. Drives the
   // mobile_route override + viewport_only block in handleNavigateToScreen.
   is_mobile?: boolean;
+  // VTID-03300: "My Journey" next-step focus. Set when the user opened the orb
+  // by tapping a specific Foundation step in the Next-Steps checklist, so the
+  // journey-guide provider LEADS with that exact step rather than the
+  // sequentially-computed current_next_step. One-shot per session.
+  journey_focus_step?: string;
   // VTID-NAV: Cached memory pack from the first navigator_consult call this
   // session, with a 30s TTL — subsequent consult calls reuse it instead of
   // re-paying retrieval cost.

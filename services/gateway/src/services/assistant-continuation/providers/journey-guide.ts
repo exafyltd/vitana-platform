@@ -65,6 +65,12 @@ interface JourneyGuideInputs {
   userId: string;
   isReconnect?: boolean;
   lang: string;
+  /**
+   * VTID-03300: the Foundation step key the user tapped in "My Journey" to open
+   * the orb. When set and that step isn't already done, the provider leads with
+   * it instead of the sequentially-computed `current_next_step`.
+   */
+  focusStep?: string | null;
 }
 
 function readInputs(ctx: ContinuationDecisionContext): JourneyGuideInputs | null {
@@ -77,6 +83,7 @@ function readInputs(ctx: ContinuationDecisionContext): JourneyGuideInputs | null
     userId: obj.userId,
     isReconnect: obj.isReconnect === true,
     lang: typeof obj.lang === 'string' && obj.lang ? obj.lang : 'en',
+    focusStep: typeof obj.focusStep === 'string' && obj.focusStep ? obj.focusStep : null,
   };
 }
 
@@ -96,13 +103,33 @@ export function makeJourneyGuideProvider(): ContinuationProvider {
 
       let snapshot: JourneyFoundationSnapshot;
       let stepDef: { execute_prompt: string; benefit: string } | undefined;
+      // VTID-03300: the step to lead with. Defaults to the computed next step,
+      // but a user-tapped focus step overrides it (see below).
+      let leadStep: JourneyFoundationSnapshot['current_next_step'] = null;
+      let isFocusOverride = false;
       try {
         const [{ buildJourneyFoundationSnapshot }, { getStepDef }] = await Promise.all([
           import('../../journey-foundation/journey-foundation-state'),
           import('../../journey-foundation/foundation-steps'),
         ]);
         snapshot = await buildJourneyFoundationSnapshot(inputs.supabase, inputs.userId);
-        const key = snapshot.current_next_step?.key;
+
+        // VTID-03300: when the user tapped a specific step in "My Journey", lead
+        // with THAT step (as long as it isn't already done) instead of the
+        // sequentially-computed next step. Lets the user jump to "Profile" even
+        // if it isn't the strict next gate — Vitana focuses on what they asked.
+        leadStep = snapshot.current_next_step;
+        if (inputs.focusStep) {
+          const focused = snapshot.foundation_steps.find(
+            (v) => v.key === inputs.focusStep && v.status !== 'done',
+          );
+          if (focused) {
+            leadStep = focused;
+            isFocusOverride = true;
+          }
+        }
+
+        const key = leadStep?.key;
         stepDef = key ? getStepDef(key) : undefined;
       } catch (err) {
         return {
@@ -114,10 +141,12 @@ export function makeJourneyGuideProvider(): ContinuationProvider {
       }
 
       // Graduated → the journey is done; hand the floor to the normal ladder.
-      if (snapshot.graduated) {
+      // Exception: an explicit user tap on a still-open step (e.g. an optional
+      // economy-activation step) overrides graduation so Vitana still leads it.
+      if (snapshot.graduated && !isFocusOverride) {
         return { providerKey: JOURNEY_GUIDE_PROVIDER_KEY, status: 'suppressed', latencyMs: 0, reason: 'journey_graduated' };
       }
-      const step = snapshot.current_next_step;
+      const step = leadStep;
       if (!step || !stepDef) {
         return { providerKey: JOURNEY_GUIDE_PROVIDER_KEY, status: 'suppressed', latencyMs: 0, reason: 'no_next_step' };
       }
