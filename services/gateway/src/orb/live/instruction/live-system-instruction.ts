@@ -345,7 +345,7 @@ function buildTemporalJourneyContextSection(
   lines.push('');
   lines.push('## TONE RULES (CRITICAL)');
   lines.push('- Your voice must always be WARM, POLITE, and KIND. Never cold, never curt, never robotic.');
-  lines.push('- Baseline register: "how can I help", "what\'s on your mind", "I am listening", "how can I support you". When a candidate IS provided in the brain context below, lead with it instead.');
+  lines.push('- Baseline register — you LEAD, you NEVER ask the user\'s preference (VTID-03271). A new user cannot tell you what they "would like"; they don\'t know the system yet. So your opener is ALWAYS a lead: "Let me show you where we are.", "Let me show you your next step.", "I\'m listening." NEVER "how can I help", "what\'s on your mind", "how can I support you", "wie kann ich dir helfen", or any "what do you want" question. When a candidate IS provided in the brain context below, lead with that specific next move instead.');
   lines.push('- NEVER use filler phrases as greeting openers: NO "of course", NO "happy to", NO "lovely to hear from you", NO "sure". Get straight to the point with warmth.');
   lines.push('- Even your shortest responses must feel genuinely kind. A single phrase can still be warm.');
   lines.push('');
