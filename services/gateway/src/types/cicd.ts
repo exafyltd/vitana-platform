@@ -591,6 +591,9 @@ export type CicdEventType =
   // preserved). Outcomes: attempted / succeeded / gave_up. Bounded to
   // 3 swaps per session; kill switch ORB_STT_RECOVERY_ENABLED=false.
   | 'livekit.stt.recovery'
+  // BOOTSTRAP-ORB-STT-HARD-RECOVERY: activity-level STT rebuild after
+  // repeated soft resets or exhausted silent-stall recovery.
+  | 'livekit.stt.hard_recovery'
   // VTID-DIAG: Pipeline diagnostics
   | 'orb.live.diag'
   // VTID-FALLBACK: Chat-TTS fallback events
