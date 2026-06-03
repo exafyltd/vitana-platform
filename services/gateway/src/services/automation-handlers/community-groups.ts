@@ -348,10 +348,101 @@ async function runCommunityCreatorDigest(ctx: AutomationContext) {
   return { usersAffected, actionsTaken };
 }
 
+// ── AP-0211: "Revive Your Group" Re-Ignition ────────────────
+// Daily heartbeat: scan for dormant groups (no posts in DORMANT_DAYS) that
+// still have members and a host, and nudge the host to re-ignite — post an
+// update or plan a meetup. In-platform host notification, attributed to
+// Autopilot. A per-group cooldown prevents nudging the same host more than
+// once every REVIVE_COOLDOWN_DAYS even though the scan runs daily.
+const DORMANT_DAYS = 14;
+const REVIVE_COOLDOWN_DAYS = 7;
+const REVIVE_MAX_NUDGES = 50; // safety cap per run
+
+async function runReviveYourGroup(ctx: AutomationContext) {
+  const { supabase } = ctx;
+  let usersAffected = 0;
+  let actionsTaken = 0;
+
+  const dormantCutoff = new Date(Date.now() - DORMANT_DAYS * 86_400_000).toISOString();
+  const cooldownCutoff = new Date(Date.now() - REVIVE_COOLDOWN_DAYS * 86_400_000).toISOString();
+
+  // Active, hosted groups that still have members. global_community_groups has
+  // no tenant_id — the global community is shared — so we scan all of them.
+  const { data: groups } = await supabase
+    .from('global_community_groups')
+    .select('id, name, created_by, member_count')
+    .eq('status', 'approved')
+    .not('created_by', 'is', null)
+    .gte('member_count', 1)
+    .limit(500);
+
+  let scanned = 0;
+  for (const group of groups || []) {
+    if (actionsTaken >= REVIVE_MAX_NUDGES) break;
+    scanned++;
+
+    // Most recent post in the group is the activity signal.
+    const { data: lastPost } = await supabase
+      .from('group_posts')
+      .select('created_at')
+      .eq('group_id', group.id)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    // Dormant = no posts at all, or the latest post is older than the cutoff.
+    const isDormant = !lastPost || lastPost.created_at < dormantCutoff;
+    if (!isDormant) continue;
+
+    // Cooldown: skip if this host was already nudged for this group recently.
+    const { data: recentNudge } = await supabase
+      .from('user_notifications')
+      .select('id')
+      .eq('user_id', group.created_by)
+      .eq('type', 'orb_proactive_message')
+      .contains('data', { automation_id: 'AP-0211', group_id: group.id })
+      .gte('created_at', cooldownCutoff)
+      .limit(1);
+    if (recentNudge && recentNudge.length > 0) continue;
+
+    const daysQuiet = lastPost
+      ? Math.floor((Date.now() - new Date(lastPost.created_at).getTime()) / 86_400_000)
+      : null;
+    const memberCount = group.member_count ?? 0;
+    const memberWord = memberCount === 1 ? 'member' : 'members';
+
+    ctx.notify(group.created_by, 'orb_proactive_message', {
+      title: `Your group "${group.name}" has gone quiet 🌱`,
+      body: daysQuiet !== null
+        ? `No new posts in ${daysQuiet} days. Your ${memberCount} ${memberWord} are waiting — share an update or plan a meetup to bring it back to life.`
+        : `${memberCount} ${memberWord} joined but no one has posted yet. Kick things off with a welcome or a question.`,
+      data: {
+        url: `/community/groups/${group.id}`,
+        group_id: group.id,
+        days_quiet: String(daysQuiet ?? 0),
+        via: 'autopilot',
+        automation_id: 'AP-0211',
+      },
+    });
+
+    usersAffected++;
+    actionsTaken++;
+  }
+
+  await ctx.emitEvent('autopilot.group_revive.scanned', {
+    groups_scanned: scanned,
+    nudges_sent: actionsTaken,
+    dormant_threshold_days: DORMANT_DAYS,
+  });
+
+  return { usersAffected, actionsTaken };
+}
+
 export function registerCommunityGroupsHandlers(): void {
   registerHandler('runGroupInviteFollowUp', runGroupInviteFollowUp);
   registerHandler('runNewMemberWelcome', runNewMemberWelcome);
   registerHandler('runWelcomeSquad', runWelcomeSquad);
+  registerHandler('runReviveYourGroup', runReviveYourGroup);
   registerHandler('runMeetupRsvpEncouragement', runMeetupRsvpEncouragement);
   registerHandler('runPostMeetupConnect', runPostMeetupConnect);
   registerHandler('runCommunityCreatorDigest', runCommunityCreatorDigest);
