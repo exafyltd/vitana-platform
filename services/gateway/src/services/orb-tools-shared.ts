@@ -26,6 +26,9 @@
  */
 
 import { SupabaseClient } from '@supabase/supabase-js';
+import { shouldBlockTool } from './intelligence/role-policy-enforcer';
+// VTID-03255 — Journey Foundation voice tool: writes every answer + returns next move.
+import { tool_record_journey_answer } from './journey-foundation/record-journey-answer-tool';
 import { fetchVitanaIndexForProfiler } from './user-context-profiler';
 import { resolvePillarKey } from '../lib/vitana-pillars';
 import {
@@ -33,6 +36,9 @@ import {
   lookupByAlias,
   lookupByRoute,
   suggestSimilar,
+  suggestSimilarScored,
+  FUZZY_NAV_MIN_SCORE,
+  resolveEffectiveRoles,
   getContent,
   type NavCatalogEntry,
 } from '../lib/navigation-catalog';
@@ -2489,22 +2495,52 @@ export async function tool_navigate_to_screen(
   // Three-tier resolution: exact → alias → fuzzy.
   let entry: NavCatalogEntry | null = lookupScreen(screenIdArg) || lookupByAlias(screenIdArg);
   if (!entry) {
-    const similar = suggestSimilar(screenIdArg, 1);
-    if (similar.length > 0) {
-      entry = similar[0];
+    // VTID-NAV-CONFIDENCE (VTID-03258): only auto-resolve a fuzzy match when it clears the
+    // confidence floor. A weak best-match (title-word-only overlap) is NOT a
+    // license to teleport the user to "the nearest thing" — that was the
+    // wrong-screen-redirect class. Below the floor we reject and let the model
+    // ask, surfacing the near-misses as suggestions.
+    const scored = suggestSimilarScored(screenIdArg, 3);
+    const best = scored[0];
+    if (best && best.score >= FUZZY_NAV_MIN_SCORE) {
+      entry = best.entry;
       emitOasisEvent({
         vtid: 'VTID-NAV-01',
         type: 'orb.navigator.blocked',
         source: 'orb-tools-shared',
         status: 'info',
-        message: `Fuzzy-resolved screen_id '${screenIdArg}' → '${entry.screen_id}'`,
+        message: `Fuzzy-resolved screen_id '${screenIdArg}' → '${entry.screen_id}' (score ${best.score})`,
         payload: {
           session_id: sessionId,
           attempted_screen_id: screenIdArg,
           resolved_screen_id: entry.screen_id,
+          fuzzy_score: best.score,
           error_kind: 'fuzzy_resolved',
         },
       }).catch(() => {});
+    } else if (best) {
+      // Near-misses exist but none are confident enough — do NOT navigate.
+      emitOasisEvent({
+        vtid: 'VTID-NAV-CONFIDENCE',
+        type: 'orb.navigator.blocked',
+        source: 'orb-tools-shared',
+        status: 'warning',
+        message: `Low-confidence screen_id '${screenIdArg}' (best ${best.entry.screen_id} score ${best.score} < ${FUZZY_NAV_MIN_SCORE})`,
+        payload: {
+          session_id: sessionId,
+          attempted_screen_id: screenIdArg,
+          best_candidate: best.entry.screen_id,
+          fuzzy_score: best.score,
+          error_kind: 'low_confidence',
+          suggestions: scored.map((s) => s.entry.screen_id),
+        },
+      }).catch(() => {});
+      return {
+        ok: false,
+        error: `I'm not confident which screen '${screenIdArg}' means. Ask the user which they want — closest matches: ${scored
+          .map((s) => s.entry.screen_id)
+          .join(', ')}. Do not navigate until they confirm.`,
+      };
     }
   }
   if (!entry) {
@@ -2544,6 +2580,39 @@ export async function tool_navigate_to_screen(
     return {
       ok: false,
       error: `Screen '${screenIdArg}' requires the user to be signed in. Tell them briefly and offer to take them to registration instead.`,
+    };
+  }
+
+  // GATE 1.5: surface-role scoping (VTID-NAV-SURFACE / VTID-03258). The ORB Navigator must
+  // never cross surfaces: a community user on vitanaland is never teleported
+  // into /admin or /command-hub, and a developer in Command Hub is never sent
+  // to a community route Command Hub can't render. The session's surface is
+  // derived from current_route (NOT the DB role — same convention as the
+  // consult path), and the entry's effective roles come from the catalog. This
+  // is the direct-navigate counterpart to the surface scoping consultNavigator
+  // already applies, and the primary guard against wrong-screen redirects.
+  const surfaceRole = deriveNavigatorSurfaceRole(currentRoute);
+  const effectiveRoles = resolveEffectiveRoles(entry);
+  if (!effectiveRoles.includes(surfaceRole)) {
+    emitOasisEvent({
+      vtid: 'VTID-NAV-SURFACE',
+      type: 'orb.navigator.blocked',
+      source: 'orb-tools-shared',
+      status: 'warning',
+      message: `Cross-surface navigation blocked: '${entry.screen_id}' (roles ${effectiveRoles.join('/')}) from ${surfaceRole} surface`,
+      payload: {
+        session_id: sessionId,
+        attempted_screen_id: screenIdArg,
+        resolved_screen_id: entry.screen_id,
+        error_kind: 'wrong_surface',
+        session_surface_role: surfaceRole,
+        entry_roles: effectiveRoles,
+        current_route: currentRoute,
+      },
+    }).catch(() => {});
+    return {
+      ok: false,
+      error: `Screen '${entry.screen_id}' belongs to a different surface (${effectiveRoles.join('/')}) than the user's current one (${surfaceRole}). Do not navigate there. Stay within the user's current surface or answer in voice.`,
     };
   }
 
@@ -3862,6 +3931,10 @@ export const ORB_TOOL_REGISTRY: Record<string, OrbToolHandler> = {
   // the LLM can answer "what is my Life Compass goal?" / "remind me what I'm
   // working toward" with the canonical value instead of inventing one.
   get_life_compass: tool_get_life_compass,
+  // VTID-03255 — Journey Foundation: records every voice answer, writes the real
+  // fact (life_compass goal / economy stance / focus / teacher ack), re-verifies,
+  // and returns the next move. Reachable from Vertex, LiveKit, and /api/v1/orb/tool.
+  record_journey_answer: tool_record_journey_answer,
 };
 
 export const ORB_TOOL_NAMES = Object.keys(ORB_TOOL_REGISTRY);
@@ -3881,6 +3954,24 @@ export async function dispatchOrbTool(
   if (!handler) {
     return { ok: false, error: `unknown tool: ${name}` };
   }
+
+  // BOOTSTRAP-ROLE-AUTH-ENFORCER — role-policy shadow hook (deny-by-default).
+  //
+  // Non-invasive: with FEATURE_ROLE_POLICY_ENFORCE off (default) this only
+  // LOGS a violation (shadow) and NEVER blocks. With the flag on it would
+  // return a deny result before dispatch.
+  //
+  // INTEGRATION TODO: the ORB tool registry names here (e.g. 'search_memory',
+  // 'play_music') are NOT yet 1:1 with the assistant-role-registry tool
+  // allowlist names (e.g. 'get_recent_memory'). A name-mapping table
+  // (orb-tool-name -> registry-tool-name) must land BEFORE the enforce flag
+  // is flipped to staging+prod, otherwise legitimate tools would be denied.
+  // Until that mapping exists this hook is shadow-only telemetry; do NOT
+  // enable FEATURE_ROLE_POLICY_ENFORCE in prod. See role-policy-enforcer.ts.
+  if (shouldBlockTool(identity.role, name, { surface: 'orb-tool', session_id: identity.session_id ?? undefined, actor_id: identity.user_id })) {
+    return { ok: false, error: `tool '${name}' not permitted for role '${identity.role ?? '(null)'}'` };
+  }
+
   try {
     return await handler(args, identity, sb);
   } catch (e: unknown) {

@@ -32,7 +32,15 @@ export type LatencyPhase =
   | 'transcript_ready'
   | 'tool_dispatch'
   | 'tool_response'
-  | 'audio_out_first_chunk';
+  | 'audio_out_first_chunk'
+  // ORB-CONVERSATION-LATENCY: session-establishment (turn 0) phases — the
+  // click-to-first-greeting-audio critical path. Recorded on a dedicated
+  // establish tracker (separate from the per-turn tracker) so
+  // time_to_first_audio_ms and its breakdown are measurable per session.
+  | 'upstream_connected'
+  | 'context_awaited'
+  | 'setup_sent'
+  | 'greeting_sent';
 
 export interface LatencyMark {
   phase: LatencyPhase;

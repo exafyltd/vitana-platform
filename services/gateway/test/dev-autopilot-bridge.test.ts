@@ -10,7 +10,10 @@
 
 import {
   decideBridgeAction,
+  resolveRetryThreshold,
+  parseThreshold,
   CHILD_SPAWN_CONFIDENCE_THRESHOLD,
+  RETRY_THRESHOLD_BY_STAGE,
 } from '../src/services/dev-autopilot-bridge';
 
 // =============================================================================
@@ -108,6 +111,69 @@ describe('decideBridgeAction', () => {
       max_auto_fix_depth: 2,
       kill_switch: false,
     })).toEqual({ action: 'spawn_child' });
+  });
+
+  it('no failure_stage falls back to the global threshold (backward compatible)', () => {
+    // 0.28 < global 0.3 → escalate; same input with no stage as the legacy path.
+    expect(decideBridgeAction({
+      confidence_numeric: 0.28,
+      auto_fix_depth: 0,
+      max_auto_fix_depth: 2,
+      kill_switch: false,
+    })).toEqual({ action: 'escalate', reason: 'low_confidence' });
+  });
+});
+
+// =============================================================================
+// Per-stage confidence calibration (Step 4)
+// =============================================================================
+
+describe('resolveRetryThreshold + per-stage calibration', () => {
+  it('uses a low bar for CI and a high bar for verification', () => {
+    // ci ≤ deploy ≤ verification: retry CI aggressively, gate verification hard.
+    expect(RETRY_THRESHOLD_BY_STAGE.ci).toBe(0.25);
+    expect(RETRY_THRESHOLD_BY_STAGE.deploy).toBe(0.35);
+    expect(RETRY_THRESHOLD_BY_STAGE.verification).toBe(0.5);
+    expect(RETRY_THRESHOLD_BY_STAGE.ci).toBeLessThan(RETRY_THRESHOLD_BY_STAGE.verification);
+  });
+
+  it('environmental_blocker never retries regardless of confidence', () => {
+    expect(resolveRetryThreshold('verification', 'environmental_blocker')).toBe(Number.POSITIVE_INFINITY);
+    expect(decideBridgeAction({
+      confidence_numeric: 1,
+      auto_fix_depth: 0,
+      max_auto_fix_depth: 2,
+      kill_switch: false,
+      failure_class: 'environmental_blocker',
+    })).toEqual({ action: 'escalate', reason: 'low_confidence' });
+  });
+
+  it('same confidence: retries a CI failure but escalates a verification failure', () => {
+    const base = { confidence_numeric: 0.3, auto_fix_depth: 0, max_auto_fix_depth: 2, kill_switch: false };
+    // 0.3 ≥ ci bar (0.25) → spawn; 0.3 < verification bar (0.5) → escalate.
+    expect(decideBridgeAction({ ...base, failure_stage: 'ci' })).toEqual({ action: 'spawn_child' });
+    expect(decideBridgeAction({ ...base, failure_stage: 'verification' })).toEqual({ action: 'escalate', reason: 'low_confidence' });
+  });
+
+  it('parseThreshold falls back to the default for non-finite / missing overrides (Codex P2)', () => {
+    // A non-numeric override must NOT become NaN — otherwise `confidence < NaN`
+    // is always false and the stage retries regardless of confidence.
+    expect(parseThreshold('false', 0.5)).toBe(0.5);
+    expect(parseThreshold('', 0.5)).toBe(0.5);
+    expect(parseThreshold(undefined, 0.5)).toBe(0.5);
+    expect(parseThreshold('not-a-number', 0.5)).toBe(0.5);
+    // Valid numeric overrides are honoured.
+    expect(parseThreshold('0.4', 0.5)).toBe(0.4);
+    expect(parseThreshold('0', 0.5)).toBe(0);
+  });
+
+  it('depth cap and kill switch still take precedence over the per-stage bar', () => {
+    expect(decideBridgeAction({
+      confidence_numeric: 0.99, auto_fix_depth: 2, max_auto_fix_depth: 2, kill_switch: false, failure_stage: 'ci',
+    })).toEqual({ action: 'escalate', reason: 'depth_cap_reached' });
+    expect(decideBridgeAction({
+      confidence_numeric: 0.99, auto_fix_depth: 0, max_auto_fix_depth: 2, kill_switch: true, failure_stage: 'ci',
+    })).toEqual({ action: 'escalate', reason: 'kill_switch_armed' });
   });
 });
 

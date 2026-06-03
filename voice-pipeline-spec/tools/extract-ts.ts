@@ -64,6 +64,29 @@ function main(): void {
       }
     }
 
+    // Some tools are dispatched via an `if (toolName === 'navigate') { ... }`
+    // chain rather than a switch — e.g. the unified Navigator tools
+    // (navigate / get_current_screen / navigate_to_screen). Match ONLY the
+    // exact `<dispatcher> === '<literal>'` idiom where the identifier on one
+    // side is a known tool dispatcher (toolName / tool_name / name), so we
+    // don't pick up unrelated string comparisons elsewhere in the file.
+    if (node.getKind() === SyntaxKind.BinaryExpression) {
+      const bin = node.asKindOrThrow(SyntaxKind.BinaryExpression);
+      const op = bin.getOperatorToken().getKind();
+      if (op === SyntaxKind.EqualsEqualsEqualsToken || op === SyntaxKind.EqualsEqualsToken) {
+        const left = bin.getLeft();
+        const right = bin.getRight();
+        const idSide = Node.isIdentifier(left) ? left : Node.isIdentifier(right) ? right : null;
+        const litSide = Node.isStringLiteral(left) ? left : Node.isStringLiteral(right) ? right : null;
+        if (idSide && litSide && TOOL_DISPATCHER_DISCRIMINANTS.has(idSide.getText())) {
+          const name = litSide.getLiteralValue();
+          if (/^[a-z][a-z0-9_]*$/.test(name)) {
+            tools.push({ name, line: bin.getStartLineNumber() });
+          }
+        }
+      }
+    }
+
     if (node.getKind() === SyntaxKind.CallExpression) {
       const call = node.asKindOrThrow(SyntaxKind.CallExpression);
       const callee = call.getExpression().getText();
