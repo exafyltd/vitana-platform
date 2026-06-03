@@ -1,0 +1,23 @@
+{
+  "fixture_id": "synthetic-018-specialist-handoff",
+  "source": "synthetic",
+  "captured_at": "2026-06-03T00:00:00Z",
+  "turn_count": 2,
+  "notes": "Specialist routing / report to a pillar agent.",
+  "turns": [
+    {
+      "turn": 1,
+      "kind": "voice",
+      "user_input": "I've been having really bad headaches every afternoon",
+      "expected_tool": "report_to_specialist",
+      "expected_intent": "goal.specialist"
+    },
+    {
+      "turn": 2,
+      "kind": "voice",
+      "user_input": "Ask the nutrition agent what I should eat for more energy",
+      "expected_tool": "ask_pillar_agent",
+      "expected_intent": "goal.pillar_agent"
+    }
+  ]
+}
