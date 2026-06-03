@@ -72,6 +72,17 @@ import {
 import { emitOasisEvent } from '../../../services/oasis-event-service';
 import { defaultWakeTimelineRecorder } from '../../../services/wake-timeline/wake-timeline-recorder';
 import { decideWakeBriefForSession } from '../../../services/wake-brief-wiring';
+// VTID-03255 — write a Journey Foundation session summary at session end.
+import { createClient as createJourneySupabaseClient } from '@supabase/supabase-js';
+import { recordJourneySessionSummary } from '../../../services/journey-foundation/session-summary-writer';
+import { buildJourneyFoundationSnapshot } from '../../../services/journey-foundation/journey-foundation-state';
+// VTID-03210: single structured turn-1 wake-decision observability line.
+import {
+  logWakeDecisionSnapshot,
+  type FirstNameSource,
+} from '../instruction/wake-decision-snapshot';
+// VTID-03248 (R1 slice 1): single canonical spoken-first-name resolver.
+import { resolveSpokenFirstName } from '../../../services/awareness-unified-context';
 import { recordAgentHeartbeat } from '../../../routes/agents-registry';
 import {
   fetchAdminBriefingBlock,
@@ -627,6 +638,47 @@ export async function handleLiveSessionStart(
   console.log(`[VTID-ANON] Session ${sessionId}: hasJwtIdentity=${hasJwtIdentity}, isAnonymous=${isAnonymousSession}, req.identity.user_id=${req.identity?.user_id || 'none'}, orbIdentity.user_id=${orbIdentity?.user_id || 'none'}, bootstrapIdentity=${bootstrapIdentity ? bootstrapIdentity.user_id.substring(0, 8) : 'null'}`);
   console.log(`[VTID-CONTEXT] Client context: city=${clientContext.city || 'unknown'}, country=${clientContext.country || 'unknown'}, time=${clientContext.localTime || 'unknown'}, device=${clientContext.device || 'unknown'}, anonymous=${isAnonymousSession}`);
 
+  // DEV-COMHU-0502 — ORB Recovery 1 (auth contract): structured identity
+  // resolution telemetry. This is the OASIS signal that lets the Phase D
+  // cockpit count "anonymous sessions on an authenticated surface" — the
+  // metric that exposes the widget-side anonymous-drift bug from the outside.
+  // Fire-and-forget: never block session start on telemetry.
+  {
+    const idResolvedRoute =
+      typeof (body as any).current_route === 'string' ? (body as any).current_route : '';
+    const idResolvedSurface = clientContext.isMobile
+      ? 'vitanaland'
+      : idResolvedRoute.startsWith('/command-hub')
+        ? 'command-hub'
+        : idResolvedRoute.startsWith('/admin')
+          ? 'admin'
+          : 'vitanaland';
+    emitOasisEvent({
+      vtid: 'DEV-COMHU-0502',
+      type: 'orb.session.identity.resolved',
+      source: 'orb-live',
+      status: isAnonymousSession ? 'warning' : 'info',
+      message: isAnonymousSession
+        ? `session_start_anonymous (surface=${idResolvedSurface})`
+        : `session_start_authenticated (surface=${idResolvedSurface})`,
+      payload: {
+        session_id: sessionId,
+        surface: idResolvedSurface,
+        has_authorization_header: !!req.headers.authorization,
+        auth_valid: hasJwtIdentity,
+        is_anonymous: isAnonymousSession,
+        tenant_id: req.identity?.tenant_id ?? null,
+        user_id: req.identity?.user_id ?? null,
+        active_role: (req.identity as any)?.active_role ?? null,
+        // Flag the drift case explicitly: an authenticated surface running anonymous.
+        anonymous_on_authenticated_surface:
+          isAnonymousSession && (idResolvedSurface === 'command-hub' || idResolvedSurface === 'admin'),
+      },
+      actor_id: req.identity?.user_id ?? undefined,
+      surface: 'orb',
+    }).catch(() => {});
+  }
+
   // Resolve language priority:
   // 1. Client-requested lang
   // 2. Stored preference (parallel fetch)
@@ -707,10 +759,21 @@ export async function handleLiveSessionStart(
             return null;
           })
         : Promise.resolve(null),
+      // VTID-03201: proactive Autopilot offer. Fetched in parallel (no critical-path
+      // cost) so Vitana can offer "you have things waiting in your Autopilot, want me
+      // to run through them?" Only appended for community sessions (gated in .then).
+      // Returns '' for users with an empty queue, so non-community users cost just one
+      // empty query and no re-rank.
+      import('../../../routes/autopilot-recommendations')
+        .then((m) => m.buildAutopilotOfferBlock(bootstrapIdentity.user_id))
+        .catch((err) => {
+          console.warn(`[VTID-03201] SSE autopilot offer fetch failed: ${err?.message}`);
+          return '';
+        }),
     ]);
 
     contextReadyPromise = bootstrapWork
-      .then(async ([bootstrapResult, fetchedSseRole, fetchedSessionInfo, storedLangResult, adminBriefing]) => {
+      .then(async ([bootstrapResult, fetchedSseRole, fetchedSessionInfo, storedLangResult, adminBriefing, autopilotOffer]) => {
         let resolvedRole = fetchedSseRole;
         const sseRoute = typeof (body as any).current_route === 'string' ? (body as any).current_route : '';
         if (sseRoute.startsWith('/command-hub') && (!resolvedRole || resolvedRole === 'community')) {
@@ -723,6 +786,12 @@ export async function handleLiveSessionStart(
         }
 
         let finalContext = bootstrapResult.contextInstruction || '';
+        // VTID-03201: community sessions get the proactive Autopilot offer so
+        // Vitana raises it unprompted. resolvedRole already folds mobile → community.
+        if (resolvedRole === 'community' && autopilotOffer) {
+          finalContext = finalContext ? `${finalContext}\n\n${autopilotOffer}` : autopilotOffer;
+          console.log(`[VTID-03201] Autopilot proactive offer injected into SSE session ${sessionId} (${autopilotOffer.length} chars)`);
+        }
         if (isAdminRole(resolvedRole) && adminBriefing) {
           finalContext = finalContext ? `${finalContext}\n\n${adminBriefing}` : adminBriefing;
           emitOasisEvent({
@@ -790,6 +859,7 @@ export async function handleLiveSessionStart(
     createdAt: new Date(),
     lastActivity: new Date(),
     audioInChunks: 0,
+    audioInForwarded: 0, // VTID-VOICE-FWD: only ++ when a chunk is actually sent upstream
     videoInFrames: 0,
     audioOutChunks: 0,
     turn_count: 0,
@@ -982,8 +1052,16 @@ export async function handleLiveSessionStart(
   }
   (session as any).decisionContext = decisionContextVertex;
 
+  // VTID-03210: hoisted out of the wake-brief try below so the single
+  // turn-1 wake-decision snapshot (emitted after the journey-greeting
+  // block) can read them outside that try's scope.
+  let firstName: string | null = null;
+  let firstNameSource: FirstNameSource = 'none';
+  let wakeBucketForSnapshot: string | null = null;
+
   try {
     const temporal = deps.describeTimeSince(session.lastSessionInfo);
+    wakeBucketForSnapshot = temporal.bucket;
     const { getSupabase } = await import('../../../lib/supabase');
     const supabaseClient = getSupabase() ?? undefined;
     const { fetchWakeCadenceSignals } = await import('../../../services/wake-cadence-signals');
@@ -1001,7 +1079,10 @@ export async function handleLiveSessionStart(
     //      name in the email handle, e.g. "dragan@..." → "dragan").
     // Best-effort: every fetch failure leaves firstName null, which sends
     // the Teacher to the no-name pool (still correct, just less personal).
-    let firstName: string | null = null;
+    // VTID-03210: firstName + firstNameSource are declared in the outer
+    // scope (above this try). firstNameSource tracks which source resolved
+    // the name (memory_facts -> app_users -> email) so the documented
+    // multi-source name-disagreement risk is observable in the snapshot.
     if (supabaseClient && orbIdentity?.tenant_id && orbIdentity?.user_id) {
       const [cadenceResult, factResult, profileResult] = await Promise.allSettled([
         fetchWakeCadenceSignals({
@@ -1024,24 +1105,26 @@ export async function handleLiveSessionStart(
       if (cadenceResult.status === 'fulfilled') {
         cadenceSignals = cadenceResult.value;
       }
-      let fullName = '';
-      if (factResult.status === 'fulfilled' && factResult.value && !factResult.value.error) {
-        const v = (factResult.value.data as { fact_value?: string | null } | null)?.fact_value;
-        if (typeof v === 'string' && v.trim().length > 0) fullName = v.trim();
-      }
-      if (!fullName && profileResult.status === 'fulfilled' && profileResult.value && !profileResult.value.error) {
-        const v = (profileResult.value.data as { display_name?: string | null } | null)?.display_name;
-        if (typeof v === 'string' && v.trim().length > 0) fullName = v.trim();
-      }
-      if (fullName) {
-        firstName = fullName.split(/\s+/)[0] || null;
-      } else if (orbIdentity.email && orbIdentity.email.includes('@')) {
-        // Last-resort: take the email local part. Strip digits / underscores
-        // so "dragan1" → "dragan", "d_stevanovic" → "stevanovic" (best effort).
-        const local = orbIdentity.email.split('@')[0] || '';
-        const stripped = local.replace(/[0-9_.+\-]+/g, '').trim();
-        if (stripped.length >= 2) firstName = stripped[0].toUpperCase() + stripped.slice(1);
-      }
+      // VTID-03248 (R1 slice 1): resolve the spoken first name through the
+      // single canonical resolver. Behavior-identical to the previous inline
+      // logic (memory_facts → app_users → email local-part), now shared so
+      // LiveKit + every other call site resolve the SAME name with the SAME
+      // precedence (the audit found this field diverging 3-4× per session).
+      const factValue =
+        factResult.status === 'fulfilled' && factResult.value && !factResult.value.error
+          ? (factResult.value.data as { fact_value?: string | null } | null)?.fact_value ?? null
+          : null;
+      const profileValue =
+        profileResult.status === 'fulfilled' && profileResult.value && !profileResult.value.error
+          ? (profileResult.value.data as { display_name?: string | null } | null)?.display_name ?? null
+          : null;
+      const resolvedName = resolveSpokenFirstName({
+        memoryFactUserName: factValue,
+        displayName: profileValue,
+        email: orbIdentity.email ?? null,
+      });
+      firstName = resolvedName.firstName;
+      firstNameSource = resolvedName.source;
     }
     wakeBriefDecision = await decideWakeBriefForSession({
       sessionId,
@@ -1123,50 +1206,40 @@ export async function handleLiveSessionStart(
         `[VTID-03079/VTID-03101] Vertex wake-brief stored on session.wakeBriefOverrideBlock (decision_id=${wakeBriefDecision?.decisionId}, source=${picked.evidence?.find((e) => e.kind?.startsWith('source:'))?.kind || 'voice_wake_brief'}, block_chars=${block.length})`,
       );
 
-      // VTID-03112 (T1): when the wake-brief winner is the Teacher
-      // (feature_discovery kind), fetch the manual content + the next
-      // curriculum entries so the system_instruction can run Teacher
-      // Mode for the WHOLE session — not just turn 1. The model
-      // interprets every subsequent user reply IN CONTEXT (no regex,
-      // no keyword tables) and decides what to do next. Best-effort
-      // — any failure leaves teacherModeContent null and the session
-      // degrades to the legacy one-shot Teacher behavior.
-      const winnerEvidence = picked.evidence ?? [];
-      const sourceKind = winnerEvidence.find((e) => e.kind?.startsWith('source:'))?.kind || '';
-      const isTeacherWinner =
-        picked.kind === 'feature_discovery'
-        || sourceKind === 'source:feature_discovery_teacher';
-      if (isTeacherWinner && supabaseClient && orbIdentity?.tenant_id && orbIdentity?.user_id) {
-        const ctaPayload = (picked as { cta?: { payload?: { capability_key?: string } } }).cta?.payload;
-        const activeCapabilityKey = ctaPayload?.capability_key;
-        if (typeof activeCapabilityKey === 'string' && activeCapabilityKey.length > 0) {
-          try {
-            const { resolveTeacherModeContent } = await import(
-              '../../teacher/teacher-content-resolver'
-            );
-            const teacherContent = await resolveTeacherModeContent({
-              supabase: supabaseClient,
-              tenantId: orbIdentity.tenant_id,
-              userId: orbIdentity.user_id,
-              activeCapabilityKey,
-              // VTID-03120: pass user lang so the resolver picks the
-              // right teacher_intro_de / _en script for the deterministic
-              // Say-exactly intro pattern.
-              lang,
-            });
-            if (teacherContent) {
-              (session as any).teacherModeContent = teacherContent;
-              (session as any).teacherModeFirstName = firstName;
-              console.log(
-                `[VTID-03112] Teacher Mode content resolved for ${sessionId}: capability=${teacherContent.active_capability_key} manual_chars=${teacherContent.active_manual_content.length} remaining=${teacherContent.remaining_capabilities.length}`,
-              );
-            }
-          } catch (exc) {
-            console.warn(
-              `[VTID-03112] Teacher Mode resolver failed (non-fatal): ${(exc as Error).message}`,
-            );
-          }
-        }
+      // VTID-03218 (R3): Teacher Mode content is now bundled ATOMICALLY on
+      // the winning candidate by the provider (no separate post-win fetch).
+      // If the provider couldn't resolve content it returned 'errored' and
+      // never won the ranker — so a Teacher winner here ALWAYS carries
+      // content. This closes the VTID-03112 bug where the permission-asking
+      // opener fired with teacherModeContent=null and Gemini closed the
+      // overlay the moment the user said yes (no turn-2+ instructions).
+      const bundledTeacherMode = (picked as {
+        teacherMode?:
+          | import('../../teacher/teacher-content-resolver').TeacherModeContent
+          | null;
+      }).teacherMode ?? null;
+      if (bundledTeacherMode) {
+        (session as any).teacherModeContent = bundledTeacherMode;
+        (session as any).teacherModeFirstName = firstName;
+        console.log(
+          `[VTID-03218] Teacher Mode content (bundled on candidate) for ${sessionId}: capability=${bundledTeacherMode.active_capability_key} manual_chars=${bundledTeacherMode.active_manual_content.length} remaining=${bundledTeacherMode.remaining_capabilities.length}`,
+        );
+      }
+
+      // VTID-03257 (Fix-1): when the journey-guide won, bundle its GUIDE-MODE
+      // content onto the session so the envelope injects the lead-the-journey
+      // block (proactive, one-step, do-it-together, verify-on-claim, never
+      // "what do you want"). Mirrors the Teacher bundling above.
+      const bundledJourneyGuide = (picked as {
+        journeyGuide?:
+          | import('../../../services/assistant-continuation/providers/journey-guide').JourneyGuideContent
+          | null;
+      }).journeyGuide ?? null;
+      if (bundledJourneyGuide) {
+        (session as any).journeyGuideContent = bundledJourneyGuide;
+        console.log(
+          `[VTID-03257] Journey guide leading for ${sessionId}: step=${bundledJourneyGuide.step_key} (${bundledJourneyGuide.step_type}) title="${bundledJourneyGuide.step_title}"`,
+        );
       }
     }
   } catch (e) {
@@ -1217,12 +1290,25 @@ export async function handleLiveSessionStart(
             const dn = (prof?.display_name as string | undefined) ?? null;
             if (dn) nameForGreeting = dn.split(/\s+/)[0] || null;
           } catch { /* leave nameForGreeting null */ }
+          // VTID-03255 — the one guided next move, so the morning greeting
+          // drives the journey. Best-effort: never block the greeting on it.
+          let journeyNextMove: { title: string; benefit: string } | null = null;
+          try {
+            const jfSnap = await buildJourneyFoundationSnapshot(supa, orbIdentity.user_id);
+            if (jfSnap.current_next_step) {
+              journeyNextMove = {
+                title: jfSnap.current_next_step.title,
+                benefit: jfSnap.current_next_step.benefit,
+              };
+            }
+          } catch { /* leave journeyNextMove null */ }
           const result = buildJourneyGreetingBlock({
             journey,
             lifeCompassGoalText: lifeCompass?.primary_goal ?? null,
             firstName: nameForGreeting,
             lang,
             todayDateIso,
+            nextMove: journeyNextMove,
           });
           if (result.block && result.meta) {
             (session as any).journeyGreetingBlock = result.block;
@@ -1250,6 +1336,16 @@ export async function handleLiveSessionStart(
             // the Teacher Mode block so it cedes turn 1 cleanly, or (b)
             // suppressing the wake-brief's Teacher-winner selection
             // upstream when journey-greeting will fire.
+            // TODO(R1 slice): migrate the plan_phase + life_compass-state
+            // derivation onto resolveJourneyPlanPhase / resolveLifeCompassState
+            // (services/awareness-unified-context.ts). NOT done here because it
+            // is NOT a no-op: the live derivation in new-day-overview-payload.ts
+            // is 3-way (it folds a past target_date into on_personalized_goal +
+            // a separate days_past_deadline), whereas the canonical resolver is
+            // the §1.4 4-way that promotes a past target_date to 'goal_completed'.
+            // The 'set'/'unset' below is also object-presence, not the canonical
+            // primary_goal/set_at rule. Migrating either changes behavior, so it
+            // waits for the R7 goal-completion provider that consumes the 4th phase.
             console.log(
               `[VTID-03154] Journey greeting prepared for ${sessionId}: kind=${result.meta.kind} day=${journey.day_in_journey}/${journey.total_days} phase=${journey.current_wave?.id ?? 'none'} life_compass=${lifeCompass ? 'set' : 'unset'}`,
             );
@@ -1272,6 +1368,26 @@ export async function handleLiveSessionStart(
       `[VTID-03154] journey-greeting resolution failed (non-fatal) for ${sessionId}: ${(e as Error).message}`,
     );
   }
+
+  // VTID-03210: emit ONE structured turn-1 wake-decision snapshot. Runs
+  // after both the wake-brief and journey-greeting blocks are resolved so
+  // turn1_collision can see all three turn-1 blocks at once. Observability
+  // only — never throws, mutates nothing.
+  logWakeDecisionSnapshot({
+    transport: 'vertex',
+    sessionId,
+    decision: wakeBriefDecision,
+    blocks: {
+      wakeBriefOverride: !!session.wakeBriefOverrideBlock,
+      teacherModeContent: !!(session as any).teacherModeContent,
+      journeyGreeting: !!(session as any).journeyGreetingBlock,
+    },
+    firstName: { value: firstName, source: firstNameSource },
+    lang,
+    bucket: wakeBucketForSnapshot,
+    isReconnect: isReconnectStart,
+    timezonePresent: !!session.clientContext?.timezone,
+  });
 
   // Emit OASIS event with identity context
   await deps.emitLiveSessionEvent('vtid.live.session.start', {
@@ -1441,6 +1557,7 @@ export async function handleLiveSessionStop(
     user_id: session.identity?.user_id || null,
     tenant_id: session.identity?.tenant_id || null,
     audio_in_chunks: session.audioInChunks,
+    audio_in_forwarded_chunks: session.audioInForwarded, // VTID-VOICE-FWD (Track A)
     video_in_frames: session.videoInFrames,
     audio_out_chunks: session.audioOutChunks,
     duration_ms: Date.now() - session.createdAt.getTime(),
@@ -1448,6 +1565,20 @@ export async function handleLiveSessionStop(
     user_turns: session.transcriptTurns.filter((t) => t.role === 'user').length,
     model_turns: session.transcriptTurns.filter((t) => t.role === 'assistant').length,
   });
+
+  // VTID-03255: write a Journey Foundation session summary (fire-and-forget).
+  // Feeds the "since we last spoke" line + morning greeting on next open. Never
+  // allowed to affect teardown — failures are swallowed inside the writer.
+  if (session.identity?.user_id) {
+    const jfUrl = process.env.SUPABASE_URL;
+    const jfKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE;
+    if (jfUrl && jfKey) {
+      const jfClient = createJourneySupabaseClient(jfUrl, jfKey, {
+        auth: { autoRefreshToken: false, persistSession: false },
+      });
+      void recordJourneySessionSummary(jfClient, session.identity.user_id, session_id);
+    }
+  }
 
   // VTID-01959: voice self-healing dispatch (mode-gated for /report path).
   // VTID-01994: pass session metrics for mode-independent quality classifier.
@@ -1457,6 +1588,7 @@ export async function handleLiveSessionStop(
     metadata: { synthetic: (session as any).synthetic === true },
     sessionMetrics: {
       audio_in_chunks: session.audioInChunks,
+      audio_in_forwarded: session.audioInForwarded, // VTID-VOICE-FWD (Track A)
       audio_out_chunks: session.audioOutChunks,
       duration_ms: Date.now() - session.createdAt.getTime(),
       turn_count: session.turn_count,
@@ -1678,6 +1810,10 @@ export async function handleLiveStreamSend(
           body.mime || 'audio/pcm;rate=16000',
         );
         if (sent) {
+          // VTID-VOICE-FWD (Track A): forwarded-only count (SSE path mirror of
+          // the WS path in orb-live.ts). Only chunks the model actually
+          // received; the three drop gates above return before reaching here.
+          session.audioInForwarded++;
           session.lastAudioForwardedTime = Date.now();
           // VTID-FORWARDING-WATCHDOG + VTID-01984 (R5) sliding logic
           if (!session.isModelSpeaking) {

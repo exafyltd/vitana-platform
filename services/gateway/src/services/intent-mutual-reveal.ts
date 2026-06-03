@@ -40,6 +40,10 @@ export interface RedactedMatch extends Omit<MatchRow, 'vitana_id_a' | 'vitana_id
   partner_display_name?: string | null;
   partner_avatar_url?: string | null;
   partner_gender?: 'male' | 'female' | null;
+  // E6 follow-up — counterparty age in whole years, derived from
+  // profiles.date_of_birth. null when redacted, hidden, unset, or invalid.
+  // Lets the Find-a-Match age-range filter operate on real data.
+  partner_age?: number | null;
   // BOOTSTRAP-INTENT-COVER-GEN — landscape cover photo for the
   // counterparty's intent. User-uploaded or auto-generated.
   partner_match_cover_url?: string | null;

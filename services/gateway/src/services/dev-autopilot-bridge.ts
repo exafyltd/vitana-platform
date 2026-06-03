@@ -39,6 +39,7 @@ import {
 } from './self-healing-triage-service';
 import { emitOasisEvent } from './oasis-event-service';
 import { isEnvironmentalBlocker } from './dev-autopilot-self-heal-log';
+import { createRevertPullRequest, mergePullRequest } from './github-service';
 
 const LOG_PREFIX = '[dev-autopilot-bridge]';
 const BRIDGE_VTID = 'VTID-DEV-AUTOPILOT';
@@ -57,9 +58,56 @@ const GITHUB_REPO =
 // the autopilot retries more aggressively by default — the user goal is
 // "self-improving + self-healing autonomously." Failed retries still
 // escalate at the depth cap.
-const CHILD_SPAWN_CONFIDENCE_THRESHOLD = Number.parseFloat(
-  process.env.AUTOPILOT_RETRY_CONFIDENCE_THRESHOLD || '0.3',
+/**
+ * Parse a confidence-threshold env override, falling back to `fallback` for
+ * missing, empty, or non-finite values. Without the finite guard a typo like
+ * `AUTOPILOT_RETRY_CONFIDENCE_VERIFICATION=false` parses to NaN, and since
+ * `confidence < NaN` is always false the stage would spawn retries regardless
+ * of confidence — silently defeating the calibration. Exported for tests.
+ */
+export function parseThreshold(raw: string | undefined, fallback: number): number {
+  if (raw === undefined || raw.trim() === '') return fallback;
+  const n = Number.parseFloat(raw);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+const CHILD_SPAWN_CONFIDENCE_THRESHOLD = parseThreshold(
+  process.env.AUTOPILOT_RETRY_CONFIDENCE_THRESHOLD,
+  0.3,
 );
+
+/**
+ * Per-stage retry confidence thresholds (Step 4 calibration). A single global
+ * gate is miscalibrated: the odds that an autonomous retry actually fixes the
+ * problem vary a lot by WHERE the fix failed.
+ *   - ci: lint/test/typecheck failures are usually a productive code retry →
+ *     retry aggressively (low bar).
+ *   - deploy: often flaky / infra-ish → medium bar.
+ *   - verification: the fix already deployed but didn't clear the original
+ *     failure (or regressed production) — the riskiest case to retry blindly,
+ *     so demand higher agent confidence before spending another attempt.
+ * Each is overridable via env; unknown stages fall back to the global default.
+ */
+const RETRY_THRESHOLD_BY_STAGE: Record<FailureStage, number> = {
+  ci: parseThreshold(process.env.AUTOPILOT_RETRY_CONFIDENCE_CI, 0.25),
+  deploy: parseThreshold(process.env.AUTOPILOT_RETRY_CONFIDENCE_DEPLOY, 0.35),
+  verification: parseThreshold(process.env.AUTOPILOT_RETRY_CONFIDENCE_VERIFICATION, 0.5),
+};
+
+/**
+ * Resolve the confidence bar a triage report must clear to earn an autonomous
+ * retry, given the failure stage/class. Environmental blockers never retry
+ * (defense-in-depth — they are normally short-circuited before triage). When no
+ * stage is supplied we fall back to the global CHILD_SPAWN_CONFIDENCE_THRESHOLD
+ * so prior behavior is preserved. Pure — exported for tests.
+ */
+export function resolveRetryThreshold(failureStage?: FailureStage, failureClass?: string): number {
+  if (failureClass === 'environmental_blocker') return Number.POSITIVE_INFINITY;
+  if (failureStage && Object.prototype.hasOwnProperty.call(RETRY_THRESHOLD_BY_STAGE, failureStage)) {
+    return RETRY_THRESHOLD_BY_STAGE[failureStage];
+  }
+  return CHILD_SPAWN_CONFIDENCE_THRESHOLD;
+}
 
 /**
  * Write a row into self_healing_log so the Self-Healing UI surfaces this
@@ -283,13 +331,33 @@ export async function revertExecutionPR(
       return { ok: true, revert_pr_url: `${exec.pr_url}#closed` };
     }
 
-    // deploy / verification stage: PR already merged → open a revert PR.
-    // We don't have full repo write tooling wired here yet; emit a marker
-    // URL and let the execution agent (PR-9) + a follow-up pass open the
-    // actual revert PR. For now the bridge records intent.
-    const markerUrl = `https://github.com/${GITHUB_REPO}/pull/REVERT-${exec.id.slice(0, 8)}`;
-    console.warn(`${LOG_PREFIX} live revert for ${stage} stage not fully wired — emitting marker ${markerUrl}`);
-    return { ok: true, revert_pr_url: markerUrl };
+    // deploy / verification stage: PR already merged → open a revert PR and
+    // auto-merge it to restore the last-good state. createRevertPullRequest
+    // builds a reverse-tree revert based on the CURRENT main HEAD (it only
+    // overrides the merge's changed files back to their pre-merge blobs), so it
+    // stays correct even if other commits landed after the merge.
+    const mergeSha = (exec.metadata as { merge_sha?: string } | null | undefined)?.merge_sha;
+    if (!mergeSha) {
+      console.warn(`${LOG_PREFIX} cannot auto-revert ${exec.id.slice(0, 8)} (${stage}): no merge_sha on execution metadata`);
+      return { ok: false, error: 'no merge_sha on execution metadata — cannot revert merged PR' };
+    }
+    const revertBranch = `revert/auto-${exec.id.slice(0, 8)}-${Date.now()}`;
+    const title = `Revert: auto-fix ${exec.id.slice(0, 8)} failed ${stage} verification`;
+    const body =
+      `Automated rollback. Execution \`${exec.id}\` (${exec.pr_url}) failed ${stage} ` +
+      `verification after merge; reverting merge commit \`${mergeSha}\` to restore the ` +
+      `last-good state.`;
+    const revertPr = await createRevertPullRequest(GITHUB_REPO, mergeSha, revertBranch, title, body);
+    const merged = await mergePullRequest(GITHUB_REPO, revertPr.number, title, 'squash');
+    if (!merged.merged) {
+      // Revert PR is open but couldn't auto-merge (e.g. required checks pending
+      // or branch protection). Leave it for a human and report its URL — the
+      // rollback is staged, not silently dropped.
+      console.warn(`${LOG_PREFIX} revert PR #${revertPr.number} for ${exec.id.slice(0, 8)} created but auto-merge failed: ${merged.message}`);
+      return { ok: true, revert_pr_url: revertPr.html_url, error: `revert PR open but auto-merge failed: ${merged.message}` };
+    }
+    console.log(`${LOG_PREFIX} auto-reverted ${exec.id.slice(0, 8)} via PR #${revertPr.number} (merged ${merged.sha?.slice(0, 8) || '?'})`);
+    return { ok: true, revert_pr_url: revertPr.html_url };
   } catch (err) {
     return { ok: false, error: String(err) };
   }
@@ -541,11 +609,19 @@ export async function bridgeFailureToSelfHealing(input: BridgeInput): Promise<Br
     });
   }
 
-  // 3. Decide next action: spawn child vs escalate.
-  const canRetry =
-    report.confidence_numeric >= CHILD_SPAWN_CONFIDENCE_THRESHOLD &&
-    (exec.auto_fix_depth || 0) < maxDepth &&
-    !(cfg?.kill_switch);
+  // 3. Decide next action: spawn child vs escalate. Route through the pure
+  //    decideBridgeAction with the failure stage so the per-stage confidence
+  //    bar (Step 4) actually applies in production — previously the live path
+  //    inlined a single global threshold and the helper was only unit-tested.
+  const retryThreshold = resolveRetryThreshold(input.failure_stage);
+  const decision = decideBridgeAction({
+    confidence_numeric: report.confidence_numeric,
+    auto_fix_depth: exec.auto_fix_depth || 0,
+    max_auto_fix_depth: maxDepth,
+    kill_switch: !!cfg?.kill_switch,
+    failure_stage: input.failure_stage,
+  });
+  const canRetry = decision.action === 'spawn_child';
 
   const patchBase: Record<string, unknown> = {
     failure_stage: input.failure_stage,
@@ -688,7 +764,7 @@ export async function bridgeFailureToSelfHealing(input: BridgeInput): Promise<Br
     diagnosis: {
       summary: `Escalated: ${cfg?.kill_switch ? 'kill switch armed'
         : (exec.auto_fix_depth || 0) >= maxDepth ? `max retries reached (${exec.auto_fix_depth}/${maxDepth})`
-        : `confidence ${report.confidence_numeric.toFixed(2)} below threshold ${CHILD_SPAWN_CONFIDENCE_THRESHOLD}`}`,
+        : `confidence ${report.confidence_numeric.toFixed(2)} below ${input.failure_stage} threshold ${retryThreshold}`}`,
       execution_id: exec.id,
       finding_id: exec.finding_id,
       stage: input.failure_stage,
@@ -741,6 +817,10 @@ export interface DecisionInput {
   auto_fix_depth: number;
   max_auto_fix_depth: number;
   kill_switch: boolean;
+  /** Where the fix failed — selects the per-stage confidence bar (Step 4). */
+  failure_stage?: FailureStage;
+  /** Optional class override (e.g. 'environmental_blocker' never retries). */
+  failure_class?: string;
 }
 
 export type BridgeDecision =
@@ -750,8 +830,9 @@ export type BridgeDecision =
 export function decideBridgeAction(input: DecisionInput): BridgeDecision {
   if (input.kill_switch) return { action: 'escalate', reason: 'kill_switch_armed' };
   if (input.auto_fix_depth >= input.max_auto_fix_depth) return { action: 'escalate', reason: 'depth_cap_reached' };
-  if (input.confidence_numeric < CHILD_SPAWN_CONFIDENCE_THRESHOLD) return { action: 'escalate', reason: 'low_confidence' };
+  const threshold = resolveRetryThreshold(input.failure_stage, input.failure_class);
+  if (input.confidence_numeric < threshold) return { action: 'escalate', reason: 'low_confidence' };
   return { action: 'spawn_child' };
 }
 
-export { CHILD_SPAWN_CONFIDENCE_THRESHOLD, LOG_PREFIX, DRY_RUN };
+export { CHILD_SPAWN_CONFIDENCE_THRESHOLD, RETRY_THRESHOLD_BY_STAGE, LOG_PREFIX, DRY_RUN };

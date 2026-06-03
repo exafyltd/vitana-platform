@@ -102,7 +102,11 @@ export async function produceAutopilotRecommendation(
     dedupeKey: `autopilot_recommendation:${row.id}`,
     cta: {
       type: 'ask_permission',
-      payload: { recommendation_id: row.id, domain: row.domain ?? null },
+      // DEV-COMHU-0505 — ORB Recovery 5: wire the deterministic on-yes tool so
+      // "yes" after this offer invokes activate_recommendation with the id,
+      // instead of the model guessing (or answering "I have no access").
+      onYesTool: 'activate_recommendation',
+      payload: { recommendation_id: row.id, id: row.id, domain: row.domain ?? null },
     },
   };
   return { source: KEY, candidate };

@@ -1,0 +1,94 @@
+/* Phase D (DEV-COMHU voice budget watch) — Voice Instruction Budget panel.
+   CSP-compliant: external stylesheet only, no inline styles. */
+
+.voice-budget-container {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 24px;
+}
+
+.voice-budget-header h1 {
+  margin: 0 0 4px;
+}
+
+.voice-budget-sub {
+  color: var(--muted, #8a93a6);
+  margin: 0 0 16px;
+  font-size: 14px;
+}
+
+.voice-budget-controls {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+
+.voice-budget-controls input {
+  width: 80px;
+  padding: 4px 6px;
+}
+
+.voice-budget-controls button {
+  padding: 6px 14px;
+  cursor: pointer;
+}
+
+.vb-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.vb-table th,
+.vb-table td {
+  text-align: left;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border, #232a3a);
+}
+
+.vb-table th {
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.vb-table td.vb-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Severity highlights */
+.vb-row.vb-at-risk {
+  background: rgba(255, 196, 0, 0.10);
+}
+
+.vb-row.vb-overflow {
+  background: rgba(255, 64, 64, 0.16);
+}
+
+.vb-pct-bar {
+  display: inline-block;
+  height: 8px;
+  border-radius: 4px;
+  background: var(--accent, #4f8cff);
+  vertical-align: middle;
+  margin-left: 8px;
+}
+
+.vb-pct-bar.vb-at-risk { background: #ffc400; }
+.vb-pct-bar.vb-overflow { background: #ff4040; }
+
+.vb-empty,
+.vb-error {
+  padding: 24px;
+  color: var(--muted, #8a93a6);
+}
+
+.vb-error { color: #ff6b6b; }
+
+@media (max-width: 640px) {
+  .voice-budget-container { padding: 12px; }
+  .vb-table th, .vb-table td { padding: 6px 6px; font-size: 13px; }
+}

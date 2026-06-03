@@ -159,6 +159,22 @@
       ]
     },
     {
+      "name": "record_journey_answer",
+      "surface": "My Journey",
+      "category": "journey",
+      "role": [
+        "community",
+        "user"
+      ],
+      "status": "live",
+      "vtid": "VTID-03255",
+      "description": "Record a Journey Foundation answer (goal, economy stance, focus, teaching ack); writes the real record and returns the next guided move.",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
+    },
+    {
       "name": "set_reminder",
       "surface": "Reminders",
       "category": "reminders",

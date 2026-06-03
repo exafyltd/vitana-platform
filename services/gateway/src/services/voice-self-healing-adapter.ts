@@ -112,6 +112,9 @@ export interface DispatchOptions {
    */
   sessionMetrics?: {
     audio_in_chunks?: number;
+    // VTID-VOICE-FWD (Track A): forwarded-only mic count; classifier prefers
+    // this over raw audio_in_chunks for the under-responds ratio.
+    audio_in_forwarded?: number;
     audio_out_chunks?: number;
     duration_ms?: number;
     turn_count?: number;
@@ -341,6 +344,7 @@ async function handleQualityFailure(
         trigger: 'quality_failure',
         session_id: opts.sessionId,
         audio_in_chunks: opts.sessionMetrics?.audio_in_chunks,
+        audio_in_forwarded: opts.sessionMetrics?.audio_in_forwarded, // VTID-VOICE-FWD
         audio_out_chunks: opts.sessionMetrics?.audio_out_chunks,
         turn_count: opts.sessionMetrics?.turn_count,
         duration_ms: opts.sessionMetrics?.duration_ms,
@@ -374,6 +378,9 @@ async function _dispatchVoiceFailureCore(
   if (opts.sessionMetrics) {
     const qc = classifyQualityFromSessionStop({
       audio_in_chunks: opts.sessionMetrics.audio_in_chunks ?? 0,
+      // VTID-VOICE-FWD (Track A): pass through when present; classifier falls
+      // back to raw audio_in_chunks when undefined (older callers / events).
+      audio_in_forwarded: opts.sessionMetrics.audio_in_forwarded,
       audio_out_chunks: opts.sessionMetrics.audio_out_chunks ?? 0,
       duration_ms: opts.sessionMetrics.duration_ms ?? 0,
       turn_count: opts.sessionMetrics.turn_count ?? 0,

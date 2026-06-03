@@ -236,6 +236,42 @@ export async function recordWakeSessionStart(
   }
 }
 
+/**
+ * DEV-COMHU-0503 — ORB Recovery 2+3: persist `wake_cadence:last_turn_at`.
+ *
+ * This is the MISSING WRITER. `fetchWakeCadenceSignals` already reads
+ * `last_turn_at` to compute `seconds_since_last_turn_anywhere`, but nothing in
+ * the live path ever wrote it — so the policy always saw "no prior turn" and
+ * the same wake line could fire on every reopen. Call on every meaningful
+ * user/assistant turn (fire-and-forget). Never throws.
+ */
+export async function recordWakeTurn(
+  inputs: { supabase: SupabaseClient; tenantId: string; userId: string; nowIso?: string },
+): Promise<{ ok: boolean; reason?: string }> {
+  if (!inputs.tenantId || !inputs.userId) {
+    return { ok: false, reason: 'missing_identity' };
+  }
+  const nowIso = inputs.nowIso ?? new Date().toISOString();
+  try {
+    const { error } = await inputs.supabase
+      .from('user_assistant_state')
+      .upsert(
+        {
+          tenant_id: inputs.tenantId,
+          user_id: inputs.userId,
+          signal_name: SIGNAL_LAST_TURN_AT,
+          value: { iso: nowIso },
+          last_seen_at: nowIso,
+        },
+        { onConflict: 'tenant_id,user_id,signal_name' },
+      );
+    if (error) return { ok: false, reason: error.message };
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, reason: e instanceof Error ? e.message : String(e) };
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Pure helpers — exported for tests.
 // ---------------------------------------------------------------------------

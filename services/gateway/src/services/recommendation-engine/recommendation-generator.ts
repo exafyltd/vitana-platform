@@ -65,6 +65,13 @@ import {
   WearableSignal,
   generateWearableFingerprint,
 } from './analyzers/wearable-analyzer';
+// BOOTSTRAP-AUTOPILOT-EXPANSION: calendar prep analyzer (flag-gated, OFF by default).
+import {
+  analyzeCalendarPrep,
+  CalendarPrepSignal,
+  generateCalendarPrepFingerprint,
+} from './analyzers/calendar-prep-analyzer';
+import { isFeatureLive } from '../feature-flags';
 // VTID-03140 (Phase C.6): per-signal-type impact maps live in
 // `decision_policy` now; this module owns the typed lookups.
 import {
@@ -82,7 +89,7 @@ const LOG_PREFIX = '[VTID-01185:Generator]';
 // Types
 // =============================================================================
 
-export type SourceType = 'codebase' | 'oasis' | 'health' | 'roadmap' | 'llm' | 'behavior' | 'community' | 'marketplace' | 'wearable';
+export type SourceType = 'codebase' | 'oasis' | 'health' | 'roadmap' | 'llm' | 'behavior' | 'community' | 'marketplace' | 'wearable' | 'calendar_prep';
 
 export interface GeneratedRecommendation {
   title: string;
@@ -322,6 +329,35 @@ function convertWearableSignal(signal: WearableSignal): GeneratedRecommendation 
     source_type: 'wearable',
     source_ref: `wearable:${signal.condition_key}:${signal.user_id}`,
     fingerprint: generateWearableFingerprint(signal),
+    suggested_files: [],
+    suggested_endpoints: [],
+    suggested_tests: [],
+    user_id: signal.user_id,
+  };
+}
+
+/**
+ * BOOTSTRAP-AUTOPILOT-EXPANSION: map a calendar-prep signal into a community
+ * recommendation. source_ref reuses the existing `pillar_template_<pillar>`
+ * keys so COMMUNITY_ACTIONS already knows how to schedule a wellness prep block
+ * on activation — no new action wiring required.
+ */
+function convertCalendarPrepSignal(signal: CalendarPrepSignal): GeneratedRecommendation {
+  const severityToImpact: Record<CalendarPrepSignal['severity'], number> = {
+    low: 45,
+    medium: 60,
+    high: 72,
+  };
+  return {
+    title: signal.summary.substring(0, 100),
+    summary: signal.summary,
+    domain: 'health',
+    impact_score: severityToImpact[signal.severity],
+    effort_score: 2,
+    risk_level: 'low',
+    source_type: 'calendar_prep',
+    source_ref: `pillar_template_${signal.pillar}`,
+    fingerprint: generateCalendarPrepFingerprint(signal),
     suggested_files: [],
     suggested_endpoints: [],
     suggested_tests: [],
@@ -610,6 +646,32 @@ export async function generateRecommendations(
       );
     }
 
+    // BOOTSTRAP-AUTOPILOT-EXPANSION: Calendar Prep analyzer.
+    // Double-gated: must be in the requested sources AND the feature flag must
+    // be live (FEATURE_AUTOPILOT_CALENDAR_PREP_ENV). Default = OFF, and
+    // 'calendar_prep' is not in DEFAULT_CONFIG.sources, so there is no behavior
+    // change unless an operator both requests the source and flips the flag.
+    if (fullConfig.sources.includes('calendar_prep') && isFeatureLive('AUTOPILOT_CALENDAR_PREP')) {
+      analyzerPromises.push(
+        (async () => {
+          try {
+            const result = await analyzeCalendarPrep({});
+            analysisSummary.calendar_prep = result.summary;
+            if (result.ok) {
+              const cap = Math.ceil(fullConfig.limit / 2);
+              for (const signal of result.signals.slice(0, cap)) {
+                recommendations.push(convertCalendarPrepSignal(signal));
+              }
+            } else {
+              errors.push({ source: 'calendar_prep', error: result.error || 'Unknown error' });
+            }
+          } catch (err) {
+            errors.push({ source: 'calendar_prep', error: String(err) });
+          }
+        })()
+      );
+    }
+
     // VTID-02000: Marketplace analyzer (per-user product recommendations)
     if (fullConfig.sources.includes('marketplace')) {
       analyzerPromises.push(
@@ -774,6 +836,64 @@ function convertCommunityUserSignal(
   };
 }
 
+/**
+ * One-off (set-once) community actions that should NOT be regenerated once the
+ * user has activated or completed them — onboarding steps only make sense the
+ * first time. Everything else (engagement, weakness nudges, pillar templates)
+ * is repeatable and may re-surface after expiry. VTID-03201.
+ */
+function isOneOffSourceRef(sourceRef: string | null): boolean {
+  if (!sourceRef) return false;
+  return sourceRef.startsWith('onboarding_');
+}
+
+/** How long a rejected recommendation stays suppressed before it may re-surface. */
+export const REJECTED_COOLDOWN_DAYS = 14;
+
+/** A historical autopilot_recommendations row, as read for the dedupe pre-check. */
+export interface FingerprintHistoryRow {
+  fingerprint: string;
+  source_ref: string | null;
+  status: string;
+  updated_at: string | null;
+  expires_at: string | null;
+}
+
+/**
+ * Graded dedupe decision (VTID-03201): does this existing row block
+ * regeneration of the same fingerprint?
+ *
+ *   - expired (expires_at < now)         → allow  (stale, replaceable)
+ *   - new / snoozed (not expired)        → block  (live duplicate)
+ *   - rejected within cooldown window    → block  (don't re-nag instantly)
+ *   - rejected older than cooldown       → allow
+ *   - activated/completed one-off ref    → block  (set-once actions)
+ *   - activated/completed repeatable ref → allow  (re-surface periodically)
+ *
+ * Pure and side-effect free so it can be unit-tested without the network.
+ */
+export function isFingerprintBlocked(row: FingerprintHistoryRow, nowMs: number = Date.now()): boolean {
+  // A stale (expired) row never blocks regeneration — replacing it is the
+  // whole point of replenishment.
+  const expired = row.expires_at != null && new Date(row.expires_at).getTime() < nowMs;
+  if (expired) return false;
+
+  switch (row.status) {
+    case 'new':
+    case 'snoozed':
+      return true;
+    case 'rejected': {
+      const updatedMs = row.updated_at ? new Date(row.updated_at).getTime() : 0;
+      return nowMs - updatedMs < REJECTED_COOLDOWN_DAYS * 86400000;
+    }
+    case 'activated':
+    case 'completed':
+      return isOneOffSourceRef(row.source_ref);
+    default:
+      return false;
+  }
+}
+
 // =============================================================================
 // Per-User Personal Recommendation Generator
 // =============================================================================
@@ -912,33 +1032,40 @@ export async function generatePersonalRecommendations(
       console.warn(`${LOG_PREFIX} rankBatch failed (non-fatal):`, rankErr?.message);
     }
 
-    // Pre-check: fetch ALL existing fingerprints for this user (ANY status)
-    // to prevent re-creating recommendations that were already activated/rejected.
-    // The RPC only checks new/snoozed, so we need this extra guard.
-    const existingFingerprints = new Set<string>();
+    // Pre-check: fetch existing fingerprints + their state and apply the GRADED
+    // dedupe policy (VTID-03201). The previous implementation blocked any
+    // fingerprint that had EVER existed in any status, so a user whose recs had
+    // all expired or been rejected could never get fresh ones — the popup
+    // permanently emptied out. The RPC already blocks live duplicates (status
+    // new/snoozed); isFingerprintBlocked() adds the guards the RPC can't (see
+    // its docstring for the full policy).
+    const blockedFingerprints = new Set<string>();
     try {
       const fpResp = await fetch(
-        `${supabaseUrl}/rest/v1/autopilot_recommendations?user_id=eq.${userId}&select=fingerprint&fingerprint=not.is.null`,
+        `${supabaseUrl}/rest/v1/autopilot_recommendations?user_id=eq.${userId}&select=fingerprint,source_ref,status,updated_at,expires_at&fingerprint=not.is.null`,
         { headers: { apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` } }
       );
       if (fpResp.ok) {
-        const fpRows = await fpResp.json() as { fingerprint: string }[];
+        const fpRows = await fpResp.json() as FingerprintHistoryRow[];
+        const now = Date.now();
         for (const row of fpRows) {
-          if (row.fingerprint) existingFingerprints.add(row.fingerprint);
+          if (!row.fingerprint) continue;
+          // Block wins across duplicate fingerprints with mixed history.
+          if (isFingerprintBlocked(row, now)) blockedFingerprints.add(row.fingerprint);
         }
-        console.log(`${LOG_PREFIX} Pre-check: ${existingFingerprints.size} existing fingerprints for user ${userId.slice(0, 8)}`);
+        console.log(`${LOG_PREFIX} Graded dedupe: ${blockedFingerprints.size}/${fpRows.length} fingerprints blocked for user ${userId.slice(0, 8)}`);
       }
     } catch (fpErr) {
       console.warn(`${LOG_PREFIX} Pre-check fingerprint query failed (non-fatal):`, fpErr);
     }
 
-    // Insert with deduplication (skip if fingerprint exists in ANY status)
+    // Insert with deduplication (graded policy above + RPC active-dup guard)
     let generated = 0;
     let duplicatesSkipped = 0;
 
     for (const rec of recommendations) {
-      // Skip if this fingerprint already exists (activated, rejected, etc.)
-      if (rec.fingerprint && existingFingerprints.has(rec.fingerprint)) {
+      // Skip only if the graded policy says this fingerprint is still blocked.
+      if (rec.fingerprint && blockedFingerprints.has(rec.fingerprint)) {
         duplicatesSkipped++;
         continue;
       }

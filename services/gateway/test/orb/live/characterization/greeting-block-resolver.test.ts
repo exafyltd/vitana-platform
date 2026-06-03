@@ -1,20 +1,23 @@
 /**
- * VTID-03118 (Phase B.4) — byte-identical proof for the resolver-backed
- * greeting block.
+ * VTID-03118 (Phase B.4) — greeting-bucket fallback content lock.
  *
- * The Phase B.4 PR removes the inline `switch (bucket)` body that used to
- * push per-bucket greeting policy lines and replaces it with a single
- * `PolicyResolver.getRenderBlock()` call plus two token substitutions.
+ * ORIGINAL PURPOSE: prove that `buildLiveSystemInstruction` rendered the
+ * per-bucket greeting-policy block byte-identically whether the PolicyResolver
+ * returned its seeded content or the consumer fell back to the inline
+ * BUCKET_DEFAULT_TEMPLATES.
  *
- * This test locks the invariant: the output of `buildLiveSystemInstruction`
- * is **byte-identical** whether the resolver returns its seeded content or
- * the consumer falls back to BUCKET_DEFAULT_TEMPLATES. Both code paths must
- * produce the same prompt — that is the whole point of the vertical proof.
+ * R2 (BOOTSTRAP-ORB-R2-GREETING-POLICY): the legacy `## GREETING POLICY` stack
+ * was DELETED from `buildLiveSystemInstruction`. Its temporal/bucketed
+ * fallback pools moved verbatim to the priority-80 voice-wake-brief provider,
+ * which owns the no-provider fallback path in the Central Continuation
+ * Contract. The resolver-vs-defaults parity is no longer relevant (the moved
+ * pools are static constants, not resolver-backed), but the VERBATIM bucket
+ * content + token substitution must still be locked — that is what this test
+ * now does, against the new owner.
  */
 
 // pickShortGapGreetings shuffles its return value, which would make the
-// byte-identical comparison flap. Pin it to a fixed sequence so the two
-// invocations (defaults path vs resolver path) emit the same menu lines.
+// menu-expansion comparison flap. Pin it to a fixed sequence.
 jest.mock('../../../../src/orb/instruction/greeting-pools', () => ({
   pickShortGapGreetings: (_lang: string, _n: number) => [
     'fixed phrase 1',
@@ -26,19 +29,18 @@ jest.mock('../../../../src/orb/instruction/greeting-pools', () => ({
   ],
 }));
 
-import { buildLiveSystemInstruction } from '../../../../src/orb/live/instruction/live-system-instruction';
 import {
-  configurePolicyResolverForTests,
-  __resetPolicyResolverForTests,
-  POLICY_KEYS,
-  RENDER_BLOCK_KEYS,
-} from '../../../../src/services/decision-contract';
+  WAKE_BRIEF_BUCKET_TEMPLATES,
+  renderWakeBriefFallbackBlock,
+  expandShortGapPhraseMenu,
+  type WakeBriefTemporalBucket,
+} from '../../../../src/services/assistant-continuation/providers/voice-wake-brief';
 
-// Same template strings the consumer falls back to when the cache is cold
-// (see BUCKET_DEFAULT_TEMPLATES in live-system-instruction.ts). Duplicating
-// them here is the test contract: if the consumer ever diverges from these,
-// the byte-identical claim fails.
-const TEMPLATES = {
+// The template strings the moved pools must render. Duplicating them here is
+// the test contract: if the provider ever diverges from these verbatim
+// strings, the lock fails. These are byte-identical to the pre-R2
+// BUCKET_DEFAULT_TEMPLATES that used to live in live-system-instruction.ts.
+const TEMPLATES: Record<WakeBriefTemporalBucket, string> = {
   reconnect:
 `- BUCKET = reconnect (transparent server-side resume — the user did NOT perceive any pause).
   • DO NOT speak. DO NOT greet. DO NOT acknowledge any "interruption", "reconnection", "resume", "where were we", "I'm back", "I'm listening", "picking up", or anything similar. Saying any of these creates a perceived apology that the user reads as a bug.
@@ -104,136 +106,29 @@ const TEMPLATES = {
   • Max TWO short sentences total: the time-of-day greeting + optionally one question.`,
 };
 
-const RECENT_PAST = new Date(Date.now() - 60_000).toISOString();
+const ALL_BUCKETS: WakeBriefTemporalBucket[] = [
+  'reconnect', 'recent', 'same_day', 'today',
+  'yesterday', 'week', 'long', 'first',
+];
 
-type BucketName = 'reconnect' | 'recent' | 'same_day' | 'today' | 'yesterday' | 'week' | 'long' | 'first';
-
-// Map each bucket to a lastSessionInfo timestamp that classifies into that
-// bucket via describeTimeSince().
-function timestampFor(bucket: BucketName): string {
-  const now = Date.now();
-  switch (bucket) {
-    case 'reconnect': return new Date(now - 30000).toISOString();           // < 120s
-    case 'recent':    return new Date(now - 5 * 60000).toISOString();        // 2-15 min
-    case 'same_day':  return new Date(now - 2 * 3600000).toISOString();      // 15 min - 8 h
-    case 'today':     return new Date(now - 10 * 3600000).toISOString();     // 8-24 h
-    case 'yesterday': return new Date(now - 25 * 3600000).toISOString();     // ~1 day
-    case 'week':      return new Date(now - 3 * 86400000).toISOString();    // 2-7 days
-    case 'long':      return new Date(now - 14 * 86400000).toISOString();   // > 7 days
-    case 'first':     return '';                                              // empty → 'first'
-  }
-}
-
-function withResolverFromTable(): void {
-  configurePolicyResolverForTests({
-    decisionPolicy: [
-      {
-        policy_key: POLICY_KEYS.SESSION_RECENCY_RECONNECT_MAX_SECONDS,
-        tenant_id: null, version: 1, value_json: 120,
-        effective_from: RECENT_PAST, effective_until: null,
-      },
-      {
-        policy_key: POLICY_KEYS.SESSION_RECENCY_RECENT_MAX_MINUTES,
-        tenant_id: null, version: 1, value_json: 15,
-        effective_from: RECENT_PAST, effective_until: null,
-      },
-      {
-        policy_key: POLICY_KEYS.SESSION_RECENCY_SAME_DAY_MAX_HOURS,
-        tenant_id: null, version: 1, value_json: 8,
-        effective_from: RECENT_PAST, effective_until: null,
-      },
-      {
-        policy_key: POLICY_KEYS.SESSION_RECENCY_TODAY_MAX_HOURS,
-        tenant_id: null, version: 1, value_json: 24,
-        effective_from: RECENT_PAST, effective_until: null,
-      },
-      {
-        policy_key: POLICY_KEYS.SESSION_RECENCY_WEEK_MAX_DAYS,
-        tenant_id: null, version: 1, value_json: 7,
-        effective_from: RECENT_PAST, effective_until: null,
-      },
-    ],
-    policyRenderBlock: [
-      ['reconnect', RENDER_BLOCK_KEYS.GREETING_BUCKET_RECONNECT],
-      ['recent', RENDER_BLOCK_KEYS.GREETING_BUCKET_RECENT],
-      ['same_day', RENDER_BLOCK_KEYS.GREETING_BUCKET_SAME_DAY],
-      ['today', RENDER_BLOCK_KEYS.GREETING_BUCKET_TODAY],
-      ['yesterday', RENDER_BLOCK_KEYS.GREETING_BUCKET_YESTERDAY],
-      ['week', RENDER_BLOCK_KEYS.GREETING_BUCKET_WEEK],
-      ['long', RENDER_BLOCK_KEYS.GREETING_BUCKET_LONG],
-      ['first', RENDER_BLOCK_KEYS.GREETING_BUCKET_FIRST],
-    ].map(([bucket, blockKey]) => ({
-      block_key: blockKey,
-      language: 'en',
-      tenant_id: null,
-      version: 1,
-      content: TEMPLATES[bucket as keyof typeof TEMPLATES],
-      effective_from: RECENT_PAST,
-      effective_until: null,
-    })),
+describe('R2: voice-wake-brief owns the temporal fallback pools (byte-identical to legacy)', () => {
+  it('exposes one template per temporal bucket', () => {
+    for (const bucket of ALL_BUCKETS) {
+      expect(WAKE_BRIEF_BUCKET_TEMPLATES[bucket]).toBe(TEMPLATES[bucket]);
+    }
   });
-}
 
-function callBuilder(timestamp: string): string {
-  return buildLiveSystemInstruction(
-    'en',                       // lang
-    'verbose',                  // voiceStyle
-    undefined,                  // bootstrapContext (no wake-brief override marker)
-    'community',                // activeRole
-    undefined,                  // conversationSummary
-    undefined,                  // conversationHistory
-    false,                      // isReconnect
-    timestamp ? { time: timestamp, wasFailure: false } : null,
-    null,                       // currentRoute
-    null,                       // recentRoutes
-    { timeOfDay: 'evening' } as any, // clientContext — carries timeOfDay
-    null,                       // vitanaId
-    false,                      // omitGreetingPolicy
-  );
-}
-
-beforeEach(() => {
-  __resetPolicyResolverForTests();
-});
-
-afterAll(() => {
-  __resetPolicyResolverForTests();
-});
-
-describe('VTID-03118 — resolver-backed greeting block parity', () => {
-  const buckets: BucketName[] = [
-    'reconnect', 'recent', 'same_day', 'today',
-    'yesterday', 'week', 'long', 'first',
-  ];
-
-  for (const bucket of buckets) {
-    it(`bucket="${bucket}" produces byte-identical output via defaults vs resolver`, () => {
-      const ts = timestampFor(bucket);
-
-      // Path 1: cache empty → defaults.
-      __resetPolicyResolverForTests();
-      const fromDefaults = callBuilder(ts);
-
-      // Path 2: cache primed with the same templates the seed migration loaded.
-      withResolverFromTable();
-      const fromResolver = callBuilder(ts);
-
-      expect(fromResolver).toBe(fromDefaults);
-    });
-  }
-
-  it('today bucket output contains the expected verbatim line for greetingTimeOfDay="evening"', () => {
-    const out = callBuilder(timestampFor('today'));
+  it('today bucket substitutes greetingTimeOfDay verbatim', () => {
+    const out = renderWakeBriefFallbackBlock('today', 'en', 'evening');
     expect(out).toContain(
       '  • ALWAYS open with "Good evening, [Name]." using the user\'s name from memory context.',
     );
     expect(out).toContain('  • If no name is available in memory, just say "Good evening."');
-    // Sanity: the placeholder must NOT survive into the rendered prompt.
     expect(out).not.toContain('{{greeting_time_of_day}}');
   });
 
-  it('reconnect bucket output contains the "do not speak" guardrail verbatim', () => {
-    const out = callBuilder(timestampFor('reconnect'));
+  it('reconnect bucket renders the "do not speak" guardrail verbatim', () => {
+    const out = renderWakeBriefFallbackBlock('reconnect', 'en', 'evening');
     expect(out).toContain(
       '- BUCKET = reconnect (transparent server-side resume — the user did NOT perceive any pause).',
     );
@@ -241,27 +136,33 @@ describe('VTID-03118 — resolver-backed greeting block parity', () => {
   });
 
   it('recent bucket expands the short-gap phrase menu (non-wake-brief path)', () => {
-    const out = callBuilder(timestampFor('recent'));
+    const out = renderWakeBriefFallbackBlock('recent', 'en', 'evening');
     expect(out).toContain('  • Pick ONE of these example phrasings (use them VERBATIM');
     expect(out).toContain(
       '  • Rotate across sessions — the user notices repetition. If the previous session used one of these, pick a different one.',
     );
     expect(out).toContain('  • Max ONE short phrase. Warm but direct.');
-    // Placeholder must be fully substituted.
     expect(out).not.toContain('{{short_gap_phrase_menu}}');
   });
 
-  it('describeTimeSince still classifies via the resolver-supplied thresholds', () => {
-    // Prime the cache with the same constants the pre-PR literals used and
-    // verify each timestamp lands in the expected bucket via output markers.
-    withResolverFromTable();
-    expect(callBuilder(timestampFor('reconnect'))).toContain('BUCKET = reconnect');
-    expect(callBuilder(timestampFor('recent'))).toContain('BUCKET = recent');
-    expect(callBuilder(timestampFor('same_day'))).toContain('BUCKET = same_day');
-    expect(callBuilder(timestampFor('today'))).toContain('BUCKET = today');
-    expect(callBuilder(timestampFor('yesterday'))).toContain('BUCKET = yesterday');
-    expect(callBuilder(timestampFor('week'))).toContain('BUCKET = week');
-    expect(callBuilder(timestampFor('long'))).toContain('BUCKET = long');
-    expect(callBuilder(timestampFor('first'))).toContain('BUCKET = first');
+  it('wake-brief override suppresses the short-gap phrase list', () => {
+    const out = renderWakeBriefFallbackBlock('recent', 'en', 'evening', true);
+    expect(out).toContain('SHORT-GAP PHRASE LIST SUPPRESSED');
+    expect(out).not.toContain('Pick ONE of these example phrasings');
+  });
+
+  it('expandShortGapPhraseMenu emits the pinned fixed phrases verbatim', () => {
+    const menu = expandShortGapPhraseMenu('en');
+    expect(menu).toContain('"fixed phrase 1"');
+    expect(menu).toContain('"fixed phrase 6"');
+  });
+
+  it('every bucket renders with no surviving placeholder tokens', () => {
+    for (const bucket of ALL_BUCKETS) {
+      const out = renderWakeBriefFallbackBlock(bucket, 'en', 'morning');
+      expect(out).not.toContain('{{greeting_time_of_day}}');
+      expect(out).not.toContain('{{short_gap_phrase_menu}}');
+      expect(out).toContain(`BUCKET = ${bucket}`);
+    }
   });
 });
