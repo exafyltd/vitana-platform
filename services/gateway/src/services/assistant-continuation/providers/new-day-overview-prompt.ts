@@ -60,11 +60,14 @@ function timeOfDay(localHour: number): 'morning' | 'afternoon' | 'evening' {
  */
 function buildShapeExample(lang: string): string {
   if (lang.startsWith('de')) {
+    // Anna's plan_phase is 'on_personalized_goal' in this example — she has
+    // an active Life Compass goal (half an hour of stillness daily), so the
+    // greeting drops "X von 90" framing and anchors on "Tag X mit Vitana".
     return `### ❌ Dashboard-Ton — SO SOLLST DU NICHT SPRECHEN:
 "Guten Abend, Anna. Dein Vitana-Index liegt bei 84. Dein Ziel ist 30 Minuten Meditation am Tag. Du hast einen Termin um 19 Uhr und drei ungelesene Erinnerungen. Was möchtest du zuerst machen?"
 
 ### ✅ Begleiter-Ton — GENAU DIESE TEXTUR UND DIESE BREITE SOLLST DU IMITIEREN:
-"Guten Abend, Anna — schön, dass du wieder da bist. Heute ist Tag 23 von 90 in deiner Reise, du bist mitten in der Erkundungs-Phase. Dein Vitana-Index steht bei 84, das ist ein ausgeglichener Tag — vor allem deine Meditation trägt dich gerade durch die Woche, leicht im Plus seit letztem Wochenende. An deinem Ziel, jeden Tag eine halbe Stunde Stille zu finden, sind wir mit dem heutigen Tag wieder ein Stück konsequenter dran.
+"Guten Abend, Anna — schön, dass du wieder da bist. Heute ist dein 132. Tag mit Vitana, und wir arbeiten gerade an deinem Ziel: jeden Tag eine halbe Stunde Stille zu finden. Dein Vitana-Index steht bei 84, das ist ein ausgeglichener Tag — vor allem deine Meditation trägt dich gerade durch die Woche, leicht im Plus seit letztem Wochenende. An diesem Ziel sind wir mit dem heutigen Tag wieder ein Stück konsequenter dran.
 
 Bevor ich's vergesse: in einer guten Stunde steht dein Yoga-Termin an, und drei kleine Erinnerungen warten noch auf dich. Ich hab heute auch den nächsten Schritt für dich vorbereitet — eine kurze Atem-Sequenz vor dem Schlafengehen. Soll ich die für dich starten, oder gehen wir zuerst die Erinnerungen durch?"`;
   }
@@ -73,7 +76,7 @@ Bevor ich's vergesse: in einer guten Stunde steht dein Yoga-Termin an, und drei 
 "Good evening, Anna. Your Vitana Index is 84. Your goal is 30 minutes of meditation a day. You have one event at 7 pm and three unread reminders. What would you like to do first?"
 
 ### ✅ Companion tone — IMITATE THIS TEXTURE AND THIS BREADTH:
-"Good evening, Anna — glad to have you back. Today is day 23 of 90 on your journey, right in the middle of the exploration phase. Your Vitana Index is at 84, that reads like a balanced day — your meditation pillar is really carrying the week, slightly up since last weekend. On your goal of half an hour of stillness every day, today moves us one notch more consistent.
+"Good evening, Anna — glad to have you back. Today is your day 132 with Vitana, and we're working on your goal of finding half an hour of stillness every day. Your Vitana Index is at 84, that reads like a balanced day — your meditation pillar is really carrying the week, slightly up since last weekend. On that goal, today moves us one notch more consistent.
 
 Before I forget: your yoga class kicks off in just over an hour, and three small reminders are waiting too. I've also prepared the next step for you — a short breath sequence before bed. Want me to start that for you, or shall we walk through the reminders first?"`;
 }
@@ -162,11 +165,51 @@ greetings are forbidden.
    clause ("schön, dass du wieder da bist" / "glad to have you back"
    / equivalent). NEVER go from the salutation straight into a stat.
 
-2. JOURNEY CONTEXT FIRST. If \`journey\` is present, name the day in
-   the journey + the current wave/phase right after the warmth
-   clause. "Heute ist Tag X von Y, du bist mitten in der [phase]" /
-   "Today is day X of Y, you're in [phase]". This anchors the entire
-   greeting in the user's longer arc.
+2. JOURNEY CONTEXT FIRST — BRANCH ON \`journey.plan_phase\`. If
+   \`journey\` is present, anchor the greeting in the user's journey
+   right after the warmth clause. The framing depends on plan_phase:
+
+   - plan_phase === 'default_active' (scaffolding plan still running,
+     no personalized goal yet): name the day + the wave —
+     "Heute ist Tag X von Y in deinem Start-Plan, du bist gerade in
+     der [current_wave.name]-Phase" / "Today is day X of Y in your
+     starter plan, you're in the [current_wave.name] phase". The
+     wave gives the user a sense of WHERE they are in the onboarding
+     arc.
+
+   - plan_phase === 'default_finished_no_goal' (scaffolding plan
+     complete, no personalized goal yet): celebrate the completion
+     AND open the goal-setting moment —
+     "Du hast deinen Start-Plan vollständig durchlaufen — magst du,
+     dass wir jetzt gleich dein erstes persönliches Ziel formulieren?"
+     / "You've completed your starter plan — want us to set your first
+     personalized goal together right now?". This invitation OWNS
+     paragraph 2's named close (Rule 7) — it is the next step in the
+     endless journey. Do NOT say "your journey is finished" — the
+     journey is endless, only the default scaffolding plan ended.
+
+   - plan_phase === 'on_personalized_goal' (active Life Compass goal —
+     the goal-anchored arc, regardless of plan_type): DROP the
+     "X von Y / X of Y" framing entirely. The user is no longer on
+     scaffolding — they are on their own arc. Anchor instead on the
+     goal:
+       "Heute ist dein {day_in_journey}. Tag mit Vitana, und wir
+       arbeiten gerade an deinem Ziel: [primary_goal verbatim]" /
+       "Today is your day {day_in_journey} with Vitana, and we're
+       working on your goal: [primary_goal verbatim]".
+     If \`current_goal_day\` is set, you may add "seit {current_goal_day}
+     Tagen". If \`previous_goals_count\` > 0, you may weave in
+     "dein {previous_goals_count + 1}. Ziel mit mir" — the goal
+     arc length, the user's history.
+     If \`days_past_deadline\` is set, mention it gently as a
+     prompt-to-reflect: "dein Stichtag liegt {days_past_deadline}
+     Tage zurück — magst du, dass wir gleich kurz schauen, wo wir
+     stehen?". Do NOT treat the past deadline as failure.
+
+   NEVER speak the words "Day X of 90" or "Tag X von 90" when
+   plan_phase === 'on_personalized_goal'. The endless-journey arc is
+   measured in days-with-Vitana and goals achieved, not in days of
+   scaffolding.
 
 3. NO BARE NUMBERS. Every number in the spoken output must arrive
    PAIRED with what it means AND which pillar (or trend) drives it.
@@ -301,9 +344,28 @@ function buildCoverageChecklist(p: OverviewPayload): string {
   const items: string[] = [];
 
   if (p.journey) {
-    items.push(`- [ ] ADDRESS: journey day ${p.journey.day_in_journey} of ${p.journey.total_days}` +
-      (p.journey.current_wave ? `, currently in "${p.journey.current_wave.name}" phase` : '') +
-      ` (Rule 2 — name the day + phase in paragraph 1).`);
+    const j = p.journey;
+    if (j.plan_phase === 'on_personalized_goal') {
+      // Goal-anchored arc — no "X of Y" framing.
+      const goalArc = j.previous_goals_count > 0
+        ? ` This is goal number ${j.previous_goals_count + 1} in the user arc.`
+        : ' This is the first personalized goal for this user.';
+      const goalDayHint = j.current_goal_day !== null
+        ? ` Day ${j.current_goal_day} on this goal.`
+        : '';
+      const deadlineHint = j.days_past_deadline !== null
+        ? ` ⚠ Target date passed ${j.days_past_deadline} days ago — mention gently, never as failure.`
+        : '';
+      items.push(`- [ ] ADDRESS (Rule 2, plan_phase='on_personalized_goal'): Day ${j.day_in_journey} with Vitana, working on the active Life Compass goal.${goalArc}${goalDayHint}${deadlineHint} DO NOT use "Tag X von 90" framing.`);
+    } else if (j.plan_phase === 'default_finished_no_goal') {
+      items.push(`- [ ] ADDRESS (Rule 2, plan_phase='default_finished_no_goal'): User has completed the ${j.default_plan_total_days}-day starter plan (now day ${j.day_in_journey}) but has NOT set a personalized goal. Open the goal-setting moment — this becomes the named close (Rule 7).`);
+    } else {
+      // default_active
+      const waveHint = j.current_wave
+        ? `, currently in "${j.current_wave.name}" phase (day ${j.current_wave.day_in_wave}, ${j.current_wave.days_to_next_wave ?? '?'} days to next wave)`
+        : '';
+      items.push(`- [ ] ADDRESS (Rule 2, plan_phase='default_active'): Day ${j.day_in_journey} of ${j.default_plan_total_days} in the starter plan${waveHint}.`);
+    }
   }
 
   if (p.vitana_index.state === 'ok' && p.vitana_index.today !== null) {

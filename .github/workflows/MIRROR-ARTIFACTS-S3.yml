@@ -8,6 +8,17 @@ name: Mirror Artifacts to S3 (dormant)
 # When live, mirrors gs://vitana-artifacts-staging/finetune-current/<target>/weights.tar.gz
 # to s3://<AWS_BUCKET>/finetune-current/<target>/weights.tar.gz so the
 # Bedrock canary path has a portable copy.
+#
+# Phase 1 W2 Track A (VTID-03200): the mirror job ALSO carries NON-WEIGHT
+# artifacts — eval-coverage reports and dataset manifests — so the GCS -> S3
+# wiring proves itself end-to-end before any weights exist (W3 Bedrock work).
+# Setup / secrets: scripts/aws/README.md.
+#
+# BOOTSTRAP-EVIDENCE-ARTIFACTS: the `preflight` job below runs on EVERY
+# schedule regardless of AWS secrets (gated only on the existing GCP WIF). It
+# enumerates the GCS source side with the SAME globs the mirror uses and
+# reports exactly WHAT would mirror — read-only, no AWS calls. This keeps the
+# dormant mirror code-ready and inspectable before AWS is provisioned.
 
 on:
   schedule:
@@ -46,6 +57,62 @@ jobs:
             echo "AWS_BUCKET / AWS_ROLE_ARN not configured; skipping (this is expected pre-W3)"
           fi
 
+  # BOOTSTRAP-EVIDENCE-ARTIFACTS — preflight / dry-run. Runs on EVERY schedule
+  # regardless of AWS secrets (gated only on GCP WIF, which already exists), so
+  # the GCS source side of the mirror is always inspectable. Reports exactly
+  # WHAT would mirror without ever touching AWS — code-ready proof the mirror
+  # has real sources to carry the moment AWS lands.
+  preflight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Auth to GCP (WIF)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_WIF_SA_EMAIL }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Enumerate what WOULD mirror (read-only, no AWS)
+        env:
+          STAGING_BUCKET: ${{ env.STAGING_BUCKET }}
+          # Empty when secret unset — preflight renders a placeholder S3 dest.
+          AWS_BUCKET: ${{ secrets.AWS_BUCKET }}
+          PREFLIGHT_MARKDOWN_PATH: /tmp/mirror-preflight.md
+        run: |
+          set -euo pipefail
+          npx -y tsx scripts/aws/mirror-preflight.ts > /tmp/mirror-preflight.json
+          echo "Would-mirror count: $(python3 -c "import json;print(json.load(open('/tmp/mirror-preflight.json'))['would_mirror_count'])")"
+
+      - name: Append preflight summary
+        if: always()
+        run: |
+          if [ -f /tmp/mirror-preflight.md ]; then
+            cat /tmp/mirror-preflight.md >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo '## MIRROR-ARTIFACTS-S3 preflight'                >> "$GITHUB_STEP_SUMMARY"
+            echo ''                                                >> "$GITHUB_STEP_SUMMARY"
+            echo 'Preflight did not produce Markdown — see logs.'  >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload preflight artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mirror-preflight-${{ github.run_id }}
+          path: |
+            /tmp/mirror-preflight.json
+            /tmp/mirror-preflight.md
+          if-no-files-found: warn
+          retention-days: 90
+
   mirror:
     needs: guard
     if: needs.guard.outputs.aws_ready == 'true'
@@ -82,4 +149,43 @@ jobs:
             aws s3 cp "${TMP}" "s3://${AWS_BUCKET}/finetune-current/${TARGET}/weights.tar.gz"
             rm -f "${TMP}"
             echo "${TARGET}: mirrored"
+          done
+
+      # --- Non-weight artifacts (VTID-03200) — prove the wiring early ---
+      - name: Mirror eval-coverage reports GCS -> S3
+        env:
+          AWS_BUCKET: ${{ secrets.AWS_BUCKET }}
+          AWS_REGION: ${{ secrets.AWS_REGION || 'us-east-1' }}
+        run: |
+          set -euo pipefail
+          SRC="${STAGING_BUCKET}/eval-reports/"
+          if ! gsutil -q ls "${SRC}" 2>/dev/null; then
+            echo "eval-reports: none present; skipping"
+            exit 0
+          fi
+          LOCAL="/tmp/eval-reports"
+          mkdir -p "${LOCAL}"
+          gsutil -m rsync -r "${SRC}" "${LOCAL}/"
+          aws s3 sync "${LOCAL}/" "s3://${AWS_BUCKET}/eval-reports/" --region "${AWS_REGION}"
+          rm -rf "${LOCAL}"
+          echo "eval-reports: mirrored"
+
+      - name: Mirror dataset manifests GCS -> S3
+        env:
+          AWS_BUCKET: ${{ secrets.AWS_BUCKET }}
+          AWS_REGION: ${{ secrets.AWS_REGION || 'us-east-1' }}
+        run: |
+          set -euo pipefail
+          MANIFESTS=$(gsutil ls "${STAGING_BUCKET}/datasets/*/manifest.json" 2>/dev/null || true)
+          if [ -z "$MANIFESTS" ]; then
+            echo "dataset manifests: none present; skipping"
+            exit 0
+          fi
+          for M in $MANIFESTS; do
+            NAME=$(echo "$M" | sed -E 's#.*/datasets/([^/]+)/manifest.json#\1#')
+            TMP="/tmp/${NAME}-manifest.json"
+            gsutil cp "$M" "$TMP"
+            aws s3 cp "$TMP" "s3://${AWS_BUCKET}/datasets/${NAME}/manifest.json" --region "${AWS_REGION}"
+            rm -f "$TMP"
+            echo "dataset ${NAME}: manifest mirrored"
           done

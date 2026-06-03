@@ -36,3 +36,43 @@ export interface DatasetExtractionRun {
   hf_dataset_id?: string;       // huggingface dataset id if pushed
   dry_run: boolean;
 }
+
+/**
+ * Minimal shape of an oasis_events row as returned by the extraction query.
+ * Shared so the preview summarizer and each extractor's row projector agree
+ * on the input shape without re-declaring it.
+ */
+export interface OasisEventRow {
+  id: string;
+  created_at: string;
+  topic: string;
+  metadata: Record<string, unknown> | null;
+  message: string | null;
+}
+
+/**
+ * Read-only PREVIEW of what a real extraction WOULD produce — Phase 1 W2
+ * readiness (BOOTSTRAP-DATASET-READINESS).
+ *
+ * Runs the SAME consent-gated query and the SAME per-target row projection as
+ * the real extractor, but writes nothing (no JSONL, no GCS upload, no event
+ * emit). Lets an operator confirm "X rows would extract" before and
+ * immediately after flipping `tenant_settings.feature_flags.data_export_ok`,
+ * without producing or persisting a dataset.
+ */
+export interface DatasetExtractionPreview {
+  target: DatasetTarget;
+  preview: true;
+  /** Events returned by the consent-gated query (already post-PII-filter). */
+  rows_total: number;
+  /** Rows that pass this target's projection predicate (would land in JSONL, pre-dedup). */
+  rows_projected: number;
+  /** Rows after dedup-by-source-id — the real JSONL row count that would be written. */
+  rows_after_dedup: number;
+  /** Projected-row counts grouped by metadata.tenant_id ("unknown" when absent). */
+  by_tenant: Record<string, number>;
+  /** Projected-row counts grouped by source event topic. */
+  by_source: Record<string, number>;
+  /** Up to N sample projected rows (same shape that would be written to JSONL). */
+  samples: DatasetRow[];
+}

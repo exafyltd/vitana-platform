@@ -68,6 +68,13 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const { vtidRouter } = require('./routes/vtid');
   // VTID-03177 (PROFILE): RUM beacon receiver from vitana-v1 frontend
   const { rumBeaconRouter } = require('./routes/rum-beacon');
+  // VTID-03204 (Phase 1 W2): one-off staging-only admin endpoint for the
+  // tenant_settings.data_export_ok consent flip. Hard-gated on isStaging
+  // inside the router; mounted unconditionally because route registration
+  // is cheap and the guard runs per-request.
+  const { adminStagingRouter } = require('./routes/admin-staging');
+  // BOOTSTRAP-SUPERVISOR-SUMMARY: read-only consolidated program-state summary.
+  const { supervisorSummaryRouter } = require('./routes/supervisor-summary');
   const { router: tasksRouter } = require('./routes/tasks');
   const { router: eventsRouter } = require('./routes/events');
   const eventsApiRouter = require('./routes/gateway-events-api').default;
@@ -97,6 +104,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   // same OASIS pipeline the gateway uses.
   const oasisEmitRouter = require('./routes/oasis-emit').default;
   const vitanaIndexRouter = require('./routes/vitana-index').default;
+  // VTID-03255: Journey Foundation read path — shared snapshot for voice + Meine Reise + /autopilot.
+  const journeyFoundationRouter = require('./routes/journey-foundation').default;
   // VTID-03152 Slice B + J: unified my-journey payload + landing-route resolver.
   const myJourneyRouter = require('./routes/my-journey').default;
   const goalPlannerRouter = require('./routes/goal-planner').default;
@@ -221,6 +230,12 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const domainRoutingRouter = require('./routes/domain-routing').default;
   // VTID-01119: User Preference & Constraint Modeling Engine
   const userPreferencesRouter = require('./routes/user-preferences').default;
+  // VTID-03213: Universal Cart Phase 1 gateway slice (universal_carts / universal_cart_items / universal_cart_events)
+  const universalCartRouter = require('./routes/universal-cart').default;
+  // VTID-03260: Propose-then-approve shopping agent Phase 1 (proposes into the Universal Cart; never checks out)
+  const shoppingAgentRouter = require('./routes/shopping-agent').default;
+  // VTID-03237: Video Shop (Vitanaland) backend slice — feed/anchor/saved/events over products + Universal Cart
+  const shopFeedRouter = require('./routes/shop-feed').default;
   // VTID-01126: D32 Situational Awareness Engine - situation understanding layer
   const situationalAwarenessRouter = require('./routes/situational-awareness').default;
   // VTID-01127: D33 Availability, Time-Window & Readiness Engine
@@ -308,6 +323,11 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const stripeConnectWebhookRouter = require('./routes/stripe-connect-webhook').default;
   // VTID-03107: Billing v1 — customer-side Stripe subscriptions + credit packs + redemption
   const billingRouter = require('./routes/billing').default;
+  // VTID-03201: Stripe-funded wallet deposits (EUR + USD fiat ledger, ships in parallel with Billing v1)
+  const walletRouter = require('./routes/wallet').default;
+  const walletStripeWebhookRouter = require('./routes/wallet-stripe-webhook').default;
+  // VTID-03249: Wallet spend + earning admin endpoints (cart / marketplace integration contract)
+  const walletAdminRouter = require('./routes/wallet-admin').default;
   // Notification System — FCM push + in-app notification history
   const notificationsRouter = require('./routes/notifications').default;
   // Chat — User-to-user direct messaging
@@ -319,6 +339,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const adminUsersLookupRouter = require('./routes/admin-users-lookup').default;
   // Phase 0 staging build (P0.3): /admin/health + /admin/build-info diagnostics.
   const adminHealthRouter = require('./routes/admin-health').default;
+  // Phase D (DEV-COMHU voice budget watch): admin observability for the Vertex
+  // system_instruction budget. See services/voice-budget-watch.ts.
+  const voiceBudgetWatchRouter = require('./routes/voice-budget-watch').default;
   const usersVitanaIdRouter = require('./routes/users-vitana-id').default;
   // VTID-01973: Vitana Intent Engine (P2-A). Voice-dictated intent registry +
   // kind-aware matcher. Behind FEATURE_INTENT_ENGINE_A — disabled by default.
@@ -419,6 +442,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const canaryTargetRouter = require('./routes/canary-target').default;
   // VTID-02031: Ops "Action Required" — pull surface mirroring Gchat pings
   const opsActionRequiredRouter = require('./routes/ops-action-required').default;
+  // BOOTSTRAP-35DAY-TRACKER: Training cycle tracker for System Overview
+  const trainingStatusRouter = require('./routes/training-status').default;
 
   // CORS setup - DEV-OASIS-0101
   setupCors(app);
@@ -596,6 +621,11 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   mountRouterSync(app, '/api/v1/vtid', vtidRouter, { owner: 'vtid' });
   // VTID-03177 (PROFILE): RUM beacon — POST /api/v1/rum/beacon
   mountRouterSync(app, '/api/v1/rum', rumBeaconRouter, { owner: 'rum-beacon' });
+  // VTID-03204 (Phase 1 W2): POST /api/v1/admin/staging/tenant-consent/flip
+  mountRouterSync(app, '/api/v1/admin/staging', adminStagingRouter, { owner: 'admin-staging' });
+  // BOOTSTRAP-SUPERVISOR-SUMMARY: GET /api/v1/supervisor/summary — one read-only
+  // call aggregating the latest dataset/shadow/finetune/canary/auto-promote/backlog state.
+  mountRouterSync(app, '/api/v1/supervisor', supervisorSummaryRouter, { owner: 'supervisor-summary' });
 
   // VTID-0516: Autonomous Safe-Merge Layer - CICD routes
   // Note: Same router mounted at multiple paths is allowed (different effective routes)
@@ -710,6 +740,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   // (get_vitana_index, get_index_improvement_suggestions). Lifted from the
   // inline case bodies in orb-live.ts so both pipelines share the helper layer.
   mountRouterSync(app, '/api/v1/vitana-index', vitanaIndexRouter, { owner: 'vitana-index' });
+
+  // VTID-03255: Journey Foundation — shared goal-gated, dual-axis journey snapshot.
+  mountRouterSync(app, '/api/v1/journey-foundation', journeyFoundationRouter, { owner: 'journey-foundation' });
 
   // VTID-03152: journey-foundation endpoints.
   mountRouterSync(app, '/api/v1/my-journey', myJourneyRouter, { owner: 'my-journey' });
@@ -1006,6 +1039,14 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   mountRouterSync(app, '/api/v1/stripe', stripeConnectWebhookRouter, { owner: 'stripe-connect-webhook' });
   // VTID-03107: Billing v1 — customer-side Stripe + redemption codes + admin code mgmt
   mountRouterSync(app, '/api/v1/billing', billingRouter, { owner: 'billing' });
+  // VTID-03201: Wallet deposit webhook (raw body already applied to /api/v1/stripe/webhook).
+  // Mounted under /api/v1/stripe so the route resolves to /api/v1/stripe/webhook/wallet.
+  mountRouterSync(app, '/api/v1/stripe', walletStripeWebhookRouter, { owner: 'wallet-stripe-webhook' });
+  // VTID-03201: Wallet user-facing routes (EUR + USD fiat). Path-scoped requireAuth inside router.
+  mountRouterSync(app, '/api/v1', walletRouter, { owner: 'wallet' });
+  // VTID-03249: Wallet admin spend/credit routes (cart / marketplace integration).
+  // Path-scoped requireAuth + requireExafyAdmin inside router.
+  mountRouterSync(app, '/api/v1', walletAdminRouter, { owner: 'wallet-admin' });
 
   // Notification System — FCM push notifications + in-app history
   mountRouterSync(app, '/api/v1/notifications', notificationsRouter, { owner: 'notifications' });
@@ -1124,6 +1165,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   // VTID-02031: Ops Action Required — pull surface for Command Hub Overview
   mountRouterSync(app, '/api/v1/ops/action-required', opsActionRequiredRouter, { owner: 'ops-action-required' });
 
+  // BOOTSTRAP-35DAY-TRACKER: Training cycle tracker — Command Hub Overview "Training" section
+  mountRouterSync(app, '/api/v1/training', trainingStatusRouter, { owner: 'training-status' });
+
   // VTID-01097: Diary Templates - guided diary templates for memory quality
   mountRouterSync(app, '/api/v1/diary', diaryRouter, { owner: 'diary' });
 
@@ -1161,6 +1205,15 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
 
   // VTID-01119: User Preference & Constraint Modeling Engine
   mountRouterSync(app, '/api/v1/user-preferences', userPreferencesRouter, { owner: 'user-preferences' });
+
+  // VTID-03213: Universal Cart Phase 1 gateway slice — community-role-gated cart over universal_* tables
+  mountRouterSync(app, '/api/v1/universal-cart', universalCartRouter, { owner: 'universal-cart' });
+
+  // VTID-03260: Propose-then-approve shopping agent — community-role-gated; proposes items into the Universal Cart (never checks out)
+  mountRouterSync(app, '/api/v1/shopping-agent', shoppingAgentRouter, { owner: 'shopping-agent' });
+
+  // VTID-03237: Video Shop (Vitanaland) — community-role-gated feed/anchor/saved/events over products + Universal Cart
+  mountRouterSync(app, '/api/v1/shop-feed', shopFeedRouter, { owner: 'shop-feed' });
 
   // VTID-01126: D32 Situational Awareness Engine - situation understanding layer
   mountRouterSync(app, '/api/v1/situational', situationalAwarenessRouter, { owner: 'situational-awareness' });

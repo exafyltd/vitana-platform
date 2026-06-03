@@ -1,0 +1,160 @@
+name: Phase Gate Status Report
+
+# VTID-03216 — Phase 1 W3-B0 PR 2.
+#
+# Daily report on every operator-side gate the Phase 1 autonomous loop is
+# waiting on. Tells the operator exactly which gate is blocked and gives
+# the one-line unblock command. Read-only across the board.
+#
+# Five gates checked:
+#   1. Vertex IAM (via gcloud preflight from this workflow)
+#   2. Prod consent (count tenants with feature_flags.data_export_ok=true)
+#   3. AWS mirror (AWS_BUCKET + AWS_ROLE_ARN secrets present + smoke)
+#   4. Shadow traffic (last 24h eval.shadow.compared on staging)
+#   5. Dataset rows (last CRON-DATASET-EXTRACTION row counts on prod)
+
+on:
+  schedule:
+    # Daily at 08:30 UTC — 15 min after the shadow-comparison report so
+    # this report can read its latest output.
+    - cron: '30 8 * * *'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: phase-gate-status-report
+  cancel-in-progress: false
+
+env:
+  GCP_PROJECT: lovable-vitana-vers1
+  STAGING_GATEWAY_URL: https://gateway-staging-q74ibpv6ia-uc.a.run.app
+  PROD_GATEWAY_URL: https://gateway.vitanaland.com
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: services/gateway/package-lock.json
+
+      - name: Install gateway deps
+        working-directory: services/gateway
+        run: npm ci --no-audit --no-fund
+
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_WIF_SA_EMAIL }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Resolve prod Supabase creds (existing W1 grants on WIF SA)
+        id: secrets
+        run: |
+          set -euo pipefail
+          PROD_URL=$(gcloud secrets versions access latest --secret=SUPABASE_URL --project="${GCP_PROJECT}" 2>/dev/null || echo '')
+          PROD_KEY=$(gcloud secrets versions access latest --secret=SUPABASE_SERVICE_ROLE --project="${GCP_PROJECT}" 2>/dev/null || echo '')
+          if [ -z "$PROD_URL" ] || [ -z "$PROD_KEY" ]; then
+            echo "::warning::Could not resolve prod Supabase creds — prod_consent and dataset_rows gates will report unknown."
+          else
+            echo "::add-mask::$PROD_URL"
+            echo "::add-mask::$PROD_KEY"
+          fi
+          {
+            echo "PROD_SUPABASE_URL=$PROD_URL"
+            echo "PROD_SUPABASE_SERVICE_ROLE=$PROD_KEY"
+          } >> "$GITHUB_ENV"
+
+      - name: Probe Vertex IAM
+        id: vertex
+        run: |
+          set +e
+          # VTID-03222 (Phase 1 W3-B1): broadened IAM detection.
+          # Switched from `gcloud ai operations list` to `gcloud ai
+          # custom-jobs list` — the latter is the exact API surface
+          # CRON-FINETUNE-TRAINER hits, so a denial here is a true
+          # blocker. The grep also widened: case-insensitive +
+          # additional terms (permission, denied, 403, aiplatform,
+          # forbidden, insufficient, customJobs) so any reasonable
+          # gcloud error variant resolves to `denied` not `skipped`.
+          gcloud ai custom-jobs list \
+            --region=us-central1 --project="${GCP_PROJECT}" --limit=1 \
+            > /tmp/vertex-probe.txt 2>&1
+          RC=$?
+          if [ $RC -eq 0 ]; then
+            echo "VERTEX_IAM_CHECK_RESULT=ok" >> "$GITHUB_ENV"
+            echo "Vertex IAM probe: ok"
+          else
+            if grep -qiE "permission|denied|403|aiplatform|forbidden|insufficient|customjobs|role/iam" /tmp/vertex-probe.txt; then
+              echo "VERTEX_IAM_CHECK_RESULT=denied" >> "$GITHUB_ENV"
+              echo "Vertex IAM probe: denied"
+            else
+              echo "VERTEX_IAM_CHECK_RESULT=skipped" >> "$GITHUB_ENV"
+              echo "Vertex IAM probe: skipped (non-IAM gcloud error)"
+            fi
+            echo '--- gcloud stderr (head) ---'
+            head -10 /tmp/vertex-probe.txt 2>/dev/null || true
+          fi
+
+      - name: Probe AWS mirror
+        id: aws
+        env:
+          AWS_BUCKET: ${{ secrets.AWS_BUCKET }}
+          AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
+        run: |
+          if [ -z "${AWS_BUCKET:-}" ] || [ -z "${AWS_ROLE_ARN:-}" ]; then
+            echo "AWS_SMOKE_RESULT=not_configured" >> "$GITHUB_ENV"
+            echo "AWS_BUCKET="          >> "$GITHUB_ENV"
+            echo "AWS_ROLE_ARN="        >> "$GITHUB_ENV"
+          else
+            # We don't attempt an actual aws sts call here to avoid
+            # spurious failures from OIDC trust-policy gaps; the
+            # SMOKE-AWS-MIRROR workflow does the real smoke. Report
+            # secrets-present, smoke=skipped (operator runs smoke
+            # explicitly).
+            echo "AWS_SMOKE_RESULT=skipped" >> "$GITHUB_ENV"
+            echo "AWS_BUCKET=$AWS_BUCKET"   >> "$GITHUB_ENV"
+            echo "AWS_ROLE_ARN=$AWS_ROLE_ARN" >> "$GITHUB_ENV"
+          fi
+
+      - name: Generate report
+        working-directory: services/gateway
+        env:
+          GATEWAY_SERVICE_TOKEN: ${{ secrets.GATEWAY_SERVICE_TOKEN }}
+          REPORT_MARKDOWN_PATH: /tmp/phase-gate-status-report.md
+        run: |
+          set -euo pipefail
+          npx tsx scripts/eval/phase-gate-status-report.ts > /tmp/phase-gate-status-report.json
+          echo "JSON written: $(wc -c < /tmp/phase-gate-status-report.json) bytes"
+          echo "Markdown written: $(wc -c < /tmp/phase-gate-status-report.md 2>/dev/null || echo 0) bytes"
+
+      - name: Append summary
+        if: always()
+        run: |
+          if [ -f /tmp/phase-gate-status-report.md ]; then
+            cat /tmp/phase-gate-status-report.md >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo '## Phase gate status report'                      >> "$GITHUB_STEP_SUMMARY"
+            echo ''                                                  >> "$GITHUB_STEP_SUMMARY"
+            echo 'Report script did not produce Markdown — see logs.' >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase-gate-status-report-${{ github.run_id }}
+          path: |
+            /tmp/phase-gate-status-report.json
+            /tmp/phase-gate-status-report.md
+          if-no-files-found: warn
+          retention-days: 90

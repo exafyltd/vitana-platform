@@ -24,5 +24,6 @@
 
 export * from './analyzers';
 export * from './recommendation-generator';
+export * from './community-regeneration';
 export * from './scheduler';
 export * from './autonomous-engine';
