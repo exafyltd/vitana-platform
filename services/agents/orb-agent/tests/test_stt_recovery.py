@@ -32,10 +32,12 @@ def test_topic_exists_with_exact_string() -> None:
     """Gateway oasis-emit allowlist (`livekit.` prefix) accepts this by
     rule; CicdEventType union has it explicitly. Pin the literal so a
     rename doesn't silently regress observability."""
-    from src.orb_agent.oasis import TOPIC_STT_RECOVERY
+    from src.orb_agent.oasis import TOPIC_STT_HARD_RECOVERY, TOPIC_STT_RECOVERY
 
     assert TOPIC_STT_RECOVERY == "livekit.stt.recovery"
     assert TOPIC_STT_RECOVERY.startswith("livekit.")
+    assert TOPIC_STT_HARD_RECOVERY == "livekit.stt.hard_recovery"
+    assert TOPIC_STT_HARD_RECOVERY.startswith("livekit.")
 
 
 def test_recovery_kill_switch_default_on(monkeypatch) -> None:  # type: ignore[no-untyped-def]
@@ -100,8 +102,8 @@ def test_recovery_preserves_chat_ctx_tools_instructions() -> None:
     the agent can't call resolve_recipient/send_chat_message anymore.
     Without llm/tts the swap would break voice output entirely."""
     src = _session_src()
-    # Find the Agent(...) construction inside _attempt_stt_recovery.
-    recovery_start = src.find("async def _attempt_stt_recovery")
+    # Find the Agent(...) construction inside the shared rebuild helper.
+    recovery_start = src.find("async def _rebuild_agent_with_fresh_stt")
     assert recovery_start != -1
     recovery_block = src[recovery_start : recovery_start + 4000]
 
@@ -117,3 +119,47 @@ def test_recovery_preserves_chat_ctx_tools_instructions() -> None:
         "VTID-03078 regression: recovery is reusing the old (stalled) STT "
         "instead of the freshly-built cascade"
     )
+
+
+def test_soft_reset_streak_escalates_to_hard_recovery() -> None:
+    src = _session_src()
+    assert "SttHardRecoveryEscalator" in src
+    stall_start = src.find("async def _on_stall")
+    assert stall_start != -1
+    stall_block = src[stall_start : stall_start + 8000]
+
+    for required in (
+        "hard_escalator.record_soft_reset",
+        "hard_recovery_after_soft_resets",
+        "hard_recovery_triggered",
+        "_hard_recovery(",
+        '"audio_diag": audio_diag',
+    ):
+        assert required in stall_block, (
+            f"BOOTSTRAP-ORB-STT-HARD-RECOVERY regression: `{required}` "
+            "missing from the soft-reset stall path"
+        )
+
+
+def test_silent_stall_gave_up_routes_to_hard_recovery() -> None:
+    src = _session_src()
+    gave_up_start = src.find('"outcome": "gave_up"')
+    assert gave_up_start != -1
+    gave_up_block = src[gave_up_start : gave_up_start + 1200]
+    assert "silent_stall_recovery_gave_up" in gave_up_block
+    assert "_hard_recovery(" in gave_up_block
+
+
+def test_recovery_does_not_fake_transcript_freshness() -> None:
+    src = _session_src()
+    assert 'stall_state["last_transcript_at"] = time.monotonic()' not in src
+    assert 'stall_state["last_transcript_at"] = _record_real_transcript_seen()' in src
+    assert 'turn_state["user_done_at"] = _record_real_transcript_seen()' in src
+
+
+def test_silent_stall_payload_includes_audio_diag() -> None:
+    src = _session_src()
+    watchdog_start = src.find("async def _silent_stall_watchdog")
+    assert watchdog_start != -1
+    watchdog_block = src[watchdog_start : watchdog_start + 3000]
+    assert '"audio_diag": _collect_audio_diag()' in watchdog_block

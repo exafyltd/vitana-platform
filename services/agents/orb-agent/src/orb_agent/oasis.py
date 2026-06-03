@@ -182,3 +182,7 @@ TOPIC_STT_SILENT_STALL = "livekit.stt.silent_stall"
 #     recovery verify window after the swap completed.
 #   - `gave_up`: per-session max swap count reached. We stop trying.
 TOPIC_STT_RECOVERY = "livekit.stt.recovery"
+
+# BOOTSTRAP-ORB-STT-HARD-RECOVERY: emitted when failed STT soft recovery is
+# escalated to an activity-level Agent rebuild carrying a fresh STT cascade.
+TOPIC_STT_HARD_RECOVERY = "livekit.stt.hard_recovery"

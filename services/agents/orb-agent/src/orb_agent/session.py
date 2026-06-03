@@ -52,12 +52,18 @@ from .oasis import (
     TOPIC_STALL_DETECTED,
     TOPIC_STT_AVAILABILITY_CHANGED,
     TOPIC_STT_ERROR,
+    TOPIC_STT_HARD_RECOVERY,
     TOPIC_STT_METRICS,
     TOPIC_STT_RECOVERY,
     TOPIC_STT_SILENT_STALL,
     OasisEmitter,
 )
 from .providers import build_cascade
+from .stt_hard_recovery import (
+    HARD_RECOVERY_AFTER,
+    HardRecoveryGate,
+    SttHardRecoveryEscalator,
+)
 from .tools import all_tools
 from .watchdogs import StallWatchdog, STALL_THRESHOLD_MS
 
@@ -151,7 +157,7 @@ def _get_vad() -> Any:
     return _SHARED_VAD
 
 
-CODE_VERSION = "agent-2026-05-17-vtid-03046-turn-telemetry"
+CODE_VERSION = "agent-2026-06-03-orb-stt-hard-recovery"
 
 
 # VTID-03014: localized first-greeting templates. session.say() speaks the
@@ -1125,7 +1131,201 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
     # no reason to ever GIVE UP on recovery: a dead agent is strictly
     # worse than rebuilding STT one more time. Telemetry is preserved
     # via soft_reset_count so we can still see how often it fires.
+    # BOOTSTRAP-ORB-STT-HARD-RECOVERY: if those swaps do not produce a
+    # real transcript, escalate to an Agent activity rebuild instead of
+    # trusting the private-slot swap forever.
     soft_reset_count = {"n": 0}
+    last_transcript_at: dict[str, float | None] = {"t": None}
+    hard_escalator = SttHardRecoveryEscalator()
+    hard_recovery_gate = HardRecoveryGate()
+
+    def _record_real_transcript_seen(transcript_at: float | None = None) -> float:
+        seen_at = transcript_at if transcript_at is not None else time.monotonic()
+        last_transcript_at["t"] = seen_at
+        hard_escalator.record_transcript(seen_at)
+        return seen_at
+
+    def _values(collection: Any) -> list[Any]:
+        if collection is None:
+            return []
+        values = getattr(collection, "values", None)
+        if callable(values):
+            try:
+                return list(values())
+            except Exception:  # noqa: BLE001
+                return []
+        try:
+            return list(collection)
+        except Exception:  # noqa: BLE001
+            return []
+
+    def _collect_audio_diag() -> dict[str, Any]:
+        """Best-effort LiveKit audio subscription snapshot for stall events."""
+        diag: dict[str, Any] = {
+            "remote_participant_count": 0,
+            "audio_publication_count": 0,
+            "audio_subscribed_count": 0,
+            "microphone_publication_count": 0,
+            "microphone_subscribed_count": 0,
+            "sample_publications": [],
+            "session_input_audio_present": None,
+            "session_input_audio_type": None,
+            "activity_type": None,
+            "activity_stt_type": None,
+            "session_stt_type": None,
+        }
+        try:
+            room = getattr(ctx, "room", None)
+            participants = _values(getattr(room, "remote_participants", None))
+            diag["remote_participant_count"] = len(participants)
+            sample_publications: list[dict[str, Any]] = []
+            for participant in participants:
+                publications = _values(
+                    getattr(participant, "track_publications", None)
+                    or getattr(participant, "tracks", None)
+                )
+                for pub in publications:
+                    track = getattr(pub, "track", None)
+                    source = str(
+                        getattr(pub, "source", "")
+                        or getattr(pub, "track_source", "")
+                        or ""
+                    )
+                    kind = str(getattr(pub, "kind", "") or getattr(track, "kind", "") or "")
+                    name = str(getattr(pub, "name", "") or getattr(track, "name", "") or "")
+                    subscribed = bool(
+                        getattr(pub, "subscribed", False)
+                        or getattr(pub, "is_subscribed", False)
+                    )
+                    muted = bool(
+                        getattr(pub, "muted", False)
+                        or getattr(pub, "is_muted", False)
+                    )
+                    marker = f"{source} {kind} {name}".lower()
+                    is_audio = "audio" in marker
+                    is_microphone = "microphone" in marker or ("mic" in marker and is_audio)
+                    if is_audio:
+                        diag["audio_publication_count"] += 1
+                        if subscribed:
+                            diag["audio_subscribed_count"] += 1
+                    if is_microphone:
+                        diag["microphone_publication_count"] += 1
+                        if subscribed:
+                            diag["microphone_subscribed_count"] += 1
+                    if len(sample_publications) < 8:
+                        sample_publications.append(
+                            {
+                                "participant": str(getattr(participant, "identity", "") or "")[:80],
+                                "source": source[:80],
+                                "kind": kind[:40],
+                                "name": name[:80],
+                                "subscribed": subscribed,
+                                "muted": muted,
+                            }
+                        )
+            diag["sample_publications"] = sample_publications
+            session_input = getattr(session, "input", None)
+            input_audio = getattr(session_input, "audio", None) if session_input is not None else None
+            diag["session_input_audio_present"] = input_audio is not None
+            if input_audio is not None:
+                diag["session_input_audio_type"] = type(input_audio).__name__
+            activity = getattr(session, "_activity", None)
+            activity_stt = getattr(activity, "stt", None) if activity is not None else None
+            session_stt = getattr(session, "_stt", None)
+            diag["activity_type"] = type(activity).__name__ if activity is not None else None
+            diag["activity_stt_type"] = type(activity_stt).__name__ if activity_stt is not None else None
+            diag["session_stt_type"] = type(session_stt).__name__ if session_stt is not None else None
+        except Exception as exc:  # noqa: BLE001
+            diag["error"] = f"{type(exc).__name__}: {exc}"[:240]
+        return diag
+
+    async def _rebuild_agent_with_fresh_stt() -> tuple[str, str | None]:
+        fresh_cascade = build_cascade(
+            bootstrap.voice_config,
+            lang=identity.lang,
+            voice_override=voice_override,
+        )
+        if fresh_cascade.stt is None:
+            return (
+                "rebuild_returned_none",
+                f"cascade.notes={list(fresh_cascade.notes)[:5]}"[:300],
+            )
+
+        current = getattr(session, "agent", None)
+        if current is None:
+            return ("no_current_agent", None)
+
+        new_agent = Agent(
+            instructions=getattr(current, "_instructions", "") or "",
+            tools=list(getattr(current, "_tools", []) or []),
+            chat_ctx=getattr(current, "_chat_ctx", None),
+            stt=fresh_cascade.stt,
+            llm=getattr(current, "_llm", None),
+            tts=getattr(current, "_tts", None),
+        )
+        session.update_agent(new_agent)
+        swap_task = getattr(session, "_update_activity_atask", None)
+        if swap_task is not None:
+            try:
+                await asyncio.wait_for(swap_task, timeout=5.0)
+            except asyncio.TimeoutError:
+                logger.warning("STT hard recovery activity swap timed out")
+                return ("activity_swap_timeout", None)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("STT hard recovery activity swap raised: %s", exc)
+                return ("activity_swap_error", str(exc)[:300])
+        stall.feed()
+        return ("succeeded", None)
+
+    async def _hard_recovery(*, reason: str, soft_resets_before: int = 0) -> None:
+        async def _run() -> None:
+            outcome = "failed"
+            error: str | None = None
+            audio_diag = _collect_audio_diag()
+            try:
+                outcome, error = await _rebuild_agent_with_fresh_stt()
+            except Exception as exc:  # noqa: BLE001
+                logger.exception("STT hard recovery failed: %s", exc)
+                error = str(exc)[:500]
+            try:
+                await oasis.emit(
+                    topic=TOPIC_STT_HARD_RECOVERY,
+                    payload={
+                        "code_version": CODE_VERSION,
+                        "user_id": identity.user_id,
+                        "agent_id": agent_id,
+                        "orb_session_id": orb_session_id,
+                        "reason": reason,
+                        "method": "session.update_agent_fresh_stt",
+                        "outcome": outcome,
+                        "error": error,
+                        "soft_resets_before": soft_resets_before,
+                        "audio_diag": audio_diag,
+                    },
+                )
+            except Exception:  # noqa: BLE001
+                pass
+
+        ran = await hard_recovery_gate.run(_run)
+        if ran:
+            return
+        try:
+            await oasis.emit(
+                topic=TOPIC_STT_HARD_RECOVERY,
+                payload={
+                    "code_version": CODE_VERSION,
+                    "user_id": identity.user_id,
+                    "agent_id": agent_id,
+                    "orb_session_id": orb_session_id,
+                    "reason": reason,
+                    "method": "session.update_agent_fresh_stt",
+                    "outcome": "skipped_in_flight",
+                    "soft_resets_before": soft_resets_before,
+                    "audio_diag": _collect_audio_diag(),
+                },
+            )
+        except Exception:  # noqa: BLE001
+            pass
 
     async def _on_stall() -> None:
         stall_count["n"] += 1
@@ -1233,6 +1433,14 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
         # Feed the watchdog so the next stall fires after a fresh
         # STALL_THRESHOLD_MS window, not immediately after this attempt.
         stall.feed()
+        audio_diag = _collect_audio_diag()
+        stale_soft_streak = hard_escalator.record_soft_reset(last_transcript_at["t"])
+        hard_recovery_triggered = reset_status != "swapped" or stale_soft_streak
+        hard_recovery_reason = (
+            "soft_reset_failed"
+            if reset_status != "swapped"
+            else "soft_reset_streak_no_transcript"
+        )
 
         try:
             await oasis.emit(
@@ -1247,10 +1455,19 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
                     "soft_reset_count": soft_reset_count["n"],
                     "soft_reset_status": reset_status,
                     "soft_reset_error": reset_error,
+                    "last_transcript_at_monotonic": last_transcript_at["t"],
+                    "hard_recovery_after_soft_resets": HARD_RECOVERY_AFTER,
+                    "hard_recovery_triggered": hard_recovery_triggered,
+                    "audio_diag": audio_diag,
                 },
             )
         except Exception:  # noqa: BLE001
             pass
+        if hard_recovery_triggered:
+            await _hard_recovery(
+                reason=hard_recovery_reason,
+                soft_resets_before=soft_reset_count["n"],
+            )
 
     stall.start(on_stall=_on_stall)
 
@@ -1318,7 +1535,7 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
         # complete. Paired with the next speech_created in _on_speech
         # above. Capture transcript length defensively — the field name
         # varies across livekit-agents versions.
-        turn_state["user_done_at"] = time.monotonic()
+        turn_state["user_done_at"] = _record_real_transcript_seen()
         text_len = 0
         try:
             t = (
@@ -1854,7 +2071,7 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
         logger.debug("could not hook user_state_changed for silent-stall: %s", exc)
 
     def _on_transcript_for_stall(_ev: Any = None) -> None:
-        stall_state["last_transcript_at"] = time.monotonic()
+        stall_state["last_transcript_at"] = _record_real_transcript_seen()
         stall_state["user_speaking_since"] = None        # turn closed cleanly
         stall_state["expecting_transcript_since"] = None  # VTID-03080: transcript arrived after speech_end
 
@@ -1925,12 +2142,20 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
                     oasis.emit(
                         topic=TOPIC_STT_RECOVERY,
                         payload={
+                            "code_version": CODE_VERSION,
                             "user_id": identity.user_id,
                             "orb_session_id": orb_session_id,
                             "outcome": "gave_up",
                             "attempts": attempts,
                             "max_attempts": STT_RECOVERY_MAX_ATTEMPTS,
+                            "audio_diag": _collect_audio_diag(),
                         },
+                    )
+                )
+                asyncio.create_task(
+                    _hard_recovery(
+                        reason="silent_stall_recovery_gave_up",
+                        soft_resets_before=soft_reset_count["n"],
                     )
                 )
             return
@@ -1945,75 +2170,82 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
             oasis.emit(
                 topic=TOPIC_STT_RECOVERY,
                 payload={
+                    "code_version": CODE_VERSION,
                     "user_id": identity.user_id,
                     "orb_session_id": orb_session_id,
                     "outcome": "attempted",
                     "attempt_no": attempt_no,
                     "max_attempts": STT_RECOVERY_MAX_ATTEMPTS,
+                    "audio_diag": _collect_audio_diag(),
                 },
             )
         )
 
         try:
-            # Step 1: fresh cascade. Same build_cascade call as session
-            # bootstrap — keeps language, voice override, all options.
-            fresh_cascade = build_cascade(
-                bootstrap.voice_config,
-                lang=identity.lang,
-                voice_override=voice_override,
-            )
-            if fresh_cascade.stt is None:
-                logger.warning(
-                    "VTID-03078: fresh cascade has no STT (build_cascade notes=%s) — abort recovery",
-                    list(fresh_cascade.notes)[:5],
+            rebuild_result: dict[str, str | None] = {
+                "outcome": "skipped_in_flight",
+                "error": None,
+            }
+
+            async def _run_rebuild() -> None:
+                rebuild_outcome, rebuild_error = await _rebuild_agent_with_fresh_stt()
+                rebuild_result["outcome"] = rebuild_outcome
+                rebuild_result["error"] = rebuild_error
+
+            if await hard_recovery_gate.run(_run_rebuild):
+                outcome = rebuild_result["outcome"] or "failed"
+                error = rebuild_result["error"]
+            else:
+                outcome = "skipped_in_flight"
+                error = None
+            if outcome == "succeeded":
+                logger.info(
+                    "VTID-03078: STT recovery swap completed (attempt %d/%d)",
+                    attempt_no, STT_RECOVERY_MAX_ATTEMPTS,
                 )
-                return
+            else:
+                logger.warning(
+                    "VTID-03078: STT recovery attempt %d/%d outcome=%s error=%s",
+                    attempt_no, STT_RECOVERY_MAX_ATTEMPTS, outcome, error,
+                )
 
-            # Step 2: snapshot the current Agent so we preserve everything
-            # except STT. The Agent on this session is the same object
-            # passed to session.start; we grab it back via session.agent.
-            current = getattr(session, "agent", None)
-            if current is None:
-                logger.warning("VTID-03078: session.agent is None — abort recovery")
-                return
-
-            new_agent = Agent(
-                instructions=getattr(current, "_instructions", "") or "",
-                tools=list(getattr(current, "_tools", []) or []),
-                chat_ctx=getattr(current, "_chat_ctx", None),
-                stt=fresh_cascade.stt,
-                llm=getattr(current, "_llm", None),
-                tts=getattr(current, "_tts", None),
-            )
-
-            # Step 3: in-place swap. update_agent is sync; the activity
-            # transition runs as a background task. Bounded wait so we
-            # know within ~5s whether the swap landed.
-            session.update_agent(new_agent)
-            swap_task = getattr(session, "_update_activity_atask", None)
-            if swap_task is not None:
-                try:
-                    await asyncio.wait_for(swap_task, timeout=5.0)
-                except asyncio.TimeoutError:
-                    logger.warning(
-                        "VTID-03078: activity-swap task didn't finish in 5s for STT recovery"
-                    )
-                except Exception as exc:  # noqa: BLE001
-                    logger.warning(
-                        "VTID-03078: activity-swap task raised: %s", exc
-                    )
-
-            # Reset the stall-state so the watchdog doesn't re-fire
-            # immediately on the same stale `user_speaking_since`.
+            # Reset only trigger state; transcript freshness must come from
+            # user_input_transcribed, not from our recovery attempt.
             stall_state["user_speaking_since"] = None
-            stall_state["last_transcript_at"] = time.monotonic()
-
-            logger.info(
-                "VTID-03078: STT recovery swap completed (attempt %d/%d)",
-                attempt_no, STT_RECOVERY_MAX_ATTEMPTS,
+            stall_state["expecting_transcript_since"] = None
+            asyncio.create_task(
+                oasis.emit(
+                    topic=TOPIC_STT_RECOVERY,
+                    payload={
+                        "code_version": CODE_VERSION,
+                        "user_id": identity.user_id,
+                        "orb_session_id": orb_session_id,
+                        "outcome": outcome,
+                        "attempt_no": attempt_no,
+                        "max_attempts": STT_RECOVERY_MAX_ATTEMPTS,
+                        "error": error,
+                        "audio_diag": _collect_audio_diag(),
+                    },
+                )
             )
+            return
         except Exception as exc:  # noqa: BLE001
             logger.exception("VTID-03078: STT recovery attempt %d failed: %s", attempt_no, exc)
+            asyncio.create_task(
+                oasis.emit(
+                    topic=TOPIC_STT_RECOVERY,
+                    payload={
+                        "code_version": CODE_VERSION,
+                        "user_id": identity.user_id,
+                        "orb_session_id": orb_session_id,
+                        "outcome": "failed",
+                        "attempt_no": attempt_no,
+                        "max_attempts": STT_RECOVERY_MAX_ATTEMPTS,
+                        "error": str(exc)[:500],
+                        "audio_diag": _collect_audio_diag(),
+                    },
+                )
+            )
         finally:
             recovery_state["in_flight"] = False
 
@@ -2087,6 +2319,7 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
                     "threshold_s": SILENT_STALL_THRESHOLD_S,
                     "min_transcript_age_s": SILENT_STALL_MIN_TRANSCRIPT_AGE_S,
                     "vad_speech_end_timeout_s": VAD_SPEECH_END_TRANSCRIPT_TIMEOUT_S,
+                    "audio_diag": _collect_audio_diag(),
                 }
                 payload.update(extras)
                 asyncio.create_task(
