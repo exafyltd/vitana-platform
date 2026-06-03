@@ -152,7 +152,7 @@ def _get_vad() -> Any:
     return _SHARED_VAD
 
 
-CODE_VERSION = "agent-2026-05-17-vtid-03046-turn-telemetry"
+CODE_VERSION = "agent-2026-06-03-orb-stt-hard-recovery-stt-hard-recovery"
 
 
 # VTID-03014: localized first-greeting templates. session.say() speaks the
@@ -1128,6 +1128,60 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
     # via soft_reset_count so we can still see how often it fires.
     soft_reset_count = {"n": 0}
 
+    # BOOTSTRAP-ORB-STT-HARD-RECOVERY: shared monotonic marker of the last REAL user transcript.
+    # Updated by every user_input_transcribed hook below. The recovery
+    # watchdogs read it to tell whether a swap/rebuild actually restored
+    # hearing (transcript advanced) vs. thrashed with no effect. Seeded to
+    # "now" so a quiet greeting-only open doesn't look like a stall.
+    last_transcript_at = {"t": time.monotonic()}
+
+    # BOOTSTRAP-ORB-STT-HARD-RECOVERY: escalation from tier-1 (the in-place _stt swap below —
+    # cheap but often a no-op once the running activity has bound the stale
+    # stream; prod 2026-06-02 logged 14 "swapped" soft-resets across 96s of
+    # dead air) to tier-2 (a full agent rebuild via update_agent, the proven
+    # persona-handoff primitive). After this many consecutive soft-resets
+    # land with NO new transcript in between, stop re-swapping a dead slot
+    # and rebuild the agent instead.
+    HARD_RECOVERY_AFTER = 2
+    soft_reset_streak = {"n": 0, "seen_transcript": None}
+
+    # Forward handle to the tier-2 recovery (defined later, alongside the
+    # silent-stall watchdog). Populated once that closure exists so _on_stall
+    # can escalate into it without depending on definition order.
+    _hard_recovery_ref: dict[str, Any] = {"fn": None}
+
+    def _audio_input_diag() -> dict[str, Any]:
+        """Best-effort snapshot of the inbound audio path so a stall event
+        can distinguish 'mic track gone' (audio never arrives) from 'STT deaf
+        while audio flows' (the silent-buffer failure mode). Never raises."""
+        diag: dict[str, Any] = {
+            "remote_participants": 0,
+            "mic_tracks": 0,
+            "subscribed": 0,
+            "muted": 0,
+        }
+        try:
+            room = getattr(ctx, "room", None)
+            rps = getattr(room, "remote_participants", None) or {}
+            parts = rps.values() if hasattr(rps, "values") else rps
+            for p in parts:
+                diag["remote_participants"] += 1
+                pubs = getattr(p, "track_publications", None) or {}
+                pubvals = pubs.values() if hasattr(pubs, "values") else pubs
+                for pub in pubvals:
+                    kind = str(getattr(pub, "kind", "")).lower()
+                    source = str(getattr(pub, "source", "")).lower()
+                    if not (kind.endswith("audio") or source.endswith("microphone")):
+                        continue
+                    diag["mic_tracks"] += 1
+                    if getattr(pub, "subscribed", False):
+                        diag["subscribed"] += 1
+                    if getattr(pub, "muted", False):
+                        diag["muted"] += 1
+        except Exception:  # noqa: BLE001
+            diag["error"] = True
+        return diag
+
     async def _on_stall() -> None:
         stall_count["n"] += 1
         soft_reset_count["n"] += 1
@@ -1235,6 +1289,18 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
         # STALL_THRESHOLD_MS window, not immediately after this attempt.
         stall.feed()
 
+        # BOOTSTRAP-ORB-STT-HARD-RECOVERY: escalation bookkeeping. Count consecutive soft-resets
+        # with NO new transcript in between; once we cross HARD_RECOVERY_AFTER,
+        # escalate to the tier-2 agent rebuild instead of re-swapping a slot
+        # the running activity has proven it won't read from.
+        cur_tx = last_transcript_at["t"]
+        if cur_tx != soft_reset_streak["seen_transcript"]:
+            soft_reset_streak["n"] = 0
+            soft_reset_streak["seen_transcript"] = cur_tx
+        soft_reset_streak["n"] += 1
+        escalate = soft_reset_streak["n"] >= HARD_RECOVERY_AFTER
+        audio_diag = _audio_input_diag()
+
         try:
             await oasis.emit(
                 topic=TOPIC_STALL_DETECTED,
@@ -1248,10 +1314,21 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
                     "soft_reset_count": soft_reset_count["n"],
                     "soft_reset_status": reset_status,
                     "soft_reset_error": reset_error,
+                    "soft_reset_streak": soft_reset_streak["n"],
+                    "escalated_to_hard_recovery": escalate,
+                    "audio_input": audio_diag,
                 },
             )
         except Exception:  # noqa: BLE001
             pass
+
+        # BOOTSTRAP-ORB-STT-HARD-RECOVERY: fire the tier-2 rebuild OUTSIDE the telemetry try so a
+        # failed emit never blocks recovery. _attempt_stt_recovery is itself
+        # re-entrant-safe (in_flight + backoff guards), so this cannot
+        # double-swap with the silent-stall path.
+        if escalate and _hard_recovery_ref["fn"] is not None:
+            soft_reset_streak["n"] = 0
+            asyncio.create_task(_hard_recovery_ref["fn"](trigger="stall_watchdog"))
 
     stall.start(on_stall=_on_stall)
 
@@ -1320,6 +1397,9 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
         # above. Capture transcript length defensively — the field name
         # varies across livekit-agents versions.
         turn_state["user_done_at"] = time.monotonic()
+        # BOOTSTRAP-ORB-STT-HARD-RECOVERY: a real transcript landed — advance the shared marker so
+        # the recovery watchdogs know hearing is (still) working.
+        last_transcript_at["t"] = turn_state["user_done_at"]
         text_len = 0
         try:
             t = (
@@ -1916,7 +1996,9 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
         logger.debug("could not hook user_state_changed for silent-stall: %s", exc)
 
     def _on_transcript_for_stall(_ev: Any = None) -> None:
-        stall_state["last_transcript_at"] = time.monotonic()
+        _now = time.monotonic()
+        stall_state["last_transcript_at"] = _now
+        last_transcript_at["t"] = _now  # BOOTSTRAP-ORB-STT-HARD-RECOVERY: shared recovery marker
         stall_state["user_speaking_since"] = None        # turn closed cleanly
         stall_state["expecting_transcript_since"] = None  # VTID-03080: transcript arrived after speech_end
 
@@ -1945,9 +2027,11 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
     #      as VTID-03046 persona handoff). Bounded by 5s wait on the
     #      activity-transition task.
     #
-    # Bounded to STT_RECOVERY_MAX_ATTEMPTS per session. After exhausting
-    # attempts the watchdog stays telemetry-only — likely a deeper
-    # LiveKit transport problem, not STT. Kill switch:
+    # BOOTSTRAP-ORB-STT-HARD-RECOVERY: the first STT_RECOVERY_MAX_ATTEMPTS rebuilds fire at the
+    # watchdog's normal cadence; beyond that recovery CONTINUES under
+    # exponential backoff (capped at STT_RECOVERY_BACKOFF_CEILING_S) rather
+    # than giving up — the old hard cap caused permanent deafness once a
+    # recoverable stall needed >5 swaps. Kill switch:
     # ORB_STT_RECOVERY_ENABLED=false reverts to detection-only behavior.
     # ------------------------------------------------------------------
     # VTID-03079: bumped from 3 → 5. The previous cap was burned by
@@ -1957,7 +2041,17 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
     # legitimately need 4-5 recoveries. Each attempt is bounded to ~3s
     # by the activity-swap wait, so 5 attempts cost at most ~15s of
     # total session disruption — still well under any user's patience.
+    # BOOTSTRAP-ORB-STT-HARD-RECOVERY: fast-cadence attempt budget. The first
+    # STT_RECOVERY_MAX_ATTEMPTS recoveries fire at the watchdog's normal
+    # ~8s cadence. Beyond that we DO NOT give up — the old behavior went
+    # permanently deaf after 5 (prod 2026-06-02: 96s of dead air while the
+    # tier-1 swap thrashed). Instead we keep rebuilding under exponential
+    # backoff capped at STT_RECOVERY_BACKOFF_CEILING_S, so a chronic upstream
+    # problem costs at most ~1 rebuild/min (no STT/Deepgram connection churn —
+    # honoring the original VTID-03079 cost guard) while a recoverable stall
+    # still eventually restores hearing instead of dying silently.
     STT_RECOVERY_MAX_ATTEMPTS = 5
+    STT_RECOVERY_BACKOFF_CEILING_S = 60.0
 
     def _stt_recovery_enabled() -> bool:
         return os.environ.get("ORB_STT_RECOVERY_ENABLED", "true").lower() not in (
@@ -1968,41 +2062,55 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
         "attempts": 0,
         "last_attempt_at": 0.0,
         "in_flight": False,
+        "backoff_until": 0.0,
+        "seen_transcript": None,
     }
 
-    async def _attempt_stt_recovery() -> None:
-        """Build a fresh STT cascade and swap it onto the current Agent.
-        Bounded; runs at most STT_RECOVERY_MAX_ATTEMPTS per session and
-        guards against re-entry while a previous swap is still completing."""
+    async def _attempt_stt_recovery(trigger: str = "silent_stall") -> None:
+        """Build a fresh STT cascade and swap it onto the current Agent via
+        update_agent (the proven persona-handoff primitive). Never gives up
+        permanently (BOOTSTRAP-ORB-STT-HARD-RECOVERY): past the fast-cadence budget it continues
+        under exponential backoff. Re-entrant-safe via the in_flight guard,
+        so the broad stall watchdog and the silent-stall watchdog can both
+        call it without double-swapping."""
         if not _stt_recovery_enabled():
             return
         if recovery_state["in_flight"]:
             return
-        attempts = int(recovery_state["attempts"])
-        if attempts >= STT_RECOVERY_MAX_ATTEMPTS:
-            # Emit gave_up exactly once when we hit the cap.
-            if attempts == STT_RECOVERY_MAX_ATTEMPTS:
-                recovery_state["attempts"] = attempts + 1  # idempotent
-                asyncio.create_task(
-                    oasis.emit(
-                        topic=TOPIC_STT_RECOVERY,
-                        payload={
-                            "user_id": identity.user_id,
-                            "orb_session_id": orb_session_id,
-                            "outcome": "gave_up",
-                            "attempts": attempts,
-                            "max_attempts": STT_RECOVERY_MAX_ATTEMPTS,
-                        },
-                    )
-                )
-            return
+        now = time.monotonic()
+        if now < float(recovery_state["backoff_until"]):
+            return  # still cooling down after a prior rebuild
+
+        # If a real transcript arrived since our last attempt, hearing was
+        # restored — reset the budget so a LATER stall starts fresh at the
+        # fast cadence rather than inheriting a deep backoff.
+        cur_tx = last_transcript_at["t"]
+        if (
+            recovery_state["seen_transcript"] is not None
+            and cur_tx != recovery_state["seen_transcript"]
+        ):
+            recovery_state["attempts"] = 0
+        recovery_state["seen_transcript"] = cur_tx
 
         recovery_state["in_flight"] = True
-        recovery_state["attempts"] = attempts + 1
-        recovery_state["last_attempt_at"] = time.monotonic()
-        attempt_no = recovery_state["attempts"]
+        recovery_state["attempts"] = int(recovery_state["attempts"]) + 1
+        recovery_state["last_attempt_at"] = now
+        attempt_no = int(recovery_state["attempts"])
 
-        # Telemetry: announce the attempt.
+        # Past the fast budget, schedule the NEXT attempt under exponential
+        # backoff (capped). Within the budget, no extra delay — rely on the
+        # watchdog's own SILENT_STALL_REPEAT_S cadence.
+        if attempt_no > STT_RECOVERY_MAX_ATTEMPTS:
+            backoff_s = min(
+                SILENT_STALL_REPEAT_S * (2 ** (attempt_no - STT_RECOVERY_MAX_ATTEMPTS)),
+                STT_RECOVERY_BACKOFF_CEILING_S,
+            )
+        else:
+            backoff_s = 0.0
+        recovery_state["backoff_until"] = now + backoff_s
+
+        # Telemetry: announce the attempt, with audio-path diagnostics so the
+        # next bad session is unambiguous (mic-track-loss vs STT-deaf).
         asyncio.create_task(
             oasis.emit(
                 topic=TOPIC_STT_RECOVERY,
@@ -2011,7 +2119,10 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
                     "orb_session_id": orb_session_id,
                     "outcome": "attempted",
                     "attempt_no": attempt_no,
-                    "max_attempts": STT_RECOVERY_MAX_ATTEMPTS,
+                    "fast_budget": STT_RECOVERY_MAX_ATTEMPTS,
+                    "backoff_s": round(backoff_s, 1),
+                    "trigger": trigger,
+                    "audio_input": _audio_input_diag(),
                 },
             )
         )
@@ -2078,6 +2189,11 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
             logger.exception("VTID-03078: STT recovery attempt %d failed: %s", attempt_no, exc)
         finally:
             recovery_state["in_flight"] = False
+
+    # BOOTSTRAP-ORB-STT-HARD-RECOVERY: expose the tier-2 recovery to the broad stall watchdog
+    # (_on_stall, defined earlier) so it can escalate after consecutive
+    # ineffective soft-resets.
+    _hard_recovery_ref["fn"] = _attempt_stt_recovery
 
     def _check_for_stall(now: float) -> tuple[str, dict[str, Any]] | None:
         """Return (detection_reason, telemetry_extras) if a stall should
@@ -2159,11 +2275,11 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
                     + " ".join(f"{k}={v}" for k, v in extras.items() if k != "detector")
                 )
                 await _publish_client_alert(reason="stt_silent_stall", detail=client_detail)
-                # VTID-03078: fire the actual recovery — fresh STT cascade
-                # swapped onto the current Agent via session.update_agent.
-                # Bounded (max 3 attempts per session); kill-switchable via
-                # ORB_STT_RECOVERY_ENABLED=false.
-                asyncio.create_task(_attempt_stt_recovery())
+                # VTID-03078 / BOOTSTRAP-ORB-STT-HARD-RECOVERY: fire the actual recovery — fresh STT
+                # cascade swapped onto the current Agent via update_agent.
+                # Fast cadence then exponential backoff (never permanently
+                # gives up); kill-switchable via ORB_STT_RECOVERY_ENABLED=false.
+                asyncio.create_task(_attempt_stt_recovery(trigger="silent_stall"))
             except asyncio.CancelledError:
                 raise
             except Exception as exc:  # noqa: BLE001

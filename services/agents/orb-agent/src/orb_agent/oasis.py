@@ -183,8 +183,11 @@ TOPIC_STT_SILENT_STALL = "livekit.stt.silent_stall"
 # decides to attempt an in-place STT swap (build fresh cascade →
 # session.update_agent with a new Agent carrying stt=fresh + preserved
 # llm/tts/instructions/tools/chat_ctx). Outcomes:
-#   - `attempted`: swap scheduled. Includes per-session attempt count.
+#   - `attempted`: swap scheduled. Includes attempt_no, backoff_s, trigger
+#     (silent_stall | stall_watchdog), and an audio_input diagnostic snapshot.
 #   - `succeeded`: a user_input_transcribed event arrived within the
 #     recovery verify window after the swap completed.
-#   - `gave_up`: per-session max swap count reached. We stop trying.
+# BOOTSTRAP-ORB-STT-HARD-RECOVERY: there is no longer a `gave_up` outcome — past the fast-cadence
+# budget recovery continues under exponential backoff rather than stopping,
+# because a permanently deaf agent is strictly worse than one more rebuild.
 TOPIC_STT_RECOVERY = "livekit.stt.recovery"
