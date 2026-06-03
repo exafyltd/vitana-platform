@@ -34,24 +34,28 @@ jest.mock('../../src/services/notification-service', () => ({
 jest.mock('../../src/services/recommendation-engine', () => ({
   generateRecommendations: jest.fn(),
   generatePersonalRecommendations: jest.fn().mockResolvedValue({ generated: 0 }),
+  regenerateCommunityRecommendations: jest.fn().mockResolvedValue({ generated: 0 }),
   SourceType: {},
 }));
 jest.mock('../../src/services/wave-defaults', () => ({
   DEFAULT_WAVE_CONFIG: {},
   buildTemplateToWaveMap: () => ({}),
 }));
-jest.mock('@supabase/supabase-js', () => ({
-  createClient: () => ({
-    from: () => ({
-      select: () => ({
-        eq: () => ({
-          eq: () => ({ maybeSingle: async () => ({ data: null }) }),
-          like: () => ({ data: [] }),
-        }),
-      }),
-    }),
-  }),
-}));
+jest.mock('@supabase/supabase-js', () => {
+  // Chainable PostgREST-shaped query stub. Each .from() returns the same
+  // shape; .like terminates with {data:[]} and .maybeSingle terminates with
+  // {data:null} — enough to walk both the milestone branch and the tenant
+  // lookup the /complete route now performs.
+  const make = () => {
+    const chain: any = {};
+    chain.select = () => chain;
+    chain.eq = () => chain;
+    chain.like = () => Promise.resolve({ data: [] });
+    chain.maybeSingle = async () => ({ data: null });
+    return chain;
+  };
+  return { createClient: () => ({ from: () => make() }) };
+});
 
 const REC_ID = '11111111-1111-4111-8111-111111111111';
 const USER_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';

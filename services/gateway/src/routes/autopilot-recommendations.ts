@@ -2093,21 +2093,24 @@ router.post('/:id/complete', async (req: Request, res: Response) => {
       console.warn(`${LOG_PREFIX} Failed to emit completion event:`, e);
     }
 
-    // Milestone fan-out: only on first-time completion of an onboarding rec.
-    if (!alreadyCompleted && sourceRef?.startsWith?.('onboarding_')) {
-      try {
-        const supabaseUrl = process.env.SUPABASE_URL!;
-        const supabaseKey = process.env.SUPABASE_SERVICE_ROLE!;
-        const { createClient } = await import('@supabase/supabase-js');
-        const supabase = createClient(supabaseUrl, supabaseKey);
+    // Look up tenant once; reused by the milestone fan-out and the
+    // post-complete regenerate call below. The pre-rebase milestone block
+    // scoped `tenantRow` inside its own try, which broke the VTID-03301
+    // regenerate call that was merged in afterwards (TS2304).
+    let tenantId: string | undefined;
+    try {
+      const { createClient } = await import('@supabase/supabase-js');
+      const supabase = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE!);
+      const { data: tenantRow } = await supabase
+        .from('user_tenants')
+        .select('tenant_id')
+        .eq('user_id', userId)
+        .eq('is_primary', true)
+        .maybeSingle();
+      tenantId = tenantRow?.tenant_id || undefined;
 
-        const { data: tenantRow } = await supabase
-          .from('user_tenants')
-          .select('tenant_id')
-          .eq('user_id', userId)
-          .eq('is_primary', true)
-          .maybeSingle();
-
+      // Milestone fan-out: only on first-time completion of an onboarding rec.
+      if (!alreadyCompleted && sourceRef?.startsWith?.('onboarding_')) {
         const { data: remaining } = await supabase
           .from('autopilot_recommendations')
           .select('id')
@@ -2115,7 +2118,7 @@ router.post('/:id/complete', async (req: Request, res: Response) => {
           .eq('status', 'activated')
           .like('source_ref', 'onboarding_%');
 
-        if ((!remaining || remaining.length === 0) && tenantRow?.tenant_id) {
+        if ((!remaining || remaining.length === 0) && tenantId) {
           await emitOasisEvent({
             vtid: 'VTID-01180',
             type: 'user.milestone.reached' as any,
@@ -2125,13 +2128,13 @@ router.post('/:id/complete', async (req: Request, res: Response) => {
             payload: {
               user_id: userId,
               milestone: 'onboarding_complete',
-              tenant_id: tenantRow.tenant_id,
+              tenant_id: tenantId,
             },
           });
         }
-      } catch (e) {
-        console.warn(`${LOG_PREFIX} Milestone check failed (non-fatal):`, e);
       }
+    } catch (e) {
+      console.warn(`${LOG_PREFIX} Tenant lookup / milestone check failed (non-fatal):`, e);
     }
 
     // VTID-03301: queue-empty → regenerate immediately. Fire-and-forget so
@@ -2141,7 +2144,7 @@ router.post('/:id/complete', async (req: Request, res: Response) => {
     // surfaces the fresh batch.
     regenerateCommunityRecommendations(userId, {
       requireEmptyQueue: true,
-      tenantId: tenantRow?.tenant_id || undefined,
+      tenantId,
       trigger_type: 'auto_replenish',
     }).catch((e: any) => console.warn(`${LOG_PREFIX} post-complete regen error (non-fatal): ${e?.message}`));
 
