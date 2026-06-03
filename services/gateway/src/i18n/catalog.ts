@@ -37,6 +37,16 @@ export type GatewayI18nKey =
   | 'notif.signal_expired.body'
   | 'notif.reminder.title'
   | 'notif.fallback_app_name'
+  // Live room goes live → notify everyone who tapped "Notify me" on the scheduled session.
+  | 'notif.live_going_live.title'
+  | 'notif.live_going_live.body'
+  // Daily pace check (claude/daily-pace-notifications)
+  | 'notif.daily_pace.on_track.title'
+  | 'notif.daily_pace.on_track.body'
+  | 'notif.daily_pace.slightly_behind.title'
+  | 'notif.daily_pace.slightly_behind.body'
+  | 'notif.daily_pace.falling_behind.title'
+  | 'notif.daily_pace.falling_behind.body'
   // Notification-category labels surfaced on Settings → Notifications page.
   // Mapped from notification_categories.slug (display_name + description).
   | 'notif.category.chat.direct_messages.label'
@@ -60,7 +70,30 @@ export type GatewayI18nKey =
   | 'notif.category.community.live_rooms.label'
   | 'notif.category.community.live_rooms.desc'
   | 'notif.category.community.connections_social.label'
-  | 'notif.category.community.connections_social.desc';
+  | 'notif.category.community.connections_social.desc'
+  // Priority of the Day banner (VTID-01947) — awareness-driven Home card +
+  // morning-brief fallback body. Emitted by the gateway as a full sentence,
+  // so it must be localized server-side (the frontend renders it verbatim).
+  | 'priority.absence_streak.named'
+  | 'priority.absence_streak'
+  | 'priority.absence.named.day'
+  | 'priority.absence.named.days'
+  | 'priority.absence.day'
+  | 'priority.absence.days'
+  | 'priority.overdue.one'
+  | 'priority.overdue.many'
+  | 'priority.goal_prosperity_idle'
+  | 'priority.welcome_wave'
+  | 'priority.welcome_generic'
+  | 'priority.open_recs.one'
+  | 'priority.open_recs.many'
+  | 'priority.journey_day'
+  | 'priority.greeting.morning.named'
+  | 'priority.greeting.morning'
+  | 'priority.greeting.afternoon.named'
+  | 'priority.greeting.afternoon'
+  | 'priority.greeting.evening.named'
+  | 'priority.greeting.evening';
 
 type LocaleCatalog = Record<GatewayI18nKey, string>;
 
@@ -87,6 +120,15 @@ const DE: LocaleCatalog = {
   'notif.signal_expired.body': 'Ein prädiktives Signal ist abgelaufen.',
   'notif.reminder.title': '🔔 Erinnerung',
   'notif.fallback_app_name': 'Vitana',
+  'notif.live_going_live.title': '🔴 Jetzt live!',
+  'notif.live_going_live.body': '„{title}" hat gerade begonnen. Schau jetzt rein.',
+  // Daily pace check
+  'notif.daily_pace.on_track.title': 'Auf Kurs ✨',
+  'notif.daily_pace.on_track.body': 'Du bist auf einem guten Weg. Schließ heute noch deinen Tagesplan ab — dein Ziel kommt näher.',
+  'notif.daily_pace.slightly_behind.title': 'Heute geht noch was',
+  'notif.daily_pace.slightly_behind.body': 'Ein, zwei Schritte vom Tagesplan reichen, um wieder mit deinem Ziel im Gleichschritt zu sein.',
+  'notif.daily_pace.falling_behind.title': 'Dein Ziel wartet',
+  'notif.daily_pace.falling_behind.body': 'Wir kommen vom Kurs ab. Ein kleiner Schritt heute — und du bist wieder dabei.',
   // Notification-category labels (Settings → Benachrichtigungen)
   'notif.category.chat.direct_messages.label': 'Direktnachrichten',
   'notif.category.chat.direct_messages.desc': 'Neue Nachrichten von Personen und Gruppen',
@@ -110,6 +152,27 @@ const DE: LocaleCatalog = {
   'notif.category.community.live_rooms.desc': 'Live-Raum-Starts, Einladungen, Zusammenfassungen und Aufzeichnungen',
   'notif.category.community.connections_social.label': 'Verbindungen & Soziales',
   'notif.category.community.connections_social.desc': 'Neue Matches, Verbindungen und soziale Aktivität',
+  // Priority of the Day banner (VTID-01947)
+  'priority.absence_streak.named': '{name}, willkommen zurück. Deine Tagebuch-Serie pausierte bei {streak} Tagen – möchtest du sie fortsetzen?',
+  'priority.absence_streak': 'Willkommen zurück. Deine Tagebuch-Serie pausierte bei {streak} Tagen – möchtest du sie fortsetzen?',
+  'priority.absence.named.day': '{name}, es ist {days} Tag her – schön, dass du wieder da bist.',
+  'priority.absence.named.days': '{name}, es sind {days} Tage her – schön, dass du wieder da bist.',
+  'priority.absence.day': 'Es ist {days} Tag her – schön, dass du wieder da bist.',
+  'priority.absence.days': 'Es sind {days} Tage her – schön, dass du wieder da bist.',
+  'priority.overdue.one': '{count} Journey-Aktivität wartet noch von vorhin. Willst du sie jetzt angehen?',
+  'priority.overdue.many': '{count} Journey-Aktivitäten warten noch von vorhin. Willst du eine jetzt angehen?',
+  'priority.goal_prosperity_idle': 'Dein Ziel zielt auf finanzielle Freiheit. Ein Business-Hub-Check-in könnte es heute voranbringen.',
+  'priority.welcome_wave': 'Du bist in „{wave}“ – {description}. Möchtest du eine 2-Minuten-Tour?',
+  'priority.welcome_generic': 'Willkommen auf deiner Longevity-Reise. Lass mich dir zeigen, was wir gemeinsam tun können.',
+  'priority.open_recs.one': '{count} Autopilot-Aktion ist für dich bereit. Einen Blick wert?',
+  'priority.open_recs.many': '{count} Autopilot-Aktionen sind für dich bereit. Einen Blick wert?',
+  'priority.journey_day': 'Tag {day} deiner Reise, in „{wave}“. Bleib dran.',
+  'priority.greeting.morning.named': 'Guten Morgen, {name}. Bereit, wenn du es bist.',
+  'priority.greeting.morning': 'Guten Morgen. Bereit, wenn du es bist.',
+  'priority.greeting.afternoon.named': 'Guten Tag, {name}. Bereit, wenn du es bist.',
+  'priority.greeting.afternoon': 'Guten Tag. Bereit, wenn du es bist.',
+  'priority.greeting.evening.named': 'Guten Abend, {name}. Bereit, wenn du es bist.',
+  'priority.greeting.evening': 'Guten Abend. Bereit, wenn du es bist.',
 };
 
 const EN: LocaleCatalog = {
@@ -135,6 +198,15 @@ const EN: LocaleCatalog = {
   'notif.signal_expired.body': 'A predictive signal has expired.',
   'notif.reminder.title': '🔔 Reminder',
   'notif.fallback_app_name': 'Vitana',
+  'notif.live_going_live.title': '🔴 Now live!',
+  'notif.live_going_live.body': '"{title}" just started. Tune in now.',
+  // Daily pace check
+  'notif.daily_pace.on_track.title': 'On track ✨',
+  'notif.daily_pace.on_track.body': "You're moving well. Wrap up today's plan — your goal is getting closer.",
+  'notif.daily_pace.slightly_behind.title': "Today's still open",
+  'notif.daily_pace.slightly_behind.body': "One or two steps from today's plan are enough to fall back in step with your goal.",
+  'notif.daily_pace.falling_behind.title': 'Your goal is waiting',
+  'notif.daily_pace.falling_behind.body': "We're drifting off course. One small step today — and you're back in.",
   // Notification-category labels (Settings → Notifications)
   'notif.category.chat.direct_messages.label': 'Direct Messages',
   'notif.category.chat.direct_messages.desc': 'New messages from people and groups',
@@ -158,6 +230,27 @@ const EN: LocaleCatalog = {
   'notif.category.community.live_rooms.desc': 'Live room starting, invites, summaries, and recordings',
   'notif.category.community.connections_social.label': 'Connections & Social',
   'notif.category.community.connections_social.desc': 'New matches, connections, and social activity',
+  // Priority of the Day banner (VTID-01947)
+  'priority.absence_streak.named': '{name}, welcome back. Your diary streak paused at {streak} days — want to pick it up?',
+  'priority.absence_streak': 'Welcome back. Your diary streak paused at {streak} days — want to pick it up?',
+  'priority.absence.named.day': "{name}, it's been {days} day — glad you're back.",
+  'priority.absence.named.days': "{name}, it's been {days} days — glad you're back.",
+  'priority.absence.day': "It's been {days} day — glad you're back.",
+  'priority.absence.days': "It's been {days} days — glad you're back.",
+  'priority.overdue.one': '{count} journey activity is waiting from earlier. Want to tackle it now?',
+  'priority.overdue.many': '{count} journey activities are waiting from earlier. Want to tackle one now?',
+  'priority.goal_prosperity_idle': 'Your goal points at building freedom. One Business Hub check-in could move it today.',
+  'priority.welcome_wave': 'You\'re in "{wave}" — {description}. Want a 2-minute walkthrough?',
+  'priority.welcome_generic': 'Welcome to your longevity journey. Let me show you what we can do together.',
+  'priority.open_recs.one': '{count} Autopilot action ready for you. Worth a look?',
+  'priority.open_recs.many': '{count} Autopilot actions ready for you. Worth a look?',
+  'priority.journey_day': 'Day {day} of your journey, in {wave}. Keep going.',
+  'priority.greeting.morning.named': 'Good morning, {name}. Ready when you are.',
+  'priority.greeting.morning': 'Good morning. Ready when you are.',
+  'priority.greeting.afternoon.named': 'Good afternoon, {name}. Ready when you are.',
+  'priority.greeting.afternoon': 'Good afternoon. Ready when you are.',
+  'priority.greeting.evening.named': 'Good evening, {name}. Ready when you are.',
+  'priority.greeting.evening': 'Good evening. Ready when you are.',
 };
 
 // Draft locales — start as a copy of EN; replace with native strings as they

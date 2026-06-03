@@ -205,6 +205,13 @@ export type CicdEventType =
   | 'orb.session.ended'
   // VTID-01039: ORB Conversation Aggregation
   | 'orb.session.summary'
+  // DEV-COMHU-0502 — ORB Recovery 1: auth-contract identity resolution telemetry
+  | 'orb.session.identity.resolved'
+  // DEV-COMHU-0503 — ORB Recovery 2+3: close/reopen continuity state transitions
+  | 'orb.session.continuity.persisted'
+  | 'orb.session.continuity.cleared'
+  // DEV-COMHU-0504 — ORB Recovery 4: audio-ready handshake ack
+  | 'orb.session.audio_ready.acked'
   // VTID-01032: Multi-service deploy selection event
   | 'cicd.deploy.selection'
   // VTID-01033: CICD Concurrency Lock Events
@@ -510,6 +517,10 @@ export type CicdEventType =
   // BOOTSTRAP-ORB-HOTFIX-1: pre-greeting latency gauge (time from session-start
   // request to first greeting audio chunk forwarded to client)
   | 'orb.live.greeting.delivered'
+  // Phase D (DEV-COMHU voice budget watch): voice instruction budget observability
+  | 'voice.instruction.budget_trimmed'
+  | 'voice.instruction.budget_at_risk'
+  | 'voice.instruction.budget_overflow'
   // BOOTSTRAP-ADMIN-BB-CC: admin insight lifecycle
   | 'admin.insight.approved'
   | 'admin.insight.rejected'
@@ -863,6 +874,21 @@ export type CicdEventType =
   | 'staging.deploy.failed'
   | 'staging.metrics.snapshot'
   | 'staging.revert.completed'
+  // VTID-03177 follow-up: RUN-STAGING-MIGRATION.yml emits these per run.
+  // Allowlist for /api/v1/oasis/emit extended for the `staging.migration.`
+  // prefix in the same PR.
+  | 'staging.migration.completed'
+  | 'staging.migration.failed'
+  // VTID-03204 (Phase 1 W2 acceptance helper): one-off endpoint that flips
+  // tenant_settings.feature_flags.data_export_ok on staging tenants so the
+  // dataset-extraction PII gate can produce real rows. Staging-only by hard
+  // guard.
+  | 'staging.tenant_consent.flipped'
+  // VTID-03241 (Phase 1 W3-E1 PR 4): role-aware context pack — shadow
+  // mode emits this per assistant turn describing what WOULD be allowed/
+  // blocked under the role registry policy. Fire-and-forget; gated by
+  // FEATURE_ROLE_AWARE_CONTEXT_SHADOW_ENV (off in prod by default).
+  | 'assistant.role.context_pack.shadow'
   | 'production.publish.requested'
   | 'production.publish.completed'
   | 'production.publish.failed'

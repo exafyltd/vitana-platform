@@ -51,7 +51,11 @@ const MAX_BODY_BYTES = 16 * 1024;
 // the same panel. Without this entry the topics 400 here and silently
 // disappear — Voice Lab stays empty for LiveKit, and the failure
 // classifier sees no session-stop metrics.
-const ALLOWED_PREFIXES = ['orb.livekit.', 'livekit.', 'vtid.live.'] as const;
+// VTID-03177 follow-up: `staging.migration.` added so the new
+// RUN-STAGING-MIGRATION.yml workflow can emit success/failure telemetry from
+// GitHub Actions via this proxy (the runner has the GATEWAY_SERVICE_TOKEN but
+// no Supabase write surface, same shape as the orb-agent path).
+const ALLOWED_PREFIXES = ['orb.livekit.', 'livekit.', 'vtid.live.', 'staging.migration.'] as const;
 
 function isAllowedTopic(topic: unknown): topic is string {
   if (typeof topic !== 'string') return false;

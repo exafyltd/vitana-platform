@@ -1,0 +1,90 @@
+name: Cron Shadow Comparison Report
+
+# Phase 1 W3-A (VTID-03212) — daily report on staging shadow-comparison
+# events. Runs after the graduation recommender's 09:00 CET tick so its
+# output is visible in the same time window the operator reviews
+# auto-promote decisions.
+#
+# Reads from the staging-only admin endpoint
+# (GET /api/v1/admin/staging/eval/shadow-comparison-report) — does NOT
+# touch Supabase directly, so no extra IAM grants are needed beyond the
+# existing GATEWAY_SERVICE_TOKEN repo secret.
+#
+# Insufficient-data behavior: emits a "no data yet" report and exits 0.
+# Workflow only fails when the endpoint itself errors (5xx, network).
+
+on:
+  schedule:
+    # Daily at 09:15 CET (08:15 UTC winter / 07:15 UTC summer). 15 min
+    # after the graduation recommender (08:00 UTC) so the comparison
+    # report is the second thing the operator sees after the FCM digest.
+    - cron: '15 8 * * *'
+  workflow_dispatch:
+    inputs:
+      window_hours:
+        description: 'Lookback window in hours (1-168)'
+        required: true
+        default: '24'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cron-shadow-comparison-report
+  cancel-in-progress: false
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: services/gateway/package-lock.json
+
+      - name: Install gateway deps
+        working-directory: services/gateway
+        run: npm ci --no-audit --no-fund
+
+      - name: Run shadow-comparison report
+        working-directory: services/gateway
+        env:
+          GATEWAY_SERVICE_TOKEN: ${{ secrets.GATEWAY_SERVICE_TOKEN }}
+          STAGING_GATEWAY_URL: https://gateway-staging-q74ibpv6ia-uc.a.run.app
+          WINDOW_HOURS: ${{ inputs.window_hours || '24' }}
+          REPORT_MARKDOWN_PATH: /tmp/shadow-comparison-report.md
+        run: |
+          set -euo pipefail
+          if [ -z "${GATEWAY_SERVICE_TOKEN:-}" ]; then
+            echo "::error::GATEWAY_SERVICE_TOKEN repo secret is missing"
+            exit 1
+          fi
+          npx tsx scripts/eval/shadow-comparison-report.ts > /tmp/shadow-comparison-report.json
+          echo "JSON written: $(wc -c < /tmp/shadow-comparison-report.json) bytes"
+          echo "Markdown written: $(wc -c < /tmp/shadow-comparison-report.md 2>/dev/null || echo 0) bytes"
+
+      - name: Append summary
+        if: always()
+        run: |
+          if [ -f /tmp/shadow-comparison-report.md ]; then
+            cat /tmp/shadow-comparison-report.md >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo '## Shadow-comparison report' >> "$GITHUB_STEP_SUMMARY"
+            echo '' >> "$GITHUB_STEP_SUMMARY"
+            echo 'Report script did not produce a Markdown file. Check the run logs.' >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: shadow-comparison-report-${{ github.run_id }}
+          path: |
+            /tmp/shadow-comparison-report.json
+            /tmp/shadow-comparison-report.md
+          if-no-files-found: warn
+          retention-days: 90

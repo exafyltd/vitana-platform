@@ -301,6 +301,11 @@ jobs:
             EXTRA_ENV_ARGS+=(--update-env-vars=COMMIT_SHA=${{ github.sha }})
             # VTID-01225: Cognee Extractor URL for entity extraction
             EXTRA_ENV_ARGS+=(--update-env-vars=COGNEE_EXTRACTOR_URL=https://cognee-extractor-86804897789.us-central1.run.app)
+            # VTID-01175: Worker verification mode. 'advisory' (default) runs the
+            # verification engine on every completion and emits a developer-review
+            # report of fixes needed, but NEVER blocks the task. Set to 'blocking'
+            # to restore the legacy hard gate (failed verification fails/retries).
+            EXTRA_ENV_ARGS+=(--update-env-vars=VERIFICATION_MODE=advisory)
             # VTID-01155: Bind Gemini API key for TTS and chat
             SECRETS_ARGS+=(--update-secrets=GOOGLE_GEMINI_API_KEY=GOOGLE_GEMINI_API_KEY:latest)
             # VTID-01184 + BOOTSTRAP-LLM-ROUTER: OpenAI API key — used for

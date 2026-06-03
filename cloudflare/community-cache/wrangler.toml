@@ -22,12 +22,13 @@ routes = [
   { pattern = "preview-cache.vitanaland.com/*", zone_name = "vitanaland.com" },
 ]
 
-# KV namespace for cached responses. The first deploy creates the namespace
-# via `wrangler kv:namespace create COMMUNITY_CACHE_KV --env staging`; the
-# resulting id is pasted in here.
+# KV namespace for cached responses. Created via BOOTSTRAP-CLOUDFLARE-KV.yml
+# workflow run 26640830245 (2026-05-29). To rotate: bump the id below after
+# `wrangler kv:namespace create COMMUNITY_CACHE_KV --env staging` returns a
+# new one; existing entries are lost on rotation (cache is non-durable).
 [[kv_namespaces]]
 binding = "COMMUNITY_CACHE_KV"
-id = "REPLACE_WITH_KV_ID_AFTER_FIRST_DEPLOY"
+id = "e336541bebfb4bcd952792beaa91e0a2"
 
 [vars]
 GATEWAY_ORIGIN = "https://gateway-staging-q74ibpv6ia-uc.a.run.app"

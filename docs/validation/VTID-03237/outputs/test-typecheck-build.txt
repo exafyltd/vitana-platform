@@ -1,0 +1,21 @@
+=== npm run typecheck ===
+> @vitana/gateway@1.0.1 typecheck
+> tsc --noEmit
+(exit 0 — no errors)
+
+=== npm test (tail) ===
+Test Suites: 286 passed, 286 total
+Tests:       6 skipped, 4939 passed, 4945 total
+Snapshots:   9 passed, 9 total
+TEST_EXIT=0
+
+universal-cart suite (relevant):
+  VTID-03213 §4 item mutation + §5 event emission
+    POST /items — 400 on unknown source_surface (sms rejected; video_shop accepted)
+    POST /items — creates new item ... emits item.added
+  38 passed, 38 total
+
+=== npm run build (tail) ===
+> @vitana/gateway@1.0.1 copy-data
+> mkdir -p dist/services && cp src/services/tool-manifest.json dist/services/tool-manifest.json
+BUILD_EXIT=0

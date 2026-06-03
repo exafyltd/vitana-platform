@@ -26,7 +26,15 @@ interface Spec {
   tools: { name: string; implementations: string[]; safety_critical: boolean; owner_vtid?: string | null }[];
   oasis_topics: { topic: string; implementations: string[] }[];
   watchdogs: { name: string; value: number; implementations: string[] }[];
-  system_instruction_params: { authenticated_signature: string[]; anonymous_signature: string[] };
+  system_instruction_params: {
+    authenticated_signature: string[];
+    anonymous_signature: string[];
+    case_convention?: string;
+    impl_specific_optional?: {
+      authenticated?: { vertex?: string[]; livekit?: string[] };
+      anonymous?: { vertex?: string[]; livekit?: string[] };
+    };
+  };
 }
 
 interface Extracted {
@@ -168,39 +176,50 @@ function diff(spec: Spec, vertex: Extracted, livekit: Extracted): DriftEntry[] {
     }
   }
 
-  // System instruction signatures
-  const expectedAuth = spec.system_instruction_params.authenticated_signature;
-  const expectedAnon = spec.system_instruction_params.anonymous_signature;
+  // System instruction signatures.
+  //
+  // Cross-language case convention is NOT drift: TS uses camelCase
+  // (`voiceStyle`) and Python uses snake_case (`voice_style`) for the same
+  // logical parameter. We normalise every name to the spec's `case_convention`
+  // (snake_case) before comparing. We also strip parameters declared in
+  // `impl_specific_optional` for the implementation under test — those are
+  // intentional one-sided trailing optionals (e.g. Vertex `omitGreetingPolicy`/
+  // `surface`, LiveKit `firstName`/`displayName`) and must not register as
+  // drift. Anything left over is a genuine shared-contract violation.
+  const sip = spec.system_instruction_params;
+  const expectedAuth = sip.authenticated_signature.map(toSnake);
+  const expectedAnon = sip.anonymous_signature.map(toSnake);
+  const optAuth = sip.impl_specific_optional?.authenticated ?? {};
+  const optAnon = sip.impl_specific_optional?.anonymous ?? {};
 
-  if (vertex.system_instruction_signatures.authenticated) {
-    if (!arraysEqual(vertex.system_instruction_signatures.authenticated, expectedAuth)) {
-      entries.push({
-        category: 'signature_mismatch',
-        kind: 'system_instruction',
-        name: 'authenticated_signature (vertex)',
-        detail: `spec=${JSON.stringify(expectedAuth)} vertex=${JSON.stringify(vertex.system_instruction_signatures.authenticated)}`,
-        severity: 'safety_critical',
-      });
-    }
+  function normalizeSig(names: string[], implOptional: string[] | undefined): string[] {
+    const strip = new Set((implOptional ?? []).map(toSnake));
+    return names.map(toSnake).filter((n) => !strip.has(n));
   }
-  if (vertex.system_instruction_signatures.anonymous) {
-    if (!arraysEqual(vertex.system_instruction_signatures.anonymous, expectedAnon)) {
+
+  const sigChecks: Array<{
+    impl: 'vertex' | 'livekit';
+    names: string[] | null;
+    expected: string[];
+    optional: string[] | undefined;
+    label: string;
+  }> = [
+    { impl: 'vertex', names: vertex.system_instruction_signatures.authenticated, expected: expectedAuth, optional: optAuth.vertex, label: 'authenticated_signature (vertex)' },
+    { impl: 'vertex', names: vertex.system_instruction_signatures.anonymous, expected: expectedAnon, optional: optAnon.vertex, label: 'anonymous_signature (vertex)' },
+    { impl: 'livekit', names: livekit.system_instruction_signatures.authenticated, expected: expectedAuth, optional: optAuth.livekit, label: 'authenticated_signature (livekit)' },
+    { impl: 'livekit', names: livekit.system_instruction_signatures.anonymous, expected: expectedAnon, optional: optAnon.livekit, label: 'anonymous_signature (livekit)' },
+  ];
+
+  for (const chk of sigChecks) {
+    if (!chk.names) continue;
+    if (chk.impl === 'livekit' && livekit.status === 'not_yet_implemented') continue;
+    const normalized = normalizeSig(chk.names, chk.optional);
+    if (!arraysEqual(normalized, chk.expected)) {
       entries.push({
         category: 'signature_mismatch',
         kind: 'system_instruction',
-        name: 'anonymous_signature (vertex)',
-        detail: `spec=${JSON.stringify(expectedAnon)} vertex=${JSON.stringify(vertex.system_instruction_signatures.anonymous)}`,
-        severity: 'safety_critical',
-      });
-    }
-  }
-  if (livekit.system_instruction_signatures.authenticated && livekit.status !== 'not_yet_implemented') {
-    if (!arraysEqual(livekit.system_instruction_signatures.authenticated, expectedAuth)) {
-      entries.push({
-        category: 'signature_mismatch',
-        kind: 'system_instruction',
-        name: 'authenticated_signature (livekit)',
-        detail: `spec=${JSON.stringify(expectedAuth)} livekit=${JSON.stringify(livekit.system_instruction_signatures.authenticated)}`,
+        name: chk.label,
+        detail: `spec=${JSON.stringify(chk.expected)} ${chk.impl}(normalized)=${JSON.stringify(normalized)} (raw=${JSON.stringify(chk.names)})`,
         severity: 'safety_critical',
       });
     }
@@ -213,6 +232,15 @@ function arraysEqual(a: string[], b: string[]): boolean {
   if (a.length !== b.length) return false;
   for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
   return true;
+}
+
+/** Normalise a parameter name to snake_case so camelCase (TS) and snake_case
+ *  (Python) spellings of the same logical parameter compare equal. */
+function toSnake(name: string): string {
+  return name
+    .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
+    .replace(/([A-Z]+)([A-Z][a-z])/g, '$1_$2')
+    .toLowerCase();
 }
 
 function renderMarkdown(drifts: DriftEntry[], vertex: Extracted, livekit: Extracted): string {
