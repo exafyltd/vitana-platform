@@ -13,7 +13,18 @@ on:
   schedule:
     # Daily at 04:00 UTC (~05:00-06:00 CET).
     - cron: '0 4 * * *'
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      target:
+        description: 'Artifact target to stage'
+        required: false
+        default: all
+        type: choice
+        options:
+          - all
+          - voice-tool-router
+          - intent-kind
+          - pillar-classifier
 
 permissions:
   contents: read
@@ -43,23 +54,36 @@ jobs:
       - name: Mirror latest weights for each target
         run: |
           set -euo pipefail
-          for TARGET in voice-tool-router intent-kind pillar-classifier; do
+          REQUESTED_TARGET="${{ github.event.inputs.target || 'all' }}"
+          if [ "${REQUESTED_TARGET}" = "all" ]; then
+            TARGETS="voice-tool-router intent-kind pillar-classifier"
+          else
+            TARGETS="${REQUESTED_TARGET}"
+          fi
+
+          for TARGET in ${TARGETS}; do
             SRC="${STAGING_BUCKET}/finetune-runs/${TARGET}/"
             DST="${STAGING_BUCKET}/finetune-current/${TARGET}/"
             echo "=== ${TARGET} ==="
             # List existing runs newest-first; take the first that has a
             # weights.tar.gz at its root.
-            LATEST=$(gsutil ls "${SRC}" 2>/dev/null | sort -r | head -10)
+            LATEST=$(gsutil ls "${SRC}" 2>/dev/null || true)
+            LATEST=$(printf "%s\n" "${LATEST}" | sort -r | head -10)
             if [ -z "$LATEST" ]; then
               echo "no runs yet for ${TARGET}; skipping"
               continue
             fi
+            STAGED=0
             for RUN in $LATEST; do
               if gsutil -q stat "${RUN}weights.tar.gz" 2>/dev/null; then
                 echo "selecting ${RUN}weights.tar.gz -> ${DST}weights.tar.gz"
                 gsutil -m cp "${RUN}weights.tar.gz" "${DST}weights.tar.gz"
                 echo "${RUN}" | gsutil -m cp - "${DST}LATEST_RUN.txt"
+                STAGED=1
                 break
               fi
             done
+            if [ "${STAGED}" -eq 0 ]; then
+              echo "no weights.tar.gz found in latest runs for ${TARGET}; skipping"
+            fi
           done
