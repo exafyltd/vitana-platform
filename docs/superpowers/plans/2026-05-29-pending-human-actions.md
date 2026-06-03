@@ -239,3 +239,35 @@ Codex review caught real bugs that were fixed forward before merge:
 5. **Phase B (#2411) rollout:** VOICE_RANKING_SHADOW 48h → dragan1 canary → expand.
 6. **Phase C (#2412):** founder approval of the design doc before any code.
 7. Prod smokes (dragan3 + dragan1, Vertex + LiveKit canary) per each phase block above.
+
+---
+
+## UPDATE 2026-06-03 — ORB-5 runtime follow-up merged (#2488)
+
+- #2488 merged (`a3b101bb`): activate_recommendation now reads `pending_cta` from
+  orb_session_state on a bare "yes" (resolves id, consumes only on activation
+  success). Closes the read side of the autopilot CTA loop (#2438 shipped the write).
+- Codex caught 2 real bugs, both fixed: clear-on-read race (moved to success path)
+  + the eager-clear that dropped retry context.
+- CI root cause that blocked it was NOT code/flake: the branch was based on a stale
+  main whose autopilot-voice-tools.test.ts predated #2463's wording fix. Rebase onto
+  current main pulled in the corrected assertion → all 12 checks green → merged.
+  (Diagnosed via the get_job_logs MCP tool once it attached.)
+
+### Sandbox capability findings (definitive, 2026-06-03)
+- NO Supabase MCP attached to this container (mcpServers: []; no mcp__supabase__*).
+- Outbound egress to *.supabase.co / api.supabase.com / gateway prod = 403 (firewalled).
+- No gcloud. GitHub MCP IS available incl. get_job_logs + actions_* (attached late).
+- Net: this session CAN merge PRs + read CI logs; CANNOT apply DB migrations, curl
+  prod, or dispatch workflows. The orb_session_state migration remains the one hard
+  infra dependency — must be applied via a surface with Supabase access OR the
+  RUN-MIGRATION workflow.
+
+### STILL REQUIRED (unchanged — infra, not code)
+1. Apply migration 20260606000000_DEV_COMHU_0503_orb_session_state.sql (gates
+   continuity #2435, audio-ready #2437, pending-CTA #2438 + #2488).
+2. Verify exec_sql RPC for voice-budget (#2408).
+3. Apply vitana-v1 + orb-agent patch files (docs/patches/**).
+4. Confirm EXEC-DEPLOY SUCCESS + /alive for the merged commits.
+5. Phase B shadow→canary rollout (#2411); Phase C founder gate (#2412).
+6. Prod smokes (dragan3/dragan1, Vertex + LiveKit).
