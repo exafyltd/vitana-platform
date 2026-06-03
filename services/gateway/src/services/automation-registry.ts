@@ -192,9 +192,10 @@ const COMMUNITY_GROUPS: AutomationDefinition[] = [
   },
   {
     id: 'AP-0211', name: '"Revive Your Group" Re-Ignition', domain: 'community-groups',
-    status: 'PLANNED', priority: 'P1', triggerType: 'heartbeat',
+    status: 'IMPLEMENTED', priority: 'P1', triggerType: 'heartbeat',
     triggerConfig: { intervalMinutes: 1440 }, // daily dormant-group scan
     targetRoles: [...MEMBER_ROLES],
+    handler: 'runReviveYourGroup',
     requires: ['AP-0205', 'AP-0503'],
   },
   {
