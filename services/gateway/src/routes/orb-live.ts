@@ -3670,8 +3670,8 @@ async function executeLiveApiToolInner(
           if (!deflection) {
             // Last-resort generic fallback — still NOT "no recommendations".
             deflection = (session.lang || 'en').toLowerCase().startsWith('de')
-              ? 'Im Moment ist nichts Spezifisches vorgemerkt, aber in Vitanaland gibt es viel zu lernen. Wo möchtest du anfangen?'
-              : 'Nothing specific is queued up at the moment, but Vitanaland has lots to learn. What would you like to dive into?';
+              ? 'Lass mich dir einen guten nächsten Schritt in Vitanaland zeigen — wir schauen es uns gemeinsam an.'
+              : "Let me show you a good next step in Vitanaland — let's take a look together.";
           }
           return { success: true, result: deflection };
         }
