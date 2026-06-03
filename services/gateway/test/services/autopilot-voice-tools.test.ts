@@ -15,6 +15,7 @@
 
 import {
   summarizeAutopilotForVoice,
+  renderAutopilotOfferBlock,
   type CommunityRecommendationView,
 } from '../../src/routes/autopilot-recommendations';
 
@@ -36,7 +37,9 @@ describe('summarizeAutopilotForVoice', () => {
     const s = summarizeAutopilotForVoice([]);
     expect(s.count).toBe(0);
     expect(s.ids).toEqual([]);
-    expect(s.spoken).toMatch(/no Autopilot actions/i);
+    // Empty-queue copy was softened on main ("you don't have any … yet, those
+    // build up as you keep using Vitana"); assert the stable intent, not wording.
+    expect(s.spoken).toMatch(/don't have any Autopilot actions/i);
   });
 
   it('uses the singular form for exactly one action', () => {
@@ -68,5 +71,46 @@ describe('summarizeAutopilotForVoice', () => {
     // The ids the voice layer stashes for "activate those" must equal the
     // ids of the recommendations that were read aloud, in the same order.
     expect(s.ids).toEqual(recs.map(r => r.id));
+  });
+});
+
+describe('renderAutopilotOfferBlock (proactive offer)', () => {
+  it('returns an empty string when the queue is empty (no false offer)', () => {
+    expect(renderAutopilotOfferBlock([])).toBe('');
+  });
+
+  it('singularizes for exactly one prepared action', () => {
+    const block = renderAutopilotOfferBlock([view('a', 'Add your photo')]);
+    expect(block).toContain('one action');
+    expect(block).not.toMatch(/\b1 actions\b/);
+  });
+
+  it('reports the count and instructs a single proactive offer', () => {
+    const recs = [
+      view('a', 'Add your photo'),
+      view('b', 'Write your first diary entry'),
+      view('c', 'Attend a meetup'),
+    ];
+    const block = renderAutopilotOfferBlock(recs);
+    expect(block).toContain('3 actions');
+    // Names the two tools Vitana must call, so the read+activate handshake is wired.
+    expect(block).toContain('get_autopilot_recommendations');
+    expect(block).toContain('activate_autopilot_recommendations');
+    // Must offer first, not read unprompted, and only once.
+    expect(block).toMatch(/AT MOST ONCE/i);
+    expect(block).toMatch(/do not read the list unprompted/i);
+  });
+
+  it('teases the top two titles to make the offer concrete', () => {
+    const recs = [
+      view('a', 'Add your photo'),
+      view('b', 'Write your first diary entry'),
+      view('c', 'Attend a meetup'),
+    ];
+    const block = renderAutopilotOfferBlock(recs);
+    expect(block).toContain('Add your photo');
+    expect(block).toContain('Write your first diary entry');
+    // Third title is not teased (keeps the offer short).
+    expect(block).not.toContain('Attend a meetup');
   });
 });

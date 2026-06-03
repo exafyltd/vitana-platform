@@ -18,8 +18,10 @@
  *   - No checkout, no Stripe, no wallet waterfall, no autopilot bridge, no matchmaking.
  *
  * Access control:
- *   - Community-role-only. Non-community sessions get HTTP 403 with `error: 'cart_unavailable_for_role'`.
- *   - Role is read from `user_tenants.active_role` via the service-role client.
+ *   - Authenticated-user-only (any role). The mobile app's entire audience is
+ *     community users, so commerce is open to every signed-in caller; we do NOT
+ *     gate on `active_role` (doing so blocked every user whose active_role was
+ *     null/unset). 401 only when the bearer token is missing/invalid.
  *   - Cart + cart_items mutations use the user-JWT-scoped client so RLS enforces owner isolation.
  *   - cart_events INSERTs use the service-role client (RLS blocks `authenticated` writes; audit
  *     emission is the gateway's responsibility).
@@ -36,8 +38,16 @@ import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { createUserSupabaseClient } from '../lib/supabase-user';
 import { getSupabase } from '../lib/supabase';
+import { checkoutUniversalCart, CHECKOUT_ERROR_STATUS } from '../services/checkout/checkout-service';
+import { getMonthlySpend } from '../services/budget/spend-service';
 
 export const VTID = 'VTID-03213';
+
+/** Default currency fallback (matches the rest of the gateway's commerce code). */
+const DEFAULT_CURRENCY = 'EUR';
+
+/** Near-cap advisory ratio — projected spend within 15% of the cap → 'near'. */
+const NEAR_CAP_RATIO = 0.85;
 
 // =============================================================================
 // Constants — keep in sync with supabase/migrations/20260605000000_VTID_03186_universal_cart_schema.sql
@@ -46,8 +56,12 @@ export const VTID = 'VTID-03213';
 /** item_type CHECK: must match cart_items_item_type_check. */
 const ALLOWED_ITEM_TYPES = ['supplement', 'partner_product'] as const;
 
-/** source_surface CHECK: must match cart_items_source_surface_check. NULL is also allowed. */
-const ALLOWED_SOURCE_SURFACES = ['web', 'mobile', 'voice', 'autopilot', 'community'] as const;
+/**
+ * source_surface CHECK: must match cart_items_source_surface_check. NULL is also allowed.
+ * 'video_shop' added in VTID-03237 (Video Shop) — kept in sync with the widened
+ * CHECK in 20260607000000_VTID_03237_video_shop_schema.sql.
+ */
+const ALLOWED_SOURCE_SURFACES = ['web', 'mobile', 'voice', 'autopilot', 'community', 'video_shop'] as const;
 
 /**
  * Whitelist of keys permitted inside `universal_cart_events.event_payload`.
@@ -67,8 +81,6 @@ const ALLOWED_EVENT_PAYLOAD_KEYS = new Set([
 
 /** Soft cap on event-payload string fields to prevent accidental PII leakage via metadata blob. */
 const EVENT_PAYLOAD_STRING_MAX = 200;
-
-const COMMUNITY_ROLE = 'community';
 
 const router = Router();
 
@@ -142,21 +154,11 @@ export async function getActiveRole(
 }
 
 /**
- * Standardized 403 response for non-community sessions.
+ * Auth gate. Returns the resolved identity for any authenticated caller, or
+ * sends a 401 and returns null so callers can early-exit. Intentionally does
+ * NOT gate on role — see the "Access control" note in the file header.
  */
-function denyForRole(res: Response, callerRole: string | null): Response {
-  return res.status(403).json({
-    ok: false,
-    error: 'cart_unavailable_for_role',
-    role: callerRole, // for client-side diagnostics; not PII
-  });
-}
-
-/**
- * Combined auth + role gate. Returns the resolved identity on success, or sends
- * a 401/403 response and returns null so callers can early-exit.
- */
-async function authorizeCommunityCaller(
+export async function authorizeCommunityCaller(
   req: Request,
   res: Response
 ): Promise<{ token: string; user_id: string; tenant_id: string | null } | null> {
@@ -170,11 +172,11 @@ async function authorizeCommunityCaller(
     res.status(401).json({ ok: false, error: 'UNAUTHENTICATED', detail: ctx.error });
     return null;
   }
-  const role = await getActiveRole(ctx.user_id, ctx.tenant_id);
-  if (role !== COMMUNITY_ROLE) {
-    denyForRole(res, role);
-    return null;
-  }
+  // The mobile app has a single audience — every user IS a community user —
+  // so commerce must be available to any authenticated caller. The previous
+  // `active_role === 'community'` wall blocked everyone whose user_tenants
+  // active_role wasn't exactly that string (null/unset for app users), which
+  // broke the cart for all of them. Authenticate only; never gate on role.
   return { token, user_id: ctx.user_id, tenant_id: ctx.tenant_id };
 }
 
@@ -260,6 +262,10 @@ const AddItemBody = z.object({
   unit_price_cents_snapshot: z.number().int().nonnegative().optional(),
   currency_snapshot: z.string().length(3).optional(),
   autopilot_rec_id: z.string().uuid().optional(),
+  // VTID-03237 — Video Shop attribution. Structured companions to source_ref;
+  // copied onto product_orders at order time by the future checkout bridge.
+  source_video_id: z.string().uuid().optional(),
+  source_creator_id: z.string().uuid().optional(),
   metadata: z.record(z.unknown()).optional(),
 });
 
@@ -419,6 +425,119 @@ router.get('/', async (req: Request, res: Response) => {
 });
 
 /**
+ * GET /budget — VTID-03260 (Phase 2) standing-budget read.
+ *
+ * Read-only budget summary for the caller, in their currency_preference (per
+ * currency, never mixed). ADVISORY ONLY: never blocks or charges anything.
+ *
+ * Response:
+ *   { ok, monthly_cap_cents, spent_this_month_cents, cart_active_subtotal_cents,
+ *     currency, status: 'under'|'near'|'over' }
+ *
+ * status: null/0 cap → 'under'. Else projected = spent + cart subtotal;
+ *   'over' if projected > cap; 'near' if projected >= 0.85*cap; else 'under'.
+ */
+router.get('/budget', async (req: Request, res: Response) => {
+  const id = await authorizeCommunityCaller(req, res);
+  if (!id) return;
+
+  const svc = getSupabase();
+
+  // Currency + monthly cap from the user's profile/limitations (service-role read,
+  // consistent with the spend read). currency_preference falls back to the same
+  // default the rest of the commerce code uses.
+  let currency = DEFAULT_CURRENCY;
+  let monthly_cap_cents: number | null = null;
+
+  if (svc) {
+    const userRow = await svc
+      .from('app_users')
+      .select('currency_preference')
+      .eq('user_id', id.user_id)
+      .maybeSingle();
+    if (!userRow.error && userRow.data?.currency_preference) {
+      currency = userRow.data.currency_preference as string;
+    }
+
+    const limRow = await svc
+      .from('user_limitations')
+      .select('budget_monthly_cap_cents')
+      .eq('user_id', id.user_id)
+      .maybeSingle();
+    if (!limRow.error && limRow.data) {
+      monthly_cap_cents = (limRow.data.budget_monthly_cap_cents as number | null) ?? null;
+    }
+  }
+
+  // Month-to-date CONVERTED spend in this currency.
+  const spent_this_month_cents = await getMonthlySpend(svc, id.user_id, currency);
+
+  // Active-cart subtotal = sum(coalesce(unit_price_cents_snapshot,0) * quantity)
+  // over the caller's active cart items. RLS-scoped user client.
+  const userClient = createUserSupabaseClient(id.token);
+  let cart_active_subtotal_cents = 0;
+
+  const cartRes = await userClient
+    .from('universal_carts')
+    .select('id')
+    .eq('user_id', id.user_id)
+    .eq('status', 'active')
+    .maybeSingle();
+
+  if (cartRes.error && !isNoRowsError(cartRes.error)) {
+    return res.status(500).json({
+      ok: false,
+      error: 'cart_lookup_failed',
+      detail: cartRes.error.message,
+    });
+  }
+
+  if (cartRes.data?.id) {
+    const itemsRes = await userClient
+      .from('universal_cart_items')
+      .select('unit_price_cents_snapshot, quantity')
+      .eq('cart_id', cartRes.data.id)
+      .eq('status', 'active');
+
+    if (itemsRes.error) {
+      return res.status(500).json({
+        ok: false,
+        error: 'cart_items_lookup_failed',
+        detail: itemsRes.error.message,
+      });
+    }
+
+    for (const row of (itemsRes.data ?? []) as Array<{ unit_price_cents_snapshot: number | null; quantity: number | null }>) {
+      const unit = Number(row?.unit_price_cents_snapshot ?? 0);
+      const qty = Number(row?.quantity ?? 0);
+      if (Number.isFinite(unit) && Number.isFinite(qty)) {
+        cart_active_subtotal_cents += unit * qty;
+      }
+    }
+  }
+
+  // Status (ADVISORY ONLY).
+  let status: 'under' | 'near' | 'over' = 'under';
+  if (monthly_cap_cents && monthly_cap_cents > 0) {
+    const projected = spent_this_month_cents + cart_active_subtotal_cents;
+    if (projected > monthly_cap_cents) {
+      status = 'over';
+    } else if (projected >= monthly_cap_cents * NEAR_CAP_RATIO) {
+      status = 'near';
+    }
+  }
+
+  return res.status(200).json({
+    ok: true,
+    monthly_cap_cents,
+    spent_this_month_cents,
+    cart_active_subtotal_cents,
+    currency,
+    status,
+  });
+});
+
+/**
  * POST /items — Add an item to the caller's active cart.
  * If the product is already in the cart with status='active', bump its quantity
  * instead of creating a duplicate row.
@@ -441,6 +560,48 @@ router.post('/items', async (req: Request, res: Response) => {
   const body = parsed.data;
 
   const supabase = createUserSupabaseClient(id.token);
+
+  // 0. VTID-03237 — Video Shop integrity check.
+  // Adds attributed to the video feed must point at a product that is actually
+  // purchasable (active + in stock) and, when a source_video_id is supplied,
+  // genuinely anchored to that live video. This guards the new surface only;
+  // existing web/mobile/voice/autopilot/community adds are unchanged.
+  if (body.source_surface === 'video_shop') {
+    const svc = getSupabase();
+    if (!svc) {
+      return res.status(500).json({ ok: false, error: 'service_unavailable' });
+    }
+    const product = await svc
+      .from('products')
+      .select('id, is_active, availability')
+      .eq('id', body.product_id)
+      .maybeSingle();
+    if (product.error) {
+      return res.status(500).json({ ok: false, error: 'product_lookup_failed', detail: product.error.message });
+    }
+    if (!product.data || product.data.is_active !== true) {
+      return res.status(409).json({ ok: false, error: 'product_unavailable' });
+    }
+    if (product.data.availability !== 'in_stock') {
+      return res.status(409).json({ ok: false, error: 'product_out_of_stock' });
+    }
+    if (body.source_video_id) {
+      const anchor = await svc
+        .from('shop_video_anchors')
+        .select('id, shop_videos!inner(id, status, moderation_status)')
+        .eq('video_id', body.source_video_id)
+        .eq('product_id', body.product_id)
+        .eq('shop_videos.status', 'active')
+        .eq('shop_videos.moderation_status', 'approved')
+        .maybeSingle();
+      if (anchor.error) {
+        return res.status(500).json({ ok: false, error: 'anchor_lookup_failed', detail: anchor.error.message });
+      }
+      if (!anchor.data) {
+        return res.status(409).json({ ok: false, error: 'product_not_anchored_to_video' });
+      }
+    }
+  }
 
   // 1. Resolve or create the active cart.
   const cartLookup = await supabase
@@ -595,6 +756,8 @@ router.post('/items', async (req: Request, res: Response) => {
   if (body.currency_snapshot !== undefined) insertPayload.currency_snapshot = body.currency_snapshot;
   if (body.source_surface !== undefined) insertPayload.source_surface = body.source_surface;
   if (body.source_ref !== undefined) insertPayload.source_ref = body.source_ref;
+  if (body.source_video_id !== undefined) insertPayload.source_video_id = body.source_video_id;
+  if (body.source_creator_id !== undefined) insertPayload.source_creator_id = body.source_creator_id;
 
   const inserted = await supabase
     .from('universal_cart_items')
@@ -906,6 +1069,53 @@ router.get('/events', async (req: Request, res: Response) => {
   }
 
   return res.status(200).json({ ok: true, events: eventsRes.data ?? [] });
+});
+
+/**
+ * POST /checkout — VTID-03237 (V1.2) hybrid checkout bridge.
+ *
+ * Settles the caller's active cart, routing each line by product source:
+ * first-party SKUs debit the Vitana wallet and become converted orders; affiliate
+ * SKUs return merchant redirect targets (no debit) and become pending orders.
+ * Idempotent on the optional `idempotency_key` (also used as the checkout_id).
+ * The heavy lifting + money-safety ordering live in checkout-service.ts.
+ */
+const CheckoutBody = z.object({
+  idempotency_key: z.string().uuid().optional(),
+  session_id: z.string().min(1).max(200).optional(),
+});
+
+router.post('/checkout', async (req: Request, res: Response) => {
+  const id = await authorizeCommunityCaller(req, res);
+  if (!id) return;
+
+  const parsed = CheckoutBody.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    return res.status(400).json({
+      ok: false,
+      error: 'invalid_request',
+      detail: parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`),
+    });
+  }
+
+  // impact-allow-no-oasis: commerce state for this slice is recorded in
+  // product_orders + shop_video_events (the non-OASIS funnel sink), not
+  // oasis_events. oasis_events is the VTID lifecycle/governance log (CLAUDE.md
+  // §6), not an end-user commerce ledger — consistent with VTID-03237's
+  // declared OASIS_IMPACT: none (#2470). The cart audit trail lives in
+  // universal_cart_events; the wallet movement is logged in wallet_ledger_entries.
+  const result = await checkoutUniversalCart({
+    userId: id.user_id,
+    tenantId: id.tenant_id,
+    idempotencyKey: parsed.data.idempotency_key ?? null,
+    sessionId: parsed.data.session_id ?? null,
+  });
+
+  if (!result.ok) {
+    const status = CHECKOUT_ERROR_STATUS[result.error] ?? 500;
+    return res.status(status).json(result);
+  }
+  return res.status(200).json(result);
 });
 
 export default router;

@@ -67,6 +67,11 @@ import { isTier0RedisEnabled } from './system-controls-service';
 import { auditMemoryRead } from './memory-audit';
 // VTID-02000: Marketplace context primitive
 import { getUserHealthContext } from './user-health-context';
+// Phase B (ORB Memory Resilience): relevance-ranked memory selection, gated
+// OFF-by-default behind FEATURE_BOOTSTRAP_CONTEXT_RANKED_RETRIEVAL_ENV with a
+// FEATURE_VOICE_RANKING_SHADOW_ENV shadow-compare log. See memory-ranker.ts.
+import { isFeatureLive } from './feature-flags';
+import { rankMemoryHits, shadowCompareHits } from './memory-hit-ranking';
 
 // =============================================================================
 // Identity Core — fact keys that are ALWAYS loaded regardless of limits
@@ -991,13 +996,85 @@ export async function buildContextPack(
 
   // Merge structured facts + diary hits into memory hits (prepend - higher priority)
   // VTID-01224-FIX: Include diary entries so search_memory tool can find diary data
+  //
+  // Phase B (Finding 2): keep an UNSLICED candidate pool. The naive path slices
+  // to MAX_MEMORY_HITS here by relevance_score; the ranked path must instead get
+  // to choose its top-N from the FULL merged pool, so a high-importance/recent
+  // candidate sitting just below the old relevance_score cutoff can still be
+  // selected. We compute the naive result exactly as before (byte-for-byte for
+  // the flag-OFF path) AND retain the unsliced pool for the ranker.
   const mergeItems = [...structuredFacts, ...diaryHits];
+  // `memoryPool` is the full, unsliced candidate set in relevance_score order
+  // when merges happened, or the raw fetch result otherwise (mirrors the
+  // original control flow where the merge block was skipped with no merges).
+  let memoryPool: MemoryHit[] = memoryHits;
   if (mergeItems.length > 0) {
-    memoryHits = [...mergeItems, ...memoryHits];
-    // Re-sort by relevance and enforce limit
-    memoryHits.sort((a, b) => b.relevance_score - a.relevance_score);
-    memoryHits = memoryHits.slice(0, CONTEXT_PACK_CONFIG.MAX_MEMORY_HITS);
+    memoryPool = [...mergeItems, ...memoryHits];
+    // Re-sort by relevance (full pool, NO slice — slice deferred to the naive
+    // computation below so the ranker can see every candidate).
+    memoryPool.sort((a, b) => b.relevance_score - a.relevance_score);
+    // Naive selection: relevance_score desc, sliced to the budget. This is the
+    // exact output the old code produced and what ships when both flags are OFF.
+    memoryHits = memoryPool.slice(0, CONTEXT_PACK_CONFIG.MAX_MEMORY_HITS);
     hitCounts.memory_garden = memoryHits.length;
+  }
+
+  // ===========================================================================
+  // Phase B (ORB Memory Resilience): relevance-ranked memory selection.
+  //
+  // At this point `memoryHits` is the NAIVE selection: merged, relevance_score
+  // desc, sliced to MAX_MEMORY_HITS. Phase B replaces "first N by relevance_score"
+  // with a relevance-RANKED top-N (importance + recency + optional similarity)
+  // so the content that survives the cap is the most useful.
+  //
+  // Finding 2: the ranker is fed the UNSLICED `memoryPool`, not the naive
+  // (already-sliced) `memoryHits`. This lets ranking SELECT the true top-N by
+  // the new formula from the full candidate set instead of merely REORDERING
+  // the naive survivors. `topK` still caps the output at MAX_MEMORY_HITS, so the
+  // size budget is unchanged.
+  //
+  // Behavior-safe:
+  //   - When neither flag is live, this block is a no-op — `memoryHits` ships
+  //     byte-for-byte as the naive path produced it.
+  //   - VOICE_RANKING_SHADOW: compute the ranked set, log a structured
+  //     [memory.retrieval.shadow] comparison, but ship the naive set unchanged.
+  //   - BOOTSTRAP_CONTEXT_RANKED_RETRIEVAL: ship the ranked set (same budget).
+  // Both flags default OFF (FEATURE_<NAME>_ENV unset → 'off').
+  // ===========================================================================
+  const rankedRetrievalLive = isFeatureLive('BOOTSTRAP_CONTEXT_RANKED_RETRIEVAL');
+  const rankingShadowLive = isFeatureLive('VOICE_RANKING_SHADOW');
+  if (rankedRetrievalLive || rankingShadowLive) {
+    const rankInputs = {
+      // UNSLICED pool: ranker selects top-`topK` from every candidate.
+      hits: memoryPool,
+      topK: CONTEXT_PACK_CONFIG.MAX_MEMORY_HITS,
+      now: new Date(),
+      // MemoryHit carries no embedding column today, so similarity degrades to 0
+      // and ranking reduces to importance + recency. Seam left open for later.
+      intentEmbedding: undefined as number[] | undefined,
+    };
+    if (rankingShadowLive) {
+      // Shadow compares the NAIVE sliced set (what ships when flag is off)
+      // against the ranked set, so the diff reflects exactly what flipping the
+      // flag would change.
+      const { ranked, comparison } = shadowCompareHits(memoryHits, rankInputs);
+      // Structured shadow log: old order vs new order, char totals, overlap.
+      console.log(
+        `[memory.retrieval.shadow] ${JSON.stringify({
+          user_id: input.lens.user_id ?? null,
+          query: input.query,
+          applied: rankedRetrievalLive ? 'ranked' : 'naive',
+          ...comparison,
+        })}`,
+      );
+      if (rankedRetrievalLive) {
+        memoryHits = ranked;
+        hitCounts.memory_garden = memoryHits.length;
+      }
+    } else if (rankedRetrievalLive) {
+      memoryHits = rankMemoryHits(rankInputs);
+      hitCounts.memory_garden = memoryHits.length;
+    }
   }
 
   // VTID-01230: Session buffer — inject recent turns from Tier 0

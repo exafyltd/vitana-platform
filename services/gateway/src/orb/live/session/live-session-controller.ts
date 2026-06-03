@@ -72,6 +72,10 @@ import {
 import { emitOasisEvent } from '../../../services/oasis-event-service';
 import { defaultWakeTimelineRecorder } from '../../../services/wake-timeline/wake-timeline-recorder';
 import { decideWakeBriefForSession } from '../../../services/wake-brief-wiring';
+// VTID-03255 — write a Journey Foundation session summary at session end.
+import { createClient as createJourneySupabaseClient } from '@supabase/supabase-js';
+import { recordJourneySessionSummary } from '../../../services/journey-foundation/session-summary-writer';
+import { buildJourneyFoundationSnapshot } from '../../../services/journey-foundation/journey-foundation-state';
 // VTID-03210: single structured turn-1 wake-decision observability line.
 import {
   logWakeDecisionSnapshot,
@@ -755,10 +759,21 @@ export async function handleLiveSessionStart(
             return null;
           })
         : Promise.resolve(null),
+      // VTID-03201: proactive Autopilot offer. Fetched in parallel (no critical-path
+      // cost) so Vitana can offer "you have things waiting in your Autopilot, want me
+      // to run through them?" Only appended for community sessions (gated in .then).
+      // Returns '' for users with an empty queue, so non-community users cost just one
+      // empty query and no re-rank.
+      import('../../../routes/autopilot-recommendations')
+        .then((m) => m.buildAutopilotOfferBlock(bootstrapIdentity.user_id))
+        .catch((err) => {
+          console.warn(`[VTID-03201] SSE autopilot offer fetch failed: ${err?.message}`);
+          return '';
+        }),
     ]);
 
     contextReadyPromise = bootstrapWork
-      .then(async ([bootstrapResult, fetchedSseRole, fetchedSessionInfo, storedLangResult, adminBriefing]) => {
+      .then(async ([bootstrapResult, fetchedSseRole, fetchedSessionInfo, storedLangResult, adminBriefing, autopilotOffer]) => {
         let resolvedRole = fetchedSseRole;
         const sseRoute = typeof (body as any).current_route === 'string' ? (body as any).current_route : '';
         if (sseRoute.startsWith('/command-hub') && (!resolvedRole || resolvedRole === 'community')) {
@@ -771,6 +786,12 @@ export async function handleLiveSessionStart(
         }
 
         let finalContext = bootstrapResult.contextInstruction || '';
+        // VTID-03201: community sessions get the proactive Autopilot offer so
+        // Vitana raises it unprompted. resolvedRole already folds mobile → community.
+        if (resolvedRole === 'community' && autopilotOffer) {
+          finalContext = finalContext ? `${finalContext}\n\n${autopilotOffer}` : autopilotOffer;
+          console.log(`[VTID-03201] Autopilot proactive offer injected into SSE session ${sessionId} (${autopilotOffer.length} chars)`);
+        }
         if (isAdminRole(resolvedRole) && adminBriefing) {
           finalContext = finalContext ? `${finalContext}\n\n${adminBriefing}` : adminBriefing;
           emitOasisEvent({
@@ -1204,6 +1225,22 @@ export async function handleLiveSessionStart(
           `[VTID-03218] Teacher Mode content (bundled on candidate) for ${sessionId}: capability=${bundledTeacherMode.active_capability_key} manual_chars=${bundledTeacherMode.active_manual_content.length} remaining=${bundledTeacherMode.remaining_capabilities.length}`,
         );
       }
+
+      // VTID-03257 (Fix-1): when the journey-guide won, bundle its GUIDE-MODE
+      // content onto the session so the envelope injects the lead-the-journey
+      // block (proactive, one-step, do-it-together, verify-on-claim, never
+      // "what do you want"). Mirrors the Teacher bundling above.
+      const bundledJourneyGuide = (picked as {
+        journeyGuide?:
+          | import('../../../services/assistant-continuation/providers/journey-guide').JourneyGuideContent
+          | null;
+      }).journeyGuide ?? null;
+      if (bundledJourneyGuide) {
+        (session as any).journeyGuideContent = bundledJourneyGuide;
+        console.log(
+          `[VTID-03257] Journey guide leading for ${sessionId}: step=${bundledJourneyGuide.step_key} (${bundledJourneyGuide.step_type}) title="${bundledJourneyGuide.step_title}"`,
+        );
+      }
     }
   } catch (e) {
     console.warn(
@@ -1253,12 +1290,25 @@ export async function handleLiveSessionStart(
             const dn = (prof?.display_name as string | undefined) ?? null;
             if (dn) nameForGreeting = dn.split(/\s+/)[0] || null;
           } catch { /* leave nameForGreeting null */ }
+          // VTID-03255 — the one guided next move, so the morning greeting
+          // drives the journey. Best-effort: never block the greeting on it.
+          let journeyNextMove: { title: string; benefit: string } | null = null;
+          try {
+            const jfSnap = await buildJourneyFoundationSnapshot(supa, orbIdentity.user_id);
+            if (jfSnap.current_next_step) {
+              journeyNextMove = {
+                title: jfSnap.current_next_step.title,
+                benefit: jfSnap.current_next_step.benefit,
+              };
+            }
+          } catch { /* leave journeyNextMove null */ }
           const result = buildJourneyGreetingBlock({
             journey,
             lifeCompassGoalText: lifeCompass?.primary_goal ?? null,
             firstName: nameForGreeting,
             lang,
             todayDateIso,
+            nextMove: journeyNextMove,
           });
           if (result.block && result.meta) {
             (session as any).journeyGreetingBlock = result.block;
@@ -1286,6 +1336,16 @@ export async function handleLiveSessionStart(
             // the Teacher Mode block so it cedes turn 1 cleanly, or (b)
             // suppressing the wake-brief's Teacher-winner selection
             // upstream when journey-greeting will fire.
+            // TODO(R1 slice): migrate the plan_phase + life_compass-state
+            // derivation onto resolveJourneyPlanPhase / resolveLifeCompassState
+            // (services/awareness-unified-context.ts). NOT done here because it
+            // is NOT a no-op: the live derivation in new-day-overview-payload.ts
+            // is 3-way (it folds a past target_date into on_personalized_goal +
+            // a separate days_past_deadline), whereas the canonical resolver is
+            // the §1.4 4-way that promotes a past target_date to 'goal_completed'.
+            // The 'set'/'unset' below is also object-presence, not the canonical
+            // primary_goal/set_at rule. Migrating either changes behavior, so it
+            // waits for the R7 goal-completion provider that consumes the 4th phase.
             console.log(
               `[VTID-03154] Journey greeting prepared for ${sessionId}: kind=${result.meta.kind} day=${journey.day_in_journey}/${journey.total_days} phase=${journey.current_wave?.id ?? 'none'} life_compass=${lifeCompass ? 'set' : 'unset'}`,
             );
@@ -1505,6 +1565,20 @@ export async function handleLiveSessionStop(
     user_turns: session.transcriptTurns.filter((t) => t.role === 'user').length,
     model_turns: session.transcriptTurns.filter((t) => t.role === 'assistant').length,
   });
+
+  // VTID-03255: write a Journey Foundation session summary (fire-and-forget).
+  // Feeds the "since we last spoke" line + morning greeting on next open. Never
+  // allowed to affect teardown — failures are swallowed inside the writer.
+  if (session.identity?.user_id) {
+    const jfUrl = process.env.SUPABASE_URL;
+    const jfKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE;
+    if (jfUrl && jfKey) {
+      const jfClient = createJourneySupabaseClient(jfUrl, jfKey, {
+        auth: { autoRefreshToken: false, persistSession: false },
+      });
+      void recordJourneySessionSummary(jfClient, session.identity.user_id, session_id);
+    }
+  }
 
   // VTID-01959: voice self-healing dispatch (mode-gated for /report path).
   // VTID-01994: pass session metrics for mode-independent quality classifier.

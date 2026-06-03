@@ -35,6 +35,35 @@ on:
         required: false
         default: ''
         type: string
+      # BOOTSTRAP-FT-QUOTA-FALLBACK: accelerator/machine/region overrides.
+      # The default L4 in us-central1 has been stuck JOB_STATE_PENDING because of L4
+      # GPU quota pressure — the queued run never STARTS (and Google credits only
+      # begin once it starts). These inputs let an operator re-submit to capacity
+      # that has quota WITHOUT editing code. Leave blank to keep config.yaml defaults
+      # (NVIDIA_L4 / g2-standard-8 / us-central1).
+      #
+      # Known-good fallback combos (pick accelerator + matching machine + region):
+      #   * A100 in us-central1:  accelerator=NVIDIA_TESLA_A100  machine=a2-highgpu-1g
+      #   * L4 in us-east1:       accelerator=NVIDIA_L4          machine=g2-standard-8  region=us-east1
+      #   * L4 in europe-west4:   accelerator=NVIDIA_L4          machine=g2-standard-8  region=europe-west4
+      # COST NOTE: A100 costs materially MORE per GPU-hour than L4. Prefer moving the
+      # SAME L4 to a region with quota first; only escalate to A100 if no L4 region has
+      # capacity. This is opt-in and never the default — choose consciously.
+      accelerator_type_override:
+        description: 'Override accelerator (blank=NVIDIA_L4 default; A100=NVIDIA_TESLA_A100, pricier)'
+        required: false
+        default: ''
+        type: string
+      machine_type_override:
+        description: 'Override machine type (blank=g2-standard-8 default; A100 needs a2-highgpu-1g)'
+        required: false
+        default: ''
+        type: string
+      region_override:
+        description: 'Override region (blank=us-central1 default; e.g. us-east1 / europe-west4 for L4 quota)'
+        required: false
+        default: ''
+        type: string
 
 permissions:
   contents: read
@@ -88,5 +117,9 @@ jobs:
         working-directory: services/gateway
         env:
           FINETUNE_DRY_RUN: ${{ inputs.dry_run == 'true' && '1' || '0' }}
-          FINETUNE_BASE_MODEL_OVERRIDE: ${{ inputs.base_model_override || '' }}
+          FINETUNE_BASE_MODEL_OVERRIDE: ${{ inputs.base_model_override || (inputs.synthetic_bootstrap == 'true' && matrix.target == 'voice-tool-router' && 'Qwen/Qwen2.5-0.5B-Instruct') || '' }}
+          # BOOTSTRAP-FT-QUOTA-FALLBACK: blank => submit-job.ts keeps config.yaml defaults.
+          FINETUNE_ACCELERATOR_TYPE: ${{ inputs.accelerator_type_override || '' }}
+          FINETUNE_MACHINE_TYPE: ${{ inputs.machine_type_override || '' }}
+          FINETUNE_REGION: ${{ inputs.region_override || '' }}
         run: npx tsx scripts/finetune/submit-job.ts ${{ matrix.target }}

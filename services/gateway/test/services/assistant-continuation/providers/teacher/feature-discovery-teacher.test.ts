@@ -8,8 +8,18 @@ import {
   renderTeacherLine,
   TEACHER_EXTRA_KEY,
   TEACHER_PROVIDER_KEY,
+  // R4 (BOOTSTRAP-ORB-R4-GRADUATED-TEACHER) graduated-track exports.
+  pickRefreshCapability,
+  gracefulPauseAllowed,
+  startOfNextLocalDayIso,
+  nextRefreshOkIso,
+  renderRefreshInvitation,
+  renderGracefulPauseLine,
+  GRACEFUL_PAUSE_KEY,
+  TEACHER_REFRESH_INTERVAL_DAYS,
   type CapabilityCatalogRow,
   type AwarenessLedgerRow,
+  type RefreshScheduleRow,
 } from '../../../../../src/services/assistant-continuation/providers/teacher/feature-discovery-teacher';
 import type { ContinuationDecisionContext } from '../../../../../src/services/assistant-continuation/types';
 
@@ -484,14 +494,21 @@ describe('VTID-03093 — provider produce()', () => {
     expect(r.candidate.dedupeKey).toBe('teacher:life_compass');
   });
 
-  test('all capabilities mastered → suppressed:all_known_or_dismissed', async () => {
+  // R4 (BOOTSTRAP-ORB-R4-GRADUATED-TEACHER): an all-mastered user no longer
+  // SUPPRESSES — the linear pick returns null, the graduated track runs, and
+  // (with no `tried` capability to refresh and no pause sentinel yet) it speaks
+  // the graceful-pause line once. This test previously asserted suppression;
+  // R4 deliberately changes that contract. See the "graduated track" suite for
+  // the refresh/pause/silent matrix.
+  test('all capabilities mastered → graceful-pause fires (R4 re-engage, no suppress)', async () => {
     const provider = makeFeatureDiscoveryTeacherProvider({ rng: () => 0 });
     const r = await provider.produce(
       ctxWith({
         [TEACHER_EXTRA_KEY]: {
-          supabase: fakeSb({
+          supabase: fakeSbGraduated({
             catalog: [cat({ capability_key: 'a' })],
             ledger: [lr({ capability_key: 'a', awareness_state: 'mastered' })],
+            schedule: [],
           }),
           tenantId: 't1',
           userId: 'u1',
@@ -501,9 +518,10 @@ describe('VTID-03093 — provider produce()', () => {
         },
       }),
     );
-    expect(r.status).toBe('suppressed');
-    if (r.status === 'suppressed') {
-      expect(r.reason).toBe('all_capabilities_known_or_dismissed');
+    expect(r.status).toBe('returned');
+    if (r.status === 'returned') {
+      expect(r.candidate.kind).toBe('check_in');
+      expect(r.candidate.dedupeKey).toBe('teacher:graceful_pause');
     }
   });
 
@@ -550,5 +568,397 @@ describe('VTID-03093 — provider produce()', () => {
         expect(r.candidate.userFacingLine.toLowerCase()).not.toContain('how can i help');
       }
     }
+  });
+});
+
+// ===========================================================================
+// R4 (BOOTSTRAP-ORB-R4-GRADUATED-TEACHER) — graduated-user Teacher track.
+//
+// When the linear curriculum is exhausted (Dragan1: every enabled capability
+// tried/completed/introduced within cooldown → pickCapability returns null),
+// the Teacher must RE-ENGAGE instead of suppressing:
+//   1. deepening refresh of a `tried` capability when refresh-due, ELSE
+//   2. graceful-pause line once per local day, ELSE
+//   3. silent on subsequent same-day opens.
+// ===========================================================================
+
+const REFRESH_INTERVAL_MS = TEACHER_REFRESH_INTERVAL_DAYS * DAY_MS;
+
+function sched(over: Partial<RefreshScheduleRow> = {}): RefreshScheduleRow {
+  return {
+    capability_key: 'life_compass',
+    next_refresh_ok_at: NOW_ISO,
+    refresh_count: 0,
+    ...over,
+  };
+}
+
+describe('R4 — pickRefreshCapability (pure)', () => {
+  test('a `tried` capability with NO schedule row is refresh-eligible', () => {
+    const catalog = [cat({ capability_key: 'life_compass' })];
+    const ledger = [lr({ capability_key: 'life_compass', awareness_state: 'tried' })];
+    const picked = pickRefreshCapability(catalog, ledger, [], NOW_ISO);
+    expect(picked?.row.capability_key).toBe('life_compass');
+    expect(picked?.refreshCount).toBe(0);
+  });
+
+  test('completed / mastered / introduced are NOT refresh candidates', () => {
+    const catalog = [
+      cat({ capability_key: 'a' }),
+      cat({ capability_key: 'b' }),
+      cat({ capability_key: 'c' }),
+    ];
+    const ledger = [
+      lr({ capability_key: 'a', awareness_state: 'completed' }),
+      lr({ capability_key: 'b', awareness_state: 'mastered' }),
+      lr({ capability_key: 'c', awareness_state: 'introduced' }),
+    ];
+    expect(pickRefreshCapability(catalog, ledger, [], NOW_ISO)).toBeNull();
+  });
+
+  test('refresh NOT due yet (next_refresh_ok_at in the future) → filtered out', () => {
+    const catalog = [cat({ capability_key: 'life_compass' })];
+    const ledger = [lr({ capability_key: 'life_compass', awareness_state: 'tried' })];
+    const schedule = [
+      sched({
+        capability_key: 'life_compass',
+        next_refresh_ok_at: new Date(NOW_MS + 10 * DAY_MS).toISOString(),
+      }),
+    ];
+    expect(pickRefreshCapability(catalog, ledger, schedule, NOW_ISO)).toBeNull();
+  });
+
+  test('refresh due (next_refresh_ok_at in the past) → eligible, carries refresh_count', () => {
+    const catalog = [cat({ capability_key: 'life_compass' })];
+    const ledger = [lr({ capability_key: 'life_compass', awareness_state: 'tried' })];
+    const schedule = [
+      sched({
+        capability_key: 'life_compass',
+        next_refresh_ok_at: new Date(NOW_MS - 1 * DAY_MS).toISOString(),
+        refresh_count: 2,
+      }),
+    ];
+    const picked = pickRefreshCapability(catalog, ledger, schedule, NOW_ISO);
+    expect(picked?.row.capability_key).toBe('life_compass');
+    expect(picked?.refreshCount).toBe(2);
+  });
+
+  test('never-refreshed sorts before a due-refreshed one', () => {
+    const catalog = [
+      cat({ capability_key: 'never', pedagogical_order: 99 }),
+      cat({ capability_key: 'dueonce', pedagogical_order: 1 }),
+    ];
+    const ledger = [
+      lr({ capability_key: 'never', awareness_state: 'tried' }),
+      lr({ capability_key: 'dueonce', awareness_state: 'tried' }),
+    ];
+    const schedule = [
+      sched({
+        capability_key: 'dueonce',
+        next_refresh_ok_at: new Date(NOW_MS - 1 * DAY_MS).toISOString(),
+      }),
+    ];
+    // 'never' has nextOkMs=-Infinity → sorts first despite higher ped order.
+    const picked = pickRefreshCapability(catalog, ledger, schedule, NOW_ISO);
+    expect(picked?.row.capability_key).toBe('never');
+  });
+});
+
+describe('R4 — pause + schedule pure helpers', () => {
+  test('gracefulPauseAllowed: no sentinel → allowed', () => {
+    expect(gracefulPauseAllowed([], NOW_ISO)).toBe(true);
+  });
+
+  test('gracefulPauseAllowed: sentinel in the future → NOT allowed (already spoke today)', () => {
+    const schedule = [
+      sched({
+        capability_key: GRACEFUL_PAUSE_KEY,
+        next_refresh_ok_at: new Date(NOW_MS + 6 * 60 * 60 * 1000).toISOString(),
+      }),
+    ];
+    expect(gracefulPauseAllowed(schedule, NOW_ISO)).toBe(false);
+  });
+
+  test('gracefulPauseAllowed: sentinel due (past) → allowed again', () => {
+    const schedule = [
+      sched({
+        capability_key: GRACEFUL_PAUSE_KEY,
+        next_refresh_ok_at: new Date(NOW_MS - 60 * 1000).toISOString(),
+      }),
+    ];
+    expect(gracefulPauseAllowed(schedule, NOW_ISO)).toBe(true);
+  });
+
+  test('startOfNextLocalDayIso (UTC) is the next midnight after now', () => {
+    // NOW_ISO = 2026-05-19T08:00:00Z → next UTC midnight = 2026-05-20T00:00:00Z
+    expect(startOfNextLocalDayIso(NOW_ISO, 0)).toBe('2026-05-20T00:00:00.000Z');
+  });
+
+  test('startOfNextLocalDayIso honors a +120min (CEST) offset', () => {
+    // Local time is 10:00 CEST on the 19th → next local midnight = 2026-05-20
+    // 00:00 local = 2026-05-19T22:00:00Z.
+    expect(startOfNextLocalDayIso(NOW_ISO, 120)).toBe('2026-05-19T22:00:00.000Z');
+  });
+
+  test('nextRefreshOkIso defaults to now + 90 days', () => {
+    expect(nextRefreshOkIso(NOW_ISO)).toBe(
+      new Date(NOW_MS + REFRESH_INTERVAL_MS).toISOString(),
+    );
+  });
+
+  test('renderRefreshInvitation names the capability (first refresh)', () => {
+    const en = renderRefreshInvitation({ lang: 'en', displayName: 'Life Compass', refreshCount: 0 });
+    expect(en).toContain('Life Compass');
+    expect(en.toLowerCase()).toContain('revisit');
+    const de = renderRefreshInvitation({ lang: 'de', displayName: 'Life Compass', refreshCount: 0 });
+    expect(de).toContain('Life Compass');
+  });
+
+  test('renderRefreshInvitation escalates framing on a repeat refresh', () => {
+    const first = renderRefreshInvitation({ lang: 'en', displayName: 'X', refreshCount: 0 });
+    const second = renderRefreshInvitation({ lang: 'en', displayName: 'X', refreshCount: 1 });
+    expect(second).not.toBe(first);
+    expect(second.toLowerCase()).toContain('deeper');
+  });
+
+  test('renderGracefulPauseLine is the operator-fixed copy', () => {
+    expect(renderGracefulPauseLine('en')).toBe(
+      "You've explored most of what Vitana offers. I'll surface new things as they ship. Want me to summarize what you've learned this month?",
+    );
+    expect(renderGracefulPauseLine('de')).toContain('Vitana');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Graduated-track mock: supports the schedule SELECT + captures rpc() calls.
+// ---------------------------------------------------------------------------
+
+interface RpcCall {
+  fn: string;
+  args: Record<string, unknown>;
+}
+
+function fakeSbGraduated(opts: {
+  catalog: CapabilityCatalogRow[];
+  ledger: AwarenessLedgerRow[];
+  schedule?: RefreshScheduleRow[];
+  scheduleError?: { message: string } | null;
+  rpcCalls?: RpcCall[];
+}): import('@supabase/supabase-js').SupabaseClient {
+  return {
+    from: (table: string) => ({
+      select: () => ({
+        eq: () => {
+          if (table === 'system_capabilities') {
+            return Promise.resolve({ data: opts.catalog, error: null });
+          }
+          // user_capability_awareness + teacher_capability_refresh_schedule
+          // both use .eq().eq().
+          return {
+            eq: () => {
+              if (table === 'teacher_capability_refresh_schedule') {
+                return Promise.resolve({
+                  data: opts.schedule ?? [],
+                  error: opts.scheduleError ?? null,
+                });
+              }
+              return Promise.resolve({ data: opts.ledger, error: null });
+            },
+          };
+        },
+      }),
+    }),
+    rpc: async (fn: string, args: Record<string, unknown>) => {
+      opts.rpcCalls?.push({ fn, args });
+      return { data: null, error: null };
+    },
+  } as unknown as import('@supabase/supabase-js').SupabaseClient;
+}
+
+describe('R4 — provider produce() graduated track', () => {
+  beforeEach(() => {
+    mockResolveTeacherMode.mockReset();
+    mockResolveTeacherMode.mockResolvedValue(makeTeacherMode());
+  });
+
+  // Dragan1 case: linear curriculum exhausted (the one capability is `tried`),
+  // refresh is due (no schedule row) → deepening refresh FIRES.
+  test('exhausted curriculum + refresh due → deepening refresh fires (bundled content)', async () => {
+    mockResolveTeacherMode.mockResolvedValue(
+      makeTeacherMode({ active_capability_key: 'life_compass' }),
+    );
+    const rpcCalls: RpcCall[] = [];
+    const provider = makeFeatureDiscoveryTeacherProvider({ newId: () => 'rid', rng: () => 0 });
+    const r = await provider.produce(
+      ctxWith({
+        [TEACHER_EXTRA_KEY]: {
+          supabase: fakeSbGraduated({
+            catalog: [cat({ capability_key: 'life_compass', display_name: 'Life Compass' })],
+            ledger: [lr({ capability_key: 'life_compass', awareness_state: 'tried' })],
+            schedule: [],
+            rpcCalls,
+          }),
+          tenantId: 't1',
+          userId: 'u1',
+          lang: 'en',
+          firstName: 'Dragan',
+          greetingPolicy: 'warm_return',
+          nowIso: NOW_ISO,
+        },
+      }),
+    );
+    expect(r.status).toBe('returned');
+    if (r.status !== 'returned') return;
+    expect(r.candidate.id).toBe('teacher-refresh-rid');
+    expect(r.candidate.kind).toBe('feature_discovery');
+    expect(r.candidate.dedupeKey).toBe('teacher:refresh:life_compass');
+    // next-level framing names the capability.
+    expect(r.candidate.userFacingLine).toContain('Life Compass');
+    // bundled teacherMode (R3 atomicity preserved for the refresh path).
+    const tm = (r.candidate as { teacherMode?: TeacherModeContent }).teacherMode;
+    expect(tm?.active_capability_key).toBe('life_compass');
+    // schedule advanced by 90 days via the RPC.
+    const refreshRpc = rpcCalls.find((c) => c.args.p_capability_key === 'life_compass');
+    expect(refreshRpc?.fn).toBe('record_teacher_refresh');
+    expect(refreshRpc?.args.p_is_refresh).toBe(true);
+    expect(refreshRpc?.args.p_next_ok_at).toBe(nextRefreshOkIso(NOW_ISO));
+  });
+
+  // Nothing refresh-eligible (the tried capability was refreshed recently) →
+  // graceful-pause line, ONCE, and stamps the same-day silence sentinel.
+  test('nothing refresh-eligible → graceful-pause line fires once + stamps sentinel', async () => {
+    const rpcCalls: RpcCall[] = [];
+    const provider = makeFeatureDiscoveryTeacherProvider({ newId: () => 'pid', rng: () => 0 });
+    const r = await provider.produce(
+      ctxWith({
+        [TEACHER_EXTRA_KEY]: {
+          supabase: fakeSbGraduated({
+            catalog: [cat({ capability_key: 'life_compass' })],
+            ledger: [lr({ capability_key: 'life_compass', awareness_state: 'tried' })],
+            // refresh NOT due → no refresh candidate.
+            schedule: [
+              sched({
+                capability_key: 'life_compass',
+                next_refresh_ok_at: new Date(NOW_MS + 30 * DAY_MS).toISOString(),
+              }),
+            ],
+            rpcCalls,
+          }),
+          tenantId: 't1',
+          userId: 'u1',
+          lang: 'en',
+          greetingPolicy: 'warm_return',
+          nowIso: NOW_ISO,
+          tzOffsetMinutes: 0,
+        },
+      }),
+    );
+    expect(r.status).toBe('returned');
+    if (r.status !== 'returned') return;
+    expect(r.candidate.id).toBe('teacher-pause-pid');
+    expect(r.candidate.kind).toBe('check_in');
+    expect(r.candidate.dedupeKey).toBe('teacher:graceful_pause');
+    expect(r.candidate.userFacingLine).toBe(renderGracefulPauseLine('en'));
+    // resolver NOT called on the pause path (no capability to teach).
+    expect(mockResolveTeacherMode).not.toHaveBeenCalled();
+    // sentinel stamped for next local day, NOT a refresh.
+    const pauseRpc = rpcCalls.find((c) => c.args.p_capability_key === GRACEFUL_PAUSE_KEY);
+    expect(pauseRpc?.fn).toBe('record_teacher_refresh');
+    expect(pauseRpc?.args.p_is_refresh).toBe(false);
+    expect(pauseRpc?.args.p_next_ok_at).toBe(startOfNextLocalDayIso(NOW_ISO, 0));
+  });
+
+  // Same-day reopen after the pause already fired → silent (no second pause).
+  test('graceful-pause already spoken today → suppressed (silent)', async () => {
+    const provider = makeFeatureDiscoveryTeacherProvider({ rng: () => 0 });
+    const r = await provider.produce(
+      ctxWith({
+        [TEACHER_EXTRA_KEY]: {
+          supabase: fakeSbGraduated({
+            catalog: [cat({ capability_key: 'life_compass' })],
+            ledger: [lr({ capability_key: 'life_compass', awareness_state: 'completed' })],
+            schedule: [
+              // pause sentinel already set for later today.
+              sched({
+                capability_key: GRACEFUL_PAUSE_KEY,
+                next_refresh_ok_at: new Date(NOW_MS + 8 * 60 * 60 * 1000).toISOString(),
+              }),
+            ],
+          }),
+          tenantId: 't1',
+          userId: 'u1',
+          lang: 'en',
+          greetingPolicy: 'warm_return',
+          nowIso: NOW_ISO,
+        },
+      }),
+    );
+    expect(r.status).toBe('suppressed');
+    if (r.status === 'suppressed') {
+      expect(r.reason).toBe('graceful_pause_already_spoken_today');
+    }
+  });
+
+  // Refresh content resolution failure must NOT fire an empty Teacher — R3
+  // atomicity contract carries into the graduated track.
+  test('refresh content resolution null → errored (Teacher does not fire empty)', async () => {
+    mockResolveTeacherMode.mockResolvedValue(null);
+    const provider = makeFeatureDiscoveryTeacherProvider({ rng: () => 0 });
+    const r = await provider.produce(
+      ctxWith({
+        [TEACHER_EXTRA_KEY]: {
+          supabase: fakeSbGraduated({
+            catalog: [cat({ capability_key: 'life_compass' })],
+            ledger: [lr({ capability_key: 'life_compass', awareness_state: 'tried' })],
+            schedule: [],
+          }),
+          tenantId: 't1',
+          userId: 'u1',
+          lang: 'en',
+          greetingPolicy: 'warm_return',
+          nowIso: NOW_ISO,
+        },
+      }),
+    );
+    expect(r.status).toBe('errored');
+    if (r.status === 'errored') {
+      expect(r.reason).toMatch(/teacher_refresh_content_resolution_failed/);
+    }
+  });
+
+  // NON-exhausted case: an unknown capability is still eligible → the NORMAL
+  // Teacher path runs, NOT the graduated track. No regression.
+  test('non-exhausted curriculum → normal Teacher path (no graduated track)', async () => {
+    const rpcCalls: RpcCall[] = [];
+    const provider = makeFeatureDiscoveryTeacherProvider({ newId: () => 'nid', rng: () => 0 });
+    const r = await provider.produce(
+      ctxWith({
+        [TEACHER_EXTRA_KEY]: {
+          supabase: fakeSbGraduated({
+            catalog: [
+              cat({ capability_key: 'life_compass' }),
+              // 'vitana_index' is unknown (never introduced) → normal pick.
+              cat({ capability_key: 'vitana_index', display_name: 'Vitana Index' }),
+            ],
+            ledger: [lr({ capability_key: 'life_compass', awareness_state: 'tried' })],
+            schedule: [],
+            rpcCalls,
+          }),
+          tenantId: 't1',
+          userId: 'u1',
+          lang: 'en',
+          firstName: 'Dragan',
+          greetingPolicy: 'fresh_intro',
+          nowIso: NOW_ISO,
+        },
+      }),
+    );
+    expect(r.status).toBe('returned');
+    if (r.status !== 'returned') return;
+    // Normal path id prefix (not -refresh- / -pause-), normal dedupe key.
+    expect(r.candidate.id).toBe('teacher-nid');
+    expect(r.candidate.dedupeKey).toBe('teacher:vitana_index');
+    // No refresh/pause RPC was issued on the normal path.
+    expect(rpcCalls.length).toBe(0);
   });
 });

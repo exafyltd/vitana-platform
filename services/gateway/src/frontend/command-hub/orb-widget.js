@@ -1173,6 +1173,13 @@
         response_modalities: ['audio', 'text'],
         vad_silence_ms: 850 // VTID-03019: trimmed 1200→850 to cut ~350ms off end-of-turn latency; constants.ts mirrors
       };
+      // VTID-03250: send the browser's OWN IANA timezone so the gateway has a
+      // reliable local time even when geo-IP rate-limits (HTTP 429). Without
+      // this the assistant lost the user's time and hallucinated it.
+      try {
+        var _tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+        if (_tz) startPayload.client_timezone = _tz;
+      } catch (e) { /* Intl unavailable — gateway falls back to geo-IP */ }
       if (_s.currentRoute) startPayload.current_route = _s.currentRoute;
       if (_s.recentRoutes && _s.recentRoutes.length) startPayload.recent_routes = _s.recentRoutes.slice(0, 5);
 
