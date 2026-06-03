@@ -2271,7 +2271,10 @@ export function lookupByRoute(route: string | undefined | null): NavCatalogEntry
  * Suggest catalog entries with similar ids (for tool-call hallucination recovery).
  * Uses substring + token-overlap scoring; cheap and good enough for ~40 entries.
  */
-export function suggestSimilar(attemptedId: string, limit = 5): NavCatalogEntry[] {
+export function suggestSimilarScored(
+  attemptedId: string,
+  limit = 5,
+): Array<{ entry: NavCatalogEntry; score: number }> {
   if (!attemptedId) return [];
   const target = attemptedId.toLowerCase();
   const targetTokens = new Set(target.split(/[\.\-_\s]+/).filter(Boolean));
@@ -2298,7 +2301,28 @@ export function suggestSimilar(attemptedId: string, limit = 5): NavCatalogEntry[
   }
 
   scored.sort((a, b) => b.score - a.score);
-  return scored.slice(0, limit).map(s => s.entry);
+  return scored.slice(0, limit);
+}
+
+/**
+ * VTID-NAV-CONFIDENCE (VTID-03258): the minimum suggestSimilar score at which a fuzzy
+ * resolution is trustworthy enough to auto-navigate without confirmation.
+ * Scoring units (see suggestSimilarScored): exact id +100, substring +30,
+ * per shared id-token +10, per shared title-word +3. A score >= 10 means the
+ * attempt shares at least one whole id token OR is a substring of a real
+ * screen_id — a real lexical anchor. Below that (title-word-only overlaps of
+ * 3/6/9, or pure noise) we MUST NOT silently teleport the user to "the nearest
+ * thing"; that was the wrong-screen-redirect class. The navigate_to_screen
+ * gate rejects sub-floor fuzzy matches and tells the model to be specific.
+ */
+export const FUZZY_NAV_MIN_SCORE = 10;
+
+/**
+ * Suggest catalog entries with similar ids (for tool-call hallucination recovery).
+ * Uses substring + token-overlap scoring; cheap and good enough for ~40 entries.
+ */
+export function suggestSimilar(attemptedId: string, limit = 5): NavCatalogEntry[] {
+  return suggestSimilarScored(attemptedId, limit).map((s) => s.entry);
 }
 
 /**

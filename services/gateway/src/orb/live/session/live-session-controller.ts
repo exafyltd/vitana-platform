@@ -1225,6 +1225,22 @@ export async function handleLiveSessionStart(
           `[VTID-03218] Teacher Mode content (bundled on candidate) for ${sessionId}: capability=${bundledTeacherMode.active_capability_key} manual_chars=${bundledTeacherMode.active_manual_content.length} remaining=${bundledTeacherMode.remaining_capabilities.length}`,
         );
       }
+
+      // VTID-03257 (Fix-1): when the journey-guide won, bundle its GUIDE-MODE
+      // content onto the session so the envelope injects the lead-the-journey
+      // block (proactive, one-step, do-it-together, verify-on-claim, never
+      // "what do you want"). Mirrors the Teacher bundling above.
+      const bundledJourneyGuide = (picked as {
+        journeyGuide?:
+          | import('../../../services/assistant-continuation/providers/journey-guide').JourneyGuideContent
+          | null;
+      }).journeyGuide ?? null;
+      if (bundledJourneyGuide) {
+        (session as any).journeyGuideContent = bundledJourneyGuide;
+        console.log(
+          `[VTID-03257] Journey guide leading for ${sessionId}: step=${bundledJourneyGuide.step_key} (${bundledJourneyGuide.step_type}) title="${bundledJourneyGuide.step_title}"`,
+        );
+      }
     }
   } catch (e) {
     console.warn(

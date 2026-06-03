@@ -45,6 +45,10 @@ import {
 // boundary. The function is pure (lang → string), so the round-trip is
 // safe.
 import { buildNavigatorPolicySection } from '../../../routes/orb-live';
+import {
+  BRAIN_OPENER_V2_START,
+  BRAIN_OPENER_V2_END,
+} from './brain-opener-sentinels';
 // L2.2b.6 (VTID-03010): tool-catalog renderer. Embeds the tool catalog into
 // the prompt as a prose block so the LiveKit path (where the Python
 // livekit-plugins-google plugin does NOT fully serialize @function_tool
@@ -205,12 +209,26 @@ export function describeRoute(route: string | undefined | null, lang: string): {
  */
 export function stripBrainOpenerSections(bootstrap: string): string {
   if (!bootstrap) return bootstrap;
+  let out = bootstrap;
+  // VTID-03259 (Fix-3): remove the sentinel-delimited V2 proactive-initiative
+  // region FIRST, as one opaque unit. The V2 block contains nested `=== … ===`
+  // subsections (STEP 1 — YOUR VERY FIRST UTTERANCE, ON NO, ON HARDER REFUSAL);
+  // the heading-based strip below stops at the first nested `===`, so STEP 1's
+  // competing "speak this verbatim" directive used to survive and fight the
+  // wake-brief / journey-guide override. Stripping the sentinel region kills it
+  // regardless of nesting. (Belt-and-suspenders: the heading list still runs in
+  // case an older brain build emitted the block without sentinels.)
+  const sentinelPattern = new RegExp(
+    `${BRAIN_OPENER_V2_START}[\\s\\S]*?${BRAIN_OPENER_V2_END}`,
+    'g',
+  );
+  out = out.replace(sentinelPattern, '');
   const SECTIONS = [
     'OPENING SHAPE MATRIX (TENURE × LAST_INTERACTION)',
     'PROACTIVE OPENER CANDIDATE — YOUR FIRST UTTERANCE MUST BUILD AROUND THIS',
     'PROACTIVE INITIATIVE OFFER (V2 — HIGHEST-PRIORITY OPENER FOR THIS SESSION)',
+    'STEP 1 — YOUR VERY FIRST UTTERANCE (sanctioned, do NOT paraphrase)',
   ];
-  let out = bootstrap;
   for (const heading of SECTIONS) {
     const safe = heading.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const pattern = new RegExp(
