@@ -80,7 +80,7 @@ jobs:
               if gsutil -q stat "${RUN}weights.tar.gz" 2>/dev/null; then
                 echo "selecting ${RUN}weights.tar.gz -> ${DST}weights.tar.gz"
                 gsutil -m cp "${RUN}weights.tar.gz" "${DST}weights.tar.gz"
-                echo "${RUN}" | gsutil -m cp - "${DST}LATEST_RUN.txt"
+                echo "${RUN}" | gsutil cp - "${DST}LATEST_RUN.txt"
                 STAGED=1
                 break
               fi
@@ -92,7 +92,7 @@ jobs:
                 gsutil -m cp -r "${RUN}*" "${DOWNLOAD_DIR}/"
                 tar -czf "${WORKDIR}/weights.tar.gz" -C "${DOWNLOAD_DIR}" .
                 gsutil -m cp "${WORKDIR}/weights.tar.gz" "${DST}weights.tar.gz"
-                echo "${RUN}" | gsutil -m cp - "${DST}LATEST_RUN.txt"
+                echo "${RUN}" | gsutil cp - "${DST}LATEST_RUN.txt"
                 rm -rf "${WORKDIR}"
                 STAGED=1
                 break
