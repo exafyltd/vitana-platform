@@ -423,6 +423,8 @@ export async function decideWakeBriefForSession(
         // VTID-03300: when the user tapped a specific Foundation step in "My
         // Journey", lead with THAT step instead of the computed next step.
         focusStep: args.journeyFocusStep ?? null,
+        // VTID-03300 (follow-up): greet by name in the journey opener.
+        firstName: args.firstName ?? null,
       };
     }
   }
