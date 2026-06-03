@@ -19,9 +19,22 @@ import {
   clarifyGoalIfNeeded,
   type ClarificationAnswer,
 } from '../services/journey/goal-planner-service';
+import { localizeGoalPlan } from '../services/journey/goal-plan-i18n';
+import { getUserLocale } from '../i18n/server-locale';
 
 const router = Router();
 const VTID = 'VTID-03152';
+
+/**
+ * Resolve the locale the plan should be rendered in. The frontend passes the
+ * app's *active* language toggle as `?locale=de-DE` so the plan follows the
+ * toggle, not a stale stored preference; we fall back to the user's server-side
+ * locale when the param is absent. (VTID-03152b)
+ */
+async function resolveLocale(client: SupabaseClient, userId: string, raw: unknown): Promise<string> {
+  if (typeof raw === 'string' && raw.trim()) return raw.trim();
+  return getUserLocale(client, userId).catch(() => 'de');
+}
 
 function getServiceClient(): SupabaseClient | null {
   const url = process.env.SUPABASE_URL;
@@ -57,7 +70,13 @@ router.post('/generate', requireAuth, async (req: AuthenticatedRequest, res: Res
       // No goal/deadline yet, or generation failed — let the client fall back gracefully.
       return res.status(200).json({ ok: false, error: 'no_plan_generated', vtid: VTID, plan: null });
     }
-    const plan = await getGoalPlan(client, userId);
+    let plan = await getGoalPlan(client, userId);
+    if (plan) {
+      // The plan was just authored in the user's locale; localize only if the
+      // active toggle differs (e.g. an EN user generated a DE-sourced plan).
+      const locale = await resolveLocale(client, userId, req.query.locale ?? req.body?.locale);
+      plan = await localizeGoalPlan(client, plan, plan.source_lang, locale);
+    }
     return res.status(200).json({ ok: true, vtid: VTID, plan_id: result.plan_id, step_count: result.step_count, plan });
   } catch (err: any) {
     console.error('[VTID-03152] POST /goal-plan/generate:', err.message);
@@ -72,7 +91,13 @@ router.get('/', requireAuth, async (req: AuthenticatedRequest, res: Response) =>
   if (!client) return res.status(503).json({ ok: false, error: 'supabase_unavailable', vtid: VTID });
 
   try {
-    const plan = await getGoalPlan(client, userId);
+    let plan = await getGoalPlan(client, userId);
+    if (plan) {
+      // Render in the app's active language (toggle), translating + caching on
+      // first view of a non-source locale so subsequent toggles are instant.
+      const locale = await resolveLocale(client, userId, req.query.locale);
+      plan = await localizeGoalPlan(client, plan, plan.source_lang, locale);
+    }
     return res.status(200).json({ ok: true, vtid: VTID, plan });
   } catch (err: any) {
     console.error('[VTID-03152] GET /goal-plan:', err.message);
