@@ -285,9 +285,33 @@ export function tt(
   });
 }
 
+// Full language names (English + native) → locale code. The assistant-inferred
+// `memory_facts.preferred_language` fallback stores values as language WORDS
+// ("German", "Serbian", "Spanish") rather than ISO codes, so the ISO-prefix
+// checks below silently mis-resolve them: "serbian" starts with "se" (not "sr")
+// and "spanish" starts with "sp" (not "es"), so both used to collapse to the
+// default locale — Serbian users were served German content. Match names first.
+const LANGUAGE_NAME_TO_LOCALE: Record<string, GatewayLocale> = {
+  german: 'de',
+  deutsch: 'de',
+  english: 'en',
+  englisch: 'en',
+  serbian: 'sr',
+  serbisch: 'sr',
+  srpski: 'sr',
+  spanish: 'es',
+  spanisch: 'es',
+  espanol: 'es',
+  'español': 'es',
+};
+
 export function normalizeLocale(loc: string | null | undefined): GatewayLocale {
   if (!loc) return GATEWAY_DEFAULT_LOCALE;
-  const lower = loc.toLowerCase();
+  const lower = loc.toLowerCase().trim();
+  // Exact language-name match takes priority over ISO-prefix heuristics so
+  // word-form values resolve correctly regardless of their leading letters.
+  const byName = LANGUAGE_NAME_TO_LOCALE[lower];
+  if (byName) return byName;
   if (lower.startsWith('de')) return 'de';
   if (lower.startsWith('en')) return 'en';
   if (lower.startsWith('sr')) return 'sr';

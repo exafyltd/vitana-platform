@@ -81,6 +81,13 @@ import {
   GOAL_COMPLETION_EXTRA_KEY,
   GOAL_COMPLETION_PROVIDER_KEY,
 } from './assistant-continuation/providers/goal-completion-inquiry';
+// VTID-03257 (Fix-1): journey-guide — for non-graduated users the Foundation
+// checklist LEADS turn-1 (priority 91, above new-day-return + Teacher).
+import {
+  makeJourneyGuideProvider,
+  JOURNEY_GUIDE_EXTRA_KEY,
+  JOURNEY_GUIDE_PROVIDER_KEY,
+} from './assistant-continuation/providers/journey-guide';
 // VTID-03061 (B0d-real Xf.1): auto-emit OASIS next_action.suggested/
 // .suppressed events when a wake-brief decision lands. Fire-and-forget;
 // never blocks the voice path.
@@ -148,6 +155,13 @@ export function ensureWakeBriefProviderRegistered(): void {
   if (!defaultProviderRegistry.get(GOAL_COMPLETION_PROVIDER_KEY)) {
     defaultProviderRegistry.register(makeGoalCompletionInquiryProvider());
   }
+  // VTID-03257 (Fix-1): journey-guide at priority 91 — for users still on the
+  // Journey Foundation (not graduated), the checklist LEADS the conversation
+  // (above new_day_return 90 + Teacher 85). Suppresses cleanly when graduated
+  // or no next step, so it never blocks the returning-user providers.
+  if (!defaultProviderRegistry.get(JOURNEY_GUIDE_PROVIDER_KEY)) {
+    defaultProviderRegistry.register(makeJourneyGuideProvider());
+  }
   _registered = true;
 }
 
@@ -173,6 +187,13 @@ export interface DecideWakeBriefArgs {
   isReconnect: boolean;
   /** Resolved language for the session (post-anonymous browser-lang resolve). */
   lang: string;
+  /**
+   * VTID-03300: the "My Journey" Foundation step the user tapped to open the
+   * orb (from the session-start body's `journey_focus_step`). When set and the
+   * step is not already done, the journey-guide provider leads with this step
+   * instead of the sequentially-computed `current_next_step`.
+   */
+  journeyFocusStep?: string | null;
   /** journeySurface from the ClientContextEnvelope, if any. */
   envelopeJourneySurface?: string;
   /**
@@ -389,6 +410,20 @@ export async function decideWakeBriefForSession(
         tenantId: args.tenantId,
         userId: args.userId,
         lang: args.lang,
+        firstName: args.firstName ?? null,
+      };
+      // VTID-03257 (Fix-1): journey-guide inputs. Provider suppresses when the
+      // user has graduated the Foundation or has no next step, so passing the
+      // extra always is safe — when active it LEADS (priority 91).
+      extra[JOURNEY_GUIDE_EXTRA_KEY] = {
+        supabase: args.supabase,
+        userId: args.userId,
+        isReconnect: args.isReconnect,
+        lang: args.lang,
+        // VTID-03300: when the user tapped a specific Foundation step in "My
+        // Journey", lead with THAT step instead of the computed next step.
+        focusStep: args.journeyFocusStep ?? null,
+        // VTID-03300 (follow-up): greet by name in the journey opener.
         firstName: args.firstName ?? null,
       };
     }
