@@ -55,11 +55,21 @@ const POST_TURN_COOLDOWN_MS_FALLBACK = 2_000;
 const SILENCE_KEEPALIVE_INTERVAL_MS_FALLBACK = 3_000;
 const SILENCE_IDLE_THRESHOLD_MS_FALLBACK = 3_000;
 
-// VTID-WATCHDOG: stall detection windows. 8s greeting / 10s turn — short
-// enough to recover from a true Vertex stall, long enough to tolerate a
-// healthy 5-7s first-turn inference.
-const GREETING_RESPONSE_TIMEOUT_MS_FALLBACK = 8_000;
-const TURN_RESPONSE_TIMEOUT_MS_FALLBACK = 10_000;
+// VTID-03234 (report finding #4): stall-detection windows. The OLD values
+// (8s greeting / 10s turn) fired INSIDE the real first-turn compute window.
+// With a ~15K-char system instruction + heavy bootstrap context (the new-day
+// greeting block alone is ~12K chars) + 50+ tools, Vertex's first audio
+// routinely takes 10-20s — so the 8s greeting watchdog terminated HEALTHY
+// sessions at startup, the client re-greeted, and it looped. That is the
+// "disconnects in the first minute, constantly" symptom users reported.
+//
+// Raised well above the compute window. The watchdog RESTARTS on every
+// audio/text chunk (see upstream-message-handler), so these only bound the
+// gap BEFORE the model's first output — a genuinely stuck session still
+// recovers, just after a longer, less twitchy grace instead of killing
+// every slow-but-healthy first turn.
+const GREETING_RESPONSE_TIMEOUT_MS_FALLBACK = 30_000;
+const TURN_RESPONSE_TIMEOUT_MS_FALLBACK = 20_000;
 
 // VTID-FORWARDING-WATCHDOG (latest = VTID-01984): 45s tolerance for
 // genuine first-turn before any sign of life. With ~15K-char system

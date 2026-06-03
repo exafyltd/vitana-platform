@@ -1,0 +1,75 @@
+name: Smoke AWS Mirror (manual)
+
+# Phase 1 W2 Track A (VTID-03200 — AWS S3 runway). Proves the GCS -> S3
+# mirror wiring end-to-end against a tiny NON-WEIGHT marker file, BEFORE any
+# real fine-tune weights exist. Manual only (workflow_dispatch). Refuses with
+# a clear error when the AWS secrets are missing, so a dispatch on an
+# un-provisioned account fails loudly instead of silently passing.
+#
+# Setup: see scripts/aws/README.md (AWS_BUCKET, AWS_ROLE_ARN, AWS_REGION).
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: smoke-aws-mirror
+  cancel-in-progress: false
+
+env:
+  GCP_PROJECT: lovable-vitana-vers1
+  STAGING_BUCKET: gs://vitana-artifacts-staging
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      # Fail fast with the exact message acceptance checks for, BEFORE the
+      # AWS OIDC step (which would otherwise error confusingly on empty role).
+      - name: Guard — require AWS secrets
+        env:
+          AWS_BUCKET: ${{ secrets.AWS_BUCKET }}
+          AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
+        run: |
+          if [ -z "$AWS_BUCKET" ]; then
+            echo "::error::AWS_BUCKET secret not set"
+            echo "AWS_BUCKET secret not set — provision AWS first (see scripts/aws/README.md)"
+            exit 1
+          fi
+          if [ -z "$AWS_ROLE_ARN" ]; then
+            echo "::error::AWS_ROLE_ARN secret not set"
+            echo "AWS_ROLE_ARN secret not set — provision AWS first (see scripts/aws/README.md)"
+            exit 1
+          fi
+          echo "AWS_BUCKET + AWS_ROLE_ARN present; proceeding with smoke test"
+
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Auth to GCP (WIF)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_WIF_SA_EMAIL }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure AWS via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION || 'us-east-1' }}
+
+      - name: Run mirror smoke test
+        env:
+          AWS_BUCKET: ${{ secrets.AWS_BUCKET }}
+          AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
+          AWS_REGION: ${{ secrets.AWS_REGION || 'us-east-1' }}
+        run: npx -y tsx scripts/aws/smoke-mirror.ts

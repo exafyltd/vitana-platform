@@ -14,7 +14,16 @@ name: Cron Dataset Extraction
 # roles/storage.objectCreator on gs://vitana-artifacts-staging/ (existing
 # Phase 0 grant).
 #
-# Manual run: workflow_dispatch with optional dry_run + max_rows inputs.
+# Manual run: workflow_dispatch with optional preview + dry_run + max_rows inputs.
+#
+# Phase 1 W2 readiness (BOOTSTRAP-DATASET-READINESS): the `preview` input
+# (default true on manual runs) runs the SAME consent-gated query + the SAME
+# row projection but COUNTS + SAMPLES the projected rows instead of writing the
+# dataset. It lets an operator confirm "X rows would extract" before AND
+# immediately after flipping prod tenant consent
+# (tenant_settings.feature_flags.data_export_ok) — without writing any data and
+# without needing consent first. Preview only applies to manual (workflow_dispatch)
+# runs; the scheduled cron always runs the real extraction unchanged.
 
 on:
   schedule:
@@ -23,8 +32,14 @@ on:
     - cron: '0 0 * * *'
   workflow_dispatch:
     inputs:
+      preview:
+        description: 'PREVIEW only — count + sample projected rows, write NOTHING (no JSONL/GCS/events). Default true.'
+        required: false
+        default: 'true'
+        type: choice
+        options: [ 'true', 'false' ]
       dry_run:
-        description: 'Skip GCS upload + event emit (for testing)'
+        description: 'Skip GCS upload + event emit (still writes local JSONL). Ignored when preview=true.'
         required: false
         default: 'false'
         type: choice
@@ -94,6 +109,10 @@ jobs:
         working-directory: services/gateway
         env:
           DATASET_GCS_BUCKET: ${{ env.GCS_BUCKET }}
+          # Preview is a manual-only, read-only readiness check. On the scheduled
+          # cron `github.event_name` is 'schedule' so DATASET_PREVIEW is forced to
+          # '0' — the real extraction path is never altered by this input.
+          DATASET_PREVIEW: ${{ github.event_name == 'workflow_dispatch' && inputs.preview == 'true' && '1' || '0' }}
           DATASET_DRY_RUN: ${{ inputs.dry_run == 'true' && '1' || '0' }}
           DATASET_MAX_ROWS: ${{ inputs.max_rows || '50000' }}
           DATASET_DAYS_BACK: ${{ inputs.days_back || '30' }}

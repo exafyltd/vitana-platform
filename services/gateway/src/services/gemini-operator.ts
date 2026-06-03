@@ -35,6 +35,7 @@ import {
   TaskStatusResponse
 } from './operator-service';
 import { emitOasisEvent, recommendationSyncEvents } from './oasis-event-service';
+import { dataExportConsentTag } from './data-export-consent';
 // VTID-01221: Sync Brief formatter for recommendation presentation
 import { formatSyncBrief, isWhatNextIntent, shouldFetchRecommendations, SyncBriefContext, Recommendation } from './sync-brief-formatter';
 // VTID-0538: Knowledge Hub integration
@@ -843,6 +844,14 @@ async function logAutopilotIntent(params: {
   action: 'created' | 'approved' | 'rejected' | 'executed';
   details: Record<string, unknown>;
 }): Promise<void> {
+  // Phase 1 W2 (BOOTSTRAP-PHASE1-W2-CONSENT-METADATA): tag with data_export_ok
+  // only where the thread's tenant has established export consent, so the
+  // intent-kind dataset extractor can ingest these events. Default off.
+  const identity = threadIdentityMap.get(params.threadId);
+  const consentTag = await dataExportConsentTag({
+    tenantId: identity?.tenant_id,
+    userId: identity?.user_id,
+  });
   await emitOasisEvent({
     vtid: params.vtid,
     type: `autopilot.intent.${params.action}`,
@@ -851,7 +860,8 @@ async function logAutopilotIntent(params: {
     message: `Autopilot intent ${params.action}`,
     payload: {
       threadId: params.threadId,
-      ...params.details
+      ...params.details,
+      ...consentTag
     }
   }).catch(err => console.warn('[VTID-0536] Failed to log autopilot intent:', err.message));
 }

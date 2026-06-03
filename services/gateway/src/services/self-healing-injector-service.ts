@@ -7,7 +7,7 @@
  */
 
 import { createHash } from 'crypto';
-import { Diagnosis } from '../types/self-healing';
+import { Diagnosis, AutonomyLevel } from '../types/self-healing';
 import { emitOasisEvent } from './oasis-event-service';
 import { bridgeActivationToExecution } from './dev-autopilot-execute';
 import { loadSourceFile } from './self-healing-diagnosis-service';
@@ -402,6 +402,30 @@ async function bridgeToAutopilotExecution(
 }
 
 /**
+ * Confidence floor at or above which a diagnosis is auto-approved (no human
+ * gate) for a given autonomy level.
+ *
+ * Historically this gate was a hardcoded `confidence >= 0.8` that ignored the
+ * autonomy level entirely — so selecting "Level 4: FULL AUTO" in the Command
+ * Hub had no effect and every sub-0.8 failure escalated. FULL_AUTO now relaxes
+ * the floor to 0.5 (matching the <0.5 escalation boundary in
+ * processFailingService), so moderately-confident diagnoses actually run.
+ */
+export function autoApproveFloor(level: AutonomyLevel): number {
+  switch (level) {
+    case AutonomyLevel.FULL_AUTO:
+      return 0.5;
+    case AutonomyLevel.AUTO_FIX_SIMPLE:
+      return 0.8;
+    // OBSERVE_ONLY / DIAGNOSE_ONLY never reach injection; SPEC_AND_WAIT always
+    // requires a human. A floor above 1.0 makes confidence-based auto-approval
+    // impossible for those levels.
+    default:
+      return 1.01;
+  }
+}
+
+/**
  * Inject a diagnosed failure into the autopilot pipeline.
  * The VTID already exists in vtid_ledger (created in diagnosis phase).
  * This function transitions it to 'pending' and attaches the spec.
@@ -411,7 +435,8 @@ export async function injectIntoAutopilotPipeline(
   diagnosis: Diagnosis,
   spec: string,
   specHash: string,
-): Promise<{ success: boolean; error?: string }> {
+  autonomyLevel: AutonomyLevel = AutonomyLevel.AUTO_FIX_SIMPLE,
+): Promise<{ success: boolean; error?: string; autoApproved?: boolean }> {
   if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
     console.error('[self-healing-injector] Supabase not configured');
     return { success: false, error: 'supabase_not_configured' };
@@ -424,7 +449,9 @@ export async function injectIntoAutopilotPipeline(
     const isVoiceSyntheticSource =
       typeof diagnosis.endpoint === 'string' &&
       diagnosis.endpoint.startsWith('voice-error://');
-    const autoApproved = isVoiceSyntheticSource || diagnosis.confidence >= 0.8;
+    const autoApproved =
+      isVoiceSyntheticSource ||
+      diagnosis.confidence >= autoApproveFloor(autonomyLevel);
 
     // Step 1: Update the existing VTID entry — transition allocated → pending
     const updateResp = await fetch(
@@ -585,7 +612,7 @@ export async function injectIntoAutopilotPipeline(
       console.warn(`[self-healing-injector] Failed to insert self_healing_log: ${err.message}`);
     });
 
-    return { success: true };
+    return { success: true, autoApproved };
   } catch (error: any) {
     console.error(`[self-healing-injector] Error injecting ${vtid}: ${error.message}`);
     return { success: false, error: error.message };

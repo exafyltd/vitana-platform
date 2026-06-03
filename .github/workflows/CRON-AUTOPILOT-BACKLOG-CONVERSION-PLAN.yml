@@ -1,0 +1,103 @@
+name: Cron Autopilot Backlog Conversion Plan
+
+# VTID-03232 — Phase 1 W3-C1 PR 1.
+#
+# Reads the same blocked dev-autopilot rows the W3-C0 drain planner
+# surfaced and decides per row whether it can be turned into a real
+# dev_autopilot finding (= fuel) or should be archived / sent to human
+# spec / left in operator review.
+#
+# Read-only — does NOT mutate vtid_ledger. Conversion (when the
+# operator decides to act on a recommendation) is operator-driven via
+# scripts/autopilot/backlog-convert-row.ts --execute --id=<row_id>.
+
+on:
+  schedule:
+    # Daily at 09:15 UTC — 15 min after CRON-AUTOPILOT-BACKLOG-DRAIN-PLAN
+    # so the operator sees the diagnostic (what's in the queue) before
+    # the conversion plan (what to do about it).
+    - cron: '15 9 * * *'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: cron-autopilot-backlog-conversion-plan
+  cancel-in-progress: false
+
+env:
+  GCP_PROJECT: lovable-vitana-vers1
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: services/gateway/package-lock.json
+
+      - name: Install gateway deps
+        working-directory: services/gateway
+        run: npm ci --no-audit --no-fund
+
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_WIF_SA_EMAIL }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Resolve prod Supabase creds
+        run: |
+          set -euo pipefail
+          PROD_URL=$(gcloud secrets versions access latest --secret=SUPABASE_URL --project="${GCP_PROJECT}" 2>/dev/null || echo '')
+          PROD_KEY=$(gcloud secrets versions access latest --secret=SUPABASE_SERVICE_ROLE --project="${GCP_PROJECT}" 2>/dev/null || echo '')
+          if [ -z "$PROD_URL" ] || [ -z "$PROD_KEY" ]; then
+            echo "::error::Could not resolve prod Supabase creds."
+            exit 1
+          fi
+          echo "::add-mask::$PROD_URL"
+          echo "::add-mask::$PROD_KEY"
+          {
+            echo "PROD_SUPABASE_URL=$PROD_URL"
+            echo "PROD_SUPABASE_SERVICE_ROLE=$PROD_KEY"
+          } >> "$GITHUB_ENV"
+
+      - name: Generate conversion plan
+        working-directory: services/gateway
+        env:
+          REPORT_MARKDOWN_PATH: /tmp/autopilot-backlog-conversion-plan.md
+        run: |
+          set -euo pipefail
+          npx tsx scripts/autopilot/backlog-conversion-classifier.ts > /tmp/autopilot-backlog-conversion-plan.json
+          echo "JSON written: $(wc -c < /tmp/autopilot-backlog-conversion-plan.json) bytes"
+          echo "Markdown written: $(wc -c < /tmp/autopilot-backlog-conversion-plan.md 2>/dev/null || echo 0) bytes"
+
+      - name: Append summary
+        if: always()
+        run: |
+          if [ -f /tmp/autopilot-backlog-conversion-plan.md ]; then
+            cat /tmp/autopilot-backlog-conversion-plan.md >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo '## Backlog conversion plan'                          >> "$GITHUB_STEP_SUMMARY"
+            echo ''                                                     >> "$GITHUB_STEP_SUMMARY"
+            echo 'Classifier did not produce Markdown — see logs.'     >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: autopilot-backlog-conversion-plan-${{ github.run_id }}
+          path: |
+            /tmp/autopilot-backlog-conversion-plan.json
+            /tmp/autopilot-backlog-conversion-plan.md
+          if-no-files-found: warn
+          retention-days: 90

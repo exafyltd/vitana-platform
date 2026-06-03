@@ -32,6 +32,24 @@ interface AllocatorResponse {
 }
 
 /**
+ * VTID-03230: Pick a meaningful title for a freshly-allocated ledger row.
+ * Returns null when the caller didn't supply one and the source slug is
+ * generic ("api") — in that case we leave the RPC default untouched.
+ */
+function deriveAllocationTitle(
+  requestedTitle: string | undefined,
+  source: string
+): string | null {
+  if (requestedTitle && requestedTitle.length > 0 && requestedTitle !== 'Allocated - Pending Title') {
+    return requestedTitle.slice(0, 200);
+  }
+  if (!source || source === 'api') return null;
+  const cleaned = source.replace(/[-_]/g, ' ').trim();
+  if (!cleaned) return null;
+  return (cleaned.charAt(0).toUpperCase() + cleaned.slice(1)).slice(0, 200);
+}
+
+/**
  * POST /allocate → /api/v1/vtid/allocate
  * VTID-0542 + VTID-01181: Global VTID Allocator
  *
@@ -67,6 +85,12 @@ router.post("/allocate", async (req: Request, res: Response) => {
     const source = req.body?.source || 'api';
     const layer = req.body?.layer || 'DEV';
     const module = req.body?.module || 'TASK';
+    // VTID-03230: accept optional title; if absent, we'll derive one from
+    // `source` after allocation so the ledger row never lands with the
+    // literal "Allocated - Pending Title" default and flood the Tasks board.
+    const requestedTitle: string | undefined = typeof req.body?.title === 'string'
+      ? req.body.title.trim()
+      : undefined;
 
     // Call the atomic allocation function
     const resp = await fetch(supabaseUrl + "/rest/v1/rpc/allocate_global_vtid", {
@@ -106,6 +130,37 @@ router.post("/allocate", async (req: Request, res: Response) => {
 
     const allocated = result[0];
     console.log(`[VTID-0542] Successfully allocated: ${allocated.vtid} (num=${allocated.num})`);
+
+    // VTID-03230: backfill a meaningful title onto the freshly-allocated row.
+    // The RPC defaults title to "Allocated - Pending Title", which floods the
+    // Tasks board with workflow scratch tokens (330 of 603 completed rows at
+    // time of fix). Prefer caller-supplied title; otherwise derive one from
+    // the source slug (e.g. "phase-1-w3b1-acceptance-doc" → "Phase 1 w3b1
+    // acceptance doc"). Best-effort — failure here does NOT fail allocation,
+    // because the VTID is still valid for the ledger row that already exists.
+    try {
+      const derivedTitle = deriveAllocationTitle(requestedTitle, source);
+      if (derivedTitle) {
+        const patchResp = await fetch(
+          supabaseUrl + `/rest/v1/vtid_ledger?vtid=eq.${encodeURIComponent(allocated.vtid)}`,
+          {
+            method: "PATCH",
+            headers: {
+              "Content-Type": "application/json",
+              apikey: svcKey,
+              Authorization: "Bearer " + svcKey,
+              Prefer: "return=minimal",
+            },
+            body: JSON.stringify({ title: derivedTitle, summary: derivedTitle }),
+          }
+        );
+        if (!patchResp.ok) {
+          console.warn(`[VTID-03230] Title backfill PATCH failed for ${allocated.vtid}: HTTP ${patchResp.status}`);
+        }
+      }
+    } catch (titleErr) {
+      console.warn(`[VTID-03230] Title backfill exception for ${allocated.vtid}:`, titleErr);
+    }
 
     return res.status(201).json({
       ok: true,

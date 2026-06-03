@@ -43,6 +43,12 @@ import { getSupabase } from '../lib/supabase';
 import { getSystemControl } from './system-controls-service';
 // VTID-01952 Phase 0 — Identity Lock guardrail block (canonical name/DOB/etc from app_users)
 import { buildIdentityGuardrailBlock } from './identity-guardrail-block';
+// VTID-03259 (Fix-3): sentinels wrapping the V2 proactive-initiative block so
+// the live-instruction stripper removes it as one unit when an override wins.
+import {
+  BRAIN_OPENER_V2_START,
+  BRAIN_OPENER_V2_END,
+} from '../orb/live/instruction/brain-opener-sentinels';
 import {
   pickOpenerCandidate,
   getAwarenessContext,
@@ -535,11 +541,37 @@ export async function buildProactiveGuideBlock(input: {
   // VTID-02019: pass the user's tz through so HH:MM in the awareness block
   // renders local. If the surface didn't supply one, awareness resolves to
   // Europe/Berlin (system default).
+  // VTID-03262 (Fix-4): fetch the unified awareness AND the Journey Foundation
+  // signal in PARALLEL (no added latency). The Foundation signal lets
+  // buildAwarenessBlock render ONE coherent "where am I" — Foundation-primary
+  // until graduation, 90-day wave arc after — instead of two competing
+  // journey narratives. Best-effort: a Foundation read failure just falls back
+  // to the legacy wave line.
   let awareness: UserAwareness | null = null;
-  try {
-    awareness = await getAwarenessContext(input.user_id, input.tenant_id, input.user_timezone);
-  } catch (err: any) {
-    console.warn(`${LOG_PREFIX} getAwarenessContext failed:`, err?.message);
+  let foundationSignal: FoundationAwarenessSignal | null = null;
+  const [awarenessRes, foundationRes] = await Promise.allSettled([
+    getAwarenessContext(input.user_id, input.tenant_id, input.user_timezone),
+    (async (): Promise<FoundationAwarenessSignal | null> => {
+      const sb = getSupabase();
+      if (!sb) return null;
+      const { buildJourneyFoundationSnapshot } = await import('./journey-foundation/journey-foundation-state');
+      const snap = await buildJourneyFoundationSnapshot(sb, input.user_id);
+      return {
+        on_foundation: snap.foundation_steps.length > 0,
+        graduated: snap.graduated,
+        next_step_title: snap.current_next_step?.title ?? null,
+      };
+    })(),
+  ]);
+  if (awarenessRes.status === 'fulfilled') {
+    awareness = awarenessRes.value;
+  } else {
+    console.warn(`${LOG_PREFIX} getAwarenessContext failed:`, awarenessRes.reason?.message);
+  }
+  if (foundationRes.status === 'fulfilled') {
+    foundationSignal = foundationRes.value;
+  } else {
+    console.warn(`${LOG_PREFIX} journey-foundation signal failed:`, foundationRes.reason?.message);
   }
 
   // VTID-01931 Phase B: Read companion config from voice_live personality.
@@ -625,7 +657,7 @@ export async function buildProactiveGuideBlock(input: {
   const introductionMode = awareness?.tenure.stage === 'day0';
 
   // Awareness block — single source of truth for "who is on the line right now"
-  const awarenessBlock = buildAwarenessBlock(awareness);
+  const awarenessBlock = buildAwarenessBlock(awareness, foundationSignal);
 
   // Always include the rules — even with no candidate today, the LLM still
   // needs to know how to honor dismissals if the user volunteers one.
@@ -1045,8 +1077,13 @@ async function buildProactiveInitiativeOffer(
      Splice tool-result fields ({index_delta}, {pillar_value}, etc.)
      naturally where the template uses them.`;
 
+  // VTID-03259 (Fix-3): wrap the whole V2 block (incl. nested STEP 1 / ON NO /
+  // ON HARDER REFUSAL subsections) in opaque sentinels so the live-instruction
+  // stripper can remove it as ONE unit when a wake-brief / journey-guide
+  // override owns turn 1 — otherwise STEP 1's "speak this verbatim" directive
+  // survives the heading-based strip and competes with the override.
   return `
-
+${BRAIN_OPENER_V2_START}
 === PROACTIVE INITIATIVE OFFER (V2 — HIGHEST-PRIORITY OPENER FOR THIS SESSION) ===
 
 This block OVERRIDES the PROACTIVE OPENER CANDIDATE block above and
@@ -1087,15 +1124,32 @@ ${afterConsentBlock}
 
 Once you have offered this initiative in this session, do NOT re-offer
 it. If the user wants to talk about something else first, give them the
-floor — you can come back to the initiative naturally if it fits.`;
+floor — you can come back to the initiative naturally if it fits.
+${BRAIN_OPENER_V2_END}`;
 }
 
+
+/**
+ * VTID-03262 (Fix-4): compact Journey Foundation signal used to reconcile the
+ * two journey models into one coherent "where am I" in the awareness block.
+ */
+export interface FoundationAwarenessSignal {
+  /** A user_journey_foundation row exists (the user is in the onboarding arc). */
+  on_foundation: boolean;
+  /** All required Foundation steps satisfied. */
+  graduated: boolean;
+  /** Title of the current next Foundation step (for the awareness line). */
+  next_step_title: string | null;
+}
 
 /**
  * Build the awareness summary block for the system prompt.
  * Returns empty string when no awareness available.
  */
-function buildAwarenessBlock(awareness: UserAwareness | null): string {
+export function buildAwarenessBlock(
+  awareness: UserAwareness | null,
+  foundation?: FoundationAwarenessSignal | null,
+): string {
   if (!awareness) return '';
 
   const lines: string[] = ['=== USER AWARENESS (right now) ==='];
@@ -1117,15 +1171,30 @@ function buildAwarenessBlock(awareness: UserAwareness | null): string {
     }
   }
 
-  // Journey + active wave
-  if (awareness.journey.is_past_90_day) {
-    lines.push(`Journey: past the initial 90-day plan (day ${awareness.journey.day_in_journey}). No active wave.`);
+  // Journey — VTID-03262 (Fix-4): reconcile the TWO journey models into ONE
+  // coherent "where am I". There is exactly ONE day-counter (day_in_journey,
+  // days since signup). There are two arcs: the Journey Foundation onboarding
+  // checklist (user_journey_foundation — the immediate "where am I" UNTIL
+  // graduation) and the 90-day wave plan (user_journey — the longer arc).
+  // Pre-graduation the Foundation is primary and the wave plan is explicitly
+  // demoted to background so Vitana never narrates two competing "where you
+  // are" stories (that was the mixing). Post-graduation the wave plan leads.
+  const dayN = awareness.journey.day_in_journey;
+  if (foundation && foundation.on_foundation && !foundation.graduated) {
+    const stepBit = foundation.next_step_title
+      ? ` Current step: "${foundation.next_step_title}".`
+      : '';
+    lines.push(
+      `Journey (day ${dayN}): the user is still completing the JOURNEY FOUNDATION onboarding checklist (not yet graduated) — this is their "where am I" RIGHT NOW.${stepBit} The journey-guide leads the next Foundation step; do NOT narrate a separate "day N of 90 / wave" plan as their current focus — the 90-day wave arc only becomes primary after they graduate the Foundation.`,
+    );
+  } else if (awareness.journey.is_past_90_day) {
+    lines.push(`Journey: past the initial 90-day plan (day ${dayN}). No active wave.`);
   } else if (awareness.journey.current_wave) {
     lines.push(
-      `Journey: day ${awareness.journey.day_in_journey} of 90, currently in wave "${awareness.journey.current_wave.name}" — ${awareness.journey.current_wave.description}`,
+      `Journey: day ${dayN} of 90, currently in wave "${awareness.journey.current_wave.name}" — ${awareness.journey.current_wave.description}`,
     );
   } else {
-    lines.push(`Journey: day ${awareness.journey.day_in_journey}, between waves.`);
+    lines.push(`Journey: day ${dayN}, between waves.`);
   }
 
   // Active goal

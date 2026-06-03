@@ -25,6 +25,12 @@ export interface KnowledgeSearchRequest {
   role?: string;
   tenant?: string;
   maxResults?: number;
+  /**
+   * User ID — when present, the generated answer respects the user's
+   * preferred language (German by default). Without it, the LLM falls
+   * back to whatever language it chooses, which is usually English.
+   */
+  userId?: string;
 }
 
 export interface KnowledgeDoc {
@@ -112,7 +118,8 @@ export async function searchKnowledgeDocs(
  */
 async function generateAnswer(
   query: string,
-  docs: KnowledgeDoc[]
+  docs: KnowledgeDoc[],
+  userId?: string,
 ): Promise<string> {
   if (docs.length === 0) {
     return `I couldn't find any documentation matching your query "${query}". Try rephrasing your question or check the Vitana documentation directly.`;
@@ -129,7 +136,9 @@ async function generateAnswer(
       .map((doc, i) => `[Doc ${i + 1}: ${doc.title}]\n${doc.snippet}`)
       .join('\n\n');
 
-    const prompt = `You are a Vitana documentation assistant. Answer the user's question based ONLY on the documentation excerpts provided below. Be concise and accurate. If the documentation doesn't contain enough information to fully answer, say so.
+    // Resolve user locale so the generated answer is in the user's language.
+    // Falls back to base prompt if userId/supabase not available.
+    let basePrompt = `You are a Vitana documentation assistant. Answer the user's question based ONLY on the documentation excerpts provided below. Be concise and accurate. If the documentation doesn't contain enough information to fully answer, say so.
 
 Documentation excerpts:
 ${context}
@@ -137,6 +146,21 @@ ${context}
 User question: ${query}
 
 Answer (be specific and reference the documentation):`;
+
+    if (userId && SUPABASE_URL && SUPABASE_SERVICE_ROLE) {
+      try {
+        const { createClient } = await import('@supabase/supabase-js');
+        const { getUserLocale } = await import('../i18n/server-locale');
+        const { buildLocalizedSystemPrompt } = await import('../i18n/llm-locale');
+        const supa = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE);
+        const locale = await getUserLocale(supa, userId);
+        basePrompt = buildLocalizedSystemPrompt(basePrompt, locale);
+      } catch (e) {
+        console.warn(`[VTID-0538] locale resolution failed:`, (e as Error).message);
+      }
+    }
+
+    const prompt = basePrompt;
 
     const response = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${GOOGLE_GEMINI_API_KEY}`,
@@ -199,7 +223,7 @@ function formatSimpleAnswer(query: string, docs: KnowledgeDoc[]): string {
 export async function searchKnowledge(
   request: KnowledgeSearchRequest
 ): Promise<KnowledgeSearchResponse> {
-  const { query, role = 'operator', tenant, maxResults = 5 } = request;
+  const { query, role = 'operator', tenant, maxResults = 5, userId } = request;
 
   console.log(`[VTID-0538] Knowledge search: "${query}" (role=${role}, tenant=${tenant || 'default'})`);
 
@@ -222,8 +246,8 @@ export async function searchKnowledge(
     // Search for documents
     const docs = await searchKnowledgeDocs(query, maxResults);
 
-    // Generate answer from docs
-    const answer = await generateAnswer(query, docs);
+    // Generate answer from docs (in user's preferred language if userId given)
+    const answer = await generateAnswer(query, docs, userId);
 
     // Log success event
     await emitOasisEvent({
