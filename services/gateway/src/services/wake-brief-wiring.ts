@@ -63,6 +63,31 @@ import {
   NEW_DAY_RETURN_EXTRA_KEY,
   NEW_DAY_RETURN_PROVIDER_KEY,
 } from './assistant-continuation/providers/new-day-return';
+// R6 (BOOTSTRAP-ORB-R6R7-PROVIDERS): first-time-welcome provider — fires
+// once on the user's first-ever session (is_first_session=true). Priority
+// 95, above every other turn-1 producer. Suppresses cleanly otherwise so
+// it never blocks the daily/Teacher/wake-brief path.
+import {
+  makeFirstTimeWelcomeProvider,
+  FIRST_TIME_WELCOME_EXTRA_KEY,
+  FIRST_TIME_WELCOME_PROVIDER_KEY,
+} from './assistant-continuation/providers/first-time-welcome';
+// R7 (BOOTSTRAP-ORB-R6R7-PROVIDERS): goal-completion-inquiry provider —
+// fires when the active life_compass goal's target_date is in the past
+// (end-of-day UTC). Priority 92, above new-day-return (90). Suppresses
+// cleanly when no active goal / no target_date / target not yet past.
+import {
+  makeGoalCompletionInquiryProvider,
+  GOAL_COMPLETION_EXTRA_KEY,
+  GOAL_COMPLETION_PROVIDER_KEY,
+} from './assistant-continuation/providers/goal-completion-inquiry';
+// VTID-03257 (Fix-1): journey-guide — for non-graduated users the Foundation
+// checklist LEADS turn-1 (priority 91, above new-day-return + Teacher).
+import {
+  makeJourneyGuideProvider,
+  JOURNEY_GUIDE_EXTRA_KEY,
+  JOURNEY_GUIDE_PROVIDER_KEY,
+} from './assistant-continuation/providers/journey-guide';
 // VTID-03061 (B0d-real Xf.1): auto-emit OASIS next_action.suggested/
 // .suppressed events when a wake-brief decision lands. Fire-and-forget;
 // never blocks the voice path.
@@ -115,6 +140,27 @@ export function ensureWakeBriefProviderRegistered(): void {
   // never blocks the other providers when the trigger does not apply.
   if (!defaultProviderRegistry.get(NEW_DAY_RETURN_PROVIDER_KEY)) {
     defaultProviderRegistry.register(makeNewDayReturnProvider());
+  }
+  // R6 (BOOTSTRAP-ORB-R6R7-PROVIDERS): first-time-welcome at priority 95.
+  // Suppresses unless user_journey.is_first_session=true, so it only wins
+  // the ranker on the user's first-ever session and never blocks the
+  // returning-user providers otherwise.
+  if (!defaultProviderRegistry.get(FIRST_TIME_WELCOME_PROVIDER_KEY)) {
+    defaultProviderRegistry.register(makeFirstTimeWelcomeProvider());
+  }
+  // R7 (BOOTSTRAP-ORB-R6R7-PROVIDERS): goal-completion-inquiry at priority
+  // 92. Suppresses unless the active life_compass goal's target_date is in
+  // the past (end-of-day UTC), so it only wins when a goal has actually
+  // completed and otherwise yields to new-day-return / Teacher / wake-brief.
+  if (!defaultProviderRegistry.get(GOAL_COMPLETION_PROVIDER_KEY)) {
+    defaultProviderRegistry.register(makeGoalCompletionInquiryProvider());
+  }
+  // VTID-03257 (Fix-1): journey-guide at priority 91 — for users still on the
+  // Journey Foundation (not graduated), the checklist LEADS the conversation
+  // (above new_day_return 90 + Teacher 85). Suppresses cleanly when graduated
+  // or no next step, so it never blocks the returning-user providers.
+  if (!defaultProviderRegistry.get(JOURNEY_GUIDE_PROVIDER_KEY)) {
+    defaultProviderRegistry.register(makeJourneyGuideProvider());
   }
   _registered = true;
 }
@@ -338,6 +384,35 @@ export async function decideWakeBriefForSession(
         lang: args.lang,
         firstName: args.firstName ?? null,
         timezone: args.timezone ?? null,
+      };
+      // R6 (BOOTSTRAP-ORB-R6R7-PROVIDERS): first-time-welcome inputs.
+      // Provider suppresses unless is_first_session=true, so passing the
+      // extra always is safe.
+      extra[FIRST_TIME_WELCOME_EXTRA_KEY] = {
+        supabase: args.supabase,
+        tenantId: args.tenantId,
+        userId: args.userId,
+        lang: args.lang,
+        firstName: args.firstName ?? null,
+      };
+      // R7 (BOOTSTRAP-ORB-R6R7-PROVIDERS): goal-completion-inquiry inputs.
+      // Provider suppresses unless the active goal's target_date is past,
+      // so passing the extra always is safe.
+      extra[GOAL_COMPLETION_EXTRA_KEY] = {
+        supabase: args.supabase,
+        tenantId: args.tenantId,
+        userId: args.userId,
+        lang: args.lang,
+        firstName: args.firstName ?? null,
+      };
+      // VTID-03257 (Fix-1): journey-guide inputs. Provider suppresses when the
+      // user has graduated the Foundation or has no next step, so passing the
+      // extra always is safe — when active it LEADS (priority 91).
+      extra[JOURNEY_GUIDE_EXTRA_KEY] = {
+        supabase: args.supabase,
+        userId: args.userId,
+        isReconnect: args.isReconnect,
+        lang: args.lang,
       };
     }
   }

@@ -29,7 +29,11 @@ async function main(): Promise<void> {
   const cfg = await parseYaml(configPath);
   const trainerDir = path.join(__dirname, 'trainer-package');
   const trainerUri = buildTrainerPackageUri(cfg);
-  const archivePath = path.join(os.tmpdir(), 'finetune-trainer-0.1.0.tar.gz');
+  // Keep this label in lock-step with the version in trainer-package/setup.py.
+  // v0.1.3: numpy<2 pin (training runs) + PEFT adapter saved with
+  // safe_serialization=False (save no longer trips on Qwen2.5 tied weights).
+  // See setup.py for the full failure history.
+  const archivePath = path.join(os.tmpdir(), 'finetune-trainer-0.1.3.tar.gz');
 
   await fs.access(path.join(trainerDir, 'setup.py'));
   execFileSync('tar', ['-czf', archivePath, '-C', trainerDir, '.'], { stdio: 'inherit' });

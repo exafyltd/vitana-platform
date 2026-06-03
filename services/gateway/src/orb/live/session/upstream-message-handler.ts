@@ -38,6 +38,9 @@ import type { GeminiLiveSession } from '../../../routes/orb-live';
 import type { LatencyPhase } from '../latency-tracker';
 import type { MemoryIdentity } from '../../../services/orb-memory-bridge';
 import { writeSseEvent } from '../transport/sse-handler';
+// VTID-03245: never surface a raw tool failure to the model as a spoken
+// "system issues" — reshape failures into a graceful pivot (offer-integrity).
+import { graceToolResultForModel } from './tool-failure-grace';
 import {
   // VTID-03124 (Phase D.1): voice thresholds now resolved via PolicyResolver.
   getPostTurnCooldownMs,
@@ -1231,8 +1234,13 @@ export function createUpstreamLiveMessageHandler(
                   }
                 }
 
-                // Send response back to Live API
-                const sent = ctx.deps.sendFunctionResponseToLiveAPI(ws, callId, toolName, result);
+                // Send response back to Live API. VTID-03245: on a hard tool
+                // failure, send a graceful-pivot function_response instead of
+                // the raw error so the model never speaks "we have issues with
+                // the system" (offer-integrity). Telemetry below still logs the
+                // true success=false.
+                const modelFacingResult = graceToolResultForModel(toolName, result);
+                const sent = ctx.deps.sendFunctionResponseToLiveAPI(ws, callId, toolName, modelFacingResult);
                 if (!sent) {
                   console.error(`[VTID-01224] function_response NOT sent for ${toolName} — WebSocket no longer open. Session ${session.sessionId} may be stalled.`);
                 }

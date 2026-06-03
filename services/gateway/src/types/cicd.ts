@@ -884,6 +884,11 @@ export type CicdEventType =
   // dataset-extraction PII gate can produce real rows. Staging-only by hard
   // guard.
   | 'staging.tenant_consent.flipped'
+  // VTID-03241 (Phase 1 W3-E1 PR 4): role-aware context pack — shadow
+  // mode emits this per assistant turn describing what WOULD be allowed/
+  // blocked under the role registry policy. Fire-and-forget; gated by
+  // FEATURE_ROLE_AWARE_CONTEXT_SHADOW_ENV (off in prod by default).
+  | 'assistant.role.context_pack.shadow'
   | 'production.publish.requested'
   | 'production.publish.completed'
   | 'production.publish.failed'

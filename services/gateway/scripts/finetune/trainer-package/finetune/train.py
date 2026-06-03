@@ -62,6 +62,18 @@ def main() -> None:
         TrainingArguments,
     )
 
+    # Env banner (v0.1.2): print resolved torch/numpy/transformers versions as
+    # the first lines after import so env drift (e.g. NumPy 2.x shadowing the
+    # container's torch 2.3) is visible immediately instead of as an opaque
+    # "PyTorch not found" failure later. See setup.py failure history.
+    import numpy as _np
+    import transformers as _tf
+    print(
+        f"[env] torch={torch.__version__} numpy={_np.__version__} "
+        f"transformers={_tf.__version__} cuda_available={torch.cuda.is_available()}",
+        flush=True,
+    )
+
     hf_token = os.environ.get("HF_TOKEN") or None
     tokenizer = AutoTokenizer.from_pretrained(args.base_model, token=hf_token, trust_remote_code=True)
     if tokenizer.pad_token is None:
@@ -119,7 +131,13 @@ def main() -> None:
     trainer.train()
 
     final_dir = Path(output_dir) / "final"
-    model.save_pretrained(final_dir)
+    # safe_serialization=False (v0.1.3): Qwen2.5 ties the input embeddings to the
+    # LM head, so safetensors' shared-tensor scan (_find_shared_tensors) hits
+    # "Attempted to access the data pointer on an invalid python storage" and the
+    # save aborts AFTER training completes (CustomJob 3932080612898242560,
+    # 2026-06-02). Writing the PEFT adapter as a pickle .bin sidesteps the tied-
+    # tensor check; fine for a LoRA adapter artifact.
+    model.save_pretrained(final_dir, safe_serialization=False)
     tokenizer.save_pretrained(final_dir)
     write_manifest(final_dir, args, len(rows))
     upload_directory(final_dir, args.output_uri)

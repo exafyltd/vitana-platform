@@ -23,7 +23,7 @@
 import { Router, Request, Response } from 'express';
 import { createHash } from 'crypto';
 import { emitOasisEvent } from '../services/oasis-event-service';
-import { generateRecommendations, generatePersonalRecommendations, SourceType } from '../services/recommendation-engine';
+import { generateRecommendations, generatePersonalRecommendations, regenerateCommunityRecommendations, SourceType } from '../services/recommendation-engine';
 import { notifyUserAsync } from '../services/notification-service';
 import { DEFAULT_WAVE_CONFIG, buildTemplateToWaveMap } from '../services/wave-defaults';
 import { derivePillarImpact } from '../services/recommendation-engine/pillar-impact';
@@ -99,6 +99,69 @@ function annotateWithPillarImpact<T extends { contribution_vector?: unknown }>(r
 const router = Router();
 
 const LOG_PREFIX = '[VTID-01180]';
+
+/**
+ * Build the full community recommendation rows for an API response body
+ * (dedup → retired-action filter → wave/horizon enrichment → pillar_impact).
+ * Mirrors the GET / handler's community enrichment. The GET / handler remains
+ * the canonical "which recs does this user see" surface and the FE refetches it
+ * after a forced /generate, so this is a convenience projection for the
+ * /generate response (VTID-03301). Defined after COMMUNITY_ACTIONS so the
+ * retired-action filter can reference it.
+ */
+async function buildCommunityRecsResponse(
+  userId: string,
+  statuses: string[],
+  limit: number,
+): Promise<Array<Record<string, any>>> {
+  const fetchLimit = Math.max((limit + 1) * 4, 80);
+  const result = await queryRecommendationsByRole('community', userId, statuses, fetchLimit, 0);
+  let recommendations = result.ok ? (result.data || []) : [];
+
+  // Dedup by source_ref then title, preferring 'new' status (same rules as GET /).
+  const seen = new Map<string, any>();
+  for (const rec of recommendations) {
+    const k = rec.source_ref || rec.title;
+    const ex = seen.get(k);
+    if (!ex) seen.set(k, rec);
+    else if (rec.status === 'new' && ex.status !== 'new') seen.set(k, rec);
+  }
+  const seenTitles = new Set<string>();
+  recommendations = [];
+  for (const rec of seen.values()) {
+    if (seenTitles.has(rec.title)) continue;
+    seenTitles.add(rec.title);
+    recommendations.push(rec);
+  }
+
+  // Retired-action filter: only keep refs that map to a real community action.
+  recommendations = recommendations.filter((rec) => !rec.source_ref || COMMUNITY_ACTIONS[rec.source_ref]);
+
+  // Wave/horizon enrichment (mirrors GET /).
+  const templateToWave = buildTemplateToWaveMap();
+  for (const rec of recommendations) {
+    if (rec.source_ref) {
+      const waveId = templateToWave.get(rec.source_ref);
+      if (waveId) {
+        rec.wave_id = waveId;
+        rec.wave_order = DEFAULT_WAVE_CONFIG.find((w) => w.id === waveId)?.order ?? 99;
+      }
+    }
+    if (!rec.wave_id) {
+      rec.wave_id = 'wave-1';
+      rec.wave_order = 1;
+    }
+    const waveDef = DEFAULT_WAVE_CONFIG.find((w) => w.id === rec.wave_id);
+    const startDay = waveDef?.timeline.start_day ?? 0;
+    rec.horizon =
+      startDay <= 0  ? 'today'    :
+      startDay <= 3  ? 'next3'    :
+      startDay <= 7  ? 'thisWeek' :
+      startDay <= 30 ? 'month'    : 'future';
+  }
+
+  return annotateWithPillarImpact(recommendations).slice(0, limit);
+}
 
 // =============================================================================
 // Community Action Map — signal_type → action for community user activation
@@ -794,6 +857,7 @@ export interface CommunityRecommendationView {
 export async function listCommunityAutopilotRecommendations(
   userId: string,
   limit = 5,
+  opts: { autoGenerate?: boolean } = {},
 ): Promise<CommunityRecommendationView[]> {
   try {
     if (!userId) return [];
@@ -802,11 +866,56 @@ export async function listCommunityAutopilotRecommendations(
     // GET handler's fetchLimit heuristic.
     const fetchLimit = Math.max((clamped + 1) * 4, 40);
     const result = await queryRecommendationsByRole('community', userId, ['new'], fetchLimit, 0);
-    if (!result.ok || !result.data) return [];
+    if (!result.ok) return [];
+    let rows: any[] = result.data || [];
+
+    // Parity with the popup's list handler: when the canonical query yields
+    // no NEW recs, the popup does NOT return empty — it falls back to the
+    // no-source_type query and then auto-generates + refetches. The voice READ
+    // tool opts into this (autoGenerate) so "what's in my Autopilot?" matches
+    // exactly what opening the popup would show, including for first-time users,
+    // expired queues, and users whose recs were all activated. The proactive
+    // OFFER deliberately does NOT opt in — it must stay latency-cheap at session
+    // bootstrap and simply not offer when the queue is genuinely empty.
+    if (rows.length === 0 && opts.autoGenerate) {
+      const fb = await queryRecommendationsFallback(userId, ['new'], fetchLimit, 0);
+      if (fb.ok && (fb.data?.length ?? 0) > 0) {
+        rows = fb.data!;
+      } else {
+        try {
+          const supabaseUrl = process.env.SUPABASE_URL;
+          const svcKey = process.env.SUPABASE_SERVICE_ROLE;
+          if (supabaseUrl && svcKey) {
+            const { createClient } = await import('@supabase/supabase-js');
+            const supa = createClient(supabaseUrl, svcKey);
+            const { data: tenantRow } = await supa
+              .from('user_tenants')
+              .select('tenant_id')
+              .eq('user_id', userId)
+              .eq('is_primary', true)
+              .maybeSingle();
+            // Community users always have a primary tenant; if none, skip
+            // generation rather than depend on a DEFAULT_TENANT_ID fallback.
+            const tenantId = tenantRow?.tenant_id;
+            if (tenantId) {
+              const genResult = await generatePersonalRecommendations(userId, tenantId, { trigger_type: 'auto_replenish' });
+              if (genResult.generated > 0) {
+                const fresh = await queryRecommendationsByRole('community', userId, ['new'], fetchLimit, 0);
+                if (fresh.ok && (fresh.data?.length ?? 0) > 0) rows = fresh.data!;
+              }
+            }
+          }
+        } catch (genErr: any) {
+          console.warn(`${LOG_PREFIX} listCommunity auto-generation failed (non-fatal): ${genErr?.message}`);
+        }
+      }
+    }
+
+    if (rows.length === 0) return [];
 
     // Dedup by source_ref then title (same rules as the popup).
     const seen = new Map<string, any>();
-    for (const rec of result.data) {
+    for (const rec of rows) {
       const key = rec.source_ref || rec.title;
       if (!seen.has(key)) seen.set(key, rec);
     }
@@ -862,13 +971,80 @@ export function summarizeAutopilotForVoice(
 ): { spoken: string; ids: string[]; count: number } {
   const ids = recs.map(r => r.id);
   if (recs.length === 0) {
-    return { spoken: 'You have no Autopilot actions prepared right now.', ids, count: 0 };
+    // VTID-03245 (offer-integrity): don't dead-end on "no recommendations" —
+    // be honest AND pivot to a real next step the assistant can actually do.
+    // (Autopilot actions are generated by the platform over time; there is no
+    // voice tool to mint one on the spot, so do NOT offer to "set one up".)
+    return {
+      spoken:
+        "You don't have any Autopilot actions prepared yet — those build up as you keep using Vitana. "
+        + 'Is there something specific I can help you with right now?',
+      ids,
+      count: 0,
+    };
   }
   const titles = recs.map((r, i) => `${i + 1}. ${r.title}`);
   const lead = recs.length === 1
     ? 'You have one Autopilot action prepared:'
     : `You have ${recs.length} Autopilot actions prepared:`;
   return { spoken: `${lead} ${titles.join('; ')}.`, ids, count: recs.length };
+}
+
+/**
+ * Render the system-instruction block that tells the voice assistant (Vitana)
+ * to PROACTIVELY offer to read the user's Autopilot. Pure function over an
+ * already-fetched list. Returns '' for an empty queue, so the caller can append
+ * unconditionally without gating on count. VTID-03201.
+ *
+ * This is the "Vitana says: you have Autopilot recommendations, want me to look?"
+ * half of the feature — the read (`get_autopilot_recommendations`) and the
+ * activation (`activate_autopilot_recommendations`) tools already exist; this
+ * block is what makes Vitana raise it unprompted instead of waiting to be asked.
+ *
+ * Instruction text is intentionally English: it is read by the model, which
+ * responds in the user's language per the "Respond ONLY in {language}" rule.
+ */
+export function renderAutopilotOfferBlock(recs: CommunityRecommendationView[]): string {
+  if (recs.length === 0) return '';
+
+  const count = recs.length;
+  const teaser = recs.slice(0, 2).map(r => r.title).join('; ');
+  const countPhrase = count === 1 ? 'one action' : `${count} actions`;
+
+  return [
+    '## AUTOPILOT — PROACTIVE OFFER (this session)',
+    `The user has ${countPhrase} prepared and waiting in their Autopilot${teaser ? ` (for example: ${teaser})` : ''}.`,
+    '',
+    'EARLY in the conversation — right after your greeting, or at the first',
+    'natural pause — proactively offer ONCE, in one short warm sentence, to go',
+    'through them. For example: "By the way, your Autopilot has a few things',
+    'ready for you — want me to run through them?"',
+    '',
+    'Rules for this proactive offer:',
+    '- Offer FIRST. Do NOT read the list unprompted.',
+    '- If the user agrees ("yes", "go ahead", "what\'s in there?", "was hat der',
+    '  Autopilot?"), call the tool get_autopilot_recommendations and then read',
+    '  its `spoken` summary verbatim.',
+    '- If the user then agrees to act ("activate them", "do the first one",',
+    '  "los geht\'s", "yes do it"), call activate_autopilot_recommendations.',
+    '- Make this proactive offer AT MOST ONCE per conversation. If the user',
+    '  declines or changes the subject, drop it gracefully and never raise it again.',
+    '- This is an offer, not a script — phrase it naturally in the user\'s language.',
+  ].join('\n');
+}
+
+/** Async wrapper: fetch the user's queue, then render the offer block. Never throws. */
+export async function buildAutopilotOfferBlock(userId: string): Promise<string> {
+  try {
+    if (!userId) return '';
+    // Same canonical list the popup + get_autopilot_recommendations use, so the
+    // offer's count matches what Vitana will actually read aloud.
+    const recs = await listCommunityAutopilotRecommendations(userId, 5);
+    return renderAutopilotOfferBlock(recs);
+  } catch (err: any) {
+    console.warn(`${LOG_PREFIX} buildAutopilotOfferBlock failed (non-fatal): ${err?.message}`);
+    return '';
+  }
 }
 
 /** Structured result for community activation, mapped to HTTP by the route and to speech by voice. */
@@ -1414,6 +1590,8 @@ router.post('/:id/reject', async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const { reason } = req.body;
+    const userId = getUserId(req);
+    const role = getActiveRole(req);
 
     if (!id) {
       return res.status(400).json({ ok: false, error: 'Recommendation ID required' });
@@ -1433,6 +1611,16 @@ router.post('/:id/reject', async (req: Request, res: Response) => {
     const response = result.data;
     if (!response?.ok) {
       return res.status(400).json({ ok: false, error: response?.error || 'Failed to reject' });
+    }
+
+    // VTID-03301: dismissing the last rec also empties the queue — kick the
+    // same guarded regeneration the /complete path uses. Community only;
+    // fire-and-forget so reject stays fast.
+    if (role === 'community' && userId) {
+      regenerateCommunityRecommendations(userId, {
+        requireEmptyQueue: true,
+        trigger_type: 'auto_replenish',
+      }).catch((e: any) => console.warn(`${LOG_PREFIX} post-reject regen error (non-fatal): ${e?.message}`));
     }
 
     return res.status(200).json({
@@ -1523,6 +1711,49 @@ router.post('/generate', async (req: Request, res: Response) => {
 
   try {
     const userId = getUserId(req);
+    const role = getActiveRole(req);
+
+    // =========================================================================
+    // VTID-03301: Community on-demand regeneration.
+    // POST /recommendations/generate?role=community
+    //   → 200 { ok, generated, recommendations }            (fresh batch)
+    //   → 200 { ok, generated: 0, reason }                  (guard fired)
+    // Same guards as the queue-empty auto-trigger; the cooldown makes a
+    // double-tap idempotent so a force-refresh can't double-generate.
+    // =========================================================================
+    if (role === 'community') {
+      if (!userId) {
+        return res.status(401).json({ ok: false, error: 'User ID required' });
+      }
+      const tenantId = req.get('X-Vitana-Tenant') || undefined;
+      const regen = await regenerateCommunityRecommendations(userId, {
+        trigger_type: 'manual',
+        tenantId,
+      });
+      if (!regen.ok) {
+        return res.status(500).json({ ok: false, error: regen.error || 'Generation failed' });
+      }
+      if (regen.generated === 0) {
+        return res.status(200).json({
+          ok: true,
+          generated: 0,
+          reason: regen.reason || 'no_signals',
+          recommendations: [],
+          vtid: 'VTID-03301',
+          timestamp: new Date().toISOString(),
+        });
+      }
+      const recommendations = await buildCommunityRecsResponse(userId, ['new', 'activated'], 20);
+      return res.status(200).json({
+        ok: true,
+        generated: regen.generated,
+        recommendations,
+        run_id: regen.run_id,
+        vtid: 'VTID-03301',
+        timestamp: new Date().toISOString(),
+      });
+    }
+
     const {
       sources = ['codebase', 'oasis', 'health', 'roadmap'],
       limit = 20,
@@ -1938,6 +2169,17 @@ router.post('/:id/complete', async (req: Request, res: Response) => {
         }
       }
     }
+
+    // VTID-03301: queue-empty → regenerate immediately. Fire-and-forget so
+    // Complete returns fast; the guard re-checks the active (new + activated)
+    // count and only generates when it has actually hit 0 (and honors the
+    // daily cap / cooldown / consent / enabled gates). The FE's poll/refetch
+    // surfaces the fresh batch.
+    regenerateCommunityRecommendations(userId, {
+      requireEmptyQueue: true,
+      tenantId: tenantRow?.tenant_id || undefined,
+      trigger_type: 'auto_replenish',
+    }).catch((e: any) => console.warn(`${LOG_PREFIX} post-complete regen error (non-fatal): ${e?.message}`));
 
     return res.status(200).json({
       ok: true,

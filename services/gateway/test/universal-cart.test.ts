@@ -2,7 +2,7 @@
  * VTID-03213 — Universal Cart gateway slice tests.
  *
  * Coverage:
- *   §1  Role gating          — 401 unauthenticated, 403 cart_unavailable_for_role for non-community.
+ *   §1  Auth gating          — 401 unauthenticated; commerce is open to ANY authenticated caller (no role gate).
  *   §2  Owner isolation      — RLS-blank reads surface as 404, gateway never trusts cross-user inputs.
  *   §3  Active-cart behavior — POST / get-or-create idempotency; emits cart.created only on actual create.
  *   §4  Item mutation        — add (insert), add (quantity bump), patch quantity, soft-remove, complete (idempotent).
@@ -136,21 +136,21 @@ const PRODUCT_B = '77777777-7777-4000-f000-000000000f02';
 const BEARER_A = 'Bearer fake-jwt-user-a';
 const BEARER_B = 'Bearer fake-jwt-user-b';
 
-/** Seed the me_context + active_role lookups for a given user / role. */
-function seedAuth(opts: { user_id?: string; tenant_id?: string | null; role: string | null }) {
-  // me_context RPC
+/**
+ * Seed the me_context auth lookup for a given user.
+ *
+ * The commerce gate is AUTH-ONLY now: `authorizeCommunityCaller` no longer
+ * queries `user_tenants.active_role`, so we seed ONLY the me_context response.
+ * The `role` field is accepted for call-site compatibility but ignored — it no
+ * longer affects anything. (Seeding a phantom active_role response here would be
+ * wrongly consumed by the handler's first real query and misalign every test.)
+ */
+function seedAuth(opts: { user_id?: string; tenant_id?: string | null; role?: string | null }) {
+  // me_context RPC — the only auth lookup the gate performs.
   mockSupabase.__seed({
     data: { user_id: opts.user_id ?? USER_A, tenant_id: opts.tenant_id === undefined ? TENANT_1 : opts.tenant_id },
     error: null,
   });
-  // user_tenants.active_role lookup
-  if (opts.role !== null && opts.tenant_id !== null) {
-    mockSupabase.__seed({ data: { active_role: opts.role }, error: null });
-  } else if (opts.tenant_id !== null) {
-    // explicit no-row → maybeSingle returns data: null
-    mockSupabase.__seed({ data: null, error: null });
-  }
-  // If tenant_id is null, getActiveRole short-circuits without querying — no seed needed.
 }
 
 beforeEach(() => {
@@ -216,10 +216,10 @@ describe(`${'VTID-03213'} §6 getBearerToken`, () => {
 });
 
 // =============================================================================
-// §1  Role gating
+// §1  Auth gating (open to any authenticated user — commerce is NOT role-gated)
 // =============================================================================
 
-describe(`${'VTID-03213'} §1 role gating`, () => {
+describe(`${'VTID-03213'} §1 auth gating`, () => {
   test('GET /health is open (no auth required)', async () => {
     const res = await request(buildApp()).get('/api/v1/universal-cart/health');
     expect(res.status).toBe(200);
@@ -241,42 +241,79 @@ describe(`${'VTID-03213'} §1 role gating`, () => {
     expect(res.body.error).toBe('UNAUTHENTICATED');
   });
 
-  test('POST / with role=admin → 403 cart_unavailable_for_role', async () => {
+  test('POST / with role=admin is allowed (commerce is not role-gated) → 201', async () => {
+    // The hotfix removed the community-role wall: ANY authenticated caller may
+    // use the cart. Prove an 'admin' caller is allowed through to create a cart.
     seedAuth({ role: 'admin' });
+    // universal_carts SELECT → no existing
+    mockSupabase.__seed({ data: null, error: null });
+    // universal_carts INSERT → returns new cart
+    mockSupabase.__seed({
+      data: { id: CART_A, user_id: USER_A, status: 'active', tenant_id: TENANT_1 },
+      error: null,
+    });
+    // universal_cart_events INSERT (audit)
+    mockSupabase.__seed({ data: null, error: null });
+
     const res = await request(buildApp())
       .post('/api/v1/universal-cart')
       .set('Authorization', BEARER_A);
-    expect(res.status).toBe(403);
-    expect(res.body.error).toBe('cart_unavailable_for_role');
-    expect(res.body.role).toBe('admin');
+
+    expect(res.status).toBe(201);
+    expect(res.body.ok).toBe(true);
+    expect(res.body.created).toBe(true);
+    expect(res.body.error).toBeUndefined();
   });
 
-  test('POST / with role=developer → 403', async () => {
+  test('POST / with role=developer is allowed → existing cart returned (200)', async () => {
     seedAuth({ role: 'developer' });
+    // universal_carts SELECT → existing active cart
+    mockSupabase.__seed({
+      data: { id: CART_A, user_id: USER_A, status: 'active' },
+      error: null,
+    });
+
     const res = await request(buildApp())
       .post('/api/v1/universal-cart')
       .set('Authorization', BEARER_A);
-    expect(res.status).toBe(403);
-    expect(res.body.error).toBe('cart_unavailable_for_role');
+
+    expect(res.status).toBe(200);
+    expect(res.body.created).toBe(false);
+    expect(res.body.error).toBeUndefined();
   });
 
-  test('POST / with no active_role row → 403', async () => {
+  test('POST / with no active_role is still allowed (existing-cart path) → 200', async () => {
+    // Users whose active_role is null/unset were the ones the old gate broke;
+    // they must now be allowed through.
     seedAuth({ role: null });
+    // universal_carts SELECT → existing active cart
+    mockSupabase.__seed({
+      data: { id: CART_A, user_id: USER_A, status: 'active' },
+      error: null,
+    });
+
     const res = await request(buildApp())
       .post('/api/v1/universal-cart')
       .set('Authorization', BEARER_A);
-    expect(res.status).toBe(403);
-    expect(res.body.error).toBe('cart_unavailable_for_role');
-    expect(res.body.role).toBeNull();
+
+    expect(res.status).toBe(200);
+    expect(res.body.created).toBe(false);
+    expect(res.body.cart.id).toBe(CART_A);
+    expect(res.body.error).toBeUndefined();
   });
 
-  test('GET / requires same gate (sanity)', async () => {
+  test('GET / is open to any authenticated caller (no role gate)', async () => {
     seedAuth({ role: 'admin' });
+    // universal_carts SELECT → no cart
+    mockSupabase.__seed({ data: null, error: null });
+
     const res = await request(buildApp())
       .get('/api/v1/universal-cart')
       .set('Authorization', BEARER_A);
-    expect(res.status).toBe(403);
-    expect(res.body.error).toBe('cart_unavailable_for_role');
+
+    expect(res.status).toBe(200);
+    expect(res.body.ok).toBe(true);
+    expect(res.body.error).toBeUndefined();
   });
 });
 
@@ -712,6 +749,153 @@ describe(`${'VTID-03213'} §4 item mutation + §5 event emission`, () => {
     expect(res.body.already_completed).toBe(true);
     expect(mockSupabase.__insertsFor('universal_cart_events')).toHaveLength(0);
     expect(mockSupabase.__updatesFor('universal_cart_items')).toHaveLength(0);
+  });
+});
+
+// =============================================================================
+// VTID-03260 Phase 2 — GET /budget
+// =============================================================================
+
+describe(`${'VTID-03260'} GET /budget`, () => {
+  test('401 without Bearer', async () => {
+    const res = await request(buildApp()).get('/api/v1/universal-cart/budget');
+    expect(res.status).toBe(401);
+    expect(res.body.error).toBe('UNAUTHENTICATED');
+  });
+
+  test('non-community role (admin) is allowed — budget is not role-gated', async () => {
+    seedAuth({ role: 'admin' });
+    // Budget reads: app_users, user_limitations, product_orders (spend), carts.
+    seedBudget({ capCents: null, cartId: null });
+    const res = await request(buildApp())
+      .get('/api/v1/universal-cart/budget')
+      .set('Authorization', BEARER_A);
+    expect(res.status).toBe(200);
+    expect(res.body.ok).toBe(true);
+    expect(res.body.error).toBeUndefined();
+  });
+
+  /** Seed the budget reads in handler order: app_users, user_limitations,
+   * product_orders (getMonthlySpend), universal_carts, universal_cart_items. */
+  function seedBudget(opts: {
+    currency?: string;
+    capCents?: number | null;
+    spendRows?: Array<{ amount_cents: number }>;
+    cartId?: string | null;
+    itemRows?: Array<{ unit_price_cents_snapshot: number | null; quantity: number | null }>;
+  }) {
+    mockSupabase.__seed({ data: { currency_preference: opts.currency ?? 'EUR' }, error: null });
+    mockSupabase.__seed({ data: { budget_monthly_cap_cents: opts.capCents ?? null }, error: null });
+    mockSupabase.__seed({ data: opts.spendRows ?? [], error: null });
+    mockSupabase.__seed({ data: opts.cartId ? { id: opts.cartId } : null, error: null });
+    if (opts.cartId) {
+      mockSupabase.__seed({ data: opts.itemRows ?? [], error: null });
+    }
+  }
+
+  test('status under — null cap → always under', async () => {
+    seedAuth({ role: 'community' });
+    seedBudget({
+      capCents: null,
+      spendRows: [{ amount_cents: 99999 }],
+      cartId: CART_A,
+      itemRows: [{ unit_price_cents_snapshot: 5000, quantity: 2 }],
+    });
+
+    const res = await request(buildApp())
+      .get('/api/v1/universal-cart/budget')
+      .set('Authorization', BEARER_A);
+
+    expect(res.status).toBe(200);
+    expect(res.body.ok).toBe(true);
+    expect(res.body.monthly_cap_cents).toBeNull();
+    expect(res.body.spent_this_month_cents).toBe(99999);
+    expect(res.body.cart_active_subtotal_cents).toBe(10000); // 5000 * 2
+    expect(res.body.currency).toBe('EUR');
+    expect(res.body.status).toBe('under'); // null cap → under regardless
+  });
+
+  test('status under — projected well below cap', async () => {
+    seedAuth({ role: 'community' });
+    seedBudget({
+      capCents: 100000,
+      spendRows: [{ amount_cents: 1000 }],
+      cartId: CART_A,
+      itemRows: [{ unit_price_cents_snapshot: 2000, quantity: 1 }],
+    });
+
+    const res = await request(buildApp())
+      .get('/api/v1/universal-cart/budget')
+      .set('Authorization', BEARER_A);
+
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe('under'); // projected 3000 < 0.85*100000
+  });
+
+  test('status near — projected >= 0.85*cap but <= cap', async () => {
+    seedAuth({ role: 'community' });
+    // cap=10000; spend=8000; cart subtotal=1000 → projected=9000 = 0.9*cap → near
+    seedBudget({
+      capCents: 10000,
+      spendRows: [{ amount_cents: 8000 }],
+      cartId: CART_A,
+      itemRows: [{ unit_price_cents_snapshot: 1000, quantity: 1 }],
+    });
+
+    const res = await request(buildApp())
+      .get('/api/v1/universal-cart/budget')
+      .set('Authorization', BEARER_A);
+
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe('near');
+  });
+
+  test('status over — projected > cap', async () => {
+    seedAuth({ role: 'community' });
+    // cap=10000; spend=9000; cart subtotal=2000 → projected=11000 > cap → over
+    seedBudget({
+      capCents: 10000,
+      spendRows: [{ amount_cents: 9000 }],
+      cartId: CART_A,
+      itemRows: [{ unit_price_cents_snapshot: 2000, quantity: 1 }],
+    });
+
+    const res = await request(buildApp())
+      .get('/api/v1/universal-cart/budget')
+      .set('Authorization', BEARER_A);
+
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe('over');
+  });
+
+  test('no active cart → subtotal 0', async () => {
+    seedAuth({ role: 'community' });
+    seedBudget({
+      capCents: 10000,
+      spendRows: [{ amount_cents: 5000 }],
+      cartId: null,
+    });
+
+    const res = await request(buildApp())
+      .get('/api/v1/universal-cart/budget')
+      .set('Authorization', BEARER_A);
+
+    expect(res.status).toBe(200);
+    expect(res.body.cart_active_subtotal_cents).toBe(0);
+    expect(res.body.spent_this_month_cents).toBe(5000);
+    expect(res.body.status).toBe('under'); // 5000 < 0.85*10000
+  });
+
+  test('currency follows currency_preference (USD)', async () => {
+    seedAuth({ role: 'community' });
+    seedBudget({ currency: 'USD', capCents: null, cartId: null });
+
+    const res = await request(buildApp())
+      .get('/api/v1/universal-cart/budget')
+      .set('Authorization', BEARER_A);
+
+    expect(res.status).toBe(200);
+    expect(res.body.currency).toBe('USD');
   });
 });
 

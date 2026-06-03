@@ -3,6 +3,8 @@ import {
   buildTrainerPackageUri,
   buildTrainingArgs,
   countDatasetRowsFromJsonl,
+  assertBaseModelSubmitSafe,
+  isKnownGatedBaseModel,
   type FinetuneConfig,
 } from '../scripts/finetune/submit-job-lib';
 
@@ -41,7 +43,7 @@ const config: FinetuneConfig = {
 describe('finetune submit job config', () => {
   test('builds the trainer package URI from the configured output prefix', () => {
     expect(buildTrainerPackageUri(config)).toBe(
-      'gs://vitana-artifacts-staging/finetune-runs/voice-tool-router/trainer/finetune-trainer-0.1.0.tar.gz',
+      'gs://vitana-artifacts-staging/finetune-runs/voice-tool-router/trainer/finetune-trainer-0.1.3.tar.gz',
     );
   });
 
@@ -66,9 +68,19 @@ describe('finetune submit job config', () => {
     });
 
     expect(jobConfig.workerPoolSpecs[0].pythonPackageSpec.packageUris).toEqual([
-      'gs://vitana-artifacts-staging/finetune-runs/voice-tool-router/trainer/finetune-trainer-0.1.0.tar.gz',
+      'gs://vitana-artifacts-staging/finetune-runs/voice-tool-router/trainer/finetune-trainer-0.1.3.tar.gz',
     ]);
     expect(jobConfig.workerPoolSpecs[0].pythonPackageSpec.pythonModule).toBe('finetune.train');
+  });
+
+  test('detects gated Hugging Face base models before submitting Vertex jobs', () => {
+    expect(isKnownGatedBaseModel('google/gemma-2-2b-it')).toBe(true);
+    expect(isKnownGatedBaseModel('Qwen/Qwen2.5-1.5B-Instruct')).toBe(false);
+
+    expect(() => assertBaseModelSubmitSafe({
+      ...config,
+      base_model: 'google/gemma-2-2b-it',
+    })).toThrow(/known gated Hugging Face repo/);
   });
 });
 

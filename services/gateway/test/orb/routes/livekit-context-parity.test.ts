@@ -26,11 +26,17 @@ const ORB_LIVEKIT_PATH = path.resolve(
   __dirname,
   '../../../src/routes/orb-livekit.ts',
 );
+const ORB_LIVE_PATH = path.resolve(
+  __dirname,
+  '../../../src/routes/orb-live.ts',
+);
 
 let source: string;
+let vertexSource: string;
 
 beforeAll(() => {
   source = fs.readFileSync(ORB_LIVEKIT_PATH, 'utf8');
+  vertexSource = fs.readFileSync(ORB_LIVE_PATH, 'utf8');
 });
 
 describe('VTID-03036 LiveKit context parity wire-up', () => {
@@ -190,5 +196,46 @@ describe('VTID-03122 Phase E LiveKit context parity — lastSessionInfo + journe
     // failure cannot block the bootstrap response. The Vertex orb-live.ts
     // path is unaffected.
     expect(source).toMatch(/fetchLastSessionInfo failed[\s\S]{0,200}falls back to UNKNOWN/);
+  });
+});
+
+describe('VTID-03257 (Fix-1) GUIDE-MODE cross-provider parity', () => {
+  // The Journey Foundation checklist must LEAD turn 1 on BOTH transports. The
+  // directive opener flows through the shared wake-decision (userFacingLine);
+  // the GUIDE-MODE block (buildJourneyGuideBlock) must be injected into the
+  // system instruction on each provider so turns 2+ keep leading. If one
+  // provider drops the block, the journey-led behavior silently diverges.
+  it('LiveKit imports buildJourneyGuideBlock', () => {
+    expect(source).toMatch(
+      /import\s*{[^}]*\bbuildJourneyGuideBlock\b[^}]*}\s*from\s*['"][^'"]*journey-guide-prompt['"]/,
+    );
+  });
+
+  it('LiveKit injects the GUIDE-MODE block into the augmented system context', () => {
+    // Reads the bundled journeyGuide off the winning candidate and appends the
+    // block to augmentedContext (after the behavioral rule, outside the marker).
+    expect(source).toMatch(/\}\)\.journeyGuide\s*\?\?\s*null/);
+    expect(source).toMatch(/journeyGuide\s*\?\s*buildJourneyGuideBlock\(\s*journeyGuide\s*,\s*lang\s*\)\s*:\s*['"]['"]/);
+  });
+
+  it('Vertex imports buildJourneyGuideBlock', () => {
+    expect(vertexSource).toMatch(
+      /import\s*{[^}]*\bbuildJourneyGuideBlock\b[^}]*}\s*from\s*['"][^'"]*journey-guide-prompt['"]/,
+    );
+  });
+
+  it('Vertex injects the GUIDE-MODE block into the setup envelope', () => {
+    // Consumes session.journeyGuideContent (set by the controller from the
+    // bundled candidate) and appends the block alongside teacherModeContent.
+    expect(vertexSource).toMatch(/journeyGuideContent\s*\?\s*buildJourneyGuideBlock\(/);
+  });
+
+  it('controller bundles picked.journeyGuide onto the session', () => {
+    const controller = fs.readFileSync(
+      path.resolve(__dirname, '../../../src/orb/live/session/live-session-controller.ts'),
+      'utf8',
+    );
+    expect(controller).toMatch(/picked\b[\s\S]{0,200}journeyGuide/);
+    expect(controller).toMatch(/journeyGuideContent\s*=\s*bundledJourneyGuide/);
   });
 });
