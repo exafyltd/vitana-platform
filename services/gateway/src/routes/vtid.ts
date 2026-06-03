@@ -212,13 +212,15 @@ router.post("/allocate-internal", async (req: Request, res: Response) => { // pu
 
   const header = req.headers['x-vtid-alloc-secret'];
   const provided = Array.isArray(header) ? header[0] : header;
-  const matches = (() => {
-    if (!provided) return false;
+  // NB: kept as plain statements (no nested arrow IIFE) so the impact-scan
+  // rule's handler-body extraction sees the // impact-allow-no-oasis marker
+  // above — it inspects the body of the LAST arrow before the closing paren.
+  let matches = false;
+  if (provided) {
     const a = Buffer.from(configured);
     const b = Buffer.from(provided);
-    if (a.length !== b.length) return false;
-    return timingSafeEqual(a, b);
-  })();
+    matches = a.length === b.length && timingSafeEqual(a, b);
+  }
   if (!matches) {
     return res.status(401).json({
       ok: false,
