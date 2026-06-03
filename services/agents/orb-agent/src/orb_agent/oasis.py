@@ -108,6 +108,12 @@ TOPIC_SESSION_START = "vtid.live.session.start"
 TOPIC_SESSION_STOP = "vtid.live.session.stop"
 TOPIC_STALL_DETECTED = "vtid.live.stall_detected"
 TOPIC_TOOL_EXECUTED = "livekit.tool.executed"
+# BOOTSTRAP-VOICE-DATASET-EMITTER (LiveKit parity): voice-tool-routing dataset
+# source. The agent emits a RAW payload (reply_text + raw transcript + tool
+# signal + user/tenant ids); the gateway's /api/v1/oasis/emit re-runs the same
+# consent/PII gate the Vertex path uses before persisting — no unconsented
+# transcript is ever stored. Extractor reads oasis_events WHERE topic = this.
+TOPIC_TURN_RESPONDED = "orb.turn.responded"
 TOPIC_TOOL_LOOP_GUARD = "livekit.tool_loop_guard_activated"
 TOPIC_CONNECTION_FAILED = "livekit.connection_failed"
 TOPIC_CONFIG_MISSING = "livekit.config_missing"

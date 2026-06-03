@@ -55,6 +55,7 @@ from .oasis import (
     TOPIC_STT_METRICS,
     TOPIC_STT_RECOVERY,
     TOPIC_STT_SILENT_STALL,
+    TOPIC_TURN_RESPONDED,
     OasisEmitter,
 )
 from .providers import build_cascade
@@ -1328,6 +1329,11 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
             )
             if isinstance(t, str):
                 text_len = len(t)
+                # BOOTSTRAP-VOICE-DATASET-EMITTER: keep the raw transcript for
+                # the turn so the paired assistant reply can emit
+                # orb.turn.responded with the voice-tool-routing signal
+                # (consent/PII-gated server-side at /api/v1/oasis/emit).
+                turn_state["user_text"] = t
         except Exception:  # noqa: BLE001
             pass
         turn_state["user_text_len"] = text_len
@@ -1456,10 +1462,44 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
     # appended to chat_ctx — LLM responses, tool calls, etc. If we see
     # `assistant` role items with non-empty text but no audible
     # output, the LLM is producing text but TTS isn't producing audio.
+    # BOOTSTRAP-VOICE-DATASET-EMITTER: emit a RAW orb.turn.responded for the
+    # voice-tool-routing dataset. The gateway (/api/v1/oasis/emit) re-runs the
+    # consent/PII gate before persisting, so transcript/tool fields are dropped
+    # server-side when the tenant hasn't consented — the agent can't read
+    # tenant policy itself, so it sends everything and lets the gateway gate.
+    async def _emit_turn_responded(
+        reply_text: str,
+        user_text: str,
+        tool_name: str | None,
+        tool_args: dict[str, Any] | None,
+    ) -> None:
+        payload: dict[str, Any] = {
+            "orb_session_id": orb_session_id,
+            "conversation_id": orb_session_id,
+            "reply_text": reply_text,
+            "provider": "livekit",
+            "user_id": identity.user_id,
+            "tenant_id": identity.tenant_id,
+        }
+        if user_text:
+            payload["input_text"] = user_text
+            payload["transcript"] = user_text
+        if tool_name:
+            payload["tool_name"] = tool_name
+            tc: dict[str, Any] = {"name": tool_name}
+            if tool_args:
+                tc["arguments"] = tool_args
+            payload["tool_call"] = tc
+        try:
+            await oasis.emit(topic=TOPIC_TURN_RESPONDED, payload=payload)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("orb.turn.responded emit failed: %s", exc)
+
     def _on_conversation_item(ev: Any = None) -> None:
         item = getattr(ev, "item", None) or ev
         role = None
         text_len = 0
+        reply_text_val = ""
         try:
             role = getattr(item, "role", None) or (
                 item.get("role") if isinstance(item, dict) else None
@@ -1472,6 +1512,7 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
                 or ""
             )
             text_len = len(text) if isinstance(text, str) else 0
+            reply_text_val = text if isinstance(text, str) else ""
         except Exception:
             pass
         asyncio.create_task(
@@ -1487,6 +1528,27 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
                 },
             )
         )
+        # BOOTSTRAP-VOICE-DATASET-EMITTER: on a substantive assistant reply that
+        # answers a real user turn, emit orb.turn.responded. Only fire when a
+        # pending user transcript exists — this skips the greeting (no preceding
+        # user turn). Clear the per-turn signal on read so a tool-loop's extra
+        # assistant items don't double-emit the same turn.
+        try:
+            if str(role) == "assistant" and reply_text_val.strip():
+                pending_user = turn_state.get("user_text")
+                if pending_user:
+                    tool_name = getattr(gw, "last_tool_name", None)
+                    tool_args = getattr(gw, "last_tool_args", None)
+                    turn_state["user_text"] = None
+                    gw.last_tool_name = None
+                    gw.last_tool_args = None
+                    asyncio.create_task(
+                        _emit_turn_responded(
+                            reply_text_val, pending_user, tool_name, tool_args,
+                        )
+                    )
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("orb.turn.responded hook failed: %s", exc)
 
     try:
         session.on("conversation_item_added")(_on_conversation_item)  # type: ignore[misc]
