@@ -5,3 +5,8 @@ dist/
 coverage/
 *.log
 .DS_Store
+
+# Guard: ignore a node_modules *symlink* too — the rule above ("node_modules/")
+# only matches a real directory, which let an accidental symlink get committed
+# and broke the Cloud Run source deploy (VTID-03210 hotfix).
+node_modules

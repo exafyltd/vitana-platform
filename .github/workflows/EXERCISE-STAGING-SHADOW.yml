@@ -1,0 +1,159 @@
+name: Exercise Staging Shadow Traffic
+
+# VTID-03215 — Phase 1 W3-B0 PR 1.
+#
+# Drives the staging gateway's runWithShadow chokepoint with deterministic
+# synthetic prompts so the shadow-comparison report transitions out of
+# insufficient_data:true. Without this, staging carries zero organic
+# voice traffic and every downstream report stays empty waiting for
+# someone to manually exercise the Command Hub voice surface.
+#
+# Events emitted by this workflow are real eval.shadow.compared rows but
+# carry metadata.exerciser_source=staging-shadow-exerciser-vtid-03215 so
+# graduation-recommender / canary-readiness downstream can filter them
+# out cleanly.
+#
+# Optional daily schedule: keeps non-zero shadow events flowing so the
+# daily shadow-comparison-report (08:15 UTC) always has data even on
+# zero-traffic days.
+
+on:
+  schedule:
+    # Daily at 07:30 UTC — 45 min before CRON-SHADOW-COMPARISON-REPORT so
+    # the report has fresh exerciser data to aggregate.
+    - cron: '30 7 * * *'
+  workflow_dispatch:
+    inputs:
+      prompts_count:
+        description: 'Number of synthetic prompts to drive (1-50)'
+        required: true
+        default: '15'
+      prompt_seed:
+        description: 'Deterministic seed (default: today UTC date)'
+        required: false
+        default: ''
+      feature:
+        description: 'Shadow feature label'
+        required: true
+        default: 'voice-tool-router'
+        type: choice
+        options: [ voice-tool-router, intent-kind, pillar-classifier ]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: exercise-staging-shadow
+  cancel-in-progress: false
+
+env:
+  STAGING_GATEWAY_URL: https://gateway-staging-q74ibpv6ia-uc.a.run.app
+
+jobs:
+  exercise:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Sanity check staging gateway is up + on staging env
+        run: |
+          set -euo pipefail
+          HEALTH=$(curl -sS --max-time 10 "${STAGING_GATEWAY_URL}/api/v1/admin/health")
+          ENV=$(printf '%s' "$HEALTH" | python3 -c "import sys, json; print(json.load(sys.stdin).get('env',''))")
+          if [ "$ENV" != "staging" ]; then
+            echo "::error::staging gateway health did not return env=staging (got '$ENV'): $HEALTH"
+            exit 1
+          fi
+          echo "Staging gateway healthy: $HEALTH"
+
+      - name: Drive shadow traffic
+        env:
+          GATEWAY_SERVICE_TOKEN: ${{ secrets.GATEWAY_SERVICE_TOKEN }}
+          PROMPTS_COUNT: ${{ inputs.prompts_count || '15' }}
+          PROMPT_SEED: ${{ inputs.prompt_seed }}
+          FEATURE: ${{ inputs.feature || 'voice-tool-router' }}
+        run: |
+          set -euo pipefail
+          if [ -z "${GATEWAY_SERVICE_TOKEN:-}" ]; then
+            echo "::error::GATEWAY_SERVICE_TOKEN repo secret is missing"
+            echo "::error::Set with: gh secret set GATEWAY_SERVICE_TOKEN --repo exafyltd/vitana-platform"
+            exit 1
+          fi
+
+          BODY=$(python3 -c "
+          import json, os
+          body = {
+            'prompts_count': int(os.environ['PROMPTS_COUNT']),
+            'feature': os.environ['FEATURE'],
+          }
+          seed = os.environ.get('PROMPT_SEED', '').strip()
+          if seed:
+            body['prompt_seed'] = seed
+          print(json.dumps(body))
+          ")
+
+          RESP=$(curl -sS --max-time 60 -w "\n__HTTP__%{http_code}" \
+            -X POST "${STAGING_GATEWAY_URL}/api/v1/admin/staging/eval/exercise-shadow" \
+            -H "Authorization: Bearer ${GATEWAY_SERVICE_TOKEN}" \
+            -H "Content-Type: application/json" \
+            -d "$BODY")
+
+          BODY_RESP=$(printf '%s' "$RESP" | sed -E '$d')
+          HTTP_CODE=$(printf '%s' "$RESP" | tail -n1 | sed 's/__HTTP__//')
+
+          echo "HTTP $HTTP_CODE"
+          echo "Response: $BODY_RESP"
+
+          # Save artifact + summary.
+          printf '%s' "$BODY_RESP" > /tmp/exercise-shadow.json
+          BODY_RESP="$BODY_RESP" HTTP_CODE="$HTTP_CODE" python3 <<'PY'
+          import json, os
+          body = os.environ.get('BODY_RESP', '')
+          http = os.environ.get('HTTP_CODE', '?')
+          try:
+              d = json.loads(body)
+          except Exception:
+              d = {}
+
+          lines = []
+          lines.append('## Staging shadow-traffic exerciser')
+          lines.append('')
+          lines.append(f'- HTTP: {http}')
+          lines.append(f'- env: {d.get("env")}')
+          lines.append(f'- exerciser_source: `{d.get("exerciser_source")}`')
+          lines.append(f'- seed: `{d.get("seed")}`')
+          lines.append(f'- feature: `{d.get("feature")}`')
+          lines.append(f'- prompts_count: {d.get("prompts_count")}')
+          lines.append(f'- emitted: {d.get("emitted")}')
+          lines.append(f'- designed_mismatch_count: {d.get("designed_mismatch_count")}')
+          lines.append(f'- designed_error_count: {d.get("designed_error_count")}')
+          lines.append(f'- wall_ms: {d.get("wall_ms")}')
+          sample = d.get('sample', [])
+          if sample:
+              lines.append('')
+              lines.append('### Sample (first 5)')
+              lines.append('')
+              lines.append('| idx | input | primary | candidate | agree |')
+              lines.append('| ---: | --- | --- | --- | :---: |')
+              for s in sample:
+                  agree = 'yes' if s.get('agree') else 'no'
+                  lines.append(f'| {s.get("idx")} | {s.get("input")} | `{s.get("primary")}` | `{s.get("candidate")}` | {agree} |')
+
+          path = os.environ.get('GITHUB_STEP_SUMMARY')
+          if path:
+              with open(path, 'a') as f:
+                  f.write('\n'.join(lines) + '\n')
+          PY
+
+          case "$HTTP_CODE" in
+            2*) echo "OK" ;;
+            *) echo "::error::exerciser returned HTTP $HTTP_CODE"; exit 1 ;;
+          esac
+
+      - name: Upload artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: exercise-shadow-${{ github.run_id }}
+          path: /tmp/exercise-shadow.json
+          if-no-files-found: warn
+          retention-days: 30

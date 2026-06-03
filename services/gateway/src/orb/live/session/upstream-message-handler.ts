@@ -35,8 +35,12 @@
 import WebSocket from 'ws';
 import { randomUUID } from 'crypto';
 import type { GeminiLiveSession } from '../../../routes/orb-live';
+import type { LatencyPhase } from '../latency-tracker';
 import type { MemoryIdentity } from '../../../services/orb-memory-bridge';
 import { writeSseEvent } from '../transport/sse-handler';
+// VTID-03245: never surface a raw tool failure to the model as a spoken
+// "system issues" — reshape failures into a graceful pivot (offer-integrity).
+import { graceToolResultForModel } from './tool-failure-grace';
 import {
   // VTID-03124 (Phase D.1): voice thresholds now resolved via PolicyResolver.
   getPostTurnCooldownMs,
@@ -85,6 +89,17 @@ export interface UpstreamMessageHandlerDeps {
   ) => boolean;
   sendFunctionResponseToLiveAPI: (...args: any[]) => boolean;
   sendWsMessage: (ws: WebSocket, message: Record<string, unknown>) => void;
+  // Phase 1 W2 (BOOTSTRAP-PHASE1-W2-VOICE-LATENCY-WIRE): per-turn latency marks.
+  // No-op when FEATURE_LATENCY_TELEMETRY_ENV is off.
+  markVoiceLatency: (
+    session: GeminiLiveSession,
+    phase: LatencyPhase,
+    detail?: Record<string, unknown>,
+  ) => void;
+  finalizeVoiceTurnLatency: (
+    session: GeminiLiveSession,
+    status?: 'success' | 'error',
+  ) => void;
   startResponseWatchdog: (
     session: GeminiLiveSession,
     timeoutMs: number,
@@ -217,6 +232,9 @@ export function createUpstreamLiveMessageHandler(
             }
             // Notify WS client via callback
             ctx.callbacks.onInterrupted?.();
+            // Phase 1 W2: the user barged in — finalize the (incomplete) turn so
+            // the next user audio chunk starts a fresh latency turn.
+            ctx.deps.finalizeVoiceTurnLatency(session, 'error');
             return;
           }
 
@@ -233,6 +251,26 @@ export function createUpstreamLiveMessageHandler(
             session.turnCompleteAt = Date.now();
             console.log(`[VTID-VOICE-INIT] Model stopped speaking for session ${session.sessionId} — mic audio ungated (cooldown ${getPostTurnCooldownMs()}ms)`);
             ctx.deps.emitDiag(session, 'turn_complete');
+            // DEV-COMHU-0503 (review fix): record wake_cadence:last_turn_at on
+            // every completed turn so fetchWakeCadenceSignals can compute
+            // seconds_since_last_turn_anywhere next session — this is what makes
+            // the greeting-decay policy suppress repeated wake greetings on
+            // quick reopens. Fire-and-forget; never blocks the turn.
+            if (session.identity?.tenant_id && session.identity?.user_id) {
+              const _cadenceSb = getSupabase();
+              if (_cadenceSb) {
+                const _cadTenant = session.identity.tenant_id;
+                const _cadUser = session.identity.user_id;
+                void import('../../../services/wake-cadence-signals')
+                  .then(({ recordWakeTurn }) =>
+                    recordWakeTurn({ supabase: _cadenceSb, tenantId: _cadTenant, userId: _cadUser }),
+                  )
+                  .catch(() => { /* cadence write is best-effort */ });
+              }
+            }
+            // Phase 1 W2: turn finished cleanly — emit voice.latency.measured and
+            // clear the tracker so the next user audio starts a fresh turn.
+            ctx.deps.finalizeVoiceTurnLatency(session, 'success');
 
             // VTID-02047 voice channel-swap: if a persona swap was queued by
             // the report_to_specialist tool, Vitana has just finished speaking
@@ -824,6 +862,8 @@ export function createUpstreamLiveMessageHandler(
                   // session in the middle of Vertex computing a follow-up turn.
                   session.vertexHasShownLife = true;
                   console.log(`[VTID-VOICE-INIT] Model started speaking for session ${session.sessionId} — mic audio gated`);
+                  // Phase 1 W2: first TTS chunk forwarded to the client.
+                  ctx.deps.markVoiceLatency(session, 'audio_out_first_chunk');
                   ctx.deps.emitDiag(session, 'model_start_speaking');
                   // BOOTSTRAP-ORB-HOTFIX-1: If this is the greeting (no turns yet
                   // and greeting was sent), emit the pre-greeting latency gauge.
@@ -851,6 +891,62 @@ export function createUpstreamLiveMessageHandler(
                       console.warn(`[BOOTSTRAP-ORB-HOTFIX-1] emit failed: ${err?.message || err}`);
                     });
                     console.log(`[BOOTSTRAP-ORB-HOTFIX-1] pre_greeting_ms=${preGreetingMs} for session ${session.sessionId}`);
+                  }
+
+                  // BOOTSTRAP-ORB-GREETING-REEMIT: Gemini Live occasionally
+                  // auto-continues after a "Say exactly: …" greeting directive
+                  // and re-speaks the SAME opener / "My Journey" summary as a
+                  // brand-new model turn — with NO user input in between. This
+                  // is the user-reported "greeting spoken 3 times, again and
+                  // again" symptom.
+                  //
+                  // VTID-03143 (transcript-prefix suppression below) only
+                  // catches this AFTER ~30 chars of OUTPUT TRANSCRIPTION match a
+                  // prior turn, so the first words still leak, and it does
+                  // nothing when output transcription is sparse/absent. Here we
+                  // catch it STRUCTURALLY, from the very first audio chunk, with
+                  // no dependency on transcription:
+                  //
+                  //   greetingSent              → the only thing the model was
+                  //                               ever told to produce so far is
+                  //                               the opener.
+                  //   turn_count >= 1           → the greeting already completed
+                  //                               at least once.
+                  //   consecutiveModelTurns
+                  //     >= turn_count           → the user has NEVER spoken. The
+                  //                               counter resets to 0 the instant
+                  //                               a user transcription arrives
+                  //                               (see input-transcription path),
+                  //                               so equality means every turn so
+                  //                               far was a consecutive model
+                  //                               turn — i.e. the opener + its
+                  //                               re-emits, nothing else.
+                  //   inputTranscriptBuffer
+                  //     empty                   → no user utterance mid-flight.
+                  //
+                  // When all hold, this NEW model turn can only be an unsolicited
+                  // re-emit of the opener. Flip the audio-suppression flag BEFORE
+                  // the forward decision below so the entire turn is dropped (no
+                  // first-word leak). The loopguard further down pauses the
+                  // silence keepalive so Vertex idles the loop out naturally; a
+                  // real user utterance resets consecutiveModelTurns and lifts
+                  // the suppression on the next turn.
+                  if (
+                    session.greetingSent
+                    && session.turn_count >= 1
+                    && session.consecutiveModelTurns >= session.turn_count
+                    && (session.inputTranscriptBuffer || '').trim().length === 0
+                    && (session as any).suppressCurrentTurnAudio !== true
+                  ) {
+                    (session as any).suppressCurrentTurnAudio = true;
+                    console.warn(
+                      `[BOOTSTRAP-ORB-GREETING-REEMIT] Suppressing unsolicited greeting re-emit for session ${session.sessionId} ` +
+                      `(turn_count=${session.turn_count}, consecutiveModelTurns=${session.consecutiveModelTurns}) — user has not spoken yet`,
+                    );
+                    ctx.deps.emitDiag(session, 'greeting_reemit_suppressed', {
+                      turn_count: session.turn_count,
+                      consecutive_model_turns: session.consecutiveModelTurns,
+                    });
                   }
                 }
                 // VTID-WATCHDOG: Model is sending audio — restart watchdog.
@@ -930,6 +1026,12 @@ export function createUpstreamLiveMessageHandler(
               // was destroying healthy sessions when first-turn inference exceeded
               // 15 s). Real WS failures are still caught by native handlers.
               session.vertexHasShownLife = true;
+              // Phase 1 W2: first STT fragment of the turn = transcript_ready.
+              // inputTranscriptBuffer is still empty until the append below, so
+              // an empty buffer marks the leading fragment exactly once per turn.
+              if (!session.inputTranscriptBuffer) {
+                ctx.deps.markVoiceLatency(session, 'transcript_ready', { chars: inputTranscription.length });
+              }
               ctx.deps.emitDiag(session, 'input_transcription', { text_preview: inputTranscription.substring(0, 80) });
               if (session.sseResponse) {
                 writeSseEvent(session.sseResponse, { type: 'input_transcript', text: inputTranscription });
@@ -1132,8 +1234,13 @@ export function createUpstreamLiveMessageHandler(
                   }
                 }
 
-                // Send response back to Live API
-                const sent = ctx.deps.sendFunctionResponseToLiveAPI(ws, callId, toolName, result);
+                // Send response back to Live API. VTID-03245: on a hard tool
+                // failure, send a graceful-pivot function_response instead of
+                // the raw error so the model never speaks "we have issues with
+                // the system" (offer-integrity). Telemetry below still logs the
+                // true success=false.
+                const modelFacingResult = graceToolResultForModel(toolName, result);
+                const sent = ctx.deps.sendFunctionResponseToLiveAPI(ws, callId, toolName, modelFacingResult);
                 if (!sent) {
                   console.error(`[VTID-01224] function_response NOT sent for ${toolName} — WebSocket no longer open. Session ${session.sessionId} may be stalled.`);
                 }

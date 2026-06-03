@@ -514,6 +514,53 @@ router.post('/rooms/:id/start', async (req: Request, res: Response) => {
     console.warn(`[VTID-01228] community_live_streams sync (start) failed: ${err.message}`);
   }
 
+  // Notify everyone who tapped "Notify me" on this scheduled session that it's now live.
+  // Audience comes from live_stream_subscribers (the persistent Notify list); titles/bodies
+  // are localized per-recipient via the gateway i18n catalog (PR #2269 server-side i18n rule).
+  try {
+    const credsN = getSupabaseCredentials();
+    if (credsN) {
+      const { createClient } = await import('@supabase/supabase-js');
+      const supaN = createClient(credsN.url, credsN.key);
+      let hostId = '';
+      try { hostId = JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString()).sub; } catch {}
+
+      const { data: stream } = await supaN
+        .from('community_live_streams')
+        .select('title, tenant_id')
+        .eq('id', roomId)
+        .single();
+
+      const tenantId = (stream as any)?.tenant_id;
+      if (tenantId) {
+        const { data: subs } = await supaN
+          .from('live_stream_subscribers')
+          .select('user_id')
+          .eq('stream_id', roomId)
+          .neq('user_id', hostId);
+
+        const subscriberIds = [...new Set((subs || []).map((s: any) => s.user_id as string))];
+        if (subscriberIds.length > 0) {
+          const { tt } = await import('../i18n/catalog');
+          const { bulkGetUserLocales } = await import('../i18n/server-locale');
+          const locales = await bulkGetUserLocales(supaN, subscriberIds);
+          const streamTitle = (stream as any)?.title || '';
+          for (const uid of subscriberIds) {
+            const lc = locales.get(uid);
+            notifyUserAsync(uid, tenantId, 'live_room_starting', {
+              title: tt('notif.live_going_live.title', lc),
+              body: tt('notif.live_going_live.body', lc, { title: streamTitle }),
+              data: { url: '/community/live-rooms', room_id: roomId, entity_id: roomId },
+            }, supaN);
+          }
+          console.log(`[Notifications] live go-live fan-out → ${subscriberIds.length} subscriber(s) for ${roomId}`);
+        }
+      }
+    }
+  } catch (err: any) {
+    console.warn(`[Notifications] live go-live dispatch error: ${err.message}`);
+  }
+
   console.log(`[VTID-01090] Live room started: ${roomId}`);
 
   // VTID-03107: Surface session budget so the frontend SessionTimer can
