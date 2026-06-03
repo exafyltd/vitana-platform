@@ -92,7 +92,7 @@ async function runNewMemberWelcome(ctx: AutomationContext) {
 // ── AP-0212: "Welcome Squad" New-Member Activation ──────────
 // Multi-step orchestration fired on community.member.joined:
 //   1. Introduce the newcomer to up to 3 existing group members ("the squad")
-//   2. Suggest related groups (topic overlap) + an upcoming meetup
+//   2. Suggest related public groups in the same category
 //   3. Send the newcomer a warm welcome with the intros + suggestions
 //   4. Notify the group host their Welcome Squad went out (auto-fire,
 //      in-platform members only, attributed "via Autopilot")
@@ -111,9 +111,12 @@ async function runWelcomeSquad(ctx: AutomationContext) {
   let usersAffected = 0;
   let actionsTaken = 0;
 
+  // Real schema: global_community_groups / global_community_group_members
+  // (the VTID-01084 community_groups/_memberships tables were never deployed
+  // to production; the live, populated tables are the global_* ones).
   const { data: group } = await supabase
-    .from('community_groups')
-    .select('name, description, created_by, topic_keys')
+    .from('global_community_groups')
+    .select('name, description, created_by, category')
     .eq('id', group_id)
     .maybeSingle();
   if (!group) return { usersAffected: 0, actionsTaken: 0 };
@@ -127,11 +130,13 @@ async function runWelcomeSquad(ctx: AutomationContext) {
 
   // Step 1 — pick the squad: up to 3 existing members of this group
   // (excluding the newcomer and the host, who is notified separately).
+  // Oldest members first so the newcomer meets established regulars.
   const { data: members } = await supabase
-    .from('community_memberships')
+    .from('global_community_group_members')
     .select('user_id')
     .eq('group_id', group_id)
     .neq('user_id', user_id)
+    .order('joined_at', { ascending: true })
     .limit(50);
 
   const squad: string[] = [];
@@ -141,28 +146,18 @@ async function runWelcomeSquad(ctx: AutomationContext) {
     if (squad.length >= SQUAD_SIZE) break;
   }
 
-  // Step 2 — suggest related groups (topic overlap) + an upcoming meetup.
+  // Step 2 — suggest related public groups in the same category.
   let suggestedGroups: Array<{ id: string; name: string }> = [];
-  if (Array.isArray(group.topic_keys) && group.topic_keys.length > 0) {
+  if (group.category) {
     const { data: related } = await supabase
-      .from('community_groups')
+      .from('global_community_groups')
       .select('id, name')
-      .eq('tenant_id', tenantId)
+      .eq('category', group.category)
+      .eq('is_public', true)
       .neq('id', group_id)
-      .overlaps('topic_keys', group.topic_keys)
       .limit(2);
     suggestedGroups = related || [];
   }
-
-  const { data: upcomingMeetup } = await supabase
-    .from('community_meetups')
-    .select('id, title')
-    .eq('tenant_id', tenantId)
-    .eq('group_id', group_id)
-    .gte('starts_at', new Date().toISOString())
-    .order('starts_at', { ascending: true })
-    .limit(1)
-    .maybeSingle();
 
   // Step 3 — warm welcome to the newcomer with the squad + suggestions.
   const squadLine = squad.length
@@ -172,7 +167,6 @@ async function runWelcomeSquad(ctx: AutomationContext) {
   if (suggestedGroups.length) {
     extras.push(`${suggestedGroups.length} related group${suggestedGroups.length > 1 ? 's' : ''} you'll like`);
   }
-  if (upcomingMeetup) extras.push(`"${upcomingMeetup.title}" coming up`);
 
   ctx.notify(user_id, 'orb_proactive_message', {
     title: `Welcome to ${group.name}! Your squad is ready 👋`,
@@ -182,7 +176,6 @@ async function runWelcomeSquad(ctx: AutomationContext) {
       group_id,
       squad_user_ids: squad.join(','),
       suggested_group_ids: suggestedGroups.map((g) => g.id).join(','),
-      meetup_id: upcomingMeetup?.id || '',
       via: 'autopilot',
       automation_id: 'AP-0212',
     },
@@ -225,7 +218,6 @@ async function runWelcomeSquad(ctx: AutomationContext) {
     group_id,
     squad_size: squad.length,
     suggested_groups: suggestedGroups.length,
-    has_meetup: !!upcomingMeetup,
   });
 
   return { usersAffected, actionsTaken };
