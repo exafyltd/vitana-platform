@@ -1,0 +1,86 @@
+name: Bind GATEWAY_SERVICE_TOKEN env on gateway-staging (one-off)
+
+# VTID-03207 — bridge so the staging admin endpoints can authenticate.
+#
+# gateway-staging was not given a GATEWAY_SERVICE_TOKEN env var in Phase 0's
+# STAGE-DEPLOY.yml. The admin-staging.ts endpoint (VTID-03204) checks
+# process.env.GATEWAY_SERVICE_TOKEN; without it bound, every request is
+# rejected with 'invalid service token' even with a correct bearer.
+#
+# This workflow sets the env var on gateway-staging using the repo secret
+# GATEWAY_SERVICE_TOKEN (already exists, same value used by orb-agent
+# against prod gateway). One-off; once bound, future STAGE-DEPLOY runs
+# need to preserve it via the env_vars block in STAGE-DEPLOY.yml. That
+# preservation is a follow-up — for now we set it and trust the next
+# STAGE-DEPLOY's --set-env-vars (which replaces) doesn't clobber it
+# unless STAGE-DEPLOY.yml is updated to include it.
+#
+# IMPORTANT: --update-env-vars MERGES, not replaces. So this binding
+# survives across UPDATE-GATEWAY-ENV calls. It only gets clobbered if
+# STAGE-DEPLOY.yml re-runs with --set-env-vars that omits it. A
+# permanent fix would update STAGE-DEPLOY.yml; deferred as a small
+# follow-up commit.
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: "Type 'I-mean-bind' to confirm"
+        required: true
+        default: ''
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  bind:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Confirm intent
+        run: |
+          if [ "${{ inputs.confirm }}" != "I-mean-bind" ]; then
+            echo "::error::confirm input must be exactly 'I-mean-bind'"
+            exit 1
+          fi
+
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_WIF_SA_EMAIL }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Bind GATEWAY_SERVICE_TOKEN on gateway-staging
+        env:
+          TOKEN: ${{ secrets.GATEWAY_SERVICE_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${TOKEN:-}" ]; then
+            echo "::error::GATEWAY_SERVICE_TOKEN repo secret is empty"
+            exit 1
+          fi
+          # --update-env-vars MERGES with the existing env block (vs
+          # --set-env-vars which replaces). Cloud Run masks the value in
+          # logs since it appears in --update-env-vars (it's still in the
+          # service config which is queryable by anyone with run.services.get,
+          # but that's the existing surface area).
+          gcloud run services update gateway-staging \
+            --region=us-central1 --project=lovable-vitana-vers1 \
+            --update-env-vars="GATEWAY_SERVICE_TOKEN=${TOKEN}" \
+            --quiet
+
+          # Verify it's set (don't print the value)
+          HAS=$(gcloud run services describe gateway-staging \
+            --region=us-central1 --project=lovable-vitana-vers1 \
+            --format='value(spec.template.spec.containers[0].env)' \
+            | grep -c 'GATEWAY_SERVICE_TOKEN' || true)
+          echo "GATEWAY_SERVICE_TOKEN entries in spec: $HAS"
+
+          {
+            echo "## GATEWAY_SERVICE_TOKEN bound on gateway-staging"
+            echo ""
+            echo "Cloud Run revision will roll on next request; subsequent admin-staging"
+            echo "endpoint calls will validate the bearer token."
+          } >> "$GITHUB_STEP_SUMMARY"

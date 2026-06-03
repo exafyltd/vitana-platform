@@ -56,6 +56,32 @@ export function isZombieEscalation(endpoint: string, failureClass: string | null
   return false;
 }
 
+// BOOTSTRAP-VOICE-AUDIO-IN-ZERO-METRIC: phantom session-stop filter.
+//
+// `vtid.live.session.stop` is emitted from four sites in orb-live.ts. Two of
+// them are session-management bookkeeping, NOT user-perceived conversations:
+//   - `superseded_by_new_session` — terminateExistingSessionsForUser() kills a
+//     prior session whenever the user (re)opens the ORB (reload, reconnect-as-
+//     new-session, multi-tab). The single-session-per-user rule guarantees one
+//     of these per re-open.
+//   - `expired_ttl` — the 30-min zombie reaper closes sessions the client never
+//     cleanly stopped.
+// These carry `audio_in_chunks: 0` whenever the superseded/expired session had
+// not spoken yet, so counting them as "observed sessions" double-counts a single
+// real conversation and inflates the audio-in-zero ratio (the headline the
+// Improve cockpit alarms on). A genuinely abandoned session (user opened, said
+// nothing, closed normally) has NO such `reason` and is still counted — that is
+// a real no-show worth measuring. We only drop the bookkeeping artifacts.
+const LIFECYCLE_ARTIFACT_STOP_REASONS = new Set([
+  'superseded_by_new_session',
+  'expired_ttl',
+]);
+
+export function isLifecycleArtifactStop(metadata: unknown): boolean {
+  const reason = (metadata as { reason?: unknown } | null | undefined)?.reason;
+  return typeof reason === 'string' && LIFECYCLE_ARTIFACT_STOP_REASONS.has(reason);
+}
+
 export type ActionSeverity = 'critical' | 'warning' | 'info';
 
 export type ActionSource =
@@ -648,8 +674,14 @@ async function fetchVoiceSessionHealth(cfg: SupabaseConfig): Promise<VoiceImprov
       audioInZero = 0,
       oneWay = 0;
     for (const row of rows) {
-      total += 1;
       const meta = row.metadata || {};
+      // BOOTSTRAP-VOICE-AUDIO-IN-ZERO-METRIC: skip session-management
+      // bookkeeping stops (superseded_by_new_session / expired_ttl). They are
+      // not user-perceived conversations and carry audio_in_chunks=0 whenever
+      // the superseded/expired session never spoke — counting them double-
+      // counts a single real conversation and inflates the audio-in-zero ratio.
+      if (isLifecycleArtifactStop(meta)) continue;
+      total += 1;
       const audioIn = Number(meta.audio_in_chunks ?? meta.audio_in ?? 0);
       const audioOut = Number(meta.audio_out_chunks ?? meta.audio_out ?? 0);
       if (audioIn === 0) audioInZero += 1;
