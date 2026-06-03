@@ -22,27 +22,29 @@
 //   - curt commands: "Go ahead.", "Bereit.", "Lista.", "请说。"
 //   - colloquial "what's up": "Was liegt an?", "Worum geht's?"
 //
-// Every remaining phrase greets the user warmly, then offers help.
+// VTID-03256 — every phrase greets warmly, then LEADS to the next step.
+// Vitana proposes the move; she never asks the user's preference ("what would
+// you like?") — a returning user is here to continue, so we continue them.
 export const SHORT_GAP_GREETING_PHRASES: Record<string, string[]> = {
   en: [
-    "Welcome back. How can I help you?",
-    "Good to have you back. What would you like to do?",
-    "Hi again. How can I support you?",
-    "Nice to hear you. What can I help with?",
-    "Welcome back. What is on your mind?",
-    "I'm here for you. How can I help?",
-    "Good to see you again. What would you like to focus on?",
-    "Welcome back. What would you like to pick up on?",
+    "Welcome back. Let's pick up where we left off.",
+    "Good to have you back. Let me show you the next step.",
+    "Hi again. Let's keep going.",
+    "Nice to hear you. Let me show you where we are.",
+    "Welcome back. Let's continue together.",
+    "I'm here for you. Let me walk you to the next step.",
+    "Good to see you again. Let's pick up where we left off.",
+    "Welcome back. Let me show you what's next.",
   ],
   de: [
-    "Schön, dich wieder zu hören. Wie kann ich dir helfen?",
-    "Willkommen zurück. Womit kann ich dich unterstützen?",
-    "Schön, dass du wieder da bist. Womit kann ich helfen?",
-    "Hallo nochmal. Wie kann ich dir helfen?",
-    "Gut, dich wieder zu hören. Worauf möchtest du eingehen?",
-    "Schön, dass du wieder hier bist. Was kann ich für dich tun?",
-    "Willkommen zurück. Was steht für dich an?",
-    "Ich bin für dich da. Wie kann ich dir helfen?",
+    "Schön, dich wieder zu hören. Lass uns dort weitermachen, wo wir aufgehört haben.",
+    "Willkommen zurück. Lass mich dir den nächsten Schritt zeigen.",
+    "Schön, dass du wieder da bist. Lass uns weitermachen.",
+    "Hallo nochmal. Lass uns weitermachen.",
+    "Gut, dich wieder zu hören. Lass mich dir zeigen, wo wir stehen.",
+    "Schön, dass du wieder hier bist. Lass uns dort anknüpfen, wo wir waren.",
+    "Willkommen zurück. Lass mich dir zeigen, was als Nächstes kommt.",
+    "Ich bin für dich da. Lass mich dich zum nächsten Schritt führen.",
   ],
   fr: [
     "Content de te revoir. Comment puis-je t'aider ?",

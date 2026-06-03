@@ -181,7 +181,7 @@ describe('VTID-03053 — defaultVoiceWakeBriefRenderer emits pillar-specific lin
       { greetingPolicy: 'fresh_intro', lang: 'en', pillarMomentum: null },
       makeCtx({ greetingPolicy: 'fresh_intro', lang: 'en' }),
     );
-    expect(line).toBe('Hello! How can I help today?');
+    expect(line).toBe("Hello! Let me show you where we'll begin.");
   });
 
   test('falls through to generic greeting when pillarMomentum is omitted', () => {
@@ -197,8 +197,8 @@ describe('VTID-03053 — defaultVoiceWakeBriefRenderer emits pillar-specific lin
       { greetingPolicy: 'brief_resume', lang: 'en', pillarMomentum: makePm() },
       makeCtx({ greetingPolicy: 'brief_resume', lang: 'en' }),
     );
-    // VTID-03083: warmer copy — never confronting questions.
-    expect(line).toBe('Welcome back. What would you like to pick up on?');
+    // VTID-03256: proactive-lead copy — propose the next move, never ask preference.
+    expect(line).toBe("Welcome back. Let's pick up right where we left off.");
   });
 });
 
