@@ -609,6 +609,12 @@ routineAuditsRouter.get(
       const sinceHours = Math.min(parseInt(req.query.window_hours as string) || 24, 24 * 14);
       const since = hoursAgoIso(sinceHours);
 
+      // Optional device filter so the rollup can compare iOS vs Android vs
+      // desktop. Absent → all devices (backward compatible with the original
+      // single-call rollup).
+      const platformRaw = typeof req.query.platform === 'string' ? req.query.platform.toLowerCase() : '';
+      const platformFilter = (['ios', 'android', 'desktop', 'other'] as const).find((p) => p === platformRaw) ?? null;
+
       // Pull a bounded sample of recent latency beacons. limit=5000 keeps the
       // response well under PostgREST's hard cap while covering a normal day's
       // volume; if a screen ever exceeds this the p75 is still representative.
@@ -621,19 +627,27 @@ routineAuditsRouter.get(
       if (sample === null) {
         // Supabase creds absent (e.g. local) — let the routine treat this as
         // a soft "no data" rather than a breach.
-        return res.json({ ok: true, window_hours: sinceHours, sample_size: 0, screens: [] });
+        return res.json({ ok: true, window_hours: sinceHours, platform: platformFilter, sample_size: 0, platform_breakdown: {}, screens: [] });
       }
 
-      // Bucket raw values by screen → metric.
+      // Bucket raw values by screen → metric, optionally restricted to one
+      // platform. Track an all-up device breakdown alongside so a single call
+      // still surfaces where the traffic is coming from.
       type Bucket = Record<string, Record<string, number[]>>;
       const buckets: Bucket = {};
       let worstRatingBy: Record<string, string> = {};
+      const platformBreakdown: Record<string, number> = {};
+      let matched = 0;
       for (const row of sample) {
         const m = row.metadata || {};
+        const platform = typeof m.platform === 'string' ? m.platform : 'unknown';
+        platformBreakdown[platform] = (platformBreakdown[platform] ?? 0) + 1;
+        if (platformFilter && platform !== platformFilter) continue;
         const screen = typeof m.screen === 'string' ? m.screen : null;
         const metric = typeof m.metric === 'string' ? m.metric : null;
         const value = typeof m.value === 'number' ? m.value : Number(m.value);
         if (!screen || !metric || !Number.isFinite(value)) continue;
+        matched += 1;
         (buckets[screen] ??= {})[metric] ??= [];
         buckets[screen][metric].push(value);
         if (m.rating === 'poor') worstRatingBy[`${screen}|${metric}`] = 'poor';
@@ -658,7 +672,11 @@ routineAuditsRouter.get(
       return res.json({
         ok: true,
         window_hours: sinceHours,
-        sample_size: sample.length,
+        platform: platformFilter,
+        // When a platform filter is applied, sample_size reflects the matched
+        // beacons so the rollup's `sample_size === 0` skip works per platform.
+        sample_size: platformFilter ? matched : sample.length,
+        platform_breakdown: platformBreakdown,
         screens,
       });
     } catch (e: any) {

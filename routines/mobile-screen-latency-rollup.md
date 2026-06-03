@@ -53,12 +53,13 @@ p75 CLS ≥ `0.25`.
 ### 1. Open run
 `POST $GATEWAY_URL/api/v1/routines/mobile-screen-latency-rollup/runs` with `X-Routine-Token`.
 
-### 2. Read the rollup
+### 2. Read the rollup — all-up, then per device
 
 ```
 GET $GATEWAY_URL/api/v1/routines/audits/mobile-screen-latency?window_hours=24
 H:  X-Routine-Token: $ROUTINE_INGEST_TOKEN
-→ { ok: true, window_hours, sample_size,
+→ { ok: true, window_hours, platform: null, sample_size,
+    platform_breakdown: { ios, android, desktop, unknown },
     screens: [ { screen, samples,
                  metrics: { LCP: { p75, p95, count, worst_rating }, ... } } ] }
 ```
@@ -66,18 +67,33 @@ H:  X-Routine-Token: $ROUTINE_INGEST_TOKEN
 If `sample_size === 0`: telemetry is dark or no traffic yet → skip step 4,
 summary = `"✅ No mobile latency samples in window — telemetry dark or quiet"`.
 
-### 3. Threshold check (per tracked screen)
+The `platform_breakdown` shows where the traffic came from. To attribute a
+breach to **iOS vs Android** (the two Appilix surfaces), re-read the rollup
+filtered per device — the response shape is identical, just narrowed:
+
+```
+GET .../mobile-screen-latency?window_hours=24&platform=ios
+GET .../mobile-screen-latency?window_hours=24&platform=android
+```
+
+A per-platform read with `sample_size === 0` simply means no traffic from
+that device in the window — not a breach.
+
+### 3. Threshold check (per tracked screen, per device)
 
 ```
 POOR = { LCP:4000, TTFB:1800, FCP:3000, INP:500, CLS:0.25 }
 breached_screens = []
-for each tracked screen in the table above:
-  row = screens.find(s => s.screen === route)
-  if not row: continue                      // no samples this window
-  breaches = []
-  for metric, p75 in row.metrics:
-    if p75 != null and p75 >= POOR[metric]: breaches.push({ metric, p75, count })
-  if breaches: breached_screens.push({ screen: route, breaches })
+for platform in ['ios', 'android']:            // desktop is not a complaint surface
+  rollup = GET .../mobile-screen-latency?window_hours=24&platform=${platform}
+  if rollup.sample_size === 0: continue        // no traffic from this device
+  for each tracked screen in the table above:
+    row = rollup.screens.find(s => s.screen === route)
+    if not row: continue                        // no samples this window
+    breaches = []
+    for metric, p75 in row.metrics:
+      if p75 != null and p75 >= POOR[metric]: breaches.push({ metric, p75, count })
+    if breaches: breached_screens.push({ platform, screen: route, breaches })
 ```
 
 ### 4. Emit OASIS event (only if breaches)
@@ -86,9 +102,12 @@ for each tracked screen in the table above:
 POST $GATEWAY_URL/api/v1/events/ingest
 B: { vtid:"VTID-03177", type:"mobile.screen.slow",
      source:"routine.mobile-screen-latency-rollup", status:"warning",
-     message:"<N> mobile screens over budget: <screen list>",
-     payload:{ window_hours:24, breached_screens, sample_size } }
+     message:"<N> mobile screens over budget: <platform:screen list>",
+     payload:{ window_hours:24, breached_screens, sample_size, platform_breakdown } }
 ```
+
+Each `breached_screens` entry carries its `platform`, so the event makes the
+iOS-vs-Android split explicit (e.g. `android:/comm/events-meetups LCP 4200`).
 
 ### 5. Close run
 
