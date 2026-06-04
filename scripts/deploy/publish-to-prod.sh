@@ -2,10 +2,13 @@
 #
 # publish-to-prod.sh — THE DOCUMENTED MANUAL ESCAPE HATCH
 # ============================================================================
-# Staging-first cutover (2026-06-04): automatic deploys go to STAGING ONLY.
-# Production is normally reached via the single PUBLISH button in the Command
-# Hub. This script is the *other* sanctioned path: a deliberate, governed,
-# human-initiated production deploy — the explicit EXCEPTION, never the default.
+# Staging-first cutover (effective Mon 8 Jun 2026, 10:00 Europe/Berlin): from
+# the cutover instant, automatic (push) deploys no longer reach production —
+# they land on STAGING. Production is normally reached via the single PUBLISH
+# button in the Command Hub. This script is the *other* sanctioned path: a
+# deliberate, governed, human-initiated production deploy — the explicit
+# EXCEPTION, never the default. (Before the cutover it also works, but auto
+# pushes still reach prod, so you rarely need it then.)
 #
 # It wraps a `workflow_dispatch` of EXEC-DEPLOY.yml (the canonical governed
 # prod deploy: VTID hard-gate + governance eval + `gcloud run deploy`).

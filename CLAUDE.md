@@ -232,16 +232,21 @@ await page.reload();
 
 ### CI/CD Pipeline — STAGING-FIRST (CRITICAL - Updated 2026-06-04)
 
-> **Cutover rule:** Auto deploys go to **STAGING ONLY**. Production is reached
-> **only** via (a) the single PUBLISH button in the Command Hub, or (b) the
-> documented manual escape hatch `scripts/deploy/publish-to-prod.sh`. There is
-> **no** auto-to-prod path anymore — `AUTO-DEPLOY.yml` is `workflow_dispatch`-only.
+> **Cutover rule (time-gated):** the switch flips at **Mon 8 Jun 2026, 10:00
+> Europe/Berlin** (08:00 UTC). **Before** that instant, every deploy path
+> reaches production on push as it always did. **At/after** it, every automatic
+> (push) deploy path is FROZEN from prod and auto deploys land on **staging
+> only**. Production is then reached **only** via (a) the single PUBLISH button
+> in the Command Hub, or (b) a deliberate manual run — `workflow_dispatch` of
+> the relevant deploy workflow, or `scripts/deploy/publish-to-prod.sh`. The gate
+> lives in each deploy workflow's `cutover_gate` job; manual dispatch is never
+> frozen. No redeploy is needed to flip it — it is purely time-based.
 
-21. **IF** you push/merge to `main` → **THEN it deploys to STAGING via `STAGE-DEPLOY.yml` (`gateway-staging`). It does NOT touch production. Verify on `preview-gateway.vitanaland.com`, not prod.**
-22. **IF** you need code on PRODUCTION → **THEN do NOT push and expect prod to update. Either click PUBLISH in the Command Hub (promotes the tested staging build) or run `scripts/deploy/publish-to-prod.sh --service <svc> --vtid <id> --reason "<why>"` (the explicit exception).**
-23. **IF** you are tempted to manually dispatch `EXEC-DEPLOY.yml` to prod "to be safe" → **THEN STOP. That is the old auto-to-prod habit. Auto = staging. Prod = PUBLISH button or escape-hatch script only, with a recorded reason.**
-24. **IF** `worker-runner` needs a prod update → **THEN use the escape-hatch script. `worker-runner` has no staging twin yet, so it is freeze-only on the auto path until one exists.**
-25. **IF** making frontend CSS/JS changes (Command Hub) → **THEN bump the `?v=` cache-busting parameter in index.html. The change auto-deploys to STAGING; it reaches prod only when PUBLISH is clicked.**
+21. **IF** you push/merge to `main` **on/after the cutover** → **THEN it deploys to STAGING (gateway via `STAGE-DEPLOY.yml` → `gateway-staging`). It does NOT touch production. Verify on `preview-gateway.vitanaland.com`, not prod.**
+22. **IF** you need code on PRODUCTION (post-cutover) → **THEN do NOT push and expect prod to update. Either click PUBLISH in the Command Hub (promotes the tested staging build) or run `scripts/deploy/publish-to-prod.sh --service <svc> --vtid <id> --reason "<why>"` (the explicit exception).**
+23. **IF** you are tempted to manually dispatch `EXEC-DEPLOY.yml` to prod "to be safe" post-cutover → **THEN STOP. That is the old auto-to-prod habit. Auto = staging. Prod = PUBLISH button or escape-hatch/manual dispatch only, with a recorded reason.**
+24. **IF** `worker-runner` / `vitana-orb-agent` / the autopilot job needs a prod update post-cutover → **THEN use the escape-hatch script or the workflow's manual `workflow_dispatch`. These have no staging twin yet, so they are freeze-only on the auto path until one exists.**
+25. **IF** making frontend CSS/JS changes (Command Hub) → **THEN bump the `?v=` cache-busting parameter in index.html. Post-cutover the change auto-deploys to STAGING; it reaches prod only when PUBLISH is clicked.**
 
 ### Memory
 
@@ -867,12 +872,14 @@ write_fact(
 
 Deployments have repeatedly failed because Cloud Shell had stale code, or the wrong branch was deployed. This protocol prevents that.
 
-> **Staging-first note (2026-06-04):** by default you are verifying **STAGING**
+> **Staging-first note (effective Mon 8 Jun 2026, 10:00 Europe/Berlin):** from
+> the cutover instant you are by default verifying **STAGING**
 > (`gateway-staging` / `preview-gateway.vitanaland.com`), because pushes to
 > `main` auto-deploy staging only. The same curl/revision checks below apply —
 > just point them at the staging URL and expect `env=staging`. You verify
 > **production** only after a PUBLISH-button promotion or an escape-hatch
-> (`scripts/deploy/publish-to-prod.sh`) deploy — never as a side effect of a push.
+> (`scripts/deploy/publish-to-prod.sh`) / manual-dispatch deploy — never as a
+> side effect of a push. (Before the cutover, pushes still reach prod.)
 
 ### Pre-Deploy Verification (BEFORE `gcloud builds submit`)
 
@@ -939,6 +946,10 @@ the old "merge to main → manually dispatch EXEC-DEPLOY to prod" flow is GONE.*
 
 ### The model: push freely → staging; one button → prod
 
+The cutover is **time-gated** — it flips at **Mon 8 Jun 2026, 10:00
+Europe/Berlin**. Before then, push still reaches prod; the table below
+describes behavior **at/after** the cutover.
+
 | Action | Where it lands | How |
 |--------|----------------|-----|
 | Push / merge to `main` (gateway) | **STAGING** (`gateway-staging`) | `STAGE-DEPLOY.yml`, automatic |
@@ -947,9 +958,13 @@ the old "merge to main → manually dispatch EXEC-DEPLOY to prod" flow is GONE.*
 
 - **`STAGE-DEPLOY.yml`** auto-deploys staging on every push to `main` under
   `services/gateway/**`. Smoke-gates on `/api/v1/admin/health` → `env=staging`.
-- **`AUTO-DEPLOY.yml`** no longer fires on push — it is `workflow_dispatch`-only
-  and requires a `reason`. It is **not** the normal path; it is a low-level
-  manual lever. Prefer the escape-hatch script, which records the reason.
+  Unaffected by the cutover — staging deploys always run.
+- **`AUTO-DEPLOY.yml`** (and `DEPLOY-ORB-AGENT.yml`, `DEPLOY-AUTOPILOT-JOB.yml`,
+  `VTID-02409-BOOTSTRAP.yml`) each carry a `cutover_gate` job. On a push
+  **at/after** the cutover instant the prod path is frozen (auto = staging);
+  **before** it, prod deploys as before. Their manual `workflow_dispatch`
+  (which requires a `reason` on AUTO-DEPLOY) is **never** frozen — it is the
+  deliberate prod lever. Prefer the escape-hatch script, which records the reason.
 - **`EXEC-DEPLOY.yml`** is still the canonical governed prod deploy, driven by
   the PUBLISH button and the escape-hatch script (both `workflow_dispatch`).
 
@@ -1003,7 +1018,7 @@ Use these PATs with the GitHub REST API (`api.github.com`) for all PR and deploy
 
 | Date | Change | VTID |
 |------|--------|------|
-| 2026-06-04 | Staging-first cutover (backend / workstream A): cut auto-to-prod (`AUTO-DEPLOY.yml` → `workflow_dispatch`-only), added manual escape hatch `scripts/deploy/publish-to-prod.sh`, rewrote §15/§16 + IF-THEN CI/CD rules. Auto = staging; prod = PUBLISH button or escape hatch. | BOOTSTRAP-STAGING-FIRST-CUTOVER |
+| 2026-06-04 | Staging-first cutover (time-gated, effective Mon 8 Jun 2026 10:00 Europe/Berlin): added a `cutover_gate` job to every auto-to-prod workflow (`AUTO-DEPLOY`, `DEPLOY-ORB-AGENT`, `DEPLOY-AUTOPILOT-JOB`, `VTID-02409-BOOTSTRAP`) that freezes the push path post-cutover while leaving manual dispatch open; added manual escape hatch `scripts/deploy/publish-to-prod.sh`; rewrote §15/§16 + IF-THEN CI/CD rules. Before cutover all paths still reach prod; after, auto = staging, prod = PUBLISH button / manual exception. Frontend (`vitana-v1`) gated in parallel. | BOOTSTRAP-STAGING-FIRST-CUTOVER |
 | 2026-04-14 | Replaced broad visual verification with targeted protocol: screenshot what you changed, interact with it, verify it works | VTID-01917 |
 | 2026-03-19 | Added CI/CD deployment pipeline critical lessons (Auto Deploy ≠ actual deploy) | BOOTSTRAP-OPERATOR-NAV-FIX |
 | 2026-02-13 | Added Deployment Verification Protocol section + rules | VTID-01228 |
