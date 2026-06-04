@@ -805,6 +805,30 @@ export const NAVIGATION_CATALOG: ReadonlyArray<NavCatalogEntry> = [
     },
   },
   {
+    // VTID-NAV-HEALTH-SUPP: the personal supplement TRACKER inside the Health
+    // hub (Health → Supplements mode), reached via /health?mode=supplements.
+    // Distinct from DISCOVER.SUPPLEMENTS (the marketplace/shop). "Health
+    // supplements", "my supplements", "my stack" must land HERE, not the shop.
+    screen_id: 'HEALTH.SUPPLEMENTS',
+    route: '/health?mode=supplements',
+    category: 'health',
+    access: 'authenticated',
+    anonymous_safe: false,
+    aliases: ['health-supplements', 'my-supplements', 'supplement-tracker', 'my-stack', 'supplement-stack', 'vitamin-tracker', 'meine-supplements', 'meine-nahrungsergaenzung'],
+    i18n: {
+      en: {
+        title: 'My Supplements',
+        description: 'Track the supplements, vitamins, and minerals you take.',
+        when_to_visit: "When the user wants to view, track, log, or manage THEIR OWN supplements — their supplement stack, the vitamins or minerals THEY take, the 'health supplements' tracker, or add a supplement to their regimen. This is the personal health tracker, NOT shopping the marketplace.",
+      },
+      de: {
+        title: 'Meine Nahrungsergänzung',
+        description: 'Verfolge die Nahrungsergänzungsmittel, Vitamine und Mineralien, die du nimmst.',
+        when_to_visit: 'Wenn der Nutzer SEINE EIGENEN Nahrungsergänzungsmittel ansehen, verfolgen, protokollieren oder verwalten möchte — seinen Supplement-Stack, die Vitamine oder Mineralien, die er nimmt, den "Gesundheits-Supplement"-Tracker, oder ein Supplement zu seiner Routine hinzufügen. Das ist der persönliche Gesundheits-Tracker, NICHT der Marktplatz-Einkauf.',
+      },
+    },
+  },
+  {
     screen_id: 'HEALTH.MY_BIOLOGY',
     route: '/health/my-biology',
     category: 'health',
@@ -909,16 +933,22 @@ export const NAVIGATION_CATALOG: ReadonlyArray<NavCatalogEntry> = [
     category: 'discover',
     access: 'authenticated',
     anonymous_safe: false,
+    // Canonical destination for a GENERIC "supplements" / "show me supplements"
+    // query — the marketplace wins the tie against HEALTH.SUPPLEMENTS (the
+    // personal tracker), which only wins when the user qualifies it ("health
+    // supplements", "my supplements") via the multi-token coverage bonus.
+    priority: 1,
+    aliases: ['shop-supplements', 'buy-supplements', 'supplement-shop', 'supplement-store', 'browse-supplements'],
     i18n: {
       en: {
         title: 'Supplements',
         description: 'Curated supplements for longevity and wellness.',
-        when_to_visit: 'When the user asks about supplements, vitamins, minerals, nutraceuticals, or what to take for their health.',
+        when_to_visit: 'When the user wants to browse, show, shop for, or buy supplements, vitamins, minerals, or nutraceuticals in the marketplace — exploring available products, brands, or deals. NOT for tracking the supplements they personally take (that is HEALTH.SUPPLEMENTS).',
       },
       de: {
         title: 'Nahrungsergänzungsmittel',
         description: 'Kuratierte Nahrungsergänzungsmittel für Longevity und Wellness.',
-        when_to_visit: 'Wenn der Nutzer nach Nahrungsergänzungsmitteln, Vitaminen, Mineralien, Nutraceuticals oder dem, was er für seine Gesundheit nehmen sollte, fragt.',
+        when_to_visit: 'Wenn der Nutzer Nahrungsergänzungsmittel, Vitamine, Mineralien oder Nutraceuticals im Marktplatz durchstöbern, ansehen oder kaufen möchte — verfügbare Produkte, Marken oder Angebote erkunden. NICHT zum Verfolgen der Supplements, die er selbst einnimmt (das ist HEALTH.SUPPLEMENTS).',
       },
     },
   },
@@ -1416,11 +1446,46 @@ export const NAVIGATION_CATALOG: ReadonlyArray<NavCatalogEntry> = [
     },
   },
   {
+    // Generic Support destination (lands on the Contact tab). Keeps the
+    // canonical `/settings/support` path so route resolution stays stable;
+    // it redirects to `/support`. Note: that redirect drops any querystring,
+    // so the sub-tab entries below target `/support?tab=…` DIRECTLY.
     screen_id: 'SETTINGS.SUPPORT', route: '/settings/support', category: 'settings',
     access: 'authenticated', anonymous_safe: false,
+    aliases: ['support', 'help', 'support-center', 'help-center', 'get-help', 'hilfe', 'kundendienst'],
     i18n: {
-      en: { title: 'Support', description: 'Get help, contact support, or report an issue.', when_to_visit: 'When the user asks for help, support, how to contact the team, report a bug, or needs assistance with something.' },
-      de: { title: 'Support', description: 'Hilfe erhalten, Support kontaktieren oder ein Problem melden.', when_to_visit: 'Wenn der Nutzer nach Hilfe, Support, wie man das Team kontaktiert, einen Fehler melden oder Unterstützung bei etwas braucht fragt.' },
+      en: { title: 'Support', description: 'Get help, contact support, or report an issue.', when_to_visit: 'When the user asks for help, support, how to contact the team, report a bug, or needs general assistance without naming a specific support section.' },
+      de: { title: 'Support', description: 'Hilfe erhalten, Support kontaktieren oder ein Problem melden.', when_to_visit: 'Wenn der Nutzer allgemein nach Hilfe, Support, wie man das Team kontaktiert, einen Fehler melden oder Unterstützung braucht fragt, ohne einen bestimmten Support-Bereich zu nennen.' },
+    },
+  },
+  {
+    // VTID-NAV-SUPPORT-TABS: deep-link straight to the Support sub-tabs so
+    // "take me to Support FAQs" lands on the FAQ tab, not the default Contact
+    // tab. Both Support.tsx (desktop) and MobileSupport.tsx read `?tab=`.
+    screen_id: 'SETTINGS.SUPPORT_CONTACT', route: '/support?tab=contact', category: 'settings',
+    access: 'authenticated', anonymous_safe: false,
+    aliases: ['support-contact', 'contact-support', 'submit-ticket', 'support-ticket', 'report-issue', 'support-kontakt'],
+    i18n: {
+      en: { title: 'Contact Support', description: 'Reach the support team — record a message, submit a ticket, or email us.', when_to_visit: 'When the user wants to contact support, submit a support ticket, report a bug, send a message to the team, or request a callback.' },
+      de: { title: 'Support kontaktieren', description: 'Erreiche das Support-Team — nimm eine Nachricht auf, reiche ein Ticket ein oder schreib uns.', when_to_visit: 'Wenn der Nutzer den Support kontaktieren, ein Support-Ticket einreichen, einen Fehler melden, dem Team eine Nachricht senden oder einen Rückruf anfordern möchte.' },
+    },
+  },
+  {
+    screen_id: 'SETTINGS.SUPPORT_FAQ', route: '/support?tab=faqs', category: 'settings',
+    access: 'authenticated', anonymous_safe: false,
+    aliases: ['support-faq', 'support-faqs', 'faq', 'faqs', 'knowledge-base', 'help-articles', 'support-knowledge-base', 'haeufige-fragen', 'faq-seite'],
+    i18n: {
+      en: { title: 'Support FAQs', description: 'Frequently asked questions, help articles, and the knowledge base.', when_to_visit: 'When the user asks for FAQs, frequently asked questions, help articles, the knowledge base, common questions, or how-to guides.' },
+      de: { title: 'Support-FAQ', description: 'Häufig gestellte Fragen, Hilfeartikel und die Wissensdatenbank.', when_to_visit: 'Wenn der Nutzer nach FAQ, häufig gestellten Fragen, Hilfeartikeln, der Wissensdatenbank, häufigen Fragen oder Anleitungen fragt.' },
+    },
+  },
+  {
+    screen_id: 'SETTINGS.SUPPORT_COMMUNITY', route: '/support?tab=community', category: 'settings',
+    access: 'authenticated', anonymous_safe: false,
+    aliases: ['support-community', 'community-help', 'community-support', 'support-forum', 'community-hilfe'],
+    i18n: {
+      en: { title: 'Community Help', description: 'Get help from other members — community groups and forums.', when_to_visit: 'When the user asks about community help, getting help from other users, community support groups, or user forums.' },
+      de: { title: 'Community-Hilfe', description: 'Hol dir Hilfe von anderen Mitgliedern — Community-Gruppen und Foren.', when_to_visit: 'Wenn der Nutzer nach Community-Hilfe, Hilfe von anderen Nutzern, Community-Support-Gruppen oder Nutzerforen fragt.' },
     },
   },
 

@@ -79,6 +79,11 @@ interface ShadowReport {
     labeled_comparisons?: number;
     primary_accuracy?: number | null;
     candidate_accuracy?: number | null;
+    // Real-model-only accuracy (excludes simulated_models=true). The gate keys
+    // off these so a candidate never graduates on simulated evidence.
+    real_labeled_comparisons?: number;
+    real_primary_accuracy?: number | null;
+    real_candidate_accuracy?: number | null;
   }>;
 }
 
@@ -120,18 +125,19 @@ function reason(rule: string, ok: boolean, detail: string): Reason {
  *   - Otherwise → PASS with the numbers.
  */
 function accuracyReason(
-  rollup: Pick<ShadowReport['features'][number], 'labeled_comparisons' | 'primary_accuracy' | 'candidate_accuracy'> | null,
+  rollup: Pick<ShadowReport['features'][number], 'real_labeled_comparisons' | 'real_primary_accuracy' | 'real_candidate_accuracy'> | null,
   thresholds: Pick<typeof THRESHOLDS, 'min_labeled_comparisons' | 'min_candidate_accuracy' | 'max_accuracy_regression'> = THRESHOLDS,
 ): Reason {
-  const labeled = rollup?.labeled_comparisons ?? 0;
-  const candAcc = rollup?.candidate_accuracy ?? null;
-  const primAcc = rollup?.primary_accuracy ?? null;
+  // Real-model evidence ONLY — simulated comparisons never graduate a candidate.
+  const labeled = rollup?.real_labeled_comparisons ?? 0;
+  const candAcc = rollup?.real_candidate_accuracy ?? null;
+  const primAcc = rollup?.real_primary_accuracy ?? null;
 
   if (labeled < thresholds.min_labeled_comparisons || candAcc === null) {
     return reason(
       'candidate_accuracy',
       false,
-      `Only ${labeled} corpus-grounded comparisons (need ${thresholds.min_labeled_comparisons}). Run EXERCISE-STAGING-SHADOW with source=golden-corpus, or wait for labeled organic turns, to score accuracy vs ground truth.`,
+      `Only ${labeled} REAL (non-simulated) corpus-grounded comparisons (need ${thresholds.min_labeled_comparisons}). Deploy the fine-tuned candidate to a Vertex endpoint (set CANDIDATE_ENDPOINT__voice_tool_router) and run EXERCISE-STAGING-SHADOW with source=golden-corpus — simulated comparisons do not count toward readiness.`,
     );
   }
   if (candAcc < thresholds.min_candidate_accuracy) {
