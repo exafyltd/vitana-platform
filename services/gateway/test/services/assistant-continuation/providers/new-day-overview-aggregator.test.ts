@@ -153,7 +153,7 @@ describe('VTID-03166 renderNewDayReturnLineWithOverview', () => {
   it('renders just salutation + invitation when payload empty', () => {
     const line = renderNewDayReturnLineWithOverview(args, () => 0);
     expect(line).toMatch(/Good afternoon, Dragan\./);
-    expect(line).toMatch(/Where would you like to start|Where do you want|How can I help/);
+    expect(line).toMatch(/Let's pick up|Let me show you your next step|Let's get started/);
     expect(line).not.toMatch(/event|Index|focus/i);
   });
 
@@ -248,7 +248,7 @@ describe('VTID-03166 renderNewDayReturnLineWithOverview', () => {
     }, () => 0);
     expect(line).toMatch(/Guten Morgen, Dragan\./);
     expect(line).toMatch(/Heute steht "Maxina Sync"/);
-    expect(line).toMatch(/Womit fangen wir an|Wo möchtest du|Womit darf ich/);
+    expect(line).toMatch(/Lass uns dort weitermachen|Lass mich dir deinen nächsten Schritt|Lass uns gleich loslegen/);
   });
 
   it('no firstName → opens without name comma', () => {
