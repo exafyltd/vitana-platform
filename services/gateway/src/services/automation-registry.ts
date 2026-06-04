@@ -192,16 +192,18 @@ const COMMUNITY_GROUPS: AutomationDefinition[] = [
   },
   {
     id: 'AP-0211', name: '"Revive Your Group" Re-Ignition', domain: 'community-groups',
-    status: 'PLANNED', priority: 'P1', triggerType: 'heartbeat',
+    status: 'IMPLEMENTED', priority: 'P1', triggerType: 'heartbeat',
     triggerConfig: { intervalMinutes: 1440 }, // daily dormant-group scan
     targetRoles: [...MEMBER_ROLES],
+    handler: 'runReviveYourGroup',
     requires: ['AP-0205', 'AP-0503'],
   },
   {
     id: 'AP-0212', name: '"Welcome Squad" New-Member Activation', domain: 'community-groups',
-    status: 'PLANNED', priority: 'P1', triggerType: 'event',
+    status: 'IMPLEMENTED', priority: 'P1', triggerType: 'event',
     triggerConfig: { eventTopic: 'community.member.joined' },
     targetRoles: [...MEMBER_ROLES],
+    handler: 'runWelcomeSquad',
     requires: ['AP-0203', 'AP-0103'],
   },
 ];
@@ -266,9 +268,10 @@ const EVENTS_LIVE_ROOMS: AutomationDefinition[] = [
   },
   {
     id: 'AP-0309', name: '"Host Night" Concierge', domain: 'events-live-rooms',
-    status: 'PLANNED', priority: 'P0', triggerType: 'heartbeat',
-    triggerConfig: { intervalMinutes: 1440 }, // daily interest-cluster scan
+    status: 'IMPLEMENTED', priority: 'P0', triggerType: 'heartbeat',
+    triggerConfig: { intervalMinutes: 1440 }, // daily upcoming-event concierge scan
     targetRoles: [...MEMBER_ROLES],
+    handler: 'runHostNightConcierge',
     requires: ['AP-0301', 'AP-0302', 'AP-0403', 'AP-0405'],
   },
   {

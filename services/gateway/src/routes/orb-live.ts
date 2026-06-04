@@ -1016,6 +1016,11 @@ export interface GeminiLiveSession {
   // hook in the session start payload + every updateContext. Drives the
   // mobile_route override + viewport_only block in handleNavigateToScreen.
   is_mobile?: boolean;
+  // VTID-03300: "My Journey" next-step focus. Set when the user opened the orb
+  // by tapping a specific Foundation step in the Next-Steps checklist, so the
+  // journey-guide provider LEADS with that exact step rather than the
+  // sequentially-computed current_next_step. One-shot per session.
+  journey_focus_step?: string;
   // VTID-NAV: Cached memory pack from the first navigator_consult call this
   // session, with a 30s TTL — subsequent consult calls reuse it instead of
   // re-paying retrieval cost.
@@ -3665,8 +3670,8 @@ async function executeLiveApiToolInner(
           if (!deflection) {
             // Last-resort generic fallback — still NOT "no recommendations".
             deflection = (session.lang || 'en').toLowerCase().startsWith('de')
-              ? 'Im Moment ist nichts Spezifisches vorgemerkt, aber in Vitanaland gibt es viel zu lernen. Wo möchtest du anfangen?'
-              : 'Nothing specific is queued up at the moment, but Vitanaland has lots to learn. What would you like to dive into?';
+              ? 'Lass mich dir einen guten nächsten Schritt in Vitanaland zeigen — wir schauen es uns gemeinsam an.'
+              : "Let me show you a good next step in Vitanaland — let's take a look together.";
           }
           return { success: true, result: deflection };
         }
@@ -7106,8 +7111,8 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
   // These remain only as the legacy fallback for sessions with no awareness.
   // "What can I do for you?" removed — it's on the FORBIDDEN OPENINGS list now.
   const greetingPrompts: Record<string, string> = {
-    'en': 'Open with ONE single short phrase. NEVER use two-part sentences with dashes. Do NOT say "Hello", "Hi", or the user\'s name. Do NOT introduce yourself. If your system instruction\'s OPENING SHAPE MATRIX provides a Proactive Opener Candidate, USE IT. Otherwise pick ONE of: "How can I help?" / "What\'s on your mind?" / "I am listening." / "What would you like to know?". Vary across sessions.',
-    'de': 'Beginne mit EINER einzelnen kurzen Frage. NIEMALS zweiteilige Sätze mit Gedankenstrichen. Sage KEIN "Hallo", kein "Hi" und nicht den Namen des Benutzers. Stelle dich NICHT vor. Wenn die OPENING SHAPE MATRIX in deinem System-Prompt einen Proactive Opener Candidate enthält, NUTZE IHN. Ansonsten wähle EINE: "Womit kann ich helfen?" / "Was möchtest du wissen?" / "Ich höre dir zu." / "Was brauchst du?". Variiere zwischen Sitzungen.',
+    'en': 'Open with ONE single short phrase that LEADS — propose the next move, never ask the user\'s preference. NEVER use two-part sentences with dashes. Do NOT say "Hello", "Hi", or the user\'s name. Do NOT introduce yourself. If your system instruction\'s OPENING SHAPE MATRIX provides a Proactive Opener Candidate, USE IT. Otherwise pick ONE of: "Let me show you where we are." / "Let me show you your next step." / "I am listening." / "Let\'s keep going.". NEVER "How can I help?" / "What would you like?". Vary across sessions.',
+    'de': 'Beginne mit EINER einzelnen kurzen Aussage, die FÜHRT — schlage den nächsten Schritt vor, frage nie nach der Vorliebe des Benutzers. NIEMALS zweiteilige Sätze mit Gedankenstrichen. Sage KEIN "Hallo", kein "Hi" und nicht den Namen des Benutzers. Stelle dich NICHT vor. Wenn die OPENING SHAPE MATRIX in deinem System-Prompt einen Proactive Opener Candidate enthält, NUTZE IHN. Ansonsten wähle EINE: "Lass mich dir zeigen, wo wir stehen." / "Lass mich dir den nächsten Schritt zeigen." / "Ich höre dir zu." / "Lass uns weitermachen.". NIEMALS "Womit kann ich helfen?" / "Was möchtest du?". Variiere zwischen Sitzungen.',
     'fr': 'Commence par UNE seule courte phrase. JAMAIS de phrases en deux parties avec des tirets. Ne dis PAS "Bonjour" ni le prénom. Ne te présente PAS. Choisis UNE : "En quoi puis-je aider ?" / "Que puis-je faire pour vous ?" / "Je vous écoute." / "Qu\'aimeriez-vous savoir ?". Varie entre les sessions.',
     'es': 'Comienza con UNA sola frase corta. NUNCA frases de dos partes con guiones. NO digas "Hola" ni el nombre del usuario. NO te presentes. Elige UNA: "¿En qué puedo ayudar?" / "¿Qué necesitas?" / "Te escucho." / "¿Qué te gustaría saber?". Varía entre sesiones.',
     'ar': 'ابدأ بعبارة واحدة قصيرة. لا تستخدم جملاً من جزأين. لا تقل "مرحبا" أو اسم المستخدم. لا تقدم نفسك. اختر واحدة: "كيف يمكنني المساعدة؟" / "ماذا تود أن تعرف؟" / "أنا أستمع." / "ماذا يمكنني أن أفعل لك؟"',
@@ -7357,13 +7362,13 @@ function sendReconnectRecoveryPromptToLiveAPI(ws: WebSocket, session: GeminiLive
       thinking: "Sorry, we lost the connection for a moment. You were asking about <PARAPHRASE THE USER'S LAST TURN IN 3-6 WORDS>. Here's the answer:",
       listening_user_speaking: "Sorry, we lost the connection mid-sentence. You were saying <PARAPHRASE THEIR PARTIAL UTTERANCE IN 3-6 WORDS> — go on, I'm listening.",
       speaking: "Sorry, we lost the connection while I was answering. Let me continue:",
-      idle: "I'm back. What would you like to talk about?"
+      idle: "I'm back. Let me show you your next step."
     },
     de: {
       thinking: "Entschuldige, die Verbindung war kurz weg. Du hast nach <PARAPHRASIERE DEN LETZTEN BEITRAG IN 3-6 WORTEN> gefragt. Hier ist die Antwort:",
       listening_user_speaking: "Entschuldige, die Verbindung war kurz weg, während du gesprochen hast. Du warst gerade bei <PARAPHRASIERE DAS UNTERBROCHENE THEMA IN 3-6 WORTEN> — sprich ruhig weiter, ich höre zu.",
       speaking: "Entschuldige, die Verbindung war kurz weg, während ich geantwortet habe. Ich mache weiter:",
-      idle: "Ich bin wieder da. Worüber möchtest du sprechen?"
+      idle: "Ich bin wieder da. Lass mich dir den nächsten Schritt zeigen."
     },
     fr: {
       thinking: "Désolé, la connexion a sauté un instant. Vous me demandiez à propos de <PARAPHRASEZ EN 3-6 MOTS>. Voici la réponse :",

@@ -42,6 +42,7 @@ export async function tool_record_journey_answer(
     return { ok: false, error: 'record_journey_answer requires a `step`.' };
   }
 
+  const teachMode = (args as any).teach_mode === true || (args as any).teachMode === true;
   const input: JourneyAnswerInput = {
     step,
     value: asString((args as any).value),
@@ -51,8 +52,9 @@ export async function tool_record_journey_answer(
     target_date: asString((args as any).target_date) ?? null,
     starting_value: asNumber((args as any).starting_value),
     acknowledged: (args as any).acknowledged !== false,
+    // VTID-03270 — propagate so applyJourneyAnswer skips DATA writes in teach mode.
+    teachMode,
   };
-  const teachMode = (args as any).teach_mode === true || (args as any).teachMode === true;
 
   try {
     const delta = await applyJourneyAnswerWithVoice(sb, identity.user_id, input, { teachMode });
