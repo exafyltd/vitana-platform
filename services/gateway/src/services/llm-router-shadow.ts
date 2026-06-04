@@ -22,6 +22,7 @@
 
 import { emitOasisEvent } from './oasis-event-service';
 import { isFeatureLive } from './feature-flags';
+import { scoreGroundTruth } from './shadow-accuracy';
 
 const FEATURE_NAME = 'SHADOW_TOOL_ROUTER';
 
@@ -34,6 +35,20 @@ export interface ShadowInvocation<TInput, TOutput> {
   extractKey?: (out: TOutput) => string | null;
   /** Optional context to attach to the OASIS event (user id, session id). */
   context?: { actor_id?: string; session_id?: string };
+  /**
+   * Optional ground-truth key for accuracy scoring (e.g. the labeled
+   * `expected_tool` of a golden-corpus turn). When set, the emitted event
+   * additionally carries `expected_key` + `primary_correct` + `candidate_correct`,
+   * letting the aggregator compute accuracy-vs-truth, not just primary↔candidate
+   * agreement. Unset (the common case) leaves the event shape unchanged.
+   */
+  groundTruthKey?: string | null;
+  /**
+   * Optional extra labels passed straight through to the event payload
+   * (e.g. `fixture_id`, `turn`, `corpus_grounded`). Reserved keys in the
+   * payload always win.
+   */
+  labels?: Record<string, unknown>;
 }
 
 /**
@@ -82,6 +97,11 @@ async function compareAndEmit<TInput, TOutput>(
     ? primaryKey === candidateKey
     : null;
 
+  // Ground-truth accuracy: only present when the caller supplied a labeled
+  // expected key (golden-corpus turns). Unlabeled traffic → all-null, event
+  // shape unchanged.
+  const score = scoreGroundTruth(inv.groundTruthKey, primaryKey, candidateKey);
+
   try {
     await emitOasisEvent({
       vtid: 'VTID-03179',
@@ -93,11 +113,15 @@ async function compareAndEmit<TInput, TOutput>(
         : `shadow ${inv.feature}: primary=${primaryKey} candidate=${candidateKey} agree=${agreement}`,
       actor_id: inv.context?.actor_id,
       payload: {
+        ...(inv.labels ?? {}),
         feature: inv.feature,
         session_id: inv.context?.session_id,
         primary_key: primaryKey,
         candidate_key: candidateKey,
         agreement,
+        expected_key: score.expected_key,
+        primary_correct: score.primary_correct,
+        candidate_correct: score.candidate_correct,
         primary_ms: primaryMs,
         candidate_ms: candidateMs,
         candidate_error: candidateError,

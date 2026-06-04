@@ -97,11 +97,11 @@ describe('VTID-03110 — buildTeacherDeflectionForEmptyRecommendations', () => {
     });
     assertNoForbiddenPhrase(out);
     expect(out).toContain('The Five Pillars');
-    // German body markers
-    expect(out.toLowerCase()).toMatch(/vitanaland|magst du/);
+    // VTID-03270 — German LEAD markers (proposes the move, no preference-asking).
+    expect(out.toLowerCase()).toMatch(/lass mich|zeigen|gemeinsam/);
   });
 
-  test('recType=match acknowledges the match miss explicitly without dismissing', async () => {
+  test('recType=match leads with the teaching capability (VTID-03270 — no dwelling on the miss)', async () => {
     const out = await buildTeacherDeflectionForEmptyRecommendations({
       supabase: fakeSb({ catalog: [FIVE_PILLARS], ledger: [] }),
       tenantId: 't1',
@@ -111,9 +111,9 @@ describe('VTID-03110 — buildTeacherDeflectionForEmptyRecommendations', () => {
       nowIso: NOW_ISO,
     });
     assertNoForbiddenPhrase(out);
-    // recType=match acknowledges the community-match miss but pivots
-    // to teaching.
-    expect(out.toLowerCase()).toMatch(/community match|fresh.*match/);
+    // Proactive-lead doctrine: Vitana proposes the capability and offers to do
+    // it together — she does NOT dwell on the absent match or ask preference.
+    expect(out.toLowerCase()).toMatch(/let me introduce|let's take a (quick )?look/);
     expect(out).toContain('The Five Pillars');
   });
 
@@ -202,7 +202,7 @@ describe('VTID-03110 — buildTeacherDeflectionForEmptyRecommendations', () => {
     });
     assertNoForbiddenPhrase(out);
     expect(out).toContain('The Five Pillars');
-    // English markers
-    expect(out.toLowerCase()).toMatch(/vitanaland|introduce|learn/);
+    // VTID-03270 — English LEAD markers.
+    expect(out.toLowerCase()).toMatch(/let me show|let me introduce|take a (quick )?look/);
   });
 });
