@@ -2107,7 +2107,40 @@ export async function tool_activate_recommendation(
   id: OrbToolIdentity,
   sb: SupabaseClient,
 ): Promise<OrbToolResult> {
-  const recId = String(args.id ?? '').trim();
+  let recId = String(args.id ?? '').trim();
+  // DEV-COMHU-0505 (review follow-up): when the model calls this after a spoken
+  // "yes" it often has no id in context — the offer's id lives in the persisted
+  // pending CTA (written by wake-brief-wiring into orb_session_state). Fall back
+  // to it so the affirmative turn resolves deterministically instead of erroring
+  // with "id is required" (the "I have no access" symptom). Authed users only.
+  let recIdFromPendingCta = false;
+  if (!recId && id.user_id) {
+    try {
+      const { readOrbSessionState } = await import('./orb/orb-session-state');
+      const pending = await readOrbSessionState<{ tool?: string; payload?: { id?: string } }>(
+        sb,
+        id.user_id,
+        'pending_cta',
+      );
+      const pendingId =
+        pending &&
+        pending.value &&
+        pending.value.tool === 'activate_recommendation' &&
+        typeof pending.value.payload?.id === 'string'
+          ? pending.value.payload.id.trim()
+          : '';
+      if (pendingId) {
+        recId = pendingId;
+        recIdFromPendingCta = true;
+        // NOTE: do NOT consume the pending CTA here — only after activation
+        // actually succeeds (below). Clearing on read would drop the user's
+        // only recovery context if the fetch/update hits a transient error,
+        // turning a retryable "yes" into a permanent "id is required".
+      }
+    } catch {
+      // pending-CTA fallback is best-effort; fall through to the id check below.
+    }
+  }
   if (!recId) {
     return { ok: false, error: 'id is required' };
   }
@@ -2154,6 +2187,15 @@ export async function tool_activate_recommendation(
         }).catch(() => {});
       })
       .catch(() => {});
+
+    // DEV-COMHU-0505 (review follow-up): consume the pending CTA ONLY now that
+    // activation has verified+succeeded, so a transient fetch/update error
+    // above leaves the row intact for the user's retry. Fire-and-forget.
+    if (recIdFromPendingCta && id.user_id) {
+      void import('./orb/orb-session-state')
+        .then(({ clearOrbSessionState }) => clearOrbSessionState(sb, id.user_id, 'pending_cta'))
+        .catch(() => {});
+    }
 
     const title = recRow.title ?? 'that recommendation';
     return {

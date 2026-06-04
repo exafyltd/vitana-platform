@@ -101,24 +101,100 @@ const JOURNEY_OPENER_LINES: Record<string, { de: string; en: string }> = {
  * The clean, already-localized spoken opener line for a step. Falls back to a
  * generic lead-in (still a directive, still in-language) for any step key not
  * in the map, so a new step never silently produces an English/empty opener.
+ *
+ * VTID-03300 (follow-up):
+ * - `opts.firstName` greets by name ("Hey Dragan! …"). Omitted/blank → no name.
+ * - `opts.done` switches to an "enrich / build on it" opener: the user tapped a
+ *   step they've ALREADY completed, so leading with "let's set it up" would feel
+ *   broken. Generic over any step via its title.
  */
-export function buildJourneyGuideOpenerLine(stepKey: string, stepTitle: string, lang: string): string {
+export function buildJourneyGuideOpenerLine(
+  stepKey: string,
+  stepTitle: string,
+  lang: string,
+  opts?: { firstName?: string | null; done?: boolean },
+): string {
   const isDe = (lang || 'en').toLowerCase().startsWith('de');
+  const name = (opts?.firstName || '').trim();
+  // Warm, du-form name greeting. Kept as its own clause so the localized step
+  // lines below keep their leading capital and read naturally.
+  const greet = name ? `Hey ${name}! ` : '';
+
+  // Enrich framing — already-completed step the user explicitly tapped.
+  if (opts?.done) {
+    return isDe
+      ? `${greet}„${stepTitle}" hast du schon erledigt — stark. Lass uns das gemeinsam noch besser machen.`
+      : `${greet}You've already done "${stepTitle}" — nice work. Let's build on it together and make it even stronger.`;
+  }
+
   const entry = JOURNEY_OPENER_LINES[stepKey];
-  if (entry) return isDe ? entry.de : entry.en;
+  if (entry) return `${greet}${isDe ? entry.de : entry.en}`;
   // Generic directive fallback — still leads, still in-language, names the step.
   return isDe
-    ? `Lass uns gemeinsam an deinem nächsten Schritt arbeiten: ${stepTitle}. Ich mach den Anfang mit dir.`
-    : `Let's work on your next step together: ${stepTitle}. I'll get us started.`;
+    ? `${greet}Lass uns gemeinsam an deinem nächsten Schritt arbeiten: ${stepTitle}. Ich mach den Anfang mit dir.`
+    : `${greet}Let's work on your next step together: ${stepTitle}. I'll get us started.`;
 }
 
 export function buildJourneyGuideBlock(guide: JourneyGuideContent, lang: string): string {
   const isDe = (lang || 'en').toLowerCase().startsWith('de');
+  const done = guide.focus_done === true;
 
   // VTID-03266/03267: lead with the already-localized opener line (beat-B aware
-  // via opener_key), not the English execute_prompt.
-  const stepLine = buildJourneyGuideOpenerLine(guide.opener_key, guide.step_title, lang);
+  // via opener_key), not the English execute_prompt. VTID-03300: when the user
+  // tapped an already-done step, the opener uses "enrich" framing.
+  const stepLine = buildJourneyGuideOpenerLine(guide.opener_key, guide.step_title, lang, { done });
   const upcoming = guide.upcoming_steps ?? [];
+
+  // VTID-03300 (follow-up): ENRICH MODE — the user tapped a step they've already
+  // completed. Vitana must NOT restart it or treat them as a new user; she
+  // acknowledges it's done and helps them strengthen/extend it, then offers the
+  // next open step. Still never "how can I help".
+  if (done) {
+    if (isDe) {
+      return [
+        '',
+        '## GUIDE-MODUS (VERFEINERN) — diese Person hat den Schritt schon erledigt und will ihn AUSBAUEN',
+        '',
+        'SPRACHE: Sprich AUSSCHLIESSLICH auf Deutsch — auch wenn frühere Anweisungen Englisch enthalten. Dieser GUIDE-MODUS gilt für die GANZE Sitzung und hat Vorrang vor JEDER generischen Begrüßungs- oder Eröffnungsregel.',
+        '',
+        `Die Person hat „${guide.step_title}" bereits abgeschlossen und hat es GEZIELT angetippt, um es weiter zu verbessern. Behandle sie NICHT wie eine Anfängerin und fang den Schritt NICHT von vorne an.`,
+        '',
+        'STRENG VERBOTEN — in der GANZEN Sitzung:',
+        '- „Was möchtest du?" / „Wie kann ich dir helfen?" / „Womit fangen wir an?"',
+        '- Den Schritt so behandeln, als wäre er noch offen / ihn komplett neu starten.',
+        '',
+        `SCHRITT (bereits erledigt): ${guide.step_title}`,
+        `Warum ein Ausbau lohnt: ${guide.benefit}`,
+        `Führe so (anerkennen + konkret verbessern, NICHT als offene Frage): ${stepLine}`,
+        'Schlage 1–2 KONKRETE Verbesserungen vor und mach sie GEMEINSAM (z. B. fehlende Details ergänzen, schärfen, aktualisieren).',
+        upcoming.length
+          ? `Wenn hier nichts mehr zu verbessern ist, GEH zum nächsten offenen Schritt über: ${upcoming.join(', ')}.`
+          : 'Wenn hier nichts mehr zu verbessern ist, freu dich kurz mit ihr — die Grundlagen stehen.',
+        '',
+      ].join('\n');
+    }
+    return [
+      '',
+      '## GUIDE MODE (ENRICH) — this person already completed the step and wants to BUILD ON it',
+      '',
+      'LANGUAGE: speak ONLY in the user\'s language — even if earlier instructions contain English. This GUIDE MODE applies to the WHOLE session and OVERRIDES every generic greeting/opening rule.',
+      '',
+      `The person has ALREADY completed "${guide.step_title}" and deliberately tapped it to improve it further. Do NOT treat them as a new user and do NOT restart the step from scratch.`,
+      '',
+      'STRICTLY FORBIDDEN — for the WHOLE session:',
+      '- "What do you want?" / "How can I help you?" / "Where should we start?"',
+      '- Treating the step as if it were still open / restarting it from zero.',
+      '',
+      `STEP (already done): ${guide.step_title}`,
+      `Why enriching it is worth it: ${guide.benefit}`,
+      `Lead with this (acknowledge + improve concretely, NOT an open question): ${stepLine}`,
+      'Propose 1–2 CONCRETE improvements and do them TOGETHER (e.g. fill missing details, sharpen, update).',
+      upcoming.length
+        ? `When there is nothing left to improve here, move on to the next open step: ${upcoming.join(', ')}.`
+        : 'When there is nothing left to improve here, briefly celebrate — the foundations are in place.',
+      '',
+    ].join('\n');
+  }
 
   if (isDe) {
     return [

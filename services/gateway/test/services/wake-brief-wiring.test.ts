@@ -129,7 +129,7 @@ describe('B0d.4 — wake-brief-wiring', () => {
         },
         { recorder },
       );
-      expect(decision.selectedContinuation?.userFacingLine).toBe('Hallo! Wie kann ich dir heute helfen?');
+      expect(decision.selectedContinuation?.userFacingLine).toBe('Hallo! Lass mich dir zeigen, wo wir anfangen.');
     });
   });
 
