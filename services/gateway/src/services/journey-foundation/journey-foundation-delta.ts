@@ -46,6 +46,14 @@ export interface JourneyAnswerInput {
   starting_value?: number | null;
   /** Teacher-moment acknowledgment. */
   acknowledged?: boolean;
+  /**
+   * VTID-03270 — the user is learning, not submitting a data answer. In teach
+   * mode we NEVER write (no goal/intent/pillar writes), so the model calling
+   * record_journey_answer during a teaching beat can't pollute the Life Compass
+   * (observed: step='life_compass' value='profil vervollständigen' teach_mode=true
+   * wrote garbage to the goal). Teacher-moment ACKs still record via `acknowledged`.
+   */
+  teachMode?: boolean;
 }
 
 // ── normalizers ──────────────────────────────────────────────────────────────
@@ -157,16 +165,21 @@ export async function applyJourneyAnswer(
   const changed: string[] = [];
 
   // 1. Write the journey-owned fact to its real home.
-  if (input.step === 'life_compass' || input.step === 'goal') {
+  // VTID-03270 — teach mode never writes DATA (goal/intent/pillar). A teaching
+  // beat is not a data answer; writing here pollutes the record (observed:
+  // step='life_compass' value='profil vervollständigen' teach_mode=true wrote a
+  // junk goal). Teacher-moment ACKs (TEACHER_STEPS) still record below.
+  const dataWriteAllowed = !input.teachMode;
+  if (dataWriteAllowed && (input.step === 'life_compass' || input.step === 'goal')) {
     await writeGoal(client, userId, input);
     changed.push('life_compass.primary_goal');
-  } else if (input.step === 'economic_intent' || input.step === 'economic_aspiration') {
+  } else if (dataWriteAllowed && (input.step === 'economic_intent' || input.step === 'economic_aspiration')) {
     const intent = normalizeEconomicIntent(input.value);
     if (intent) {
       await patchRow(client, userId, { economic_intent: intent });
       changed.push('economic_intent');
     }
-  } else if (input.step === 'weakest_habit') {
+  } else if (dataWriteAllowed && input.step === 'weakest_habit') {
     const pillar = normalizePillar(input.value);
     if (pillar) {
       await patchRow(client, userId, { focus_pillar: pillar });

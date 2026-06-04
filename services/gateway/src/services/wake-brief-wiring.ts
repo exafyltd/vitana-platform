@@ -187,6 +187,13 @@ export interface DecideWakeBriefArgs {
   isReconnect: boolean;
   /** Resolved language for the session (post-anonymous browser-lang resolve). */
   lang: string;
+  /**
+   * VTID-03300: the "My Journey" Foundation step the user tapped to open the
+   * orb (from the session-start body's `journey_focus_step`). When set and the
+   * step is not already done, the journey-guide provider leads with this step
+   * instead of the sequentially-computed `current_next_step`.
+   */
+  journeyFocusStep?: string | null;
   /** journeySurface from the ClientContextEnvelope, if any. */
   envelopeJourneySurface?: string;
   /**
@@ -413,6 +420,11 @@ export async function decideWakeBriefForSession(
         userId: args.userId,
         isReconnect: args.isReconnect,
         lang: args.lang,
+        // VTID-03300: when the user tapped a specific Foundation step in "My
+        // Journey", lead with THAT step instead of the computed next step.
+        focusStep: args.journeyFocusStep ?? null,
+        // VTID-03300 (follow-up): greet by name in the journey opener.
+        firstName: args.firstName ?? null,
       };
     }
   }

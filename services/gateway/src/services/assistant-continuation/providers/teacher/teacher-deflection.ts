@@ -72,52 +72,52 @@ const PHRASINGS: Record<string, Phrasings> = {
   en: {
     withCapability: (n, recType) =>
       recType === 'match'
-        ? `I don't have a fresh community match lined up for you right now, but there's plenty in Vitanaland I can show you. Want me to introduce you to ${n}?`
-        : `I don't have a specific recommendation queued up right now, but there's plenty to learn in Vitanaland. Want me to introduce you to ${n}?`,
+        ? `Let me introduce you to ${n} — a great next move. Let's take a quick look together.`
+        : `Let me show you ${n} next — let's take a quick look together.`,
     fallback: (recType) =>
       recType === 'match'
-        ? `No fresh community match is queued up at the moment, but I can walk you through anything in Vitanaland. What would you like to explore?`
-        : `Nothing specific is queued up at the moment, but Vitanaland has lots to learn. What would you like to dive into?`,
+        ? `Let me walk you through Vitanaland — I'll show you a good next step.`
+        : `Let me show you a good next step in Vitanaland — let's take a look together.`,
   },
   de: {
     withCapability: (n, recType) =>
       recType === 'match'
-        ? `Aktuell habe ich kein frisches Community-Match für dich, aber in Vitanaland gibt es viel, was ich dir zeigen kann. Magst du, dass ich dir ${n} vorstelle?`
-        : `Aktuell ist nichts Spezifisches für dich vorgemerkt, aber in Vitanaland gibt es viel zu lernen. Magst du, dass ich dir ${n} vorstelle?`,
+        ? `Lass mich dir ${n} vorstellen — ein guter nächster Schritt. Lass uns gemeinsam einen Blick darauf werfen.`
+        : `Lass mich dir als Nächstes ${n} zeigen — wir schauen es uns kurz gemeinsam an.`,
     fallback: (recType) =>
       recType === 'match'
-        ? `Im Moment ist kein neues Community-Match vorgemerkt, aber ich kann dich durch alles in Vitanaland führen. Was möchtest du entdecken?`
-        : `Im Moment ist nichts Spezifisches vorgemerkt, aber in Vitanaland gibt es viel zu lernen. Wo möchtest du anfangen?`,
+        ? `Lass mich dich durch Vitanaland führen — ich zeige dir einen guten nächsten Schritt.`
+        : `Lass mich dir einen guten nächsten Schritt in Vitanaland zeigen — wir schauen es uns gemeinsam an.`,
   },
   fr: {
     withCapability: (n, recType) =>
       recType === 'match'
-        ? `Je n'ai pas de match communautaire frais pour toi en ce moment, mais Vitanaland a beaucoup à offrir. Veux-tu que je te présente ${n} ?`
-        : `Je n'ai pas de recommandation spécifique en file d'attente, mais il y a beaucoup à apprendre dans Vitanaland. Veux-tu que je te présente ${n} ?`,
+        ? `Laisse-moi te présenter ${n} — une bonne prochaine étape. Regardons ça ensemble.`
+        : `Laisse-moi te montrer ${n} — regardons ça rapidement ensemble.`,
     fallback: (recType) =>
       recType === 'match'
-        ? `Aucun match communautaire frais pour le moment, mais je peux te guider à travers tout Vitanaland. Que veux-tu explorer ?`
-        : `Rien de spécifique en file en ce moment, mais Vitanaland a beaucoup à apprendre. Par où veux-tu commencer ?`,
+        ? `Laisse-moi te guider dans Vitanaland — je vais te montrer une bonne prochaine étape.`
+        : `Laisse-moi te montrer une bonne prochaine étape dans Vitanaland — regardons ça ensemble.`,
   },
   es: {
     withCapability: (n, recType) =>
       recType === 'match'
-        ? `Ahora mismo no tengo un match nuevo de la comunidad para ti, pero hay mucho que puedo mostrarte en Vitanaland. ¿Te presento ${n}?`
-        : `No tengo una recomendación específica en cola ahora mismo, pero hay mucho que aprender en Vitanaland. ¿Te presento ${n}?`,
+        ? `Déjame presentarte ${n} — un buen siguiente paso. Vamos a verlo juntos.`
+        : `Déjame mostrarte ${n} — le echamos un vistazo rápido juntos.`,
     fallback: (recType) =>
       recType === 'match'
-        ? `No hay un match nuevo de la comunidad ahora mismo, pero puedo guiarte por todo Vitanaland. ¿Qué te gustaría explorar?`
-        : `Nada específico en cola ahora mismo, pero hay mucho que aprender en Vitanaland. ¿Por dónde empezamos?`,
+        ? `Déjame guiarte por Vitanaland — te muestro un buen siguiente paso.`
+        : `Déjame mostrarte un buen siguiente paso en Vitanaland — lo vemos juntos.`,
   },
   sr: {
     withCapability: (n, recType) =>
       recType === 'match'
-        ? `Тренутно немам свежи community match за тебе, али у Vitanaland-у имам много шта да ти покажем. Желиш ли да ти представим ${n}?`
-        : `Тренутно немам специфичну препоруку, али у Vitanaland-у има много да се учи. Желиш ли да ти представим ${n}?`,
+        ? `Да ти представим ${n} — добар следећи корак. Хајде да погледамо заједно.`
+        : `Да ти покажем ${n} — хајде да брзо погледамо заједно.`,
     fallback: (recType) =>
       recType === 'match'
-        ? `Тренутно нема новог community match-а, али могу да те водим кроз било шта у Vitanaland-у. Шта желиш да истражиш?`
-        : `Тренутно ништа специфично није на чекању, али Vitanaland има много да научиш. Где желиш да почнемо?`,
+        ? `Да те проведем кроз Vitanaland — показаћу ти добар следећи корак.`
+        : `Да ти покажем добар следећи корак у Vitanaland-у — хајде да погледамо заједно.`,
   },
 };
 

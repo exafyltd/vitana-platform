@@ -117,14 +117,18 @@ describe('VTID-03092 — teacher-invitation-pool', () => {
     }
   });
 
-  test('every phrase contains a question mark (permission-asking)', () => {
-    // Phrases may have a question + explanatory follow-up
-    // ("Do you have a moment? I would like to introduce something."),
-    // so we only require AT LEAST one '?' in the phrase, not that it
-    // ends with one.
+  test('every phrase LEADS — no preference-asking wording (VTID-03256)', () => {
+    // Proactive-lead doctrine: phrases either lead ("Let me show you…",
+    // "I'd like to introduce…") or ask permission to lead ("Darf ich…?",
+    // "May I…?"). They must NEVER ask the user's preference — a first-week
+    // user can't answer that. Banned: "would you like", "magst du", "do you
+    // want", "möchtest du".
+    const banned = [/would you like/i, /\bmagst du\b/i, /do you want/i, /möchtest du/i];
     for (const lang of ['en', 'de']) {
       for (const phrase of listTeacherInvitations(lang)) {
-        expect(phrase.includes('?')).toBe(true);
+        for (const re of banned) {
+          expect(phrase).not.toMatch(re);
+        }
       }
     }
   });

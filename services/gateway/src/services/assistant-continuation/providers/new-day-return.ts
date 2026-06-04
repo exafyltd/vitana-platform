@@ -311,11 +311,11 @@ function buildLifeCompassClause(payload: NewDayOverviewPayload, lang: string): s
   return `Your focus stays on: ${goal}.`;
 }
 
-/** One open invitation. */
+/** One proactive lead-in — propose the move, never ask preference (VTID-03270). */
 function buildInvitation(lang: string, rng: () => number): string {
   const pool = lang === 'de'
-    ? ['Womit fangen wir an?', 'Wo möchtest du heute anknüpfen?', 'Womit darf ich dir helfen?']
-    : ['Where would you like to start?', 'Where do you want to pick up?', 'How can I help you today?'];
+    ? ['Lass uns dort weitermachen, wo wir aufgehört haben.', 'Lass mich dir deinen nächsten Schritt zeigen.', 'Lass uns gleich loslegen.']
+    : ["Let's pick up right where we left off.", 'Let me show you your next step.', "Let's get started."];
   return pickFromPool(pool, rng);
 }
 
