@@ -901,6 +901,12 @@ export async function handleLiveSessionStart(
     is_mobile: typeof (body as any).is_mobile === 'boolean'
       ? (body as any).is_mobile
       : undefined,
+    // VTID-03300: "My Journey" next-step focus. Set when the user opened the
+    // orb by tapping a specific Foundation step; the journey-guide provider
+    // leads with this step instead of the sequentially-computed next step.
+    journey_focus_step: typeof (body as any).journey_focus_step === 'string'
+      ? (body as any).journey_focus_step
+      : undefined,
   };
 
   // VTID-SESSION-LIMIT: Terminate any existing active sessions for this user.
@@ -1134,6 +1140,9 @@ export async function handleLiveSessionStart(
       wasFailure: temporal.wasFailure,
       isReconnect: isReconnectStart,
       lang,
+      // VTID-03300: forward the tapped "My Journey" step so journey-guide leads
+      // with it. Undefined for normal opens → default next-step behaviour.
+      journeyFocusStep: (session as any).journey_focus_step ?? null,
       supabase: supabaseClient,
       // VTID-03085 (Lane 1): pass the compiled spine — unlocks
       // life_compass_alignment, vitana_index_pillar,

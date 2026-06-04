@@ -167,7 +167,7 @@ describe('B0d.2 — Voice Wake Brief provider', () => {
       const result = (await provider.produce(
         makeCtx({ greetingPolicy: 'fresh_intro', lang: 'de' }),
       )) as ProviderResult;
-      expect(result.candidate?.userFacingLine).toBe('Hallo! Wie kann ich dir heute helfen?');
+      expect(result.candidate?.userFacingLine).toBe('Hallo! Lass mich dir zeigen, wo wir anfangen.');
     });
 
     it('falls back to English for an unknown lang', async () => {
@@ -178,7 +178,7 @@ describe('B0d.2 — Voice Wake Brief provider', () => {
       const result = (await provider.produce(
         makeCtx({ greetingPolicy: 'fresh_intro', lang: 'xx' }),
       )) as ProviderResult;
-      expect(result.candidate?.userFacingLine).toBe('Hello! How can I help today?');
+      expect(result.candidate?.userFacingLine).toBe("Hello! Let me show you where we'll begin.");
     });
 
     it('defaults to English when lang is absent', async () => {
@@ -189,7 +189,7 @@ describe('B0d.2 — Voice Wake Brief provider', () => {
       const result = (await provider.produce(
         makeCtx({ greetingPolicy: 'warm_return' }),
       )) as ProviderResult;
-      expect(result.candidate?.userFacingLine).toBe('Welcome back. What is on your mind?');
+      expect(result.candidate?.userFacingLine).toBe('Welcome back. Let me show you where we are.');
     });
   });
 
