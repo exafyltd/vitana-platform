@@ -805,6 +805,30 @@ export const NAVIGATION_CATALOG: ReadonlyArray<NavCatalogEntry> = [
     },
   },
   {
+    // VTID-NAV-HEALTH-SUPP: the personal supplement TRACKER inside the Health
+    // hub (Health → Supplements mode), reached via /health?mode=supplements.
+    // Distinct from DISCOVER.SUPPLEMENTS (the marketplace/shop). "Health
+    // supplements", "my supplements", "my stack" must land HERE, not the shop.
+    screen_id: 'HEALTH.SUPPLEMENTS',
+    route: '/health?mode=supplements',
+    category: 'health',
+    access: 'authenticated',
+    anonymous_safe: false,
+    aliases: ['health-supplements', 'my-supplements', 'supplement-tracker', 'my-stack', 'supplement-stack', 'vitamin-tracker', 'meine-supplements', 'meine-nahrungsergaenzung'],
+    i18n: {
+      en: {
+        title: 'My Supplements',
+        description: 'Track the supplements, vitamins, and minerals you take.',
+        when_to_visit: "When the user wants to view, track, log, or manage THEIR OWN supplements — their supplement stack, the vitamins or minerals THEY take, the 'health supplements' tracker, or add a supplement to their regimen. This is the personal health tracker, NOT shopping the marketplace.",
+      },
+      de: {
+        title: 'Meine Nahrungsergänzung',
+        description: 'Verfolge die Nahrungsergänzungsmittel, Vitamine und Mineralien, die du nimmst.',
+        when_to_visit: 'Wenn der Nutzer SEINE EIGENEN Nahrungsergänzungsmittel ansehen, verfolgen, protokollieren oder verwalten möchte — seinen Supplement-Stack, die Vitamine oder Mineralien, die er nimmt, den "Gesundheits-Supplement"-Tracker, oder ein Supplement zu seiner Routine hinzufügen. Das ist der persönliche Gesundheits-Tracker, NICHT der Marktplatz-Einkauf.',
+      },
+    },
+  },
+  {
     screen_id: 'HEALTH.MY_BIOLOGY',
     route: '/health/my-biology',
     category: 'health',
@@ -909,16 +933,17 @@ export const NAVIGATION_CATALOG: ReadonlyArray<NavCatalogEntry> = [
     category: 'discover',
     access: 'authenticated',
     anonymous_safe: false,
+    aliases: ['shop-supplements', 'buy-supplements', 'supplement-shop', 'supplement-store', 'browse-supplements'],
     i18n: {
       en: {
         title: 'Supplements',
         description: 'Curated supplements for longevity and wellness.',
-        when_to_visit: 'When the user asks about supplements, vitamins, minerals, nutraceuticals, or what to take for their health.',
+        when_to_visit: 'When the user wants to browse, show, shop for, or buy supplements, vitamins, minerals, or nutraceuticals in the marketplace — exploring available products, brands, or deals. NOT for tracking the supplements they personally take (that is HEALTH.SUPPLEMENTS).',
       },
       de: {
         title: 'Nahrungsergänzungsmittel',
         description: 'Kuratierte Nahrungsergänzungsmittel für Longevity und Wellness.',
-        when_to_visit: 'Wenn der Nutzer nach Nahrungsergänzungsmitteln, Vitaminen, Mineralien, Nutraceuticals oder dem, was er für seine Gesundheit nehmen sollte, fragt.',
+        when_to_visit: 'Wenn der Nutzer Nahrungsergänzungsmittel, Vitamine, Mineralien oder Nutraceuticals im Marktplatz durchstöbern, ansehen oder kaufen möchte — verfügbare Produkte, Marken oder Angebote erkunden. NICHT zum Verfolgen der Supplements, die er selbst einnimmt (das ist HEALTH.SUPPLEMENTS).',
       },
     },
   },
