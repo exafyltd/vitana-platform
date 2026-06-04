@@ -1,0 +1,42 @@
+name: VCAOP Guardrails (required gate)
+
+# Runbook Sec. 3 AC: `test:guardrails` must be green and a REQUIRED CI gate
+# before any feature/deploy. Guardrails are never weakened to pass a feature
+# (Sec. 0.3, Sec. 11.3). This job runs on every PR/push touching VCAOP.
+
+on:
+  pull_request:
+    paths:
+      - 'services/vcaop/**'
+      - '.github/workflows/VCAOP-GUARDRAILS-CI.yml'
+  push:
+    branches:
+      - 'claude/**'
+      - 'feature/vcaop'
+    paths:
+      - 'services/vcaop/**'
+      - '.github/workflows/VCAOP-GUARDRAILS-CI.yml'
+
+jobs:
+  guardrails:
+    name: test:guardrails (must pass)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        working-directory: services/vcaop
+        run: npm install --no-audit --no-fund
+
+      - name: Typecheck
+        working-directory: services/vcaop
+        run: npm run typecheck
+
+      - name: Guardrail tests (required gate)
+        working-directory: services/vcaop
+        run: npm run test:guardrails
