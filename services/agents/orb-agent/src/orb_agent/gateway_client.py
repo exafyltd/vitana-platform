@@ -72,6 +72,11 @@ class GatewayClient:
         # gate, and the mobile_route override.
         self.is_mobile: bool = False
         self.is_anonymous: bool = False
+        # BOOTSTRAP-VOICE-DATASET-EMITTER: last tool dispatched this turn, set by
+        # tools._dispatch / _dispatch_with_directive and read+cleared by
+        # session.py's orb.turn.responded emit to carry the tool-routing signal.
+        self.last_tool_name: str | None = None
+        self.last_tool_args: dict[str, Any] | None = None
 
     def _headers(self) -> dict[str, str]:
         h = {"Content-Type": "application/json"}
