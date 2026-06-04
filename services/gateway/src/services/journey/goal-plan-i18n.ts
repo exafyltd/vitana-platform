@@ -41,6 +41,31 @@ interface TranslatableStep {
   description: string | null;
 }
 
+// How long a *view* (GET) is allowed to wait on the translate-on-view LLM call
+// before it returns the best-available text and finishes translating in the
+// background. The plan rows are already in the DB and must render instantly; the
+// localized wording is a progressive enhancement that fills the cache for the
+// next view. Capping this keeps the My Journey plan drawer from spinning on a
+// slow LLM round-trip (the iPhone "takes forever to display" symptom).
+export const VIEW_TRANSLATE_DEADLINE_MS = 3500;
+
+// Sentinel for the deadline race (distinct from any translate result/null).
+const TRANSLATE_TIMEOUT = Symbol('goal-plan-i18n-translate-timeout');
+
+// Result of filling the per-locale cache for the misses of one plan: the
+// localized summary (undefined when it wasn't missing) and a map of step_id →
+// localized text. Shared by the in-flight dedupe below.
+interface TranslateFill {
+  plan_summary?: string | null;
+  steps: Map<string, { title: string; description: string | null }>;
+}
+
+// Coalesce concurrent identical fills (plan_id:locale). A spinning client that
+// retries the GET, or React double-mounting the drawer, would otherwise fan out
+// into several redundant LLM calls for the same plan+locale; the first call's
+// promise is shared so they all resolve from one translation.
+const inflightFills = new Map<string, Promise<TranslateFill | null>>();
+
 /** All steps across the three kinds, flattened, preserving their ids. */
 function flattenSteps(plan: GoalPlanView): GoalPlanStep[] {
   return [...plan.milestones, ...plan.checkpoints, ...plan.habits];
@@ -162,6 +187,7 @@ export async function localizeGoalPlan(
   plan: GoalPlanView,
   sourceLang: string | null,
   targetLocaleRaw: string,
+  opts?: { deadlineMs?: number },
 ): Promise<GoalPlanView> {
   void sourceLang;
   const target = normalizeLocale(targetLocaleRaw);
@@ -187,46 +213,79 @@ export async function localizeGoalPlan(
     console.warn(`${LOG} cache read failed (continuing): ${e?.message}`);
   }
 
-  // 2. Determine what's missing and translate it in one shot.
+  // 2. Determine what's missing and translate it. The translation (one LLM call)
+  //    is the slow part; the plan rows are already in hand. So we DON'T let it
+  //    block the response past `opts.deadlineMs` when a deadline is given: we
+  //    return the best-available text now and let the translation finish in the
+  //    background, seeding the cache so the next view is an instant cache hit.
   const missingSteps = steps.filter((s) => !cachedSteps.has(s.id));
   const summaryMissing = cachedSummary === undefined && plan.plan_summary != null;
   if (missingSteps.length > 0 || summaryMissing) {
-    const translated = await translateBatch(
-      language,
-      REGISTER_HINT[target] ?? '',
-      summaryMissing ? plan.plan_summary : null,
-      missingSteps.map((s) => ({ id: s.id, title: s.title, description: s.description })),
-    );
-    if (translated) {
-      // Persist new translations to the cache (best-effort; never blocks the response).
-      try {
-        if (summaryMissing) {
-          cachedSummary = translated.plan_summary ?? plan.plan_summary;
-          await client
-            .from('goal_plan_i18n')
-            .upsert({ plan_id: plan.id, locale: target, plan_summary: cachedSummary }, { onConflict: 'plan_id,locale' });
-        }
-        const rows = missingSteps.map((s) => {
-          const tr = translated.steps[s.id];
-          const title = tr?.title ?? s.title;
-          const description = tr ? tr.description : s.description;
-          cachedSteps.set(s.id, { title, description });
-          return { step_id: s.id, locale: target, title, description };
-        });
-        if (rows.length > 0) {
-          await client.from('goal_plan_step_i18n').upsert(rows, { onConflict: 'step_id,locale' });
-        }
-      } catch (e: any) {
-        console.warn(`${LOG} cache write failed (non-fatal): ${e?.message}`);
-        // Still apply in-memory translations below even if caching failed.
-        if (summaryMissing && cachedSummary === undefined) cachedSummary = translated.plan_summary ?? plan.plan_summary;
+    const fillKey = `${plan.id}:${target}`;
+    let fill = inflightFills.get(fillKey);
+    if (!fill) {
+      fill = (async (): Promise<TranslateFill | null> => {
+        const translated = await translateBatch(
+          language,
+          REGISTER_HINT[target] ?? '',
+          summaryMissing ? plan.plan_summary : null,
+          missingSteps.map((s) => ({ id: s.id, title: s.title, description: s.description })),
+        );
+        if (!translated) return null;
+        const out: TranslateFill = { steps: new Map() };
+        if (summaryMissing) out.plan_summary = translated.plan_summary ?? plan.plan_summary;
         for (const s of missingSteps) {
-          if (!cachedSteps.has(s.id)) {
-            const tr = translated.steps[s.id];
-            cachedSteps.set(s.id, { title: tr?.title ?? s.title, description: tr ? tr.description : s.description });
-          }
+          const tr = translated.steps[s.id];
+          out.steps.set(s.id, { title: tr?.title ?? s.title, description: tr ? tr.description : s.description });
         }
+        // Persist to the cache (best-effort; a write failure still returns the
+        // in-memory translation so this view is localized, it just re-translates
+        // next time).
+        try {
+          if (out.plan_summary !== undefined) {
+            await client
+              .from('goal_plan_i18n')
+              .upsert({ plan_id: plan.id, locale: target, plan_summary: out.plan_summary }, { onConflict: 'plan_id,locale' });
+          }
+          const rows = [...out.steps].map(([step_id, v]) => ({ step_id, locale: target, title: v.title, description: v.description }));
+          if (rows.length > 0) {
+            await client.from('goal_plan_step_i18n').upsert(rows, { onConflict: 'step_id,locale' });
+          }
+        } catch (e: any) {
+          console.warn(`${LOG} cache write failed (non-fatal): ${e?.message}`);
+        }
+        return out;
+      })();
+      inflightFills.set(fillKey, fill);
+      // Drop the in-flight entry once settled, regardless of outcome.
+      void fill.catch(() => null).finally(() => {
+        if (inflightFills.get(fillKey) === fill) inflightFills.delete(fillKey);
+      });
+    }
+
+    const applyFill = (f: TranslateFill | null) => {
+      if (!f) return;
+      if (f.plan_summary !== undefined) cachedSummary = f.plan_summary;
+      for (const [id, v] of f.steps) cachedSteps.set(id, v);
+    };
+
+    const deadlineMs = opts?.deadlineMs;
+    if (deadlineMs && deadlineMs > 0) {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const timeout = new Promise<typeof TRANSLATE_TIMEOUT>((resolve) => {
+        timer = setTimeout(() => resolve(TRANSLATE_TIMEOUT), deadlineMs);
+      });
+      const winner = await Promise.race([fill.catch(() => null), timeout]);
+      if (timer) clearTimeout(timer);
+      if (winner === TRANSLATE_TIMEOUT) {
+        // Spinner would hang on a slow LLM round-trip — return source text now,
+        // let the shared fill finish caching for the next view.
+        console.log(`${LOG} translate exceeded ${deadlineMs}ms — serving source, caching in background (plan=${plan.id} locale=${target})`);
+      } else {
+        applyFill(winner);
       }
+    } else {
+      applyFill(await fill.catch(() => null));
     }
   }
 

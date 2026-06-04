@@ -19,7 +19,7 @@ import {
   clarifyGoalIfNeeded,
   type ClarificationAnswer,
 } from '../services/journey/goal-planner-service';
-import { localizeGoalPlan } from '../services/journey/goal-plan-i18n';
+import { localizeGoalPlan, VIEW_TRANSLATE_DEADLINE_MS } from '../services/journey/goal-plan-i18n';
 import { getUserLocale } from '../i18n/server-locale';
 
 const router = Router();
@@ -75,7 +75,7 @@ router.post('/generate', requireAuth, async (req: AuthenticatedRequest, res: Res
       // The plan was just authored in the user's locale; localize only if the
       // active toggle differs (e.g. an EN user generated a DE-sourced plan).
       const locale = await resolveLocale(client, userId, req.query.locale ?? req.body?.locale);
-      plan = await localizeGoalPlan(client, plan, plan.source_lang, locale);
+      plan = await localizeGoalPlan(client, plan, plan.source_lang, locale, { deadlineMs: VIEW_TRANSLATE_DEADLINE_MS });
     }
     return res.status(200).json({ ok: true, vtid: VTID, plan_id: result.plan_id, step_count: result.step_count, plan });
   } catch (err: any) {
@@ -95,8 +95,11 @@ router.get('/', requireAuth, async (req: AuthenticatedRequest, res: Response) =>
     if (plan) {
       // Render in the app's active language (toggle), translating + caching on
       // first view of a non-source locale so subsequent toggles are instant.
+      // Cap how long the view waits on the LLM: the plan must display fast, so a
+      // slow first-view translation finishes in the background and seeds the
+      // cache for the next view instead of hanging the spinner.
       const locale = await resolveLocale(client, userId, req.query.locale);
-      plan = await localizeGoalPlan(client, plan, plan.source_lang, locale);
+      plan = await localizeGoalPlan(client, plan, plan.source_lang, locale, { deadlineMs: VIEW_TRANSLATE_DEADLINE_MS });
     }
     return res.status(200).json({ ok: true, vtid: VTID, plan });
   } catch (err: any) {
