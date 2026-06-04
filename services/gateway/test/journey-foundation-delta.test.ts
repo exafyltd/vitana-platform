@@ -106,4 +106,22 @@ describe('applyJourneyAnswer — write + delta', () => {
     expect(client._db['user_journey_foundation'][0].economic_intent).toBe('build_business');
     expect(delta.screen_message).toMatch(/stance/i);
   });
+
+  it('VTID-03270: teach mode never writes data (no junk goal from a teaching beat)', async () => {
+    // Repro of the live bug: the model called record_journey_answer in a teaching
+    // beat with step=life_compass + a step-description value. That must NOT write
+    // a goal.
+    const client = makeStatefulClient();
+    const delta = await applyJourneyAnswer(client, 'u1', {
+      step: 'life_compass',
+      value: 'profil vervollständigen',
+      teachMode: true,
+    });
+    expect(client._db['life_compass'] ?? []).toHaveLength(0); // no goal row written
+    expect(delta.changed_fields).not.toContain('life_compass.primary_goal');
+    // a real (non-teach) answer still writes
+    const client2 = makeStatefulClient();
+    await applyJourneyAnswer(client2, 'u1', { step: 'life_compass', value: 'Lose 5kg' });
+    expect(client2._db['life_compass'][0].primary_goal).toBe('Lose 5kg');
+  });
 });

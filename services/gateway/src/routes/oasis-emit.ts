@@ -34,6 +34,8 @@ import {
   AuthenticatedRequest,
 } from '../middleware/auth-supabase-jwt';
 import type { CicdEventType } from '../types/cicd';
+import { dataExportConsentTag } from '../services/data-export-consent';
+import { buildOrbTurnRespondedPayload } from './orb-turn-event-payload';
 
 const router = Router();
 
@@ -55,7 +57,17 @@ const MAX_BODY_BYTES = 16 * 1024;
 // RUN-STAGING-MIGRATION.yml workflow can emit success/failure telemetry from
 // GitHub Actions via this proxy (the runner has the GATEWAY_SERVICE_TOKEN but
 // no Supabase write surface, same shape as the orb-agent path).
-const ALLOWED_PREFIXES = ['orb.livekit.', 'livekit.', 'vtid.live.', 'staging.migration.'] as const;
+// BOOTSTRAP-VOICE-DATASET-EMITTER (LiveKit parity): `orb.turn.responded` added
+// so LiveKit voice turns contribute to the voice-tool-routing dataset, same as
+// the Vertex path. This topic is consent/PII-gated server-side below (the agent
+// can't read tenant policy) — no raw transcript is persisted without consent.
+const ALLOWED_PREFIXES = [
+  'orb.livekit.',
+  'livekit.',
+  'vtid.live.',
+  'staging.migration.',
+  'orb.turn.responded',
+] as const;
 
 function isAllowedTopic(topic: unknown): topic is string {
   if (typeof topic !== 'string') return false;
@@ -187,13 +199,55 @@ router.post(
     const actor = (req as Request & { __emit_actor?: string }).__emit_actor ?? 'service:unknown';
     const emitVtid = body.vtid && body.vtid.length > 0 ? body.vtid : VTID;
 
+    // BOOTSTRAP-VOICE-DATASET-EMITTER (LiveKit parity): the orb-agent emits a
+    // RAW orb.turn.responded payload (full reply_text + raw transcript + tool
+    // signal + user/tenant ids) because it cannot read tenant export policy.
+    // Re-run the SAME consent/PII gate the Vertex path uses
+    // (buildOrbTurnRespondedPayload + dataExportConsentTag) so the persisted
+    // row is byte-identical in shape and NO unconsented transcript is ever
+    // stored. Single source of truth — no agent-side consent cache to drift.
+    let effectivePayload: Record<string, unknown> = body.payload ?? {};
+    if (body.topic === 'orb.turn.responded') {
+      const p = effectivePayload;
+      const consentTag = await dataExportConsentTag({
+        userId: typeof p.user_id === 'string' ? p.user_id : null,
+        tenantId: typeof p.tenant_id === 'string' ? p.tenant_id : null,
+      });
+      const rawToolCall =
+        p.tool_call && typeof p.tool_call === 'object'
+          ? (p.tool_call as { name?: string; arguments?: Record<string, unknown> })
+          : null;
+      const orbSessionId = typeof p.orb_session_id === 'string' ? p.orb_session_id : '';
+      effectivePayload = buildOrbTurnRespondedPayload({
+        orbSessionId,
+        conversationId:
+          typeof p.conversation_id === 'string' && p.conversation_id.length > 0
+            ? p.conversation_id
+            : orbSessionId,
+        replyText: typeof p.reply_text === 'string' ? p.reply_text : '',
+        provider: typeof p.provider === 'string' ? p.provider : 'livekit',
+        consentTag,
+        toolSignal: {
+          toolName: typeof p.tool_name === 'string' ? p.tool_name : null,
+          inputText:
+            typeof p.input_text === 'string'
+              ? p.input_text
+              : typeof p.transcript === 'string'
+                ? p.transcript
+                : null,
+          toolCall: rawToolCall,
+        },
+        guardrailExcluded: p.guardrail_excluded === true,
+      });
+    }
+
     const result = await emitOasisEvent({
       vtid: emitVtid,
       type: body.topic as CicdEventType,
       source: 'orb-agent',
       status: 'info',
       message: `[${body.topic}] emitted via /api/v1/oasis/emit`,
-      payload: body.payload ?? {},
+      payload: effectivePayload,
       actor_role: actor.startsWith('admin:') ? 'admin' : 'agent',
       surface: 'api',
     });
