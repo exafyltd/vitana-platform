@@ -933,6 +933,11 @@ export const NAVIGATION_CATALOG: ReadonlyArray<NavCatalogEntry> = [
     category: 'discover',
     access: 'authenticated',
     anonymous_safe: false,
+    // Canonical destination for a GENERIC "supplements" / "show me supplements"
+    // query — the marketplace wins the tie against HEALTH.SUPPLEMENTS (the
+    // personal tracker), which only wins when the user qualifies it ("health
+    // supplements", "my supplements") via the multi-token coverage bonus.
+    priority: 1,
     aliases: ['shop-supplements', 'buy-supplements', 'supplement-shop', 'supplement-store', 'browse-supplements'],
     i18n: {
       en: {
