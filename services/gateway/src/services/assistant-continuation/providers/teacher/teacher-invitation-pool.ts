@@ -10,9 +10,12 @@
  * second sentence that offers to introduce ONE unexplored Vitanaland
  * feature. The greeting clause comes from `teacher-greeting-pool.ts`.
  *
- * Hard rules baked into this pool:
- *   - Every phrase asks PERMISSION ("Darf ich…?", "Hast du kurz Zeit?",
- *     "Magst du…?") — Vitana never assumes the user wants to be taught.
+ * Hard rules baked into this pool (VTID-03256 — proactive-lead doctrine):
+ *   - Every phrase LEADS or asks permission to LEAD ("Let me show you…",
+ *     "I'd like to introduce…", "Darf ich…?" = may I). Vitana proposes the
+ *     move and offers to take it. NEVER preference-asking — no "Would you
+ *     like…?", "Magst du…?", "Do you want…?". A first-week user cannot answer
+ *     a preference question; they don't know the system yet.
  *   - No "How can I help you?" / "Wie kann ich dir helfen?" — the
  *     Teacher's contract is "I want to introduce something to you",
  *     not "tell me what you want". The user has been clear about this.
@@ -21,7 +24,6 @@
  *     a few phrases name the feature, others stay abstract ("etwas
  *     Neues", "something I want to show you") so we can rotate without
  *     forcing the user to hear the capability name twice.
- *   - All phrases end in a question mark (permission-asking).
  *
  * Pool size target: ~20 per language so Gemini's recency bias doesn't
  * lock onto a single phrasing across the user's first 20+ sessions.
@@ -30,47 +32,47 @@
 const INVITATION_PHRASES: Record<string, string[]> = {
   en: [
     'May I show you something?',
-    'Do you have a moment? I would like to introduce something to you.',
-    'Would you like to see {featureLabel}?',
+    'I would like to introduce something to you.',
+    'Let me show you {featureLabel}.',
     'May I introduce you to {featureLabel}?',
-    'Got a minute? I would love to show you something.',
-    'Is now a good time to show you something new?',
-    'May I take a minute to introduce something?',
-    'Would you like a quick tour of {featureLabel}?',
-    'I have something I would love to show you — interested?',
-    'Got a minute for a small discovery?',
+    'I would love to show you something — let me.',
+    'Let me show you something new.',
+    'Let me take a minute to introduce something.',
+    'Let me give you a quick tour of {featureLabel}.',
+    'I have something to show you — let me.',
+    'Let me show you a small discovery.',
     'May I introduce one of our community features to you?',
-    'Would you like to learn about {featureLabel}?',
-    'Could I quickly walk you through {featureLabel}?',
-    'Do you have a couple of minutes for something new?',
-    'May I show you what {featureLabel} can do?',
-    'Got time for a 30-second introduction?',
-    'Would you like me to show you around {featureLabel}?',
-    'I would like to introduce you to {featureLabel} — okay?',
-    'May I share something about our community with you?',
-    'Want to discover something new in Vitanaland?',
+    'Let me tell you about {featureLabel}.',
+    'Let me walk you through {featureLabel}.',
+    'I want to show you something new — may I?',
+    'Let me show you what {featureLabel} can do.',
+    'Let me give you a quick 30-second introduction.',
+    'Let me show you around {featureLabel}.',
+    'I would like to introduce you to {featureLabel} — may I?',
+    'Let me share something about our community with you.',
+    'Let me show you something new in Vitanaland.',
   ],
   de: [
     'Darf ich dir kurz etwas zeigen?',
-    'Hast du einen Moment? Ich möchte dir etwas vorstellen.',
-    'Magst du, dass ich dir {featureLabel} zeige?',
+    'Ich möchte dir etwas vorstellen.',
+    'Lass mich dir {featureLabel} zeigen.',
     'Darf ich dir {featureLabel} vorstellen?',
-    'Hast du eine Minute? Ich würde dir gerne etwas zeigen.',
-    'Passt es dir gerade, wenn ich dir etwas Neues zeige?',
+    'Ich würde dir gerne etwas zeigen — lass mich.',
+    'Lass mich dir etwas Neues zeigen.',
     'Darf ich dir kurz {featureLabel} näherbringen?',
-    'Magst du eine kleine Tour durch {featureLabel}?',
-    'Ich habe etwas, das ich dir gerne zeigen würde — interessiert?',
-    'Hast du Lust auf eine kleine Entdeckung?',
+    'Lass mich dir eine kleine Tour durch {featureLabel} geben.',
+    'Ich habe etwas, das ich dir zeige.',
+    'Lass mich dir eine kleine Entdeckung zeigen.',
     'Darf ich dir eine unserer Community-Funktionen vorstellen?',
-    'Magst du mehr über {featureLabel} erfahren?',
-    'Soll ich dich kurz durch {featureLabel} führen?',
-    'Hast du ein paar Minuten für etwas Neues?',
-    'Darf ich dir zeigen, was {featureLabel} dir bringt?',
-    'Hast du Zeit für eine 30-Sekunden-Einführung?',
-    'Magst du, dass ich dich durch {featureLabel} führe?',
-    'Ich würde dir gerne {featureLabel} vorstellen — passt das?',
-    'Darf ich dir etwas aus unserer Community zeigen?',
-    'Magst du etwas Neues in Vitanaland entdecken?',
+    'Lass mich dir mehr über {featureLabel} erzählen.',
+    'Lass mich dich durch {featureLabel} führen.',
+    'Ich möchte dir etwas Neues zeigen — darf ich?',
+    'Lass mich dir zeigen, was {featureLabel} dir bringt.',
+    'Lass mich dir eine 30-Sekunden-Einführung geben.',
+    'Lass mich dir {featureLabel} in Ruhe zeigen.',
+    'Ich würde dir gerne {featureLabel} vorstellen — darf ich?',
+    'Lass mich dir etwas aus unserer Community zeigen.',
+    'Lass mich dir etwas Neues in Vitanaland zeigen.',
   ],
 };
 

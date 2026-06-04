@@ -361,6 +361,118 @@ router.post('/groups/:id/join', async (req: Request, res: Response) => {
 });
 
 /**
+ * POST /global-groups/:id/join -> POST /api/v1/community/global-groups/:id/join
+ *
+ * Join a *global community group* — the real, populated schema
+ * (global_community_groups / global_community_group_members), as opposed to
+ * the never-deployed VTID-01084 community_groups schema used by
+ * /groups/:id/join.
+ *
+ * Writes the membership row under the user's RLS context (the
+ * "Users can join groups" policy permits self-insert), then dispatches the
+ * `community.member.joined` automation event WITH `user_id` so AP-0212
+ * (Welcome Squad) and AP-0203 can fire. member_count and chat participants
+ * are maintained automatically by DB triggers on insert.
+ */
+router.post('/global-groups/:id/join', async (req: Request, res: Response) => {
+  const groupId = req.params.id;
+  console.log(`[${VTID}] POST /community/global-groups/${groupId}/join`);
+
+  const token = getBearerToken(req);
+  if (!token) {
+    return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
+  }
+
+  const uuidValidation = z.string().uuid('Invalid group ID').safeParse(groupId);
+  if (!uuidValidation.success) {
+    return res.status(400).json({ ok: false, error: 'Invalid group ID format' });
+  }
+
+  // Resolve the authenticated user id from the JWT (matches existing pattern).
+  let userId = '';
+  try {
+    userId = JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString()).sub;
+  } catch {
+    /* fall through to the unauth check below */
+  }
+  if (!userId) {
+    return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
+  }
+
+  if (!process.env.SUPABASE_URL || !process.env.SUPABASE_ANON_KEY) {
+    return res.status(503).json({ ok: false, error: 'Gateway misconfigured' });
+  }
+
+  try {
+    const supabase = createUserSupabaseClient(token);
+
+    // Confirm the group exists (and is visible under RLS) before joining.
+    const { data: group, error: groupErr } = await supabase
+      .from('global_community_groups')
+      .select('id, name')
+      .eq('id', groupId)
+      .maybeSingle();
+    if (groupErr) {
+      return res.status(502).json({ ok: false, error: groupErr.message });
+    }
+    if (!group) {
+      return res.status(404).json({ ok: false, error: 'GROUP_NOT_FOUND' });
+    }
+
+    // Idempotent membership: only insert if not already a member.
+    const { data: existing } = await supabase
+      .from('global_community_group_members')
+      .select('id')
+      .eq('group_id', groupId)
+      .eq('user_id', userId)
+      .maybeSingle();
+
+    let alreadyMember = !!existing;
+
+    if (!existing) {
+      const { error: insErr } = await supabase
+        .from('global_community_group_members')
+        .insert({ group_id: groupId, user_id: userId, role: 'member' });
+      if (insErr) {
+        // Unique-violation => raced with a concurrent join; treat as success.
+        if (insErr.code === '23505') {
+          alreadyMember = true;
+        } else {
+          console.error(`[${VTID}] global group join insert error:`, insErr.message);
+          return res.status(502).json({ ok: false, error: insErr.message });
+        }
+      }
+    }
+
+    // Emit an OASIS event for observability.
+    await emitCommunityEvent(
+      'community.membership.joined',
+      'success',
+      `User joined global group: ${groupId}`,
+      { group_id: groupId, user_id: userId, already_member: alreadyMember }
+    );
+
+    // Dispatch the automation event WITH user_id (only on a genuinely new
+    // join) so AP-0212 (Welcome Squad) / AP-0203 can fire.
+    if (!alreadyMember) {
+      const tenantId = process.env.DEFAULT_TENANT_ID;
+      if (tenantId) {
+        dispatchEvent(tenantId, 'community.member.joined', {
+          group_id: groupId,
+          user_id: userId,
+        }).catch(err => console.warn(`[${VTID}] dispatch community.member.joined failed:`, err.message));
+      }
+    }
+
+    console.log(`[${VTID}] User ${userId.slice(0, 8)}… joined global group ${groupId} (new=${!alreadyMember})`);
+    return res.status(200).json({ ok: true, data: { group_id: groupId, already_member: alreadyMember } });
+  } catch (err: any) {
+    console.error(`[${VTID}] global group join error:`, err.message);
+    return res.status(502).json({ ok: false, error: err.message });
+  }
+});
+
+/**
  * POST /meetups -> POST /api/v1/community/meetups
  *
  * Create a new meetup.

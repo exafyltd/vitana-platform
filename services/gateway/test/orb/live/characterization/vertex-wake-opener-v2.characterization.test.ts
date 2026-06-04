@@ -138,7 +138,7 @@ describe('VTID-03104: Teacher-opener v2 in sendGreetingPromptToLiveAPI', () => {
   });
 
   it('legacy menu path remains intact for sessions without a wake-brief override', () => {
-    expect(fn).toMatch(/pick ONE of: "How can I help\?"/);
+    expect(fn).toMatch(/pick ONE of: "Let me show you where we are\."/);
     expect(fn).toMatch(/ws\.send\(JSON\.stringify\(message\)\)/);
   });
 
