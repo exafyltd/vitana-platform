@@ -128,11 +128,12 @@ export function makeJourneyGuideProvider(): ContinuationProvider {
       // the shorter ladder. An explicit step tap (focusStep) bypasses this — a
       // direct request to talk about a step is always honoured. Best-effort:
       // any read error leaves the gate open (degrade to current behaviour).
-      if (!inputs.focusStep) {
+      const tenantId = ctx.tenantId;
+      if (!inputs.focusStep && tenantId) {
         try {
           const cadence = await fetchWakeCadenceSignals({
             supabase: inputs.supabase,
-            tenantId: ctx.tenantId,
+            tenantId,
             userId: inputs.userId,
           });
           const sinceMs = cadence.time_since_last_greeting_today_ms;
