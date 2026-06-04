@@ -461,6 +461,7 @@ export async function generateGoalPlan(
     client,
     planId,
     locale,
+    goal.primary_goal,
     plan.plan_summary,
     ((stepRows as any[]) ?? []).map((s) => ({ id: s.id, title: s.title, description: s.description ?? null })),
   );
