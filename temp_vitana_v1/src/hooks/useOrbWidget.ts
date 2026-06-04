@@ -59,7 +59,7 @@ export function useOrbWidget() {
 
     const script = document.createElement("script");
     script.id = ORB_SCRIPT_ID;
-    script.src = `${GATEWAY_URL}/command-hub/orb-widget.js?v=20260410`;
+    script.src = `${GATEWAY_URL}/command-hub/orb-widget.js?v=20260531-DEV-COMHU-0504-audio-ready-r3`;
     script.onload = () => {
       const orb = (window as any).VitanaOrb;
       if (orb && !initialized.current) {

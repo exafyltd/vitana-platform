@@ -17,7 +17,7 @@
 (function (window) {
   'use strict';
 
-  var _WIDGET_VERSION = '2026-05-08-vtid-02034b-stale-instance-404';
+  var _WIDGET_VERSION = '2026-05-31-DEV-COMHU-0504-audio-ready-r3';
   console.log('[VTOrb] Widget version: ' + _WIDGET_VERSION);
 
   // Prevent double-load
@@ -160,6 +160,7 @@
     // Watchdogs
     clientWatchdogInterval: null,
     clientLastActivityAt: 0,
+    _sseReadyWatchdogTimer: null,
     // DEV-COMHU-0501 — ORB Recovery 0.1: cross-provider speaking-state watchdog.
     // lastAudioReceivedAt is stamped on every inbound audio frame (any source);
     // the watchdog clears a stuck audioPlaying when frames stop arriving AND
@@ -834,6 +835,7 @@
     }
     console.log('[VTOrb] _resetAndReconnect: forcing full session restart');
     _stopWatchdog();
+    _stopSseReadyWatchdog();
     if (_s.captureStream) {
       try { _s.captureStream.getTracks().forEach(function (t) { t.stop(); }); } catch (e) { /* ignore */ }
       _s.captureStream = null;
@@ -1304,6 +1306,7 @@
       es.onerror = function () {
         if (es.readyState === EventSource.CLOSED) {
           _stopWatchdog();
+          _stopSseReadyWatchdog();
           // BOOTSTRAP-ORB-MODERN-RECOVERY: a real SSE-level CLOSED is the
           // signal that the upstream session is gone. Always announce the
           // disconnect and hand to _attemptReconnect — the reconnect loop
@@ -1314,6 +1317,7 @@
         }
       };
       _s.eventSource = es;
+      _startSseReadyWatchdog();
 
       // Mic capture starts AFTER greeting completes (first turn_complete).
       // Opening the mic during greeting causes echo-triggered interruptions
@@ -1338,6 +1342,7 @@
     // setTimeout reconnect callbacks) must see this flag and bail.
     _s._userInitiatedStop = true;
     _stopWatchdog();
+    _stopSseReadyWatchdog();
     _stopSpeakingWatchdog(); // DEV-COMHU-0501
     clearTimeout(_s._listeningIdleTimer);
 
@@ -1451,6 +1456,7 @@
   function _handleMessage(msg) {
     switch (msg.type) {
       case 'ready':
+        _stopSseReadyWatchdog();
         _setOrbState('thinking');
         _s.voiceState = 'THINKING';
         _setStatus(_cfg.lang.startsWith('de') ? 'Denkt nach...' : 'Thinking...');
@@ -2184,6 +2190,7 @@
   // VTID-HEARTBEAT-FIX: Increased from 12s to 30s. Server now sends data
   // heartbeats every 10s that trigger onmessage and reset this watchdog.
   var WATCHDOG_TIMEOUT = 30000;
+  var SSE_READY_WATCHDOG_MS = 12000;
 
   function _startWatchdog() {
     _stopWatchdog();
@@ -2211,6 +2218,25 @@
 
   function _resetWatchdog() {
     _s.clientLastActivityAt = Date.now();
+  }
+
+  function _startSseReadyWatchdog() {
+    _stopSseReadyWatchdog();
+    _s._sseReadyWatchdogTimer = setTimeout(function () {
+      _s._sseReadyWatchdogTimer = null;
+      if (!_s.active || !_s.overlayVisible || _s._userInitiatedStop) return;
+      if (_s.voiceState !== 'CONNECTING') return;
+      console.warn('[VTOrb] SSE ready watchdog fired - no ready frame after ' + SSE_READY_WATCHDOG_MS + 'ms');
+      _announceDisconnect('connection');
+      _attemptReconnect();
+    }, SSE_READY_WATCHDOG_MS);
+  }
+
+  function _stopSseReadyWatchdog() {
+    if (_s._sseReadyWatchdogTimer) {
+      clearTimeout(_s._sseReadyWatchdogTimer);
+      _s._sseReadyWatchdogTimer = null;
+    }
   }
 
   // ============================================================
@@ -2781,6 +2807,7 @@
       if (_s.captureProcessor) { try { _s.captureProcessor.disconnect(); } catch (e) {} _s.captureProcessor = null; }
       if (_s.captureCtx) { try { _s.captureCtx.close().catch(function () {}); } catch (e) {} _s.captureCtx = null; }
       if (_s.eventSource) { try { _s.eventSource.close(); } catch (e) {} _s.eventSource = null; }
+      _stopSseReadyWatchdog();
 
       _s.sessionId = null;
       _s.active = false;
