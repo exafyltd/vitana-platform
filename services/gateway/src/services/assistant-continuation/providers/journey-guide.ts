@@ -23,6 +23,8 @@ import type {
 } from '../types';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { JourneyFoundationSnapshot } from '../../journey-foundation/types';
+// VTID-03272 — recency gate so a rapid reopen doesn't replay the full journey opener.
+import { fetchWakeCadenceSignals } from '../../wake-cadence-signals';
 
 export const JOURNEY_GUIDE_PROVIDER_KEY = 'journey_guide';
 export const JOURNEY_GUIDE_EXTRA_KEY = 'journey_guide';
@@ -30,6 +32,11 @@ export const JOURNEY_GUIDE_EXTRA_KEY = 'journey_guide';
 // Above new_day_return (90) + Teacher (85): the checklist leads. Below
 // first_time_welcome (95, the one-time intro) + goal_completion (92).
 const JOURNEY_GUIDE_PRIORITY = 91;
+
+// VTID-03272 — if we already greeted this user within this window, do NOT replay
+// the full journey opener on a fresh reopen; cede to the shorter ladder (which
+// gives a brief "welcome back, let's continue") instead of repeating the summary.
+const JOURNEY_GUIDE_RECENT_GREETING_MS = 10 * 60 * 1000;
 
 /** Bundled GUIDE-MODE content the controller reads off the winning candidate. */
 export interface JourneyGuideContent {
@@ -113,6 +120,28 @@ export function makeJourneyGuideProvider(): ContinuationProvider {
       // Transparent reconnect: the previous turn is still alive — don't open.
       if (inputs.isReconnect) {
         return { providerKey: JOURNEY_GUIDE_PROVIDER_KEY, status: 'suppressed', latencyMs: 0, reason: 'forced_skip_reconnect' };
+      }
+
+      // VTID-03272 — recency gate. If we already delivered the journey opener
+      // within JOURNEY_GUIDE_RECENT_GREETING_MS, a fresh reopen must NOT replay
+      // the same full summary (the "same speech every 2 minutes" bug). Cede to
+      // the shorter ladder. An explicit step tap (focusStep) bypasses this — a
+      // direct request to talk about a step is always honoured. Best-effort:
+      // any read error leaves the gate open (degrade to current behaviour).
+      if (!inputs.focusStep) {
+        try {
+          const cadence = await fetchWakeCadenceSignals({
+            supabase: inputs.supabase,
+            tenantId: ctx.tenantId,
+            userId: inputs.userId,
+          });
+          const sinceMs = cadence.time_since_last_greeting_today_ms;
+          if (typeof sinceMs === 'number' && sinceMs < JOURNEY_GUIDE_RECENT_GREETING_MS) {
+            return { providerKey: JOURNEY_GUIDE_PROVIDER_KEY, status: 'suppressed', latencyMs: 0, reason: 'recently_greeted' };
+          }
+        } catch {
+          /* leave the gate open on any cadence read error */
+        }
       }
 
       let snapshot: JourneyFoundationSnapshot;
