@@ -73,7 +73,14 @@ export function buildGoalBlock(lc: LifeCompassSnapshot, now: Date = new Date()) 
   const goalTotalDays = hasDeadline
     ? Math.max(0, daysBetween(lc.set_at, lc.target_date) ?? 0)
     : null;
-  const goalDay = hasDeadline
+  // Day counter: whole days elapsed since the goal was set. This is NOT gated
+  // on a deadline — the My Journey "Day N" reflects how long the user has been
+  // on the journey, so it must keep counting from set_at even before a target
+  // date is chosen. (Gating it on hasDeadline pinned the mobile North Star to
+  // "Day 1" forever for users who set a goal but no deadline.) Only the
+  // countdown (days_to_deadline) and the progress ring (goal_total_days /
+  // goal_progress_pct) genuinely require a deadline and stay null without one.
+  const goalDay = lc.set_at
     ? Math.max(0, daysBetween(lc.set_at, nowIso) ?? 0)
     : null;
   const goalProgressPct =
