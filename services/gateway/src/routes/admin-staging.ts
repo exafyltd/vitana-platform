@@ -27,6 +27,7 @@ import { getSupabase } from '../lib/supabase';
 import { isStaging } from '../env';
 import { emitOasisEvent } from '../services/oasis-event-service';
 import { runWithShadowAwaitable } from '../services/llm-router-shadow';
+import { accuracyRollup } from '../services/shadow-accuracy';
 
 const router = Router();
 
@@ -199,6 +200,11 @@ interface ShadowFeatureRollup {
   delta_p95_pct: number | null;
   candidate_error_rate: number;
   candidate_fallback_count: number;
+  // Ground-truth accuracy (golden-corpus-grounded comparisons only). null when
+  // the window carried no labeled turns — agreement-only shadow traffic.
+  labeled_comparisons: number;
+  primary_accuracy: number | null;
+  candidate_accuracy: number | null;
 }
 
 function percentile(sorted: number[], p: number): number {
@@ -224,6 +230,8 @@ function rollupFeature(feature: string, rows: ShadowEventRow[]): ShadowFeatureRo
       candidate_error?: string | null;
       candidate_fallback?: boolean;
       no_decision?: boolean;
+      primary_correct?: boolean | null;
+      candidate_correct?: boolean | null;
     };
     if (m.agreement === true) agreed++;
     else if (m.agreement === false) mismatched++;
@@ -241,6 +249,9 @@ function rollupFeature(feature: string, rows: ShadowEventRow[]): ShadowFeatureRo
   const p95c = percentile(candidateMs, 95);
 
   const ratedTotal = agreed + mismatched;
+  // Ground-truth accuracy over labeled (golden-corpus) comparisons in this
+  // feature bucket. Pure helper, shared with the shadow primitive's scorer.
+  const acc = accuracyRollup(rows.map((r) => (r.metadata ?? {}) as { primary_correct?: unknown; candidate_correct?: unknown }));
   return {
     feature,
     total_comparisons: total,
@@ -254,6 +265,9 @@ function rollupFeature(feature: string, rows: ShadowEventRow[]): ShadowFeatureRo
     delta_p95_pct: p95p > 0 ? ((p95c - p95p) / p95p) * 100 : null,
     candidate_error_rate: total > 0 ? errored / total : 0,
     candidate_fallback_count: fallback,
+    labeled_comparisons: acc.labeled_comparisons,
+    primary_accuracy: acc.primary_accuracy,
+    candidate_accuracy: acc.candidate_accuracy,
   };
 }
 
@@ -356,6 +370,23 @@ const ExerciseShadowBodySchema = z.object({
   prompts_count: z.number().int().min(1).max(50).optional(),
   prompt_seed: z.string().min(1).max(64).optional(),
   feature: z.enum(['voice-tool-router', 'intent-kind', 'pillar-classifier']).optional(),
+  // VTID-04 (BOOTSTRAP-SHADOW-CORPUS-ACCURACY): when 'golden-corpus', drive the
+  // shadow comparison off labeled corpus turns supplied in `corpus_turns` and
+  // score primary/candidate against each turn's `expected_tool` ground truth.
+  // Defaults to 'synthetic' (the original VTID-03215 hash-driven path).
+  source: z.enum(['synthetic', 'golden-corpus']).optional(),
+  corpus_turns: z
+    .array(
+      z.object({
+        user_input: z.string().min(1).max(2000),
+        expected_tool: z.string().min(1).max(128),
+        fixture_id: z.string().max(128).optional(),
+        turn: z.number().int().optional(),
+      }),
+    )
+    .min(1)
+    .max(200)
+    .optional(),
 });
 
 const SYNTHETIC_TOOLS = [
@@ -413,6 +444,148 @@ router.post(
     const count = parsed.data.prompts_count ?? 15;
     const seed = parsed.data.prompt_seed ?? new Date().toISOString().slice(0, 10);
     const feature = parsed.data.feature ?? 'voice-tool-router';
+    const source = parsed.data.source ?? 'synthetic';
+
+    // -----------------------------------------------------------------------
+    // GOLDEN-CORPUS source (BOOTSTRAP-SHADOW-CORPUS-ACCURACY): drive the shadow
+    // comparison off labeled corpus turns and score each model against the
+    // turn's `expected_tool` ground truth. Unlike the synthetic path (which
+    // fabricates agreement from a hash), this produces a real ACCURACY signal —
+    // the metric the canary-readiness gate needs.
+    //
+    // The primary/candidate here are STILL deterministic simulations (the real
+    // fine-tuned model isn't reachable from the gateway request path): primary
+    // is correct ~92% of turns, candidate ~86%, candidate errors ~3% — derived
+    // per (seed, turn) so re-runs reproduce. Events are tagged
+    // metadata.corpus_grounded + simulated_models so consumers never mistake
+    // them for real-model evidence. When a real candidate is wired in, only the
+    // `candidate` closure below changes; the scoring + emit path is unchanged.
+    // -----------------------------------------------------------------------
+    if (source === 'golden-corpus') {
+      const turns = parsed.data.corpus_turns;
+      if (!turns || turns.length === 0) {
+        res.status(400).json({ ok: false, error: 'corpus_turns_required', message: 'source=golden-corpus requires a non-empty corpus_turns array' });
+        return;
+      }
+      const exerciserSource = 'staging-shadow-corpus-accuracy';
+      const sessionPrefix = `corpus-staging-${seed}`;
+      // Distinct expected tools across the supplied turns — used to pick a
+      // deterministically *different* (wrong) tool when simulating a miss.
+      const toolPool = Array.from(new Set(turns.map((t) => t.expected_tool)));
+
+      const started = Date.now();
+      let emitted = 0;
+      let primaryCorrect = 0;
+      let candidateCorrect = 0;
+      let candidateErrors = 0;
+      const sample: Array<{ fixture_id?: string; turn?: number; input: string; expected: string; primary: string; candidate: string; primary_ok: boolean; candidate_ok: boolean }> = [];
+
+      const wrongTool = (expected: string, i: number): string => {
+        if (toolPool.length <= 1) return `${expected}__alt`;
+        let pick = toolPool[hashIdx(`${seed}:wrong`, i, toolPool.length)];
+        if (pick === expected) pick = toolPool[(toolPool.indexOf(expected) + 1) % toolPool.length];
+        return pick;
+      };
+
+      for (let i = 0; i < turns.length; i++) {
+        const t = turns[i];
+        const expected = t.expected_tool;
+        const primaryOk = hashIdx(`${seed}:p-acc`, i, 100) >= 8;   // ~92% correct
+        const candidateOk = hashIdx(`${seed}:c-acc`, i, 100) >= 14; // ~86% correct
+        const candidateWillError = hashIdx(`${seed}:c-err`, i, 100) < 3; // ~3% error
+        const primaryTool = primaryOk ? expected : wrongTool(expected, i);
+        const candidateTool = candidateOk ? expected : wrongTool(expected, i + 1);
+        const primaryDelay = 80 + hashIdx(`${seed}:p-delay`, i, 100);
+        const candidateDelay = 60 + hashIdx(`${seed}:c-delay`, i, 160);
+
+        const { shadowDone } = await runWithShadowAwaitable({
+          feature,
+          input: { text: t.user_input, exerciser_source: exerciserSource } as Record<string, unknown>,
+          primary: async () => {
+            await new Promise((r) => setTimeout(r, primaryDelay));
+            return { tool_name: primaryTool };
+          },
+          candidate: async () => {
+            await new Promise((r) => setTimeout(r, candidateDelay));
+            if (candidateWillError) throw new Error('synthetic candidate error (corpus exerciser)');
+            return { tool_name: candidateTool };
+          },
+          extractKey: (out) => (out as { tool_name?: string }).tool_name ?? null,
+          groundTruthKey: expected,
+          labels: {
+            corpus_grounded: true,
+            simulated_models: true,
+            exerciser_source: exerciserSource,
+            fixture_id: t.fixture_id,
+            corpus_turn: t.turn,
+          },
+          context: { session_id: `${sessionPrefix}-${i}` },
+        });
+        await shadowDone;
+
+        emitted++;
+        if (primaryTool === expected) primaryCorrect++;
+        if (!candidateWillError && candidateTool === expected) candidateCorrect++;
+        if (candidateWillError) candidateErrors++;
+        if (sample.length < 5) {
+          sample.push({
+            fixture_id: t.fixture_id,
+            turn: t.turn,
+            input: t.user_input,
+            expected,
+            primary: primaryTool,
+            candidate: candidateWillError ? '(error)' : candidateTool,
+            primary_ok: primaryTool === expected,
+            candidate_ok: !candidateWillError && candidateTool === expected,
+          });
+        }
+      }
+
+      const wallMs = Date.now() - started;
+      await emitOasisEvent({
+        vtid: 'VTID-03179',
+        type: 'eval.shadow.compared',
+        source: 'gateway/admin-staging-corpus-exerciser',
+        status: 'info',
+        message: `corpus exerciser scored ${emitted} labeled turns (primary ${primaryCorrect}/${emitted} correct)`,
+        payload: {
+          env: 'staging',
+          exerciser_source: exerciserSource,
+          corpus_grounded: true,
+          simulated_models: true,
+          is_exerciser_rollup: true,
+          seed,
+          feature,
+          labeled_comparisons: emitted,
+          primary_correct_count: primaryCorrect,
+          candidate_correct_count: candidateCorrect,
+          candidate_error_count: candidateErrors,
+          primary_accuracy: emitted > 0 ? primaryCorrect / emitted : null,
+          candidate_accuracy: emitted > 0 ? candidateCorrect / emitted : null,
+          wall_ms: wallMs,
+        },
+      }).catch(() => { /* telemetry must not break the exerciser response */ });
+
+      res.json({
+        ok: true,
+        env: 'staging',
+        source: 'golden-corpus',
+        exerciser_source: exerciserSource,
+        seed,
+        feature,
+        labeled_comparisons: emitted,
+        primary_correct_count: primaryCorrect,
+        candidate_correct_count: candidateCorrect,
+        candidate_error_count: candidateErrors,
+        primary_accuracy: emitted > 0 ? primaryCorrect / emitted : null,
+        candidate_accuracy: emitted > 0 ? candidateCorrect / emitted : null,
+        wall_ms: wallMs,
+        sample,
+        note: 'Each row is a real eval.shadow.compared event scored against the corpus expected_tool ground truth (metadata.primary_correct / candidate_correct). Models are deterministic simulations tagged simulated_models=true until a real candidate is wired into the candidate closure.',
+      });
+      return;
+    }
+
     const sessionPrefix = `exerciser-staging-${seed}`;
     const exerciserSource = `staging-shadow-exerciser-vtid-03215`;
 

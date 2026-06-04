@@ -1183,6 +1183,17 @@
       if (_s.currentRoute) startPayload.current_route = _s.currentRoute;
       if (_s.recentRoutes && _s.recentRoutes.length) startPayload.recent_routes = _s.recentRoutes.slice(0, 5);
 
+      // VTID-03300: "My Journey" next-step focus. When the host opens the orb
+      // by tapping a specific Foundation step (VitanaOrb.focusJourneyStep), the
+      // step key rides along so the journey-guide provider LEADS with THAT step
+      // ("Let's improve your Profile…") instead of the sequentially-computed
+      // next step. One-shot: consumed for this session only so the next normal
+      // open reverts to the default next-step behaviour.
+      if (_s.journeyFocus) {
+        startPayload.journey_focus_step = _s.journeyFocus;
+        _s.journeyFocus = null;
+      }
+
       // VTID-02020: when this _sessionStart is happening as part of a reconnect
       // (NOT a first-time session), send the conversation history + the
       // pre-disconnect stage so the backend can route to the contextual
@@ -2951,6 +2962,10 @@
             .filter(function (r) { return typeof r === 'string'; })
             .slice(0, 5);
         }
+        // VTID-03300: optional one-shot journey-step focus (see focusJourneyStep).
+        if (typeof opts.initialContext.journey_focus_step === 'string') {
+          _s.journeyFocus = opts.initialContext.journey_focus_step || null;
+        }
       }
 
       _injectStyles();
@@ -3031,6 +3046,16 @@
 
     show: _show,
     hide: _hide,
+
+    // VTID-03300: open the orb and start a session FOCUSED on a specific
+    // "My Journey" Foundation step. The host calls this when the user taps a
+    // step in the Next-Steps checklist; Vitana then leads with that exact step
+    // ("Let's get your Profile set up…") instead of the default next step.
+    // One-shot: the focus is consumed by the upcoming _sessionStart only.
+    focusJourneyStep: function (stepKey) {
+      _s.journeyFocus = (typeof stepKey === 'string' && stepKey) ? stepKey : null;
+      _show();
+    },
     // DEV-COMHU-0503: intentional forget (logout / account switch / start over).
     reset: _reset,
 
@@ -3055,6 +3080,12 @@
         _s.recentRoutes = ctx.recent_routes
           .filter(function (r) { return typeof r === 'string'; })
           .slice(0, 5);
+      }
+      // VTID-03300: pre-arm a one-shot journey-step focus from the host. Set
+      // only when present, so the per-route updateContext stream (which never
+      // carries this field) can't clobber a pending focus.
+      if (typeof ctx.journey_focus_step === 'string') {
+        _s.journeyFocus = ctx.journey_focus_step || null;
       }
     },
 

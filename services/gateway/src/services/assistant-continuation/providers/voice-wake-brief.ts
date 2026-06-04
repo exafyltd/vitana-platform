@@ -240,16 +240,16 @@ const DEFAULT_LINES: Record<GreetingPolicy, Record<string, string>> = {
   // Suppressed at provider boundary; never reaches the renderer.
   skip: { en: '', de: '' },
   brief_resume: {
-    en: 'Welcome back. What would you like to pick up on?',
-    de: 'Schön, dich wieder zu hören. Womit kann ich dir helfen?',
+    en: "Welcome back. Let's pick up right where we left off.",
+    de: 'Schön, dich wieder zu hören. Lass uns genau dort weitermachen, wo wir aufgehört haben.',
   },
   warm_return: {
-    en: 'Welcome back. What is on your mind?',
-    de: 'Schön, dass du wieder da bist. Womit kann ich dir helfen?',
+    en: 'Welcome back. Let me show you where we are.',
+    de: 'Schön, dass du wieder da bist. Lass mich dir zeigen, wo wir gerade stehen.',
   },
   fresh_intro: {
-    en: 'Hello! How can I help today?',
-    de: 'Hallo! Wie kann ich dir heute helfen?',
+    en: "Hello! Let me show you where we'll begin.",
+    de: 'Hallo! Lass mich dir zeigen, wo wir anfangen.',
   },
 };
 
@@ -267,24 +267,24 @@ const DEFAULT_LINES: Record<GreetingPolicy, Record<string, string>> = {
  */
 const PILLAR_PROACTIVE_LINES: Record<PillarKey, Record<string, string>> = {
   sleep: {
-    en: 'Your sleep pillar has been slipping lately. Want to look at what is getting in the way?',
-    de: 'Deine Schlaf-Säule sackt in letzter Zeit etwas ab. Wollen wir uns anschauen, was da hineinspielt?',
+    en: "Your sleep pillar has been slipping lately. Let me show you what's getting in the way.",
+    de: 'Deine Schlaf-Säule sackt in letzter Zeit etwas ab. Lass mich dir zeigen, was da hineinspielt.',
   },
   nutrition: {
-    en: 'Your nutrition pillar has been slipping lately. Want help getting it back on track?',
-    de: 'Deine Ernährungs-Säule sackt in letzter Zeit etwas ab. Sollen wir das gemeinsam wieder aufbauen?',
+    en: "Your nutrition pillar has been slipping lately. Let me help you get it back on track.",
+    de: 'Deine Ernährungs-Säule sackt in letzter Zeit etwas ab. Lass uns das gemeinsam wieder aufbauen.',
   },
   exercise: {
-    en: 'Your exercise pillar has been slipping lately. Want to set up something light for today?',
-    de: 'Deine Bewegungs-Säule sackt in letzter Zeit etwas ab. Sollen wir heute etwas Leichtes einplanen?',
+    en: 'Your exercise pillar has been slipping lately. Let me set up something light for today.',
+    de: 'Deine Bewegungs-Säule sackt in letzter Zeit etwas ab. Lass uns heute etwas Leichtes einplanen.',
   },
   hydration: {
-    en: 'Your hydration pillar has been slipping lately. Want a small step to lift it back up?',
-    de: 'Deine Hydrations-Säule sackt in letzter Zeit etwas ab. Wollen wir einen kleinen Schritt einbauen?',
+    en: 'Your hydration pillar has been slipping lately. Let me add a small step to lift it back up.',
+    de: 'Deine Hydrations-Säule sackt in letzter Zeit etwas ab. Lass uns einen kleinen Schritt einbauen.',
   },
   mental: {
-    en: 'Your mental pillar has been slipping lately. What is weighing on you right now?',
-    de: 'Deine Mental-Säule sackt in letzter Zeit etwas ab. Was beschäftigt dich gerade?',
+    en: "Your mental pillar has been slipping lately. Let me help with what's weighing on you.",
+    de: 'Deine Mental-Säule sackt in letzter Zeit etwas ab. Lass mich dir mit dem helfen, was dich gerade beschäftigt.',
   },
 };
 

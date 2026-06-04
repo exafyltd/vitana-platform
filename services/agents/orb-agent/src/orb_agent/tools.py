@@ -115,7 +115,13 @@ async def _dispatch(ctx: RunContext, name: str, args: dict[str, Any] | None = No
     business logic. Tools whose endpoint already exists as a standalone route
     keep calling it directly (calendar, reminders, intents, vitana-index).
     """
-    return await _gw(ctx).post("/api/v1/orb/tool", {"name": name, "args": args or {}})
+    gw = _gw(ctx)
+    # BOOTSTRAP-VOICE-DATASET-EMITTER: record the dispatched tool for the turn so
+    # session.py's orb.turn.responded emit can carry the voice-tool-routing
+    # signal. Read + cleared per turn in the conversation_item hook.
+    gw.last_tool_name = name
+    gw.last_tool_args = args or None
+    return await gw.post("/api/v1/orb/tool", {"name": name, "args": args or {}})
 
 
 async def _dispatch_with_directive(
@@ -138,6 +144,10 @@ async def _dispatch_with_directive(
     from .directives import extract_directive, publish_orb_directive  # local import
 
     gw = _gw(ctx)
+    # BOOTSTRAP-VOICE-DATASET-EMITTER: record the dispatched tool for the turn
+    # (same as _dispatch) so the turn.responded emit carries the routing signal.
+    gw.last_tool_name = name
+    gw.last_tool_args = args or None
     body = await gw.post("/api/v1/orb/tool", {"name": name, "args": args or {}})
     directive = extract_directive(body)
     if directive is not None:

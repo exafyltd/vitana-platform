@@ -54,6 +54,15 @@ const THRESHOLDS = {
   max_candidate_error_rate: 0.02,
   min_consecutive_clean_days: 5,
   min_dataset_rows: 1000,
+  // BOOTSTRAP-SHADOW-CORPUS-ACCURACY: ground-truth accuracy gate. Agreement
+  // alone can't catch two models confidently agreeing on the WRONG tool — only
+  // accuracy-vs-truth can. These apply once the window carries enough
+  // golden-corpus-grounded comparisons (events with primary_correct /
+  // candidate_correct) to be statistically meaningful.
+  min_labeled_comparisons: 50,
+  min_candidate_accuracy: 0.85,
+  // The candidate may not be materially worse than the primary it would replace.
+  max_accuracy_regression: 0.05,
 } as const;
 
 interface ShadowReport {
@@ -66,6 +75,10 @@ interface ShadowReport {
     agreement_rate: number | null;
     candidate_p95_ms: number;
     candidate_error_rate: number;
+    // Ground-truth accuracy (present once corpus-grounded shadow events land).
+    labeled_comparisons?: number;
+    primary_accuracy?: number | null;
+    candidate_accuracy?: number | null;
   }>;
 }
 
@@ -92,6 +105,54 @@ interface CanaryReadinessReport {
 
 function reason(rule: string, ok: boolean, detail: string): Reason {
   return { rule, ok, detail };
+}
+
+/**
+ * BOOTSTRAP-SHADOW-CORPUS-ACCURACY: ground-truth accuracy gate.
+ *
+ * Pure + exported so it's unit-tested without the network/env the rest of this
+ * script needs. Returns the `candidate_accuracy` Reason for a feature rollup:
+ *   - Not enough labeled (golden-corpus-grounded) comparisons → FAIL with a
+ *     "run the corpus exerciser" nudge (consistent with how every other
+ *     insufficient-evidence rule blocks here).
+ *   - Candidate below the absolute floor → FAIL.
+ *   - Candidate materially worse than the primary it would replace → FAIL.
+ *   - Otherwise → PASS with the numbers.
+ */
+function accuracyReason(
+  rollup: Pick<ShadowReport['features'][number], 'labeled_comparisons' | 'primary_accuracy' | 'candidate_accuracy'> | null,
+  thresholds: Pick<typeof THRESHOLDS, 'min_labeled_comparisons' | 'min_candidate_accuracy' | 'max_accuracy_regression'> = THRESHOLDS,
+): Reason {
+  const labeled = rollup?.labeled_comparisons ?? 0;
+  const candAcc = rollup?.candidate_accuracy ?? null;
+  const primAcc = rollup?.primary_accuracy ?? null;
+
+  if (labeled < thresholds.min_labeled_comparisons || candAcc === null) {
+    return reason(
+      'candidate_accuracy',
+      false,
+      `Only ${labeled} corpus-grounded comparisons (need ${thresholds.min_labeled_comparisons}). Run EXERCISE-STAGING-SHADOW with source=golden-corpus, or wait for labeled organic turns, to score accuracy vs ground truth.`,
+    );
+  }
+  if (candAcc < thresholds.min_candidate_accuracy) {
+    return reason(
+      'candidate_accuracy',
+      false,
+      `Candidate accuracy ${(candAcc * 100).toFixed(1)}% < ${(thresholds.min_candidate_accuracy * 100).toFixed(0)}% floor (over ${labeled} labeled turns).`,
+    );
+  }
+  if (primAcc !== null && candAcc < primAcc - thresholds.max_accuracy_regression) {
+    return reason(
+      'candidate_accuracy',
+      false,
+      `Candidate accuracy ${(candAcc * 100).toFixed(1)}% regresses >${(thresholds.max_accuracy_regression * 100).toFixed(0)}pp below primary ${(primAcc * 100).toFixed(1)}%.`,
+    );
+  }
+  return reason(
+    'candidate_accuracy',
+    true,
+    `Candidate accuracy ${(candAcc * 100).toFixed(1)}%${primAcc !== null ? ` vs primary ${(primAcc * 100).toFixed(1)}%` : ''} over ${labeled} labeled turns (>= ${(thresholds.min_candidate_accuracy * 100).toFixed(0)}% floor).`,
+  );
 }
 
 async function fetchShadowReport(): Promise<ShadowReport> {
@@ -233,6 +294,10 @@ async function generate(): Promise<CanaryReadinessReport> {
     } else {
       reasons.push(reason('candidate_error_rate', true, `Candidate error rate ${(featureRollup.candidate_error_rate * 100).toFixed(2)}% within budget.`));
     }
+
+    // Ground-truth accuracy gate (BOOTSTRAP-SHADOW-CORPUS-ACCURACY): the real
+    // "is the candidate right?" check, beyond mutual agreement.
+    reasons.push(accuracyReason(featureRollup));
   }
 
   // Fine-tune status — must have a successful run
@@ -339,5 +404,5 @@ if (require.main === module) {
   });
 }
 
-export { generate, renderMarkdown };
+export { generate, renderMarkdown, accuracyReason };
 export type { CanaryReadinessReport, Reason };
