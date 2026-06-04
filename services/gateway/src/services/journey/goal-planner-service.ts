@@ -12,6 +12,7 @@ import { SupabaseClient } from '@supabase/supabase-js';
 import { callViaRouter } from '../llm-router';
 import { bulkCreateCalendarEvents } from '../calendar-service';
 import { getUserLocale } from '../../i18n/server-locale';
+import { seedGoalPlanSourceCache } from './goal-plan-i18n';
 import type { CreateCalendarEventInput } from '../../types/calendar';
 
 const LOG = '[VTID-03152 goal-planner]';
@@ -420,6 +421,10 @@ export async function generateGoalPlan(
       total_days: totalDays,
       status: 'active',
       model: result.model ?? null,
+      // Language the stored title/description/plan_summary are authored in, so
+      // view-time localization (goal-plan-i18n) can skip translating when the
+      // requested locale already matches the source. (VTID-03152b)
+      source_lang: locale,
     })
     .select('id')
     .single();
@@ -449,6 +454,16 @@ export async function generateGoalPlan(
     console.error(`${LOG} insert goal_plan_steps failed: ${stepErr.message}`);
     return null;
   }
+
+  // Seed the source-locale cache so a same-language view is an instant cache hit
+  // and freshly authored copy is never re-translated. (VTID-03152b)
+  await seedGoalPlanSourceCache(
+    client,
+    planId,
+    locale,
+    plan.plan_summary,
+    ((stepRows as any[]) ?? []).map((s) => ({ id: s.id, title: s.title, description: s.description ?? null })),
+  );
 
   await mirrorStepsToCalendar(userId, planId, goal, startDate, (stepRows as any[]) ?? []);
 
@@ -535,6 +550,7 @@ export interface GoalPlanView {
   day: number;       // current day offset (clamped 0..total_days)
   days_left: number; // calendar days until target_date (>=0)
   status: string;
+  source_lang: string | null; // language the stored text is authored in (VTID-03152b)
   milestones: GoalPlanStep[];
   checkpoints: GoalPlanStep[];
   habits: GoalPlanStep[];
@@ -544,7 +560,7 @@ export interface GoalPlanView {
 export async function getGoalPlan(client: SupabaseClient, userId: string): Promise<GoalPlanView | null> {
   const { data: planRows, error: planErr } = await client
     .from('goal_plans')
-    .select('id, goal_text, plan_summary, start_date, target_date, total_days, status')
+    .select('id, goal_text, plan_summary, start_date, target_date, total_days, status, source_lang')
     .eq('user_id', userId)
     .eq('status', 'active')
     .order('generated_at', { ascending: false })
@@ -573,6 +589,7 @@ export async function getGoalPlan(client: SupabaseClient, userId: string): Promi
     day,
     days_left: daysLeft,
     status: plan.status,
+    source_lang: plan.source_lang ?? null,
     milestones: all.filter((s) => s.kind === 'milestone'),
     checkpoints: all.filter((s) => s.kind === 'checkpoint'),
     habits: all.filter((s) => s.kind === 'habit'),
