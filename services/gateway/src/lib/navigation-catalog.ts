@@ -1416,11 +1416,45 @@ export const NAVIGATION_CATALOG: ReadonlyArray<NavCatalogEntry> = [
     },
   },
   {
-    screen_id: 'SETTINGS.SUPPORT', route: '/settings/support', category: 'settings',
+    // Canonical route is `/support` (the `/settings/support` path just
+    // redirects to it, dropping any querystring — so sub-tab entries below
+    // MUST target `/support?tab=…` directly). Lands on the Contact tab.
+    screen_id: 'SETTINGS.SUPPORT', route: '/support', category: 'settings',
     access: 'authenticated', anonymous_safe: false,
+    aliases: ['support', 'help', 'support-center', 'help-center', 'get-help', 'hilfe', 'kundendienst'],
     i18n: {
-      en: { title: 'Support', description: 'Get help, contact support, or report an issue.', when_to_visit: 'When the user asks for help, support, how to contact the team, report a bug, or needs assistance with something.' },
-      de: { title: 'Support', description: 'Hilfe erhalten, Support kontaktieren oder ein Problem melden.', when_to_visit: 'Wenn der Nutzer nach Hilfe, Support, wie man das Team kontaktiert, einen Fehler melden oder Unterstützung bei etwas braucht fragt.' },
+      en: { title: 'Support', description: 'Get help, contact support, or report an issue.', when_to_visit: 'When the user asks for help, support, how to contact the team, report a bug, or needs general assistance without naming a specific support section.' },
+      de: { title: 'Support', description: 'Hilfe erhalten, Support kontaktieren oder ein Problem melden.', when_to_visit: 'Wenn der Nutzer allgemein nach Hilfe, Support, wie man das Team kontaktiert, einen Fehler melden oder Unterstützung braucht fragt, ohne einen bestimmten Support-Bereich zu nennen.' },
+    },
+  },
+  {
+    // VTID-NAV-SUPPORT-TABS: deep-link straight to the Support sub-tabs so
+    // "take me to Support FAQs" lands on the FAQ tab, not the default Contact
+    // tab. Both Support.tsx (desktop) and MobileSupport.tsx read `?tab=`.
+    screen_id: 'SETTINGS.SUPPORT_CONTACT', route: '/support?tab=contact', category: 'settings',
+    access: 'authenticated', anonymous_safe: false,
+    aliases: ['support-contact', 'contact-support', 'submit-ticket', 'support-ticket', 'report-issue', 'support-kontakt'],
+    i18n: {
+      en: { title: 'Contact Support', description: 'Reach the support team — record a message, submit a ticket, or email us.', when_to_visit: 'When the user wants to contact support, submit a support ticket, report a bug, send a message to the team, or request a callback.' },
+      de: { title: 'Support kontaktieren', description: 'Erreiche das Support-Team — nimm eine Nachricht auf, reiche ein Ticket ein oder schreib uns.', when_to_visit: 'Wenn der Nutzer den Support kontaktieren, ein Support-Ticket einreichen, einen Fehler melden, dem Team eine Nachricht senden oder einen Rückruf anfordern möchte.' },
+    },
+  },
+  {
+    screen_id: 'SETTINGS.SUPPORT_FAQ', route: '/support?tab=faqs', category: 'settings',
+    access: 'authenticated', anonymous_safe: false,
+    aliases: ['support-faq', 'support-faqs', 'faq', 'faqs', 'knowledge-base', 'help-articles', 'support-knowledge-base', 'haeufige-fragen', 'faq-seite'],
+    i18n: {
+      en: { title: 'Support FAQs', description: 'Frequently asked questions, help articles, and the knowledge base.', when_to_visit: 'When the user asks for FAQs, frequently asked questions, help articles, the knowledge base, common questions, or how-to guides.' },
+      de: { title: 'Support-FAQ', description: 'Häufig gestellte Fragen, Hilfeartikel und die Wissensdatenbank.', when_to_visit: 'Wenn der Nutzer nach FAQ, häufig gestellten Fragen, Hilfeartikeln, der Wissensdatenbank, häufigen Fragen oder Anleitungen fragt.' },
+    },
+  },
+  {
+    screen_id: 'SETTINGS.SUPPORT_COMMUNITY', route: '/support?tab=community', category: 'settings',
+    access: 'authenticated', anonymous_safe: false,
+    aliases: ['support-community', 'community-help', 'community-support', 'support-forum', 'community-hilfe'],
+    i18n: {
+      en: { title: 'Community Help', description: 'Get help from other members — community groups and forums.', when_to_visit: 'When the user asks about community help, getting help from other users, community support groups, or user forums.' },
+      de: { title: 'Community-Hilfe', description: 'Hol dir Hilfe von anderen Mitgliedern — Community-Gruppen und Foren.', when_to_visit: 'Wenn der Nutzer nach Community-Hilfe, Hilfe von anderen Nutzern, Community-Support-Gruppen oder Nutzerforen fragt.' },
     },
   },
 
