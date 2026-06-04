@@ -1416,10 +1416,11 @@ export const NAVIGATION_CATALOG: ReadonlyArray<NavCatalogEntry> = [
     },
   },
   {
-    // Canonical route is `/support` (the `/settings/support` path just
-    // redirects to it, dropping any querystring — so sub-tab entries below
-    // MUST target `/support?tab=…` directly). Lands on the Contact tab.
-    screen_id: 'SETTINGS.SUPPORT', route: '/support', category: 'settings',
+    // Generic Support destination (lands on the Contact tab). Keeps the
+    // canonical `/settings/support` path so route resolution stays stable;
+    // it redirects to `/support`. Note: that redirect drops any querystring,
+    // so the sub-tab entries below target `/support?tab=…` DIRECTLY.
+    screen_id: 'SETTINGS.SUPPORT', route: '/settings/support', category: 'settings',
     access: 'authenticated', anonymous_safe: false,
     aliases: ['support', 'help', 'support-center', 'help-center', 'get-help', 'hilfe', 'kundendienst'],
     i18n: {
