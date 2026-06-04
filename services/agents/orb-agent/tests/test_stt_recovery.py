@@ -58,16 +58,81 @@ def test_recovery_kill_switch_off_variants(monkeypatch) -> None:  # type: ignore
         assert val in ("false", "0", "no", "off"), v
 
 
-def test_max_attempts_constant_pinned_at_five() -> None:
-    """VTID-03079 bumped 3 → 5 once the tighter predicate started
-    rejecting false positives. 5 attempts cost at most ~15s of swap
-    activity (each bounded by the 5s activity-swap wait); a longer
-    session may legitimately need 4-5 recoveries. Anything higher risks
-    churning Google STT / Deepgram connections on a chronic problem;
-    anything lower means we give up before the user does."""
+def test_fast_budget_constant_pinned_at_five() -> None:
+    """BOOTSTRAP-ORB-STT-HARD-RECOVERY: STT_RECOVERY_MAX_ATTEMPTS is now the FAST-cadence budget,
+    not a hard give-up. The first 5 rebuilds fire at the watchdog cadence;
+    beyond that recovery continues under backoff. The constant stays 5 so the
+    fast phase matches the prior tuning (VTID-03079)."""
     src = _session_src()
     assert "STT_RECOVERY_MAX_ATTEMPTS = 5" in src, (
-        "VTID-03079 regression: STT_RECOVERY_MAX_ATTEMPTS must be 5"
+        "BOOTSTRAP-ORB-STT-HARD-RECOVERY regression: STT_RECOVERY_MAX_ATTEMPTS (fast budget) must be 5"
+    )
+
+
+def test_recovery_never_permanently_gives_up() -> None:
+    """BOOTSTRAP-ORB-STT-HARD-RECOVERY: the hard cap caused 96s of dead air in prod (2026-06-02)
+    once a recoverable stall needed >5 swaps. Recovery must no longer emit a
+    `gave_up` outcome or otherwise stop trying — past the fast budget it
+    continues under exponential backoff capped at a ceiling constant."""
+    src = _session_src()
+    assert '"gave_up"' not in src, (
+        "BOOTSTRAP-ORB-STT-HARD-RECOVERY regression: recovery must not permanently give up "
+        "(no `gave_up` outcome)"
+    )
+    assert "STT_RECOVERY_BACKOFF_CEILING_S" in src, (
+        "BOOTSTRAP-ORB-STT-HARD-RECOVERY regression: backoff ceiling constant missing — recovery "
+        "would either give up or churn unbounded"
+    )
+    # The backoff must be bounded (cost guard preserved): a ceiling, applied
+    # via min(...), so chronic upstream failure costs ~1 rebuild/min not a
+    # tight loop.
+    recovery_start = src.find("async def _attempt_stt_recovery")
+    recovery_block = src[recovery_start : recovery_start + 4000]
+    assert "backoff_until" in recovery_block, (
+        "BOOTSTRAP-ORB-STT-HARD-RECOVERY regression: no backoff gating in _attempt_stt_recovery"
+    )
+    assert "STT_RECOVERY_BACKOFF_CEILING_S" in recovery_block, (
+        "BOOTSTRAP-ORB-STT-HARD-RECOVERY regression: backoff ceiling not applied in recovery"
+    )
+
+
+def test_broad_stall_watchdog_escalates_to_hard_recovery() -> None:
+    """BOOTSTRAP-ORB-STT-HARD-RECOVERY: the broad StallWatchdog (_on_stall) previously only did the
+    in-place _stt swap — the no-op that thrashed 14× in prod. It must now
+    escalate into the proven update_agent rebuild after consecutive
+    ineffective soft-resets."""
+    src = _session_src()
+    assert "HARD_RECOVERY_AFTER" in src, (
+        "BOOTSTRAP-ORB-STT-HARD-RECOVERY regression: escalation threshold constant missing"
+    )
+    stall_start = src.find("async def _on_stall")
+    # Slice to the watchdog registration that immediately follows _on_stall
+    # so the window covers the whole closure regardless of its length.
+    stall_end = src.find("stall.start(on_stall=_on_stall)", stall_start)
+    stall_block = src[stall_start:stall_end]
+    assert "_hard_recovery_ref" in stall_block, (
+        "BOOTSTRAP-ORB-STT-HARD-RECOVERY regression: _on_stall does not escalate to tier-2 recovery"
+    )
+    assert 'trigger="stall_watchdog"' in stall_block, (
+        "BOOTSTRAP-ORB-STT-HARD-RECOVERY regression: escalation must tag its trigger for telemetry"
+    )
+    # And the forward handle must actually be populated to the recovery fn.
+    assert "_hard_recovery_ref[\"fn\"] = _attempt_stt_recovery" in src, (
+        "BOOTSTRAP-ORB-STT-HARD-RECOVERY regression: tier-2 recovery never wired to the forward ref"
+    )
+
+
+def test_stall_events_carry_audio_input_diagnostics() -> None:
+    """BOOTSTRAP-ORB-STT-HARD-RECOVERY: every recovery/stall event must carry an audio-path
+    snapshot so the next bad session distinguishes 'mic track gone' from
+    'STT deaf while audio flows' — the ambiguity that cost us weeks."""
+    src = _session_src()
+    assert "def _audio_input_diag" in src, (
+        "BOOTSTRAP-ORB-STT-HARD-RECOVERY regression: audio-input diagnostic helper missing"
+    )
+    assert src.count("_audio_input_diag()") >= 2, (
+        "BOOTSTRAP-ORB-STT-HARD-RECOVERY regression: audio diagnostics must be attached to BOTH "
+        "the stall event and the recovery event"
     )
 
 
@@ -103,7 +168,9 @@ def test_recovery_preserves_chat_ctx_tools_instructions() -> None:
     # Find the Agent(...) construction inside _attempt_stt_recovery.
     recovery_start = src.find("async def _attempt_stt_recovery")
     assert recovery_start != -1
-    recovery_block = src[recovery_start : recovery_start + 4000]
+    # Window widened (BOOTSTRAP-ORB-STT-HARD-RECOVERY added backoff gating + telemetry ahead of the
+    # Agent() construction, pushing it down ~1.5k chars).
+    recovery_block = src[recovery_start : recovery_start + 6000]
 
     # Each of these MUST appear inside the recovery's Agent() call.
     for required in ("instructions=", "tools=", "chat_ctx=", "stt=", "llm=", "tts="):

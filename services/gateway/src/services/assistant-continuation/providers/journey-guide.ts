@@ -56,6 +56,12 @@ export interface JourneyGuideContent {
    * say "I have no suggestions" or ask "how can I help"; there is always a next.
    */
   upcoming_steps: string[];
+  /**
+   * VTID-03300 (follow-up): true when the user tapped a step they've ALREADY
+   * completed. The opener + GUIDE-MODE block switch to "enrich / build on it"
+   * framing instead of "let's set it up" (which feels broken for a done step).
+   */
+  focus_done?: boolean;
 }
 
 const GATE_KEY = 'life_compass';
@@ -65,6 +71,19 @@ interface JourneyGuideInputs {
   userId: string;
   isReconnect?: boolean;
   lang: string;
+  /**
+   * VTID-03300: the Foundation step key the user tapped in "My Journey" to open
+   * the orb. When set, the provider LEADS with this step instead of the
+   * sequentially-computed `current_next_step` — even if the step is already
+   * `done` or the user has graduated (an explicit tap must never open cold; a
+   * done step switches the opener to "enrich" framing, see `focusStepDone`).
+   */
+  focusStep?: string | null;
+  /**
+   * VTID-03300 (follow-up): resolved spoken first name, so the opener can greet
+   * by name ("Hey Dragan, …"). Null when unknown → opener omits the name.
+   */
+  firstName?: string | null;
 }
 
 function readInputs(ctx: ContinuationDecisionContext): JourneyGuideInputs | null {
@@ -77,6 +96,8 @@ function readInputs(ctx: ContinuationDecisionContext): JourneyGuideInputs | null
     userId: obj.userId,
     isReconnect: obj.isReconnect === true,
     lang: typeof obj.lang === 'string' && obj.lang ? obj.lang : 'en',
+    focusStep: typeof obj.focusStep === 'string' && obj.focusStep ? obj.focusStep : null,
+    firstName: typeof obj.firstName === 'string' && obj.firstName ? obj.firstName : null,
   };
 }
 
@@ -96,13 +117,38 @@ export function makeJourneyGuideProvider(): ContinuationProvider {
 
       let snapshot: JourneyFoundationSnapshot;
       let stepDef: { execute_prompt: string; benefit: string } | undefined;
+      // VTID-03300: the step to lead with. Defaults to the computed next step,
+      // but a user-tapped focus step overrides it (see below).
+      let leadStep: JourneyFoundationSnapshot['current_next_step'] = null;
+      let isFocusOverride = false;
+      // VTID-03300 (follow-up): the user tapped a step they've ALREADY completed.
+      // We still lead with it (an explicit tap must never open cold), but switch
+      // the opener + GUIDE-MODE to "enrich/build-on-it" framing instead of
+      // "let's set it up", which would feel broken for a done step.
+      let focusStepDone = false;
       try {
         const [{ buildJourneyFoundationSnapshot }, { getStepDef }] = await Promise.all([
           import('../../journey-foundation/journey-foundation-state'),
           import('../../journey-foundation/foundation-steps'),
         ]);
         snapshot = await buildJourneyFoundationSnapshot(inputs.supabase, inputs.userId);
-        const key = snapshot.current_next_step?.key;
+
+        // VTID-03300: when the user tapped a specific step in "My Journey", lead
+        // with THAT step instead of the sequentially-computed next step — even
+        // when it's already done or the user has graduated. An explicit tap is a
+        // direct request to talk about that step, so Vitana focuses on what they
+        // asked (a done step flips to "enrich" framing via focusStepDone).
+        leadStep = snapshot.current_next_step;
+        if (inputs.focusStep) {
+          const focused = snapshot.foundation_steps.find((v) => v.key === inputs.focusStep);
+          if (focused) {
+            leadStep = focused;
+            isFocusOverride = true;
+            focusStepDone = focused.status === 'done';
+          }
+        }
+
+        const key = leadStep?.key;
         stepDef = key ? getStepDef(key) : undefined;
       } catch (err) {
         return {
@@ -114,10 +160,12 @@ export function makeJourneyGuideProvider(): ContinuationProvider {
       }
 
       // Graduated → the journey is done; hand the floor to the normal ladder.
-      if (snapshot.graduated) {
+      // Exception: an explicit user tap on a still-open step (e.g. an optional
+      // economy-activation step) overrides graduation so Vitana still leads it.
+      if (snapshot.graduated && !isFocusOverride) {
         return { providerKey: JOURNEY_GUIDE_PROVIDER_KEY, status: 'suppressed', latencyMs: 0, reason: 'journey_graduated' };
       }
-      const step = snapshot.current_next_step;
+      const step = leadStep;
       if (!step || !stepDef) {
         return { providerKey: JOURNEY_GUIDE_PROVIDER_KEY, status: 'suppressed', latencyMs: 0, reason: 'no_next_step' };
       }
@@ -150,6 +198,10 @@ export function makeJourneyGuideProvider(): ContinuationProvider {
         navigation_route: step.navigation_route,
         opener_key: openerKey,
         upcoming_steps: upcoming,
+        // VTID-03300 (follow-up): the user tapped an already-done step — the
+        // controller's GUIDE-MODE block reads this to lead with "enrich it"
+        // framing instead of "set it up".
+        focus_done: focusStepDone,
       };
 
       // VTID-03266 (Fix-6): the spoken opener is an ALREADY-LOCALIZED short
@@ -160,7 +212,10 @@ export function makeJourneyGuideProvider(): ContinuationProvider {
       // contract lives in the GUIDE-MODE block (buildJourneyGuideBlock), which
       // is injected as a system instruction on BOTH transports (turns 2+).
       const { buildJourneyGuideOpenerLine } = await import('../../../orb/live/instruction/journey-guide-prompt');
-      const openerLine = buildJourneyGuideOpenerLine(openerKey, step.title, inputs.lang);
+      const openerLine = buildJourneyGuideOpenerLine(openerKey, step.title, inputs.lang, {
+        firstName: inputs.firstName ?? null,
+        done: focusStepDone,
+      });
       const candidate = {
         id: `journey-guide-${step.key}`,
         surface: 'orb_wake',
