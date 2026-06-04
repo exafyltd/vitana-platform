@@ -147,9 +147,15 @@ async function translateBatch(
  * one LLM call. Falls back to the source text on any failure. Pure-ish: returns
  * a new GoalPlanView with localized strings; ids/dates/status/progress unchanged.
  *
- * `sourceLang` is goal_plans.source_lang — when it already equals the requested
- * locale we short-circuit (no DB read, no LLM). NULL source (pre-existing plans,
- * language unknown) always goes through the translate-and-cache path.
+ * We deliberately do NOT short-circuit when the plan's source language already
+ * equals the requested locale. Legacy plans can hold mixed-language rows (e.g. an
+ * English title left over from a partial one-time translation alongside a German
+ * body); returning that stored text raw is exactly the bug we're fixing. Serving
+ * display text only through the per-locale cache means a cache miss
+ * translate-and-normalizes the row into one uniform language. Freshly generated
+ * plans seed their source-locale cache at creation (seedGoalPlanSourceCache), so
+ * the clean common case is a cache hit with no LLM call. `sourceLang` is kept in
+ * the signature for callers/telemetry but no longer gates translation.
  */
 export async function localizeGoalPlan(
   client: SupabaseClient,
@@ -157,12 +163,8 @@ export async function localizeGoalPlan(
   sourceLang: string | null,
   targetLocaleRaw: string,
 ): Promise<GoalPlanView> {
+  void sourceLang;
   const target = normalizeLocale(targetLocaleRaw);
-  const source = sourceLang ? normalizeLocale(sourceLang) : null;
-
-  // Fast path: stored text is already in the requested language.
-  if (source && source === target) return plan;
-
   const language = LANGUAGE_NAMES[target] ?? 'English';
   const steps = flattenSteps(plan);
   const stepIds = steps.map((s) => s.id);
@@ -242,4 +244,34 @@ export async function localizeGoalPlan(
     checkpoints: applyKind(plan.checkpoints),
     habits: applyKind(plan.habits),
   };
+}
+
+/**
+ * Seed the per-locale cache with a freshly generated plan's text in the locale it
+ * was authored in, so the common same-language view is an instant cache hit (no
+ * LLM call) and we never re-translate clean, just-authored copy. Best-effort —
+ * a failure here just means the first same-language view pays for one
+ * (idempotent) normalization translation instead.
+ */
+export async function seedGoalPlanSourceCache(
+  client: SupabaseClient,
+  planId: string,
+  sourceLocaleRaw: string,
+  planSummary: string | null,
+  steps: Array<{ id: string; title: string; description: string | null }>,
+): Promise<void> {
+  const locale = normalizeLocale(sourceLocaleRaw);
+  try {
+    await client
+      .from('goal_plan_i18n')
+      .upsert({ plan_id: planId, locale, plan_summary: planSummary ?? null }, { onConflict: 'plan_id,locale' });
+    if (steps.length > 0) {
+      await client.from('goal_plan_step_i18n').upsert(
+        steps.map((s) => ({ step_id: s.id, locale, title: s.title, description: s.description ?? null })),
+        { onConflict: 'step_id,locale' },
+      );
+    }
+  } catch (e: any) {
+    console.warn(`${LOG} seed source cache failed (non-fatal): ${e?.message}`);
+  }
 }

@@ -12,6 +12,7 @@ import { SupabaseClient } from '@supabase/supabase-js';
 import { callViaRouter } from '../llm-router';
 import { bulkCreateCalendarEvents } from '../calendar-service';
 import { getUserLocale } from '../../i18n/server-locale';
+import { seedGoalPlanSourceCache } from './goal-plan-i18n';
 import type { CreateCalendarEventInput } from '../../types/calendar';
 
 const LOG = '[VTID-03152 goal-planner]';
@@ -453,6 +454,16 @@ export async function generateGoalPlan(
     console.error(`${LOG} insert goal_plan_steps failed: ${stepErr.message}`);
     return null;
   }
+
+  // Seed the source-locale cache so a same-language view is an instant cache hit
+  // and freshly authored copy is never re-translated. (VTID-03152b)
+  await seedGoalPlanSourceCache(
+    client,
+    planId,
+    locale,
+    plan.plan_summary,
+    ((stepRows as any[]) ?? []).map((s) => ({ id: s.id, title: s.title, description: s.description ?? null })),
+  );
 
   await mirrorStepsToCalendar(userId, planId, goal, startDate, (stepRows as any[]) ?? []);
 
