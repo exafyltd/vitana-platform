@@ -1,19 +1,33 @@
-name: Auto Deploy (Canonical → EXEC-DEPLOY)
+name: Auto Deploy (Manual prod dispatch — staging-first cutover)
 
-# VTID-01082-FIX: Fixed VTID extraction from truncated merge commit messages
-# GitHub truncates commit messages in merge commits, causing VTID extraction to fail.
-# This workflow now:
-# 1. Checks out the repo to get full commit message via git
-# 2. Searches the full commit body (not just subject line)
-# 3. Falls back to branch name extraction if commit message fails
+# ============================================================================
+# STAGING-FIRST CUTOVER (2026-06-04): AUTO-TO-PROD IS DISABLED.
+# ----------------------------------------------------------------------------
+# This workflow used to trigger on every push to `main` and dispatch
+# EXEC-DEPLOY.yml straight to PRODUCTION (gateway + worker-runner). That
+# auto-to-prod path has been CUT.
+#
+#   • Auto deploy on push to `main`  →  STAGING only, via STAGE-DEPLOY.yml.
+#   • Production is reached ONLY via:
+#       1. the one PUBLISH button in the Command Hub, or
+#       2. the documented manual escape hatch:
+#          scripts/deploy/publish-to-prod.sh  (the explicit exception).
+#
+# The dispatch logic below is retained for compatibility and is now
+# `workflow_dispatch`-only. Triggering it is a deliberate, governed prod
+# deploy — never an automatic consequence of a push. Prefer the escape-hatch
+# script, which records a `--reason` and labels the action as the exception.
+# ============================================================================
+#
+# VTID-01082-FIX: Robust VTID extraction from truncated merge commit messages
+# (retained for manual dispatch traceability).
 
 on:
-  push:
-    branches: [ "main" ]
-    paths:
-      - "services/gateway/**"
-      - "services/worker-runner/**"
-      - ".github/workflows/**"
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: 'Why are you deploying to PROD manually (the documented exception)?'
+        required: true
 
 permissions:
   contents: read
@@ -27,6 +41,15 @@ jobs:
   dispatch_exec_deploy:
     runs-on: ubuntu-latest
     steps:
+      - name: Announce manual prod deploy (the documented exception)
+        run: |
+          echo "==========================================================================="
+          echo "⚠️  MANUAL PRODUCTION DEPLOY — staging-first exception path"
+          echo "Reason: ${{ github.event.inputs.reason }}"
+          echo "Actor:  ${{ github.actor }}"
+          echo "This is NOT an automatic deploy. Auto pushes go to STAGING (STAGE-DEPLOY.yml)."
+          echo "==========================================================================="
+
       # VTID-01082-FIX: Checkout repo to get full commit message
       - name: Checkout repository
         uses: actions/checkout@v4
