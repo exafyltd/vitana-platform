@@ -553,12 +553,56 @@ export const NAVIGATION_CATALOG: ReadonlyArray<NavCatalogEntry> = [
       en: {
         title: 'Events & Meetups',
         description: 'Upcoming Maxina community events, in-person meetups, and gatherings.',
-        when_to_visit: 'When the user asks about upcoming events, meetups, things to attend, scheduled gatherings, dance events, wellness workshops, or community activities they can attend in person.',
+        when_to_visit: 'When the user asks about events and meetups in general, the Events & Meetups screen, things to attend, scheduled gatherings, dance events, wellness workshops, or community activities they can attend in person. Lands on the Hot tab by default.',
       },
       de: {
         title: 'Events & Meetups',
         description: 'Kommende Maxina Community Events, persönliche Treffen und Zusammenkünfte.',
-        when_to_visit: 'Wenn der Nutzer nach kommenden Events, Meetups, Veranstaltungen, geplanten Treffen, Tanzveranstaltungen, Wellness-Workshops oder Community-Aktivitäten fragt, an denen teilgenommen werden kann.',
+        when_to_visit: 'Wenn der Nutzer allgemein nach Events und Meetups, dem Events-&-Meetups-Bildschirm, Veranstaltungen, geplanten Treffen, Tanzveranstaltungen, Wellness-Workshops oder Community-Aktivitäten fragt, an denen teilgenommen werden kann. Öffnet standardmäßig den Hot-Tab.',
+      },
+    },
+  },
+  {
+    // VTID-NAV-EVENT-TABS: the Events & Meetups screen has four tabs (Hot,
+    // Upcoming, Today, Following). Hot is the COMM.EVENTS default; Following is
+    // COMM.FEED. These two pin the Upcoming and Today tabs so the Navigator can
+    // land on the exact tab the user names. EventsAndMeetups.tsx reads `?tab=`.
+    screen_id: 'COMM.EVENTS_UPCOMING',
+    route: '/comm/events-meetups?tab=upcoming',
+    category: 'community',
+    access: 'authenticated',
+    anonymous_safe: false,
+    aliases: ['upcoming-events', 'events-upcoming', 'upcoming', 'kommende-veranstaltungen'],
+    i18n: {
+      en: {
+        title: 'Upcoming Events',
+        description: 'Upcoming community events and meetups you can attend.',
+        when_to_visit: 'When the user asks for upcoming events, the upcoming tab, what events are coming up, or future events and meetups in Events & Meetups.',
+      },
+      de: {
+        title: 'Kommende Veranstaltungen',
+        description: 'Kommende Community-Events und Meetups, an denen du teilnehmen kannst.',
+        when_to_visit: 'Wenn der Nutzer nach kommenden Veranstaltungen, anstehenden Events, dem Tab "Kommend" oder zukünftigen Events und Meetups fragt.',
+      },
+    },
+  },
+  {
+    screen_id: 'COMM.EVENTS_TODAY',
+    route: '/comm/events-meetups?tab=today',
+    category: 'community',
+    access: 'authenticated',
+    anonymous_safe: false,
+    aliases: ['today-events', 'events-today', 'todays-events', 'heutige-veranstaltungen'],
+    i18n: {
+      en: {
+        title: "Today's Events",
+        description: 'Community events and meetups happening today.',
+        when_to_visit: "When the user asks what events are happening today, today's events, or the today tab in Events & Meetups.",
+      },
+      de: {
+        title: 'Heutige Veranstaltungen',
+        description: 'Community-Events und Meetups, die heute stattfinden.',
+        when_to_visit: 'Wenn der Nutzer fragt, welche Events heute stattfinden, nach heutigen Veranstaltungen oder dem Tab "Heute".',
       },
     },
   },
@@ -1074,13 +1118,13 @@ export const NAVIGATION_CATALOG: ReadonlyArray<NavCatalogEntry> = [
     i18n: {
       en: {
         title: 'My Calendar',
-        description: 'Your personal calendar — view upcoming events, appointments, scheduled activities, and your schedule. The calendar opens as an overlay.',
-        when_to_visit: 'When the user asks to open their calendar, see their calendar, my calendar, show calendar, check their appointments, view upcoming schedule, check availability, Kalender öffnen, or manage their personal calendar.',
+        description: 'Your personal calendar — your appointments, scheduled activities, and daily schedule. Opens as an overlay.',
+        when_to_visit: 'When the user asks to open their calendar, see their calendar, my calendar, show calendar, check their appointments, view their schedule, check availability, or manage their personal calendar. NOT for community events (that is Events & Meetups).',
       },
       de: {
         title: 'Mein Kalender',
-        description: 'Dein persönlicher Kalender — sieh anstehende Termine, Verabredungen und geplante Aktivitäten. Der Kalender öffnet sich als Overlay.',
-        when_to_visit: 'Wenn der Nutzer seinen Kalender öffnen, Kalender anzeigen, mein Kalender, seinen Zeitplan sehen, Termine prüfen, anstehende Events ansehen, Verfügbarkeit prüfen oder seinen persönlichen Kalender verwalten möchte.',
+        description: 'Dein persönlicher Kalender — deine Termine, Verabredungen und geplante Aktivitäten. Öffnet sich als Overlay.',
+        when_to_visit: 'Wenn der Nutzer seinen Kalender öffnen, Kalender anzeigen, mein Kalender, seinen Zeitplan sehen, Termine prüfen, Verfügbarkeit prüfen oder seinen persönlichen Kalender verwalten möchte. NICHT für Community-Events (das ist Events & Meetups).',
       },
     },
     related_kb_topics: ['calendar', 'schedule', 'appointments', 'events'],
