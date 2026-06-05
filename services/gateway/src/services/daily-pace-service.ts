@@ -247,6 +247,7 @@ export async function computePaceDecision(
   userId: string,
   tenantId: string,
   nowUtc: Date,
+  opts?: { skipHourCheck?: boolean },
 ): Promise<PaceDecision> {
   // 1. Resolve tz. Invalid strings fall through to Europe/Berlin via
   //    getUserTimezone's isValidTimezone guard, so this never throws.
@@ -264,7 +265,10 @@ export async function computePaceDecision(
     return { shouldNotify: false, skipReason: 'invalid_tz', timezone: tz };
   }
 
-  if (localHour !== 19) {
+  // The wrong_hour gate is bypassable only via the explicit debug param
+  // on the route (?force=true) so on-call can fire a test push for a
+  // single user without waiting for their local 19:00 tick.
+  if (!opts?.skipHourCheck && localHour !== 19) {
     return {
       shouldNotify: false,
       skipReason: 'wrong_hour',
