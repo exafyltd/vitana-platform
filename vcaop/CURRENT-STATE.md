@@ -11,15 +11,16 @@
 
 ## Current position
 
-- **Current VTID:** `CTRL-GUARD-0001` (Guardrails package) — **DONE** (CI gate green)
-- **Last action:** Built guardrails package + 50 tests (all green), wired `VCAOP-GUARDRAILS-CI.yml` as a required gate, committed (`c2aebb43`), pushed to `claude/vibrant-lovelace-DBM5k`, opened draft PR **#2585**. CI: `test:guardrails (must pass)` → **success**; `unit`, `scan`, `Validate Services Structure`, Phase 2B checks → success; `validate` was finishing.
-- **Next action:** Begin `CTRL-SCHEMA-0002` — Prisma models (runbook Sec. 4.1–4.7) with reversible migrations; record rollback BEFORE applying (Sec. 0.7). Extend the existing OASIS Prisma schema in place (Sec. 1.1) — do NOT fork. Migration target requires the dev DB (BLOCKERS.md BLK-001); if no reachable dev Supabase, build the schema + reversible migration files and verify `prisma migrate` up/down against a local/ephemeral Postgres or mock, log the live-apply as blocked, and continue.
+- **Current VTID:** `CTRL-SCHEMA-0002` (Prisma data model) — **DONE (verified locally; live-apply blocked on BLK-001)**
+- **Last action:** Extended `prisma/schema.prisma` in place with 16 VCAOP models (Sec. 4.1–4.7); generated canonical UP SQL via `prisma migrate diff` + hand-written `down.sql`; **verified up→down→up on ephemeral Postgres 16 (3→19→3→19 tables)**; `prisma validate` passes; confirmed all secret-like columns are `*_ref`/`*_hash` and `user_reward_link` is credential-free. Files in `prisma/migrations/20260604_vcaop_ctrl_schema_0002/`.
+- **Previously:** `CTRL-GUARD-0001` DONE — guardrails + 50 tests, `VCAOP-GUARDRAILS-CI.yml` required gate green; draft PR **#2585**.
+- **Next action:** `CTRL-POLICY-0003` — policy engine seeds for top ~20 providers (unknown=denied), unit tests per `automation_allowed`. The PolicyEngine class already exists (guardrails); this VTID adds the seed dataset + loader + tests.
 
 ## Layer progress
 
 | Layer | VTIDs | Status |
 |-------|-------|--------|
-| CTRL  | GUARD-0001 ✅, SCHEMA-0002, POLICY-0003, API-0004 | GUARD-0001 DONE (PR #2585); rest TODO |
+| CTRL  | GUARD-0001 ✅, SCHEMA-0002 ✅, POLICY-0003, API-0004 | GUARD+SCHEMA DONE; POLICY next |
 | IAM   | ROLES-0001 | TODO |
 | VAULT | CORE-0001, OTP-0002 | TODO |
 | CONN  | BASE-0001, API-0002, OAUTH-0003, BROWSER-0004, MANUAL-0005 | TODO |
@@ -39,4 +40,7 @@
 
 ## Rollback notes (last migrate/deploy)
 
-- None yet. No migration or deploy performed this session (guardrails layer is pure code + tests; no DB/Cloud Run changes).
+- **CTRL-SCHEMA-0002 migration** (`prisma/migrations/20260604_vcaop_ctrl_schema_0002/`):
+  rollback = `psql "$DATABASE_URL" -f .../down.sql` (drops the 16 VCAOP tables CASCADE,
+  leaves OASIS tables intact). Tested up→down→up on ephemeral Postgres. NOT yet applied
+  to a live dev DB (BLK-001) — live apply + down-verify is the runtime step.
