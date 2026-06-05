@@ -173,10 +173,10 @@ const ROUTING_CASES: RoutingCase[] = [
   // ── COMM.EVENTS (P0) ──
   { utterance: 'take me to the events page',                lang: 'en', expected_screen_id: 'COMM.EVENTS' },
   { utterance: 'where can I find the meetups',              lang: 'en', expected_screen_id: 'COMM.EVENTS' },
-  { utterance: 'show me upcoming events',                   lang: 'en', expected_screen_id: 'COMM.EVENTS' },
+  { utterance: 'show me upcoming events',                   lang: 'en', expected_screen_id: 'COMM.EVENTS_UPCOMING' },
   { utterance: 'I want to attend a meetup',                 lang: 'en', expected_screen_id: 'COMM.EVENTS' },
   { utterance: 'wo finde ich die treffen',                  lang: 'de', expected_screen_id: 'COMM.EVENTS' },
-  { utterance: 'zeig mir die kommenden veranstaltungen',    lang: 'de', expected_screen_id: 'COMM.EVENTS' },
+  { utterance: 'zeig mir die kommenden veranstaltungen',    lang: 'de', expected_screen_id: 'COMM.EVENTS_UPCOMING' },
 
   // ── COMM.LIVE_ROOMS ──
   { utterance: 'open the live rooms',                       lang: 'en', expected_screen_id: 'COMM.LIVE_ROOMS' },
