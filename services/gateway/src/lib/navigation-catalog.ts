@@ -888,12 +888,12 @@ export const NAVIGATION_CATALOG: ReadonlyArray<NavCatalogEntry> = [
       en: {
         title: 'Medical',
         description: 'Your medical records — upload and view your medical reports and doctor documents.',
-        when_to_visit: 'When the user asks for the Medical tab on the Health screen, their medical records, medical reports, doctor reports, or to upload a medical report. NOT health conditions/diagnoses (HEALTH.CONDITIONS) and NOT biomarker lab values (HEALTH.MY_BIOLOGY).',
+        when_to_visit: 'When the user asks for the Medical tab on the Health screen, their medical records, medical reports, doctor reports, or to upload a medical report.',
       },
       de: {
         title: 'Medizinisch',
         description: 'Deine medizinischen Unterlagen — lade Arztberichte und medizinische Dokumente hoch und sieh sie an.',
-        when_to_visit: 'Wenn der Nutzer nach dem Tab "Medizinisch" auf dem Gesundheits-Bildschirm, seinen medizinischen Unterlagen, Arztberichten oder dem Hochladen eines Arztberichts fragt. NICHT Gesundheitszustände/Diagnosen (HEALTH.CONDITIONS) und NICHT Biomarker-Laborwerte (HEALTH.MY_BIOLOGY).',
+        when_to_visit: 'Wenn der Nutzer nach dem Tab "Medizinisch" auf dem Gesundheits-Bildschirm, seinen medizinischen Unterlagen, Arztberichten oder dem Hochladen eines Arztberichts fragt.',
       },
     },
   },
