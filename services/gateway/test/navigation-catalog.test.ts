@@ -185,7 +185,7 @@ const ROUTING_CASES: RoutingCase[] = [
 
   // ── COMM.MEDIA_HUB ──
   { utterance: 'show me the videos and podcasts',           lang: 'en', expected_screen_id: 'COMM.MEDIA_HUB' },
-  { utterance: 'wo sind die podcasts',                      lang: 'de', expected_screen_id: 'COMM.MEDIA_HUB' },
+  { utterance: 'wo sind die podcasts',                      lang: 'de', expected_screen_id: 'COMM.MEDIA_PODCASTS' },
 
   // ── BUSINESS ──
   { utterance: 'I want to make money with the community',   lang: 'en', expected_screen_id: 'BUSINESS.SELL_EARN' },
