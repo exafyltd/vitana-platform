@@ -10,3 +10,5 @@ export * as connectors from './connectors';
 export * as onboarding from './onboarding';
 export * as agents from './agents';
 export * as rewards from './rewards';
+export * as commerce from './commerce';
+export * as observability from './observability';

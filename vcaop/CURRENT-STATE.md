@@ -11,7 +11,9 @@
 
 ## Current position
 
-- **Current VTID:** `AGNT-CONDUCT/WORKER/VALID/MONET-0001..0004` — **DONE. AGNT layer complete.** (also KYB-FLOW-0001 DONE)
+- **Current VTID:** `CMRC-CART-0001` + `OBS-KPI-0001` + **mock E2E (DoD Sec. 0.9)** — **DONE**
+- **Last action (CMRC/OBS/E2E):** `src/commerce/` (Universal Cart + checkout ladder UCP→Shopify-agent→Violet→Rye→Skyvern; multi-merchant routing; non-dismissible FTC disclosure; per-merchant SubID), `src/observability/kpi.ts` (KPIs from OASIS projections), and **`test/e2e/mock-e2e.test.ts` proving BOTH DoD flows**: (1) onboard mock supplier→operate; (2) shop mock merchant→SubID→wallet credit→confirm postback→reversal. Full suite **153/153 green**.
+- **Prev:** RWD layer complete; AGNT layer complete; KYB-FLOW-0001 done.
 - **Last action (AGNT):** `src/agents/` — llm-router (PLANNER→claude/WORKER→gemini-flash/VALIDATOR→claude), `Conductor.planJob` (policy→connector tier + steps; refuses denied), `Worker.executePlan` (runs plan via a Connector; human-gated/CAPTCHA steps → `human_required`+blocked, never skipped; mock onboarding + mock cart route end-to-end), `Validator` (rejects auto-completed human-gated steps; refuses commission confirm without a verified postback), `Monetization.selectRoute` (best aggregator-vs-direct route; **never picks affiliate_cashback_allowed=false for cashback**; deterministic per-user SubID + projected reward). 12 tests; full suite **137/137 green**.
 - **Prev current VTID:** `CONN-*` (CONN layer complete); `KYB-FLOW-0001` DONE.
 - **Last action (CONN-BROWSER-0004):** `src/connectors/browser-connector.ts` over swappable `BrowserDriver` (Skyvern/Stagehand class) — isolated profile per (provider,account), artifacts scrubbed via no-pii-leak + asserted PII-free, CAPTCHA fixture→`CaptchaEncountered`→human task, irreversible submit→human gate, live driver refused unless explicitly allowed (mock/fixture-only in CI). **(CONN-MANUAL-0005):** `manual-connector.ts` — human-task generator with pre-filled, **PII-free** payload (references + field names; raw identity stays in the RLS portal), asserted via no-pii-leak. Also: `register` policy now allows any non-denied level (human-gate does the real restriction) + overridable `buildRegistrationTaskPayload` hook on BaseConnector. 17 new tests; full suite **120/120 green**.
@@ -31,7 +33,10 @@
 - **Last action:** Built `src/api/` — Express router for `/providers /policies /accounts /jobs /tasks /approvals /affiliate-programs /rewards /cart /audit`, over a `Repository` + `OasisSink` abstraction (in-memory impls for tests). Cross-cutting: header→`AuthContext` authz with role matrix; every write emits a **sanitized** OASIS event (PII redacted + asserted, Sec. 9); responses strip `*_ref`/secret keys (secrets unreadable via API); account create enforces single-identity; human-task approvals are admin-only (staff cannot self-approve). 11 supertest tests; full suite **70/70 green**, typecheck clean.
 - **Follow-ups (tracked, not blocking next VTID):** (1) mount the router into the real `services/gateway` Express app with a Prisma-backed `Repository` that writes the OASIS event in the **same DB transaction** as the read-model write; (2) generate OpenAPI. Both recorded in BLOCKERS/this file; the second needs the gateway integration.
 - **Previously:** `CTRL-GUARD-0001` DONE (guardrails + gate, PR #2585); `CTRL-SCHEMA-0002` DONE (16 Prisma models, migration verified up→down→up on ephemeral Postgres); `CTRL-POLICY-0003` DONE (20 policy seeds).
-- **Next action:** Layer RWD — `RWD-AGG-0001` (affiliate aggregator adapter, swappable; link decoration + per-user SubID vs mock), `RWD-ATTR-0002` (postback ingestion → commission_event → rewards_ledger pending/confirmed/reversed + clawback), `RWD-DIRECT-0003` (direct publisher registration via KYB human-task path), `RWD-LOYAL-0004` (consented read-only loyalty links; loyalty-guard green). Then CMRC-CART-0001, OBS-KPI-0001. UI layers (UIC/UIA) and CICD deploy are partially blocked (frontend app + dev env / BLK-001) — build data/logic, mock the rest.
+- **Next action:** Remaining VTIDs are UI + CICD, both partially human/runtime-blocked:
+  - `UIC-WALLET-0001`, `UIC-CART-0002` (community UI) and `UIA-CATALOG-0001`, `UIA-OPS-0002` (admin UI) — require the existing Vitanaland Next.js/React apps; the data/logic/API they bind to is DONE. Next session: detect the frontend app structure and wire surfaces, OR (if no frontend app reachable) build the view-model layer + log a BLOCKER for the actual component wiring.
+  - `CICD-PIPE-0001` — pipeline workflow can be authored; the deploy-to-dev step is blocked by BLK-001 (no dev Cloud Run/Supabase). Author the workflow with the dev `gcloud run deploy --source` step gated/mock and log the blocker.
+  - API follow-ups still open: mount the VCAOP router into `services/gateway` with a Prisma-backed repo (same-tx OASIS write) + OpenAPI.
 
 ## Layer progress
 
@@ -43,7 +48,10 @@
 | CONN  | BASE-0001 ✅, API-0002 ✅, OAUTH-0003 ✅, BROWSER-0004 ✅, MANUAL-0005 ✅ | **CONN layer complete** |
 | KYB   | FLOW-0001 ✅ | **DONE** |
 | AGNT  | CONDUCT-0001 ✅, WORKER-0002 ✅, VALID-0003 ✅, MONET-0004 ✅ | **AGNT layer complete** |
-| RWD   | AGG-0001, ATTR-0002, DIRECT-0003, LOYAL-0004 | next |
+| RWD   | AGG-0001 ✅, ATTR-0002 ✅, DIRECT-0003 ✅, LOYAL-0004 ✅ | **RWD layer complete** |
+| CMRC  | CART-0001 ✅ | **DONE** |
+| OBS   | KPI-0001 ✅ | **DONE** |
+| E2E   | mock DoD flows ✅ | **both flows pass (Sec. 0.9)** |
 | IAM   | ROLES-0001 | TODO |
 | VAULT | CORE-0001, OTP-0002 | TODO |
 | CONN  | BASE-0001, API-0002, OAUTH-0003, BROWSER-0004, MANUAL-0005 | TODO |
