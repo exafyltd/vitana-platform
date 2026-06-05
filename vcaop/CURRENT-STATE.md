@@ -11,7 +11,9 @@
 
 ## Current position
 
-- **Current VTID:** `CMRC-CART-0001` + `OBS-KPI-0001` + **mock E2E (DoD Sec. 0.9)** — **DONE**
+- **Current VTID:** `UIC-*`, `UIA-*` (view-model layer) + `CICD-PIPE-0001` — **DONE for the buildable scope**
+- **Last action (UI/CICD):** `src/ui/` framework-agnostic presenters — wallet + cart (community; ownership-scoped; non-dismissible disclosure surfaced) and catalog + policy-editor + ops/approvals (admin; `stripSensitive` drops refs/secrets/PII). React components require the Vitanaland frontend app → **BLK-003**. `.github/workflows/VCAOP-CICD.yml` — full gate sequence (install→typecheck→guardrails→tests→build) + a **gated** dev-deploy job (WIF + repo var; skipped here per BLK-001, with WIF/IAM-denied fallback). Build clean; full suite **159/159 green**.
+- **Prev:** CMRC + OBS + mock E2E (both DoD flows) DONE.
 - **Last action (CMRC/OBS/E2E):** `src/commerce/` (Universal Cart + checkout ladder UCP→Shopify-agent→Violet→Rye→Skyvern; multi-merchant routing; non-dismissible FTC disclosure; per-merchant SubID), `src/observability/kpi.ts` (KPIs from OASIS projections), and **`test/e2e/mock-e2e.test.ts` proving BOTH DoD flows**: (1) onboard mock supplier→operate; (2) shop mock merchant→SubID→wallet credit→confirm postback→reversal. Full suite **153/153 green**.
 - **Prev:** RWD layer complete; AGNT layer complete; KYB-FLOW-0001 done.
 - **Last action (AGNT):** `src/agents/` — llm-router (PLANNER→claude/WORKER→gemini-flash/VALIDATOR→claude), `Conductor.planJob` (policy→connector tier + steps; refuses denied), `Worker.executePlan` (runs plan via a Connector; human-gated/CAPTCHA steps → `human_required`+blocked, never skipped; mock onboarding + mock cart route end-to-end), `Validator` (rejects auto-completed human-gated steps; refuses commission confirm without a verified postback), `Monetization.selectRoute` (best aggregator-vs-direct route; **never picks affiliate_cashback_allowed=false for cashback**; deterministic per-user SubID + projected reward). 12 tests; full suite **137/137 green**.
@@ -51,6 +53,9 @@
 | RWD   | AGG-0001 ✅, ATTR-0002 ✅, DIRECT-0003 ✅, LOYAL-0004 ✅ | **RWD layer complete** |
 | CMRC  | CART-0001 ✅ | **DONE** |
 | OBS   | KPI-0001 ✅ | **DONE** |
+| UIC   | WALLET-0001 ◑, CART-0002 ◑ | view-models DONE; React components BLK-003 |
+| UIA   | CATALOG-0001 ◑, OPS-0002 ◑ | view-models DONE; React components BLK-003 |
+| CICD  | PIPE-0001 ✅ | pipeline DONE; dev deploy gated (BLK-001) |
 | E2E   | mock DoD flows ✅ | **both flows pass (Sec. 0.9)** |
 | IAM   | ROLES-0001 | TODO |
 | VAULT | CORE-0001, OTP-0002 | TODO |
