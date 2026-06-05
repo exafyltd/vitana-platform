@@ -447,10 +447,15 @@ router.post('/daily-pace-notifications', async (req: Request, res: Response) => 
   if (!supa) return res.status(503).json({ ok: false, error: 'Supabase not configured' });
 
   const nowUtc = new Date();
-  const allUsers = await getActiveUsers(supa, tenantId);
+  // When user_id is supplied, target that user directly instead of
+  // fetching the tenant fan-out and filtering in memory — Supabase REST
+  // pages at ~1k rows so a valid user on a later page would otherwise be
+  // silently dropped (codex review). computePaceDecision already
+  // tenant-scopes every read it does, so bogus UUIDs surface as the
+  // expected skip reasons (no_goal etc.) in the response.
   const users = debugUserId
-    ? allUsers.filter((u) => u.user_id === debugUserId)
-    : allUsers;
+    ? [{ user_id: debugUserId }]
+    : await getActiveUsers(supa, tenantId);
 
   // Pre-fetch locales for the whole tenant in one query (same pattern as
   // the other fan-out routes — avoids N round-trips for catalog lookups).
