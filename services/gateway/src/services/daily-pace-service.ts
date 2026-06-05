@@ -153,11 +153,16 @@ export async function getUserTimezone(
     // column or table may not exist on older snapshots — fall through
   }
 
-  // 2. user_preferences.timezone (tenant-scoped same as above)
+  // 2. user_preferences.timezone — `user_preferences` has no tenant_id
+  //    column (schema confirmed June 2026), so this lookup is user-scoped
+  //    only. Adding .eq('tenant_id', …) here would silently 400 and the
+  //    DB layer would return null instead of the real timezone.
   try {
-    let q = supa.from('user_preferences').select('timezone').eq('user_id', userId);
-    if (tenantId) q = q.eq('tenant_id', tenantId);
-    const { data } = await q.maybeSingle();
+    const { data } = await supa
+      .from('user_preferences')
+      .select('timezone')
+      .eq('user_id', userId)
+      .maybeSingle();
     const tz = (data as { timezone?: string | null } | null)?.timezone ?? null;
     if (tz && isValidTimezone(tz)) return tz;
   } catch {
@@ -278,12 +283,15 @@ export async function computePaceDecision(
     };
   }
 
-  // 2. Active life_compass goal required
+  // 2. Active life_compass goal required. NOTE: `life_compass` has no
+  //    tenant_id column (schema confirmed June 2026); user_id is unique
+  //    enough on its own. An earlier .eq('tenant_id', …) here caused
+  //    PostgREST to 400, the destructured `data` came back null, and
+  //    everyone was silently skipped with skipReason='no_goal'.
   const { data: goal } = await supa
     .from('life_compass')
     .select('id')
     .eq('user_id', userId)
-    .eq('tenant_id', tenantId)
     .eq('is_active', true)
     .maybeSingle();
   if (!goal) {
@@ -325,11 +333,12 @@ export async function computePaceDecision(
   //    blow the ratio past 1.
   const windowStart = new Date(nowUtc.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
 
+  // `autopilot_recommendations` has no tenant_id column (schema confirmed
+  // June 2026); same silent-skip trap as life_compass if we filter on it.
   const { count: surfaced7d } = await supa
     .from('autopilot_recommendations')
     .select('id', { count: 'exact', head: true })
     .eq('user_id', userId)
-    .eq('tenant_id', tenantId)
     .gte('created_at', windowStart);
   const surfaced = surfaced7d || 0;
 
@@ -358,11 +367,11 @@ export async function computePaceDecision(
   }
 
   // 6. activated_7d (same window, status=activated)
+  // No tenant_id column on autopilot_recommendations (see surfaced7d note).
   const { count: activated7d } = await supa
     .from('autopilot_recommendations')
     .select('id', { count: 'exact', head: true })
     .eq('user_id', userId)
-    .eq('tenant_id', tenantId)
     .eq('status', 'activated')
     .gte('created_at', windowStart);
   const activated = activated7d || 0;
