@@ -225,6 +225,50 @@ function getDeps(): LiveSessionControllerDeps {
 }
 
 // =============================================================================
+// VTID-ORB-CHURN: session-start idempotency (kills "superseded_by_new_session")
+// =============================================================================
+// Telemetry showed ~32% of all `/live/session/start` calls were restarts for the
+// SAME user within 2 minutes of the previous start (260/801 over 14d), and 92% of
+// the resulting `superseded_by_new_session` stops had ZERO turns. The client fires
+// a redundant start (token-refresh widget re-init, double-mount, app foreground),
+// each one trips `terminateExistingSessionsForUser()` and tears down the greeting
+// mid-utterance — the user hears "constant disconnects during the opening".
+//
+// This guard makes `/live/session/start` idempotent: if the same user already has
+// an ACTIVE, fully-initialized, ZERO-turn session inside the dedup window, return
+// THAT live session instead of superseding it. Reusing a zero-turn session is safe
+// — it is an abandoned greeting in the exact same state a fresh one would be — and
+// the client opening its SSE against the returned `session_id` is the already-
+// supported reconnect flow. Reconnect starts (transcript history / non-idle stage)
+// are intentional continuity and always bypass this guard.
+const ORB_SESSION_DEDUP_WINDOW_MS = Number(process.env.ORB_SESSION_DEDUP_WINDOW_MS) || 120_000;
+
+/**
+ * Find the most-recent reusable live session for a user: active, owned by the
+ * user, no turns yet, already past first-response (so we never hand back a
+ * half-built session), and younger than the dedup window. Returns null when no
+ * such session exists (the normal "genuine new conversation" path).
+ */
+function findReusableLiveSession(userId: string): GeminiLiveSession | null {
+  const now = Date.now();
+  let best: GeminiLiveSession | null = null;
+  let bestAge = Infinity;
+  for (const session of liveSessions.values()) {
+    if (!session.active) continue;
+    if (!session.identity || session.identity.user_id !== userId) continue;
+    if (session.turn_count !== 0) continue;
+    if (!(session as { startResponseBody?: unknown }).startResponseBody) continue;
+    const age = now - session.createdAt.getTime();
+    if (age > ORB_SESSION_DEDUP_WINDOW_MS) continue;
+    if (age < bestAge) {
+      bestAge = age;
+      best = session;
+    }
+  }
+  return best;
+}
+
+// =============================================================================
 // Lifecycle / cleanup helpers
 // =============================================================================
 
@@ -632,6 +676,37 @@ export async function handleLiveSessionStart(
   // Resolve full identity (JWT verified → real user, or DEV_IDENTITY fallback)
   const orbIdentity = await deps.resolveOrbIdentity(req);
   const bootstrapIdentity: SupabaseIdentity | null = hasJwtIdentity ? orbIdentity : null;
+
+  // VTID-ORB-CHURN: idempotency guard. A duplicate start for a user who already
+  // has a fresh, zero-turn session in flight returns the live session instead of
+  // superseding it — collapsing the session churn that tore down the greeting.
+  // DEV identity is shared across anonymous dev sessions, so it is never deduped
+  // (matches the supersede skip below). Reconnect starts always proceed.
+  const isDevIdentityForDedup = orbIdentity?.user_id === DEV_IDENTITY.USER_ID;
+  if (orbIdentity?.user_id && !isDevIdentityForDedup && !isReconnectStart) {
+    const reusable = findReusableLiveSession(orbIdentity.user_id);
+    if (reusable) {
+      const reusedAgeMs = Date.now() - reusable.createdAt.getTime();
+      console.log(
+        `[VTID-ORB-CHURN] Deduplicated /live/session/start for user=${orbIdentity.user_id.substring(0, 8)}… → reusing live session ${reusable.sessionId} (age=${reusedAgeMs}ms, turns=0); supersede skipped, discarded ${sessionId}`,
+      );
+      deps.emitLiveSessionEvent('vtid.live.session.start', {
+        session_id: reusable.sessionId,
+        user_id: orbIdentity.user_id,
+        tenant_id: orbIdentity.tenant_id || null,
+        transport: 'sse',
+        deduplicated: true,
+        dedup_reason: 'fresh_zero_turn_session_reused',
+        reused_session_id: reusable.sessionId,
+        discarded_session_id: sessionId,
+        reused_age_ms: reusedAgeMs,
+      }).catch(() => {});
+      return res.status(200).json({
+        ...(reusable as unknown as { startResponseBody: Record<string, unknown> }).startResponseBody,
+        deduplicated: true,
+      });
+    }
+  }
 
   // VTID-CONTEXT: Build client context (IP geo, device, time) — for all sessions
   const clientContext = await deps.buildClientContext(req);
@@ -1418,7 +1493,7 @@ export async function handleLiveSessionStart(
   // BOOTSTRAP-VOICE-DEMO: real heartbeat
   recordAgentHeartbeat('orb-live').catch(() => {});
 
-  return res.status(200).json({
+  const startResponseBody = {
     ok: true,
     session_id: sessionId,
     conversation_id: resolvedConversationId,
@@ -1461,7 +1536,14 @@ export async function handleLiveSessionStart(
           }
         : null,
     },
-  });
+  };
+
+  // VTID-ORB-CHURN: stash the exact start response on the session so a duplicate
+  // start within the dedup window can replay it (see findReusableLiveSession).
+  (session as unknown as { startResponseBody: typeof startResponseBody }).startResponseBody =
+    startResponseBody;
+
+  return res.status(200).json(startResponseBody);
 }
 
 /**
