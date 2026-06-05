@@ -57,13 +57,21 @@ export abstract class BaseConnector extends CaptchaAwareConnectorBase implements
   }
 
   // ---- Gated public surface --------------------------------------------------
+  /**
+   * Payload for the human registration task. Override to pre-fill (e.g. ManualConnector
+   * supplies PII-free references + field names). Default is minimal.
+   */
+  protected buildRegistrationTaskPayload(_identity: BusinessIdentity, ctx: JobContext): Record<string, unknown> {
+    return { providerId: ctx.providerId };
+  }
+
   async register(identity: BusinessIdentity, ctx: JobContext): Promise<RegisterResult> {
     assertDevEnvironment(ctx.env);
     this.policyEngine.assertActionAllowed(ctx.providerId, 'register');
     const policy = this.policyEngine.getPolicy(ctx.providerId);
     if (policy.registration_method === 'human_required') {
       // Major-provider registration is human-gated by default (Sec. 10).
-      this.requireHuman(policy.kyb_required ? 'KYB' : 'IRREVERSIBLE_SUBMIT', ctx, { providerId: ctx.providerId });
+      this.requireHuman(policy.kyb_required ? 'KYB' : 'IRREVERSIBLE_SUBMIT', ctx, this.buildRegistrationTaskPayload(identity, ctx));
     }
     return this.doRegister(identity, ctx);
   }

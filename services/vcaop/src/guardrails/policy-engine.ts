@@ -43,9 +43,10 @@ export type ProviderAction =
 
 /** Minimum automation level each action requires, expressed as the allowed set. */
 const ACTION_REQUIREMENTS: Record<ProviderAction, AutomationAllowed[]> = {
-  // Registration of major providers is human-gated by default; only allowed when
-  // the policy explicitly permits an automated path.
-  register: ['api_only', 'oauth_only'],
+  // Registration is permitted for any non-denied provider; the actual restriction
+  // (human_required) is applied by the human-gate, not the policy gate. A 'denied'
+  // provider is still blocked here because the automation_allowed check below trips.
+  register: ['api_only', 'oauth_only', 'browser_with_human_submit', 'manual_only'],
   verify: ['api_only', 'oauth_only', 'browser_with_human_submit', 'manual_only'],
   operate_api: ['api_only'],
   operate_oauth: ['oauth_only', 'api_only'],
