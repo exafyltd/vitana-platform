@@ -11,7 +11,9 @@
 
 ## Current position
 
-- **Current VTID:** `CONN-BROWSER-0004` + `CONN-MANUAL-0005` — **DONE. CONN layer complete.**
+- **Current VTID:** `AGNT-CONDUCT/WORKER/VALID/MONET-0001..0004` — **DONE. AGNT layer complete.** (also KYB-FLOW-0001 DONE)
+- **Last action (AGNT):** `src/agents/` — llm-router (PLANNER→claude/WORKER→gemini-flash/VALIDATOR→claude), `Conductor.planJob` (policy→connector tier + steps; refuses denied), `Worker.executePlan` (runs plan via a Connector; human-gated/CAPTCHA steps → `human_required`+blocked, never skipped; mock onboarding + mock cart route end-to-end), `Validator` (rejects auto-completed human-gated steps; refuses commission confirm without a verified postback), `Monetization.selectRoute` (best aggregator-vs-direct route; **never picks affiliate_cashback_allowed=false for cashback**; deterministic per-user SubID + projected reward). 12 tests; full suite **137/137 green**.
+- **Prev current VTID:** `CONN-*` (CONN layer complete); `KYB-FLOW-0001` DONE.
 - **Last action (CONN-BROWSER-0004):** `src/connectors/browser-connector.ts` over swappable `BrowserDriver` (Skyvern/Stagehand class) — isolated profile per (provider,account), artifacts scrubbed via no-pii-leak + asserted PII-free, CAPTCHA fixture→`CaptchaEncountered`→human task, irreversible submit→human gate, live driver refused unless explicitly allowed (mock/fixture-only in CI). **(CONN-MANUAL-0005):** `manual-connector.ts` — human-task generator with pre-filled, **PII-free** payload (references + field names; raw identity stays in the RLS portal), asserted via no-pii-leak. Also: `register` policy now allows any non-denied level (human-gate does the real restriction) + overridable `buildRegistrationTaskPayload` hook on BaseConnector. 17 new tests; full suite **120/120 green**.
 - **Prev current VTID:** `CONN-OAUTH-0003` — DONE
 - **Last action (CONN-OAUTH-0003):** Added `src/connectors/oauth-connector.ts` — token lifecycle over swappable `OAuthClient`+`TokenStore`: proactive refresh near expiry, refresh-on-401 + backoff retry, **refresh-token revocation → `markDegraded` + REAUTH human task (halts)**. Added `REAUTH` to human-gate actions (additive gate) and `markDegraded` to `JobContext`. healthCheck reports degraded on missing/expired token. 6 tests; full suite **110/110 green**.
@@ -29,7 +31,7 @@
 - **Last action:** Built `src/api/` — Express router for `/providers /policies /accounts /jobs /tasks /approvals /affiliate-programs /rewards /cart /audit`, over a `Repository` + `OasisSink` abstraction (in-memory impls for tests). Cross-cutting: header→`AuthContext` authz with role matrix; every write emits a **sanitized** OASIS event (PII redacted + asserted, Sec. 9); responses strip `*_ref`/secret keys (secrets unreadable via API); account create enforces single-identity; human-task approvals are admin-only (staff cannot self-approve). 11 supertest tests; full suite **70/70 green**, typecheck clean.
 - **Follow-ups (tracked, not blocking next VTID):** (1) mount the router into the real `services/gateway` Express app with a Prisma-backed `Repository` that writes the OASIS event in the **same DB transaction** as the read-model write; (2) generate OpenAPI. Both recorded in BLOCKERS/this file; the second needs the gateway integration.
 - **Previously:** `CTRL-GUARD-0001` DONE (guardrails + gate, PR #2585); `CTRL-SCHEMA-0002` DONE (16 Prisma models, migration verified up→down→up on ephemeral Postgres); `CTRL-POLICY-0003` DONE (20 policy seeds).
-- **Next action:** `KYB-FLOW-0001` — human-in-the-loop onboarding: portal pre-fills; officer completes KYB/liveness/tax; artifacts vaulted and reused across providers. **AC:** a KYB provider advances only after staff+admin approval; artifacts reused on the next provider. Build as an onboarding orchestration over the existing pieces (human_task, approvals API, vault refs, ManualConnector). Then Layer AGNT (conductor/worker/validator/monetization agents).
+- **Next action:** Layer RWD — `RWD-AGG-0001` (affiliate aggregator adapter, swappable; link decoration + per-user SubID vs mock), `RWD-ATTR-0002` (postback ingestion → commission_event → rewards_ledger pending/confirmed/reversed + clawback), `RWD-DIRECT-0003` (direct publisher registration via KYB human-task path), `RWD-LOYAL-0004` (consented read-only loyalty links; loyalty-guard green). Then CMRC-CART-0001, OBS-KPI-0001. UI layers (UIC/UIA) and CICD deploy are partially blocked (frontend app + dev env / BLK-001) — build data/logic, mock the rest.
 
 ## Layer progress
 
@@ -39,7 +41,9 @@
 | IAM   | ROLES-0001 ✅ | **DONE** (RLS verified on ephemeral PG; live-apply blocked BLK-001) |
 | VAULT | CORE-0001 ✅, OTP-0002 ✅ | **VAULT layer complete** |
 | CONN  | BASE-0001 ✅, API-0002 ✅, OAUTH-0003 ✅, BROWSER-0004 ✅, MANUAL-0005 ✅ | **CONN layer complete** |
-| KYB   | FLOW-0001 | next |
+| KYB   | FLOW-0001 ✅ | **DONE** |
+| AGNT  | CONDUCT-0001 ✅, WORKER-0002 ✅, VALID-0003 ✅, MONET-0004 ✅ | **AGNT layer complete** |
+| RWD   | AGG-0001, ATTR-0002, DIRECT-0003, LOYAL-0004 | next |
 | IAM   | ROLES-0001 | TODO |
 | VAULT | CORE-0001, OTP-0002 | TODO |
 | CONN  | BASE-0001, API-0002, OAUTH-0003, BROWSER-0004, MANUAL-0005 | TODO |
