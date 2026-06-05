@@ -21,7 +21,7 @@ import {
   OperateResult,
   HealthResult,
   ProviderAccount,
-} from './Connector';
+} from './connector';
 import { PolicyEngine, ProviderAction } from '../guardrails/policy-engine';
 import { assertDevEnvironment } from '../guardrails/env-boundary';
 import { enforceHumanGate, HumanRequiredAction } from '../guardrails/human-gate';

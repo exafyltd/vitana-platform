@@ -1,5 +1,5 @@
 import { BaseConnector } from '../../src/connectors/base-connector';
-import { ConnectorMode, JobContext, OperateAction, BusinessIdentity, ProviderAccount } from '../../src/connectors/Connector';
+import { ConnectorMode, JobContext, OperateAction, BusinessIdentity, ProviderAccount } from '../../src/connectors/connector';
 import { PolicyEngine, ProviderPolicy } from '../../src/guardrails/policy-engine';
 import { PolicyDenied, HumanTaskRequired, EnvBoundaryViolation, CaptchaEncountered } from '../../src/guardrails/errors';
 import { HumanTask } from '../../src/guardrails/human-gate';

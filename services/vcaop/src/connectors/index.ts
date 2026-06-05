@@ -1,3 +1,3 @@
 /** VCAOP connectors (CONN layer). */
-export * from './Connector';
+export * from './connector';
 export * from './base-connector';
