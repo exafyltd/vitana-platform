@@ -429,11 +429,28 @@ router.post('/daily-pace-notifications', async (req: Request, res: Response) => 
   const tenantId = getTenantId(req);
   if (!tenantId) return res.status(400).json({ ok: false, error: 'tenant_id required' });
 
+  // Debug params for on-call / manual testing:
+  //   user_id — process ONLY this user (skip the tenant fan-out)
+  //   force   — also bypass the wrong_hour gate so you can fire a test
+  //             push at any time of day. Both also accepted as query string.
+  const debugUserId =
+    (req.body?.user_id as string | undefined) ||
+    (req.query?.user_id as string | undefined) ||
+    undefined;
+  const force =
+    req.body?.force === true ||
+    req.body?.force === 'true' ||
+    req.query?.force === 'true' ||
+    req.query?.force === '1';
+
   const supa = await getServiceClient();
   if (!supa) return res.status(503).json({ ok: false, error: 'Supabase not configured' });
 
   const nowUtc = new Date();
-  const users = await getActiveUsers(supa, tenantId);
+  const allUsers = await getActiveUsers(supa, tenantId);
+  const users = debugUserId
+    ? allUsers.filter((u) => u.user_id === debugUserId)
+    : allUsers;
 
   // Pre-fetch locales for the whole tenant in one query (same pattern as
   // the other fan-out routes — avoids N round-trips for catalog lookups).
@@ -453,7 +470,9 @@ router.post('/daily-pace-notifications', async (req: Request, res: Response) => 
 
   for (const { user_id } of users) {
     try {
-      const decision = await computePaceDecision(supa, user_id, tenantId, nowUtc);
+      const decision = await computePaceDecision(supa, user_id, tenantId, nowUtc, {
+        skipHourCheck: force,
+      });
 
       if (!decision.shouldNotify) {
         if (decision.skipReason) skipped[decision.skipReason]++;
