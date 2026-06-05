@@ -11,16 +11,16 @@
 
 ## Current position
 
-- **Current VTID:** `CTRL-SCHEMA-0002` (Prisma data model) — **DONE (verified locally; live-apply blocked on BLK-001)**
-- **Last action:** Extended `prisma/schema.prisma` in place with 16 VCAOP models (Sec. 4.1–4.7); generated canonical UP SQL via `prisma migrate diff` + hand-written `down.sql`; **verified up→down→up on ephemeral Postgres 16 (3→19→3→19 tables)**; `prisma validate` passes; confirmed all secret-like columns are `*_ref`/`*_hash` and `user_reward_link` is credential-free. Files in `prisma/migrations/20260604_vcaop_ctrl_schema_0002/`.
-- **Previously:** `CTRL-GUARD-0001` DONE — guardrails + 50 tests, `VCAOP-GUARDRAILS-CI.yml` required gate green; draft PR **#2585**.
-- **Next action:** `CTRL-POLICY-0003` — policy engine seeds for top ~20 providers (unknown=denied), unit tests per `automation_allowed`. The PolicyEngine class already exists (guardrails); this VTID adds the seed dataset + loader + tests.
+- **Current VTID:** `CTRL-POLICY-0003` (policy seeds) — **DONE**
+- **Last action:** Added `src/policy/provider-policy-seeds.ts` — 20 conservative provider seeds (all `registration_method=human_required`, `captcha_policy=human_only`, `multi_account_allowed=false`); `seedPolicyEngine()` loader; cashback gated (affiliate networks allow, marketplaces null, loyalty false). 10 new tests; full suite **60/60 green**, typecheck clean. Added a "Unit tests (full suite)" step to `VCAOP-GUARDRAILS-CI.yml`.
+- **Previously:** `CTRL-GUARD-0001` DONE (guardrails + gate, PR #2585); `CTRL-SCHEMA-0002` DONE (16 Prisma models, reversible migration verified up→down→up on ephemeral Postgres).
+- **Next action:** `CTRL-API-0004` — VCAOP REST API on the Gateway: `/providers /accounts /jobs /tasks /affiliate-programs /rewards /cart /policies /approvals /audit`. Behind authz; every write emits an OASIS event **in the same tx** as the read-model write; no PII in logs; OpenAPI generated. Mount under the existing `services/gateway` Express app (Sec. 1.1). Use the guardrails (policy-engine, no-pii-leak, human-gate, env-boundary) on every handler.
 
 ## Layer progress
 
 | Layer | VTIDs | Status |
 |-------|-------|--------|
-| CTRL  | GUARD-0001 ✅, SCHEMA-0002 ✅, POLICY-0003, API-0004 | GUARD+SCHEMA DONE; POLICY next |
+| CTRL  | GUARD-0001 ✅, SCHEMA-0002 ✅, POLICY-0003 ✅, API-0004 | 3/4 DONE; API-0004 next |
 | IAM   | ROLES-0001 | TODO |
 | VAULT | CORE-0001, OTP-0002 | TODO |
 | CONN  | BASE-0001, API-0002, OAUTH-0003, BROWSER-0004, MANUAL-0005 | TODO |

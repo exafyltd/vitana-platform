@@ -40,3 +40,7 @@ jobs:
       - name: Guardrail tests (required gate)
         working-directory: services/vcaop
         run: npm run test:guardrails
+
+      - name: Unit tests (full suite)
+        working-directory: services/vcaop
+        run: npm test
