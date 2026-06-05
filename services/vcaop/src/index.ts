@@ -9,3 +9,4 @@ export * as vault from './vault';
 export * as connectors from './connectors';
 export * as onboarding from './onboarding';
 export * as agents from './agents';
+export * as rewards from './rewards';
