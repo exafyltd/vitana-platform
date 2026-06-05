@@ -642,8 +642,48 @@ export const NAVIGATION_CATALOG: ReadonlyArray<NavCatalogEntry> = [
       de: {
         title: 'Media Hub',
         description: 'Videos, Podcasts und Musik der Community.',
-        when_to_visit: 'Wenn der Nutzer nach Videos, Podcasts, Musik, Aufnahmen fragt oder Medieninhalte der Community durchstöbern möchte.',
+        when_to_visit: 'Wenn der Nutzer allgemein nach dem Media Hub, Medieninhalten der Community fragt oder Medien durchstöbern möchte. Öffnet standardmäßig den Shorts-Feed.',
       },
+    },
+  },
+  {
+    // VTID-NAV-MEDIA-TABS: the Media Hub (mobile) has three mode pills —
+    // Shorts (default), Music, Podcasts — reached via /comm/media-hub?tab=.
+    // MediaHub.tsx reads `?tab=`. These pin each tab so the Navigator can land
+    // on the exact one; generic "media hub" stays on COMM.MEDIA_HUB (Shorts).
+    screen_id: 'COMM.MEDIA_SHORTS',
+    route: '/comm/media-hub?tab=shorts',
+    category: 'community',
+    access: 'authenticated',
+    anonymous_safe: false,
+    aliases: ['media-shorts', 'shorts', 'short-videos', 'reels'],
+    i18n: {
+      en: { title: 'Shorts', description: 'Short community videos — the Shorts feed.', when_to_visit: 'When the user asks for shorts, short videos, the shorts feed, or reels in the Media Hub.' },
+      de: { title: 'Shorts', description: 'Kurze Community-Videos — der Shorts-Feed.', when_to_visit: 'Wenn der Nutzer nach Shorts, kurzen Videos, dem Shorts-Feed oder Reels im Media Hub fragt.' },
+    },
+  },
+  {
+    screen_id: 'COMM.MEDIA_MUSIC',
+    route: '/comm/media-hub?tab=music',
+    category: 'community',
+    access: 'authenticated',
+    anonymous_safe: false,
+    aliases: ['media-music', 'music', 'songs', 'tracks'],
+    i18n: {
+      en: { title: 'Music', description: 'Music shared by the community.', when_to_visit: 'When the user asks for music, songs, or tracks in the Media Hub.' },
+      de: { title: 'Musik', description: 'Musik der Community.', when_to_visit: 'Wenn der Nutzer nach Musik, Liedern oder Tracks im Media Hub fragt.' },
+    },
+  },
+  {
+    screen_id: 'COMM.MEDIA_PODCASTS',
+    route: '/comm/media-hub?tab=podcasts',
+    category: 'community',
+    access: 'authenticated',
+    anonymous_safe: false,
+    aliases: ['media-podcasts', 'podcasts', 'podcast'],
+    i18n: {
+      en: { title: 'Podcasts', description: 'Podcasts and audio episodes shared by the community.', when_to_visit: 'When the user asks for podcasts, the podcasts tab, or audio episodes in the Media Hub.' },
+      de: { title: 'Podcasts', description: 'Podcasts und Audiofolgen der Community.', when_to_visit: 'Wenn der Nutzer nach Podcasts, dem Podcast-Tab oder Audiofolgen im Media Hub fragt.' },
     },
   },
 
