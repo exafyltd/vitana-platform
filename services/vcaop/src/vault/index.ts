@@ -2,3 +2,4 @@
 export * from './secret-store';
 export * from './totp';
 export * from './vault';
+export * from './mailbox';
