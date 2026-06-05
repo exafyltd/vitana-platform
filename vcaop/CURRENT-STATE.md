@@ -11,7 +11,9 @@
 
 ## Current position
 
-- **Current VTID:** `CONN-BASE-0001` (Connector interface + base) — **DONE**
+- **Current VTID:** `CONN-API-0002` (ApiConnector) — **DONE (mock; vendor SDKs unverified — BLK-002)**
+- **Last action (CONN-API-0002):** Added `src/connectors/api-connector.ts` — `ApiConnector` over a swappable `ApiClient` interface; `MockApiClient` + provider stubs (amazon/ebay/walmart/cj). operate/healthCheck round-trip through the mock; register human-gated; default-deny for unknown providers. No live calls (Sec. 0.5/0.8). Logged VER-002 / BLK-002 (vendor SDK+auth not independently verified this pass; mock-to-interface). 6 tests; full suite **104/104 green**.
+- **Prev current VTID:** `CONN-BASE-0001` — DONE
 - **Last action (CONN-BASE-0001):** Added `src/connectors/` — `Connector` interface (Sec. 4.4) and `BaseConnector` that routes every method (register/verify/operate/healthCheck) through the guardrails **before** the adapter hook runs: env-boundary, policy-engine (default-deny, mode→action mapping), human-gate (human-required registration emits a human_task + halts), CAPTCHA→`CaptchaEncountered`. Adapters implement `do*` hooks only and never see an ungated call. 7 tests prove gates fire before adapter logic; full suite **98/98 green**.
 - **Prev current VTID:** `VAULT-OTP-0002` — DONE
 - **Last action (VAULT-OTP-0002):** Added `src/vault/mailbox.ts` — deterministic per-onboarding alias (`provider+<slug>-<onboardingId>@system-domain`), `assertSystemAlias` (refuses personal inboxes), OTP + verification-link extraction, `resolveVerificationStep()`, and `InMemoryMailbox`. AC met: a simulated verification link/OTP resolves a job step; inboxes isolated per alias. 7 tests; full suite **91/91 green**. **VAULT layer complete.**
@@ -23,7 +25,7 @@
 - **Last action:** Built `src/api/` — Express router for `/providers /policies /accounts /jobs /tasks /approvals /affiliate-programs /rewards /cart /audit`, over a `Repository` + `OasisSink` abstraction (in-memory impls for tests). Cross-cutting: header→`AuthContext` authz with role matrix; every write emits a **sanitized** OASIS event (PII redacted + asserted, Sec. 9); responses strip `*_ref`/secret keys (secrets unreadable via API); account create enforces single-identity; human-task approvals are admin-only (staff cannot self-approve). 11 supertest tests; full suite **70/70 green**, typecheck clean.
 - **Follow-ups (tracked, not blocking next VTID):** (1) mount the router into the real `services/gateway` Express app with a Prisma-backed `Repository` that writes the OASIS event in the **same DB transaction** as the read-model write; (2) generate OpenAPI. Both recorded in BLOCKERS/this file; the second needs the gateway integration.
 - **Previously:** `CTRL-GUARD-0001` DONE (guardrails + gate, PR #2585); `CTRL-SCHEMA-0002` DONE (16 Prisma models, migration verified up→down→up on ephemeral Postgres); `CTRL-POLICY-0003` DONE (20 policy seeds).
-- **Next action:** `CONN-API-0002` — `ApiConnector` + provider stubs (post-registration) vs sandbox/mock; **AC:** mock round-trip for `operate`/`healthCheck`. **Sec. 0.8 vendor verification applies** — before wiring any real SDK (SP-API/eBay/Walmart/CJ), verify current official docs/availability/auth model, record in DECISIONS (VER-*), and if unavailable/gated build a mock to the interface + log BLOCKERS. Then OAUTH-0003 (token lifecycle + re-auth human task), BROWSER-0004 (Skyvern/Stagehand, artifact scrubbing, CAPTCHA fixture→task, CI live-disabled), MANUAL-0005 (pre-filled secret/PII-free task payload).
+- **Next action:** `CONN-OAUTH-0003` — `OAuthConnector` + token lifecycle (proactive refresh, refresh-on-401+backoff) + re-auth human task on refresh-token revocation → account `degraded` (Sec. 4.5). **AC:** refresh + revocation→degraded tested. Build over a swappable `OAuthClient`/token-store interface (mock). Then BROWSER-0004 (Skyvern/Stagehand, artifact scrubbing, CAPTCHA fixture→task, CI live-disabled), MANUAL-0005 (pre-filled secret/PII-free task payload).
 
 ## Layer progress
 
@@ -32,7 +34,7 @@
 | CTRL  | GUARD-0001 ✅, SCHEMA-0002 ✅, POLICY-0003 ✅, API-0004 ✅* | **CTRL layer complete** (API has 2 follow-ups) |
 | IAM   | ROLES-0001 ✅ | **DONE** (RLS verified on ephemeral PG; live-apply blocked BLK-001) |
 | VAULT | CORE-0001 ✅, OTP-0002 ✅ | **VAULT layer complete** |
-| CONN  | BASE-0001 ✅, API-0002, OAUTH-0003, BROWSER-0004, MANUAL-0005 | BASE done; adapters next |
+| CONN  | BASE-0001 ✅, API-0002 ✅, OAUTH-0003, BROWSER-0004, MANUAL-0005 | BASE+API done; OAUTH next |
 | IAM   | ROLES-0001 | TODO |
 | VAULT | CORE-0001, OTP-0002 | TODO |
 | CONN  | BASE-0001, API-0002, OAUTH-0003, BROWSER-0004, MANUAL-0005 | TODO |

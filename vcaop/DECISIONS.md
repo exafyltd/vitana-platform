@@ -22,3 +22,4 @@
 | ID | Tool/SDK | Source | Date | Conclusion |
 |----|----------|--------|------|------------|
 | VER-001 | (none yet — guardrails layer has no third-party adapters) | — | 2026-06-04 | Connector/vendor verification begins at Layer CONN/RWD; deferred until those VTIDs. |
+| VER-002 | Amazon SP-API, eBay, Walmart, CJ (ApiConnector targets) | not independently fetched this pass | 2026-06-05 | Per Sec. 0.8 step 3: live SDK/auth model NOT re-verified against official docs in this environment (no confirmed outbound access to vendor docs; treat as unverified/gated). Built `ApiConnector` against a swappable `ApiClient` interface with **mock** provider stubs only — no live calls, none in CI. Real-vendor wiring + auth model verification is a runtime task; logged in BLOCKERS (BLK-002). |
