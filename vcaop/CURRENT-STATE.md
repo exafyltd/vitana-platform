@@ -11,16 +11,18 @@
 
 ## Current position
 
-- **Current VTID:** `CTRL-POLICY-0003` (policy seeds) — **DONE**
-- **Last action:** Added `src/policy/provider-policy-seeds.ts` — 20 conservative provider seeds (all `registration_method=human_required`, `captcha_policy=human_only`, `multi_account_allowed=false`); `seedPolicyEngine()` loader; cashback gated (affiliate networks allow, marketplaces null, loyalty false). 10 new tests; full suite **60/60 green**, typecheck clean. Added a "Unit tests (full suite)" step to `VCAOP-GUARDRAILS-CI.yml`.
-- **Previously:** `CTRL-GUARD-0001` DONE (guardrails + gate, PR #2585); `CTRL-SCHEMA-0002` DONE (16 Prisma models, reversible migration verified up→down→up on ephemeral Postgres).
-- **Next action:** `CTRL-API-0004` — VCAOP REST API on the Gateway: `/providers /accounts /jobs /tasks /affiliate-programs /rewards /cart /policies /approvals /audit`. Behind authz; every write emits an OASIS event **in the same tx** as the read-model write; no PII in logs; OpenAPI generated. Mount under the existing `services/gateway` Express app (Sec. 1.1). Use the guardrails (policy-engine, no-pii-leak, human-gate, env-boundary) on every handler.
+- **Current VTID:** `CTRL-API-0004` (VCAOP REST API) — **DONE (core router + tests); 2 follow-ups open**
+- **Last action:** Built `src/api/` — Express router for `/providers /policies /accounts /jobs /tasks /approvals /affiliate-programs /rewards /cart /audit`, over a `Repository` + `OasisSink` abstraction (in-memory impls for tests). Cross-cutting: header→`AuthContext` authz with role matrix; every write emits a **sanitized** OASIS event (PII redacted + asserted, Sec. 9); responses strip `*_ref`/secret keys (secrets unreadable via API); account create enforces single-identity; human-task approvals are admin-only (staff cannot self-approve). 11 supertest tests; full suite **70/70 green**, typecheck clean.
+- **Follow-ups (tracked, not blocking next VTID):** (1) mount the router into the real `services/gateway` Express app with a Prisma-backed `Repository` that writes the OASIS event in the **same DB transaction** as the read-model write; (2) generate OpenAPI. Both recorded in BLOCKERS/this file; the second needs the gateway integration.
+- **Previously:** `CTRL-GUARD-0001` DONE (guardrails + gate, PR #2585); `CTRL-SCHEMA-0002` DONE (16 Prisma models, migration verified up→down→up on ephemeral Postgres); `CTRL-POLICY-0003` DONE (20 policy seeds).
+- **Next action:** `IAM-ROLES-0001` — Gateway authz + Supabase RLS for all VCAOP tables; role matrix tests (`iam.test.ts`): community cannot read another user's rewards; staff cannot satisfy a human gate alone; only admin changes policy; secrets unreadable by all roles. The application-level role matrix already exists in `src/api/authz.ts` + router; IAM-ROLES-0001 adds the RLS SQL policies (migration, reversible) + an `iam.test.ts` that asserts the matrix end-to-end. RLS enable was deferred here per DEC-008.
 
 ## Layer progress
 
 | Layer | VTIDs | Status |
 |-------|-------|--------|
-| CTRL  | GUARD-0001 ✅, SCHEMA-0002 ✅, POLICY-0003 ✅, API-0004 | 3/4 DONE; API-0004 next |
+| CTRL  | GUARD-0001 ✅, SCHEMA-0002 ✅, POLICY-0003 ✅, API-0004 ✅* | **CTRL layer complete** (API has 2 follow-ups) |
+| IAM   | ROLES-0001 | next |
 | IAM   | ROLES-0001 | TODO |
 | VAULT | CORE-0001, OTP-0002 | TODO |
 | CONN  | BASE-0001, API-0002, OAUTH-0003, BROWSER-0004, MANUAL-0005 | TODO |

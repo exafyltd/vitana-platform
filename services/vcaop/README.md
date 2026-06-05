@@ -8,8 +8,13 @@ Dev/staging-only control plane + connectors + commerce/rewards. Built per
 This package is being built layer by layer (runbook Sec. 6). See
 `vcaop/CURRENT-STATE.md` at the repo root for live progress.
 
-- ✅ `CTRL-GUARD-0001` — **Guardrails** (this is the first gate; see below)
-- ⏳ `CTRL-SCHEMA-0002` … and the rest of Sec. 6 (TODO)
+- ✅ `CTRL-GUARD-0001` — **Guardrails** (the first gate; see below)
+- ✅ `CTRL-SCHEMA-0002` — Prisma data model (16 models) + reversible migration
+- ✅ `CTRL-POLICY-0003` — 20 conservative provider policy seeds + loader
+- ✅ `CTRL-API-0004` — REST API router (`src/api/`): authz matrix, OASIS-on-write,
+  PII/secret redaction, single-identity + human-gate enforcement. Mountable into
+  the Gateway; **follow-ups:** mount into `services/gateway` + generate OpenAPI.
+- ⏳ `IAM-ROLES-0001` … and the rest of Sec. 6 (TODO)
 
 ## Guardrails (`src/guardrails/`) — the control layer (runbook Sec. 3)
 
