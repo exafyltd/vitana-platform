@@ -40,6 +40,8 @@ export interface JobContext {
   env?: NodeJS.ProcessEnv;
   /** Optional clock for deterministic tests. */
   now?: number;
+  /** Called to mark an account degraded (e.g. OAuth refresh-token revoked, Sec. 4.5). */
+  markDegraded?: (accountId: string, reason: string) => void;
 }
 
 export interface OperateAction {

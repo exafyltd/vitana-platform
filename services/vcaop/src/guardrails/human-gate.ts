@@ -14,6 +14,7 @@ export const HUMAN_REQUIRED_ACTIONS = [
   'PRIVILEGE_ESCALATION',
   'IRREVERSIBLE_SUBMIT',
   'TRANSFER',
+  'REAUTH', // OAuth refresh-token revoked -> human re-auth (magic link), account degraded (Sec. 4.5)
 ] as const;
 
 export type HumanRequiredAction = (typeof HUMAN_REQUIRED_ACTIONS)[number];
