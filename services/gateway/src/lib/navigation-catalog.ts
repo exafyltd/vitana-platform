@@ -873,6 +873,31 @@ export const NAVIGATION_CATALOG: ReadonlyArray<NavCatalogEntry> = [
     },
   },
   {
+    // VTID-NAV-HEALTH-MODES: the Medical mode of the main Health screen
+    // (Health → Medical), reached via /health?mode=medical. This is the
+    // medical-records/reports tab (upload blood tests & doctor reports) — NOT
+    // HEALTH.CONDITIONS (diagnoses/risks) and NOT HEALTH.MY_BIOLOGY (biomarkers
+    // / lab-result values). Health.tsx reads `?mode=`.
+    screen_id: 'HEALTH.MEDICAL',
+    route: '/health?mode=medical',
+    category: 'health',
+    access: 'authenticated',
+    anonymous_safe: false,
+    aliases: ['health-medical', 'medical-tab', 'medical-records', 'medical-reports', 'my-medical', 'health-reports', 'medizinisch'],
+    i18n: {
+      en: {
+        title: 'Medical',
+        description: 'Your medical records — upload and view your medical reports and doctor documents.',
+        when_to_visit: 'When the user asks for the Medical tab on the Health screen, their medical records, medical reports, doctor reports, or to upload a medical report. NOT health conditions/diagnoses (HEALTH.CONDITIONS) and NOT biomarker lab values (HEALTH.MY_BIOLOGY).',
+      },
+      de: {
+        title: 'Medizinisch',
+        description: 'Deine medizinischen Unterlagen — lade Arztberichte und medizinische Dokumente hoch und sieh sie an.',
+        when_to_visit: 'Wenn der Nutzer nach dem Tab "Medizinisch" auf dem Gesundheits-Bildschirm, seinen medizinischen Unterlagen, Arztberichten oder dem Hochladen eines Arztberichts fragt. NICHT Gesundheitszustände/Diagnosen (HEALTH.CONDITIONS) und NICHT Biomarker-Laborwerte (HEALTH.MY_BIOLOGY).',
+      },
+    },
+  },
+  {
     screen_id: 'HEALTH.MY_BIOLOGY',
     route: '/health/my-biology',
     category: 'health',
@@ -1546,8 +1571,8 @@ export const NAVIGATION_CATALOG: ReadonlyArray<NavCatalogEntry> = [
     screen_id: 'HEALTH.CONDITIONS', route: '/health/conditions', category: 'health',
     access: 'authenticated', anonymous_safe: false,
     i18n: {
-      en: { title: 'Health Conditions', description: 'Track and manage your health conditions.', when_to_visit: 'When the user asks about their health conditions, medical conditions, chronic conditions, diagnoses, or health issues they are managing.' },
-      de: { title: 'Gesundheitszustände', description: 'Verfolge und verwalte deine Gesundheitszustände.', when_to_visit: 'Wenn der Nutzer nach seinen Gesundheitszuständen, medizinischen Zuständen, chronischen Erkrankungen, Diagnosen oder Gesundheitsproblemen fragt, die er verwaltet.' },
+      en: { title: 'Health Conditions', description: 'Track and manage your health conditions.', when_to_visit: 'When the user asks about their health conditions, chronic conditions, diagnoses, health risks, or health issues they are managing.' },
+      de: { title: 'Gesundheitszustände', description: 'Verfolge und verwalte deine Gesundheitszustände.', when_to_visit: 'Wenn der Nutzer nach seinen Gesundheitszuständen, chronischen Erkrankungen, Diagnosen, Gesundheitsrisiken oder Gesundheitsproblemen fragt, die er verwaltet.' },
     },
   },
 
