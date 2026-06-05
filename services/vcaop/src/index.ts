@@ -6,3 +6,4 @@ export * as guardrails from './guardrails';
 export * as policy from './policy';
 export * as api from './api';
 export * as vault from './vault';
+export * as connectors from './connectors';
