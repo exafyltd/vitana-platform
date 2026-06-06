@@ -70,6 +70,15 @@ const CreateTicketSchema = z.object({
   // Structured fields filled by the specialist intake agent during voice
   // capture. Open shape per kind — see plan for kind-specific schemas.
   structured_fields: z.record(z.unknown()).optional(),
+
+  // Origin surface. Usually left unset and derived from screen_path by the
+  // classifier, but a client may pin it — e.g. the in-app Support → Contact
+  // screen pins 'support' so those tickets form a distinct, human-only queue
+  // that the auto-triage routine skips.
+  surface: z.enum([
+    'community', 'admin', 'command-hub', 'mobile-only',
+    'marketplace', 'infrastructure', 'support',
+  ]).optional(),
 }).refine(
   v => Boolean(v.raw_text) || Boolean(v.raw_transcript) || (v.intake_messages && v.intake_messages.length > 0),
   { message: 'At least one of raw_text, raw_transcript, or intake_messages is required' }
@@ -149,6 +158,9 @@ router.post('/', async (req: Request, res: Response) => {
     screen_path: body.screen_path ?? null,
     app_version: body.app_version ?? null,
     device_meta: body.device_meta ?? null,
+    // Pinned surface (if the client set one) — otherwise the classifier
+    // derives it from screen_path. Support → Contact pins 'support'.
+    ...(body.surface ? { surface: body.surface } : {}),
   };
 
   const { data, error } = await supabase

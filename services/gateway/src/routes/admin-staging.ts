@@ -28,6 +28,7 @@ import { isStaging } from '../env';
 import { emitOasisEvent } from '../services/oasis-event-service';
 import { runWithShadowAwaitable } from '../services/llm-router-shadow';
 import { accuracyRollup } from '../services/shadow-accuracy';
+import { candidateEndpointFor, vertexPredictToolName } from '../services/candidate-model-provider';
 
 const router = Router();
 
@@ -205,6 +206,11 @@ interface ShadowFeatureRollup {
   labeled_comparisons: number;
   primary_accuracy: number | null;
   candidate_accuracy: number | null;
+  // Real-model-only accuracy (excludes simulated_models=true) — what the
+  // canary-readiness gate graduates on (BOOTSTRAP-SHADOW-REAL-CANDIDATE).
+  real_labeled_comparisons: number;
+  real_primary_accuracy: number | null;
+  real_candidate_accuracy: number | null;
 }
 
 function percentile(sorted: number[], p: number): number {
@@ -251,7 +257,7 @@ function rollupFeature(feature: string, rows: ShadowEventRow[]): ShadowFeatureRo
   const ratedTotal = agreed + mismatched;
   // Ground-truth accuracy over labeled (golden-corpus) comparisons in this
   // feature bucket. Pure helper, shared with the shadow primitive's scorer.
-  const acc = accuracyRollup(rows.map((r) => (r.metadata ?? {}) as { primary_correct?: unknown; candidate_correct?: unknown }));
+  const acc = accuracyRollup(rows.map((r) => (r.metadata ?? {}) as { primary_correct?: unknown; candidate_correct?: unknown; simulated_models?: unknown }));
   return {
     feature,
     total_comparisons: total,
@@ -268,6 +274,9 @@ function rollupFeature(feature: string, rows: ShadowEventRow[]): ShadowFeatureRo
     labeled_comparisons: acc.labeled_comparisons,
     primary_accuracy: acc.primary_accuracy,
     candidate_accuracy: acc.candidate_accuracy,
+    real_labeled_comparisons: acc.real_labeled_comparisons,
+    real_primary_accuracy: acc.real_primary_accuracy,
+    real_candidate_accuracy: acc.real_candidate_accuracy,
   };
 }
 
@@ -473,6 +482,23 @@ router.post(
       // deterministically *different* (wrong) tool when simulating a miss.
       const toolPool = Array.from(new Set(turns.map((t) => t.expected_tool)));
 
+      // G4 (BOOTSTRAP-SHADOW-REAL-CANDIDATE): resolve the candidate source once.
+      // When CANDIDATE_ENDPOINT__voice_tool_router is set, the candidate is the
+      // REAL fine-tuned model on Vertex (simulated_models=false); otherwise we
+      // fall back to the deterministic simulation below, tagged honestly so the
+      // accuracy gate never graduates on simulated evidence. The fallback is
+      // logged (not silent).
+      const candidateEndpoint = candidateEndpointFor(feature);
+      const candidateSimulated = candidateEndpoint === null;
+      const candidateSource: 'vertex_endpoint' | 'simulation' =
+        candidateEndpoint ? 'vertex_endpoint' : 'simulation';
+      if (candidateSimulated) {
+        // eslint-disable-next-line no-console
+        console.warn(
+          `[admin-staging corpus exerciser] feature='${feature}' candidate=SIMULATION — CANDIDATE_ENDPOINT__${feature.replace(/[^a-z0-9]+/gi, '_').toLowerCase()} unset`,
+        );
+      }
+
       const started = Date.now();
       let emitted = 0;
       let primaryCorrect = 0;
@@ -498,6 +524,12 @@ router.post(
         const primaryDelay = 80 + hashIdx(`${seed}:p-delay`, i, 100);
         const candidateDelay = 60 + hashIdx(`${seed}:c-delay`, i, 160);
 
+        // Capture the candidate's ACTUAL decision so the response summary is
+        // honest for both the real-endpoint and simulation paths (the
+        // per-turn eval.shadow.compared events remain the authoritative source
+        // the report endpoint aggregates).
+        let candTool: string | null = null;
+        let candErrored = false;
         const { shadowDone } = await runWithShadowAwaitable({
           feature,
           input: { text: t.user_input, exerciser_source: exerciserSource } as Record<string, unknown>,
@@ -506,15 +538,25 @@ router.post(
             return { tool_name: primaryTool };
           },
           candidate: async () => {
+            if (candidateEndpoint) {
+              const out = await vertexPredictToolName(candidateEndpoint, t.user_input);
+              candTool = out.tool_name;
+              return out;
+            }
             await new Promise((r) => setTimeout(r, candidateDelay));
-            if (candidateWillError) throw new Error('synthetic candidate error (corpus exerciser)');
+            if (candidateWillError) {
+              candErrored = true;
+              throw new Error('synthetic candidate error (corpus exerciser)');
+            }
+            candTool = candidateTool;
             return { tool_name: candidateTool };
           },
           extractKey: (out) => (out as { tool_name?: string }).tool_name ?? null,
           groundTruthKey: expected,
           labels: {
             corpus_grounded: true,
-            simulated_models: true,
+            simulated_models: candidateSimulated,
+            candidate_source: candidateSource,
             exerciser_source: exerciserSource,
             fixture_id: t.fixture_id,
             corpus_turn: t.turn,
@@ -525,8 +567,8 @@ router.post(
 
         emitted++;
         if (primaryTool === expected) primaryCorrect++;
-        if (!candidateWillError && candidateTool === expected) candidateCorrect++;
-        if (candidateWillError) candidateErrors++;
+        if (!candErrored && candTool === expected) candidateCorrect++;
+        if (candErrored) candidateErrors++;
         if (sample.length < 5) {
           sample.push({
             fixture_id: t.fixture_id,
@@ -534,9 +576,9 @@ router.post(
             input: t.user_input,
             expected,
             primary: primaryTool,
-            candidate: candidateWillError ? '(error)' : candidateTool,
+            candidate: candErrored ? '(error)' : (candTool ?? '(null)'),
             primary_ok: primaryTool === expected,
-            candidate_ok: !candidateWillError && candidateTool === expected,
+            candidate_ok: !candErrored && candTool === expected,
           });
         }
       }
@@ -552,7 +594,8 @@ router.post(
           env: 'staging',
           exerciser_source: exerciserSource,
           corpus_grounded: true,
-          simulated_models: true,
+          simulated_models: candidateSimulated,
+          candidate_source: candidateSource,
           is_exerciser_rollup: true,
           seed,
           feature,
