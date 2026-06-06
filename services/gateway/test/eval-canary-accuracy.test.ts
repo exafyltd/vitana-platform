@@ -9,7 +9,11 @@
  */
 process.env.NODE_ENV = 'test';
 
-import { accuracyReason } from '../scripts/eval/canary-readiness-report';
+import {
+  accuracyReason,
+  computeConsecutiveCleanDays,
+  prevUtcDay,
+} from '../scripts/eval/canary-readiness-report';
 
 describe('canary readiness — candidate_accuracy gate', () => {
   test('blocks when there are too few corpus-grounded comparisons', () => {
@@ -55,5 +59,58 @@ describe('canary readiness — candidate_accuracy gate', () => {
   test('a candidate exactly at the floor passes', () => {
     const r = accuracyReason({ real_labeled_comparisons: 50, real_primary_accuracy: 0.85, real_candidate_accuracy: 0.85 });
     expect(r.ok).toBe(true);
+  });
+});
+
+describe('consecutive_clean_days streak (G5b)', () => {
+  test('prevUtcDay steps back one day, across month/year boundaries', () => {
+    expect(prevUtcDay('2026-06-04')).toBe('2026-06-03');
+    expect(prevUtcDay('2026-06-01')).toBe('2026-05-31');
+    expect(prevUtcDay('2026-01-01')).toBe('2025-12-31');
+  });
+
+  test('today not clean → streak 0 regardless of history', () => {
+    const hist = [{ date: '2026-06-03', clean: true }, { date: '2026-06-02', clean: true }];
+    expect(computeConsecutiveCleanDays(hist, false, '2026-06-04')).toBe(0);
+  });
+
+  test('today clean, no history → 1', () => {
+    expect(computeConsecutiveCleanDays([], true, '2026-06-04')).toBe(1);
+  });
+
+  test('today + two prior clean days → 3', () => {
+    const hist = [{ date: '2026-06-03', clean: true }, { date: '2026-06-02', clean: true }];
+    expect(computeConsecutiveCleanDays(hist, true, '2026-06-04')).toBe(3);
+  });
+
+  test('a missing calendar day breaks the streak', () => {
+    // 06-03 missing → only today counts
+    const hist = [{ date: '2026-06-02', clean: true }, { date: '2026-06-01', clean: true }];
+    expect(computeConsecutiveCleanDays(hist, true, '2026-06-04')).toBe(1);
+  });
+
+  test('a not-clean prior day stops the streak', () => {
+    const hist = [{ date: '2026-06-03', clean: true }, { date: '2026-06-02', clean: false }, { date: '2026-06-01', clean: true }];
+    expect(computeConsecutiveCleanDays(hist, true, '2026-06-04')).toBe(2);
+  });
+
+  test('a full 5-day streak meets the threshold', () => {
+    const hist = [
+      { date: '2026-06-03', clean: true },
+      { date: '2026-06-02', clean: true },
+      { date: '2026-06-01', clean: true },
+      { date: '2026-05-31', clean: true },
+    ];
+    expect(computeConsecutiveCleanDays(hist, true, '2026-06-04')).toBe(5);
+  });
+
+  test('newest snapshot per date wins (history is newest-first)', () => {
+    // 06-03 has a later clean=false then an earlier clean=true; newest (false) wins → streak stops at today
+    const hist = [
+      { date: '2026-06-03', clean: false },
+      { date: '2026-06-03', clean: true },
+      { date: '2026-06-02', clean: true },
+    ];
+    expect(computeConsecutiveCleanDays(hist, true, '2026-06-04')).toBe(1);
   });
 });
