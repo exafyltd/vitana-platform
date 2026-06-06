@@ -1,0 +1,113 @@
+name: Exercise Staging Shadow (Golden Corpus)
+
+# BOOTSTRAP-SHADOW-REAL-CANDIDATE — Day-4 follow-up.
+#
+# Sibling of EXERCISE-STAGING-SHADOW.yml. That workflow drives SYNTHETIC prompts
+# and only produces primary<->candidate *agreement*. This one drives the LABELED
+# golden corpus (test/eval/golden-corpus/) through the same staging exerciser
+# (source=golden-corpus), so every emitted eval.shadow.compared row carries
+# ground-truth correctness (primary_correct / candidate_correct). That is the
+# accuracy signal the canary-readiness gate consumes.
+#
+# Provenance: events are tagged metadata.candidate_source — `simulation` until a
+# real fine-tuned model is wired in via CANDIDATE_ENDPOINT__voice_tool_router on
+# the staging gateway, then `vertex_endpoint`. The gate only graduates on
+# non-simulated (real) accuracy, so running this on schedule keeps the labeled
+# window fresh and becomes load-bearing the moment the real candidate is served.
+#
+# Runs daily a few minutes after the synthetic exerciser and before
+# CRON-SHADOW-COMPARISON-REPORT (08:15 UTC) so the report aggregates fresh
+# corpus-grounded accuracy.
+
+on:
+  schedule:
+    - cron: '35 7 * * *'
+  workflow_dispatch:
+    inputs:
+      seed:
+        description: 'Deterministic seed (default: today UTC date)'
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+concurrency:
+  group: exercise-staging-shadow-corpus
+  cancel-in-progress: false
+
+env:
+  STAGING_GATEWAY_URL: https://gateway-staging-q74ibpv6ia-uc.a.run.app
+
+jobs:
+  exercise-corpus:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Sanity check staging gateway is up + on staging env
+        run: |
+          set -euo pipefail
+          HEALTH=$(curl -sS --max-time 10 "${STAGING_GATEWAY_URL}/api/v1/admin/health")
+          ENV=$(printf '%s' "$HEALTH" | python3 -c "import sys, json; print(json.load(sys.stdin).get('env',''))")
+          if [ "$ENV" != "staging" ]; then
+            echo "::error::staging gateway health did not return env=staging (got '$ENV'): $HEALTH"
+            exit 1
+          fi
+          echo "Staging gateway healthy: $HEALTH"
+
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install gateway deps
+        working-directory: services/gateway
+        run: npm ci --no-audit --no-fund
+
+      - name: Emit golden corpus through the staging exerciser
+        working-directory: services/gateway
+        env:
+          GATEWAY_URL: ${{ env.STAGING_GATEWAY_URL }}
+          GATEWAY_SERVICE_TOKEN: ${{ secrets.GATEWAY_SERVICE_TOKEN }}
+          SEED: ${{ inputs.seed }}
+        run: |
+          set -euo pipefail
+          if [ -z "${GATEWAY_SERVICE_TOKEN:-}" ]; then
+            echo "::error::GATEWAY_SERVICE_TOKEN repo secret is missing"
+            echo "::error::Set with: gh secret set GATEWAY_SERVICE_TOKEN --repo exafyltd/vitana-platform"
+            exit 1
+          fi
+
+          SEED_ARG=""
+          if [ -n "${SEED:-}" ]; then SEED_ARG="--seed=${SEED}"; fi
+
+          # The runner logs '[emit] HTTP <status>' but does NOT exit non-zero on
+          # a failed POST — capture its output and assert a 2xx ourselves so a
+          # 4xx/5xx can't pass silently.
+          set +e
+          OUT=$(npx tsx test/eval/shadow-corpus-runner.ts --emit ${SEED_ARG} 2>&1)
+          RC=$?
+          set -e
+          echo "$OUT"
+          echo "$OUT" > /tmp/corpus-exercise.log
+
+          if [ "$RC" -ne 0 ]; then
+            echo "::error::shadow-corpus-runner exited non-zero ($RC)"
+            exit 1
+          fi
+          # Require a logged 2xx from the exerciser POST.
+          if ! printf '%s\n' "$OUT" | grep -qE '^\[emit\] HTTP 2[0-9][0-9]$'; then
+            echo "::error::corpus exerciser POST did not return 2xx — see log above"
+            exit 1
+          fi
+          echo "Corpus exerciser emitted OK."
+
+      - name: Upload log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: corpus-exercise-${{ github.run_id }}
+          path: /tmp/corpus-exercise.log
+          if-no-files-found: warn
+          retention-days: 30
