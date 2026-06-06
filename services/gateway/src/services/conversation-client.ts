@@ -25,7 +25,7 @@ import {
 import { ContextLens, createContextLens } from '../types/context-lens';
 import { computeRetrievalRouterDecision, logRetrievalRouterDecision } from './retrieval-router';
 import { buildContextPack, formatContextPackForLLM, BuildContextPackInput, extractLanguageFromContextPack, buildLanguageDirective } from './context-pack-builder';
-import { processWithGemini } from './gemini-operator';
+import { processWithGemini, setThreadIdentity } from './gemini-operator';
 import { getGeminiToolDefinitions, logToolExecution } from './tool-registry';
 import { classifyCategory } from '../routes/memory';
 import { getPersonalityConfigSync } from './ai-personality-service';
@@ -327,6 +327,18 @@ export async function processConversationTurn(
     // Step 5: Get tool definitions
     const toolDefs = getGeminiToolDefinitions(input.role);
 
+    // VTID-CHAT-SEND: Register the user's identity for this thread BEFORE the
+    // LLM runs, so identity-bound tools the executor dispatches (send_chat_message,
+    // resolve_recipient, get_user_matches, recall_conversation_at_time) can act
+    // on the user's behalf. The text-DM brain previously never set this, so
+    // those tools silently failed with "User context not available" — which is
+    // why asking Vitana to message someone fell back to an events search.
+    setThreadIdentity(thread.thread_id, {
+      tenant_id: input.tenant_id,
+      user_id: input.user_id,
+      role: input.role,
+    });
+
     // Step 6: Call LLM
     const llmStartTime = Date.now();
     let reply = '';
@@ -535,6 +547,13 @@ User's role: ${role}
 Instructions:
 ${ucConfig.common_instructions || '- Use the memory context to personalize responses\n- Use knowledge context for Vitana-specific questions\n- Be helpful and accurate'}
 - ${channel === 'orb' ? (ucConfig.instructions_orb || 'Keep responses brief and natural for voice') : (ucConfig.instructions_operator || 'You can use markdown formatting and be more detailed')}
+
+Sending messages to other members:
+- You CAN send a direct chat message to another community member on the user's behalf using the send_chat_message tool. When the user asks to message someone ("send Maria a message saying ...", "schick Mariia eine Nachricht: ..."), do this:
+  1. Confirm the recipient and the exact message text with the user first ("Soll ich die Nachricht an <name> senden?").
+  2. When the user confirms (e.g. "yes, send it" / "ja, versende es"), call send_chat_message with recipient_label set to the name the user used (full name preferred) and body set to the exact message text.
+  3. If the name is ambiguous, call resolve_recipient first to disambiguate, then confirm with the user.
+- NEVER claim a message was sent unless send_chat_message returned ok. If it returns an error, tell the user honestly and offer to try again — do NOT silently switch to a different action like searching for events.
 
 Sharing Links:
 - Event search results include a "Link:" field with a URL like https://vitanaland.com/e/{slug}. When the user asks about an event or asks for a link, you MUST copy this exact URL into your response on its own line. NEVER say "the link is on its way" or "I'll send the link" — paste the actual URL.
