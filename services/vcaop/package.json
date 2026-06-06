@@ -8,7 +8,8 @@
     "build": "tsc",
     "typecheck": "tsc --noEmit",
     "test": "jest",
-    "test:guardrails": "jest --runInBand test/guardrails"
+    "test:guardrails": "jest --runInBand test/guardrails",
+    "health": "jest --runInBand test/guardrails test/e2e test/vault/totp.test.ts test/observability"
   },
   "dependencies": {
     "express": "^4.18.2"
