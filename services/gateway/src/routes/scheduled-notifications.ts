@@ -429,11 +429,33 @@ router.post('/daily-pace-notifications', async (req: Request, res: Response) => 
   const tenantId = getTenantId(req);
   if (!tenantId) return res.status(400).json({ ok: false, error: 'tenant_id required' });
 
+  // Debug params for on-call / manual testing:
+  //   user_id — process ONLY this user (skip the tenant fan-out)
+  //   force   — also bypass the wrong_hour gate so you can fire a test
+  //             push at any time of day. Both also accepted as query string.
+  const debugUserId =
+    (req.body?.user_id as string | undefined) ||
+    (req.query?.user_id as string | undefined) ||
+    undefined;
+  const force =
+    req.body?.force === true ||
+    req.body?.force === 'true' ||
+    req.query?.force === 'true' ||
+    req.query?.force === '1';
+
   const supa = await getServiceClient();
   if (!supa) return res.status(503).json({ ok: false, error: 'Supabase not configured' });
 
   const nowUtc = new Date();
-  const users = await getActiveUsers(supa, tenantId);
+  // When user_id is supplied, target that user directly instead of
+  // fetching the tenant fan-out and filtering in memory — Supabase REST
+  // pages at ~1k rows so a valid user on a later page would otherwise be
+  // silently dropped (codex review). computePaceDecision already
+  // tenant-scopes every read it does, so bogus UUIDs surface as the
+  // expected skip reasons (no_goal etc.) in the response.
+  const users = debugUserId
+    ? [{ user_id: debugUserId }]
+    : await getActiveUsers(supa, tenantId);
 
   // Pre-fetch locales for the whole tenant in one query (same pattern as
   // the other fan-out routes — avoids N round-trips for catalog lookups).
@@ -453,7 +475,9 @@ router.post('/daily-pace-notifications', async (req: Request, res: Response) => 
 
   for (const { user_id } of users) {
     try {
-      const decision = await computePaceDecision(supa, user_id, tenantId, nowUtc);
+      const decision = await computePaceDecision(supa, user_id, tenantId, nowUtc, {
+        skipHourCheck: force,
+      });
 
       if (!decision.shouldNotify) {
         if (decision.skipReason) skipped[decision.skipReason]++;
