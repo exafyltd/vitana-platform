@@ -2851,6 +2851,7 @@ export async function tool_navigate(
   }
 
   const lang = (id.lang || 'en') as string;
+  const isMobile = (typeof args.is_mobile === 'boolean' ? args.is_mobile : id.is_mobile) ?? false;
   const currentRoute = typeof args.current_route === 'string' && args.current_route.length > 0
     ? args.current_route
     : null;
@@ -2976,13 +2977,25 @@ export async function tool_navigate(
     const entry = lookupScreen(consultResult.primary.screen_id);
     if (entry) {
       const content = getContent(entry, lang);
+      // VTID-NAV-OVERLAY: resolve the route the SAME way navigate_to_screen
+      // does — honor mobile_route, and for overlay entries append the
+      // `?open=<query_marker>` marker the frontend intercepts. Without this the
+      // auto-redirect path dispatched the raw `entry.route` (e.g. `/calendar`),
+      // which is not a real page → 404. Overlays must open as a drawer instead.
+      const baseRoute = (isMobile && entry.mobile_route) ? entry.mobile_route : entry.route;
+      let resolvedRoute = baseRoute;
+      if (entry.entry_kind === 'overlay' && entry.overlay) {
+        const sep = resolvedRoute.includes('?') ? '&' : '?';
+        resolvedRoute = `${resolvedRoute}${sep}open=${entry.overlay.query_marker}`;
+      }
       const directive = {
         type: 'orb_directive',
         directive: 'navigate',
         screen_id: entry.screen_id,
-        route: entry.route,
+        route: resolvedRoute,
         title: content.title,
         reason: question,
+        entry_kind: entry.entry_kind || 'route',
         vtid: 'VTID-NAV-01',
       };
 
@@ -2995,7 +3008,7 @@ export async function tool_navigate(
         payload: {
           session_id: id.session_id || null,
           screen_id: entry.screen_id,
-          route: entry.route,
+          route: resolvedRoute,
           drain_wait_ms: 0,
         },
       }).catch(() => {});
@@ -3005,11 +3018,11 @@ export async function tool_navigate(
         type: 'orb.navigator.requested',
         source: 'orb-tools-shared',
         status: 'info',
-        message: `navigate auto-redirect to ${entry.screen_id} (${entry.route})`,
+        message: `navigate auto-redirect to ${entry.screen_id} (${resolvedRoute})`,
         payload: {
           session_id: id.session_id || null,
           screen_id: entry.screen_id,
-          route: entry.route,
+          route: resolvedRoute,
           reason: question,
           is_anonymous: isAnonymous,
         },
