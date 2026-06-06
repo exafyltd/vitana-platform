@@ -55,33 +55,61 @@ export interface AccuracyRollup {
   primary_accuracy: number | null;
   /** Share of labeled comparisons (with a non-null candidate_correct) where the candidate matched. null when none. */
   candidate_accuracy: number | null;
+  // ── Real-model-only view (BOOTSTRAP-SHADOW-REAL-CANDIDATE, Day-4 G5) ──
+  // Identical to the above but EXCLUDING rows tagged `simulated_models: true`.
+  // The canary gate keys off these so a candidate can never graduate on
+  // simulated evidence — simulated comparisons still count toward display
+  // accuracy but NOT toward readiness.
+  /** Labeled comparisons from a REAL candidate model (simulated_models !== true). */
+  real_labeled_comparisons: number;
+  /** Primary accuracy over real-candidate labeled comparisons. null when none. */
+  real_primary_accuracy: number | null;
+  /** Candidate accuracy over real-candidate labeled comparisons. null when none. */
+  real_candidate_accuracy: number | null;
 }
 
-/** Minimal row shape — just the two correctness flags from event metadata. */
+/** Minimal row shape — the correctness flags + provenance from event metadata. */
 export interface ScoredRow {
   primary_correct?: unknown;
   candidate_correct?: unknown;
+  /** When strictly true, the candidate was a simulation — excluded from real_* counts. */
+  simulated_models?: unknown;
 }
 
 /**
  * Roll a set of scored events into a feature-level accuracy. Rows without a
  * boolean `primary_correct` are ignored (unlabeled shadow traffic), so this is
- * safe to run over a mixed stream of labeled + unlabeled comparisons.
+ * safe to run over a mixed stream of labeled + unlabeled comparisons. Rows
+ * tagged `simulated_models: true` count toward the display accuracy but are
+ * excluded from the `real_*` fields the readiness gate consumes.
  */
 export function accuracyRollup(rows: ScoredRow[]): AccuracyRollup {
   let labeled = 0;
   let primaryHits = 0;
   let candidateLabeled = 0;
   let candidateHits = 0;
+  let realLabeled = 0;
+  let realPrimaryHits = 0;
+  let realCandidateLabeled = 0;
+  let realCandidateHits = 0;
 
   for (const r of rows) {
+    const real = r.simulated_models !== true;
     if (typeof r.primary_correct === 'boolean') {
       labeled++;
       if (r.primary_correct) primaryHits++;
+      if (real) {
+        realLabeled++;
+        if (r.primary_correct) realPrimaryHits++;
+      }
     }
     if (typeof r.candidate_correct === 'boolean') {
       candidateLabeled++;
       if (r.candidate_correct) candidateHits++;
+      if (real) {
+        realCandidateLabeled++;
+        if (r.candidate_correct) realCandidateHits++;
+      }
     }
   }
 
@@ -89,5 +117,8 @@ export function accuracyRollup(rows: ScoredRow[]): AccuracyRollup {
     labeled_comparisons: labeled,
     primary_accuracy: labeled > 0 ? primaryHits / labeled : null,
     candidate_accuracy: candidateLabeled > 0 ? candidateHits / candidateLabeled : null,
+    real_labeled_comparisons: realLabeled,
+    real_primary_accuracy: realLabeled > 0 ? realPrimaryHits / realLabeled : null,
+    real_candidate_accuracy: realCandidateLabeled > 0 ? realCandidateHits / realCandidateLabeled : null,
   };
 }

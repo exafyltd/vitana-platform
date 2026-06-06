@@ -87,18 +87,24 @@ function parseLooseJson(text: string): any | null {
 }
 
 /**
- * Translate a plan_summary + a batch of steps into `language` in a single LLM
- * call. Returns null on any failure (caller keeps the source text — a hiccup
- * must never blank out the plan). Step ids are echoed back so we can map the
- * translations onto the right rows.
+ * Translate the goal title (goal_text) + plan_summary + a batch of steps into
+ * `language` in a single LLM call. Returns null on any failure (caller keeps the
+ * source text — a hiccup must never blank out the plan). Step ids are echoed back
+ * so we can map the translations onto the right rows.
  */
 async function translateBatch(
   language: string,
   registerHint: string,
+  goalText: string | null,
   planSummary: string | null,
   steps: TranslatableStep[],
-): Promise<{ plan_summary: string | null; steps: Record<string, { title: string; description: string | null }> } | null> {
+): Promise<{
+  goal_text: string | null;
+  plan_summary: string | null;
+  steps: Record<string, { title: string; description: string | null }>;
+} | null> {
   const payload = {
+    goal_text: goalText ?? '',
     plan_summary: planSummary ?? '',
     steps: steps.map((s) => ({ id: s.id, title: s.title, description: s.description ?? '' })),
   };
@@ -109,10 +115,11 @@ async function translateBatch(
     `If a string is already in ${language}, return it unchanged. Do NOT translate, add, ` +
     `remove or reorder the "id" values — echo them back exactly.`;
   const user =
-    `Translate the "plan_summary" and each step's "title" and "description" into ${language}. ` +
+    `Translate the "goal_text" (a short goal title), the "plan_summary" and each step's ` +
+    `"title" and "description" into ${language}. ` +
     `Respond with ONLY a JSON object — no markdown fences, no commentary — of exactly this shape:\n` +
-    `{"plan_summary": string, "steps": [{"id": string, "title": string, "description": string}]}\n` +
-    `Keep the JSON field names (plan_summary, steps, id, title, description) in English.\n\n` +
+    `{"goal_text": string, "plan_summary": string, "steps": [{"id": string, "title": string, "description": string}]}\n` +
+    `Keep the JSON field names (goal_text, plan_summary, steps, id, title, description) in English.\n\n` +
     `Source JSON:\n${JSON.stringify(payload)}`;
 
   const result = await callViaRouter('worker', user, {
@@ -138,8 +145,9 @@ async function translateBatch(
       };
     }
   }
+  const goal = typeof parsed.goal_text === 'string' && parsed.goal_text.trim() ? parsed.goal_text : null;
   const summary = typeof parsed.plan_summary === 'string' && parsed.plan_summary.trim() ? parsed.plan_summary : null;
-  return { plan_summary: summary, steps: byId };
+  return { goal_text: goal, plan_summary: summary, steps: byId };
 }
 
 /**
@@ -172,39 +180,54 @@ export async function localizeGoalPlan(
   // 1. Read whatever is already cached for this locale.
   const cachedSteps = new Map<string, { title: string; description: string | null }>();
   let cachedSummary: string | null | undefined;
+  let cachedGoalText: string | null | undefined;
   try {
     const [{ data: stepRows }, { data: planRows }] = await Promise.all([
       stepIds.length
         ? client.from('goal_plan_step_i18n').select('step_id, title, description').eq('locale', target).in('step_id', stepIds)
         : Promise.resolve({ data: [] as any[] }),
-      client.from('goal_plan_i18n').select('plan_summary').eq('locale', target).eq('plan_id', plan.id).maybeSingle(),
+      client.from('goal_plan_i18n').select('goal_text, plan_summary').eq('locale', target).eq('plan_id', plan.id).maybeSingle(),
     ]);
     for (const r of (stepRows as any[]) ?? []) {
       cachedSteps.set(r.step_id, { title: r.title, description: r.description ?? null });
     }
-    if (planRows) cachedSummary = (planRows as any).plan_summary ?? null;
+    if (planRows) {
+      cachedSummary = (planRows as any).plan_summary ?? null;
+      cachedGoalText = (planRows as any).goal_text ?? null;
+    }
   } catch (e: any) {
     console.warn(`${LOG} cache read failed (continuing): ${e?.message}`);
   }
 
-  // 2. Determine what's missing and translate it in one shot.
+  // 2. Determine what's missing and translate it in one shot. A field counts as
+  //    missing when the source has it but the cache doesn't yet hold a value —
+  //    this also backfills goal_text onto plan rows cached before it was tracked.
   const missingSteps = steps.filter((s) => !cachedSteps.has(s.id));
-  const summaryMissing = cachedSummary === undefined && plan.plan_summary != null;
-  if (missingSteps.length > 0 || summaryMissing) {
+  const summaryMissing = plan.plan_summary != null && cachedSummary == null;
+  const goalTextMissing = plan.goal_text != null && cachedGoalText == null;
+  if (missingSteps.length > 0 || summaryMissing || goalTextMissing) {
     const translated = await translateBatch(
       language,
       REGISTER_HINT[target] ?? '',
+      goalTextMissing ? plan.goal_text : null,
       summaryMissing ? plan.plan_summary : null,
       missingSteps.map((s) => ({ id: s.id, title: s.title, description: s.description })),
     );
     if (translated) {
+      if (goalTextMissing) cachedGoalText = translated.goal_text ?? plan.goal_text;
+      if (summaryMissing) cachedSummary = translated.plan_summary ?? plan.plan_summary;
       // Persist new translations to the cache (best-effort; never blocks the response).
       try {
-        if (summaryMissing) {
-          cachedSummary = translated.plan_summary ?? plan.plan_summary;
-          await client
-            .from('goal_plan_i18n')
-            .upsert({ plan_id: plan.id, locale: target, plan_summary: cachedSummary }, { onConflict: 'plan_id,locale' });
+        if (goalTextMissing || summaryMissing) {
+          await client.from('goal_plan_i18n').upsert(
+            {
+              plan_id: plan.id,
+              locale: target,
+              goal_text: cachedGoalText ?? plan.goal_text,
+              plan_summary: cachedSummary ?? plan.plan_summary,
+            },
+            { onConflict: 'plan_id,locale' },
+          );
         }
         const rows = missingSteps.map((s) => {
           const tr = translated.steps[s.id];
@@ -219,7 +242,6 @@ export async function localizeGoalPlan(
       } catch (e: any) {
         console.warn(`${LOG} cache write failed (non-fatal): ${e?.message}`);
         // Still apply in-memory translations below even if caching failed.
-        if (summaryMissing && cachedSummary === undefined) cachedSummary = translated.plan_summary ?? plan.plan_summary;
         for (const s of missingSteps) {
           if (!cachedSteps.has(s.id)) {
             const tr = translated.steps[s.id];
@@ -239,6 +261,7 @@ export async function localizeGoalPlan(
 
   return {
     ...plan,
+    goal_text: cachedGoalText ?? plan.goal_text,
     plan_summary: cachedSummary ?? plan.plan_summary,
     milestones: applyKind(plan.milestones),
     checkpoints: applyKind(plan.checkpoints),
@@ -257,6 +280,7 @@ export async function seedGoalPlanSourceCache(
   client: SupabaseClient,
   planId: string,
   sourceLocaleRaw: string,
+  goalText: string | null,
   planSummary: string | null,
   steps: Array<{ id: string; title: string; description: string | null }>,
 ): Promise<void> {
@@ -264,7 +288,7 @@ export async function seedGoalPlanSourceCache(
   try {
     await client
       .from('goal_plan_i18n')
-      .upsert({ plan_id: planId, locale, plan_summary: planSummary ?? null }, { onConflict: 'plan_id,locale' });
+      .upsert({ plan_id: planId, locale, goal_text: goalText ?? null, plan_summary: planSummary ?? null }, { onConflict: 'plan_id,locale' });
     if (steps.length > 0) {
       await client.from('goal_plan_step_i18n').upsert(
         steps.map((s) => ({ step_id: s.id, locale, title: s.title, description: s.description ?? null })),
