@@ -74,7 +74,28 @@ describe('accuracyRollup', () => {
 
   test('no labeled rows → null accuracy, zero labeled', () => {
     const acc = accuracyRollup([{ agreement: false }, {}]);
-    expect(acc).toEqual({ labeled_comparisons: 0, primary_accuracy: null, candidate_accuracy: null });
+    expect(acc).toEqual({
+      labeled_comparisons: 0, primary_accuracy: null, candidate_accuracy: null,
+      real_labeled_comparisons: 0, real_primary_accuracy: null, real_candidate_accuracy: null,
+    });
+  });
+
+  test('simulated rows count toward display accuracy but NOT real_* (gate safety)', () => {
+    const acc = accuracyRollup([
+      // two simulated labeled comparisons (both candidate-correct)
+      { primary_correct: true, candidate_correct: true, simulated_models: true },
+      { primary_correct: true, candidate_correct: true, simulated_models: true },
+      // one REAL labeled comparison (candidate wrong)
+      { primary_correct: true, candidate_correct: false, simulated_models: false },
+    ]);
+    // Display view sees all three.
+    expect(acc.labeled_comparisons).toBe(3);
+    expect(acc.candidate_accuracy).toBeCloseTo(2 / 3);
+    // Real view sees only the one non-simulated row — so the gate can't be
+    // fooled by simulated candidate accuracy.
+    expect(acc.real_labeled_comparisons).toBe(1);
+    expect(acc.real_primary_accuracy).toBe(1);
+    expect(acc.real_candidate_accuracy).toBe(0);
   });
 });
 
