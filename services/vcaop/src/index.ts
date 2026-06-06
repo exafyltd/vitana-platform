@@ -13,3 +13,4 @@ export * as rewards from './rewards';
 export * as commerce from './commerce';
 export * as observability from './observability';
 export * as ui from './ui';
+export * as healing from './healing';

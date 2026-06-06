@@ -109,9 +109,12 @@ Mirrors the voice-perf learning loop:
 6. Bounded retries — never thrash; degrade-and-escalate beats infinite loops.
 
 ## 9. Status of this plan
-The detection layer (`npm run health`, `VCAOP-HEALTH.yml`) and the recovery
-primitives (down-migrations, revision rollback, connector degrade, policy re-seed)
-**exist today**. The autonomous **orchestrator** that walks the ladder is the next
-build step once a dev environment exists (BLK-001) — until then the hourly probe +
-failure-issue path gives detection and human-routed recovery, and all primitives are
-ready for the orchestrator to call.
+The detection layer (`npm run health`, `VCAOP-HEALTH.yml`, in-process
+`invariantProbe`) and the recovery primitives (down-migrations, revision rollback,
+connector degrade, policy re-seed) **exist today**. The autonomous **orchestrator**
+that walks the ladder is **built and tested** (`src/healing/`): detect→diagnose→
+bounded ladder→verify→recover, guardrail-never-healed, escalate-on-exhaustion,
+self-improvement memory — 9 tests in `test/healing/`. It runs against injected
+recovery primitives (mock today); the real primitives are wired in as the dev
+environment (BLK-001) and live signals come online — the orchestrator interface
+does not change.
