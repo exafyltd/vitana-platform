@@ -51,15 +51,24 @@ describe('VTID-03152 my-journey buildGoalBlock', () => {
     expect(block.pillar_focus).toBe('health');
   });
 
-  it('returns null goal-progress fields when no deadline is set', () => {
+  it('counts goal_day from set_at even when no deadline is set, but leaves deadline-only fields null', () => {
+    // Set 30 days before FIXED_NOW, no deadline. The day counter must keep
+    // counting from set_at (so the mobile North Star advances past "Day 1"),
+    // while the countdown / total / progress stay null without a deadline.
     const block = buildGoalBlock(compass({ set_at: '2026-05-02T12:00:00.000Z' }), FIXED_NOW);
     expect(block.has_deadline).toBe(false);
     expect(block.days_to_deadline).toBeNull();
     expect(block.goal_total_days).toBeNull();
-    expect(block.goal_day).toBeNull();
+    expect(block.goal_day).toBe(30);
     expect(block.goal_progress_pct).toBeNull();
     // Goal text/pillar still pass through.
     expect(block.active_goal_text).toBe('Lose 10 kg');
+  });
+
+  it('returns null goal_day only when set_at itself is missing', () => {
+    const block = buildGoalBlock(compass({ set_at: null }), FIXED_NOW);
+    expect(block.has_deadline).toBe(false);
+    expect(block.goal_day).toBeNull();
   });
 
   it('clamps a deadline that is today to 0 days left and 100% progress', () => {
