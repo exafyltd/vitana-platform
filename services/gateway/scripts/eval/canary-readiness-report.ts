@@ -104,6 +104,9 @@ interface CanaryReadinessReport {
     real_traffic_estimate_24h: number;
     finetune_status: string;
     latest_dataset_rows: number | null;
+    snapshot_date: string;
+    clean_today: boolean;
+    consecutive_clean_days: number;
   };
   next_recommended_action: string;
 }
@@ -231,6 +234,110 @@ async function fetchLatestDatasetRows(target: string): Promise<number | null> {
   }
 }
 
+// ───────────────────────── consecutive-clean-days (G5b) ─────────────────────
+// BOOTSTRAP-SHADOW-REAL-CANDIDATE: the gate's "5 consecutive clean days" rule
+// needs cross-day history. Each run persists a per-day snapshot of whether the
+// day was otherwise-ready ("clean"), and reads prior snapshots to count the
+// streak — turning a permanently-false rule into one that can actually be met.
+
+const READINESS_SNAPSHOT_TOPIC = 'canary.readiness.snapshot';
+
+export interface ReadinessSnapshot {
+  date: string; // 'YYYY-MM-DD' (UTC)
+  clean: boolean;
+}
+
+/** Previous calendar day (UTC) for a 'YYYY-MM-DD' string. */
+export function prevUtcDay(day: string): string {
+  const d = new Date(`${day}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() - 1);
+  return d.toISOString().slice(0, 10);
+}
+
+/**
+ * Longest run of consecutive clean days ending today. Today's cleanliness is
+ * passed in (computed this run, before the snapshot is persisted); prior days
+ * come from stored snapshots. A missing calendar day breaks the streak — "N
+ * consecutive clean days" requires evidence for each day, so a gap is not clean.
+ */
+export function computeConsecutiveCleanDays(
+  history: ReadinessSnapshot[],
+  todayClean: boolean,
+  today: string,
+): number {
+  if (!todayClean) return 0;
+  // Latest snapshot per date wins (history is newest-first).
+  const byDate = new Map<string, boolean>();
+  for (const h of history) {
+    if (!byDate.has(h.date)) byDate.set(h.date, h.clean);
+  }
+  let streak = 1; // today
+  let cursor = prevUtcDay(today);
+  while (byDate.get(cursor) === true) {
+    streak++;
+    cursor = prevUtcDay(cursor);
+  }
+  return streak;
+}
+
+/** Read prior daily readiness snapshots for a target (last ~14 days). */
+async function fetchReadinessSnapshots(target: string): Promise<ReadinessSnapshot[]> {
+  if (!PROD_SUPABASE_URL || !PROD_SUPABASE_KEY) return [];
+  try {
+    const sinceIso = new Date(Date.now() - 14 * 86_400_000).toISOString();
+    const resp = await fetch(
+      `${PROD_SUPABASE_URL}/rest/v1/oasis_events`
+      + `?topic=eq.${READINESS_SNAPSHOT_TOPIC}`
+      + `&created_at=gte.${encodeURIComponent(sinceIso)}`
+      + `&metadata->>target=eq.${encodeURIComponent(target)}`
+      + '&order=created_at.desc&limit=200&select=created_at,metadata',
+      { headers: { apikey: PROD_SUPABASE_KEY, Authorization: `Bearer ${PROD_SUPABASE_KEY}` } },
+    );
+    if (!resp.ok) return [];
+    const rows = (await resp.json()) as Array<{ created_at: string; metadata: { date?: string; clean?: boolean } | null }>;
+    const out: ReadinessSnapshot[] = [];
+    for (const r of rows) {
+      const date = r.metadata?.date ?? (typeof r.created_at === 'string' ? r.created_at.slice(0, 10) : null);
+      if (date && typeof r.metadata?.clean === 'boolean') out.push({ date, clean: r.metadata.clean });
+    }
+    return out;
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Persist today's snapshot so tomorrow's run can read it. Written to the SAME
+ * prod store the read path uses (read/write consistency — the gateway-emit path
+ * would route to a different DB). Best-effort: never fails the report.
+ */
+async function emitReadinessSnapshot(target: string, date: string, clean: boolean, verdict: string): Promise<void> {
+  if (!PROD_SUPABASE_URL || !PROD_SUPABASE_KEY) return;
+  try {
+    await fetch(`${PROD_SUPABASE_URL}/rest/v1/oasis_events`, {
+      method: 'POST',
+      headers: {
+        apikey: PROD_SUPABASE_KEY,
+        Authorization: `Bearer ${PROD_SUPABASE_KEY}`,
+        'Content-Type': 'application/json',
+        Prefer: 'return=minimal',
+      },
+      body: JSON.stringify({
+        vtid: 'VTID-03217',
+        topic: READINESS_SNAPSHOT_TOPIC,
+        service: 'canary-readiness-report',
+        role: 'eval',
+        status: clean ? 'success' : 'info',
+        message: `canary readiness snapshot ${target} ${date}: clean=${clean} verdict=${verdict}`,
+        source: 'scripts/eval/canary-readiness-report',
+        metadata: { target, date, clean, verdict },
+      }),
+    });
+  } catch {
+    /* best-effort telemetry */
+  }
+}
+
 async function generate(): Promise<CanaryReadinessReport> {
   const target = FEATURE_TARGET;
   let shadow: ShadowReport | null = null;
@@ -340,12 +447,18 @@ async function generate(): Promise<CanaryReadinessReport> {
     reasons.push(reason('dataset_rows', true, `${latestRows} rows extracted recently for ${target} (>= ${THRESHOLDS.min_dataset_rows}).`));
   }
 
-  // 5-consecutive-days clean — out of scope for the single-run report;
-  // surfaced as an unmet rule with explicit "needs cron history" note.
+  // 5-consecutive-days clean (G5b): a "clean day" is one where every OTHER
+  // criterion passed. Compute today's cleanliness from the reasons gathered so
+  // far, read prior daily snapshots, and count the streak ending today. main()
+  // persists today's snapshot afterward so tomorrow's run can read it.
+  const snapshotDate = new Date().toISOString().slice(0, 10);
+  const cleanToday = reasons.every((r) => r.ok);
+  const snapshotHistory = await fetchReadinessSnapshots(target);
+  const consecutiveClean = computeConsecutiveCleanDays(snapshotHistory, cleanToday, snapshotDate);
   reasons.push(reason(
     'consecutive_clean_days',
-    false,
-    `Today's report covers a single 24h window; ${THRESHOLDS.min_consecutive_clean_days} consecutive clean days require historical comparison across daily snapshots (not yet wired). Graduation recommender's daily FCM digest is the authoritative source.`,
+    consecutiveClean >= THRESHOLDS.min_consecutive_clean_days,
+    `${consecutiveClean} consecutive clean day(s)${cleanToday ? '' : ' — today not clean, streak reset'}; need ${THRESHOLDS.min_consecutive_clean_days} (read ${snapshotHistory.length} prior daily snapshot(s)).`,
   ));
 
   const allOk = reasons.every((r) => r.ok);
@@ -366,6 +479,9 @@ async function generate(): Promise<CanaryReadinessReport> {
       real_traffic_estimate_24h: realTraffic,
       finetune_status: FINETUNE_STATUS,
       latest_dataset_rows: latestRows,
+      snapshot_date: snapshotDate,
+      clean_today: cleanToday,
+      consecutive_clean_days: consecutiveClean,
     },
     next_recommended_action: nextAction,
   };
@@ -401,6 +517,13 @@ async function main(): Promise<void> {
     await fs.writeFile(REPORT_MARKDOWN_PATH, renderMarkdown(report), 'utf-8');
     console.error(`[canary-readiness-report] markdown written: ${REPORT_MARKDOWN_PATH}`);
   }
+  // Persist today's snapshot so tomorrow's run can extend the streak (G5b).
+  await emitReadinessSnapshot(
+    report.target,
+    report.evidence.snapshot_date,
+    report.evidence.clean_today,
+    report.verdict,
+  );
 }
 
 if (require.main === module) {
@@ -410,5 +533,5 @@ if (require.main === module) {
   });
 }
 
-export { generate, renderMarkdown, accuracyReason };
+export { generate, renderMarkdown, accuracyReason, computeConsecutiveCleanDays, prevUtcDay };
 export type { CanaryReadinessReport, Reason };
