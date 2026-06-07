@@ -1156,7 +1156,11 @@
         lang: _cfg.lang,
         voice_style: 'friendly, calm, empathetic',
         response_modalities: ['audio', 'text'],
-        vad_silence_ms: 850 // VTID-03019: trimmed 1200→850 to cut ~350ms off end-of-turn latency; constants.ts mirrors
+        vad_silence_ms: 850, // VTID-03019: trimmed 1200→850 to cut ~350ms off end-of-turn latency; constants.ts mirrors
+        // BOOTSTRAP-ORB-SESSION-CHURN: declare WHY this start fired so the gateway
+        // can attribute session reuse vs. supersede per-cause in oasis_events.
+        // Defaults to a user-initiated open; the reconnect block below overrides.
+        start_cause: 'user_open'
       };
       // VTID-03250: send the browser's OWN IANA timezone so the gateway has a
       // reliable local time even when geo-IP rate-limits (HTTP 429). Without
@@ -1194,6 +1198,7 @@
           });
         }
         startPayload.reconnect_stage = _s._preDisconnectStage || 'idle';
+        startPayload.start_cause = 'reconnect';
         if (_s.conversationId) startPayload.conversation_id = _s.conversationId;
         console.log('[VTOrb] _sessionStart: reconnect context — stage=' + startPayload.reconnect_stage
           + ', transcript=' + (startPayload.transcript_history ? startPayload.transcript_history.length : 0) + ' turns'

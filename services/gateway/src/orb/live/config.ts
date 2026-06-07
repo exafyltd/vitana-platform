@@ -42,6 +42,33 @@ export const SESSION_TIMEOUT_MS = 30 * 60 * 1000;
 export const CONVERSATION_TIMEOUT_MS = 24 * 60 * 60 * 1000;
 
 /**
+ * ORB session-start idempotency (BOOTSTRAP-ORB-SESSION-CHURN).
+ *
+ * Telemetry (oasis_events, dev): 31.7% of `/live/session/start` calls supersede
+ * a still-live session for the SAME user, and 89.5% of those superseded
+ * sessions had ZERO turns — the greeting was torn down before it ever spoke
+ * (the "constant disconnect during the opening" the community reports). The
+ * superseding start lands within ~3.4s on average, so a redundant start (widget
+ * re-show, double-mount, or a supersede→SSE-close→reconnect bounce) should
+ * REUSE the in-flight zero-turn session instead of superseding it.
+ *
+ * The decision is STATE-driven, not clock-driven: a session is reusable while
+ * it is `active` and has taken NO turns — that is the real signal, the same
+ * greeting state a fresh session would be in. The age bound is only a safety
+ * backstop so a wedged session can't be reused forever; it defaults to the
+ * session TTL precisely because a zero-turn session stays in the identical
+ * state for its whole life. Both are env-overridable so ops can tune the
+ * backstop or flip the kill switch without a redeploy (defense-in-depth).
+ */
+export const ORB_SESSION_REUSE_ENABLED =
+  (process.env.ORB_SESSION_REUSE_ENABLED ?? 'true').toLowerCase() !== 'false';
+
+export const ORB_SESSION_REUSE_MAX_AGE_MS = (() => {
+  const raw = Number(process.env.ORB_SESSION_REUSE_MAX_AGE_MS);
+  return Number.isFinite(raw) && raw > 0 ? raw : SESSION_TIMEOUT_MS;
+})();
+
+/**
  * Maximum concurrent ORB connections from a single IP. Higher values
  * invite abuse; lower values break shared offices/NAT exits.
  */

@@ -40,7 +40,13 @@ import type {
   LiveStreamVideoFrame,
 } from '../types';
 import type { ContextPack } from '../../../types/conversation';
-import { SESSION_TIMEOUT_MS, VERTEX_PROJECT_ID } from '../config';
+import {
+  SESSION_TIMEOUT_MS,
+  VERTEX_PROJECT_ID,
+  ORB_SESSION_REUSE_ENABLED,
+  ORB_SESSION_REUSE_MAX_AGE_MS,
+} from '../config';
+import { pickReusableSession } from './session-reuse';
 import { VERTEX_LIVE_MODEL } from '../protocol';
 import {
   // VTID-03124 (Phase D.1): voice thresholds now resolved via PolicyResolver.
@@ -225,47 +231,38 @@ function getDeps(): LiveSessionControllerDeps {
 }
 
 // =============================================================================
-// VTID-ORB-CHURN: session-start idempotency (kills "superseded_by_new_session")
+// BOOTSTRAP-ORB-SESSION-CHURN: session-start idempotency
 // =============================================================================
-// Telemetry showed ~32% of all `/live/session/start` calls were restarts for the
-// SAME user within 2 minutes of the previous start (260/801 over 14d), and 92% of
-// the resulting `superseded_by_new_session` stops had ZERO turns. The client fires
-// a redundant start (token-refresh widget re-init, double-mount, app foreground),
-// each one trips `terminateExistingSessionsForUser()` and tears down the greeting
-// mid-utterance — the user hears "constant disconnects during the opening".
+// Verified against oasis_events (dev): 31.7% of `/live/session/start` calls
+// supersede a still-live session for the SAME user, and 89.5% of those
+// superseded sessions had ZERO turns — torn down before the greeting ever spoke
+// (the "constant disconnect during the opening" the community reports). The
+// superseding start lands ~3.4s later on average — a rapid re-show / double-mount
+// / supersede→SSE-close→reconnect bounce, NOT a slow token-refresh.
 //
-// This guard makes `/live/session/start` idempotent: if the same user already has
-// an ACTIVE, fully-initialized, ZERO-turn session inside the dedup window, return
-// THAT live session instead of superseding it. Reusing a zero-turn session is safe
-// — it is an abandoned greeting in the exact same state a fresh one would be — and
-// the client opening its SSE against the returned `session_id` is the already-
-// supported reconnect flow. Reconnect starts (transcript history / non-idle stage)
-// are intentional continuity and always bypass this guard.
-const ORB_SESSION_DEDUP_WINDOW_MS = Number(process.env.ORB_SESSION_DEDUP_WINDOW_MS) || 120_000;
+// This guard makes `/live/session/start` idempotent: if the same user already
+// has a reusable in-flight session, return THAT live session instead of
+// superseding it. The decision is STATE-driven (active + zero turns) with a
+// configurable age backstop — see ORB_SESSION_REUSE_* in ../config. Reusing a
+// zero-turn session is safe (identical greeting state) and the client opening
+// its SSE against the returned `session_id` is the already-supported reconnect
+// flow. Reconnect starts (transcript history / non-idle stage) carry real
+// continuity and always bypass this guard.
 
 /**
  * Find the most-recent reusable live session for a user: active, owned by the
- * user, no turns yet, already past first-response (so we never hand back a
- * half-built session), and younger than the dedup window. Returns null when no
- * such session exists (the normal "genuine new conversation" path).
+ * user, no turns yet, and already past first-response (so we never hand back a
+ * half-built session). The age backstop (ORB_SESSION_REUSE_MAX_AGE_MS) only
+ * guards against a wedged session; state — not the clock — is the primary gate.
+ * Returns null when no such session exists (the normal new-conversation path).
  */
 function findReusableLiveSession(userId: string): GeminiLiveSession | null {
-  const now = Date.now();
-  let best: GeminiLiveSession | null = null;
-  let bestAge = Infinity;
-  for (const session of liveSessions.values()) {
-    if (!session.active) continue;
-    if (!session.identity || session.identity.user_id !== userId) continue;
-    if (session.turn_count !== 0) continue;
-    if (!(session as { startResponseBody?: unknown }).startResponseBody) continue;
-    const age = now - session.createdAt.getTime();
-    if (age > ORB_SESSION_DEDUP_WINDOW_MS) continue;
-    if (age < bestAge) {
-      bestAge = age;
-      best = session;
-    }
-  }
-  return best;
+  return pickReusableSession(
+    liveSessions.values() as Iterable<GeminiLiveSession & { startResponseBody?: unknown }>,
+    userId,
+    Date.now(),
+    ORB_SESSION_REUSE_MAX_AGE_MS,
+  );
 }
 
 // =============================================================================
@@ -677,18 +674,32 @@ export async function handleLiveSessionStart(
   const orbIdentity = await deps.resolveOrbIdentity(req);
   const bootstrapIdentity: SupabaseIdentity | null = hasJwtIdentity ? orbIdentity : null;
 
-  // VTID-ORB-CHURN: idempotency guard. A duplicate start for a user who already
-  // has a fresh, zero-turn session in flight returns the live session instead of
-  // superseding it — collapsing the session churn that tore down the greeting.
+  // BOOTSTRAP-ORB-SESSION-CHURN: idempotency guard. A duplicate start for a user
+  // who already has an active, zero-turn session in flight returns the live
+  // session instead of superseding it — collapsing the churn that tore down the
+  // greeting before it spoke. Gated by ORB_SESSION_REUSE_ENABLED (kill switch).
   // DEV identity is shared across anonymous dev sessions, so it is never deduped
   // (matches the supersede skip below). Reconnect starts always proceed.
+  //
+  // `start_cause` is a contextual signal the client declares (e.g. 'user_open',
+  // 'reconnect', 'dom_recovery') so the dedup decision is observable per-cause
+  // in oasis_events — it does not change the decision (state does), it explains it.
+  const startCause =
+    typeof (body as { start_cause?: unknown }).start_cause === 'string'
+      ? ((body as { start_cause?: string }).start_cause as string)
+      : null;
   const isDevIdentityForDedup = orbIdentity?.user_id === DEV_IDENTITY.USER_ID;
-  if (orbIdentity?.user_id && !isDevIdentityForDedup && !isReconnectStart) {
+  if (
+    ORB_SESSION_REUSE_ENABLED &&
+    orbIdentity?.user_id &&
+    !isDevIdentityForDedup &&
+    !isReconnectStart
+  ) {
     const reusable = findReusableLiveSession(orbIdentity.user_id);
     if (reusable) {
       const reusedAgeMs = Date.now() - reusable.createdAt.getTime();
       console.log(
-        `[VTID-ORB-CHURN] Deduplicated /live/session/start for user=${orbIdentity.user_id.substring(0, 8)}… → reusing live session ${reusable.sessionId} (age=${reusedAgeMs}ms, turns=0); supersede skipped, discarded ${sessionId}`,
+        `[BOOTSTRAP-ORB-SESSION-CHURN] Reused /live/session/start for user=${orbIdentity.user_id.substring(0, 8)}… cause=${startCause ?? 'unset'} → live session ${reusable.sessionId} (age=${reusedAgeMs}ms, turns=0); supersede skipped, discarded ${sessionId}`,
       );
       deps.emitLiveSessionEvent('vtid.live.session.start', {
         session_id: reusable.sessionId,
@@ -696,7 +707,8 @@ export async function handleLiveSessionStart(
         tenant_id: orbIdentity.tenant_id || null,
         transport: 'sse',
         deduplicated: true,
-        dedup_reason: 'fresh_zero_turn_session_reused',
+        dedup_reason: 'zero_turn_session_reused',
+        start_cause: startCause,
         reused_session_id: reusable.sessionId,
         discarded_session_id: sessionId,
         reused_age_ms: reusedAgeMs,
