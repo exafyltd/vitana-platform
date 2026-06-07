@@ -17,7 +17,7 @@
 (function (window) {
   'use strict';
 
-  var _WIDGET_VERSION = '2026-05-08-vtid-02034b-stale-instance-404';
+  var _WIDGET_VERSION = '2026-06-01-devcomhu0503b-persist-continuity-on-disconnect';
   console.log('[VTOrb] Widget version: ' + _WIDGET_VERSION);
 
   // Prevent double-load
@@ -715,6 +715,21 @@
 
     console.warn('[VTOrb] _announceDisconnect: reason=' + reason + ', stage=' + stage);
 
+    // DEV-COMHU-0503 follow-up: persist continuity to the gateway the MOMENT a
+    // disconnect is detected — not only on graceful _hide(). Mobile WebViews
+    // routinely RELOAD the page during an outage (network change, OS
+    // backgrounding/kill, OOM, or a render-crash auto-reload), which wipes the
+    // module-scoped _s — including _transcriptHistory and conversationId. When
+    // that happened the next _sessionStart's continuity GET found nothing had
+    // been persisted for the disconnect, so Vitana greeted "first-time" and the
+    // user lost the entire conversation ("forgets what we talked about"). The
+    // in-memory reconnect path (_resetAndReconnect/_attemptReconnect) already
+    // carries history, but it only survives if the page stays alive. Persisting
+    // here (short 5-min TTL, keepalive so it survives teardown) lets a
+    // reload-during-outage rehydrate conversation_id + the last turns and
+    // resume the same thread instead of starting over.
+    _persistContinuity('connection', 5);
+
     // Gate mic immediately — _sendAudio checks `active` and `voiceState === 'MUTED'`
     // at the VAD processor (line ~1191), so setting MUTED stops outbound audio.
     _s.voiceState = 'MUTED';
@@ -1156,11 +1171,7 @@
         lang: _cfg.lang,
         voice_style: 'friendly, calm, empathetic',
         response_modalities: ['audio', 'text'],
-        vad_silence_ms: 850, // VTID-03019: trimmed 1200→850 to cut ~350ms off end-of-turn latency; constants.ts mirrors
-        // BOOTSTRAP-ORB-SESSION-CHURN: declare WHY this start fired so the gateway
-        // can attribute session reuse vs. supersede per-cause in oasis_events.
-        // Defaults to a user-initiated open; the reconnect block below overrides.
-        start_cause: 'user_open'
+        vad_silence_ms: 850 // VTID-03019: trimmed 1200→850 to cut ~350ms off end-of-turn latency; constants.ts mirrors
       };
       // VTID-03250: send the browser's OWN IANA timezone so the gateway has a
       // reliable local time even when geo-IP rate-limits (HTTP 429). Without
@@ -1198,7 +1209,6 @@
           });
         }
         startPayload.reconnect_stage = _s._preDisconnectStage || 'idle';
-        startPayload.start_cause = 'reconnect';
         if (_s.conversationId) startPayload.conversation_id = _s.conversationId;
         console.log('[VTOrb] _sessionStart: reconnect context — stage=' + startPayload.reconnect_stage
           + ', transcript=' + (startPayload.transcript_history ? startPayload.transcript_history.length : 0) + ' turns'
