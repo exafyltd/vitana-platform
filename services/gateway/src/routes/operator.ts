@@ -587,6 +587,7 @@ router.post('/upload', async (req: Request, res: Response) => {
 // Simple command matching for deploy commands using existing CICD infrastructure
 
 import deployOrchestrator from '../services/deploy-orchestrator';
+import { triggerWorkflow } from '../services/github-service';
 import { emitOasisEvent } from '../services/oasis-event-service';
 // VTID-0525-B: DeployCommandSchema and TaskCommandSchema unused in MVP
 // import { DeployCommandSchema, TaskCommandSchema } from '../types/operator-command';
@@ -1389,6 +1390,8 @@ router.post('/publish', requireAdminAuth, async (req: Request, res: Response) =>
       environment: 'production',
       source: 'api',
       canary: isCanary,
+      // Ship the EXACT staging commit we resolved + displayed (no main-HEAD drift).
+      commitSha: stagingCommit,
     });
 
     if (!deployResult.ok) {
@@ -1419,6 +1422,54 @@ router.post('/publish', requireAdminAuth, async (req: Request, res: Response) =>
         blocked: deployResult.blocked,
         violations: deployResult.violations,
       });
+    }
+
+    // Step 7b: One-button-both (workstream C) — also promote the FRONTEND.
+    // The community app is a separate Cloud Run service in exafyltd/vitana-v1.
+    // It must be REBUILT from the tested commit with prod .env (its staging image
+    // bakes staging URLs and must never be image-promoted), so we cross-repo
+    // dispatch vitana-v1's DEPLOY.yml with the staging commit SHA.
+    //
+    // Best-effort: the gateway deploy already succeeded; a frontend failure (or a
+    // missing cross-repo token) is surfaced separately and does NOT fail publish.
+    let frontendPromote: { ok: boolean; detail?: string; source_commit?: string | null } = {
+      ok: false,
+      detail: 'not_attempted',
+    };
+    try {
+      const FRONTEND_REPO = process.env.FRONTEND_DEPLOY_REPO || 'exafyltd/vitana-v1';
+      // PAT (or fine-grained token) with `actions:write` on vitana-v1. The default
+      // platform token (GITHUB_SAFE_MERGE_TOKEN) does not span repos.
+      const FRONTEND_TOKEN = process.env.FRONTEND_DEPLOY_TOKEN;
+      if (!FRONTEND_TOKEN) {
+        frontendPromote = {
+          ok: false,
+          detail: 'FRONTEND_DEPLOY_TOKEN not set — frontend NOT promoted. Run vitana-v1 DEPLOY.yml manually, or set the secret to enable one-button-both.',
+        };
+      } else {
+        // Resolve the commit currently serving on community-app-staging so we
+        // ship the exact tested frontend bits (empty → vitana-v1 main HEAD).
+        let feCommit: string | null = null;
+        try {
+          const feStaging = await describeService('community-app-staging');
+          feCommit = feStaging.activeRevisionCommit;
+        } catch {
+          feCommit = null;
+        }
+        await triggerWorkflow(
+          FRONTEND_REPO,
+          'DEPLOY.yml',
+          'main',
+          {
+            reason: `publish-both via Command Hub (gateway ${stagingCommit.slice(0, 7)}); frontend ${feCommit ? feCommit.slice(0, 7) : 'main HEAD'}`,
+            commit_sha: feCommit || '',
+          },
+          FRONTEND_TOKEN,
+        );
+        frontendPromote = { ok: true, source_commit: feCommit };
+      }
+    } catch (e) {
+      frontendPromote = { ok: false, detail: e instanceof Error ? e.message : 'frontend_dispatch_failed' };
     }
 
     // Step 8: record the publish row in software_versions. cloud_run_revision
@@ -1465,6 +1516,7 @@ router.post('/publish', requireAdminAuth, async (req: Request, res: Response) =>
         source_commit: stagingCommit,
         workflow_run_id: deployResult.workflow_run_id,
         workflow_url: deployResult.workflow_url,
+        frontend_promote: frontendPromote,
       },
     });
 
@@ -1476,6 +1528,7 @@ router.post('/publish', requireAdminAuth, async (req: Request, res: Response) =>
       source_commit: stagingCommit,
       workflow_run_id: deployResult.workflow_run_id,
       workflow_url: deployResult.workflow_url,
+      frontend_promote: frontendPromote,
     });
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';

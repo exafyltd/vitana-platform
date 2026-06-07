@@ -482,6 +482,12 @@ VTID_ALLOCATOR_ENABLED=true|false
 ### Optional
 ```bash
 NODE_ENV=production|development|test
+# One-button-both publish (workstream C): cross-repo token + repo for promoting
+# the frontend (community-app) from the Command Hub PUBLISH button. Without
+# FRONTEND_DEPLOY_TOKEN the gateway still publishes, and the response reports
+# frontend_promote.ok=false with a "token not set" detail (deploy frontend manually).
+FRONTEND_DEPLOY_TOKEN=<PAT with actions:write on exafyltd/vitana-v1>
+FRONTEND_DEPLOY_REPO=exafyltd/vitana-v1
 GOOGLE_CLOUD_PROJECT=lovable-vitana-vers1
 GCP_PROJECT=lovable-vitana-vers1
 VERTEX_LOCATION=us-central1
