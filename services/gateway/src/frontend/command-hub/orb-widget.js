@@ -17,7 +17,7 @@
 (function (window) {
   'use strict';
 
-  var _WIDGET_VERSION = '2026-05-08-vtid-02034b-stale-instance-404';
+  var _WIDGET_VERSION = '2026-06-01-devcomhu0503b-persist-continuity-on-disconnect';
   console.log('[VTOrb] Widget version: ' + _WIDGET_VERSION);
 
   // Prevent double-load
@@ -714,6 +714,21 @@
     _s._preDisconnectStage = stage;
 
     console.warn('[VTOrb] _announceDisconnect: reason=' + reason + ', stage=' + stage);
+
+    // DEV-COMHU-0503 follow-up: persist continuity to the gateway the MOMENT a
+    // disconnect is detected — not only on graceful _hide(). Mobile WebViews
+    // routinely RELOAD the page during an outage (network change, OS
+    // backgrounding/kill, OOM, or a render-crash auto-reload), which wipes the
+    // module-scoped _s — including _transcriptHistory and conversationId. When
+    // that happened the next _sessionStart's continuity GET found nothing had
+    // been persisted for the disconnect, so Vitana greeted "first-time" and the
+    // user lost the entire conversation ("forgets what we talked about"). The
+    // in-memory reconnect path (_resetAndReconnect/_attemptReconnect) already
+    // carries history, but it only survives if the page stays alive. Persisting
+    // here (short 5-min TTL, keepalive so it survives teardown) lets a
+    // reload-during-outage rehydrate conversation_id + the last turns and
+    // resume the same thread instead of starting over.
+    _persistContinuity('connection', 5);
 
     // Gate mic immediately — _sendAudio checks `active` and `voiceState === 'MUTED'`
     // at the VAD processor (line ~1191), so setting MUTED stops outbound audio.
