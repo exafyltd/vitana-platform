@@ -53,6 +53,16 @@ describe('CTRL-API-0004 — VCAOP API', () => {
     expect(oasis.events.some((e) => e.type === 'vcaop.policy.updated')).toBe(true);
   });
 
+  test('policy upsert for a NEW provider supplies NOT-NULL connector_mode (Codex P2)', async () => {
+    const { app, repo } = makeApp();
+    const policy = { automation_allowed: 'manual_only', registration_method: 'human_required', captcha_policy: 'human_only', kyb_required: true, multi_account_allowed: false, affiliate_cashback_allowed: null, notes: 't' };
+    const r = await request(app).put('/api/v1/vcaop/policies/brand_new').set(as('admin')).send({ policy });
+    expect(r.status).toBe(200);
+    const created = await repo.get('provider', 'brand_new');
+    expect(created!.connector_mode).toBe('manual'); // NOT NULL satisfied for the Prisma repo
+    expect(created!.category).toBe('unknown');
+  });
+
   test('account creation enforces single-identity (409 on second active)', async () => {
     const { app, repo } = makeApp();
     await repo.create('provider', { id: 'amazon', name: 'Amazon', category: 'm', policy: { multi_account_allowed: false } });

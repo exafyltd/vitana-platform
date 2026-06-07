@@ -48,6 +48,25 @@ describe('RWD-ATTR-0002 — attribution + rewards ledger', () => {
     await attr.reverse(commissionId);
     expect(await attr.walletBalance('u1')).toBe(0); // clawed back
   });
+
+  test('a late/duplicate confirm after reversal does NOT re-credit (Codex P2)', async () => {
+    const { attr } = setup();
+    const { commissionId } = await attr.ingestPending(postback);
+    await attr.confirm(commissionId, 'pb_123');
+    await attr.reverse(commissionId);
+    expect(await attr.walletBalance('u1')).toBe(0);
+    // a late confirm postback must be refused — wallet stays clawed back
+    await expect(attr.confirm(commissionId, 'pb_late')).rejects.toThrow(/not 'pending'/);
+    expect(await attr.walletBalance('u1')).toBe(0);
+  });
+
+  test('a duplicate confirm on an already-confirmed commission is refused', async () => {
+    const { attr } = setup();
+    const { commissionId } = await attr.ingestPending(postback);
+    await attr.confirm(commissionId, 'pb_123');
+    await expect(attr.confirm(commissionId, 'pb_again')).rejects.toThrow(/not 'pending'/);
+    expect(await attr.walletBalance('u1')).toBe(5); // unchanged, not double-credited
+  });
 });
 
 describe('RWD-DIRECT-0003 — direct publisher registration', () => {

@@ -60,7 +60,12 @@ export class Attribution {
   async confirm(commissionId: string, postbackRef: string): Promise<void> {
     const commission = await this.repo.get('commission_event', commissionId);
     if (!commission) throw new Error(`commission ${commissionId} not found`);
-    this.validator.assertConfirmable({ status: 'pending', postbackRef }); // refuses without verified postback
+    // Only a still-pending commission may be confirmed. A late/duplicate confirm
+    // after a reversal (or re-confirm) must NOT re-credit the wallet.
+    if (commission.status !== 'pending') {
+      throw new Error(`commission ${commissionId} is '${commission.status}', not 'pending' — refusing to (re)confirm`);
+    }
+    this.validator.assertConfirmable({ status: commission.status as 'pending', postbackRef }); // refuses without verified postback
     await this.repo.update('commission_event', commissionId, { status: 'confirmed', postback_ref: postbackRef });
     for (const r of await this.rewardsFor(commissionId)) {
       await this.repo.update('rewards_ledger', r.id, { state: 'confirmed' });

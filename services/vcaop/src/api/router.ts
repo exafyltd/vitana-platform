@@ -17,6 +17,7 @@ import { Repository, Record_, newId } from './repository';
 import { OasisSink } from './oasis-sink';
 import { AuthResolver, headerAuthResolver, withAuth, requireRole } from './authz';
 import { PolicyEngine } from '../guardrails/policy-engine';
+import { generateOpenApi } from './openapi';
 import { assertSingleActiveAccount, isActiveStatus, ExistingAccount } from '../guardrails/single-identity';
 import { HUMAN_REQUIRED_ACTIONS } from '../guardrails/human-gate';
 import { SingleIdentityViolation } from '../guardrails/errors';
@@ -57,6 +58,10 @@ export function buildVcaopRouter(deps: VcaopApiDeps): Router {
   const router = express.Router();
 
   router.use(express.json());
+
+  // OpenAPI spec — served before auth so tooling can discover the API.
+  router.get('/openapi.json', (_req, res) => res.json(generateOpenApi()));
+
   router.use(withAuth(resolver));
 
   const emit = (type: string, status: 'info' | 'success' | 'warning' | 'error', message: string, payload: Record<string, unknown>) =>
@@ -75,7 +80,17 @@ export function buildVcaopRouter(deps: VcaopApiDeps): Router {
     const existing = await repo.get('provider', providerId);
     const saved = existing
       ? await repo.update('provider', providerId, { policy })
-      : await repo.create('provider', { id: providerId, name: providerId, category: 'unknown', policy });
+      : // New provider via policy upsert: supply all NOT-NULL columns with safe
+        // defaults (connector_mode defaults to the most restrictive 'manual') so the
+        // Prisma-backed repo accepts the row.
+        await repo.create('provider', {
+          id: providerId,
+          name: providerId,
+          category: 'unknown',
+          connector_mode: 'manual',
+          kyb_required: true,
+          policy,
+        });
     policyEngine.setPolicy(providerId, policy);
     await emit('vcaop.policy.updated', 'success', `policy set for ${providerId}`, { providerId });
     ok(res, serialize(saved));
