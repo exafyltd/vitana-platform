@@ -369,5 +369,13 @@ export function isEnvironmentalBlocker(errorMessage: string | undefined | null):
   // backs up the gateway times out per-task at 720s before the worker even
   // gets to run the LLM. That's a capacity problem, not a code defect; the
   // triage agent can't fix it.
-  return /ENOSPC|out of memory|OOMKilled|ECONNREFUSED|ETIMEDOUT.*supabase|GITHUB_TOKEN.*not set|GITHUB_SAFE_MERGE_TOKEN.*not set|container recycled mid-execution|worker-queue wait time|worker queue.*timeout/i.test(errorMessage);
+  //
+  // 2026-06-07: also short-circuit on Cloud Run deploy concurrency races.
+  // When multiple EXEC-DEPLOY runs target the same service in overlapping
+  // windows, `gcloud run deploy` aborts with an optimistic-concurrency
+  // conflict ("ABORTED: Conflict for resource 'gateway': version 'X' was
+  // specified but current version is 'Y'"). The same commit deploys fine on
+  // retry — it's a deploy-time race, not a code defect, so the triage agent
+  // must not spend a retry trying to "fix" it.
+  return /ENOSPC|out of memory|OOMKilled|ECONNREFUSED|ETIMEDOUT.*supabase|GITHUB_TOKEN.*not set|GITHUB_SAFE_MERGE_TOKEN.*not set|container recycled mid-execution|worker-queue wait time|worker queue.*timeout|ABORTED: Conflict for resource|was specified but current version is|gcloud\.run\.deploy.*ABORTED/i.test(errorMessage);
 }
