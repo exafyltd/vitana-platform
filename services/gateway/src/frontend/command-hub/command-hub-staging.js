@@ -466,6 +466,14 @@
     const headers = (opts.buildContextHeaders ? opts.buildContextHeaders({}) : {}) || {};
     const s = (window.__vitana_state && window.__vitana_state.publishFlow) || {};
 
+    // Self-heal the "Reading state…" wedge: if a prior open already loaded the
+    // staging/prod revisions but a re-render race left the phase stuck on
+    // 'loading', advance to the correct phase instead of spinning forever. The
+    // data needed to publish is already present, so there's nothing to wait on.
+    if (s.phase === 'loading' && s.sourceRevision) {
+      s.phase = s.canaryRevision ? 'canary-active' : 'ready';
+    }
+
     const card = el('div', {
       class: 'publish-popover',
       style: 'position:absolute;top:calc(100% + 8px);left:0;width:340px;background:var(--color-sidebar-bg);' +
@@ -786,6 +794,26 @@
       });
     }
     card.appendChild(primary);
+
+    // Escape hatch for the rare case where the initial revision fetch hangs and
+    // no data ever arrives: let the operator force a fresh state read from
+    // inside the popover instead of having to reload the whole Command Hub.
+    if (phase === 'loading') {
+      const retryRow = el('div', { style: 'margin-top:8px;text-align:center;' },
+        el('button', {
+          type: 'button',
+          style: 'background:none;border:none;color:#94a3b8;font-size:11px;cursor:pointer;text-decoration:underline;',
+          onclick: function (e) {
+            e.stopPropagation();
+            if (window.__vitana_state) {
+              window.__vitana_state.publishFlow = { open: true, phase: 'loading' };
+            }
+            if (typeof renderApp === 'function') renderApp();
+          },
+        }, 'Stuck on “Reading state…”? Re-read state')
+      );
+      card.appendChild(retryRow);
+    }
 
     if (phase === 'ready') {
       const skipRow = el('div', { style: 'margin-top:8px;text-align:center;' },

@@ -1329,11 +1329,15 @@ router.post('/publish', requireAdminAuth, async (req: Request, res: Response) =>
       });
     }
 
-    // Step 4: bake-time guard.
+    // Step 4: bake-time guard. Also resolve the prebuilt image the staging
+    // revision is already running, so the promote can REUSE it and skip the
+    // from-source rebuild (~30s vs minutes — see Step 7).
     let ageMs = 0;
+    let stagingImage: string | null = null;
     try {
       const rev = (await listRevisions('gateway-staging', 5)).find(r => r.shortName === stagingRevShort);
       if (rev?.createdAt) ageMs = Date.now() - Date.parse(rev.createdAt);
+      stagingImage = rev?.image || null;
     } catch {
       ageMs = STAGING_PUBLISH_BAKE_MS; // can't read age — treat as old enough; we already verified active rev
     }
@@ -1371,6 +1375,8 @@ router.post('/publish', requireAdminAuth, async (req: Request, res: Response) =>
         request_id: requestId,
         source_revision: stagingRevShort,
         source_commit: stagingCommit,
+        source_image: stagingImage,
+        promote_mode: stagingImage ? 'image-reuse' : 'source-rebuild',
         staging_age_seconds: Math.floor(ageMs / 1000),
         confirm_short_sha: typeof req.body?.confirm_short_sha === 'string' ? req.body.confirm_short_sha : null,
       },
@@ -1392,6 +1398,10 @@ router.post('/publish', requireAdminAuth, async (req: Request, res: Response) =>
       canary: isCanary,
       // Ship the EXACT staging commit we resolved + displayed (no main-HEAD drift).
       commitSha: stagingCommit,
+      // Promote the prebuilt image the staging revision is already running so
+      // prod skips the rebuild (~30s). If we couldn't resolve it, EXEC-DEPLOY
+      // falls back to a from-source build of commitSha (still correct, slower).
+      image: stagingImage || undefined,
     });
 
     if (!deployResult.ok) {
