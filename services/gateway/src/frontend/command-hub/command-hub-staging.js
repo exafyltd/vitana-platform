@@ -486,7 +486,7 @@
     const chipText = ({
       loading:           el('span', {}, spinnerSvg(11, '#cbd5e1'), ' Reading state…'),
       ready:             'Ready to publish',
-      publishing:        el('span', {}, spinnerSvg(11, '#93c5fd'), ' Dispatching canary…'),
+      publishing:        el('span', {}, spinnerSvg(11, '#93c5fd'), ' Publishing…'),
       'canary-active':   '🐤 Canary at 10%',
       promoting:         el('span', {}, spinnerSvg(11, '#93c5fd'), ' Promoting to 100%…'),
       promoted:          '✓ Promoted',
@@ -776,21 +776,22 @@
     if (dispatching) {
       primary.appendChild(spinnerSvg(14, '#93c5fd'));
       primary.appendChild(document.createTextNode(
-        phase === 'full-publishing' ? 'Publishing 100%…' :
+        phase === 'full-publishing' ? 'Publishing…' :
         phase === 'building' ? 'Building…' :
         phase === 'rolling' ? 'Rolling out…' :
-        'Dispatching canary…'
+        'Publishing…'
       ));
     } else if (phase === 'loading') {
       primary.appendChild(spinnerSvg(14, '#cbd5e1'));
       primary.appendChild(document.createTextNode('Loading…'));
     } else {
-      primary.textContent = 'Publish to canary (10%)';
+      primary.textContent = 'Publish to production';
     }
     if (phase === 'ready') {
       primary.addEventListener('click', function (e) {
         e.stopPropagation();
-        dispatchPublish('canary', headers, opts);
+        // Single-click 100% promote (image swap, ~30s). No canary step.
+        dispatchPublish('full', headers, opts);
       });
     }
     card.appendChild(primary);
@@ -816,18 +817,9 @@
     }
 
     if (phase === 'ready') {
-      const skipRow = el('div', { style: 'margin-top:8px;text-align:center;' },
-        el('button', {
-          type: 'button',
-          style: 'background:none;border:none;color:#94a3b8;font-size:11px;cursor:pointer;text-decoration:underline;',
-          onclick: function (e) {
-            e.stopPropagation();
-            if (!window.confirm('Skip canary and publish to 100% immediately?\n\nFor voice, canary is recommended — bad changes reach all users within seconds.')) return;
-            dispatchPublish('full', headers, opts);
-          },
-        }, 'Skip canary — publish 100% now')
-      );
-      card.appendChild(skipRow);
+      card.appendChild(el('div', {
+        style: 'margin-top:8px;text-align:center;color:#94a3b8;font-size:11px;',
+      }, 'One-click promote to 100% · ~30s, no rebuild'));
     }
 
     return card;

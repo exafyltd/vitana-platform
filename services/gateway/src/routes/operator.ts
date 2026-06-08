@@ -1386,7 +1386,9 @@ router.post('/publish', requireAdminAuth, async (req: Request, res: Response) =>
     // body.mode='full' opts out of canary for low-risk shipments where the
     // operator wants 100% immediately. Body shape:
     //   { confirm_short_sha?: string, mode?: 'canary'|'full' }
-    const mode: 'canary' | 'full' = (req.body?.mode === 'full') ? 'full' : 'canary';
+    // One-button publish: default to a single 100% promote. Canary is opt-in
+    // only when the caller explicitly asks for mode='canary'.
+    const mode: 'canary' | 'full' = (req.body?.mode === 'canary') ? 'canary' : 'full';
     const isCanary = mode === 'canary';
 
     // Step 7: dispatch the production deploy (EXEC-DEPLOY.yml).
