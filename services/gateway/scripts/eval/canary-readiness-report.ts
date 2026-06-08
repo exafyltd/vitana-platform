@@ -533,5 +533,9 @@ if (require.main === module) {
   });
 }
 
-export { generate, renderMarkdown, accuracyReason, computeConsecutiveCleanDays, prevUtcDay };
+// NOTE: computeConsecutiveCleanDays and prevUtcDay are already exported inline
+// at their declarations above. Re-exporting them here is a duplicate export
+// that breaks the esbuild transform — the cause of CANARY-READINESS-REPORT
+// failing daily since #2582 merged. Only re-export names declared without `export`.
+export { generate, renderMarkdown, accuracyReason };
 export type { CanaryReadinessReport, Reason };
