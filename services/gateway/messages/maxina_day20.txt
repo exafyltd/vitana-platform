@@ -1,0 +1,120 @@
+Bereit für Tag 19? ✨
+Deine Benachrichtigungen einstellen
+
+Heute geht es darum, deine Benachrichtigungen zu testen.
+
+Benachrichtigungen sind die kleinen Nachrichten, die MAXINA dir schickt — zum Beispiel, wenn etwas passiert, wenn du eine Erinnerung bekommst oder wenn ein Live Room startet.
+
+Heute entscheidest du, wovon du mehr möchtest — und was du lieber nicht mehr bekommen willst.
+
+
+1. Finde die Benachrichtigungs-Einstellungen
+
+Öffne MAXINA und suche nach den Notification Settings.
+
+Du findest sie meistens unter deinem Profil oder im Hauptbereich Settings.
+
+Schau dir an, welche Arten von Push-Benachrichtigungen MAXINA dir schicken kann.
+
+Zum Beispiel:
+
+   • Erinnerungen
+   • Nachrichten
+   • Events
+   • Live Rooms
+   • Community-Updates
+
+Nimm dir kurz Zeit und schau dich um.
+
+Frag dich:
+
+   • Verstehe ich diese Benachrichtigungs-Kategorien?
+   • Ist klar, was jede Kategorie bedeutet?
+   • Verstehe ich, was ich ein- oder ausschalten kann?
+
+
+2. Schalte eine Sache aus und eine Sache ein
+
+Wähle jetzt eine Benachrichtigung aus, die du nicht mehr bekommen möchtest.
+
+Zum Beispiel:
+
+   Live Rooms
+
+Schalte sie aus.
+
+Wähle danach eine Kategorie aus, von der du gerne mehr bekommen möchtest, und schalte sie ein.
+
+Zum Beispiel:
+
+   • Erinnerungen
+   • oder Nachrichten
+   • oder Events
+
+Prüfe danach:
+
+   • War es leicht, die Einstellung zu ändern?
+   • Hat der Schalter klar gezeigt, ob etwas an oder aus ist?
+   • Wurde die Einstellung gespeichert?
+
+
+3. Bitte Vitana, eine Einstellung zu ändern
+
+Tippe jetzt auf den Vitana-Orb und sag:
+
+   „Vitana, benachrichtige mich nicht mehr über Live Rooms."
+
+Schau dann, was passiert.
+
+Frag dich:
+
+   • Hat Vitana die Einstellung wirklich geändert?
+   • Oder hat sie nur erklärt, wie du es selbst machen kannst?
+   • War ihre Antwort hilfreich?
+   • Wusste ich danach, was ich tun muss?
+
+Das ist wichtig, weil wir testen möchten, ob Vitana wirklich helfen kann — und nicht nur darüber spricht.
+
+
+4. Sag Vitana, wie sich die Benachrichtigungen angefühlt haben
+
+Sag Vitana jetzt ehrlich, wie sich die Benachrichtigungen in den letzten 18 Tagen für dich angefühlt haben.
+
+Du kannst sagen:
+
+   „MAXINA hat mir zu viele Benachrichtigungen geschickt."
+
+   oder
+
+   „MAXINA hat mir zu wenige Benachrichtigungen geschickt."
+
+   oder
+
+   „Die Benachrichtigungen waren genau richtig."
+
+   oder
+
+   „Einige Benachrichtigungen waren hilfreich, andere nicht."
+
+Es gibt keine falsche Antwort.
+Wir möchten dein echtes Gefühl hören.
+
+
+Deine Aufgabe für heute
+
+Öffne die Notification Settings.
+Schalte eine Kategorie aus, die du nicht mehr möchtest.
+Schalte eine Kategorie ein, von der du gerne mehr bekommen möchtest.
+Bitte Vitana, eine Art von Benachrichtigung zu stoppen.
+Prüfe, ob Vitana die Einstellung wirklich geändert oder nur erklärt hat.
+
+Sag Vitana danach:
+
+   • Waren die MAXINA Benachrichtigungen zu viel, zu wenig oder genau richtig?
+
+Und wenn etwas nicht funktioniert, sag einfach zum Vitana-Orb:
+
+   „Das hat nicht funktioniert."
+
+
+Danke, dass du uns hilfst, MAXINA Benachrichtigungen ruhiger, schlauer und nützlicher zu machen. 💛
