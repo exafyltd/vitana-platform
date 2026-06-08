@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Intelligence Cockpit — Command Hub</title>
+  <link rel="stylesheet" href="/command-hub/styles.css?v=20260601-VTID-03247" />
+  <link rel="stylesheet" href="/command-hub/intelligence-cockpit.css?v=20260601-VTID-03247" />
+</head>
+<body>
+  <div class="cockpit-container">
+    <header class="cockpit-header">
+      <h1>Intelligence Cockpit</h1>
+      <p class="cockpit-sub">
+        Phase 1 W3 spine. One page for the operator to see whether the
+        assistant-intelligence loop's inputs are healthy:
+        dataset &rarr; training &rarr; context quality &rarr; role-aware
+        delivery &rarr; shadow eval &rarr; self-healing. Panels marked
+        <em>placeholder</em> ship in follow-up PRs.
+      </p>
+      <div class="cockpit-controls">
+        <button id="cockpit-refresh" type="button">Refresh</button>
+        <span id="cockpit-last-update" class="cockpit-meta">never</span>
+      </div>
+    </header>
+
+    <main class="cockpit-grid">
+      <section class="cockpit-panel cockpit-panel--live" id="panel-training">
+        <header class="cockpit-panel__header">
+          <h2>Training &amp; dataset pipeline</h2>
+          <span class="cockpit-panel__badge cockpit-panel__badge--live">live</span>
+        </header>
+        <div class="cockpit-panel__body" id="panel-training-body">Loading&hellip;</div>
+      </section>
+
+      <section class="cockpit-panel cockpit-panel--placeholder" id="panel-context-quality">
+        <header class="cockpit-panel__header">
+          <h2>Context quality score</h2>
+          <span class="cockpit-panel__badge cockpit-panel__badge--placeholder">placeholder</span>
+        </header>
+        <div class="cockpit-panel__body">
+          <p>Consumes the daily <code>CRON-CONTEXT-QUALITY-SCORE</code> artifact
+            (VTID-03246, PR 2). Wiring lands in the follow-up endpoint
+            <code>GET /api/v1/admin/cockpit/context-quality</code>.</p>
+          <p class="cockpit-panel__hint">
+            Will surface: overall <strong>context_quality_score / 100</strong>,
+            per-source freshness/trust/coverage/consent breakdown, and the
+            tenant-consent gate status.
+          </p>
+        </div>
+      </section>
+
+      <section class="cockpit-panel cockpit-panel--placeholder" id="panel-role-registry">
+        <header class="cockpit-panel__header">
+          <h2>Role registry &amp; shadow</h2>
+          <span class="cockpit-panel__badge cockpit-panel__badge--placeholder">placeholder</span>
+        </header>
+        <div class="cockpit-panel__body">
+          <p>Consumes the <code>assistant.role.context_pack.shadow</code> OASIS
+            stream (VTID-03241, PR 4) and the role registry
+            (VTID-03240, PR 3). Wiring lands in
+            <code>GET /api/v1/admin/cockpit/role-registry-shadow</code>.</p>
+          <p class="cockpit-panel__hint">
+            Will surface: role distribution per surface, would_allow vs
+            would_block counts per (role, source), and per-role
+            <strong>policy_match_rate</strong> with a 7-day trend.
+          </p>
+        </div>
+      </section>
+
+      <section class="cockpit-panel cockpit-panel--placeholder" id="panel-self-healing">
+        <header class="cockpit-panel__header">
+          <h2>Self-healing &amp; eval</h2>
+          <span class="cockpit-panel__badge cockpit-panel__badge--placeholder">placeholder</span>
+        </header>
+        <div class="cockpit-panel__body">
+          <p>Consumes the autonomous self-healing feed. Wiring lands in
+            <code>GET /api/v1/admin/cockpit/self-healing</code>.</p>
+          <p class="cockpit-panel__hint">
+            Will surface: failure clusters, applied self-heal interventions,
+            and eval-suite pass/fail trends so the operator can see whether
+            the loop is closing.
+          </p>
+        </div>
+      </section>
+    </main>
+
+    <footer class="cockpit-footer">
+      <span>VTID-03247 spine</span>
+      <span>·</span>
+      <span>Read-only</span>
+    </footer>
+  </div>
+
+  <script src="/command-hub/intelligence-cockpit.js?v=20260601-VTID-03247"></script>
+</body>
+</html>
