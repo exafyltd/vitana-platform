@@ -3,6 +3,9 @@
 # no side effects. Safe to delete after use. (BOOTSTRAP-ORB-STAGING-PROBE)
 name: ZZ ORB Staging Probe (manual)
 on:
+  push:
+    branches: [claude/sleepy-fermi-migpP]
+    paths: ['.github/workflows/ZZ-ORB-STAGING-PROBE.yml']
   workflow_dispatch: {}
 permissions:
   contents: read
