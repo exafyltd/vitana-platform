@@ -8,6 +8,8 @@ import {
   composeQualityScore,
   sortActionItems,
   dedupeActionItems,
+  isZombieEscalation,
+  isLifecycleArtifactStop,
   type ActionItem,
 } from '../../src/services/voice-improvement-aggregator';
 
@@ -124,5 +126,80 @@ describe('dedupeActionItems', () => {
 
   it('returns empty array for empty input', () => {
     expect(dedupeActionItems([])).toEqual([]);
+  });
+});
+
+// VTID-02953 (PR-K): zombie-filter unit tests.
+describe('isZombieEscalation', () => {
+  it('marks route_not_registered against a retired endpoint as zombie', () => {
+    // PR-I deleted /api/v1/self-healing/canary/failing-health — escalations
+    // against it from before that deletion are zombies (endpoint cannot be
+    // investigated; it no longer exists).
+    expect(
+      isZombieEscalation('/api/v1/self-healing/canary/failing-health', 'route_not_registered'),
+    ).toBe(true);
+  });
+
+  it('does NOT mark route_not_registered against a currently-registered endpoint as zombie', () => {
+    // The new canary IS in ENDPOINT_FILE_MAP — a real route_not_registered
+    // here would be a genuine deploy regression and must surface.
+    expect(
+      isZombieEscalation('/api/v1/canary-target/health', 'route_not_registered'),
+    ).toBe(false);
+  });
+
+  it('marks dev_autopilot_safety_gate_blocked against synthetic autopilot.* endpoints as zombie', () => {
+    expect(isZombieEscalation('autopilot.approve_safety', 'dev_autopilot_safety_gate_blocked')).toBe(true);
+  });
+
+  it('does NOT mark dev_autopilot_safety_gate_blocked against a real route as zombie', () => {
+    expect(
+      isZombieEscalation('/api/v1/canary-target/health', 'dev_autopilot_safety_gate_blocked'),
+    ).toBe(false);
+  });
+
+  it('does NOT mark handler_crash escalations as zombie even on retired endpoints', () => {
+    // Other failure classes must keep showing — they may reference real
+    // bugs even if the specific endpoint moved.
+    expect(
+      isZombieEscalation('/api/v1/self-healing/canary/failing-health', 'handler_crash'),
+    ).toBe(false);
+  });
+
+  it('does NOT mark null failure_class as zombie (preserve everything we cannot categorize)', () => {
+    expect(isZombieEscalation('/api/v1/self-healing/canary/failing-health', null)).toBe(false);
+  });
+});
+
+describe('isLifecycleArtifactStop', () => {
+  it('marks superseded_by_new_session stops as lifecycle artifacts', () => {
+    expect(isLifecycleArtifactStop({ reason: 'superseded_by_new_session', audio_in_chunks: 0 })).toBe(true);
+  });
+
+  it('marks expired_ttl stops as lifecycle artifacts', () => {
+    expect(isLifecycleArtifactStop({ reason: 'expired_ttl', audio_in_chunks: 0 })).toBe(true);
+  });
+
+  it('marks a superseded stop as an artifact even when it carried real audio', () => {
+    // A reloaded mid-conversation session is a fragment of one user
+    // conversation that continues in the new session — still not counted
+    // separately, regardless of audio.
+    expect(isLifecycleArtifactStop({ reason: 'superseded_by_new_session', audio_in_chunks: 240 })).toBe(true);
+  });
+
+  it('does NOT mark a normally-ended session (no reason) — a genuine no-show still counts', () => {
+    // User opened the ORB, said nothing, closed normally. This IS a real
+    // audio-in-zero conversation attempt worth measuring.
+    expect(isLifecycleArtifactStop({ audio_in_chunks: 0 })).toBe(false);
+  });
+
+  it('does NOT mark a user-requested stop as an artifact', () => {
+    expect(isLifecycleArtifactStop({ reason: 'session_stop_requested', audio_in_chunks: 130 })).toBe(false);
+  });
+
+  it('is null/undefined safe', () => {
+    expect(isLifecycleArtifactStop(null)).toBe(false);
+    expect(isLifecycleArtifactStop(undefined)).toBe(false);
+    expect(isLifecycleArtifactStop({})).toBe(false);
   });
 });

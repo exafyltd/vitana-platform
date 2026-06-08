@@ -1,0 +1,153 @@
+name: Canary Readiness Report
+
+# VTID-03217 — Phase 1 W3-B0 PR 3.
+#
+# Daily evidence packet for the operator's PUBLISH decision. Consumes:
+#   - the W3-A shadow-comparison report (per-feature rollup)
+#   - the latest dataset.extraction.completed event (per target)
+#   - Vertex fine-tune status (from gcloud probe)
+#
+# Emits a single verdict (READY_FOR_CANARY | NOT_READY) with specific
+# unmet thresholds. No state modification, no auto-promote, no canary
+# execution.
+
+on:
+  schedule:
+    # Daily at 08:45 UTC — 15 min after the phase gate status report
+    # (08:30 UTC), so the operator sees the full gate state before
+    # reading the canary readiness verdict.
+    - cron: '45 8 * * *'
+  workflow_dispatch:
+    inputs:
+      target:
+        description: 'Fine-tune target to evaluate'
+        required: true
+        default: 'voice-tool-router'
+        type: choice
+        options: [ voice-tool-router, intent-kind, pillar-classifier ]
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: canary-readiness-report
+  cancel-in-progress: false
+
+env:
+  GCP_PROJECT: lovable-vitana-vers1
+  STAGING_GATEWAY_URL: https://gateway-staging-q74ibpv6ia-uc.a.run.app
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: services/gateway/package-lock.json
+
+      - name: Install gateway deps
+        working-directory: services/gateway
+        run: npm ci --no-audit --no-fund
+
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_WIF_SA_EMAIL }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Resolve prod Supabase creds
+        run: |
+          set -euo pipefail
+          PROD_URL=$(gcloud secrets versions access latest --secret=SUPABASE_URL --project="${GCP_PROJECT}" 2>/dev/null || echo '')
+          PROD_KEY=$(gcloud secrets versions access latest --secret=SUPABASE_SERVICE_ROLE --project="${GCP_PROJECT}" 2>/dev/null || echo '')
+          if [ -n "$PROD_URL" ]; then echo "::add-mask::$PROD_URL"; fi
+          if [ -n "$PROD_KEY" ]; then echo "::add-mask::$PROD_KEY"; fi
+          {
+            echo "PROD_SUPABASE_URL=$PROD_URL"
+            echo "PROD_SUPABASE_SERVICE_ROLE=$PROD_KEY"
+          } >> "$GITHUB_ENV"
+
+      - name: Probe Vertex fine-tune status
+        id: ftstatus
+        run: |
+          set +e
+          TARGET="${{ inputs.target || 'voice-tool-router' }}"
+          PREFIX="${TARGET}-ft-"
+          # Latest job with this prefix; success state = JOB_STATE_SUCCEEDED.
+          OUT=$(gcloud ai custom-jobs list --region=us-central1 --project="${GCP_PROJECT}" \
+            --filter="display_name~'${PREFIX}'" \
+            --sort-by="~create_time" --limit=1 \
+            --format='value(state)' 2>&1)
+          RC=$?
+          if [ $RC -ne 0 ]; then
+            # VTID-03225 (Phase 1 W3-C0): parity with PHASE-GATE-STATUS-REPORT
+            # widened grep. Detects IAM denial across more gcloud error
+            # variants and reports it as iam_blocked (a true FAIL signal)
+            # rather than skipped (which the canary script treats as
+            # unknown). Keeps the two reports aligned on the Vertex gate.
+            if echo "$OUT" | grep -qiE "permission|denied|403|aiplatform|forbidden|insufficient|customjobs|role/iam"; then
+              echo "FINETUNE_STATUS=iam_blocked" >> "$GITHUB_ENV"
+              echo "Vertex IAM denied — operator must grant roles/aiplatform.user on the WIF SA"
+            else
+              echo "FINETUNE_STATUS=skipped" >> "$GITHUB_ENV"
+              echo "Vertex probe non-IAM error (treating as skipped):"
+              echo "$OUT" | head -10
+            fi
+          else
+            # gcloud can print an endpoint banner before the value; extract
+            # only the JOB_STATE token so active jobs don't get mislabeled.
+            STATE=$(echo "$OUT" | grep -oE 'JOB_STATE_[A-Z_]+' | tail -1)
+            case "$STATE" in
+              JOB_STATE_SUCCEEDED) echo "FINETUNE_STATUS=ok" >> "$GITHUB_ENV" ;;
+              JOB_STATE_FAILED|JOB_STATE_CANCELLED) echo "FINETUNE_STATUS=failed" >> "$GITHUB_ENV" ;;
+              JOB_STATE_PENDING|JOB_STATE_RUNNING|JOB_STATE_QUEUED) echo "FINETUNE_STATUS=running" >> "$GITHUB_ENV" ;;
+              "") echo "FINETUNE_STATUS=none" >> "$GITHUB_ENV" ;;
+              *) echo "FINETUNE_STATUS=skipped" >> "$GITHUB_ENV"; echo "Unknown JOB_STATE='$STATE'" ;;
+            esac
+            echo "Vertex latest job state: '$STATE'"
+          fi
+
+      - name: Generate canary readiness report
+        working-directory: services/gateway
+        env:
+          GATEWAY_SERVICE_TOKEN: ${{ secrets.GATEWAY_SERVICE_TOKEN }}
+          FEATURE_TARGET: ${{ inputs.target || 'voice-tool-router' }}
+          REPORT_MARKDOWN_PATH: /tmp/canary-readiness-report.md
+        run: |
+          set -euo pipefail
+          npx tsx scripts/eval/canary-readiness-report.ts > /tmp/canary-readiness-report.json
+          echo "JSON written: $(wc -c < /tmp/canary-readiness-report.json) bytes"
+          echo "Markdown written: $(wc -c < /tmp/canary-readiness-report.md 2>/dev/null || echo 0) bytes"
+          # Surface verdict so it's visible in the GH UI without opening
+          # the artifact.
+          VERDICT=$(python3 -c "import json; print(json.load(open('/tmp/canary-readiness-report.json'))['verdict'])")
+          echo "Verdict: $VERDICT"
+
+      - name: Append summary
+        if: always()
+        run: |
+          if [ -f /tmp/canary-readiness-report.md ]; then
+            cat /tmp/canary-readiness-report.md >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo '## Canary readiness report'                       >> "$GITHUB_STEP_SUMMARY"
+            echo ''                                                  >> "$GITHUB_STEP_SUMMARY"
+            echo 'Report did not produce Markdown — see logs.'      >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: canary-readiness-report-${{ github.run_id }}
+          path: |
+            /tmp/canary-readiness-report.json
+            /tmp/canary-readiness-report.md
+          if-no-files-found: warn
+          retention-days: 90

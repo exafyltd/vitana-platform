@@ -18,7 +18,18 @@
 
 name: Deploy Autopilot Job (VTID-02703)
 
+# Triggers:
+#   1. Manual: workflow_dispatch with overridable knobs (memory/cpu/timeout).
+#   2. Auto: every push to main that touches services/gateway/** or this
+#      workflow file. Without auto-trigger, the Job image silently drifts —
+#      we shipped 12 days of gateway changes (2026-05-05 → 2026-05-17) while
+#      the Job ran stale code and every dispatched execution hung.
 on:
+  push:
+    branches: [main]
+    paths:
+      - 'services/gateway/**'
+      - '.github/workflows/DEPLOY-AUTOPILOT-JOB.yml'
   workflow_dispatch:
     inputs:
       vtid:
@@ -39,7 +50,36 @@ on:
         default: '2'
 
 jobs:
+  # Staging-first cutover gate. Freezes the AUTOMATIC (push) build+deploy of the
+  # live autopilot Cloud Run Job at/after Mon 8 Jun 2026, 10:00 Europe/Berlin.
+  # No staging twin for the job, so the push path is freeze-only post-cutover;
+  # deploy via manual workflow_dispatch (the documented exception). Manual
+  # dispatch is never frozen.
+  cutover_gate:
+    runs-on: ubuntu-latest
+    outputs:
+      frozen: ${{ steps.gate.outputs.frozen }}
+    steps:
+      - name: Evaluate staging-first cutover
+        id: gate
+        shell: bash
+        run: |
+          CUTOVER_EPOCH="$(date -d 'TZ="Europe/Berlin" 2026-06-08 10:00:00' +%s)"
+          NOW_EPOCH="$(date -u +%s)"
+          if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
+            echo "Manual dispatch → not frozen (deliberate prod exception)."
+            echo "frozen=false" >> "$GITHUB_OUTPUT"
+          elif [ "$NOW_EPOCH" -ge "$CUTOVER_EPOCH" ]; then
+            echo "::warning::Staging-first cutover ACTIVE — auto deploy of the autopilot job to LIVE is frozen. Use a manual workflow_dispatch to ship."
+            echo "frozen=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Pre-cutover — auto deploy proceeds (cutover at $(date -u -d @${CUTOVER_EPOCH}) UTC)."
+            echo "frozen=false" >> "$GITHUB_OUTPUT"
+          fi
+
   deploy:
+    needs: cutover_gate
+    if: needs.cutover_gate.outputs.frozen != 'true'
     runs-on: ubuntu-latest
     permissions:
       id-token: write
@@ -59,8 +99,21 @@ jobs:
         # WIF gives us a short-lived OAuth token; gcloud configure-docker
         # only sets a credential helper that isn't honored here. Explicit
         # docker login with the access token works.
+        #
+        # Retry: 2026-05-17 saw a real-deal transient "context deadline
+        # exceeded" against pkg.dev's token endpoint that failed the whole
+        # workflow. Three attempts with a 10s pause cleanly absorbs that.
         run: |
-          gcloud auth print-access-token | docker login -u oauth2accesstoken --password-stdin us-central1-docker.pkg.dev
+          for attempt in 1 2 3; do
+            if gcloud auth print-access-token | docker login -u oauth2accesstoken --password-stdin us-central1-docker.pkg.dev; then
+              echo "docker login ok on attempt $attempt"
+              exit 0
+            fi
+            echo "docker login attempt $attempt failed — sleeping 10s"
+            sleep 10
+          done
+          echo "docker login failed after 3 attempts" >&2
+          exit 1
 
       - name: Build container with Dockerfile.job (local docker)
         env:
@@ -90,6 +143,12 @@ jobs:
           PROJECT: lovable-vitana-vers1
           REGION: us-central1
           JOB_NAME: autopilot-executor
+          # On push triggers `inputs.*` is empty; fall back to the same
+          # defaults the workflow_dispatch form declares so the gcloud
+          # flags stay valid either way.
+          TIMEOUT_SECONDS: ${{ github.event.inputs.timeout_seconds || '3600' }}
+          MEMORY: ${{ github.event.inputs.memory || '2Gi' }}
+          CPU: ${{ github.event.inputs.cpu || '2' }}
         run: |
           set -e
           IMAGE_URI="$REGION-docker.pkg.dev/$PROJECT/cloud-run-source-deploy/autopilot-executor:${{ github.sha }}"
@@ -98,9 +157,9 @@ jobs:
             --image="$IMAGE_URI" \
             --region="$REGION" \
             --project="$PROJECT" \
-            --task-timeout="${{ github.event.inputs.timeout_seconds }}s" \
-            --memory="${{ github.event.inputs.memory }}" \
-            --cpu="${{ github.event.inputs.cpu }}" \
+            --task-timeout="${TIMEOUT_SECONDS}s" \
+            --memory="$MEMORY" \
+            --cpu="$CPU" \
             --max-retries=0 \
             --parallelism=1 \
             --tasks=1 \

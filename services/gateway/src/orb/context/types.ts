@@ -1,19 +1,27 @@
 /**
  * VTID-02941 (B0b-min) — AssistantDecisionContext: the decision contract.
  * VTID-02950 (F2)     — adds conceptMastery field.
+ * VTID-02954 (F3)     — adds journeyStage field.
+ * VTID-02955 (B5)     — adds pillarMomentum field.
+ * VTID-02962 (B6)     — adds interactionStyle field.
  *
  * This is the SINGLE typed shape the instruction layer reads to assemble
  * a prompt. Raw rows (memory, threads, messages, promises, profiles,
- * concept rows, scores, transcripts) MUST NOT cross this boundary. The
- * compiler distills; the renderer formats. No exceptions.
+ * concept rows, scores, transcripts, journey rows, route history,
+ * behavioral history, biomarkers, trend arrays) MUST NOT cross this
+ * boundary. The compiler distills; the renderer formats. No exceptions.
  *
  * Wall:
  *   - Forbidden: match journey, feature discovery, wake brief,
- *     continuation contract, greeting decay rewrite, journey stage
- *     modulation, reliability tuning. Each gets its own slice.
- *   - Continuity (B2) + conceptMastery (B3) are wired through this
- *     contract.
+ *     continuation contract, greeting decay rewrite, reliability tuning.
+ *     Each gets its own slice.
+ *   - Continuity (B2) + conceptMastery (B3) + journeyStage (B4) +
+ *     pillarMomentum (B5) + interactionStyle (B6) are wired through
+ *     this contract.
  *   - Adding new fields later is fine; pushing raw rows into them is not.
+ *   - No medical interpretation. No diagnoses. No treatment advice.
+ *   - No free-text psychological summaries. No diagnostic-feeling
+ *     personality labels. No mental-health inference.
  */
 
 /**
@@ -145,6 +153,294 @@ export interface DecisionConceptMastery {
 }
 
 /**
+ * Coarse explanation-depth hint that the decision layer reads. Same
+ * enum as B4's compiler — re-declared here so the decision-contract
+ * type surface stays self-contained (no imports from `services/`).
+ */
+export type ExplanationDepthHint = 'deep' | 'standard' | 'terse';
+
+/**
+ * Tenure bucket — coarse onboarding stage. Identical to B4's
+ * OnboardingStage; re-aliased here so the decision-contract type
+ * surface stays self-contained.
+ */
+export type TenureBucket =
+  | 'first_session'
+  | 'first_days'
+  | 'first_week'
+  | 'first_month'
+  | 'established';
+
+/**
+ * Vitana Index tier bucket. Replaces the raw 0..999 score — the LLM
+ * never sees the underlying number.
+ */
+export type VitanaIndexTierBucket =
+  | 'foundation'
+  | 'building'
+  | 'momentum'
+  | 'resonance'
+  | 'flourishing'
+  | 'unknown';
+
+/**
+ * Bucketed time held in current Index tier. Replaces the raw day
+ * count.
+ */
+export type TierTenureBucket = 'new' | 'settled' | 'long_standing' | 'unknown';
+
+/**
+ * Bucketed recency of the user's last authenticated activity.
+ * Replaces the raw `last_active_date` ISO string.
+ */
+export type ActivityRecencyBucket = 'today' | 'recent' | 'lapsed' | 'unknown';
+
+/**
+ * Bucketed total usage-days volume. Replaces the raw `usage_days_count`
+ * integer.
+ */
+export type UsageVolumeBucket = 'none' | 'light' | 'regular' | 'heavy';
+
+/**
+ * Coarse confidence in the journey-stage signal. Driven by how many
+ * underlying sources reported `ok:true` AND had data.
+ */
+export type JourneyConfidenceBucket = 'low' | 'medium' | 'high';
+
+/**
+ * Stage-aware tone hint the decision layer can read. Derived purely
+ * from tenure_bucket.
+ */
+export type StageToneHint =
+  | 'warm_welcoming'   // first_session
+  | 'guiding'          // first_days
+  | 'collaborative'    // first_week + first_month
+  | 'concise_familiar'; // established
+
+/**
+ * Allowed warnings on the journey-stage signal. Enums only — NEVER
+ * free-text strings, NEVER raw timestamps, NEVER raw history.
+ */
+export type JourneyStageWarning =
+  | 'no_tenure_data'
+  | 'long_inactivity'
+  | 'unknown_tier';
+
+/**
+ * Distilled journey-stage view. Mirrors `JourneyStageContext` from
+ * `services/journey-stage/types.ts` but strips:
+ *   - raw tenure_days integer (kept as tenure_bucket enum)
+ *   - raw last_active_date ISO string (kept as activity_recency enum)
+ *   - raw usage_days_count integer (kept as usage_volume enum)
+ *   - raw vitana_index.score_total (kept as tier enum only)
+ *   - raw tier_days_held integer (kept as tier_tenure enum)
+ *
+ * Kept: bucketed forms of everything above + the existing
+ * ExplanationDepthHint + a derived stage-aware tone hint.
+ */
+export interface DecisionJourneyStage {
+  /** 5-step onboarding ladder. Same enum as B4's compiler. */
+  stage: TenureBucket;
+  /** Bucketed tenure — alias of `stage` for clarity. */
+  tenure_bucket: TenureBucket;
+  /**
+   * Coarse depth hint already derived by B4's compiler:
+   *   first_session + first_days → 'deep'
+   *   first_week + first_month    → 'standard'
+   *   established                  → 'terse'
+   */
+  explanation_depth: ExplanationDepthHint;
+  /** Stage-aware tone hint. Derived purely from `stage`. */
+  tone_hint: StageToneHint;
+  /** Bucketed Vitana Index tier. NEVER the raw 0..999 score. */
+  vitana_index_tier: VitanaIndexTierBucket;
+  /** Bucketed time held in current tier. NEVER the raw day count. */
+  tier_tenure: TierTenureBucket;
+  /** Bucketed recency. NEVER a raw timestamp. */
+  activity_recency: ActivityRecencyBucket;
+  /** Bucketed usage volume. NEVER the raw integer. */
+  usage_volume: UsageVolumeBucket;
+  /** Coarse confidence the LLM can use to weight the signal. */
+  journey_confidence: JourneyConfidenceBucket;
+  /** Warnings as enums. NEVER free-text. */
+  warnings: ReadonlyArray<JourneyStageWarning>;
+}
+
+/**
+ * Canonical 5-pillar enum (post-Phase E). Re-declared here so the
+ * decision-contract types stay self-contained (no imports from
+ * `services/`).
+ */
+export type PillarKey =
+  | 'sleep'
+  | 'nutrition'
+  | 'exercise'
+  | 'hydration'
+  | 'mental';
+
+/**
+ * Per-pillar momentum band — same enum as the underlying B5 compiler;
+ * already decision-grade.
+ */
+export type PillarMomentumBand =
+  | 'improving'
+  | 'steady'
+  | 'slipping'
+  | 'unknown';
+
+/**
+ * Coarse confidence in the pillar-momentum signal. The decision
+ * adapter passes this through unchanged from the B5 compiler.
+ */
+export type PillarMomentumConfidence = 'low' | 'medium' | 'high';
+
+/**
+ * Allowed warnings on the pillar-momentum signal. Enums only —
+ * NEVER free-text. NEVER medical interpretation. NEVER diagnosis.
+ */
+export type PillarMomentumWarning =
+  | 'low_pillar_confidence'
+  | 'no_recent_pillar_data';
+
+/**
+ * Distilled pillar-momentum view. Mirrors `PillarMomentumContext`
+ * from `services/pillar-momentum/types.ts` but strips:
+ *   - raw pillar scores (0..200 per pillar)
+ *   - raw history dates / timestamps
+ *   - raw trend arrays
+ *   - raw window-coverage integers
+ *
+ * Kept: stable pillar enums (which one is weakest / strongest /
+ * suggested-focus), per-pillar momentum band, coarse confidence,
+ * and enum-only warnings.
+ *
+ * NEVER carries medical interpretation, diagnoses, or treatment
+ * advice. The pillars are coaching axes, not clinical categories.
+ */
+export interface DecisionPillarMomentum {
+  /**
+   * Per-pillar momentum band, one entry per canonical pillar.
+   * Order is deterministic (sleep / nutrition / exercise / hydration
+   * / mental) so the renderer output is stable.
+   */
+  per_pillar: ReadonlyArray<{
+    pillar: PillarKey;
+    momentum: PillarMomentumBand;
+  }>;
+  /** Pillar with the lowest latest score, or null if no data. */
+  weakest_pillar: PillarKey | null;
+  /** Pillar with the highest latest score, or null if no data. */
+  strongest_pillar: PillarKey | null;
+  /**
+   * Suggested focus pillar — typically the weakest, with a tie-break
+   * preference for pillars whose momentum is 'slipping' or 'unknown'.
+   * Null when no pillar data exists.
+   */
+  suggested_focus: PillarKey | null;
+  /** Coarse confidence the LLM can use to weight the signal. */
+  confidence: PillarMomentumConfidence;
+  /** Warnings as enums. NEVER free-text, NEVER medical. */
+  warnings: ReadonlyArray<PillarMomentumWarning>;
+}
+
+// ---------------------------------------------------------------------------
+// B6 — Interaction Style (VTID-02962)
+// ---------------------------------------------------------------------------
+
+/**
+ * Preferred verbosity of the assistant's answers. Coarse band, NEVER
+ * derived from word counts or free-text classification. The compiler
+ * either reads it from a stored user preference or returns 'unknown'.
+ */
+export type PreferredResponseStyle =
+  | 'concise'
+  | 'balanced'
+  | 'detailed'
+  | 'unknown';
+
+/**
+ * How fast the user wants the conversation to move. Coarse band; the
+ * adapter MUST NOT pass raw response latencies or turn timestamps.
+ */
+export type InteractionPace = 'slow' | 'normal' | 'fast' | 'unknown';
+
+/**
+ * Tone the user prefers from the assistant. Enum-only — never a free-
+ * text descriptor and NEVER diagnostic-sounding (no
+ * "anxious / depressive / avoidant" etc.).
+ */
+export type TonePreference =
+  | 'direct'
+  | 'warm'
+  | 'coaching'
+  | 'neutral'
+  | 'unknown';
+
+/**
+ * Hint for how deep the assistant's explanations should go. Tighter
+ * than B4's `ExplanationDepthHint` because it captures the user's own
+ * preference rather than the stage-derived default. The renderer uses
+ * 'normal' as the no-signal fallback so callers can rely on a
+ * non-degenerate value without inspecting source_health.
+ */
+export type InteractionExplanationDepth = 'minimal' | 'normal' | 'expanded';
+
+/**
+ * Coarse confidence band for the interaction-style signal as a whole.
+ * Replaces any raw 0..1 numeric score the underlying store may carry.
+ */
+export type InteractionStyleConfidenceBucket =
+  | 'low'
+  | 'medium'
+  | 'high'
+  | 'unknown';
+
+/**
+ * Allowed warnings on the interaction-style signal. Enums only —
+ * NEVER free-text, NEVER diagnostic, NEVER medical.
+ */
+export type InteractionStyleWarning =
+  | 'no_recorded_preferences'
+  | 'low_signal_confidence';
+
+/**
+ * Distilled interaction-style view. Mirrors `InteractionStyleContext`
+ * from `services/interaction-style/types.ts` but strips:
+ *   - raw user preference rows
+ *   - raw timestamps (`last_updated_at`, `last_seen_at`)
+ *   - raw chat-message or transcript-derived counts
+ *   - raw confidence floats (bucketed to low / medium / high / unknown)
+ *   - any free-text personality / psychological summary
+ *
+ * Kept: bucketed preference enums, an explanation-depth hint the
+ * renderer can read directly, and an enum-only warnings list.
+ *
+ * NEVER carries:
+ *   - medical interpretation
+ *   - mental-health inference
+ *   - diagnostic-feeling personality labels
+ *   - free-text psychological summaries
+ */
+export interface DecisionInteractionStyle {
+  /** Preferred verbosity. Enum-only. */
+  preferred_response_style: PreferredResponseStyle;
+  /** Preferred conversational pace. Enum-only. */
+  interaction_pace: InteractionPace;
+  /** Preferred tone from the assistant. Enum-only. */
+  tone_preference: TonePreference;
+  /**
+   * Explanation depth hint derived from the user's recorded preference.
+   * Defaults to 'normal' when no signal is available so the prompt
+   * always reads a usable value.
+   */
+  explanation_depth_hint: InteractionExplanationDepth;
+  /** Coarse confidence band the LLM can use to weight the signal. */
+  confidence_bucket: InteractionStyleConfidenceBucket;
+  /** Warnings as enums. NEVER free-text. NEVER diagnostic. */
+  warnings: ReadonlyArray<InteractionStyleWarning>;
+}
+
+/**
  * Per-source health view. Empty/missing rows are not failures — they
  * just mean the user has no state yet. Failures (Supabase down, schema
  * mismatch, etc.) surface here with a `reason`.
@@ -153,6 +449,12 @@ export interface DecisionSourceHealth {
   continuity: { ok: boolean; reason?: string };
   /** F2: concept-mastery source health. */
   concept_mastery: { ok: boolean; reason?: string };
+  /** F3: journey-stage source health. */
+  journey_stage: { ok: boolean; reason?: string };
+  /** B5: pillar-momentum source health. */
+  pillar_momentum: { ok: boolean; reason?: string };
+  /** B6: interaction-style source health. */
+  interaction_style: { ok: boolean; reason?: string };
 }
 
 /**
@@ -177,6 +479,24 @@ export interface AssistantDecisionContext {
    * concept-mastery section in that case.
    */
   concept_mastery: DecisionConceptMastery | null;
+  /**
+   * F3: Journey-stage decision view. `null` when the compiler had no
+   * input or source-health is degraded — the renderer must emit no
+   * journey-stage section in that case.
+   */
+  journey_stage: DecisionJourneyStage | null;
+  /**
+   * B5: Pillar-momentum decision view. `null` when the compiler had
+   * no input or source-health is degraded — the renderer must emit
+   * no pillar-momentum section in that case.
+   */
+  pillar_momentum: DecisionPillarMomentum | null;
+  /**
+   * B6: Interaction-style decision view. `null` when the compiler had
+   * no input or source-health is degraded — the renderer must emit
+   * no interaction-style section in that case.
+   */
+  interaction_style: DecisionInteractionStyle | null;
   /** Per-source health. Always present, even when fields are null. */
   source_health: DecisionSourceHealth;
 }

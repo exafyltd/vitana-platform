@@ -1,0 +1,23 @@
+-- BOOTSTRAP-LONGEVITY-STAGE-FIX — NEUTRALIZED (no-op)
+--
+-- This migration originally flipped the longevity stub's tenant lookup from
+-- `SELECT id FROM public.tenants` to `SELECT tenant_id FROM public.tenants`
+-- on the assumption that `tenant_id` was the real PK column.
+--
+-- That assumption is WRONG. The canonical bootstrap migration
+-- (20251231000000_vtid_01101) defines `public.tenants` with `id UUID PRIMARY KEY`
+-- and NO `tenant_id` column. This migration was never applied to prod (the live
+-- error remained `column "id" does not exist`), and applying it would only have
+-- flipped the failure to `column "tenant_id" does not exist` — the same
+-- stage.longevity.failed class, a different column name.
+--
+-- It has been superseded by the drift-proof fix in
+--   20260528184700_BOOTSTRAP_fix_longevity_stub_drift_proof.sql
+-- which resolves the tenant solely from daily_recompute_runs.tenant_id (a
+-- schema-stable table) and removes the unverifiable public.tenants fallback
+-- entirely. That migration has a later timestamp, so it wins on any ordered
+-- re-run; this file is reduced to an intentional no-op so it can never
+-- re-introduce the broken lookup if applied in isolation.
+--
+-- Intentionally does nothing.
+SELECT 1;

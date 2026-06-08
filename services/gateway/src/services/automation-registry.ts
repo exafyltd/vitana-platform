@@ -190,6 +190,22 @@ const COMMUNITY_GROUPS: AutomationDefinition[] = [
     targetRoles: [...MEMBER_ROLES],
     handler: 'runCommunityCreatorDigest',
   },
+  {
+    id: 'AP-0211', name: '"Revive Your Group" Re-Ignition', domain: 'community-groups',
+    status: 'IMPLEMENTED', priority: 'P1', triggerType: 'heartbeat',
+    triggerConfig: { intervalMinutes: 1440 }, // daily dormant-group scan
+    targetRoles: [...MEMBER_ROLES],
+    handler: 'runReviveYourGroup',
+    requires: ['AP-0205', 'AP-0503'],
+  },
+  {
+    id: 'AP-0212', name: '"Welcome Squad" New-Member Activation', domain: 'community-groups',
+    status: 'IMPLEMENTED', priority: 'P1', triggerType: 'event',
+    triggerConfig: { eventTopic: 'community.member.joined' },
+    targetRoles: [...MEMBER_ROLES],
+    handler: 'runWelcomeSquad',
+    requires: ['AP-0203', 'AP-0103'],
+  },
 ];
 
 // =============================================================================
@@ -249,6 +265,21 @@ const EVENTS_LIVE_ROOMS: AutomationDefinition[] = [
     triggerConfig: { eventTopic: 'meetup.ended' },
     targetRoles: [...MEMBER_ROLES],
     handler: 'runNoShowFollowUp',
+  },
+  {
+    id: 'AP-0309', name: '"Host Night" Concierge', domain: 'events-live-rooms',
+    status: 'IMPLEMENTED', priority: 'P0', triggerType: 'heartbeat',
+    triggerConfig: { intervalMinutes: 1440 }, // daily upcoming-event concierge scan
+    targetRoles: [...MEMBER_ROLES],
+    handler: 'runHostNightConcierge',
+    requires: ['AP-0301', 'AP-0302', 'AP-0403', 'AP-0405'],
+  },
+  {
+    id: 'AP-0310', name: '"Go Together +1" Group Outing Builder', domain: 'events-live-rooms',
+    status: 'PLANNED', priority: 'P1', triggerType: 'event',
+    triggerConfig: { eventTopic: 'match.daily.event' },
+    targetRoles: [...MEMBER_ROLES],
+    requires: ['AP-0303'],
   },
 ];
 
@@ -319,6 +350,20 @@ const SHARING_GROWTH: AutomationDefinition[] = [
     targetRoles: ALL_ROLES,
     handler: 'runViralLoopOnboarding',
   },
+  {
+    id: 'AP-0411', name: '"Bring Your Circle" Smart Invite Wave', domain: 'sharing-growth',
+    status: 'PLANNED', priority: 'P0', triggerType: 'event',
+    triggerConfig: { eventTopic: 'match.feedback.like' },
+    targetRoles: [...MEMBER_ROLES],
+    requires: ['AP-0404', 'AP-0405', 'AP-0708'],
+  },
+  {
+    id: 'AP-0412', name: '"Progress to Story" Shareable Win', domain: 'sharing-growth',
+    status: 'PLANNED', priority: 'P1', triggerType: 'event',
+    triggerConfig: { eventTopic: 'user.milestone.reached' },
+    targetRoles: [...MEMBER_ROLES],
+    requires: ['AP-0407', 'AP-0509', 'AP-0410'],
+  },
 ];
 
 // =============================================================================
@@ -386,6 +431,23 @@ const ENGAGEMENT_LOOPS: AutomationDefinition[] = [
     triggerConfig: { intervalMinutes: 360 }, // every 6h
     targetRoles: [...MEMBER_ROLES],
     handler: 'runMilestoneScanner',
+  },
+  {
+    // BOOTSTRAP-NOTIF-SYSTEM-EVENTS: pairs with `upcoming_event_today`
+    // (channel='push' in TYPE_META). Fires once per user per day for their
+    // first calendar_events entry of the day.
+    id: 'AP-0510', name: 'Upcoming Events Today Push', domain: 'engagement-loops',
+    status: 'IMPLEMENTED', priority: 'P1', triggerType: 'cron',
+    triggerConfig: { cronExpression: '0 8 * * *' },
+    targetRoles: [...MEMBER_ROLES],
+    handler: 'runUpcomingEventsToday',
+  },
+  {
+    id: 'AP-0511', name: '"Friends Challenge" Social Streak', domain: 'engagement-loops',
+    status: 'PLANNED', priority: 'P1', triggerType: 'heartbeat',
+    triggerConfig: { intervalMinutes: 1440 }, // daily shared-goal scan
+    targetRoles: [...MEMBER_ROLES],
+    requires: ['AP-0405', 'AP-0708'],
   },
 ];
 

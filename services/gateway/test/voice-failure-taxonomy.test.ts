@@ -438,4 +438,78 @@ describe('VTID-01958: Voice Failure Taxonomy', () => {
       expect(r).toBeNull();
     });
   });
+
+  describe('VTID-VOICE-FWD (Track A): forwarded-only ratio for model_under_responds', () => {
+    const { classifyQualityFromSessionStop } = require('../src/services/voice-failure-taxonomy');
+
+    test('echo-inflated session (high raw audio_in, healthy forwarded) → null, NOT under-responds', () => {
+      // Raw ratio 505/73 ≈ 6.9 would have classified as under-responds and
+      // quarantined the class. But most of those 505 raw chunks were echo the
+      // mic re-captured while the model spoke — dropped at the echo gate, never
+      // forwarded. Forwarded ratio 146/73 = 2.0 is a healthy talkative session.
+      const r = classifyQualityFromSessionStop({
+        audio_in_chunks: 505,
+        audio_in_forwarded: 146,
+        audio_out_chunks: 73,
+        duration_ms: 64000,
+        turn_count: 8,
+      });
+      expect(r).toBeNull();
+    });
+
+    test('genuine under-respond (forwarded ratio still high) → still classifies', () => {
+      // Even on forwarded-only counts the model produced almost nothing:
+      // forwarded 300 vs output 10 = ratio 30. This is a real failure and must
+      // still be caught.
+      const r = classifyQualityFromSessionStop({
+        audio_in_chunks: 360,
+        audio_in_forwarded: 300,
+        audio_out_chunks: 10,
+        duration_ms: 70000,
+        turn_count: 3,
+      });
+      expect(r?.class).toBe('voice.model_under_responds');
+      expect(r?.normalized_signature).toBe('model_under_responds_r20to100');
+    });
+
+    test('back-compat: no audio_in_forwarded falls back to raw audio_in_chunks', () => {
+      // Old session.stop events (emitted before Track A shipped) carry no
+      // forwarded field; the classifier must behave exactly as before.
+      const r = classifyQualityFromSessionStop({
+        audio_in_chunks: 945,
+        audio_out_chunks: 46,
+        duration_ms: 80000,
+        turn_count: 5,
+      });
+      expect(r?.class).toBe('voice.model_under_responds');
+      expect(r?.normalized_signature).toBe('model_under_responds_r20to100');
+    });
+
+    test('forwarded count below 100 gate → not enough real input to judge → null', () => {
+      // Raw audio_in 480 clears the old >=100 gate, but only 40 chunks were
+      // actually forwarded — too little real conversation to call a failure.
+      const r = classifyQualityFromSessionStop({
+        audio_in_chunks: 480,
+        audio_in_forwarded: 40,
+        audio_out_chunks: 5,
+        duration_ms: 20000,
+        turn_count: 2,
+      });
+      expect(r).toBeNull();
+    });
+
+    test('forwarded ratio recomputes the bucket (r100plus on raw → r5to10 on forwarded)', () => {
+      // Raw 585/5 = 117 (r100plus, the worst-case fixture). Forwarded 30/5 = 6
+      // lands in r5to10 — a much milder, real signal.
+      const r = classifyQualityFromSessionStop({
+        audio_in_chunks: 585,
+        audio_in_forwarded: 300,
+        audio_out_chunks: 50,
+        duration_ms: 93700,
+        turn_count: 1,
+      });
+      expect(r?.class).toBe('voice.model_under_responds');
+      expect(r?.normalized_signature).toBe('model_under_responds_r5to10');
+    });
+  });
 });

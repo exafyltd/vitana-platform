@@ -47,9 +47,15 @@ function emptyContext(over: Partial<AssistantDecisionContext> = {}): AssistantDe
   return {
     continuity: null,
     concept_mastery: null,
+    journey_stage: null,
+    pillar_momentum: null,
+    interaction_style: null,
     source_health: {
       continuity: { ok: true },
       concept_mastery: { ok: true },
+      journey_stage: { ok: true },
+      pillar_momentum: { ok: true },
+      interaction_style: { ok: true },
     },
     ...over,
   };
@@ -103,6 +109,9 @@ describe('B0b-min — decision-contract-renderer', () => {
           source_health: {
             continuity: { ok: false, reason: 'supabase_unconfigured' },
             concept_mastery: { ok: true },
+            journey_stage: { ok: true },
+            pillar_momentum: { ok: true },
+            interaction_style: { ok: true },
           },
         }),
       );
@@ -279,6 +288,9 @@ describe('B0b-min — decision-contract-renderer', () => {
           source_health: {
             continuity: { ok: true },
             concept_mastery: { ok: false, reason: 'supabase_unconfigured' },
+            journey_stage: { ok: true },
+            pillar_momentum: { ok: true },
+            interaction_style: { ok: true },
           },
         }),
       );
@@ -462,6 +474,444 @@ describe('B0b-min — decision-contract-renderer', () => {
       expect(continuityIdx).toBeGreaterThan(-1);
       expect(conceptIdx).toBeGreaterThan(-1);
       expect(continuityIdx).toBeLessThan(conceptIdx);
+    });
+  });
+
+  // F3: journey-stage rendering + degraded handling + raw-field ignorance.
+  describe('journey stage (F3)', () => {
+    function makeStage(over: any = {}): any {
+      return {
+        stage: 'first_session',
+        tenure_bucket: 'first_session',
+        explanation_depth: 'deep',
+        tone_hint: 'warm_welcoming',
+        vitana_index_tier: 'unknown',
+        tier_tenure: 'unknown',
+        activity_recency: 'unknown',
+        usage_volume: 'none',
+        journey_confidence: 'low',
+        warnings: [],
+        ...over,
+      };
+    }
+
+    it('returns empty string when all three fields null and all sources healthy', () => {
+      expect(renderDecisionContract(emptyContext())).toBe('');
+    });
+
+    it('emits degraded hint when journey_stage null AND source degraded', () => {
+      const out = renderDecisionContract(
+        emptyContext({
+          source_health: {
+            continuity: { ok: true },
+            concept_mastery: { ok: true },
+            journey_stage: { ok: false, reason: 'supabase_unconfigured' },
+            pillar_momentum: { ok: true },
+            interaction_style: { ok: true },
+          },
+        }),
+      );
+      expect(out).toContain('journey_stage: source degraded');
+      expect(out).toContain('supabase_unconfigured');
+    });
+
+    it('renders stage + tone + depth always (core fields)', () => {
+      const out = renderDecisionContract(
+        emptyContext({
+          journey_stage: makeStage({
+            stage: 'first_week',
+            tenure_bucket: 'first_week',
+            explanation_depth: 'standard',
+            tone_hint: 'collaborative',
+          }),
+        }),
+      );
+      expect(out).toContain('Journey stage:');
+      expect(out).toContain('stage: first_week');
+      expect(out).toContain('tone: collaborative');
+      expect(out).toContain('explanation depth: standard');
+    });
+
+    it('renders Vitana Index tier + tenure when not unknown', () => {
+      const out = renderDecisionContract(
+        emptyContext({
+          journey_stage: makeStage({
+            vitana_index_tier: 'momentum',
+            tier_tenure: 'settled',
+          }),
+        }),
+      );
+      expect(out).toContain('Vitana Index tier: momentum [settled]');
+    });
+
+    it('omits Vitana Index line when tier is unknown', () => {
+      const out = renderDecisionContract(
+        emptyContext({
+          journey_stage: makeStage({ vitana_index_tier: 'unknown' }),
+        }),
+      );
+      expect(out).not.toContain('Vitana Index tier');
+    });
+
+    it('renders activity_recency when not unknown', () => {
+      const out = renderDecisionContract(
+        emptyContext({
+          journey_stage: makeStage({ activity_recency: 'recent' }),
+        }),
+      );
+      expect(out).toContain('activity recency: recent');
+    });
+
+    it('renders usage_volume when not none', () => {
+      const out = renderDecisionContract(
+        emptyContext({
+          journey_stage: makeStage({ usage_volume: 'regular' }),
+        }),
+      );
+      expect(out).toContain('usage volume: regular');
+    });
+
+    it('renders warnings list when non-empty', () => {
+      const out = renderDecisionContract(
+        emptyContext({
+          journey_stage: makeStage({
+            warnings: ['long_inactivity', 'unknown_tier'],
+          }),
+        }),
+      );
+      expect(out).toContain('warnings: long_inactivity, unknown_tier');
+    });
+
+    it('omits warnings line when empty', () => {
+      const out = renderDecisionContract(
+        emptyContext({ journey_stage: makeStage({ warnings: [] }) }),
+      );
+      expect(out).not.toContain('warnings:');
+    });
+
+    it('raw-field ignorance: smuggled raw fields are NOT in output', () => {
+      const sneakyStage = {
+        ...makeStage({ stage: 'established', tenure_bucket: 'established' }),
+        // smuggled raw fields:
+        tenure_days: 365,
+        last_active_date: '2026-05-10',
+        score_total: 712,
+        tier_days_held: 90,
+        usage_days_count: 250,
+        raw_profile_bio: 'user lives in Berlin and likes hiking',
+      };
+      const out = renderDecisionContract(
+        emptyContext({ journey_stage: sneakyStage as any }),
+      );
+      expect(out).not.toContain('365');
+      expect(out).not.toContain('2026-05-10');
+      expect(out).not.toContain('712');
+      expect(out).not.toContain('250');
+      expect(out).not.toContain('Berlin');
+      expect(out).not.toContain('hiking');
+      expect(out).not.toContain('raw_profile_bio');
+    });
+  });
+
+  describe('all three sections coexist', () => {
+    it('renders continuity → concept_mastery → journey_stage, in that order', () => {
+      const out = renderDecisionContract(
+        emptyContext({
+          continuity: {
+            open_threads: [
+              { thread_id: 't1', topic: 'magnesium', summary: null, days_since_last_mention: 1 },
+            ],
+            promises_owed: [],
+            promises_kept_recently: [],
+            counts: {
+              open_threads_total: 1,
+              promises_owed_total: 0,
+              promises_overdue: 0,
+              threads_mentioned_today: 0,
+            },
+            recommended_follow_up: 'mention_open_thread',
+          },
+          concept_mastery: {
+            concepts_explained: [{
+              concept_key: 'vitana_index',
+              frequency: 'once',
+              days_since_last_explained: 2,
+              repetition_hint: 'one_liner',
+            }],
+            concepts_mastered: [],
+            dyk_cards_seen: [],
+            counts: {
+              concepts_explained_total: 1,
+              concepts_mastered_total: 0,
+              dyk_cards_seen_total: 0,
+              concepts_explained_in_last_24h: 0,
+            },
+            recommended_cadence: 'use_one_liner',
+          },
+          journey_stage: {
+            stage: 'first_month',
+            tenure_bucket: 'first_month',
+            explanation_depth: 'standard',
+            tone_hint: 'collaborative',
+            vitana_index_tier: 'momentum',
+            tier_tenure: 'settled',
+            activity_recency: 'today',
+            usage_volume: 'regular',
+            journey_confidence: 'high',
+            warnings: [],
+          },
+        }),
+      );
+      const continuityIdx = out.indexOf('Continuity:');
+      const conceptIdx = out.indexOf('Concept mastery:');
+      const journeyIdx = out.indexOf('Journey stage:');
+      expect(continuityIdx).toBeGreaterThan(-1);
+      expect(conceptIdx).toBeGreaterThan(-1);
+      expect(journeyIdx).toBeGreaterThan(-1);
+      expect(continuityIdx).toBeLessThan(conceptIdx);
+      expect(conceptIdx).toBeLessThan(journeyIdx);
+    });
+  });
+
+  // B5: pillar-momentum rendering + degraded handling + raw-field ignorance.
+  describe('pillar momentum (B5)', () => {
+    function makePillar(over: any = {}): any {
+      return {
+        per_pillar: [
+          { pillar: 'sleep',     momentum: 'unknown' },
+          { pillar: 'nutrition', momentum: 'unknown' },
+          { pillar: 'exercise',  momentum: 'unknown' },
+          { pillar: 'hydration', momentum: 'unknown' },
+          { pillar: 'mental',    momentum: 'unknown' },
+        ],
+        weakest_pillar: null,
+        strongest_pillar: null,
+        suggested_focus: null,
+        confidence: 'low',
+        warnings: [],
+        ...over,
+      };
+    }
+
+    it('returns empty string when all four fields null and all sources healthy', () => {
+      expect(renderDecisionContract(emptyContext())).toBe('');
+    });
+
+    it('emits degraded hint when pillar_momentum null AND source degraded', () => {
+      const out = renderDecisionContract(
+        emptyContext({
+          source_health: {
+            continuity: { ok: true },
+            concept_mastery: { ok: true },
+            journey_stage: { ok: true },
+            pillar_momentum: { ok: false, reason: 'supabase_unconfigured' },
+            interaction_style: { ok: true },
+          },
+        }),
+      );
+      expect(out).toContain('pillar_momentum: source degraded');
+      expect(out).toContain('supabase_unconfigured');
+    });
+
+    it('renders per_pillar (skipping unknowns) + weakest/strongest/suggested + confidence', () => {
+      const out = renderDecisionContract(
+        emptyContext({
+          pillar_momentum: makePillar({
+            per_pillar: [
+              { pillar: 'sleep',     momentum: 'slipping' },
+              { pillar: 'nutrition', momentum: 'steady' },
+              { pillar: 'exercise',  momentum: 'unknown' },
+              { pillar: 'hydration', momentum: 'improving' },
+              { pillar: 'mental',    momentum: 'steady' },
+            ],
+            weakest_pillar: 'sleep',
+            strongest_pillar: 'mental',
+            suggested_focus: 'sleep',
+            confidence: 'high',
+          }),
+        }),
+      );
+      expect(out).toContain('Pillar momentum:');
+      expect(out).toContain('per_pillar: sleep: slipping, nutrition: steady, hydration: improving, mental: steady');
+      // 'exercise: unknown' is intentionally omitted from the line.
+      expect(out).not.toContain('exercise: unknown');
+      expect(out).toContain('weakest: sleep');
+      expect(out).toContain('strongest: mental');
+      expect(out).toContain('suggested focus: sleep');
+      expect(out).toContain('confidence: high');
+    });
+
+    it('omits per_pillar line entirely when every pillar is unknown', () => {
+      const out = renderDecisionContract(
+        emptyContext({
+          pillar_momentum: makePillar({
+            warnings: ['no_recent_pillar_data'],
+          }),
+        }),
+      );
+      expect(out).not.toContain('per_pillar:');
+      expect(out).toContain('warnings: no_recent_pillar_data');
+    });
+
+    it('renders warnings list when non-empty', () => {
+      const out = renderDecisionContract(
+        emptyContext({
+          pillar_momentum: makePillar({
+            warnings: ['low_pillar_confidence', 'no_recent_pillar_data'],
+          }),
+        }),
+      );
+      expect(out).toContain('warnings: low_pillar_confidence, no_recent_pillar_data');
+    });
+
+    it('returns empty section when no content + no warnings', () => {
+      // If every pillar is unknown AND there are no pillar picks AND no
+      // warnings, the section is just noise — renderer should skip it.
+      const out = renderDecisionContract(
+        emptyContext({
+          pillar_momentum: makePillar({
+            warnings: [],
+            // Intentionally also low confidence-ish flag; rendering decides.
+          }),
+        }),
+      );
+      // With empty per_pillar + no picks + no warnings, no section emitted.
+      expect(out).not.toContain('Pillar momentum:');
+    });
+
+    it('raw-field ignorance: smuggled scores/timestamps are NOT in output', () => {
+      const sneakyPillar = {
+        ...makePillar({
+          per_pillar: [
+            { pillar: 'sleep',     momentum: 'slipping', latest_score: 42, recent_window_days: 7 },
+            { pillar: 'nutrition', momentum: 'unknown' },
+            { pillar: 'exercise',  momentum: 'unknown' },
+            { pillar: 'hydration', momentum: 'unknown' },
+            { pillar: 'mental',    momentum: 'unknown' },
+          ],
+          weakest_pillar: 'sleep',
+          confidence: 'medium',
+        }),
+        // smuggled top-level raw fields:
+        history_days_sampled: 14,
+        last_score_date: '2026-05-13',
+        raw_biomarker_glucose: 96,
+      };
+      const out = renderDecisionContract(
+        emptyContext({ pillar_momentum: sneakyPillar as any }),
+      );
+      expect(out).not.toContain('42');
+      expect(out).not.toContain('14');
+      expect(out).not.toContain('2026-05-13');
+      expect(out).not.toContain('96');
+      expect(out).not.toContain('glucose');
+      expect(out).not.toContain('recent_window_days');
+      expect(out).not.toContain('history_days_sampled');
+    });
+
+    it('output does NOT contain medical/clinical language', () => {
+      const out = renderDecisionContract(
+        emptyContext({
+          pillar_momentum: makePillar({
+            per_pillar: [
+              { pillar: 'sleep',     momentum: 'slipping' },
+              { pillar: 'nutrition', momentum: 'steady' },
+              { pillar: 'exercise',  momentum: 'steady' },
+              { pillar: 'hydration', momentum: 'steady' },
+              { pillar: 'mental',    momentum: 'steady' },
+            ],
+            weakest_pillar: 'sleep',
+            strongest_pillar: 'mental',
+            suggested_focus: 'sleep',
+            confidence: 'high',
+            warnings: [],
+          }),
+        }),
+      );
+      const banned = [
+        'diagnos', 'symptom', 'disease', 'illness', 'treatment',
+        'prescription', 'medication', 'clinical',
+      ];
+      for (const word of banned) {
+        expect(out.toLowerCase()).not.toContain(word);
+      }
+    });
+  });
+
+  describe('all four sections coexist', () => {
+    it('renders continuity → concept_mastery → journey_stage → pillar_momentum, in that order', () => {
+      const out = renderDecisionContract(
+        emptyContext({
+          continuity: {
+            open_threads: [
+              { thread_id: 't1', topic: 'magnesium', summary: null, days_since_last_mention: 1 },
+            ],
+            promises_owed: [],
+            promises_kept_recently: [],
+            counts: {
+              open_threads_total: 1,
+              promises_owed_total: 0,
+              promises_overdue: 0,
+              threads_mentioned_today: 0,
+            },
+            recommended_follow_up: 'mention_open_thread',
+          },
+          concept_mastery: {
+            concepts_explained: [{
+              concept_key: 'vitana_index',
+              frequency: 'once',
+              days_since_last_explained: 2,
+              repetition_hint: 'one_liner',
+            }],
+            concepts_mastered: [],
+            dyk_cards_seen: [],
+            counts: {
+              concepts_explained_total: 1,
+              concepts_mastered_total: 0,
+              dyk_cards_seen_total: 0,
+              concepts_explained_in_last_24h: 0,
+            },
+            recommended_cadence: 'use_one_liner',
+          },
+          journey_stage: {
+            stage: 'first_month',
+            tenure_bucket: 'first_month',
+            explanation_depth: 'standard',
+            tone_hint: 'collaborative',
+            vitana_index_tier: 'momentum',
+            tier_tenure: 'settled',
+            activity_recency: 'today',
+            usage_volume: 'regular',
+            journey_confidence: 'high',
+            warnings: [],
+          },
+          pillar_momentum: {
+            per_pillar: [
+              { pillar: 'sleep',     momentum: 'slipping' },
+              { pillar: 'nutrition', momentum: 'steady' },
+              { pillar: 'exercise',  momentum: 'improving' },
+              { pillar: 'hydration', momentum: 'steady' },
+              { pillar: 'mental',    momentum: 'steady' },
+            ],
+            weakest_pillar: 'sleep',
+            strongest_pillar: 'exercise',
+            suggested_focus: 'sleep',
+            confidence: 'high',
+            warnings: [],
+          },
+        }),
+      );
+      const continuityIdx = out.indexOf('Continuity:');
+      const conceptIdx = out.indexOf('Concept mastery:');
+      const journeyIdx = out.indexOf('Journey stage:');
+      const pillarIdx = out.indexOf('Pillar momentum:');
+      expect(continuityIdx).toBeGreaterThan(-1);
+      expect(conceptIdx).toBeGreaterThan(-1);
+      expect(journeyIdx).toBeGreaterThan(-1);
+      expect(pillarIdx).toBeGreaterThan(-1);
+      expect(continuityIdx).toBeLessThan(conceptIdx);
+      expect(conceptIdx).toBeLessThan(journeyIdx);
+      expect(journeyIdx).toBeLessThan(pillarIdx);
     });
   });
 });

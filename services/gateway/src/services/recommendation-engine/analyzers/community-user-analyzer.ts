@@ -47,10 +47,32 @@ export type CanonicalWeakness =
   | 'sleep_low'
   | 'mental_low';
 
+// VTID-03138 (Phase C.8): pillar weakness threshold + decline gate now
+// resolved via PolicyResolver. Literal defaults below are the cache-cold
+// safety net.
+import { getPolicyResolver } from '../../decision-contract/policy-resolver';
+import { POLICY_KEYS } from '../../decision-contract/policy-keys';
+
 /** Threshold below which a pillar is considered weak and a weakness
  *  recommendation is emitted. Each pillar scale: 0..200; threshold 80 =
- *  below the "Building" floor for that pillar. */
+ *  below the "Building" floor for that pillar.
+ *  Legacy const kept for inspection; hot path uses
+ *  `getPillarWeaknessThreshold()`. */
 const PILLAR_WEAKNESS_THRESHOLD = 80;
+
+function getPillarWeaknessThreshold(): number {
+  return getPolicyResolver().getValue<number>(
+    POLICY_KEYS.ANALYZER_COMMUNITY_PILLAR_WEAKNESS_THRESHOLD,
+    { defaultValue: 80 },
+  );
+}
+
+function getDeclineTrendDropPoints(): number {
+  return getPolicyResolver().getValue<number>(
+    POLICY_KEYS.ANALYZER_COMMUNITY_DECLINE_TREND_DROP_POINTS,
+    { defaultValue: 10 },
+  );
+}
 
 /**
  * Pure deterministic weakness detection from canonical 5-pillar scores.
@@ -62,17 +84,19 @@ export function detectCanonicalWeaknesses(
 ): CanonicalWeakness[] {
   if (!scores) return [];
   const out: CanonicalWeakness[] = [];
+  const weaknessThreshold = getPillarWeaknessThreshold();
+  const declineDropPoints = getDeclineTrendDropPoints();
   for (const p of PILLAR_KEYS) {
     const current = Number(scores[p] ?? 0);
-    if (current < PILLAR_WEAKNESS_THRESHOLD) {
+    if (current < weaknessThreshold) {
       out.push(`${p}_low` as CanonicalWeakness);
       continue;
     }
-    // Optional trend check: if pillar dropped by >= 10 points from previous
-    // snapshot, flag it as declining even if still above threshold.
+    // Optional trend check: if pillar dropped by ≥ declineDropPoints from
+    // previous snapshot, flag it as declining even if still above threshold.
     if (previous) {
       const prev = Number(previous[p] ?? 0);
-      if (prev - current >= 10) {
+      if (prev - current >= declineDropPoints) {
         out.push(`${p}_low` as CanonicalWeakness);
       }
     }
@@ -430,8 +454,10 @@ const T: Record<string, Partial<Record<LangCode, { title: string; summary: strin
   },
 };
 
-/** Resolve translation with optional variable substitution. Fallback: English → key. */
-function t(key: string, lang: LangCode, vars?: Record<string, string | number>): { title: string; summary: string } {
+/** Resolve translation with optional variable substitution. Fallback: English → key.
+ *  Exported so the onboarding-seed parity test can assert the DB seed copy
+ *  matches the canonical day0 strings. */
+export function t(key: string, lang: LangCode, vars?: Record<string, string | number>): { title: string; summary: string } {
   const entry = T[key]?.[lang] ?? T[key]?.['en'] ?? { title: key, summary: '' };
   if (!vars) return { ...entry };
   let { title, summary } = entry;
@@ -502,11 +528,19 @@ export interface CommunityUserAnalysisResult {
 export function detectOnboardingStage(createdAt: Date): OnboardingStage {
   const daysSinceCreation = Math.floor((Date.now() - createdAt.getTime()) / 86400000);
 
-  if (daysSinceCreation < 1) return 'day0';
-  if (daysSinceCreation < 3) return 'day1';
-  if (daysSinceCreation < 7) return 'day3';
-  if (daysSinceCreation < 14) return 'day7';
-  if (daysSinceCreation < 30) return 'day14';
+  // VTID-03138 (Phase C.8): 5 stage boundaries now policy-driven.
+  const r = getPolicyResolver();
+  const d1 = r.getValue<number>(POLICY_KEYS.ANALYZER_COMMUNITY_STAGE_DAY1_AFTER_DAYS, { defaultValue: 1 });
+  const d3 = r.getValue<number>(POLICY_KEYS.ANALYZER_COMMUNITY_STAGE_DAY3_AFTER_DAYS, { defaultValue: 3 });
+  const d7 = r.getValue<number>(POLICY_KEYS.ANALYZER_COMMUNITY_STAGE_DAY7_AFTER_DAYS, { defaultValue: 7 });
+  const d14 = r.getValue<number>(POLICY_KEYS.ANALYZER_COMMUNITY_STAGE_DAY14_AFTER_DAYS, { defaultValue: 14 });
+  const d30 = r.getValue<number>(POLICY_KEYS.ANALYZER_COMMUNITY_STAGE_DAY30PLUS_AFTER_DAYS, { defaultValue: 30 });
+
+  if (daysSinceCreation < d1) return 'day0';
+  if (daysSinceCreation < d3) return 'day1';
+  if (daysSinceCreation < d7) return 'day3';
+  if (daysSinceCreation < d14) return 'day7';
+  if (daysSinceCreation < d30) return 'day14';
   return 'day30plus';
 }
 
@@ -698,7 +732,9 @@ export async function gatherUserContext(
 // Recommendation Templates (key-based, resolved via t())
 // =============================================================================
 
-interface RecommendationTemplate {
+// Exported alongside STAGE_TEMPLATES so the emitted .d.ts can name the type
+// (declaration:true would otherwise fail with TS4025 on the exported const).
+export interface RecommendationTemplate {
   key: string;
   domain: string;
   priority: 'low' | 'medium' | 'high';
@@ -709,7 +745,12 @@ interface RecommendationTemplate {
   condition?: (ctx: UserContext) => boolean;
 }
 
-const STAGE_TEMPLATES: Record<OnboardingStage, RecommendationTemplate[]> = {
+// Exported so the DB onboarding-seed migration
+// (supabase/migrations/..._seed_community_onboarding_autopilot.sql) can be
+// parity-checked against day0 here — see
+// test/autopilot-onboarding-seed-bundle.test.ts. The seed mirrors day0 and the
+// test fails if the two ever drift.
+export const STAGE_TEMPLATES: Record<OnboardingStage, RecommendationTemplate[]> = {
   day0: [
     { key: 'onboarding_profile', domain: 'community', priority: 'high', impact_score: 9, effort_score: 2, time_estimate_seconds: 120, signal_type: 'onboarding_profile' },
     { key: 'onboarding_avatar', domain: 'community', priority: 'high', impact_score: 9, effort_score: 1, time_estimate_seconds: 60, signal_type: 'onboarding_avatar' },

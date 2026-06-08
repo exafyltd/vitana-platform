@@ -328,14 +328,30 @@ export function decideGreetingPolicyWithEvidence(
     evidenceFor(evidence, 'sessions_today_count', input.sessions_today_count, 'ignored');
   }
 
-  // Style avoidance: same style twice in a row → downgrade one tier.
+  // Style avoidance: same style twice in a row → downgrade one tier — but
+  // NEVER below brief_resume. Stylistic repetition must not produce total
+  // silence; silence is reserved for the forced-skip safety rules above
+  // (reconnect / <5min mid-conversation / <15min greet-once). A same-day
+  // reopen hours later must still speak a light continuity line (plan §2.2).
+  //
+  // VTID-03226: previously this let brief_resume → skip, so a heavy-day
+  // dampening (fresh_intro → brief_resume) followed by same-style decay
+  // collapsed to DEAD AIR on reopen. Verified in production: dragan1
+  // (sessions_today=12, last greeting brief_resume at 07:54) reopened ~4h
+  // later and got policy=skip → no audio. brief_resume is now the decay
+  // floor (the lightest *audible* greeting).
   if (input.greeting_style_last_used && input.greeting_style_last_used === policy) {
-    const downgraded = downgradeTier(policy);
-    if (downgraded !== policy) {
-      policy = downgraded;
-      evidenceFor(evidence, 'greeting_style_last_used', input.greeting_style_last_used, 'dampened');
-    } else {
+    if (policy === 'brief_resume') {
+      // Floor reached — keep the light continuity line rather than going silent.
       evidenceFor(evidence, 'greeting_style_last_used', input.greeting_style_last_used, 'ignored');
+    } else {
+      const downgraded = downgradeTier(policy);
+      if (downgraded !== policy) {
+        policy = downgraded;
+        evidenceFor(evidence, 'greeting_style_last_used', input.greeting_style_last_used, 'dampened');
+      } else {
+        evidenceFor(evidence, 'greeting_style_last_used', input.greeting_style_last_used, 'ignored');
+      }
     }
   } else if (input.greeting_style_last_used) {
     evidenceFor(evidence, 'greeting_style_last_used', input.greeting_style_last_used, 'ignored');

@@ -92,3 +92,53 @@ export const AWARENESS_EVENT_TO_TOPIC: Record<
   dismissed:  CAPABILITY_AWARENESS_DISMISSED,
   mastered:   CAPABILITY_AWARENESS_MASTERED,
 };
+
+// ---------------------------------------------------------------------------
+// B0d-real Contextual Next Action events (VTID-03061 Xf.1)
+//
+// Lifecycle for a B0d-real candidate that the Contextual Next Action
+// provider produced. The Command Hub Candidate Inspector (Xf.3) reads
+// these from OASIS to render a per-user "what won, what lost, what
+// happened next" timeline.
+//
+// Naming follows the `orb.livekit.` prefix so the existing
+// POST /api/v1/oasis/emit allowlist accepts these.
+// ---------------------------------------------------------------------------
+
+/** Provider returned a candidate AND the framework picked it as the
+ *  decision. Auto-emitted by the wake-brief-wiring layer. */
+export const NEXT_ACTION_SUGGESTED  = 'orb.livekit.next_action.suggested'  as const;
+/** User followed the CTA — booked the reminder time, opened the
+ *  Life Compass tab, etc. Emitted by the accepted handler (Xf.2). */
+export const NEXT_ACTION_ACCEPTED   = 'orb.livekit.next_action.accepted'   as const;
+/** User declined / changed the subject / ignored. Emitted by the
+ *  dismissed handler (Xf.2). */
+export const NEXT_ACTION_DISMISSED  = 'orb.livekit.next_action.dismissed'  as const;
+/** Source-level result. Emits one per source per decision so the
+ *  Inspector can render the full candidate slate, not only the winner. */
+export const NEXT_ACTION_CANDIDATE  = 'orb.livekit.next_action.candidate'  as const;
+/** The composer ran but no source produced a winning candidate.
+ *  Carries the suppress reason for the inspector. */
+export const NEXT_ACTION_SUPPRESSED = 'orb.livekit.next_action.suppressed' as const;
+
+export const NEXT_ACTION_TOPIC_REGISTRY = [
+  NEXT_ACTION_SUGGESTED,
+  NEXT_ACTION_ACCEPTED,
+  NEXT_ACTION_DISMISSED,
+  NEXT_ACTION_CANDIDATE,
+  NEXT_ACTION_SUPPRESSED,
+] as const;
+
+export type NextActionEventName =
+  | 'suggested' | 'accepted' | 'dismissed' | 'candidate' | 'suppressed';
+
+export const NEXT_ACTION_EVENT_TO_TOPIC: Record<
+  NextActionEventName,
+  (typeof NEXT_ACTION_TOPIC_REGISTRY)[number]
+> = {
+  suggested:  NEXT_ACTION_SUGGESTED,
+  accepted:   NEXT_ACTION_ACCEPTED,
+  dismissed:  NEXT_ACTION_DISMISSED,
+  candidate:  NEXT_ACTION_CANDIDATE,
+  suppressed: NEXT_ACTION_SUPPRESSED,
+};

@@ -1,5 +1,6 @@
 // Vitana Dev Frontend Spec v2 Implementation - Task 3
 // AUTODEPLOY-TRIGGER: 2025-12-20T14:00:00Z
+// DEV-COMHU-03107: Billing v1 — admin Billing Codes + Billing Dashboard tabs
 
 // VTID-0539: Operator Console Chat Experience Improvements
 // DEV-COMHU-2025-0012: Task Management v1 - Persisted Specs + Lifecycle + Approvals
@@ -2715,7 +2716,9 @@ const NAVIGATION_CONFIG = [
             { "key": "identity-access", "path": "/command-hub/admin/identity-access/" },
             { "key": "marketplace-shops", "path": "/command-hub/admin/marketplace-shops/" },
             { "key": "marketplace-review", "path": "/command-hub/admin/marketplace-review/" },
-            { "key": "analytics", "path": "/command-hub/admin/analytics/" }
+            { "key": "analytics", "path": "/command-hub/admin/analytics/" },
+            { "key": "billing-dashboard", "label": "Billing", "path": "/command-hub/admin/billing-dashboard/" },
+            { "key": "billing-codes", "label": "Billing Codes", "path": "/command-hub/admin/billing-codes/" }
         ]
     },
     {
@@ -2743,6 +2746,7 @@ const NAVIGATION_CONFIG = [
             { "key": "journey-context", "label": "Journey Context",    "path": "/command-hub/voice/journey-context/" },
             { "key": "tools",           "label": "Tool Catalog",       "path": "/command-hub/voice/tools/" },
             { "key": "self-healing",    "label": "Self-Healing",       "path": "/command-hub/voice/self-healing/" },
+            { "key": "test-contracts",  "label": "Test Contracts",     "path": "/command-hub/voice/test-contracts/" },
             { "key": "livekit-test",    "label": "LiveKit Test Bench", "path": "/command-hub/voice/livekit-test/" },
             { "key": "orb-ui-monitor",  "label": "Orb UI Monitor",     "path": "/command-hub/voice/orb-ui-monitor/" }
         ]
@@ -3210,8 +3214,55 @@ const state = {
     versionHistory: [],
     selectedVersionId: null,
 
-    // Publish Modal (VTID-0517)
+    // Publish Modal (VTID-0517) — legacy dev/dropdown flow. Phase 0 staging
+    // build keeps this for the staging Command Hub fallback.
     showPublishModal: false,
+
+    // Phase 0 staging build (post-handoff UX): inline publish flow on the
+    // production Command Hub. Replaces the modal entirely — see
+    // command-hub-staging.js renderPublishInlineFlow().
+    publishFlow: {
+        open: false,
+        // Phases:
+        //   loading        — fetching staging + prod state
+        //   ready          — comparison loaded; show "Publish to canary" button
+        //   publishing     — /publish dispatched; waiting for canary revision to land
+        //   canary-active  — new revision serving 10%; show Promote / Discard
+        //   promoting      — /promote dispatched; traffic shifting to 100%
+        //   promoted       — 100% on new revision; auto-close
+        //   aborting       — /abort-canary dispatched; restoring stable revision
+        //   aborted        — stable restored to 100%; auto-close
+        //   full-publishing — operator chose "Skip canary"; old-style 100%-on-deploy
+        //   full-verified  — full publish landed
+        //   error          — show retry
+        phase: 'loading',
+        message: '',
+        vtid: null,
+        workflowUrl: null,
+        startedAt: null,
+        // Source = staging revision being promoted
+        sourceRevision: null,
+        sourceCommit: null,
+        sourceDeployedAt: null,
+        // Live = currently-serving prod revision (when no canary)
+        liveRevision: null,
+        liveCommit: null,
+        liveDeployedAt: null,
+        // Canary-active state (when a canary is already running)
+        canaryRevision: null,
+        canaryCommit: null,
+        canaryPercent: null,
+        stableRevision: null,
+        stableCommit: null,
+        stablePercent: null,
+    },
+
+    // CLOCK dropdown env filter tab. 'all' | 'production' | 'staging'.
+    versionFilter: 'all',
+
+    // Active prod revision short SHA + age, polled every 30s for the
+    // "Live: <sha> · Xm ago" annotation under PUBLISH.
+    liveRevision: { shortSha: null, deployedAt: null, lastFetched: 0 },
 
     // VTID-01180: Autopilot Recommendations Modal
     showAutopilotRecommendationsModal: false,
@@ -3767,6 +3818,15 @@ const state = {
         error: null
     },
 
+    // BOOTSTRAP-35DAY-TRACKER: Training cycle tracker (System Overview "Training" section)
+    trainingStatus: {
+        data: null,
+        lastRefreshed: null,
+        loading: false,
+        fetched: false,
+        error: null
+    },
+
     // Operator module — Supervision Dashboard
     operatorDashboard: { data: null, loading: false, error: null, fetched: false },
     operatorTaskQueue: { items: [], loading: false, error: null, fetched: false, statusFilter: 'all' },
@@ -3890,6 +3950,17 @@ const state = {
     testingCycles: { cycles: [], loading: false, error: null, fetched: false },
     // Testing & QA — ORB Monitor (GitHub Actions)
     orbMonitor: { runs: [], screens: {}, loading: false, error: null, fetched: false },
+    // VTID-03025 (Slice 1c): LiveKit hourly dry-run test grid.
+    livekitTests: {
+        recentRuns: [],
+        latestRun: null,           // { run, results: [...] }
+        cases: [],
+        coverage: null,            // CoverageReport from /tests/coverage
+        loading: false,
+        triggering: false,
+        error: null,
+        fetched: false,
+    },
     cloudRunUrl: 'https://community-app-86804897789.us-central1.run.app',
     // Testing & QA — selected run detail drawer
     testingSelectedRun: null,
@@ -5069,8 +5140,11 @@ async function fetchDeploymentHistory() {
             return [];
         }
 
-        // Map API response to version history format
+        // Map API response to version history format.
         // API returns: swv_id, service, git_commit, status, initiator, deploy_type, environment, created_at
+        // Phase 0 staging build (P0.5): forward the new fields the extended
+        // /deployments endpoint exposes so the CLOCK dropdown's Revert
+        // button + display-label rendering work.
         return deployments.map(function (d, index) {
             return {
                 id: 'deploy-' + (d.swv_id || d.swv || index),
@@ -5081,7 +5155,14 @@ async function fetchDeploymentHistory() {
                 createdAt: d.created_at,
                 service: d.service,
                 environment: d.environment,
-                commit: d.git_commit || d.commit
+                commit: d.git_commit || d.commit,
+                // Phase 0 additions:
+                git_commit: d.git_commit || null,
+                cloud_run_revision: d.cloud_run_revision || null,
+                source_revision: d.source_revision || null,
+                display_deploy_type: d.display_deploy_type || d.deploy_type || null,
+                is_active: !!d.is_active,
+                revert_eligible: !!d.revert_eligible
             };
         });
     } catch (error) {
@@ -5637,26 +5718,88 @@ function renderHeader() {
         left.appendChild(renderVersionDropdown());
     }
 
-    // 4. Publish pill (neutral styling - SPEC-01: same palette as Autopilot)
+    // 4. Publish pill (neutral styling - SPEC-01: same palette as Autopilot).
+    // Phase 0 staging build (UX polish): on the PRODUCTION Command Hub, the
+    // PUBLISH button opens an inline popover (Lovable-style) instead of the
+    // legacy modal. On staging CH (or before VitanaStaging loads), fall back
+    // to the legacy modal — it shows a banner saying "use prod CH to publish".
+    // Anchor the popover as a sibling of the button via a position:relative
+    // wrapper so the popover's position:absolute lands correctly.
+    // The publish flow is a popover anchored to the button via position:absolute.
+    // Wrapping the button in a position:relative inline-block keeps the popover
+    // positioned correctly WITHOUT changing the button's height or alignment
+    // relative to sibling pills (AUTOPILOT / OPERATOR / CLOCK).  No "Live: ..."
+    // pill in the header — the live-revision context lives INSIDE the popover
+    // where the operator actually needs it (deciding what to publish).
+    const publishWrap = document.createElement('span');
+    publishWrap.style.cssText = 'position:relative;display:inline-block;';
+
     const publishBtn = document.createElement('button');
     publishBtn.className = 'header-pill header-pill--neutral';
     publishBtn.textContent = 'PUBLISH';
     publishBtn.onclick = async () => {
+        const isProdCH = window.VitanaStaging && window.VitanaStaging.env === 'production';
+        if (isProdCH) {
+            state.publishFlow = {
+                open: !state.publishFlow.open,
+                phase: 'loading',
+                message: '',
+                vtid: null,
+                workflowUrl: null,
+                startedAt: null,
+                sourceRevision: null,
+                sourceCommit: null,
+                sourceDeployedAt: null,
+                liveRevision: null,
+                liveCommit: null,
+                liveDeployedAt: null,
+                canaryRevision: null,
+                canaryCommit: null,
+                canaryPercent: null,
+                stableRevision: null,
+                stableCommit: null,
+                stablePercent: null,
+            };
+            renderApp();
+            return;
+        }
+        // Staging CH (or pre-env-detection) — use legacy modal.
         state.showPublishModal = true;
-        renderApp(); // Show modal immediately with loading state
-
-        // Fetch version history if not already loaded
+        renderApp();
         if (!state.versionHistory || state.versionHistory.length === 0) {
             try {
-                console.log('[VTID-0523-B] Fetching version history for publish modal');
                 state.versionHistory = await fetchDeploymentHistory();
-                renderApp(); // Re-render with loaded versions
+                renderApp();
             } catch (error) {
                 console.error('[VTID-0523-B] Failed to fetch version history:', error);
             }
         }
     };
-    left.appendChild(publishBtn);
+    publishWrap.appendChild(publishBtn);
+
+    if (state.publishFlow && state.publishFlow.open && window.VitanaStaging && window.VitanaStaging.renderPublishInlineFlow) {
+        try {
+            const popover = window.VitanaStaging.renderPublishInlineFlow({
+                buildContextHeaders: typeof buildContextHeaders === 'function' ? buildContextHeaders : null,
+                onAfterPublish: function () {
+                    if (typeof fetchDeploymentHistory === 'function') {
+                        fetchDeploymentHistory().then(function (h) {
+                            state.versionHistory = h;
+                            if (typeof renderApp === 'function') renderApp();
+                        }).catch(function () { /* swallow */ });
+                    }
+                    if (window.__vitana_state && window.__vitana_state.liveRevision) {
+                        window.__vitana_state.liveRevision.lastFetched = 0;
+                    }
+                },
+            });
+            publishWrap.appendChild(popover);
+        } catch (err) {
+            console.warn('[VitanaStaging] renderPublishInlineFlow failed:', err);
+        }
+    }
+
+    left.appendChild(publishWrap);
 
     header.appendChild(left);
 
@@ -5924,88 +6067,210 @@ function renderHeader() {
  * - Shows SWV label
  * - Hover/tooltip shows VTID + timestamp
  */
+// Lovable-style relative time: "just now", "2m ago", "1h ago", "3d ago", "May 12".
+function formatRelativeTime(isoString) {
+    if (!isoString) return '';
+    const then = new Date(isoString).getTime();
+    if (Number.isNaN(then)) return '';
+    const seconds = Math.max(0, Math.round((Date.now() - then) / 1000));
+    if (seconds < 45) return 'just now';
+    if (seconds < 90) return '1m ago';
+    const minutes = Math.round(seconds / 60);
+    if (minutes < 60) return minutes + 'm ago';
+    if (minutes < 90) return '1h ago';
+    const hours = Math.round(minutes / 60);
+    if (hours < 24) return hours + 'h ago';
+    if (hours < 36) return '1d ago';
+    const days = Math.round(hours / 24);
+    if (days < 14) return days + 'd ago';
+    // Older than two weeks — switch to date.
+    return new Date(then).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
+// Set up a 10s polling tick that keeps the CLOCK dropdown fresh while open
+// AND refreshes the relative timestamps without re-hitting the API.
+function ensureVersionDropdownPoller() {
+    if (state._versionPoller) return;
+    state._versionPoller = setInterval(function () {
+        if (!state.isVersionDropdownOpen) {
+            clearInterval(state._versionPoller);
+            state._versionPoller = null;
+            return;
+        }
+        // Re-fetch + re-render; keeps "just now" / "Xm ago" accurate AND
+        // surfaces new deploys that happened while dropdown is open.
+        if (typeof fetchDeploymentHistory === 'function') {
+            fetchDeploymentHistory().then(function (h) {
+                state.versionHistory = h;
+                if (typeof renderApp === 'function') renderApp();
+            }).catch(function () { /* swallow */ });
+        }
+    }, 10000);
+}
+
 function renderVersionDropdown() {
+    ensureVersionDropdownPoller();
+
     const dropdown = document.createElement('div');
     dropdown.className = 'version-dropdown';
 
-    // Header
+    // ── Header: title + filter tabs ───────────────────────────────────────
     const dropdownHeader = document.createElement('div');
     dropdownHeader.className = 'version-dropdown__title';
-    dropdownHeader.textContent = 'Versions';
+    dropdownHeader.style.display = 'flex';
+    dropdownHeader.style.justifyContent = 'space-between';
+    dropdownHeader.style.alignItems = 'center';
+
+    const titleSpan = document.createElement('span');
+    titleSpan.textContent = 'Versions';
+    dropdownHeader.appendChild(titleSpan);
+
+    // Filter tabs — All / Production / Staging. Default 'all'.
+    const tabs = document.createElement('div');
+    tabs.style.cssText = 'display:flex;gap:4px;font-size:10px;text-transform:none;letter-spacing:normal;font-weight:500;';
+    [
+        { id: 'all', label: 'All' },
+        { id: 'production', label: 'Prod' },
+        { id: 'staging', label: 'Staging' },
+    ].forEach(function (t) {
+        const tab = document.createElement('button');
+        const active = state.versionFilter === t.id;
+        tab.type = 'button';
+        tab.textContent = t.label;
+        tab.style.cssText = 'padding:2px 8px;background:' + (active ? 'rgba(96,165,250,0.18)' : 'transparent') +
+            ';color:' + (active ? '#93c5fd' : 'var(--color-text-secondary)') +
+            ';border:1px solid ' + (active ? 'rgba(96,165,250,0.4)' : 'rgba(255,255,255,0.08)') +
+            ';border-radius:4px;cursor:pointer;font-size:10px;';
+        tab.onclick = function (e) {
+            e.stopPropagation();
+            state.versionFilter = t.id;
+            renderApp();
+        };
+        tabs.appendChild(tab);
+    });
+    dropdownHeader.appendChild(tabs);
     dropdown.appendChild(dropdownHeader);
 
-    // List container
+    // ── List container ────────────────────────────────────────────────────
     const list = document.createElement('div');
     list.className = 'version-dropdown__list';
 
-    // Show loading state if no data yet
+    // Apply env filter. Treat null/unknown env as "production" to be safe
+    // (legacy rows had environment=dev-sandbox).
+    function envOf(v) {
+        const e = (v.environment || '').toLowerCase();
+        if (e === 'staging') return 'staging';
+        return 'production'; // dev-sandbox + everything else collapses to prod for the filter
+    }
+    const filtered = (state.versionHistory || []).filter(function (v) {
+        if (state.versionFilter === 'all') return true;
+        return envOf(v) === state.versionFilter;
+    });
+
     if (!state.versionHistory || state.versionHistory.length === 0) {
         const emptyItem = document.createElement('div');
         emptyItem.className = 'version-dropdown__item version-dropdown__item--empty';
-        emptyItem.textContent = 'Loading deployments...';
+        emptyItem.textContent = 'Loading deployments…';
+        list.appendChild(emptyItem);
+    } else if (filtered.length === 0) {
+        const emptyItem = document.createElement('div');
+        emptyItem.className = 'version-dropdown__item version-dropdown__item--empty';
+        emptyItem.textContent = 'No deployments in this filter.';
         list.appendChild(emptyItem);
     } else {
-        // VTID-0524: Render deployments (already sorted by created_at DESC from API)
-        state.versionHistory.forEach(function (version) {
+        filtered.forEach(function (version) {
             const item = document.createElement('div');
             item.className = 'version-dropdown__item';
             if (state.selectedVersionId === version.id) {
                 item.className += ' version-dropdown__item--selected';
             }
+            if (version.is_active) item.className += ' version-dropdown__item--active';
 
-            // VTID-0524: Build tooltip with VTID + timestamp
+            // Tooltip carries absolute time + VTID + full SHA.
             const tooltipParts = [];
-            if (version.vtid) {
-                tooltipParts.push(version.vtid);
+            if (version.createdAt) tooltipParts.push(new Date(version.createdAt).toLocaleString());
+            if (version.vtid) tooltipParts.push(version.vtid);
+            if (version.commit) tooltipParts.push('commit ' + version.commit);
+            if (version.cloud_run_revision) tooltipParts.push('rev ' + version.cloud_run_revision);
+            item.title = tooltipParts.join(' · ');
+
+            // ── Row 1: time-first + LIVE marker ──────────────────────────
+            const row1 = document.createElement('div');
+            row1.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:3px;';
+
+            const timeLeft = document.createElement('span');
+            timeLeft.style.cssText = 'display:flex;align-items:center;gap:6px;color:var(--color-text-primary);font-size:0.85rem;font-weight:500;';
+            const dot = document.createElement('span');
+            dot.style.cssText = 'display:inline-block;width:7px;height:7px;border-radius:50%;background:' +
+                (version.is_active ? '#10b981' : 'rgba(148,163,184,0.4)') + ';flex:none;';
+            timeLeft.appendChild(dot);
+            timeLeft.appendChild(document.createTextNode(formatRelativeTime(version.createdAt)));
+            row1.appendChild(timeLeft);
+
+            const row1Right = document.createElement('span');
+            row1Right.style.cssText = 'display:flex;align-items:center;gap:6px;';
+            if (version.is_active) {
+                const liveBadge = document.createElement('span');
+                liveBadge.className = 'version-dropdown__item-badge version-dropdown__item-badge--live';
+                liveBadge.textContent = 'LIVE';
+                row1Right.appendChild(liveBadge);
+            } else if (version.status === 'failure') {
+                const failBadge = document.createElement('span');
+                failBadge.className = 'version-dropdown__item-badge version-dropdown__item-badge--failure';
+                failBadge.textContent = 'Failed';
+                row1Right.appendChild(failBadge);
             }
-            if (version.createdAt) {
-                tooltipParts.push(new Date(version.createdAt).toLocaleString());
+            row1.appendChild(row1Right);
+            item.appendChild(row1);
+
+            // ── Row 2: SWV + env + commit SHA ────────────────────────────
+            const row2 = document.createElement('div');
+            row2.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:0.72rem;color:var(--color-text-secondary);';
+
+            const left = document.createElement('span');
+            const env = envOf(version);
+            const envColor = env === 'staging' ? '#93c5fd' : '#a78bfa';
+            left.innerHTML = '<span style="color:' + envColor + ';font-weight:500;">' + env + '</span>' +
+                ' · ' + (version.swv || '—') +
+                (version.display_deploy_type ? ' · ' + version.display_deploy_type : '');
+            row2.appendChild(left);
+
+            const sha = version.commit ? version.commit.slice(0, 7) : (version.cloud_run_revision || '');
+            if (sha) {
+                const shaSpan = document.createElement('code');
+                shaSpan.style.cssText = 'color:#fde68a;font-size:0.7rem;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;';
+                shaSpan.textContent = sha;
+                row2.appendChild(shaSpan);
             }
-            if (version.commit) {
-                tooltipParts.push('Commit: ' + version.commit);
-            }
-            item.title = tooltipParts.join(' | ');
+            item.appendChild(row2);
 
-            // Primary label: SWV + service
-            const label = document.createElement('div');
-            label.className = 'version-dropdown__item-label';
-            label.textContent = version.swv + ' – ' + (version.service || 'unknown');
-            item.appendChild(label);
-
-            // Meta line: timestamp + status badge
-            const meta = document.createElement('div');
-            meta.className = 'version-dropdown__item-meta';
-
-            const timestamp = document.createElement('span');
-            timestamp.className = 'version-dropdown__item-timestamp';
-            timestamp.textContent = version.createdAt ? formatVersionTimestamp(version.createdAt) : '';
-            meta.appendChild(timestamp);
-
-            if (version.status) {
-                const badge = document.createElement('span');
-                // VTID-0524: Map status to badge classes
-                let badgeClass = 'version-dropdown__item-badge';
-                if (version.status === 'success') {
-                    badgeClass += ' version-dropdown__item-badge--success';
-                } else if (version.status === 'failure') {
-                    badgeClass += ' version-dropdown__item-badge--failure';
-                } else {
-                    badgeClass += ' version-dropdown__item-badge--' + version.status;
+            // ── Row 3: revert button (only if eligible) ──────────────────
+            if (version.revert_eligible && window.VitanaStaging) {
+                try {
+                    const revertBtn = window.VitanaStaging.renderRevertButton(version, {
+                        buildContextHeaders: typeof buildContextHeaders === 'function' ? buildContextHeaders : null,
+                        onAfterRevert: function () {
+                            if (typeof fetchDeploymentHistory === 'function') {
+                                fetchDeploymentHistory().then(function (h) {
+                                    state.versionHistory = h;
+                                    if (typeof renderApp === 'function') renderApp();
+                                }).catch(function () { /* swallow */ });
+                            }
+                        },
+                    });
+                    revertBtn.style.marginTop = '6px';
+                    revertBtn.style.marginLeft = '13px'; // align past the LIVE dot
+                    item.appendChild(revertBtn);
+                } catch (err) {
+                    console.warn('[VitanaStaging] renderRevertButton failed:', err);
                 }
-                badge.className = badgeClass;
-                badge.textContent = version.status.charAt(0).toUpperCase() + version.status.slice(1);
-                meta.appendChild(badge);
             }
 
-            item.appendChild(meta);
-
-            // Click handler
+            // Single click no longer triggers a "selected" toast (that pattern
+            // was from the legacy modal flow). Selection is purely visual now.
             item.onclick = function (e) {
                 e.stopPropagation();
                 state.selectedVersionId = version.id;
-                const displayName = version.swv || version.vtid || version.label;
-                showToast('Version ' + displayName + ' selected. Restore/publish flow will be implemented in a later step.', 'info');
-                state.isVersionDropdownOpen = false;
                 renderApp();
             };
 
@@ -6185,11 +6450,16 @@ function renderModuleContent(moduleKey, tab) {
     } else if (moduleKey === 'voice' && tab === 'self-healing') {
         // Voice slice extracted from autonomy/self-healing
         container.appendChild(renderVoiceSelfHealingPanel());
+    } else if (moduleKey === 'voice' && tab === 'test-contracts') {
+        // VTID-02954 (PR-L1): Test Contract Registry — read-only status panel
+        container.appendChild(renderTestContractsPanel());
     } else if (moduleKey === 'voice' && tab === 'livekit-test') {
         container.appendChild(renderLivekitTestView());
     } else if (moduleKey === 'voice' && tab === 'orb-ui-monitor') {
         // Migrated from testing-qa/e2e — scheduled UI E2E test runs
         container.appendChild(renderOrbMonitorSection());
+        // VTID-03025 (Slice 1c): LiveKit hourly dry-run test grid.
+        container.appendChild(renderLivekitHourlyTestsPanel());
 
     } else if (moduleKey === 'oasis' && tab === 'events') {
         // VTID-0600: OASIS Events View
@@ -6239,6 +6509,12 @@ function renderModuleContent(moduleKey, tab) {
     } else if (moduleKey === 'admin' && tab === 'marketplace-review') {
         // VTID-02000: Admin Marketplace Review Queue - approve/reject flagged products
         container.appendChild(renderAdminMarketplaceReviewView());
+    } else if (moduleKey === 'admin' && tab === 'billing-dashboard') {
+        // VTID-03107: Billing v1 operator dashboard — MRR / paywall funnel / code redemptions / voice degrade
+        container.appendChild(renderAdminBillingDashboardView());
+    } else if (moduleKey === 'admin' && tab === 'billing-codes') {
+        // VTID-03107: Billing v1 admin — redemption code generation + listing
+        container.appendChild(renderAdminBillingCodesView());
     } else if (moduleKey === 'agents' && tab === 'registered-agents') {
         // VTID-01173: Agents Control Plane v1 - Registered Agents (Worker Orchestrator)
         container.appendChild(renderRegisteredAgentsView());
@@ -6602,6 +6878,16 @@ function renderTasksView() {
 
             // VTID-01055: Suppress deleted/voided tasks (client-side safety net)
             if (!isTaskRenderable(t)) return false;
+
+            // VTID-03229: hide auto-allocated artifact rows. Phase 1 W3 / EXEC-DEPLOY
+            // style flows grab a VTID purely for gating and never assign a title,
+            // so the ledger row lands with the RPC's default literal. Without this
+            // filter, >50% of "Completed" is workflow scratch tokens (330 of 603 at
+            // time of fix), drowning real work. Backend fix lives in the allocator
+            // (VTID-03230); this is the client-side belt-and-suspenders so already-
+            // landed legacy rows fall off the board immediately.
+            const _t03229 = (t.title || '').trim();
+            if (_t03229 === 'Allocated - Pending Title' || _t03229 === 'Pending Title') return false;
 
             // VTID-01005: Use OASIS-derived column as authoritative source
             if (mapStatusToColumnWithOverride(t.vtid, t.status, t.oasisColumn) !== colName) return false;
@@ -11411,6 +11697,458 @@ async function triggerMarketplaceSync(network) {
         console.error('[VTID-02000] sync failed:', err);
         showToast('Sync failed: ' + err.message, 'error');
     }
+}
+
+// =============================================================================
+// VTID-03107 · Billing v1 — operator dashboard
+// =============================================================================
+// Operator tab at /command-hub/admin/billing-dashboard/.
+//
+// Renders KPIs from GET /api/v1/billing/admin/metrics:
+//   - MRR / ARR (€ from active + trialing subs)
+//   - Subscription counts by plan
+//   - Paywall funnel (30d): shown / upgraded / credit_paid /
+//     deferred_for_vulnerability / degraded
+//   - Code redemptions by campaign (30d)
+//   - Voice degrade events (7d)
+//   - Marketing budget remaining (cents)
+//
+// Read-only. All numbers from the live schema; no caching beyond the
+// 60-second auto-refresh.
+// =============================================================================
+
+async function fetchAdminBillingMetrics() {
+    state.adminBillingMetricsLoading = true;
+    try {
+        var resp = await fetch('/api/v1/billing/admin/metrics', {
+            method: 'GET', headers: buildContextHeaders(),
+        });
+        var json = await resp.json();
+        if (!resp.ok || !json.ok) throw new Error(json.error || ('HTTP ' + resp.status));
+        state.adminBillingMetrics = json;
+        state.adminBillingMetricsError = null;
+    } catch (err) {
+        console.error('[VTID-03107] fetch metrics failed:', err);
+        state.adminBillingMetrics = null;
+        state.adminBillingMetricsError = String(err && err.message ? err.message : err);
+    } finally {
+        state.adminBillingMetricsLoading = false;
+        renderApp();
+    }
+}
+
+function formatEur(cents) {
+    if (typeof cents !== 'number') return '–';
+    return '€' + (cents / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function renderAdminBillingDashboardView() {
+    var container = document.createElement('div');
+    container.className = 'admin-screen-container';
+
+    if (!state.adminBillingMetrics && !state.adminBillingMetricsLoading) {
+        fetchAdminBillingMetrics();
+    }
+
+    var header = document.createElement('div');
+    header.className = 'admin-screen-header';
+    header.innerHTML = '<h2>Billing Dashboard (VTID-03107)</h2>' +
+        '<p class="admin-screen-subtitle">Live KPIs from user_subscriptions + paywall_events + redemption_redemptions. ' +
+        'Refreshes manually via the button.</p>';
+    container.appendChild(header);
+
+    var refreshBar = document.createElement('div');
+    refreshBar.style.cssText = 'margin-bottom:1rem;';
+    refreshBar.innerHTML = '<button id="vtid-03107-metrics-refresh" style="padding:0.5rem 1rem;background:#334155;color:#e2e8f0;border:1px solid #475569;border-radius:4px;cursor:pointer;font-size:13px;">↻ Refresh</button>';
+    container.appendChild(refreshBar);
+    refreshBar.querySelector('#vtid-03107-metrics-refresh').addEventListener('click', function () {
+        state.adminBillingMetrics = null;
+        state.adminBillingMetricsError = null;
+        fetchAdminBillingMetrics();
+    });
+
+    if (state.adminBillingMetricsLoading) {
+        var loading = document.createElement('p');
+        loading.textContent = 'Loading metrics…';
+        loading.style.color = '#94a3b8';
+        container.appendChild(loading);
+        return container;
+    }
+
+    if (state.adminBillingMetricsError) {
+        var errEl = document.createElement('p');
+        errEl.textContent = 'Error: ' + state.adminBillingMetricsError;
+        errEl.style.color = '#ef4444';
+        container.appendChild(errEl);
+        return container;
+    }
+
+    var m = state.adminBillingMetrics;
+    if (!m) {
+        var emptyEl = document.createElement('p');
+        emptyEl.textContent = 'No metrics yet.';
+        emptyEl.style.color = '#94a3b8';
+        container.appendChild(emptyEl);
+        return container;
+    }
+
+    // ── KPI card grid ──────────────────────────────────────────────────────
+    var grid = document.createElement('div');
+    grid.style.cssText = 'display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:1rem;margin-bottom:1.5rem;';
+
+    function kpiCard(label, value, accent) {
+        var card = document.createElement('div');
+        card.style.cssText = 'background:#1e293b;border:1px solid #334155;border-left:4px solid ' + (accent || '#475569') +
+            ';border-radius:6px;padding:1rem;';
+        card.innerHTML = '<div style="font-size:11px;color:#94a3b8;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:0.25rem;">' +
+            escapeHtml(label) + '</div>' +
+            '<div style="font-size:24px;font-weight:600;color:#e2e8f0;">' + escapeHtml(String(value)) + '</div>';
+        return card;
+    }
+
+    grid.appendChild(kpiCard('MRR', formatEur(m.revenue.mrr_cents), '#10b981'));
+    grid.appendChild(kpiCard('ARR', formatEur(m.revenue.arr_cents), '#10b981'));
+    grid.appendChild(kpiCard('Active + Trialing', m.subscriptions.total_active_or_trialing, '#3b82f6'));
+    grid.appendChild(kpiCard('Voice Degrades (7d)', m.voice_degrade_count_7d, '#f59e0b'));
+    grid.appendChild(kpiCard('Marketing Budget Left',
+        m.marketing_budget_remaining_cents !== null ? formatEur(m.marketing_budget_remaining_cents) : 'not set',
+        '#a855f7'));
+
+    container.appendChild(grid);
+
+    // ── Subs by plan ───────────────────────────────────────────────────────
+    var planCard = document.createElement('div');
+    planCard.style.cssText = 'background:#1e293b;border:1px solid #334155;border-radius:8px;padding:1rem;margin-bottom:1rem;';
+    var planHtml = '<h3 style="margin:0 0 0.5rem;font-size:14px;">Subscriptions by plan</h3>';
+    var planRows = '<table style="width:100%;border-collapse:collapse;font-size:13px;">' +
+        '<thead><tr style="border-bottom:1px solid #334155;"><th style="text-align:left;padding:0.5rem;">Plan</th>' +
+        '<th style="text-align:right;padding:0.5rem;">Total</th>' +
+        '<th style="text-align:right;padding:0.5rem;">Trialing</th></tr></thead><tbody>';
+    var planKeys = Object.keys(m.subscriptions.by_plan || {});
+    if (planKeys.length === 0) {
+        planRows += '<tr><td colspan="3" style="padding:0.5rem;color:#64748b;">No subscriptions yet.</td></tr>';
+    } else {
+        planKeys.forEach(function (k) {
+            planRows += '<tr style="border-bottom:1px solid #1e293b;">' +
+                '<td style="padding:0.5rem;font-family:monospace;">' + escapeHtml(k) + '</td>' +
+                '<td style="padding:0.5rem;text-align:right;">' + (m.subscriptions.by_plan[k] || 0) + '</td>' +
+                '<td style="padding:0.5rem;text-align:right;color:#94a3b8;">' + (m.subscriptions.trialing_by_plan[k] || 0) + '</td>' +
+                '</tr>';
+        });
+    }
+    planRows += '</tbody></table>';
+    planCard.innerHTML = planHtml + planRows;
+    container.appendChild(planCard);
+
+    // ── Paywall funnel (30d) ───────────────────────────────────────────────
+    var funnelCard = document.createElement('div');
+    funnelCard.style.cssText = 'background:#1e293b;border:1px solid #334155;border-radius:8px;padding:1rem;margin-bottom:1rem;';
+    funnelCard.innerHTML = '<h3 style="margin:0 0 0.5rem;font-size:14px;">Paywall funnel (last 30 days)</h3>';
+    var funnel = m.paywall_funnel_30d || {};
+    var funnelKeys = ['shown', 'upgraded', 'credit_paid', 'deferred_for_vulnerability', 'degraded', 'redeemed', 'rejected', 'soft_counter_reached'];
+    var funnelGrid = document.createElement('div');
+    funnelGrid.style.cssText = 'display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:0.5rem;';
+    funnelKeys.forEach(function (k) {
+        if ((funnel[k] || 0) === 0) return; // hide empty
+        var stage = document.createElement('div');
+        stage.style.cssText = 'background:#0f172a;padding:0.5rem;border-radius:4px;border-top:3px solid ' +
+            (k === 'upgraded' || k === 'credit_paid' ? '#10b981' :
+             k === 'deferred_for_vulnerability' ? '#a855f7' :
+             k === 'degraded' ? '#f59e0b' :
+             k === 'rejected' ? '#ef4444' : '#475569') + ';';
+        stage.innerHTML = '<div style="font-size:10px;color:#94a3b8;text-transform:uppercase;">' + k + '</div>' +
+            '<div style="font-size:20px;font-weight:600;">' + (funnel[k] || 0) + '</div>';
+        funnelGrid.appendChild(stage);
+    });
+    funnelCard.appendChild(funnelGrid);
+    container.appendChild(funnelCard);
+
+    // ── Redemptions by campaign (30d) ──────────────────────────────────────
+    var redemptions = m.redemptions_30d || {};
+    var campaignKeys = Object.keys(redemptions);
+    if (campaignKeys.length > 0) {
+        var rdCard = document.createElement('div');
+        rdCard.style.cssText = 'background:#1e293b;border:1px solid #334155;border-radius:8px;padding:1rem;';
+        var rdHtml = '<h3 style="margin:0 0 0.5rem;font-size:14px;">Code redemptions (last 30 days)</h3>' +
+            '<table style="width:100%;border-collapse:collapse;font-size:13px;">' +
+            '<thead><tr style="border-bottom:1px solid #334155;">' +
+            '<th style="text-align:left;padding:0.5rem;">Campaign</th>' +
+            '<th style="text-align:right;padding:0.5rem;">Redemptions</th>' +
+            '<th style="text-align:right;padding:0.5rem;">Foregone revenue</th>' +
+            '</tr></thead><tbody>';
+        campaignKeys.forEach(function (c) {
+            rdHtml += '<tr style="border-bottom:1px solid #1e293b;">' +
+                '<td style="padding:0.5rem;font-family:monospace;">' + escapeHtml(c) + '</td>' +
+                '<td style="padding:0.5rem;text-align:right;">' + redemptions[c].count + '</td>' +
+                '<td style="padding:0.5rem;text-align:right;color:#a855f7;">' + formatEur(redemptions[c].grant_value_cents) + '</td>' +
+                '</tr>';
+        });
+        rdHtml += '</tbody></table>';
+        rdCard.innerHTML = rdHtml;
+        container.appendChild(rdCard);
+    }
+
+    var footer = document.createElement('p');
+    footer.style.cssText = 'margin-top:1rem;font-size:11px;color:#64748b;';
+    footer.textContent = 'Generated at ' + (m.generated_at || '?');
+    container.appendChild(footer);
+
+    return container;
+}
+
+// =============================================================================
+// VTID-03107 · Billing v1 — admin redemption-code management
+// =============================================================================
+// Operator tab at /command-hub/admin/billing-codes/.
+//
+// Lets ops:
+//   - Bulk-generate unique-per-user codes for a campaign (test cohort pattern,
+//     365-day default). Downloads CSV for distribution.
+//   - View existing codes per campaign with usage stats.
+//   - Deactivate a code instantly (leak response).
+//
+// Reads/writes via the routes shipped in PR-2 (routes/billing.ts):
+//   POST /api/v1/billing/admin/redemption-codes/generate
+//   GET  /api/v1/billing/admin/redemption-codes
+//   PATCH /api/v1/billing/admin/redemption-codes/:code
+// =============================================================================
+
+async function fetchAdminBillingCodes(campaign) {
+    state.adminBillingCodesLoading = true;
+    try {
+        var url = '/api/v1/billing/admin/redemption-codes?include_codes=true' +
+            (campaign ? '&campaign=' + encodeURIComponent(campaign) : '') +
+            '&limit=200';
+        var resp = await fetch(url, { method: 'GET', headers: buildContextHeaders() });
+        var json = await resp.json();
+        if (!resp.ok || !json.ok) throw new Error(json.error || ('HTTP ' + resp.status));
+        state.adminBillingCodes = json.codes || [];
+        state.adminBillingCodesError = null;
+    } catch (err) {
+        console.error('[VTID-03107] fetch billing codes failed:', err);
+        state.adminBillingCodes = [];
+        state.adminBillingCodesError = String(err && err.message ? err.message : err);
+    } finally {
+        state.adminBillingCodesLoading = false;
+        renderApp();
+    }
+}
+
+async function generateAdminBillingCodes(payload) {
+    try {
+        var resp = await fetch('/api/v1/billing/admin/redemption-codes/generate', {
+            method: 'POST',
+            headers: Object.assign({ 'Content-Type': 'application/json' }, buildContextHeaders()),
+            body: JSON.stringify(payload),
+        });
+        var json = await resp.json();
+        if (!resp.ok || !json.ok) throw new Error(json.error || ('HTTP ' + resp.status));
+        state.adminBillingLastBatch = json;
+        await fetchAdminBillingCodes(null);
+        return json;
+    } catch (err) {
+        console.error('[VTID-03107] generate codes failed:', err);
+        state.adminBillingError = String(err && err.message ? err.message : err);
+        renderApp();
+        throw err;
+    }
+}
+
+async function deactivateAdminBillingCode(code) {
+    try {
+        var resp = await fetch('/api/v1/billing/admin/redemption-codes/' + encodeURIComponent(code), {
+            method: 'PATCH',
+            headers: Object.assign({ 'Content-Type': 'application/json' }, buildContextHeaders()),
+            body: JSON.stringify({ is_active: false }),
+        });
+        var json = await resp.json();
+        if (!resp.ok || !json.ok) throw new Error(json.error || ('HTTP ' + resp.status));
+        await fetchAdminBillingCodes(null);
+    } catch (err) {
+        console.error('[VTID-03107] deactivate code failed:', err);
+        alert('Deactivate failed: ' + err.message);
+    }
+}
+
+function downloadCodesAsCsv(codes, campaign) {
+    var header = 'code,campaign,grants_plan,grant_duration_days,deep_link\n';
+    var origin = (window.location.origin || '').replace(/\/$/, '');
+    var rows = codes.map(function (c) {
+        var code = (c.code || '').replace(/"/g, '""');
+        var deepLink = origin + '/redeem?code=' + encodeURIComponent(c.code);
+        return [
+            '"' + code + '"',
+            '"' + (campaign || '') + '"',
+            '"' + (c.grants_plan || 'premium') + '"',
+            (c.grant_duration_days || 365),
+            '"' + deepLink + '"',
+        ].join(',');
+    }).join('\n');
+    var blob = new Blob([header + rows], { type: 'text/csv;charset=utf-8' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = 'vitana-codes-' + (campaign || 'batch') + '-' + Date.now() + '.csv';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+}
+
+function renderAdminBillingCodesView() {
+    var container = document.createElement('div');
+    container.className = 'admin-screen-container';
+
+    if (!state.adminBillingCodes && !state.adminBillingCodesLoading) {
+        fetchAdminBillingCodes(null);
+    }
+
+    var header = document.createElement('div');
+    header.className = 'admin-screen-header';
+    header.innerHTML = '<h2>Billing Codes (VTID-03107)</h2>' +
+        '<p class="admin-screen-subtitle">Generate redemption codes for test cohorts and special campaigns. ' +
+        'The public FOUNDING code is managed via SQL (see migration 6). All grants decrement the marketing budget cap.</p>';
+    container.appendChild(header);
+
+    // ── Generation form ────────────────────────────────────────────────────
+    var formCard = document.createElement('div');
+    formCard.className = 'admin-form-card';
+    formCard.style.cssText = 'background:#1e293b;border:1px solid #334155;border-radius:8px;padding:1rem;margin-bottom:1rem;';
+    formCard.innerHTML =
+        '<h3 style="margin:0 0 0.75rem;font-size:14px;">Generate codes</h3>' +
+        '<div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr auto;gap:0.5rem;align-items:end;">' +
+        '  <div><label style="display:block;font-size:11px;color:#94a3b8;margin-bottom:0.25rem;">Campaign name</label>' +
+        '    <input id="vtid-03107-campaign" type="text" placeholder="test_cohort_2026Q2" ' +
+        '      style="width:100%;padding:0.4rem;background:#0f172a;border:1px solid #475569;border-radius:4px;color:#e2e8f0;" /></div>' +
+        '  <div><label style="display:block;font-size:11px;color:#94a3b8;margin-bottom:0.25rem;">Count</label>' +
+        '    <input id="vtid-03107-count" type="number" min="1" max="1000" value="100" ' +
+        '      style="width:100%;padding:0.4rem;background:#0f172a;border:1px solid #475569;border-radius:4px;color:#e2e8f0;" /></div>' +
+        '  <div><label style="display:block;font-size:11px;color:#94a3b8;margin-bottom:0.25rem;">Days granted</label>' +
+        '    <input id="vtid-03107-days" type="number" min="1" max="730" value="365" ' +
+        '      style="width:100%;padding:0.4rem;background:#0f172a;border:1px solid #475569;border-radius:4px;color:#e2e8f0;" /></div>' +
+        '  <div><label style="display:block;font-size:11px;color:#94a3b8;margin-bottom:0.25rem;">Plan</label>' +
+        '    <select id="vtid-03107-plan" style="width:100%;padding:0.4rem;background:#0f172a;border:1px solid #475569;border-radius:4px;color:#e2e8f0;">' +
+        '      <option value="premium">premium</option>' +
+        '      <option value="premium_5x">premium_5x (Host)</option>' +
+        '      <option value="premium_20x">premium_20x (Community)</option>' +
+        '    </select></div>' +
+        '  <button id="vtid-03107-generate" class="primary-btn" style="padding:0.5rem 1rem;background:#10b981;color:#0f172a;border:none;border-radius:4px;font-weight:600;cursor:pointer;">Generate</button>' +
+        '</div>' +
+        '<p style="margin:0.5rem 0 0;font-size:11px;color:#64748b;">Codes are unique-per-user (max_uses=1). For shared marketing codes, edit redemption_codes directly via SQL.</p>';
+    container.appendChild(formCard);
+
+    formCard.querySelector('#vtid-03107-generate').addEventListener('click', async function () {
+        var campaign = formCard.querySelector('#vtid-03107-campaign').value.trim();
+        var count = parseInt(formCard.querySelector('#vtid-03107-count').value, 10) || 0;
+        var days = parseInt(formCard.querySelector('#vtid-03107-days').value, 10) || 365;
+        var plan = formCard.querySelector('#vtid-03107-plan').value;
+        if (!campaign) { alert('Campaign name required'); return; }
+        if (count < 1 || count > 1000) { alert('Count must be 1–1000'); return; }
+        try {
+            var result = await generateAdminBillingCodes({
+                campaign: campaign, count: count, grant_duration_days: days, grants_plan: plan,
+            });
+            downloadCodesAsCsv(result.codes || [], campaign);
+            alert('Generated ' + (result.generated || 0) + ' codes for campaign "' + campaign + '". CSV downloaded.');
+        } catch (e) { /* error already alerted via state */ }
+    });
+
+    // ── Last-batch quick view ──────────────────────────────────────────────
+    if (state.adminBillingLastBatch) {
+        var batch = state.adminBillingLastBatch;
+        var batchCard = document.createElement('div');
+        batchCard.style.cssText = 'background:#064e3b;border:1px solid #10b981;border-radius:8px;padding:1rem;margin-bottom:1rem;color:#d1fae5;';
+        batchCard.innerHTML = '<strong>Last batch:</strong> ' + (batch.generated || 0) +
+            ' codes generated for campaign "' + escapeHtml(batch.campaign || '') + '" ' +
+            '(plan=' + escapeHtml(batch.grants_plan || '') + ', ' + (batch.grant_duration_days || '?') + ' days each). ' +
+            'CSV downloaded. Distribute to recipients individually.';
+        container.appendChild(batchCard);
+    }
+
+    // ── Existing codes table ───────────────────────────────────────────────
+    var listCard = document.createElement('div');
+    listCard.className = 'admin-list-container';
+    listCard.style.cssText = 'background:#1e293b;border:1px solid #334155;border-radius:8px;padding:1rem;';
+
+    var listHeader = document.createElement('div');
+    listHeader.style.cssText = 'display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem;';
+    listHeader.innerHTML = '<h3 style="margin:0;font-size:14px;">Recent codes (latest 200)</h3>' +
+        '<button id="vtid-03107-refresh" style="padding:0.25rem 0.75rem;background:#334155;color:#e2e8f0;border:1px solid #475569;border-radius:4px;cursor:pointer;font-size:12px;">↻ Refresh</button>';
+    listCard.appendChild(listHeader);
+    listHeader.querySelector('#vtid-03107-refresh').addEventListener('click', function () {
+        state.adminBillingCodes = null;
+        state.adminBillingCodesError = null;
+        fetchAdminBillingCodes(null);
+    });
+
+    if (state.adminBillingCodesLoading) {
+        var loading = document.createElement('p');
+        loading.textContent = 'Loading…';
+        loading.style.color = '#94a3b8';
+        listCard.appendChild(loading);
+    } else if (state.adminBillingCodesError) {
+        var errEl = document.createElement('p');
+        errEl.textContent = 'Error: ' + state.adminBillingCodesError;
+        errEl.style.color = '#ef4444';
+        listCard.appendChild(errEl);
+    } else if (!state.adminBillingCodes || state.adminBillingCodes.length === 0) {
+        var empty = document.createElement('p');
+        empty.textContent = 'No codes generated yet. Use the form above.';
+        empty.style.color = '#94a3b8';
+        listCard.appendChild(empty);
+    } else {
+        var table = document.createElement('table');
+        table.className = 'list-table';
+        table.style.cssText = 'width:100%;border-collapse:collapse;font-size:12px;';
+        table.innerHTML =
+            '<thead><tr style="border-bottom:1px solid #334155;">' +
+            '<th style="text-align:left;padding:0.5rem;">Code</th>' +
+            '<th style="text-align:left;padding:0.5rem;">Campaign</th>' +
+            '<th style="text-align:left;padding:0.5rem;">Plan</th>' +
+            '<th style="text-align:right;padding:0.5rem;">Days</th>' +
+            '<th style="text-align:right;padding:0.5rem;">Used</th>' +
+            '<th style="text-align:center;padding:0.5rem;">Active</th>' +
+            '<th style="text-align:left;padding:0.5rem;">Created</th>' +
+            '<th></th>' +
+            '</tr></thead>';
+        var tbody = document.createElement('tbody');
+        state.adminBillingCodes.forEach(function (c) {
+            var tr = document.createElement('tr');
+            tr.style.cssText = 'border-bottom:1px solid #1e293b;';
+            var usagePct = c.max_uses > 0 ? Math.round((c.uses_count / c.max_uses) * 100) : 0;
+            var usedColor = usagePct >= 100 ? '#ef4444' : usagePct >= 80 ? '#f59e0b' : '#10b981';
+            tr.innerHTML =
+                '<td style="padding:0.5rem;font-family:monospace;">' + escapeHtml(c.code) + '</td>' +
+                '<td style="padding:0.5rem;">' + escapeHtml(c.campaign) + '</td>' +
+                '<td style="padding:0.5rem;">' + escapeHtml(c.grants_plan) + '</td>' +
+                '<td style="padding:0.5rem;text-align:right;">' + (c.grant_duration_days || '?') + '</td>' +
+                '<td style="padding:0.5rem;text-align:right;color:' + usedColor + ';">' +
+                  (c.uses_count || 0) + ' / ' + (c.max_uses || 0) + '</td>' +
+                '<td style="padding:0.5rem;text-align:center;">' + (c.is_active ? '✓' : '✗') + '</td>' +
+                '<td style="padding:0.5rem;color:#94a3b8;">' +
+                  (c.created_at ? new Date(c.created_at).toISOString().slice(0, 10) : '') + '</td>' +
+                '<td style="padding:0.5rem;text-align:right;">' +
+                  (c.is_active ? '<button class="deactivate-btn" data-code="' + escapeHtml(c.code) +
+                    '" style="padding:0.25rem 0.5rem;background:#7f1d1d;color:#fecaca;border:none;border-radius:4px;cursor:pointer;font-size:11px;">Deactivate</button>' : '') +
+                '</td>';
+            tbody.appendChild(tr);
+        });
+        table.appendChild(tbody);
+        listCard.appendChild(table);
+
+        // Wire deactivate buttons
+        listCard.querySelectorAll('.deactivate-btn').forEach(function (btn) {
+            btn.addEventListener('click', function () {
+                var code = btn.getAttribute('data-code');
+                if (confirm('Deactivate code "' + code + '"? This is reversible via SQL.')) {
+                    deactivateAdminBillingCode(code);
+                }
+            });
+        });
+    }
+    container.appendChild(listCard);
+
+    return container;
 }
 
 function renderAdminMarketplaceShopsView() {
@@ -16269,7 +17007,10 @@ function fetchVoiceLabSessions(append) {
     }
 
     var offset = append ? state.voiceLab.sessions.length : 0;
-    fetch('/api/v1/voice-lab/live/sessions?offset=' + offset)
+    // VTID-02983: requireAuth on /voice-lab/* reads Bearer-only — without
+    // buildContextHeaders the request 401s and the catch silently empties
+    // the list. Same fix applies to /:id, /:id/turns, /:id/diagnostics below.
+    fetch('/api/v1/voice-lab/live/sessions?offset=' + offset, { headers: buildContextHeaders() })
         .then(function (resp) {
             if (!resp.ok) throw new Error('Failed to fetch sessions');
             return resp.json();
@@ -16331,10 +17072,12 @@ function fetchVoiceLabSessionDetails(sessionId) {
     renderApp();
 
     // Fetch session details, turns, and pipeline diagnostics in parallel
+    // VTID-02983: same auth requirement as fetchVoiceLabSessions above.
+    var vlHeaders = { headers: buildContextHeaders() };
     Promise.all([
-        fetch('/api/v1/voice-lab/live/sessions/' + sessionId).then(function (r) { return r.json(); }),
-        fetch('/api/v1/voice-lab/live/sessions/' + sessionId + '/turns').then(function (r) { return r.json(); }),
-        fetch('/api/v1/voice-lab/live/sessions/' + sessionId + '/diagnostics').then(function (r) { return r.json(); }).catch(function () { return null; })
+        fetch('/api/v1/voice-lab/live/sessions/' + sessionId, vlHeaders).then(function (r) { return r.json(); }),
+        fetch('/api/v1/voice-lab/live/sessions/' + sessionId + '/turns', vlHeaders).then(function (r) { return r.json(); }),
+        fetch('/api/v1/voice-lab/live/sessions/' + sessionId + '/diagnostics', vlHeaders).then(function (r) { return r.json(); }).catch(function () { return null; })
     ])
         .then(function (results) {
             var detailsResp = results[0];
@@ -16410,7 +17153,8 @@ function stopVoiceLabAutoRefresh() {
  * VTID-01218B: Silent fetch (no loading state, for auto-refresh)
  */
 function fetchVoiceLabSessionsSilent() {
-    fetch('/api/v1/voice-lab/live/sessions')
+    // VTID-02983: auth headers required — see fetchVoiceLabSessions.
+    fetch('/api/v1/voice-lab/live/sessions', { headers: buildContextHeaders() })
         .then(function (resp) {
             if (!resp.ok) throw new Error('Failed to fetch sessions');
             return resp.json();
@@ -24033,6 +24777,37 @@ function renderPublishModal() {
     body.className = 'modal-body';
     body.style.cssText = 'padding: 20px;';
 
+    // Phase 0 staging build (P0.5): on production Command Hub, surface the
+    // "Promote latest staging → production" card at the very top of the body.
+    // On staging Command Hub, fall through to the legacy dropdown — the
+    // operator can still re-deploy specific versions to dev for testing.
+    if (window.VitanaStaging) {
+        const env = window.VitanaStaging.env;
+        if (env === 'production') {
+            try {
+                body.appendChild(window.VitanaStaging.renderPublishStagingCard({
+                    buildContextHeaders: typeof buildContextHeaders === 'function' ? buildContextHeaders : null,
+                    onAfterPublish: function () {
+                        // Refresh version history after a publish so CLOCK shows the new prod row.
+                        if (typeof fetchDeploymentHistory === 'function') {
+                            fetchDeploymentHistory().then(function (h) {
+                                state.versionHistory = h;
+                                if (typeof renderApp === 'function') renderApp();
+                            }).catch(function () { /* swallow */ });
+                        }
+                    },
+                }));
+            } catch (err) {
+                console.warn('[VitanaStaging] renderPublishStagingCard failed:', err);
+            }
+        } else if (env === 'staging') {
+            const banner = document.createElement('div');
+            banner.style.cssText = 'margin-bottom:14px;padding:10px 12px;background:rgba(96,165,250,0.08);border:1px solid rgba(96,165,250,0.3);border-radius:6px;font-size:12px;color:#93c5fd;';
+            banner.textContent = 'You are on the STAGING Command Hub. Use the production Command Hub to publish.';
+            body.appendChild(banner);
+        }
+    }
+
     // Environment Info Section
     const envSection = document.createElement('div');
     envSection.style.cssText = 'margin-bottom: 20px; padding: 14px; background: rgba(255,255,255,0.03); border-radius: 8px; font-size: 13px;';
@@ -28264,15 +29039,32 @@ function computeOrbSessionStats(orbEvents, orbHealthDetails) {
         if (t.includes('connection_failed') || t.includes('config_missing') || t.includes('error')) failures++;
     });
     var gl = orbHealthDetails && orbHealthDetails.gemini_live;
+    var vr = orbHealthDetails && orbHealthDetails.voice_runtime;
+    var successRate = starts > 0 ? Math.round(((starts - failures) / starts) * 100) : 0;
+
+    // ORB-VOICE-HEALTH-PROBE: runtime truth = the actively-selected provider's
+    // readiness (voice_runtime.healthy / gemini_live.enabled), NOT a stale flag.
+    var runtimeProvider = (vr && vr.active_provider) || (gl && gl.active_provider) || null;
+    var runtimeHealthy = vr ? !!vr.healthy : (gl ? !!gl.enabled : false);
+
+    // The 24h counter is independent positive evidence: you cannot complete
+    // successful voice sessions unless the runtime (provider + project + auth)
+    // is actually working. When the counter proves health, the config badges
+    // must AGREE — never show "ORB BROKEN" over demonstrably-live sessions.
+    var counterProvenHealthy = starts > 0 && failures === 0 && successRate >= 80;
+
     return {
         sessions_24h: starts,
         completions_24h: stops,
         failures_24h: failures,
-        success_rate: starts > 0 ? Math.round(((starts - failures) / starts) * 100) : 0,
+        success_rate: successRate,
         last_success: lastSuccess,
-        gemini_live_enabled: gl ? gl.enabled : false,
-        vertex_project_configured: gl ? (gl.vertex_project_id && gl.vertex_project_id !== 'EMPTY') : false,
-        google_auth_ready: gl ? gl.google_auth_ready : false,
+        runtime_provider: runtimeProvider,
+        runtime_healthy: runtimeHealthy,
+        counter_proven_healthy: counterProvenHealthy,
+        gemini_live_enabled: (gl ? !!gl.enabled : false) || counterProvenHealthy,
+        vertex_project_configured: (gl ? (gl.vertex_project_id && gl.vertex_project_id !== 'EMPTY') : false) || counterProvenHealthy,
+        google_auth_ready: (gl ? !!gl.google_auth_ready : false) || counterProvenHealthy,
         active_sessions: orbHealthDetails ? (orbHealthDetails.active_sessions || 0) : 0,
         active_live_sessions: gl ? (gl.active_live_sessions || 0) : 0
     };
@@ -28339,7 +29131,11 @@ async function fetchOverviewDashboard() {
                 { name: 'CI/CD',   url: '/api/v1/cicd/health' },
                 { name: 'Operator', url: '/api/v1/operator/health' },
                 { name: 'Autopilot', url: '/api/v1/autopilot/health' },
-                { name: 'Assistant', url: '/api/v1/assistant/health' }
+                { name: 'Assistant', url: '/api/v1/assistant/health' },
+                // ORB-VOICE-HEALTH-PROBE: include ORB Live so the ORB Voice card
+                // gets its health block on a cold System Overview load (without
+                // it, gl was null and every badge collapsed to FAIL).
+                { name: 'ORB Live', url: '/api/v1/orb/health' }
             ];
         // VTID-01982: pass the operator's bearer token to /health probes
         var dashHeaders = (typeof buildContextHeaders === 'function') ? buildContextHeaders({ 'Accept': 'application/json' }) : {};
@@ -28590,6 +29386,10 @@ function renderOverviewSystemView() {
     if (!state.actionRequired.fetched && !state.actionRequired.loading) {
         fetchActionRequired();
     }
+    // BOOTSTRAP-35DAY-TRACKER: load the active training cycle for the Training section
+    if (!state.trainingStatus.fetched && !state.trainingStatus.loading) {
+        fetchTrainingStatus();
+    }
     // Auto-refresh every 30s while the Overview is mounted. Use a single
     // timer keyed on the state to avoid stacking duplicates across renders.
     if (!state._actionRequiredTimer) {
@@ -28701,6 +29501,17 @@ function renderOverviewSystemView() {
     banner.appendChild(bannerLeft);
     banner.appendChild(bannerRight);
     container.appendChild(banner);
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // SECTION: Training — the multi-day training cycle tracker (goal in,
+    // verified outcome out). BOOTSTRAP-35DAY-TRACKER.
+    // Defensive: this section must never be able to break the whole Overview.
+    // ═══════════════════════════════════════════════════════════════════════
+    try {
+        container.appendChild(renderTrainingCycleSection());
+    } catch (trErr) {
+        if (typeof console !== 'undefined') console.warn('[training-section] render failed:', trErr);
+    }
 
     // ═══════════════════════════════════════════════════════════════════════
     // SECTION 2: Key Metrics Grid
@@ -29044,6 +29855,25 @@ function renderOverviewSystemView() {
     orbHeader.appendChild(orbDot);
     orbHeader.appendChild(orbTitleEl);
     orbPanel.appendChild(orbHeader);
+
+    // ORB-VOICE-HEALTH-PROBE: surface the actively-selected upstream provider
+    // (the same signal selectUpstreamProvider/resolveActiveProviderForCaller
+    // resolve at session connect time) so the card reflects runtime reality.
+    var orbProvider = (orbStats && orbStats.runtime_provider) || (orbOk ? 'vertex' : null);
+    if (orbProvider) {
+        var provRow = document.createElement('div');
+        provRow.className = 'orb-config-row';
+        var provLabel = document.createElement('span');
+        provLabel.className = 'orb-config-label';
+        provLabel.textContent = 'Active provider';
+        var provVal = document.createElement('span');
+        provVal.className = 'orb-config-value';
+        provVal.style.color = '#94a3b8';
+        provVal.textContent = orbProvider === 'livekit' ? 'LiveKit' : 'Vertex';
+        provRow.appendChild(provLabel);
+        provRow.appendChild(provVal);
+        orbPanel.appendChild(provRow);
+    }
 
     var configs = [
         { label: 'Gemini Live', ok: orbStats && orbStats.gemini_live_enabled },
@@ -29547,6 +30377,201 @@ async function fetchActionRequired(silentRefresh) {
     if (state.activeModule === 'overview' && state.activeTab === 'system-overview') {
         renderApp();
     }
+}
+
+// BOOTSTRAP-35DAY-TRACKER: fetch the active training cycle + per-day goals/outcomes.
+async function fetchTrainingStatus(silentRefresh) {
+    if (state.trainingStatus.loading) return;
+    var isInitialLoad = !state.trainingStatus.fetched;
+    state.trainingStatus.loading = true;
+    state.trainingStatus.error = null;
+    if (isInitialLoad && !silentRefresh) renderApp();
+
+    try {
+        var r = await fetchWT('/api/v1/training/status', {
+            headers: (typeof buildContextHeaders === 'function') ? buildContextHeaders({ Accept: 'application/json' }) : { Accept: 'application/json' }
+        });
+        if (!r.ok) {
+            state.trainingStatus.error = 'HTTP ' + r.status;
+        } else {
+            state.trainingStatus.data = await r.json();
+        }
+    } catch (err) {
+        state.trainingStatus.error = (err && err.message) ? err.message : String(err);
+    }
+    state.trainingStatus.lastRefreshed = new Date().toISOString();
+    state.trainingStatus.loading = false;
+    state.trainingStatus.fetched = true;
+    if (state.activeModule === 'overview' && state.activeTab === 'system-overview') {
+        renderApp();
+    }
+}
+
+// BOOTSTRAP-35DAY-TRACKER: render the "Training" section for System Overview.
+// Generic across cycles — header adapts to cycle.label / length_days.
+function renderTrainingCycleSection() {
+    var ts = state.trainingStatus;
+    var section = document.createElement('div');
+    section.style.cssText = 'margin:0.85rem 0;border:1px solid rgba(99,102,241,0.35);border-radius:10px;' +
+        'background:linear-gradient(180deg,rgba(49,46,129,0.18),rgba(15,23,42,0.25));overflow:hidden;';
+
+    // ── Header ──
+    var head = document.createElement('div');
+    head.style.cssText = 'display:flex;align-items:center;gap:0.6rem;padding:0.7rem 0.95rem;' +
+        'border-bottom:1px solid rgba(99,102,241,0.25);';
+    var hIcon = document.createElement('span'); hIcon.textContent = '🎓'; hIcon.style.cssText = 'font-size:1.05rem;';
+    var hTitle = document.createElement('strong'); hTitle.style.cssText = 'color:#c7d2fe;font-size:0.95rem;';
+    var hSpacer = document.createElement('span'); hSpacer.style.flex = '1';
+    var hMeta = document.createElement('span'); hMeta.style.cssText = 'font-size:0.72rem;color:rgba(199,210,254,0.65);';
+    var hRefresh = document.createElement('button');
+    hRefresh.className = 'btn btn-sm'; hRefresh.textContent = 'Refresh';
+    hRefresh.style.cssText = 'padding:1px 8px;font-size:0.72rem;';
+    hRefresh.onclick = function () { state.trainingStatus.fetched = false; fetchTrainingStatus(); };
+    head.appendChild(hIcon); head.appendChild(hTitle); head.appendChild(hSpacer); head.appendChild(hMeta); head.appendChild(hRefresh);
+    section.appendChild(head);
+
+    var body = document.createElement('div');
+    body.style.cssText = 'padding:0.85rem 0.95rem;';
+
+    if (ts.error && !ts.data) {
+        hTitle.textContent = 'Training';
+        var err = document.createElement('div');
+        err.style.cssText = 'font-size:0.8rem;color:#fca5a5;';
+        err.textContent = '⚠️ Could not load training status: ' + ts.error;
+        body.appendChild(err);
+        section.appendChild(body);
+        return section;
+    }
+    if (!ts.data) {
+        hTitle.textContent = 'Training';
+        var load = document.createElement('div');
+        load.style.cssText = 'font-size:0.8rem;color:#93c5fd;';
+        load.textContent = 'Loading training cycle…';
+        body.appendChild(load);
+        section.appendChild(body);
+        return section;
+    }
+
+    var data = ts.data;
+    var cycle = data.cycle || {};
+    var live = data.live || {};
+    var today = data.today || null;
+    var days = Array.isArray(data.days) ? data.days : [];
+
+    hTitle.textContent = (cycle.label || 'Training') + ' · Day ' + (cycle.current_day || 1) + ' of ' + (cycle.length_days || '—');
+    hMeta.textContent = (data.source === 'db' ? '' : 'bootstrap · ') + (ts.lastRefreshed ? dashboardRelativeTime(ts.lastRefreshed) : '');
+
+    var statusColors = {
+        success: { fg: '#86efac', bg: 'rgba(34,197,94,0.14)', dot: '#22c55e' },
+        running: { fg: '#fcd34d', bg: 'rgba(245,158,11,0.14)', dot: '#f59e0b' },
+        failure: { fg: '#fca5a5', bg: 'rgba(239,68,68,0.14)', dot: '#ef4444' },
+        partial: { fg: '#fdba74', bg: 'rgba(249,115,22,0.14)', dot: '#f97316' },
+        pending: { fg: '#cbd5e1', bg: 'rgba(148,163,184,0.12)', dot: '#94a3b8' }
+    };
+    function colorFor(s) { return statusColors[s] || statusColors.pending; }
+
+    // ── Today's goal card ──
+    var goalCard = document.createElement('div');
+    var tc = colorFor(today ? today.status : 'pending');
+    goalCard.style.cssText = 'border:1px solid ' + tc.dot + '55;background:' + tc.bg + ';border-radius:8px;padding:0.7rem 0.85rem;margin-bottom:0.75rem;';
+    var gLabel = document.createElement('div');
+    gLabel.style.cssText = 'font-size:0.68rem;text-transform:uppercase;letter-spacing:0.08em;color:rgba(226,232,240,0.6);margin-bottom:0.3rem;';
+    gLabel.textContent = "Today's Goal — End of Day";
+    goalCard.appendChild(gLabel);
+    var gText = document.createElement('div');
+    gText.style.cssText = 'font-size:0.9rem;color:#f1f5f9;line-height:1.45;';
+    gText.textContent = today && today.goal ? today.goal : 'No goal set for today yet.';
+    goalCard.appendChild(gText);
+
+    var gStatus = document.createElement('span');
+    gStatus.style.cssText = 'display:inline-block;margin-top:0.5rem;font-size:0.7rem;font-weight:700;border-radius:999px;padding:2px 9px;color:' + tc.fg + ';background:rgba(0,0,0,0.25);';
+    gStatus.textContent = (today ? today.status : 'pending').toUpperCase();
+    goalCard.appendChild(gStatus);
+
+    if (today && today.outcome) {
+        var gOut = document.createElement('div');
+        gOut.style.cssText = 'margin-top:0.5rem;font-size:0.8rem;color:#cbd5e1;line-height:1.4;';
+        gOut.innerHTML = '<strong style="color:#e2e8f0;">Outcome:</strong> ';
+        gOut.appendChild(document.createTextNode(today.outcome + (today.evidence ? ' — ' + today.evidence : '')));
+        goalCard.appendChild(gOut);
+    }
+    body.appendChild(goalCard);
+
+    // ── Initiated-today list ──
+    if (today && Array.isArray(today.initiated) && today.initiated.length) {
+        var initWrap = document.createElement('div');
+        initWrap.style.cssText = 'margin-bottom:0.75rem;';
+        var initLabel = document.createElement('div');
+        initLabel.style.cssText = 'font-size:0.68rem;text-transform:uppercase;letter-spacing:0.08em;color:rgba(226,232,240,0.6);margin-bottom:0.35rem;';
+        initLabel.textContent = 'Initiated Today';
+        initWrap.appendChild(initLabel);
+        today.initiated.forEach(function (it) {
+            var row = document.createElement('div');
+            row.style.cssText = 'display:flex;align-items:flex-start;gap:0.5rem;padding:0.28rem 0;font-size:0.82rem;color:#e2e8f0;';
+            var dot = document.createElement('span');
+            var ic = colorFor(it.status === 'done' ? 'success' : (it.status || 'pending'));
+            dot.style.cssText = 'flex:0 0 auto;width:8px;height:8px;border-radius:50%;margin-top:0.45rem;background:' + ic.dot + ';';
+            var txt = document.createElement('span');
+            txt.textContent = it.label + (it.detail ? ' — ' + it.detail : '');
+            row.appendChild(dot); row.appendChild(txt);
+            initWrap.appendChild(row);
+        });
+        body.appendChild(initWrap);
+    }
+
+    // ── Live tiles: training job · gateway revision · flags ──
+    var tiles = document.createElement('div');
+    tiles.style.cssText = 'display:flex;flex-wrap:wrap;gap:0.5rem;margin-bottom:0.75rem;';
+    function tile(label, value, valColor) {
+        var t = document.createElement('div');
+        t.style.cssText = 'flex:1 1 160px;min-width:140px;border:1px solid rgba(148,163,184,0.2);border-radius:7px;padding:0.5rem 0.65rem;background:rgba(15,23,42,0.3);';
+        var l = document.createElement('div');
+        l.style.cssText = 'font-size:0.64rem;text-transform:uppercase;letter-spacing:0.06em;color:rgba(148,163,184,0.8);';
+        l.textContent = label;
+        var v = document.createElement('div');
+        v.style.cssText = 'font-size:0.82rem;color:' + (valColor || '#e2e8f0') + ';margin-top:0.2rem;word-break:break-all;';
+        v.textContent = value;
+        t.appendChild(l); t.appendChild(v);
+        return t;
+    }
+    var job = live.training_job || {};
+    var jobColor = job.state === 'JOB_STATE_SUCCEEDED' ? '#86efac'
+        : (job.state === 'JOB_STATE_FAILED' ? '#fca5a5' : '#fcd34d');
+    tiles.appendChild(tile('Training Job', (job.state || 'unknown') + (job.job_id ? ' · ' + job.job_id : ''), jobColor));
+    tiles.appendChild(tile('Gateway Revision', live.gateway_revision || '—', '#93c5fd'));
+    var flags = live.flags || {};
+    var onCount = Object.keys(flags).filter(function (k) { return flags[k]; }).length;
+    tiles.appendChild(tile('Wave-0 Flags', onCount + ' of ' + Object.keys(flags).length + ' ON', onCount === 0 ? '#86efac' : '#fcd34d'));
+    body.appendChild(tiles);
+
+    // ── 35-day strip ──
+    var stripLabel = document.createElement('div');
+    stripLabel.style.cssText = 'font-size:0.68rem;text-transform:uppercase;letter-spacing:0.08em;color:rgba(226,232,240,0.6);margin-bottom:0.35rem;';
+    stripLabel.textContent = cycle.length_days + '-Day Track';
+    body.appendChild(stripLabel);
+
+    var strip = document.createElement('div');
+    strip.style.cssText = 'display:flex;flex-wrap:wrap;gap:4px;';
+    var byNum = {};
+    days.forEach(function (d) { byNum[d.day_number] = d; });
+    for (var i = 1; i <= (cycle.length_days || 35); i++) {
+        var cell = document.createElement('div');
+        var d = byNum[i];
+        var cc = d ? colorFor(d.status) : statusColors.pending;
+        var isCurrent = i === cycle.current_day;
+        cell.style.cssText = 'width:24px;height:24px;border-radius:5px;display:flex;align-items:center;justify-content:center;' +
+            'font-size:0.62rem;color:' + (d ? cc.fg : 'rgba(148,163,184,0.6)') + ';' +
+            'background:' + (d ? cc.bg : 'rgba(148,163,184,0.08)') + ';' +
+            'border:1px solid ' + (isCurrent ? cc.dot : 'rgba(148,163,184,0.18)') + ';' +
+            (isCurrent ? 'box-shadow:0 0 0 1px ' + cc.dot + ';font-weight:700;' : '');
+        cell.textContent = String(i);
+        if (d && d.goal) cell.title = 'Day ' + i + ': ' + d.goal + ' [' + d.status + ']';
+        strip.appendChild(cell);
+    }
+    body.appendChild(strip);
+
+    section.appendChild(body);
+    return section;
 }
 
 // VTID-02031: Render "Action Required" panel — pinned at the top of the
@@ -35073,6 +36098,337 @@ async function triggerOrbMonitor(btn) {
     }
 }
 
+// ─── LiveKit Hourly Tests Panel (VTID-03025) ────────────────────────────
+// Slice 1c surface for the dry-run suite shipped in Slices 1a/1b. Polls
+// the gateway's /api/v1/voice-lab/tests/* read APIs and renders:
+//   - latest run header (passed / failed / errored, duration, age)
+//   - 13-case (or more) result table with status dot + tool_calls preview
+//   - recent-runs strip (last ~10 runs as colored dots)
+//   - Trigger Run button (kicks off SMOKE-LIVEKIT-TESTS.yml via GitHub Actions)
+function renderLivekitHourlyTestsPanel() {
+    var section = document.createElement('div');
+    section.style.cssText = 'margin-bottom:1.5rem;padding-top:1rem;border-top:2px solid var(--color-border);';
+
+    var titleRow = document.createElement('div');
+    titleRow.style.cssText = 'display:flex;align-items:center;gap:0.75rem;margin-bottom:0.75rem;';
+    titleRow.innerHTML = '<h3 style="margin:0;">LiveKit Hourly Tests</h3>' +
+        '<span style="font-size:0.75rem;color:var(--color-text-secondary);">' +
+        'Layer-A dry-run via gateway tool-routing · VTID-03025</span>';
+    section.appendChild(titleRow);
+
+    // Lazy-fetch latest run + cases + coverage on first render.
+    if (!state.livekitTests.fetched && !state.livekitTests.loading) {
+        state.livekitTests.loading = true;
+        Promise.all([
+            fetch('/api/v1/voice-lab/tests/runs?limit=10', { headers: buildContextHeaders() }).then(function (r) { return r.json(); }),
+            fetch('/api/v1/voice-lab/tests/cases', { headers: buildContextHeaders() }).then(function (r) { return r.json(); }),
+            fetch('/api/v1/voice-lab/tests/coverage', { headers: buildContextHeaders() }).then(function (r) { return r.json(); }),
+        ]).then(function (results) {
+            var runsResp = results[0];
+            var casesResp = results[1];
+            var covResp = results[2];
+            state.livekitTests.recentRuns = (runsResp && runsResp.runs) || [];
+            state.livekitTests.cases = (casesResp && casesResp.cases) || [];
+            state.livekitTests.coverage = (covResp && covResp.ok) ? covResp.coverage : null;
+            state.livekitTests.loading = false;
+            state.livekitTests.fetched = true;
+            // Chain-load the latest run's detail.
+            if (state.livekitTests.recentRuns.length > 0) {
+                var latestId = state.livekitTests.recentRuns[0].id;
+                fetch('/api/v1/voice-lab/tests/runs/' + latestId, { headers: buildContextHeaders() })
+                    .then(function (r) { return r.json(); })
+                    .then(function (detail) {
+                        if (detail && detail.ok) {
+                            state.livekitTests.latestRun = { run: detail.run, results: detail.results || [] };
+                        }
+                        renderApp();
+                    }).catch(function () { renderApp(); });
+            } else {
+                renderApp();
+            }
+        }).catch(function (err) {
+            state.livekitTests.loading = false;
+            state.livekitTests.error = err.message || String(err);
+            renderApp();
+        });
+    }
+
+    if (state.livekitTests.loading && !state.livekitTests.fetched) {
+        var loader = document.createElement('div');
+        loader.className = 'placeholder-content';
+        loader.textContent = 'Loading LiveKit hourly test grid...';
+        section.appendChild(loader);
+        return section;
+    }
+
+    if (state.livekitTests.error) {
+        var errDiv = document.createElement('div');
+        errDiv.className = 'placeholder-content';
+        errDiv.style.color = 'var(--color-text-secondary)';
+        errDiv.textContent = 'Could not load LiveKit hourly tests: ' + state.livekitTests.error;
+        section.appendChild(errDiv);
+        return section;
+    }
+
+    var card = document.createElement('div');
+    card.style.cssText = 'background:var(--color-bg-secondary);border:1px solid var(--color-border);border-radius:8px;padding:1rem;';
+
+    var recent = state.livekitTests.recentRuns || [];
+    var latest = state.livekitTests.latestRun;
+    var cases = state.livekitTests.cases || [];
+    var coverage = state.livekitTests.coverage;
+
+    // Parity coverage banner. Renders ONLY when the coverage endpoint
+    // returned a report — drops silently on first deploys before the
+    // tool-manifest read is wired into the prod image.
+    if (coverage) {
+        var covBanner = document.createElement('div');
+        var pct = coverage.coverage_pct || 0;
+        var bannerColor = pct >= 100 ? 'var(--color-bg-secondary)' :
+                          pct >= 80 ? '#3b2f0f' :
+                          '#3b1f1f';
+        var bannerTextColor = pct >= 100 ? 'var(--color-text-secondary)' :
+                              pct >= 80 ? '#fbbf24' :
+                              '#f87171';
+        covBanner.style.cssText = 'display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap;margin-bottom:0.85rem;padding:0.5rem 0.75rem;background:' + bannerColor +
+            ';border:1px solid var(--color-border);border-radius:6px;font-size:0.8rem;color:' + bannerTextColor + ';';
+
+        var covSummary = document.createElement('span');
+        covSummary.style.fontWeight = '600';
+        covSummary.textContent = 'Parity: ' + coverage.tested_total + ' / ' + coverage.live_total + ' live tools tested (' + pct + '%)';
+        covBanner.appendChild(covSummary);
+
+        if (coverage.manifest_generated_at) {
+            var manifestStamp = document.createElement('span');
+            manifestStamp.style.cssText = 'font-size:0.7rem;color:var(--color-text-secondary);';
+            manifestStamp.textContent = '· manifest ' + coverage.manifest_generated_at;
+            covBanner.appendChild(manifestStamp);
+        }
+
+        if (coverage.uncovered_total > 0) {
+            var missingDetails = document.createElement('details');
+            missingDetails.style.cssText = 'margin-left:auto;font-size:0.75rem;';
+            var summary = document.createElement('summary');
+            summary.style.cssText = 'cursor:pointer;color:' + bannerTextColor + ';';
+            summary.textContent = coverage.uncovered_total + ' missing';
+            missingDetails.appendChild(summary);
+
+            var missingList = document.createElement('div');
+            missingList.style.cssText = 'margin-top:0.5rem;padding:0.5rem;background:var(--color-bg-primary);border:1px solid var(--color-border);border-radius:4px;max-height:180px;overflow-y:auto;font-family:var(--font-mono);font-size:0.7rem;color:var(--color-text-secondary);min-width:280px;';
+            (coverage.uncovered || []).forEach(function (u) {
+                var row = document.createElement('div');
+                row.style.padding = '1px 0';
+                row.textContent = u.name + (u.surface ? '  (' + u.surface + ')' : '');
+                missingList.appendChild(row);
+            });
+            missingDetails.appendChild(missingList);
+            covBanner.appendChild(missingDetails);
+        }
+
+        card.appendChild(covBanner);
+    }
+
+    if (recent.length === 0) {
+        var noRuns = document.createElement('div');
+        noRuns.style.cssText = 'font-size:0.85rem;color:var(--color-text-secondary);margin-bottom:0.75rem;';
+        noRuns.innerHTML = 'No runs yet. Trigger the first one to populate the grid — ' +
+            cases.length + ' enabled case(s) registered.';
+        card.appendChild(noRuns);
+    } else {
+        // Summary header for the latest run.
+        var head = recent[0];
+        var headerRow = document.createElement('div');
+        headerRow.style.cssText = 'display:flex;align-items:center;gap:1rem;flex-wrap:wrap;margin-bottom:0.75rem;';
+
+        var statusDot = document.createElement('span');
+        var dotColor = head.errored > 0 ? '#ef4444' :
+                       head.failed > 0 ? '#f59e0b' :
+                       head.passed === head.total && head.total > 0 ? '#22c55e' : '#6b7280';
+        statusDot.style.cssText = 'width:12px;height:12px;border-radius:50%;display:inline-block;background:' + dotColor + ';';
+        headerRow.appendChild(statusDot);
+
+        var summary = document.createElement('span');
+        summary.style.cssText = 'font-size:0.95rem;font-weight:600;';
+        summary.textContent = head.passed + ' / ' + head.total + ' passed';
+        headerRow.appendChild(summary);
+
+        var subSummary = document.createElement('span');
+        subSummary.style.cssText = 'font-size:0.8rem;color:var(--color-text-secondary);';
+        var parts = [];
+        if (head.failed > 0) parts.push(head.failed + ' failed');
+        if (head.errored > 0) parts.push(head.errored + ' errored');
+        if (head.duration_ms) parts.push(Math.round(head.duration_ms / 1000) + 's');
+        if (parts.length > 0) subSummary.textContent = '(' + parts.join(' · ') + ')';
+        headerRow.appendChild(subSummary);
+
+        var ageSpan = document.createElement('span');
+        ageSpan.style.cssText = 'font-size:0.75rem;color:var(--color-text-secondary);margin-left:auto;';
+        ageSpan.textContent = 'Last run: ' + formatEventTimestamp(head.started_at) + ' (trigger=' + (head.trigger || 'manual') + ')';
+        headerRow.appendChild(ageSpan);
+
+        card.appendChild(headerRow);
+
+        // Recent-runs strip (last ~10 runs as colored dots, leftmost = most recent).
+        var stripRow = document.createElement('div');
+        stripRow.style.cssText = 'display:flex;align-items:center;gap:0.4rem;margin-bottom:0.9rem;padding-bottom:0.6rem;border-bottom:1px solid var(--color-border);';
+        var stripLabel = document.createElement('span');
+        stripLabel.style.cssText = 'font-size:0.7rem;color:var(--color-text-secondary);margin-right:0.4rem;';
+        stripLabel.textContent = 'Recent runs:';
+        stripRow.appendChild(stripLabel);
+        recent.forEach(function (run) {
+            var d = document.createElement('span');
+            var dc = run.errored > 0 ? '#ef4444' :
+                     run.failed > 0 ? '#f59e0b' :
+                     run.passed === run.total && run.total > 0 ? '#22c55e' : '#6b7280';
+            d.style.cssText = 'width:10px;height:10px;border-radius:50%;display:inline-block;background:' + dc + ';';
+            d.title = formatEventTimestamp(run.started_at) + ' — ' +
+                run.passed + '/' + run.total + ' passed' +
+                (run.failed > 0 ? ', ' + run.failed + ' failed' : '') +
+                (run.errored > 0 ? ', ' + run.errored + ' errored' : '');
+            stripRow.appendChild(d);
+        });
+        card.appendChild(stripRow);
+
+        // Per-case grid for the latest run.
+        if (latest && latest.results && latest.results.length > 0) {
+            var grid = document.createElement('div');
+            grid.style.cssText = 'display:grid;grid-template-columns:14px minmax(180px, 1.4fr) 1fr 70px 70px;column-gap:0.6rem;row-gap:0.4rem;font-size:0.78rem;';
+
+            // Header row.
+            ['', 'Case', 'Tool calls / failure reason', 'Latency', 'Retried'].forEach(function (h, idx) {
+                var th = document.createElement('div');
+                th.style.cssText = 'font-size:0.7rem;color:var(--color-text-secondary);text-transform:uppercase;letter-spacing:0.04em;padding-bottom:0.25rem;border-bottom:1px solid var(--color-border);';
+                if (idx >= 3) th.style.textAlign = 'right';
+                th.textContent = h;
+                grid.appendChild(th);
+            });
+
+            latest.results.forEach(function (r) {
+                var statusColor = r.status === 'passed' ? '#22c55e' :
+                                  r.status === 'failed' ? '#f59e0b' :
+                                  '#ef4444';
+                var dot = document.createElement('span');
+                dot.style.cssText = 'width:10px;height:10px;border-radius:50%;display:inline-block;background:' + statusColor + ';margin-top:5px;';
+                dot.title = r.status;
+                grid.appendChild(dot);
+
+                var key = document.createElement('div');
+                key.style.cssText = 'font-family:var(--font-mono);font-size:0.75rem;color:var(--color-text-primary);';
+                key.textContent = r.case_key;
+                grid.appendChild(key);
+
+                var detail = document.createElement('div');
+                detail.style.cssText = 'font-size:0.72rem;color:var(--color-text-secondary);overflow:hidden;text-overflow:ellipsis;';
+                var detailParts = [];
+                if (r.tool_calls && r.tool_calls.length > 0) {
+                    detailParts.push(r.tool_calls.map(function (tc) { return tc.name; }).join(', '));
+                }
+                if (r.failure_reasons && r.failure_reasons.length > 0) {
+                    detailParts.push('× ' + r.failure_reasons.join(', '));
+                }
+                if (r.error) {
+                    detailParts.push('⚠ ' + r.error.substring(0, 140));
+                }
+                if (detailParts.length === 0 && r.reply_text) {
+                    detailParts.push('"' + r.reply_text.substring(0, 80) + (r.reply_text.length > 80 ? '…' : '') + '"');
+                }
+                detail.textContent = detailParts.join(' · ') || '—';
+                detail.title = detailParts.join(' · ');
+                grid.appendChild(detail);
+
+                var lat = document.createElement('div');
+                lat.style.cssText = 'text-align:right;color:var(--color-text-secondary);';
+                lat.textContent = r.latency_ms != null ? r.latency_ms + 'ms' : '—';
+                grid.appendChild(lat);
+
+                var ret = document.createElement('div');
+                ret.style.cssText = 'text-align:right;color:var(--color-text-secondary);';
+                ret.textContent = r.retried ? 'yes' : 'no';
+                grid.appendChild(ret);
+            });
+
+            card.appendChild(grid);
+        } else if (latest === null && recent.length > 0) {
+            var loadingDetail = document.createElement('div');
+            loadingDetail.style.cssText = 'font-size:0.8rem;color:var(--color-text-secondary);margin-top:0.5rem;';
+            loadingDetail.textContent = 'Loading per-case detail for the latest run…';
+            card.appendChild(loadingDetail);
+        }
+    }
+
+    // Buttons row.
+    var btnRow = document.createElement('div');
+    btnRow.style.cssText = 'display:flex;gap:0.5rem;margin-top:1rem;';
+
+    var trigBtn = document.createElement('button');
+    trigBtn.className = 'task-spec-pipeline-btn task-spec-pipeline-btn-generate';
+    trigBtn.style.fontSize = '0.8rem';
+    trigBtn.textContent = state.livekitTests.triggering ? 'Triggering...' : 'Trigger Run';
+    trigBtn.disabled = !!state.livekitTests.triggering;
+    trigBtn.onclick = function () { triggerLivekitHourlyTests(trigBtn); };
+    btnRow.appendChild(trigBtn);
+
+    var refreshBtn = document.createElement('button');
+    refreshBtn.className = 'task-spec-pipeline-btn';
+    refreshBtn.style.cssText = 'font-size:0.8rem;background:var(--color-bg-primary);color:var(--color-text-secondary);border:1px solid var(--color-border);';
+    refreshBtn.textContent = 'Refresh';
+    refreshBtn.onclick = function () {
+        state.livekitTests.fetched = false;
+        state.livekitTests.loading = false;
+        state.livekitTests.latestRun = null;
+        renderApp();
+    };
+    btnRow.appendChild(refreshBtn);
+
+    var casesInfo = document.createElement('span');
+    casesInfo.style.cssText = 'font-size:0.72rem;color:var(--color-text-secondary);margin-left:auto;align-self:center;';
+    casesInfo.textContent = cases.length + ' case(s) enabled · hourly cron lands in Slice 1b';
+    btnRow.appendChild(casesInfo);
+
+    card.appendChild(btnRow);
+    section.appendChild(card);
+    return section;
+}
+
+async function triggerLivekitHourlyTests(btn) {
+    // Hit the same gateway endpoint the smoke workflow uses. We avoid
+    // dispatching the GH Actions workflow from the browser (no PAT) —
+    // the gateway call runs the suite directly, returns results inline,
+    // and persists rows the panel re-fetches.
+    state.livekitTests.triggering = true;
+    btn.disabled = true;
+    btn.textContent = 'Triggering...';
+    try {
+        var response = await fetch('/api/v1/voice-lab/tests/run', {
+            method: 'POST',
+            headers: buildContextHeaders({ 'Content-Type': 'application/json' }),
+            body: JSON.stringify({ trigger: 'admin' }),
+        });
+        var result = await response.json();
+        if (response.ok && result && result.ok) {
+            // Re-fetch so the panel shows the run we just kicked off.
+            state.livekitTests.triggering = false;
+            state.livekitTests.fetched = false;
+            state.livekitTests.loading = false;
+            state.livekitTests.latestRun = null;
+            renderApp();
+            showToast('LiveKit hourly tests triggered (run ' +
+                (result.summary && result.summary.run_id ? result.summary.run_id.substring(0, 8) : '?') +
+                ')', 'success');
+        } else {
+            state.livekitTests.triggering = false;
+            btn.disabled = false;
+            btn.textContent = 'Trigger Run';
+            showToast('LiveKit tests failed: ' + (result && result.error ? result.error : 'unknown'), 'error');
+        }
+    } catch (e) {
+        state.livekitTests.triggering = false;
+        btn.disabled = false;
+        btn.textContent = 'Trigger Run';
+        showToast('Network error: ' + (e.message || 'Unknown'), 'error');
+    }
+}
+
 /**
  * VTID-LIVEKIT-FOUNDATION: standalone LiveKit test page.
  *
@@ -35093,6 +36449,28 @@ async function triggerOrbMonitor(btn) {
  * "Disconnect" tears down the Room + microphone.
  */
 function renderLivekitTestView() {
+    // VTID-03029: Survive renderApp() re-mounts.
+    //
+    // _renderAppCore() does `root.innerHTML = ''` (line ~5234) before
+    // rebuilding the tree from every render*View(). Anything that touches
+    // global state and re-renders mid-session — showToast() at line 5136
+    // and 5141 is the loudest culprit, but every background poll / role
+    // switch / notification dispatch does it too — wipes this view's DOM
+    // off-screen. The original closures keep running (Room stays alive,
+    // mic stays published, audio keeps playing) but the listener's
+    // stateEl reference is now detached, so setState('connected') paints
+    // a node nobody sees. The freshly-rendered DOM shows the initial
+    // "disconnected" HTML, and `room` in the new closure is null — so a
+    // second Connect click spawns a parallel WebRTC session on top of the
+    // first.
+    //
+    // Fix: while a LiveKit session is alive, cache this view's container
+    // on `window` and return the same DOM node on subsequent renders.
+    // Original closures + listener refs + audio elements stay intact;
+    // on-screen state matches the live session truthfully.
+    if (window._lktSurviveContainer && window._lktSurviveContainer._lktActive) {
+        return window._lktSurviveContainer;
+    }
     var container = document.createElement('div');
     container.className = 'livekit-test-view';
     container.style.cssText = 'padding:24px;max-width:1100px;margin:0 auto;font-family:system-ui,-apple-system,sans-serif;color:#e5e7eb;';
@@ -35137,10 +36515,96 @@ function renderLivekitTestView() {
     statusPanel.style.cssText = 'display:grid;grid-template-columns:repeat(4,1fr);gap:8px;padding:12px;background:#0f172a;border-radius:8px;margin-bottom:16px;';
     statusPanel.innerHTML =
           '<div><span style="color:#94a3b8;font-size:11px;">CONNECTION</span><br><span class="lkt-state" style="color:#facc15;font-weight:bold;">disconnected</span></div>'
-        + '<div><span style="color:#94a3b8;font-size:11px;">ACTIVE PROVIDER</span><br><span class="lkt-active" style="color:#facc15;font-weight:bold;">…</span></div>'
+        // VTID-02997: the field shows what's being TESTED. In Test-session
+        // mode (default) it reads "TESTING: LiveKit pipeline" because that's
+        // what this page actually exercises; in Production-token mode it
+        // reverts to "PROD PROVIDER" + the live active-provider value
+        // (vertex/livekit). The label + value are both updated by
+        // applyMode() further down.
+        + '<div><span class="lkt-active-label" style="color:#94a3b8;font-size:11px;">TESTING</span><br><span class="lkt-active" style="color:#facc15;font-weight:bold;">…</span></div>'
         + '<div><span style="color:#94a3b8;font-size:11px;">MIC</span><br><span class="lkt-mic" style="color:#facc15;font-weight:bold;">off</span></div>'
         + '<div><span style="color:#94a3b8;font-size:11px;">AGENT SPEAKING</span><br><span class="lkt-speaking" style="color:#facc15;font-weight:bold;">no</span></div>';
     container.appendChild(statusPanel);
+
+    // VTID-03075: reconnect banner. Painted when the agent publishes a
+    // `client.alert.show` data message on the `orb_alert` topic — fired
+    // today by the silent-stall watchdog when VAD says user-speaking but
+    // no transcript arrives within 3s. Mirrors Vertex's connection_alert
+    // path; without this the user sees a frozen UI for minutes while STT
+    // silently buffers.
+    var reconnectBanner = document.createElement('div');
+    reconnectBanner.className = 'lkt-reconnect-banner';
+    reconnectBanner.style.cssText = 'display:none;padding:10px 14px;background:#7c2d12;color:#fff;border-radius:6px;margin-bottom:12px;font-size:13px;font-weight:bold;border:1px solid #f97316;';
+    reconnectBanner.textContent = '⏳ Hold on a second, reconnecting…';
+    container.appendChild(reconnectBanner);
+
+    // VTID-02996: live mic level meter + audio-autoplay-block recovery +
+    // mic-permission banner. The page used to show "MIC: on" the moment
+    // setMicrophoneEnabled resolved, even if the OS-level permission was
+    // denied or the audio track was producing silence — operators had no
+    // way to know whether their speech was being captured. The meter polls
+    // a Web Audio analyser hooked to the local mic track via
+    // attachLocalMicMeter() (see below). The audio-gate banner appears
+    // when Chrome's autoplay policy blocks the agent's remote audio after
+    // the Connect gesture's "user-activation" expires.
+    var diagBar = document.createElement('div');
+    diagBar.className = 'lkt-diag-bar';
+    diagBar.style.cssText = 'display:flex;flex-direction:column;gap:8px;margin-bottom:16px;';
+    diagBar.innerHTML = ''
+        + '<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:#0b1220;border:1px solid #1e293b;border-radius:8px;">'
+        +   '<span style="color:#94a3b8;font-size:11px;letter-spacing:0.05em;min-width:90px;">MIC LEVEL</span>'
+        +   '<div style="flex:1;height:10px;background:#0f172a;border:1px solid #1e293b;border-radius:5px;overflow:hidden;">'
+        +     '<div class="lkt-mic-meter-fill" style="height:100%;width:0%;background:#475569;transition:width 60ms linear;"></div>'
+        +   '</div>'
+        +   '<span class="lkt-mic-meter-label" style="color:#94a3b8;font-size:12px;font-family:monospace;min-width:120px;text-align:right;">idle</span>'
+        + '</div>'
+        // VTID-02997: this button is now ALWAYS visible while a session is
+        // live (not just on autoplay-rejection) — Chrome's play() promise
+        // doesn't always reject when audio is silently muted, so a passive
+        // banner wasn't enough. The button stays visible during the whole
+        // session as a manual fallback the operator can mash if they hear
+        // nothing. Clicking it forces .play() on every attached audio
+        // element + resumes the AudioContext.
+        + '<div class="lkt-audio-gate" style="display:none;align-items:center;gap:12px;padding:12px 14px;background:#3a2a12;border-left:3px solid #facc15;border-radius:6px;">'
+        +   '<span style="font-size:13px;color:#fef9c3;flex:1;">If you do not hear the agent, click to enable audio playback.</span>'
+        +   '<button class="lkt-audio-gate-btn" style="padding:8px 16px;background:#facc15;color:#0f172a;border:none;border-radius:6px;font-weight:bold;cursor:pointer;">Enable audio</button>'
+        + '</div>'
+        + '<div class="lkt-mic-permission" style="display:none;padding:10px 14px;background:#3a1212;border-left:3px solid #ef4444;border-radius:6px;font-size:13px;color:#fecaca;">'
+        +   '<strong>Microphone permission denied.</strong> Allow microphone access in your browser address bar, then disconnect and reconnect.'
+        + '</div>';
+    container.appendChild(diagBar);
+
+    // VTID-02995: explicit MODE block. Replaces the old <select> that defaulted
+    // to "Production token (active provider must be livekit)" — which made the
+    // test bench feel like it required production to be flipped to LiveKit.
+    // Two radio-style buttons; default = test-session (the always-works path
+    // while prod active-provider is Vertex). The hidden input.lkt-mode placed
+    // inside the controls row mirrors the chosen mode for the existing
+    // mintToken() / runDiagnostics() value-read contract.
+    var modeBlock = document.createElement('div');
+    modeBlock.className = 'lkt-mode-block';
+    modeBlock.style.cssText = 'display:flex;flex-direction:column;gap:8px;margin-bottom:16px;padding:12px;background:#0b1220;border:1px solid #1e293b;border-radius:8px;';
+    modeBlock.innerHTML = ''
+        + '<div style="display:flex;align-items:center;gap:10px;">'
+        +   '<span style="color:#94a3b8;font-size:11px;letter-spacing:0.05em;">MODE</span>'
+        +   '<span class="lkt-mode-route" style="color:#60a5fa;font-family:monospace;font-size:11px;"></span>'
+        + '</div>'
+        + '<div class="lkt-mode-buttons" style="display:flex;gap:8px;flex-wrap:wrap;">'
+        +   '<button class="lkt-mode-btn" data-mode="test-session" '
+        +     'style="flex:1;min-width:240px;padding:10px 12px;background:#0f172a;color:#e5e7eb;border:1px solid #334155;border-radius:6px;cursor:pointer;text-align:left;">'
+        +     '<div class="lkt-mode-btn-title" style="font-weight:bold;font-size:13px;">Test-session mode (default)</div>'
+        +     '<div style="font-size:11px;color:#94a3b8;margin-top:2px;">Bypasses production active-provider gate. Use this to test LiveKit while prod runs Vertex.</div>'
+        +   '</button>'
+        +   '<button class="lkt-mode-btn" data-mode="active" '
+        +     'style="flex:1;min-width:240px;padding:10px 12px;background:#0f172a;color:#e5e7eb;border:1px solid #334155;border-radius:6px;cursor:pointer;text-align:left;">'
+        +     '<div class="lkt-mode-btn-title" style="font-weight:bold;font-size:13px;">Production-token mode</div>'
+        +     '<div style="font-size:11px;color:#94a3b8;margin-top:2px;">Uses the real production gate. Refuses unless active provider is livekit.</div>'
+        +   '</button>'
+        + '</div>'
+        + '<div class="lkt-mode-refusal" style="display:none;padding:8px 10px;background:#3a1212;border-left:3px solid #ef4444;font-size:12px;color:#fecaca;border-radius:4px;">'
+        +   '<strong>Production LiveKit is disabled.</strong> Use Test-session mode or enable LiveKit canary in Voice Lab.'
+        + '</div>';
+    container.appendChild(modeBlock);
 
     var controls = document.createElement('div');
     controls.style.cssText = 'display:flex;gap:8px;margin-bottom:16px;align-items:center;flex-wrap:wrap;';
@@ -35180,10 +36644,7 @@ function renderLivekitTestView() {
           '<button class="lkt-connect" style="padding:10px 20px;background:#22c55e;color:#0f172a;border:none;border-radius:6px;font-weight:bold;cursor:pointer;">▶ Connect &amp; Talk</button>'
         + '<button class="lkt-disconnect" style="padding:10px 20px;background:#475569;color:#e5e7eb;border:none;border-radius:6px;cursor:pointer;" disabled>■ Disconnect</button>'
         + '<button class="lkt-diagnose" style="padding:10px 20px;background:#7c3aed;color:#fff;border:none;border-radius:6px;font-weight:bold;cursor:pointer;">⚙ Run Diagnostics</button>'
-        + '<select class="lkt-mode" style="padding:8px;background:#0f172a;color:#e5e7eb;border:1px solid #334155;border-radius:4px;">'
-        +   '<option value="active">Production token (active provider must be livekit)</option>'
-        +   '<option value="test-session">Test-session token (any active provider)</option>'
-        + '</select>'
+        + '<input type="hidden" class="lkt-mode" value="test-session" />'
         + langSelectHtml
         + '<input class="lkt-agent" placeholder="agent_id" value="orb-agent" style="padding:8px;background:#0f172a;color:#e5e7eb;border:1px solid #334155;border-radius:4px;width:160px;" />'
         + '<a href="/command-hub/voice/orb-live/" style="color:#60a5fa;font-size:12px;align-self:center;">→ Orb LIVE</a>';
@@ -35294,6 +36755,70 @@ function renderLivekitTestView() {
     var disconnectBtn = container.querySelector('.lkt-disconnect');
     var modeSel = container.querySelector('.lkt-mode');
     var agentInput = container.querySelector('.lkt-agent');
+    // VTID-02995: wire the explicit MODE block. Buttons toggle the hidden
+    // input.lkt-mode that mintToken()/runDiagnostics() read. The route hint +
+    // refusal banner update reactively, and the refusal banner uses the
+    // active-provider state loaded below (default unknown = treat as Vertex
+    // so the banner shows for Production-mode until proven otherwise).
+    var modeButtons = container.querySelectorAll('.lkt-mode-btn');
+    var modeRouteEl = container.querySelector('.lkt-mode-route');
+    var modeRefusalEl = container.querySelector('.lkt-mode-refusal');
+    // Module-scoped active-provider value (filled by the fetch below).
+    // Treated as 'vertex' until loaded so Production mode shows refusal
+    // by default — better than misleading the operator with a green path.
+    var lktActiveProvider = 'vertex';
+    function applyMode(mode) {
+        modeSel.value = mode;
+        for (var i = 0; i < modeButtons.length; i++) {
+            var b = modeButtons[i];
+            var picked = b.getAttribute('data-mode') === mode;
+            b.style.background = picked ? '#1e293b' : '#0f172a';
+            b.style.borderColor = picked ? (mode === 'test-session' ? '#22c55e' : '#facc15') : '#334155';
+            var titleEl = b.querySelector('.lkt-mode-btn-title');
+            if (titleEl) {
+                titleEl.textContent = (picked ? '● ' : '○ ') + (
+                    b.getAttribute('data-mode') === 'test-session'
+                        ? 'Test-session mode (default)'
+                        : 'Production-token mode'
+                );
+            }
+        }
+        if (modeRouteEl) {
+            modeRouteEl.textContent = mode === 'test-session'
+                ? 'POST /api/v1/agents/:id/voice-config/test-session'
+                : 'POST /api/v1/orb/livekit/token';
+        }
+        if (modeRefusalEl) {
+            var refuse = (mode === 'active') && (lktActiveProvider !== 'livekit');
+            modeRefusalEl.style.display = refuse ? 'block' : 'none';
+        }
+        // VTID-02997: the "what is this page testing?" label was the single
+        // most confusing thing about the test bench — operators saw
+        // "vertex" and thought the test was running on Vertex. Now the
+        // label says what's actually being tested under each mode.
+        var activeLabelEl = container.querySelector('.lkt-active-label');
+        if (activeLabelEl && activeEl) {
+            if (mode === 'test-session') {
+                activeLabelEl.textContent = 'TESTING';
+                activeEl.textContent = 'LiveKit pipeline';
+                activeEl.style.color = '#22c55e';
+            } else {
+                activeLabelEl.textContent = 'PROD PROVIDER';
+                // activeEl content/colour is owned by the /orb/active-provider
+                // fetch below; only override here if it hasn't loaded yet.
+                if (!activeEl.textContent || activeEl.textContent === 'LiveKit pipeline') {
+                    activeEl.textContent = lktActiveProvider;
+                    activeEl.style.color = lktActiveProvider === 'livekit' ? '#22c55e' : '#facc15';
+                }
+            }
+        }
+    }
+    for (var mi = 0; mi < modeButtons.length; mi++) {
+        modeButtons[mi].addEventListener('click', function (e) {
+            applyMode(e.currentTarget.getAttribute('data-mode'));
+        });
+    }
+    applyMode('test-session');
     var transcriptEl = container.querySelector('.lkt-transcript');
     var eventsEl = container.querySelector('.lkt-events');
 
@@ -35853,6 +37378,161 @@ function renderLivekitTestView() {
     function setState(s) { stateEl.textContent = s; stateEl.style.color = s === 'connected' ? '#22c55e' : s === 'connecting' ? '#facc15' : '#94a3b8'; }
     function setMic(on) { micEl.textContent = on ? 'on' : 'off'; micEl.style.color = on ? '#22c55e' : '#94a3b8'; }
     function setSpeaking(on) { speakingEl.textContent = on ? 'yes' : 'no'; speakingEl.style.color = on ? '#22c55e' : '#94a3b8'; }
+
+    // VTID-02996: the page is otherwise a black box — no way to see whether
+    // the mic is actually capturing, no way to recover when the browser
+    // silently blocks autoplay of the agent's audio, no way to see what the
+    // STT thinks you said. The helpers below address each of those.
+    var liveAudioCtx = null;
+    var liveMicAnalyser = null;
+    var liveMicAnimId = null;
+    var liveRemoteAnalysers = [];
+
+    function ensureAudioCtx() {
+        if (liveAudioCtx) {
+            // Some browsers re-suspend the context (e.g. on tab visibility); kick it.
+            if (liveAudioCtx.state === 'suspended' && typeof liveAudioCtx.resume === 'function') {
+                liveAudioCtx.resume().catch(function () {});
+            }
+            return liveAudioCtx;
+        }
+        try {
+            var Ctor = window.AudioContext || window.webkitAudioContext;
+            if (!Ctor) return null;
+            liveAudioCtx = new Ctor();
+            if (liveAudioCtx.state === 'suspended' && typeof liveAudioCtx.resume === 'function') {
+                liveAudioCtx.resume().catch(function () {});
+            }
+            return liveAudioCtx;
+        } catch (e) { return null; }
+    }
+
+    function attachLocalMicMeter(track) {
+        var ctx = ensureAudioCtx();
+        if (!ctx || !track) return;
+        try {
+            var stream = track.mediaStream
+                || (track.mediaStreamTrack ? new MediaStream([track.mediaStreamTrack]) : null);
+            if (!stream) return;
+            var src = ctx.createMediaStreamSource(stream);
+            liveMicAnalyser = ctx.createAnalyser();
+            liveMicAnalyser.fftSize = 1024;
+            src.connect(liveMicAnalyser);
+            var data = new Uint8Array(liveMicAnalyser.frequencyBinCount);
+            var meter = document.querySelector('.lkt-mic-meter-fill');
+            var label = document.querySelector('.lkt-mic-meter-label');
+            function loop() {
+                if (!liveMicAnalyser) return;
+                liveMicAnalyser.getByteTimeDomainData(data);
+                // RMS-ish level (Uint8 centered on 128).
+                var sum = 0;
+                for (var i = 0; i < data.length; i++) { var v = (data[i] - 128) / 128; sum += v * v; }
+                var rms = Math.sqrt(sum / data.length);
+                var pct = Math.min(100, Math.max(0, Math.round(rms * 400)));
+                if (meter) {
+                    meter.style.width = pct + '%';
+                    meter.style.background = pct > 40 ? '#22c55e' : pct > 10 ? '#facc15' : '#475569';
+                }
+                if (label) {
+                    label.textContent = pct > 5 ? ('capturing ' + pct + '%') : 'silent';
+                    label.style.color = pct > 5 ? '#22c55e' : '#94a3b8';
+                }
+                liveMicAnimId = requestAnimationFrame(loop);
+            }
+            loop();
+            log('info', 'mic meter attached');
+        } catch (e) {
+            log('warn', 'mic meter attach failed', { err: String(e) });
+        }
+    }
+
+    function attachRemoteAudioMeter(track) {
+        var ctx = ensureAudioCtx();
+        if (!ctx || !track) return;
+        try {
+            var stream = track.mediaStream
+                || (track.mediaStreamTrack ? new MediaStream([track.mediaStreamTrack]) : null);
+            if (!stream) return;
+            var src = ctx.createMediaStreamSource(stream);
+            var analyser = ctx.createAnalyser();
+            analyser.fftSize = 512;
+            src.connect(analyser);
+            liveRemoteAnalysers.push(analyser);
+            var data = new Uint8Array(analyser.frequencyBinCount);
+            (function tick() {
+                if (liveRemoteAnalysers.indexOf(analyser) === -1) return;
+                analyser.getByteTimeDomainData(data);
+                var sum = 0;
+                for (var i = 0; i < data.length; i++) { var v = (data[i] - 128) / 128; sum += v * v; }
+                var rms = Math.sqrt(sum / data.length);
+                // 0.02 threshold ≈ very quiet speech; below that count as silent.
+                setSpeaking(rms > 0.02);
+                requestAnimationFrame(tick);
+            })();
+        } catch (e) {
+            log('warn', 'remote audio meter attach failed', { err: String(e) });
+        }
+    }
+
+    function stopAudioMeters() {
+        if (liveMicAnimId) {
+            try { cancelAnimationFrame(liveMicAnimId); } catch (e) {}
+            liveMicAnimId = null;
+        }
+        liveMicAnalyser = null;
+        liveRemoteAnalysers = [];
+        var meter = document.querySelector('.lkt-mic-meter-fill');
+        if (meter) meter.style.width = '0%';
+        var label = document.querySelector('.lkt-mic-meter-label');
+        if (label) { label.textContent = 'idle'; label.style.color = '#94a3b8'; }
+    }
+
+    function showAudioGateBanner(onClick) {
+        var banner = container.querySelector('.lkt-audio-gate');
+        if (!banner) return;
+        banner.style.display = 'flex';
+        var btn = banner.querySelector('.lkt-audio-gate-btn');
+        if (btn) {
+            // VTID-02997: keep the banner visible after the click — Chrome may
+            // need multiple .play() attempts and the user shouldn't have to
+            // reconnect to get the button back. The button just re-triggers
+            // playback whenever they hit it.
+            btn.onclick = function () {
+                if (onClick) onClick();
+            };
+        }
+    }
+    function hideAudioGateBanner() {
+        var banner = container.querySelector('.lkt-audio-gate');
+        if (banner) banner.style.display = 'none';
+    }
+    // VTID-02997: single re-play function used by both the manual button
+    // and the autoplay-rejection catch path. Resumes AudioContext + calls
+    // .play() on every attached audio element.
+    function forceReplayAllAudio() {
+        var ctx = ensureAudioCtx();
+        if (ctx && ctx.state === 'suspended' && typeof ctx.resume === 'function') {
+            ctx.resume().catch(function () {});
+        }
+        attachedAudio.forEach(function (a) {
+            try {
+                var pp = a.play();
+                if (pp && typeof pp.then === 'function') {
+                    pp.catch(function (err) { log('warn', 'replay still blocked', { err: String(err && err.message || err) }); });
+                }
+            } catch (e) {}
+        });
+        log('info', 'audio re-play forced (' + attachedAudio.length + ' element(s))');
+    }
+
+    function showMicPermissionBanner() {
+        var banner = container.querySelector('.lkt-mic-permission');
+        if (banner) banner.style.display = 'block';
+    }
+    function hideMicPermissionBanner() {
+        var banner = container.querySelector('.lkt-mic-permission');
+        if (banner) banner.style.display = 'none';
+    }
     function appendTranscript(who, text) {
         if (transcriptEl.textContent === '— no transcript yet —') transcriptEl.textContent = '';
         var line = document.createElement('div');
@@ -35890,14 +37570,26 @@ function renderLivekitTestView() {
     }
 
     // Load active provider on mount.
+    // VTID-02995: also feed the mode block's refusal banner. When the user
+    // picks Production-token mode, the banner appears unless active=livekit.
     fetch((window.GATEWAY_URL || '') + '/api/v1/orb/active-provider')
         .then(function (r) { return r.json(); })
         .then(function (body) {
             var p = body && body.active_provider || 'unknown';
-            activeEl.textContent = p;
-            activeEl.style.color = p === 'livekit' ? '#22c55e' : '#facc15';
+            lktActiveProvider = (p === 'livekit' || p === 'vertex') ? p : 'vertex';
+            // VTID-02997: applyMode owns the activeEl text/colour now — it
+            // writes "LiveKit pipeline" (green) for Test-session and the
+            // raw provider value for Production-token. Re-running it here
+            // refreshes the refusal banner with the new active-provider
+            // value too.
+            applyMode(modeSel.value || 'test-session');
         })
-        .catch(function () { activeEl.textContent = '(unreachable)'; activeEl.style.color = '#ef4444'; });
+        .catch(function () {
+            // Couldn't reach the gate — keep refusal banner visible for Production
+            // mode (we can't prove LiveKit is active). lktActiveProvider stays
+            // at its 'vertex' default and applyMode renders accordingly.
+            applyMode(modeSel.value || 'test-session');
+        });
 
     function loadLivekitClient() {
         // Load the UMD build from same-origin static assets (CSP-friendly).
@@ -35967,7 +37659,8 @@ function renderLivekitTestView() {
         });
         var json = await res.json();
         if (res.status === 503) {
-            throw new Error('provider_standby — active is "' + (json.active_provider || 'vertex') + '". Flip in Voice Lab first, OR switch the dropdown above to "Test-session token".');
+            // VTID-02995: align the message with the new MODE block labels.
+            throw new Error('Production LiveKit refused (active="' + (json.active_provider || 'vertex') + '"). Switch to Test-session mode (default) or enable LiveKit canary in Voice Lab.');
         }
         if (!res.ok) {
             throw new Error('token mint failed (' + res.status + '): ' + (json.error || JSON.stringify(json)));
@@ -35980,46 +37673,260 @@ function renderLivekitTestView() {
     }
 
     async function connect() {
+        // VTID-02997: PRIME AUDIO inside the click handler's user-gesture
+        // window. Chrome treats the page as "blocked from autoplaying audio"
+        // until a play() succeeds during user activation. The agent's audio
+        // track arrives 1-2s after the click, by which time the gesture is
+        // gone and the SDK's implicit .play() can resolve without actually
+        // producing sound — that's why PR-F's audio-gate banner never
+        // appeared either (no rejection to catch). Play a 1-frame silent
+        // buffer right here, synchronously after the click, to unlock audio
+        // for the rest of the page lifetime. Same trick LiveKit's own UI
+        // examples use.
+        try {
+            var ctx = ensureAudioCtx();
+            if (ctx && typeof ctx.createBuffer === 'function') {
+                var buf = ctx.createBuffer(1, 1, 22050);
+                var src = ctx.createBufferSource();
+                src.buffer = buf;
+                src.connect(ctx.destination);
+                if (typeof src.start === 'function') src.start(0);
+                else if (typeof src.noteOn === 'function') src.noteOn(0);
+            }
+        } catch (audioPrimeErr) {
+            log('warn', 'audio prime failed (continuing)', { err: String(audioPrimeErr) });
+        }
+
+        // VTID-02995: pre-flight refusal — if Production mode is selected
+        // but active provider isn't livekit, fail loudly BEFORE the round-trip
+        // and surface the refusal banner. The 503 path in mintToken() is the
+        // fallback for races (active flipped between page-load and click).
+        if (modeSel.value === 'active' && lktActiveProvider !== 'livekit') {
+            if (modeRefusalEl) modeRefusalEl.style.display = 'block';
+            setState('disconnected');
+            log('error', 'Production LiveKit is disabled (active=' + lktActiveProvider + '). Switch to Test-session mode or enable LiveKit canary in Voice Lab.');
+            return;
+        }
+        // Parallel-connect guard: if a Room already exists, refuse to spawn
+        // a second one. Without this guard, a stale Connect button (e.g.
+        // because room.connect() rejected even though the room is alive,
+        // see the catch block below) lets the user start a second
+        // WebRTC session on top of the first — both rooms publish the mic
+        // and play remote audio, producing two overlapping conversations.
+        if (room) {
+            log('warn', 'connect ignored — a session is already active. Click Disconnect first.');
+            return;
+        }
         connectBtn.disabled = true;
         setState('connecting');
         try {
-            var LivekitClient = await loadLivekitClient();
-            log('event', 'livekit-client UMD loaded');
-            var minted = await mintToken();
+            // VTID-03018: consume the prewarmed client+token promises kicked
+            // off when the view first rendered. Falls back to a fresh mint
+            // when prewarm wasn't possible (auth missing at render, settings
+            // changed, prewarm errored, etc.).
+            var pre = container._prewarm;
+            var clientPromise = pre && pre.getClient && pre.getClient();
+            var tokenPromise = pre && pre.getToken && pre.getToken();
+            if (!clientPromise) {
+                clientPromise = loadLivekitClient();
+            }
+            if (!tokenPromise) {
+                if (pre && pre.kick) pre.kick();
+                tokenPromise = (pre && pre.getToken && pre.getToken()) || mintToken();
+            }
+            var LivekitClient = await clientPromise;
+            log('event', 'livekit-client UMD loaded' + (pre && pre.getClient && pre.getClient() === clientPromise ? ' (prewarmed)' : ''));
+            var minted;
+            try {
+                minted = await tokenPromise;
+                log('info', 'token minted', { url: minted.url, room: minted.room });
+            } catch (e) {
+                // Prewarmed token errored at use — retry once with a fresh mint.
+                log('warn', 'prewarmed token failed at use, re-minting', { err: String(e && e.message || e) });
+                minted = await mintToken();
+                log('info', 'token minted (fresh after prewarm fail)', { url: minted.url, room: minted.room });
+            }
+            // Consume the prewarmed token and arm a fresh one for the next
+            // disconnect/reconnect cycle.
+            if (pre && pre.consumeAndRearm) pre.consumeAndRearm();
             room = new LivekitClient.Room({ adaptiveStream: true, dynacast: true });
+            // VTID-03029: mark this container as having a live session so
+            // subsequent renderApp() re-mounts (showToast, polls, etc.)
+            // return this DOM node instead of building a fresh one.
+            container._lktActive = true;
+            window._lktSurviveContainer = container;
 
             room.on(LivekitClient.RoomEvent.ConnectionStateChanged, function (s) {
                 log('event', 'ConnectionStateChanged', { state: s });
-                if (s === LivekitClient.ConnectionState.Connected) {
+                // String compare (not the enum) so the listener stays correct
+                // even if a future bundle update relocates ConnectionState.
+                // Bundle values verified: 'connected' / 'connecting' /
+                // 'disconnected' / 'reconnecting' / 'signalReconnecting'.
+                if (s === 'connected') {
                     setState('connected');
                     disconnectBtn.disabled = false;
-                } else if (s === LivekitClient.ConnectionState.Disconnected) {
+                } else if (s === 'disconnected') {
                     setState('disconnected');
                     setMic(false);
                     setSpeaking(false);
                     connectBtn.disabled = false;
                     disconnectBtn.disabled = true;
+                    // Server-initiated tear-down: drop attached audio and
+                    // null the room reference so the parallel-connect guard
+                    // releases for the next Connect click.
+                    attachedAudio.forEach(function (el) { try { el.remove(); } catch (_) {} });
+                    attachedAudio = [];
+                    room = null;
+                    // VTID-03029: session is gone; release the survival
+                    // cache so the next renderApp() rebuilds the view fresh.
+                    container._lktActive = false;
+                    if (window._lktSurviveContainer === container) window._lktSurviveContainer = null;
+                } else if (s === 'reconnecting' || s === 'signalReconnecting') {
+                    setState(s);
                 }
             });
 
             room.on(LivekitClient.RoomEvent.TrackSubscribed, function (track, _pub, participant) {
                 log('event', 'TrackSubscribed', { kind: track.kind, participant: participant.identity });
                 if (track.kind === LivekitClient.Track.Kind.Audio) {
+                    // VTID-02996: the previous handler attached the audio element
+                    // with display:none and never called .play() — Chrome's autoplay
+                    // policy silently rejected playback after the Connect gesture
+                    // expired. Now: explicitly play, surface the failure as a big
+                    // "🔊 Click to hear agent" button instead of dead silence, and
+                    // attach a Web Audio analyser so the speaking indicator
+                    // reflects actual remote audio energy (not just track lifecycle
+                    // events that fire once and never refresh).
                     var el = track.attach();
                     el.style.display = 'none';
+                    el.autoplay = true;
                     document.body.appendChild(el);
                     attachedAudio.push(el);
                     track.on('started', function () { setSpeaking(true); });
                     track.on('ended', function () { setSpeaking(false); });
+                    try {
+                        var p = el.play();
+                        if (p && typeof p.then === 'function') {
+                            p.catch(function (err) {
+                                log('warn', 'audio autoplay blocked — click ENABLE AUDIO', { err: String(err && err.message || err) });
+                            });
+                        }
+                    } catch (pErr) {
+                        log('warn', 'audio play() threw', { err: String(pErr) });
+                    }
+                    // VTID-02997: always show the manual re-play button once an
+                    // audio track is attached. Chrome's .play() promise doesn't
+                    // reliably reject when the audio is silently muted, so a
+                    // passive autoplay-catch-only banner was missing the case
+                    // that actually broke the test bench. The button stays
+                    // visible until the user disconnects.
+                    showAudioGateBanner(forceReplayAllAudio);
+                    attachRemoteAudioMeter(track);
                 }
             });
+
+            // VTID-02996: live STT/TTS transcripts straight from LiveKit. Both
+            // sides (agent TTS + user STT, when the agent is configured for
+            // server-side STT) come through RoomEvent.TranscriptionReceived as
+            // arrays of { text, final, participantIdentity }. Surface them in
+            // the TRANSCRIPT pane so the operator can see what the agent
+            // actually heard vs what they spoke — the single biggest reason
+            // this page felt "dead" before this PR.
+            if (LivekitClient.RoomEvent.TranscriptionReceived) {
+                room.on(LivekitClient.RoomEvent.TranscriptionReceived, function (segments, participant /*, publication */) {
+                    if (!segments || !segments.length) return;
+                    var who = (participant && participant.identity && participant.identity.indexOf('agent-') === 0) ? 'agent' : 'user';
+                    for (var ti = 0; ti < segments.length; ti++) {
+                        var seg = segments[ti];
+                        if (!seg || !seg.text) continue;
+                        // Only show final segments to avoid streaming-flicker;
+                        // interim updates are debug-only.
+                        if (seg.final === false) {
+                            log('event', 'transcript (interim)', { who: who, text: seg.text });
+                        } else {
+                            appendTranscript(who, String(seg.text));
+                        }
+                    }
+                });
+            }
+
+            // VTID-03075: reconnect chime — C5 → E5 ascending two-tone, 400ms
+            // total. Same notes / duration / envelope as Vertex's INSTANT-FEEDBACK
+            // PCM chime (orb-live.ts:1342-1396) so the audio cue feels identical
+            // across providers. Generated on demand via WebAudio API — no MP3
+            // asset, no server PCM publishing.
+            function playReconnectChime() {
+                try {
+                    var AC = window.AudioContext || window.webkitAudioContext;
+                    if (!AC) return;
+                    if (!window._lktChimeCtx) window._lktChimeCtx = new AC();
+                    var ctx = window._lktChimeCtx;
+                    if (ctx.state === 'suspended') { try { ctx.resume(); } catch (_) {} }
+                    var now = ctx.currentTime;
+                    // Tone 1: C5 (523.25Hz) 0-150ms, fade in/out.
+                    var o1 = ctx.createOscillator();
+                    var g1 = ctx.createGain();
+                    o1.frequency.value = 523.25;
+                    g1.gain.setValueAtTime(0, now);
+                    g1.gain.linearRampToValueAtTime(0.18, now + 0.02);
+                    g1.gain.linearRampToValueAtTime(0.18, now + 0.08);
+                    g1.gain.linearRampToValueAtTime(0, now + 0.15);
+                    o1.connect(g1).connect(ctx.destination);
+                    o1.start(now); o1.stop(now + 0.16);
+                    // Tone 2: E5 (659.25Hz) 150-400ms, fade in/out.
+                    var o2 = ctx.createOscillator();
+                    var g2 = ctx.createGain();
+                    o2.frequency.value = 659.25;
+                    g2.gain.setValueAtTime(0, now + 0.15);
+                    g2.gain.linearRampToValueAtTime(0.18, now + 0.17);
+                    g2.gain.linearRampToValueAtTime(0.18, now + 0.25);
+                    g2.gain.linearRampToValueAtTime(0, now + 0.40);
+                    o2.connect(g2).connect(ctx.destination);
+                    o2.start(now + 0.15); o2.stop(now + 0.41);
+                } catch (e) { log('warn', 'playReconnectChime failed', { error: String(e) }); }
+            }
+
+            // VTID-03075: banner show/hide. Auto-hides after 6s OR when the
+            // next transcript arrives (sign of recovery).
+            var _bannerHideTimer = null;
+            function showReconnectBanner(reason, detail) {
+                try {
+                    if (reconnectBanner) {
+                        reconnectBanner.textContent = '⏳ Hold on a second, reconnecting…' + (detail ? ' (' + detail + ')' : '');
+                        reconnectBanner.style.display = 'block';
+                    }
+                    playReconnectChime();
+                    if (_bannerHideTimer) clearTimeout(_bannerHideTimer);
+                    _bannerHideTimer = setTimeout(function () {
+                        if (reconnectBanner) reconnectBanner.style.display = 'none';
+                        _bannerHideTimer = null;
+                    }, 6000);
+                } catch (e) { log('warn', 'showReconnectBanner failed', { error: String(e) }); }
+            }
+            function hideReconnectBanner() {
+                if (reconnectBanner) reconnectBanner.style.display = 'none';
+                if (_bannerHideTimer) { clearTimeout(_bannerHideTimer); _bannerHideTimer = null; }
+            }
 
             room.on(LivekitClient.RoomEvent.DataReceived, function (payload, _participant, _kind, topic) {
                 try {
                     var msg = JSON.parse(new TextDecoder().decode(payload));
                     log('event', 'DataReceived', msg);
-                    if (msg.type === 'transcript') appendTranscript(msg.is_user ? 'user' : 'agent', String(msg.text || ''));
+                    if (msg.type === 'transcript') {
+                        appendTranscript(msg.is_user ? 'user' : 'agent', String(msg.text || ''));
+                        // VTID-03075: any transcript = STT recovered (or never stuck). Drop the banner.
+                        hideReconnectBanner();
+                    }
                     if (msg.type === 'tool_call') log('event', 'tool_call', msg);
+                    // VTID-03075: agent-published client alert on the `orb_alert` topic.
+                    // Today's reason: stt_silent_stall. Future reasons (connection_recovering,
+                    // etc.) ride the same channel.
+                    if (msg.type === 'client.alert.show' && (topic === 'orb_alert' || !topic)) {
+                        showReconnectBanner(msg.reason, msg.detail);
+                    }
+                    if (msg.type === 'client.alert.hide') {
+                        hideReconnectBanner();
+                    }
                     // PR 1.B-0 — orb_directive: the agent publishes structured payloads on
                     // the data channel (topic='orb_directive') so the page can react out-of-band
                     // the same way the SSE/WS branch does on Vertex. Currently 2 directive
@@ -36037,14 +37944,55 @@ function renderLivekitTestView() {
 
             await room.connect(minted.url, minted.token);
             log('info', 'room.connect resolved');
-            await room.localParticipant.setMicrophoneEnabled(true);
-            setMic(true);
-            log('info', 'mic enabled — speak now');
+            // VTID-02996: take the actual mic publication so we can wire a
+            // live level meter on it (Web Audio analyser). If the browser
+            // denies the mic permission, setMicrophoneEnabled rejects and
+            // the catch shows the user a clear "mic permission needed"
+            // banner instead of silently leaving MIC: on but capturing
+            // nothing.
+            try {
+                var micPub = await room.localParticipant.setMicrophoneEnabled(true);
+                setMic(true);
+                log('info', 'mic enabled — speak now');
+                var micTrack = (micPub && micPub.track) ||
+                    (room.localParticipant.getTrackPublication &&
+                        (room.localParticipant.getTrackPublication(LivekitClient.Track.Source.Microphone) || {}).track) ||
+                    null;
+                if (micTrack) {
+                    attachLocalMicMeter(micTrack);
+                } else {
+                    log('warn', 'mic track not retrievable for meter — mic still publishing');
+                }
+            } catch (micErr) {
+                setMic(false);
+                log('error', 'mic permission denied or unavailable', { err: String(micErr && micErr.message || micErr) });
+                showMicPermissionBanner();
+            }
         } catch (e) {
             log('error', e.message || String(e));
+            // If room.connect() rejected but the room actually reached the
+            // Connected state (post-connect setup hiccup — late timeout,
+            // track-publish race, etc.), don't lie to the user about the
+            // state. The ConnectionStateChanged listener already painted
+            // 'connected'; keep it. The session is usable.
+            if (room && room.state === 'connected') {
+                log('warn', 'connect() rejected but room.state === connected; leaving session active', { err: e && e.message });
+                return;
+            }
             setState('disconnected');
             connectBtn.disabled = false;
             disconnectBtn.disabled = true;
+            // Tear down a partially-created room so the parallel-connect
+            // guard releases and the next click starts from a clean slate.
+            if (room) {
+                try { room.disconnect().catch(function () {}); } catch (_) {}
+                room = null;
+            }
+            attachedAudio.forEach(function (el) { try { el.remove(); } catch (_) {} });
+            attachedAudio = [];
+            // VTID-03029: connect truly failed; release the survival cache.
+            container._lktActive = false;
+            if (window._lktSurviveContainer === container) window._lktSurviveContainer = null;
         }
     }
 
@@ -36055,6 +38003,13 @@ function renderLivekitTestView() {
         }
         attachedAudio.forEach(function (el) { try { el.remove(); } catch (e) {} });
         attachedAudio = [];
+        // VTID-03029: user-initiated tear-down; release the survival cache
+        // so the next renderApp() rebuilds the view fresh.
+        container._lktActive = false;
+        if (window._lktSurviveContainer === container) window._lktSurviveContainer = null;
+        stopAudioMeters(); // VTID-02996: tear down analysers + reset meter UI
+        hideMicPermissionBanner();
+        hideAudioGateBanner(); // VTID-02997: hide re-play button when session ends
         setState('disconnected');
         setMic(false);
         setSpeaking(false);
@@ -36065,6 +38020,110 @@ function renderLivekitTestView() {
 
     connectBtn.addEventListener('click', connect);
     disconnectBtn.addEventListener('click', disconnect);
+
+    // VTID-03018: prewarm — kick off the LiveKit UMD bundle load AND the
+    // token mint as soon as the view renders, so by the time the user
+    // clicks Connect both promises are already resolving (often resolved).
+    // Cached under a fingerprint of the inputs that affect token contents
+    // — if the user changes lang, voice, mode, or agent_id, we invalidate
+    // and re-mint. This pulls ~500-1000ms of token-fetch + ~200-500ms of
+    // UMD load out of the click→greeting critical path.
+    var prewarmKey = null;
+    var prewarmedClientPromise = null;
+    var prewarmedTokenPromise = null;
+
+    function _computePrewarmKey() {
+        var supKey = Object.keys(localStorage).find(function (k) { return /sb-.*-auth-token/.test(k); });
+        var authToken = null;
+        if (supKey) {
+            try {
+                var parsed = JSON.parse(localStorage.getItem(supKey));
+                authToken = parsed && (parsed.access_token || (parsed.currentSession && parsed.currentSession.access_token));
+            } catch (e) {}
+        }
+        authToken = authToken || localStorage.getItem('vitana.authToken') || '';
+        var tokenSig = authToken ? authToken.slice(-32) : 'noauth';
+        var mode = (modeSel && modeSel.value) || 'test-session';
+        var agentId = (agentInput && agentInput.value) || 'orb-agent';
+        var lang = '';
+        try {
+            var langEl = container.querySelector('.lkt-lang');
+            if (langEl) lang = langEl.value || '';
+        } catch (e) {}
+        var voice = '';
+        try {
+            var voiceEl = container.querySelector('.lkt-voice');
+            if (voiceEl) voice = voiceEl.value || '';
+        } catch (e) {}
+        return [tokenSig, mode, agentId, lang, voice].join('|');
+    }
+
+    function _kickPrewarm() {
+        var key = _computePrewarmKey();
+        // Skip auth-less prewarm; user hasn't signed in yet (the sign-in
+        // panel will trigger a re-render when auth lands, and we'll
+        // re-prewarm then).
+        if (key.indexOf('noauth|') === 0) return;
+        // Same fingerprint as an in-flight prewarm? Reuse.
+        if (key === prewarmKey && prewarmedTokenPromise) return;
+        prewarmKey = key;
+        if (!prewarmedClientPromise) {
+            prewarmedClientPromise = loadLivekitClient().catch(function (e) {
+                log('warn', 'prewarm: client load failed (will retry on connect)', { err: String(e && e.message || e) });
+                prewarmedClientPromise = null;
+                throw e;
+            });
+        }
+        var thisKey = key;
+        prewarmedTokenPromise = mintToken().catch(function (e) {
+            log('warn', 'prewarm: token mint failed (will retry on connect)', { err: String(e && e.message || e) });
+            if (prewarmKey === thisKey) prewarmedTokenPromise = null;
+            throw e;
+        });
+        log('info', 'prewarm: client+token kicked off');
+    }
+
+    // Re-prewarm on input changes that affect token contents.
+    try {
+        var langElForWatch = container.querySelector('.lkt-lang');
+        if (langElForWatch) langElForWatch.addEventListener('change', _kickPrewarm);
+    } catch (e) {}
+    try {
+        var voiceElForWatch = container.querySelector('.lkt-voice');
+        if (voiceElForWatch) voiceElForWatch.addEventListener('change', _kickPrewarm);
+    } catch (e) {}
+    try {
+        if (agentInput) agentInput.addEventListener('change', _kickPrewarm);
+    } catch (e) {}
+    try {
+        var modeBtnsForWatch = container.querySelectorAll('.lkt-mode-btn');
+        for (var mbi = 0; mbi < modeBtnsForWatch.length; mbi++) {
+            modeBtnsForWatch[mbi].addEventListener('click', function () {
+                // Mode buttons toggle .lkt-mode hidden input via applyMode();
+                // give it a tick to flip before reading.
+                setTimeout(_kickPrewarm, 0);
+            });
+        }
+    } catch (e) {}
+
+    // Wrap connect() to consume the prewarmed promises and re-arm.
+    // (We can't safely replace the function reference now that it's already
+    // wired to the button; instead, expose the prewarmed promises to it via
+    // closure variables the connect() body reads.)
+    container._prewarm = {
+        getClient: function () { return prewarmedClientPromise; },
+        getToken: function () { return prewarmedTokenPromise; },
+        consumeAndRearm: function () {
+            prewarmedTokenPromise = null;
+            // schedule a fresh prewarm for the next reconnect
+            try { _kickPrewarm(); } catch (e) {}
+        },
+        kick: function () { try { _kickPrewarm(); } catch (e) {} },
+    };
+
+    // Kick off the FIRST prewarm now. We defer one tick so all the DOM
+    // queries above (which the closure uses) are fully attached.
+    setTimeout(_kickPrewarm, 0);
 
     return container;
 }
@@ -36805,26 +38864,27 @@ function renderDocsSystemKnowledgeView() {
 // Docs > Manuals: per-tenant Instruction Manual catalog
 // ===========================================================================
 // Renders the Maxina Instruction Manual (and other tenant manuals as they
-// are authored) as a 13-module tree on the left, chapter content on the
+// are authored) as a user-manual tree on the left, chapter content on the
 // right. Reads from /api/v1/admin/system-kb/docs?path_prefix=kb/instruction-manual/.
 // Edits route to the System Knowledge tab where the existing editor lives.
 
 const TENANT_MANUAL_TENANTS = ['maxina', 'alkalma', 'earthlinks', 'community'];
 const MANUAL_MODULE_LABELS = {
-    '00-concepts': '0. Foundational Concepts',
+    '00-concepts': '0. Mission, Voice & Core Concepts',
     '01-public': '1. Public & Onboarding',
-    '02-home': '2. Home',
-    '03-community': '3. Community',
-    '04-discover': '4. Discover',
-    '05-health': '5. Health',
+    '02-home': '2. Home & My Journey',
+    '03-community': '3. Community, Events & Media',
+    '04-discover': '4. Discover & Marketplace',
+    '05-health': '5. Health & Vitana Index',
     '06-inbox': '6. Inbox',
-    '07-ai': '7. AI',
-    '08-wallet': '8. Wallet',
-    '09-sharing': '9. Sharing',
-    '10-memory': '10. Memory',
+    '07-ai': '7. Vitana Assistant & AI',
+    '08-wallet': '8. Smart Wallet',
+    '09-sharing': '9. Sharing & Data Monetization',
+    '10-memory': '10. Memory & Diary',
     '11-settings': '11. Settings',
-    '12-utility': '12. Utility',
+    '12-utility': '12. Calendar, Profile & Search',
     '13-overlays': '13. Overlays & Popups',
+    '14-business': '14. Business & Income',
 };
 
 function initManualsState() {
@@ -41423,7 +43483,20 @@ function renderVoiceImproveView() {
 
     items.forEach(function (it) {
         var card = document.createElement('section');
-        var sevColor = it.severity === 'critical' ? '#dc2626' : it.severity === 'warning' ? '#f59e0b' : '#3b82f6';
+        // VTID-02953 (PR-K): self_healing_win gets a distinct green visual so
+        // autonomous fixes are recognizably WINS, not yet-another-info-item.
+        var isWin = it.source === 'self_healing_win';
+        var sevColor = isWin
+            ? '#16a34a'
+            : it.severity === 'critical' ? '#dc2626'
+            : it.severity === 'warning' ? '#f59e0b'
+            : '#3b82f6';
+        var badgeRgb = isWin
+            ? '22,163,74'
+            : it.severity === 'critical' ? '220,38,38'
+            : it.severity === 'warning' ? '245,158,11'
+            : '59,130,246';
+        var badgeLabel = isWin ? 'HEALED' : it.severity;
         card.style.cssText = 'margin-bottom:0.5rem;padding:0.85rem 1rem;background:var(--color-surface);border:1px solid var(--color-border);border-left:4px solid ' + sevColor + ';border-radius:6px;';
         if (vi.busyRowId === it.id) card.style.opacity = '0.55';
 
@@ -41432,7 +43505,7 @@ function renderVoiceImproveView() {
 
         var titleBlock = document.createElement('div');
         titleBlock.style.cssText = 'flex:1;';
-        var sevBadge = '<span style="display:inline-block;font-size:0.6rem;font-weight:600;padding:0.1rem 0.35rem;border-radius:4px;color:' + sevColor + ';background:rgba(' + (it.severity === 'critical' ? '220,38,38' : it.severity === 'warning' ? '245,158,11' : '59,130,246') + ',0.12);text-transform:uppercase;margin-right:0.4rem;">' + it.severity + '</span>';
+        var sevBadge = '<span style="display:inline-block;font-size:0.6rem;font-weight:600;padding:0.1rem 0.35rem;border-radius:4px;color:' + sevColor + ';background:rgba(' + badgeRgb + ',0.12);text-transform:uppercase;margin-right:0.4rem;">' + badgeLabel + '</span>';
         titleBlock.innerHTML =
             '<div style="font-weight:600;font-size:0.9rem;">' + sevBadge + escapeHtml(it.title) + '</div>'
             + '<div style="font-size:0.78rem;color:var(--color-text-secondary);margin-top:0.15rem;">' + escapeHtml(it.description || '') + '</div>';
@@ -42369,7 +44442,13 @@ function renderVoiceAwarenessView() {
     var subs = [
         { key: 'registry',   label: 'Registry'   },
         { key: 'test',       label: 'Test'       },
-        { key: 'watchdogs',  label: 'Watchdogs'  }
+        { key: 'watchdogs',  label: 'Watchdogs'  },
+        // VTID-03095 (Teacher PR 5): the "Teach Vitanaland" panel —
+        // read-only inspector for the Feature Discovery Coach
+        // (Teacher) catalog + per-user awareness ledger +
+        // greeting/invitation pool copy. Reads /api/v1/voice/
+        // teach-vitanaland/state.
+        { key: 'teach',      label: 'Teach Vitanaland' }
     ];
     subs.forEach(function (s) {
         var pill = document.createElement('button');
@@ -42393,9 +44472,240 @@ function renderVoiceAwarenessView() {
     } else if (active === 'watchdogs') {
         // VTID-02859: Awareness Watchdogs sub-tab — fetches /voice/awareness/watchdogs
         body.appendChild(renderAwarenessWatchdogsTable());
+    } else if (active === 'teach') {
+        // VTID-03095 (Teacher PR 5): Teach Vitanaland inspector panel.
+        body.appendChild(renderTeachVitanalandView());
     }
     c.appendChild(body);
     return c;
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// VTID-03095 (Teacher PR 5): Teach Vitanaland inspector view.
+//
+// Read-only operator panel for the Feature Discovery Coach (Teacher).
+// Renders the global capability catalog, the per-user awareness ledger,
+// and the greeting + invitation phrase pools. Mutations happen via the
+// existing POST /api/v1/voice/teacher/event endpoint (PR 4); this view
+// is purely diagnostic.
+// ─────────────────────────────────────────────────────────────────────────
+function renderTeachVitanalandView() {
+    var c = document.createElement('div');
+    c.style.cssText = 'padding:1.5rem;';
+
+    if (!state.teachVitanaland) {
+        state.teachVitanaland = {
+            userId: '',
+            loading: false,
+            error: null,
+            data: null,
+        };
+    }
+    var tv = state.teachVitanaland;
+
+    // ---- Header ----
+    var header = document.createElement('div');
+    header.style.cssText = 'margin-bottom:1rem;';
+    var title = document.createElement('h2');
+    title.textContent = 'Teach Vitanaland';
+    title.style.cssText = 'margin:0 0 0.25rem 0;font-size:1.25rem;color:var(--color-text-primary);';
+    header.appendChild(title);
+    var subtitle = document.createElement('div');
+    subtitle.textContent = 'Feature Discovery Coach (the Teacher) — catalog, per-user awareness ledger, and phrase pools. VTID-03095.';
+    subtitle.style.cssText = 'font-size:0.8rem;color:var(--color-text-secondary);';
+    header.appendChild(subtitle);
+    c.appendChild(header);
+
+    // ---- User picker ----
+    var picker = document.createElement('div');
+    picker.style.cssText = 'display:flex;gap:0.5rem;align-items:center;margin-bottom:1rem;';
+    var userInput = document.createElement('input');
+    userInput.type = 'text';
+    userInput.placeholder = 'user_id (UUID) — optional (catalog renders without it)';
+    userInput.value = tv.userId || '';
+    userInput.style.cssText = 'flex:1;padding:0.5rem 0.75rem;background:var(--color-bg-secondary);border:1px solid var(--color-border);border-radius:6px;color:var(--color-text-primary);font-family:monospace;font-size:0.85rem;';
+    userInput.oninput = function () { tv.userId = userInput.value.trim(); };
+    var loadBtn = document.createElement('button');
+    loadBtn.textContent = tv.loading ? 'Loading…' : 'Load';
+    loadBtn.disabled = !!tv.loading;
+    loadBtn.style.cssText = 'padding:0.5rem 1rem;background:#3b82f6;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:0.85rem;font-weight:500;' + (tv.loading ? 'opacity:0.6;cursor:not-allowed;' : '');
+    loadBtn.onclick = function () {
+        loadTeachVitanalandData(tv.userId);
+    };
+    picker.appendChild(userInput);
+    picker.appendChild(loadBtn);
+    c.appendChild(picker);
+
+    // ---- Error ----
+    if (tv.error) {
+        var err = document.createElement('div');
+        err.textContent = '⚠ ' + tv.error;
+        err.style.cssText = 'padding:0.75rem 1rem;background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.3);border-radius:6px;color:#ef4444;margin-bottom:1rem;font-size:0.85rem;';
+        c.appendChild(err);
+    }
+
+    // ---- Initial empty state ----
+    if (!tv.data) {
+        var empty = document.createElement('div');
+        empty.textContent = 'Press Load to fetch the catalog. Pass a user_id to also see the per-user awareness ledger.';
+        empty.style.cssText = 'padding:1rem;color:var(--color-text-secondary);font-size:0.85rem;';
+        c.appendChild(empty);
+        return c;
+    }
+
+    var data = tv.data;
+
+    // ---- Capability Catalog panel ----
+    var catalogPanel = makeTeachPanel('Capability Catalog (' + (data.catalog || []).length + ')', 'Every feature the Teacher can introduce. Read-only.');
+    var catTable = document.createElement('table');
+    catTable.style.cssText = 'width:100%;border-collapse:collapse;font-size:0.8rem;';
+    var thead = document.createElement('thead');
+    thead.innerHTML = '<tr style="text-align:left;border-bottom:1px solid var(--color-border);"><th style="padding:0.5rem 0.5rem 0.5rem 0;">capability_key</th><th style="padding:0.5rem;">display_name</th><th style="padding:0.5rem;">manual_path</th><th style="padding:0.5rem;">enabled</th></tr>';
+    catTable.appendChild(thead);
+    var tbody = document.createElement('tbody');
+    (data.catalog || []).forEach(function (row) {
+        var tr = document.createElement('tr');
+        tr.style.cssText = 'border-bottom:1px solid var(--color-border);';
+        tr.innerHTML = '<td style="padding:0.5rem 0.5rem 0.5rem 0;font-family:monospace;color:var(--color-text-secondary);">' + esc(row.capability_key) + '</td>' +
+            '<td style="padding:0.5rem;color:var(--color-text-primary);">' + esc(row.display_name || '') + '</td>' +
+            '<td style="padding:0.5rem;font-family:monospace;font-size:0.75rem;color:var(--color-text-secondary);">' + esc(row.manual_path || '(none)') + '</td>' +
+            '<td style="padding:0.5rem;color:' + (row.enabled ? '#10b981' : '#ef4444') + ';">' + (row.enabled ? '✓' : '✕') + '</td>';
+        tbody.appendChild(tr);
+    });
+    catTable.appendChild(tbody);
+    catalogPanel.body.appendChild(catTable);
+    c.appendChild(catalogPanel.el);
+
+    // ---- Per-User Awareness Ledger panel ----
+    var ledgerPanel = makeTeachPanel(
+        data.user_id ? ('Awareness Ledger — ' + esc(data.user_id) + ' (' + (data.ledger || []).length + ')') : 'Awareness Ledger',
+        data.user_id ? 'Per-capability state ladder for the selected user.' : 'Pass a user_id and reload to see the ledger.',
+    );
+    if (data.user_id && (data.ledger || []).length > 0) {
+        var ledTable = document.createElement('table');
+        ledTable.style.cssText = 'width:100%;border-collapse:collapse;font-size:0.8rem;';
+        var ledHead = document.createElement('thead');
+        ledHead.innerHTML = '<tr style="text-align:left;border-bottom:1px solid var(--color-border);"><th style="padding:0.5rem 0.5rem 0.5rem 0;">capability_key</th><th style="padding:0.5rem;">state</th><th style="padding:0.5rem;">dismiss_count</th><th style="padding:0.5rem;">last_introduced_at</th><th style="padding:0.5rem;">use_count</th></tr>';
+        ledTable.appendChild(ledHead);
+        var ledBody = document.createElement('tbody');
+        (data.ledger || []).forEach(function (row) {
+            var stateColor = '#6b7280';
+            if (row.awareness_state === 'introduced') stateColor = '#3b82f6';
+            else if (row.awareness_state === 'seen' || row.awareness_state === 'tried') stateColor = '#f59e0b';
+            else if (row.awareness_state === 'completed' || row.awareness_state === 'mastered') stateColor = '#10b981';
+            else if (row.awareness_state === 'dismissed') stateColor = '#ef4444';
+            var tr = document.createElement('tr');
+            tr.style.cssText = 'border-bottom:1px solid var(--color-border);';
+            tr.innerHTML = '<td style="padding:0.5rem 0.5rem 0.5rem 0;font-family:monospace;">' + esc(row.capability_key) + '</td>' +
+                '<td style="padding:0.5rem;color:' + stateColor + ';font-weight:500;">' + esc(row.awareness_state) + '</td>' +
+                '<td style="padding:0.5rem;text-align:right;">' + (row.dismiss_count || 0) + '</td>' +
+                '<td style="padding:0.5rem;font-size:0.75rem;color:var(--color-text-secondary);">' + esc(row.last_introduced_at || '—') + '</td>' +
+                '<td style="padding:0.5rem;text-align:right;">' + (row.use_count || 0) + '</td>';
+            ledBody.appendChild(tr);
+        });
+        ledTable.appendChild(ledBody);
+        ledgerPanel.body.appendChild(ledTable);
+    } else if (data.user_id) {
+        var ledEmpty = document.createElement('div');
+        ledEmpty.textContent = 'No ledger rows for this user — they have never been offered a capability yet.';
+        ledEmpty.style.cssText = 'padding:0.5rem;color:var(--color-text-secondary);font-size:0.85rem;';
+        ledgerPanel.body.appendChild(ledEmpty);
+    }
+    c.appendChild(ledgerPanel.el);
+
+    // ---- Phrase Pools panel ----
+    var poolsPanel = makeTeachPanel('Phrase Pools', 'Read-only view of the Teacher’s greeting + invitation pools per language.');
+    Object.keys(data.phrase_pools || {}).forEach(function (lang) {
+        var pool = data.phrase_pools[lang];
+        var langBlock = document.createElement('div');
+        langBlock.style.cssText = 'margin-top:0.75rem;';
+        var langTitle = document.createElement('div');
+        langTitle.textContent = lang.toUpperCase() + ' — ' + (pool.greetings || []).length + ' greetings, ' + (pool.invitations || []).length + ' invitations';
+        langTitle.style.cssText = 'font-weight:600;margin-bottom:0.5rem;color:var(--color-text-primary);';
+        langBlock.appendChild(langTitle);
+
+        var greetingsList = document.createElement('div');
+        greetingsList.style.cssText = 'margin-bottom:0.5rem;';
+        var grTitle = document.createElement('div');
+        grTitle.textContent = 'Greetings:';
+        grTitle.style.cssText = 'font-size:0.75rem;color:var(--color-text-secondary);margin-bottom:0.25rem;';
+        greetingsList.appendChild(grTitle);
+        (pool.greetings || []).forEach(function (g) {
+            var line = document.createElement('div');
+            line.textContent = '• ' + g;
+            line.style.cssText = 'padding:0.15rem 0.5rem;font-size:0.8rem;color:var(--color-text-primary);';
+            greetingsList.appendChild(line);
+        });
+        langBlock.appendChild(greetingsList);
+
+        var invitationsList = document.createElement('div');
+        var inTitle = document.createElement('div');
+        inTitle.textContent = 'Invitations:';
+        inTitle.style.cssText = 'font-size:0.75rem;color:var(--color-text-secondary);margin-bottom:0.25rem;';
+        invitationsList.appendChild(inTitle);
+        (pool.invitations || []).forEach(function (i) {
+            var line = document.createElement('div');
+            line.textContent = '• ' + i;
+            line.style.cssText = 'padding:0.15rem 0.5rem;font-size:0.8rem;color:var(--color-text-primary);';
+            invitationsList.appendChild(line);
+        });
+        langBlock.appendChild(invitationsList);
+
+        poolsPanel.body.appendChild(langBlock);
+    });
+    c.appendChild(poolsPanel.el);
+
+    return c;
+}
+
+function makeTeachPanel(title, subtitle) {
+    var panel = document.createElement('div');
+    panel.style.cssText = 'background:var(--color-bg-secondary);border:1px solid var(--color-border);border-radius:8px;padding:1rem 1.25rem;margin-bottom:1rem;';
+    var titleEl = document.createElement('div');
+    titleEl.textContent = title;
+    titleEl.style.cssText = 'font-size:0.95rem;font-weight:600;color:var(--color-text-primary);margin-bottom:0.25rem;';
+    panel.appendChild(titleEl);
+    if (subtitle) {
+        var subEl = document.createElement('div');
+        subEl.textContent = subtitle;
+        subEl.style.cssText = 'font-size:0.75rem;color:var(--color-text-secondary);margin-bottom:0.75rem;';
+        panel.appendChild(subEl);
+    }
+    var body = document.createElement('div');
+    panel.appendChild(body);
+    return { el: panel, body: body };
+}
+
+function loadTeachVitanalandData(userId) {
+    state.teachVitanaland.loading = true;
+    state.teachVitanaland.error = null;
+    renderApp();
+    var url = '/api/v1/voice/teach-vitanaland/state' + (userId ? ('?user_id=' + encodeURIComponent(userId)) : '');
+    fetch(url, { headers: buildContextHeaders() })
+        .then(function (r) { return r.json(); })
+        .then(function (json) {
+            state.teachVitanaland.loading = false;
+            if (json && json.ok) {
+                state.teachVitanaland.data = json;
+            } else {
+                state.teachVitanaland.error = (json && (json.message || json.error)) || 'Unknown error';
+            }
+            renderApp();
+        })
+        .catch(function (err) {
+            state.teachVitanaland.loading = false;
+            state.teachVitanaland.error = (err && err.message) || String(err);
+            renderApp();
+        });
+}
+
+function esc(s) {
+    if (s === null || s === undefined) return '';
+    return String(s)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -42525,6 +44835,10 @@ function renderJourneyContextView() {
     // VTID-02937 (B4): Tenure & Journey Stage panel — onboarding ladder
     // + tenure days + usage days + last active + Index tier. Read-only.
     grid.appendChild(renderJourneyContextJourneyStagePanel(jc.journeyStage));
+    // VTID-03065 (B0d-real Xh): Contextual Next Action Candidate Inspector —
+    // recent decisions with source/winner/outcome, sourced from the
+    // OASIS rollup endpoint Xf.3 shipped (GET /voice/next-action/inspector).
+    grid.appendChild(renderJourneyContextNextActionInspectorPanel(jc.nextActionInspector));
 
     c.appendChild(grid);
     return c;
@@ -42581,6 +44895,12 @@ function loadJourneyContext() {
         // VTID-02937 (B4): journey-stage preview — tenure / usage_days /
         // Index tier + distilled context. Keyed on user/tenant.
         fetch('/api/v1/voice/journey-stage/preview' + qs, { headers: buildContextHeaders() }).then(function (r) { return r.json(); }).catch(function () { return { ok: false }; }),
+        // VTID-03065 (B0d-real Xh): Candidate Inspector — recent
+        // contextual_next_action decisions grouped by decision_id.
+        // Auth: admin-only on the endpoint side. Keyed on user_id.
+        fetch('/api/v1/voice/next-action/inspector?user_id=' + encodeURIComponent(jc.userId || '') + '&hours=24', { headers: buildContextHeaders() })
+            .then(function (r) { return r.json(); })
+            .catch(function () { return { ok: false }; }),
     ]).then(function (results) {
         jc.loading = false;
         if (results[0] && results[0].ok) {
@@ -42625,6 +44945,11 @@ function loadJourneyContext() {
             jc.journeyStage = results[8];
         } else {
             jc.journeyStage = null;
+        }
+        if (results[9] && results[9].ok) {
+            jc.nextActionInspector = results[9];
+        } else {
+            jc.nextActionInspector = null;
         }
         renderApp();
     }).catch(function (err) {
@@ -43480,6 +45805,84 @@ function renderJourneyContextFeatureDiscoveryPanel(fd) {
     return panel;
 }
 
+// ─────────────────────────────────────────────────────────────────────────
+// VTID-03065 (B0d-real Xh) — Contextual Next Action Candidate Inspector
+// panel. Reads from GET /api/v1/voice/next-action/inspector (shipped in
+// Xf.3). For the selected user, shows recent decisions grouped by
+// decision_id: which source won, which CTA the user followed, which
+// composer suppressions fired and why.
+//
+// Wall: NO buttons, NO mutation. Read-only operator surface.
+// ─────────────────────────────────────────────────────────────────────────
+function renderJourneyContextNextActionInspectorPanel(insp) {
+    var panel = renderJourneyContextPanel(
+        'Contextual Next Action Inspector (B0d-real)',
+        'Recent decisions across the 8-source composer — winner, outcome, suppression reasons',
+    );
+
+    if (!insp) {
+        panel.appendChild(renderJourneyContextEmptyRow('status', 'no data — load a user above'));
+        return panel;
+    }
+
+    var totals = insp.totals || {};
+    panel.appendChild(renderJourneyContextEmptyRow('window_hours', String(insp.window_hours || 0)));
+    panel.appendChild(renderJourneyContextEmptyRow('suggested', String(totals.suggested || 0)));
+    panel.appendChild(renderJourneyContextEmptyRow('accepted', String(totals.accepted || 0)));
+    panel.appendChild(renderJourneyContextEmptyRow('dismissed', String(totals.dismissed || 0)));
+    panel.appendChild(renderJourneyContextEmptyRow('suppressed', String(totals.suppressed || 0)));
+
+    var decisions = Array.isArray(insp.decisions) ? insp.decisions : [];
+    var listHeader = document.createElement('div');
+    listHeader.style.cssText = 'margin-top:0.75rem;font-size:0.85rem;font-weight:600;color:var(--color-text-primary);';
+    listHeader.textContent = 'Recent decisions (newest first)';
+    panel.appendChild(listHeader);
+
+    if (decisions.length === 0) {
+        panel.appendChild(renderJourneyContextEmptyRow('decisions', 'no recent decisions in window'));
+        return panel;
+    }
+
+    decisions.forEach(function (d) {
+        // Row 1 — winner / suppression headline
+        var headline;
+        if (d.suggested) {
+            var sourceEv = d.suggested.source_evidence;
+            var srcKind = sourceEv && typeof sourceEv === 'object' ? String(sourceEv.kind || '?') : '?';
+            var srcKey = srcKind.replace(/^source:/, '');
+            var prio = d.suggested.priority != null ? d.suggested.priority : '?';
+            headline = 'WINNER ' + srcKey + ' (p=' + prio + ')';
+        } else if (d.suppressed) {
+            headline = 'SUPPRESSED — ' + String(d.suppressed.suppress_reason || d.suppressed.provider_status || '?');
+        } else {
+            headline = '(no suggested or suppressed payload)';
+        }
+        panel.appendChild(renderJourneyContextEmptyRow(d.decision_id || '(no id)', headline));
+
+        // Row 2 — outcome (when present)
+        if (d.outcome) {
+            var outcomeLabel = String(d.outcome).toUpperCase();
+            var outcomeWhen = d.outcome_at ? new Date(d.outcome_at).toLocaleString() : '';
+            panel.appendChild(renderJourneyContextEmptyRow(
+                '  outcome',
+                outcomeLabel + (outcomeWhen ? ' @ ' + outcomeWhen : ''),
+            ));
+        }
+
+        // Row 3 — reason evidence (when winner)
+        if (d.suggested && Array.isArray(d.suggested.reason_evidence) && d.suggested.reason_evidence.length > 0) {
+            d.suggested.reason_evidence.forEach(function (r) {
+                panel.appendChild(renderJourneyContextEmptyRow(
+                    '  ' + String(r.kind || '?'),
+                    String(r.detail || ''),
+                ));
+            });
+        }
+    });
+
+    return panel;
+}
+
 // VTID-02867: Inline expandable "Open architecture reports (N)" section.
 // Fetches voice_architecture_reports where status='open' and lets the
 // operator Accept (via /healing/reports/:id/execute) or Reject (via
@@ -43813,6 +46216,336 @@ function renderVoiceSelfHealingPanel() {
     });
 
     return panel;
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// VTID-02954 (PR-L1): Test Contract Registry — read-only status panel.
+//
+// Fetches /api/v1/test-contracts and renders a table of (capability, status,
+// last_run_at, owner). Each row has a manual "Run now" button (admin-only;
+// the backend rejects non-admins). PR-L1 is read+run only — no edit/delete
+// from this surface yet.
+// ─────────────────────────────────────────────────────────────────────────
+function renderTestContractsPanel() {
+    var container = document.createElement('div');
+    container.style.cssText = 'padding:16px;';
+
+    var tcState = state.testContracts || (state.testContracts = { rows: null, error: null, running: {} });
+
+    var header = document.createElement('div');
+    header.style.cssText = 'margin-bottom:16px;display:flex;justify-content:space-between;align-items:flex-start;gap:12px;';
+
+    var headerText = document.createElement('div');
+    headerText.style.cssText = 'flex:1;';
+    headerText.innerHTML =
+        '<h2 style="margin:0;color:var(--color-text-primary);">Test Contracts</h2>' +
+        '<p style="margin:4px 0 0 0;color:var(--color-text-secondary);font-size:0.85rem;">' +
+        'The autonomy spine. Every capability has a contract defining "healthy". If a contract fails, self-healing repairs the system back to known-good behavior. ' +
+        '<strong>VTID-02958 (PR-L3)</strong> — failure scanner with debounce (2 same-signature failures) + auto-repair VTID + quarantine (3 attempts/24h).' +
+        '</p>';
+    header.appendChild(headerText);
+
+    // VTID-02958 (PR-L3): top-of-panel scheduled-run trigger. Runs every
+    // live_probe contract, persists test_contract_runs, and (per the
+    // debounce + quarantine rules) allocates repair VTIDs as needed.
+    var scanBtn = document.createElement('button');
+    scanBtn.style.cssText = 'padding:8px 14px;font-size:0.8rem;border-radius:4px;border:1px solid #3b82f6;background:rgba(59,130,246,0.1);color:#93c5fd;cursor:pointer;font-weight:600;flex-shrink:0;';
+    scanBtn.disabled = tcState.scanRunning === true;
+    scanBtn.textContent = scanBtn.disabled ? 'Scanning...' : 'Run scheduled scan';
+    scanBtn.onclick = function () {
+        tcState.scanRunning = true;
+        renderApp();
+        fetch('/api/v1/test-contracts/scheduled-run', {
+            method: 'POST',
+            headers: buildContextHeaders(),
+        })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                tcState.scanRunning = false;
+                tcState.lastScan = data;
+                if (data.ok) {
+                    // Force a contracts re-fetch so statuses reflect what just happened
+                    tcState.rows = null;
+                }
+                renderApp();
+                var msg = 'Scan complete: ' + (data.passed_count || 0) + ' passed, ' + (data.failed_count || 0) + ' failed';
+                if (data.repairs_allocated) msg += ', ' + data.repairs_allocated + ' repair VTID(s) allocated';
+                if (data.quarantines) msg += ', ' + data.quarantines + ' quarantined';
+                alert(msg);
+            })
+            .catch(function (e) {
+                tcState.scanRunning = false;
+                alert('Scan failed: ' + e.message);
+                renderApp();
+            });
+    };
+    header.appendChild(scanBtn);
+
+    container.appendChild(header);
+
+    if (tcState.rows === null && tcState.error === null) {
+        fetch('/api/v1/test-contracts', { headers: buildContextHeaders() })
+            .then(function (r) {
+                if (!r.ok) throw new Error('HTTP ' + r.status);
+                return r.json();
+            })
+            .then(function (data) {
+                tcState.rows = data.contracts || [];
+                tcState.error = null;
+                renderApp();
+            })
+            .catch(function (e) {
+                tcState.error = e.message;
+                tcState.rows = [];
+                renderApp();
+            });
+        var loading = document.createElement('div');
+        loading.style.cssText = 'padding:24px;text-align:center;color:var(--color-text-secondary);';
+        loading.textContent = 'Loading test contracts...';
+        container.appendChild(loading);
+        return container;
+    }
+
+    if (tcState.error) {
+        var err = document.createElement('div');
+        err.style.cssText = 'padding:24px;background:rgba(220,38,38,0.1);border:1px solid #dc2626;border-radius:6px;color:#fca5a5;';
+        err.textContent = 'Failed to load test contracts: ' + tcState.error;
+        container.appendChild(err);
+        return container;
+    }
+
+    if (!tcState.rows || tcState.rows.length === 0) {
+        var none = document.createElement('div');
+        none.style.cssText = 'padding:24px;text-align:center;color:var(--color-text-secondary);';
+        none.textContent = 'No test contracts registered yet. Migration 20260521000000 seeds 6 contracts.';
+        container.appendChild(none);
+        return container;
+    }
+
+    // Summary band
+    var summary = document.createElement('div');
+    summary.style.cssText = 'display:flex;gap:16px;margin-bottom:16px;padding:12px;background:var(--color-surface);border:1px solid var(--color-border);border-radius:6px;';
+    var byStatus = { pass: 0, fail: 0, pending: 0, unknown: 0, quarantined: 0 };
+    tcState.rows.forEach(function (r) {
+        if (byStatus.hasOwnProperty(r.status)) byStatus[r.status] += 1;
+    });
+    summary.innerHTML =
+        '<div><strong style="color:var(--color-text-primary);">' + tcState.rows.length + '</strong> contracts</div>' +
+        '<div style="color:#16a34a;"><strong>' + byStatus.pass + '</strong> passing</div>' +
+        '<div style="color:#dc2626;"><strong>' + byStatus.fail + '</strong> failing</div>' +
+        '<div style="color:#94a3b8;"><strong>' + byStatus.unknown + '</strong> never run</div>' +
+        '<div style="color:#fbbf24;"><strong>' + byStatus.pending + '</strong> pending</div>' +
+        '<div style="color:#f87171;"><strong>' + byStatus.quarantined + '</strong> quarantined</div>';
+    container.appendChild(summary);
+
+    // Rows
+    tcState.rows.forEach(function (row) {
+        var card = document.createElement('section');
+        var statusColor = row.status === 'pass' ? '#16a34a' : row.status === 'fail' ? '#dc2626' : row.status === 'quarantined' ? '#f87171' : row.status === 'pending' ? '#fbbf24' : '#94a3b8';
+        var regressed = row.status === 'fail' && row.last_status === 'pass';
+        card.style.cssText = 'margin-bottom:8px;padding:12px 14px;background:var(--color-surface);border:1px solid var(--color-border);border-left:4px solid ' + statusColor + ';border-radius:6px;display:flex;justify-content:space-between;align-items:center;gap:12px;';
+
+        var info = document.createElement('div');
+        info.style.cssText = 'flex:1;min-width:0;';
+        var statusBadge = '<span style="display:inline-block;font-size:0.65rem;font-weight:700;padding:0.1rem 0.4rem;border-radius:4px;color:' + statusColor + ';background:' + statusColor + '22;text-transform:uppercase;margin-right:0.4rem;">' + row.status + '</span>';
+        var regressedBadge = regressed ? '<span style="display:inline-block;font-size:0.6rem;font-weight:700;padding:0.1rem 0.35rem;border-radius:4px;color:#dc2626;background:#dc262622;margin-right:0.4rem;">REGRESSED</span>' : '';
+        info.innerHTML =
+            '<div style="font-weight:600;font-size:0.9rem;">' + statusBadge + regressedBadge + escapeHtml(row.capability) + '</div>' +
+            '<div style="font-size:0.75rem;color:var(--color-text-secondary);margin-top:0.2rem;">' +
+                escapeHtml(row.contract_type) + ' · ' +
+                escapeHtml(row.service) + '/' + escapeHtml(row.environment) + ' · ' +
+                'owner: ' + escapeHtml(row.owner) +
+                (row.target_endpoint ? ' · ' + escapeHtml(row.target_endpoint) : '') +
+            '</div>' +
+            '<div style="font-size:0.7rem;color:var(--color-text-secondary);margin-top:0.2rem;">' +
+                'last run: ' + (row.last_run_at ? new Date(row.last_run_at).toLocaleString() : 'never') +
+                (row.last_failure_signature ? ' · <span style="color:#dc2626;">' + escapeHtml(row.last_failure_signature).slice(0, 120) + '</span>' : '') +
+            '</div>';
+        card.appendChild(info);
+
+        var actions = document.createElement('div');
+        actions.style.cssText = 'display:flex;gap:6px;flex-shrink:0;';
+        var runBtn = document.createElement('button');
+        runBtn.style.cssText = 'padding:6px 12px;font-size:0.75rem;border-radius:4px;border:1px solid var(--color-border);background:var(--color-bg);color:var(--color-text-primary);cursor:pointer;';
+        runBtn.disabled = tcState.running[row.id] === true;
+        runBtn.textContent = runBtn.disabled ? 'Running...' : 'Run now';
+        runBtn.onclick = function () {
+            tcState.running[row.id] = true;
+            renderApp();
+            fetch('/api/v1/test-contracts/' + encodeURIComponent(row.id) + '/run', {
+                method: 'POST',
+                headers: buildContextHeaders(),
+            })
+                .then(function (r) { return r.json(); })
+                .then(function (data) {
+                    tcState.running[row.id] = false;
+                    if (data.ok && data.result) {
+                        // Update row in place
+                        for (var i = 0; i < tcState.rows.length; i++) {
+                            if (tcState.rows[i].id === row.id) {
+                                tcState.rows[i].status = data.new_status;
+                                tcState.rows[i].last_status = data.previous_status;
+                                tcState.rows[i].last_run_at = data.result.ran_at;
+                                tcState.rows[i].last_failure_signature = data.result.failure_reason
+                                    ? row.command_key + ':' + data.result.failure_reason
+                                    : null;
+                            }
+                        }
+                    }
+                    renderApp();
+                })
+                .catch(function (e) {
+                    tcState.running[row.id] = false;
+                    alert('Run failed: ' + e.message);
+                    renderApp();
+                });
+        };
+        actions.appendChild(runBtn);
+        card.appendChild(actions);
+
+        container.appendChild(card);
+    });
+
+    // VTID-02957 (PR-L2): missing-contract gaps appended below the existing
+    // contracts. Each row has an "Allocate VTID" button that kicks off the
+    // dev_autopilot pipeline to write the test + allowlist entry.
+    container.appendChild(renderMissingContractsSection());
+
+    return container;
+}
+
+function renderMissingContractsSection() {
+    var section = document.createElement('div');
+    section.style.cssText = 'margin-top:32px;padding-top:24px;border-top:1px solid var(--color-border);';
+
+    var mState = state.missingContracts || (state.missingContracts = { gaps: null, error: null, allocating: {}, allocated: {} });
+
+    var header = document.createElement('div');
+    header.style.cssText = 'margin-bottom:16px;';
+    header.innerHTML =
+        '<h3 style="margin:0;color:var(--color-text-primary);">Missing Contracts</h3>' +
+        '<p style="margin:4px 0 0 0;color:var(--color-text-secondary);font-size:0.85rem;">' +
+        'Endpoints with NO contract row. Self-healing cannot detect regressions on these capabilities until contracts exist. ' +
+        'Click "Allocate VTID" to dispatch the dev_autopilot pipeline to write a test + allowlist entry. ' +
+        '<strong>VTID-02957 (PR-L2)</strong> — discovery only, no auto-allocation yet.' +
+        '</p>';
+    section.appendChild(header);
+
+    if (mState.gaps === null && mState.error === null) {
+        fetch('/api/v1/test-contracts/missing', { headers: buildContextHeaders() })
+            .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+            .then(function (data) {
+                mState.gaps = data.gaps || [];
+                mState.totals = { total: data.total_endpoints, covered: data.covered, missing: data.missing };
+                mState.error = null;
+                renderApp();
+            })
+            .catch(function (e) {
+                mState.error = e.message;
+                mState.gaps = [];
+                renderApp();
+            });
+        var loading = document.createElement('div');
+        loading.style.cssText = 'padding:16px;text-align:center;color:var(--color-text-secondary);';
+        loading.textContent = 'Scanning for missing contracts...';
+        section.appendChild(loading);
+        return section;
+    }
+
+    if (mState.error) {
+        var err = document.createElement('div');
+        err.style.cssText = 'padding:16px;background:rgba(220,38,38,0.1);border:1px solid #dc2626;border-radius:6px;color:#fca5a5;';
+        err.textContent = 'Scan failed: ' + mState.error;
+        section.appendChild(err);
+        return section;
+    }
+
+    if (!mState.gaps || mState.gaps.length === 0) {
+        var none = document.createElement('div');
+        none.style.cssText = 'padding:16px;text-align:center;color:#16a34a;';
+        none.textContent = '✓ Every registered endpoint has a contract. Nothing to scan.';
+        section.appendChild(none);
+        return section;
+    }
+
+    var summary = document.createElement('div');
+    summary.style.cssText = 'display:flex;gap:16px;margin-bottom:16px;padding:12px;background:var(--color-surface);border:1px solid var(--color-border);border-radius:6px;font-size:0.8rem;';
+    var t = mState.totals || { total: 0, covered: 0, missing: 0 };
+    summary.innerHTML =
+        '<div><strong style="color:var(--color-text-primary);">' + t.total + '</strong> endpoints in ENDPOINT_FILE_MAP</div>' +
+        '<div style="color:#16a34a;"><strong>' + t.covered + '</strong> have contracts</div>' +
+        '<div style="color:#f59e0b;"><strong>' + t.missing + '</strong> missing</div>';
+    section.appendChild(summary);
+
+    mState.gaps.forEach(function (gap) {
+        var card = document.createElement('section');
+        var alreadyAllocated = mState.allocated[gap.dedupe_key];
+        var sevColor = alreadyAllocated ? '#16a34a' : '#f59e0b';
+        card.style.cssText = 'margin-bottom:8px;padding:12px 14px;background:var(--color-surface);border:1px solid var(--color-border);border-left:4px solid ' + sevColor + ';border-radius:6px;display:flex;justify-content:space-between;align-items:center;gap:12px;';
+
+        var info = document.createElement('div');
+        info.style.cssText = 'flex:1;min-width:0;';
+        var statusBadge = alreadyAllocated
+            ? '<span style="display:inline-block;font-size:0.65rem;font-weight:700;padding:0.1rem 0.4rem;border-radius:4px;color:#16a34a;background:rgba(22,163,74,0.12);text-transform:uppercase;margin-right:0.4rem;">VTID ALLOCATED</span>'
+            : '<span style="display:inline-block;font-size:0.65rem;font-weight:700;padding:0.1rem 0.4rem;border-radius:4px;color:#f59e0b;background:rgba(245,158,11,0.12);text-transform:uppercase;margin-right:0.4rem;">MISSING</span>';
+        info.innerHTML =
+            '<div style="font-weight:600;font-size:0.9rem;">' + statusBadge + escapeHtml(gap.capability) + '</div>' +
+            '<div style="font-size:0.75rem;color:var(--color-text-secondary);margin-top:0.2rem;">' +
+                escapeHtml(gap.contract_type) + ' · ' +
+                escapeHtml(gap.service) + '/' + escapeHtml(gap.environment) + ' · ' +
+                escapeHtml(gap.target_endpoint) +
+            '</div>' +
+            '<div style="font-size:0.7rem;color:var(--color-text-secondary);margin-top:0.2rem;font-family:ui-monospace,monospace;">' +
+                'file: ' + escapeHtml(gap.target_file) + ' · ' +
+                'suggested command_key: ' + escapeHtml(gap.suggested_command_key) +
+                (alreadyAllocated ? ' · VTID: ' + escapeHtml(alreadyAllocated) : '') +
+            '</div>';
+        card.appendChild(info);
+
+        var actions = document.createElement('div');
+        actions.style.cssText = 'display:flex;gap:6px;flex-shrink:0;';
+        var allocBtn = document.createElement('button');
+        allocBtn.style.cssText = 'padding:6px 12px;font-size:0.75rem;border-radius:4px;border:1px solid var(--color-border);background:var(--color-bg);color:var(--color-text-primary);cursor:pointer;';
+        var busy = mState.allocating[gap.dedupe_key] === true;
+        allocBtn.disabled = busy || !!alreadyAllocated;
+        allocBtn.textContent = busy ? 'Allocating...' : alreadyAllocated ? 'Open VTID' : 'Allocate VTID';
+        allocBtn.onclick = function () {
+            if (alreadyAllocated) {
+                history.pushState(null, '', '/command-hub/oasis/vtid-ledger/?vtid=' + encodeURIComponent(alreadyAllocated));
+                renderApp();
+                return;
+            }
+            mState.allocating[gap.dedupe_key] = true;
+            renderApp();
+            fetch('/api/v1/test-contracts/missing/' + encodeURIComponent(gap.dedupe_key) + '/allocate', {
+                method: 'POST',
+                headers: buildContextHeaders(),
+            })
+                .then(function (r) { return r.json().then(function (b) { return { status: r.status, body: b }; }); })
+                .then(function (resp) {
+                    mState.allocating[gap.dedupe_key] = false;
+                    if (resp.status === 201 && resp.body.allocated_vtid) {
+                        mState.allocated[gap.dedupe_key] = resp.body.allocated_vtid;
+                    } else if (resp.status === 200 && resp.body.deduped && resp.body.existing_vtid) {
+                        mState.allocated[gap.dedupe_key] = resp.body.existing_vtid;
+                    } else {
+                        alert('Allocation failed: ' + (resp.body.error || resp.body.message || resp.status));
+                    }
+                    renderApp();
+                })
+                .catch(function (e) {
+                    mState.allocating[gap.dedupe_key] = false;
+                    alert('Allocation error: ' + e.message);
+                    renderApp();
+                });
+        };
+        actions.appendChild(allocBtn);
+        card.appendChild(actions);
+
+        section.appendChild(card);
+    });
+
+    return section;
 }
 
 function renderSelfHealingView() {

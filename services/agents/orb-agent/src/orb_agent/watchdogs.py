@@ -31,15 +31,14 @@ BOOTSTRAP_REBUILD_MIN_AGE_MS = 60_000
 
 # Stall watchdog: no agent OR user activity (speech_created, agent state
 # transition, user state transition) for this long → emit OASIS event +
-# force a transport-level reconnect. The chat context is preserved by
-# livekit-agents across the reconnect, so the user keeps where they left
-# off. PR-VTID-02854: bumped from 8s → 30s after observing the watchdog
-# wasn't wired and a German session sat in dead air for 1-2 minutes
-# before the underlying SDK reconnect triggered. 8s is too aggressive
-# for a conversational pause; 30s is a real-stall signal that won't
-# false-fire on a user thinking. Tunable per session via env var
-# AGENT_STALL_THRESHOLD_MS.
-STALL_THRESHOLD_MS = 30_000
+# soft-reset STT (VTID-03004 / VTID-03005).
+# History:
+#  - originally 8s (false-fired on conversational pauses)
+#  - bumped 8s → 30s by PR-VTID-02854 to avoid false-fires
+#  - lowered 30s → 10s by VTID-03005 once the watchdog could recover via
+#    soft STT swap instead of just being telemetry. Faster detection +
+#    cheap recovery beats slow detection + dead air for the user.
+STALL_THRESHOLD_MS = 10_000
 
 
 @dataclass

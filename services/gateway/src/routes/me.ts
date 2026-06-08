@@ -185,6 +185,21 @@ router.get('/', async (req: Request, res: Response) => {
           })
           .catch(err => console.warn(`[Calendar] Journey init failed (non-fatal): ${err.message}`));
       }).catch(err => console.error('[Calendar] Module import failed:', err.message));
+
+      // VTID-03152 Slice A: idempotently create the persistent user_journey
+      // row alongside the calendar init. Fire-and-forget; failures are
+      // non-fatal (getJourneyState() falls back to math).
+      const { getSupabase } = require('../lib/supabase');
+      const supa = getSupabase();
+      if (supa) {
+        import('../services/journey/user-journey-service').then(({ ensureUserJourneyRow }) => {
+          ensureUserJourneyRow(supa, meCtx.user_id!, { tenant_id: meCtx.tenant_id ?? null })
+            .then((created) => {
+              if (created) console.log(`[VTID-03152] user_journey row created for ${meCtx.user_id!.slice(0, 8)}`);
+            })
+            .catch((err: any) => console.warn(`[VTID-03152] ensureUserJourneyRow failed (non-fatal): ${err.message}`));
+        }).catch(err => console.error('[VTID-03152] Module import failed:', err.message));
+      }
     }
 
     return res.status(200).json({

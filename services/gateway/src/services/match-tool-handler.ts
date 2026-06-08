@@ -83,47 +83,46 @@ export async function executeGetUserMatches(
   }
 
   try {
-    // Build query: matches_daily for this user + date + state=suggested
+    // Build query: matches_daily for this user + date + state=suggested.
+    // NOTE: We deliberately avoid a PostgREST embed (match_targets!inner) here.
+    // The embed depends on PostgREST discovering the matches_daily ->
+    // match_targets FK in its schema cache; under production schema drift
+    // (FK absent on the deployed table) that fails with PGRST200
+    // "Could not find a relationship ... in the schema cache" and threw.
+    // Instead we fetch match_targets in a second query (no relationship
+    // discovery required) and join in memory.
     let query = supabase
       .from('matches_daily')
-      .select(`
-        id,
-        match_type,
-        target_id,
-        score,
-        reasons,
-        state,
-        match_targets!inner (
-          display_name,
-          topic_keys,
-          tags,
-          metadata,
-          target_type
-        )
-      `)
+      .select('id, match_type, target_id, score, reasons, state')
       .eq('user_id', userId)
       .eq('match_date', date)
       .eq('state', 'suggested')
       .gte('score', minScore)
       .order('score', { ascending: false });
 
-    // Apply match_type filter
+    // Apply match_type filter (real column on matches_daily)
     if (args.match_type) {
       query = query.eq('match_type', args.match_type);
     }
 
-    // Apply topic filter via match_targets.topic_keys array contains
-    if (args.topic_filter) {
-      query = query.contains('match_targets.topic_keys', [args.topic_filter]);
-    }
-
-    const { data: matches, error, count } = await query.limit(limit);
+    // The topic filter lives on match_targets (Step 2). When present we must
+    // over-fetch and filter in memory after the join, since we can't apply it
+    // on matches_daily. Daily matches per user are small, so the cap is safe.
+    const fetchLimit = args.topic_filter ? 200 : limit;
+    const { data: matches, error } = await query.limit(fetchLimit);
 
     if (error) {
       console.error(`[${VTID}] get_user_matches query error:`, error.message);
 
-      // If table doesn't exist yet (migration not deployed), return gracefully
-      if (error.message.includes('does not exist') || error.message.includes('relation')) {
+      // Graceful fallback for table/schema availability (migration not deployed
+      // or schema drift) — return empty rather than surfacing an error.
+      const em = error.message || '';
+      if (
+        em.includes('does not exist') ||
+        em.includes('relation') ||
+        em.includes('Could not find') ||
+        em.includes('schema cache')
+      ) {
         return {
           ok: true,
           matches: [],
@@ -142,6 +141,42 @@ export async function executeGetUserMatches(
         error: error.message,
       };
     }
+
+    // Step 2: Fetch match target details separately (no embed). Applying the
+    // topic filter here also enforces the original inner-join semantics: only
+    // matches whose target survives the lookup (and topic filter) are kept.
+    const matchRows = (matches || []) as any[];
+    const targetIds = [...new Set(matchRows.map((m) => m.target_id).filter(Boolean))];
+    const targetMap = new Map<string, any>();
+    if (targetIds.length > 0) {
+      let tq = supabase
+        .from('match_targets')
+        .select('id, display_name, topic_keys, tags, metadata, target_type')
+        .in('id', targetIds);
+      if (args.topic_filter) {
+        tq = tq.contains('topic_keys', [args.topic_filter]);
+      }
+      const { data: targets, error: targetErr } = await tq;
+      if (targetErr) {
+        const tm = targetErr.message || '';
+        if (
+          !tm.includes('does not exist') &&
+          !tm.includes('relation') &&
+          !tm.includes('Could not find') &&
+          !tm.includes('schema cache')
+        ) {
+          console.warn(`[${VTID}] match_targets lookup failed: ${tm}`);
+        }
+      }
+      for (const t of (targets || []) as any[]) {
+        targetMap.set(t.id, t);
+      }
+    }
+
+    // Enforce inner-join + topic-filter semantics, then apply the result limit.
+    const filteredMatches = matchRows
+      .filter((m) => targetMap.has(m.target_id))
+      .slice(0, limit);
 
     // Get total count of suggested matches for context
     const { count: totalCount } = await supabase
@@ -164,8 +199,8 @@ export async function executeGetUserMatches(
     }
 
     // Build privacy-safe previews
-    const previews: MatchPreview[] = (matches || []).map((m: any) => {
-      const target = m.match_targets;
+    const previews: MatchPreview[] = filteredMatches.map((m: any) => {
+      const target = targetMap.get(m.target_id);
       let displayName = target?.display_name || 'Unknown';
 
       // Privacy gate for person matches

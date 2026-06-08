@@ -11,36 +11,50 @@ keywords: [notifications, notifications, notifications, settings]
 related_concepts: []
 related_screens: []
 ---
+
 ## What it is
 
-The **Notifications** screen is part of Settings — preferences, privacy, billing, integrations, and account-level controls. In the navigation it sits at Settings → Notifications, and Direct URL: `/settings/notifications`. This chapter explains what the screen contains, why a Maxina community user would open it, what they will see when they do, and how to act on what is there.
+Notifications is the Notifications screen in the Settings module. It gives the user a focused place to understand the current state, choose the next step, and ask Vitana for help.
+
+Settings gives the user control over identity, privacy, connected apps, notifications, billing, support, and tenant role.
 
 ## Why it matters
 
-Settings is the surface that lets you tune Vitana to your situation, revoke things you no longer want, and stay in control of the account. Every Maxina member arrives at this screen at some point in their first 30 days — sometimes via the Did You Know guided tour, sometimes by tapping a card on Home, sometimes by asking ORB "show me the notifications". Knowing why the screen exists is what stops it from feeling like noise the next time you land here.
+Settings gives the user control over identity, privacy, connected apps, notifications, billing, support, and tenant role. It should help the user live better through the five longevity pillars while making useful community or income opportunities easier to act on.
 
 ## Where to find it
 
-Direct URL: `/settings/notifications`. It lives under the **Settings** module of the sidebar, on the tab labelled **Notifications**. If you ask ORB "open the notifications" the Navigator will route you straight here.
+Direct URL: `/settings/notifications`.
+
+Sidebar path: **Settings → Notifications**.
+
+Module: **Settings**.
 
 ## What you see on this screen
 
-This section is the screen-level inventory of panels, cards, buttons, and information. It is what Vitana reads aloud when a user asks "what's on this screen?". A maxina admin should expand this list with the exact components currently rendered. Until polished, expect to see the standard layout for the Settings module: a header with the screen title, the primary content area filled with the cards or list described by the screen's purpose, and any module-specific toolbar in the sidebar or top-right. Anything truly distinctive about the **Notifications** screen — counts, filters, special actions — should be enumerated here as bullet points by the admin via the Command Hub Manuals tab.
-
-- Header: the screen title (Notifications) and any quick-action buttons for this module
-- Main content area: the panels or list described by the screen's purpose
-- Empty state: friendly first-run copy if you have not yet engaged with this surface
-- Action buttons: the primary call-to-action for this screen (often "Add", "Open", "RSVP", or "Save" depending on context)
+- Account, preference, privacy, notification, billing, support, or connected-app controls
+- Save, reset, connect, disconnect, export, delete, or contact actions
+- Warnings for sensitive or irreversible changes
+- Tenant and role context
 
 ## How to use it
 
-1. Open the screen via the sidebar (Settings → Notifications) or by asking ORB "open notifications".
-2. Visit when something is wrong, when you want to connect a tracker, or when a renewal needs attention.
-3. If you are not sure what something on the screen means, ask ORB "what is this card?" — Vitana will read the relevant chapter section aloud.
-4. To leave the screen, use the back button or open another sidebar item; nothing on this screen requires you to "save and exit" — your state is persisted automatically.
-5. Many screens in the Settings module pair with a related screen: see the related-screens list below for the next logical place to look.
+1. Identify the setting category before making changes.
+2. Explain what the setting affects.
+3. Change the smallest necessary scope.
+4. Confirm privacy, billing, app connection, data export, or deletion actions.
+
+## What you can ask Vitana
+
+- "Open privacy settings."
+- "Connect my wearable."
+- "Talk to tech support."
+- "Change notification settings."
+
+## Guidance for Vitana Assistant
+
+Settings gives the user control over identity, privacy, connected apps, notifications, billing, support, and tenant role. Explain the screen in plain language first, then offer the next safe action. Ask for confirmation before sending messages, making purchases, booking services, changing privacy, sharing data, altering subscriptions, or deleting anything.
 
 ## Related
 
-- See module 11 for the other screens in **Settings**.
-- See the foundational concepts (chapter 0.x) for cross-cutting vocabulary referenced on this screen.
+Related references from the manual front matter: [].

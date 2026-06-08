@@ -23,6 +23,57 @@ import { ADMIN_TOOL_SCHEMAS } from '../../../services/admin-voice-tools';
 
 
 /**
+ * L2.2b.6 (VTID-03010): Render the same tool catalog as a prose block for
+ * embedding in the system instruction. Vertex's Gemini Live receives the
+ * structured `tools[0].function_declarations` array via the BidiGenerate
+ * setup message, but the LiveKit / livekit-plugins-google path does NOT
+ * fully serialize @function_tool decorators into Gemini's
+ * function_declarations (smoke-tested: many tool calls never fire even
+ * when the agent has the decorator). Embedding the tool catalog as text
+ * inside the prompt gives the LLM a backup directory it can read directly
+ * — names + descriptions, no parameter schemas (those are still on the
+ * @function_tool side; the prompt block exists to make the LLM AWARE the
+ * tool exists and what it does).
+ *
+ * Output shape (one tool per block, blank line between):
+ *
+ *   ### <name>
+ *   <multi-line description>
+ *
+ * Returns empty string when no tools are declared (anonymous-on-landing).
+ * The caller appends a `## AVAILABLE TOOLS` header before this output so
+ * the section is discoverable in the prompt.
+ */
+export function renderAvailableToolsSection(
+  mode: 'anonymous' | 'authenticated' = 'authenticated',
+  currentRoute?: string,
+  activeRole?: string,
+): string {
+  const tools = buildLiveApiTools(mode, currentRoute, activeRole);
+  const decls: Array<{ name?: unknown; description?: unknown }> = [];
+  for (const entry of tools as Array<Record<string, unknown>>) {
+    const fnDecls = (entry as { function_declarations?: unknown }).function_declarations;
+    if (Array.isArray(fnDecls)) {
+      for (const d of fnDecls) {
+        if (d && typeof d === 'object') decls.push(d as { name?: unknown; description?: unknown });
+      }
+    }
+  }
+  if (decls.length === 0) return '';
+  const lines: string[] = [];
+  for (const d of decls) {
+    const name = typeof d.name === 'string' ? d.name : '';
+    const description = typeof d.description === 'string' ? d.description : '';
+    if (!name) continue;
+    lines.push(`### ${name}`);
+    if (description) lines.push(description);
+    lines.push('');
+  }
+  return lines.join('\n').trimEnd();
+}
+
+
+/**
  * VTID-01224: Build Live API tool declarations for function calling
  * These tools enable dynamic context retrieval during the conversation
  *
@@ -645,12 +696,12 @@ export function buildLiveApiTools(
             'Switch the active persona on this voice call to another colleague',
             '(or back to Vitana). Call ONLY when the user EXPLICITLY asks to',
             'talk to a different person by name — "switch me to Devon", "back',
-            'to Vitana please", "I want to talk to Atlas about my refund',
-            'instead". Voice + persona swap in the same call, no ticket filed.',
+            'to Vitana please". Voice + persona swap in the same call, no',
+            'ticket filed.',
             '',
-            'Personas: vitana (life companion + instruction manual), devon',
-            '(bugs), sage (general support), atlas (marketplace claims), mira',
-            '(account issues).',
+            'Personas (VTID-03044 canary): vitana (life companion + instruction',
+            'manual) and devon (bugs / UX issues, tech support). Sage / Atlas /',
+            'Mira are DISABLED in this phase — never target them.',
             '',
             'AFTER calling: speak ONE short bridge sentence in your own',
             'natural words. ANNOUNCE the handoff — never INTRODUCE the new',
@@ -681,7 +732,7 @@ export function buildLiveApiTools(
                 // newly-added specialist becomes a valid switch target with
                 // zero code change. Default keys: vitana (receptionist),
                 // devon, sage, atlas, mira. New specialists added by INSERT.
-                description: 'Target persona key (e.g. vitana, devon, sage, atlas, mira, or any other active key from agent_personas). Use vitana to hand the user back to the receptionist.',
+                description: 'Target persona key. VTID-03044 canary: only vitana and devon are enabled. Sage / Atlas / Mira exist in agent_personas but are status=\'draft\' — never target them. Use vitana to hand the user back to the receptionist.',
               },
               reason: {
                 type: 'string',
@@ -699,10 +750,11 @@ export function buildLiveApiTools(
         {
           name: 'report_to_specialist',
           description: [
-            'File a customer-support ticket and hand the call to a specialist',
-            '(Devon/Sage/Atlas/Mira). This is RARE — typically less than 5%',
-            'of conversations. You ARE the instruction manual; almost every',
-            'question is yours to answer.',
+            'File a customer-support ticket and hand the call to Devon, our',
+            'tech-support colleague (VTID-03044 canary: Devon is the ONLY',
+            'enabled specialist; Sage / Atlas / Mira are disabled). This is',
+            'RARE — typically less than 5% of conversations. You ARE the',
+            'instruction manual; almost every question is yours to answer.',
             '',
             'YOU MUST PROPOSE BEFORE CALLING. Even when forwarding is warranted,',
             'first say something like "Shall I bring in Devon to file this?"',
@@ -764,7 +816,7 @@ export function buildLiveApiTools(
                 // agent_personas registry. Default specialists: devon (bugs/
                 // UX), sage (support), atlas (marketplace/finance), mira
                 // (account). New specialists added by INSERT.
-                description: 'Optional: which specialist should own this (e.g. devon, sage, atlas, mira, or any other active key from agent_personas.handles_kinds). The backend re-checks via the keyword router and falls back to the kind→handles_kinds match if the hint is empty or unknown.',
+                description: 'Optional: which specialist should own this. VTID-03044 canary: only devon is enabled — Sage / Atlas / Mira are status=\'draft\' and the backend RPC will not return them. The backend re-checks via the keyword router and falls back to the kind→handles_kinds match if the hint is empty or unknown.',
               },
               summary: {
                 type: 'string',
@@ -861,6 +913,38 @@ export function buildLiveApiTools(
               },
             },
             required: ['question'],
+          },
+        },
+        // L2.2b.6 (VTID-03010) — Life Compass read tool. The Life Compass is
+        // the user's authoritative long-term direction (goal + why + target
+        // date). Without this tool the model has no way to answer "what is
+        // my Life Compass goal?" with the canonical value — it either
+        // invents one from prior conversation or denies access.
+        {
+          name: 'get_life_compass',
+          description: [
+            "Return the user's active Life Compass — the one-sentence long-term",
+            'direction they set in Settings. Includes:',
+            '  - goal: the current primary_goal text (the one-sentence direction)',
+            '  - category: the life domain (e.g. longevity, business, family)',
+            '',
+            'CALL THIS WHEN the user asks any variation of:',
+            '  - "What is my Life Compass?" / "Was ist mein Life Compass?"',
+            '  - "What\'s my Life Compass goal?" / "Was ist mein Lebenskompass-Ziel?"',
+            '  - "What am I working toward?" / "Worauf arbeite ich hin?"',
+            '  - "Remind me what my goal is" / "Erinnere mich an mein Ziel"',
+            '  - "What\'s my long-term direction?"',
+            '',
+            'If the row exists with a goal, narrate it warmly and connect the',
+            "user's question or current plan back to the goal. If `available:",
+            'false` with reason `not_set`, gently offer to walk them through',
+            "setting one up — do NOT say 'I don't have access'. If reason is",
+            '`life_compass_not_deployed`, the feature is off in this environment',
+            "— acknowledge honestly that the feature isn't enabled here.",
+          ].join('\n'),
+          parameters: {
+            type: 'object',
+            properties: {},
           },
         },
         // ─── BOOTSTRAP-ORB-INDEX-AWARENESS-R4 — Vitana Index tools (5-pillar) ───
@@ -1019,6 +1103,64 @@ export function buildLiveApiTools(
               },
             },
             required: ['raw_text'],
+          },
+        },
+        // ─── VTID-03255 — record_journey_answer: drive the guided journey ───
+        {
+          name: 'record_journey_answer',
+          description: [
+            "Record the user's answer to a Journey Foundation step and get the",
+            'next move back. The journey is a goal-gated, guided onboarding path:',
+            'you lead it, the My Journey screen mirrors it. CALL THIS every time',
+            'the user answers a journey question, so the real record is written and',
+            'the screen updates instantly.',
+            '',
+            'Pass `step` = the step being answered:',
+            '  - "life_compass"  -> their main goal. Put the goal sentence in',
+            '     `value`; if they give a measurable target + timeframe, also pass',
+            '     `target_value`, `target_unit`, `target_date` (YYYY-MM-DD).',
+            '  - "economic_intent" -> their stance on earning in the longevity',
+            '     economy. Put their words in `value` (build a business / passive',
+            '     income / earn from recommendations / just curious). "curious" is',
+            '     a valid answer - never pressure them.',
+            '  - "weakest_habit" -> the habit blocking their health most. Put it in',
+            '     `value` (food / water / exercise / sleep / stress).',
+            '  - "understand_economy", "autopilot", "business_live_media" -> these',
+            '     are teaching moments; call with `acknowledged: true` once the',
+            '     user understands.',
+            '',
+            'The tool returns the exact next sentence to say (in `text`) and the',
+            'next step + navigation in `result`. Speak the returned `text`, then',
+            'continue. Set `teach_mode: true` when the user is not in the mood to',
+            'do tasks and just wants to understand.',
+          ].join('\n'),
+          parameters: {
+            type: 'object',
+            properties: {
+              step: {
+                type: 'string',
+                description:
+                  'The journey step being answered: life_compass, economic_intent, weakest_habit, understand_economy, autopilot, business_live_media, economic_aspiration.',
+              },
+              value: {
+                type: 'string',
+                description: "The user's answer in their own words (goal sentence, pillar, intent).",
+              },
+              category: { type: 'string', description: 'Optional life domain for the goal.' },
+              target_value: { type: 'number', description: 'Optional measurable target (e.g. 5).' },
+              target_unit: { type: 'string', description: 'Optional unit for the target (e.g. kg).' },
+              target_date: { type: 'string', description: 'Optional deadline, YYYY-MM-DD.' },
+              starting_value: { type: 'number', description: 'Optional starting value for the goal.' },
+              acknowledged: {
+                type: 'boolean',
+                description: 'For teaching steps - true once the user understands.',
+              },
+              teach_mode: {
+                type: 'boolean',
+                description: 'True when the user wants to learn rather than execute a task now.',
+              },
+            },
+            required: ['step'],
           },
         },
         // ─── VTID-02601 — set_reminder: voice-create a one-shot reminder ───
@@ -1370,6 +1512,60 @@ export function buildLiveApiTools(
               },
             },
             required: ['id'],
+          },
+        },
+        {
+          name: 'get_autopilot_recommendations',
+          description: [
+            'Read out what is prepared in the user\'s Autopilot — the SAME',
+            'list shown in the Autopilot popup. Call this when the user asks',
+            '"what\'s in my Autopilot?", "what has Autopilot prepared?",',
+            '"what do you suggest I do today?", "read my recommendations",',
+            'or "was hat der Autopilot für mich?".',
+            '',
+            'Returns { ok, count, spoken, items:[{id,title}] }. Speak the',
+            '`spoken` summary verbatim (it is already ordered and concise).',
+            'The user can then say "activate those" / "do the first two" and',
+            'you call activate_autopilot_recommendations — the ids are',
+            'remembered from THIS call, so you never need to pass them back.',
+          ].join('\n'),
+          parameters: {
+            type: 'object',
+            properties: {
+              limit: {
+                type: 'number',
+                description: 'Max actions to read out. Defaults to 5. Keep small for voice.',
+              },
+            },
+            required: [],
+          },
+        },
+        {
+          name: 'activate_autopilot_recommendations',
+          description: [
+            'Activate one or more Autopilot recommendations on the user\'s',
+            'behalf — the same full activation the popup performs (schedules',
+            'a calendar slot where applicable, notifies, and replenishes the',
+            'queue). Use ONLY after the user has explicitly agreed to act',
+            '("yes, do those", "activate the first one", "los geht\'s").',
+            '',
+            'You normally call this with NO arguments right after',
+            'get_autopilot_recommendations — it activates the actions you',
+            'just read aloud. To activate a subset, pass `ids` with the',
+            'specific recommendation ids from the items list (never guess an',
+            'id). Returns { ok, activated, spoken }; speak `spoken` verbatim.',
+          ].join('\n'),
+          parameters: {
+            type: 'object',
+            properties: {
+              ids: {
+                type: 'array',
+                items: { type: 'string' },
+                description:
+                  'OPTIONAL — specific recommendation ids to activate. Omit to activate everything just read aloud by get_autopilot_recommendations.',
+              },
+            },
+            required: [],
           },
         },
         {
@@ -1852,6 +2048,69 @@ export function buildLiveApiTools(
               },
             },
             required: ['pillar'],
+          },
+        },
+        // VTID-03112 (T1): Teacher Mode tools. Only declared for authenticated
+        // sessions — anonymous landing-page visitors never enter Teacher Mode.
+        // The two tools work together: teacher_event advances the
+        // `system_capabilities` awareness ledger after the LLM delivers each
+        // capability's intro; end_teaching_session closes the overlay
+        // gracefully when the LLM senses the user wants to stop. The LLM
+        // decides when to call each — no rule table on our side.
+        {
+          name: 'teacher_event',
+          description: [
+            'Teacher Mode lifecycle: record a capability-awareness event for',
+            'the active user (introduced / tried / completed / dismissed). Call',
+            'this AFTER you have actually delivered an intro for a capability,',
+            'or when the user signals they want to dismiss / skip it. The',
+            'system_capabilities ledger drives the curriculum — calling this',
+            'is how the model says "I taught X, please advance the ledger so',
+            'I don\'t re-offer it next session".',
+            '',
+            'Examples (call IMMEDIATELY after the model action it records):',
+            "  - 'tried': you just narrated The Five Pillars manual content.",
+            "  - 'dismissed': user said 'nein danke' to the offer.",
+            "  - 'completed': user confirmed they understand / will use it.",
+          ].join('\n'),
+          parameters: {
+            type: 'object',
+            properties: {
+              capability_key: {
+                type: 'string',
+                description: 'The capability_key from system_capabilities (e.g. "five_pillars", "vitana_id"). The model receives the active key in its Teacher Mode prompt.',
+              },
+              event_name: {
+                type: 'string',
+                enum: ['introduced', 'seen', 'tried', 'completed', 'dismissed'],
+                description: 'Which lifecycle event to record. Use "tried" after delivering an intro; "dismissed" when user declines; "completed" if the user confirms understanding.',
+              },
+            },
+            required: ['capability_key', 'event_name'],
+          },
+        },
+        {
+          name: 'end_teaching_session',
+          description: [
+            'Teacher Mode termination: close the orb overlay gracefully when',
+            'the user has signaled they want to end. ALWAYS call this AFTER',
+            'speaking your warm farewell line — do not just stop talking. The',
+            'overlay UI listens for this directive and fades out the chime.',
+            '',
+            'Call this when the user says any kind of "I\'m done" / "nein',
+            'danke" / "enough" — interpret IN CONTEXT, not by keyword match.',
+            'If the user is ambiguous, ask a clarifying question first; only',
+            'call this when you are confident the session should end.',
+          ].join('\n'),
+          parameters: {
+            type: 'object',
+            properties: {
+              reason: {
+                type: 'string',
+                description: 'Short freeform reason the model is closing (e.g. "user said nein danke", "user signaled they are tired"). Used for telemetry — never spoken.',
+              },
+            },
+            required: [],
           },
         },
         // BOOTSTRAP-ADMIN-DD: admin voice tools — only injected when active_role

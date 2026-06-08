@@ -1,0 +1,229 @@
+name: Run SQL Migration (STAGING ONLY)
+# VTID-Phase0-followup: separate staging migration runner.
+#
+# WHY A SEPARATE FILE (not a branch=prod|staging input on RUN-MIGRATION.yml):
+#   1. Hard physical separation — no way to accidentally select "prod" in a
+#      dropdown and clobber inmkhvwdcuyhnxkgfvsb. This file CANNOT reach prod
+#      because it never reads SUPABASE_DB_URL.
+#   2. Different secret (STAGING_SUPABASE_DB_URL) + different project_ref
+#      assertion (rsdakjqpvcpgomltdmxu) + a literal confirm phrase.
+#   3. Memory rule: "migrations are STAGING-FIRST then user manually merges to
+#      prod via Supabase dashboard" — staging path deserves its own UX so the
+#      operator's muscle memory for RUN-MIGRATION (prod) never crosses wires.
+#   4. Memory rule: "migrations are ONE FILE AT A TIME; never resurrect
+#      APPLY-MIGRATIONS.yml" — preserved here (single migration_file input).
+#
+# Prereq secret (operator must set before first run):
+#   gh secret set STAGING_SUPABASE_DB_URL --repo exafyltd/vitana-platform
+#   value = postgres connection string for project_ref rsdakjqpvcpgomltdmxu
+
+on:
+  workflow_dispatch:
+    inputs:
+      migration_file:
+        description: 'Migration file path (relative to repo root). ONE file at a time.'
+        required: true
+        default: 'supabase/migrations/20260528220000_VTID_03180_community_cache_materialized_views.sql'
+      confirm:
+        description: "Type 'I-mean-staging' to confirm this targets STAGING (rsdakjqpvcpgomltdmxu), NOT prod"
+        required: true
+        default: ''
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  STAGING_PROJECT_REF: rsdakjqpvcpgomltdmxu
+  PROD_PROJECT_REF: inmkhvwdcuyhnxkgfvsb
+
+jobs:
+  migrate-staging:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # ---------------------------------------------------------------
+      # GUARD 1: Confirm phrase must match exactly.
+      # ---------------------------------------------------------------
+      - name: Confirm staging intent
+        run: |
+          set -euo pipefail
+          if [ "${{ inputs.confirm }}" != "I-mean-staging" ]; then
+            echo "::error::confirm input must be exactly 'I-mean-staging' (got: '${{ inputs.confirm }}')"
+            exit 1
+          fi
+          echo "Confirm phrase OK."
+
+      # ---------------------------------------------------------------
+      # GUARD 2: Migration file must exist and live under supabase/migrations/.
+      # ---------------------------------------------------------------
+      - name: Validate migration file path
+        run: |
+          set -euo pipefail
+          F="${{ inputs.migration_file }}"
+          case "$F" in
+            supabase/migrations/*.sql) ;;
+            *) echo "::error::migration_file must match supabase/migrations/*.sql (got: $F)"; exit 1 ;;
+          esac
+          if [ ! -f "$F" ]; then
+            echo "::error::migration file not found in checkout: $F"
+            exit 1
+          fi
+          echo "Migration file OK: $F"
+
+      # ---------------------------------------------------------------
+      # GUARD 3: Secret must exist AND must contain the staging project_ref,
+      # AND must NOT contain the prod project_ref. This is the hard prod-block.
+      # ---------------------------------------------------------------
+      - name: Verify STAGING_SUPABASE_DB_URL targets staging (HARD GUARD)
+        env:
+          STAGING_DB_URL: ${{ secrets.STAGING_SUPABASE_DB_URL }}
+        run: |
+          set -euo pipefail
+          if [ -z "${STAGING_DB_URL:-}" ]; then
+            echo "::error::STAGING_SUPABASE_DB_URL secret is empty or missing."
+            echo "::error::Set it with: gh secret set STAGING_SUPABASE_DB_URL --repo exafyltd/vitana-platform"
+            exit 1
+          fi
+          if ! printf '%s' "$STAGING_DB_URL" | grep -q "$STAGING_PROJECT_REF"; then
+            echo "::error::STAGING_SUPABASE_DB_URL does not contain staging project_ref ($STAGING_PROJECT_REF)."
+            echo "::error::Refusing to run — secret may be misconfigured."
+            exit 1
+          fi
+          if printf '%s' "$STAGING_DB_URL" | grep -q "$PROD_PROJECT_REF"; then
+            echo "::error::STAGING_SUPABASE_DB_URL contains PROD project_ref ($PROD_PROJECT_REF). HARD STOP."
+            exit 1
+          fi
+          echo "STAGING_SUPABASE_DB_URL targets $STAGING_PROJECT_REF — OK."
+
+      # ---------------------------------------------------------------
+      # GUARD 4: WIF auth — same pattern as EXEC-DEPLOY.yml. Used so the
+      # OASIS emit step can pull a Google ID token if the gateway endpoint
+      # requires one; also future-proofs to Cloud SQL Auth Proxy if we move
+      # the staging DB behind it.
+      # ---------------------------------------------------------------
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_WIF_SA_EMAIL }}
+          project_id: lovable-vitana-vers1
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Install psql
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client
+
+      # ---------------------------------------------------------------
+      # Apply the migration. Wrap in BEGIN/COMMIT via psql -1 so a failure
+      # rolls back cleanly (each migration file is expected to be a single
+      # logical change per the one-file-at-a-time rule).
+      # ---------------------------------------------------------------
+      - name: Apply migration to STAGING
+        id: apply
+        env:
+          STAGING_DB_URL: ${{ secrets.STAGING_SUPABASE_DB_URL }}
+        run: |
+          set -euo pipefail
+          F="${{ inputs.migration_file }}"
+          echo "Applying $F to project_ref=$STAGING_PROJECT_REF"
+          # -v ON_ERROR_STOP=1 stops on first SQL error; -1 wraps in a tx.
+          psql "$STAGING_DB_URL" \
+            -v ON_ERROR_STOP=1 \
+            -1 \
+            -f "$F" \
+            | tee migration_output.log
+          echo "applied=true" >> "$GITHUB_OUTPUT"
+
+      - name: Reload PostgREST schema cache
+        if: success()
+        env:
+          STAGING_DB_URL: ${{ secrets.STAGING_SUPABASE_DB_URL }}
+        run: |
+          set -euo pipefail
+          psql "$STAGING_DB_URL" -c "NOTIFY pgrst, 'reload schema';"
+          echo "Schema cache reload signal sent."
+
+      # ---------------------------------------------------------------
+      # OASIS telemetry — fire-and-forget. New topics; see risks.
+      # ---------------------------------------------------------------
+      - name: Emit OASIS success event
+        if: success()
+        env:
+          GATEWAY_SERVICE_TOKEN: ${{ secrets.GATEWAY_SERVICE_TOKEN }}
+        run: |
+          set -euo pipefail
+          curl -sS -X POST "https://gateway.vitanaland.com/api/v1/oasis/emit" \
+            -H "Authorization: Bearer $GATEWAY_SERVICE_TOKEN" \
+            -H "Content-Type: application/json" \
+            --max-time 10 \
+            -d "$(jq -nc \
+              --arg topic 'staging.migration.completed' \
+              --arg project_ref "$STAGING_PROJECT_REF" \
+              --arg migration_file '${{ inputs.migration_file }}' \
+              --arg run_id '${{ github.run_id }}' \
+              --arg run_url '${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}' \
+              --arg actor '${{ github.actor }}' \
+              '{topic:$topic, payload:{project_ref:$project_ref, migration_file:$migration_file, run_id:$run_id, run_url:$run_url, actor:$actor, ok:true}}')" \
+            || echo "::warning::OASIS emit failed (non-blocking)"
+
+      - name: Emit OASIS failure event
+        if: failure()
+        env:
+          GATEWAY_SERVICE_TOKEN: ${{ secrets.GATEWAY_SERVICE_TOKEN }}
+        run: |
+          set -euo pipefail
+          curl -sS -X POST "https://gateway.vitanaland.com/api/v1/oasis/emit" \
+            -H "Authorization: Bearer $GATEWAY_SERVICE_TOKEN" \
+            -H "Content-Type: application/json" \
+            --max-time 10 \
+            -d "$(jq -nc \
+              --arg topic 'staging.migration.failed' \
+              --arg project_ref "$STAGING_PROJECT_REF" \
+              --arg migration_file '${{ inputs.migration_file }}' \
+              --arg run_id '${{ github.run_id }}' \
+              --arg run_url '${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}' \
+              --arg actor '${{ github.actor }}' \
+              '{topic:$topic, payload:{project_ref:$project_ref, migration_file:$migration_file, run_id:$run_id, run_url:$run_url, actor:$actor, ok:false}}')" \
+            || echo "::warning::OASIS emit failed (non-blocking)"
+
+      # ---------------------------------------------------------------
+      # Run summary so `gh run view` shows green/red status clearly.
+      # ---------------------------------------------------------------
+      - name: Write run summary (success)
+        if: success()
+        run: |
+          {
+            echo "## STAGING migration applied"
+            echo ""
+            echo "- **Project ref:** \`$STAGING_PROJECT_REF\` (staging)"
+            echo "- **Migration file:** \`${{ inputs.migration_file }}\`"
+            echo "- **Actor:** @${{ github.actor }}"
+            echo ""
+            echo "### psql output (tail)"
+            echo '```'
+            tail -n 50 migration_output.log 2>/dev/null || echo '(no output captured)'
+            echo '```'
+            echo ""
+            echo "Next: verify in staging, then manually promote to prod via Supabase dashboard."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Write run summary (failure)
+        if: failure()
+        run: |
+          {
+            echo "## STAGING migration FAILED"
+            echo ""
+            echo "- **Project ref:** \`$STAGING_PROJECT_REF\` (staging)"
+            echo "- **Migration file:** \`${{ inputs.migration_file }}\`"
+            echo "- **Actor:** @${{ github.actor }}"
+            echo ""
+            echo "The migration was wrapped in a single transaction (psql -1) and rolled back on error."
+            echo ""
+            echo "### psql output (tail)"
+            echo '```'
+            tail -n 80 migration_output.log 2>/dev/null || echo '(no output captured — failure may have occurred before psql ran)'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

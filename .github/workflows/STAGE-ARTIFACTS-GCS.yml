@@ -1,0 +1,104 @@
+name: Stage Artifacts to GCS
+
+# Phase 1 W1 (VTID-03179 FINETUNES) — daily HF Hub -> GCS mirror for
+# trained finetune weights so all artifacts have a portable, GCP-local copy.
+# Reads the latest weight bundle for each target from gs://vitana-artifacts-staging/finetune-runs/<target>/
+# and ensures it's present in a stable canonical location.
+#
+# In W1 this workflow is mostly a no-op (no fine-tunes have completed yet).
+# It will start doing real work in W2 when the first voice-tool-router run
+# finishes.
+
+on:
+  schedule:
+    # Daily at 04:00 UTC (~05:00-06:00 CET).
+    - cron: '0 4 * * *'
+  workflow_dispatch:
+    inputs:
+      target:
+        description: 'Artifact target to stage'
+        required: false
+        default: all
+        type: choice
+        options:
+          - all
+          - voice-tool-router
+          - intent-kind
+          - pillar-classifier
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: stage-artifacts-gcs
+  cancel-in-progress: false
+
+env:
+  GCP_PROJECT: lovable-vitana-vers1
+  STAGING_BUCKET: gs://vitana-artifacts-staging
+
+jobs:
+  stage:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Auth to GCP (WIF)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_WIF_SA_EMAIL }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Mirror latest weights for each target
+        run: |
+          set -euo pipefail
+          REQUESTED_TARGET="${{ github.event.inputs.target || 'all' }}"
+          if [ "${REQUESTED_TARGET}" = "all" ]; then
+            TARGETS="voice-tool-router intent-kind pillar-classifier"
+          else
+            TARGETS="${REQUESTED_TARGET}"
+          fi
+
+          for TARGET in ${TARGETS}; do
+            SRC="${STAGING_BUCKET}/finetune-runs/${TARGET}/"
+            DST="${STAGING_BUCKET}/finetune-current/${TARGET}/"
+            echo "=== ${TARGET} ==="
+            # List existing runs newest-first. The trainer currently uploads
+            # adapter/tokenizer files as a directory; older staging expected a
+            # prebuilt weights.tar.gz. Support both shapes and publish the
+            # canonical tarball either way.
+            LATEST=$(gsutil ls "${SRC}" 2>/dev/null || true)
+            LATEST=$(printf "%s\n" "${LATEST}" | sort -r | head -10)
+            if [ -z "$LATEST" ]; then
+              echo "no runs yet for ${TARGET}; skipping"
+              continue
+            fi
+            STAGED=0
+            for RUN in $LATEST; do
+              if gsutil -q stat "${RUN}weights.tar.gz" 2>/dev/null; then
+                echo "selecting ${RUN}weights.tar.gz -> ${DST}weights.tar.gz"
+                gsutil -m cp "${RUN}weights.tar.gz" "${DST}weights.tar.gz"
+                echo "${RUN}" | gsutil cp - "${DST}LATEST_RUN.txt"
+                STAGED=1
+                break
+              fi
+              if gsutil -q stat "${RUN}vitana_training_manifest.json" 2>/dev/null; then
+                echo "packaging ${RUN} -> ${DST}weights.tar.gz"
+                WORKDIR="$(mktemp -d)"
+                DOWNLOAD_DIR="${WORKDIR}/artifact"
+                mkdir -p "${DOWNLOAD_DIR}"
+                gsutil -m cp -r "${RUN}*" "${DOWNLOAD_DIR}/"
+                tar -czf "${WORKDIR}/weights.tar.gz" -C "${DOWNLOAD_DIR}" .
+                gsutil -m cp "${WORKDIR}/weights.tar.gz" "${DST}weights.tar.gz"
+                echo "${RUN}" | gsutil cp - "${DST}LATEST_RUN.txt"
+                rm -rf "${WORKDIR}"
+                STAGED=1
+                break
+              fi
+            done
+            if [ "${STAGED}" -eq 0 ]; then
+              echo "no weights.tar.gz found in latest runs for ${TARGET}; skipping"
+            fi
+          done

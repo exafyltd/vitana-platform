@@ -44,6 +44,16 @@ import {
 import { analyzeLifeCompass } from './analyzers/life-compass-analyzer';
 import { analyzeIndexGaps } from './analyzers/index-gap-analyzer';
 import { buildRankerContext, rankBatch } from './ranking/index-pillar-weighter';
+// VTID-03133 (Phase C.4): replace direct `rankBatch` with the
+// PolicyResolver-backed strategy so each recommendation gets a
+// RankProvenance trail persisted to autopilot_recommendations.provenance.
+// The legacy `rankBatch` import stays for the fallback path inside the
+// try/catch below — if the strategy bombs, we silently fall back to the
+// pre-C.4 scoring path so production keeps working.
+import {
+  rankBatchWithProvenance,
+  type RankProvenance,
+} from '../decision-contract';
 import { deriveEconomicAxis } from './economic-axis';
 import {
   analyzeMarketplace,
@@ -55,6 +65,23 @@ import {
   WearableSignal,
   generateWearableFingerprint,
 } from './analyzers/wearable-analyzer';
+// BOOTSTRAP-AUTOPILOT-EXPANSION: calendar prep analyzer (flag-gated, OFF by default).
+import {
+  analyzeCalendarPrep,
+  CalendarPrepSignal,
+  generateCalendarPrepFingerprint,
+} from './analyzers/calendar-prep-analyzer';
+import { isFeatureLive } from '../feature-flags';
+// VTID-03140 (Phase C.6): per-signal-type impact maps live in
+// `decision_policy` now; this module owns the typed lookups.
+import {
+  getCodebaseSignalImpact,
+  getOasisSignalImpact,
+  getHealthSignalImpact,
+  getLLMSignalImpact,
+  getMarketplaceSignalImpact,
+  getWearableSignalImpact,
+} from './signal-impact';
 
 const LOG_PREFIX = '[VTID-01185:Generator]';
 
@@ -62,7 +89,7 @@ const LOG_PREFIX = '[VTID-01185:Generator]';
 // Types
 // =============================================================================
 
-export type SourceType = 'codebase' | 'oasis' | 'health' | 'roadmap' | 'llm' | 'behavior' | 'community' | 'marketplace' | 'wearable';
+export type SourceType = 'codebase' | 'oasis' | 'health' | 'roadmap' | 'llm' | 'behavior' | 'community' | 'marketplace' | 'wearable' | 'calendar_prep';
 
 export interface GeneratedRecommendation {
   title: string;
@@ -162,14 +189,8 @@ function convertCodebaseSignal(signal: CodebaseSignal): GeneratedRecommendation 
     missing_docs: 'dev',
   };
 
-  const impactMap: Record<string, number> = {
-    todo: 5,
-    large_file: 6,
-    missing_tests: 7,
-    dead_code: 4,
-    duplication: 5,
-    missing_docs: 3,
-  };
+  // VTID-03140 (Phase C.6): impactMap moved to decision_policy
+  // (`recommendation.signal_impact.codebase`).
 
   const effortMap: Record<string, number> = {
     todo: 3,
@@ -190,7 +211,7 @@ function convertCodebaseSignal(signal: CodebaseSignal): GeneratedRecommendation 
     title: signal.suggested_action.substring(0, 100),
     summary: signal.message,
     domain: domainMap[signal.type] || 'dev',
-    impact_score: impactMap[signal.type] || 5,
+    impact_score: getCodebaseSignalImpact(signal.type),
     effort_score: effortMap[signal.type] || 5,
     risk_level: severityToRisk[signal.severity] || 'low',
     source_type: 'codebase',
@@ -211,19 +232,14 @@ function convertOasisSignal(signal: OasisSignal): GeneratedRecommendation {
     underused_feature: 'Review underused feature',
   };
 
-  const impactMap: Record<string, number> = {
-    error_pattern: 8,
-    slow_endpoint: 7,
-    failed_deploy: 9,
-    anomaly: 6,
-    underused_feature: 4,
-  };
+  // VTID-03140 (Phase C.6): impactMap moved to decision_policy
+  // (`recommendation.signal_impact.oasis`).
 
   return {
     title: `${typeToTitle[signal.type] || 'Address issue'}: ${signal.source.substring(0, 50)}`,
     summary: signal.message,
     domain: signal.type === 'failed_deploy' ? 'infra' : 'dev',
-    impact_score: impactMap[signal.type] || 6,
+    impact_score: getOasisSignalImpact(signal.type),
     effort_score: signal.type === 'slow_endpoint' ? 6 : 5,
     risk_level: signal.severity === 'critical' ? 'critical' : signal.severity as 'low' | 'medium' | 'high',
     source_type: 'oasis',
@@ -244,19 +260,14 @@ function convertHealthSignal(signal: HealthSignal): GeneratedRecommendation {
     stale_migration: 'Apply pending migration',
   };
 
-  const impactMap: Record<string, number> = {
-    missing_index: 7,
-    large_table: 6,
-    missing_rls: 9,
-    env_gap: 8,
-    stale_migration: 5,
-  };
+  // VTID-03140 (Phase C.6): impactMap moved to decision_policy
+  // (`recommendation.signal_impact.health`).
 
   return {
     title: `${typeToTitle[signal.type] || 'Fix issue'}: ${signal.resource}`,
     summary: signal.message,
     domain: signal.type === 'missing_rls' ? 'security' : 'infra',
-    impact_score: impactMap[signal.type] || 6,
+    impact_score: getHealthSignalImpact(signal.type),
     effort_score: signal.type === 'large_table' ? 8 : 4,
     risk_level: signal.severity === 'critical' ? 'critical' : signal.severity as 'low' | 'medium' | 'high',
     source_type: 'health',
@@ -290,7 +301,9 @@ function convertLLMSignal(signal: LLMSignal): GeneratedRecommendation {
     title: signal.title.substring(0, 100),
     summary: signal.message,
     domain: signal.type === 'security' ? 'security' : signal.type === 'architecture' ? 'infra' : 'dev',
-    impact_score: signal.confidence > 0.8 ? 8 : signal.confidence > 0.5 ? 6 : 4,
+    // VTID-03140 (Phase C.6): confidence ladder moved to decision_policy
+    // (`recommendation.signal_impact.llm`).
+    impact_score: getLLMSignalImpact(signal.confidence),
     effort_score: signal.type === 'architecture' ? 7 : 5,
     risk_level: signal.severity,
     source_type: 'llm',
@@ -303,7 +316,9 @@ function convertLLMSignal(signal: LLMSignal): GeneratedRecommendation {
 }
 
 function convertWearableSignal(signal: WearableSignal): GeneratedRecommendation {
-  const impact = signal.severity === 'high' ? 8 : signal.severity === 'medium' ? 6 : 4;
+  // VTID-03140 (Phase C.6): severity ladder moved to decision_policy
+  // (`recommendation.signal_impact.wearable`).
+  const impact = getWearableSignalImpact(signal.severity);
   return {
     title: signal.summary.substring(0, 100),
     summary: signal.summary,
@@ -314,6 +329,35 @@ function convertWearableSignal(signal: WearableSignal): GeneratedRecommendation 
     source_type: 'wearable',
     source_ref: `wearable:${signal.condition_key}:${signal.user_id}`,
     fingerprint: generateWearableFingerprint(signal),
+    suggested_files: [],
+    suggested_endpoints: [],
+    suggested_tests: [],
+    user_id: signal.user_id,
+  };
+}
+
+/**
+ * BOOTSTRAP-AUTOPILOT-EXPANSION: map a calendar-prep signal into a community
+ * recommendation. source_ref reuses the existing `pillar_template_<pillar>`
+ * keys so COMMUNITY_ACTIONS already knows how to schedule a wellness prep block
+ * on activation — no new action wiring required.
+ */
+function convertCalendarPrepSignal(signal: CalendarPrepSignal): GeneratedRecommendation {
+  const severityToImpact: Record<CalendarPrepSignal['severity'], number> = {
+    low: 45,
+    medium: 60,
+    high: 72,
+  };
+  return {
+    title: signal.summary.substring(0, 100),
+    summary: signal.summary,
+    domain: 'health',
+    impact_score: severityToImpact[signal.severity],
+    effort_score: 2,
+    risk_level: 'low',
+    source_type: 'calendar_prep',
+    source_ref: `pillar_template_${signal.pillar}`,
+    fingerprint: generateCalendarPrepFingerprint(signal),
     suggested_files: [],
     suggested_endpoints: [],
     suggested_tests: [],
@@ -335,7 +379,9 @@ function convertMarketplaceSignal(signal: MarketplaceSignal): GeneratedRecommend
     title: `Try: ${signal.product_title}${priceText}`.substring(0, 100),
     summary: `Recommended${conditionText}. ${reasonsText}`,
     domain: 'marketplace',
-    impact_score: signal.match_score > 0.7 ? 8 : signal.match_score > 0.5 ? 6 : 4,
+    // VTID-03140 (Phase C.6): match_score ladder moved to decision_policy
+    // (`recommendation.signal_impact.marketplace`).
+    impact_score: getMarketplaceSignalImpact(signal.match_score),
     effort_score: 2, // easy to act on — just review + click
     risk_level: signal.severity,
     source_type: 'marketplace',
@@ -600,6 +646,32 @@ export async function generateRecommendations(
       );
     }
 
+    // BOOTSTRAP-AUTOPILOT-EXPANSION: Calendar Prep analyzer.
+    // Double-gated: must be in the requested sources AND the feature flag must
+    // be live (FEATURE_AUTOPILOT_CALENDAR_PREP_ENV). Default = OFF, and
+    // 'calendar_prep' is not in DEFAULT_CONFIG.sources, so there is no behavior
+    // change unless an operator both requests the source and flips the flag.
+    if (fullConfig.sources.includes('calendar_prep') && isFeatureLive('AUTOPILOT_CALENDAR_PREP')) {
+      analyzerPromises.push(
+        (async () => {
+          try {
+            const result = await analyzeCalendarPrep({});
+            analysisSummary.calendar_prep = result.summary;
+            if (result.ok) {
+              const cap = Math.ceil(fullConfig.limit / 2);
+              for (const signal of result.signals.slice(0, cap)) {
+                recommendations.push(convertCalendarPrepSignal(signal));
+              }
+            } else {
+              errors.push({ source: 'calendar_prep', error: result.error || 'Unknown error' });
+            }
+          } catch (err) {
+            errors.push({ source: 'calendar_prep', error: String(err) });
+          }
+        })()
+      );
+    }
+
     // VTID-02000: Marketplace analyzer (per-user product recommendations)
     if (fullConfig.sources.includes('marketplace')) {
       analyzerPromises.push(
@@ -764,6 +836,64 @@ function convertCommunityUserSignal(
   };
 }
 
+/**
+ * One-off (set-once) community actions that should NOT be regenerated once the
+ * user has activated or completed them — onboarding steps only make sense the
+ * first time. Everything else (engagement, weakness nudges, pillar templates)
+ * is repeatable and may re-surface after expiry. VTID-03201.
+ */
+function isOneOffSourceRef(sourceRef: string | null): boolean {
+  if (!sourceRef) return false;
+  return sourceRef.startsWith('onboarding_');
+}
+
+/** How long a rejected recommendation stays suppressed before it may re-surface. */
+export const REJECTED_COOLDOWN_DAYS = 14;
+
+/** A historical autopilot_recommendations row, as read for the dedupe pre-check. */
+export interface FingerprintHistoryRow {
+  fingerprint: string;
+  source_ref: string | null;
+  status: string;
+  updated_at: string | null;
+  expires_at: string | null;
+}
+
+/**
+ * Graded dedupe decision (VTID-03201): does this existing row block
+ * regeneration of the same fingerprint?
+ *
+ *   - expired (expires_at < now)         → allow  (stale, replaceable)
+ *   - new / snoozed (not expired)        → block  (live duplicate)
+ *   - rejected within cooldown window    → block  (don't re-nag instantly)
+ *   - rejected older than cooldown       → allow
+ *   - activated/completed one-off ref    → block  (set-once actions)
+ *   - activated/completed repeatable ref → allow  (re-surface periodically)
+ *
+ * Pure and side-effect free so it can be unit-tested without the network.
+ */
+export function isFingerprintBlocked(row: FingerprintHistoryRow, nowMs: number = Date.now()): boolean {
+  // A stale (expired) row never blocks regeneration — replacing it is the
+  // whole point of replenishment.
+  const expired = row.expires_at != null && new Date(row.expires_at).getTime() < nowMs;
+  if (expired) return false;
+
+  switch (row.status) {
+    case 'new':
+    case 'snoozed':
+      return true;
+    case 'rejected': {
+      const updatedMs = row.updated_at ? new Date(row.updated_at).getTime() : 0;
+      return nowMs - updatedMs < REJECTED_COOLDOWN_DAYS * 86400000;
+    }
+    case 'activated':
+    case 'completed':
+      return isOneOffSourceRef(row.source_ref);
+    default:
+      return false;
+  }
+}
+
 // =============================================================================
 // Per-User Personal Recommendation Generator
 // =============================================================================
@@ -844,6 +974,11 @@ export async function generatePersonalRecommendations(
     // G4: re-rank by pillar-gap + compass + journey_mode BEFORE fingerprint
     // dedup so the highest-rank_score candidates survive when they collide.
     // rankBatch also applies the G6 per-pillar quota + balance guard.
+    // VTID-03133 (Phase C.4): use `rankBatchWithProvenance` so each
+    // ranked rec carries a `RankProvenance` trail. We key the trail by
+    // the rec's index-id and persist it after the corresponding row is
+    // inserted in autopilot_recommendations.
+    const provenanceByIndex = new Map<string, RankProvenance>();
     try {
       const rankerInputs = recommendations.map((r, idx) => ({
         id: String(idx),
@@ -852,50 +987,90 @@ export async function generatePersonalRecommendations(
         contribution_vector: (r as any).contribution_vector ?? null,
         economic_axis: deriveEconomicAxis(r.source_type, r.source_ref),
       }));
-      const ranked = rankBatch(rankerInputs, rankerCtx);
+      let rankedOrder: Array<{ rec: { id?: string } }>;
+      try {
+        const rankedWithProv = rankBatchWithProvenance(rankerInputs, rankerCtx);
+        for (const r of rankedWithProv) {
+          const idxId = (r.ranked.rec as { id?: string }).id;
+          if (idxId) provenanceByIndex.set(idxId, r.provenance);
+        }
+        rankedOrder = rankedWithProv.map((r) => ({ rec: r.ranked.rec }));
+      } catch (stratErr: any) {
+        // Strategy bombed → fall back to the pre-C.4 scoring path so
+        // production isn't blocked by a Phase C wiring bug. Provenance
+        // is auxiliary; rank order is critical.
+        console.warn(
+          `${LOG_PREFIX} rankBatchWithProvenance failed — falling back to legacy rankBatch (non-fatal): ${stratErr?.message}`,
+        );
+        rankedOrder = rankBatch(rankerInputs, rankerCtx).map((r) => ({ rec: r.rec }));
+      }
       // Apply rank order back onto recommendations[].
       const indexById = new Map<string, GeneratedRecommendation>(
         recommendations.map((r, idx) => [String(idx), r]),
       );
-      recommendations = ranked
-        .map(r => indexById.get((r.rec as any).id as string))
+      // VTID-03133: stash the new ranker index back onto each rec so we
+      // can recover its provenance in the insert loop below. Map's key
+      // is `rec` reference for stability across the re-ordering.
+      const recToProvenance = new Map<GeneratedRecommendation, RankProvenance>();
+      for (const r of rankedOrder) {
+        const idxId = (r.rec as { id?: string }).id;
+        if (!idxId) continue;
+        const matched = indexById.get(idxId);
+        const prov = provenanceByIndex.get(idxId);
+        if (matched && prov) recToProvenance.set(matched, prov);
+      }
+      // Stamp provenance onto the rec object (untyped — picked up below
+      // in the insert loop). Done before `recommendations` is rewritten
+      // by the .filter so references survive.
+      for (const [rec, prov] of recToProvenance) {
+        (rec as unknown as { __rank_provenance?: RankProvenance }).__rank_provenance = prov;
+      }
+      recommendations = rankedOrder
+        .map(r => indexById.get((r.rec as { id?: string }).id as string))
         .filter((r): r is GeneratedRecommendation => !!r);
     } catch (rankErr: any) {
       console.warn(`${LOG_PREFIX} rankBatch failed (non-fatal):`, rankErr?.message);
     }
 
-    // Pre-check: fetch ALL existing fingerprints for this user (ANY status)
-    // to prevent re-creating recommendations that were already activated/rejected.
-    // The RPC only checks new/snoozed, so we need this extra guard.
-    const existingFingerprints = new Set<string>();
+    // Pre-check: fetch existing fingerprints + their state and apply the GRADED
+    // dedupe policy (VTID-03201). The previous implementation blocked any
+    // fingerprint that had EVER existed in any status, so a user whose recs had
+    // all expired or been rejected could never get fresh ones — the popup
+    // permanently emptied out. The RPC already blocks live duplicates (status
+    // new/snoozed); isFingerprintBlocked() adds the guards the RPC can't (see
+    // its docstring for the full policy).
+    const blockedFingerprints = new Set<string>();
     try {
       const fpResp = await fetch(
-        `${supabaseUrl}/rest/v1/autopilot_recommendations?user_id=eq.${userId}&select=fingerprint&fingerprint=not.is.null`,
+        `${supabaseUrl}/rest/v1/autopilot_recommendations?user_id=eq.${userId}&select=fingerprint,source_ref,status,updated_at,expires_at&fingerprint=not.is.null`,
         { headers: { apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` } }
       );
       if (fpResp.ok) {
-        const fpRows = await fpResp.json() as { fingerprint: string }[];
+        const fpRows = await fpResp.json() as FingerprintHistoryRow[];
+        const now = Date.now();
         for (const row of fpRows) {
-          if (row.fingerprint) existingFingerprints.add(row.fingerprint);
+          if (!row.fingerprint) continue;
+          // Block wins across duplicate fingerprints with mixed history.
+          if (isFingerprintBlocked(row, now)) blockedFingerprints.add(row.fingerprint);
         }
-        console.log(`${LOG_PREFIX} Pre-check: ${existingFingerprints.size} existing fingerprints for user ${userId.slice(0, 8)}`);
+        console.log(`${LOG_PREFIX} Graded dedupe: ${blockedFingerprints.size}/${fpRows.length} fingerprints blocked for user ${userId.slice(0, 8)}`);
       }
     } catch (fpErr) {
       console.warn(`${LOG_PREFIX} Pre-check fingerprint query failed (non-fatal):`, fpErr);
     }
 
-    // Insert with deduplication (skip if fingerprint exists in ANY status)
+    // Insert with deduplication (graded policy above + RPC active-dup guard)
     let generated = 0;
     let duplicatesSkipped = 0;
 
     for (const rec of recommendations) {
-      // Skip if this fingerprint already exists (activated, rejected, etc.)
-      if (rec.fingerprint && existingFingerprints.has(rec.fingerprint)) {
+      // Skip only if the graded policy says this fingerprint is still blocked.
+      if (rec.fingerprint && blockedFingerprints.has(rec.fingerprint)) {
         duplicatesSkipped++;
         continue;
       }
 
-      const insertResult = await callRpc<{ duplicate?: boolean }>('insert_autopilot_recommendation', {
+      const insertResult = await callRpc<{ duplicate?: boolean; id?: string }>('insert_autopilot_recommendation', {
         p_title: rec.title,
         p_summary: rec.summary,
         p_domain: rec.domain,
@@ -920,6 +1095,45 @@ export async function generatePersonalRecommendations(
           duplicatesSkipped++;
         } else {
           generated++;
+          // VTID-03133 (Phase C.4): persist the RankProvenance trail to
+          // the autopilot_recommendations row created by the RPC above.
+          // Best-effort: UPDATE failure NEVER blocks generation (the row
+          // already exists; provenance is auxiliary). Without an
+          // id-returning RPC, we'd have to update by fingerprint —
+          // luckily the RPC's JSONB return includes `id` when not a
+          // duplicate.
+          const insertedId = insertResult.data?.id;
+          const prov = (rec as unknown as { __rank_provenance?: RankProvenance }).__rank_provenance;
+          if (insertedId && prov) {
+            try {
+              const supabaseUrl = process.env.SUPABASE_URL;
+              const supabaseKey = process.env.SUPABASE_SERVICE_ROLE;
+              if (supabaseUrl && supabaseKey) {
+                const upd = await fetch(
+                  `${supabaseUrl}/rest/v1/autopilot_recommendations?id=eq.${insertedId}`,
+                  {
+                    method: 'PATCH',
+                    headers: {
+                      'Content-Type': 'application/json',
+                      apikey: supabaseKey,
+                      Authorization: `Bearer ${supabaseKey}`,
+                      Prefer: 'return=minimal',
+                    },
+                    body: JSON.stringify({ provenance: prov }),
+                  },
+                );
+                if (!upd.ok) {
+                  console.warn(
+                    `${LOG_PREFIX} provenance UPDATE failed (non-fatal): ${upd.status} for id=${insertedId.slice(0, 8)}`,
+                  );
+                }
+              }
+            } catch (provErr: any) {
+              console.warn(
+                `${LOG_PREFIX} provenance UPDATE threw (non-fatal): ${provErr?.message}`,
+              );
+            }
+          }
         }
       } else {
         errors.push({ source: 'community', error: insertResult.error || 'Insert failed' });

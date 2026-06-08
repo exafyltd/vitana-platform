@@ -205,6 +205,13 @@ export type CicdEventType =
   | 'orb.session.ended'
   // VTID-01039: ORB Conversation Aggregation
   | 'orb.session.summary'
+  // DEV-COMHU-0502 — ORB Recovery 1: auth-contract identity resolution telemetry
+  | 'orb.session.identity.resolved'
+  // DEV-COMHU-0503 — ORB Recovery 2+3: close/reopen continuity state transitions
+  | 'orb.session.continuity.persisted'
+  | 'orb.session.continuity.cleared'
+  // DEV-COMHU-0504 — ORB Recovery 4: audio-ready handshake ack
+  | 'orb.session.audio_ready.acked'
   // VTID-01032: Multi-service deploy selection event
   | 'cicd.deploy.selection'
   // VTID-01033: CICD Concurrency Lock Events
@@ -501,11 +508,19 @@ export type CicdEventType =
   | 'orb.live.connection_failed'
   // VTID-WATCHDOG: ORB stall detection events
   | 'orb.live.stall_detected'
+  // VTID-02986: LiveKit (orb-agent) stall detection, namespaced under
+  // vtid.live.* so Voice Lab's /api/v1/voice-lab/live/sessions query
+  // surfaces it next to Vertex's stall events.
+  | 'vtid.live.stall_detected'
   // VTID-TOOLGUARD: Tool loop guard activation
   | 'orb.live.tool_loop_guard_activated'
   // BOOTSTRAP-ORB-HOTFIX-1: pre-greeting latency gauge (time from session-start
   // request to first greeting audio chunk forwarded to client)
   | 'orb.live.greeting.delivered'
+  // Phase D (DEV-COMHU voice budget watch): voice instruction budget observability
+  | 'voice.instruction.budget_trimmed'
+  | 'voice.instruction.budget_at_risk'
+  | 'voice.instruction.budget_overflow'
   // BOOTSTRAP-ADMIN-BB-CC: admin insight lifecycle
   | 'admin.insight.approved'
   | 'admin.insight.rejected'
@@ -520,6 +535,73 @@ export type CicdEventType =
   | 'tenant.weekly.review.ready'
   // BOOTSTRAP-ADMIN-DD: admin voice tool side-effects
   | 'admin.autopilot.pause_requested'
+  // L1 (VTID-02976): upstream provider selection — pure-selector decisions.
+  // `selected` fires once per `connectToLiveAPI` call; `selection_error` fires
+  // ONLY when a LiveKit request was downgraded (config invalid or pinned_to_vertex_l1).
+  | 'orb.upstream.provider.selected'
+  | 'orb.upstream.provider.selection_error'
+  // L2.1 (VTID-02980): LiveKit internal-canary observability.
+  // `canary.selection_unlocked` fires when the selector returns
+  // `provider='livekit'` via the canary path (all hard gates pass: env/sys
+  // request + creds + canary.enabled + identity allowlisted). In L2.1 the
+  // consumer still pins to Vertex and emits `canary.consumer_pinned_vertex_l21`
+  // to make that pin explicit; L2.2 removes the consumer-side pin + adds
+  // connect_started/succeeded/failed events for the real media path.
+  | 'orb.upstream.canary.selection_unlocked'
+  | 'orb.upstream.canary.consumer_pinned_vertex_l21'
+  // L2.2a (VTID-02982): per-identity active-provider gate.
+  // Fires from `GET /api/v1/orb/active-provider` when a caller would have
+  // routed to LiveKit (creds valid, canary enabled, identity allowlisted)
+  // BUT the backend LiveKit Agent flag is off. The L2.2a safety pin keeps
+  // the caller on Vertex — this event tells operators "you have a canary
+  // user waiting; flip `voice.livekit_agent_enabled` once L2.2b lands."
+  | 'orb.upstream.active_provider.pinned_until_agent_ready'
+  // L2.2b.1 (VTID-02987): backend orb-agent lifecycle observability.
+  // Emitted by the Python `services/agents/orb-agent` worker via
+  // POST /api/v1/oasis/emit. These 5 events form the room-join proof loop
+  // for the canary path. Audio / LLM / tool events are deferred to
+  // subsequent L2.2b.x phases.
+  | 'orb.livekit.agent.starting'
+  | 'orb.livekit.agent.room_join_started'
+  | 'orb.livekit.agent.room_join_succeeded'
+  | 'orb.livekit.agent.room_join_failed'
+  | 'orb.livekit.agent.disconnected'
+  // L2.2b.2 (VTID-02990): Gemini-via-Vertex text/model loop — proves the
+  // agent can reach a model from canary room context using Cloud Run's
+  // default service account (ADC, no API key). Emitted by the orb-agent's
+  // text-only self-test path (`ORB_AGENT_TEXT_ONLY=true`). No STT/TTS yet
+  // — that's L2.2b.3. Failure reason (e.g. `genai_sdk_not_installed`,
+  // `vertex_client_init_error`, `vertex_api_error`, `timeout`) is carried
+  // in the payload.
+  | 'orb.livekit.agent.model_request_started'
+  | 'orb.livekit.agent.model_request_succeeded'
+  | 'orb.livekit.agent.model_request_failed'
+  // VTID-03046: per-turn LiveKit-agent latency telemetry. Fires once per
+  // user-then-assistant exchange, with `stt_done_to_speech_created_ms`
+  // (wall-clock wait after the user stops talking) and
+  // `system_instruction_chars` so we can correlate latency with prompt
+  // size. Pure additive — no behavior change to the voice path.
+  | 'orb.livekit.agent.turn.measured'
+  // VTID-03050: STT failure observability. Emitted from session.py when
+  // the SDK's `error` / `metrics_collected` / FallbackAdapter's
+  // `stt_availability_changed` events fire — closes the diagnostic gap
+  // around the cascade STT chain (Google primary + Google mirror +
+  // Deepgram). Pure additive telemetry; no behavior change.
+  | 'livekit.stt.error'
+  | 'livekit.stt.availability_changed'
+  | 'livekit.stt.metrics'
+  // VTID-03075: silent-stall detection. Fires when VAD reports
+  // user_state_changed → "speaking" but no user_input_transcribed
+  // arrives within 3 seconds. Pairs with a `client.alert.show` data
+  // message published to the LiveKit room so the Test Bench shows
+  // "Hold on, reconnecting…" + plays a chime.
+  | 'livekit.stt.silent_stall'
+  // VTID-03078: STT recovery telemetry. Fires when the silent-stall
+  // watchdog attempts an in-place STT swap (build fresh cascade →
+  // session.update_agent with new Agent carrying stt=fresh and the rest
+  // preserved). Outcomes: attempted / succeeded / gave_up. Bounded to
+  // 3 swaps per session; kill switch ORB_STT_RECOVERY_ENABLED=false.
+  | 'livekit.stt.recovery'
   // VTID-DIAG: Pipeline diagnostics
   | 'orb.live.diag'
   // VTID-FALLBACK: Chat-TTS fallback events
@@ -605,6 +687,24 @@ export type CicdEventType =
   // (vtid-terminalize.ts emits the same topic via a local fetch helper,
   // so it didn't need the type-system entry.)
   | 'self-healing.terminalize.blocked'
+  // PR-L1 (VTID-02954): Test Contract Registry run events. Emitted by
+  // /api/v1/test-contracts/:id/run for every contract execution so the
+  // cockpit can show pass/fail history and Phase 3's failure scanner
+  // can detect regressions from the event stream.
+  | 'test-contract.run.passed'
+  | 'test-contract.run.failed'
+  | 'test-contract.run.dispatched'
+  // PR-L2 (VTID-02957): Missing-Test Scanner. Emitted when the scanner
+  // allocates a VTID for a capability that has no test_contracts row.
+  | 'missing-test.scanner.allocated'
+  // PR-L3 (VTID-02958): Failure Scanner — scheduled-tick lifecycle +
+  // repair allocation + quarantine signals.
+  | 'test-contract.scheduled_run.completed'
+  | 'test-contract.repair.allocated'
+  | 'test-contract.quarantined'
+  // PR-L5 (VTID-02970): Repair pattern memory.
+  | 'repair-pattern.recorded'
+  | 'repair-pattern.quarantine.toggled'
   | 'self-healing.completed'
   | 'self-healing.snapshot.pre_fix'
   | 'self-healing.snapshot.post_fix'
@@ -747,6 +847,8 @@ export type CicdEventType =
   | 'voice.message.rate_limited'
   | 'voice.message.misroute'
   | 'voice.message.share_link_sent'
+  | 'voice.chat_message.send_failed'
+  | 'voice.chat_message.missing_session_fallback'
   | 'vitana_id.confirmed'
   // VTID-02047: Unified Feedback Pipeline events
   | 'feedback.ticket.created'
@@ -765,7 +867,56 @@ export type CicdEventType =
   // BOOTSTRAP-ARCH-INV: Architecture investigator hypothesis events
   | 'architecture.investigation.started'
   | 'architecture.investigation.completed'
-  | 'architecture.investigation.failed';
+  | 'architecture.investigation.failed'
+  // Phase 0 staging build (handoff brief P0.4 + P0.7 + P0.8):
+  // STAGE-DEPLOY workflow, publish/revert API, isolation smokes.
+  | 'staging.deploy.completed'
+  | 'staging.deploy.failed'
+  | 'staging.metrics.snapshot'
+  | 'staging.revert.completed'
+  // VTID-03177 follow-up: RUN-STAGING-MIGRATION.yml emits these per run.
+  // Allowlist for /api/v1/oasis/emit extended for the `staging.migration.`
+  // prefix in the same PR.
+  | 'staging.migration.completed'
+  | 'staging.migration.failed'
+  // VTID-03204 (Phase 1 W2 acceptance helper): one-off endpoint that flips
+  // tenant_settings.feature_flags.data_export_ok on staging tenants so the
+  // dataset-extraction PII gate can produce real rows. Staging-only by hard
+  // guard.
+  | 'staging.tenant_consent.flipped'
+  // VTID-03241 (Phase 1 W3-E1 PR 4): role-aware context pack — shadow
+  // mode emits this per assistant turn describing what WOULD be allowed/
+  // blocked under the role registry policy. Fire-and-forget; gated by
+  // FEATURE_ROLE_AWARE_CONTEXT_SHADOW_ENV (off in prod by default).
+  | 'assistant.role.context_pack.shadow'
+  | 'production.publish.requested'
+  | 'production.publish.completed'
+  | 'production.publish.failed'
+  | 'production.revert.completed'
+  // Voice-first canary publish (added post-Phase 0). Sequence on a canary run:
+  //   .requested   — operator clicked "Publish canary"; EXEC-DEPLOY dispatched
+  //                  with canary=true.  No traffic shift yet.
+  //   .started     — EXEC-DEPLOY finished; canary revision is at 10%, prior
+  //                  revision at 90%.  Operator is now watching metrics.
+  //   .promoted    — operator clicked "Promote to 100%"; canary revision is
+  //                  now serving 100% traffic.
+  //   .aborted     — operator clicked "Discard canary"; traffic shifted back
+  //                  to the prior revision at 100%, canary revision idle.
+  | 'production.canary.requested'
+  | 'production.canary.started'
+  | 'production.canary.promoted'
+  | 'production.canary.aborted'
+  // Phase 1 W1 (VTID-03177 PROFILE): latency + eval + dataset + fine-tune telemetry.
+  // All emitted with env=staging|production via env-tagging in emitOasisEvent().
+  // Inert in prod until FEATURE_LATENCY_TELEMETRY_ENV is flipped on.
+  | 'voice.latency.measured'        // per-turn phased latency: audio_in_first_byte..audio_out_first_chunk
+  | 'screen.latency.measured'       // per-route TTFB / Server-Timing breakdown from gateway
+  | 'eval.shadow.compared'          // shadow harness compared primary vs candidate model on one eval input
+  | 'eval.coverage.report'          // periodic golden-corpus coverage report (replay-runner output)
+  | 'dataset.extraction.completed'  // dataset-extraction cron finished one slice; metadata.rows / .target
+  | 'finetune.training.completed'   // Vertex Custom Training job ended; metadata.job_id / .status / .target
+  | 'auto_promote.proposed'         // auto-promoter chose to bump a staging tier; metadata.from / .to
+  | 'auto_promote.rejected';        // auto-promoter declined to bump; metadata.reason
 
 export interface CicdOasisEvent {
   vtid: string;
@@ -786,6 +937,10 @@ export interface CicdOasisEvent {
   // Auto-resolved from actor_id if omitted by caller (cached lookup in
   // emitOasisEvent). Null when the event has no human actor (system/cron).
   vitana_id?: string | null;
+  // Phase 0 staging build: explicit env tag. When unset, emitOasisEvent
+  // defaults to the running process's VITANA_ENV. Embedded in metadata.env
+  // (no oasis_events schema change required).
+  env?: 'production' | 'staging';
 }
 
 // ==================== Allowed Services for Deploy ====================

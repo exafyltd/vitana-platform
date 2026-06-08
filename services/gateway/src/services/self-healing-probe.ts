@@ -35,6 +35,31 @@ function buildProbeUrl(endpoint: string, gatewayUrl: string): string {
   return `${gatewayUrl}/${endpoint}`;
 }
 
+/**
+ * A finding's recorded endpoint is only worth re-probing post-deploy when it is
+ * an actual HTTP target — a "/path" or a full "http(s)://…" URL. Dev Autopilot
+ * code/scanner findings record a *source file path* (e.g.
+ * "services/gateway/src/foo.ts") and lifecycle markers record dotted ids (e.g.
+ * "autopilot.approve_safety"); neither is reachable over HTTP, and probing them
+ * would always 404 and falsely fail every fix. Voice-synthetic markers are
+ * verified by the dedicated voice probe, not here.
+ *
+ * Returns the probeable target string, or null when the endpoint isn't an HTTP
+ * target (caller should then fall back to non-probe verification).
+ */
+export function resolveProbeTarget(endpoint: string | null | undefined): string | null {
+  if (!endpoint || typeof endpoint !== 'string') return null;
+  const e = endpoint.trim();
+  if (!e) return null;
+  if (isVoiceSyntheticEndpoint(e)) return null;
+  if (/^https?:\/\//i.test(e)) return e;
+  // A leading slash means an absolute HTTP path on the gateway (e.g.
+  // "/api/v1/live/rooms"). Source file paths are repo-relative ("services/…")
+  // and never start with "/".
+  if (e.startsWith('/')) return e;
+  return null;
+}
+
 export async function probeEndpoint(
   endpoint: string,
   opts: ProbeOptions = {},

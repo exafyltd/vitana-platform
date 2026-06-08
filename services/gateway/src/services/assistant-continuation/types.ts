@@ -68,7 +68,11 @@ export type ContinuationKind =
  * without runtime narrowing tricks.
  */
 export type ContinuationCta =
-  | { type: 'ask_permission'; payload?: Record<string, unknown> }
+  // DEV-COMHU-0505 — ORB Recovery 5: ask_permission now carries the deterministic
+  // on-yes tool. When the user says "yes", the model calls `onYesTool` with
+  // `payload` instead of guessing — fixing the "I have no access" mismatch for
+  // autopilot permission offers. Optional + back-compatible (older sources omit it).
+  | { type: 'ask_permission'; onYesTool?: string; payload?: Record<string, unknown> }
   | { type: 'navigate'; route: string; payload?: Record<string, unknown> }
   | { type: 'offer_demo'; payload?: Record<string, unknown> }
   | { type: 'run_tool'; toolName: string; payload?: Record<string, unknown> }

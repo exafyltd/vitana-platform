@@ -2,10 +2,11 @@
  * VTID-01095: Daily Recompute Service
  *
  * Orchestrates the daily recompute pipeline for each user:
- *   Stage A: Longevity compute
- *   Stage B: Topics recompute
- *   Stage C: Community recommendations
- *   Stage D: Matches recompute
+ *   Stage A: Vitana Index compute (BOOTSTRAP-VITANA-INDEX-DAILY)
+ *   Stage B: Longevity compute
+ *   Stage C: Topics recompute
+ *   Stage D: Community recommendations
+ *   Stage E: Matches recompute
  *
  * Key features:
  *   - Idempotent: Uses daily_recompute_runs table to track progress
@@ -20,8 +21,10 @@ import { emitOasisEvent } from './oasis-event-service';
 
 const VTID = 'VTID-01095';
 
-// Pipeline stages in execution order
-export const PIPELINE_STAGES = ['longevity', 'topics', 'community_recs', 'matches'] as const;
+// Pipeline stages in execution order. `index` runs first so the freshly
+// computed Vitana Index row is available to any downstream stage that
+// reads from `vitana_index_scores` (matches, recommendations).
+export const PIPELINE_STAGES = ['index', 'longevity', 'topics', 'community_recs', 'matches'] as const;
 export type PipelineStage = (typeof PIPELINE_STAGES)[number];
 
 export interface StageStatus {
@@ -143,6 +146,7 @@ async function getOrCreateRun(
   const now = new Date().toISOString();
 
   const initialStageStatus: Record<PipelineStage, StageStatus> = {
+    index: { status: 'pending' },
     longevity: { status: 'pending' },
     topics: { status: 'pending' },
     community_recs: { status: 'pending' },
@@ -164,7 +168,7 @@ async function getOrCreateRun(
       run_date: runDate,
       status: 'in_progress',
       stage_status: initialStageStatus,
-      current_stage: 'longevity',
+      current_stage: 'index',
       started_at: now,
     }),
   });
@@ -221,6 +225,7 @@ async function executeStage(
   const startTime = Date.now();
 
   const rpcNames: Record<PipelineStage, string> = {
+    index: 'scheduler_vitana_index_compute_daily',
     longevity: 'scheduler_longevity_compute_daily',
     topics: 'scheduler_topics_recompute_user_profile',
     community_recs: 'scheduler_community_recompute_recommendations',

@@ -1,0 +1,144 @@
+name: Set staging tenant consent flag (one-off helper, v2 curl path)
+
+# VTID-03206 — rewrite of the original VTID-03202 workflow.
+#
+# The original tried to resolve STAGING_SUPABASE_URL +
+# STAGING_SUPABASE_SERVICE_ROLE_KEY from GCP Secret Manager via the WIF SA.
+# That path is blocked: the W1 grants for those two secrets went to the
+# Cloud Run runtime SA (vitana-vertex-ai-service@), not the GitHub
+# Actions WIF SA. The WIF SA also lacks secretmanager.secrets.getIamPolicy
+# on those secrets, so even the self-grant workflow
+# (GRANT-WIF-STAGING-SECRETS.yml) fails with PERMISSION_DENIED.
+#
+# v2 path: VTID-03204 shipped POST /api/v1/admin/staging/tenant-consent/flip
+# on gateway-staging, gated by GATEWAY_SERVICE_TOKEN + staging-only env
+# guard. This workflow just curls that endpoint with the repo secret.
+# No Supabase access from this workflow, no IAM grant needed.
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: "Type 'I-mean-staging-consent' to confirm STAGING target"
+        required: true
+        default: ''
+      tenant_id:
+        description: "Tenant id to flip (or 'ALL' for every staging tenant)"
+        required: true
+        default: 'ALL'
+      dry_run:
+        description: "true = preview (no writes). false = apply."
+        required: true
+        default: 'true'
+        type: choice
+        options: [ 'true', 'false' ]
+
+permissions:
+  contents: read
+
+env:
+  STAGING_GATEWAY_URL: https://gateway-staging-q74ibpv6ia-uc.a.run.app
+
+jobs:
+  set-consent:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Confirm staging intent
+        run: |
+          set -euo pipefail
+          if [ "${{ inputs.confirm }}" != "I-mean-staging-consent" ]; then
+            echo "::error::confirm input must be exactly 'I-mean-staging-consent' (got: '${{ inputs.confirm }}')"
+            exit 1
+          fi
+
+      - name: Call gateway-staging consent flip endpoint
+        env:
+          GATEWAY_SERVICE_TOKEN: ${{ secrets.GATEWAY_SERVICE_TOKEN }}
+          TENANT_ID: ${{ inputs.tenant_id }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          set -euo pipefail
+          if [ -z "${GATEWAY_SERVICE_TOKEN:-}" ]; then
+            echo "::error::GATEWAY_SERVICE_TOKEN repo secret is missing"
+            exit 1
+          fi
+
+          # First, sanity-check the staging gateway is healthy + on the right env.
+          HEALTH=$(curl -sS --max-time 10 "${STAGING_GATEWAY_URL}/api/v1/admin/health")
+          ENV=$(printf '%s' "$HEALTH" | python3 -c "import sys, json; print(json.load(sys.stdin).get('env',''))")
+          if [ "$ENV" != "staging" ]; then
+            echo "::error::staging gateway health did not return env=staging (got '$ENV'): $HEALTH"
+            exit 1
+          fi
+          echo "Staging gateway healthy: $HEALTH"
+
+          # Build body.
+          BODY=$(python3 -c "
+          import json, os
+          body = {'tenant_id': os.environ['TENANT_ID'], 'dry_run': os.environ['DRY_RUN'].lower() != 'false'}
+          print(json.dumps(body))
+          ")
+          echo "Body: $BODY"
+
+          # Call the endpoint.
+          RESP=$(curl -sS --max-time 30 -w "\n__HTTP__%{http_code}" \
+            -X POST "${STAGING_GATEWAY_URL}/api/v1/admin/staging/tenant-consent/flip" \
+            -H "Authorization: Bearer ${GATEWAY_SERVICE_TOKEN}" \
+            -H "Content-Type: application/json" \
+            -d "$BODY")
+
+          BODY_RESP=$(printf '%s' "$RESP" | sed -E '$d')
+          HTTP_CODE=$(printf '%s' "$RESP" | tail -n1 | sed 's/__HTTP__//')
+
+          echo "HTTP $HTTP_CODE"
+          echo "Response: $BODY_RESP"
+
+          # Pretty-print summary into the GH step summary. Single-quoted
+          # heredoc so bash doesn't try to interpret backticks/${} inside
+          # the Python source. Values are passed via env to keep the
+          # heredoc body literal.
+          BODY_RESP="$BODY_RESP" HTTP_CODE="$HTTP_CODE" python3 <<'PY'
+          import json, os
+          body = os.environ.get('BODY_RESP', '')
+          http_code = os.environ.get('HTTP_CODE', '?')
+          try:
+              d = json.loads(body)
+          except Exception as e:
+              print(f'(could not parse response as JSON: {e})')
+              d = {}
+
+          lines = []
+          lines.append('## Staging tenant consent flip')
+          lines.append('')
+          lines.append(f'- HTTP: {http_code}')
+          lines.append(f'- ok: {d.get("ok")}')
+          lines.append(f'- dry_run: {d.get("dry_run")}')
+          lines.append(f'- scanned: {d.get("scanned")}')
+          lines.append(f'- already_consented: {d.get("already_consented")}')
+          if d.get('dry_run'):
+              lines.append(f'- to_flip: {d.get("to_flip")}')
+              sample = d.get('sample_to_flip', [])
+              if sample:
+                  lines.append('- sample_to_flip: ' + ', '.join(sample[:5]))
+          else:
+              lines.append(f'- flipped: {d.get("flipped")}')
+              lines.append(f'- failed: {d.get("failed")}')
+              fids = d.get('flipped_tenant_ids', [])
+              if fids:
+                  lines.append('')
+                  lines.append('### Flipped tenants')
+                  for t in fids[:20]:
+                      lines.append('  - ' + t)
+
+          summary_path = os.environ.get('GITHUB_STEP_SUMMARY')
+          if summary_path:
+              with open(summary_path, 'a') as f:
+                  f.write('\n'.join(lines) + '\n')
+          PY
+
+          # Fail the workflow if HTTP wasn't 2xx.
+          case "$HTTP_CODE" in
+            2*) echo "OK" ;;
+            *) echo "::error::endpoint returned HTTP $HTTP_CODE"; exit 1 ;;
+          esac

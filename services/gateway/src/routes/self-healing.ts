@@ -31,6 +31,11 @@ import {
 import { spawnTriageAgent } from '../services/self-healing-triage-service';
 import { probeEndpoint, isJsonHealthy } from '../services/self-healing-probe';
 import {
+  aggregateSelfHealingMetrics,
+  type SelfHealingLogRow,
+  type AutopilotExecRow,
+} from '../services/self-healing-metrics';
+import {
   HealthReport,
   ServiceStatus,
   SelfHealingReportResponse,
@@ -303,8 +308,13 @@ export async function processFailingService(
     diagnosis.auto_fixable = false;
   }
 
+  // Level 4 (FULL_AUTO): the injector relaxes the auto-approve floor to 0.5 via
+  // autoApproveFloor(), so confidence in [0.5, 0.8) auto-runs instead of waiting
+  // for a human. The <0.5 escalation above still applies. The autonomy level is
+  // passed through so the injector can pick the correct floor.
+
   // Inject into autopilot pipeline
-  const injection = await injectIntoAutopilotPipeline(vtid, diagnosis, spec, spec_hash);
+  const injection = await injectIntoAutopilotPipeline(vtid, diagnosis, spec, spec_hash, autonomyLevel);
   if (!injection.success) {
     console.error(`[self-healing] Failed to inject ${vtid}: ${injection.error}`);
     return { action: 'escalated', vtid, reason: `Injection failed: ${injection.error}` };
@@ -314,10 +324,11 @@ export async function processFailingService(
   // which the autopilot event loop picks up and dispatches through the
   // standard pipeline (enforceSpecRequirement → worker-runner → completion).
 
-  // Gchat notification ONLY when a human decision is required.
-  // Auto-approved tasks run silently — the team sees them in the
-  // Command Hub if they look, but we don't ping for in-progress work.
-  if (diagnosis.confidence < 0.8) {
+  // Gchat notification ONLY when a human decision is required. Use the injector's
+  // actual approval decision (which honours the per-level floor) instead of a
+  // hardcoded 0.8 — otherwise FULL_AUTO would auto-run a 0.6 fix yet still ping
+  // the team to "approve" it.
+  if (!injection.autoApproved) {
     await notifyGChat(
       `⏳ *Self-Healing AWAITING APPROVAL*\n` +
       `Task: ${vtid}\n` +
@@ -703,6 +714,58 @@ router.get('/history/classes', async (_req: Request, res: Response) => {
       .map((k) => ({ class: k, count: counts[k] }))
       .sort((a, b) => b.count - a.count);
     return res.json({ ok: true, classes });
+  } catch (err: any) {
+    return res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+/**
+ * GET /metrics/summary — Self-Healing observability (Step 5).
+ *
+ * Aggregates self_healing_log + dev_autopilot_executions over a recent window
+ * into resolved/success rates, escalation breakdowns by failure class + stage,
+ * and the actionable-vs-infra/policy split (Step 2 tagging). Read-only; the
+ * heavy lifting is the pure aggregateSelfHealingMetrics() so it stays testable.
+ *
+ * Query: ?days=N (default 7, clamped 1..90).
+ *
+ * Read-only aggregate counts/rates (no PII, secrets, or mutation). Matches the
+ * sibling read endpoints in this router (/health, /history, /history/classes,
+ * /pending-approval, …), which are all served anonymously behind the Command
+ * Hub. No new auth scheme is introduced here — that would be inconsistent with
+ * the rest of the router and would break the dashboard's fetch.
+ */
+router.get('/metrics/summary', async (req: Request, res: Response) => { // public-route
+  try {
+    if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
+      return res.status(500).json({ ok: false, error: 'Supabase not configured' });
+    }
+    const days = Math.min(90, Math.max(1, Number.parseInt(String(req.query.days ?? '7'), 10) || 7));
+    const sinceIso = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+    const sinceParam = `&created_at=gte.${encodeURIComponent(sinceIso)}`;
+
+    const [logsResp, execsResp] = await Promise.all([
+      fetch(
+        `${SUPABASE_URL}/rest/v1/self_healing_log` +
+          `?select=outcome,failure_class,confidence,attempt_number,created_at,diagnosis` +
+          `${sinceParam}&order=created_at.desc&limit=10000`,
+        { headers: supabaseHeaders() },
+      ),
+      fetch(
+        `${SUPABASE_URL}/rest/v1/dev_autopilot_executions` +
+          `?select=status,failure_stage,created_at${sinceParam}&order=created_at.desc&limit=10000`,
+        { headers: supabaseHeaders() },
+      ),
+    ]);
+
+    if (!logsResp.ok || !execsResp.ok) {
+      return res.status(500).json({ ok: false, error: 'Failed to query metrics' });
+    }
+    const logs = (await logsResp.json()) as SelfHealingLogRow[];
+    const execs = (await execsResp.json()) as AutopilotExecRow[];
+
+    const metrics = aggregateSelfHealingMetrics(logs, execs, days);
+    return res.json({ ok: true, metrics });
   } catch (err: any) {
     return res.status(500).json({ ok: false, error: err.message });
   }

@@ -30,3 +30,5 @@ Thumbs.db
 
 # Local git worktrees (used by parallel Claude Code sessions)
 .worktrees/
+.claude/worktrees/
+.test-venv/

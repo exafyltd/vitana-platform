@@ -9,9 +9,9 @@
  * - GET /api/v1/voice-lab/live/sessions/:sessionId/turns - Get session turns
  */
 
-import { Router, Request, Response } from 'express';
+import { Router, Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
-import { requireAuth } from '../middleware/auth-supabase-jwt';
+import { requireAuth, optionalAuth, type AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
 import { analyzeSessionEvents } from '../services/voice-session-analyzer';
 import { runVoiceProbe } from '../services/voice-synthetic-probe';
 import {
@@ -30,6 +30,17 @@ import {
   buildShadowComparison,
   buildLiveMonitor,
 } from '../services/voice-healing-summary';
+// VTID-03025: LiveKit hourly tests — Slice 1a foundation.
+import {
+  runLiveKitTestSuite,
+  listRecentRuns as listLivekitTestRuns,
+  getRunDetail as getLivekitTestRunDetail,
+  listCases as listLivekitTestCases,
+} from '../services/voice-lab/livekit-test-runner';
+import {
+  evaluateLiveKitDryRun,
+} from '../services/voice-lab/livekit-test-eval';
+import { getCoverage as getLivekitTestCoverage } from '../services/voice-lab/livekit-test-coverage';
 
 const router = Router();
 
@@ -53,6 +64,261 @@ router.get('/health', (_req: Request, res: Response) => {
   });
 });
 
+// =============================================================================
+// VTID-03025: LiveKit hourly tests — Slice 1a foundation.
+//
+// Routes registered BEFORE `router.use(requireAuth)` because they accept
+// EITHER the GitHub Actions cron's service token OR an admin Supabase JWT.
+// The same dual gate is used by `routes/oasis-emit.ts`.
+//
+// POST /tests/run    — execute all enabled cases serially, return summary
+// POST /tests/eval   — execute ONE ad-hoc prompt; for debug/admin probing
+// GET  /tests/runs   — list recent run summaries
+// GET  /tests/runs/:id — full results for one run
+// GET  /tests/cases  — list registered cases
+// =============================================================================
+
+const LIVEKIT_TESTS_VTID = 'VTID-03025';
+
+function livekitTestsAuthGate(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): void {
+  const header = req.header('authorization') ?? req.header('Authorization');
+  if (!header || !header.toLowerCase().startsWith('bearer ')) {
+    res.status(401).json({
+      ok: false,
+      error: 'missing bearer token',
+      vtid: LIVEKIT_TESTS_VTID,
+    });
+    return;
+  }
+  const token = header.slice('bearer '.length).trim();
+  if (!token) {
+    res.status(401).json({
+      ok: false,
+      error: 'empty bearer token',
+      vtid: LIVEKIT_TESTS_VTID,
+    });
+    return;
+  }
+
+  // Path 1: app-level service-token compare — cheapest path, used by Cloud
+  // Shell + by future hourly cron when the GH-Actions secret is in sync.
+  const serviceToken = process.env.GATEWAY_SERVICE_TOKEN ?? '';
+  if (serviceToken.length > 0 && token === serviceToken) {
+    (req as AuthenticatedRequest).identity = undefined;
+    (req as Request & { __livekit_tests_actor?: string }).__livekit_tests_actor =
+      'service:cron';
+    next();
+    return;
+  }
+
+  // Path 2: Google id_token from a GCP service account (Workload Identity
+  // Federation, Cloud Scheduler with OIDC, etc.). Robust to the GH-secret /
+  // Secret-Manager value drifting out of sync because the caller mints a
+  // fresh id_token each call. Audience must match this gateway's URL.
+  // Email is required to end in .iam.gserviceaccount.com so user OAuth
+  // tokens can never satisfy this path.
+  void (async (): Promise<void> => {
+    try {
+      const { OAuth2Client } = await import('google-auth-library');
+      const audience =
+        process.env.LIVEKIT_TESTS_GCP_AUDIENCE ??
+        process.env.GATEWAY_SELF_URL ??
+        'https://gateway-86804897789.us-central1.run.app';
+      const client = new OAuth2Client();
+      const ticket = await client.verifyIdToken({ idToken: token, audience });
+      const payload = ticket.getPayload();
+      if (
+        payload?.email &&
+        payload.email_verified === true &&
+        /\.iam\.gserviceaccount\.com$/i.test(payload.email)
+      ) {
+        (req as AuthenticatedRequest).identity = undefined;
+        (req as Request & { __livekit_tests_actor?: string }).__livekit_tests_actor =
+          `gcp_sa:${payload.email}`;
+        next();
+        return;
+      }
+    } catch {
+      // Not a valid Google id_token / audience mismatch — fall through to JWT.
+    }
+
+    // Path 3: exafy_admin Supabase JWT (Command Hub operators).
+    optionalAuth(req as AuthenticatedRequest, res, () => {
+      const id = (req as AuthenticatedRequest).identity;
+      if (id && id.exafy_admin === true) {
+        (req as Request & { __livekit_tests_actor?: string }).__livekit_tests_actor =
+          `admin:${id.user_id ?? 'unknown'}`;
+        next();
+        return;
+      }
+      res.status(401).json({
+        ok: false,
+        error: 'unauthorized — service token, GCP SA id_token, or exafy_admin JWT required',
+        vtid: LIVEKIT_TESTS_VTID,
+      });
+    });
+  })();
+}
+
+const RunPostSchema = z.object({
+  trigger: z.enum(['manual', 'cron', 'admin', 'test']).default('manual'),
+  case_key: z.string().min(1).max(128).optional(),
+  layer: z.enum(['A', 'B']).default('A'),
+});
+
+router.post(
+  '/tests/run',
+  livekitTestsAuthGate,
+  async (req: Request, res: Response) => {
+    const parsed = RunPostSchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      return res.status(400).json({
+        ok: false,
+        error: 'invalid request body',
+        issues: parsed.error.issues,
+        vtid: LIVEKIT_TESTS_VTID,
+      });
+    }
+    try {
+      const summary = await runLiveKitTestSuite({
+        trigger: parsed.data.trigger,
+        caseKey: parsed.data.case_key,
+        layer: parsed.data.layer,
+      });
+      return res.status(200).json({ ok: true, vtid: LIVEKIT_TESTS_VTID, summary });
+    } catch (err) {
+      return res.status(500).json({
+        ok: false,
+        error: (err as Error).message ?? String(err),
+        vtid: LIVEKIT_TESTS_VTID,
+      });
+    }
+  },
+);
+
+const EvalPostSchema = z.object({
+  prompt: z.string().min(1).max(4000),
+  language: z.string().min(2).max(8).optional(),
+  current_route: z.string().max(256).nullable().optional(),
+  active_role: z.string().max(64).optional(),
+});
+
+router.post(
+  '/tests/eval',
+  livekitTestsAuthGate,
+  async (req: Request, res: Response) => {
+    const parsed = EvalPostSchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      return res.status(400).json({
+        ok: false,
+        error: 'invalid request body',
+        issues: parsed.error.issues,
+        vtid: LIVEKIT_TESTS_VTID,
+      });
+    }
+    try {
+      const result = await evaluateLiveKitDryRun({
+        prompt: parsed.data.prompt,
+        language: parsed.data.language,
+        currentRoute: parsed.data.current_route,
+        activeRole: parsed.data.active_role,
+      });
+      return res.status(200).json({ ok: true, vtid: LIVEKIT_TESTS_VTID, result });
+    } catch (err) {
+      return res.status(500).json({
+        ok: false,
+        error: (err as Error).message ?? String(err),
+        vtid: LIVEKIT_TESTS_VTID,
+      });
+    }
+  },
+);
+
+router.get(
+  '/tests/runs',
+  livekitTestsAuthGate,
+  async (req: Request, res: Response) => {
+    const limitRaw = req.query.limit;
+    const limit = typeof limitRaw === 'string' ? Number(limitRaw) : 50;
+    const safeLimit = Number.isFinite(limit) && limit > 0 ? Math.min(limit, 200) : 50;
+    try {
+      const runs = await listLivekitTestRuns(safeLimit);
+      return res.status(200).json({ ok: true, vtid: LIVEKIT_TESTS_VTID, runs });
+    } catch (err) {
+      return res.status(500).json({
+        ok: false,
+        error: (err as Error).message ?? String(err),
+        vtid: LIVEKIT_TESTS_VTID,
+      });
+    }
+  },
+);
+
+router.get(
+  '/tests/runs/:id',
+  livekitTestsAuthGate,
+  async (req: Request, res: Response) => {
+    try {
+      const detail = await getLivekitTestRunDetail(req.params.id);
+      if (!detail) {
+        return res.status(404).json({
+          ok: false,
+          error: 'run not found',
+          vtid: LIVEKIT_TESTS_VTID,
+        });
+      }
+      return res.status(200).json({ ok: true, vtid: LIVEKIT_TESTS_VTID, ...detail });
+    } catch (err) {
+      return res.status(500).json({
+        ok: false,
+        error: (err as Error).message ?? String(err),
+        vtid: LIVEKIT_TESTS_VTID,
+      });
+    }
+  },
+);
+
+router.get(
+  '/tests/cases',
+  livekitTestsAuthGate,
+  async (_req: Request, res: Response) => {
+    try {
+      const cases = await listLivekitTestCases();
+      return res.status(200).json({ ok: true, vtid: LIVEKIT_TESTS_VTID, cases });
+    } catch (err) {
+      return res.status(500).json({
+        ok: false,
+        error: (err as Error).message ?? String(err),
+        vtid: LIVEKIT_TESTS_VTID,
+      });
+    }
+  },
+);
+
+// Parity coverage: which live tools in `tool-manifest.json` are NOT yet
+// covered by an enabled test case. Drives the "X / N tools tested" header
+// + "Missing" list in the UI panel. Used by Slice 1c parity guard.
+router.get(
+  '/tests/coverage',
+  livekitTestsAuthGate,
+  async (_req: Request, res: Response) => {
+    try {
+      const coverage = await getLivekitTestCoverage();
+      return res.status(200).json({ ok: true, vtid: LIVEKIT_TESTS_VTID, coverage });
+    } catch (err) {
+      return res.status(500).json({
+        ok: false,
+        error: (err as Error).message ?? String(err),
+        vtid: LIVEKIT_TESTS_VTID,
+      });
+    }
+  },
+);
+
 router.use(requireAuth);
 
 // =============================================================================
@@ -72,7 +338,10 @@ interface LiveSessionSummary {
   audio_in_chunks: number;
   audio_out_chunks: number;
   lang?: string;
-  transport: 'websocket' | 'sse';
+  // VTID-02986: 'livekit' added so orb-agent sessions can ship through the
+  // same shape. Vertex still emits 'websocket' or 'sse'; the UI badges by
+  // value so 'livekit' is distinguishable from those.
+  transport: 'websocket' | 'sse' | 'livekit';
   error_count: number;
   interrupted_count: number;
   user_id?: string;
@@ -194,7 +463,10 @@ async function queryVoiceLabEvents(
     // VTID filter: VTID-01218A (legacy voice-lab) + VTID-01155 (orb-live emitter)
     // + VTID-VOICE-HEALING (autonomous self-healing loop events: dispatched,
     // verdict, rollback, suppressed, spec_memory.blocked, investigation.completed)
-    params.push(`vtid=in.("VTID-01218A","VTID-01155","VTID-VOICE-HEALING")`);
+    // + VTID-LIVEKIT-AGENT (VTID-02986: orb-agent emits vtid.live.session.start/stop
+    //   with this VTID; required for LiveKit sessions to appear next to Vertex
+    //   in the unified Voice Lab list).
+    params.push(`vtid=in.("VTID-01218A","VTID-01155","VTID-VOICE-HEALING","VTID-LIVEKIT-AGENT")`);
 
     // Ordering and pagination
     params.push('order=created_at.desc');

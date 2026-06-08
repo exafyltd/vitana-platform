@@ -173,10 +173,10 @@ const ROUTING_CASES: RoutingCase[] = [
   // ── COMM.EVENTS (P0) ──
   { utterance: 'take me to the events page',                lang: 'en', expected_screen_id: 'COMM.EVENTS' },
   { utterance: 'where can I find the meetups',              lang: 'en', expected_screen_id: 'COMM.EVENTS' },
-  { utterance: 'show me upcoming events',                   lang: 'en', expected_screen_id: 'COMM.EVENTS' },
+  { utterance: 'show me upcoming events',                   lang: 'en', expected_screen_id: 'COMM.EVENTS_UPCOMING' },
   { utterance: 'I want to attend a meetup',                 lang: 'en', expected_screen_id: 'COMM.EVENTS' },
   { utterance: 'wo finde ich die treffen',                  lang: 'de', expected_screen_id: 'COMM.EVENTS' },
-  { utterance: 'zeig mir die kommenden veranstaltungen',    lang: 'de', expected_screen_id: 'COMM.EVENTS' },
+  { utterance: 'zeig mir die kommenden veranstaltungen',    lang: 'de', expected_screen_id: 'COMM.EVENTS_UPCOMING' },
 
   // ── COMM.LIVE_ROOMS ──
   { utterance: 'open the live rooms',                       lang: 'en', expected_screen_id: 'COMM.LIVE_ROOMS' },
@@ -185,7 +185,7 @@ const ROUTING_CASES: RoutingCase[] = [
 
   // ── COMM.MEDIA_HUB ──
   { utterance: 'show me the videos and podcasts',           lang: 'en', expected_screen_id: 'COMM.MEDIA_HUB' },
-  { utterance: 'wo sind die podcasts',                      lang: 'de', expected_screen_id: 'COMM.MEDIA_HUB' },
+  { utterance: 'wo sind die podcasts',                      lang: 'de', expected_screen_id: 'COMM.MEDIA_PODCASTS' },
 
   // ── BUSINESS ──
   { utterance: 'I want to make money with the community',   lang: 'en', expected_screen_id: 'BUSINESS.SELL_EARN' },
@@ -196,6 +196,13 @@ const ROUTING_CASES: RoutingCase[] = [
   { utterance: 'open my services',                          lang: 'en', expected_screen_id: 'BUSINESS.SERVICES' },
   { utterance: 'show me my clients',                        lang: 'en', expected_screen_id: 'BUSINESS.CLIENTS' },
   { utterance: 'wie laufen meine buchungen',                lang: 'de', expected_screen_id: 'BUSINESS.ANALYTICS' },
+  // VTID-NAV-BUSINESS-TABS: "Business Hub Sales" must reach the Sales tab, not
+  // the Business Hub Snapshot (BUSINESS.OVERVIEW). Plus the plain-parent guard.
+  { utterance: 'take me to business hub sales',             lang: 'en', expected_screen_id: 'BUSINESS.SELL_EARN' },
+  { utterance: 'business hub sales',                        lang: 'en', expected_screen_id: 'BUSINESS.SELL_EARN' },
+  { utterance: 'open my sales',                             lang: 'en', expected_screen_id: 'BUSINESS.SELL_EARN' },
+  { utterance: 'bring mich zum business hub verkäufe',      lang: 'de', expected_screen_id: 'BUSINESS.SELL_EARN' },
+  { utterance: 'open the business hub',                     lang: 'en', expected_screen_id: 'BUSINESS.OVERVIEW' },
 
   // ── WALLET ──
   { utterance: 'open my wallet',                            lang: 'en', expected_screen_id: 'WALLET.OVERVIEW' },

@@ -27,14 +27,58 @@ import {
   getContent as getNavContent,
   lookupByRoute as lookupNavByRoute,
 } from '../../../lib/navigation-catalog';
-import { pickShortGapGreetings } from '../../instruction/greeting-pools';
+// VTID-03118 (Phase B.4): bucket thresholds come from PolicyResolver instead
+// of inline literals. Resolver returns byte-identical values for the seeded
+// defaults (Phase B.2 / VTID-03114).
+//
+// R2 (BOOTSTRAP-ORB-R2-GREETING-POLICY): the greeting-bucket prompt fragments
+// (RENDER_BLOCK_KEYS) and the short-gap phrase pool (pickShortGapGreetings)
+// are no longer consumed here — the legacy `## GREETING POLICY` fallback stack
+// moved to the voice-wake-brief provider. Only the time-since threshold
+// lookups (POLICY_KEYS) remain.
+import {
+  getPolicyResolver,
+  POLICY_KEYS,
+} from '../../../services/decision-contract';
 // A3: buildNavigatorPolicySection stays in orb-live.ts (still consumed by
 // the route handler too); the instruction builder calls it back across the
 // boundary. The function is pure (lang → string), so the round-trip is
 // safe.
 import { buildNavigatorPolicySection } from '../../../routes/orb-live';
+import {
+  BRAIN_OPENER_V2_START,
+  BRAIN_OPENER_V2_END,
+} from './brain-opener-sentinels';
+// L2.2b.6 (VTID-03010): tool-catalog renderer. Embeds the tool catalog into
+// the prompt as a prose block so the LiveKit path (where the Python
+// livekit-plugins-google plugin does NOT fully serialize @function_tool
+// decorators into Gemini's function_declarations) has a backup directory
+// the LLM can read directly. Vertex sees the same prose block AND the
+// structured function_declarations via the BidiGenerate setup message —
+// redundancy is harmless for Vertex and load-bearing for LiveKit.
+import { renderAvailableToolsSection } from '../tools/live-tool-catalog';
+import {
+  capBootstrapContext,
+  BOOTSTRAP_CONTEXT_MAX_CHARS,
+} from './bootstrap-cap';
+// BOOTSTRAP-ORB-R0-INSTRUCTION-CAP: stable, model-ignored delimiter emitted at
+// the start of the bootstrap region so the send-site budget guard can make the
+// bootstrap individually trimmable. Shared from instruction-budget so producer
+// (this builder) and consumer (orb-live.ts decomposeInstructionSections) agree
+// on one constant.
+import { BOOTSTRAP_CONTEXT_START_MARKER } from './instruction-budget';
 
 type TemporalBucket = 'reconnect' | 'recent' | 'same_day' | 'today' | 'yesterday' | 'week' | 'long' | 'first';
+
+// R2 (BOOTSTRAP-ORB-R2-GREETING-POLICY): the legacy 8-bucket greeting-policy
+// fallback pools (`BUCKET_TO_BLOCK_KEY`, `BUCKET_DEFAULT_TEMPLATES`,
+// `expandShortGapPhraseMenu`) were removed from this module. The Central
+// Continuation Contract owns the first spoken line in production; the
+// temporal fallback pools now live on the priority-80 voice-wake-brief
+// provider (see WAKE_BRIEF_BUCKET_TEMPLATES / renderWakeBriefFallbackBlock in
+// services/assistant-continuation/providers/voice-wake-brief.ts). `TemporalBucket`
+// is retained here — `describeTimeSince` still classifies session recency for
+// the TEMPORAL AND JOURNEY CONTEXT block and the continuation decider.
 
 // Exported for characterization testing (A0.2, orb-live-refactor).
 // No behavior change — same function, externally addressable so the refactor
@@ -59,28 +103,55 @@ export function describeTimeSince(lastSessionInfo: { time: string; wasFailure: b
   const diffHour = Math.floor(diffMin / 60);
   const diffDay = Math.floor(diffHour / 24);
 
+  // VTID-03118 (Phase B.4): thresholds resolved through PolicyResolver.
+  // Defaults match the pre-B.4 literal values (live-system-instruction.ts
+  // lines 72-91 before this PR) so behavior is byte-identical when the
+  // seeds from Phase B.2 are present; defaults take over if the cache is
+  // cold (e.g. early boot, Supabase outage).
+  const resolver = getPolicyResolver();
+  const reconnectMaxSec = resolver.getValue<number>(
+    POLICY_KEYS.SESSION_RECENCY_RECONNECT_MAX_SECONDS,
+    { defaultValue: 120 },
+  );
+  const recentMaxMin = resolver.getValue<number>(
+    POLICY_KEYS.SESSION_RECENCY_RECENT_MAX_MINUTES,
+    { defaultValue: 15 },
+  );
+  const sameDayMaxHour = resolver.getValue<number>(
+    POLICY_KEYS.SESSION_RECENCY_SAME_DAY_MAX_HOURS,
+    { defaultValue: 8 },
+  );
+  const todayMaxHour = resolver.getValue<number>(
+    POLICY_KEYS.SESSION_RECENCY_TODAY_MAX_HOURS,
+    { defaultValue: 24 },
+  );
+  const weekMaxDay = resolver.getValue<number>(
+    POLICY_KEYS.SESSION_RECENCY_WEEK_MAX_DAYS,
+    { defaultValue: 7 },
+  );
+
   let bucket: TemporalBucket;
   let timeAgo: string;
-  if (diffSec < 120) {
+  if (diffSec < reconnectMaxSec) {
     bucket = 'reconnect';
     timeAgo = diffSec < 30 ? 'a few seconds ago' : `about ${diffSec} seconds ago`;
-  } else if (diffMin < 15) {
+  } else if (diffMin < recentMaxMin) {
     bucket = 'recent';
     timeAgo = `${diffMin} minute${diffMin === 1 ? '' : 's'} ago`;
-  } else if (diffHour < 8) {
+  } else if (diffHour < sameDayMaxHour) {
     bucket = 'same_day';
     if (diffMin < 60) {
       timeAgo = `${diffMin} minutes ago`;
     } else {
       timeAgo = `about ${diffHour} hour${diffHour === 1 ? '' : 's'} ago`;
     }
-  } else if (diffHour < 24) {
+  } else if (diffHour < todayMaxHour) {
     bucket = 'today';
     timeAgo = `earlier today (about ${diffHour} hours ago)`;
   } else if (diffDay === 1) {
     bucket = 'yesterday';
     timeAgo = 'yesterday';
-  } else if (diffDay < 7) {
+  } else if (diffDay < weekMaxDay) {
     bucket = 'week';
     timeAgo = `${diffDay} days ago`;
   } else {
@@ -123,6 +194,52 @@ export function describeRoute(route: string | undefined | null, lang: string): {
  * The block is language-agnostic — Gemini Live translates it into the
  * session language via the LANGUAGE directive earlier in the instruction.
  */
+
+/**
+ * VTID-03097: surgically strip vitana-brain's opener sections from
+ * `bootstrapContext` when a VERTEX WAKE BRIEF override is active.
+ * The three sections below all tell Gemini "your first utterance must
+ * build around this candidate" and dominate the override at generation
+ * time even when the override is later in the prompt. Removing them
+ * lets the override own the first turn without re-architecting
+ * vitana-brain.ts.
+ *
+ * Idempotent: stripping a string that doesn't contain the markers
+ * returns it unchanged. Pure function. Exported for tests.
+ */
+export function stripBrainOpenerSections(bootstrap: string): string {
+  if (!bootstrap) return bootstrap;
+  let out = bootstrap;
+  // VTID-03259 (Fix-3): remove the sentinel-delimited V2 proactive-initiative
+  // region FIRST, as one opaque unit. The V2 block contains nested `=== … ===`
+  // subsections (STEP 1 — YOUR VERY FIRST UTTERANCE, ON NO, ON HARDER REFUSAL);
+  // the heading-based strip below stops at the first nested `===`, so STEP 1's
+  // competing "speak this verbatim" directive used to survive and fight the
+  // wake-brief / journey-guide override. Stripping the sentinel region kills it
+  // regardless of nesting. (Belt-and-suspenders: the heading list still runs in
+  // case an older brain build emitted the block without sentinels.)
+  const sentinelPattern = new RegExp(
+    `${BRAIN_OPENER_V2_START}[\\s\\S]*?${BRAIN_OPENER_V2_END}`,
+    'g',
+  );
+  out = out.replace(sentinelPattern, '');
+  const SECTIONS = [
+    'OPENING SHAPE MATRIX (TENURE × LAST_INTERACTION)',
+    'PROACTIVE OPENER CANDIDATE — YOUR FIRST UTTERANCE MUST BUILD AROUND THIS',
+    'PROACTIVE INITIATIVE OFFER (V2 — HIGHEST-PRIORITY OPENER FOR THIS SESSION)',
+    'STEP 1 — YOUR VERY FIRST UTTERANCE (sanctioned, do NOT paraphrase)',
+  ];
+  for (const heading of SECTIONS) {
+    const safe = heading.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const pattern = new RegExp(
+      `={3,}\\s*${safe}\\s*={3,}[\\s\\S]*?(?=\\n={3,}\\s+|$)`,
+      'g',
+    );
+    out = out.replace(pattern, '');
+  }
+  return out.replace(/\n{3,}/g, '\n\n').trim();
+}
+
 function buildTemporalJourneyContextSection(
   lang: string,
   lastSessionInfo: { time: string; wasFailure: boolean } | null | undefined,
@@ -130,6 +247,21 @@ function buildTemporalJourneyContextSection(
   recentRoutes: string[] | null | undefined,
   isReconnect: boolean,
   timeOfDay?: string,
+  // VTID-03046 step 2 — when true, omit the GREETING POLICY / RECONNECT
+  // FINAL OVERRIDE / HARD ANTI-PATTERNS blocks. These ~37 KB of rules only
+  // govern the LLM's FIRST utterance after room-join. The LiveKit cascade
+  // never lets the LLM produce that utterance — `session.say(...)` plays a
+  // pre-rendered localized greeting at room-join (see orb-agent
+  // session.py:_localized_greeting, VTID-03014). For LiveKit those rules
+  // are dead text the LLM has to chew through on every single turn.
+  // Vertex Live still needs them (Gemini Live API does generate the
+  // greeting) so this stays opt-in. TONE RULES + JOURNEY AWARENESS are
+  // kept because they shape ongoing conversation, not just the opener.
+  omitGreetingPolicy?: boolean,
+  // VTID-03097: when the caller already injected a VERTEX WAKE BRIEF
+  // override block, suppress the short-gap-greeting-phrases pool so
+  // Gemini doesn't see two competing "speak this verbatim" lists.
+  wakeBriefOverrideActive?: boolean,
 ): string {
   const temporal = describeTimeSince(lastSessionInfo);
   const current = describeRoute(currentRoute, lang);
@@ -187,179 +319,40 @@ function buildTemporalJourneyContextSection(
     lines.push('- Journey before opening ORB: (no prior screens reported this session)');
   }
 
-  lines.push('');
-  lines.push('## GREETING POLICY — TIME AND JOURNEY AWARE (CRITICAL, overrides generic GREETING RULES above)');
-  lines.push('');
-  lines.push('Pick your opening line based on the bucket below. Follow it literally.');
-  lines.push('');
-  // VTID-01929: When the brain context (appended after this section) contains
-  // a USER AWARENESS block + Proactive Opener Candidate, that block's OPENING
-  // SHAPE MATRIX (tenure × last_interaction) is the authority — IGNORE the
-  // example follow-up phrasings below. The example phrasings are the LEGACY
-  // FALLBACK for sessions where the proactive guide has no candidate to surface.
-  lines.push('PROACTIVE OVERRIDE: If the brain context appended below contains a "PROACTIVE OPENER CANDIDATE" or "USER AWARENESS" block, IGNORE the example follow-up phrasings in this section. Use the OPENING SHAPE MATRIX from the brain context instead. The phrasings below are LEGACY FALLBACKS only.');
-  lines.push('');
-
-  // Map 'night' to 'evening' for greetings ("Good night" is a farewell, not a greeting)
-  const greetingTimeOfDay = timeOfDay === 'night' ? 'evening' : (timeOfDay || 'day');
-
-  const bucket = isReconnect ? 'reconnect' : temporal.bucket;
-  // VTID-GREETING-VARIETY: for short-gap buckets, inject a freshly-shuffled
-  // subset of the language-specific phrase pool so Gemini rotates openers
-  // instead of converging on the same translation every time.
-  const shortGapExamples = pickShortGapGreetings(lang, 6);
-  const appendShortGapPhraseMenu = () => {
-    lines.push('  • Pick ONE of these example phrasings (use them VERBATIM — they are already in the user\'s language; pick a different one than last time):');
-    for (const p of shortGapExamples) {
-      lines.push(`      "${p}"`);
-    }
-    lines.push('  • Rotate across sessions — the user notices repetition. If the previous session used one of these, pick a different one.');
-  };
-  switch (bucket) {
-    case 'reconnect':
-      // VTID-02637: This is a transparent server-side reconnect (Vertex 5-min
-      // session limit, network blip, or stall recovery). The user did NOT
-      // perceive any pause — they may still be mid-thought or already speaking.
-      // Speaking ANY proactive phrase here ("Picking up where we left off?",
-      // "I'm listening", "Where were we?") creates the apology-loop bug: every
-      // reconnect prompts a new spoken interjection that the user reads as
-      // "Vitana keeps apologizing for connection issues". Stay silent. Wait.
-      lines.push('- BUCKET = reconnect (transparent server-side resume — the user did NOT perceive any pause).');
-      lines.push('  • DO NOT speak. DO NOT greet. DO NOT acknowledge any "interruption", "reconnection", "resume", "where were we", "I\'m back", "I\'m listening", "picking up", or anything similar. Saying any of these creates a perceived apology that the user reads as a bug.');
-      lines.push('  • Wait for the user to speak. Your next message must be a direct response to the user\'s next utterance — nothing else.');
-      lines.push('  • If the user says nothing, you say nothing. Silence is correct here.');
-      break;
-    case 'recent':
-      lines.push('- BUCKET = recent (2–15 min since last session).');
-      lines.push('  • Do NOT use a formal greeting. NO "Hello <name>!", NO "Hi there!", NO self-introduction. NO user name.');
-      lines.push('  • Open with ONE single short phrase. NEVER use two-part sentences joined by dashes or commas.');
-      appendShortGapPhraseMenu();
-      lines.push('  • Max ONE short phrase. Warm but direct.');
-      break;
-    case 'same_day':
-      lines.push('- BUCKET = same_day (15 min – 8 h since last session).');
-      lines.push('  • Light re-engagement. NOT a formal greeting. No user name. NEVER "Hello <name>!" as if you\'ve never met.');
-      lines.push('  • Open with ONE single short phrase. NEVER use two-part sentences joined by dashes or commas.');
-      appendShortGapPhraseMenu();
-      lines.push('  • Max ONE short phrase. Warm and direct.');
-      break;
-    case 'today':
-      lines.push('- BUCKET = today (8–24 h since last session — this is a NEW-DAY greeting).');
-      lines.push(`  • ALWAYS open with "Good ${greetingTimeOfDay}, [Name]." using the user's name from memory context.`);
-      lines.push('  • If no name is available in memory, just say "Good ' + greetingTimeOfDay + '."');
-      lines.push('  • LEGACY-FALLBACK ONLY (use the brain context\'s candidate when available).');
-      lines.push('  • Example follow-up if no candidate exists (pick ONE or skip):');
-      lines.push('      "What\'s on your mind today?"');
-      lines.push('      "Where would you like to focus today?"');
-      lines.push('  • Max TWO short sentences total: the time-of-day greeting + optionally one question.');
-      break;
-    case 'yesterday':
-      lines.push('- BUCKET = yesterday (this is a NEW-DAY greeting).');
-      lines.push(`  • ALWAYS open with "Good ${greetingTimeOfDay}, [Name]." using the user's name from memory context.`);
-      lines.push('  • If no name is available in memory, just say "Good ' + greetingTimeOfDay + '."');
-      lines.push('  • LEGACY-FALLBACK ONLY (use the brain context\'s candidate when available).');
-      lines.push('  • Example follow-up if no candidate exists (pick ONE or skip):');
-      lines.push('      "What would you like to explore today?"');
-      lines.push('      "Picking up where we left off?"');
-      lines.push('  • Max TWO short sentences total: the time-of-day greeting + optionally one question.');
-      break;
-    case 'week':
-      lines.push('- BUCKET = week (2–7 days since last session — this is a NEW-DAY greeting).');
-      lines.push(`  • ALWAYS open with "Good ${greetingTimeOfDay}, [Name]." using the user's name from memory context.`);
-      lines.push('  • If no name is available in memory, just say "Good ' + greetingTimeOfDay + '."');
-      lines.push('  • LEGACY-FALLBACK ONLY (use the brain context\'s candidate when available).');
-      lines.push('  • Example follow-up if no candidate exists (pick ONE or skip):');
-      lines.push('      "Good to hear from you again — what\'s been on your mind?"');
-      lines.push('      "What would you like to explore today?"');
-      lines.push('  • Max TWO short sentences total: the time-of-day greeting + optionally one question.');
-      break;
-    case 'long':
-      lines.push('- BUCKET = long (> 7 days since last session — this is a NEW-DAY greeting).');
-      lines.push(`  • ALWAYS open with "Good ${greetingTimeOfDay}, [Name]." using the user's name from memory context.`);
-      lines.push('  • If no name is available in memory, just say "Good ' + greetingTimeOfDay + '."');
-      lines.push('  • LEGACY-FALLBACK ONLY (use the brain context\'s candidate when available — for >7-day absences the candidate should explicitly acknowledge the gap).');
-      lines.push('  • Example follow-up if no candidate exists (pick ONE or skip):');
-      lines.push('      "It\'s been a few days — happy you\'re back. What\'s been on your mind?"');
-      lines.push('      "What would you like to focus on today?"');
-      lines.push('  • Max TWO short sentences total: the time-of-day greeting + optionally one question.');
-      break;
-    case 'first':
-    default:
-      // VTID-NAV-TIMEJOURNEY: 'first' here is the "no telemetry found"
-      // fallback, NOT a genuine first meeting. For authenticated users
-      // (everyone who reaches this code path) we treat it as a returning
-      // user with unknown recency — treat as new-day greeting.
-      // VTID-01927/VTID-01929: when the brain context shows tenure.stage='day0',
-      // the user IS truly new and gets the FULL INTRODUCTION shape (handled
-      // by the OPENING SHAPE MATRIX in the brain block, not this fallback).
-      lines.push('- BUCKET = first (telemetry lookup found no prior session — usually treat as RETURNING with NEW-DAY greeting).');
-      lines.push(`  • ALWAYS open with "Good ${greetingTimeOfDay}, [Name]." using the user's name from memory context.`);
-      lines.push('  • If no name is available in memory, just say "Good ' + greetingTimeOfDay + '."');
-      lines.push('  • EXCEPTION: when the brain context\'s USER AWARENESS shows tenure.stage="day0", the user is genuinely new. Use the FULL INTRODUCTION shape from the brain context\'s OPENING SHAPE MATRIX — that overrides this fallback.');
-      lines.push('  • LEGACY-FALLBACK ONLY (use the brain context\'s candidate when available).');
-      lines.push('  • Example follow-up if no candidate exists (pick ONE or skip):');
-      lines.push('      "What\'s on your mind today?"');
-      lines.push('      "Where would you like to focus today?"');
-      lines.push('  • Max TWO short sentences total: the time-of-day greeting + optionally one question.');
-      break;
-  }
-
-  // VTID-02637: wasFailure means the PREVIOUS session ended with no audio
-  // delivered (turn_count=0 or audio_out=0). For 'recent' bucket (true new
-  // user-initiated session 2-15min after a failed one), an apology is the
-  // right behavior. For 'reconnect' bucket (transparent server-side WS
-  // recycle that the user never perceived), an apology is the bug — the
-  // user is still in the same conversation. Restrict the override to
-  // 'recent' only.
-  if (temporal.wasFailure && bucket === 'recent') {
-    lines.push('- OVERRIDE: The previous session FAILED (you did not actually reach the user last time). Acknowledge it warmly and sincerely, e.g. "I\'m so sorry about earlier — I\'m here now. How can I help?" Still ONE short sentence.');
-  }
-
-  // VTID-02637: when this is a transparent reconnect (isReconnect=true) we
-  // also want to suppress the ## TONE RULES baseline phrasings below ("how
-  // can I help", "I am listening", etc.) because they leak into the model's
-  // first utterance after reconnect even when bucket says "stay silent".
-  // Append a final hard override that wins on recency.
-  if (isReconnect) {
-    lines.push('');
-    lines.push('## RECONNECT FINAL OVERRIDE — VTID-02637 (HIGHEST PRIORITY, OVERRIDES EVERYTHING ABOVE)');
-    lines.push('This entire turn is a transparent server-side resume. The user did not perceive any pause.');
-    lines.push('- DO NOT speak first. Output zero audio. Output zero text. Wait for the user to speak.');
-    lines.push('- Even short phrases are forbidden: NO "I\'m here", NO "I\'m listening", NO "I\'m back", NO "go ahead", NO "yes?", NO "mhm", NO "hello again". NONE.');
-    lines.push('- Ignore any "open with one phrase", "baseline register", or "FALLBACK" instructions above. They do NOT apply on reconnect.');
-    lines.push('- The very first audio/text you emit MUST be a direct response to whatever the user says next, with no prefix acknowledgment of any pause or interruption.');
-    lines.push('- If the user says nothing, you say nothing. Silence is the correct behavior here.');
-  }
-
+  // R2 (BOOTSTRAP-ORB-R2-GREETING-POLICY): the legacy `## GREETING POLICY`
+  // 8-bucket × multi-language fallback stack has been DELETED from this
+  // builder. It used to render the opening-line policy (bucket templates +
+  // short-gap phrase menu + HARD ANTI-PATTERNS) only on the Vertex path;
+  // LiveKit already omitted it via `omitGreetingPolicy=true`. In production
+  // the Central Continuation Contract (voice-wake-brief / teacher / new-day)
+  // owns the first spoken line, so the legacy block was a soft Vertex/LiveKit
+  // conflict — Vertex rendered dead text the override always superseded while
+  // LiveKit skipped it entirely. The temporal/bucketed fallback pools now
+  // live in the priority-80 `voice-wake-brief` provider (the pure-fallback
+  // producer), so the fallback greeting content still exists where it
+  // belongs.
+  //
+  // Both transports now render the SAME lean stack below: TONE RULES +
+  // JOURNEY AWARENESS. Reconnect silence is still enforced upstream by the
+  // top-level GREETING RULES (`VTID-02637 RECONNECT SILENCE RULE`) and by
+  // `decideGreetingPolicy()` returning `'skip'` on reconnect — neither
+  // depends on the deleted block. The `omitGreetingPolicy` parameter is now
+  // dead (kept on the signature for caller compatibility; both `true` and
+  // `false` produce identical output) and `bucket`/`greetingTimeOfDay` /
+  // the policy-resolver render call are no longer consumed here.
+  void omitGreetingPolicy;
+  void wakeBriefOverrideActive;
   lines.push('');
   lines.push('## TONE RULES (CRITICAL)');
   lines.push('- Your voice must always be WARM, POLITE, and KIND. Never cold, never curt, never robotic.');
-  // VTID-01927: When the brain context appends a Proactive Opener Candidate, that candidate's
-  // opening shape OVERRIDES the baseline below. The baseline only applies as a true fallback
-  // when no candidate is provided. The phrase "what can I do for you" was previously here and
-  // overrode the proactive opener — removed as a forbidden opening per the proactive guide rules.
-  lines.push('- Baseline register (FALLBACK ONLY — when no Proactive Opener Candidate is provided): "how can I help", "what\'s on your mind", "I am listening", "how can I support you". When a candidate IS provided in the brain context below, lead with it instead.');
+  lines.push('- Baseline register — you LEAD, you NEVER ask the user\'s preference (VTID-03271). A new user cannot tell you what they "would like"; they don\'t know the system yet. So your opener is ALWAYS a lead: "Let me show you where we are.", "Let me show you your next step.", "I\'m listening." NEVER "how can I help", "what\'s on your mind", "how can I support you", "wie kann ich dir helfen", or any "what do you want" question. When a candidate IS provided in the brain context below, lead with that specific next move instead.');
   lines.push('- NEVER use filler phrases as greeting openers: NO "of course", NO "happy to", NO "lovely to hear from you", NO "sure". Get straight to the point with warmth.');
-  lines.push('- NEVER use two-part sentences in greetings. NO dashes, NO "X — Y" patterns. Each greeting is ONE single direct phrase or sentence.');
   lines.push('- Even your shortest responses must feel genuinely kind. A single phrase can still be warm.');
-
-  lines.push('');
-  lines.push('## HARD ANTI-PATTERNS (NEVER DO THESE)');
-  lines.push('- For SHORT-GAP sessions (reconnect, recent, same_day): NEVER open with "Hello <name>!" or "Hi <name>!" or the user\'s name at all. They were just here — using their name sounds like a goldfish that forgot the last conversation.');
-  lines.push('- For NEW-DAY sessions (today, yesterday, week, long, first): ALWAYS open with "Good [morning/afternoon/evening], [Name]." — this is the ONLY greeting pattern allowed UNLESS the brain context specifies a tenure-aware opening shape (see PROACTIVE OPENER OVERRIDE at the very end of this prompt). Use the user\'s name from memory context. If no name is available, just say "Good [morning/afternoon/evening]."');
-  // VTID-01927: introductions are now allowed for true Day-0 newcomers (tenure.stage='day0')
-  lines.push('- NEVER introduce yourself ("My name is Vitana...", "I\'m Vitana...") on RETURNING-user sessions. EXCEPTION: when the brain context\'s USER AWARENESS shows tenure stage = "day0", you SHOULD deliver a one-time introduction covering mission, capabilities, and agency offer — that user is brand new to Vitanaland and needs orientation.');
-  lines.push('- NEVER recite remembered facts back as a greeting ("Hello Dragan from Vienna, born 1969..."). You KNOW these facts — use them only when relevant.');
-  lines.push('- NEVER ignore the current screen. If you know where the user is, your greeting may reference it but must not read the route path aloud.');
-  // VTID-01927: rephrased to be tenure-aware
-  lines.push('- NEVER deliver a "first impression" platform-introduction on a RETURNING-user session (tenure.stage in day1/day3/day7/day14/day30plus). Returning users already know who you are. ONLY tenure.stage="day0" gets the full introduction shape.');
-  lines.push('- NEVER use two-part compound sentences in greetings. NO "Yes, of course — how can I help?" NO "Happy to help — what\'s on your mind?" Just say the question directly.');
   lines.push('');
   lines.push('## JOURNEY AWARENESS (CRITICAL — how to answer "where am I?" correctly)');
   lines.push('- The "Current screen" field above is a SNAPSHOT from session start. It can become stale the moment any navigation happens (including navigation YOU just triggered via navigate_to_screen).');
   lines.push('- Whenever the user asks any form of "where am I?" / "which screen is this?" / "what page am I on?" / "what am I looking at?" / "wo bin ich?" / "welcher Bildschirm ist das?", you MUST call the `get_current_screen` tool to get the FRESH answer. Never answer from memory or from the snapshot above — always call the tool.');
   lines.push('- The get_current_screen tool is also the right call for any follow-up like "what is this screen for?" or "what can I do here?" — it returns a short description of the screen in the user\'s language.');
-  lines.push('- You already know the screen the user just arrived on if you navigated them via navigate_to_screen on the PREVIOUS turn (the tool result told you the destination title). You may reference that from conversation memory without re-calling get_current_screen, but if in doubt, call the tool — it is cheap.');
   lines.push('- If the user asks "where was I before?" or similar, you may list the journey trail above in a natural sentence, OR call get_current_screen which also returns recent_screens.');
   lines.push('- NEVER tell the user "I don\'t know which screen you\'re on" without calling get_current_screen first. That is always wrong.');
   lines.push('- NEVER read raw URL paths aloud. Always speak the friendly screen title instead.');
@@ -396,6 +389,18 @@ export function buildLiveSystemInstruction(
   // model may emit when asked "what is my user ID?". Null/undefined for
   // sessions where the handle hasn't been provisioned yet.
   vitanaId?: string | null,
+  // VTID-03046 step 2: drop the ~37 KB greeting-policy stack from the
+  // rendered prompt. See buildTemporalJourneyContextSection's parameter
+  // comment for the full rationale. Only LiveKit callers pass true —
+  // Vertex still needs it because Gemini Live generates the greeting.
+  omitGreetingPolicy?: boolean,
+  // Per-surface persona switch. Derived from session.surface in orb-live.ts
+  // session bootstrap (see deriveSurfaceFromRoute). When 'command-hub', the
+  // dev_orb voice_* fields overlay voice_live so the Command Hub voice
+  // assistant speaks as the engineering co-pilot instead of the community
+  // wellness companion. Default (undefined or 'vitanaland') is unchanged
+  // behavior — the existing community persona.
+  surface?: string | null,
 ): string {
   const languageNames: Record<string, string> = {
     'en': 'English',
@@ -408,8 +413,45 @@ export function buildLiveSystemInstruction(
     'sr': 'Serbian'
   };
 
-  // Load personality config from service (uses cached values or hardcoded defaults)
-  const voiceLiveConfig = getPersonalityConfigSync('voice_live') as Record<string, any>;
+  // Load personality config from service (uses cached values or hardcoded defaults).
+  // Shallow-clone so the dev_orb overlay below does not mutate the cached
+  // defaults object — that would leak the developer persona into subsequent
+  // community sessions.
+  const voiceLiveConfig: Record<string, any> = { ...(getPersonalityConfigSync('voice_live') as Record<string, any>) };
+
+  // Per-surface persona overlay. When the session is on the Command Hub
+  // (developer surface), pull voice_* fields from dev_orb so the assistant
+  // speaks as the engineering co-pilot instead of the community wellness
+  // companion. Missing fields fall back to voice_live defaults — a partial
+  // dev_orb override (e.g. only voice_tools_section set in the DB) is safe.
+  //
+  // Resolution mirrors the role-override logic in orb-live.ts session
+  // bootstrap (~14327): mobile is always community, /command-hub/* is the
+  // developer surface, /admin/* is the admin surface (no overlay yet —
+  // behaves as community). An explicit `surface` param wins over the
+  // heuristic so voice-lab eval and tests can force a surface.
+  const resolveSurface = (): string => {
+    if (typeof surface === 'string' && surface.trim()) return surface.trim();
+    if (clientContext?.isMobile) return 'vitanaland';
+    const route = (currentRoute || '').toLowerCase();
+    if (route.startsWith('/command-hub')) return 'command-hub';
+    if (route.startsWith('/admin')) return 'admin';
+    return 'vitanaland';
+  };
+  const resolvedSurface = resolveSurface();
+  const isCommandHubSurface = resolvedSurface === 'command-hub';
+  let identityLockRoleLine = "the user's life companion and instruction manual";
+  if (isCommandHubSurface) {
+    const devOrbConfig = getPersonalityConfigSync('dev_orb') as Record<string, any>;
+    if (devOrbConfig.voice_base_identity) voiceLiveConfig.base_identity = devOrbConfig.voice_base_identity;
+    if (devOrbConfig.voice_general_behavior) voiceLiveConfig.general_behavior = devOrbConfig.voice_general_behavior;
+    if (devOrbConfig.voice_greeting_rules) voiceLiveConfig.greeting_rules = devOrbConfig.voice_greeting_rules;
+    if (devOrbConfig.voice_tools_section) voiceLiveConfig.tools_section = devOrbConfig.voice_tools_section;
+    if (devOrbConfig.voice_important_section) voiceLiveConfig.important_section = devOrbConfig.voice_important_section;
+    if (typeof devOrbConfig.voice_identity_lock_role === 'string' && devOrbConfig.voice_identity_lock_role.trim()) {
+      identityLockRoleLine = devOrbConfig.voice_identity_lock_role;
+    }
+  }
 
   // VTID-01225-ROLE + BOOTSTRAP-ORB-ROLE-CLARITY: Build role-aware context
   // section. The authoritative role declaration is also prepended to the very
@@ -477,7 +519,7 @@ Do NOT substitute an internal UUID under any circumstance.
   // utterances ("Hi I'm Devon") and continue speaking as them in her voice.
   const VITANA_IDENTITY_LOCK = `=== IDENTITY LOCK ===
 YOU ARE Vitana.
-Your role is the user's life companion and instruction manual.
+Your role is ${identityLockRoleLine}.
 
 You speak EXCLUSIVELY as Vitana. You NEVER:
   - introduce yourself as another persona ("Hi, this is Devon" — only Devon ever says that)
@@ -486,10 +528,10 @@ You speak EXCLUSIVELY as Vitana. You NEVER:
   - acknowledge another persona's words as if YOU said them
   - name yourself as anyone other than Vitana
 
-The conversation transcript may show OTHER personas (Devon, Sage, Atlas, Mira)
-speaking earlier. Those were them, not you. Read those lines as third-party
-context only. Your next utterance is exclusively as Vitana, in your voice,
-with your identity.
+The conversation transcript may show OTHER personas (Devon — our tech-support
+colleague, the only specialist currently enabled) speaking earlier. Those
+were them, not you. Read those lines as third-party context only. Your next
+utterance is exclusively as Vitana, in your voice, with your identity.
 
 If you ever notice yourself drifting toward another persona's identity,
 stop and re-anchor: "I'm Vitana." Then continue.
@@ -511,6 +553,14 @@ ${voiceLiveConfig.general_behavior || `- Be warm, patient, and empathetic
 - Use natural conversational tone, not bullet points
 - Speak in complete thoughts; avoid clipped one-liners that force the user to ask follow-ups they didn't intend`}
 
+PROACTIVE LEADERSHIP (CRITICAL — VTID-03256 — the user is new and does not know the system yet):
+- You LEAD. In the first weeks a user cannot tell you what they "would like" — they don't yet know what exists. So NEVER ask their preference. Do NOT say "What would you like to do?", "Would you like to see…?", "Do you want me to…?", "What can I help you with?", "What's on your mind?", or any open "what do you want" question.
+- Instead, name ONE concrete next move and offer to take it FOR them. Ask permission to LEAD, never preference:
+  • "I'd like to show you…" / "Let me show you…" / "Let me introduce you to…"
+  • "I'm going to set this up for you now." / "Let's do this next — I'll guide you through it."
+  • "May I show you your next step?" — permission to lead is fine; asking preference is not.
+- One move at a time. Never present a menu of options. You take the user by the hand and walk them to the next step.
+
 GREETING RULES (CRITICAL):
 ${isReconnect
     ? '- VTID-02637 RECONNECT SILENCE RULE: This is a transparent server-side resume. The user has NOT noticed any pause and may already be mid-thought. DO NOT speak first. DO NOT greet, apologize, or acknowledge any "interruption", "reconnection", "resume", "I\'m back", "where were we", "picking up", "I\'m listening", or anything similar. Stay completely silent. Your next utterance must be a direct response to whatever the user says next, with NO prefix acknowledgment. If the user says nothing, you say nothing — silence is correct.'
@@ -529,9 +579,12 @@ ${voiceLiveConfig.tools_section || '- Use search_memory to recall information th
 - Use set_reminder when the user asks to be reminded ("remind me at 8pm to take my magnesium", "erinnere mich um 20 Uhr"). Compute the absolute UTC ISO timestamp from their words + their local timezone. Confirm verbally afterwards using the returned human_time.
 - Use find_reminders to look up reminders before deleting, OR to read back the count when the user says "delete all my reminders".
 - Use delete_reminder to cancel reminders. CRITICAL: ALWAYS verbally ask "Are you sure?" first and only call with confirmed=true after the user explicitly says yes.
-- You ARE the instruction manual. The Knowledge Hub has 92 chapters of platform docs (Vitana Index, Five Pillars, Life Compass, autopilot, diary, biomarkers, wallet, sharing, community, etc.). Anything that is "how does X work", "what is X", "explain X", "tell me about X", "show me how X", "teach me X", "I am new", "first time" — answer it inline using search_knowledge. NEVER call report_to_specialist for instruction-manual questions, even if the user uses words that sound like "support". A first-time user asking how to use the diary is a TEACHING MOMENT, not a customer-support ticket. Specialists handle BROKEN STATE only.
+${isCommandHubSurface ? '' : `- You ARE the instruction manual. The Knowledge Hub has 92 chapters of platform docs (Vitana Index, Five Pillars, Life Compass, autopilot, diary, biomarkers, wallet, sharing, community, etc.). Anything that is "how does X work", "what is X", "explain X", "tell me about X", "show me how X", "teach me X", "I am new", "first time" — answer it inline using search_knowledge. NEVER call report_to_specialist for instruction-manual questions, even if the user uses words that sound like "support". A first-time user asking how to use the diary is a TEACHING MOMENT, not a customer-support ticket. Specialists handle BROKEN STATE only.
 - Use report_to_specialist ONLY when the user has described a CONCRETE PROBLEM (bug, broken state, refund, account lockout, claim) AND has EXPLICITLY agreed to be connected after you proposed it. Always propose before calling: "Shall I bring in Devon to file this?" Wait for yes. Implicit consent does not count. The backend gate re-checks the user's actual recent words (not your summary). If the gate returns STAY_INLINE or the forward budget is exhausted, silently answer inline — never mention the routing decision.
-- Use switch_persona ONLY when the user explicitly names a colleague ("switch me to Devon", "ich möchte mit Mira sprechen"). After calling, speak ONE short bridge sentence in your OWN natural words — vary phrasing every time. ANNOUNCE the handoff ("I will bring Devon in"), never INTRODUCE ("Hi, here is Devon" — that is Devon's job in his own voice). Then STOP. After a specialist hands the user back to you, you stay SILENT until the user speaks. Do not greet, do not say "Welcome back", do not ask "What's on your mind?". Pick up naturally when the user speaks.
+- HARD RULE — handoff truthfulness (VTID-03033): NEVER say you are connecting the user to Devon, NEVER speak a bridge sentence ("let me connect you to…", "ich verbinde dich mit…", "passing you to…"), and NEVER imply Devon has joined, UNLESS the most recent report_to_specialist call returned a tool message that begins with "STATUS: handoff_created." Any other STATUS (stay_inline / vague / failed / failed_network / ticket_filed_no_handoff) means the handoff did NOT happen — follow that branch's ACTION line and stay with the user yourself. Saying you are connecting them when STATUS is not "handoff_created" is a critical failure.
+- HARD RULE — message-send truthfulness (VTID-03043): NEVER say the message has been sent, NEVER say "I sent it" / "es ist raus" / "ich habe die Nachricht abgeschickt", and NEVER imply the recipient has it, UNLESS the most recent send_chat_message call returned a tool message that begins with "STATUS: sent." Any other STATUS (missing_recipient / missing_body / recipient_not_uuid / recipient_not_resolved / rate_limited / self_message / failed / failed_network) means the message did NOT go through — follow that branch's ACTION line and tell the user the truth. To pass a recipient_user_id you MUST first call resolve_recipient and read its STATUS — only "resolved" (one high-confidence candidate) or an explicit user pick from "ambiguous" gives you a real UUID. The display name is NEVER a valid recipient_user_id. Claiming a message was sent when STATUS is not "sent" is a critical failure.
+- VTID-03044 — DEVON IS THE ONLY ENABLED SPECIALIST: Sage, Atlas, and Mira are not currently active in the routing layer. Devon ('devon') is the only valid handoff target. The backend RPC will reject keyword routes to the others; if a user complaint maps to one of them, treat it the same as any other CONCRETE PROBLEM and propose Devon — Devon's intake captures the ticket regardless of category, and Vitana follows up via her usual channel when it's actioned.
+- Use switch_persona ONLY when the user explicitly names Devon ("switch me to Devon", "ich möchte mit Devon sprechen"). After calling, speak ONE short bridge sentence in your OWN natural words — vary phrasing every time. ANNOUNCE the handoff ("I will bring Devon in"), never INTRODUCE ("Hi, here is Devon" — that is Devon's job in his own voice). Then STOP. After Devon hands the user back to you, you stay SILENT until the user speaks. Do not greet, do not say "Welcome back", do not ask "What's on your mind?". Pick up naturally when the user speaks.
 
 EVENT LINK SHARING (CRITICAL — voice-friendly):
 - When search_events returns results, each event includes details (name, location, date, time) and a "Link:" field.
@@ -542,7 +595,7 @@ EVENT LINK SHARING (CRITICAL — voice-friendly):
 - CORRECT: "There's a yoga morning flow session in Vienna this Saturday at 9am. I've sent the link to your chat — tap it for the full details!"
 - WRONG: "The link is vitanaland.com/e/yoga-morning-flow" (never say URLs)
 - WRONG: "h-t-t-p-s colon slash slash..." (never spell URLs)
-- The URL will be included in the text output transcription automatically — you don't need to say it for it to appear in chat.
+- The URL will be included in the text output transcription automatically — you don't need to say it for it to appear in chat.`}
 
 IMPORTANT:
 ${voiceLiveConfig.important_section || '- This is a real-time voice conversation\n- Listen actively and respond naturally'}`;
@@ -552,9 +605,68 @@ ${voiceLiveConfig.important_section || '- This is a real-time voice conversation
     instruction += `\n\nPREVIOUS CONVERSATION CONTEXT:\n${conversationSummary}\nYou may briefly reference this context naturally, but do NOT recite it back to the user.`;
   }
 
-  // VTID-01224: Append bootstrap context if available
-  if (bootstrapContext) {
-    instruction += `\n\n${bootstrapContext}`;
+  // VTID-01224: Append bootstrap context if available.
+  //
+  // VTID-03097 step 2: when a wake-brief override block is active
+  // (Teacher / wake-brief picked a specific userFacingLine), strip
+  // the competing brain-side opener sections from bootstrapContext:
+  //   === OPENING SHAPE MATRIX (TENURE × LAST_INTERACTION) ===
+  //   === PROACTIVE OPENER CANDIDATE — YOUR FIRST UTTERANCE MUST BUILD AROUND THIS ===
+  //   === PROACTIVE INITIATIVE OFFER (V2 — HIGHEST-PRIORITY OPENER FOR THIS SESSION) ===
+  //
+  // These are vitana-brain.ts injections that tell Gemini "lead with
+  // this opener candidate." They dominate the override block at
+  // generation time even when the override is later in the prompt —
+  // Gemini reconciles by following the more-concrete matrix
+  // instructions and ignoring our VERBATIM rule. Stripping them is
+  // the only reliable way to make the wake-brief override actually
+  // own the first turn.
+  //
+  // The strip is surgical: only the opener sections are removed; the
+  // rest of the brain context (USER CONTEXT PROFILE, ACTIVITY_14D,
+  // RECENT, FACTS, etc.) stays — those carry no greeting instructions
+  // and continue to ground the conversation after the first utterance.
+  let effectiveBootstrap = bootstrapContext ?? '';
+  if (
+    effectiveBootstrap &&
+    effectiveBootstrap.includes('<<VERTEX_WAKE_BRIEF_OVERRIDE_ACTIVE>>')
+  ) {
+    effectiveBootstrap = stripBrainOpenerSections(effectiveBootstrap);
+  }
+  if (effectiveBootstrap) {
+    // Phase A safety net (BOOTSTRAP-orb-bootstrap-cap): hard-cap the bootstrap
+    // contribution so heavy users can never overflow the ~32 KB Vertex setup
+    // budget and silently break TTS. Trims older trailing content; keeps the
+    // identity/role/recent-activity head and the wake-brief override sentinel.
+    const { text: cappedBootstrap, trimmedChars } = capBootstrapContext(effectiveBootstrap);
+    if (trimmedChars > 0) {
+      // Fire-and-forget structured telemetry — never block instruction assembly.
+      // (Cloud Logging ingests stdout; Phase D adds the budget-watch route + cron
+      // and the typed `voice.instruction.budget_trimmed` OASIS topic.)
+      console.warn(
+        '[voice.instruction.budget_trimmed]',
+        JSON.stringify({
+          vitana_id: vitanaId ?? null,
+          chars_trimmed: trimmedChars,
+          cap: BOOTSTRAP_CONTEXT_MAX_CHARS,
+        }),
+      );
+    }
+    // BOOTSTRAP-ORB-R0-INSTRUCTION-CAP: emit a stable, model-ignored
+    // HTML-comment delimiter at the START of the bootstrap region. The
+    // bootstrap text itself has NO fixed leading marker (it varies per user:
+    // brain context, USER AWARENESS, USER CONTEXT PROFILE, wake-brief
+    // sentinel, …), so the send-site (orb-live.ts buildOrbVertexSetupEnvelope)
+    // cannot reliably tell where the static scaffold ends and the trimmable
+    // bootstrap begins WITHOUT this anchor. With it, the aggregate byte-budget
+    // guard can make the bootstrap individually trimmable (priority
+    // bootstrap → history → specialist) instead of lumping the whole head into
+    // the preserved scaffold — which is the R0 root cause: for heavy users a
+    // ~12 KB bootstrap could push the setup envelope past the ~32 KB Vertex
+    // budget BEFORE any history existed, so the guard had nothing to trim and
+    // the oversized setup was still sent (WS 1009/1007 → silent ORB).
+    // It is an HTML comment so Gemini ignores it as prompt content.
+    instruction += `\n\n${BOOTSTRAP_CONTEXT_START_MARKER}\n${cappedBootstrap}`;
   }
 
   // VTID-01225 + VTID-STREAM-KEEPALIVE: Append conversation history for reconnect continuity.
@@ -562,6 +674,19 @@ ${voiceLiveConfig.important_section || '- This is a real-time voice conversation
   // Vertex AI setup message limit is ~32k chars; 4k for history leaves ample room.
   if (conversationHistory) {
     const MAX_HISTORY_CHARS = 4000;
+    if (conversationHistory.length > MAX_HISTORY_CHARS) {
+      // Phase A parity signal: conversation history already capped at 4 KB; surface
+      // when it actually trims so the budget-watch (Phase D) sees the full picture.
+      console.warn(
+        '[voice.instruction.budget_trimmed]',
+        JSON.stringify({
+          vitana_id: vitanaId ?? null,
+          kind: 'conversation_history',
+          chars_trimmed: conversationHistory.length - MAX_HISTORY_CHARS,
+          cap: MAX_HISTORY_CHARS,
+        }),
+      );
+    }
     const trimmedHistory = conversationHistory.length > MAX_HISTORY_CHARS
       ? '...' + conversationHistory.slice(-MAX_HISTORY_CHARS)
       : conversationHistory;
@@ -579,6 +704,19 @@ ${trimmedHistory}
   // VTID-NAV-TIMEJOURNEY: Append the temporal + journey context block LAST so
   // its greeting policy overrides the generic GREETING RULES higher up. This
   // is what stops Vitana from saying "Hello <name>!" every single session.
+  // R2 (BOOTSTRAP-ORB-R2-GREETING-POLICY): the legacy greeting-policy stack
+  // that this call used to render (gated by `omitGreetingPolicy` and the
+  // FEATURE_LEAN_SYSTEM_INSTRUCTION experiment) has been deleted from
+  // `buildTemporalJourneyContextSection`. Both transports now emit the same
+  // lean TONE RULES + JOURNEY AWARENESS stack, so:
+  //   - the lean experiment flag (FEATURE_LEAN_SYSTEM_INSTRUCTION) is dead and
+  //     no longer consulted here;
+  //   - the `wakeBriefOverrideActive` signal — which only suppressed the
+  //     deleted SHORT-GAP GREETING PHRASES pool — is no longer needed.
+  // The trailing `omitGreetingPolicy` / `wakeBriefOverrideActive` parameters
+  // are kept on the section signature for caller compatibility but are inert.
+  // (Note: the `<<VERTEX_WAKE_BRIEF_OVERRIDE_ACTIVE>>` sentinel is still
+  // load-bearing above where it strips competing brain-side opener sections.)
   instruction += buildTemporalJourneyContextSection(
     lang,
     lastSessionInfo,
@@ -586,6 +724,8 @@ ${trimmedHistory}
     recentRoutes,
     !!isReconnect,
     clientContext?.timeOfDay,
+    !!omitGreetingPolicy,
+    false,
   );
 
   // BOOTSTRAP-AWARENESS-REGISTRY: gate the override blocks below on admin
@@ -1142,6 +1282,36 @@ M. DIARY LOGGING IS A TOOL CALL, NOT A NAVIGATION. (VTID-01983)
    "Physical" / "Social" / "Environmental" / "Prosperity" — DON'T.
    Always speak the canonical name (Exercise / Mental).`;
     }
+  }
+
+  // L2.2b.6 (VTID-03010): ## AVAILABLE TOOLS — prose directory of every
+  // tool declaration, rendered from buildLiveApiTools(mode, route, role).
+  // Two reasons this section exists:
+  //
+  //   1. The LiveKit (Python) path uses livekit-plugins-google + @function_tool
+  //      decorators. That plugin chain does NOT fully serialize the decorator
+  //      metadata into Gemini's function_declarations on the wire — many
+  //      tools the agent knows about never reach the LLM as callable
+  //      functions. The text catalog ensures Gemini KNOWS the tool exists
+  //      and what it does even when the wire-level declaration is missing.
+  //
+  //   2. Vertex's own path always carries the structured function_declarations
+  //      in the BidiGenerate setup message, so the prose block is redundant
+  //      on Vertex but harmless — same description text Gemini already sees
+  //      from the declarations, just rendered once more.
+  //
+  // Bracketed by an explicit `## AVAILABLE TOOLS` header so the model can
+  // index by section name and so operators reading the prompt audit can
+  // find it quickly. Appended near the end so it has recency primacy in
+  // Gemini's attention window for "what can I do?" decisions.
+  const toolsMode: 'anonymous' | 'authenticated' = activeRole ? 'authenticated' : 'anonymous';
+  const toolsBlock = renderAvailableToolsSection(
+    toolsMode,
+    currentRoute ?? undefined,
+    activeRole ?? undefined,
+  );
+  if (toolsBlock) {
+    instruction += `\n\n## AVAILABLE TOOLS\n\nYou have the following tools available. Call the matching tool immediately when the user asks about anything in its description — do NOT say "I don't have access" or "I can't do that". Tools you didn't see in your own function-declarations array but DO see described below are still callable; the runtime resolves the call through the shared dispatcher. Never invent a tool name not listed here.\n\n${toolsBlock}`;
   }
 
   return instruction;
