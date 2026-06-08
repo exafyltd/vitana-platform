@@ -1554,6 +1554,262 @@ router.post('/publish', requireAdminAuth, async (req: Request, res: Response) =>
  *      cloud_run_revision=<target>, initiator_id=<admin uuid>.
  *   7. Emit production.revert.completed or staging.revert.completed.
  */
+// ====================================================================
+// Shared revert core + both-repos revert (one-click clock revert).
+//
+// The Command Hub clock-revert reverts BOTH the backend (gateway) and the
+// frontend (community-app) together, so a "go back to the previous version"
+// click restores the whole product, not just the API. Both are fast Cloud Run
+// traffic shifts to an existing revision (no rebuild). The gateway service
+// account must hold roles/run.developer on the community-app services for the
+// frontend half; absent that, the frontend result reports shift_failed with the
+// IAM detail and the backend revert still stands (we surface partials, never
+// hide them).
+// ====================================================================
+
+type RevertStatus =
+  | 'reverted'
+  | 'already_active'
+  | 'not_found'
+  | 'too_old'
+  | 'shift_failed'
+  | 'no_target'
+  | 'resolve_failed';
+
+interface RevertOutcome {
+  status: RevertStatus;
+  ok: boolean; // true only for 'reverted'
+  service: string;
+  target_revision?: string;
+  target_commit?: string | null;
+  operation_name?: string;
+  swv_id?: string;
+  detail?: string;
+}
+
+/** Cloud Run service pairing: backend ↔ frontend, per environment. */
+const REVERT_SIBLING: Record<string, string> = {
+  gateway: 'community-app',
+  'community-app': 'gateway',
+  'gateway-staging': 'community-app-staging',
+  'community-app-staging': 'gateway-staging',
+};
+
+function isBackendService(service: string): boolean {
+  return service === 'gateway' || service === 'gateway-staging';
+}
+
+function revertOutcomeToHttp(o: RevertOutcome): number {
+  switch (o.status) {
+    case 'reverted': return 200;
+    case 'not_found': return 404;
+    case 'already_active': return 409;
+    case 'too_old': return 409;
+    case 'shift_failed': return 502;
+    default: return 500;
+  }
+}
+
+/**
+ * Validate a target revision, shift 100% traffic to it, record a `rollback`
+ * software_versions row, and emit the terminal OASIS event. Used by both
+ * POST /revert (single service) and POST /revert-both (gateway + community-app
+ * together). Returns a structured outcome; callers decide HTTP status and
+ * partial-failure handling. Works for any of the four managed Cloud Run
+ * services — environment (production/staging) is derived from the `-staging`
+ * suffix.
+ */
+async function revertOneService(
+  service: string,
+  targetRevisionRaw: string,
+  identity: { user_id: string },
+  requestId: string,
+): Promise<RevertOutcome> {
+  const targetShort = shortRevisionName(targetRevisionRaw);
+  const isStaging = service.endsWith('-staging');
+  const environment = isStaging ? 'staging' : 'production';
+
+  const revisions = await listRevisions(service, 100);
+  const target = revisions.find(r => r.shortName === targetShort);
+  if (!target) {
+    return {
+      status: 'not_found', ok: false, service, target_revision: targetShort,
+      detail: `revision ${targetShort} not found in last 100 revisions of ${service}`,
+    };
+  }
+  if (target.isActive) {
+    return {
+      status: 'already_active', ok: false, service, target_revision: targetShort,
+      target_commit: target.commitSha, detail: `${service} is already serving ${targetShort}`,
+    };
+  }
+  const ageMs = target.createdAt ? Date.now() - Date.parse(target.createdAt) : 0;
+  if (ageMs > REVERT_AGE_LIMIT_MS) {
+    return {
+      status: 'too_old', ok: false, service, target_revision: targetShort,
+      detail: `revision ${targetShort} is ${Math.floor(ageMs / (24 * 60 * 60 * 1000))} days old; >90d. Re-deploy that commit instead.`,
+    };
+  }
+
+  const result = await updateTrafficToRevision(service, targetShort);
+  if (!result.ok) {
+    await emitOasisEvent({
+      vtid: 'BOOTSTRAP-REVERT',
+      type: isStaging ? 'staging.deploy.failed' : 'production.publish.failed',
+      source: 'gateway-operator',
+      status: 'error',
+      message: `revert: ${service} → ${targetShort} traffic-shift failed (${result.error})`,
+      actor_id: identity.user_id,
+      actor_role: 'admin',
+      surface: 'command-hub',
+      payload: { request_id: requestId, service, target_revision: targetShort, error: result.error },
+    });
+    return {
+      status: 'shift_failed', ok: false, service, target_revision: targetShort,
+      target_commit: target.commitSha, detail: result.error,
+    };
+  }
+
+  ACTIVE_REV_CACHE.delete(service); // invalidate cache so next /deployments shows new active
+  const swvId = await getNextSWV();
+  await insertSoftwareVersion({
+    swv_id: swvId,
+    service,
+    git_commit: target.commitSha || '(unknown)',
+    deploy_type: 'rollback',
+    initiator: 'user',
+    status: 'success',
+    environment,
+    cloud_run_revision: targetShort,
+    source_revision: null,
+    initiator_id: identity.user_id,
+  });
+
+  await emitOasisEvent({
+    vtid: 'BOOTSTRAP-REVERT',
+    type: isStaging ? 'staging.revert.completed' : 'production.revert.completed',
+    source: 'gateway-operator',
+    status: 'success',
+    message: `revert: ${service} now serving ${targetShort}`,
+    actor_id: identity.user_id,
+    actor_role: 'admin',
+    surface: 'command-hub',
+    payload: {
+      request_id: requestId,
+      service,
+      target_revision: targetShort,
+      target_commit: target.commitSha,
+      operation_name: result.operationName,
+      swv_id: swvId,
+    },
+  });
+
+  return {
+    status: 'reverted', ok: true, service, target_revision: targetShort,
+    target_commit: target.commitSha, operation_name: result.operationName, swv_id: swvId,
+  };
+}
+
+/**
+ * POST /api/v1/operator/revert-both → /api/v1/operator/revert-both
+ *
+ * One-click "go back to the previous version" across BOTH repos. Reverts the
+ * anchor service (the clicked clock row) to `target_revision`, then reverts its
+ * paired sibling to the revision that sibling was serving at the anchor's deploy
+ * time (`target_created_at`), falling back to the sibling's immediately-previous
+ * revision when no timestamp is supplied. Anchor success drives the HTTP status;
+ * the sibling result is always reported alongside (skips/failures included).
+ */
+router.post('/revert-both', requireAdminAuth, async (req: Request, res: Response) => {
+  // impact-allow-no-oasis: the state-transition events (production/staging.
+  // revert.completed) are emitted inside revertOneService() for each service
+  // this handler reverts, not in the handler body.
+  const requestId = randomUUID();
+  const { identity } = req as AuthenticatedRequest;
+  if (!identity) return res.status(401).json({ ok: false, error: 'unauthorized' });
+
+  const service = (req.body?.service || '').toString().trim();
+  const targetRevisionRaw = (req.body?.target_revision || '').toString().trim();
+  const anchorCreatedAt = (req.body?.target_created_at || '').toString().trim();
+
+  const sibling = REVERT_SIBLING[service];
+  if (!sibling) {
+    return res.status(400).json({
+      ok: false, error: 'invalid_service',
+      detail: 'service must be gateway, gateway-staging, community-app, or community-app-staging',
+    });
+  }
+  if (!targetRevisionRaw) {
+    return res.status(400).json({ ok: false, error: 'missing_target_revision' });
+  }
+
+  try {
+    // 1. Revert the anchor (the service whose clock row was clicked).
+    const anchor = await revertOneService(service, targetRevisionRaw, identity, requestId);
+
+    // 2. Resolve + revert the sibling. Time-correlate to the anchor deploy when
+    //    we have its timestamp; otherwise step the sibling back one revision.
+    let siblingOutcome: RevertOutcome;
+    try {
+      const sibRevs = await listRevisions(sibling, 100);
+      const sorted = sibRevs.slice().sort((a, b) =>
+        Date.parse(b.createdAt || '0') - Date.parse(a.createdAt || '0'));
+      const active = sorted.find(r => r.isActive) || null;
+      const notActive = (shortName: string) => !active || active.shortName !== shortName;
+
+      let chosen = undefined as (typeof sorted)[number] | undefined;
+      const anchorMs = anchorCreatedAt ? Date.parse(anchorCreatedAt) : NaN;
+      if (!Number.isNaN(anchorMs)) {
+        chosen = sorted.find(r => {
+          const t = Date.parse(r.createdAt || '0');
+          return !Number.isNaN(t) && t <= anchorMs && notActive(r.shortName);
+        });
+      }
+      if (!chosen) {
+        chosen = sorted.find(r => notActive(r.shortName)); // immediately-previous
+      }
+
+      if (!chosen) {
+        siblingOutcome = {
+          status: 'no_target', ok: false, service: sibling,
+          detail: `${sibling} has no earlier revision to revert to.`,
+        };
+      } else if (active && chosen.shortName === active.shortName) {
+        siblingOutcome = {
+          status: 'already_active', ok: false, service: sibling,
+          target_revision: chosen.shortName, target_commit: chosen.commitSha,
+          detail: `${sibling} already serving ${chosen.shortName}`,
+        };
+      } else {
+        siblingOutcome = await revertOneService(sibling, chosen.shortName, identity, requestId);
+      }
+    } catch (sibErr) {
+      siblingOutcome = {
+        status: 'resolve_failed', ok: false, service: sibling,
+        detail: sibErr instanceof Error ? sibErr.message : 'unknown',
+      };
+    }
+
+    // 3. Respond. backend/frontend convenience aliases + raw anchor/sibling.
+    const backend = isBackendService(service) ? anchor : siblingOutcome;
+    const frontend = isBackendService(service) ? siblingOutcome : anchor;
+    const siblingSettled = siblingOutcome.ok || siblingOutcome.status === 'already_active';
+
+    return res.status(anchor.ok ? 200 : revertOutcomeToHttp(anchor)).json({
+      ok: anchor.ok,
+      both_ok: anchor.ok && siblingSettled,
+      backend,
+      frontend,
+      anchor,
+      sibling: siblingOutcome,
+    });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    console.error(`[Operator] /revert-both failed: ${errorMessage}`);
+    return res.status(500).json({ ok: false, error: 'internal_error', detail: errorMessage });
+  }
+});
+
 router.post('/revert', requireAdminAuth, async (req: Request, res: Response) => {
   const requestId = randomUUID();
   const { identity } = req as AuthenticatedRequest;
