@@ -51,6 +51,10 @@ on:
         description: 'Exact commit SHA to build/deploy (the tested staging commit). When empty, falls back to main HEAD (legacy behavior). Threaded by the PUBLISH flow so prod ships the EXACT bits verified on staging — no "tested X, shipped Y" drift.'
         required: false
         default: ''
+      image:
+        description: 'Prebuilt container image to deploy (e.g. the image the staging revision is already running). When set, the deploy REUSES this image with --image and skips the from-source rebuild (publish in ~30s instead of minutes). When empty, falls back to --source build (legacy behavior). commit_sha is still used to re-stamp GIT_COMMIT_SHA on the new revision.'
+        required: false
+        default: ''
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -488,11 +492,29 @@ jobs:
 
           # Build deploy args
           DEPLOY_ARGS=(
-            --source="$SOURCE_PATH"
             --region=us-central1
             --project=lovable-vitana-vers1
             --allow-unauthenticated
           )
+
+          # Fast publish (image promotion): when an `image` input is provided we
+          # REUSE the prebuilt container the staging revision already runs and
+          # deploy it with --image — no from-source rebuild (publish ~30s vs
+          # minutes). When empty, fall back to the legacy --source build so every
+          # existing caller (auto-deploy, escape-hatch) is unaffected.
+          PROMOTE_IMAGE="${{ github.event.inputs.image }}"
+          if [ -n "$PROMOTE_IMAGE" ]; then
+            echo "::notice::Image-promotion mode — deploying prebuilt image (no rebuild): $PROMOTE_IMAGE"
+            DEPLOY_ARGS+=(--image="$PROMOTE_IMAGE")
+            # The image carries no env; re-stamp the promoted commit so
+            # /admin/build-info (and the publish verifier) report the right SHA.
+            if [ -n "${{ github.event.inputs.commit_sha }}" ]; then
+              EXTRA_ENV_ARGS+=(--update-env-vars=GIT_COMMIT_SHA=${{ github.event.inputs.commit_sha }})
+              EXTRA_ENV_ARGS+=(--update-env-vars=COMMIT_SHA=${{ github.event.inputs.commit_sha }})
+            fi
+          else
+            DEPLOY_ARGS+=(--source="$SOURCE_PATH")
+          fi
 
           # Cognee-extractor: internal-only ingress, override custom SA to avoid IAM actAs error
           if [ "$CLOUD_RUN_SERVICE" = "cognee-extractor" ]; then

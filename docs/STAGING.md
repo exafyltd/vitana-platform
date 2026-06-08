@@ -136,9 +136,26 @@ Server flow (`POST /api/v1/operator/publish`):
 6. Insert `software_versions` row with `source_revision`, `initiator_id`.
 7. Emit `production.publish.requested` + `production.publish.completed` events.
 
-The new prod revision becomes active once EXEC-DEPLOY finishes (~5min). The
-publish-staging card surfaces the workflow URL inline so the operator can
-watch progress.
+### Fast publish — image promotion, not rebuild (~30s)
+
+Publish does **not** rebuild the container from source. The staging deploy
+already built and tested the exact image the `gateway-staging` revision is
+running, so publish **reuses that prebuilt image**:
+
+- Step 4 also resolves the staging revision's container image and threads it to
+  EXEC-DEPLOY's `image` input (alongside `commit_sha`).
+- When `image` is set, EXEC-DEPLOY deploys with `gcloud run deploy --image …`
+  (no Cloud Build) and re-stamps `GIT_COMMIT_SHA`/`COMMIT_SHA` so
+  `/admin/build-info` reports the promoted commit. Result: a new prod revision
+  in **~30s** instead of a 3–8 min from-source rebuild — and the bits are
+  byte-identical to what staging verified (zero "tested X, shipped Y" drift).
+- If the image can't be resolved, `image` is empty and EXEC-DEPLOY falls back to
+  the legacy `--source` build of `commit_sha` (correct, just slower). Every
+  other caller (auto-deploy, escape-hatch) passes no image and is unaffected.
+
+The publish-staging card surfaces the workflow URL inline so the operator can
+watch progress. The popover self-heals if it ever wedges on "Reading state…",
+and offers an in-popover "Re-read state" link as a fallback.
 
 ## 4. How to revert
 

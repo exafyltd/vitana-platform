@@ -39,6 +39,11 @@ export interface DeployRequest {
   // than rebuilding main HEAD (closes the "tested X, shipped Y" drift). When
   // omitted, EXEC-DEPLOY falls back to main HEAD (legacy behavior).
   commitSha?: string;
+  // Prebuilt container image to promote (the image the staging revision is
+  // already running). When set, EXEC-DEPLOY deploys it with --image and skips
+  // the from-source rebuild — publish in ~30s instead of minutes. When omitted,
+  // EXEC-DEPLOY rebuilds from source (legacy behavior).
+  image?: string;
 }
 
 // VTID-0407: Governance violation interface
@@ -211,7 +216,7 @@ async function evaluateGovernance(
  * VTID-0407: Now integrates governance evaluation before deployment.
  */
 export async function executeDeploy(request: DeployRequest): Promise<DeployResult> {
-  const { vtid, service, environment, source, canary, commitSha } = request;
+  const { vtid, service, environment, source, canary, commitSha, image } = request;
 
   console.log(`[Deploy Orchestrator] Starting deploy for ${service} to ${environment} (VTID: ${vtid}, source: ${source})`);
 
@@ -260,6 +265,9 @@ export async function executeDeploy(request: DeployRequest): Promise<DeployResul
         canary: canary ? 'true' : 'false',
         // Ship the exact tested commit when provided; empty → main HEAD (legacy).
         commit_sha: commitSha || '',
+        // Promote the prebuilt staging image when provided so prod skips the
+        // rebuild; empty → EXEC-DEPLOY builds from source (legacy).
+        image: image || '',
       }
     );
 
