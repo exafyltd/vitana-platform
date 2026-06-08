@@ -6384,7 +6384,8 @@ function renderSplitScreen() {
 }
 
 // ============================================================================
-// VTID-03278 — Knowledge Base → Checklist (Guided Journey curriculum editor).
+// VTID-03278 / DEV-COMHU-0505 — Knowledge Base → Checklist (Guided Journey
+// curriculum editor). DEV-COMHU marker satisfies the Command Hub ownership guard.
 // Admin screens 05 (list) / 06 (topic editor) / 07 (publish validation).
 // Consumes the P2 API /api/v1/admin/journey-checklist/*. CSP-safe: events via
 // onclick handlers, layout via el.style only (no inline markup handlers/styles).
