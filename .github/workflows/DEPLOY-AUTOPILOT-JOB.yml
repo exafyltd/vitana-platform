@@ -50,7 +50,36 @@ on:
         default: '2'
 
 jobs:
+  # Staging-first cutover gate. Freezes the AUTOMATIC (push) build+deploy of the
+  # live autopilot Cloud Run Job at/after Mon 8 Jun 2026, 10:00 Europe/Berlin.
+  # No staging twin for the job, so the push path is freeze-only post-cutover;
+  # deploy via manual workflow_dispatch (the documented exception). Manual
+  # dispatch is never frozen.
+  cutover_gate:
+    runs-on: ubuntu-latest
+    outputs:
+      frozen: ${{ steps.gate.outputs.frozen }}
+    steps:
+      - name: Evaluate staging-first cutover
+        id: gate
+        shell: bash
+        run: |
+          CUTOVER_EPOCH="$(date -d 'TZ="Europe/Berlin" 2026-06-08 10:00:00' +%s)"
+          NOW_EPOCH="$(date -u +%s)"
+          if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
+            echo "Manual dispatch → not frozen (deliberate prod exception)."
+            echo "frozen=false" >> "$GITHUB_OUTPUT"
+          elif [ "$NOW_EPOCH" -ge "$CUTOVER_EPOCH" ]; then
+            echo "::warning::Staging-first cutover ACTIVE — auto deploy of the autopilot job to LIVE is frozen. Use a manual workflow_dispatch to ship."
+            echo "frozen=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Pre-cutover — auto deploy proceeds (cutover at $(date -u -d @${CUTOVER_EPOCH}) UTC)."
+            echo "frozen=false" >> "$GITHUB_OUTPUT"
+          fi
+
   deploy:
+    needs: cutover_gate
+    if: needs.cutover_gate.outputs.frozen != 'true'
     runs-on: ubuntu-latest
     permissions:
       id-token: write

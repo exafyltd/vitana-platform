@@ -47,6 +47,10 @@ on:
         description: 'If true, deploy with --no-traffic so the new revision is created but not serving. The operator promotes it via /operator/promote after verifying staging metrics. Defaults to false (existing 100%-on-deploy behavior).'
         required: false
         default: 'false'
+      commit_sha:
+        description: 'Exact commit SHA to build/deploy (the tested staging commit). When empty, falls back to main HEAD (legacy behavior). Threaded by the PUBLISH flow so prod ships the EXACT bits verified on staging — no "tested X, shipped Y" drift.'
+        required: false
+        default: ''
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -54,7 +58,19 @@ jobs:
       id-token: write
       contents: read
     steps:
+      # Check out the exact commit the publish flow tested on staging when
+      # commit_sha is provided; otherwise main HEAD (legacy). workflow_dispatch
+      # must run against a branch (main), so the SHA is selected here, not at
+      # dispatch time.
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.commit_sha != '' && github.event.inputs.commit_sha || github.sha }}
+      # Resolve the ACTUAL deployed commit (the checked-out HEAD) so every
+      # downstream SHA bake records what really shipped, not the dispatch ref.
+      - name: Resolve deploy SHA
+        id: deploy_sha
+        shell: bash
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
       - uses: google-github-actions/auth@v2
         with:
           workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
@@ -297,8 +313,8 @@ jobs:
             # /admin/build-info + cloud-run-admin.describeService can surface a real
             # 7-char SHA (instead of falling back to the *.run.app revision name).
             # Mirrors what STAGE-DEPLOY.yml already does for gateway-staging.
-            EXTRA_ENV_ARGS+=(--update-env-vars=GIT_COMMIT_SHA=${{ github.sha }})
-            EXTRA_ENV_ARGS+=(--update-env-vars=COMMIT_SHA=${{ github.sha }})
+            EXTRA_ENV_ARGS+=(--update-env-vars=GIT_COMMIT_SHA=${{ steps.deploy_sha.outputs.sha }})
+            EXTRA_ENV_ARGS+=(--update-env-vars=COMMIT_SHA=${{ steps.deploy_sha.outputs.sha }})
             # VTID-01225: Cognee Extractor URL for entity extraction
             EXTRA_ENV_ARGS+=(--update-env-vars=COGNEE_EXTRACTOR_URL=https://cognee-extractor-86804897789.us-central1.run.app)
             # VTID-01175: Worker verification mode. 'advisory' (default) runs the
@@ -722,7 +738,7 @@ jobs:
         run: |
           # Record deployment version in OASIS via Gateway API
           SERVICE_NAME="${{ steps.deploy.outputs.cloud_run_service }}"
-          GIT_COMMIT="${{ github.sha }}"
+          GIT_COMMIT="${{ steps.deploy_sha.outputs.sha }}"
 
           # BOOTSTRAP-PHASE0-UX: include the Cloud Run revision name so the
           # CLOCK dropdown can match this row to the currently-serving
