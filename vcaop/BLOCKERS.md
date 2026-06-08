@@ -13,4 +13,6 @@
 
 | BLK-004 | eBay (first integration) | eBay developer/EPN docs not independently verified here; needs real **sandbox** (then prod) OAuth creds + an EPN campaign id. | Built eBay Api/OAuth clients + EPN link decorator behind the connector interfaces, mock-only; `live` mode refuses without vault creds (no silent live calls). | (1) Create an eBay developer sandbox app → supply `EBAY_OAUTH_CLIENT_ID/SECRET` via Secret Manager; (2) apply to eBay Partner Network → supply campaign id; then I wire the live calls + flip `live`. |
 
+| BLK-005 | Affiliate aggregator (Phase 3) | Aggregator API/terms not verified here; needs a chosen vendor (Skimlinks/Sovrn/Wildfire) + API key + publisher id. | Built `HttpAggregatorClient` + postback-signature-verify behind the `AggregatorClient` interface, mock-only; `live` refuses without vaulted creds. | Choose the aggregator, sign up, supply `AGGREGATOR_API_KEY` (vault) + publisher id; then I wire live link decoration + postback signature verification and flip `live`. |
+
 _No fabricated credentials were used. No Tier-B action was taken to unblock (Sec. 11.3)._
