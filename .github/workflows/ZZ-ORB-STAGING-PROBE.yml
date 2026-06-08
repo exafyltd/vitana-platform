@@ -1,0 +1,32 @@
+# Manual-only diagnostic: probes the staging gateway ORB path from a GitHub
+# runner (open egress) the same way the pre-login orb widget does. No deploy,
+# no side effects. Safe to delete after use. (BOOTSTRAP-ORB-STAGING-PROBE)
+name: ZZ ORB Staging Probe (manual)
+on:
+  workflow_dispatch: {}
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Probe staging vs prod ORB session/start
+        run: |
+          probe() {
+            local label="$1"; local url="$2"; local origin="$3"
+            echo "===== $label : $url (Origin: $origin) ====="
+            echo "--- admin/health ---"
+            curl -s -m 15 -w "\n[HTTP %{http_code} ct=%{content_type}]\n" "$url/api/v1/admin/health" || echo "(curl failed)"
+            echo "--- GET /command-hub/orb-widget.js (served?) ---"
+            curl -s -o /dev/null -m 15 -w "[widget HTTP %{http_code} ct=%{content_type} bytes=%{size_download}]\n" "$url/command-hub/orb-widget.js" || echo "(curl failed)"
+            echo "--- POST /api/v1/orb/live/session/start (anonymous / pre-login) ---"
+            curl -s -m 25 -w "\n[HTTP %{http_code} ct=%{content_type}]\n" \
+              -X POST "$url/api/v1/orb/live/session/start" \
+              -H "Content-Type: application/json" \
+              -H "Origin: $origin" \
+              -d '{"lang":"de"}' || echo "(curl failed)"
+            echo
+          }
+          probe "STAGING" "https://preview-gateway.vitanaland.com" "https://preview.vitanaland.com"
+          probe "STAGING-runapp" "https://gateway-staging-q74ibpv6ia-uc.a.run.app" "https://preview.vitanaland.com"
+          probe "PROD (control, known-good)" "https://gateway.vitanaland.com" "https://vitanaland.com"
