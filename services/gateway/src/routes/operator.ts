@@ -1721,6 +1721,9 @@ async function revertOneService(
  * the sibling result is always reported alongside (skips/failures included).
  */
 router.post('/revert-both', requireAdminAuth, async (req: Request, res: Response) => {
+  // impact-allow-no-oasis: the state-transition events (production/staging.
+  // revert.completed) are emitted inside revertOneService() for each service
+  // this handler reverts, not in the handler body.
   const requestId = randomUUID();
   const { identity } = req as AuthenticatedRequest;
   if (!identity) return res.status(401).json({ ok: false, error: 'unauthorized' });
