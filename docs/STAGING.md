@@ -147,21 +147,56 @@ watch progress.
 2. Find the revision you want to roll back to. Eligible rows show a small
    red "Revert" button — eligibility means `status='success'`, has a
    `cloud_run_revision`, age < 90 days, and not currently active.
-3. Click **Revert**. A confirm overlay opens.
+3. Click **Revert**. A confirm overlay opens — it states that **both repos**
+   will roll back.
 4. Type the 7-char commit short SHA. Click **Revert**.
 
-Server flow (`POST /api/v1/operator/revert`):
+### One-click revert reverts BOTH repos (backend + frontend)
 
-1. Validate `service` ∈ `{gateway, gateway-staging}`.
-2. List revisions on the service, verify target exists + not active + not
-   expired.
-3. Call Cloud Run Admin API `updateService(traffic)` → 100% to target.
-4. Insert `software_versions` row with `deploy_type='rollback'`.
-5. Emit `production.revert.completed` or `staging.revert.completed`.
+The clock revert restores the whole product, not just the API. One click rolls
+back **both** the backend (`gateway`) and the frontend (`community-app`)
+together, so users never see a half-reverted state.
 
-Traffic shifts complete in ~30s — no rebuild. The revert button works on
-both prod and staging Command Hubs (it operates on whichever stack the
-caller is currently viewing, via the `service` body parameter).
+Server flow (`POST /api/v1/operator/revert-both`):
+
+1. Validate the anchor `service` ∈ `{gateway, gateway-staging, community-app,
+   community-app-staging}` and resolve its paired sibling
+   (`gateway`↔`community-app`, `gateway-staging`↔`community-app-staging`).
+2. **Anchor** (the clicked clock row): list revisions, verify target exists +
+   not active + age < 90d, then Cloud Run Admin API `updateService(traffic)` →
+   100% to target.
+3. **Sibling**: resolve the revision the sibling was serving at the anchor
+   revision's deploy time (`target_created_at`), falling back to the sibling's
+   immediately-previous revision; then the same traffic shift.
+4. Insert a `software_versions` row (`deploy_type='rollback'`) and emit
+   `production.revert.completed` / `staging.revert.completed` for **each**
+   service.
+5. Anchor success drives the HTTP status; the sibling result is always reported
+   alongside. Partial failures are surfaced, never hidden.
+
+The legacy single-service endpoint (`POST /api/v1/operator/revert`,
+`service` ∈ `{gateway, gateway-staging}`) is unchanged and still available.
+
+Traffic shifts complete in ~30s — no rebuild. The revert button works on both
+prod and staging Command Hubs (it operates on whichever stack the caller is
+currently viewing, via the anchor `service`).
+
+> **IAM prerequisite for the frontend half.** The gateway service account
+> already holds `roles/run.developer` on `gateway`/`gateway-staging`. For the
+> both-repos revert to shift `community-app`/`community-app-staging` traffic it
+> needs the same role on those services:
+>
+> ```bash
+> gcloud run services add-iam-policy-binding community-app \
+>   --region=us-central1 --project=lovable-vitana-vers1 \
+>   --member="serviceAccount:<gateway-runtime-SA>" --role=roles/run.developer
+> gcloud run services add-iam-policy-binding community-app-staging \
+>   --region=us-central1 --project=lovable-vitana-vers1 \
+>   --member="serviceAccount:<gateway-runtime-SA>" --role=roles/run.developer
+> ```
+>
+> Without it, the backend still reverts and the overlay reports the frontend
+> half as failed with the permission detail (grant the role, then re-click).
 
 ## 5. Migration / publish decoupling
 

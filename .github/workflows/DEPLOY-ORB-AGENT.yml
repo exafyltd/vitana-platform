@@ -42,7 +42,36 @@ env:
   IMAGE_REPO: us-central1-docker.pkg.dev/lovable-vitana-vers1/vitana-services/orb-agent
 
 jobs:
+  # Staging-first cutover gate. Freezes the AUTOMATIC (push) deploy of the live
+  # vitana-orb-agent service at/after Mon 8 Jun 2026, 10:00 Europe/Berlin.
+  # orb-agent has no staging twin, so post-cutover the push path is freeze-only;
+  # deploy via manual workflow_dispatch (the documented exception). Manual
+  # dispatch is never frozen.
+  cutover_gate:
+    runs-on: ubuntu-latest
+    outputs:
+      frozen: ${{ steps.gate.outputs.frozen }}
+    steps:
+      - name: Evaluate staging-first cutover
+        id: gate
+        shell: bash
+        run: |
+          CUTOVER_EPOCH="$(date -d 'TZ="Europe/Berlin" 2026-06-08 10:00:00' +%s)"
+          NOW_EPOCH="$(date -u +%s)"
+          if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
+            echo "Manual dispatch → not frozen (deliberate prod exception)."
+            echo "frozen=false" >> "$GITHUB_OUTPUT"
+          elif [ "$NOW_EPOCH" -ge "$CUTOVER_EPOCH" ]; then
+            echo "::warning::Staging-first cutover ACTIVE — auto deploy of vitana-orb-agent to LIVE is frozen. Use a manual workflow_dispatch to ship."
+            echo "frozen=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Pre-cutover — auto deploy proceeds (cutover at $(date -u -d @${CUTOVER_EPOCH}) UTC)."
+            echo "frozen=false" >> "$GITHUB_OUTPUT"
+          fi
+
   build-and-deploy:
+    needs: cutover_gate
+    if: needs.cutover_gate.outputs.frozen != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
 

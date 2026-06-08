@@ -34,6 +34,11 @@ export interface DeployRequest {
   // Operator then promotes via /operator/promote after watching staging
   // metrics. Default false preserves the existing 100%-on-deploy behavior.
   canary?: boolean;
+  // Exact commit SHA to build/deploy — the commit verified on staging. Threaded
+  // to EXEC-DEPLOY's commit_sha input so prod ships the EXACT tested bits rather
+  // than rebuilding main HEAD (closes the "tested X, shipped Y" drift). When
+  // omitted, EXEC-DEPLOY falls back to main HEAD (legacy behavior).
+  commitSha?: string;
 }
 
 // VTID-0407: Governance violation interface
@@ -206,7 +211,7 @@ async function evaluateGovernance(
  * VTID-0407: Now integrates governance evaluation before deployment.
  */
 export async function executeDeploy(request: DeployRequest): Promise<DeployResult> {
-  const { vtid, service, environment, source, canary } = request;
+  const { vtid, service, environment, source, canary, commitSha } = request;
 
   console.log(`[Deploy Orchestrator] Starting deploy for ${service} to ${environment} (VTID: ${vtid}, source: ${source})`);
 
@@ -253,6 +258,8 @@ export async function executeDeploy(request: DeployRequest): Promise<DeployResul
         health_path: '/alive',
         initiator: source === 'operator.console.chat' ? 'agent' : 'user',
         canary: canary ? 'true' : 'false',
+        // Ship the exact tested commit when provided; empty → main HEAD (legacy).
+        commit_sha: commitSha || '',
       }
     );
 
