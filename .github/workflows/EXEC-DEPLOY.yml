@@ -416,6 +416,11 @@ jobs:
             # VTID-01981: Routines ingest token — required by /api/v1/routines POST/PATCH
             # so daily Claude Code remote agents can authenticate without user JWTs.
             EXTRA_ENV_ARGS+=(--update-env-vars=ROUTINE_INGEST_TOKEN=${{ secrets.ROUTINE_INGEST_TOKEN }})
+            # BOOTSTRAP-VTID-ALLOC-SCOPED: shared secret for the scoped allocation
+            # route /api/v1/vtid/allocate-internal so trusted automation (Claude
+            # Code remote sessions) can mint VTIDs without the service-role key.
+            # Gateway validates it with timingSafeEqual and returns 401 on mismatch.
+            EXTRA_ENV_ARGS+=(--update-env-vars=VTID_ALLOC_SECRET=${{ secrets.VTID_ALLOC_SECRET }})
             # VTID-02030d/e: Google Chat webhook for human-in-the-loop pings
             # (voice quarantine, architectural recommendations, etc.).
             # Same secret used by DAILY-STATUS-UPDATE.yml's existing pings.
