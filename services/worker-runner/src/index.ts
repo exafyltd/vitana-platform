@@ -16,6 +16,9 @@ import express, { Request, Response } from 'express';
 import { config as dotenvConfig } from 'dotenv';
 import { WorkerRunner, createRunnerFromEnv } from './services/runner-service';
 import { startAgentRegistration } from './lib/agents-registry-client';
+// VTID-02978 (M1): operator-armed canary that mirrors the gateway PR-I
+// canary, used to prove the M1 worker-runner repair-loop green path.
+import canaryTargetRouter from './routes/canary-target';
 
 // Load environment variables
 dotenvConfig();
@@ -26,6 +29,10 @@ const PORT = parseInt(process.env.PORT || '8080', 10);
 // Express app for health checks
 const app = express();
 app.use(express.json());
+
+// VTID-02978 (M1): canary mounted at the conventional path so the
+// gateway's failure scanner can probe worker-runner.canary_target_health.
+app.use('/api/v1/canary-target', canaryTargetRouter);
 
 // Runner instance
 let runner: WorkerRunner | null = null;

@@ -179,4 +179,86 @@ describe('aggregatePulse', () => {
     expect(item.age_minutes).toBeGreaterThanOrEqual(36);
     expect(item.age_minutes).toBeLessThanOrEqual(38);
   });
+
+  // VTID-02956 (PR-L1.5): test-contract integration.
+  describe('test_contract_failure source', () => {
+    const failingContract = {
+      id: 'c-uuid-1',
+      capability: 'canary_target_disarmed_health',
+      service: 'gateway',
+      environment: 'dev',
+      target_endpoint: '/api/v1/canary-target/health',
+      target_file: 'services/gateway/src/routes/canary-target.ts',
+      owner: 'self-healing',
+      status: 'fail' as const,
+      last_status: 'pass' as const, // regressed!
+      last_run_at: agoIso(2),
+      last_failure_signature: 'canary_target.disarmed_health:status_mismatch: got 500, expected 200',
+    };
+
+    it('a regressed contract (pass → fail) is severity=critical', () => {
+      const items = aggregatePulse([], [], [], [failingContract]);
+      expect(items).toHaveLength(1);
+      expect(items[0].source).toBe('test_contract_failure');
+      expect(items[0].severity).toBe('critical');
+      expect(items[0].title).toContain('Contract failing');
+      expect(items[0].title).toContain('regressed');
+    });
+
+    it('a quarantined contract is severity=critical regardless of previous status', () => {
+      const items = aggregatePulse([], [], [], [{ ...failingContract, status: 'quarantined' as const, last_status: 'fail' }]);
+      expect(items[0].severity).toBe('critical');
+      expect(items[0].title).toContain('quarantined');
+    });
+
+    it('a still-failing contract (fail → fail) is severity=warning, not critical (already on the queue)', () => {
+      const items = aggregatePulse([], [], [], [{ ...failingContract, last_status: 'fail' as const }]);
+      expect(items[0].severity).toBe('warning');
+      expect(items[0].title).not.toContain('regressed');
+    });
+
+    it('offers rerun_contract + open_contract + investigate actions', () => {
+      const items = aggregatePulse([], [], [], [failingContract]);
+      expect(items[0].actions).toContain('rerun_contract');
+      expect(items[0].actions).toContain('open_contract');
+      expect(items[0].actions).toContain('investigate');
+    });
+
+    it('source_url deep-links to the test-contracts panel filtered by capability', () => {
+      const items = aggregatePulse([], [], [], [failingContract]);
+      expect(items[0].source_url).toContain('/command-hub/voice/test-contracts');
+      expect(items[0].source_url).toContain('capability=canary_target_disarmed_health');
+    });
+
+    it('passes structured metadata (capability, regressed flag, owner) for the UI', () => {
+      const items = aggregatePulse([], [], [], [failingContract]);
+      const m = items[0].metadata as Record<string, unknown>;
+      expect(m.capability).toBe('canary_target_disarmed_health');
+      expect(m.regressed).toBe(true);
+      expect(m.owner).toBe('self-healing');
+      expect(m.failure_signature).toContain('status_mismatch');
+    });
+
+    it('critical contracts sort before warning findings, then by recency within severity', () => {
+      const items = aggregatePulse(
+        [{
+          id: 'f-info',
+          title: 'minor finding', summary: '',
+          risk_class: 'low', impact_score: 1, effort_score: 1,
+          auto_exec_eligible: true, domain: 'x',
+          first_seen_at: agoIso(1), seen_count: 1, spec_snapshot: null,
+        }],
+        [], [],
+        [failingContract], // critical (regressed)
+      );
+      expect(items[0].source).toBe('test_contract_failure');
+      expect(items[1].source).toBe('dev_autopilot_finding');
+    });
+
+    it('an empty contracts array (default param) does not break the existing aggregator signature', () => {
+      // Backward compat — callers that don't pass contracts still work.
+      const items = aggregatePulse([], [], []);
+      expect(items).toEqual([]);
+    });
+  });
 });

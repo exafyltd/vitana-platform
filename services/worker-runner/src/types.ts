@@ -99,6 +99,19 @@ export interface ExecutionResult {
   fallback_used?: boolean;
   fallback_from?: string;
   fallback_reason?: string;
+  // PR-A (VTID-02922): populated when the runner delegated to an autopilot
+  // execution. healing_state tells downstream consumers what kind of success
+  // this is: 'patched_pending_deploy' = PR opened but NOT yet healed (CI +
+  // deploy still pending); 'verified_healed' = execution.status=completed.
+  // When `defer=true`, the runner should release the claim WITHOUT calling
+  // /complete or /terminalize — the self-healing reconciler will finish the
+  // VTID lifecycle when the autopilot execution reaches a terminal state.
+  healing_state?: 'patched_pending_deploy' | 'verified_healed' | 'execution_failed';
+  defer?: boolean;
+  pr_url?: string;
+  pr_number?: number;
+  branch?: string;
+  autopilot_execution_id?: string;
 }
 
 /**

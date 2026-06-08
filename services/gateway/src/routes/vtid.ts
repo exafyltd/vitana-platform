@@ -1,5 +1,6 @@
 import { Router, Request, Response } from "express";
 import { z } from "zod";
+import { timingSafeEqual } from "crypto";
 import { buildStageTimeline, defaultStageTimeline, type TimelineEvent, type StageTimelineEntry } from '../lib/stage-mapping';
 // VTID-01181: Import system controls service for DB-backed allocator toggle
 import { isVtidAllocatorEnabled, getSystemControl } from '../services/system-controls-service';
@@ -29,6 +30,24 @@ interface AllocatorResponse {
   id?: string;
   error?: string;
   message?: string;
+}
+
+/**
+ * VTID-03230: Pick a meaningful title for a freshly-allocated ledger row.
+ * Returns null when the caller didn't supply one and the source slug is
+ * generic ("api") — in that case we leave the RPC default untouched.
+ */
+function deriveAllocationTitle(
+  requestedTitle: string | undefined,
+  source: string
+): string | null {
+  if (requestedTitle && requestedTitle.length > 0 && requestedTitle !== 'Allocated - Pending Title') {
+    return requestedTitle.slice(0, 200);
+  }
+  if (!source || source === 'api') return null;
+  const cleaned = source.replace(/[-_]/g, ' ').trim();
+  if (!cleaned) return null;
+  return (cleaned.charAt(0).toUpperCase() + cleaned.slice(1)).slice(0, 200);
 }
 
 /**
@@ -67,6 +86,12 @@ router.post("/allocate", async (req: Request, res: Response) => {
     const source = req.body?.source || 'api';
     const layer = req.body?.layer || 'DEV';
     const module = req.body?.module || 'TASK';
+    // VTID-03230: accept optional title; if absent, we'll derive one from
+    // `source` after allocation so the ledger row never lands with the
+    // literal "Allocated - Pending Title" default and flood the Tasks board.
+    const requestedTitle: string | undefined = typeof req.body?.title === 'string'
+      ? req.body.title.trim()
+      : undefined;
 
     // Call the atomic allocation function
     const resp = await fetch(supabaseUrl + "/rest/v1/rpc/allocate_global_vtid", {
@@ -107,6 +132,37 @@ router.post("/allocate", async (req: Request, res: Response) => {
     const allocated = result[0];
     console.log(`[VTID-0542] Successfully allocated: ${allocated.vtid} (num=${allocated.num})`);
 
+    // VTID-03230: backfill a meaningful title onto the freshly-allocated row.
+    // The RPC defaults title to "Allocated - Pending Title", which floods the
+    // Tasks board with workflow scratch tokens (330 of 603 completed rows at
+    // time of fix). Prefer caller-supplied title; otherwise derive one from
+    // the source slug (e.g. "phase-1-w3b1-acceptance-doc" → "Phase 1 w3b1
+    // acceptance doc"). Best-effort — failure here does NOT fail allocation,
+    // because the VTID is still valid for the ledger row that already exists.
+    try {
+      const derivedTitle = deriveAllocationTitle(requestedTitle, source);
+      if (derivedTitle) {
+        const patchResp = await fetch(
+          supabaseUrl + `/rest/v1/vtid_ledger?vtid=eq.${encodeURIComponent(allocated.vtid)}`,
+          {
+            method: "PATCH",
+            headers: {
+              "Content-Type": "application/json",
+              apikey: svcKey,
+              Authorization: "Bearer " + svcKey,
+              Prefer: "return=minimal",
+            },
+            body: JSON.stringify({ title: derivedTitle, summary: derivedTitle }),
+          }
+        );
+        if (!patchResp.ok) {
+          console.warn(`[VTID-03230] Title backfill PATCH failed for ${allocated.vtid}: HTTP ${patchResp.status}`);
+        }
+      }
+    } catch (titleErr) {
+      console.warn(`[VTID-03230] Title backfill exception for ${allocated.vtid}:`, titleErr);
+    }
+
     return res.status(201).json({
       ok: true,
       vtid: allocated.vtid,
@@ -116,6 +172,119 @@ router.post("/allocate", async (req: Request, res: Response) => {
 
   } catch (e: any) {
     console.error(`[VTID-0542] Allocation error:`, e);
+    return res.status(500).json({
+      ok: false,
+      error: 'internal_server_error',
+      message: e.message,
+    } as AllocatorResponse);
+  }
+});
+
+/**
+ * Scoped machine-to-machine VTID allocation (shared secret, no user JWT).
+ *
+ * POST /allocate-internal → /api/v1/vtid/allocate-internal
+ *
+ * Lets a trusted automation (e.g. a Claude Code remote session) mint a VTID
+ * without holding the Supabase service-role key: the gateway keeps the DB
+ * credential internally and this route only requires a narrow shared secret.
+ * Modeled on internal-marketplace-sync.ts (X-Scheduler-Secret precedent).
+ *
+ * Auth: X-VTID-Alloc-Secret header, timing-safe compared to VTID_ALLOC_SECRET.
+ *   - secret not configured on gateway → 500 (fail closed)
+ *   - missing/invalid secret          → 401
+ * Governance: respects the allocator kill-switch (409 when disarmed), so this
+ * never bypasses Governance > Controls.
+ */
+router.post("/allocate-internal", async (req: Request, res: Response) => { // public-route — no user JWT; authed by the X-VTID-Alloc-Secret shared secret below
+  // impact-allow-no-oasis: allocation mirrors the user-facing /allocate route,
+  // which also emits no OASIS event. The shell ledger entry created here is not
+  // a lifecycle transition; vtid.lifecycle.* events fire when the task actually
+  // starts/completes, not on allocation.
+  const configured = process.env.VTID_ALLOC_SECRET;
+  if (!configured) {
+    return res.status(500).json({
+      ok: false,
+      error: 'secret_not_configured',
+      message: 'VTID_ALLOC_SECRET is not configured on the gateway.',
+    } as AllocatorResponse);
+  }
+
+  const header = req.headers['x-vtid-alloc-secret'];
+  const provided = Array.isArray(header) ? header[0] : header;
+  // NB: kept as plain statements (no nested arrow IIFE) so the impact-scan
+  // rule's handler-body extraction sees the // impact-allow-no-oasis marker
+  // above — it inspects the body of the LAST arrow before the closing paren.
+  let matches = false;
+  if (provided) {
+    const a = Buffer.from(configured);
+    const b = Buffer.from(provided);
+    matches = a.length === b.length && timingSafeEqual(a, b);
+  }
+  if (!matches) {
+    return res.status(401).json({
+      ok: false,
+      error: 'invalid_secret',
+      message: 'Invalid or missing X-VTID-Alloc-Secret header.',
+    } as AllocatorResponse);
+  }
+
+  // Respect the governance kill-switch — same gate as the user-facing route.
+  const allocatorEnabled = await isVtidAllocatorEnabled();
+  if (!allocatorEnabled) {
+    return res.status(409).json({
+      ok: false,
+      error: 'allocator_disabled',
+      message: 'VTID allocator is not active. Enable via Governance > Controls or set VTID_ALLOCATOR_ENABLED=true.',
+      vtid: 'VTID-0542',
+    } as AllocatorResponse);
+  }
+
+  try {
+    const { supabaseUrl, svcKey } = getSupabaseConfig();
+    const source = req.body?.source || 'automation';
+    const layer = req.body?.layer || 'DEV';
+    const module = req.body?.module || 'TASK';
+
+    const resp = await fetch(supabaseUrl + "/rest/v1/rpc/allocate_global_vtid", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        apikey: svcKey,
+        Authorization: "Bearer " + svcKey,
+      },
+      body: JSON.stringify({ p_source: source, p_layer: layer, p_module: module }),
+    });
+
+    if (!resp.ok) {
+      const errorText = await resp.text();
+      console.error(`[VTID-0542] Scoped allocation RPC failed: ${resp.status} - ${errorText}`);
+      return res.status(502).json({
+        ok: false,
+        error: 'allocation_failed',
+        message: `Database allocation failed: ${resp.statusText}`,
+      } as AllocatorResponse);
+    }
+
+    const result = await resp.json() as Array<{ vtid: string; num: number; id: string }>;
+    if (!result || result.length === 0) {
+      return res.status(502).json({
+        ok: false,
+        error: 'allocation_empty',
+        message: 'Allocation function returned no result',
+      } as AllocatorResponse);
+    }
+
+    const allocated = result[0];
+    console.log(`[VTID-0542] Scoped allocation: ${allocated.vtid} (num=${allocated.num}, source=${source})`);
+    return res.status(201).json({
+      ok: true,
+      vtid: allocated.vtid,
+      num: allocated.num,
+      id: allocated.id,
+    } as AllocatorResponse);
+  } catch (e: any) {
+    console.error(`[VTID-0542] Scoped allocation error:`, e);
     return res.status(500).json({
       ok: false,
       error: 'internal_server_error',

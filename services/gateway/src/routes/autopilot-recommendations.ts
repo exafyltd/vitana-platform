@@ -23,13 +23,145 @@
 import { Router, Request, Response } from 'express';
 import { createHash } from 'crypto';
 import { emitOasisEvent } from '../services/oasis-event-service';
-import { generateRecommendations, generatePersonalRecommendations, SourceType } from '../services/recommendation-engine';
+import { generateRecommendations, generatePersonalRecommendations, regenerateCommunityRecommendations, SourceType } from '../services/recommendation-engine';
 import { notifyUserAsync } from '../services/notification-service';
 import { DEFAULT_WAVE_CONFIG, buildTemplateToWaveMap } from '../services/wave-defaults';
+import { derivePillarImpact } from '../services/recommendation-engine/pillar-impact';
+import { evaluateRecAlignment } from '../services/recommendation-engine/alignment-evaluator';
+
+/**
+ * Phase 5 of the Ultimate Goal hardening (VTID-02935): when a recommendation
+ * graduates to a VTID, emit an OASIS event reporting whether the rec advances
+ * any mission dimension. The rec is "aligned" if it has a primary pillar OR a
+ * non-'none' economic_axis. Pillar impact is derived from contribution_vector.
+ *
+ * NOT a hard block — visibility only. Future: graduation to a block once ≥80%
+ * of activations in a 14-day window carry alignment fields. See
+ * docs/GOVERNANCE/ULTIMATE-GOAL.md.
+ */
+async function emitAlignmentEventForActivation(params: {
+  vtid: string;
+  recId: string;
+  recTitle: string;
+  userId: string | null;
+  supabaseUrl: string;
+  svcKey: string;
+}): Promise<void> {
+  try {
+    const recResp = await fetch(
+      `${params.supabaseUrl}/rest/v1/autopilot_recommendations?id=eq.${params.recId}&select=economic_axis,autonomy_level,contribution_vector,source_type,source_ref,domain&limit=1`,
+      { headers: { apikey: params.svcKey, Authorization: `Bearer ${params.svcKey}` } },
+    );
+    if (!recResp.ok) return;
+    const rows = await recResp.json() as any[];
+    const rec = rows[0];
+    if (!rec) return;
+
+    const evaluation = evaluateRecAlignment(rec);
+
+    await emitOasisEvent({
+      vtid: params.vtid,
+      type: evaluation.topic,
+      source: 'autopilot-recommendations',
+      status: evaluation.status,
+      message: evaluation.message,
+      payload: {
+        recommendation_id: params.recId,
+        recommendation_title: params.recTitle,
+        user_id: params.userId,
+        pillar_impact: evaluation.pillar_impact,
+        economic_axis: evaluation.economic_axis,
+        autonomy_level: evaluation.autonomy_level,
+        source_type: rec.source_type || null,
+        source_ref: rec.source_ref || null,
+        domain: rec.domain || null,
+      },
+    });
+  } catch (err: any) {
+    // Never let alignment telemetry break the activation path.
+    console.warn(`[VTID-02935] emitAlignmentEventForActivation failed (non-fatal): ${err?.message || err}`);
+  }
+}
+
+/**
+ * Annotate an array of recommendation rows from get_autopilot_recommendations
+ * with derived pillar_impact ({primary_pillar, magnitude}). Read-time derivation
+ * from contribution_vector JSONB — see services/.../pillar-impact.ts.
+ * Mutates each row in place (cheap and unambiguous for response payload use).
+ */
+function annotateWithPillarImpact<T extends { contribution_vector?: unknown }>(rows: T[]): Array<T & { pillar_impact: ReturnType<typeof derivePillarImpact> }> {
+  return rows.map((row) => ({
+    ...row,
+    pillar_impact: derivePillarImpact(row.contribution_vector as Record<string, unknown> | null | undefined),
+  }));
+}
 
 const router = Router();
 
 const LOG_PREFIX = '[VTID-01180]';
+
+/**
+ * Build the full community recommendation rows for an API response body
+ * (dedup → retired-action filter → wave/horizon enrichment → pillar_impact).
+ * Mirrors the GET / handler's community enrichment. The GET / handler remains
+ * the canonical "which recs does this user see" surface and the FE refetches it
+ * after a forced /generate, so this is a convenience projection for the
+ * /generate response (VTID-03301). Defined after COMMUNITY_ACTIONS so the
+ * retired-action filter can reference it.
+ */
+async function buildCommunityRecsResponse(
+  userId: string,
+  statuses: string[],
+  limit: number,
+): Promise<Array<Record<string, any>>> {
+  const fetchLimit = Math.max((limit + 1) * 4, 80);
+  const result = await queryRecommendationsByRole('community', userId, statuses, fetchLimit, 0);
+  let recommendations = result.ok ? (result.data || []) : [];
+
+  // Dedup by source_ref then title, preferring 'new' status (same rules as GET /).
+  const seen = new Map<string, any>();
+  for (const rec of recommendations) {
+    const k = rec.source_ref || rec.title;
+    const ex = seen.get(k);
+    if (!ex) seen.set(k, rec);
+    else if (rec.status === 'new' && ex.status !== 'new') seen.set(k, rec);
+  }
+  const seenTitles = new Set<string>();
+  recommendations = [];
+  for (const rec of seen.values()) {
+    if (seenTitles.has(rec.title)) continue;
+    seenTitles.add(rec.title);
+    recommendations.push(rec);
+  }
+
+  // Retired-action filter: only keep refs that map to a real community action.
+  recommendations = recommendations.filter((rec) => !rec.source_ref || COMMUNITY_ACTIONS[rec.source_ref]);
+
+  // Wave/horizon enrichment (mirrors GET /).
+  const templateToWave = buildTemplateToWaveMap();
+  for (const rec of recommendations) {
+    if (rec.source_ref) {
+      const waveId = templateToWave.get(rec.source_ref);
+      if (waveId) {
+        rec.wave_id = waveId;
+        rec.wave_order = DEFAULT_WAVE_CONFIG.find((w) => w.id === waveId)?.order ?? 99;
+      }
+    }
+    if (!rec.wave_id) {
+      rec.wave_id = 'wave-1';
+      rec.wave_order = 1;
+    }
+    const waveDef = DEFAULT_WAVE_CONFIG.find((w) => w.id === rec.wave_id);
+    const startDay = waveDef?.timeline.start_day ?? 0;
+    rec.horizon =
+      startDay <= 0  ? 'today'    :
+      startDay <= 3  ? 'next3'    :
+      startDay <= 7  ? 'thisWeek' :
+      startDay <= 30 ? 'month'    : 'future';
+  }
+
+  return annotateWithPillarImpact(recommendations).slice(0, limit);
+}
 
 // =============================================================================
 // Community Action Map — signal_type → action for community user activation
@@ -47,7 +179,7 @@ interface CommunityAction {
   };
 }
 
-const COMMUNITY_ACTIONS: Record<string, CommunityAction> = {
+export const COMMUNITY_ACTIONS: Record<string, CommunityAction> = {
   // Onboarding
   onboarding_profile:           { action_type: 'navigate', target: '/profile/edit', completion_message: 'Let\'s complete your profile!' },
   onboarding_avatar:            { action_type: 'navigate', target: '/profile/edit', completion_message: 'Add a photo so others can recognize you!' },
@@ -70,6 +202,14 @@ const COMMUNITY_ACTIONS: Record<string, CommunityAction> = {
   // Advanced
   share_expertise:      { action_type: 'navigate', target: '/groups', completion_message: 'Share your knowledge in a group!' },
   start_streak:         { action_type: 'navigate', target: '/diary', completion_message: 'Start your wellness streak!', calendar_event: { title_template: 'Start a wellness streak', duration_minutes: 15, event_type: 'health', wellness_tags: ['wellness'] } },
+  try_live_room:        { action_type: 'navigate', target: '/events', completion_message: 'Drop into a live room!', calendar_event: { title_template: 'Try a live room', duration_minutes: 15, event_type: 'community', wellness_tags: ['social', 'mental'] } },
+  // Index-gap pillar templates (index-gap-analyzer fallback) — schedulable wellness blocks.
+  // source_ref === `pillar_template_${pillar}`; MUST stay in sync with index-gap-analyzer.ts.
+  pillar_template_nutrition: { action_type: 'navigate', target: '/health', completion_message: 'Plan a balanced meal block.', calendar_event: { title_template: 'Meal planning block', duration_minutes: 15, event_type: 'nutrition', wellness_tags: ['nutrition'] } },
+  pillar_template_hydration: { action_type: 'navigate', target: '/health', completion_message: 'Time for a hydration check-in.', calendar_event: { title_template: 'Hydration check-in', duration_minutes: 10, event_type: 'health', wellness_tags: ['hydration'] } },
+  pillar_template_exercise:  { action_type: 'navigate', target: '/health', completion_message: 'Time to move.', calendar_event: { title_template: '30-minute movement block', duration_minutes: 30, event_type: 'workout', wellness_tags: ['movement'] } },
+  pillar_template_sleep:     { action_type: 'navigate', target: '/health', completion_message: 'Set up your wind-down.', calendar_event: { title_template: 'Wind-down block', duration_minutes: 30, event_type: 'health', wellness_tags: ['sleep'] } },
+  pillar_template_mental:    { action_type: 'navigate', target: '/chat', completion_message: 'A few minutes for your mind.', calendar_event: { title_template: 'Meditation / breathwork', duration_minutes: 10, event_type: 'health', wellness_tags: ['mindfulness', 'mental'] } },
   // mentor_new and organize_meetup removed — not automatable by autopilot
   // Weakness-driven
   weakness_movement:    { action_type: 'navigate', target: '/health', completion_message: 'Let\'s get moving!', calendar_event: { title_template: 'Exercise session', duration_minutes: 30, event_type: 'workout', wellness_tags: ['movement'] } },
@@ -154,8 +294,13 @@ function getActiveRole(req: Request): string | null {
 
 // =============================================================================
 // Helper: Direct PostgREST query for role-filtered recommendations
+//
+// VTID-02969: Exported so other voice / proactive surfaces (e.g.
+// tool_send_chat_message → next_actions) can reuse the EXACT same query
+// the Autopilot popup hits. There must be only one canonical "which
+// recommendations does this user see" source.
 // =============================================================================
-async function queryRecommendationsByRole(
+export async function queryRecommendationsByRole(
   role: string,
   userId: string | null,
   statuses: string[],
@@ -168,7 +313,7 @@ async function queryRecommendationsByRole(
     return { ok: false, error: 'Missing Supabase credentials' };
   }
 
-  const select = 'id,title,summary,domain,risk_level,impact_score,effort_score,status,activated_vtid,created_at,activated_at,time_estimate_seconds,source_ref,contribution_vector';
+  const select = 'id,title,summary,domain,risk_level,impact_score,effort_score,status,activated_vtid,created_at,activated_at,time_estimate_seconds,source_ref,economic_axis,autonomy_level,contribution_vector';
   const params = new URLSearchParams();
   params.set('select', select);
   params.set('status', `in.(${statuses.join(',')})`);
@@ -178,6 +323,9 @@ async function queryRecommendationsByRole(
 
   // Exclude snoozed recs
   params.append('or', '(snoozed_until.is.null,snoozed_until.lt.now())');
+  // Exclude expired recs (VTID-03201): stale rows must not surface in the
+  // popup/count. Repeated `or` params are ANDed by PostgREST.
+  params.append('or', '(expires_at.is.null,expires_at.gt.now())');
 
   if (role === 'community') {
     // Community role: only personal recs from community analyzer
@@ -232,7 +380,7 @@ async function queryRecommendationsFallback(
     return { ok: false, error: 'Missing Supabase credentials' };
   }
 
-  const select = 'id,title,summary,domain,risk_level,impact_score,effort_score,status,activated_vtid,created_at,activated_at,time_estimate_seconds,source_ref,source_type,user_id,contribution_vector';
+  const select = 'id,title,summary,domain,risk_level,impact_score,effort_score,status,activated_vtid,created_at,activated_at,time_estimate_seconds,source_ref,source_type,user_id,economic_axis,autonomy_level,contribution_vector';
   const params = new URLSearchParams();
   params.set('select', select);
   params.set('status', `in.(${statuses.join(',')})`);
@@ -240,6 +388,7 @@ async function queryRecommendationsFallback(
   params.set('limit', String(limit));
   params.set('offset', String(offset));
   params.append('or', '(snoozed_until.is.null,snoozed_until.lt.now())');
+  params.append('or', '(expires_at.is.null,expires_at.gt.now())');
   params.set('user_id', `eq.${userId}`);
 
   try {
@@ -444,6 +593,7 @@ router.get('/', async (req: Request, res: Response) => {
                 target.rank_score = r.rank_score;
                 target.pillar_boost = r.pillar_boost;
                 target.compass_boost = r.compass_boost;
+                target.economic_boost = r.economic_boost;
                 target.journey_mode = r.journey_mode;
               }
             }
@@ -497,7 +647,7 @@ router.get('/', async (req: Request, res: Response) => {
 
       return res.status(200).json({
         ok: true,
-        recommendations,
+        recommendations: annotateWithPillarImpact(recommendations),
         count: recommendations.length,
         has_more: hasMore,
         ...(waves ? { waves } : {}),
@@ -534,7 +684,7 @@ router.get('/', async (req: Request, res: Response) => {
 
     return res.status(200).json({
       ok: true,
-      recommendations,
+      recommendations: annotateWithPillarImpact(recommendations),
       count: recommendations.length,
       has_more: hasMore,
       vtid: 'VTID-01180',
@@ -675,6 +825,440 @@ router.post('/generate-personal', async (req: Request, res: Response) => {
 });
 
 // =============================================================================
+// Shared community Autopilot service (VTID-03201)
+//
+// Single source of truth for LISTING and ACTIVATING community Autopilot
+// recommendations, so the REST popup (this router) and the ORB voice tools
+// behave identically. Voice previously had its own minimal activation path in
+// orb-tools-shared.ts that only flipped status — it skipped activated_at, the
+// calendar event, the OASIS event, the push notification, and replenishment.
+// Both surfaces now call activateCommunityAutopilotRecommendation().
+// =============================================================================
+
+/** A community recommendation projected for the popup AND for voice. */
+export interface CommunityRecommendationView {
+  id: string;
+  title: string;
+  summary: string | null;
+  source_ref: string | null;
+  domain: string | null;
+  impact_score: number | null;
+  time_estimate_seconds: number | null;
+  status: string;
+}
+
+/**
+ * List the community recommendations a user currently sees in the Autopilot
+ * popup. Uses the SAME canonical query (queryRecommendationsByRole), the SAME
+ * COMMUNITY_ACTIONS filter, and the SAME G4 index-pillar re-rank as the GET
+ * handler, so the spoken list and the visual list always agree on order and
+ * membership. Never throws — returns [] on any internal failure.
+ */
+export async function listCommunityAutopilotRecommendations(
+  userId: string,
+  limit = 5,
+  opts: { autoGenerate?: boolean } = {},
+): Promise<CommunityRecommendationView[]> {
+  try {
+    if (!userId) return [];
+    const clamped = Math.min(Math.max(limit, 1), 20);
+    // Over-fetch to survive dedup + retired-action filtering, mirroring the
+    // GET handler's fetchLimit heuristic.
+    const fetchLimit = Math.max((clamped + 1) * 4, 40);
+    const result = await queryRecommendationsByRole('community', userId, ['new'], fetchLimit, 0);
+    if (!result.ok) return [];
+    let rows: any[] = result.data || [];
+
+    // Parity with the popup's list handler: when the canonical query yields
+    // no NEW recs, the popup does NOT return empty — it falls back to the
+    // no-source_type query and then auto-generates + refetches. The voice READ
+    // tool opts into this (autoGenerate) so "what's in my Autopilot?" matches
+    // exactly what opening the popup would show, including for first-time users,
+    // expired queues, and users whose recs were all activated. The proactive
+    // OFFER deliberately does NOT opt in — it must stay latency-cheap at session
+    // bootstrap and simply not offer when the queue is genuinely empty.
+    if (rows.length === 0 && opts.autoGenerate) {
+      const fb = await queryRecommendationsFallback(userId, ['new'], fetchLimit, 0);
+      if (fb.ok && (fb.data?.length ?? 0) > 0) {
+        rows = fb.data!;
+      } else {
+        try {
+          const supabaseUrl = process.env.SUPABASE_URL;
+          const svcKey = process.env.SUPABASE_SERVICE_ROLE;
+          if (supabaseUrl && svcKey) {
+            const { createClient } = await import('@supabase/supabase-js');
+            const supa = createClient(supabaseUrl, svcKey);
+            const { data: tenantRow } = await supa
+              .from('user_tenants')
+              .select('tenant_id')
+              .eq('user_id', userId)
+              .eq('is_primary', true)
+              .maybeSingle();
+            // Community users always have a primary tenant; if none, skip
+            // generation rather than depend on a DEFAULT_TENANT_ID fallback.
+            const tenantId = tenantRow?.tenant_id;
+            if (tenantId) {
+              const genResult = await generatePersonalRecommendations(userId, tenantId, { trigger_type: 'auto_replenish' });
+              if (genResult.generated > 0) {
+                const fresh = await queryRecommendationsByRole('community', userId, ['new'], fetchLimit, 0);
+                if (fresh.ok && (fresh.data?.length ?? 0) > 0) rows = fresh.data!;
+              }
+            }
+          }
+        } catch (genErr: any) {
+          console.warn(`${LOG_PREFIX} listCommunity auto-generation failed (non-fatal): ${genErr?.message}`);
+        }
+      }
+    }
+
+    if (rows.length === 0) return [];
+
+    // Dedup by source_ref then title (same rules as the popup).
+    const seen = new Map<string, any>();
+    for (const rec of rows) {
+      const key = rec.source_ref || rec.title;
+      if (!seen.has(key)) seen.set(key, rec);
+    }
+    const seenTitles = new Set<string>();
+    let recs: any[] = [];
+    for (const rec of seen.values()) {
+      if (seenTitles.has(rec.title)) continue;
+      seenTitles.add(rec.title);
+      recs.push(rec);
+    }
+
+    // Retired-action filter: only refs that map to a real community action.
+    recs = recs.filter(rec => !rec.source_ref || COMMUNITY_ACTIONS[rec.source_ref]);
+
+    // G4 index-weighted re-rank (same module the popup uses).
+    try {
+      const { buildRankerContext, rankBatch } = await import('../services/recommendation-engine/ranking/index-pillar-weighter');
+      const { createClient } = await import('@supabase/supabase-js');
+      const svc = process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE
+        ? createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE)
+        : null;
+      if (svc && recs.length > 0) {
+        const ctx = await buildRankerContext(svc, userId);
+        recs = rankBatch(recs as any, ctx).map(r => r.rec as any);
+      }
+    } catch (rankErr: any) {
+      console.warn(`${LOG_PREFIX} listCommunity re-rank failed (non-fatal):`, rankErr?.message);
+    }
+
+    return recs.slice(0, clamped).map(rec => ({
+      id: rec.id,
+      title: rec.title,
+      summary: rec.summary ?? null,
+      source_ref: rec.source_ref ?? null,
+      domain: rec.domain ?? null,
+      impact_score: rec.impact_score ?? null,
+      time_estimate_seconds: rec.time_estimate_seconds ?? null,
+      status: rec.status,
+    }));
+  } catch (err: any) {
+    console.warn(`${LOG_PREFIX} listCommunityAutopilotRecommendations failed (non-fatal):`, err?.message);
+    return [];
+  }
+}
+
+/**
+ * Project a list of community recommendations into a short, voice-friendly
+ * summary string Gemini can read aloud, plus the ordered ids so a follow-up
+ * "activate these" resolves to exactly what was read.
+ */
+export function summarizeAutopilotForVoice(
+  recs: CommunityRecommendationView[],
+): { spoken: string; ids: string[]; count: number } {
+  const ids = recs.map(r => r.id);
+  if (recs.length === 0) {
+    // VTID-03245 (offer-integrity): don't dead-end on "no recommendations" —
+    // be honest AND pivot to a real next step the assistant can actually do.
+    // (Autopilot actions are generated by the platform over time; there is no
+    // voice tool to mint one on the spot, so do NOT offer to "set one up".)
+    return {
+      spoken:
+        "You don't have any Autopilot actions prepared yet — those build up as you keep using Vitana. "
+        + 'Is there something specific I can help you with right now?',
+      ids,
+      count: 0,
+    };
+  }
+  const titles = recs.map((r, i) => `${i + 1}. ${r.title}`);
+  const lead = recs.length === 1
+    ? 'You have one Autopilot action prepared:'
+    : `You have ${recs.length} Autopilot actions prepared:`;
+  return { spoken: `${lead} ${titles.join('; ')}.`, ids, count: recs.length };
+}
+
+/**
+ * Render the system-instruction block that tells the voice assistant (Vitana)
+ * to PROACTIVELY offer to read the user's Autopilot. Pure function over an
+ * already-fetched list. Returns '' for an empty queue, so the caller can append
+ * unconditionally without gating on count. VTID-03201.
+ *
+ * This is the "Vitana says: you have Autopilot recommendations, want me to look?"
+ * half of the feature — the read (`get_autopilot_recommendations`) and the
+ * activation (`activate_autopilot_recommendations`) tools already exist; this
+ * block is what makes Vitana raise it unprompted instead of waiting to be asked.
+ *
+ * Instruction text is intentionally English: it is read by the model, which
+ * responds in the user's language per the "Respond ONLY in {language}" rule.
+ */
+export function renderAutopilotOfferBlock(recs: CommunityRecommendationView[]): string {
+  if (recs.length === 0) return '';
+
+  const count = recs.length;
+  const teaser = recs.slice(0, 2).map(r => r.title).join('; ');
+  const countPhrase = count === 1 ? 'one action' : `${count} actions`;
+
+  return [
+    '## AUTOPILOT — PROACTIVE OFFER (this session)',
+    `The user has ${countPhrase} prepared and waiting in their Autopilot${teaser ? ` (for example: ${teaser})` : ''}.`,
+    '',
+    'EARLY in the conversation — right after your greeting, or at the first',
+    'natural pause — proactively offer ONCE, in one short warm sentence, to go',
+    'through them. For example: "By the way, your Autopilot has a few things',
+    'ready for you — want me to run through them?"',
+    '',
+    'Rules for this proactive offer:',
+    '- Offer FIRST. Do NOT read the list unprompted.',
+    '- If the user agrees ("yes", "go ahead", "what\'s in there?", "was hat der',
+    '  Autopilot?"), call the tool get_autopilot_recommendations and then read',
+    '  its `spoken` summary verbatim.',
+    '- If the user then agrees to act ("activate them", "do the first one",',
+    '  "los geht\'s", "yes do it"), call activate_autopilot_recommendations.',
+    '- Make this proactive offer AT MOST ONCE per conversation. If the user',
+    '  declines or changes the subject, drop it gracefully and never raise it again.',
+    '- This is an offer, not a script — phrase it naturally in the user\'s language.',
+  ].join('\n');
+}
+
+/** Async wrapper: fetch the user's queue, then render the offer block. Never throws. */
+export async function buildAutopilotOfferBlock(userId: string): Promise<string> {
+  try {
+    if (!userId) return '';
+    // Same canonical list the popup + get_autopilot_recommendations use, so the
+    // offer's count matches what Vitana will actually read aloud.
+    const recs = await listCommunityAutopilotRecommendations(userId, 5);
+    return renderAutopilotOfferBlock(recs);
+  } catch (err: any) {
+    console.warn(`${LOG_PREFIX} buildAutopilotOfferBlock failed (non-fatal): ${err?.message}`);
+    return '';
+  }
+}
+
+/** Structured result for community activation, mapped to HTTP by the route and to speech by voice. */
+export interface ActivateCommunityResult {
+  ok: boolean;
+  httpStatus: number;
+  error?: string;
+  already_activated?: boolean;
+  recommendation_id?: string;
+  title?: string;
+  action_type?: 'navigate' | 'notify';
+  target?: string | null;
+  completion_message?: string;
+  calendar_event_id?: string | null;
+  replenished?: number;
+}
+
+/**
+ * Canonical community Autopilot activation. Performs ALL side effects:
+ * status → activated + activated_at, calendar event (for schedulable actions),
+ * OASIS event, push notification, and last-rec auto-replenishment. Used by both
+ * the REST popup and the ORB voice tool. VTID-03201.
+ */
+export async function activateCommunityAutopilotRecommendation(
+  userId: string | null,
+  id: string,
+  opts: { tenantId?: string; skipReplenish?: boolean } = {},
+): Promise<ActivateCommunityResult> {
+  const supabaseUrl = process.env.SUPABASE_URL;
+  const svcKey = process.env.SUPABASE_SERVICE_ROLE;
+  if (!supabaseUrl || !svcKey) {
+    return { ok: false, httpStatus: 503, error: 'Supabase not configured' };
+  }
+
+  // Fetch the recommendation to get source_type, source_ref, user_id, status
+  const recResp = await fetch(
+    `${supabaseUrl}/rest/v1/autopilot_recommendations?id=eq.${id}&select=id,title,summary,source_type,source_ref,user_id,status,domain&limit=1`,
+    { headers: { apikey: svcKey, Authorization: `Bearer ${svcKey}` } }
+  );
+  if (!recResp.ok) {
+    return { ok: false, httpStatus: 400, error: 'Failed to fetch recommendation' };
+  }
+  const recRows = await recResp.json() as any[];
+  const rec = recRows[0];
+  if (!rec) {
+    return { ok: false, httpStatus: 404, error: 'Recommendation not found' };
+  }
+
+  // Verify this is a community recommendation belonging to this user
+  if (rec.source_type !== 'community') {
+    return { ok: false, httpStatus: 403, error: 'Not a community recommendation' };
+  }
+  if (rec.user_id && userId && rec.user_id !== userId) {
+    return { ok: false, httpStatus: 403, error: 'Recommendation belongs to another user' };
+  }
+
+  // Already activated? Return idempotent response
+  if (rec.status === 'activated') {
+    const action = COMMUNITY_ACTIONS[rec.source_ref] || null;
+    return {
+      ok: true,
+      httpStatus: 200,
+      already_activated: true,
+      recommendation_id: id,
+      title: rec.title,
+      action_type: action?.action_type || 'notify',
+      target: action?.target || null,
+      completion_message: action?.completion_message || 'Already done!',
+    };
+  }
+
+  // Must be in activatable state
+  if (rec.status !== 'new' && rec.status !== 'snoozed') {
+    return { ok: false, httpStatus: 400, error: `Cannot activate recommendation in status: ${rec.status}` };
+  }
+
+  // Look up the community action
+  const action = COMMUNITY_ACTIONS[rec.source_ref] || {
+    action_type: 'notify' as const,
+    completion_message: 'Done!',
+  };
+
+  // Update recommendation status to 'activated' via PostgREST — NO VTID
+  const patchResp = await fetch(
+    `${supabaseUrl}/rest/v1/autopilot_recommendations?id=eq.${id}`,
+    {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: svcKey,
+        Authorization: `Bearer ${svcKey}`,
+      },
+      body: JSON.stringify({
+        status: 'activated',
+        activated_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      }),
+    }
+  );
+  if (!patchResp.ok) {
+    console.error(`${LOG_PREFIX} Community activate PATCH failed:`, await patchResp.text());
+    return { ok: false, httpStatus: 500, error: 'Failed to update recommendation status' };
+  }
+
+  // Intelligent Calendar: create calendar event for schedulable actions
+  let calendarEvent = null;
+  if (action.calendar_event && userId) {
+    try {
+      const { computeNextAvailableSlot, createCalendarEvent } = await import('../services/calendar-service');
+      const slot = await computeNextAvailableSlot(userId, 'community', action.calendar_event.duration_minutes);
+      const endSlot = new Date(slot.getTime() + action.calendar_event.duration_minutes * 60 * 1000);
+      calendarEvent = await createCalendarEvent(userId, {
+        title: action.calendar_event.title_template || rec.title,
+        description: rec.summary || action.completion_message,
+        start_time: slot.toISOString(),
+        end_time: endSlot.toISOString(),
+        event_type: action.calendar_event.event_type,
+        status: 'confirmed',
+        priority: 'medium',
+        role_context: 'community',
+        source_type: 'autopilot',
+        source_ref_id: id,
+        source_ref_type: 'autopilot_recommendation',
+        priority_score: 60,
+        wellness_tags: action.calendar_event.wellness_tags,
+        metadata: { recommendation_title: rec.title, source_ref: rec.source_ref },
+      } as any);
+      if (calendarEvent) {
+        console.log(`${LOG_PREFIX} Calendar event created for recommendation ${id.slice(0, 8)}... → ${calendarEvent.id.slice(0, 8)}...`);
+      }
+    } catch (calErr: any) {
+      console.warn(`${LOG_PREFIX} Calendar event creation failed (non-fatal): ${calErr.message}`);
+    }
+  }
+
+  // Emit OASIS event
+  await emitOasisEvent({
+    vtid: 'SYSTEM',
+    type: 'autopilot.recommendation.activated' as any,
+    source: 'autopilot-recommendations',
+    status: 'info',
+    message: `Community recommendation activated: ${rec.title}`,
+    payload: {
+      recommendation_id: id,
+      user_id: userId,
+      role: 'community',
+      action_type: action.action_type,
+      target: action.target || null,
+      source_ref: rec.source_ref,
+      calendar_event_id: calendarEvent?.id || null,
+    },
+  });
+
+  // Send push notification
+  if (userId) {
+    try {
+      const { createClient } = await import('@supabase/supabase-js');
+      const supa = createClient(supabaseUrl, svcKey);
+      const { data: tenantRow } = await supa
+        .from('user_tenants')
+        .select('tenant_id')
+        .eq('user_id', userId)
+        .eq('is_primary', true)
+        .maybeSingle();
+      if (tenantRow?.tenant_id) {
+        notifyUserAsync(userId, tenantRow.tenant_id, 'recommendation_activated', {
+          title: rec.title,
+          body: action.completion_message,
+          data: { url: action.target || '/', recommendation_id: id },
+        }, supa);
+      }
+    } catch (notifErr: any) {
+      console.warn(`${LOG_PREFIX} Notification error (non-fatal): ${notifErr.message}`);
+    }
+  }
+
+  console.log(`${LOG_PREFIX} Community activation: ${rec.source_ref} → ${action.action_type}:${action.target || 'none'}`);
+
+  // Auto-replenishment: if this was the user's last 'new' rec, generate fresh ones.
+  // Voice skips this inline (it runs analyzers and can be slow) — the popup/list
+  // auto-generates on next open, so the queue still refills.
+  let replenished = 0;
+  if (userId && !opts.skipReplenish) {
+    try {
+      const remainingResp = await fetch(
+        `${supabaseUrl}/rest/v1/autopilot_recommendations?user_id=eq.${userId}&status=eq.new&select=id&limit=1`,
+        { headers: { apikey: svcKey, Authorization: `Bearer ${svcKey}` } }
+      );
+      const remainingRows = remainingResp.ok ? await remainingResp.json() as any[] : [];
+      if (remainingRows.length === 0) {
+        console.log(`${LOG_PREFIX} Last community rec activated for user ${userId.slice(0, 8)} — triggering auto-replenishment`);
+        const genResult = await generatePersonalRecommendations(userId, opts.tenantId || '', { trigger_type: 'auto_replenish' });
+        replenished = genResult?.generated || 0;
+        console.log(`${LOG_PREFIX} Auto-replenishment generated ${replenished} new recommendations`);
+      }
+    } catch (replenishErr: any) {
+      console.warn(`${LOG_PREFIX} Auto-replenishment failed (non-fatal): ${replenishErr.message}`);
+    }
+  }
+
+  return {
+    ok: true,
+    httpStatus: 200,
+    recommendation_id: id,
+    title: rec.title,
+    action_type: action.action_type,
+    target: action.target || null,
+    completion_message: action.completion_message,
+    calendar_event_id: calendarEvent?.id || null,
+    replenished,
+  };
+}
+
+// =============================================================================
 // POST /recommendations/:id/activate - Activate recommendation (creates VTID)
 // =============================================================================
 /**
@@ -711,191 +1295,24 @@ router.post('/:id/activate', async (req: Request, res: Response) => {
     // Community activation path — NO VTIDs, returns action for frontend
     // =========================================================================
     if (role === 'community') {
-      const supabaseUrl = process.env.SUPABASE_URL;
-      const svcKey = process.env.SUPABASE_SERVICE_ROLE;
-      if (!supabaseUrl || !svcKey) {
-        return res.status(503).json({ ok: false, error: 'Supabase not configured' });
+      // Single source: REST and ORB voice share this activation flow.
+      const tenantId = req.get('X-Vitana-Tenant') || '';
+      const result = await activateCommunityAutopilotRecommendation(userId, id, { tenantId });
+      if (!result.ok) {
+        return res.status(result.httpStatus).json({ ok: false, error: result.error });
       }
-
-      // Fetch the recommendation to get source_type, source_ref, user_id, status
-      const recResp = await fetch(
-        `${supabaseUrl}/rest/v1/autopilot_recommendations?id=eq.${id}&select=id,title,summary,source_type,source_ref,user_id,status,domain&limit=1`,
-        { headers: { apikey: svcKey, Authorization: `Bearer ${svcKey}` } }
-      );
-      if (!recResp.ok) {
-        return res.status(400).json({ ok: false, error: 'Failed to fetch recommendation' });
-      }
-      const recRows = await recResp.json() as any[];
-      const rec = recRows[0];
-      if (!rec) {
-        return res.status(404).json({ ok: false, error: 'Recommendation not found' });
-      }
-
-      // Verify this is a community recommendation belonging to this user
-      if (rec.source_type !== 'community') {
-        return res.status(403).json({ ok: false, error: 'Not a community recommendation' });
-      }
-      if (rec.user_id && userId && rec.user_id !== userId) {
-        return res.status(403).json({ ok: false, error: 'Recommendation belongs to another user' });
-      }
-
-      // Already activated? Return idempotent response
-      if (rec.status === 'activated') {
-        const action = COMMUNITY_ACTIONS[rec.source_ref] || null;
-        return res.status(200).json({
-          ok: true,
-          already_activated: true,
-          recommendation_id: id,
-          title: rec.title,
-          action_type: action?.action_type || 'notify',
-          target: action?.target || null,
-          completion_message: action?.completion_message || 'Already done!',
-          vtid: 'VTID-01180',
-          timestamp: new Date().toISOString(),
-        });
-      }
-
-      // Must be in activatable state
-      if (rec.status !== 'new' && rec.status !== 'snoozed') {
-        return res.status(400).json({ ok: false, error: `Cannot activate recommendation in status: ${rec.status}` });
-      }
-
-      // Look up the community action
-      const action = COMMUNITY_ACTIONS[rec.source_ref] || {
-        action_type: 'notify' as const,
-        completion_message: 'Done!',
-      };
-
-      // Update recommendation status to 'activated' via PostgREST — NO VTID
-      const patchResp = await fetch(
-        `${supabaseUrl}/rest/v1/autopilot_recommendations?id=eq.${id}`,
-        {
-          method: 'PATCH',
-          headers: {
-            'Content-Type': 'application/json',
-            apikey: svcKey,
-            Authorization: `Bearer ${svcKey}`,
-          },
-          body: JSON.stringify({
-            status: 'activated',
-            activated_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-          }),
-        }
-      );
-      if (!patchResp.ok) {
-        console.error(`${LOG_PREFIX} Community activate PATCH failed:`, await patchResp.text());
-        return res.status(500).json({ ok: false, error: 'Failed to update recommendation status' });
-      }
-
-      // Intelligent Calendar: create calendar event for schedulable actions
-      let calendarEvent = null;
-      if (action.calendar_event && userId) {
-        try {
-          const { computeNextAvailableSlot, createCalendarEvent } = await import('../services/calendar-service');
-          const slot = await computeNextAvailableSlot(userId, 'community', action.calendar_event.duration_minutes);
-          const endSlot = new Date(slot.getTime() + action.calendar_event.duration_minutes * 60 * 1000);
-          calendarEvent = await createCalendarEvent(userId, {
-            title: action.calendar_event.title_template || rec.title,
-            description: rec.summary || action.completion_message,
-            start_time: slot.toISOString(),
-            end_time: endSlot.toISOString(),
-            event_type: action.calendar_event.event_type,
-            status: 'confirmed',
-            priority: 'medium',
-            role_context: 'community',
-            source_type: 'autopilot',
-            source_ref_id: id,
-            source_ref_type: 'autopilot_recommendation',
-            priority_score: 60,
-            wellness_tags: action.calendar_event.wellness_tags,
-            metadata: { recommendation_title: rec.title, source_ref: rec.source_ref },
-          } as any);
-          if (calendarEvent) {
-            console.log(`${LOG_PREFIX} Calendar event created for recommendation ${id.slice(0, 8)}... → ${calendarEvent.id.slice(0, 8)}...`);
-          }
-        } catch (calErr: any) {
-          console.warn(`${LOG_PREFIX} Calendar event creation failed (non-fatal): ${calErr.message}`);
-        }
-      }
-
-      // Emit OASIS event
-      await emitOasisEvent({
-        vtid: 'SYSTEM',
-        type: 'autopilot.recommendation.activated' as any,
-        source: 'autopilot-recommendations',
-        status: 'info',
-        message: `Community recommendation activated: ${rec.title}`,
-        payload: {
-          recommendation_id: id,
-          user_id: userId,
-          role: 'community',
-          action_type: action.action_type,
-          target: action.target || null,
-          source_ref: rec.source_ref,
-          calendar_event_id: calendarEvent?.id || null,
-        },
-      });
-
-      // Send push notification
-      if (userId) {
-        try {
-          const { createClient } = await import('@supabase/supabase-js');
-          const supa = createClient(supabaseUrl, svcKey);
-          const { data: tenantRow } = await supa
-            .from('user_tenants')
-            .select('tenant_id')
-            .eq('user_id', userId)
-            .eq('is_primary', true)
-            .maybeSingle();
-          if (tenantRow?.tenant_id) {
-            notifyUserAsync(userId, tenantRow.tenant_id, 'recommendation_activated', {
-              title: rec.title,
-              body: action.completion_message,
-              data: { url: action.target || '/', recommendation_id: id },
-            }, supa);
-          }
-        } catch (notifErr: any) {
-          console.warn(`${LOG_PREFIX} Notification error (non-fatal): ${notifErr.message}`);
-        }
-      }
-
-      console.log(`${LOG_PREFIX} Community activation: ${rec.source_ref} → ${action.action_type}:${action.target || 'none'}`);
-
-      // Auto-replenishment: check if user has any remaining 'new' recs.
-      // If this was the last one, trigger generation of fresh recommendations.
-      let replenished = 0;
-      if (userId) {
-        try {
-          const remainingResp = await fetch(
-            `${supabaseUrl}/rest/v1/autopilot_recommendations?user_id=eq.${userId}&status=eq.new&select=id&limit=1`,
-            { headers: { apikey: svcKey!, Authorization: `Bearer ${svcKey}` } }
-          );
-          const remainingRows = remainingResp.ok ? await remainingResp.json() as any[] : [];
-          if (remainingRows.length === 0) {
-            console.log(`${LOG_PREFIX} Last community rec activated for user ${userId.slice(0, 8)} — triggering auto-replenishment`);
-            const tenantId = req.get('X-Vitana-Tenant') || '';
-            const authToken = req.get('Authorization')?.replace('Bearer ', '') || '';
-            const { generatePersonalRecommendations: genPersonal } = await import('../services/recommendation-engine');
-            const genResult = await genPersonal(userId, tenantId, { trigger_type: 'auto_replenish' });
-            replenished = genResult?.generated || 0;
-            console.log(`${LOG_PREFIX} Auto-replenishment generated ${replenished} new recommendations`);
-          }
-        } catch (replenishErr: any) {
-          console.warn(`${LOG_PREFIX} Auto-replenishment failed (non-fatal): ${replenishErr.message}`);
-        }
-      }
-
-      return res.status(200).json({
+      return res.status(result.httpStatus).json({
         ok: true,
-        recommendation_id: id,
-        title: rec.title,
+        already_activated: result.already_activated,
+        recommendation_id: result.recommendation_id,
+        title: result.title,
         status: 'activated',
         activated_at: new Date().toISOString(),
-        action_type: action.action_type,
-        target: action.target || null,
-        completion_message: action.completion_message,
-        replenished,
+        action_type: result.action_type,
+        target: result.target ?? null,
+        completion_message: result.completion_message,
+        calendar_event_id: result.calendar_event_id ?? null,
+        replenished: result.replenished ?? 0,
         vtid: 'VTID-01180',
         timestamp: new Date().toISOString(),
       });
@@ -921,7 +1338,7 @@ router.post('/:id/activate', async (req: Request, res: Response) => {
     // Emit OASIS event for tracking
     await emitOasisEvent({
       vtid: response.vtid || 'SYSTEM',
-      type: 'autopilot.recommendation.activated' as any,
+      type: 'autopilot.recommendation.activated',
       source: 'autopilot-recommendations',
       status: 'info',
       message: `Recommendation activated: ${response.title}`,
@@ -932,6 +1349,24 @@ router.post('/:id/activate', async (req: Request, res: Response) => {
         already_activated: response.already_activated,
       },
     });
+
+    // VTID-02935 Phase 5: emit alignment telemetry for fresh activations only.
+    // Skip already-activated calls (idempotent re-tries don't change alignment
+    // state). Pillar impact is derived from contribution_vector at read time.
+    if (!response.already_activated && response.vtid) {
+      const supabaseUrlForAlign = process.env.SUPABASE_URL;
+      const svcKeyForAlign = process.env.SUPABASE_SERVICE_ROLE;
+      if (supabaseUrlForAlign && svcKeyForAlign) {
+        await emitAlignmentEventForActivation({
+          vtid: response.vtid,
+          recId: id,
+          recTitle: response.title || '',
+          userId: userId || null,
+          supabaseUrl: supabaseUrlForAlign,
+          svcKey: svcKeyForAlign,
+        });
+      }
+    }
 
     // Create draft spec in oasis_specs from recommendation data so the task
     // enters the spec pipeline with content ready for validate → approve flow
@@ -1155,6 +1590,8 @@ router.post('/:id/reject', async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const { reason } = req.body;
+    const userId = getUserId(req);
+    const role = getActiveRole(req);
 
     if (!id) {
       return res.status(400).json({ ok: false, error: 'Recommendation ID required' });
@@ -1174,6 +1611,16 @@ router.post('/:id/reject', async (req: Request, res: Response) => {
     const response = result.data;
     if (!response?.ok) {
       return res.status(400).json({ ok: false, error: response?.error || 'Failed to reject' });
+    }
+
+    // VTID-03301: dismissing the last rec also empties the queue — kick the
+    // same guarded regeneration the /complete path uses. Community only;
+    // fire-and-forget so reject stays fast.
+    if (role === 'community' && userId) {
+      regenerateCommunityRecommendations(userId, {
+        requireEmptyQueue: true,
+        trigger_type: 'auto_replenish',
+      }).catch((e: any) => console.warn(`${LOG_PREFIX} post-reject regen error (non-fatal): ${e?.message}`));
     }
 
     return res.status(200).json({
@@ -1264,6 +1711,49 @@ router.post('/generate', async (req: Request, res: Response) => {
 
   try {
     const userId = getUserId(req);
+    const role = getActiveRole(req);
+
+    // =========================================================================
+    // VTID-03301: Community on-demand regeneration.
+    // POST /recommendations/generate?role=community
+    //   → 200 { ok, generated, recommendations }            (fresh batch)
+    //   → 200 { ok, generated: 0, reason }                  (guard fired)
+    // Same guards as the queue-empty auto-trigger; the cooldown makes a
+    // double-tap idempotent so a force-refresh can't double-generate.
+    // =========================================================================
+    if (role === 'community') {
+      if (!userId) {
+        return res.status(401).json({ ok: false, error: 'User ID required' });
+      }
+      const tenantId = req.get('X-Vitana-Tenant') || undefined;
+      const regen = await regenerateCommunityRecommendations(userId, {
+        trigger_type: 'manual',
+        tenantId,
+      });
+      if (!regen.ok) {
+        return res.status(500).json({ ok: false, error: regen.error || 'Generation failed' });
+      }
+      if (regen.generated === 0) {
+        return res.status(200).json({
+          ok: true,
+          generated: 0,
+          reason: regen.reason || 'no_signals',
+          recommendations: [],
+          vtid: 'VTID-03301',
+          timestamp: new Date().toISOString(),
+        });
+      }
+      const recommendations = await buildCommunityRecsResponse(userId, ['new', 'activated'], 20);
+      return res.status(200).json({
+        ok: true,
+        generated: regen.generated,
+        recommendations,
+        run_id: regen.run_id,
+        vtid: 'VTID-03301',
+        timestamp: new Date().toISOString(),
+      });
+    }
+
     const {
       sources = ['codebase', 'oasis', 'health', 'roadmap'],
       limit = 20,
@@ -1350,6 +1840,34 @@ router.post('/generate', async (req: Request, res: Response) => {
             body: 'Autopilot found new actions to improve your wellbeing.',
             data: { url: '/autopilot', count: String(result.generated) },
           }, supa);
+
+          // BOOTSTRAP-NOTIF-SYSTEM-EVENTS: surface the highest-impact rec
+          // from this run as a P0 push so users see critical
+          // recommendations even outside the in-app inbox. Threshold of 8+
+          // matches the engine's reserved tier (see recommendation-
+          // generator impact_score mapping where 8 is "strong signal").
+          const { data: highImpact } = await supa
+            .from('autopilot_recommendations')
+            .select('id, title, summary, impact_score')
+            .eq('user_id', userId)
+            .eq('tenant_id', tenantRow.tenant_id)
+            .gte('impact_score', 8)
+            .gte('created_at', new Date(Date.now() - 5 * 60 * 1000).toISOString())
+            .order('impact_score', { ascending: false })
+            .limit(1);
+          const topRec = highImpact?.[0];
+          if (topRec) {
+            notifyUserAsync(userId, tenantRow.tenant_id, 'high_impact_recommendation', {
+              title: topRec.title || 'High-impact recommendation',
+              body: topRec.summary || 'Autopilot flagged a high-impact action for you.',
+              data: {
+                url: `/autopilot?rec=${topRec.id}`,
+                entity_id: topRec.id,
+                recommendation_id: topRec.id,
+                impact_score: String(topRec.impact_score ?? ''),
+              },
+            }, supa);
+          }
         }
       } catch (notifErr: any) {
         console.warn(`[Notifications] new_recommendation dispatch error: ${notifErr.message}`);
@@ -1522,118 +2040,85 @@ router.post('/:id/complete', async (req: Request, res: Response) => {
     }
 
     const recId = req.params.id;
-    const supabaseUrl = process.env.SUPABASE_URL;
-    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE;
-    if (!supabaseUrl || !supabaseKey) {
-      return res.status(500).json({ ok: false, error: 'Missing Supabase credentials' });
+    const role = getActiveRole(req);
+    console.log(`${LOG_PREFIX} Completing recommendation ${recId.slice(0, 8)}... (role: ${role || 'none'})`);
+
+    // VTID-03180: route delegates to the canonical RPC so the state transition
+    // (status, completed_at) and the reward credit happen in a single
+    // transaction. Previously this route PATCHed a `metadata` column that
+    // doesn't exist on autopilot_recommendations, so every POST returned 400
+    // and the row stayed 'activated' forever.
+    const result = await callRpc<any>('complete_autopilot_recommendation', {
+      p_recommendation_id: recId,
+      p_user_id: userId,
+    });
+
+    if (!result.ok) {
+      console.error(`${LOG_PREFIX} complete RPC transport error:`, result.error);
+      return res.status(500).json({ ok: false, error: result.error });
     }
 
-    // Fetch the recommendation
-    const fetchResp = await fetch(
-      `${supabaseUrl}/rest/v1/autopilot_recommendations?id=eq.${recId}&user_id=eq.${userId}&select=id,status,source_ref,title`,
-      {
-        headers: {
-          'apikey': supabaseKey,
-          'Authorization': `Bearer ${supabaseKey}`,
-        },
-      },
-    );
-    const recs = await fetchResp.json() as any[];
-    const rec = recs?.[0];
-    if (!rec) {
-      return res.status(404).json({ ok: false, error: 'Recommendation not found' });
+    const response = result.data;
+    if (!response?.ok) {
+      const errStr = String(response?.error || '');
+      const statusCode =
+        errStr.includes('not found') ? 404 :
+        errStr.includes('belongs to another user') ? 403 :
+        errStr.includes('system-wide') ? 403 :
+        400;
+      return res.status(statusCode).json({ ok: false, error: errStr || 'Failed to complete' });
     }
 
-    if (rec.status !== 'activated') {
-      return res.status(400).json({ ok: false, error: `Cannot complete recommendation in status: ${rec.status}` });
-    }
+    const sourceRef: string | null = response.source_ref || null;
+    const alreadyCompleted: boolean = response.already_completed === true;
 
-    // Update status to 'completed' with completion timestamp in metadata
-    const patchResp = await fetch(
-      `${supabaseUrl}/rest/v1/autopilot_recommendations?id=eq.${recId}`,
-      {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          'apikey': supabaseKey,
-          'Authorization': `Bearer ${supabaseKey}`,
-          'Prefer': 'return=minimal',
-        },
-        body: JSON.stringify({
-          status: 'completed',
-          metadata: {
-            completed_at: new Date().toISOString(),
-            completed_by: userId,
-          },
-        }),
-      },
-    );
-
-    if (!patchResp.ok) {
-      console.error(`${LOG_PREFIX} Community complete PATCH failed:`, await patchResp.text());
-      return res.status(500).json({ ok: false, error: 'Failed to mark as completed' });
-    }
-
-    // Emit OASIS event
+    // OASIS event — visibility only, never block the response on this.
     try {
       await emitOasisEvent({
         vtid: 'VTID-01180',
         type: 'autopilot.recommendation.completed' as any,
         source: 'autopilot-recommendations',
         status: 'info',
-        message: `Community recommendation completed: ${rec.title}`,
+        message: `Community recommendation completed: ${response.title}`,
         payload: {
           recommendation_id: recId,
           user_id: userId,
-          source_ref: rec.source_ref,
-          title: rec.title,
+          source_ref: sourceRef,
+          title: response.title,
+          reward: response.reward ?? 0,
+          already_completed: alreadyCompleted,
         },
       });
     } catch (e) {
       console.warn(`${LOG_PREFIX} Failed to emit completion event:`, e);
     }
 
-    // Look up tenant for notification
-    const { createClient } = await import('@supabase/supabase-js');
-    const supabase = createClient(supabaseUrl, supabaseKey);
-    const { data: tenantRow } = await supabase
-      .from('user_tenants')
-      .select('tenant_id')
-      .eq('user_id', userId)
-      .eq('is_primary', true)
-      .maybeSingle();
-
-    // Check if user earned a reward for this action
-    const signalType = rec.source_ref;
-    const isOnboardingAction = signalType?.startsWith('onboarding_');
-    if (isOnboardingAction && tenantRow?.tenant_id) {
-      // Credit small reward for completing onboarding tasks
-      try {
-        await supabase.rpc('credit_wallet', {
-          p_tenant_id: tenantRow.tenant_id,
-          p_user_id: userId,
-          p_amount: 10,
-          p_type: 'reward',
-          p_source: 'recommendation_complete',
-          p_source_event_id: `rec_complete_${recId}`,
-          p_description: `Completed: ${rec.title}`,
-        });
-      } catch {
-        // Best-effort; may fail if duplicate
-      }
-    }
-
-    // Emit milestone event if all day-0 onboarding tasks are completed
-    if (isOnboardingAction && tenantRow?.tenant_id) {
-      const { data: remaining } = await supabase
-        .from('autopilot_recommendations')
-        .select('id')
+    // Look up tenant once; reused by the milestone fan-out and the
+    // post-complete regenerate call below. The pre-rebase milestone block
+    // scoped `tenantRow` inside its own try, which broke the VTID-03301
+    // regenerate call that was merged in afterwards (TS2304).
+    let tenantId: string | undefined;
+    try {
+      const { createClient } = await import('@supabase/supabase-js');
+      const supabase = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE!);
+      const { data: tenantRow } = await supabase
+        .from('user_tenants')
+        .select('tenant_id')
         .eq('user_id', userId)
-        .eq('status', 'activated')
-        .like('source_ref', 'onboarding_%');
+        .eq('is_primary', true)
+        .maybeSingle();
+      tenantId = tenantRow?.tenant_id || undefined;
 
-      if (!remaining || remaining.length === 0) {
-        try {
+      // Milestone fan-out: only on first-time completion of an onboarding rec.
+      if (!alreadyCompleted && sourceRef?.startsWith?.('onboarding_')) {
+        const { data: remaining } = await supabase
+          .from('autopilot_recommendations')
+          .select('id')
+          .eq('user_id', userId)
+          .eq('status', 'activated')
+          .like('source_ref', 'onboarding_%');
+
+        if ((!remaining || remaining.length === 0) && tenantId) {
           await emitOasisEvent({
             vtid: 'VTID-01180',
             type: 'user.milestone.reached' as any,
@@ -1643,20 +2128,34 @@ router.post('/:id/complete', async (req: Request, res: Response) => {
             payload: {
               user_id: userId,
               milestone: 'onboarding_complete',
-              tenant_id: tenantRow.tenant_id,
+              tenant_id: tenantId,
             },
           });
-        } catch {
-          // Best-effort
         }
       }
+    } catch (e) {
+      console.warn(`${LOG_PREFIX} Tenant lookup / milestone check failed (non-fatal):`, e);
     }
+
+    // VTID-03301: queue-empty → regenerate immediately. Fire-and-forget so
+    // Complete returns fast; the guard re-checks the active (new + activated)
+    // count and only generates when it has actually hit 0 (and honors the
+    // daily cap / cooldown / consent / enabled gates). The FE's poll/refetch
+    // surfaces the fresh batch.
+    regenerateCommunityRecommendations(userId, {
+      requireEmptyQueue: true,
+      tenantId,
+      trigger_type: 'auto_replenish',
+    }).catch((e: any) => console.warn(`${LOG_PREFIX} post-complete regen error (non-fatal): ${e?.message}`));
 
     return res.status(200).json({
       ok: true,
+      recommendation_id: recId,
+      title: response.title,
       status: 'completed',
-      completed_at: new Date().toISOString(),
-      reward: isOnboardingAction ? 10 : 0,
+      completed_at: response.completed_at,
+      reward: response.reward ?? 0,
+      already_completed: alreadyCompleted,
     });
 
   } catch (err: any) {

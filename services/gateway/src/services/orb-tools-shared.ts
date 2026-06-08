@@ -26,6 +26,9 @@
  */
 
 import { SupabaseClient } from '@supabase/supabase-js';
+import { shouldBlockTool } from './intelligence/role-policy-enforcer';
+// VTID-03255 — Journey Foundation voice tool: writes every answer + returns next move.
+import { tool_record_journey_answer } from './journey-foundation/record-journey-answer-tool';
 import { fetchVitanaIndexForProfiler } from './user-context-profiler';
 import { resolvePillarKey } from '../lib/vitana-pillars';
 import {
@@ -33,6 +36,9 @@ import {
   lookupByAlias,
   lookupByRoute,
   suggestSimilar,
+  suggestSimilarScored,
+  FUZZY_NAV_MIN_SCORE,
+  resolveEffectiveRoles,
   getContent,
   type NavCatalogEntry,
 } from '../lib/navigation-catalog';
@@ -321,18 +327,111 @@ export async function tool_switch_persona(args: OrbToolArgs): Promise<OrbToolRes
   };
 }
 
-export async function tool_report_to_specialist(args: OrbToolArgs): Promise<OrbToolResult> {
-  const specialist = String(args.specialist ?? '').trim();
-  const reason = String(args.reason ?? '').trim();
-  return {
-    ok: true,
-    result: { specialist, reason, status: 'acknowledged' },
-    text:
-      `Handoff to ${specialist || 'a specialist'} acknowledged. The full ` +
-      `live persona swap (audible voice change) lands in a follow-up; for ` +
-      `now, please continue with me and I'll pass the context forward when ` +
-      `that ships.`,
-  };
+// VTID-03024: real ticket creation for LiveKit. Was previously a stub
+// that returned "acknowledged" and dropped the user's report on the
+// floor — Vertex's case arm in orb-live.ts did all the actual work.
+// The shared helper `executeReportToSpecialist` lifts the DATA layer
+// (vague block + gate RPC + feedback_tickets insert + handoff event +
+// OASIS emit) so both pipelines create real tickets.
+//
+// The audible Devon voice swap on LiveKit is a separate concern handled
+// by the orb-agent's `perform_handoff` function — wired in a follow-up
+// VTID. This handler returns the persona key in the result so the agent
+// can decide whether to invoke that handoff.
+export async function tool_report_to_specialist(
+  args: OrbToolArgs,
+  identity: OrbToolIdentity,
+  sb: SupabaseClient,
+): Promise<OrbToolResult> {
+  const { executeReportToSpecialist } = await import('./report-to-specialist-core');
+
+  // VTID-03099: build gate_input from the user's recent RAW transcript
+  // turns so the two-gate RPC matches forward_request_phrases against
+  // what the user actually said — Vertex parity (see orb-live.ts:2872
+  // buildGateInputFromTranscript). Without this, the LLM-curated summary
+  // (compressed business language) rarely matches phrases like
+  // "verbinde mich" / "mit dem support sprechen" / "fehler melden", so
+  // Gate A returns answer_inline and the handoff is vetoed even after
+  // the user explicitly consented. 2026-05-19 user-reported regression.
+  const recentTurnsRaw = Array.isArray(args.recent_user_turns)
+    ? (args.recent_user_turns as unknown[])
+    : [];
+  const recentTurns: string[] = recentTurnsRaw
+    .map((t) => (typeof t === 'string' ? t.trim() : ''))
+    .filter((t) => t.length > 0);
+  const summaryStr =
+    typeof args.summary === 'string' ? args.summary : undefined;
+  const gateInput =
+    recentTurns.length > 0
+      ? recentTurns.slice(-3).join(' \n ')
+      : summaryStr;
+
+  const result = await executeReportToSpecialist(
+    {
+      kind: typeof args.kind === 'string' ? args.kind : undefined,
+      summary: summaryStr,
+      specialist_hint:
+        typeof args.specialist_hint === 'string' ? args.specialist_hint : undefined,
+    },
+    {
+      user_id: identity.user_id,
+      tenant_id: identity.tenant_id ?? null,
+      vitana_id: identity.vitana_id ?? null,
+      lang: identity.lang ?? null,
+    },
+    sb,
+    {
+      gate_input: gateInput,
+      source: 'orb-livekit-tool',
+      screen_path: '/orb/livekit-voice',
+    },
+  );
+
+  switch (result.decision) {
+    case 'failed':
+      return { ok: false, error: result.error };
+    case 'vague':
+      return {
+        ok: true,
+        result: { decision: 'vague', word_count: result.word_count },
+        text: result.llm_instruction,
+      };
+    case 'stay_inline':
+      return {
+        ok: true,
+        result: { decision: 'stay_inline', rpc_gate: result.rpc_gate },
+        text: result.llm_instruction,
+      };
+    case 'created': {
+      const personaLabel: Record<string, string> = {
+        devon: 'tech support',
+        sage: 'customer support',
+        atlas: 'finance / marketplace',
+        mira: 'account',
+      };
+      const roleLabel = result.persona
+        ? personaLabel[result.persona] ?? 'a specialist colleague'
+        : 'our team';
+      const ticketNum = result.ticket.ticket_number ?? '(pending)';
+      const llmInstruction = result.persona
+        ? `Ticket ${ticketNum} created. Speak ONE short bridge sentence in the user's language announcing the ROLE — "${roleLabel}". NEVER speak the persona's internal name (Devon, Sage, Atlas, Mira) out loud — the user has no context for those names. Examples (vary every call): "I'll connect you with ${roleLabel}." / "Let me bring ${roleLabel} in." / "Einen Moment, ${roleLabel} übernimmt." Then STOP — do NOT introduce the colleague yourself.`
+        : `Ticket ${ticketNum} created. Our team will look at this. Tell the user warmly that you've filed the report and they'll hear back — vary your phrasing. Then STOP.`;
+      return {
+        ok: true,
+        result: {
+          decision: 'created',
+          ticket_id: result.ticket.id,
+          ticket_number: result.ticket.ticket_number,
+          persona: result.persona,
+          matched_keyword: result.matched_keyword,
+          confidence: result.confidence,
+          rpc_decision: result.rpc_decision,
+          rpc_gate: result.rpc_gate,
+        },
+        text: llmInstruction,
+      };
+    }
+  }
 }
 
 export async function tool_search_events(
@@ -1431,7 +1530,7 @@ export async function tool_ask_pillar_agent(
   }
 }
 
-export async function tool_explain_feature(args: OrbToolArgs): Promise<OrbToolResult> {
+export async function tool_explain_feature(args: OrbToolArgs, id?: OrbToolIdentity): Promise<OrbToolResult> {
   // Accept either `topic` (Vertex's canonical key) or legacy `feature`.
   // Both pipelines must work — the LiveKit Python tool sends `feature`, the
   // Vertex-side function-tool schema declares `topic`.
@@ -1447,12 +1546,43 @@ export async function tool_explain_feature(args: OrbToolArgs): Promise<OrbToolRe
   const result = explainFeature(topic);
 
   if (!result.found) {
-    // Vertex's not-found path returns guidance text steering voice to
-    // search_knowledge with KB instructions. Mirror that exactly so both
-    // pipelines produce identical fallback behaviour.
+    // VTID-03051: chain to search_knowledge server-side so the LLM never
+    // sees a "tool returned not_found + here's some guidance text"
+    // pattern. The prior contract was: emit `found:false` + guidance and
+    // expect the LLM to make a second tool call to `search_knowledge` on
+    // its own. Gemini Live frequently mis-handled this and narrated the
+    // first response as a definitive "I couldn't find it" — user had to
+    // re-ask the same question to coax the chain.
+    //
+    // Server-side fallback makes both pipelines produce a useful answer
+    // in a single tool round trip: when the pattern matcher misses, we
+    // run the Knowledge Hub search inline and put its answer in `text`.
+    // dispatchOrbToolForVertex prefers `text` over the stringified
+    // result, so Vertex sends the KB answer to Gemini directly; the
+    // LiveKit `summarize()` reads `text` first too. Behavior parity
+    // is preserved: callers that need to distinguish the two paths can
+    // still read `result.knowledge_fallback` + `result.docs`.
+    let knowledgeAnswer = '';
+    let knowledgeDocs: Array<Record<string, unknown>> = [];
+    try {
+      const { searchKnowledge } = await import('./knowledge-hub');
+      // Pass userId so the generated answer respects the user's preferred
+      // language (German by default — community is German-first).
+      const kb = await searchKnowledge({ query: topic, maxResults: 5, userId: id?.user_id });
+      if (kb.ok && Array.isArray(kb.docs) && kb.docs.length > 0) {
+        knowledgeAnswer = (kb.answer ?? '').trim();
+        knowledgeDocs = (kb.docs as unknown) as Array<Record<string, unknown>>;
+      }
+    } catch {
+      // Best-effort: KB failure must never block the explain_feature
+      // tool — the guidance text remains as the LLM-visible fallback.
+    }
+
     const payload = {
       found: false as const,
       reason: result.reason ?? 'no_pattern_match',
+      knowledge_fallback: knowledgeAnswer.length > 0,
+      docs: knowledgeDocs,
       guidance:
         'Voice should fall back to search_knowledge. Search the Maxina ' +
         'Instruction Manual (kb/instruction-manual/maxina/*) first — it covers ' +
@@ -1463,11 +1593,12 @@ export async function tool_explain_feature(args: OrbToolArgs): Promise<OrbToolRe
     return {
       ok: true,
       result: payload,
-      // Vertex returned JSON.stringify(payload) as `result` (string). For voice
-      // it doesn't actually speak this — the LLM sees the structured fall-back
-      // signal and chooses the next tool. dispatchOrbToolForVertex will
-      // stringify the structured result for Vertex callers.
-      text: '',
+      // When the KB returned a real answer, surface it as `text`.
+      // dispatchOrbToolForVertex prefers `text` over stringified
+      // `result`, and the LiveKit agent's summarize() does the same.
+      // Empty string falls through to the structured-result path
+      // (guidance + the LLM's prior chain-to-search_knowledge behavior).
+      text: knowledgeAnswer,
     };
   }
 
@@ -1548,6 +1679,39 @@ export async function tool_resolve_recipient(
   };
 }
 
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+async function emitChatSendFailure(
+  reason: string,
+  id: OrbToolIdentity,
+  args: OrbToolArgs,
+  extra: Record<string, unknown> = {},
+): Promise<void> {
+  try {
+    const { emitOasisEvent } = await import('./oasis-event-service');
+    await emitOasisEvent({
+      vtid: 'VTID-01967',
+      type: 'voice.chat_message.send_failed',
+      source: 'orb-tools-shared',
+      status: 'warning',
+      message: `send_chat_message failed: ${reason}`,
+      payload: {
+        reason,
+        recipient_user_id_arg: typeof args.recipient_user_id === 'string' ? args.recipient_user_id : null,
+        recipient_label_arg: typeof args.recipient_label === 'string' ? args.recipient_label : null,
+        has_body: Boolean(args.body ?? args.body_text),
+        ...extra,
+      },
+      actor_id: id.user_id,
+      actor_role: 'user',
+      surface: 'orb',
+      vitana_id: id.vitana_id ?? undefined,
+    });
+  } catch {
+    // OASIS failures must not break voice flow — swallow.
+  }
+}
+
 export async function tool_send_chat_message(
   args: OrbToolArgs,
   id: OrbToolIdentity,
@@ -1560,14 +1724,87 @@ export async function tool_send_chat_message(
   // schema, so any LiveKit-sent message was silently dropped.
   // Accepts both Vertex args (recipient_user_id, body, recipient_label) and
   // legacy LiveKit (recipient_id, body_text).
-  const recipientUserId = String(args.recipient_user_id ?? args.recipient_id ?? '').trim();
-  const recipientLabel = String(args.recipient_label ?? '').trim();
+  let recipientUserId = String(args.recipient_user_id ?? args.recipient_id ?? '').trim();
+  const recipientLabel = String(
+    args.recipient_label ?? args.recipient_name ?? args.spoken_name ?? '',
+  ).trim();
   const body = String(args.body ?? args.body_text ?? '').trim();
 
-  if (!recipientUserId || !body) {
-    return { ok: false, error: 'recipient_user_id and body are required' };
+  if (!body) {
+    await emitChatSendFailure('missing_body', id, args);
+    return { ok: false, error: "I didn't catch the message — what would you like me to send?" };
+  }
+
+  // SAFETY NET: Gemini Live occasionally loses the recipient_user_id across
+  // turn boundaries (between readback and confirmation) and either omits it
+  // or passes the recipient_label as the id. If recipient_user_id isn't a
+  // UUID but we DO have a label, try to re-resolve that label to a single
+  // high-confidence candidate via the same RPC resolve_recipient uses.
+  // We use a stricter threshold (0.90) than resolve_recipient's 0.85 to
+  // avoid silently sending to a wrong fuzzy match. If ambiguous or empty,
+  // we return a clarification text so Gemini asks the user again.
+  if (!UUID_REGEX.test(recipientUserId) && recipientLabel) {
+    try {
+      const { data, error } = await sb.rpc('resolve_recipient_candidates', {
+        p_actor: id.user_id,
+        p_token: recipientLabel,
+        p_limit: 3,
+        p_global: false,
+      });
+      if (error) {
+        await emitChatSendFailure('label_recovery_rpc_error', id, args, {
+          rpc_error: error.message,
+          label: recipientLabel,
+        });
+        return {
+          ok: false,
+          error: `I had a problem looking up ${recipientLabel}. Want me to try once more?`,
+        };
+      }
+      const candidates = (data || []) as Array<{ user_id: string; vitana_id: string | null; score: number }>;
+      const top = candidates[0];
+      const secondScore = candidates[1] ? Number(candidates[1].score) : 0;
+      const topScore = top ? Number(top.score) : 0;
+      const recoverable = top && topScore >= 0.9 && secondScore / Math.max(topScore, 0.0001) < 0.85;
+      if (!recoverable) {
+        await emitChatSendFailure(
+          candidates.length === 0 ? 'label_recovery_no_match' : 'label_recovery_ambiguous',
+          id,
+          args,
+          { label: recipientLabel, candidate_count: candidates.length, top_score: topScore },
+        );
+        return {
+          ok: false,
+          error:
+            candidates.length === 0
+              ? `I couldn't find ${recipientLabel} in the community right now.`
+              : `I'm not sure which ${recipientLabel} you meant — can you say their Vitana ID?`,
+        };
+      }
+      recipientUserId = top.user_id;
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'label resolve failed';
+      await emitChatSendFailure('label_recovery_exception', id, args, { error: msg, label: recipientLabel });
+      return {
+        ok: false,
+        error: `I had a problem looking up ${recipientLabel}. Want me to try once more?`,
+      };
+    }
+  }
+
+  if (!recipientUserId) {
+    await emitChatSendFailure('missing_recipient', id, args);
+    return { ok: false, error: 'Who would you like me to send this to?' };
+  }
+  if (!UUID_REGEX.test(recipientUserId)) {
+    await emitChatSendFailure('recipient_not_uuid', id, args, { recipient_value: recipientUserId });
+    return {
+      ok: false,
+      error: `I lost track of who you meant — can you say their name again?`,
+    };
   }
   if (recipientUserId === id.user_id) {
+    await emitChatSendFailure('self_message', id, args);
     return { ok: false, error: 'cannot message yourself' };
   }
 
@@ -1575,15 +1812,148 @@ export async function tool_send_chat_message(
     const { checkVoiceSendQuota } = await import('./voice-message-guard');
     const { resolveVitanaId } = await import('../middleware/auth-supabase-jwt');
 
-    const recipientVitanaId = await resolveVitanaId(recipientUserId);
+    // Tenant backfill: voice sessions sometimes carry a null tenant_id on
+    // identity even when the user has one in app_users. chat_messages.tenant_id
+    // is NOT NULL, so we attempt to recover from app_users before failing.
+    let tenantId = id.tenant_id;
+    if (!tenantId) {
+      const { data: appUser } = await sb
+        .from('app_users')
+        .select('tenant_id')
+        .eq('user_id', id.user_id)
+        .maybeSingle();
+      tenantId = (appUser as { tenant_id?: string } | null)?.tenant_id ?? null;
+      if (!tenantId) {
+        await emitChatSendFailure('missing_tenant', id, args);
+        return {
+          ok: false,
+          error: `I can't send right now — I'm missing some account context. Try once more in a moment.`,
+        };
+      }
+    }
+
+    // VTID-02963: Restore per-voice-session rate-limit isolation.
+    // PR B-6 (VTID-02817) lifted this function from orb-live.ts inline and
+    // replaced `session.sessionId` with the synthetic key
+    // `${id.user_id}:send_chat_message`. That made the 5-send cap shared
+    // across every orb open for a user until the 30-min TTL expired —
+    // users who'd hit the cap once couldn't send via voice again for half
+    // an hour, even from a brand-new session. Restore the real session id
+    // as the key; fall back to a clearly-tagged synthetic key only when
+    // the session id is genuinely missing (LiveKit identity may not yet
+    // populate it during early bootstrap), and emit telemetry when that
+    // happens so we can see fallback usage.
+    const realSessionId = (id.session_id ?? '').trim();
+    const usingFallbackKey = !realSessionId;
+    const rateLimitKey = usingFallbackKey
+      ? `${id.user_id}:send_chat_message:no_session`
+      : realSessionId;
+    const keyType = usingFallbackKey ? 'missing_session_fallback' : 'real_session';
+    if (usingFallbackKey) {
+      try {
+        const { emitOasisEvent } = await import('./oasis-event-service');
+        await emitOasisEvent({
+          vtid: 'VTID-02963',
+          type: 'voice.chat_message.missing_session_fallback',
+          source: 'orb-tools-shared',
+          status: 'warning',
+          message:
+            'send_chat_message called without OrbToolIdentity.session_id; rate-limit key fell back to per-user synthetic',
+          payload: {
+            fallback_key: rateLimitKey,
+            recipient_user_id: recipientUserId,
+            tool: 'send_chat_message',
+          },
+          actor_id: id.user_id,
+          actor_role: 'user',
+          surface: 'orb',
+          vitana_id: id.vitana_id ?? undefined,
+        });
+      } catch {
+        // Telemetry must not break voice flow.
+      }
+    }
+
+    // VTID-02966 (Issue #1): verify the receiver actually exists AND the
+    // spoken label still resolves to them before we insert. Two failure
+    // modes this catches that previously left "Unknown User" messages in
+    // chat history:
+    //   - Gemini Live hallucinated a UUID that doesn't map to a Vitana
+    //     account (silent insert succeeded; profile lookup later 404s).
+    //   - Gemini swapped recipient_user_id mid-flow so the verbal label
+    //     ("Dragan Red") and the persisted receiver_id diverged — message
+    //     lands in the wrong person's inbox.
+    // One round-trip gives us both checks.
+    const { data: receiverRow, error: receiverErr } = await sb
+      .from('app_users')
+      .select('user_id, display_name, vitana_id')
+      .eq('user_id', recipientUserId)
+      .maybeSingle();
+    if (receiverErr) {
+      await emitChatSendFailure('receiver_lookup_error', id, args, {
+        recipient_user_id: recipientUserId,
+        db_error: receiverErr.message,
+      });
+      return {
+        ok: false,
+        error: `I had a problem checking who you meant. Want me to try once more?`,
+      };
+    }
+    if (!receiverRow) {
+      await emitChatSendFailure('receiver_not_found', id, args, {
+        recipient_user_id: recipientUserId,
+        recipient_label: recipientLabel || null,
+      });
+      return {
+        ok: false,
+        error: recipientLabel
+          ? `I couldn't find ${recipientLabel} — they may have left the community.`
+          : `I couldn't find that person — they may have left the community.`,
+      };
+    }
+    const recipientVitanaId =
+      (receiverRow as { vitana_id?: string | null }).vitana_id ?? null;
+    const recipientDisplayName =
+      (receiverRow as { display_name?: string | null }).display_name ?? null;
+
+    // Label/identity consistency: if a spoken label was provided, at least
+    // one 3+ char token of it must appear in the resolved user's display
+    // name OR vitana_id. Single-name labels ("Dragan") count. Mismatch
+    // means the verbal handle and persisted UUID drifted — refuse to
+    // deliver to the wrong person.
+    if (recipientLabel) {
+      const lbl = recipientLabel.toLowerCase().trim();
+      const dn = (recipientDisplayName ?? '').toLowerCase();
+      const vid = (recipientVitanaId ?? '').toLowerCase();
+      const tokens = lbl.split(/\s+/).filter((t) => t.length >= 3);
+      const anyMatch =
+        tokens.length === 0 ||
+        tokens.some((t) => dn.includes(t) || vid.includes(t)) ||
+        dn === lbl ||
+        vid === lbl;
+      if (!anyMatch) {
+        await emitChatSendFailure('label_id_mismatch', id, args, {
+          recipient_user_id: recipientUserId,
+          recipient_label: recipientLabel,
+          resolved_display_name: recipientDisplayName,
+          resolved_vitana_id: recipientVitanaId,
+        });
+        return {
+          ok: false,
+          error: `I'm not sure I got the right person — can you say their name again?`,
+        };
+      }
+    }
+
     const quota = await checkVoiceSendQuota({
-      session_id: `${id.user_id}:send_chat_message`,
+      session_id: rateLimitKey,
       actor_id: id.user_id,
       vitana_id: id.vitana_id ?? null,
       recipient_user_id: recipientUserId,
       recipient_vitana_id: recipientVitanaId,
       kind: 'message',
       body_length: body.length,
+      key_type: keyType,
     });
     if (!quota.allowed) {
       return {
@@ -1594,33 +1964,252 @@ export async function tool_send_chat_message(
     }
 
     const senderVitanaId = id.vitana_id ?? (await resolveVitanaId(id.user_id));
-    const { error: insErr } = await sb.from('chat_messages').insert({
-      tenant_id: id.tenant_id,
-      sender_id: id.user_id,
-      receiver_id: recipientUserId,
-      content: body,
-      ...(senderVitanaId && { sender_vitana_id: senderVitanaId }),
-      ...(recipientVitanaId && { receiver_vitana_id: recipientVitanaId }),
-      metadata: {
-        source: 'voice',
-        session_id: `${id.user_id}:send_chat_message`,
-        recipient_label: recipientLabel || recipientVitanaId,
-      },
-    });
+    const { data: inserted, error: insErr } = await sb
+      .from('chat_messages')
+      .insert({
+        tenant_id: tenantId,
+        sender_id: id.user_id,
+        receiver_id: recipientUserId,
+        content: body,
+        ...(senderVitanaId && { sender_vitana_id: senderVitanaId }),
+        ...(recipientVitanaId && { receiver_vitana_id: recipientVitanaId }),
+        metadata: {
+          source: 'voice',
+          session_id: rateLimitKey,
+          key_type: keyType,
+          recipient_label: recipientLabel || recipientVitanaId,
+        },
+      })
+      .select('id')
+      .single();
     if (insErr) {
-      return { ok: false, error: insErr.message };
+      await emitChatSendFailure('chat_messages_insert_error', id, args, {
+        db_error: insErr.message,
+        recipient_user_id: recipientUserId,
+      });
+      return {
+        ok: false,
+        error: `I couldn't send the message just now — want me to try once more?`,
+      };
     }
-    const recipDisplay = recipientLabel || recipientVitanaId || recipientUserId;
+
+    // VTID-02966 (Issue #3): push-notify the receiver. Mirrors chat.ts:80-135
+    // exactly — same payload shape (title=sender display name, body=trimmed
+    // content with 100-char cap, data.url deep-links to /inbox?thread=...).
+    // Skipped for the Vitana bot (its replies go through handleVitanaTextReply
+    // already, no push needed). Fire-and-forget; notification failures must
+    // never break the voice flow.
+    try {
+      const { isVitanaBot } = await import('../lib/vitana-bot');
+      if (!isVitanaBot(recipientUserId)) {
+        let senderName = 'New message';
+        try {
+          const { data: senderProfile } = await sb
+            .from('app_users')
+            .select('display_name, email')
+            .eq('user_id', id.user_id)
+            .maybeSingle();
+          if (senderProfile) {
+            const sp = senderProfile as { display_name?: string | null; email?: string | null };
+            senderName =
+              sp.display_name ||
+              (sp.email ? sp.email.split('@')[0] : 'New message');
+          }
+        } catch {
+          // sender lookup is best-effort
+        }
+        const truncatedBody = body.length > 100 ? body.slice(0, 97) + '...' : body;
+        const insertedId = (inserted as { id?: string } | null)?.id ?? null;
+        const { notifyUserAsync } = await import('./notification-service');
+        notifyUserAsync(
+          recipientUserId,
+          tenantId,
+          'new_chat_message',
+          {
+            title: senderName,
+            body: truncatedBody,
+            data: {
+              type: 'new_chat_message',
+              sender_id: id.user_id,
+              sender_name: senderName,
+              ...(insertedId && { message_id: insertedId }),
+              thread_id: id.user_id,
+              url: `/inbox?thread=${id.user_id}&context=global`,
+              source: 'voice',
+            },
+          },
+          sb,
+        );
+      }
+    } catch (notifyErr: unknown) {
+      const m = notifyErr instanceof Error ? notifyErr.message : 'notify dispatch failed';
+      console.warn('[VTID-02966] voice send notify dispatch error (non-fatal):', m);
+    }
+
+    // VTID-02969: structured post-send next_actions, sourced from the
+    // canonical autopilot recommendations system. Gemini's MESSAGING_CONTRACT
+    // bullet #4 instructs it to verbalize ONLY tool-provided next_actions
+    // and never to invent one off-the-cuff. Degrades silently to [] on any
+    // failure — the send itself succeeded, follow-up suggestions are
+    // best-effort.
+    let nextActions: Array<{ id: string; type: string; label: string; source: string }> = [];
+    try {
+      const { getTopAutopilotNextActions } = await import('./autopilot-voice-next-actions');
+      nextActions = await getTopAutopilotNextActions({
+        user_id: id.user_id,
+        role: id.role ?? 'community',
+        limit: 1,
+      });
+    } catch (nextErr: unknown) {
+      const m = nextErr instanceof Error ? nextErr.message : 'next_actions resolve failed';
+      console.warn('[VTID-02969] next_actions resolve error (non-fatal):', m);
+      nextActions = [];
+    }
+
+    const recipDisplay =
+      recipientLabel || recipientDisplayName || recipientVitanaId || recipientUserId;
     return {
       ok: true,
       result: {
         recipient_label: recipDisplay,
+        recipient_vitana_id: recipientVitanaId,
         remaining: quota.remaining,
+        next_actions: nextActions,
       },
       text: `Sent to ${recipDisplay}.`,
     };
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : 'send_chat_message error';
+    await emitChatSendFailure('unexpected_exception', id, args, { error: msg });
+    return {
+      ok: false,
+      error: `I hit a snag sending that — want me to try once more?`,
+    };
+  }
+}
+
+/**
+ * VTID-02975: lifted from orb-live.ts:4285 (V2 Proactive Initiative Engine).
+ *
+ * Activates an Autopilot recommendation on the user's behalf. The voice
+ * "yes" handoff after a send_chat_message next_actions[0] suggestion lands
+ * here; the HTTP /api/v1/orb/tool endpoint dispatches to it via the shared
+ * registry; LiveKit's tool runner uses it via the same registry. Single
+ * source — no per-pipeline divergence.
+ *
+ * Verifies ownership (rec.user_id must match the actor or be null),
+ * flips status new→activated only if not already activated, and emits
+ * guide.initiative.executed telemetry fire-and-forget so the funnel
+ * dashboards stay accurate regardless of which surface drove activation.
+ */
+export async function tool_activate_recommendation(
+  args: OrbToolArgs,
+  id: OrbToolIdentity,
+  sb: SupabaseClient,
+): Promise<OrbToolResult> {
+  let recId = String(args.id ?? '').trim();
+  // DEV-COMHU-0505 (review follow-up): when the model calls this after a spoken
+  // "yes" it often has no id in context — the offer's id lives in the persisted
+  // pending CTA (written by wake-brief-wiring into orb_session_state). Fall back
+  // to it so the affirmative turn resolves deterministically instead of erroring
+  // with "id is required" (the "I have no access" symptom). Authed users only.
+  let recIdFromPendingCta = false;
+  if (!recId && id.user_id) {
+    try {
+      const { readOrbSessionState } = await import('./orb/orb-session-state');
+      const pending = await readOrbSessionState<{ tool?: string; payload?: { id?: string } }>(
+        sb,
+        id.user_id,
+        'pending_cta',
+      );
+      const pendingId =
+        pending &&
+        pending.value &&
+        pending.value.tool === 'activate_recommendation' &&
+        typeof pending.value.payload?.id === 'string'
+          ? pending.value.payload.id.trim()
+          : '';
+      if (pendingId) {
+        recId = pendingId;
+        recIdFromPendingCta = true;
+        // NOTE: do NOT consume the pending CTA here — only after activation
+        // actually succeeds (below). Clearing on read would drop the user's
+        // only recovery context if the fetch/update hits a transient error,
+        // turning a retryable "yes" into a permanent "id is required".
+      }
+    } catch {
+      // pending-CTA fallback is best-effort; fall through to the id check below.
+    }
+  }
+  if (!recId) {
+    return { ok: false, error: 'id is required' };
+  }
+  try {
+    const { data: rec, error: fetchErr } = await sb
+      .from('autopilot_recommendations')
+      .select('id, title, summary, status, user_id')
+      .eq('id', recId)
+      .maybeSingle();
+
+    if (fetchErr) {
+      return { ok: false, error: fetchErr.message };
+    }
+    if (!rec) {
+      return { ok: false, error: 'recommendation_not_found' };
+    }
+    const recRow = rec as { id: string; title: string | null; summary: string | null; status: string | null; user_id: string | null };
+    if (recRow.user_id && recRow.user_id !== id.user_id) {
+      return { ok: false, error: 'recommendation_belongs_to_another_user' };
+    }
+
+    const alreadyActive = recRow.status === 'activated';
+    if (!alreadyActive) {
+      const { error: updErr } = await sb
+        .from('autopilot_recommendations')
+        .update({ status: 'activated', updated_at: new Date().toISOString() })
+        .eq('id', recId);
+      if (updErr) {
+        return { ok: false, error: updErr.message };
+      }
+    }
+
+    // Fire-and-forget telemetry. Mirrors the inline Vertex case path so
+    // funnel dashboards (`guide.initiative.executed`) keep counting both
+    // voice and REST activations under the same event type.
+    import('./guide')
+      .then(({ emitGuideTelemetry }) => {
+        emitGuideTelemetry('guide.initiative.executed', {
+          user_id: id.user_id,
+          initiative_key: 'autopilot_top_recommendation',
+          on_yes_tool: 'activate_recommendation',
+          recommendation_id: recId,
+          already_active: alreadyActive,
+        }).catch(() => {});
+      })
+      .catch(() => {});
+
+    // DEV-COMHU-0505 (review follow-up): consume the pending CTA ONLY now that
+    // activation has verified+succeeded, so a transient fetch/update error
+    // above leaves the row intact for the user's retry. Fire-and-forget.
+    if (recIdFromPendingCta && id.user_id) {
+      void import('./orb/orb-session-state')
+        .then(({ clearOrbSessionState }) => clearOrbSessionState(sb, id.user_id, 'pending_cta'))
+        .catch(() => {});
+    }
+
+    const title = recRow.title ?? 'that recommendation';
+    return {
+      ok: true,
+      result: {
+        title: recRow.title,
+        already_active: alreadyActive,
+      },
+      text: alreadyActive
+        ? `"${title}" was already on your active list — I'll keep it there.`
+        : `Done — "${title}" is on your active list. Open Autopilot when you're ready to start it.`,
+    };
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : 'activate_recommendation error';
     return { ok: false, error: msg };
   }
 }
@@ -1948,22 +2537,52 @@ export async function tool_navigate_to_screen(
   // Three-tier resolution: exact → alias → fuzzy.
   let entry: NavCatalogEntry | null = lookupScreen(screenIdArg) || lookupByAlias(screenIdArg);
   if (!entry) {
-    const similar = suggestSimilar(screenIdArg, 1);
-    if (similar.length > 0) {
-      entry = similar[0];
+    // VTID-NAV-CONFIDENCE (VTID-03258): only auto-resolve a fuzzy match when it clears the
+    // confidence floor. A weak best-match (title-word-only overlap) is NOT a
+    // license to teleport the user to "the nearest thing" — that was the
+    // wrong-screen-redirect class. Below the floor we reject and let the model
+    // ask, surfacing the near-misses as suggestions.
+    const scored = suggestSimilarScored(screenIdArg, 3);
+    const best = scored[0];
+    if (best && best.score >= FUZZY_NAV_MIN_SCORE) {
+      entry = best.entry;
       emitOasisEvent({
         vtid: 'VTID-NAV-01',
         type: 'orb.navigator.blocked',
         source: 'orb-tools-shared',
         status: 'info',
-        message: `Fuzzy-resolved screen_id '${screenIdArg}' → '${entry.screen_id}'`,
+        message: `Fuzzy-resolved screen_id '${screenIdArg}' → '${entry.screen_id}' (score ${best.score})`,
         payload: {
           session_id: sessionId,
           attempted_screen_id: screenIdArg,
           resolved_screen_id: entry.screen_id,
+          fuzzy_score: best.score,
           error_kind: 'fuzzy_resolved',
         },
       }).catch(() => {});
+    } else if (best) {
+      // Near-misses exist but none are confident enough — do NOT navigate.
+      emitOasisEvent({
+        vtid: 'VTID-NAV-CONFIDENCE',
+        type: 'orb.navigator.blocked',
+        source: 'orb-tools-shared',
+        status: 'warning',
+        message: `Low-confidence screen_id '${screenIdArg}' (best ${best.entry.screen_id} score ${best.score} < ${FUZZY_NAV_MIN_SCORE})`,
+        payload: {
+          session_id: sessionId,
+          attempted_screen_id: screenIdArg,
+          best_candidate: best.entry.screen_id,
+          fuzzy_score: best.score,
+          error_kind: 'low_confidence',
+          suggestions: scored.map((s) => s.entry.screen_id),
+        },
+      }).catch(() => {});
+      return {
+        ok: false,
+        error: `I'm not confident which screen '${screenIdArg}' means. Ask the user which they want — closest matches: ${scored
+          .map((s) => s.entry.screen_id)
+          .join(', ')}. Do not navigate until they confirm.`,
+      };
     }
   }
   if (!entry) {
@@ -2003,6 +2622,39 @@ export async function tool_navigate_to_screen(
     return {
       ok: false,
       error: `Screen '${screenIdArg}' requires the user to be signed in. Tell them briefly and offer to take them to registration instead.`,
+    };
+  }
+
+  // GATE 1.5: surface-role scoping (VTID-NAV-SURFACE / VTID-03258). The ORB Navigator must
+  // never cross surfaces: a community user on vitanaland is never teleported
+  // into /admin or /command-hub, and a developer in Command Hub is never sent
+  // to a community route Command Hub can't render. The session's surface is
+  // derived from current_route (NOT the DB role — same convention as the
+  // consult path), and the entry's effective roles come from the catalog. This
+  // is the direct-navigate counterpart to the surface scoping consultNavigator
+  // already applies, and the primary guard against wrong-screen redirects.
+  const surfaceRole = deriveNavigatorSurfaceRole(currentRoute);
+  const effectiveRoles = resolveEffectiveRoles(entry);
+  if (!effectiveRoles.includes(surfaceRole)) {
+    emitOasisEvent({
+      vtid: 'VTID-NAV-SURFACE',
+      type: 'orb.navigator.blocked',
+      source: 'orb-tools-shared',
+      status: 'warning',
+      message: `Cross-surface navigation blocked: '${entry.screen_id}' (roles ${effectiveRoles.join('/')}) from ${surfaceRole} surface`,
+      payload: {
+        session_id: sessionId,
+        attempted_screen_id: screenIdArg,
+        resolved_screen_id: entry.screen_id,
+        error_kind: 'wrong_surface',
+        session_surface_role: surfaceRole,
+        entry_roles: effectiveRoles,
+        current_route: currentRoute,
+      },
+    }).catch(() => {});
+    return {
+      ok: false,
+      error: `Screen '${entry.screen_id}' belongs to a different surface (${effectiveRoles.join('/')}) than the user's current one (${surfaceRole}). Do not navigate there. Stay within the user's current surface or answer in voice.`,
     };
   }
 
@@ -2199,6 +2851,7 @@ export async function tool_navigate(
   }
 
   const lang = (id.lang || 'en') as string;
+  const isMobile = (typeof args.is_mobile === 'boolean' ? args.is_mobile : id.is_mobile) ?? false;
   const currentRoute = typeof args.current_route === 'string' && args.current_route.length > 0
     ? args.current_route
     : null;
@@ -2324,13 +2977,25 @@ export async function tool_navigate(
     const entry = lookupScreen(consultResult.primary.screen_id);
     if (entry) {
       const content = getContent(entry, lang);
+      // VTID-NAV-OVERLAY: resolve the route the SAME way navigate_to_screen
+      // does — honor mobile_route, and for overlay entries append the
+      // `?open=<query_marker>` marker the frontend intercepts. Without this the
+      // auto-redirect path dispatched the raw `entry.route` (e.g. `/calendar`),
+      // which is not a real page → 404. Overlays must open as a drawer instead.
+      const baseRoute = (isMobile && entry.mobile_route) ? entry.mobile_route : entry.route;
+      let resolvedRoute = baseRoute;
+      if (entry.entry_kind === 'overlay' && entry.overlay) {
+        const sep = resolvedRoute.includes('?') ? '&' : '?';
+        resolvedRoute = `${resolvedRoute}${sep}open=${entry.overlay.query_marker}`;
+      }
       const directive = {
         type: 'orb_directive',
         directive: 'navigate',
         screen_id: entry.screen_id,
-        route: entry.route,
+        route: resolvedRoute,
         title: content.title,
         reason: question,
+        entry_kind: entry.entry_kind || 'route',
         vtid: 'VTID-NAV-01',
       };
 
@@ -2343,7 +3008,7 @@ export async function tool_navigate(
         payload: {
           session_id: id.session_id || null,
           screen_id: entry.screen_id,
-          route: entry.route,
+          route: resolvedRoute,
           drain_wait_ms: 0,
         },
       }).catch(() => {});
@@ -2353,11 +3018,11 @@ export async function tool_navigate(
         type: 'orb.navigator.requested',
         source: 'orb-tools-shared',
         status: 'info',
-        message: `navigate auto-redirect to ${entry.screen_id} (${entry.route})`,
+        message: `navigate auto-redirect to ${entry.screen_id} (${resolvedRoute})`,
         payload: {
           session_id: id.session_id || null,
           screen_id: entry.screen_id,
-          route: entry.route,
+          route: resolvedRoute,
           reason: question,
           is_anonymous: isAnonymous,
         },
@@ -2703,6 +3368,167 @@ async function tool_get_pillar_subscores(
 }
 
 // ---------------------------------------------------------------------------
+// VTID-03042 — save_diary_entry
+//
+// Lifted from orb-live.ts case 'save_diary_entry' (VTID-01983) so the
+// LiveKit pipeline can call the canonical write flow instead of the agent's
+// previous direct hit to /memory/diary/sync-index. The sync-index endpoint
+// only runs the health-feature extractor + Index recompute — it explicitly
+// does NOT write the user-visible `diary_entries` row (memory.ts:1776 says
+// so). LiveKit's tool therefore had Vitana announce "I logged it" while no
+// diary row was ever created, so the user saw nothing in the daily diary.
+//
+// This shared handler does the full Vertex flow:
+//   1) insert diary_entries (user-visible)
+//   2) read pre-recompute Index for delta math
+//   3) extract health features + persist
+//   4) recompute Vitana Index
+//   5) compute per-pillar delta
+//   6) celebrate diary streak (non-blocking)
+// ---------------------------------------------------------------------------
+export async function tool_save_diary_entry(
+  args: OrbToolArgs,
+  identity: OrbToolIdentity,
+  sb: SupabaseClient,
+): Promise<OrbToolResult> {
+  const rawText = typeof args.raw_text === 'string' ? args.raw_text.trim() : '';
+  if (!rawText) {
+    return { ok: false, error: 'raw_text is required' };
+  }
+  if (!identity.user_id) {
+    return { ok: false, error: 'user_id is required' };
+  }
+
+  const argDate = typeof args.entry_date === 'string' ? args.entry_date : undefined;
+  const entryDate = argDate && /^\d{4}-\d{2}-\d{2}$/.test(argDate)
+    ? argDate
+    : new Date().toISOString().slice(0, 10);
+
+  // 1) diary_entries insert — best-effort. If it fails we still proceed with
+  // the extractor/index so the Index reflects the user's words.
+  let diary_entry_written = true;
+  try {
+    const { error: insertErr } = await sb.from('diary_entries').insert({
+      user_id: identity.user_id,
+      text: rawText,
+      source: 'voice',
+      tags: ['diary', 'voice', 'orb'],
+    });
+    if (insertErr) {
+      diary_entry_written = false;
+      console.warn(
+        `[save_diary_entry] diary_entries insert failed (non-fatal): ${insertErr.message}`,
+      );
+    }
+  } catch (insertErr) {
+    diary_entry_written = false;
+    console.warn(
+      `[save_diary_entry] diary_entries insert exception (non-fatal): ${(insertErr as Error).message}`,
+    );
+  }
+
+  // 2) Pre-recompute Index for delta math.
+  const { data: beforeRow } = await sb
+    .from('vitana_index_scores')
+    .select('score_total, score_nutrition, score_hydration, score_exercise, score_sleep, score_mental')
+    .eq('user_id', identity.user_id)
+    .eq('date', entryDate)
+    .maybeSingle();
+  const before = beforeRow as Record<string, number | null> | null;
+
+  // 3) Extract health features + persist.
+  const { extractHealthFeaturesFromDiary, persistDiaryHealthFeatures } = await import(
+    './diary-health-extractor'
+  );
+  const writes = extractHealthFeaturesFromDiary(rawText);
+  const tenantId = identity.tenant_id || '00000000-0000-0000-0000-000000000000';
+  let health_features_written = 0;
+  if (writes.length > 0) {
+    const { written } = await persistDiaryHealthFeatures(
+      sb,
+      identity.user_id,
+      tenantId,
+      entryDate,
+      writes,
+    );
+    health_features_written = written;
+  }
+
+  // 4) Recompute Index.
+  let pillars_after: Record<string, number> | null = null;
+  try {
+    const { data: rec } = await sb.rpc('health_compute_vitana_index_for_user', {
+      p_user_id: identity.user_id,
+      p_date: entryDate,
+    });
+    const r = rec as { ok?: boolean; [k: string]: unknown } | null;
+    if (r && r.ok !== false) {
+      pillars_after = {
+        total: Number(r.score_total ?? 0),
+        nutrition: Number(r.score_nutrition ?? 0),
+        hydration: Number(r.score_hydration ?? 0),
+        exercise: Number(r.score_exercise ?? 0),
+        sleep: Number(r.score_sleep ?? 0),
+        mental: Number(r.score_mental ?? 0),
+      };
+    }
+  } catch (recErr) {
+    console.warn(
+      `[save_diary_entry] Index recompute failed (non-fatal): ${(recErr as Error).message}`,
+    );
+  }
+
+  // 5) Per-pillar delta.
+  const index_delta = pillars_after
+    ? {
+        total: pillars_after.total - Number(before?.score_total ?? 0),
+        nutrition: pillars_after.nutrition - Number(before?.score_nutrition ?? 0),
+        hydration: pillars_after.hydration - Number(before?.score_hydration ?? 0),
+        exercise: pillars_after.exercise - Number(before?.score_exercise ?? 0),
+        sleep: pillars_after.sleep - Number(before?.score_sleep ?? 0),
+        mental: pillars_after.mental - Number(before?.score_mental ?? 0),
+      }
+    : null;
+
+  // 6) Streak celebration (best-effort).
+  let streak: Awaited<ReturnType<typeof import('./diary-streak-celebrator').celebrateDiaryStreak>> | null = null;
+  try {
+    const { celebrateDiaryStreak } = await import('./diary-streak-celebrator');
+    streak = await celebrateDiaryStreak(sb, identity.user_id, tenantId);
+  } catch (streakErr) {
+    console.warn(
+      `[save_diary_entry] streak celebrate failed (non-fatal): ${(streakErr as Error).message}`,
+    );
+  }
+
+  console.log(
+    `[save_diary_entry] user=${identity.user_id.slice(0, 8)} features=${health_features_written} delta_total=${index_delta?.total ?? 0} diary_row=${diary_entry_written}`,
+  );
+
+  // Voice-friendly text. The LLM hears this; the structured fields are
+  // available on `result` for non-spoken consumers (cockpit / orb-tool route).
+  const deltaPhrase =
+    index_delta && index_delta.total > 0
+      ? ` Your Vitana Index moved up ${index_delta.total}.`
+      : '';
+  const text = `Diary entry logged for ${entryDate}.${deltaPhrase}`;
+
+  return {
+    ok: true,
+    result: {
+      ok: true,
+      entry_date: entryDate,
+      diary_entry_written,
+      health_features_written,
+      pillars_after,
+      index_delta,
+      streak,
+    },
+    text,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // VTID-02830 — Find Perfect flagships (deep marketplace + practitioner search)
 //
 // Both tools fuse the user's weakest Vitana Index pillar + active Life Compass
@@ -2711,6 +3537,98 @@ async function tool_get_pillar_subscores(
 // environment, the tool returns ok=true with available=false + a clean
 // "not yet computed" reason so the orb can speak it.
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// L2.2b.6 (VTID-03010) — get_life_compass
+//
+// Returns the user's active Life Compass row (current goal, why, target
+// date, optional steps). The Life Compass is the user's authoritative
+// long-term direction; ORB Vertex prompts already reference it via the
+// embedded user-context profile, but there was no dedicated tool either
+// pipeline could call to fetch the row on demand. Without it, the LLM
+// has no way to answer "what is my Life Compass goal?" / "remind me
+// what I'm working toward" with the canonical value — it either invents
+// one from prior conversation or denies access.
+// ---------------------------------------------------------------------------
+export async function tool_get_life_compass(
+  _args: OrbToolArgs,
+  identity: OrbToolIdentity,
+  sb: SupabaseClient,
+): Promise<OrbToolResult> {
+  if (!identity.user_id) {
+    return { ok: false, error: 'get_life_compass requires an authenticated user.' };
+  }
+  try {
+    // VTID-03022: corrected schema. Earlier VTID-03010 guessed at column
+    // names (`current_goal`, `why`/`motivation`, `target_date`/`deadline`)
+    // — none of those columns actually exist on `life_compass`. Confirmed
+    // canonical shape from services/gateway/src/services/guide/
+    // awareness-context.ts and services/gateway/src/services/
+    // recommendation-engine/ranking/index-pillar-weighter.ts: the live
+    // columns are `primary_goal`, `category`, `is_active`, `created_at`.
+    // A user can have multiple historical rows; exactly one has
+    // is_active=true and is the current Life Compass.
+    const { data, error } = await sb
+      .from('life_compass')
+      .select('id, primary_goal, category, is_active, created_at')
+      .eq('user_id', identity.user_id)
+      .eq('is_active', true)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (error) {
+      if (/relation .* does not exist/i.test(error.message)) {
+        return {
+          ok: true,
+          result: { available: false, reason: 'life_compass_not_deployed' },
+          text:
+            'The Life Compass feature is not enabled in this environment yet — ' +
+            'no record on file.',
+        };
+      }
+      return { ok: false, error: `get_life_compass failed: ${error.message}` };
+    }
+    if (!data) {
+      return {
+        ok: true,
+        result: { available: false, reason: 'not_set' },
+        text:
+          'You have not set up your Life Compass yet. It is the one-sentence ' +
+          'direction we anchor your plans to — you can set it in Settings → ' +
+          'Life Compass, or I can walk you through it now.',
+      };
+    }
+    const row = data as {
+      id: string;
+      primary_goal: string | null;
+      category: string | null;
+      is_active: boolean | null;
+      created_at: string | null;
+    };
+    const goal = (row.primary_goal || '').trim() || null;
+    const category = (row.category || '').trim() || null;
+    if (!goal) {
+      return {
+        ok: true,
+        result: { available: true, goal: null, category, raw: row },
+        text:
+          'You have a Life Compass row but no primary goal text in it — ' +
+          'want me to take you to Settings → Life Compass to fill it in?',
+      };
+    }
+    const text = category
+      ? `Your Life Compass — ${goal}. (Category: ${category}.)`
+      : `Your Life Compass — ${goal}.`;
+    return {
+      ok: true,
+      result: { available: true, goal, category, raw: row },
+      text,
+    };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : 'get_life_compass_exception';
+    return { ok: false, error: msg };
+  }
+}
 
 async function _getWeakestPillarAndGoal(
   sb: SupabaseClient,
@@ -3014,7 +3932,7 @@ export const ORB_TOOL_REGISTRY: Record<string, OrbToolHandler> = {
   search_web: tool_search_web,
   recall_conversation_at_time: tool_recall_conversation_at_time,
   switch_persona: (args) => tool_switch_persona(args),
-  report_to_specialist: (args) => tool_report_to_specialist(args),
+  report_to_specialist: tool_report_to_specialist,
   search_events: tool_search_events,
   search_community: tool_search_community,
   // VTID-02754 — auto-redirecting community member search (PR 1.B-1)
@@ -3025,6 +3943,10 @@ export const ORB_TOOL_REGISTRY: Record<string, OrbToolHandler> = {
   log_exercise:     (args, id, sb) => tool_log_health('log_exercise', args, id),
   log_meditation:   (args, id, sb) => tool_log_health('log_meditation', args, id),
   get_pillar_subscores: tool_get_pillar_subscores,
+  // VTID-03042 — save_diary_entry: writes diary_entries (user-visible) +
+  // runs the health-feature extractor + Vitana Index recompute. Both
+  // pipelines now go through this shared handler.
+  save_diary_entry: tool_save_diary_entry,
   play_music: tool_play_music,
   set_capability_preference: tool_set_capability_preference,
   read_email: tool_read_email,
@@ -3034,10 +3956,13 @@ export const ORB_TOOL_REGISTRY: Record<string, OrbToolHandler> = {
   consult_external_ai: tool_consult_external_ai,
   create_index_improvement_plan: tool_create_index_improvement_plan,
   ask_pillar_agent: tool_ask_pillar_agent,
-  explain_feature: (args) => tool_explain_feature(args),
+  explain_feature: (args, id) => tool_explain_feature(args, id),
   resolve_recipient: tool_resolve_recipient,
   send_chat_message: tool_send_chat_message,
   share_link: tool_share_link,
+  // VTID-02975: lifted from orb-live.ts inline. Reachable via Vertex,
+  // LiveKit, AND /api/v1/orb/tool now that it's in the shared registry.
+  activate_recommendation: tool_activate_recommendation,
   scan_existing_matches: tool_scan_existing_matches,
   share_intent_post: tool_share_intent_post,
   respond_to_match: tool_respond_to_match,
@@ -3057,6 +3982,14 @@ export const ORB_TOOL_REGISTRY: Record<string, OrbToolHandler> = {
   // VTID-02830 — Find Perfect flagships (deep marketplace + practitioner search)
   find_perfect_product: tool_find_perfect_product,
   find_perfect_practitioner: tool_find_perfect_practitioner,
+  // L2.2b.6 (VTID-03010) — Life Compass read tool. Used by both pipelines so
+  // the LLM can answer "what is my Life Compass goal?" / "remind me what I'm
+  // working toward" with the canonical value instead of inventing one.
+  get_life_compass: tool_get_life_compass,
+  // VTID-03255 — Journey Foundation: records every voice answer, writes the real
+  // fact (life_compass goal / economy stance / focus / teacher ack), re-verifies,
+  // and returns the next move. Reachable from Vertex, LiveKit, and /api/v1/orb/tool.
+  record_journey_answer: tool_record_journey_answer,
 };
 
 export const ORB_TOOL_NAMES = Object.keys(ORB_TOOL_REGISTRY);
@@ -3076,6 +4009,24 @@ export async function dispatchOrbTool(
   if (!handler) {
     return { ok: false, error: `unknown tool: ${name}` };
   }
+
+  // BOOTSTRAP-ROLE-AUTH-ENFORCER — role-policy shadow hook (deny-by-default).
+  //
+  // Non-invasive: with FEATURE_ROLE_POLICY_ENFORCE off (default) this only
+  // LOGS a violation (shadow) and NEVER blocks. With the flag on it would
+  // return a deny result before dispatch.
+  //
+  // INTEGRATION TODO: the ORB tool registry names here (e.g. 'search_memory',
+  // 'play_music') are NOT yet 1:1 with the assistant-role-registry tool
+  // allowlist names (e.g. 'get_recent_memory'). A name-mapping table
+  // (orb-tool-name -> registry-tool-name) must land BEFORE the enforce flag
+  // is flipped to staging+prod, otherwise legitimate tools would be denied.
+  // Until that mapping exists this hook is shadow-only telemetry; do NOT
+  // enable FEATURE_ROLE_POLICY_ENFORCE in prod. See role-policy-enforcer.ts.
+  if (shouldBlockTool(identity.role, name, { surface: 'orb-tool', session_id: identity.session_id ?? undefined, actor_id: identity.user_id })) {
+    return { ok: false, error: `tool '${name}' not permitted for role '${identity.role ?? '(null)'}'` };
+  }
+
   try {
     return await handler(args, identity, sb);
   } catch (e: unknown) {

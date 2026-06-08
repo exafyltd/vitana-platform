@@ -553,12 +553,56 @@ export const NAVIGATION_CATALOG: ReadonlyArray<NavCatalogEntry> = [
       en: {
         title: 'Events & Meetups',
         description: 'Upcoming Maxina community events, in-person meetups, and gatherings.',
-        when_to_visit: 'When the user asks about upcoming events, meetups, things to attend, scheduled gatherings, dance events, wellness workshops, or community activities they can attend in person.',
+        when_to_visit: 'When the user asks about events and meetups in general, the Events & Meetups screen, things to attend, scheduled gatherings, dance events, wellness workshops, or community activities they can attend in person. Lands on the Hot tab by default.',
       },
       de: {
         title: 'Events & Meetups',
         description: 'Kommende Maxina Community Events, persönliche Treffen und Zusammenkünfte.',
-        when_to_visit: 'Wenn der Nutzer nach kommenden Events, Meetups, Veranstaltungen, geplanten Treffen, Tanzveranstaltungen, Wellness-Workshops oder Community-Aktivitäten fragt, an denen teilgenommen werden kann.',
+        when_to_visit: 'Wenn der Nutzer allgemein nach Events und Meetups, dem Events-&-Meetups-Bildschirm, Veranstaltungen, geplanten Treffen, Tanzveranstaltungen, Wellness-Workshops oder Community-Aktivitäten fragt, an denen teilgenommen werden kann. Öffnet standardmäßig den Hot-Tab.',
+      },
+    },
+  },
+  {
+    // VTID-NAV-EVENT-TABS: the Events & Meetups screen has four tabs (Hot,
+    // Upcoming, Today, Following). Hot is the COMM.EVENTS default; Following is
+    // COMM.FEED. These two pin the Upcoming and Today tabs so the Navigator can
+    // land on the exact tab the user names. EventsAndMeetups.tsx reads `?tab=`.
+    screen_id: 'COMM.EVENTS_UPCOMING',
+    route: '/comm/events-meetups?tab=upcoming',
+    category: 'community',
+    access: 'authenticated',
+    anonymous_safe: false,
+    aliases: ['upcoming-events', 'events-upcoming', 'upcoming', 'kommende-veranstaltungen'],
+    i18n: {
+      en: {
+        title: 'Upcoming Events',
+        description: 'Upcoming community events and meetups you can attend.',
+        when_to_visit: 'When the user asks for upcoming events, the upcoming tab, what events are coming up, or future events and meetups in Events & Meetups.',
+      },
+      de: {
+        title: 'Kommende Veranstaltungen',
+        description: 'Kommende Community-Events und Meetups, an denen du teilnehmen kannst.',
+        when_to_visit: 'Wenn der Nutzer nach kommenden Veranstaltungen, anstehenden Events, dem Tab "Kommend" oder zukünftigen Events und Meetups fragt.',
+      },
+    },
+  },
+  {
+    screen_id: 'COMM.EVENTS_TODAY',
+    route: '/comm/events-meetups?tab=today',
+    category: 'community',
+    access: 'authenticated',
+    anonymous_safe: false,
+    aliases: ['today-events', 'events-today', 'todays-events', 'heutige-veranstaltungen'],
+    i18n: {
+      en: {
+        title: "Today's Events",
+        description: 'Community events and meetups happening today.',
+        when_to_visit: "When the user asks what events are happening today, today's events, or the today tab in Events & Meetups.",
+      },
+      de: {
+        title: 'Heutige Veranstaltungen',
+        description: 'Community-Events und Meetups, die heute stattfinden.',
+        when_to_visit: 'Wenn der Nutzer fragt, welche Events heute stattfinden, nach heutigen Veranstaltungen oder dem Tab "Heute".',
       },
     },
   },
@@ -598,8 +642,48 @@ export const NAVIGATION_CATALOG: ReadonlyArray<NavCatalogEntry> = [
       de: {
         title: 'Media Hub',
         description: 'Videos, Podcasts und Musik der Community.',
-        when_to_visit: 'Wenn der Nutzer nach Videos, Podcasts, Musik, Aufnahmen fragt oder Medieninhalte der Community durchstöbern möchte.',
+        when_to_visit: 'Wenn der Nutzer allgemein nach dem Media Hub, Medieninhalten der Community fragt oder Medien durchstöbern möchte. Öffnet standardmäßig den Shorts-Feed.',
       },
+    },
+  },
+  {
+    // VTID-NAV-MEDIA-TABS: the Media Hub (mobile) has three mode pills —
+    // Shorts (default), Music, Podcasts — reached via /comm/media-hub?tab=.
+    // MediaHub.tsx reads `?tab=`. These pin each tab so the Navigator can land
+    // on the exact one; generic "media hub" stays on COMM.MEDIA_HUB (Shorts).
+    screen_id: 'COMM.MEDIA_SHORTS',
+    route: '/comm/media-hub?tab=shorts',
+    category: 'community',
+    access: 'authenticated',
+    anonymous_safe: false,
+    aliases: ['media-shorts', 'shorts', 'short-videos', 'reels'],
+    i18n: {
+      en: { title: 'Shorts', description: 'Short community videos — the Shorts feed.', when_to_visit: 'When the user asks for shorts, short videos, the shorts feed, or reels in the Media Hub.' },
+      de: { title: 'Shorts', description: 'Kurze Community-Videos — der Shorts-Feed.', when_to_visit: 'Wenn der Nutzer nach Shorts, kurzen Videos, dem Shorts-Feed oder Reels im Media Hub fragt.' },
+    },
+  },
+  {
+    screen_id: 'COMM.MEDIA_MUSIC',
+    route: '/comm/media-hub?tab=music',
+    category: 'community',
+    access: 'authenticated',
+    anonymous_safe: false,
+    aliases: ['media-music', 'music', 'songs', 'tracks'],
+    i18n: {
+      en: { title: 'Music', description: 'Music shared by the community.', when_to_visit: 'When the user asks for music, songs, or tracks in the Media Hub.' },
+      de: { title: 'Musik', description: 'Musik der Community.', when_to_visit: 'Wenn der Nutzer nach Musik, Liedern oder Tracks im Media Hub fragt.' },
+    },
+  },
+  {
+    screen_id: 'COMM.MEDIA_PODCASTS',
+    route: '/comm/media-hub?tab=podcasts',
+    category: 'community',
+    access: 'authenticated',
+    anonymous_safe: false,
+    aliases: ['media-podcasts', 'podcasts', 'podcast'],
+    i18n: {
+      en: { title: 'Podcasts', description: 'Podcasts and audio episodes shared by the community.', when_to_visit: 'When the user asks for podcasts, the podcasts tab, or audio episodes in the Media Hub.' },
+      de: { title: 'Podcasts', description: 'Podcasts und Audiofolgen der Community.', when_to_visit: 'Wenn der Nutzer nach Podcasts, dem Podcast-Tab oder Audiofolgen im Media Hub fragt.' },
     },
   },
 
@@ -646,22 +730,29 @@ export const NAVIGATION_CATALOG: ReadonlyArray<NavCatalogEntry> = [
     },
   },
   {
+    // VTID-NAV-BUSINESS-TABS: this is the "Sales" pill of the Business Hub
+    // (mobile) / the "Sell & Earn" tab (desktop), route /business/sell-earn.
+    // The title matches the pill label the user actually sees ("Sales" / DE
+    // "Verkäufe"), and when_to_visit carries the literal "Business Hub Sales"
+    // phrase so "take me to Business Hub Sales" resolves here instead of
+    // BUSINESS.OVERVIEW (whose title is "Business Hub").
     screen_id: 'BUSINESS.SELL_EARN',
     route: '/business/sell-earn',
     category: 'business',
     access: 'authenticated',
     anonymous_safe: false,
     priority: 2,
+    aliases: ['sales', 'business-sales', 'business-hub-sales', 'sell-earn', 'sales-tab', 'verkaeufe', 'verkauf'],
     i18n: {
       en: {
-        title: 'Sell & Earn',
-        description: 'Build a new income stream by selling your services and earning rewards in the Maxina community.',
-        when_to_visit: 'When the user asks how to make money, earn income, build a side income, monetize their skills, monetize coaching, monetize fitness, monetize their expertise, sell services, become a paid creator, set up a new income stream, become a paid coach, or start earning from the Maxina community.',
+        title: 'Sales',
+        description: 'Your Sales area in the Business Hub — sell your services and build a new income stream in the Maxina community.',
+        when_to_visit: 'When the user asks for the Sales tab or the Business Hub Sales section, their sales, or how to make money, earn income, build a side income, monetize their skills, monetize coaching, monetize fitness, monetize their expertise, sell services, become a paid creator, set up a new income stream, become a paid coach, or start earning from the Maxina community.',
       },
       de: {
-        title: 'Verkaufen & Verdienen',
-        description: 'Baue eine neue Einkommensquelle auf, indem du deine Services verkaufst und in der Maxina Community Belohnungen verdienst.',
-        when_to_visit: 'Wenn der Nutzer fragt wie man Geld verdient, Einkommen generiert, ein Nebeneinkommen aufbaut, seine Fähigkeiten monetarisiert, Coaching monetarisiert, Fitness monetarisiert, seine Expertise monetarisiert, Services verkauft, bezahlter Creator wird, eine neue Einkommensquelle aufbaut oder mit der Maxina Community Geld verdienen will.',
+        title: 'Verkäufe',
+        description: 'Dein Verkaufsbereich im Business Hub — verkaufe deine Services und baue eine neue Einkommensquelle in der Maxina Community auf.',
+        when_to_visit: 'Wenn der Nutzer nach dem Tab "Verkäufe", dem Business Hub Verkäufe-Bereich oder seinen Verkäufen fragt, oder wie man Geld verdient, Einkommen generiert, ein Nebeneinkommen aufbaut, seine Fähigkeiten monetarisiert, Coaching monetarisiert, Fitness monetarisiert, seine Expertise monetarisiert, Services verkauft, bezahlter Creator wird, eine neue Einkommensquelle aufbaut oder mit der Maxina Community Geld verdienen will.',
       },
     },
   },
@@ -805,6 +896,55 @@ export const NAVIGATION_CATALOG: ReadonlyArray<NavCatalogEntry> = [
     },
   },
   {
+    // VTID-NAV-HEALTH-SUPP: the personal supplement TRACKER inside the Health
+    // hub (Health → Supplements mode), reached via /health?mode=supplements.
+    // Distinct from DISCOVER.SUPPLEMENTS (the marketplace/shop). "Health
+    // supplements", "my supplements", "my stack" must land HERE, not the shop.
+    screen_id: 'HEALTH.SUPPLEMENTS',
+    route: '/health?mode=supplements',
+    category: 'health',
+    access: 'authenticated',
+    anonymous_safe: false,
+    aliases: ['health-supplements', 'my-supplements', 'supplement-tracker', 'my-stack', 'supplement-stack', 'vitamin-tracker', 'meine-supplements', 'meine-nahrungsergaenzung'],
+    i18n: {
+      en: {
+        title: 'My Supplements',
+        description: 'Track the supplements, vitamins, and minerals you take.',
+        when_to_visit: "When the user wants to view, track, log, or manage THEIR OWN supplements — their supplement stack, the vitamins or minerals THEY take, the 'health supplements' tracker, or add a supplement to their regimen. This is the personal health tracker, NOT shopping the marketplace.",
+      },
+      de: {
+        title: 'Meine Nahrungsergänzung',
+        description: 'Verfolge die Nahrungsergänzungsmittel, Vitamine und Mineralien, die du nimmst.',
+        when_to_visit: 'Wenn der Nutzer SEINE EIGENEN Nahrungsergänzungsmittel ansehen, verfolgen, protokollieren oder verwalten möchte — seinen Supplement-Stack, die Vitamine oder Mineralien, die er nimmt, den "Gesundheits-Supplement"-Tracker, oder ein Supplement zu seiner Routine hinzufügen. Das ist der persönliche Gesundheits-Tracker, NICHT der Marktplatz-Einkauf.',
+      },
+    },
+  },
+  {
+    // VTID-NAV-HEALTH-MODES: the Medical mode of the main Health screen
+    // (Health → Medical), reached via /health?mode=medical. This is the
+    // medical-records/reports tab (upload blood tests & doctor reports) — NOT
+    // HEALTH.CONDITIONS (diagnoses/risks) and NOT HEALTH.MY_BIOLOGY (biomarkers
+    // / lab-result values). Health.tsx reads `?mode=`.
+    screen_id: 'HEALTH.MEDICAL',
+    route: '/health?mode=medical',
+    category: 'health',
+    access: 'authenticated',
+    anonymous_safe: false,
+    aliases: ['health-medical', 'medical-tab', 'medical-records', 'medical-reports', 'my-medical', 'health-reports', 'medizinisch'],
+    i18n: {
+      en: {
+        title: 'Medical',
+        description: 'Your medical records — upload and view your medical reports and doctor documents.',
+        when_to_visit: 'When the user asks for the Medical tab on the Health screen, their medical records, medical reports, doctor reports, or to upload a medical report.',
+      },
+      de: {
+        title: 'Medizinisch',
+        description: 'Deine medizinischen Unterlagen — lade Arztberichte und medizinische Dokumente hoch und sieh sie an.',
+        when_to_visit: 'Wenn der Nutzer nach dem Tab "Medizinisch" auf dem Gesundheits-Bildschirm, seinen medizinischen Unterlagen, Arztberichten oder dem Hochladen eines Arztberichts fragt.',
+      },
+    },
+  },
+  {
     screen_id: 'HEALTH.MY_BIOLOGY',
     route: '/health/my-biology',
     category: 'health',
@@ -909,16 +1049,22 @@ export const NAVIGATION_CATALOG: ReadonlyArray<NavCatalogEntry> = [
     category: 'discover',
     access: 'authenticated',
     anonymous_safe: false,
+    // Canonical destination for a GENERIC "supplements" / "show me supplements"
+    // query — the marketplace wins the tie against HEALTH.SUPPLEMENTS (the
+    // personal tracker), which only wins when the user qualifies it ("health
+    // supplements", "my supplements") via the multi-token coverage bonus.
+    priority: 1,
+    aliases: ['shop-supplements', 'buy-supplements', 'supplement-shop', 'supplement-store', 'browse-supplements'],
     i18n: {
       en: {
         title: 'Supplements',
         description: 'Curated supplements for longevity and wellness.',
-        when_to_visit: 'When the user asks about supplements, vitamins, minerals, nutraceuticals, or what to take for their health.',
+        when_to_visit: 'When the user wants to browse, show, shop for, or buy supplements, vitamins, minerals, or nutraceuticals in the marketplace — exploring available products, brands, or deals. NOT for tracking the supplements they personally take (that is HEALTH.SUPPLEMENTS).',
       },
       de: {
         title: 'Nahrungsergänzungsmittel',
         description: 'Kuratierte Nahrungsergänzungsmittel für Longevity und Wellness.',
-        when_to_visit: 'Wenn der Nutzer nach Nahrungsergänzungsmitteln, Vitaminen, Mineralien, Nutraceuticals oder dem, was er für seine Gesundheit nehmen sollte, fragt.',
+        when_to_visit: 'Wenn der Nutzer Nahrungsergänzungsmittel, Vitamine, Mineralien oder Nutraceuticals im Marktplatz durchstöbern, ansehen oder kaufen möchte — verfügbare Produkte, Marken oder Angebote erkunden. NICHT zum Verfolgen der Supplements, die er selbst einnimmt (das ist HEALTH.SUPPLEMENTS).',
       },
     },
   },
@@ -1003,6 +1149,12 @@ export const NAVIGATION_CATALOG: ReadonlyArray<NavCatalogEntry> = [
   {
     screen_id: 'MEMORY.DIARY',
     route: '/memory/diary',
+    // BOOTSTRAP-MOBILE-NAV-CONTAINMENT: /memory/diary renders the desktop Memory
+    // hub (tabbed Overview/Timeline/Daily-Diary/Recall view) which is a desktop
+    // layout. On mobile the real diary surface is MobileDailyDiary at /daily-diary,
+    // so redirect there — otherwise "open my daily diary" strands mobile users on
+    // the read-only activity-timeline hub.
+    mobile_route: '/daily-diary',
     category: 'memory',
     access: 'authenticated',
     anonymous_safe: false,
@@ -1038,13 +1190,13 @@ export const NAVIGATION_CATALOG: ReadonlyArray<NavCatalogEntry> = [
     i18n: {
       en: {
         title: 'My Calendar',
-        description: 'Your personal calendar — view upcoming events, appointments, scheduled activities, and your schedule. The calendar opens as an overlay.',
-        when_to_visit: 'When the user asks to open their calendar, see their calendar, my calendar, show calendar, check their appointments, view upcoming schedule, check availability, Kalender öffnen, or manage their personal calendar.',
+        description: 'Your personal calendar — your appointments, scheduled activities, and daily schedule. Opens as an overlay.',
+        when_to_visit: 'When the user asks to open their calendar, see their calendar, my calendar, show calendar, check their appointments, view their schedule, check availability, or manage their personal calendar. NOT for community events (that is Events & Meetups).',
       },
       de: {
         title: 'Mein Kalender',
-        description: 'Dein persönlicher Kalender — sieh anstehende Termine, Verabredungen und geplante Aktivitäten. Der Kalender öffnet sich als Overlay.',
-        when_to_visit: 'Wenn der Nutzer seinen Kalender öffnen, Kalender anzeigen, mein Kalender, seinen Zeitplan sehen, Termine prüfen, anstehende Events ansehen, Verfügbarkeit prüfen oder seinen persönlichen Kalender verwalten möchte.',
+        description: 'Dein persönlicher Kalender — deine Termine, Verabredungen und geplante Aktivitäten. Öffnet sich als Overlay.',
+        when_to_visit: 'Wenn der Nutzer seinen Kalender öffnen, Kalender anzeigen, mein Kalender, seinen Zeitplan sehen, Termine prüfen, Verfügbarkeit prüfen oder seinen persönlichen Kalender verwalten möchte. NICHT für Community-Events (das ist Events & Meetups).',
       },
     },
     related_kb_topics: ['calendar', 'schedule', 'appointments', 'events'],
@@ -1146,6 +1298,10 @@ export const NAVIGATION_CATALOG: ReadonlyArray<NavCatalogEntry> = [
   {
     screen_id: 'INBOX.REMINDERS',
     route: '/inbox/reminder',
+    // BOOTSTRAP-MOBILE-NAV-CONTAINMENT: same surface as REMINDERS.OVERVIEW — on
+    // mobile open the Calendar popup's Reminders tab in place rather than landing
+    // on the desktop /reminders full page.
+    mobile_route: '/reminders?open=calendar&tab=reminders',
     category: 'inbox',
     access: 'authenticated',
     anonymous_safe: false,
@@ -1300,6 +1456,10 @@ export const NAVIGATION_CATALOG: ReadonlyArray<NavCatalogEntry> = [
   },
   {
     screen_id: 'INBOX.ARCHIVED', route: '/inbox/archived', category: 'inbox',
+    // BOOTSTRAP-MOBILE-NAV-CONTAINMENT: desktop-only master/detail layout (two
+    // fixed-width w-80 panes side by side); no mobile rendering exists. Gate it so
+    // the ORB never route-changes a mobile user here — it stays in voice instead.
+    viewport_only: 'desktop',
     access: 'authenticated', anonymous_safe: false,
     i18n: {
       en: { title: 'Archived Messages', description: 'Messages you have archived.', when_to_visit: 'When the user asks for archived messages, old messages, or messages they saved or dismissed.' },
@@ -1402,11 +1562,46 @@ export const NAVIGATION_CATALOG: ReadonlyArray<NavCatalogEntry> = [
     },
   },
   {
+    // Generic Support destination (lands on the Contact tab). Keeps the
+    // canonical `/settings/support` path so route resolution stays stable;
+    // it redirects to `/support`. Note: that redirect drops any querystring,
+    // so the sub-tab entries below target `/support?tab=…` DIRECTLY.
     screen_id: 'SETTINGS.SUPPORT', route: '/settings/support', category: 'settings',
     access: 'authenticated', anonymous_safe: false,
+    aliases: ['support', 'help', 'support-center', 'help-center', 'get-help', 'hilfe', 'kundendienst'],
     i18n: {
-      en: { title: 'Support', description: 'Get help, contact support, or report an issue.', when_to_visit: 'When the user asks for help, support, how to contact the team, report a bug, or needs assistance with something.' },
-      de: { title: 'Support', description: 'Hilfe erhalten, Support kontaktieren oder ein Problem melden.', when_to_visit: 'Wenn der Nutzer nach Hilfe, Support, wie man das Team kontaktiert, einen Fehler melden oder Unterstützung bei etwas braucht fragt.' },
+      en: { title: 'Support', description: 'Get help, contact support, or report an issue.', when_to_visit: 'When the user asks for help, support, how to contact the team, report a bug, or needs general assistance without naming a specific support section.' },
+      de: { title: 'Support', description: 'Hilfe erhalten, Support kontaktieren oder ein Problem melden.', when_to_visit: 'Wenn der Nutzer allgemein nach Hilfe, Support, wie man das Team kontaktiert, einen Fehler melden oder Unterstützung braucht fragt, ohne einen bestimmten Support-Bereich zu nennen.' },
+    },
+  },
+  {
+    // VTID-NAV-SUPPORT-TABS: deep-link straight to the Support sub-tabs so
+    // "take me to Support FAQs" lands on the FAQ tab, not the default Contact
+    // tab. Both Support.tsx (desktop) and MobileSupport.tsx read `?tab=`.
+    screen_id: 'SETTINGS.SUPPORT_CONTACT', route: '/support?tab=contact', category: 'settings',
+    access: 'authenticated', anonymous_safe: false,
+    aliases: ['support-contact', 'contact-support', 'submit-ticket', 'support-ticket', 'report-issue', 'support-kontakt'],
+    i18n: {
+      en: { title: 'Contact Support', description: 'Reach the support team — record a message, submit a ticket, or email us.', when_to_visit: 'When the user wants to contact support, submit a support ticket, report a bug, send a message to the team, or request a callback.' },
+      de: { title: 'Support kontaktieren', description: 'Erreiche das Support-Team — nimm eine Nachricht auf, reiche ein Ticket ein oder schreib uns.', when_to_visit: 'Wenn der Nutzer den Support kontaktieren, ein Support-Ticket einreichen, einen Fehler melden, dem Team eine Nachricht senden oder einen Rückruf anfordern möchte.' },
+    },
+  },
+  {
+    screen_id: 'SETTINGS.SUPPORT_FAQ', route: '/support?tab=faqs', category: 'settings',
+    access: 'authenticated', anonymous_safe: false,
+    aliases: ['support-faq', 'support-faqs', 'faq', 'faqs', 'knowledge-base', 'help-articles', 'support-knowledge-base', 'haeufige-fragen', 'faq-seite'],
+    i18n: {
+      en: { title: 'Support FAQs', description: 'Frequently asked questions, help articles, and the knowledge base.', when_to_visit: 'When the user asks for FAQs, frequently asked questions, help articles, the knowledge base, common questions, or how-to guides.' },
+      de: { title: 'Support-FAQ', description: 'Häufig gestellte Fragen, Hilfeartikel und die Wissensdatenbank.', when_to_visit: 'Wenn der Nutzer nach FAQ, häufig gestellten Fragen, Hilfeartikeln, der Wissensdatenbank, häufigen Fragen oder Anleitungen fragt.' },
+    },
+  },
+  {
+    screen_id: 'SETTINGS.SUPPORT_COMMUNITY', route: '/support?tab=community', category: 'settings',
+    access: 'authenticated', anonymous_safe: false,
+    aliases: ['support-community', 'community-help', 'community-support', 'support-forum', 'community-hilfe'],
+    i18n: {
+      en: { title: 'Community Help', description: 'Get help from other members — community groups and forums.', when_to_visit: 'When the user asks about community help, getting help from other users, community support groups, or user forums.' },
+      de: { title: 'Community-Hilfe', description: 'Hol dir Hilfe von anderen Mitgliedern — Community-Gruppen und Foren.', when_to_visit: 'Wenn der Nutzer nach Community-Hilfe, Hilfe von anderen Nutzern, Community-Support-Gruppen oder Nutzerforen fragt.' },
     },
   },
 
@@ -1423,8 +1618,8 @@ export const NAVIGATION_CATALOG: ReadonlyArray<NavCatalogEntry> = [
     screen_id: 'HEALTH.CONDITIONS', route: '/health/conditions', category: 'health',
     access: 'authenticated', anonymous_safe: false,
     i18n: {
-      en: { title: 'Health Conditions', description: 'Track and manage your health conditions.', when_to_visit: 'When the user asks about their health conditions, medical conditions, chronic conditions, diagnoses, or health issues they are managing.' },
-      de: { title: 'Gesundheitszustände', description: 'Verfolge und verwalte deine Gesundheitszustände.', when_to_visit: 'Wenn der Nutzer nach seinen Gesundheitszuständen, medizinischen Zuständen, chronischen Erkrankungen, Diagnosen oder Gesundheitsproblemen fragt, die er verwaltet.' },
+      en: { title: 'Health Conditions', description: 'Track and manage your health conditions.', when_to_visit: 'When the user asks about their health conditions, chronic conditions, diagnoses, health risks, or health issues they are managing.' },
+      de: { title: 'Gesundheitszustände', description: 'Verfolge und verwalte deine Gesundheitszustände.', when_to_visit: 'Wenn der Nutzer nach seinen Gesundheitszuständen, chronischen Erkrankungen, Diagnosen, Gesundheitsrisiken oder Gesundheitsproblemen fragt, die er verwaltet.' },
     },
   },
 
@@ -1712,6 +1907,12 @@ export const NAVIGATION_CATALOG: ReadonlyArray<NavCatalogEntry> = [
   // ── REMINDERS / MESSAGES / DAILY DIARY ──────────────────────────────────
   {
     screen_id: 'REMINDERS.OVERVIEW', route: '/reminders', category: 'inbox',
+    // BOOTSTRAP-MOBILE-NAV-CONTAINMENT: the /reminders page is a desktop full-list
+    // view; on mobile the reminders surface is the Calendar popup's Reminders tab.
+    // Emit the overlay marker so the ORB opens the popup in place instead of
+    // route-changing to a dead-end full page. The frontend intercepts ?open=calendar
+    // and dispatches `calendar:open` (with tab=reminders) without navigating.
+    mobile_route: '/reminders?open=calendar&tab=reminders',
     access: 'authenticated', anonymous_safe: false,
     aliases: ['reminders', 'reminder-list', 'all-reminders', 'meine-erinnerungen'],
     i18n: {
@@ -2251,7 +2452,10 @@ export function lookupByRoute(route: string | undefined | null): NavCatalogEntry
  * Suggest catalog entries with similar ids (for tool-call hallucination recovery).
  * Uses substring + token-overlap scoring; cheap and good enough for ~40 entries.
  */
-export function suggestSimilar(attemptedId: string, limit = 5): NavCatalogEntry[] {
+export function suggestSimilarScored(
+  attemptedId: string,
+  limit = 5,
+): Array<{ entry: NavCatalogEntry; score: number }> {
   if (!attemptedId) return [];
   const target = attemptedId.toLowerCase();
   const targetTokens = new Set(target.split(/[\.\-_\s]+/).filter(Boolean));
@@ -2278,7 +2482,28 @@ export function suggestSimilar(attemptedId: string, limit = 5): NavCatalogEntry[
   }
 
   scored.sort((a, b) => b.score - a.score);
-  return scored.slice(0, limit).map(s => s.entry);
+  return scored.slice(0, limit);
+}
+
+/**
+ * VTID-NAV-CONFIDENCE (VTID-03258): the minimum suggestSimilar score at which a fuzzy
+ * resolution is trustworthy enough to auto-navigate without confirmation.
+ * Scoring units (see suggestSimilarScored): exact id +100, substring +30,
+ * per shared id-token +10, per shared title-word +3. A score >= 10 means the
+ * attempt shares at least one whole id token OR is a substring of a real
+ * screen_id — a real lexical anchor. Below that (title-word-only overlaps of
+ * 3/6/9, or pure noise) we MUST NOT silently teleport the user to "the nearest
+ * thing"; that was the wrong-screen-redirect class. The navigate_to_screen
+ * gate rejects sub-floor fuzzy matches and tells the model to be specific.
+ */
+export const FUZZY_NAV_MIN_SCORE = 10;
+
+/**
+ * Suggest catalog entries with similar ids (for tool-call hallucination recovery).
+ * Uses substring + token-overlap scoring; cheap and good enough for ~40 entries.
+ */
+export function suggestSimilar(attemptedId: string, limit = 5): NavCatalogEntry[] {
+  return suggestSimilarScored(attemptedId, limit).map((s) => s.entry);
 }
 
 /**

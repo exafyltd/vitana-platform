@@ -21,6 +21,7 @@ import { getSupabase } from '../lib/supabase';
 import { notifyUserAsync } from '../services/notification-service';
 import { generatePersonalRecommendations } from '../services/recommendation-engine';
 import { sendWelcomeChatMessages } from '../services/welcome-chat-service';
+import { addUserToSystemGroups } from '../services/community-group-enrollment';
 
 const router = Router();
 
@@ -260,20 +261,43 @@ router.post('/login', async (req: Request, res: Response) => {
             .catch(err => {
               console.warn(`[VTID-01185] First-login recommendations failed for ${uid.slice(0, 8)}: ${err.message}`);
             });
-
-          // Send welcome chat messages from new user to all community members (fire-and-forget)
-          sendWelcomeChatMessages(uid, tid, profile.display_name, supabase as any)
-            .then(result => {
-              console.log(
-                `[WelcomeChat] First-login for ${uid.slice(0, 8)}: ` +
-                `sent=${result.sent}, skipped=${result.skipped}${result.reason ? `, reason=${result.reason}` : ''}`
-              );
-            })
-            .catch(err => {
-              console.warn(`[WelcomeChat] First-login failed for ${uid.slice(0, 8)}: ${err.message}`);
-            });
         }
+
+        // Welcome chat: gated independently on app_users.welcome_chat_sent inside the
+        // service. An admin invite can pre-create a welcome_to_vitana notification,
+        // which must not suppress the community greeting.
+        sendWelcomeChatMessages(uid, tid, profile.display_name, supabase as any)
+          .then(result => {
+            console.log(
+              `[WelcomeChat] First-login for ${uid.slice(0, 8)}: ` +
+              `sent=${result.sent}, skipped=${result.skipped}${result.reason ? `, reason=${result.reason}` : ''}`
+            );
+          })
+          .catch(err => {
+            console.warn(`[WelcomeChat] First-login failed for ${uid.slice(0, 8)}: ${err.message}`);
+          });
+
       }
+
+      // VTID-03089: auto-add to system groups (currently "🎆 FIRST 100",
+      // cap 100). Run on EVERY login, not just first-login: users who
+      // signed up before VTID-03089 shipped already received the welcome
+      // notification, so the `count === 0` gate above would never re-fire
+      // for them and they'd never be enrolled. The function is idempotent
+      // (chat_group_members PK + silent cap_reached skip), so re-running
+      // on every login is safe and cheap.
+      addUserToSystemGroups(uid, tid, supabase as any)
+        .then(result => {
+          if (result.added.length > 0) {
+            console.log(
+              `[GroupEnrollment] Login for ${uid.slice(0, 8)}: ` +
+              `added=${result.added.length}, skipped=${result.skipped.length}`
+            );
+          }
+        })
+        .catch(err => {
+          console.warn(`[GroupEnrollment] Login enroll failed for ${uid.slice(0, 8)}: ${err.message}`);
+        });
     }
 
     return res.status(200).json({

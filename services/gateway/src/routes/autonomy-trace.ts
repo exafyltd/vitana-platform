@@ -83,7 +83,14 @@ async function supaGet<T>(s: SupaConfig, path: string): Promise<{ ok: boolean; d
 // Types
 // =============================================================================
 
-export type TraceSource = 'execution' | 'self_healing' | 'deploy_event' | 'verification';
+export type TraceSource =
+  | 'execution'
+  | 'self_healing'
+  | 'deploy_event'
+  | 'verification'
+  // VTID-02956 (PR-L1.5): test-contract runs share the same timeline so
+  // the supervisor sees contract pass/fail next to executions + deploys.
+  | 'test_contract';
 export type TraceStatus = 'started' | 'progress' | 'success' | 'failure' | 'info';
 export type TraceKind =
   | 'execution_cooling'
@@ -104,7 +111,11 @@ export type TraceKind =
   | 'deploy_succeeded'
   | 'deploy_failed'
   | 'verification_passed'
-  | 'verification_failed';
+  | 'verification_failed'
+  // VTID-02956 (PR-L1.5): test-contract lifecycle.
+  | 'contract_passed'
+  | 'contract_failed'
+  | 'contract_dispatched';
 
 export interface TraceNode {
   stable_id: string;
@@ -201,6 +212,16 @@ function deployEventTopicToKind(topic: string): TraceKind | null {
       return 'verification_passed';
     case 'autopilot.verification.failed':
       return 'verification_failed';
+    // VTID-02956 (PR-L1.5): test-contract topics show up in oasis_events
+    // because /api/v1/test-contracts/:id/run emits them. Surfacing them
+    // here lets Trace render contract pass/fail on the same timeline as
+    // executions + deploys + heals.
+    case 'test-contract.run.passed':
+      return 'contract_passed';
+    case 'test-contract.run.failed':
+      return 'contract_failed';
+    case 'test-contract.run.dispatched':
+      return 'contract_dispatched';
     default:
       return null;
   }
@@ -349,12 +370,32 @@ function normalizeHeal(row: HealRow): TraceNode {
 function normalizeOasisEvent(row: OasisEventRow): TraceNode | null {
   const kind = deployEventTopicToKind(row.topic);
   if (!kind) return null;
-  const source: TraceSource = kind.startsWith('verification_') ? 'verification' : 'deploy_event';
+  const source: TraceSource =
+    kind.startsWith('verification_') ? 'verification' :
+    kind.startsWith('contract_') ? 'test_contract' :
+    'deploy_event';
   const status: TraceStatus =
-    kind.endsWith('_succeeded') || kind === 'verification_passed' ? 'success' :
-    kind.endsWith('_failed') || kind === 'verification_failed' ? 'failure' :
-    kind === 'deploy_requested' ? 'started' : 'info';
-  const groupId = row.vtid ? `vtid:${row.vtid}` : `oasis:${row.id}`;
+    kind.endsWith('_succeeded') || kind === 'verification_passed' || kind === 'contract_passed' ? 'success' :
+    kind.endsWith('_failed') || kind === 'verification_failed' || kind === 'contract_failed' ? 'failure' :
+    kind === 'deploy_requested' || kind === 'contract_dispatched' ? 'started' : 'info';
+  // VTID-02956 (PR-L1.5): contract events group by capability so multiple
+  // runs of the same contract form one lane. Falling back to oasis:id
+  // preserves the existing behavior for non-contract topics.
+  const meta = row.metadata || {};
+  const capability = typeof (meta as { capability?: unknown }).capability === 'string'
+    ? (meta as { capability: string }).capability
+    : null;
+  const groupId =
+    capability ? `contract:${capability}` :
+    row.vtid ? `vtid:${row.vtid}` :
+    `oasis:${row.id}`;
+  const links: Array<{ label: string; url: string }> = [];
+  if (capability) {
+    links.push({
+      label: 'Open contract',
+      url: `/command-hub/voice/test-contracts/?capability=${encodeURIComponent(capability)}`,
+    });
+  }
   return {
     stable_id: `oasis:${row.id}`,
     group_id: groupId,
@@ -364,8 +405,8 @@ function normalizeOasisEvent(row: OasisEventRow): TraceNode | null {
     status,
     headline: row.message || row.topic,
     detail: row.topic,
-    metadata: { vtid: row.vtid, topic: row.topic, ...(row.metadata || {}) },
-    links: [],
+    metadata: { vtid: row.vtid, topic: row.topic, ...meta },
+    links,
   };
 }
 
@@ -407,6 +448,13 @@ async function fetchOasisDeployEvents(s: SupaConfig, limit: number, sinceIso: st
     'cicd.deploy.service.failed',
     'autopilot.verification.passed',
     'autopilot.verification.failed',
+    // VTID-02956 (PR-L1.5): test-contract topics share this fetcher so
+    // Trace doesn't add a second oasis_events round-trip. The function
+    // name is now a slight misnomer (it covers deploy + verification +
+    // contract), but renaming would mean updating many call sites.
+    'test-contract.run.passed',
+    'test-contract.run.failed',
+    'test-contract.run.dispatched',
   ];
   const topicsIn = `(${topics.map((t) => `"${t}"`).join(',')})`;
   const r = await supaGet<OasisEventRow[]>(

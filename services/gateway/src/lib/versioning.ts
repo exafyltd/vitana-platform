@@ -17,6 +17,10 @@ export interface SoftwareVersion {
   status: 'success' | 'failure';
   environment: string;
   created_at?: string;
+  // Phase 0 staging build (migration 20260601000000): nullable additive columns.
+  cloud_run_revision?: string | null;
+  source_revision?: string | null;
+  initiator_id?: string | null;
 }
 
 export interface InsertSoftwareVersionParams {
@@ -27,6 +31,9 @@ export interface InsertSoftwareVersionParams {
   initiator: 'user' | 'agent';
   status: 'success' | 'failure';
   environment: string;
+  cloud_run_revision?: string | null;
+  source_revision?: string | null;
+  initiator_id?: string | null;
 }
 
 // ==================== Constants ====================
@@ -170,6 +177,13 @@ export async function insertSoftwareVersion(
     initiator: params.initiator,
     status: params.status,
     environment: params.environment,
+    // Phase 0 staging build: only emit the new columns if the migration has
+    // been applied AND the caller passed values. Supabase ignores unknown
+    // columns at the schema-cache level, but ignoring undefineds keeps the
+    // payload minimal for old environments.
+    ...(params.cloud_run_revision !== undefined && { cloud_run_revision: params.cloud_run_revision }),
+    ...(params.source_revision !== undefined && { source_revision: params.source_revision }),
+    ...(params.initiator_id !== undefined && { initiator_id: params.initiator_id }),
   };
 
   try {
@@ -239,7 +253,7 @@ export async function getDeploymentHistory(limit: number = 20): Promise<{
 
   try {
     const response = await fetch(
-      `${supabaseUrl}/rest/v1/software_versions?select=swv_id,created_at,git_commit,status,initiator,deploy_type,service,environment&order=created_at.desc&limit=${limit}`,
+      `${supabaseUrl}/rest/v1/software_versions?select=swv_id,created_at,git_commit,status,initiator,deploy_type,service,environment,cloud_run_revision,source_revision,initiator_id&order=created_at.desc&limit=${limit}`,
       {
         method: 'GET',
         headers: {

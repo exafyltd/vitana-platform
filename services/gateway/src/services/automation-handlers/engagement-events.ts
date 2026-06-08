@@ -223,6 +223,108 @@ async function runNoShowFollowUp(ctx: AutomationContext) {
   return { usersAffected, actionsTaken: usersAffected };
 }
 
+// ── AP-0309: "Host Night" Concierge ─────────────────────────
+// Daily heartbeat: scan upcoming global community events that are coming up
+// within CONCIERGE_HORIZON_DAYS but are still under-filled, and send the host
+// ONE concierge nudge to promote and fill the room. Events are not linked to
+// groups, so the demand signal is the host's own upcoming event. Grouped per
+// host (their soonest under-filled event wins) with a per-host cooldown so the
+// same host is not nudged on every daily run. In-platform host notification,
+// attributed to Autopilot. The share link points at the public event landing
+// — the page hosts actually share to bring people in.
+const CONCIERGE_HORIZON_DAYS = 30;    // only concierge events coming up within this window
+const CONCIERGE_MIN_LEAD_HOURS = 24;  // skip events too imminent to promote
+const CONCIERGE_COOLDOWN_DAYS = 7;    // max one nudge per host per week
+const CONCIERGE_MIN_VIABLE = 5;       // "filled enough" floor when the event has no cap
+const CONCIERGE_MAX_NUDGES = 50;      // safety cap per run
+
+async function runHostNightConcierge(ctx: AutomationContext) {
+  const { supabase } = ctx;
+  let usersAffected = 0;
+  let actionsTaken = 0;
+
+  const now = Date.now();
+  const leadCutoff = new Date(now + CONCIERGE_MIN_LEAD_HOURS * 3_600_000).toISOString();
+  const horizonCutoff = new Date(now + CONCIERGE_HORIZON_DAYS * 86_400_000).toISOString();
+  const cooldownCutoff = new Date(now - CONCIERGE_COOLDOWN_DAYS * 86_400_000).toISOString();
+
+  // Upcoming events inside the concierge window, soonest first. global_community_events
+  // has no tenant_id — the global community is shared — so we scan across all of them.
+  const { data: events } = await supabase
+    .from('global_community_events')
+    .select('id, title, start_time, participant_count, max_participants, created_by, slug')
+    .gte('start_time', leadCutoff)
+    .lte('start_time', horizonCutoff)
+    .not('created_by', 'is', null)
+    .order('start_time', { ascending: true })
+    .limit(500);
+
+  const handledHosts = new Set<string>();
+  let scanned = 0;
+
+  for (const ev of events || []) {
+    if (actionsTaken >= CONCIERGE_MAX_NUDGES) break;
+    scanned++;
+
+    // One concierge nudge per host per run — the soonest event reaches them first.
+    if (handledHosts.has(ev.created_by)) continue;
+
+    // Under-filled = below half the cap, or below the viable floor when uncapped.
+    const signups = ev.participant_count ?? 0;
+    const cap = ev.max_participants ?? 0;
+    const target = cap > 0 ? Math.ceil(cap / 2) : CONCIERGE_MIN_VIABLE;
+    if (signups >= target) continue;
+
+    // Cooldown: skip (and stop considering this host this run) if they were
+    // already concierged recently for any event.
+    const { data: recentNudge } = await supabase
+      .from('user_notifications')
+      .select('id')
+      .eq('user_id', ev.created_by)
+      .eq('type', 'orb_proactive_message')
+      .contains('data', { automation_id: 'AP-0309' })
+      .gte('created_at', cooldownCutoff)
+      .limit(1);
+    if (recentNudge && recentNudge.length > 0) {
+      handledHosts.add(ev.created_by);
+      continue;
+    }
+
+    const daysUntil = Math.max(0, Math.round((new Date(ev.start_time).getTime() - now) / 86_400_000));
+    const dayWord = daysUntil === 1 ? 'day' : 'days';
+    // The public event landing is the shareable promote page (slug preferred).
+    const shareUrl = ev.slug ? `/e/${ev.slug}` : `/pub/events/${ev.id}`;
+    const title = ev.title || 'your event';
+
+    ctx.notify(ev.created_by, 'orb_proactive_message', {
+      title: `"${title}" is coming up — let's fill the room 🎤`,
+      body: signups > 0
+        ? `${daysUntil} ${dayWord} to go with ${signups} signup${signups === 1 ? '' : 's'}. Share the event link to bring a few more people in.`
+        : `${daysUntil} ${dayWord} to go and no signups yet. Share the event link with your community to get people in the room.`,
+      data: {
+        url: shareUrl,
+        event_id: ev.id,
+        days_until: String(daysUntil),
+        signups: String(signups),
+        via: 'autopilot',
+        automation_id: 'AP-0309',
+      },
+    });
+
+    handledHosts.add(ev.created_by);
+    usersAffected++;
+    actionsTaken++;
+  }
+
+  await ctx.emitEvent('autopilot.host_concierge.scanned', {
+    events_scanned: scanned,
+    nudges_sent: actionsTaken,
+    horizon_days: CONCIERGE_HORIZON_DAYS,
+  });
+
+  return { usersAffected, actionsTaken };
+}
+
 // =============================================================================
 // AP-0500: Engagement Loops
 // =============================================================================
@@ -511,6 +613,39 @@ async function runMilestoneScanner(ctx: AutomationContext) {
 }
 
 // =============================================================================
+// AP-0510: Upcoming Events Today Push (BOOTSTRAP-NOTIF-SYSTEM-EVENTS)
+// Daily cron — delegates to /scheduled-notifications/upcoming-events which
+// dispatches the `upcoming_event_today` push for each user's first
+// calendar_events entry of the day.
+// =============================================================================
+
+async function runUpcomingEventsToday(ctx: AutomationContext) {
+  ctx.log('Upcoming events today — dispatching via scheduled-notifications');
+  const { tenantId } = ctx;
+
+  try {
+    const gatewayUrl = process.env.GATEWAY_INTERNAL_URL || `http://localhost:${process.env.PORT || 3000}`;
+    const resp = await fetch(`${gatewayUrl}/api/v1/scheduled-notifications/upcoming-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tenant_id: tenantId }),
+    });
+
+    if (!resp.ok) {
+      ctx.log(`Upcoming events endpoint failed: ${resp.status}`);
+      return { usersAffected: 0, actionsTaken: 0 };
+    }
+
+    const result = await resp.json() as any;
+    ctx.log(`Upcoming events dispatched to ${result.dispatched || 0} users`);
+    return { usersAffected: result.dispatched || 0, actionsTaken: result.dispatched || 0 };
+  } catch (err: any) {
+    ctx.log(`Upcoming events error: ${err.message}`);
+    return { usersAffected: 0, actionsTaken: 0 };
+  }
+}
+
+// =============================================================================
 // AP-1000: Platform Operations
 // =============================================================================
 
@@ -536,6 +671,7 @@ export function registerEngagementEventsHandlers(): void {
   registerHandler('runPostEventFeedback', runPostEventFeedback);
   registerHandler('runTrendingEventsDigest', runTrendingEventsDigest);
   registerHandler('runNoShowFollowUp', runNoShowFollowUp);
+  registerHandler('runHostNightConcierge', runHostNightConcierge);
 
   // Engagement Loops (AP-0500)
   registerHandler('runMorningBriefing', runMorningBriefing);
@@ -546,6 +682,7 @@ export function registerEngagementEventsHandlers(): void {
   registerHandler('runWeeklyReflection', runWeeklyReflection);
   registerHandler('runConversationContinuityNudge', runConversationContinuityNudge);
   registerHandler('runMilestoneScanner', runMilestoneScanner);
+  registerHandler('runUpcomingEventsToday', runUpcomingEventsToday);
 
   // Platform Operations (AP-1000)
   registerHandler('runVtidLifecycle', runVtidLifecycle);

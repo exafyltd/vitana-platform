@@ -25,6 +25,7 @@
 
 import fetch from 'node-fetch';
 import { randomUUID } from 'crypto';
+import { createClient } from '@supabase/supabase-js';
 import { VertexAI, GenerateContentResult, Content, Part, FunctionDeclaration, Tool } from '@google-cloud/vertexai';
 import {
   createOperatorTask,
@@ -35,6 +36,7 @@ import {
   TaskStatusResponse
 } from './operator-service';
 import { emitOasisEvent, recommendationSyncEvents } from './oasis-event-service';
+import { dataExportConsentTag } from './data-export-consent';
 // VTID-01221: Sync Brief formatter for recommendation presentation
 import { formatSyncBrief, isWhatNextIntent, shouldFetchRecommendations, SyncBriefContext, Recommendation } from './sync-brief-formatter';
 // VTID-0538: Knowledge Hub integration
@@ -465,6 +467,56 @@ Returns checklist items with pass/fail status based on OASIS evidence.`,
         required: []
       }
     },
+    // VTID-CHAT-SEND: Direct-message tools so Vitana can send a chat message to
+    // another community member on the user's behalf (text-chat parity with the
+    // ORB voice surface). Backed by the same shared handlers used by voice.
+    {
+      name: 'resolve_recipient',
+      description: `Resolve the person the user wants to message to one or more candidate community members. Call this when the user names someone to message but you are not sure exactly who they mean (e.g. ambiguous first name). Returns scored candidates; if exactly one high-confidence match is returned you can proceed, otherwise ask the user to clarify. You usually do NOT need this when the user gave a full, unambiguous name — in that case call send_chat_message directly with recipient_label set to that name.`,
+      parameters: {
+        type: 'object',
+        properties: {
+          spoken_name: {
+            type: 'string',
+            description: 'The name of the person to message, exactly as the user said it (e.g. "Maria", "Mariia Maksina", or a Vitana ID).'
+          },
+          limit: {
+            type: 'integer',
+            description: 'Maximum number of candidates to return. Defaults to 5.'
+          }
+        },
+        required: ['spoken_name']
+      }
+    },
+    {
+      name: 'send_chat_message',
+      description: `Send a direct chat message to another community member on the user's behalf. Use this when the user asks to send/write a message to a person (e.g. "send Maria a message saying ...", "schick Mariia eine Nachricht: ...").
+
+FLOW:
+1. Read back the recipient and the exact message text and ask the user to confirm ("Soll ich die Nachricht senden?").
+2. ONLY after the user confirms (e.g. "yes, send it" / "ja, versende es") call this tool.
+3. Pass recipient_label as the name the user used (full name preferred) and body as the EXACT message text the user dictated.
+
+NEVER claim a message was sent unless this tool returned ok. If it returns an error, tell the user honestly and offer to try again — do NOT silently switch to a different action.`,
+      parameters: {
+        type: 'object',
+        properties: {
+          recipient_user_id: {
+            type: 'string',
+            description: 'The recipient\'s user UUID, if you already have it from a previous resolve_recipient call. Optional — if you only have the name, leave this out and set recipient_label.'
+          },
+          recipient_label: {
+            type: 'string',
+            description: 'The recipient\'s name exactly as the user referred to them (full name preferred, e.g. "Mariia Maksina"). Used to look up and verify the recipient.'
+          },
+          body: {
+            type: 'string',
+            description: 'The message text to send, exactly as the user dictated it.'
+          }
+        },
+        required: ['body']
+      }
+    },
     // ===== VTID-DEV-ASSIST: Developer Assistant Tools =====
     {
       name: 'dev_list_tasks',
@@ -843,6 +895,14 @@ async function logAutopilotIntent(params: {
   action: 'created' | 'approved' | 'rejected' | 'executed';
   details: Record<string, unknown>;
 }): Promise<void> {
+  // Phase 1 W2 (BOOTSTRAP-PHASE1-W2-CONSENT-METADATA): tag with data_export_ok
+  // only where the thread's tenant has established export consent, so the
+  // intent-kind dataset extractor can ingest these events. Default off.
+  const identity = threadIdentityMap.get(params.threadId);
+  const consentTag = await dataExportConsentTag({
+    tenantId: identity?.tenant_id,
+    userId: identity?.user_id,
+  });
   await emitOasisEvent({
     vtid: params.vtid,
     type: `autopilot.intent.${params.action}`,
@@ -851,7 +911,8 @@ async function logAutopilotIntent(params: {
     message: `Autopilot intent ${params.action}`,
     payload: {
       threadId: params.threadId,
-      ...params.details
+      ...params.details,
+      ...consentTag
     }
   }).catch(err => console.warn('[VTID-0536] Failed to log autopilot intent:', err.message));
 }
@@ -2374,7 +2435,36 @@ async function executeCommunityGetRecommendations(
 
   if (results.length === 0) {
     console.log(`[VTID-01270A] get_recommendations (text): 0 results (type=${recType})`);
-    return { ok: true, data: { result: 'No personalized recommendations available right now. Try checking back later, or ask me about events or community groups directly.' } };
+    // VTID-03110: never say "no personalized recommendations". Deflect
+    // into a teaching offer using the next pedagogically-ordered
+    // capability from the Teacher catalog. Same helper as the voice
+    // path in orb-live.ts so behavior is consistent across modalities.
+    let deflection = '';
+    try {
+      const { getSupabase } = await import('../lib/supabase');
+      const sb = getSupabase();
+      if (sb) {
+        const { buildTeacherDeflectionForEmptyRecommendations } = await import(
+          './assistant-continuation/providers/teacher/teacher-deflection'
+        );
+        // Text path doesn't carry a session lang; default to 'en'. A
+        // future slice can lookup app_users.preferred_language if
+        // needed — voice path (orb-live.ts) uses session.lang.
+        deflection = await buildTeacherDeflectionForEmptyRecommendations({
+          supabase: sb,
+          tenantId: identity.tenant_id,
+          userId: identity.user_id,
+          lang: 'en',
+          recType,
+        });
+      }
+    } catch (err) {
+      console.warn(`[VTID-03110] deflection helper failed (non-fatal): ${(err as Error).message}`);
+    }
+    if (!deflection) {
+      deflection = 'Nothing specific is queued up at the moment, but Vitanaland has lots to learn. What would you like to dive into?';
+    }
+    return { ok: true, data: { result: deflection } };
   }
 
   const formatted = results.join('\n');
@@ -2602,6 +2692,60 @@ export async function executeTool(
             error: 'User context not available for matchmaking tool',
           };
         }
+        break;
+      }
+
+      // VTID-CHAT-SEND: Direct-message tools (text-chat parity with ORB voice).
+      // Both delegate to the shared, battle-tested handlers in
+      // orb-tools-shared.ts so text and voice send messages identically
+      // (recipient resolution, receiver verification, rate-limit, push notify).
+      case 'resolve_recipient': {
+        const sendIdentity = threadIdentityMap.get(threadId);
+        if (!sendIdentity?.user_id) {
+          result = { ok: false, error: 'User context not available for messaging' };
+          break;
+        }
+        const { tool_resolve_recipient } = await import('./orb-tools-shared');
+        const sb = createClient(SUPABASE_URL!, SUPABASE_SERVICE_ROLE!);
+        const r = await tool_resolve_recipient(
+          args as Record<string, unknown>,
+          {
+            user_id: sendIdentity.user_id,
+            tenant_id: sendIdentity.tenant_id ?? null,
+            role: sendIdentity.role ?? 'community',
+            vitana_id: sendIdentity.vitana_id ?? null,
+          },
+          sb,
+        );
+        result = r.ok
+          ? { ok: true, data: { ...((r as { result?: Record<string, unknown> }).result ?? {}), message: (r as { text?: string }).text } }
+          : { ok: false, error: (r as { error: string }).error };
+        break;
+      }
+
+      case 'send_chat_message': {
+        const sendIdentity = threadIdentityMap.get(threadId);
+        if (!sendIdentity?.user_id) {
+          result = { ok: false, error: 'User context not available for messaging' };
+          break;
+        }
+        const { tool_send_chat_message } = await import('./orb-tools-shared');
+        const sb = createClient(SUPABASE_URL!, SUPABASE_SERVICE_ROLE!);
+        const r = await tool_send_chat_message(
+          args as Record<string, unknown>,
+          {
+            user_id: sendIdentity.user_id,
+            tenant_id: sendIdentity.tenant_id ?? null,
+            role: sendIdentity.role ?? 'community',
+            vitana_id: sendIdentity.vitana_id ?? null,
+            // Use the thread id as the rate-limit session key for text chat.
+            session_id: threadId,
+          },
+          sb,
+        );
+        result = r.ok
+          ? { ok: true, data: { ...((r as { result?: Record<string, unknown> }).result ?? {}), message: (r as { text?: string }).text } }
+          : { ok: false, error: (r as { error: string }).error };
         break;
       }
 

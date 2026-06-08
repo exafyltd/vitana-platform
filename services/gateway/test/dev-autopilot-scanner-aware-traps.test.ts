@@ -223,3 +223,64 @@ describe('buildPlanningPrompt — scanner-aware traps', () => {
     expect(prompt).not.toMatch(/Any `\.github\/workflows\/\*` file/);
   });
 });
+
+describe('buildPlanningPrompt — positive scanner guidance + effective scope', () => {
+  function expectPromptFor(scanner: string): string {
+    return buildPlanningPrompt(
+      {
+        ...BASE_FINDING,
+        spec_snapshot: { scanner },
+      } as Parameters<typeof buildPlanningPrompt>[0],
+      undefined,
+      undefined,
+      BASE_SCOPE,
+    );
+  }
+
+  it('npm-audit: prompt explicitly REQUIRES bumping package.json', () => {
+    const prompt = expectPromptFor('npm-audit-scanner-v1');
+    expect(prompt).toMatch(/Canonical fix shape for this scanner \(REQUIRED\)/);
+    expect(prompt).toMatch(/bump the affected package/);
+    expect(prompt).toMatch(/MUST include the relevant `package\.json`/);
+    expect(prompt).toMatch(/A regression test that asserts the new version is welcome but is NOT/);
+    expect(prompt).toMatch(/sufficient on its own/);
+  });
+
+  it('npm-audit: effective allow-scope shows package.json and pnpm-lock.yaml', () => {
+    const prompt = expectPromptFor('npm-audit-scanner-v1');
+    // The displayed allow-scope list must include the override entries
+    // so the LLM can place package.json in Files to modify.
+    expect(prompt).toMatch(/`\*\*\/package\.json`/);
+    expect(prompt).toMatch(/`\*\*\/pnpm-lock\.yaml`/);
+  });
+
+  it('npm-audit: prompt does NOT contain the now-wrong "do NOT list config files" sentence', () => {
+    const prompt = expectPromptFor('npm-audit-scanner-v1');
+    expect(prompt).not.toMatch(/Do NOT list config files or dependency manifests/);
+  });
+
+  it('todo finding: positive guidance section is NOT included', () => {
+    const prompt = expectPromptFor('todo-scanner-v1');
+    expect(prompt).not.toMatch(/Canonical fix shape for this scanner \(REQUIRED\)/);
+  });
+
+  it('todo finding: still has the "do NOT list config files" sentence', () => {
+    const prompt = expectPromptFor('todo-scanner-v1');
+    expect(prompt).toMatch(/Do NOT list config files or dependency manifests/);
+  });
+
+  it('rls-policy: positive guidance about adding a new dated migration', () => {
+    const prompt = expectPromptFor('rls-policy-scanner-v1');
+    expect(prompt).toMatch(/Canonical fix shape for this scanner \(REQUIRED\)/);
+    expect(prompt).toMatch(/new dated migration/);
+    expect(prompt).toMatch(/YYYYMMDDHHMMSS_<purpose>\.sql/);
+    expect(prompt).toMatch(/MUST include the new migration file path/);
+  });
+
+  it('rls-policy: effective deny-scope DOES NOT contain supabase/migrations/**', () => {
+    const prompt = expectPromptFor('rls-policy-scanner-v1');
+    // Find the deny-scope section and check the migration glob is not in it
+    const denySection = prompt.match(/MUST NOT match[^]*?(?=\n\n|$)/)?.[0] || '';
+    expect(denySection).not.toMatch(/`supabase\/migrations\/\*\*`/);
+  });
+});

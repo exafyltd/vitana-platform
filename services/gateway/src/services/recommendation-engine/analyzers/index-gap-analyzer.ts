@@ -45,7 +45,7 @@ const PILLAR_FEATURE_KEY: Record<PillarKey, string> = {
 // Community source_refs to rotate through when the Mental pillar's
 // completions sub-score is low — picks the first one the user has
 // NOT completed in the last 7 days.
-const MENTAL_COMMUNITY_SOURCE_REFS = [
+export const MENTAL_COMMUNITY_SOURCE_REFS = [
   'engage_meetup',
   'deepen_connection',
   'engage_matches',

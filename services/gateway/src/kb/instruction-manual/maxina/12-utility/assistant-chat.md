@@ -11,36 +11,51 @@ keywords: [ai assistant (chat), assistant chat, assistant chat, utility]
 related_concepts: []
 related_screens: []
 ---
+
 ## What it is
 
-The **AI Assistant (Chat)** screen is a utility surface available across the platform — Calendar, Search, Profile, or the AI Assistant chat. In the navigation it sits at Utility → AI Assistant (Chat), and Direct URL: `/assistant`. This chapter explains what the screen contains, why a Maxina community user would open it, what they will see when they do, and how to act on what is there.
+AI Assistant Chat is the typed surface for asking Vitana for help, explanations, navigation, feature discovery, reminders, calendar support, business guidance, community questions, and follow-up.
+
+Utility screens are everyday tools: assistant chat, calendar, search, profile editing, and public profile preview.
 
 ## Why it matters
 
-Utility screens are tools, not feeds; they are where you search, schedule, and edit identity rather than consume. Every Maxina member arrives at this screen at some point in their first 30 days — sometimes via the Did You Know guided tour, sometimes by tapping a card on Home, sometimes by asking ORB "show me the ai assistant (chat)". Knowing why the screen exists is what stops it from feeling like noise the next time you land here.
+Vitana Assistant is the user manual in motion. It should teach what things mean, where to find them, how to use them, and when it can do the task for the user.
 
 ## Where to find it
 
-Direct URL: `/assistant`. It lives under the **Utility** module of the sidebar, on the tab labelled **AI Assistant (Chat)**. If you ask ORB "open the ai assistant (chat)" the Navigator will route you straight here.
+Direct URL: `/assistant`.
+
+Sidebar path: **Utility → AI Assistant (Chat)**.
+
+Module: **Utility**.
 
 ## What you see on this screen
 
-This section is the screen-level inventory of panels, cards, buttons, and information. It is what Vitana reads aloud when a user asks "what's on this screen?". A maxina admin should expand this list with the exact components currently rendered. Until polished, expect to see the standard layout for the Utility module: a header with the screen title, the primary content area filled with the cards or list described by the screen's purpose, and any module-specific toolbar in the sidebar or top-right. Anything truly distinctive about the **AI Assistant (Chat)** screen — counts, filters, special actions — should be enumerated here as bullet points by the admin via the Command Hub Manuals tab.
-
-- Header: the screen title (AI Assistant (Chat)) and any quick-action buttons for this module
-- Main content area: the panels or list described by the screen's purpose
-- Empty state: friendly first-run copy if you have not yet engaged with this surface
-- Action buttons: the primary call-to-action for this screen (often "Add", "Open", "RSVP", or "Save" depending on context)
+- Conversation thread with Vitana
+- Input box and suggested prompts
+- Grounded answers from the knowledge base
+- Navigation, reminder, calendar, message, and action links
+- Escalation to support or a specialist when needed
 
 ## How to use it
 
-1. Open the screen via the sidebar (Utility → AI Assistant (Chat)) or by asking ORB "open ai assistant (chat)".
-2. Open them on demand when you need a specific outcome — find a memory, edit your handle, schedule an event.
-3. If you are not sure what something on the screen means, ask ORB "what is this card?" — Vitana will read the relevant chapter section aloud.
-4. To leave the screen, use the back button or open another sidebar item; nothing on this screen requires you to "save and exit" — your state is persisted automatically.
-5. Many screens in the Utility module pair with a related screen: see the related-screens list below for the next logical place to look.
+1. Ask natural questions instead of searching menus.
+2. Use chat for explanations like what is the Vitana Index or where can I find events.
+3. Ask Vitana to open screens, set reminders, draft messages, or explain recommendations.
+4. Confirm before sending, buying, booking, sharing data, or changing settings.
+
+## What you can ask Vitana
+
+- "Help me."
+- "What is this?"
+- "Where can I find events?"
+- "Open my wallet."
+
+## Guidance for Vitana Assistant
+
+Utility screens are everyday tools: assistant chat, calendar, search, profile editing, and public profile preview. Explain the screen in plain language first, then offer the next safe action. Ask for confirmation before sending messages, making purchases, booking services, changing privacy, sharing data, altering subscriptions, or deleting anything.
 
 ## Related
 
-- See module 12 for the other screens in **Utility**.
-- See the foundational concepts (chapter 0.x) for cross-cutting vocabulary referenced on this screen.
+Related references from the manual front matter: [].

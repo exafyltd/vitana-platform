@@ -225,6 +225,15 @@ export function detectAudioOneWay(input: {
 
 export interface SessionStopMetrics {
   audio_in_chunks: number;
+  /**
+   * VTID-VOICE-FWD (Track A): mic chunks actually forwarded to the model,
+   * i.e. raw audio_in minus the chunks dropped at the orb-live gates
+   * (echo-prevention while the model speaks, post-turn cooldown, navigation
+   * teardown). Optional for back-compat: session.stop events emitted before
+   * this field shipped won't carry it, so the classifier falls back to
+   * audio_in_chunks when it's undefined.
+   */
+  audio_in_forwarded?: number;
   audio_out_chunks: number;
   duration_ms: number;
   turn_count: number;
@@ -250,15 +259,27 @@ function bucketRatio(ratio: number): string {
  * Thresholds:
  *   voice.no_engagement         turn_count==0 AND duration_ms>30s AND audio_in>=20
  *                               (user spoke but model never started speaking)
- *   voice.model_under_responds  audio_in>=100 AND audio_out/audio_in<0.15 AND turn_count>=1
+ *   voice.model_under_responds  audio_in_fwd>=100 AND audio_out/audio_in_fwd<0.2 AND turn_count>=1
  *                               (real conversation but model under-responded)
  *   voice.low_turn_progression  duration_ms>60s AND turn_count<3 AND audio_in>=50
  *                               (long session that never developed)
+ *
+ * VTID-VOICE-FWD (Track A): the model_under_responds ratio is computed from
+ * audio_in_forwarded (chunks actually sent to the model) rather than raw
+ * audio_in_chunks. On mobile without hardware AEC the mic re-captures the
+ * speaker output while the model talks; those echo chunks are counted into
+ * audio_in_chunks but dropped at the echo gate (orb-live.ts) and never reach
+ * the model. Using raw audio_in inflated the ratio and misclassified healthy,
+ * talkative sessions as "under-responds" — which then quarantined the class.
+ * We fall back to raw audio_in when the forwarded count is absent (old events).
  */
 export function classifyQualityFromSessionStop(
   metrics: SessionStopMetrics,
 ): ClassifierOutput | null {
   const ai = metrics.audio_in_chunks || 0;
+  // Forwarded-only count drives the under-responds ratio; fall back to raw
+  // audio_in for session.stop events emitted before this field existed.
+  const aiFwd = metrics.audio_in_forwarded ?? ai;
   const ao = metrics.audio_out_chunks || 0;
   const dur = metrics.duration_ms || 0;
   const turns = metrics.turn_count || 0;
@@ -277,8 +298,10 @@ export function classifyQualityFromSessionStop(
   }
 
   // 2. Model under-responds: real turn cycle but model produced very little.
-  if (turns >= 1 && ai >= 100) {
-    const ratio = ao > 0 ? ai / ao : ai;
+  // VTID-VOICE-FWD: gate and ratio both use the forwarded-only count so echo
+  // chunks (dropped before reaching the model) can't inflate the signal.
+  if (turns >= 1 && aiFwd >= 100) {
+    const ratio = ao > 0 ? aiFwd / ao : aiFwd;
     if (ratio >= 5) {
       return {
         class: 'voice.model_under_responds',

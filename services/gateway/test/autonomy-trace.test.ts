@@ -144,6 +144,76 @@ describe('aggregateTrace', () => {
     expect(nodes).toEqual([]);
   });
 
+  // VTID-02956 (PR-L1.5): test-contract events on the trace timeline.
+  describe('test_contract source (PR-L1.5)', () => {
+    it('maps test-contract.run.passed to contract_passed / status=success / source=test_contract', () => {
+      const { nodes } = aggregateTrace(
+        [], [],
+        [oasisRow({
+          id: 'o-tc-pass',
+          topic: 'test-contract.run.passed',
+          vtid: 'VTID-02954',
+          status: 'success',
+          message: 'Contract gateway_alive passed',
+          metadata: { capability: 'gateway_alive', status_code: 200, duration_ms: 91 },
+        })],
+      );
+      expect(nodes).toHaveLength(1);
+      expect(nodes[0].source).toBe('test_contract');
+      expect(nodes[0].kind).toBe('contract_passed');
+      expect(nodes[0].status).toBe('success');
+    });
+
+    it('maps test-contract.run.failed to contract_failed / status=failure', () => {
+      const { nodes } = aggregateTrace(
+        [], [],
+        [oasisRow({
+          id: 'o-tc-fail',
+          topic: 'test-contract.run.failed',
+          status: 'warning',
+          message: 'Contract canary_target_disarmed_health failed',
+          metadata: { capability: 'canary_target_disarmed_health', failure_reason: 'status_mismatch: got 500, expected 200' },
+        })],
+      );
+      expect(nodes[0].source).toBe('test_contract');
+      expect(nodes[0].kind).toBe('contract_failed');
+      expect(nodes[0].status).toBe('failure');
+    });
+
+    it('contract events group by capability so multiple runs form one lane', () => {
+      const { groups } = aggregateTrace(
+        [], [],
+        [
+          oasisRow({ id: 'o-1', topic: 'test-contract.run.passed', metadata: { capability: 'gateway_alive' } }),
+          oasisRow({ id: 'o-2', topic: 'test-contract.run.failed', metadata: { capability: 'gateway_alive' }, created_at: agoIso(60) }),
+          oasisRow({ id: 'o-3', topic: 'test-contract.run.passed', metadata: { capability: 'canary_target_status' } }),
+        ],
+      );
+      expect(groups['contract:gateway_alive']).toHaveLength(2);
+      expect(groups['contract:canary_target_status']).toHaveLength(1);
+    });
+
+    it('emits an "Open contract" link when metadata.capability is present', () => {
+      const { nodes } = aggregateTrace(
+        [], [],
+        [oasisRow({ topic: 'test-contract.run.failed', metadata: { capability: 'gateway_alive' } })],
+      );
+      const link = nodes[0].links.find((l) => l.label === 'Open contract');
+      expect(link).toBeDefined();
+      expect(link?.url).toContain('capability=gateway_alive');
+    });
+
+    it('falls back to vtid groupId when contract event has no capability metadata', () => {
+      const { nodes } = aggregateTrace(
+        [], [],
+        [oasisRow({ topic: 'test-contract.run.failed', metadata: {} })],
+      );
+      // No capability → no contract: group; should fall through to the vtid:
+      // group (since the test row has vtid='VTID-02042').
+      expect(nodes[0].group_id).toBe('vtid:VTID-02042');
+    });
+  });
+
   it('sorts nodes newest-first globally and oldest-first within a group', () => {
     const old = agoIso(30);
     const newer = agoIso(10);

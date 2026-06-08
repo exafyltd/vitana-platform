@@ -169,6 +169,22 @@ export const SCANNERS = [
     docs_url: null,
     enabled: false, // opt-in — requires worker queue + Anthropic budget
   },
+  {
+    // VTID-02866: Voice experience readiness scanner.
+    // Filesystem-only checks. DB-dependent voice checks (provider drift,
+    // failure-classes-without-rule) live in the Voice Improve aggregator
+    // (PR A source #7) instead — keeps scanner CI free of Supabase env coupling.
+    scanner: 'voice-experience-scanner-v1',
+    title: 'Voice experience readiness',
+    description: 'Filesystem checks for the voice stack: stale awareness signals (wired:not_wired without enforcement_pending), watchdogs without an oasis_topic, voice routes missing auth middleware, hardcoded TTS speakingRate literals (regression of VTID-02857 wiring).',
+    signal_type: 'voice_health',
+    category: 'quality',
+    maturity: 'beta',
+    default_severity: 'medium',
+    default_risk_class: 'medium',
+    docs_url: null,
+    enabled: true,
+  },
 ];
 
 export function byKey() {

@@ -60,6 +60,75 @@ export interface AutopilotFailureArgs {
   attempt_number?: number;
 }
 
+/**
+ * Failure classes that are inherently environmental (host / infra) rather than
+ * a code defect the autopilot can patch. The worker-queue "unclaimed" failure
+ * is the canonical case: its message is literally "worker daemon down / binary
+ * missing / network", yet that text doesn't match isEnvironmentalBlocker()'s
+ * patterns — so without this set it escalates as if a code fix could resolve it
+ * (the 2026-04-28 retry-loop outage). Normalising these to 'environmental_blocker'
+ * lets the reconciler short-circuit retries (see self-healing-reconciler.ts).
+ */
+const ENVIRONMENTAL_FAILURE_CLASSES = new Set<string>([
+  'dev_autopilot_worker_queue_unclaimed',
+]);
+
+/**
+ * Failure classes that need a human policy decision, not an auto-fix (e.g. the
+ * safety gate blocked an approval because the change is out of allow_scope).
+ * These stay visible with their own class but are flagged non-actionable so the
+ * Self-Healing view stops counting them as fixes self-healing failed to make.
+ */
+const POLICY_BLOCK_FAILURE_CLASSES = new Set<string>([
+  'dev_autopilot_safety_gate_blocked',
+]);
+
+export type NonActionableReason = 'environmental' | 'policy_block';
+
+export interface FailureActionability {
+  /** Possibly-normalised failure_class to persist. */
+  failure_class: string;
+  /** false when no autonomous code fix can resolve this failure. */
+  actionable: boolean;
+  /** Why it's non-actionable, or null when it is actionable. */
+  non_actionable_reason: NonActionableReason | null;
+}
+
+/**
+ * Decide whether a surfaced autopilot failure is something the self-healing
+ * loop could actually fix with a code change, and normalise environmental
+ * blockers so the reconciler short-circuits retries instead of spawning a
+ * SELF-HEAL VTID per failure. Pure + exported for tests.
+ *
+ * This is the "classify, don't delete" half of the Self-Healing reliability
+ * work: the dev-autopilot stage failures are intentionally surfaced, but most
+ * of them (binary missing, worker daemon down, safety-gate blocks) are infra /
+ * policy events a human must resolve — not auto-fix candidates. Tagging them
+ * keeps them visible while stopping them from drowning out the genuinely
+ * fixable failures.
+ */
+export function classifyAutopilotFailure(args: {
+  failure_class: string;
+  diagnosis?: Record<string, unknown>;
+}): FailureActionability {
+  const fc = args.failure_class;
+  const summary =
+    typeof args.diagnosis?.summary === 'string' ? args.diagnosis.summary : '';
+  const probe = `${fc} ${summary}`;
+
+  if (ENVIRONMENTAL_FAILURE_CLASSES.has(fc) || isEnvironmentalBlocker(probe)) {
+    return {
+      failure_class: 'environmental_blocker',
+      actionable: false,
+      non_actionable_reason: 'environmental',
+    };
+  }
+  if (POLICY_BLOCK_FAILURE_CLASSES.has(fc)) {
+    return { failure_class: fc, actionable: false, non_actionable_reason: 'policy_block' };
+  }
+  return { failure_class: fc, actionable: true, non_actionable_reason: null };
+}
+
 /** Time window for the writer-level idempotency check. Same vtid+endpoint+
  *  failure_class within this window is treated as a duplicate and skipped.
  *  Sized to comfortably swallow ticker-loop spam (lazyPlanTick fires every
@@ -87,12 +156,19 @@ export async function writeAutopilotFailure(
   const outcome = args.outcome || 'failed';
   const confidence = args.confidence ?? 0;
   const attempt = args.attempt_number ?? 1;
+  // Classify actionability + normalise environmental blockers BEFORE the dedup
+  // query so dedup keys on the persisted (possibly-normalised) class.
+  const classification = classifyAutopilotFailure({
+    failure_class: args.failure_class,
+    diagnosis: args.diagnosis,
+  });
+  const failureClass = classification.failure_class;
   try {
     const sinceIso = new Date(Date.now() - DEDUP_WINDOW_MS).toISOString();
     const dedupQuery =
       `?vtid=eq.${encodeURIComponent(args.vtid)}` +
       `&endpoint=eq.${encodeURIComponent(args.endpoint)}` +
-      `&failure_class=eq.${encodeURIComponent(args.failure_class)}` +
+      `&failure_class=eq.${encodeURIComponent(failureClass)}` +
       `&created_at=gte.${encodeURIComponent(sinceIso)}` +
       `&select=id&limit=1`;
     const dedupRes = await fetch(`${s.url}/rest/v1/self_healing_log${dedupQuery}`, {
@@ -119,9 +195,21 @@ export async function writeAutopilotFailure(
       body: JSON.stringify({
         vtid: args.vtid,
         endpoint: args.endpoint,
-        failure_class: args.failure_class,
+        failure_class: failureClass,
         confidence,
-        diagnosis: { stage: args.stage, ...args.diagnosis },
+        diagnosis: {
+          stage: args.stage,
+          ...args.diagnosis,
+          // Reliability tagging: lets the reconciler + UI separate infra/policy
+          // events (a human must resolve) from genuinely auto-fixable failures.
+          actionable: classification.actionable,
+          non_actionable_reason: classification.non_actionable_reason,
+          // Preserve the caller's original class when we normalised it so the
+          // specific stage failure is never lost.
+          ...(failureClass !== args.failure_class
+            ? { original_failure_class: args.failure_class }
+            : {}),
+        },
         outcome,
         attempt_number: attempt,
         resolved_at: outcome === 'pending' ? null : new Date().toISOString(),
@@ -281,5 +369,13 @@ export function isEnvironmentalBlocker(errorMessage: string | undefined | null):
   // backs up the gateway times out per-task at 720s before the worker even
   // gets to run the LLM. That's a capacity problem, not a code defect; the
   // triage agent can't fix it.
-  return /ENOSPC|out of memory|OOMKilled|ECONNREFUSED|ETIMEDOUT.*supabase|GITHUB_TOKEN.*not set|GITHUB_SAFE_MERGE_TOKEN.*not set|container recycled mid-execution|worker-queue wait time|worker queue.*timeout/i.test(errorMessage);
+  //
+  // 2026-06-07: also short-circuit on Cloud Run deploy concurrency races.
+  // When multiple EXEC-DEPLOY runs target the same service in overlapping
+  // windows, `gcloud run deploy` aborts with an optimistic-concurrency
+  // conflict ("ABORTED: Conflict for resource 'gateway': version 'X' was
+  // specified but current version is 'Y'"). The same commit deploys fine on
+  // retry — it's a deploy-time race, not a code defect, so the triage agent
+  // must not spend a retry trying to "fix" it.
+  return /ENOSPC|out of memory|OOMKilled|ECONNREFUSED|ETIMEDOUT.*supabase|GITHUB_TOKEN.*not set|GITHUB_SAFE_MERGE_TOKEN.*not set|container recycled mid-execution|worker-queue wait time|worker queue.*timeout|ABORTED: Conflict for resource|was specified but current version is|gcloud\.run\.deploy.*ABORTED/i.test(errorMessage);
 }

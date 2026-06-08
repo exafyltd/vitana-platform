@@ -62,6 +62,7 @@ JOBS=(
   "AP-0210|creator-digest|0 18 * * 0|Europe/Berlin"
   "AP-0305|trending-events|0 18 * * 0|Europe/Berlin"
   "AP-0604|wellness-check-in|0 10 * * 3|Europe/Berlin"
+  "AP-0510|upcoming-events-today|0 8 * * *|Europe/Berlin"
 )
 
 for JOB in "${JOBS[@]}"; do
@@ -104,3 +105,119 @@ done
 
 echo ""
 echo "Done. ${#JOBS[@]} scheduler jobs processed."
+
+# ──────────────────────────────────────────────────────────────
+# Direct-URL Scheduler Jobs (VTID-02601 — reminder tick/sweeper)
+#
+# These don't follow the AP-XXXX automation registry pattern — they
+# hit gateway routes directly. They're tenant-agnostic (the endpoints
+# scan all due reminders across every tenant) so no tenant_id needed.
+# ──────────────────────────────────────────────────────────────
+
+# Format: NAME|SCHEDULE|TIMEZONE|PATH
+DIRECT_JOBS=(
+  "reminders-tick|* * * * *|UTC|/api/v1/scheduled-notifications/reminders-tick"
+  "reminders-sweeper|*/5 * * * *|UTC|/api/v1/scheduled-notifications/reminders-sweeper"
+)
+
+# ──────────────────────────────────────────────────────────────
+# Tenant-scoped daily recompute (BOOTSTRAP-VITANA-INDEX-DAILY)
+#
+# POSTs to /api/v1/scheduler/daily-recompute once a day so the
+# pipeline writes a fresh `vitana_index_scores` row (plus the
+# longevity / topics / community_recs / matches stages) for each
+# active user. Without this job the Vitana Index only updates on
+# activity events, leaving the Health screen at 0 on inactive days.
+#
+# AP-0513 (claude/daily-pace-notifications) appends a second entry:
+# the daily-pace notification dispatcher. UNIQUE PATTERN: hourly UTC
+# rather than daily Europe/Berlin (every other scheduled-notification
+# job in this file is `0 H * * *` Europe/Berlin). We use hourly UTC
+# because the endpoint resolves each user's local timezone and only
+# dispatches to users whose local hour == 19. An hourly UTC cron
+# guarantees we hit every user's 19:xx window at least once per local
+# day (including fractional-offset zones like Asia/Kathmandu UTC+5:45).
+# ──────────────────────────────────────────────────────────────
+
+# Format: NAME|SCHEDULE|TIMEZONE|PATH
+TENANT_DIRECT_JOBS=(
+  "daily-recompute|0 2 * * *|UTC|/api/v1/scheduler/daily-recompute"
+  "daily-pace-notifications|0 * * * *|UTC|/api/v1/scheduled-notifications/daily-pace-notifications"
+)
+
+for JOB in "${TENANT_DIRECT_JOBS[@]}"; do
+  IFS='|' read -r NAME SCHEDULE TIMEZONE PATH_ <<< "$JOB"
+  JOB_NAME="gateway-${NAME}"
+  TARGET_URL="${GATEWAY_URL}${PATH_}"
+
+  if $DELETE; then
+    echo "Deleting: $JOB_NAME"
+    if ! $DRY_RUN; then
+      gcloud scheduler jobs delete "$JOB_NAME" \
+        --project="$PROJECT" \
+        --location="$REGION" \
+        --quiet 2>/dev/null || echo "  (not found, skipping)"
+    fi
+  else
+    echo "Creating: $JOB_NAME → $PATH_ ($SCHEDULE $TIMEZONE)"
+    if ! $DRY_RUN; then
+      gcloud scheduler jobs delete "$JOB_NAME" \
+        --project="$PROJECT" \
+        --location="$REGION" \
+        --quiet 2>/dev/null || true
+
+      gcloud scheduler jobs create http "$JOB_NAME" \
+        --project="$PROJECT" \
+        --location="$REGION" \
+        --schedule="$SCHEDULE" \
+        --time-zone="$TIMEZONE" \
+        --uri="$TARGET_URL" \
+        --http-method=POST \
+        --headers="Content-Type=application/json" \
+        --message-body="{\"tenant_id\":\"$TENANT_ID\"}" \
+        --attempt-deadline=600s \
+        --max-retry-attempts=2 \
+        --description="Gateway daily cron: $NAME"
+    fi
+  fi
+done
+
+for JOB in "${DIRECT_JOBS[@]}"; do
+  IFS='|' read -r NAME SCHEDULE TIMEZONE PATH_ <<< "$JOB"
+  JOB_NAME="gateway-${NAME}"
+  TARGET_URL="${GATEWAY_URL}${PATH_}"
+
+  if $DELETE; then
+    echo "Deleting: $JOB_NAME"
+    if ! $DRY_RUN; then
+      gcloud scheduler jobs delete "$JOB_NAME" \
+        --project="$PROJECT" \
+        --location="$REGION" \
+        --quiet 2>/dev/null || echo "  (not found, skipping)"
+    fi
+  else
+    echo "Creating: $JOB_NAME → $PATH_ ($SCHEDULE $TIMEZONE)"
+    if ! $DRY_RUN; then
+      gcloud scheduler jobs delete "$JOB_NAME" \
+        --project="$PROJECT" \
+        --location="$REGION" \
+        --quiet 2>/dev/null || true
+
+      gcloud scheduler jobs create http "$JOB_NAME" \
+        --project="$PROJECT" \
+        --location="$REGION" \
+        --schedule="$SCHEDULE" \
+        --time-zone="$TIMEZONE" \
+        --uri="$TARGET_URL" \
+        --http-method=POST \
+        --headers="Content-Type=application/json" \
+        --message-body="{}" \
+        --attempt-deadline=120s \
+        --max-retry-attempts=1 \
+        --description="Gateway direct cron: $NAME"
+    fi
+  fi
+done
+
+echo ""
+echo "Done. ${#DIRECT_JOBS[@]} direct-URL scheduler jobs processed."

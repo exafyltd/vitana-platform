@@ -1,0 +1,102 @@
+name: Cron Finetune Status
+
+# BOOTSTRAP-TRAINING-OPS-MONITOR — Training Ops monitor for the Vertex
+# fine-tune pipeline. The submit path (CRON-FINETUNE-TRAINER.yml) is
+# fire-and-forget and does NOT wait for the job to finish; runs have sat in
+# JOB_STATE_PENDING unnoticed because L4 GPU quota pressure keeps them QUEUED
+# (Google credits only begin once a job STARTS). This workflow polls the latest
+# CustomJob for a target, classifies its state (PENDING / RUNNING / SUCCEEDED /
+# FAILED + explicit quota-wait detection), writes a status summary artifact +
+# step summary, and optionally emits an OASIS finetune.job.status event.
+#
+# READ-ONLY: it only runs `gcloud ai custom-jobs list` / `describe`. It never
+# creates, cancels, or mutates a job. Builds ON TOP of the accelerator/region
+# overrides added in PR #2515 (the quota-wait verdict points the operator at
+# those inputs).
+
+on:
+  schedule:
+    # Twice daily on weekdays (08:00 + 16:00 UTC) so a stuck-PENDING training
+    # run is noticed within hours, not next Monday.
+    - cron: '0 8,16 * * 1-5'
+  workflow_dispatch:
+    inputs:
+      target:
+        description: 'Which fine-tune to monitor'
+        required: true
+        default: 'voice-tool-router'
+        type: choice
+        options: [ voice-tool-router, intent-kind, pillar-classifier ]
+      job_id:
+        description: 'Optional explicit CustomJob numeric id (blank = latest by display-name prefix)'
+        required: false
+        default: ''
+        type: string
+      region_override:
+        description: 'Optional region to query (blank = target config.yaml default, us-central1)'
+        required: false
+        default: ''
+        type: string
+      emit_oasis_event:
+        description: 'Emit OASIS finetune.job.status event to staging'
+        required: false
+        default: 'true'
+        type: choice
+        options: [ 'true', 'false' ]
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: cron-finetune-status-${{ inputs.target || 'voice-tool-router' }}
+  cancel-in-progress: false
+
+env:
+  GCP_PROJECT: lovable-vitana-vers1
+  GCP_REGION: us-central1
+
+jobs:
+  status:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      matrix:
+        target: ${{ inputs.target && fromJSON(format('[{0}]', toJSON(inputs.target))) || fromJSON('["voice-tool-router"]') }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: services/gateway/package-lock.json
+      - working-directory: services/gateway
+        run: npm ci --no-audit --no-fund
+
+      - name: Auth to GCP (WIF)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_WIF_SA_EMAIL }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Monitor ${{ matrix.target }} CustomJob status
+        working-directory: services/gateway
+        env:
+          GCP_PROJECT: ${{ env.GCP_PROJECT }}
+          FINETUNE_JOB_ID: ${{ inputs.job_id || '' }}
+          FINETUNE_REGION: ${{ inputs.region_override || '' }}
+          FINETUNE_STATUS_OUT: /tmp/finetune-status-${{ matrix.target }}.md
+          STAGING_SUPABASE_URL: ${{ (inputs.emit_oasis_event != 'false') && secrets.STAGING_SUPABASE_URL || '' }}
+          STAGING_SUPABASE_SERVICE_ROLE_KEY: ${{ (inputs.emit_oasis_event != 'false') && secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY || '' }}
+        run: npx tsx scripts/finetune/status-monitor.ts ${{ matrix.target }}
+
+      - name: Upload status summary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: finetune-status-${{ matrix.target }}-${{ github.run_id }}
+          path: /tmp/finetune-status-${{ matrix.target }}.md
+          if-no-files-found: warn
+          retention-days: 30

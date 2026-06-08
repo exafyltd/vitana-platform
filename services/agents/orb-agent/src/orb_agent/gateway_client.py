@@ -13,7 +13,15 @@ import httpx
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_TIMEOUT_S = 10.0
+DEFAULT_TIMEOUT_S = 30.0  # VTID-02863: bumped from 10s. /api/v1/intents POST
+                          # used to time out at 10s while embedding/match-compute
+                          # ran inline; the agent then reported a failure to the
+                          # LLM ("there was a problem creating your post") even
+                          # though the row was already in user_intents. Server-
+                          # side, those phases are now fire-and-forget so the
+                          # response returns in well under a second — but 30s
+                          # gives transient slowness room without ever surfacing
+                          # a fake "post failed" to the user.
 SLOW_TIMEOUT_S = 30.0  # for tools that may hit external APIs (search_web, consult_external_ai)
 
 
@@ -64,6 +72,11 @@ class GatewayClient:
         # gate, and the mobile_route override.
         self.is_mobile: bool = False
         self.is_anonymous: bool = False
+        # BOOTSTRAP-VOICE-DATASET-EMITTER: last tool dispatched this turn, set by
+        # tools._dispatch / _dispatch_with_directive and read+cleared by
+        # session.py's orb.turn.responded emit to carry the tool-routing signal.
+        self.last_tool_name: str | None = None
+        self.last_tool_args: dict[str, Any] | None = None
 
     def _headers(self) -> dict[str, str]:
         h = {"Content-Type": "application/json"}

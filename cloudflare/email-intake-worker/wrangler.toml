@@ -8,3 +8,16 @@ GATEWAY_URL = "https://vitana-gateway-q74ibpv6ia-uc.a.run.app"
 # Email routing: configure in Cloudflare dashboard
 # Route: tasks@exacy.io → this worker
 # Requires Email Routing enabled on exacy.io domain
+
+# Phase 0 staging build (handoff brief P0.6):
+# `wrangler deploy --env staging` ships a sibling worker that posts intakes
+# to gateway-staging. Email routing for the staging worker is NOT wired —
+# manual `wrangler dev --env staging` against a payload fixture is the
+# expected smoke during Phase 0. Production tasks@exacy.io routing stays on
+# the prod worker unchanged.
+[env.staging]
+name = "vitana-email-intake-staging"
+
+[env.staging.vars]
+# Update to the staging Cloud Run URL after P0.2. Pattern: gateway-staging-<hash>-uc.a.run.app.
+GATEWAY_URL = "https://gateway-staging-86804897789.us-central1.run.app"

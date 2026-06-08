@@ -20,9 +20,49 @@ voice-pipeline-spec/spec.json.tools[].name exactly.
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from .gateway_client import GatewayClient, summarize
+
+
+# VTID-03011: convert agent-side calendar args (when_iso + duration_min) into
+# the gateway route shape (start_time + end_time ISO). The agent's
+# @function_tool signatures expose `when_iso` + `duration_min` to the LLM
+# (clean, simple), but the gateway's `/api/v1/calendar/events` zod schema
+# requires `start_time` + `end_time` as ISO 8601 datetimes. Without this
+# translator the route always returned 400 "start_time Required" — caught
+# during L2.2b.6 smoke. Vertex's path is unaffected (its calendar tool is
+# inline in orb-live.ts and writes directly).
+#
+# Output format: full ISO 8601 with UTC `Z` suffix. Zod's `.datetime()` by
+# default requires UTC (no offset), so we normalize to UTC before emitting.
+# Naive (no-tz) input is interpreted as UTC — best effort; LLMs commonly
+# omit the offset for "tomorrow at 15:00" style asks.
+def _to_calendar_payload(
+    title: str,
+    when_iso: str,
+    duration_min: int = 60,
+) -> dict[str, Any]:
+    try:
+        start_dt = datetime.fromisoformat(when_iso)
+    except ValueError as exc:
+        raise ValueError(
+            f"when_iso must be ISO 8601 (e.g. '2026-05-17T15:00:00Z' "
+            f"or '2026-05-17T15:00:00+02:00'), got {when_iso!r}"
+        ) from exc
+    if start_dt.tzinfo is None:
+        start_dt = start_dt.replace(tzinfo=timezone.utc)
+    end_dt = start_dt + timedelta(minutes=max(1, int(duration_min)))
+
+    def _utc_z(dt: datetime) -> str:
+        return dt.astimezone(timezone.utc).strftime('%Y-%m-%dT%H:%M:%S.000Z')
+
+    return {
+        "title": title,
+        "start_time": _utc_z(start_dt),
+        "end_time": _utc_z(end_dt),
+    }
 
 # livekit-agents plumbing — `@function_tool` decorator + RunContext.
 # In livekit-agents 1.x, `RunContext` lives at `livekit.agents` (it moved out
@@ -75,7 +115,13 @@ async def _dispatch(ctx: RunContext, name: str, args: dict[str, Any] | None = No
     business logic. Tools whose endpoint already exists as a standalone route
     keep calling it directly (calendar, reminders, intents, vitana-index).
     """
-    return await _gw(ctx).post("/api/v1/orb/tool", {"name": name, "args": args or {}})
+    gw = _gw(ctx)
+    # BOOTSTRAP-VOICE-DATASET-EMITTER: record the dispatched tool for the turn so
+    # session.py's orb.turn.responded emit can carry the voice-tool-routing
+    # signal. Read + cleared per turn in the conversation_item hook.
+    gw.last_tool_name = name
+    gw.last_tool_args = args or None
+    return await gw.post("/api/v1/orb/tool", {"name": name, "args": args or {}})
 
 
 async def _dispatch_with_directive(
@@ -98,6 +144,10 @@ async def _dispatch_with_directive(
     from .directives import extract_directive, publish_orb_directive  # local import
 
     gw = _gw(ctx)
+    # BOOTSTRAP-VOICE-DATASET-EMITTER: record the dispatched tool for the turn
+    # (same as _dispatch) so the turn.responded emit carries the routing signal.
+    gw.last_tool_name = name
+    gw.last_tool_args = args or None
     body = await gw.post("/api/v1/orb/tool", {"name": name, "args": args or {}})
     directive = extract_directive(body)
     if directive is not None:
@@ -156,35 +206,475 @@ async def recall_conversation_at_time(context: RunContext, when: str) -> str:
 
 @function_tool
 async def switch_persona(context: RunContext, persona: str) -> str:
-    """Switch within-Vitana voice/style persona (NOT specialist handoff).
+    """Switch to a different agent persona — used by Devon to hand the user
+    back to Vitana once their intake is complete.
+
+    Mirrors Vertex behavior (orb-live.ts: switch_persona case arm).
+    Devon calls this with persona='vitana' after he asks "anything else?"
+    and the user says no.
 
     Args:
-        persona: Target persona name (e.g. "warm", "concise", "playful").
+        persona: Target persona key. The only valid value from Devon is
+            'vitana' (returning the user to the receptionist). Lateral
+            specialist↔specialist swaps are NOT allowed. Sage/Atlas/Mira
+            are disabled in this canary phase (VTID-03044) — never target
+            them.
     """
+    target = (persona or "").strip().lower()
+    gw = _gw(context)
+    oasis = getattr(gw, "oasis_emitter", None)
+    user_id = getattr(gw, "user_id", "") or ""
+
+    # VTID-03044 telemetry: emit .called before dispatch so we can SEE
+    # whether the LLM is invoking this tool at all. Across 2026-05-17 we
+    # observed 0 switch_persona.called events even after Devon explicitly
+    # asks "anything else?" — silence didn't tell us if the LLM skipped
+    # the tool or if we just lacked instrumentation.
+    if oasis is not None:
+        try:
+            await oasis.emit(
+                topic="orb.livekit.tool.switch_persona.called",
+                payload={
+                    "persona": target,
+                    "user_id": user_id,
+                    "session_id": "",
+                },
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("switch_persona: oasis .called emit failed: %s", exc)
+
     body = await _dispatch(context, "switch_persona", {"persona": persona})
+
+    # VTID-03028: when called with persona='vitana', signal the agent main
+    # loop to rebuild the AgentSession back to Vitana — same mechanism
+    # report_to_specialist uses to swap TO a specialist. Without this the
+    # specialist (Devon) says "I'll hand you back" but the AgentSession
+    # never actually rebuilds, leaving Devon's voice still active.
+    handoff_signaled = False
+    try:
+        if target == "vitana":
+            handoff_event = getattr(gw, "handoff_event", None)
+            if handoff_event is not None:
+                gw.handoff_target = "vitana"
+                gw.handoff_summary = None  # No new brief on swap-back
+                gw.handoff_reason = "specialist returning user to receptionist"
+                handoff_event.set()
+                handoff_signaled = True
+                logger.info(
+                    "switch_persona: handoff signal set → vitana "
+                    "(main loop will rebuild AgentSession)"
+                )
+            else:
+                logger.warning(
+                    "switch_persona: gw.handoff_event missing — no rebuild fired"
+                )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("switch_persona: handoff signal failed: %s", exc)
+
+    if oasis is not None:
+        try:
+            await oasis.emit(
+                topic="orb.livekit.tool.switch_persona.result",
+                payload={
+                    "persona": target,
+                    "user_id": user_id,
+                    "session_id": "",
+                    "handoff_signaled": handoff_signaled,
+                    "gateway_ok": isinstance(body, dict) and bool(body.get("ok", True)),
+                },
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("switch_persona: oasis .result emit failed: %s", exc)
+
     return summarize(body)
 
 
 @function_tool
 async def report_to_specialist(
-    context: RunContext, specialist: str, reason: str, context_summary: str
+    context: RunContext,
+    kind: str,
+    summary: str,
+    specialist_hint: str | None = None,
 ) -> str:
-    """Hand off to a specialist (Sage / Devon / Atlas / Mira / Vitana).
+    """File a customer-support ticket and hand the call to Devon, our
+    tech-support colleague (VTID-03044 canary: Devon is the ONLY enabled
+    specialist; Sage / Atlas / Mira are disabled). This is RARE —
+    typically less than 5% of conversations. You ARE the instruction
+    manual; almost every question is yours to answer.
 
-    Triggers the persona-swap flow in session.py. Each specialist has its own
-    voice configured in agent_voice_configs.
+    YOU MUST PROPOSE BEFORE CALLING. Even when forwarding is warranted,
+    first say something like "Shall I bring in Devon to file this?" and
+    wait for the user to say yes. Implicit consent does NOT count. Vary
+    the proposal phrasing every time.
+
+    CALL ONLY WHEN ALL THREE are true:
+      (1) the user has described a CONCRETE PROBLEM (bug, broken state,
+          refund, account lockout, claim) — not a question about how
+          something works,
+      (2) the user has EXPLICITLY agreed to be connected to a specialist
+          (after you proposed it), and
+      (3) you can write a SPECIFIC `summary` (>= 15 words) that describes
+          WHAT broke, on WHICH screen/feature, with the user's own words.
+          If you cannot — because the user only said "I want to report a
+          bug" without details — DO NOT CALL THIS TOOL YET. Instead ask
+          ONE follow-up question: "What's breaking — which screen or
+          feature?" Get the details, THEN call this tool. A vague summary
+          causes the specialist to invent the issue, which is worse than
+          not forwarding at all. Generic summaries like "user wants to
+          report a bug" are FORBIDDEN.
+
+    NEVER CALL for any of these — answer them yourself inline using
+    search_knowledge first:
+      - "How does X work?" / "What is X?" / "Explain X"
+      - "Show me how to use X" / "How do I X?" / "Teach me"
+      - "Tell me about X" / "I want to learn X" / "I am new"
+      - "Help me understand X" / "Walk me through X"
+      - Any health, longevity, matchmaking, community, business, diary,
+        calendar, or general life-companion question
+      - Anything that is a learning question, not a broken-state report.
+        First-time users asking how to use the diary is a teaching
+        moment, NOT a customer-support ticket.
+
+    GATE-A enforcement: the backend re-checks the user's actual recent
+    words (not your summary). If the gate returns STAY_INLINE, do NOT
+    mention the routing decision out loud — silently answer the question.
+    Same if the conversation's forward budget is exhausted (max 1
+    forward + 1 return per conversation).
+
+    AFTER A FORWARD FIRES: speak ONE short bridge sentence in your own
+    natural words. ANNOUNCE the handoff — never INTRODUCE the specialist
+    ("Hi, here is Devon" — that is DEVON'S job in his own voice). Vary
+    your phrasing every time, never recite a template. Then STOP — the
+    next voice is the specialist's.
+
+    HALLUCINATION GUARD (CRITICAL — VTID-03102): you MUST invoke this
+    function via tool call. NEVER say "Ich verbinde dich mit Devon" /
+    "I'll connect you to Devon" / "Einen Moment, Devon übernimmt" /
+    "In Ordnung, ich hole Devon" / equivalents UNLESS this tool's most
+    recent return value began with "STATUS: handoff_created." Speaking
+    the bridge sentence WITHOUT first calling this function is a FAILED
+    HANDOFF — the user is stranded with you while believing they're
+    talking to Devon. The tool call is the PHYSICAL handoff; the bridge
+    sentence is just the audible announcement of what already happened.
+    Speak ONLY after the call returns.
 
     Args:
-        specialist: One of: 'sage' | 'devon' | 'atlas' | 'mira' | 'vitana'.
-        reason: Why the user is being handed off.
-        context_summary: Short summary the specialist needs to pick up the conversation.
+        kind: Best classification of what the user is reporting. One of:
+            'bug', 'ux_issue', 'support_question', 'account_issue',
+            'marketplace_claim', 'feature_request', 'feedback'.
+        summary: CONCRETE one-paragraph summary using the user's OWN
+            WORDS. Must include: what broke (the symptom), where (which
+            screen/feature/flow), and any specifics the user gave (error
+            message, order id, account email, time of day, etc).
+            Minimum 15 words. FORBIDDEN: placeholder summaries like
+            "user wants to report a bug" or "user has an account issue"
+            or "user has a question". If you do not have enough
+            specifics, ASK the user one diagnostic question first and
+            call this tool only after you have a real description. A
+            vague summary causes the specialist to hallucinate the
+            issue.
+        specialist_hint: Optional. VTID-03044 canary: only 'devon' is
+            enabled. The backend re-checks via the keyword router and
+            falls back to the kind→handles_kinds match if the hint is
+            empty or unknown.
+
+    Observability (VTID-03033): emits orb.livekit.tool.report_to_specialist
+    .called BEFORE dispatch and .result AFTER, so OASIS can distinguish
+    (1) LLM never called the tool, (2) backend returned stay_inline,
+    (3) backend created handoff, (4) gateway/network failed.
     """
-    body = await _dispatch(
-        context,
-        "report_to_specialist",
-        {"specialist": specialist, "reason": reason, "context_summary": context_summary},
+    gw = _gw(context)
+    oasis = getattr(gw, "oasis_emitter", None)
+    orb_session_id = getattr(gw, "orb_session_id", None) or ""
+    user_id = getattr(gw, "user_id", None) or ""
+
+    # VTID-03099: extract the user's last 3 RAW transcript turns and ship
+    # them with the tool call. The gateway feeds these into the two-gate
+    # forwarding RPC as gate_input — same logic Vertex uses (orb-live.ts:
+    # buildGateInputFromTranscript). Without this, the gate only sees the
+    # LLM-curated `summary` (compressed business language) which rarely
+    # contains the forward_request_phrases the RPC looks for ("verbinde
+    # mich", "mit dem support sprechen", "fehler melden", etc.) — Gate A
+    # returns answer_inline and the handoff is silently vetoed even after
+    # the user explicitly consented. Defensive: best-effort, never raises
+    # — empty list falls through to the summary fallback on the gateway
+    # side, exactly matching Vertex's behaviour when transcriptTurns is
+    # empty.
+    recent_user_turns: list[str] = []
+    try:
+        session_obj = (
+            getattr(context, "session", None)
+            or getattr(getattr(context, "agent", None), "session", None)
+        )
+        chat_ctx = getattr(session_obj, "chat_ctx", None) if session_obj else None
+        # livekit-agents 1.x stores items on chat_ctx.items; older 0.x
+        # used .messages. Support both without importing the type.
+        items = getattr(chat_ctx, "items", None) or getattr(chat_ctx, "messages", None) or []
+        for item in reversed(list(items)):
+            role = getattr(item, "role", None)
+            if role != "user":
+                continue
+            content = (
+                getattr(item, "content", None)
+                or getattr(item, "text_content", None)
+            )
+            if content is None:
+                continue
+            if isinstance(content, str):
+                text = content.strip()
+            else:
+                # ChatMessage.content can be list[str | ContentBlock]; join
+                # whatever stringifies meaningfully and ignore the rest.
+                try:
+                    text = " ".join(
+                        str(c) for c in content if c is not None
+                    ).strip()
+                except Exception:  # noqa: BLE001
+                    text = ""
+            if text:
+                recent_user_turns.append(text)
+                if len(recent_user_turns) >= 3:
+                    break
+        recent_user_turns.reverse()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "report_to_specialist: chat_ctx read failed (gate falls back "
+            "to summary): %s",
+            exc,
+        )
+        recent_user_turns = []
+
+    args: dict[str, Any] = {"kind": kind, "summary": summary}
+    if specialist_hint:
+        args["specialist_hint"] = specialist_hint
+    if recent_user_turns:
+        args["recent_user_turns"] = recent_user_turns
+
+    # --- BEFORE DISPATCH ---------------------------------------------------
+    summary_chars = len(summary or "")
+    summary_word_count = len((summary or "").split())
+    logger.info(
+        "report_to_specialist.called: kind=%s summary_chars=%d summary_words=%d "
+        "specialist_hint=%r session=%s user=%s",
+        kind,
+        summary_chars,
+        summary_word_count,
+        specialist_hint,
+        orb_session_id,
+        user_id,
     )
-    return summarize(body)
+    if oasis is not None:
+        try:
+            await oasis.emit(
+                topic="orb.livekit.tool.report_to_specialist.called",
+                payload={
+                    "session_id": orb_session_id,
+                    "user_id": user_id,
+                    "kind": kind,
+                    "summary_chars": summary_chars,
+                    "summary_words": summary_word_count,
+                    "specialist_hint": specialist_hint,
+                    "recent_user_turns_count": len(recent_user_turns),
+                },
+                vtid="VTID-03033",
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("report_to_specialist: oasis .called emit failed: %s", exc)
+
+    # --- DISPATCH ---------------------------------------------------------
+    body = await _dispatch(context, "report_to_specialist", args)
+
+    # Parse machine-readable outcome from the gateway body.
+    ok = bool(body.get("ok", False)) if isinstance(body, dict) else False
+    transport = (
+        body.get("transport") if isinstance(body, dict) else None
+    )
+    err_msg = body.get("error") if isinstance(body, dict) else None
+    gateway_status = body.get("_status") if isinstance(body, dict) else None
+    result = body.get("result") if isinstance(body, dict) else None
+    decision = (
+        result.get("decision") if isinstance(result, dict) else None
+    )
+    persona = result.get("persona") if isinstance(result, dict) else None
+    rpc_gate = result.get("rpc_gate") if isinstance(result, dict) else None
+    rpc_decision = (
+        result.get("rpc_decision") if isinstance(result, dict) else None
+    )
+    word_count = (
+        result.get("word_count") if isinstance(result, dict) else None
+    )
+    ticket_number = (
+        result.get("ticket_number") if isinstance(result, dict) else None
+    )
+
+    # Map the gateway's decision enum to the machine-readable status the
+    # LLM sees. `handoff_created` is reserved for the case where a real
+    # specialist row was picked — an unrouted ticket is NOT a handoff.
+    status: str
+    if transport == "exception" or not ok:
+        status = "failed_network" if transport == "exception" else "failed"
+    elif decision == "created" and persona in {"devon", "sage", "atlas", "mira"}:
+        status = "handoff_created"
+    elif decision == "created":
+        status = "ticket_filed_no_handoff"
+    elif decision == "stay_inline":
+        status = "stay_inline"
+    elif decision == "vague":
+        status = "vague"
+    elif decision == "failed":
+        status = "failed"
+    else:
+        # Unknown / missing decision shape — treat as failure-loud rather
+        # than silently letting the LLM improvise. This is the catch-all
+        # for "stub_not_implemented"-class regressions.
+        status = "failed"
+
+    handoff_signaled = False
+
+    # --- HANDOFF SIGNAL (only on real handoff_created) --------------------
+    if status == "handoff_created":
+        try:
+            handoff_event = getattr(gw, "handoff_event", None)
+            if handoff_event is not None:
+                gw.handoff_target = persona
+                gw.handoff_summary = summary
+                gw.handoff_reason = f"user reported {kind}"
+                handoff_event.set()
+                handoff_signaled = True
+                logger.info(
+                    "report_to_specialist: handoff signal set → %s "
+                    "(main loop will rebuild AgentSession)",
+                    persona,
+                )
+            else:
+                logger.warning(
+                    "report_to_specialist: gw.handoff_event missing — "
+                    "ticket filed but no persona rebuild will fire",
+                )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "report_to_specialist: handoff signal failed: %s", exc
+            )
+
+    # --- AFTER DISPATCH: structured log + OASIS ---------------------------
+    logger.info(
+        "report_to_specialist.result: status=%s decision=%s persona=%s "
+        "gateway_ok=%s gateway_status=%s rpc_gate=%s rpc_decision=%s "
+        "ticket_number=%s handoff_signaled=%s error=%r",
+        status,
+        decision,
+        persona,
+        ok,
+        gateway_status,
+        rpc_gate,
+        rpc_decision,
+        ticket_number,
+        handoff_signaled,
+        err_msg,
+    )
+    if oasis is not None:
+        try:
+            await oasis.emit(
+                topic="orb.livekit.tool.report_to_specialist.result",
+                payload={
+                    "session_id": orb_session_id,
+                    "user_id": user_id,
+                    "status": status,
+                    "decision": decision,
+                    "persona": persona,
+                    "gateway_ok": ok,
+                    "gateway_status": gateway_status,
+                    "transport": transport,
+                    "rpc_gate": rpc_gate,
+                    "rpc_decision": rpc_decision,
+                    "ticket_number": ticket_number,
+                    "handoff_signaled": handoff_signaled,
+                    "error": err_msg if isinstance(err_msg, str) else None,
+                    "word_count": word_count,
+                },
+                vtid="VTID-03033",
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "report_to_specialist: oasis .result emit failed: %s", exc
+            )
+
+    # --- DETERMINISTIC LLM-FACING TEXT ------------------------------------
+    # Every branch starts with `STATUS: <status>.` so the LLM has a single
+    # machine-readable token. The action sentence after it tells the LLM
+    # what to actually say. Bridge-sentence freedom is preserved ONLY on
+    # handoff_created — every other branch forbids claiming a handoff.
+    if status == "handoff_created":
+        persona_label = {
+            "devon": "tech support",
+            "sage": "customer support",
+            "atlas": "finance / marketplace",
+            "mira": "account",
+        }.get(persona or "", "a specialist colleague")
+        ticket_label = ticket_number or "(pending)"
+        return (
+            f"STATUS: handoff_created. "
+            f"ACTION: Specialist handoff created for {persona_label} (ticket {ticket_label}). "
+            "Speak ONE short bridge sentence in the user's language announcing the ROLE "
+            f"({persona_label}) — vary phrasing every call. Then STOP. "
+            "Do NOT speak the persona's internal name (Devon/Sage/Atlas/Mira) out loud. "
+            "Do NOT introduce the colleague yourself — they will speak next in their own voice. "
+            "Do NOT promise a timeline."
+        )
+
+    if status == "ticket_filed_no_handoff":
+        ticket_label = ticket_number or "(pending)"
+        return (
+            f"STATUS: ticket_filed_no_handoff. "
+            f"ACTION: A ticket has been filed (ticket {ticket_label}) but NO specialist "
+            "was routed to take this live. Tell the user warmly that you've logged the "
+            "report and someone will follow up — vary your phrasing. Do NOT say you are "
+            "connecting them to anyone. Do NOT claim a colleague has joined."
+        )
+
+    if status == "stay_inline":
+        gate_label = rpc_gate or "unspecified"
+        return (
+            f"STATUS: stay_inline. "
+            f"ACTION: No specialist handoff was created (rpc_gate={gate_label}). "
+            "Continue helping the user inline yourself. Do NOT claim that Devon, Sage, "
+            "Atlas, or Mira has joined or is being connected — they have NOT. "
+            "Do NOT mention this routing decision out loud. Answer the user's actual "
+            "question or ask the next clarifying question naturally."
+        )
+
+    if status == "vague":
+        wc = word_count if isinstance(word_count, int) else "unknown"
+        return (
+            f"STATUS: vague. "
+            f"ACTION: Your summary was too vague (word_count={wc}). Do NOT retry this "
+            "tool yet. Ask the user ONE follow-up question in their language for "
+            "specifics (which screen / feature / error message / what they were doing). "
+            "Then wait for their answer and call this tool again with a real description "
+            "(>= 12 words). Do NOT claim anyone is being connected."
+        )
+
+    if status == "failed_network":
+        return (
+            "STATUS: failed_network. "
+            "ACTION: Specialist handoff request did NOT reach the backend (network "
+            "exception). Tell the user honestly that the report did not go through "
+            "and that you'll try again in a moment. Do NOT claim a specialist has "
+            "joined or is being connected."
+        )
+
+    # status == "failed" (gateway returned ok:false, or unknown shape)
+    err_label = (
+        err_msg if isinstance(err_msg, str) and err_msg
+        else f"gateway_status={gateway_status}" if gateway_status
+        else "unknown"
+    )
+    return (
+        f"STATUS: failed. "
+        f"ACTION: Specialist handoff failed ({err_label}). Tell the user honestly "
+        "that the report did not go through. Do NOT claim a specialist has joined "
+        "or is being connected. Do NOT promise a timeline."
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -206,10 +696,17 @@ async def search_calendar(context: RunContext, query: str, days_ahead: int = 14)
 async def create_calendar_event(
     context: RunContext, title: str, when_iso: str, duration_min: int = 60
 ) -> str:
-    """Create a calendar event."""
+    """Create a calendar event.
+
+    Args:
+        title: Event title.
+        when_iso: Start time in ISO 8601 (e.g. "2026-05-17T15:00:00+02:00").
+        duration_min: Duration in minutes (default 60).
+    """
+    # VTID-03011: translate to gateway shape (start_time + end_time).
     body = await _gw(context).post(
         "/api/v1/calendar/events",
-        {"title": title, "when_iso": when_iso, "duration_min": duration_min},
+        _to_calendar_payload(title, when_iso, duration_min),
     )
     return summarize(body)
 
@@ -217,9 +714,10 @@ async def create_calendar_event(
 @function_tool
 async def add_to_calendar(context: RunContext, title: str, when_iso: str) -> str:
     """Add an event to the user's calendar (VTID-01943)."""
+    # VTID-03011: translate to gateway shape (start_time + end_time, +60min default).
     body = await _gw(context).post(
         "/api/v1/calendar/events",
-        {"title": title, "when_iso": when_iso},
+        _to_calendar_payload(title, when_iso, 60),
     )
     return summarize(body)
 
@@ -405,6 +903,19 @@ async def consult_external_ai(
 
 
 @function_tool
+async def get_life_compass(context: RunContext) -> str:
+    """Return the user's active Life Compass — goal, why, target date (VTID-03010).
+
+    Call this when the user asks "what is my Life Compass?", "what am I
+    working toward?", "remind me what my goal is", or any variation about
+    their long-term direction. The Life Compass is the user-authored
+    one-sentence goal anchored in Settings.
+    """
+    body = await _dispatch(context, "get_life_compass", {})
+    return summarize(body)
+
+
+@function_tool
 async def get_vitana_index(context: RunContext) -> str:
     """Return the user's current Vitana Index score + per-pillar breakdown (VTID-01983)."""
     body = await _gw(context).get("/api/v1/vitana-index")
@@ -432,8 +943,68 @@ async def create_index_improvement_plan(context: RunContext, target_pillar: str)
 
 @function_tool
 async def save_diary_entry(context: RunContext, text: str) -> str:
-    """Save a diary entry. Triggers Vitana Index recompute via /memory/diary/sync-index (VTID-01983)."""
-    body = await _gw(context).post("/api/v1/memory/diary/sync-index", {"raw_text": text})
+    """Save a diary entry.
+
+    VTID-03042: switched from the legacy `/memory/diary/sync-index` call —
+    which runs the Vitana Index recompute pipeline but does NOT write the
+    user-visible `diary_entries` row — to the shared orb-tool dispatcher
+    so both pipelines:
+      1) insert the diary_entries row the user sees in their daily diary,
+      2) extract health features + recompute the Index,
+      3) celebrate any diary streak.
+
+    Without this, voice "log a diary entry" silently dropped the visible
+    row even though Vitana announced "I've logged it." (parity bug
+    surfaced in the L2.2b.7 real-mic German session, check #5.)
+    """
+    body = await _dispatch(context, "save_diary_entry", {"raw_text": text})
+    return summarize(body)
+
+
+@function_tool
+async def record_journey_answer(
+    context: RunContext,
+    step: str,
+    value: str = "",
+    target_value: float | None = None,
+    target_unit: str = "",
+    target_date: str = "",
+    category: str = "",
+    acknowledged: bool = True,
+    teach_mode: bool = False,
+) -> str:
+    """Record the user's answer to a Journey Foundation step and get the next move (VTID-03255).
+
+    The journey is a goal-gated, guided onboarding path that you lead and the
+    My Journey screen mirrors. Call this EVERY time the user answers a journey
+    question so the real record is written and the screen updates instantly.
+
+    step = the step being answered:
+      - "life_compass"     -> main goal; goal sentence in `value`, plus optional
+        `target_value` / `target_unit` / `target_date` (YYYY-MM-DD).
+      - "economic_intent"  -> their stance on earning in the longevity economy
+        (build a business / passive income / earn from recommendations / just
+        curious). "curious" is valid — never pressure them.
+      - "weakest_habit"    -> the habit blocking their health most (food / water
+        / exercise / sleep / stress) in `value`.
+      - "understand_economy", "autopilot", "business_live_media" -> teaching
+        moments; call with acknowledged=True once the user understands.
+
+    The return value's text is the next sentence to say. Set teach_mode=True
+    when the user wants to learn rather than do a task right now.
+    """
+    args: dict[str, Any] = {"step": step, "acknowledged": acknowledged, "teach_mode": teach_mode}
+    if value:
+        args["value"] = value
+    if category:
+        args["category"] = category
+    if target_value is not None:
+        args["target_value"] = target_value
+    if target_unit:
+        args["target_unit"] = target_unit
+    if target_date:
+        args["target_date"] = target_date
+    body = await _dispatch(context, "record_journey_answer", args)
     return summarize(body)
 
 
@@ -620,19 +1191,366 @@ async def get_pillar_subscores(context: RunContext, pillar: str) -> str:
 
 
 @function_tool
-async def resolve_recipient(context: RunContext, name: str) -> str:
-    """Step 1 of 3-step send-message flow: resolve a name to candidates."""
-    body = await _dispatch(context, "resolve_recipient", {"name": name})
-    return summarize(body)
+async def resolve_recipient(context: RunContext, spoken_name: str) -> str:
+    """Step 1 of the 3-step send-message flow: resolve a spoken name to
+    candidate Vitana users.
+
+    VTID-03043 — Observability + fail-loud:
+      - Emits `orb.livekit.tool.resolve_recipient.called` BEFORE dispatch
+        (spoken_name length, session, user) and `.result` AFTER with a
+        machine-readable status (`resolved` | `ambiguous` | `no_match`
+        | `failed` | `failed_network`).
+      - Returns a deterministic text to the LLM that ALWAYS starts with
+        `STATUS: <status>.` and — critically — surfaces the candidate
+        UUIDs the LLM must pass to `send_chat_message`. The legacy
+        `summarize(body)` dropped the structured candidates and only
+        showed the human-readable "Best match: Maja (95%)" line, so the
+        LLM had no UUID to forward and `send_chat_message` always failed
+        with "recipient_not_uuid". This is the bug surfaced in the
+        L2.2b.7 real-mic German test (check #6: "failed to send,
+        couldn't save the receiver").
+
+    The Vertex tool catalog declares this tool as `spoken_name` (not
+    `name`); aligning the agent signature with the catalog prevents
+    schema drift between pipelines.
+    """
+    gw = _gw(context)
+    oasis = getattr(gw, "oasis_emitter", None)
+    orb_session_id = getattr(gw, "orb_session_id", None) or ""
+    user_id = getattr(gw, "user_id", None) or ""
+
+    cleaned = (spoken_name or "").strip()
+    logger.info(
+        "resolve_recipient.called: spoken_name_chars=%d session=%s user=%s",
+        len(cleaned),
+        orb_session_id,
+        user_id,
+    )
+    if oasis is not None:
+        try:
+            await oasis.emit(
+                topic="orb.livekit.tool.resolve_recipient.called",
+                payload={
+                    "session_id": orb_session_id,
+                    "user_id": user_id,
+                    "spoken_name_chars": len(cleaned),
+                },
+                vtid="VTID-03043",
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("resolve_recipient: oasis .called emit failed: %s", exc)
+
+    body = await _dispatch(context, "resolve_recipient", {"spoken_name": cleaned})
+
+    # Parse the structured response.
+    ok = bool(body.get("ok", False)) if isinstance(body, dict) else False
+    transport = body.get("transport") if isinstance(body, dict) else None
+    err_msg = body.get("error") if isinstance(body, dict) else None
+    gateway_status = body.get("_status") if isinstance(body, dict) else None
+    result = body.get("result") if isinstance(body, dict) else None
+    candidates_raw = result.get("candidates") if isinstance(result, dict) else None
+    top_confidence = result.get("top_confidence") if isinstance(result, dict) else None
+    ambiguous = result.get("ambiguous") if isinstance(result, dict) else None
+    candidates: list[dict[str, Any]] = (
+        candidates_raw if isinstance(candidates_raw, list) else []
+    )
+
+    # Map to machine-readable status.
+    if transport == "exception":
+        status = "failed_network"
+    elif not ok:
+        status = "failed"
+    elif not candidates:
+        status = "no_match"
+    elif ambiguous is True or len(candidates) > 1:
+        status = "ambiguous"
+    else:
+        status = "resolved"
+
+    logger.info(
+        "resolve_recipient.result: status=%s candidates=%d top_confidence=%s "
+        "ambiguous=%s gateway_ok=%s gateway_status=%s error=%r",
+        status,
+        len(candidates),
+        top_confidence,
+        ambiguous,
+        ok,
+        gateway_status,
+        err_msg,
+    )
+    if oasis is not None:
+        try:
+            await oasis.emit(
+                topic="orb.livekit.tool.resolve_recipient.result",
+                payload={
+                    "session_id": orb_session_id,
+                    "user_id": user_id,
+                    "status": status,
+                    "candidate_count": len(candidates),
+                    "top_confidence": top_confidence,
+                    "ambiguous": ambiguous,
+                    "gateway_ok": ok,
+                    "gateway_status": gateway_status,
+                    "transport": transport,
+                    "error": err_msg if isinstance(err_msg, str) else None,
+                },
+                vtid="VTID-03043",
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("resolve_recipient: oasis .result emit failed: %s", exc)
+
+    # Deterministic LLM-facing text. The whole point of this rewrite: the
+    # LLM must SEE the user_id strings to pass them to send_chat_message.
+    def _fmt(c: dict[str, Any]) -> str:
+        uid = c.get("user_id") or "?"
+        vid = c.get("vitana_id") or "(no vitana_id)"
+        name = c.get("display_name") or vid
+        score = c.get("score")
+        score_str = f"{float(score) * 100:.0f}%" if isinstance(score, (int, float)) else "?"
+        return f"  - {name} (vitana_id={vid}, user_id={uid}, confidence={score_str})"
+
+    if status == "resolved":
+        top = candidates[0]
+        uid = top.get("user_id") or ""
+        vid = top.get("vitana_id") or "(no vitana_id)"
+        name = top.get("display_name") or vid
+        return (
+            f"STATUS: resolved. "
+            f"ACTION: One high-confidence match. To send a message, call "
+            f"send_chat_message with recipient_user_id=\"{uid}\", "
+            f"recipient_label=\"{vid}\", and the user's body text. "
+            f"NEVER pass the display name or any other string as recipient_user_id. "
+            f"Best match: {name} (vitana_id={vid}, user_id={uid})."
+        )
+    if status == "ambiguous":
+        listing = "\n".join(_fmt(c) for c in candidates[:3])
+        return (
+            f"STATUS: ambiguous. "
+            f"ACTION: Read the candidates' names (NOT their user_ids) to the user and "
+            f"ask which one they meant. Do NOT call send_chat_message yet. "
+            f"After the user picks, call send_chat_message with that candidate's "
+            f"user_id as recipient_user_id and vitana_id as recipient_label.\n"
+            f"Candidates ({len(candidates)} total, top 3 shown):\n{listing}"
+        )
+    if status == "no_match":
+        return (
+            f"STATUS: no_match. "
+            f"ACTION: Tell the user you couldn't find anyone named \"{cleaned}\" in the "
+            f"community. Ask them to repeat or spell the Vitana ID. Do NOT call "
+            f"send_chat_message — there is no valid recipient."
+        )
+    if status == "failed_network":
+        return (
+            "STATUS: failed_network. "
+            "ACTION: Recipient lookup did NOT reach the backend (network exception). "
+            "Tell the user honestly that you couldn't look up the recipient and you'll "
+            "try again in a moment. Do NOT call send_chat_message."
+        )
+    err_label = (
+        err_msg if isinstance(err_msg, str) and err_msg
+        else f"gateway_status={gateway_status}" if gateway_status
+        else "unknown"
+    )
+    return (
+        f"STATUS: failed. "
+        f"ACTION: Recipient lookup failed ({err_label}). Tell the user honestly that "
+        f"the lookup didn't work and you'll try again. Do NOT call send_chat_message."
+    )
 
 
 @function_tool
-async def send_chat_message(context: RunContext, recipient_id: str, body_text: str) -> str:
-    """Step 3: send the message after the user confirms the recipient."""
-    body = await _dispatch(
-        context, "send_chat_message", {"recipient_id": recipient_id, "body_text": body_text}
+async def send_chat_message(
+    context: RunContext,
+    recipient_user_id: str,
+    recipient_label: str,
+    body: str,
+) -> str:
+    """Step 3 of the 3-step send-message flow: dispatch the message.
+
+    VTID-03043 — Schema alignment + observability:
+      - Args now match the Vertex tool catalog
+        (`recipient_user_id`, `recipient_label`, `body`) so the LLM uses
+        the canonical names regardless of pipeline. Legacy
+        `recipient_id`/`body_text` are still accepted by the gateway as a
+        belt-and-braces fallback.
+      - Emits `.called` BEFORE dispatch and `.result` AFTER with a
+        machine-readable status (`sent` | `missing_recipient` |
+        `missing_body` | `recipient_not_uuid` | `rate_limited` |
+        `self_message` | `failed` | `failed_network`).
+      - Returns a deterministic text to the LLM that always opens
+        `STATUS: <status>.` and tells it what to say. Saying "the
+        message has been sent" is forbidden on any status except `sent`.
+    """
+    gw = _gw(context)
+    oasis = getattr(gw, "oasis_emitter", None)
+    orb_session_id = getattr(gw, "orb_session_id", None) or ""
+    user_id = getattr(gw, "user_id", None) or ""
+
+    recipient_user_id = (recipient_user_id or "").strip()
+    recipient_label = (recipient_label or "").strip()
+    body = (body or "").strip()
+
+    logger.info(
+        "send_chat_message.called: recipient_user_id_chars=%d label_chars=%d body_chars=%d "
+        "session=%s user=%s",
+        len(recipient_user_id),
+        len(recipient_label),
+        len(body),
+        orb_session_id,
+        user_id,
     )
-    return summarize(body)
+    if oasis is not None:
+        try:
+            await oasis.emit(
+                topic="orb.livekit.tool.send_chat_message.called",
+                payload={
+                    "session_id": orb_session_id,
+                    "user_id": user_id,
+                    "recipient_user_id_chars": len(recipient_user_id),
+                    "recipient_label_chars": len(recipient_label),
+                    "body_chars": len(body),
+                },
+                vtid="VTID-03043",
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("send_chat_message: oasis .called emit failed: %s", exc)
+
+    response = await _dispatch(
+        context,
+        "send_chat_message",
+        {
+            "recipient_user_id": recipient_user_id,
+            "recipient_label": recipient_label,
+            "body": body,
+        },
+    )
+
+    ok = bool(response.get("ok", False)) if isinstance(response, dict) else False
+    transport = response.get("transport") if isinstance(response, dict) else None
+    err_msg = response.get("error") if isinstance(response, dict) else None
+    gateway_status = response.get("_status") if isinstance(response, dict) else None
+    result = response.get("result") if isinstance(response, dict) else None
+    text_from_gateway = response.get("text") if isinstance(response, dict) else None
+
+    # Derive status. The gateway's send-side returns specific error strings
+    # for each failure mode; we keyword-match to classify so the LLM gets a
+    # single token to read.
+    if transport == "exception":
+        status = "failed_network"
+    elif ok:
+        status = "sent"
+    else:
+        err_lower = str(err_msg or "").lower()
+        if "recipient" in err_lower and ("again" in err_lower or "uuid" in err_lower or "lost track" in err_lower):
+            status = "recipient_not_uuid"
+        elif "didn't catch" in err_lower or "missing_body" in err_lower or "what would you like" in err_lower:
+            status = "missing_body"
+        elif "who would you like" in err_lower or "missing_recipient" in err_lower:
+            status = "missing_recipient"
+        elif "rate" in err_lower or "limit" in err_lower or "too many" in err_lower:
+            status = "rate_limited"
+        elif "self" in err_lower or "yourself" in err_lower:
+            status = "self_message"
+        elif "find " in err_lower or "couldn't find" in err_lower or "ambiguous" in err_lower:
+            status = "recipient_not_resolved"
+        else:
+            status = "failed"
+
+    logger.info(
+        "send_chat_message.result: status=%s gateway_ok=%s gateway_status=%s error=%r",
+        status,
+        ok,
+        gateway_status,
+        err_msg,
+    )
+    if oasis is not None:
+        try:
+            await oasis.emit(
+                topic="orb.livekit.tool.send_chat_message.result",
+                payload={
+                    "session_id": orb_session_id,
+                    "user_id": user_id,
+                    "status": status,
+                    "gateway_ok": ok,
+                    "gateway_status": gateway_status,
+                    "transport": transport,
+                    "error": err_msg if isinstance(err_msg, str) else None,
+                },
+                vtid="VTID-03043",
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("send_chat_message: oasis .result emit failed: %s", exc)
+
+    # Deterministic LLM-facing text. Only `sent` is allowed to say the
+    # message went through. Every other branch must tell the user the
+    # message did NOT go through.
+    if status == "sent":
+        # Gateway's text on success is "Sent to @vid." — preserve it.
+        if isinstance(text_from_gateway, str) and text_from_gateway:
+            return f"STATUS: sent. ACTION: {text_from_gateway}"
+        return (
+            f"STATUS: sent. "
+            f"ACTION: The message has been sent to @{recipient_label}. "
+            f"Acknowledge briefly to the user (vary phrasing every call)."
+        )
+    if status == "rate_limited":
+        return (
+            "STATUS: rate_limited. "
+            "ACTION: The message did NOT go through — voice-send quota for this session "
+            "is exhausted. Tell the user they can keep going in the app. Do NOT pretend "
+            "the message was sent."
+        )
+    if status == "missing_body":
+        return (
+            "STATUS: missing_body. "
+            "ACTION: You didn't pass a body. Ask the user what they want to say, then "
+            "call send_chat_message again with the body filled in. Do NOT claim a "
+            "message was sent."
+        )
+    if status == "missing_recipient":
+        return (
+            "STATUS: missing_recipient. "
+            "ACTION: You didn't pass a recipient_user_id. Call resolve_recipient first, "
+            "pick the UUID from its result, then call send_chat_message. Do NOT claim "
+            "a message was sent."
+        )
+    if status == "recipient_not_uuid":
+        return (
+            "STATUS: recipient_not_uuid. "
+            "ACTION: The recipient_user_id you passed is not a UUID. Call "
+            "resolve_recipient again and pass that result's user_id field verbatim — "
+            "NOT the display name, NOT the vitana_id. Do NOT claim a message was sent."
+        )
+    if status == "recipient_not_resolved":
+        return (
+            "STATUS: recipient_not_resolved. "
+            "ACTION: The gateway couldn't confirm the recipient. Tell the user you "
+            "lost track of who they meant and ask for the Vitana ID again. Do NOT "
+            "claim a message was sent."
+        )
+    if status == "self_message":
+        return (
+            "STATUS: self_message. "
+            "ACTION: The recipient resolves to the current user — Vitana cannot send "
+            "messages to yourself. Tell the user gently. Do NOT claim a message was sent."
+        )
+    if status == "failed_network":
+        return (
+            "STATUS: failed_network. "
+            "ACTION: The send did NOT reach the backend (network exception). Tell the "
+            "user the message didn't go through and you'll try again. Do NOT claim a "
+            "message was sent."
+        )
+    err_label = (
+        err_msg if isinstance(err_msg, str) and err_msg
+        else f"gateway_status={gateway_status}" if gateway_status
+        else "unknown"
+    )
+    return (
+        f"STATUS: failed. "
+        f"ACTION: Send failed ({err_label}). Tell the user honestly the message did "
+        f"NOT go through. Do NOT claim a message was sent."
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -774,6 +1692,95 @@ async def scan_existing_matches(context: RunContext) -> str:
 async def get_matchmaker_result(context: RunContext, intent_id: str) -> str:  # noqa: D401
     """Get the matchmaker's current result for a specific intent."""
     body = await _gw(context).get(f"/api/v1/intents/{intent_id}/matchmaker")
+    return summarize(body)
+
+
+# VTID-03048: matchmaker parity — surface Vertex's `find_perfect_product` and
+# `find_perfect_practitioner` tools to the LiveKit agent. Until this slice,
+# only Vertex registered them in its function_declarations catalog
+# (services/gateway/src/orb/live/tools/live-tool-catalog.ts:424-477), even
+# though the shared dispatcher already implemented them
+# (services/gateway/src/services/orb-tools-shared.ts:tool_find_perfect_product,
+# :tool_find_perfect_practitioner). Result: when a LiveKit user asked
+# "find me a tennis partner" / "recommend a supplement", the LLM had only
+# `post_intent` / `share_intent_post` available and skipped straight to
+# posting an intent instead of running the search-first matchmaker flow.
+# Both wrappers _dispatch to the shared registry which already enforces
+# the fact-fusing logic (weakest pillar + Life Compass goal + filters).
+@function_tool
+async def find_perfect_product(
+    context: RunContext,
+    goal_text: str = "",
+    pillar: str = "",
+    max_price: float | None = None,
+    exclude_ingredients: list[str] | None = None,
+) -> str:
+    """Recommend the perfect product for the user (supplement / gear / food).
+
+    Fuses the user's weakest Vitana Index pillar + active Life Compass goal
+    with a free-form ask + optional filters (price cap, ingredients to
+    avoid). Returns top-3 with rationale.
+
+    Use this for PRODUCTS. For services or practitioners use
+    `find_perfect_practitioner`. For people / community matches use
+    `find_community_member`.
+
+    Args:
+        goal_text: Free-form description of what the user wants the product
+            to help with.
+        pillar: OPTIONAL — nutrition / hydration / exercise / sleep / mental.
+            Defaults to the user's weakest pillar.
+        max_price: OPTIONAL — price cap.
+        exclude_ingredients: OPTIONAL — list of ingredient names to avoid.
+    """
+    args: dict[str, Any] = {"goal_text": goal_text}
+    if pillar:
+        args["pillar"] = pillar
+    if max_price is not None:
+        args["max_price"] = max_price
+    if exclude_ingredients:
+        args["exclude_ingredients"] = exclude_ingredients
+    body = await _dispatch(context, "find_perfect_product", args)
+    return summarize(body)
+
+
+@function_tool
+async def find_perfect_practitioner(
+    context: RunContext,
+    specialty: str = "",
+    goal_text: str = "",
+    language: str = "",
+    telehealth_ok: bool | None = None,
+    max_price: float | None = None,
+) -> str:
+    """Recommend the perfect practitioner / coach / doctor for the user.
+
+    Multi-criteria search: specialty, language, telehealth-ok, price cap,
+    fused with the active Life Compass goal. Returns top-3 with rationale.
+
+    Use for: "find me a functional medicine doc who takes telehealth",
+    "who can coach me on sleep?", "I need a German-speaking nutritionist".
+
+    Args:
+        specialty: e.g. "functional medicine", "nutrition", "therapy".
+        goal_text: Free-form description of what the user is working on.
+        language: OPTIONAL — language code or name, e.g. "en", "de".
+        telehealth_ok: OPTIONAL — restrict to practitioners offering
+            telehealth.
+        max_price: OPTIONAL — price cap.
+    """
+    args: dict[str, Any] = {}
+    if specialty:
+        args["specialty"] = specialty
+    if goal_text:
+        args["goal_text"] = goal_text
+    if language:
+        args["language"] = language
+    if telehealth_ok is not None:
+        args["telehealth_ok"] = telehealth_ok
+    if max_price is not None:
+        args["max_price"] = max_price
+    body = await _dispatch(context, "find_perfect_practitioner", args)
     return summarize(body)
 
 
@@ -931,6 +1938,10 @@ def all_tool_names() -> list[str]:
         "read_email", "find_contact",
         # External AI bridge (1)
         "consult_external_ai",
+        # Life Compass (1) — VTID-03010 (L2.2b.6)
+        "get_life_compass",
+        # Journey Foundation (1) — VTID-03255: guided goal-gated dual-axis journey
+        "record_journey_answer",
         # Vitana Index (3)
         "get_vitana_index", "get_index_improvement_suggestions", "create_index_improvement_plan",
         # Diary (1)
@@ -952,6 +1963,11 @@ def all_tool_names() -> list[str]:
         "post_intent", "view_intent_matches", "list_my_intents", "respond_to_match",
         "mark_intent_fulfilled", "share_intent_post", "scan_existing_matches",
         "get_matchmaker_result",
+        # VTID-03048: matchmaker parity — Vertex-catalog tools now exposed
+        # on LiveKit. Implementations live in
+        # services/gateway/src/services/orb-tools-shared.ts (tool_find_perfect_*)
+        # and are reached through the shared dispatcher.
+        "find_perfect_product", "find_perfect_practitioner",
         # Navigation (3)
         "navigate", "navigate_to_screen", "get_current_screen",
     ]

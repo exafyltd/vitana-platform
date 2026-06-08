@@ -262,7 +262,10 @@ export async function reportSubagentComplete(
         vtid,
         domain,
         run_id: runId,
-        skip_verification: true, // For worker-runner, we trust the LLM result
+        // Let the gateway run verification (advisory mode: never blocks, emits a
+        // developer-review report of fixes needed). Previously this was hardcoded
+        // to skip_verification:true, which bypassed the verification engine for
+        // every autonomous execution.
         result: {
           ok: result.ok,
           files_changed: result.files_changed || [],
@@ -309,7 +312,9 @@ export async function reportOrchestratorComplete(
         success,
         summary: summary || (success ? 'Task completed successfully' : 'Task failed'),
         error,
-        skip_verification: true, // For worker-runner, we trust the LLM result
+        // Let the gateway run verification (advisory mode: never blocks, emits a
+        // developer-review report of fixes needed). Previously hardcoded to
+        // skip_verification:true, bypassing the verification engine entirely.
         result: result
           ? {
               files_changed: result.files_changed || [],
@@ -419,4 +424,75 @@ export async function reportProgress(
   );
 
   return result.ok;
+}
+
+/**
+ * PR-A (VTID-02922): Four-state contract the worker-runner uses when a
+ * self-healing task is bridged into the Dev Autopilot execution pipeline.
+ * Worker-runner doesn't make its own describe-only LLM call for these
+ * tasks — it polls the gateway endpoint which proxies the real autopilot
+ * execution row.
+ */
+export type AwaitAutopilotResult =
+  | {
+      state: 'pr_ready';
+      pr_url: string;
+      pr_number: number;
+      branch: string | null;
+      files_changed: string[];
+      files_created: string[];
+      execution_status: string;
+    }
+  | {
+      state: 'completed';
+      pr_url: string;
+      pr_number: number;
+      branch: string | null;
+      files_changed: string[];
+      files_created: string[];
+      execution_status: 'completed';
+    }
+  | {
+      state: 'failed';
+      error: string;
+      execution_status: string;
+    }
+  | {
+      state: 'deferred';
+      reason: 'timeout' | 'still_running';
+      execution_status: string;
+    };
+
+/**
+ * Block-poll the gateway for an autopilot execution outcome. Returns
+ * 'deferred' on the gateway-side timeout instead of failing — the
+ * self-healing reconciler picks up the lifecycle from there.
+ */
+export async function awaitAutopilotExecution(
+  config: RunnerConfig,
+  vtid: string,
+  autopilotExecutionId: string,
+  timeoutMs?: number,
+): Promise<{ ok: boolean; result?: AwaitAutopilotResult; error?: string }> {
+  const result = await gatewayRequest<AwaitAutopilotResult>(
+    config,
+    '/api/v1/worker/orchestrator/await-autopilot-execution',
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        vtid,
+        autopilot_execution_id: autopilotExecutionId,
+        worker_id: config.workerId,
+        timeout_ms: timeoutMs,
+      }),
+    },
+  );
+
+  if (!result.ok) {
+    return { ok: false, error: result.error || 'await-autopilot-execution call failed' };
+  }
+  if (!result.data || typeof (result.data as any).state !== 'string') {
+    return { ok: false, error: 'await-autopilot-execution returned malformed body' };
+  }
+  return { ok: true, result: result.data };
 }

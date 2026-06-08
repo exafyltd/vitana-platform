@@ -28,6 +28,13 @@ import { z } from 'zod';
 import { randomUUID } from 'crypto';
 import { emitOasisEvent } from '../services/oasis-event-service';
 import { DailyClient } from '../services/daily-client';
+// VTID-03107: Live Room hosting quota enforcement
+import { verifyAndExtractIdentity } from '../middleware/auth-supabase-jwt';
+import {
+  checkEntitlement,
+  recordUsage,
+  recordPaywallEvent,
+} from '../services/entitlement-service';
 import { RoomSessionManager } from '../services/room-session-manager';
 import Stripe from 'stripe';
 import rateLimit from 'express-rate-limit';
@@ -400,6 +407,70 @@ router.post('/rooms/:id/start', async (req: Request, res: Response) => {
     return res.status(400).json({ ok: false, error: 'Invalid room ID format' });
   }
 
+  // VTID-03107: Live Room hosting quota check (BEFORE the live_room_start RPC).
+  // Fails open on any internal error — never block a legitimate room start
+  // because the entitlement service had a hiccup.
+  let liveRoomEntitlement: Awaited<ReturnType<typeof checkEntitlement>> | null = null;
+  try {
+    const verified = await verifyAndExtractIdentity(token);
+    const identity = verified?.identity;
+    if (identity?.user_id && identity?.tenant_id) {
+      liveRoomEntitlement = await checkEntitlement(
+        identity.user_id,
+        identity.tenant_id,
+        'live_room_minutes',
+        { amount: 1, authToken: token }
+      );
+
+      // Hard block when host has zero remaining minutes (free user past quota
+      // or any tier whose live_room_minutes hit `behavior_on_exceed='hard_block'`).
+      // D36 deferral has already been applied inside checkEntitlement.
+      if (
+        liveRoomEntitlement.paywall_action === 'hard_block' ||
+        liveRoomEntitlement.paywall_action === 'paywall'
+      ) {
+        await recordPaywallEvent(identity.user_id, identity.tenant_id, 'live_room_minutes', 'shown', {
+          context: 'room_start_blocked',
+          remaining: liveRoomEntitlement.remaining,
+          vtid: 'VTID-03107',
+        });
+        return res.status(402).json({
+          ok: false,
+          error: 'payment_required',
+          paywall: {
+            feature: 'live_room_minutes',
+            tier: liveRoomEntitlement.tier,
+            quota: liveRoomEntitlement.quota,
+            used: liveRoomEntitlement.used,
+            remaining: liveRoomEntitlement.remaining,
+            reset_at: liveRoomEntitlement.reset_at,
+            credit_cost_per_unit: liveRoomEntitlement.credit_cost_per_unit,
+            user_credit_balance: liveRoomEntitlement.user_credit_balance,
+            allowed_burn_buckets: liveRoomEntitlement.allowed_burn_buckets,
+            credit_option:
+              liveRoomEntitlement.credit_cost_per_unit > 0
+                ? {
+                    cost_per_unit: liveRoomEntitlement.credit_cost_per_unit,
+                    balance: liveRoomEntitlement.user_credit_balance,
+                    balance_sufficient_for_one_unit:
+                      liveRoomEntitlement.user_credit_balance >=
+                      liveRoomEntitlement.credit_cost_per_unit,
+                    endpoint: '/api/v1/billing/credits/spend',
+                  }
+                : null,
+            upgrade_url: '/api/v1/billing/checkout/subscription',
+            paywall_action: liveRoomEntitlement.paywall_action,
+          },
+          vtid: 'VTID-03107',
+        });
+      }
+    }
+  } catch (err: unknown) {
+    console.warn(
+      `[VTID-03107] live_room_minutes entitlement check failed (failing open): ${err instanceof Error ? err.message : String(err)}`
+    );
+  }
+
   const result = await callRpc(token, 'live_room_start', {
     p_live_room_id: roomId
   });
@@ -443,13 +514,72 @@ router.post('/rooms/:id/start', async (req: Request, res: Response) => {
     console.warn(`[VTID-01228] community_live_streams sync (start) failed: ${err.message}`);
   }
 
+  // Notify everyone who tapped "Notify me" on this scheduled session that it's now live.
+  // Audience comes from live_stream_subscribers (the persistent Notify list); titles/bodies
+  // are localized per-recipient via the gateway i18n catalog (PR #2269 server-side i18n rule).
+  try {
+    const credsN = getSupabaseCredentials();
+    if (credsN) {
+      const { createClient } = await import('@supabase/supabase-js');
+      const supaN = createClient(credsN.url, credsN.key);
+      let hostId = '';
+      try { hostId = JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString()).sub; } catch {}
+
+      const { data: stream } = await supaN
+        .from('community_live_streams')
+        .select('title, tenant_id')
+        .eq('id', roomId)
+        .single();
+
+      const tenantId = (stream as any)?.tenant_id;
+      if (tenantId) {
+        const { data: subs } = await supaN
+          .from('live_stream_subscribers')
+          .select('user_id')
+          .eq('stream_id', roomId)
+          .neq('user_id', hostId);
+
+        const subscriberIds = [...new Set((subs || []).map((s: any) => s.user_id as string))];
+        if (subscriberIds.length > 0) {
+          const { tt } = await import('../i18n/catalog');
+          const { bulkGetUserLocales } = await import('../i18n/server-locale');
+          const locales = await bulkGetUserLocales(supaN, subscriberIds);
+          const streamTitle = (stream as any)?.title || '';
+          for (const uid of subscriberIds) {
+            const lc = locales.get(uid);
+            notifyUserAsync(uid, tenantId, 'live_room_starting', {
+              title: tt('notif.live_going_live.title', lc),
+              body: tt('notif.live_going_live.body', lc, { title: streamTitle }),
+              data: { url: '/community/live-rooms', room_id: roomId, entity_id: roomId },
+            }, supaN);
+          }
+          console.log(`[Notifications] live go-live fan-out → ${subscriberIds.length} subscriber(s) for ${roomId}`);
+        }
+      }
+    }
+  } catch (err: any) {
+    console.warn(`[Notifications] live go-live dispatch error: ${err.message}`);
+  }
+
   console.log(`[VTID-01090] Live room started: ${roomId}`);
 
+  // VTID-03107: Surface session budget so the frontend SessionTimer can
+  // count down from minutes_allowed = remaining quota.
   return res.status(200).json({
     ok: true,
     live_room_id: roomId,
     status: 'live',
-    started_at: result.data?.started_at
+    started_at: result.data?.started_at,
+    session_budget: liveRoomEntitlement
+      ? {
+          minutes_allowed: liveRoomEntitlement.remaining,
+          tier: liveRoomEntitlement.tier,
+          quota: liveRoomEntitlement.quota,
+          used: liveRoomEntitlement.used,
+          reset_at: liveRoomEntitlement.reset_at,
+          deferred_for_vulnerability: liveRoomEntitlement.deferred_for_vulnerability,
+        }
+      : null,
   });
 });
 
@@ -482,6 +612,35 @@ router.post('/rooms/:id/end', async (req: Request, res: Response) => {
       result.error?.includes('ROOM_NOT_FOUND') ? 404 :
       result.error?.includes('INVALID_STATE') ? 409 : 502;
     return res.status(statusCode).json({ ok: false, error: result.error });
+  }
+
+  // VTID-03107: Record actual hosting minutes consumed. Best-effort — never
+  // block the room-end response on a metering error.
+  try {
+    const startedAtIso = result.data?.started_at as string | undefined;
+    const endedAtIso = result.data?.ended_at as string | undefined;
+    if (startedAtIso && endedAtIso) {
+      const elapsedMs = new Date(endedAtIso).getTime() - new Date(startedAtIso).getTime();
+      const elapsedMinutes = Math.max(0, Math.ceil(elapsedMs / 60_000));
+      if (elapsedMinutes > 0) {
+        const verified = await verifyAndExtractIdentity(token);
+        if (verified?.identity?.user_id && verified.identity.tenant_id) {
+          await recordUsage(
+            verified.identity.user_id,
+            verified.identity.tenant_id,
+            'live_room_minutes',
+            elapsedMinutes
+          );
+          console.log(
+            `[VTID-03107] recorded ${elapsedMinutes} live_room_minutes for user=${verified.identity.user_id}`
+          );
+        }
+      }
+    }
+  } catch (err: unknown) {
+    console.warn(
+      `[VTID-03107] live_room_minutes usage record failed (non-blocking): ${err instanceof Error ? err.message : String(err)}`
+    );
   }
 
   // Sync to community_live_streams (so LiveRooms listing reflects ended state)
@@ -1547,6 +1706,8 @@ router.post('/rooms/:id/sessions', sessionCreateLimiter, async (req: Request, re
           created_by: userId,
           status: streamStatus,
           stream_type: 'audio',
+          cover_image_url: validation.data.metadata?.cover_image_url || null,
+          description: validation.data.metadata?.description || null,
           started_at: streamStatus === 'live' ? new Date().toISOString() : null,
           scheduled_for: validation.data.starts_at,
           access_level: validation.data.access_level || 'public',
