@@ -15,6 +15,7 @@ const ALLOWED_ORIGINS = [
   "https://id-preview--vitana-v1.lovable.app",               // Lovable preview
   "https://vitanaland.com",                                    // Production custom domain (mobile app)
   "https://www.vitanaland.com",                                // Production custom domain (www)
+  "https://preview.vitanaland.com",                            // Staging frontend (community-app-staging) — staging-first cutover
 ];
 
 // VTID-01226: Dynamic origin patterns for Lovable-hosted frontends
