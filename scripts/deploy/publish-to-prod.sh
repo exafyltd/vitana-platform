@@ -103,7 +103,7 @@ dispatch_with_gh() {
     -f vtid="$VTID" \
     -f service="$SERVICE" \
     -f health_path="$HEALTH" \
-    -f initiator="manual-escape-hatch" \
+    -f initiator="agent" \
     -f environment="production" \
     -f canary="$CANARY"
 }
@@ -121,7 +121,7 @@ dispatch_with_curl() {
     "vtid": "${VTID}",
     "service": "${SERVICE}",
     "health_path": "${HEALTH}",
-    "initiator": "manual-escape-hatch",
+    "initiator": "agent",
     "environment": "production",
     "canary": "${CANARY}"
   }

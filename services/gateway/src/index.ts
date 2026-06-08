@@ -108,6 +108,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const journeyFoundationRouter = require('./routes/journey-foundation').default;
   // VTID-03276: Guided Journey durable mode/progress state (guided|full UX shell).
   const guidedJourneyRouter = require('./routes/guided-journey').default;
+  // VTID-03277: Guided Journey checklist curriculum — admin editor + public read.
+  const journeyChecklistAdminRouter = require('./routes/journey-checklist-admin').default;
+  const journeyChecklistRouter = require('./routes/journey-checklist').default;
   // VTID-03152 Slice B + J: unified my-journey payload + landing-route resolver.
   const myJourneyRouter = require('./routes/my-journey').default;
   const goalPlannerRouter = require('./routes/goal-planner').default;
@@ -748,6 +751,10 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
 
   // VTID-03276: Guided Journey durable mode/progress state (additive onboarding UX layer).
   mountRouterSync(app, '/api/v1/journey', guidedJourneyRouter, { owner: 'guided-journey' });
+
+  // VTID-03277: Guided Journey checklist curriculum — admin editor + public read.
+  mountRouterSync(app, '/api/v1/admin/journey-checklist', journeyChecklistAdminRouter, { owner: 'journey-checklist-admin' });
+  mountRouterSync(app, '/api/v1/journey-checklist', journeyChecklistRouter, { owner: 'journey-checklist' });
 
   // VTID-03152: journey-foundation endpoints.
   mountRouterSync(app, '/api/v1/my-journey', myJourneyRouter, { owner: 'my-journey' });
