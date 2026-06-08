@@ -196,6 +196,13 @@ const ROUTING_CASES: RoutingCase[] = [
   { utterance: 'open my services',                          lang: 'en', expected_screen_id: 'BUSINESS.SERVICES' },
   { utterance: 'show me my clients',                        lang: 'en', expected_screen_id: 'BUSINESS.CLIENTS' },
   { utterance: 'wie laufen meine buchungen',                lang: 'de', expected_screen_id: 'BUSINESS.ANALYTICS' },
+  // VTID-NAV-BUSINESS-TABS: "Business Hub Sales" must reach the Sales tab, not
+  // the Business Hub Snapshot (BUSINESS.OVERVIEW). Plus the plain-parent guard.
+  { utterance: 'take me to business hub sales',             lang: 'en', expected_screen_id: 'BUSINESS.SELL_EARN' },
+  { utterance: 'business hub sales',                        lang: 'en', expected_screen_id: 'BUSINESS.SELL_EARN' },
+  { utterance: 'open my sales',                             lang: 'en', expected_screen_id: 'BUSINESS.SELL_EARN' },
+  { utterance: 'bring mich zum business hub verkäufe',      lang: 'de', expected_screen_id: 'BUSINESS.SELL_EARN' },
+  { utterance: 'open the business hub',                     lang: 'en', expected_screen_id: 'BUSINESS.OVERVIEW' },
 
   // ── WALLET ──
   { utterance: 'open my wallet',                            lang: 'en', expected_screen_id: 'WALLET.OVERVIEW' },
