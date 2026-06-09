@@ -6078,6 +6078,18 @@ async function connectToLiveAPI(
       _personaVoice = _personaVoice || getLiveApiVoice(session.lang);
       console.log(`[VTID-02047] Setup voice for session ${session.sessionId}: persona=${_persona} voice=${_personaVoice}`);
 
+      // VTID-03273 Pillar B (Codex review fix) — when resuming a NATIVE session
+      // (resumptionHandle present), the server restores the prior context, so
+      // re-injecting transcript turns into system_instruction would DUPLICATE
+      // recent conversation on every GoAway/transparent reconnect and make the
+      // model repeat summaries / re-answer old turns — the exact "same summary
+      // every 2 minutes" defect the plan kills. Inject transcript history ONLY
+      // on a cold connection with no handle (rare fallback); native resume
+      // carries the thread itself.
+      const reconnectHistory = session.resumptionHandle
+        ? undefined
+        : renderConversationHistoryWithPersonas(session.transcriptTurns, 10);
+
       const setupMessage = {
         setup: {
           model: `projects/${VERTEX_PROJECT_ID}/locations/${VERTEX_LOCATION}/publishers/google/models/${VERTEX_LIVE_MODEL}`,
@@ -6149,7 +6161,7 @@ async function connectToLiveAPI(
                         // VTID-ANON-RECONNECT: Pass conversation history for reconnection continuity.
                         // Forwarding v2d: persona-labeled so the receiving
                         // persona doesn't absorb another persona's lines as their own.
-                        renderConversationHistoryWithPersonas(session.transcriptTurns, 10),
+                        reconnectHistory,
                         // VTID-02047: persona swap to Vitana is NOT a generic
                         // v2e: REVERSED. The old behavior forced isReconnect=false
                         // on swap-back so Vitana would greet. That caused two
@@ -6255,7 +6267,7 @@ async function connectToLiveAPI(
                         // Forwarding v2d: persona-labeled so Vitana doesn't
                         // absorb Devon/Sage/Atlas/Mira lines as her own past
                         // speech ("Hi I'm Devon" with Vitana's voice).
-                        renderConversationHistoryWithPersonas(session.transcriptTurns, 10),
+                        reconnectHistory,
                         // v3: REVERSED v2e. On swap-back to Vitana,
                         // isReconnect=FALSE so she greets with the structured
                         // welcome (see buildSwapBackWelcomeBlock).
@@ -6747,6 +6759,10 @@ import { MAX_RECONNECTS } from '../orb/live/config';
 // proactively rotate the connection. Small enough to overlap the warning
 // window, large enough to finish the new handshake before the old socket dies.
 const PROACTIVE_GOAWAY_LEAD_MS = 2000;
+// VTID-03273 Pillar B (Codex review fix) — treat the user as "mid-utterance" if
+// real mic audio was forwarded upstream within this window. Rotating during it
+// would truncate/lose live input (no resend after the last handle), so we defer.
+const PROACTIVE_GOAWAY_USER_AUDIO_IDLE_MS = 1500;
 
 /**
  * VTID-03273 Pillar B — schedule a proactive, seamless connection rotation
@@ -6770,8 +6786,15 @@ function scheduleProactiveGoAwayResume(session: GeminiLiveSession, timeLeftMs: n
     if (!session.active) return;
     const ws = session.upstreamWs;
     if (!ws || ws.readyState !== WebSocket.OPEN) return; // already gone — natural close handles it
-    if (session.isModelSpeaking && Date.now() < deadlineAt) {
-      // Don't interrupt mid-sentence — re-check soon.
+    // Never rotate while EITHER party is mid-turn: not while the model speaks,
+    // and not while the user is speaking (recent forwarded mic audio). Closing
+    // then would cut Vitana off OR truncate the user's live utterance (which is
+    // not buffered/resent past the last handle). Defer until both are idle; if
+    // we pass the deadline first, the server's own close drives the (native)
+    // reconnect instead.
+    const userMidUtterance =
+      Date.now() - (session.lastAudioForwardedTime || 0) < PROACTIVE_GOAWAY_USER_AUDIO_IDLE_MS;
+    if ((session.isModelSpeaking || userMidUtterance) && Date.now() < deadlineAt) {
       (session as any)._goAwayTimer = setTimeout(attempt, 750);
       return;
     }
