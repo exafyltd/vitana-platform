@@ -3047,7 +3047,13 @@ export async function tool_navigate(
           decision: 'confident',
           confidence: consultResult.confidence,
           screen_id: entry.screen_id,
-          route: entry.route,
+          // Return the RESOLVED route (honors mobile_route + overlay marker),
+          // matching the directive sent to the client and navigate_to_screen's
+          // contract. The caller stores result.route into session.current_route /
+          // pendingNavigation / navigator memory, so returning the raw desktop
+          // entry.route here would desync session state from where the client
+          // actually navigated (e.g. /settings/privacy vs /settings?mode=privacy).
+          route: resolvedRoute,
           title: content.title,
           reason: question,
           directive,
