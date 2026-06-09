@@ -2722,6 +2722,13 @@ const NAVIGATION_CONFIG = [
         ]
     },
     {
+        "section": "knowledge-base",
+        "basePath": "/command-hub/knowledge-base/",
+        "tabs": [
+            { "key": "checklist", "label": "Checklist", "path": "/command-hub/knowledge-base/checklist/" }
+        ]
+    },
+    {
         "section": "assistant",
         "basePath": "/command-hub/assistant/",
         "tabs": [
@@ -2951,6 +2958,7 @@ const NAVIGATION_CONFIG = [
 const SECTION_LABELS = {
     'overview': 'Overview',
     'admin': 'Admin',
+    'knowledge-base': 'Knowledge Base',
     'assistant': 'Assistant',
     'voice': 'Voice',
     'autonomy': 'Autonomy',
@@ -6375,6 +6383,441 @@ function renderSplitScreen() {
     return split;
 }
 
+// ============================================================================
+// VTID-03278 / DEV-COMHU-0505 — Knowledge Base → Checklist (Guided Journey
+// curriculum editor). DEV-COMHU marker satisfies the Command Hub ownership guard.
+// Admin screens 05 (list) / 06 (topic editor) / 07 (publish validation).
+// Consumes the P2 API /api/v1/admin/journey-checklist/*. CSP-safe: events via
+// onclick handlers, layout via el.style only (no inline markup handlers/styles).
+// Reuses existing admin-* / btn / form-control classes (no new design system).
+// ============================================================================
+function kbcState() {
+    if (!state.kbChecklist) {
+        state.kbChecklist = {
+            loaded: false, loading: false, error: null,
+            topics: [], selectedId: null, editor: null, saving: false,
+            filters: { session: '', chapter: '', status: '', businessGate: '', search: '' },
+            validation: null, validating: false,
+            versions: [], versionsLoaded: false, publishing: false,
+            view: 'topics',
+        };
+    }
+    return state.kbChecklist;
+}
+
+function kbEl(tag, cls, text) {
+    var e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text != null) e.textContent = text;
+    return e;
+}
+
+function kbTopicComplete(t) {
+    return !!(t.vitanaVoiceScript && t.vitanaVoiceScript.trim()
+        && t.guidedPracticeTarget && t.guidedPracticeTarget.trim());
+}
+
+async function fetchKbChecklist() {
+    var s = kbcState();
+    s.loading = true; s.error = null; renderApp();
+    try {
+        var qs = [];
+        if (s.filters.session) qs.push('session=' + encodeURIComponent(s.filters.session));
+        if (s.filters.chapter) qs.push('chapterId=' + encodeURIComponent(s.filters.chapter));
+        if (s.filters.status) qs.push('status=' + encodeURIComponent(s.filters.status));
+        if (s.filters.businessGate) qs.push('businessGate=' + encodeURIComponent(s.filters.businessGate));
+        if (s.filters.search) qs.push('search=' + encodeURIComponent(s.filters.search));
+        var url = '/api/v1/admin/journey-checklist/topics' + (qs.length ? '?' + qs.join('&') : '');
+        var resp = await fetch(url, { headers: buildContextHeaders() });
+        var json = await resp.json();
+        if (!resp.ok || !json.ok) {
+            if (resp.status === 401) throw new Error('Unauthenticated — sign in as an Exafy admin');
+            if (resp.status === 403) throw new Error('Access denied — Exafy admin role required');
+            throw new Error(json.error || ('HTTP ' + resp.status));
+        }
+        s.topics = json.topics || [];
+        s.loaded = true;
+    } catch (err) {
+        s.error = err.message;
+    } finally {
+        s.loading = false; renderApp();
+    }
+}
+
+function kbSelectTopic(id) {
+    var s = kbcState();
+    s.selectedId = id;
+    var t = s.topics.find(function (x) { return x.topicId === id; });
+    s.editor = t ? JSON.parse(JSON.stringify(t)) : null;
+    renderApp();
+}
+
+async function kbSaveTopic() {
+    var s = kbcState();
+    if (!s.editor) return;
+    s.saving = true; renderApp();
+    try {
+        var e = s.editor;
+        var patch = {
+            displayLabel: e.displayLabel, title: e.title, shortDescription: e.shortDescription,
+            vitanaVoiceScript: e.vitanaVoiceScript, explanation: e.explanation,
+            guidedPracticeTarget: e.guidedPracticeTarget, practiceActionType: e.practiceActionType,
+            completionEvent: e.completionEvent, unlockRule: e.unlockRule,
+            businessGate: e.businessGate || null, session: e.session, position: e.position,
+            chapterId: e.chapterId,
+        };
+        var resp = await fetch('/api/v1/admin/journey-checklist/topics/' + encodeURIComponent(e.topicId), {
+            method: 'PATCH',
+            headers: Object.assign({ 'Content-Type': 'application/json' }, buildContextHeaders()),
+            body: JSON.stringify(patch),
+        });
+        var json = await resp.json();
+        if (!resp.ok || !json.ok) throw new Error(json.error || ('HTTP ' + resp.status));
+        showToast('Saved ' + e.topicId, 'success');
+        var idx = s.topics.findIndex(function (x) { return x.topicId === e.topicId; });
+        if (idx >= 0) s.topics[idx] = json.topic;
+        s.editor = JSON.parse(JSON.stringify(json.topic));
+    } catch (err) {
+        showToast('Save failed: ' + err.message, 'error');
+    } finally {
+        s.saving = false; renderApp();
+    }
+}
+
+async function kbDisableTopic(id, disabled) {
+    try {
+        var resp = await fetch('/api/v1/admin/journey-checklist/topics/' + encodeURIComponent(id) + '/disable', {
+            method: 'POST',
+            headers: Object.assign({ 'Content-Type': 'application/json' }, buildContextHeaders()),
+            body: JSON.stringify({ disabled: disabled }),
+        });
+        var json = await resp.json();
+        if (!resp.ok || !json.ok) throw new Error(json.error || ('HTTP ' + resp.status));
+        showToast((disabled ? 'Disabled ' : 'Enabled ') + id, 'success');
+        await fetchKbChecklist();
+    } catch (err) {
+        showToast('Action failed: ' + err.message, 'error');
+    }
+}
+
+async function kbValidate() {
+    var s = kbcState();
+    s.validating = true; renderApp();
+    try {
+        var resp = await fetch('/api/v1/admin/journey-checklist/validate', { headers: buildContextHeaders() });
+        var json = await resp.json();
+        if (!resp.ok || !json.ok) throw new Error(json.error || ('HTTP ' + resp.status));
+        s.validation = json.validation;
+        showToast(json.validation.ok ? 'Validation passed'
+            : 'Validation found ' + json.validation.errors.length + ' issue(s)',
+            json.validation.ok ? 'success' : 'error');
+    } catch (err) {
+        showToast('Validate failed: ' + err.message, 'error');
+    } finally {
+        s.validating = false; renderApp();
+    }
+}
+
+async function kbPublish() {
+    var s = kbcState();
+    if (!window.confirm('Publish the current checklist? My Journey will switch to this version.')) return;
+    s.publishing = true; renderApp();
+    try {
+        var resp = await fetch('/api/v1/admin/journey-checklist/publish', {
+            method: 'POST',
+            headers: Object.assign({ 'Content-Type': 'application/json' }, buildContextHeaders()),
+            body: JSON.stringify({}),
+        });
+        var json = await resp.json();
+        if (resp.status === 422) {
+            s.validation = json.validation;
+            showToast('Publish blocked — ' + (json.validation ? json.validation.errors.length : '?') + ' validation issue(s)', 'error');
+            return;
+        }
+        if (!resp.ok || !json.ok) throw new Error(json.error || ('HTTP ' + resp.status));
+        s.validation = json.validation;
+        showToast('Published ' + json.version.versionLabel, 'success');
+        s.versionsLoaded = false;
+        await kbFetchVersions();
+    } catch (err) {
+        showToast('Publish failed: ' + err.message, 'error');
+    } finally {
+        s.publishing = false; renderApp();
+    }
+}
+
+async function kbFetchVersions() {
+    var s = kbcState();
+    try {
+        var resp = await fetch('/api/v1/admin/journey-checklist/versions', { headers: buildContextHeaders() });
+        var json = await resp.json();
+        if (!resp.ok || !json.ok) throw new Error(json.error || ('HTTP ' + resp.status));
+        s.versions = json.versions || [];
+        s.versionsLoaded = true;
+    } catch (err) {
+        showToast('Versions load failed: ' + err.message, 'error');
+    }
+    renderApp();
+}
+
+async function kbRollback(versionId) {
+    if (!window.confirm('Roll back to this version? My Journey will serve it.')) return;
+    try {
+        var resp = await fetch('/api/v1/admin/journey-checklist/rollback', {
+            method: 'POST',
+            headers: Object.assign({ 'Content-Type': 'application/json' }, buildContextHeaders()),
+            body: JSON.stringify({ versionId: versionId }),
+        });
+        var json = await resp.json();
+        if (!resp.ok || !json.ok) throw new Error(json.error || ('HTTP ' + resp.status));
+        showToast('Rolled back to ' + (json.version.versionLabel || versionId), 'success');
+        await kbFetchVersions();
+    } catch (err) {
+        showToast('Rollback failed: ' + err.message, 'error');
+    }
+}
+
+async function kbExport() {
+    try {
+        var resp = await fetch('/api/v1/admin/journey-checklist/export', { headers: buildContextHeaders() });
+        var json = await resp.json();
+        if (!resp.ok || !json.ok) throw new Error(json.error || ('HTTP ' + resp.status));
+        var blob = new Blob([JSON.stringify(json.topics, null, 2)], { type: 'application/json' });
+        var a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'journey-checklist-' + (json.curriculumVersion || 'v2') + '.json';
+        document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        URL.revokeObjectURL(a.href);
+    } catch (err) {
+        showToast('Export failed: ' + err.message, 'error');
+    }
+}
+
+function renderKbTable() {
+    var s = kbcState();
+    var wrap = kbEl('div', 'admin-list-container');
+    var count = kbEl('div', 'admin-screen-subtitle', s.topics.length + ' topic(s)');
+    count.style.padding = '0.25rem 0.5rem';
+    wrap.appendChild(count);
+    var table = kbEl('table', 'admin-list-table');
+    var thead = document.createElement('thead');
+    thead.innerHTML = '<tr><th>S</th><th>#</th><th>Label</th><th>Chapter</th><th>Gate</th><th>Status</th><th>✓</th></tr>';
+    table.appendChild(thead);
+    var tbody = document.createElement('tbody');
+    s.topics.forEach(function (t) {
+        var tr = kbEl('tr', 'admin-list-row' + (s.selectedId === t.topicId ? ' selected' : ''));
+        tr.onclick = function () { kbSelectTopic(t.topicId); };
+        function td(txt) { var d = document.createElement('td'); d.textContent = txt; return d; }
+        tr.appendChild(td(String(t.session)));
+        tr.appendChild(td(String(t.position)));
+        tr.appendChild(td(t.displayLabel));
+        tr.appendChild(td(t.chapterId));
+        tr.appendChild(td(t.businessGate || '—'));
+        var st = document.createElement('td');
+        st.appendChild(kbEl('span', 'admin-status-badge', t.status));
+        tr.appendChild(st);
+        tr.appendChild(td(kbTopicComplete(t) ? '✓' : '·'));
+        tbody.appendChild(tr);
+    });
+    table.appendChild(tbody);
+    wrap.appendChild(table);
+    return wrap;
+}
+
+function renderKbEditor() {
+    var s = kbcState();
+    var panel = kbEl('div', 'admin-detail-panel');
+    if (!s.editor) {
+        panel.appendChild(kbEl('div', 'admin-detail-empty', 'Select a topic to edit.'));
+        return panel;
+    }
+    var e = s.editor;
+    var head = kbEl('div', 'admin-detail-header');
+    head.appendChild(kbEl('h3', null, e.topicId + ' — Session ' + e.session + '.' + e.position));
+    panel.appendChild(head);
+
+    function field(label, value, opts) {
+        opts = opts || {};
+        var sec = kbEl('div', 'admin-detail-section');
+        sec.appendChild(kbEl('label', 'admin-detail-label', label));
+        var input;
+        if (opts.textarea) { input = document.createElement('textarea'); input.rows = opts.rows || 3; }
+        else if (opts.select) {
+            input = document.createElement('select');
+            opts.options.forEach(function (o) {
+                var op = document.createElement('option'); op.value = o; op.textContent = o || '—';
+                if ((value || '') === o) op.selected = true; input.appendChild(op);
+            });
+        } else { input = document.createElement('input'); input.type = 'text'; }
+        input.className = 'form-control';
+        if (!opts.select) input.value = value == null ? '' : value;
+        var handler = function (ev) { opts.set(ev.target.value); };
+        input.oninput = handler; input.onchange = handler;
+        sec.appendChild(input);
+        return sec;
+    }
+
+    panel.appendChild(field('Label (1-4 words)', e.displayLabel, { set: function (v) { e.displayLabel = v; } }));
+    panel.appendChild(field('Title', e.title, { set: function (v) { e.title = v; } }));
+    panel.appendChild(field('Short description', e.shortDescription, { textarea: true, rows: 2, set: function (v) { e.shortDescription = v; } }));
+    panel.appendChild(field('Vitana voice script', e.vitanaVoiceScript, { textarea: true, rows: 3, set: function (v) { e.vitanaVoiceScript = v; } }));
+    panel.appendChild(field('What it is', e.explanation.whatItIs, { textarea: true, rows: 2, set: function (v) { e.explanation.whatItIs = v; } }));
+    panel.appendChild(field('User benefit', e.explanation.userBenefit, { textarea: true, rows: 2, set: function (v) { e.explanation.userBenefit = v; } }));
+    panel.appendChild(field('When to use', e.explanation.whenToUse, { textarea: true, rows: 2, set: function (v) { e.explanation.whenToUse = v; } }));
+    panel.appendChild(field('Try this', e.explanation.tryThis, { textarea: true, rows: 2, set: function (v) { e.explanation.tryThis = v; } }));
+    panel.appendChild(field('Guided practice target', e.guidedPracticeTarget, { set: function (v) { e.guidedPracticeTarget = v; } }));
+    panel.appendChild(field('Completion event', e.completionEvent, { set: function (v) { e.completionEvent = v; } }));
+    panel.appendChild(field('Business gate', e.businessGate || '', { select: true, options: ['', 'curious', 'active', 'builder'], set: function (v) { e.businessGate = v || null; } }));
+
+    var actions = kbEl('div', 'admin-detail-actions');
+    var save = kbEl('button', 'btn btn-primary', s.saving ? 'Saving…' : 'Save');
+    save.onclick = kbSaveTopic;
+    actions.appendChild(save);
+    var disabled = e.status === 'disabled';
+    var disableBtn = kbEl('button', 'btn btn-danger', disabled ? 'Enable' : 'Disable');
+    disableBtn.onclick = function () { kbDisableTopic(e.topicId, !disabled); };
+    actions.appendChild(disableBtn);
+    panel.appendChild(actions);
+    return panel;
+}
+
+function renderKbVersions() {
+    var s = kbcState();
+    var wrap = kbEl('div', 'admin-list-container');
+    if (!s.versionsLoaded) { wrap.appendChild(kbEl('div', 'admin-loading', 'Loading versions…')); return wrap; }
+    if (!s.versions.length) { wrap.appendChild(kbEl('div', 'admin-empty-list', 'No published versions yet. Validate, then Publish.')); return wrap; }
+    var table = kbEl('table', 'admin-list-table');
+    var thead = document.createElement('thead');
+    thead.innerHTML = '<tr><th>Version</th><th>Topics</th><th>Sessions</th><th>Current</th><th>Published</th><th></th></tr>';
+    table.appendChild(thead);
+    var tbody = document.createElement('tbody');
+    s.versions.forEach(function (v) {
+        var tr = kbEl('tr', 'admin-list-row');
+        function td(t) { var d = document.createElement('td'); d.textContent = t; return d; }
+        tr.appendChild(td(v.versionLabel));
+        tr.appendChild(td(String(v.topicCount)));
+        tr.appendChild(td(String(v.sessionCount)));
+        var cur = document.createElement('td');
+        if (v.isCurrent) cur.appendChild(kbEl('span', 'admin-status-badge', 'current'));
+        else cur.textContent = '—';
+        tr.appendChild(cur);
+        tr.appendChild(td((v.publishedAt || '').replace('T', ' ').slice(0, 16)));
+        var act = document.createElement('td');
+        if (!v.isCurrent) {
+            var rb = kbEl('button', 'btn btn-xs btn-secondary', 'Roll back');
+            rb.onclick = function () { kbRollback(v.id); };
+            act.appendChild(rb);
+        }
+        tr.appendChild(act);
+        tbody.appendChild(tr);
+    });
+    table.appendChild(tbody);
+    wrap.appendChild(table);
+    return wrap;
+}
+
+function renderKbChecklistView() {
+    var s = kbcState();
+    var root = kbEl('div', 'admin-screen-container');
+
+    var header = kbEl('div', 'admin-screen-header');
+    header.appendChild(kbEl('h2', null, 'Knowledge Base — Guided Journey Checklist'));
+    header.appendChild(kbEl('p', 'admin-screen-subtitle',
+        'The 90-session / 250-topic onboarding curriculum My Journey consumes. Edit topics, Validate, then Publish. My Journey serves only the published version; Roll back restores a prior one.'));
+    root.appendChild(header);
+
+    // Toolbar: view toggle + actions
+    var toolbar = kbEl('div', 'admin-toolbar');
+    toolbar.style.display = 'flex'; toolbar.style.flexWrap = 'wrap'; toolbar.style.gap = '0.5rem';
+    toolbar.style.alignItems = 'center'; toolbar.style.padding = '0.5rem 0';
+    var topicsBtn = kbEl('button', 'btn btn-sm ' + (s.view === 'topics' ? 'btn-primary' : 'btn-secondary'), 'Topics');
+    topicsBtn.onclick = function () { s.view = 'topics'; renderApp(); };
+    var versionsBtn = kbEl('button', 'btn btn-sm ' + (s.view === 'versions' ? 'btn-primary' : 'btn-secondary'), 'Versions');
+    versionsBtn.onclick = function () { s.view = 'versions'; if (!s.versionsLoaded) kbFetchVersions(); else renderApp(); };
+    var validateBtn = kbEl('button', 'btn btn-sm btn-secondary', s.validating ? 'Validating…' : 'Validate');
+    validateBtn.onclick = kbValidate;
+    var publishBtn = kbEl('button', 'btn btn-sm btn-primary', s.publishing ? 'Publishing…' : 'Publish');
+    publishBtn.onclick = kbPublish;
+    var exportBtn = kbEl('button', 'btn btn-sm btn-secondary', 'Export');
+    exportBtn.onclick = kbExport;
+    [topicsBtn, versionsBtn, validateBtn, publishBtn, exportBtn].forEach(function (b) { toolbar.appendChild(b); });
+    root.appendChild(toolbar);
+
+    // Validation banner (screen 07)
+    if (s.validation) {
+        var banner = kbEl('div', s.validation.ok ? 'admin-detail-section' : 'admin-error');
+        banner.style.margin = '0.5rem 0';
+        var sum = s.validation.summary || {};
+        var bh = kbEl('div', null, (s.validation.ok ? '✓ Valid — ' : '✗ Not publishable — ')
+            + (sum.sessionCount || 0) + ' sessions / ' + (sum.topicCount || 0) + ' topics');
+        bh.style.fontWeight = '600';
+        banner.appendChild(bh);
+        (s.validation.errors || []).forEach(function (er) {
+            var line = kbEl('div', null, '• [' + er.rule + '] ' + er.detail
+                + (er.topicIds && er.topicIds.length ? ' (' + er.topicIds.slice(0, 8).join(', ') + (er.topicIds.length > 8 ? '…' : '') + ')' : ''));
+            line.style.fontSize = '0.8rem';
+            banner.appendChild(line);
+        });
+        root.appendChild(banner);
+    }
+
+    if (s.view === 'versions') { root.appendChild(renderKbVersions()); return root; }
+
+    // Filters
+    var filters = kbEl('div', 'admin-toolbar');
+    filters.style.display = 'flex'; filters.style.gap = '0.5rem'; filters.style.flexWrap = 'wrap'; filters.style.padding = '0.25rem 0';
+    var search = document.createElement('input');
+    search.type = 'text'; search.className = 'form-control'; search.placeholder = 'Search label…'; search.value = s.filters.search;
+    search.oninput = function (ev) { s.filters.search = ev.target.value; };
+    search.onkeydown = function (ev) { if (ev.key === 'Enter') fetchKbChecklist(); };
+    filters.appendChild(search);
+    function sel(options, current, onchange) {
+        var el = document.createElement('select'); el.className = 'form-control';
+        options.forEach(function (o) { var op = document.createElement('option'); op.value = o.v; op.textContent = o.t; if (o.v === current) op.selected = true; el.appendChild(op); });
+        el.onchange = onchange; return el;
+    }
+    filters.appendChild(sel(
+        [{ v: '', t: 'All chapters' }, { v: 'basics', t: 'basics' }, { v: 'daily_use', t: 'daily_use' }, { v: 'community', t: 'community' }, { v: 'health', t: 'health' }, { v: 'intelligence', t: 'intelligence' }, { v: 'discovery', t: 'discovery' }],
+        s.filters.chapter, function (ev) { s.filters.chapter = ev.target.value; fetchKbChecklist(); }));
+    filters.appendChild(sel(
+        [{ v: '', t: 'All status' }, { v: 'draft', t: 'draft' }, { v: 'published', t: 'published' }, { v: 'disabled', t: 'disabled' }],
+        s.filters.status, function (ev) { s.filters.status = ev.target.value; fetchKbChecklist(); }));
+    filters.appendChild(sel(
+        [{ v: '', t: 'All gates' }, { v: 'curious', t: 'curious' }, { v: 'active', t: 'active' }, { v: 'builder', t: 'builder' }],
+        s.filters.businessGate, function (ev) { s.filters.businessGate = ev.target.value; fetchKbChecklist(); }));
+    var applyBtn = kbEl('button', 'btn btn-sm btn-secondary', 'Apply');
+    applyBtn.onclick = fetchKbChecklist;
+    filters.appendChild(applyBtn);
+    root.appendChild(filters);
+
+    if (s.error) {
+        var err = kbEl('div', 'admin-error', s.error + ' ');
+        var retry = kbEl('button', 'btn btn-sm btn-secondary', 'Retry');
+        retry.onclick = function () { s.error = null; fetchKbChecklist(); };
+        err.appendChild(retry);
+        root.appendChild(err);
+        return root;
+    }
+    if (!s.loaded) {
+        if (!s.loading) fetchKbChecklist();
+        root.appendChild(kbEl('div', 'admin-loading', 'Loading checklist…'));
+        return root;
+    }
+
+    // Split: table (screen 05) + editor (screen 06)
+    var split = kbEl('div', 'admin-split-layout');
+    split.style.display = 'flex'; split.style.gap = '1rem'; split.style.alignItems = 'flex-start';
+    var left = kbEl('div', 'admin-split-left'); left.style.flex = '1'; left.style.minWidth = '0';
+    left.appendChild(renderKbTable());
+    split.appendChild(left);
+    var right = kbEl('div', 'admin-split-right'); right.style.flex = '1'; right.style.minWidth = '0';
+    right.appendChild(renderKbEditor());
+    split.appendChild(right);
+    root.appendChild(split);
+
+    return root;
+}
+
 function renderModuleContent(moduleKey, tab) {
     const container = document.createElement('div');
     container.className = 'content-container';
@@ -6718,6 +7161,10 @@ function renderModuleContent(moduleKey, tab) {
         container.appendChild(renderAutopilotGrowthView());
     } else if (moduleKey === 'autopilot' && tab === 'mission-alignment') {
         container.appendChild(renderAutopilotMissionAlignmentView());
+
+    // ──── Knowledge Base → Checklist (VTID-03278: Guided Journey curriculum) ────
+    } else if (moduleKey === 'knowledge-base' && tab === 'checklist') {
+        container.appendChild(renderKbChecklistView());
 
     } else {
         // Fallback placeholder for any unmapped screens
