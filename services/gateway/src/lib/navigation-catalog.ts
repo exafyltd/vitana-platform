@@ -1328,21 +1328,43 @@ export const NAVIGATION_CATALOG: ReadonlyArray<NavCatalogEntry> = [
     // layout. On mobile the real diary surface is MobileDailyDiary at /daily-diary,
     // so redirect there — otherwise "open my daily diary" strands mobile users on
     // the read-only activity-timeline hub.
-    mobile_route: '/daily-diary',
+    mobile_route: '/daily-diary?tab=health',
     category: 'memory',
     access: 'authenticated',
     anonymous_safe: false,
-    aliases: ['diary', 'daily-diary', '/diary', '/daily-diary', 'tagebuch'],
+    aliases: ['diary', 'daily-diary', '/diary', '/daily-diary', 'tagebuch', 'health-diary'],
     i18n: {
       en: {
         title: 'Daily Diary',
         description: 'Your daily diary entries — log thoughts, moods, and reflections.',
-        when_to_visit: 'When the user asks to write a diary entry, log how they feel, journal their day, or open their daily diary.',
+        when_to_visit: 'When the user asks to write a diary entry, the Health Diary tab, log how they feel, journal their day, track symptoms, or open their daily diary.',
       },
       de: {
         title: 'Tagesbuch',
         description: 'Deine täglichen Tagebucheinträge — halte Gedanken, Stimmungen und Reflexionen fest.',
-        when_to_visit: 'Wenn der Nutzer einen Tagebucheintrag schreiben, festhalten wie er sich fühlt, seinen Tag journaling oder sein Tagebuch öffnen möchte.',
+        when_to_visit: 'Wenn der Nutzer einen Tagebucheintrag schreiben, das Gesundheitstagebuch öffnen, festhalten wie er sich fühlt, seinen Tag journaling oder sein Tagebuch öffnen möchte.',
+      },
+    },
+  },
+  {
+    // VTID-NAV-DIARY-TABS: the "Bug Reports" mode pill of the Daily Diary
+    // (mobile), reached via /daily-diary?tab=bugs. NOT the Support screen.
+    screen_id: 'MEMORY.DIARY_BUGS',
+    route: '/daily-diary?tab=bugs',
+    category: 'memory',
+    access: 'authenticated',
+    anonymous_safe: false,
+    aliases: ['bug-reports', 'diary-bug-reports', 'report-a-bug'],
+    i18n: {
+      en: {
+        title: 'Bug Reports',
+        description: 'Report a bug or a UX improvement from your Daily Diary.',
+        when_to_visit: 'When the user asks for the Bug Reports tab of the Daily Diary, to report a bug, log an app issue, or suggest a UX improvement from the diary.',
+      },
+      de: {
+        title: 'Fehlerberichte',
+        description: 'Melde einen Fehler oder eine UX-Verbesserung aus deinem Tagebuch.',
+        when_to_visit: 'Wenn der Nutzer nach dem Tab "Fehlerberichte" im Tagebuch fragt, einen Fehler melden, ein App-Problem festhalten oder eine UX-Verbesserung aus dem Tagebuch vorschlagen möchte.',
       },
     },
   },
