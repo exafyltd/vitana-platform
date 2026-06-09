@@ -87,6 +87,13 @@ import { decideWakeBriefForSession } from '../services/wake-brief-wiring';
 // distills. NO raw rows cross this boundary.
 import { compileAssistantDecisionContext } from '../orb/context/compile-assistant-decision-context';
 import { renderDecisionContract } from '../orb/live/instruction/decision-contract-renderer';
+// VTID-03273 Pillar A — the single First-Utterance Authority. Both the
+// fresh-start greeting path and the reconnect-recovery path consult this
+// instead of deciding their own first line.
+import {
+  decideOpening,
+  formatOpeningDecisionLog,
+} from '../orb/live/instruction/opening-contract';
 // VTID-03252: ENVIRONMENT block formatter, extracted for testability.
 import { formatClientContextForInstruction } from '../orb/live/instruction/client-context-format';
 // BOOTSTRAP-ORB-R0-INSTRUCTION-CAP: aggregate byte-budget guard for the final
@@ -7111,6 +7118,48 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
 
   const lang = session.lang;
 
+  // VTID-03273 Pillar A — the SINGLE opening decision + the one
+  // `[opening-decision]` log per conversation (§2 acceptance #6). The
+  // wake-brief ranker and greeting policy are inputs; this is the authority the
+  // rest of this function OBEYS (not just telemetry — Codex review fix):
+  //   - a reconnect-silence decision short-circuits here (no fresh greeting);
+  //   - the `Say exactly` branch below uses `_openDecision.line`, so the
+  //     no-verbatim-repeat downgrade (line=null) actually varies the opener
+  //     instead of replaying the identical line.
+  const _wb = (session as any).wakeBriefDecision || null;
+  const _openDecision = decideOpening({
+    isAnonymous: !!session.isAnonymous,
+    hasResumptionHandle: !!session.resumptionHandle,
+    isReconnect: ((session as any)._reconnectCount || 0) > 0,
+    wakeSelectedLine: _wb?.selectedContinuation?.userFacingLine ?? null,
+    wakeSelectedKind: _wb?.selectedContinuation?.kind ?? null,
+    lastOpenerLine: (session as any)._lastOpenerLine ?? null,
+  });
+  console.log(formatOpeningDecisionLog(session.sessionId, _openDecision));
+  (session as any)._openingDecision = _openDecision;
+
+  // Honor a reconnect-silence decision: this fresh-start path was reached on a
+  // reconnect (e.g. greeting stall re-send with _reconnectCount > 0). The model
+  // resumes the thread (native) or the recovery path owns continuity — either
+  // way we must NOT emit a fresh greeting. Cadence-class silence is handled by
+  // its own kill-switchable block below, so we only short-circuit the
+  // reconnect sources here.
+  if (
+    _openDecision.mode === 'silent' &&
+    !session.isAnonymous &&
+    (_openDecision.source === 'native_resume' || _openDecision.source === 'reconnect_no_handle')
+  ) {
+    session.greetingSent = true;
+    session.greetingTurnIndex = session.turn_count;
+    emitDiag(session, 'greeting_sent', {
+      lang,
+      prompt_len: 0,
+      wake_opener: 'silent_reconnect',
+      opening_source: _openDecision.source,
+    });
+    return true;
+  }
+
   // VTID-03104 (Teacher opener v2): when the wake-brief decider produced
   // a user_facing_line on /live/session/start, replace the legacy menu
   // prompt with the SAME `Say exactly: "..."` shape the wasFailure bucket
@@ -7139,7 +7188,12 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
   // is known to keep audio flowing. B1 cadence is a separate slice.
   const wakeBriefDecision: { selectedContinuation?: { userFacingLine?: string } | null; decisionId?: string } | null =
     (session as any).wakeBriefDecision || null;
-  const wakeOverrideLine = wakeBriefDecision?.selectedContinuation?.userFacingLine?.trim();
+  // VTID-03273 Pillar A (Codex review fix) — speak the line the CONTRACT chose,
+  // not the raw wake-brief line. When the no-verbatim-repeat guard downgraded
+  // the opener it returns `line: null`, so this branch is skipped and we fall
+  // through to the lead menu below (a varied opener) instead of replaying the
+  // identical line word-for-word.
+  const wakeOverrideLine = _openDecision.mode === 'speak' ? (_openDecision.line ?? '').trim() : '';
   if (wakeOverrideLine && wakeOverrideLine.length > 0 && !session.isAnonymous) {
     // Escape double-quotes so the line cannot terminate the wrapper early.
     const safe = wakeOverrideLine.replace(/"/g, '\\"');
@@ -7411,6 +7465,31 @@ function sendReconnectRecoveryPromptToLiveAPI(ws: WebSocket, session: GeminiLive
   if (session.greetingSent) {
     console.log('[VTID-02020] Recovery prompt already sent, skipping');
     return false;
+  }
+
+  // VTID-03273 Pillar A+B — defer to the single Opening Contract. When this
+  // reconnection can resume the SAME server-side session natively (Phase 0
+  // resumption handle), the model continues the thread on its own, so emitting
+  // a recovery intro ("Sorry, we lost the connection…" / "I'm back…") would be
+  // a redundant re-introduction — exactly the "what can I help you with after
+  // reconnect" defect. Stay silent: mark the opening delivered, emit the one
+  // [opening-decision] log, send NO prompt. Cold reconnects (no handle) fall
+  // through to the legacy recovery intro below, which owns continuity there.
+  {
+    const _recoveryDecision = decideOpening({
+      isAnonymous: !!session.isAnonymous,
+      hasResumptionHandle: !!session.resumptionHandle,
+      isReconnect: true,
+      lastOpenerLine: (session as any)._lastOpenerLine ?? null,
+    });
+    if (_recoveryDecision.source === 'native_resume') {
+      console.log(formatOpeningDecisionLog(session.sessionId, _recoveryDecision));
+      session.greetingSent = true;
+      session.greetingTurnIndex = session.turn_count;
+      (session as any)._openingDecision = _recoveryDecision;
+      emitDiag(session, 'reconnect_opening_silent', { source: _recoveryDecision.source });
+      return true;
+    }
   }
 
   const lang = session.lang;

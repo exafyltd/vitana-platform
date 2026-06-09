@@ -63,9 +63,13 @@ describe('VTID-03104: Teacher-opener v2 in sendGreetingPromptToLiveAPI', () => {
     fn = extractSendGreetingFn();
   });
 
-  it('reads session.wakeBriefDecision.selectedContinuation.userFacingLine', () => {
+  it('reads session.wakeBriefDecision.selectedContinuation.userFacingLine (now via the Opening Contract)', () => {
     expect(fn).toMatch(/session as any\)\.wakeBriefDecision/);
-    expect(fn).toMatch(/selectedContinuation\?\.userFacingLine\?\.trim\(\)/);
+    // VTID-03273 Pillar A: the wake-brief line is fed into the single
+    // decideOpening authority, and the spoken override line is read back from
+    // its decision (`_openDecision.line`) — not the raw wake line directly.
+    expect(fn).toMatch(/selectedContinuation\?\.userFacingLine/);
+    expect(fn).toMatch(/_openDecision\.line/);
   });
 
   it('only fires the override branch when the line is non-empty AND session is NOT anonymous', () => {
