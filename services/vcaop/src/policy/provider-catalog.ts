@@ -71,3 +71,9 @@ export function providerRowFor(e: CatalogEntry): ProviderRow {
 }
 
 export const CATALOG_IDS: readonly string[] = PROVIDER_CATALOG.map((e) => e.id);
+
+/** Seed a PolicyEngine with the full catalog (so the Conductor can plan any provider). */
+export function seedPolicyEngineFromCatalog(engine: import('../guardrails/policy-engine').PolicyEngine): import('../guardrails/policy-engine').PolicyEngine {
+  for (const e of PROVIDER_CATALOG) engine.setPolicy(e.id, policyFor(e));
+  return engine;
+}
