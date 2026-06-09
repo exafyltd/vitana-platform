@@ -88,6 +88,16 @@ import {
   JOURNEY_GUIDE_EXTRA_KEY,
   JOURNEY_GUIDE_PROVIDER_KEY,
 } from './assistant-continuation/providers/journey-guide';
+// VTID-03290: guided-topic-narration — when a user taps a session/topic in the
+// Guided Journey catalog, Vitana opens and TEACHES that topic from the published
+// KB. Priority 96 (above first_time_welcome 95) so an explicit tap leads turn-1.
+// Fires ONLY when a topicId was tapped; otherwise skips, so it never blocks the
+// normal ladder.
+import {
+  makeGuidedTopicNarrationProvider,
+  GUIDED_TOPIC_NARRATION_EXTRA_KEY,
+  GUIDED_TOPIC_NARRATION_PROVIDER_KEY,
+} from './assistant-continuation/providers/guided-topic-narration';
 // VTID-03061 (B0d-real Xf.1): auto-emit OASIS next_action.suggested/
 // .suppressed events when a wake-brief decision lands. Fire-and-forget;
 // never blocks the voice path.
@@ -162,6 +172,12 @@ export function ensureWakeBriefProviderRegistered(): void {
   if (!defaultProviderRegistry.get(JOURNEY_GUIDE_PROVIDER_KEY)) {
     defaultProviderRegistry.register(makeJourneyGuideProvider());
   }
+  // VTID-03290: guided-topic-narration at priority 96 — leads turn-1 when a
+  // catalog topic was tapped. Skips cleanly when no topic was tapped, so it
+  // never blocks journey-guide / new-day-return / Teacher on a normal open.
+  if (!defaultProviderRegistry.get(GUIDED_TOPIC_NARRATION_PROVIDER_KEY)) {
+    defaultProviderRegistry.register(makeGuidedTopicNarrationProvider());
+  }
   _registered = true;
 }
 
@@ -194,6 +210,13 @@ export interface DecideWakeBriefArgs {
    * instead of the sequentially-computed `current_next_step`.
    */
   journeyFocusStep?: string | null;
+  /**
+   * VTID-03290: the Guided Journey catalog topic the user tapped to open the orb
+   * (from the session-start body's `guided_topic_id`). When set, the
+   * guided-topic-narration provider LEADS turn-1 — Vitana teaches that topic from
+   * the published KB. Undefined for normal opens.
+   */
+  guidedTopicId?: string | null;
   /** journeySurface from the ClientContextEnvelope, if any. */
   envelopeJourneySurface?: string;
   /**
@@ -424,6 +447,17 @@ export async function decideWakeBriefForSession(
         // Journey", lead with THAT step instead of the computed next step.
         focusStep: args.journeyFocusStep ?? null,
         // VTID-03300 (follow-up): greet by name in the journey opener.
+        firstName: args.firstName ?? null,
+      };
+      // VTID-03290: guided-topic-narration inputs. The provider skips unless a
+      // catalog topic was tapped (guidedTopicId set), so passing the extra always
+      // is safe — when active it LEADS turn-1 (priority 96) and teaches the topic.
+      extra[GUIDED_TOPIC_NARRATION_EXTRA_KEY] = {
+        supabase: args.supabase,
+        userId: args.userId,
+        isReconnect: args.isReconnect,
+        lang: args.lang,
+        topicId: args.guidedTopicId ?? null,
         firstName: args.firstName ?? null,
       };
     }
