@@ -130,7 +130,12 @@
     showFab: true,       // Show floating action button (false when parent app has its own trigger)
     onClose: null,       // Callback when overlay closes
     onSessionStart: null, // Callback when voice session starts
-    onSessionEnd: null    // Callback when voice session ends
+    onSessionEnd: null,   // Callback when voice session ends
+    // VTID-03292 (#4): fires when a turn's audio finishes playing, with
+    // { was_greeting } (true for the first turn = the teaching/opener turn).
+    // The host uses this to auto-close the overlay after the guided-topic
+    // teaching turn so the underlying drawer's next-step buttons are usable.
+    onTurnComplete: null
   };
 
   var _s = {
@@ -227,6 +232,12 @@
     // manually-closed EventSource (Android WebView fires it; spec is murky)
     // never spawns a fresh session in the background.
     _userInitiatedStop: false,
+    // VTID-03292 (#3 X-close): hard "the user closed the overlay" flag. Unlike
+    // _userInitiatedStop (which _sessionStart clears on every start, so an
+    // in-flight reconnect wipes it and re-opens), this is cleared ONLY by an
+    // explicit user re-open (_show). Every reconnect/session-start path checks
+    // it and bails, so pressing X always tears down and nothing re-opens.
+    _userRequestedClose: false,
     // VTID-02020: contextual recovery state. _preDisconnectStage captures what
     // the user was doing when the network dropped (idle / listening_user_speaking
     // / thinking / speaking) so the backend's recovery prompt can decide
@@ -1052,6 +1063,13 @@
 
   async function _sessionStart() {
     if (_s.active) return;
+    // VTID-03292 (#3): the user closed the overlay — do NOT (re)start a session.
+    // A reconnect path that races the close lands here and bails, so the orb
+    // stays closed instead of silently re-opening. Cleared only by _show().
+    if (_s._userRequestedClose) {
+      console.log('[VTOrb] _sessionStart: skipped — user requested close');
+      return;
+    }
     console.log('[VTOrb] Starting Gemini Live session...');
 
     // VTID-03098: clear the user-initiated-stop flag at the start of every
@@ -1607,6 +1625,17 @@
               _waitForAudioEnd(); // Still playing — check again in 300ms
               return;
             }
+            // VTID-03292 (#4): audio for this turn has drained. Notify the host
+            // BEFORE the listening transition so a guided-topic flow can close
+            // the overlay (revealing the drawer) instead of dropping to mic.
+            // was_greeting = the first turn (greetingComplete still false here).
+            if (_cfg.onTurnComplete) {
+              try { _cfg.onTurnComplete({ was_greeting: !_s.greetingComplete }); }
+              catch (e) { /* host callback must never break the voice loop */ }
+            }
+            // If the host closed the overlay in the callback (guided auto-close),
+            // stop here — don't beep / arm the mic on a torn-down session.
+            if (!_s.active || _s._userRequestedClose || !_s.overlayVisible) return;
             // VTID-02035b: play the ready beep BEFORE starting mic capture.
             // On iOS / Appilix WebView, getUserMedia switches the audio
             // session to the "voiceChat"/"playAndRecord" category, which
@@ -2579,6 +2608,9 @@
 
   function _show() {
     console.log('[VTOrb] _show() called — gw=' + _cfg.gw + ', _root=' + !!_root);
+    // VTID-03292 (#3): an explicit user re-open clears the hard-close flag so the
+    // session can start again. This is the ONLY place it is cleared.
+    _s._userRequestedClose = false;
     _suppressSoundscape();
     // Refresh token and language on every show — picks up login/logout and language change
     _refreshToken();
@@ -2696,6 +2728,10 @@
   }
 
   function _hide() {
+    // VTID-03292 (#3): mark a hard user-close FIRST so any racing reconnect /
+    // _sessionStart bails (see _sessionStart guard) and the overlay can't
+    // silently re-open. Cleared only on an explicit re-open in _show().
+    _s._userRequestedClose = true;
     // DEV-COMHU-0503: UI close preserves short-lived continuity (15 min) BEFORE
     // teardown, so reopening within the window resumes instead of greeting
     // first-time. _sessionStop still tears down media/SSE exactly as before.

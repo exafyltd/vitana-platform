@@ -7153,7 +7153,21 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
       ru: `Скажи ровно: "${safe}" — ОДНА короткая фраза. БЕЗ приветствия перед. БЕЗ вопроса после. НЕ перефразируй.`,
       sr: `Реци тачно: "${safe}" — ЈЕДНА кратка реченица. БЕЗ поздрава пре. БЕЗ питања после. НЕ преформулиши.`,
     };
-    const wakePrompt = wakeTriggerByLang[lang] || wakeTriggerByLang.en;
+    // VTID-03292 (#1): guided-topic narration is a TEACHING turn, not a one-line
+    // opener. The default "ONE short utterance only / do NOT add anything after"
+    // trigger makes the model speak the opener and immediately yield to listening
+    // — which is exactly the "lists instead of teaching" bug. When the session
+    // carries guidedTopicNarrationContent, send a trigger that says: open with
+    // the line, THEN keep teaching in the SAME turn per the GUIDE-MODE (TEACH)
+    // block, do not stop after the opener.
+    const isGuidedTeach = !!(session as any).guidedTopicNarrationContent;
+    const guidedTeachTriggerByLang: Record<string, string> = {
+      en: `Begin by saying: "${safe}" — then, in the SAME turn, immediately TEACH this topic following the "GUIDE MODE (TEACH)" block in your system instruction: explain it in your own words across several sentences. Do NOT stop after the opening line. Do NOT ask "how can I help". When you finish explaining, briefly offer the practice.`,
+      de: `Beginne mit: "${safe}" — und LEHRE dann im SELBEN Redebeitrag sofort dieses Thema gemäß dem Block „GUIDE-MODUS (LEHREN)" in deinem System-Prompt: erkläre es in eigenen Worten über mehrere Sätze. Hör NICHT nach dem ersten Satz auf. Frag NICHT „Wie kann ich helfen". Wenn du fertig erklärt hast, biete kurz die Übung an.`,
+    };
+    const wakePrompt = isGuidedTeach
+      ? (guidedTeachTriggerByLang[lang] || guidedTeachTriggerByLang.en)
+      : (wakeTriggerByLang[lang] || wakeTriggerByLang.en);
     const linePreview = safe.length > 160 ? safe.slice(0, 160) + '...' : safe;
     const promptPreview = wakePrompt.length > 200 ? wakePrompt.slice(0, 200) + '...' : wakePrompt;
     console.log(
