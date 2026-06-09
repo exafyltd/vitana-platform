@@ -1580,11 +1580,35 @@ export const NAVIGATION_CATALOG: ReadonlyArray<NavCatalogEntry> = [
 
   // ── DISCOVER (missing tabs) ─────────────────────────────────────────────
   {
+    // VTID-NAV-ORDERS-TABS: the generic Orders screen (default Active tab).
+    // priority keeps "my orders" here over the Active/History sub-tab entries.
     screen_id: 'DISCOVER.ORDERS', route: '/discover/orders', category: 'discover',
     access: 'authenticated', anonymous_safe: false,
+    priority: 1,
+    aliases: ['orders', 'my-orders'],
     i18n: {
-      en: { title: 'My Orders', description: 'Your order history and active orders.', when_to_visit: 'When the user asks about their orders, order history, order status, deliveries, or what they have bought.' },
-      de: { title: 'Meine Bestellungen', description: 'Deine Bestellhistorie und aktive Bestellungen.', when_to_visit: 'Wenn der Nutzer nach seinen Bestellungen, Bestellhistorie, Bestellstatus, Lieferungen oder dem fragt, was er gekauft hat.' },
+      en: { title: 'My Orders', description: 'Your orders — active and past.', when_to_visit: 'When the user asks about their orders, my orders, order status, deliveries, or what they have bought.' },
+      de: { title: 'Meine Bestellungen', description: 'Deine Bestellungen — aktive und vergangene.', when_to_visit: 'Wenn der Nutzer nach seinen Bestellungen, meinen Bestellungen, Bestellstatus, Lieferungen oder dem fragt, was er gekauft hat.' },
+    },
+  },
+  {
+    // VTID-NAV-ORDERS-TABS: the "Active" mode pill of My Orders.
+    screen_id: 'DISCOVER.ORDERS_ACTIVE', route: '/discover/orders?tab=active', category: 'discover',
+    access: 'authenticated', anonymous_safe: false,
+    aliases: ['active-orders', 'orders-active'],
+    i18n: {
+      en: { title: 'Active Orders', description: 'Your active and in-progress orders.', when_to_visit: 'When the user asks for the Active tab of My Orders, their active orders, current orders, open orders, in-progress orders, or pending deliveries.' },
+      de: { title: 'Aktive Bestellungen', description: 'Deine aktiven und laufenden Bestellungen.', when_to_visit: 'Wenn der Nutzer nach dem Tab "Aktiv" von Meine Bestellungen, seinen aktiven Bestellungen, laufenden Bestellungen, offenen Bestellungen oder ausstehenden Lieferungen fragt.' },
+    },
+  },
+  {
+    // VTID-NAV-ORDERS-TABS: the "History" mode pill of My Orders.
+    screen_id: 'DISCOVER.ORDERS_HISTORY', route: '/discover/orders?tab=history', category: 'discover',
+    access: 'authenticated', anonymous_safe: false,
+    aliases: ['order-history', 'orders-history', 'past-orders'],
+    i18n: {
+      en: { title: 'Order History', description: 'Your past and completed orders.', when_to_visit: 'When the user asks for the History tab of My Orders, their order history, past orders, completed orders, or previously delivered orders.' },
+      de: { title: 'Bestellverlauf', description: 'Deine vergangenen und abgeschlossenen Bestellungen.', when_to_visit: 'Wenn der Nutzer nach dem Tab "Verlauf" von Meine Bestellungen, seinem Bestellverlauf, vergangenen Bestellungen, abgeschlossenen Bestellungen oder bereits gelieferten Bestellungen fragt.' },
     },
   },
   {
