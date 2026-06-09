@@ -2278,6 +2278,10 @@ async function handleNavigate(
       session_id: session.sessionId,
       session_started_iso: session.createdAt.toISOString(),
       turn_number: session.turn_count,
+      // VTID-02789: thread the mobile-viewport flag so tool_navigate applies the
+      // mobile_route override (e.g. Settings pills → /settings?mode=<section>).
+      // Without this the unified navigate path always used the desktop route.
+      is_mobile: session.is_mobile === true,
     },
     sb,
   );

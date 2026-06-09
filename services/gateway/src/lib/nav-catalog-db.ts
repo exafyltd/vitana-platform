@@ -256,6 +256,16 @@ export async function refreshNavCatalogCache(): Promise<void> {
       const perTenantDelta: Map<string, NavCatalogEntryWithRules[]> = new Map();
       const idMap: Map<string, NavCatalogEntryWithRules> = new Map();
 
+      // VTID-NAV-MOBILEROUTE: `mobile_route` is not a nav_catalog column, so a
+      // DB row can't express the mobile deep-link (e.g. Settings pills →
+      // /settings?mode=<section>). Inherit it from the compile-time catalog by
+      // screen_id; without this, DB-present screens always resolve to the
+      // desktop `route` on mobile and land on the wrong (desktop) page.
+      const tsMobileRouteByScreenId = new Map<string, string>();
+      for (const e of NAVIGATION_CATALOG) {
+        if (e.mobile_route) tsMobileRouteByScreenId.set(e.screen_id, e.mobile_route);
+      }
+
       for (const raw of rows as NavCatalogRow[]) {
         const i18n = byCatalogId.get(raw.id) || {};
         if (!i18n.en) {
@@ -278,6 +288,10 @@ export async function refreshNavCatalogCache(): Promise<void> {
           context_rules: (raw.context_rules || {}) as NavContextRules,
           override_triggers: Array.isArray(raw.override_triggers) ? raw.override_triggers as OverrideTrigger[] : [],
         };
+
+        // Inherit the mobile deep-link from the TS catalog (DB has no column).
+        const tsMobileRoute = tsMobileRouteByScreenId.get(raw.screen_id);
+        if (tsMobileRoute) entry.mobile_route = tsMobileRoute;
 
         idMap.set(raw.id, entry);
 
