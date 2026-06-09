@@ -1526,19 +1526,22 @@ export const NAVIGATION_CATALOG: ReadonlyArray<NavCatalogEntry> = [
     i18n: {
       en: {
         title: 'Settings',
-        description: 'Your account settings and preferences.',
-        when_to_visit: 'When the user asks to open their settings, change preferences, or manage their account.',
+        description: 'Your account settings.',
+        when_to_visit: 'When the user asks to open their settings, the settings screen, or manage their account.',
       },
       de: {
         title: 'Einstellungen',
-        description: 'Deine Kontoeinstellungen und Präferenzen.',
-        when_to_visit: 'Wenn der Nutzer seine Einstellungen öffnen, Präferenzen ändern oder sein Konto verwalten möchte.',
+        description: 'Deine Kontoeinstellungen.',
+        when_to_visit: 'Wenn der Nutzer seine Einstellungen öffnen, den Einstellungsbildschirm öffnen oder sein Konto verwalten möchte.',
       },
     },
   },
   {
     screen_id: 'SETTINGS.PRIVACY',
     route: '/settings/privacy',
+    // VTID-NAV-SETTINGS-TABS: on mobile, land on the Privacy mode pill of the
+    // Settings screen (/settings?mode=privacy). MobileSettings reads ?mode=.
+    mobile_route: '/settings?mode=privacy',
     category: 'settings',
     access: 'authenticated',
     anonymous_safe: false,
@@ -1559,6 +1562,7 @@ export const NAVIGATION_CATALOG: ReadonlyArray<NavCatalogEntry> = [
   {
     screen_id: 'SETTINGS.NOTIFICATIONS',
     route: '/settings/notifications',
+    mobile_route: '/settings?mode=notifications',
     category: 'settings',
     access: 'authenticated',
     anonymous_safe: false,
@@ -1776,7 +1780,7 @@ export const NAVIGATION_CATALOG: ReadonlyArray<NavCatalogEntry> = [
 
   // ── SETTINGS (missing tabs) ─────────────────────────────────────────────
   {
-    screen_id: 'SETTINGS.PREFERENCES', route: '/settings/preferences', category: 'settings',
+    screen_id: 'SETTINGS.PREFERENCES', route: '/settings/preferences', mobile_route: '/settings?mode=preferences', category: 'settings',
     access: 'authenticated', anonymous_safe: false,
     i18n: {
       en: { title: 'Preferences', description: 'Your personal preferences for the app experience.', when_to_visit: 'When the user asks to change their preferences, customize the app, adjust settings, or personalize their experience.' },
@@ -1855,11 +1859,11 @@ export const NAVIGATION_CATALOG: ReadonlyArray<NavCatalogEntry> = [
       de: { title: 'Autopilot-Konnektoren', description: 'Verbinde Autopilot-Agent-Integrationen.', when_to_visit: 'Wenn der Nutzer nach dem Autopilot-Konnektoren-Tab der verbundenen Apps oder dem Verbinden einer Agent- oder Autopilot-App-Integration fragt.' },
     } },
   {
-    screen_id: 'SETTINGS.BILLING', route: '/settings/billing', category: 'settings',
+    screen_id: 'SETTINGS.BILLING', route: '/settings/billing', mobile_route: '/settings?mode=billing', category: 'settings',
     access: 'authenticated', anonymous_safe: false,
     i18n: {
-      en: { title: 'Billing', description: 'Your billing information, payment methods, and invoices.', when_to_visit: 'When the user asks about billing, payment methods, invoices, payment history, credit card, or how to pay.' },
-      de: { title: 'Abrechnung', description: 'Deine Rechnungsinformationen, Zahlungsmethoden und Rechnungen.', when_to_visit: 'Wenn der Nutzer nach Abrechnung, Zahlungsmethoden, Rechnungen, Zahlungshistorie, Kreditkarte oder wie man bezahlt fragt.' },
+      en: { title: 'Billing', description: 'Your billing information, payment methods, and invoices.', when_to_visit: 'When the user asks for the Billing tab of Settings, about billing, payment methods, invoices, payment history, credit card, or how to pay.' },
+      de: { title: 'Abrechnung', description: 'Deine Rechnungsinformationen, Zahlungsmethoden und Rechnungen.', when_to_visit: 'Wenn der Nutzer nach dem Abrechnungs-Tab der Einstellungen, Abrechnung, Zahlungsmethoden, Rechnungen, Zahlungshistorie, Kreditkarte oder wie man bezahlt fragt.' },
     },
   },
   {

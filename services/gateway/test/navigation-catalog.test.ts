@@ -339,6 +339,15 @@ const ROUTING_CASES: RoutingCase[] = [
   { utterance: 'abrechnung öffnen',                          lang: 'de', expected_screen_id: 'SETTINGS.BILLING' },
   { utterance: 'I need help from support',                   lang: 'en', expected_screen_id: 'SETTINGS.SUPPORT' },
   { utterance: 'hilfe und support',                          lang: 'de', expected_screen_id: 'SETTINGS.SUPPORT' },
+  // VTID-NAV-SETTINGS-TABS: the Settings screen's top-level mode pills
+  // (Notifications / Privacy / Preferences / Billing). On mobile these deep-link
+  // via /settings?mode=<section>; MobileSettings reads ?mode= and selects the
+  // matching pill. Keyword-deterministic against the four top pills.
+  { utterance: 'settings notifications',                     lang: 'en', expected_screen_id: 'SETTINGS.NOTIFICATIONS' },
+  { utterance: 'settings privacy',                           lang: 'en', expected_screen_id: 'SETTINGS.PRIVACY' },
+  { utterance: 'settings preferences',                       lang: 'en', expected_screen_id: 'SETTINGS.PREFERENCES' },
+  { utterance: 'settings billing',                           lang: 'en', expected_screen_id: 'SETTINGS.BILLING' },
+  { utterance: 'einstellungen abrechnung',                   lang: 'de', expected_screen_id: 'SETTINGS.BILLING' },
 
   // ── HEALTH expanded ──
   { utterance: 'show me the health pillars',                 lang: 'en', expected_screen_id: 'HEALTH.PILLARS' },
