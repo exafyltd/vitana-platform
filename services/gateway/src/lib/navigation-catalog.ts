@@ -776,21 +776,34 @@ export const NAVIGATION_CATALOG: ReadonlyArray<NavCatalogEntry> = [
     },
   },
   {
+    // VTID-NAV-BUSINESS-TABS: this is the "Insights" pill of the Business Hub
+    // (mobile) — performance, clients, earnings, growth — reached via
+    // /business/analytics, which BusinessHub maps to the Insights pill. Titled
+    // "Insights" to match the pill the user sees, with the literal "Business
+    // Hub Insights" phrase so it wins over BUSINESS.OVERVIEW ("Business Hub").
+    // NOT AI.INSIGHTS (the AI feed) — that keeps "AI insights".
     screen_id: 'BUSINESS.ANALYTICS',
     route: '/business/analytics',
     category: 'business',
     access: 'authenticated',
     anonymous_safe: false,
+    priority: 2,
+    aliases: ['business-insights', 'insights-tab', 'business-hub-insights', 'business-analytics', 'einblicke'],
     i18n: {
+      // Title stays "Business Analytics" (NOT bare "Insights") so the lone
+      // token "insights" — e.g. "AI insights", where "AI" is dropped as a
+      // <3-char token — still resolves to AI.INSIGHTS. The "Business Hub
+      // Insights" phrase lives in when_to_visit/description, which only the
+      // full multi-word query matches.
       en: {
-        title: 'Business Analytics',
-        description: 'Performance metrics for your Maxina business — bookings, revenue, growth.',
-        when_to_visit: 'When the user asks about their business performance, revenue, bookings, growth metrics, or analytics for their services.',
+        title: 'Analytics',
+        description: 'Your Business Hub Insights — performance, clients, bookings, revenue, earnings and growth for your Maxina business.',
+        when_to_visit: 'When the user asks for the Insights tab of the Business Hub, the Business Hub Insights, their business insights, business analytics, business performance, revenue, bookings, clients overview, earnings, or growth metrics for their services.',
       },
       de: {
-        title: 'Business Analytics',
-        description: 'Leistungskennzahlen für dein Maxina Business — Buchungen, Umsatz, Wachstum.',
-        when_to_visit: 'Wenn der Nutzer nach seiner Business-Performance, Umsatz, Buchungen, Wachstumskennzahlen oder Analytics für seine Services fragt.',
+        title: 'Analytics',
+        description: 'Deine Business Hub Einblicke — Performance, Kunden, Buchungen, Umsatz, Einnahmen und Wachstum für dein Maxina Business.',
+        when_to_visit: 'Wenn der Nutzer nach dem Tab "Einblicke" im Business Hub, den Business Hub Insights, dem Business Hub Einblicke Bereich, seinen Business-Einblicken, Business-Analytics, seiner Business-Performance, Umsatz, Buchungen, Kundenübersicht, Einnahmen oder Wachstumskennzahlen für seine Services fragt.',
       },
     },
   },
