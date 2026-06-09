@@ -1030,6 +1030,10 @@ export interface GeminiLiveSession {
   // journey-guide provider LEADS with that exact step rather than the
   // sequentially-computed current_next_step. One-shot per session.
   journey_focus_step?: string;
+  // VTID-03290: Guided Journey catalog topic the user tapped to open the orb.
+  // When set, the guided-topic-narration provider LEADS turn-1 and Vitana
+  // teaches that topic from the published KB. One-shot per session.
+  guided_topic_id?: string;
   // VTID-NAV: Cached memory pack from the first navigator_consult call this
   // session, with a 30s TTL — subsequent consult calls reuse it instead of
   // re-paying retrieval cost.
@@ -1323,6 +1327,7 @@ export { buildLiveApiTools } from '../orb/live/tools/live-tool-catalog';
 import { buildTeacherModeBlock } from '../orb/teacher/teacher-mode-prompt';
 // VTID-03257 (Fix-1): GUIDE MODE block — Vitana leads the Foundation checklist.
 import { buildJourneyGuideBlock } from '../orb/live/instruction/journey-guide-prompt';
+import { buildGuidedTopicNarrationBlock } from '../orb/live/instruction/guided-topic-narration-prompt';
 // A6.2 (orb-live-refactor): SessionContext + SessionMutator + first
 // lifted navigator handler. orb-live.ts keeps compat shims that build
 // the typed views and forward to handlers under orb/live/tools/handlers/.
@@ -6195,6 +6200,16 @@ async function connectToLiveAPI(
                           + ((session as any).journeyGuideContent
                               ? buildJourneyGuideBlock(
                                   (session as any).journeyGuideContent,
+                                  session.lang,
+                                )
+                              : '')
+                          // VTID-03290: GUIDE MODE (TEACH) — when the user tapped
+                          // a Guided Journey catalog topic, inject the teach-this-
+                          // topic-from-the-KB block so Vitana introduces + teaches
+                          // it (paraphrased) then guides to the practice target.
+                          + ((session as any).guidedTopicNarrationContent
+                              ? buildGuidedTopicNarrationBlock(
+                                  (session as any).guidedTopicNarrationContent,
                                   session.lang,
                                 )
                               : ''),

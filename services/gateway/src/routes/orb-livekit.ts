@@ -77,6 +77,7 @@ import { buildLiveSystemInstruction } from '../orb/live/instruction/live-system-
 import { VERTEX_WAKE_BRIEF_OVERRIDE_MARKER } from '../orb/live/instruction/wake-brief-marker';
 // VTID-03257 (Fix-1) — GUIDE-MODE block for LiveKit parity (turns 2+).
 import { buildJourneyGuideBlock } from '../orb/live/instruction/journey-guide-prompt';
+import { buildGuidedTopicNarrationBlock } from '../orb/live/instruction/guided-topic-narration-prompt';
 import {
   optionalAuth,
   requireAuthWithTenant,
@@ -1714,6 +1715,13 @@ router.get(
             (envContext as { timezone?: string } | undefined)?.timezone
               ?? (envContext as { clientContext?: { timezone?: string } } | undefined)?.clientContext?.timezone
               ?? null,
+          // VTID-03290: the Guided Journey catalog topic tapped (LiveKit reads
+          // it from the bootstrap query). When set, guided-topic-narration leads
+          // turn-1 and Vitana teaches that topic from the published KB.
+          guidedTopicId:
+            typeof req.query.guided_topic_id === 'string' && req.query.guided_topic_id
+              ? String(req.query.guided_topic_id)
+              : null,
           recordEmission: true,
         });
         // VTID-03081: bump sessions_today_count. Fire-and-forget; never
@@ -1819,11 +1827,20 @@ first turn only. Subsequent turns follow the normal conversation flow.`;
             | import('../services/assistant-continuation/providers/journey-guide').JourneyGuideContent
             | null;
         }).journeyGuide ?? null;
+        // VTID-03290: LiveKit parity — when the user tapped a Guided Journey
+        // catalog topic, the TEACH block must govern turns 2+ here too (the spoken
+        // opener rides wake_brief_decision.user_facing_line, like the journey guide).
+        const guidedTopicNarration = (picked as {
+          guidedTopicNarration?:
+            | import('../services/assistant-continuation/providers/guided-topic-narration').GuidedTopicNarrationContent
+            | null;
+        }).guidedTopicNarration ?? null;
         const augmentedContext =
           `${VERTEX_WAKE_BRIEF_OVERRIDE_MARKER}\n\n` +
           (bootstrapContext ? `${bootstrapContext}\n\n` : '') +
           `${vitanaBehavioralRule}` +
-          (journeyGuide ? buildJourneyGuideBlock(journeyGuide, lang) : '');
+          (journeyGuide ? buildJourneyGuideBlock(journeyGuide, lang) : '') +
+          (guidedTopicNarration ? buildGuidedTopicNarrationBlock(guidedTopicNarration, lang) : '');
         const voiceStyle =
           (voiceConfig as { voice_style?: string } | null)?.voice_style?.trim() ||
           'friendly, calm, empathetic';

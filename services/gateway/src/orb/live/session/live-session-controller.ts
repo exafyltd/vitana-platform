@@ -907,6 +907,12 @@ export async function handleLiveSessionStart(
     journey_focus_step: typeof (body as any).journey_focus_step === 'string'
       ? (body as any).journey_focus_step
       : undefined,
+    // VTID-03290: Guided Journey catalog topic tapped. Set when the user opened
+    // the orb by tapping a session/topic; the guided-topic-narration provider
+    // leads turn-1 and teaches that topic from the published KB.
+    guided_topic_id: typeof (body as any).guided_topic_id === 'string'
+      ? (body as any).guided_topic_id
+      : undefined,
   };
 
   // VTID-SESSION-LIMIT: Terminate any existing active sessions for this user.
@@ -1143,6 +1149,9 @@ export async function handleLiveSessionStart(
       // VTID-03300: forward the tapped "My Journey" step so journey-guide leads
       // with it. Undefined for normal opens → default next-step behaviour.
       journeyFocusStep: (session as any).journey_focus_step ?? null,
+      // VTID-03290: forward the tapped Guided Journey topic so the
+      // guided-topic-narration provider leads turn-1. Null for normal opens.
+      guidedTopicId: (session as any).guided_topic_id ?? null,
       supabase: supabaseClient,
       // VTID-03085 (Lane 1): pass the compiled spine — unlocks
       // life_compass_alignment, vitana_index_pillar,
@@ -1248,6 +1257,21 @@ export async function handleLiveSessionStart(
         (session as any).journeyGuideContent = bundledJourneyGuide;
         console.log(
           `[VTID-03257] Journey guide leading for ${sessionId}: step=${bundledJourneyGuide.step_key} (${bundledJourneyGuide.step_type}) title="${bundledJourneyGuide.step_title}"`,
+        );
+      }
+
+      // VTID-03290: when guided-topic-narration won (a catalog topic was tapped),
+      // bundle its TEACH content onto the session so the envelope injects the
+      // teach-this-topic-from-the-KB block. Mirrors the journey-guide bundling.
+      const bundledGuidedTopic = (picked as {
+        guidedTopicNarration?:
+          | import('../../../services/assistant-continuation/providers/guided-topic-narration').GuidedTopicNarrationContent
+          | null;
+      }).guidedTopicNarration ?? null;
+      if (bundledGuidedTopic) {
+        (session as any).guidedTopicNarrationContent = bundledGuidedTopic;
+        console.log(
+          `[VTID-03290] Guided topic narration leading for ${sessionId}: topic=${bundledGuidedTopic.topic_id} title="${bundledGuidedTopic.topic_title}" source=${bundledGuidedTopic.source}`,
         );
       }
     }
