@@ -927,6 +927,13 @@ export interface GeminiLiveSession {
   // When true, inbound mic audio is dropped to prevent the speaker output
   // being picked up by the mic and causing overlapping response streams.
   isModelSpeaking: boolean;
+  // VTID-03273 Pillar B — native Gemini session resumption. The latest
+  // resumable handle the server emitted via `sessionResumptionUpdate`. It is a
+  // property of the durable CONVERSATION (survives reconnects on the session
+  // object), and is replayed in the next setup envelope so a rebuilt
+  // connection resumes the SAME server-side session — no transcript re-inject,
+  // no fresh greeting, no thread loss.
+  resumptionHandle?: string | null;
   // VTID-ECHO-COOLDOWN: Timestamp when turn_complete was received.
   // Mic audio is gated for getPostTurnCooldownMs() after this to let client-side
   // audio playback finish draining — prevents speaker echo being picked up as input.
@@ -5954,6 +5961,38 @@ async function connectToLiveAPI(
   return new Promise<WebSocket>(async (resolve, reject) => {
     const vertex = new VertexLiveClient();
 
+    // VTID-03273 Pillar B — capture the rolling native session-resumption handle.
+    // Stored on the session (the durable Conversation), replayed in the next
+    // setup envelope so a rebuilt connection resumes the SAME server-side
+    // session: the model continues the thread instead of improvising a new
+    // greeting. This is the structural fix for "what can I help you with after
+    // reconnect" / "same summary every 2 minutes".
+    vertex.onSessionResumption((e) => {
+      if (e.resumable && e.handle) {
+        const first = !session.resumptionHandle;
+        session.resumptionHandle = e.handle;
+        if (first) {
+          emitDiag(session, 'session_resumption_armed', { has_handle: true });
+        }
+      }
+    });
+
+    // VTID-03273 Pillar B — proactive GoAway handling. The server warns
+    // ~before the ~10-min connection cap via `goAway{timeLeft}`. We reconnect
+    // PROACTIVELY (with the resumption handle) a moment before the deadline,
+    // while the model is idle, so the user perceives nothing. If the model is
+    // mid-utterance at the deadline we defer to the natural close, which also
+    // resumes natively now.
+    vertex.onGoAway((e) => {
+      const timeLeftMs = typeof e.timeLeftMs === 'number' ? e.timeLeftMs : 0;
+      (session as any)._goAwayDeadlineAt = Date.now() + timeLeftMs;
+      emitDiag(session, 'goaway_received', {
+        time_left_ms: timeLeftMs,
+        has_handle: !!session.resumptionHandle,
+      });
+      scheduleProactiveGoAwayResume(session, timeLeftMs);
+    });
+
     let setupComplete = false;
     const connectionTimeout = setTimeout(() => {
       if (!setupComplete) {
@@ -6066,6 +6105,18 @@ async function connectToLiveAPI(
           // VTID-01225: Enable transcription at setup level (not in generation_config)
           output_audio_transcription: {},
           input_audio_transcription: {},
+          // VTID-03273 Pillar B — native session resumption. Empty object on a
+          // fresh connect starts a resumable session; `{ handle }` on a rebuilt
+          // connection resumes the SAME server-side conversation, so the model
+          // continues the thread instead of re-greeting. The handle is captured
+          // from `sessionResumptionUpdate` (see vertex.onSessionResumption wiring).
+          session_resumption: session.resumptionHandle
+            ? { handle: session.resumptionHandle }
+            : {},
+          // VTID-03273 Pillar B — sliding-window context compression keeps long
+          // conversations under the context cap so the GoAway/resume rotation,
+          // not a hard overflow, governs connection lifetime.
+          context_window_compression: { sliding_window: {} },
           system_instruction: {
             parts: [{
               // VTID-02047 voice channel-swap: when activePersona is a specialist
@@ -6533,6 +6584,12 @@ async function connectToLiveAPI(
         clearInterval(session.silenceKeepaliveInterval);
         session.silenceKeepaliveInterval = undefined;
       }
+      // VTID-03273 Pillar B — a proactive GoAway timer for THIS connection is
+      // moot once it's closing; the reconnect (if any) arms a fresh one.
+      if ((session as any)._goAwayTimer) {
+        clearTimeout((session as any)._goAwayTimer);
+        (session as any)._goAwayTimer = undefined;
+      }
 
       session.upstreamWs = null;
 
@@ -6685,6 +6742,47 @@ async function connectToLiveAPI(
  */
 // A2 (orb-live-refactor): MAX_RECONNECTS lifted to orb/live/config.ts.
 import { MAX_RECONNECTS } from '../orb/live/config';
+
+// VTID-03273 Pillar B — how long before the server's GoAway deadline we
+// proactively rotate the connection. Small enough to overlap the warning
+// window, large enough to finish the new handshake before the old socket dies.
+const PROACTIVE_GOAWAY_LEAD_MS = 2000;
+
+/**
+ * VTID-03273 Pillar B — schedule a proactive, seamless connection rotation
+ * before the server closes this one (GoAway). At the scheduled moment, if the
+ * model is idle we close the upstream with code 1000, which the existing
+ * `ws.on('close')` transparent-reconnect path picks up — and because
+ * `session.resumptionHandle` is now set, the rebuilt setup envelope resumes the
+ * SAME server-side conversation natively (no re-greet, no thread loss). If the
+ * model is still speaking we re-check shortly so we never cut Vitana off; past
+ * the deadline we let the natural close drive the (also-native) reconnect.
+ */
+function scheduleProactiveGoAwayResume(session: GeminiLiveSession, timeLeftMs: number): void {
+  const existing = (session as any)._goAwayTimer as NodeJS.Timeout | undefined;
+  if (existing) { clearTimeout(existing); (session as any)._goAwayTimer = undefined; }
+
+  const deadlineAt = Date.now() + timeLeftMs;
+  const fireIn = Math.max(0, timeLeftMs - PROACTIVE_GOAWAY_LEAD_MS);
+
+  const attempt = () => {
+    (session as any)._goAwayTimer = undefined;
+    if (!session.active) return;
+    const ws = session.upstreamWs;
+    if (!ws || ws.readyState !== WebSocket.OPEN) return; // already gone — natural close handles it
+    if (session.isModelSpeaking && Date.now() < deadlineAt) {
+      // Don't interrupt mid-sentence — re-check soon.
+      (session as any)._goAwayTimer = setTimeout(attempt, 750);
+      return;
+    }
+    try {
+      emitDiag(session, 'goaway_proactive_reconnect', { has_handle: !!session.resumptionHandle });
+      ws.close(1000, 'goaway_proactive_resume');
+    } catch { /* natural close will still reconnect natively */ }
+  };
+
+  (session as any)._goAwayTimer = setTimeout(attempt, fireIn);
+}
 
 async function attemptTransparentReconnect(
   session: GeminiLiveSession,

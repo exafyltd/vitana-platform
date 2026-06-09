@@ -31,7 +31,9 @@
 import WebSocket from 'ws';
 import type {
   AudioOutputEvent,
+  GoAwayEvent,
   InterruptedEvent,
+  SessionResumptionEvent,
   ToolCallEvent,
   TranscriptEvent,
   TurnCompleteEvent,
@@ -86,6 +88,8 @@ export class VertexLiveClient implements UpstreamLiveClient {
   private toolCallHandler: ((e: ToolCallEvent) => void) | null = null;
   private turnCompleteHandler: ((e: TurnCompleteEvent) => void) | null = null;
   private interruptedHandler: ((e: InterruptedEvent) => void) | null = null;
+  private sessionResumptionHandler: ((e: SessionResumptionEvent) => void) | null = null;
+  private goAwayHandler: ((e: GoAwayEvent) => void) | null = null;
   private errorHandler: ((e: UpstreamErrorEvent) => void) | null = null;
   private closeHandler: ((e: UpstreamCloseEvent) => void) | null = null;
 
@@ -140,6 +144,14 @@ export class VertexLiveClient implements UpstreamLiveClient {
 
   onInterrupted(handler: (event: InterruptedEvent) => void): void {
     this.interruptedHandler = handler;
+  }
+
+  onSessionResumption(handler: (event: SessionResumptionEvent) => void): void {
+    this.sessionResumptionHandler = handler;
+  }
+
+  onGoAway(handler: (event: GoAwayEvent) => void): void {
+    this.goAwayHandler = handler;
   }
 
   onError(handler: (event: UpstreamErrorEvent) => void): void {
@@ -426,6 +438,26 @@ export class VertexLiveClient implements UpstreamLiveClient {
         this.toolCallHandler?.({ calls });
       }
     }
+
+    // VTID-03273 Pillar B — native session resumption handle rotation.
+    // Vertex emits `sessionResumptionUpdate` (camelCase) / `session_resumption_update`
+    // (snake) carrying `{ newHandle, resumable }`. We surface it so the session
+    // layer can persist the latest handle on the durable Conversation.
+    const resumption =
+      message.session_resumption_update || message.sessionResumptionUpdate;
+    if (resumption) {
+      this.sessionResumptionHandler?.({
+        handle: resumption.new_handle || resumption.newHandle || null,
+        resumable: resumption.resumable === true,
+      });
+    }
+
+    // VTID-03273 Pillar B — server is about to close this connection (~10 min
+    // cap). `timeLeft` is a protobuf Duration ("8s" string, or { seconds, nanos }).
+    const goAway = message.go_away || message.goAway;
+    if (goAway) {
+      this.goAwayHandler?.({ timeLeftMs: parseDurationMs(goAway.time_left ?? goAway.timeLeft) });
+    }
   }
 
   private handleSocketClose(code: number, reason: Buffer): void {
@@ -479,6 +511,29 @@ export function buildBidiGenerateContentUrl(location: string): string {
 }
 
 /**
+ * Parse a protobuf Duration into milliseconds. Vertex sends `time_left` either
+ * as a string like `"8s"` / `"8.250s"` or as `{ seconds, nanos }`. Returns
+ * undefined when it cannot be parsed (callers fall back to a default lead time).
+ */
+export function parseDurationMs(d: unknown): number | undefined {
+  if (d == null) return undefined;
+  if (typeof d === 'number') return d > 1e6 ? d / 1e6 : d * 1000; // nanos vs seconds heuristic
+  if (typeof d === 'string') {
+    const m = d.match(/^([0-9]*\.?[0-9]+)s$/);
+    if (m) return Math.round(parseFloat(m[1]) * 1000);
+    const n = parseFloat(d);
+    return Number.isFinite(n) ? Math.round(n * 1000) : undefined;
+  }
+  if (typeof d === 'object') {
+    const o = d as { seconds?: number | string; nanos?: number };
+    const secs = typeof o.seconds === 'string' ? parseFloat(o.seconds) : (o.seconds ?? 0);
+    const nanos = o.nanos ?? 0;
+    return Math.round(secs * 1000 + nanos / 1e6);
+  }
+  return undefined;
+}
+
+/**
  * Build the Vertex `setup` message envelope from connection options.
  *
  * Exposed for tests so the snake_case wire format is verifiable without
@@ -518,6 +573,22 @@ export function buildSetupMessage(options: UpstreamConnectOptions): Record<strin
 
   if (options.tools && options.tools.length > 0) {
     setup.tools = options.tools;
+  }
+
+  // VTID-03273 Pillar B — native session resumption. Empty object starts a
+  // fresh resumable session; `{ handle }` resumes the prior server-side
+  // conversation across a rebuilt connection (no transcript re-injection).
+  if (options.enableSessionResumption) {
+    setup.session_resumption = options.sessionResumptionHandle
+      ? { handle: options.sessionResumptionHandle }
+      : {};
+  }
+
+  // VTID-03273 Pillar B — sliding-window context compression keeps a long
+  // conversation under the context cap so the GoAway/resume rotation, not a
+  // hard context overflow, governs connection lifetime.
+  if (options.enableContextWindowCompression) {
+    setup.context_window_compression = { sliding_window: {} };
   }
 
   return { setup };
