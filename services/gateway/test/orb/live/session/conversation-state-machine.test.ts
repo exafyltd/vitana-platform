@@ -25,6 +25,20 @@ describe('VTID-03273 Pillar C: ConversationStateMachine', () => {
     expect(m.markOpeningDelivered()).toBe(false); // idempotent
   });
 
+  it('markOpeningDelivered() outside OPENING is a no-op (cannot consume the opener early)', () => {
+    const m = new ConversationStateMachine();
+    // PREWARM — illegal to deliver yet.
+    expect(m.markOpeningDelivered()).toBe(false);
+    expect(m.openingDelivered).toBe(false);
+    m.transition('OPENING');
+    // Now legal — and still available because the early call did NOT consume it.
+    expect(m.canDeliverOpening()).toBe(true);
+    expect(m.markOpeningDelivered()).toBe(true);
+    // After moving past OPENING, a late call is also a no-op.
+    m.transition('SPEAKING');
+    expect(m.markOpeningDelivered()).toBe(false);
+  });
+
   it('runs the live loop LISTENING ⇄ THINKING ⇄ SPEAKING', () => {
     const m = new ConversationStateMachine();
     m.transition('OPENING');

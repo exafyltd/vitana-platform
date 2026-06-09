@@ -83,10 +83,13 @@ export class ConversationStateMachine {
 
   /**
    * Mark the single opener as delivered (whether spoken or intentionally
-   * silent). Idempotent + safe to call outside OPENING (returns false) so the
-   * caller never accidentally re-arms it.
+   * silent). Only legal in OPENING — a call from any other state (PREWARM,
+   * RESUMED, a recovery path, …) returns false and does NOT consume the opener,
+   * so the once-in-OPENING invariant cannot be defeated by a stray/early call
+   * (Codex review fix). Idempotent within OPENING.
    */
   markOpeningDelivered(): boolean {
+    if (this._state !== 'OPENING') return false;
     if (this._openingDelivered) return false;
     this._openingDelivered = true;
     return true;
