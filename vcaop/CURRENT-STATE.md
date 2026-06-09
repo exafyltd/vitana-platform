@@ -7,6 +7,15 @@
 **Working branch:** `claude/vibrant-lovelace-DBM5k` (session-governed; specs authored on `feature/vcaop`)
 **Mode:** Autonomous build, dev/staging only, mock-first (runbook Rev. 2)
 
+> **2026-06-08 — SCHEMA NOW LIVE ON PROD VITANA (owner-approved).** With no dev
+> Supabase project existing (only `inmkhvwdcuyhnxkgfvsb` = prod VITANA), the owner
+> explicitly approved applying the **additive** VCAOP migrations to prod. Applied via
+> Supabase MCP `apply_migration`: `vcaop_ctrl_schema_0002` (16 new tables) +
+> `vcaop_iam_roles_0001` (20 RLS policies + 2 helper fns). Verified 16/20/2. No
+> existing table altered. **Rollback:** run `prisma/migrations/20260605_vcaop_iam_roles_0001/down.sql`
+> then `.../20260604_vcaop_ctrl_schema_0002/down.sql` (drops only the 16 VCAOP tables).
+> BLK-001 partially resolved (schema lives on prod; a true dev env is still preferable).
+
 ---
 
 ## Current position
