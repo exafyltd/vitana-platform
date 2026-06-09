@@ -3009,6 +3009,11 @@ export async function tool_navigate(
           session_id: id.session_id || null,
           screen_id: entry.screen_id,
           route: resolvedRoute,
+          // VTID-NAV-MOBILEROUTE: surface the viewport flag + whether a mobile
+          // deep-link existed, so we can tell mobile_route misses apart from a
+          // false is_mobile when a redirect lands on the wrong (desktop) page.
+          is_mobile: isMobile,
+          had_mobile_route: !!entry.mobile_route,
           drain_wait_ms: 0,
         },
       }).catch(() => {});
@@ -3025,6 +3030,8 @@ export async function tool_navigate(
           route: resolvedRoute,
           reason: question,
           is_anonymous: isAnonymous,
+          is_mobile: isMobile,
+          had_mobile_route: !!entry.mobile_route,
         },
       }).catch(() => {});
 
@@ -3047,7 +3054,13 @@ export async function tool_navigate(
           decision: 'confident',
           confidence: consultResult.confidence,
           screen_id: entry.screen_id,
-          route: entry.route,
+          // Return the RESOLVED route (honors mobile_route + overlay marker),
+          // matching the directive sent to the client and navigate_to_screen's
+          // contract. The caller stores result.route into session.current_route /
+          // pendingNavigation / navigator memory, so returning the raw desktop
+          // entry.route here would desync session state from where the client
+          // actually navigated (e.g. /settings/privacy vs /settings?mode=privacy).
+          route: resolvedRoute,
           title: content.title,
           reason: question,
           directive,
