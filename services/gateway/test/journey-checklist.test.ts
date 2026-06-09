@@ -14,7 +14,7 @@ import {
   rollbackChecklist,
   ChecklistValidationError,
 } from '../src/services/guided-journey/checklist-publish';
-import { getPublishedChecklist } from '../src/services/guided-journey/checklist-service';
+import { getPublishedChecklist, getOrbTopicSeed } from '../src/services/guided-journey/checklist-service';
 import type { ChecklistTopic } from '../src/types/journey-checklist';
 
 // ---------------------------------------------------------------------------
@@ -284,6 +284,68 @@ describe('checklist publish/rollback', () => {
     // public topics carry no internal fields
     expect(after.topics[0]).not.toHaveProperty('vitanaVoiceScript');
     expect(after.topics[0]).not.toHaveProperty('safetyLevel');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// VTID-03289 — ORB topic seed (voice-inclusive snapshot + server-side pickup)
+// ---------------------------------------------------------------------------
+describe('ORB topic seed (VTID-03289)', () => {
+  it('publish snapshot retains vitanaVoiceScript (so the ORB can narrate)', async () => {
+    const sb = makeFakeSupabase(fullValidSet());
+    await publishChecklist(sb, 'admin-1', { now: '2026-06-08T10:00:00Z' });
+    const stored = sb.__store.journey_checklist_versions[0];
+    expect(stored.snapshot[0]).toHaveProperty('vitanaVoiceScript');
+    expect(stored.snapshot[0].vitanaVoiceScript).toBe('Vitana explains this topic.');
+  });
+
+  it('public read still strips vitanaVoiceScript from the widened snapshot', async () => {
+    const sb = makeFakeSupabase(fullValidSet());
+    await publishChecklist(sb, 'admin-1', { now: '2026-06-08T10:00:00Z' });
+    const after = await getPublishedChecklist(sb);
+    expect(after.source).toBe('published');
+    expect(after.topics[0]).not.toHaveProperty('vitanaVoiceScript');
+  });
+
+  it('reads the seed from the PUBLISHED snapshot (Publish = go live)', async () => {
+    const sb = makeFakeSupabase(fullValidSet());
+    await publishChecklist(sb, 'admin-1', { now: '2026-06-08T10:00:00Z' });
+    const seed = await getOrbTopicSeed(sb, 'T001');
+    expect(seed).not.toBeNull();
+    expect(seed!.source).toBe('published');
+    expect(seed!.vitanaVoiceScript).toBe('Vitana explains this topic.');
+    expect(seed!.guidedPracticeTarget).toBe('life_compass');
+    expect(seed!.explanation.whatItIs).toBe('x');
+  });
+
+  it('falls back to the live draft when nothing is published yet (bootstrap)', async () => {
+    const sb = makeFakeSupabase(fullValidSet());
+    const seed = await getOrbTopicSeed(sb, 'T001');
+    expect(seed).not.toBeNull();
+    expect(seed!.source).toBe('draft_fallback');
+    expect(seed!.vitanaVoiceScript).toBe('Vitana explains this topic.');
+  });
+
+  it('returns null for a topic that is not in the published snapshot', async () => {
+    const sb = makeFakeSupabase(fullValidSet());
+    await publishChecklist(sb, 'admin-1', { now: '2026-06-08T10:00:00Z' });
+    expect(await getOrbTopicSeed(sb, 'T999')).toBeNull();
+  });
+
+  it('does not peek at the draft once a version is published (authoritative)', async () => {
+    // Publish a set, then add a brand-new draft topic that is NOT in the snapshot.
+    const sb = makeFakeSupabase(fullValidSet());
+    await publishChecklist(sb, 'admin-1', { now: '2026-06-08T10:00:00Z' });
+    sb.__store.journey_checklist_topics.push({
+      topic_id: 'T777', curriculum_version: 'v2', session: 1, position: 9,
+      chapter_id: 'basics', display_label: 'Unpublished Draft',
+      vitana_voice_script: 'SHOULD NOT BE SPOKEN', enabled: true, status: 'draft',
+      explanation_what_it_is: null, explanation_user_benefit: null,
+      explanation_when_to_use: null, explanation_try_this: null,
+      guided_practice_target: 'life_compass',
+    });
+    // A published version exists → unpublished draft topic must NOT leak to voice.
+    expect(await getOrbTopicSeed(sb, 'T777')).toBeNull();
   });
 });
 

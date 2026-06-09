@@ -12,7 +12,7 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { ChecklistValidationResult, ChecklistVersion } from '../../types/journey-checklist';
-import { listTopics, toPublicTopic } from './checklist-service';
+import { listTopics, toSnapshotTopic } from './checklist-service';
 import { validateChecklist } from './checklist-validator';
 
 const V = 'journey_checklist_versions';
@@ -72,7 +72,9 @@ export async function publishChecklist(
   if (!validation.ok) throw new ChecklistValidationError(validation);
 
   const active = topics.filter((t) => t.enabled && t.status !== 'disabled');
-  const snapshot = active.map(toPublicTopic);
+  // VTID-03289: snapshot the voice-inclusive shape so the ORB seam can narrate
+  // the published topic. The public HTTP read re-strips vitanaVoiceScript.
+  const snapshot = active.map(toSnapshotTopic);
   const versionLabel = `${curriculumVersion}-${now}`;
 
   // Unset previous current for this curriculum line, then insert the new one.

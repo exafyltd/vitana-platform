@@ -13,6 +13,8 @@ import type {
   ChecklistTopic,
   ChecklistTopicRow,
   PublicChecklistTopic,
+  SnapshotChecklistTopic,
+  OrbTopicSeed,
   ChecklistStatus,
   BusinessGate,
 } from '../../types/journey-checklist';
@@ -67,6 +69,36 @@ export function toPublicTopic(t: ChecklistTopic): PublicChecklistTopic {
     explanation: t.explanation,
     guidedPracticeTarget: t.guidedPracticeTarget,
     businessGate: t.businessGate,
+  };
+}
+
+/**
+ * VTID-03289 — the SERVER-SIDE snapshot shape: the public fields PLUS the
+ * `vitanaVoiceScript` the ORB voice bridge narrates. Stored in
+ * `journey_checklist_versions.snapshot`; stripped back to `PublicChecklistTopic`
+ * before it ever leaves the gateway over the public HTTP read (see
+ * `snapshotToPublic` + `getPublishedChecklist`).
+ */
+export function toSnapshotTopic(t: ChecklistTopic): SnapshotChecklistTopic {
+  return { ...toPublicTopic(t), vitanaVoiceScript: t.vitanaVoiceScript };
+}
+
+/**
+ * VTID-03289 — re-strip a stored snapshot row to the user-facing shape. Picks
+ * ONLY public fields, so even if the snapshot grows new internal fields later
+ * they can never leak through the public HTTP read.
+ */
+export function snapshotToPublic(s: SnapshotChecklistTopic): PublicChecklistTopic {
+  return {
+    topicId: s.topicId,
+    session: s.session,
+    position: s.position,
+    chapterId: s.chapterId,
+    displayLabel: s.displayLabel,
+    shortDescription: s.shortDescription,
+    explanation: s.explanation,
+    guidedPracticeTarget: s.guidedPracticeTarget,
+    businessGate: s.businessGate,
   };
 }
 
@@ -266,10 +298,14 @@ export async function getPublishedChecklist(
   if (error) throw error;
 
   if (ver && Array.isArray((ver as any).snapshot)) {
+    // VTID-03289: the stored snapshot now carries the internal vitanaVoiceScript
+    // (for the ORB seam). Re-strip to the public shape so it never leaks over
+    // this HTTP read. snapshotToPublic tolerates older voice-less snapshots.
+    const snap = (ver as any).snapshot as SnapshotChecklistTopic[];
     return {
       source: 'published',
       versionLabel: (ver as any).version_label ?? null,
-      topics: (ver as any).snapshot as PublicChecklistTopic[],
+      topics: snap.map(snapshotToPublic),
     };
   }
 
@@ -281,5 +317,56 @@ export async function getPublishedChecklist(
     source: 'draft_fallback',
     versionLabel: null,
     topics: working.map(toPublicTopic),
+  };
+}
+
+/**
+ * VTID-03289 — the ORB voice bridge pickup. Given a tapped topicId, return the
+ * narration seed (voice script + explanation + redirect target) for the ORB to
+ * speak. Reads the CURRENT PUBLISHED snapshot first — so "Publish = go live" and
+ * unpublished draft edits never leak into live narration — and only falls back
+ * to the live draft when nothing is published yet (bootstrap), mirroring
+ * `getPublishedChecklist`. Returns null when the topic is not live.
+ */
+export async function getOrbTopicSeed(
+  client: SupabaseClient,
+  topicId: string,
+  curriculumVersion = 'v2',
+): Promise<OrbTopicSeed | null> {
+  const { data: ver, error } = await client
+    .from(V)
+    .select('snapshot')
+    .eq('curriculum_version', curriculumVersion)
+    .eq('is_current', true)
+    .maybeSingle();
+  if (error) throw error;
+
+  // A published version is authoritative: if it exists, the ORB narrates ONLY
+  // what's in it. A topic absent from the snapshot (gated/disabled at publish)
+  // is intentionally not live → no seed, no draft peek.
+  if (ver && Array.isArray((ver as any).snapshot)) {
+    const snap = (ver as any).snapshot as SnapshotChecklistTopic[];
+    const hit = snap.find((t) => t.topicId === topicId);
+    if (!hit) return null;
+    return {
+      topicId: hit.topicId,
+      displayLabel: hit.displayLabel,
+      vitanaVoiceScript: hit.vitanaVoiceScript ?? null,
+      explanation: hit.explanation,
+      guidedPracticeTarget: hit.guidedPracticeTarget ?? null,
+      source: 'published',
+    };
+  }
+
+  // Bootstrap fallback: nothing published yet → read the live draft row.
+  const draft = await getTopic(client, topicId);
+  if (!draft || !draft.enabled || draft.status === 'disabled') return null;
+  return {
+    topicId: draft.topicId,
+    displayLabel: draft.displayLabel,
+    vitanaVoiceScript: draft.vitanaVoiceScript,
+    explanation: draft.explanation,
+    guidedPracticeTarget: draft.guidedPracticeTarget,
+    source: 'draft_fallback',
   };
 }

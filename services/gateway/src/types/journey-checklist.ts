@@ -57,6 +57,35 @@ export interface PublicChecklistTopic {
   businessGate: BusinessGate | null;
 }
 
+/**
+ * VTID-03289 — the SERVER-SIDE published snapshot row shape. Identical to the
+ * user-facing `PublicChecklistTopic` PLUS `vitanaVoiceScript`, which the ORB
+ * voice bridge needs to narrate a tapped topic. The voice script is still an
+ * internal field — `routes/journey-checklist.ts` (the public HTTP read) strips
+ * it back out via `getPublishedChecklist`, so it never reaches a generic client.
+ * It is retained only inside `journey_checklist_versions.snapshot` for the ORB
+ * seam to read server-side (see `getOrbTopicSeed`).
+ */
+export interface SnapshotChecklistTopic extends PublicChecklistTopic {
+  vitanaVoiceScript: string | null;
+}
+
+/**
+ * VTID-03289 — what the ORB live bridge picks up when a user taps a Guided
+ * Journey topic/session. Resolved from the current published snapshot (Publish
+ * = go live), falling back to the live draft only when nothing is published yet.
+ */
+export interface OrbTopicSeed {
+  topicId: string;
+  displayLabel: string;
+  /** The verbatim, pre-localized line Vitana speaks for this topic. */
+  vitanaVoiceScript: string | null;
+  explanation: ChecklistExplanation;
+  /** Where Vitana redirects the user after narrating (a route or feature key). */
+  guidedPracticeTarget: string | null;
+  source: 'published' | 'draft_fallback';
+}
+
 export interface ChecklistValidationIssue {
   rule: string;
   detail: string;
