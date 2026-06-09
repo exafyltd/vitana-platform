@@ -94,6 +94,10 @@ import {
   decideOpening,
   formatOpeningDecisionLog,
 } from '../orb/live/instruction/opening-contract';
+// VTID-03273 Pillar C — explicit conversation state machine. `openingDelivered`
+// is a property of the state (replacing the scattered greetingSent boolean);
+// the opener fires exactly once, in OPENING, for the life of the conversation.
+import { ConversationStateMachine } from '../orb/live/session/conversation-state-machine';
 // VTID-03252: ENVIRONMENT block formatter, extracted for testability.
 import { formatClientContextForInstruction } from '../orb/live/instruction/client-context-format';
 // BOOTSTRAP-ORB-R0-INSTRUCTION-CAP: aggregate byte-budget guard for the final
@@ -7126,6 +7130,14 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
   //   - the `Say exactly` branch below uses `_openDecision.line`, so the
   //     no-verbatim-repeat downgrade (line=null) actually varies the opener
   //     instead of replaying the identical line.
+  // VTID-03273 Pillar C — drive the explicit state machine. Lazily attach one
+  // per conversation and move PREWARM→OPENING; the opener is delivered exactly
+  // once, in OPENING. `markOpeningDelivered()` is the property-of-state
+  // equivalent of setting greetingSent (which stays for the legacy read sites).
+  const _sm: ConversationStateMachine =
+    (session as any).conversationSM ?? ((session as any).conversationSM = new ConversationStateMachine());
+  if (_sm.state === 'PREWARM') _sm.transition('OPENING', 'session_start');
+
   const _wb = (session as any).wakeBriefDecision || null;
   const _openDecision = decideOpening({
     isAnonymous: !!session.isAnonymous,
@@ -7151,6 +7163,7 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
   ) {
     session.greetingSent = true;
     session.greetingTurnIndex = session.turn_count;
+    _sm.markOpeningDelivered(); // VTID-03273 Pillar C — opening delivered (state)
     emitDiag(session, 'greeting_sent', {
       lang,
       prompt_len: 0,
@@ -7224,6 +7237,7 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
     ws.send(JSON.stringify(wakeMessage));
     session.greetingSent = true;
     session.greetingTurnIndex = session.turn_count;
+    _sm.markOpeningDelivered(); // VTID-03273 Pillar C — opening delivered (state)
     emitDiag(session, 'greeting_sent', {
       lang,
       prompt_len: wakePrompt.length,
@@ -7290,6 +7304,7 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
       console.log(`[VTID-WAKE-OPENER] prompt_sent=<skipped>`);
       session.greetingSent = true;
       session.greetingTurnIndex = session.turn_count;
+      _sm.markOpeningDelivered(); // VTID-03273 Pillar C — opening delivered (silent, state)
       emitDiag(session, 'greeting_sent', {
         lang,
         prompt_len: 0,
@@ -7487,6 +7502,14 @@ function sendReconnectRecoveryPromptToLiveAPI(ws: WebSocket, session: GeminiLive
       session.greetingSent = true;
       session.greetingTurnIndex = session.turn_count;
       (session as any)._openingDecision = _recoveryDecision;
+      // VTID-03273 Pillar C — recovery is the orthogonal axis: RECONNECTING →
+      // RESUMED → prior active state (never OPENING). The opening stays
+      // delivered, so the model resumes the thread instead of re-greeting.
+      const _smR: ConversationStateMachine | undefined = (session as any).conversationSM;
+      if (_smR) {
+        if (_smR.state !== 'RECONNECTING') _smR.transition('RECONNECTING', 'upstream_drop');
+        _smR.resumeToPriorState('native_resume');
+      }
       emitDiag(session, 'reconnect_opening_silent', { source: _recoveryDecision.source });
       return true;
     }
