@@ -710,22 +710,26 @@ export const NAVIGATION_CATALOG: ReadonlyArray<NavCatalogEntry> = [
     },
   },
   {
+    // VTID-NAV-BUSINESS-TABS: the "Services" pill of the Business Hub (mobile)
+    // / "My Services" tab (desktop). The "Business Hub Services" phrase in
+    // when_to_visit keeps the pill name resolving here, not to OVERVIEW.
     screen_id: 'BUSINESS.SERVICES',
     route: '/business/services',
     category: 'business',
     access: 'authenticated',
     anonymous_safe: false,
     priority: 1,
+    aliases: ['business-services', 'services-tab', 'business-hub-services', 'my-services'],
     i18n: {
       en: {
         title: 'My Services',
         description: 'Manage the services you offer to the Maxina community — coaching, classes, sessions, products.',
-        when_to_visit: 'When the user wants to manage their services, create a new service, list a coaching offering, or set up classes and sessions they offer.',
+        when_to_visit: 'When the user asks for the Services tab of the Business Hub, the Business Hub Services, their services, or wants to manage their services, create a new service, list a coaching offering, or set up classes and sessions they offer.',
       },
       de: {
         title: 'Meine Services',
         description: 'Verwalte die Services, die du der Maxina Community anbietest — Coaching, Kurse, Sessions, Produkte.',
-        when_to_visit: 'Wenn der Nutzer seine Services verwalten, einen neuen Service erstellen, ein Coaching-Angebot einstellen oder Kurse und Sessions einrichten möchte.',
+        when_to_visit: 'Wenn der Nutzer nach dem Tab "Services" im Business Hub, den Business Hub Services, seinen Services fragt, oder seine Services verwalten, einen neuen Service erstellen, ein Coaching-Angebot einstellen oder Kurse und Sessions einrichten möchte.',
       },
     },
   },
@@ -762,16 +766,23 @@ export const NAVIGATION_CATALOG: ReadonlyArray<NavCatalogEntry> = [
     category: 'business',
     access: 'authenticated',
     anonymous_safe: false,
+    priority: 1,
+    // VTID-NAV-BUSINESS-SUBTABS: the "Clients" sub-tab of the Insights pill
+    // (mobile, /business/clients -> insights.clients). when_to_visit scatters
+    // "Insights … Business Hub" (not the contiguous "Business Hub Insights")
+    // so "Business Hub Insights Clients" lands here via clients+coverage, while
+    // the bare "Business Hub Insights" query stays with BUSINESS.ANALYTICS.
+    aliases: ['business-clients', 'business-insights-clients', 'my-clients', 'clients-tab'],
     i18n: {
       en: {
         title: 'My Clients',
         description: 'Manage the clients and customers of your Maxina business.',
-        when_to_visit: 'When the user asks about their clients, customers, who they serve, or how to manage client relationships in their business.',
+        when_to_visit: 'When the user asks for the Clients tab in the Insights section of their Business Hub, their clients, customers, who they serve, or how to manage client relationships in their business.',
       },
       de: {
         title: 'Meine Kunden',
         description: 'Verwalte die Kunden deines Maxina Business.',
-        when_to_visit: 'Wenn der Nutzer nach seinen Kunden, Klienten, wen er bedient oder wie man Kundenbeziehungen im Business verwaltet, fragt.',
+        when_to_visit: 'Wenn der Nutzer nach dem Tab "Kunden" im Einblicke-Bereich seines Business Hub, seinen Kunden, Klienten, wen er bedient oder wie man Kundenbeziehungen im Business verwaltet, fragt.',
       },
     },
   },
@@ -798,12 +809,139 @@ export const NAVIGATION_CATALOG: ReadonlyArray<NavCatalogEntry> = [
       en: {
         title: 'Analytics',
         description: 'Your Business Hub Insights — performance, clients, bookings, revenue, earnings and growth for your Maxina business.',
-        when_to_visit: 'When the user asks for the Insights tab of the Business Hub, the Business Hub Insights, their business insights, business analytics, business performance, revenue, bookings, clients overview, earnings, or growth metrics for their services.',
+        when_to_visit: 'When the user asks for the Insights tab of the Business Hub, the Business Hub Insights, their business insights, business analytics, business performance, revenue, bookings, or performance metrics for their services.',
       },
       de: {
         title: 'Analytics',
         description: 'Deine Business Hub Einblicke — Performance, Kunden, Buchungen, Umsatz, Einnahmen und Wachstum für dein Maxina Business.',
-        when_to_visit: 'Wenn der Nutzer nach dem Tab "Einblicke" im Business Hub, den Business Hub Insights, dem Business Hub Einblicke Bereich, seinen Business-Einblicken, Business-Analytics, seiner Business-Performance, Umsatz, Buchungen, Kundenübersicht, Einnahmen oder Wachstumskennzahlen für seine Services fragt.',
+        when_to_visit: 'Wenn der Nutzer nach dem Tab "Einblicke" im Business Hub, den Business Hub Insights, dem Business Hub Einblicke Bereich, seinen Business-Einblicken, Business-Analytics, seiner Business-Performance, Umsatz, Buchungen oder Performance-Kennzahlen für seine Services fragt.',
+      },
+    },
+  },
+
+  // ── BUSINESS HUB sub-tabs (VTID-NAV-BUSINESS-SUBTABS) ────────────────────
+  // Mobile-only mode-pill sub-tabs that have no standalone desktop route. The
+  // mobile BusinessHub reads /business?tab=<pill.subtab> and selects that pill.
+  // Each carries the literal "Business Hub <Pill> <Subtab>" phrase so the
+  // compound voice query lands here without stealing the bare single word
+  // (events/referrals/earnings) from its primary screen.
+  {
+    screen_id: 'BUSINESS.SERVICES_EVENTS',
+    route: '/business?tab=services.events',
+    category: 'business',
+    access: 'authenticated',
+    anonymous_safe: false,
+    aliases: ['business-services-events', 'my-events', 'hosted-events'],
+    i18n: {
+      en: {
+        title: 'My Events',
+        description: 'The events, classes and sessions you host or offer as a provider in your Maxina business.',
+        when_to_visit: 'When the user asks for the My Events tab of the Business Hub Services, the Business Hub Services Events, or the events, classes and sessions they host or offer as a provider in their own business.',
+      },
+      de: {
+        title: 'Meine Events',
+        description: 'Die Events, Kurse und Sessions, die du als Anbieter in deinem Maxina Business veranstaltest oder anbietest.',
+        when_to_visit: 'Wenn der Nutzer nach dem Tab "Meine Events" der Business Hub Services, den Business Hub Services Events oder den Events, Kursen und Sessions fragt, die er als Anbieter in seinem eigenen Business veranstaltet oder anbietet.',
+      },
+    },
+  },
+  {
+    screen_id: 'BUSINESS.SERVICES_PACKAGES',
+    route: '/business?tab=services.packages',
+    category: 'business',
+    access: 'authenticated',
+    anonymous_safe: false,
+    aliases: ['business-services-packages', 'service-packages', 'my-packages'],
+    i18n: {
+      en: {
+        title: 'Service Packages',
+        description: 'Bundled service packages you offer in your Maxina business.',
+        when_to_visit: 'When the user asks for the Packages tab of the Business Hub Services, the Business Hub Services Packages, their service packages, or bundled offerings they sell in their business.',
+      },
+      de: {
+        title: 'Service-Pakete',
+        description: 'Gebündelte Service-Pakete, die du in deinem Maxina Business anbietest.',
+        when_to_visit: 'Wenn der Nutzer nach dem Tab "Pakete" der Business Hub Services, den Business Hub Services Packages, seinen Service-Paketen oder gebündelten Angeboten fragt, die er in seinem Business verkauft.',
+      },
+    },
+  },
+  {
+    screen_id: 'BUSINESS.SALES_PROMOTIONS',
+    route: '/business?tab=sales.promotions',
+    category: 'business',
+    access: 'authenticated',
+    anonymous_safe: false,
+    aliases: ['business-sales-promotions', 'my-promotions', 'sales-promotions'],
+    i18n: {
+      en: {
+        title: 'Promotions',
+        description: 'Promotions and special offers you run on your Maxina business sales.',
+        when_to_visit: 'When the user asks for the Promotions tab of the Business Hub Sales, the Business Hub Sales Promotions, or the promotions and special offers they run on their own business sales.',
+      },
+      de: {
+        title: 'Aktionen',
+        description: 'Aktionen und Sonderangebote, die du für deine Maxina Business-Verkäufe durchführst.',
+        when_to_visit: 'Wenn der Nutzer nach dem Tab "Aktionen" der Business Hub Sales, den Business Hub Sales Promotions oder den Aktionen und Sonderangeboten fragt, die er für seine eigenen Business-Verkäufe durchführt.',
+      },
+    },
+  },
+  {
+    screen_id: 'BUSINESS.SALES_REFERRALS',
+    route: '/business?tab=sales.referrals',
+    category: 'business',
+    access: 'authenticated',
+    anonymous_safe: false,
+    aliases: ['business-sales-referrals', 'sales-referrals'],
+    i18n: {
+      en: {
+        title: 'Sales Referrals',
+        description: 'Referrals you earn through your Maxina business reselling.',
+        when_to_visit: 'When the user asks for the Referrals tab of the Business Hub Sales, or the Business Hub Sales Referrals — the referrals tied to their own reseller sales in the Business Hub.',
+      },
+      de: {
+        title: 'Verkaufs-Empfehlungen',
+        description: 'Empfehlungen, die du über dein Maxina Business-Reselling verdienst.',
+        when_to_visit: 'Wenn der Nutzer nach dem Tab "Empfehlungen" der Business Hub Sales oder den Business Hub Sales Referrals fragt — den Empfehlungen, die zu seinen eigenen Reseller-Verkäufen im Business Hub gehören.',
+      },
+    },
+  },
+  {
+    screen_id: 'BUSINESS.INSIGHTS_EARNINGS',
+    route: '/business?tab=insights.earnings',
+    category: 'business',
+    access: 'authenticated',
+    anonymous_safe: false,
+    aliases: ['business-insights-earnings', 'business-earnings'],
+    i18n: {
+      en: {
+        title: 'Earnings',
+        description: 'Earnings breakdown for your Maxina business in the Insights tab.',
+        when_to_visit: 'When the user asks for the Earnings tab of the Business Hub Insights, or the Business Hub Insights Earnings — the earnings breakdown of their own business.',
+      },
+      de: {
+        title: 'Einnahmen',
+        description: 'Einnahmen-Aufschlüsselung für dein Maxina Business im Einblicke-Tab.',
+        when_to_visit: 'Wenn der Nutzer nach dem Tab "Einnahmen" der Business Hub Insights oder den Business Hub Insights Earnings fragt — der Einnahmen-Aufschlüsselung seines eigenen Business.',
+      },
+    },
+  },
+  {
+    screen_id: 'BUSINESS.INSIGHTS_GROWTH',
+    route: '/business?tab=insights.growth',
+    category: 'business',
+    access: 'authenticated',
+    anonymous_safe: false,
+    aliases: ['business-insights-growth', 'business-growth'],
+    i18n: {
+      en: {
+        title: 'Growth',
+        description: 'Growth metrics for your Maxina business in the Insights tab.',
+        when_to_visit: 'When the user asks for the Growth tab of the Business Hub Insights, or the Business Hub Insights Growth — the growth metrics and trends of their own business.',
+      },
+      de: {
+        title: 'Wachstum',
+        description: 'Wachstumskennzahlen für dein Maxina Business im Einblicke-Tab.',
+        when_to_visit: 'Wenn der Nutzer nach dem Tab "Wachstum" der Business Hub Insights oder den Business Hub Insights Growth fragt — den Wachstumskennzahlen und Trends seines eigenen Business.',
       },
     },
   },
