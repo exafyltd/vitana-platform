@@ -6905,12 +6905,23 @@ function renderKbChecklistView() {
     }
 
     // Split: table (screen 05) + editor (screen 06)
+    // VTID-03288 scroll fix: the shared .admin-split-* chain is overflow:hidden
+    // and (lacking min-height:0) lets the 250-row table grow to full height,
+    // which then gets CLIPPED to ~2 rows with no scrollbar. Neutralize the
+    // clipping here and give each pane its own bounded scroll so all 250 topics
+    // are reachable regardless of window height.
+    root.style.overflowY = 'auto';
     var split = kbEl('div', 'admin-split-layout');
     split.style.display = 'flex'; split.style.gap = '1rem'; split.style.alignItems = 'flex-start';
+    split.style.flex = 'none'; split.style.overflow = 'visible'; split.style.minHeight = '0';
     var left = kbEl('div', 'admin-split-left'); left.style.flex = '1'; left.style.minWidth = '0';
-    left.appendChild(renderKbTable());
+    left.style.overflow = 'visible'; left.style.minHeight = '0';
+    var tbl = renderKbTable();
+    tbl.style.flex = 'none'; tbl.style.maxHeight = '72vh'; tbl.style.overflowY = 'auto';
+    left.appendChild(tbl);
     split.appendChild(left);
     var right = kbEl('div', 'admin-split-right'); right.style.flex = '1'; right.style.minWidth = '0';
+    right.style.overflow = 'visible'; right.style.maxHeight = '72vh'; right.style.overflowY = 'auto';
     right.appendChild(renderKbEditor());
     split.appendChild(right);
     root.appendChild(split);
