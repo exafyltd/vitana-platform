@@ -14,6 +14,7 @@ import express from 'express';
 import {
   getJourneyState,
   setJourneyMode,
+  completePractice,
 } from '../src/services/guided-journey/guided-journey-state';
 
 // ---------------------------------------------------------------------------
@@ -179,6 +180,36 @@ describe('guided-journey-state service', () => {
     for (const key of SUBSCRIPTION_OR_PERMISSION_KEYS) {
       expect(state).not.toHaveProperty(key);
     }
+  });
+
+  it('completePractice records a topic + increments count + resumes in_progress', async () => {
+    const sb = makeFakeSupabase();
+    const s = await completePractice(sb, 'user-1', 'T001', FIXED_NOW);
+    expect(s.completedTopicIds).toContain('T001');
+    expect(s.completedPracticeCount).toBe(1);
+    expect(s.onboardingStatus).toBe('in_progress');
+  });
+
+  it('completePractice is idempotent per topic (no double count)', async () => {
+    const sb = makeFakeSupabase();
+    await completePractice(sb, 'user-1', 'T001', FIXED_NOW);
+    const s = await completePractice(sb, 'user-1', 'T001', FIXED_NOW);
+    expect(s.completedTopicIds).toEqual(['T001']);
+    expect(s.completedPracticeCount).toBe(1);
+  });
+
+  it('completePractice flips to qualified when threshold is reached', async () => {
+    const sb = makeFakeSupabase();
+    (sb.__store as Map<string, any>).set('user-q', {
+      ...defaultRow('user-q'),
+      onboarding_status: 'in_progress',
+      completed_practice_count: 59,
+      qualification_threshold: 60,
+    });
+    const s = await completePractice(sb, 'user-q', 'T123', FIXED_NOW);
+    expect(s.completedPracticeCount).toBe(60);
+    expect(s.onboardingStatus).toBe('qualified');
+    expect(s.qualifiedAt).toBe(FIXED_NOW);
   });
 });
 

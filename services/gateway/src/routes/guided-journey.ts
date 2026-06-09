@@ -17,6 +17,7 @@ import { getSupabase } from '../lib/supabase';
 import {
   getJourneyState,
   setJourneyMode,
+  completePractice,
 } from '../services/guided-journey/guided-journey-state';
 import type { JourneyMode } from '../types/guided-journey';
 
@@ -83,6 +84,32 @@ router.post('/mode', requireAuth, async (req: AuthenticatedRequest, res: Respons
   } catch (err: any) {
     console.error(`[${VTID}] set journey mode failed: ${err?.message}`);
     return res.status(500).json({ ok: false, error: 'set_mode_failed', vtid: VTID });
+  }
+});
+
+// VTID-03282 (P7) — record a completed guided-practice action for a topic.
+// POST /api/v1/journey/practice-complete  { topicId } → updated JourneyState.
+router.post('/practice-complete', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const userId = req.identity?.user_id;
+  if (!userId) {
+    return res.status(401).json({ ok: false, error: 'unauthenticated', vtid: 'VTID-03282' });
+  }
+  const topicId = req.body?.topicId as unknown;
+  if (typeof topicId !== 'string' || !topicId.trim()) {
+    return res
+      .status(400)
+      .json({ ok: false, error: 'invalid_topic_id', detail: 'topicId is required', vtid: 'VTID-03282' });
+  }
+  const client = getSupabase();
+  if (!client) {
+    return res.status(500).json({ ok: false, error: 'supabase_not_configured', vtid: 'VTID-03282' });
+  }
+  try {
+    const state = await completePractice(client, userId, topicId);
+    return res.json({ ok: true, state, vtid: 'VTID-03282' });
+  } catch (err: any) {
+    console.error(`[VTID-03282] practice-complete failed: ${err?.message}`);
+    return res.status(500).json({ ok: false, error: 'practice_complete_failed', vtid: 'VTID-03282' });
   }
 });
 
