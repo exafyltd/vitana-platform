@@ -1786,6 +1786,7 @@ export const NAVIGATION_CATALOG: ReadonlyArray<NavCatalogEntry> = [
   {
     screen_id: 'SETTINGS.CONNECTED_APPS', route: '/settings/connected-apps', category: 'settings',
     access: 'authenticated', anonymous_safe: false,
+    priority: 1,
     aliases: ['connected-apps', 'connected_apps', 'connectors', 'integrations', 'verbundene-apps', 'connect-spotify', 'connect-youtube', 'connect-google'],
     i18n: {
       en: { title: 'Connectors & Connected Apps', description: 'Connectors to third-party apps and integrations linked to your account.', when_to_visit: 'When the user asks about connectors, a connector, connected apps, app integrations, third-party connections, linked services, or how to connect an external app.' },
@@ -1800,6 +1801,59 @@ export const NAVIGATION_CATALOG: ReadonlyArray<NavCatalogEntry> = [
       de: { title: 'Soziale Konten', description: 'Verknüpfe und verwalte deine Social-Media-Konten.', when_to_visit: 'Wenn der Nutzer nach sozialen Konten, Social-Media-Verknüpfungen, Instagram, Facebook oder anderen sozialen Plattformen verbinden fragt.' },
     },
   },
+  // ── CONNECTORS category mode pills (VTID-NAV-CONNECTORS-TABS) ────────────
+  // The category tabs of Connected Apps (/connectors), reached via
+  // /connectors?tab=<category>. MobileConnectedAppsView reads ?tab=. Scoped so
+  // "Connectors <Category>" lands here while the bare category word
+  // (health/social/fitness/ai/autopilot) stays with its primary screen.
+  { screen_id: 'CONNECTORS.AI', route: '/connectors?tab=ai', category: 'settings', access: 'authenticated', anonymous_safe: false,
+    aliases: ['ai-connectors', 'connect-ai'],
+    i18n: {
+      en: { title: 'AI Connectors', description: 'Connect AI providers and apps to your account.', when_to_visit: 'When the user asks for the AI connectors, the AI tab of Connected Apps, or to connect an AI app or provider (OpenAI, Claude, Gemini) to their account.' },
+      de: { title: 'KI-Konnektoren', description: 'Verbinde KI-Anbieter und Apps mit deinem Konto.', when_to_visit: 'Wenn der Nutzer nach den KI-Konnektoren, dem KI-Tab der verbundenen Apps oder dem Verbinden einer KI-App oder eines KI-Anbieters (OpenAI, Claude, Gemini) fragt.' },
+    } },
+  { screen_id: 'CONNECTORS.PRODUCTIVITY', route: '/connectors?tab=productivity', category: 'settings', access: 'authenticated', anonymous_safe: false,
+    aliases: ['mail-calendar-connectors', 'connect-gmail'],
+    i18n: {
+      en: { title: 'Mail & Calendar Connectors', description: 'Connect email and calendar apps.', when_to_visit: 'When the user asks for the Mail and Calendar connectors, the productivity tab of Connected Apps, or to connect an email or calendar app integration (Gmail, Google Calendar, Outlook).' },
+      de: { title: 'Mail- & Kalender-Konnektoren', description: 'Verbinde E-Mail- und Kalender-Apps.', when_to_visit: 'Wenn der Nutzer nach den Mail- und Kalender-Konnektoren, dem Produktivitäts-Tab der verbundenen Apps oder dem Verbinden einer E-Mail- oder Kalender-App-Integration (Gmail, Google Kalender, Outlook) fragt.' },
+    } },
+  { screen_id: 'CONNECTORS.MEDIA', route: '/connectors?tab=media', category: 'settings', access: 'authenticated', anonymous_safe: false,
+    aliases: ['music-video-connectors', 'connect-spotify', 'connect-youtube'],
+    i18n: {
+      en: { title: 'Music & Video Connectors', description: 'Connect music and video app integrations.', when_to_visit: 'When the user asks for the Music and Video connectors, the media tab of Connected Apps, or to connect a music or video app integration (Spotify, YouTube, Apple Music).' },
+      de: { title: 'Musik- & Video-Konnektoren', description: 'Verbinde Musik- und Video-App-Integrationen.', when_to_visit: 'Wenn der Nutzer nach den Musik- und Video-Konnektoren, dem Medien-Tab der verbundenen Apps oder dem Verbinden einer Musik- oder Video-App-Integration (Spotify, YouTube, Apple Music) fragt.' },
+    } },
+  { screen_id: 'CONNECTORS.SOCIAL', route: '/connectors?tab=social', category: 'settings', access: 'authenticated', anonymous_safe: false,
+    aliases: ['social-connectors'],
+    i18n: {
+      en: { title: 'Social Connectors', description: 'Connect your social media accounts as integrations.', when_to_visit: 'When the user asks for the Social connectors tab of Connected Apps, or to connect a social media account (LinkedIn, Instagram, X) as an app integration.' },
+      de: { title: 'Social-Konnektoren', description: 'Verbinde deine Social-Media-Konten als Integrationen.', when_to_visit: 'Wenn der Nutzer nach dem Social-Konnektoren-Tab der verbundenen Apps oder dem Verbinden eines Social-Media-Kontos (LinkedIn, Instagram, X) als App-Integration fragt.' },
+    } },
+  { screen_id: 'CONNECTORS.FITNESS', route: '/connectors?tab=fitness', category: 'settings', access: 'authenticated', anonymous_safe: false,
+    aliases: ['fitness-connectors', 'connect-wearables', 'connect-strava'],
+    i18n: {
+      en: { title: 'Fitness Connectors', description: 'Connect fitness apps and wearables.', when_to_visit: 'When the user asks for the Fitness connectors tab of Connected Apps, or to connect a fitness app or wearable integration (Strava, Garmin, Fitbit).' },
+      de: { title: 'Fitness-Konnektoren', description: 'Verbinde Fitness-Apps und Wearables.', when_to_visit: 'Wenn der Nutzer nach dem Fitness-Konnektoren-Tab der verbundenen Apps oder dem Verbinden einer Fitness-App- oder Wearable-Integration (Strava, Garmin, Fitbit) fragt.' },
+    } },
+  { screen_id: 'CONNECTORS.HEALTH', route: '/connectors?tab=health', category: 'settings', access: 'authenticated', anonymous_safe: false,
+    aliases: ['health-connectors', 'connect-health-app', 'connect-labs'],
+    i18n: {
+      en: { title: 'Health Connectors', description: 'Connect health and lab app integrations.', when_to_visit: 'When the user asks for the Health connectors tab of Connected Apps, or to connect a health or lab app (Apple Health, Oura, a lab provider) as an integration.' },
+      de: { title: 'Gesundheits-Konnektoren', description: 'Verbinde Gesundheits- und Labor-App-Integrationen.', when_to_visit: 'Wenn der Nutzer nach dem Gesundheits-Konnektoren-Tab der verbundenen Apps oder dem Verbinden einer Gesundheits- oder Labor-App (Apple Health, Oura, ein Laboranbieter) als Integration fragt.' },
+    } },
+  { screen_id: 'CONNECTORS.OTHER', route: '/connectors?tab=other', category: 'settings', access: 'authenticated', anonymous_safe: false,
+    aliases: ['other-connectors'],
+    i18n: {
+      en: { title: 'Other Connectors', description: 'Other connectors and integrations.', when_to_visit: 'When the user asks for the Other connectors tab of Connected Apps, or other integrations not in the named categories.' },
+      de: { title: 'Weitere Konnektoren', description: 'Weitere Konnektoren und Integrationen.', when_to_visit: 'Wenn der Nutzer nach dem Tab "Weitere" der Konnektoren in den verbundenen Apps oder anderen Integrationen fragt.' },
+    } },
+  { screen_id: 'CONNECTORS.AGENT', route: '/connectors?tab=agent', category: 'settings', access: 'authenticated', anonymous_safe: false,
+    aliases: ['autopilot-connectors', 'agent-connectors'],
+    i18n: {
+      en: { title: 'Autopilot Connectors', description: 'Connect Autopilot agent integrations.', when_to_visit: 'When the user asks for the Autopilot connectors tab of Connected Apps, or to connect an agent or Autopilot app integration.' },
+      de: { title: 'Autopilot-Konnektoren', description: 'Verbinde Autopilot-Agent-Integrationen.', when_to_visit: 'Wenn der Nutzer nach dem Autopilot-Konnektoren-Tab der verbundenen Apps oder dem Verbinden einer Agent- oder Autopilot-App-Integration fragt.' },
+    } },
   {
     screen_id: 'SETTINGS.BILLING', route: '/settings/billing', category: 'settings',
     access: 'authenticated', anonymous_safe: false,

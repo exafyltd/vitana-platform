@@ -323,6 +323,18 @@ const ROUTING_CASES: RoutingCase[] = [
   { utterance: 'customize my app preferences',               lang: 'en', expected_screen_id: 'SETTINGS.PREFERENCES' },
   { utterance: 'connected apps settings',                    lang: 'en', expected_screen_id: 'SETTINGS.CONNECTED_APPS' },
   { utterance: 'social accounts settings',                   lang: 'en', expected_screen_id: 'SETTINGS.SOCIAL' },
+  // VTID-NAV-CONNECTORS-TABS: the Connectors category mode pills. "ai" is a
+  // <3-char token (filtered by the keyword scorer) so the AI pill relies on the
+  // semantic layer — not asserted here. The rest are keyword-deterministic.
+  { utterance: 'connectors',                                 lang: 'en', expected_screen_id: 'SETTINGS.CONNECTED_APPS' },
+  { utterance: 'connectors social',                          lang: 'en', expected_screen_id: 'CONNECTORS.SOCIAL' },
+  { utterance: 'connectors fitness',                         lang: 'en', expected_screen_id: 'CONNECTORS.FITNESS' },
+  { utterance: 'connectors health',                          lang: 'en', expected_screen_id: 'CONNECTORS.HEALTH' },
+  { utterance: 'connectors autopilot',                       lang: 'en', expected_screen_id: 'CONNECTORS.AGENT' },
+  { utterance: 'connectors mail and calendar',               lang: 'en', expected_screen_id: 'CONNECTORS.PRODUCTIVITY' },
+  { utterance: 'connectors music and video',                 lang: 'en', expected_screen_id: 'CONNECTORS.MEDIA' },
+  { utterance: 'connectors other',                           lang: 'en', expected_screen_id: 'CONNECTORS.OTHER' },
+  { utterance: 'konnektoren gesundheit',                     lang: 'de', expected_screen_id: 'CONNECTORS.HEALTH' },
   { utterance: 'open billing',                               lang: 'en', expected_screen_id: 'SETTINGS.BILLING' },
   { utterance: 'abrechnung öffnen',                          lang: 'de', expected_screen_id: 'SETTINGS.BILLING' },
   { utterance: 'I need help from support',                   lang: 'en', expected_screen_id: 'SETTINGS.SUPPORT' },
