@@ -90,9 +90,10 @@ is thin, stay general and accurate — never invent buttons, screens, or claims.
 const TOOL = {
   name: 'journey_topic_content',
   description: 'Return the German onboarding teaching content for exactly one topic.',
+  // NB: no `additionalProperties` — Gemini function-declaration schemas (an
+  // OpenAPI subset) reject it with a 400 INVALID_ARGUMENT.
   inputSchema: {
     type: 'object',
-    additionalProperties: false,
     properties: {
       whatItIs: { type: 'string', description: 'German. 1-2 short sentences: what it is.' },
       userBenefit: { type: 'string', description: 'German. 1-2 short sentences: why it helps you.' },
