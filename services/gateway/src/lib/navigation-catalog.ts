@@ -1363,8 +1363,8 @@ export const NAVIGATION_CATALOG: ReadonlyArray<NavCatalogEntry> = [
       },
       de: {
         title: 'Fehlerberichte',
-        description: 'Melde einen Fehler oder eine UX-Verbesserung aus deinem Tagebuch.',
-        when_to_visit: 'Wenn der Nutzer nach dem Tab "Fehlerberichte" im Tagebuch fragt, einen Fehler melden, ein App-Problem festhalten oder eine UX-Verbesserung aus dem Tagebuch vorschlagen möchte.',
+        description: 'Melde einen Fehler oder eine UX-Verbesserung aus deinem Tagesbuch.',
+        when_to_visit: 'Wenn der Nutzer nach dem Tab "Fehlerberichte" im Tagesbuch fragt, einen Fehler melden, ein App-Problem festhalten oder eine UX-Verbesserung aus dem Tagesbuch vorschlagen möchte.',
       },
     },
   },
