@@ -3009,6 +3009,11 @@ export async function tool_navigate(
           session_id: id.session_id || null,
           screen_id: entry.screen_id,
           route: resolvedRoute,
+          // VTID-NAV-MOBILEROUTE: surface the viewport flag + whether a mobile
+          // deep-link existed, so we can tell mobile_route misses apart from a
+          // false is_mobile when a redirect lands on the wrong (desktop) page.
+          is_mobile: isMobile,
+          had_mobile_route: !!entry.mobile_route,
           drain_wait_ms: 0,
         },
       }).catch(() => {});
@@ -3025,6 +3030,8 @@ export async function tool_navigate(
           route: resolvedRoute,
           reason: question,
           is_anonymous: isAnonymous,
+          is_mobile: isMobile,
+          had_mobile_route: !!entry.mobile_route,
         },
       }).catch(() => {});
 
