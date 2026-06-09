@@ -7,6 +7,7 @@
 import {
   decideOpening,
   formatOpeningDecisionLog,
+  assessOpenerQuality,
   OPENING_SOURCE_BASELINE_LEAD,
   type OpeningContext,
 } from '../../../../src/orb/live/instruction/opening-contract';
@@ -102,5 +103,61 @@ describe('VTID-03273 Pillar A: decideOpening (single authority)', () => {
     expect(log).toContain('mode=speak');
     expect(log).toContain('source=wake:next_action');
     expect(log).toContain('basis=fresh');
+  });
+});
+
+describe('VTID-03273 Pillar D: assessOpenerQuality (content-quality guard)', () => {
+  it('accepts concrete, leading openers', () => {
+    for (const good of [
+      'Lass uns deinen nächsten Schritt im Lebenskompass ansehen.',
+      'Let me show you your sleep insights from last night.',
+      'Weiter geht’s mit deinem Ernährungs-Check.',
+    ]) {
+      expect(assessOpenerQuality(good).ok).toBe(true);
+    }
+  });
+
+  it('rejects preference questions in every supported language', () => {
+    for (const bad of [
+      'How can I help you?',
+      'What would you like to do today?',
+      "What's on your mind?",
+      'Wie kann ich dir helfen?',
+      'Womit kann ich dienen?',
+      'Was möchtest du heute machen?',
+      'En quoi puis-je vous aider ?',
+      '¿En qué puedo ayudarte hoy?',
+    ]) {
+      const v = assessOpenerQuality(bad);
+      expect(v.ok).toBe(false);
+      expect(v.reason).toBe('forbidden_preference_question');
+    }
+  });
+
+  it('rejects contentless teasers that name no value/step', () => {
+    for (const vague of [
+      'I want to introduce you to something.',
+      'Let me show you something.',
+      'Ich möchte dir etwas zeigen.',
+      'Hallo!',
+    ]) {
+      expect(assessOpenerQuality(vague).ok).toBe(false);
+    }
+  });
+
+  it('rejects lines too short to carry a named next step', () => {
+    const v = assessOpenerQuality('Hi.');
+    expect(v.ok).toBe(false);
+  });
+
+  it('decideOpening downgrades a rejected line to a lead — speak, line=null, source names the reason', () => {
+    const d = decideOpening({
+      isAnonymous: false, hasResumptionHandle: false, isReconnect: false,
+      wakeSelectedLine: 'Wie kann ich dir helfen?',
+      wakeSelectedKind: 'voice_wake_brief',
+    });
+    expect(d.mode).toBe('speak');
+    expect(d.line).toBeNull();
+    expect(d.source).toBe('wake:voice_wake_brief:quality_forbidden_preference_question');
   });
 });

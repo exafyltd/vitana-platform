@@ -67,6 +67,64 @@ export interface OpeningContext {
 /** Source label when the model leads via its opening-shape matrix (no line). */
 export const OPENING_SOURCE_BASELINE_LEAD = 'baseline_lead';
 
+export interface OpenerQualityVerdict {
+  ok: boolean;
+  /** Stable reason code when rejected (for the [opening-decision] source). */
+  reason?: 'forbidden_preference_question' | 'contentless' | 'too_short';
+}
+
+// VTID-03273 Pillar D — forbidden preference questions. The doctrine
+// (VTID-03271 baseline register) is that Vitana LEADS; a new user cannot tell
+// us what they "would like" because they don't know the system yet. A selected
+// opener that asks the user's preference is rejected verbatim and downgraded
+// to a concrete lead. Conservative multi-language patterns (EN/DE/FR/ES/SR).
+const FORBIDDEN_OPENER_PATTERNS: ReadonlyArray<RegExp> = [
+  /how can i (help|support|assist)/i,
+  /what (would you like|do you want|can i do for you|do you need)/i,
+  /what'?s on your mind/i,
+  /wie kann ich (dir|euch|ihnen) (helfen|unterst)/i,
+  /womit kann ich (dir |euch |ihnen )?(helfen|dienen)/i,
+  /was (möchtest|willst|brauchst) du/i,
+  /que puis-je faire pour (toi|vous)/i,
+  /en quoi puis-je (t'|vous )?aider/i,
+  /en qué puedo ayudar/i,
+  /qué (te gustaría|necesitas|quieres)/i,
+  /како могу да помогнем/i,
+  /шта (желиш|ти треба)/i,
+];
+
+// Pillar D — contentless / vague openers ("I want to introduce you to
+// something", "Let me show you something") never name the value or step they
+// lead to. The spec's §1 Pillar D explicitly rejects these.
+const CONTENTLESS_OPENER_PATTERNS: ReadonlyArray<RegExp> = [
+  /introduce you (to )?something/i,
+  /show you something(\s|[.!?]|$)/i,
+  /tell you something(\s|[.!?]|$)/i,
+  /(dir|euch) (mal )?(etwas|was) (zeigen|vorstellen|erzählen)(\s|[.!?]|$)/i,
+  /^(hello|hi|hey|hallo|salut|hola|здраво|ciao)[.!?\s]*$/i,
+];
+
+/**
+ * VTID-03273 Pillar D — content-quality guard for the selected opener line.
+ * Pure. Rejects (a) preference questions ("how can I help"), (b) contentless
+ * teasers that name no concrete value/step, (c) lines too short to carry a
+ * named next step. Rejection NEVER silences the orb — the caller downgrades to
+ * the opening-shape-matrix lead, which is always a concrete lead.
+ */
+export function assessOpenerQuality(line: string): OpenerQualityVerdict {
+  const trimmed = (line || '').trim();
+  if (trimmed.length < 8) {
+    return { ok: false, reason: 'too_short' };
+  }
+  for (const p of FORBIDDEN_OPENER_PATTERNS) {
+    if (p.test(trimmed)) return { ok: false, reason: 'forbidden_preference_question' };
+  }
+  for (const p of CONTENTLESS_OPENER_PATTERNS) {
+    if (p.test(trimmed)) return { ok: false, reason: 'contentless' };
+  }
+  return { ok: true };
+}
+
 /**
  * The single opening decision. Pure: same inputs → same output.
  */
@@ -101,6 +159,18 @@ export function decideOpening(ctx: OpeningContext): OpeningDecision {
     // vervollständigen" recurring identically every session.
     if (ctx.lastOpenerLine && ctx.lastOpenerLine.trim() === line) {
       return { mode: 'speak', line: null, source: `wake:${kind}:varied`, basis: 'fresh' };
+    }
+    // Pillar D content-quality guard: a vague/preference-question opener is
+    // never spoken verbatim — downgrade to the opening-shape-matrix lead
+    // (still SPEAK; the model produces a concrete lead instead).
+    const quality = assessOpenerQuality(line);
+    if (!quality.ok) {
+      return {
+        mode: 'speak',
+        line: null,
+        source: `wake:${kind}:quality_${quality.reason}`,
+        basis: 'fresh',
+      };
     }
     return { mode: 'speak', line, source: `wake:${kind}`, basis: 'fresh' };
   }
