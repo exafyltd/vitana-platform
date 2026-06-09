@@ -7105,21 +7105,44 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
 
   // VTID-03273 Pillar A — the SINGLE opening decision + the one
   // `[opening-decision]` log per conversation (§2 acceptance #6). The
-  // wake-brief ranker and greeting policy are inputs; this names the single
-  // authoritative source/mode. The fresh-start line-selection below honors the
-  // same wake-brief input, so the decision and the spoken line agree.
-  {
-    const _wb = (session as any).wakeBriefDecision || null;
-    const _openDecision = decideOpening({
-      isAnonymous: !!session.isAnonymous,
-      hasResumptionHandle: !!session.resumptionHandle,
-      isReconnect: ((session as any)._reconnectCount || 0) > 0,
-      wakeSelectedLine: _wb?.selectedContinuation?.userFacingLine ?? null,
-      wakeSelectedKind: _wb?.selectedContinuation?.kind ?? null,
-      lastOpenerLine: (session as any)._lastOpenerLine ?? null,
+  // wake-brief ranker and greeting policy are inputs; this is the authority the
+  // rest of this function OBEYS (not just telemetry — Codex review fix):
+  //   - a reconnect-silence decision short-circuits here (no fresh greeting);
+  //   - the `Say exactly` branch below uses `_openDecision.line`, so the
+  //     no-verbatim-repeat downgrade (line=null) actually varies the opener
+  //     instead of replaying the identical line.
+  const _wb = (session as any).wakeBriefDecision || null;
+  const _openDecision = decideOpening({
+    isAnonymous: !!session.isAnonymous,
+    hasResumptionHandle: !!session.resumptionHandle,
+    isReconnect: ((session as any)._reconnectCount || 0) > 0,
+    wakeSelectedLine: _wb?.selectedContinuation?.userFacingLine ?? null,
+    wakeSelectedKind: _wb?.selectedContinuation?.kind ?? null,
+    lastOpenerLine: (session as any)._lastOpenerLine ?? null,
+  });
+  console.log(formatOpeningDecisionLog(session.sessionId, _openDecision));
+  (session as any)._openingDecision = _openDecision;
+
+  // Honor a reconnect-silence decision: this fresh-start path was reached on a
+  // reconnect (e.g. greeting stall re-send with _reconnectCount > 0). The model
+  // resumes the thread (native) or the recovery path owns continuity — either
+  // way we must NOT emit a fresh greeting. Cadence-class silence is handled by
+  // its own kill-switchable block below, so we only short-circuit the
+  // reconnect sources here.
+  if (
+    _openDecision.mode === 'silent' &&
+    !session.isAnonymous &&
+    (_openDecision.source === 'native_resume' || _openDecision.source === 'reconnect_no_handle')
+  ) {
+    session.greetingSent = true;
+    session.greetingTurnIndex = session.turn_count;
+    emitDiag(session, 'greeting_sent', {
+      lang,
+      prompt_len: 0,
+      wake_opener: 'silent_reconnect',
+      opening_source: _openDecision.source,
     });
-    console.log(formatOpeningDecisionLog(session.sessionId, _openDecision));
-    (session as any)._openingDecision = _openDecision;
+    return true;
   }
 
   // VTID-03104 (Teacher opener v2): when the wake-brief decider produced
@@ -7150,7 +7173,12 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
   // is known to keep audio flowing. B1 cadence is a separate slice.
   const wakeBriefDecision: { selectedContinuation?: { userFacingLine?: string } | null; decisionId?: string } | null =
     (session as any).wakeBriefDecision || null;
-  const wakeOverrideLine = wakeBriefDecision?.selectedContinuation?.userFacingLine?.trim();
+  // VTID-03273 Pillar A (Codex review fix) — speak the line the CONTRACT chose,
+  // not the raw wake-brief line. When the no-verbatim-repeat guard downgraded
+  // the opener it returns `line: null`, so this branch is skipped and we fall
+  // through to the lead menu below (a varied opener) instead of replaying the
+  // identical line word-for-word.
+  const wakeOverrideLine = _openDecision.mode === 'speak' ? (_openDecision.line ?? '').trim() : '';
   if (wakeOverrideLine && wakeOverrideLine.length > 0 && !session.isAnonymous) {
     // Escape double-quotes so the line cannot terminate the wrapper early.
     const safe = wakeOverrideLine.replace(/"/g, '\\"');
