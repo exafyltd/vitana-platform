@@ -1588,11 +1588,38 @@ export const NAVIGATION_CATALOG: ReadonlyArray<NavCatalogEntry> = [
     },
   },
   {
-    screen_id: 'DISCOVER.AI_PICKS', route: '/discover/ai-picks', category: 'discover',
+    // VTID-NAV-DISCOVER-TABS: the "AI Picks" mode pill of Discover (the
+    // Suggested/default tab), reached via /discover?tab=suggested. Discover.tsx
+    // reads ?tab=. (Supersedes the standalone /discover/ai-picks page so voice
+    // "AI picks" lands on the actual pill, mobile + desktop.)
+    screen_id: 'DISCOVER.AI_PICKS', route: '/discover?tab=suggested', category: 'discover',
     access: 'authenticated', anonymous_safe: false,
+    aliases: ['ai-picks', 'discover-ai-picks', 'suggested-for-you', 'discover-suggested'],
     i18n: {
-      en: { title: 'AI Picks', description: 'AI-curated product and service recommendations.', when_to_visit: 'When the user asks for AI recommendations, personalized picks, curated suggestions, or what the AI recommends for them.' },
-      de: { title: 'KI-Auswahl', description: 'KI-kuratierte Produkt- und Service-Empfehlungen.', when_to_visit: 'Wenn der Nutzer nach KI-Empfehlungen, personalisierten Vorschlägen, kuratierten Tipps fragt oder wissen will, was die KI für ihn empfiehlt.' },
+      en: { title: 'AI Picks', description: 'AI-curated product and service recommendations — the Suggested tab of Discover.', when_to_visit: 'When the user asks for the AI Picks tab of Discover, the Suggested for You tab, AI recommendations, personalized picks, curated suggestions, or what the AI recommends for them.' },
+      de: { title: 'KI-Auswahl', description: 'KI-kuratierte Produkt- und Service-Empfehlungen — der Vorschläge-Tab von Discover.', when_to_visit: 'Wenn der Nutzer nach dem AI-Picks-Tab von Discover, dem Vorschläge-Tab, KI-Empfehlungen, personalisierten Vorschlägen, kuratierten Tipps fragt oder wissen will, was die KI für ihn empfiehlt.' },
+    },
+  },
+  {
+    // VTID-NAV-DISCOVER-TABS: the "Categories" mode pill of Discover.
+    screen_id: 'DISCOVER.CATEGORIES', route: '/discover?tab=categories', category: 'discover',
+    access: 'authenticated', anonymous_safe: false,
+    aliases: ['discover-categories', 'browse-categories'],
+    i18n: {
+      en: { title: 'Categories', description: 'Browse Discover by category.', when_to_visit: 'When the user asks for the Categories tab of Discover, to browse Discover by category, or to see all the marketplace categories.' },
+      de: { title: 'Kategorien', description: 'Durchstöbere Discover nach Kategorie.', when_to_visit: 'Wenn der Nutzer nach dem Kategorien-Tab von Discover fragt, Discover nach Kategorie durchstöbern oder alle Marktplatz-Kategorien sehen möchte.' },
+    },
+  },
+  {
+    // VTID-NAV-DISCOVER-TABS: the "Share & Earn" mode pill of Discover —
+    // sharing Discover/marketplace products for rewards (NOT the SHARING
+    // referral hub, NOT Business Sell & Earn).
+    screen_id: 'DISCOVER.SHARE_EARN', route: '/discover?tab=share', category: 'discover',
+    access: 'authenticated', anonymous_safe: false,
+    aliases: ['discover-share-earn', 'share-and-earn'],
+    i18n: {
+      en: { title: 'Share & Earn', description: 'Share Discover products and earn rewards.', when_to_visit: 'When the user asks for the Share and Earn tab of Discover, the Discover Share and Earn section, or sharing Discover marketplace products to earn rewards.' },
+      de: { title: 'Teilen & Verdienen', description: 'Teile Discover-Produkte und verdiene Belohnungen.', when_to_visit: 'Wenn der Nutzer nach dem Tab "Teilen & Verdienen" von Discover, dem Discover Share and Earn Bereich oder dem Teilen von Discover-Marktplatzprodukten fragt, um Belohnungen zu verdienen.' },
     },
   },
 

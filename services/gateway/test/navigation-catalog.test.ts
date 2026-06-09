@@ -280,6 +280,11 @@ const ROUTING_CASES: RoutingCase[] = [
   { utterance: 'show me my orders',                          lang: 'en', expected_screen_id: 'DISCOVER.ORDERS' },
   { utterance: 'meine bestellungen',                         lang: 'de', expected_screen_id: 'DISCOVER.ORDERS' },
   { utterance: 'show me AI picks',                           lang: 'en', expected_screen_id: 'DISCOVER.AI_PICKS' },
+  // VTID-NAV-DISCOVER-TABS: the 3 Discover mode pills are voice-addressable.
+  { utterance: 'discover categories',                        lang: 'en', expected_screen_id: 'DISCOVER.CATEGORIES' },
+  { utterance: 'discover kategorien',                        lang: 'de', expected_screen_id: 'DISCOVER.CATEGORIES' },
+  { utterance: 'discover share and earn',                    lang: 'en', expected_screen_id: 'DISCOVER.SHARE_EARN' },
+  { utterance: 'discover ai picks',                          lang: 'en', expected_screen_id: 'DISCOVER.AI_PICKS' },
 
   // ── INBOX expanded ──
   { utterance: 'show me inspiration messages',               lang: 'en', expected_screen_id: 'INBOX.INSPIRATION' },
