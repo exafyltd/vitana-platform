@@ -1026,6 +1026,29 @@ export const NAVIGATION_CATALOG: ReadonlyArray<NavCatalogEntry> = [
     },
   },
 
+  // ── WALLET mode pills (VTID-NAV-WALLET-TABS) ────────────────────────────
+  // Activity / Actions tabs of the Wallet, reached via /wallet?tab=<mode>
+  // (query params, NOT new routes). Wallet.tsx reads ?tab=. Balances is the
+  // default (WALLET.OVERVIEW -> /wallet).
+  {
+    screen_id: 'WALLET.ACTIVITY', route: '/wallet?tab=activity', category: 'wallet',
+    access: 'authenticated', anonymous_safe: false,
+    aliases: ['wallet-activity', 'wallet-transactions'],
+    i18n: {
+      en: { title: 'Wallet Activity', description: 'Your wallet activity and transaction history.', when_to_visit: 'When the user asks for the Activity tab of the Wallet, their wallet activity, wallet transactions, transaction history, or recent wallet movements.' },
+      de: { title: 'Wallet-Aktivität', description: 'Deine Wallet-Aktivität und Transaktionshistorie.', when_to_visit: 'Wenn der Nutzer nach dem Tab "Aktivität" im Wallet, seiner Wallet-Aktivität, Wallet-Transaktionen, Transaktionshistorie oder den letzten Wallet-Bewegungen fragt.' },
+    },
+  },
+  {
+    screen_id: 'WALLET.ACTIONS', route: '/wallet?tab=actions', category: 'wallet',
+    access: 'authenticated', anonymous_safe: false,
+    aliases: ['wallet-actions'],
+    i18n: {
+      en: { title: 'Wallet Actions', description: 'Wallet actions — send, request, exchange, buy credits and tokens, add funds, withdraw.', when_to_visit: 'When the user asks for the Actions tab of the Wallet, wallet actions, to send or request a payment, exchange currency, buy credits or tokens, add funds, or withdraw from their wallet.' },
+      de: { title: 'Wallet-Aktionen', description: 'Wallet-Aktionen — senden, anfordern, tauschen, Credits und Tokens kaufen, Geld hinzufügen, abheben.', when_to_visit: 'Wenn der Nutzer nach dem Tab "Aktionen" im Wallet, Wallet-Aktionen, einer Zahlung senden oder anfordern, Währung tauschen, Credits oder Tokens kaufen, Geld hinzufügen oder von seinem Wallet abheben fragt.' },
+    },
+  },
+
   // ── HEALTH ──────────────────────────────────────────────────────────────
   {
     screen_id: 'HEALTH.OVERVIEW',

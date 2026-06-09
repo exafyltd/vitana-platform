@@ -229,6 +229,10 @@ const ROUTING_CASES: RoutingCase[] = [
   { utterance: 'show me my referral earnings',              lang: 'en', expected_screen_id: 'WALLET.REWARDS' },
   { utterance: 'meine provisionen anzeigen',                lang: 'de', expected_screen_id: 'WALLET.REWARDS' },
   { utterance: 'meine abonnements verwalten',               lang: 'de', expected_screen_id: 'WALLET.SUBSCRIPTIONS' },
+  // VTID-NAV-WALLET-TABS: the Wallet mode pills (Activity / Actions).
+  { utterance: 'wallet activity',                           lang: 'en', expected_screen_id: 'WALLET.ACTIVITY' },
+  { utterance: 'wallet actions',                            lang: 'en', expected_screen_id: 'WALLET.ACTIONS' },
+  { utterance: 'wallet aktivität',                          lang: 'de', expected_screen_id: 'WALLET.ACTIVITY' },
 
   // ── HEALTH ──
   { utterance: 'how do I track my biology',                 lang: 'en', expected_screen_id: 'HEALTH.MY_BIOLOGY' },
