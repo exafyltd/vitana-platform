@@ -47,6 +47,14 @@ on:
         description: 'If true, deploy with --no-traffic so the new revision is created but not serving. The operator promotes it via /operator/promote after verifying staging metrics. Defaults to false (existing 100%-on-deploy behavior).'
         required: false
         default: 'false'
+      commit_sha:
+        description: 'Exact commit SHA to build/deploy (the tested staging commit). When empty, falls back to main HEAD (legacy behavior). Threaded by the PUBLISH flow so prod ships the EXACT bits verified on staging — no "tested X, shipped Y" drift.'
+        required: false
+        default: ''
+      image:
+        description: 'Prebuilt container image to deploy (e.g. the image the staging revision is already running). When set, the deploy REUSES this image with --image and skips the from-source rebuild (publish in ~30s instead of minutes). When empty, falls back to --source build (legacy behavior). commit_sha is still used to re-stamp GIT_COMMIT_SHA on the new revision.'
+        required: false
+        default: ''
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -54,7 +62,19 @@ jobs:
       id-token: write
       contents: read
     steps:
+      # Check out the exact commit the publish flow tested on staging when
+      # commit_sha is provided; otherwise main HEAD (legacy). workflow_dispatch
+      # must run against a branch (main), so the SHA is selected here, not at
+      # dispatch time.
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.commit_sha != '' && github.event.inputs.commit_sha || github.sha }}
+      # Resolve the ACTUAL deployed commit (the checked-out HEAD) so every
+      # downstream SHA bake records what really shipped, not the dispatch ref.
+      - name: Resolve deploy SHA
+        id: deploy_sha
+        shell: bash
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
       - uses: google-github-actions/auth@v2
         with:
           workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
@@ -297,8 +317,8 @@ jobs:
             # /admin/build-info + cloud-run-admin.describeService can surface a real
             # 7-char SHA (instead of falling back to the *.run.app revision name).
             # Mirrors what STAGE-DEPLOY.yml already does for gateway-staging.
-            EXTRA_ENV_ARGS+=(--update-env-vars=GIT_COMMIT_SHA=${{ github.sha }})
-            EXTRA_ENV_ARGS+=(--update-env-vars=COMMIT_SHA=${{ github.sha }})
+            EXTRA_ENV_ARGS+=(--update-env-vars=GIT_COMMIT_SHA=${{ steps.deploy_sha.outputs.sha }})
+            EXTRA_ENV_ARGS+=(--update-env-vars=COMMIT_SHA=${{ steps.deploy_sha.outputs.sha }})
             # VTID-01225: Cognee Extractor URL for entity extraction
             EXTRA_ENV_ARGS+=(--update-env-vars=COGNEE_EXTRACTOR_URL=https://cognee-extractor-86804897789.us-central1.run.app)
             # VTID-01175: Worker verification mode. 'advisory' (default) runs the
@@ -396,6 +416,11 @@ jobs:
             # VTID-01981: Routines ingest token — required by /api/v1/routines POST/PATCH
             # so daily Claude Code remote agents can authenticate without user JWTs.
             EXTRA_ENV_ARGS+=(--update-env-vars=ROUTINE_INGEST_TOKEN=${{ secrets.ROUTINE_INGEST_TOKEN }})
+            # BOOTSTRAP-VTID-ALLOC-SCOPED: shared secret for the scoped allocation
+            # route /api/v1/vtid/allocate-internal so trusted automation (Claude
+            # Code remote sessions) can mint VTIDs without the service-role key.
+            # Gateway validates it with timingSafeEqual and returns 401 on mismatch.
+            EXTRA_ENV_ARGS+=(--update-env-vars=VTID_ALLOC_SECRET=${{ secrets.VTID_ALLOC_SECRET }})
             # VTID-02030d/e: Google Chat webhook for human-in-the-loop pings
             # (voice quarantine, architectural recommendations, etc.).
             # Same secret used by DAILY-STATUS-UPDATE.yml's existing pings.
@@ -472,11 +497,29 @@ jobs:
 
           # Build deploy args
           DEPLOY_ARGS=(
-            --source="$SOURCE_PATH"
             --region=us-central1
             --project=lovable-vitana-vers1
             --allow-unauthenticated
           )
+
+          # Fast publish (image promotion): when an `image` input is provided we
+          # REUSE the prebuilt container the staging revision already runs and
+          # deploy it with --image — no from-source rebuild (publish ~30s vs
+          # minutes). When empty, fall back to the legacy --source build so every
+          # existing caller (auto-deploy, escape-hatch) is unaffected.
+          PROMOTE_IMAGE="${{ github.event.inputs.image }}"
+          if [ -n "$PROMOTE_IMAGE" ]; then
+            echo "::notice::Image-promotion mode — deploying prebuilt image (no rebuild): $PROMOTE_IMAGE"
+            DEPLOY_ARGS+=(--image="$PROMOTE_IMAGE")
+            # The image carries no env; re-stamp the promoted commit so
+            # /admin/build-info (and the publish verifier) report the right SHA.
+            if [ -n "${{ github.event.inputs.commit_sha }}" ]; then
+              EXTRA_ENV_ARGS+=(--update-env-vars=GIT_COMMIT_SHA=${{ github.event.inputs.commit_sha }})
+              EXTRA_ENV_ARGS+=(--update-env-vars=COMMIT_SHA=${{ github.event.inputs.commit_sha }})
+            fi
+          else
+            DEPLOY_ARGS+=(--source="$SOURCE_PATH")
+          fi
 
           # Cognee-extractor: internal-only ingress, override custom SA to avoid IAM actAs error
           if [ "$CLOUD_RUN_SERVICE" = "cognee-extractor" ]; then
@@ -722,7 +765,7 @@ jobs:
         run: |
           # Record deployment version in OASIS via Gateway API
           SERVICE_NAME="${{ steps.deploy.outputs.cloud_run_service }}"
-          GIT_COMMIT="${{ github.sha }}"
+          GIT_COMMIT="${{ steps.deploy_sha.outputs.sha }}"
 
           # BOOTSTRAP-PHASE0-UX: include the Cloud Run revision name so the
           # CLOCK dropdown can match this row to the currently-serving

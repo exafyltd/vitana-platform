@@ -19,8 +19,10 @@ const DEFAULT_REPO = 'exafyltd/vitana-platform';
 /**
  * Get the GitHub token from environment
  */
-function getGitHubToken(): string {
-  const token = process.env.GITHUB_SAFE_MERGE_TOKEN;
+function getGitHubToken(override?: string): string {
+  // Cross-repo dispatch (e.g. vitana-platform → vitana-v1) needs a token scoped
+  // to the OTHER repo; callers pass it explicitly. Default = the platform token.
+  const token = override || process.env.GITHUB_SAFE_MERGE_TOKEN;
   if (!token) {
     throw new Error('GITHUB_SAFE_MERGE_TOKEN environment variable is not set');
   }
@@ -32,9 +34,10 @@ function getGitHubToken(): string {
  */
 async function githubRequest<T>(
   endpoint: string,
-  options: RequestInit = {}
+  options: RequestInit = {},
+  tokenOverride?: string
 ): Promise<T> {
-  const token = getGitHubToken();
+  const token = getGitHubToken(tokenOverride);
   const url = endpoint.startsWith('https://') ? endpoint : `${GITHUB_API_BASE}${endpoint}`;
 
   const response = await fetch(url, {
@@ -465,7 +468,8 @@ export async function triggerWorkflow(
   repo: string,
   workflowId: string,
   ref: string = 'main',
-  inputs: Record<string, string> = {}
+  inputs: Record<string, string> = {},
+  tokenOverride?: string
 ): Promise<void> {
   await githubRequest<void>(
     `/repos/${repo}/actions/workflows/${workflowId}/dispatches`,
@@ -475,7 +479,8 @@ export async function triggerWorkflow(
         ref,
         inputs,
       }),
-    }
+    },
+    tokenOverride
   );
 }
 

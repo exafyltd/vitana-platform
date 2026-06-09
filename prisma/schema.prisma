@@ -99,3 +99,304 @@ model ProjectionOffset {
   @@index([projectorName], map: "idx_projection_offsets_projector")
   @@map("projection_offsets")
 }
+
+// ============================================================================
+// VCAOP — Vitanaland Commerce & Account-Operations Platform (CTRL-SCHEMA-0002)
+// Runbook Sec. 4.1–4.7. Extends the OASIS schema in place (do NOT fork).
+// Every mutating op appends an OasisEvent (reused above) in the same tx.
+// Secrets are stored ONLY as *_ref / *_hash (no-credential-store guardrail);
+// PII columns are RLS-protected and never emitted to logs/prompts/OASIS.
+// user_id / tenant_id are external references (Supabase auth/app_users) stored
+// as text — no cross-schema FK, matching the OasisEvent.tenant convention.
+// ============================================================================
+
+// Sec. 4.1 — single canonical Exafy business record (supply side L1).
+model BusinessIdentity {
+  id                String   @id @default(cuid())
+  tenantId          String   @map("tenant_id")
+  legalName         String   @map("legal_name")
+  entityType        String   @map("entity_type")
+  registrationNo    String?  @map("registration_no")
+  vatEori           String?  @map("vat_eori")
+  ein               String?
+  registeredAddress String?  @map("registered_address")
+  officerName       String?  @map("officer_name") // PII — RLS-only, never to forbidden sinks
+  officerIdRef      String?  @map("officer_id_ref") // vaulted ID reference, not a value
+  licenseRefs       Json?    @map("license_refs")
+  documentRefs      Json?    @map("document_refs") // vault paths
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  @@index([tenantId], map: "idx_business_identity_tenant")
+  @@map("business_identity")
+}
+
+// Sec. 4.2 — provider catalog (supplier/marketplace). policy JSON gates actions (Sec. 4.3).
+model Provider {
+  id                String   @id @default(cuid())
+  name              String
+  category          String
+  connectorMode     String   @map("connector_mode") // api|oauth|scim|browser|manual
+  supportsBulk      Boolean  @default(false) @map("supports_bulk")
+  supportsMfa       Boolean  @default(false) @map("supports_mfa")
+  supportsRotation  Boolean  @default(false) @map("supports_rotation")
+  jurisdiction      String?
+  tosRiskLevel      String?  @map("tos_risk_level")
+  connectorConfig   Json?    @map("connector_config") // non-secret only
+  policy            Json // Sec. 4.3 per-provider policy (default-deny if absent)
+  kybRequired       Boolean  @default(true) @map("kyb_required")
+  requiredDocuments Json?    @map("required_documents")
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  accounts ProviderAccount[]
+
+  @@index([category], map: "idx_provider_category")
+  @@map("provider")
+}
+
+// Sec. 4.2 — Exafy's account at a provider. Credentials live in vault; only refs here.
+model ProviderAccount {
+  id             String   @id @default(cuid())
+  tenantId       String   @map("tenant_id")
+  providerId     String   @map("provider_id")
+  status         String   @default("discovered") // discovered|policy_approved|data_prepared|registration_submitted|kyb_pending|verification_pending|active|degraded|suspended|retired|failed
+  credentialRef  String?  @map("credential_ref")
+  mfaSeedRef     String?  @map("mfa_seed_ref")
+  aliasMailbox   String?  @map("alias_mailbox")
+  currentAgentId String?  @map("current_agent_id")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  provider        Provider                @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  jobs            ProvisioningJob[]
+  healthSnapshots AccountHealthSnapshot[]
+
+  @@index([tenantId, providerId], map: "idx_provider_account_tenant_provider")
+  @@index([status], map: "idx_provider_account_status")
+  @@map("provider_account")
+}
+
+// Sec. 4.2 — provisioning/operations job and its decomposition.
+model ProvisioningJob {
+  id                String   @id @default(cuid())
+  tenantId          String   @map("tenant_id")
+  providerAccountId String   @map("provider_account_id")
+  status            String   @default("queued") // queued|running|blocked|completed|failed
+  connectorTier     String?  @map("connector_tier") // api|oauth|scim|browser|manual
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  providerAccount ProviderAccount @relation(fields: [providerAccountId], references: [id], onDelete: Cascade)
+  steps           JobStep[]
+
+  @@index([providerAccountId], map: "idx_provisioning_job_account")
+  @@index([status], map: "idx_provisioning_job_status")
+  @@map("provisioning_job")
+}
+
+model JobStep {
+  id        String   @id @default(cuid())
+  jobId     String   @map("job_id")
+  stepType  String   @map("step_type")
+  sequence  Int      @default(0)
+  status    String   @default("pending") // pending|running|blocked|done|failed
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  job      ProvisioningJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  attempts JobAttempt[]
+
+  @@index([jobId], map: "idx_job_step_job")
+  @@map("job_step")
+}
+
+model JobAttempt {
+  id         String    @id @default(cuid())
+  stepId     String    @map("step_id")
+  attemptNo  Int       @default(1) @map("attempt_no")
+  status     String    @default("running") // running|success|failed
+  error      String?   @db.Text
+  startedAt  DateTime  @default(now()) @map("started_at")
+  finishedAt DateTime? @map("finished_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  step      JobStep       @relation(fields: [stepId], references: [id], onDelete: Cascade)
+  artifacts JobArtifact[]
+
+  @@index([stepId], map: "idx_job_attempt_step")
+  @@map("job_attempt")
+}
+
+// Sec. 4.2 — artifacts are scrubbed of PII/secrets (only refs/scrubbed blobs).
+model JobArtifact {
+  id        String   @id @default(cuid())
+  attemptId String   @map("attempt_id")
+  kind      String
+  ref       String? // vault/scrubbed-artifact reference
+  scrubbed  Boolean  @default(true)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  attempt JobAttempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+
+  @@index([attemptId], map: "idx_job_artifact_attempt")
+  @@map("job_artifact")
+}
+
+// Sec. 4.2 — human-gate task. payload is secret/PII-free (else vault refs).
+model HumanTask {
+  id           String    @id @default(cuid())
+  tenantId     String    @map("tenant_id")
+  type         String // KYB|LIVENESS|CAPTCHA|PAYOUT_BANK_LINK|PRIVILEGE_ESCALATION|IRREVERSIBLE_SUBMIT|TRANSFER
+  assignee     String? // named officer
+  providerId   String?   @map("provider_id")
+  jobId        String?   @map("job_id")
+  payload      Json?
+  status       String    @default("open") // open|in_progress|approved|rejected|completed
+  sla          DateTime?
+  evidenceRefs Json?     @map("evidence_refs")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  @@index([tenantId, status], map: "idx_human_task_tenant_status")
+  @@index([type], map: "idx_human_task_type")
+  @@map("human_task")
+}
+
+model AccountHealthSnapshot {
+  id                String   @id @default(cuid())
+  providerAccountId String   @map("provider_account_id")
+  healthStatus      String   @map("health_status")
+  detail            Json?
+  computedAt        DateTime @default(now()) @map("computed_at")
+
+  providerAccount ProviderAccount @relation(fields: [providerAccountId], references: [id], onDelete: Cascade)
+
+  @@index([providerAccountId, computedAt], map: "idx_account_health_account_time")
+  @@map("account_health_snapshot")
+}
+
+// Sec. 4.6 — affiliate program (demand side L2). same allow/deny policy discipline.
+model AffiliateProgram {
+  id                       String   @id @default(cuid())
+  network                  String
+  merchant                 String
+  commissionTerms          Json?    @map("commission_terms")
+  affiliateCashbackAllowed Boolean? @map("affiliate_cashback_allowed")
+  policy                   Json
+  source                   String // aggregator|direct
+  createdAt                DateTime @default(now()) @map("created_at")
+  updatedAt                DateTime @updatedAt @map("updated_at")
+
+  commissions CommissionEvent[]
+
+  @@index([network], map: "idx_affiliate_program_network")
+  @@map("affiliate_program")
+}
+
+// Sec. 4.6 — commission attributed via per-user SubID. pending->confirmed->reversed.
+model CommissionEvent {
+  id                 String   @id @default(cuid())
+  affiliateProgramId String   @map("affiliate_program_id")
+  subId              String   @map("sub_id")
+  userId             String   @map("user_id")
+  merchant           String
+  orderRef           String?  @map("order_ref")
+  grossCommission    Decimal  @default(0) @map("gross_commission") @db.Decimal(18, 4)
+  currency           String   @default("EUR")
+  status             String   @default("pending") // pending|confirmed|reversed
+  postbackRef        String?  @map("postback_ref")
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+
+  affiliateProgram AffiliateProgram @relation(fields: [affiliateProgramId], references: [id], onDelete: Cascade)
+  rewards          RewardsLedger[]
+
+  @@index([userId, status], map: "idx_commission_event_user_status")
+  @@index([subId], map: "idx_commission_event_subid")
+  @@map("commission_event")
+}
+
+// Sec. 4.6 — per-user accrual ledger. Wallet balance is a projection of this.
+model RewardsLedger {
+  id                String   @id @default(cuid())
+  userId            String   @map("user_id")
+  commissionEventId String?  @map("commission_event_id")
+  amount            Decimal  @default(0) @db.Decimal(18, 4)
+  currency          String   @default("EUR")
+  state             String   @default("pending") // pending|confirmed|redeemable|redeemed
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  commissionEvent CommissionEvent? @relation(fields: [commissionEventId], references: [id], onDelete: SetNull)
+
+  @@index([userId, state], map: "idx_rewards_ledger_user_state")
+  @@map("rewards_ledger")
+}
+
+// Sec. 4.6 — consented read-only loyalty link. SCHEMA-ENFORCED: no password/secret field.
+model UserRewardLink {
+  id                  String   @id @default(cuid())
+  userId              String   @map("user_id")
+  program             String
+  memberId            String?  @map("member_id") // user-provided, optional — NOT a credential
+  consentRef          String?  @map("consent_ref")
+  officialApiTokenRef String?  @map("official_api_token_ref") // Secret Manager ref, never a value
+  readOnly            Boolean  @default(true) @map("read_only")
+  createdAt           DateTime @default(now()) @map("created_at")
+  updatedAt           DateTime @updatedAt @map("updated_at")
+
+  @@index([userId], map: "idx_user_reward_link_user")
+  @@map("user_reward_link")
+}
+
+// Sec. 4.6 — Universal Cart order + per-merchant routing through the checkout ladder.
+model CartOrder {
+  id          String   @id @default(cuid())
+  userId      String   @map("user_id")
+  status      String   @default("open") // open|routed|completed|cancelled
+  totalAmount Decimal? @map("total_amount") @db.Decimal(18, 4)
+  currency    String   @default("EUR")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  routes      MerchantRoute[]
+  disclosures Disclosure[]
+
+  @@index([userId, status], map: "idx_cart_order_user_status")
+  @@map("cart_order")
+}
+
+model MerchantRoute {
+  id                 String   @id @default(cuid())
+  cartOrderId        String   @map("cart_order_id")
+  merchant           String
+  checkoutConnector  String?  @map("checkout_connector") // ucp|shopify_agent|violet|rye|skyvern
+  affiliateProgramId String?  @map("affiliate_program_id")
+  subId              String?  @map("sub_id")
+  lineItems          Json?    @map("line_items")
+  status             String   @default("pending") // pending|routed|confirmed|failed
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+
+  cartOrder CartOrder @relation(fields: [cartOrderId], references: [id], onDelete: Cascade)
+
+  @@index([cartOrderId], map: "idx_merchant_route_cart")
+  @@map("merchant_route")
+}
+
+// Sec. 4.6 — FTC-style affiliate disclosure; non-dismissible at checkout.
+model Disclosure {
+  id          String    @id @default(cuid())
+  cartOrderId String?   @map("cart_order_id")
+  kind        String    @default("ftc_affiliate")
+  text        String    @db.Text
+  dismissible Boolean   @default(false)
+  shownAt     DateTime? @map("shown_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  cartOrder CartOrder? @relation(fields: [cartOrderId], references: [id], onDelete: SetNull)
+
+  @@index([cartOrderId], map: "idx_disclosure_cart")
+  @@map("disclosure")
+}

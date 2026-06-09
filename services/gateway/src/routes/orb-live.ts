@@ -383,6 +383,15 @@ const ALLOWED_ORIGINS = [
   // gets 403 "Origin not allowed" on /orb/live/session/* — voice path
   // completely broken for operators using the gateway custom domain.
   'https://gateway.vitanaland.com',
+  // BOOTSTRAP-ORB-STAGING-ORIGIN: staging-first cutover origins. The preview
+  // community-app (preview.vitanaland.com) loads the orb widget from the staging
+  // gateway (preview-gateway.vitanaland.com); without these, /orb/live/session/*
+  // returns 403 "Origin not allowed" and the orb is silent on preview both
+  // pre- and post-login. Confirmed via the ORB staging probe: staging returned
+  // 403 "Origin not allowed" for Origin https://preview.vitanaland.com while
+  // prod returned 200 + a session for its own origin.
+  'https://preview.vitanaland.com',          // Staging community-app (community-app-staging)
+  'https://preview-gateway.vitanaland.com',  // Staging gateway custom domain (command-hub orb)
   'http://localhost:8080',
   'http://localhost:8081',  // VTID-01225: Mobile dev server
   'http://localhost:3000',
