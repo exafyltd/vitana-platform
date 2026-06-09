@@ -314,6 +314,10 @@ const ROUTING_CASES: RoutingCase[] = [
   { utterance: 'search my memories',                         lang: 'en', expected_screen_id: 'MEMORY.RECALL' },
   { utterance: 'erinnerungen durchsuchen',                   lang: 'de', expected_screen_id: 'MEMORY.RECALL' },
   { utterance: 'memory permissions',                         lang: 'en', expected_screen_id: 'MEMORY.PERMISSIONS' },
+  // VTID-NAV-DIARY-TABS: the Daily Diary mode pills (Health Diary / Bug Reports).
+  { utterance: 'health diary',                               lang: 'en', expected_screen_id: 'MEMORY.DIARY' },
+  { utterance: 'daily diary bug reports',                    lang: 'en', expected_screen_id: 'MEMORY.DIARY_BUGS' },
+  { utterance: 'fehlerberichte',                             lang: 'de', expected_screen_id: 'MEMORY.DIARY_BUGS' },
 
   // ── SETTINGS expanded ──
   { utterance: 'customize my app preferences',               lang: 'en', expected_screen_id: 'SETTINGS.PREFERENCES' },
