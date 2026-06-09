@@ -131,3 +131,55 @@ export async function setJourneyMode(
   if (updated.error) throw updated.error;
   return toJourneyState(updated.data as GuidedJourneyStateRow);
 }
+
+/**
+ * VTID-03282 (P7) — record a completed guided-practice action for a topic.
+ *
+ * Idempotent per topic: the first completion of a topic appends it to
+ * completed_topic_ids and increments completed_practice_count; re-completing the
+ * same topic is a no-op for the counter. When the count first reaches the
+ * qualification threshold, the user is marked 'qualified'. A not_started user
+ * who completes a practice becomes 'in_progress'. Listening alone never calls
+ * this — only a real practice action does.
+ */
+export async function completePractice(
+  client: SupabaseClient,
+  userId: string,
+  topicId: string,
+  now: string = new Date().toISOString(),
+): Promise<JourneyState> {
+  const row = await ensureState(client, userId);
+
+  const completed = new Set(row.completed_topic_ids ?? []);
+  const alreadyDone = completed.has(topicId);
+  completed.add(topicId);
+  const newCount = alreadyDone
+    ? row.completed_practice_count
+    : row.completed_practice_count + 1;
+
+  const patch: Record<string, unknown> = {
+    completed_topic_ids: Array.from(completed),
+    completed_practice_count: newCount,
+    last_opened_topic_id: topicId,
+    updated_at: now,
+  };
+
+  const terminal =
+    row.onboarding_status === 'qualified' || row.onboarding_status === 'completed';
+  if (!terminal && newCount >= row.qualification_threshold) {
+    patch.onboarding_status = 'qualified';
+    if (!row.qualified_at) patch.qualified_at = now;
+  } else if (row.onboarding_status === 'not_started') {
+    patch.onboarding_status = 'in_progress';
+  }
+
+  const updated = await client
+    .from(TABLE)
+    .update(patch)
+    .eq('user_id', userId)
+    .select('*')
+    .single();
+
+  if (updated.error) throw updated.error;
+  return toJourneyState(updated.data as GuidedJourneyStateRow);
+}
