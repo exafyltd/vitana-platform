@@ -6400,6 +6400,7 @@ function kbcState() {
             validation: null, validating: false,
             versions: [], versionsLoaded: false, publishing: false,
             view: 'topics',
+            regenerating: false, sessionInstructions: '', // VTID-03288: AI regeneration
         };
     }
     return state.kbChecklist;
@@ -6593,6 +6594,59 @@ async function kbExport() {
     }
 }
 
+// VTID-03288: AI regeneration — rewrite German teaching wording for one topic
+// or a whole session from freeform supervisor instructions.
+async function kbRegenerateTopic() {
+    var s = kbcState();
+    if (!s.editor) return;
+    var e = s.editor;
+    s.regenerating = true; renderApp();
+    try {
+        var resp = await fetch('/api/v1/admin/journey-checklist/topics/' + encodeURIComponent(e.topicId) + '/regenerate', {
+            method: 'POST',
+            headers: Object.assign({ 'Content-Type': 'application/json' }, buildContextHeaders()),
+            body: JSON.stringify({ instructions: e._aiInstructions || '', language: 'de' }),
+        });
+        var json = await resp.json();
+        if (!resp.ok || !json.ok) throw new Error(json.error || ('HTTP ' + resp.status));
+        showToast('KI hat ' + e.topicId + ' neu generiert', 'success');
+        var keepInstr = e._aiInstructions;
+        var idx = s.topics.findIndex(function (x) { return x.topicId === json.topic.topicId; });
+        if (idx >= 0) s.topics[idx] = json.topic;
+        s.editor = JSON.parse(JSON.stringify(json.topic));
+        s.editor._aiInstructions = keepInstr;
+    } catch (err) {
+        showToast('Regenerate failed: ' + err.message, 'error');
+    } finally {
+        s.regenerating = false; renderApp();
+    }
+}
+
+async function kbRegenerateSession() {
+    var s = kbcState();
+    var session = s.filters.session;
+    if (!session) { showToast('Set a Session # filter first', 'error'); return; }
+    if (!window.confirm('Regenerate ALL topics in session ' + session + ' with AI? This overwrites their German wording.')) return;
+    s.regenerating = true; renderApp();
+    try {
+        var resp = await fetch('/api/v1/admin/journey-checklist/sessions/' + encodeURIComponent(session) + '/regenerate', {
+            method: 'POST',
+            headers: Object.assign({ 'Content-Type': 'application/json' }, buildContextHeaders()),
+            body: JSON.stringify({ instructions: s.sessionInstructions || '', language: 'de' }),
+        });
+        var json = await resp.json();
+        if (!resp.ok) throw new Error(json.error || ('HTTP ' + resp.status));
+        var nFail = (json.failures || []).length;
+        showToast('Session ' + session + ': ' + (json.topics ? json.topics.length : 0) + ' generated'
+            + (nFail ? ', ' + nFail + ' failed' : ''), nFail ? 'error' : 'success');
+        await fetchKbChecklist();
+    } catch (err) {
+        showToast('Session regenerate failed: ' + err.message, 'error');
+    } finally {
+        s.regenerating = false; renderApp();
+    }
+}
+
 function renderKbTable() {
     var s = kbcState();
     var wrap = kbEl('div', 'admin-list-container');
@@ -6668,6 +6722,26 @@ function renderKbEditor() {
     panel.appendChild(field('Guided practice target', e.guidedPracticeTarget, { set: function (v) { e.guidedPracticeTarget = v; } }));
     panel.appendChild(field('Completion event', e.completionEvent, { set: function (v) { e.completionEvent = v; } }));
     panel.appendChild(field('Business gate', e.businessGate || '', { select: true, options: ['', 'curious', 'active', 'builder'], set: function (v) { e.businessGate = v || null; } }));
+
+    // VTID-03288: AI regeneration — supervisor types instructions, AI rewrites
+    // the German wording (voice script + explanations) for THIS topic.
+    var aiSec = kbEl('div', 'admin-detail-section');
+    aiSec.style.marginTop = '0.75rem';
+    aiSec.style.borderTop = '1px solid var(--border-color, #2a2a2a)';
+    aiSec.style.paddingTop = '0.75rem';
+    aiSec.appendChild(kbEl('label', 'admin-detail-label', 'AI-Anweisung (optional) — wie soll die KI diesen Eintrag neu schreiben?'));
+    var aiInput = document.createElement('textarea');
+    aiInput.className = 'form-control'; aiInput.rows = 2;
+    aiInput.placeholder = 'z. B. "einfacher erklären", "auf Anfänger zuschneiden", "wärmer formulieren"…';
+    aiInput.value = e._aiInstructions || '';
+    aiInput.oninput = function (ev) { e._aiInstructions = ev.target.value; };
+    aiSec.appendChild(aiInput);
+    var regenBtn = kbEl('button', 'btn btn-sm btn-secondary', s.regenerating ? 'Generiere…' : '✨ Mit KI neu generieren');
+    regenBtn.disabled = !!s.regenerating;
+    regenBtn.style.marginTop = '0.4rem';
+    regenBtn.onclick = kbRegenerateTopic;
+    aiSec.appendChild(regenBtn);
+    panel.appendChild(aiSec);
 
     var actions = kbEl('div', 'admin-detail-actions');
     var save = kbEl('button', 'btn btn-primary', s.saving ? 'Saving…' : 'Save');
@@ -6771,6 +6845,13 @@ function renderKbChecklistView() {
     search.oninput = function (ev) { s.filters.search = ev.target.value; };
     search.onkeydown = function (ev) { if (ev.key === 'Enter') fetchKbChecklist(); };
     filters.appendChild(search);
+    // VTID-03288: Session # filter — also the target for per-session AI regeneration.
+    var sessionInput = document.createElement('input');
+    sessionInput.type = 'number'; sessionInput.min = '1'; sessionInput.max = '90';
+    sessionInput.className = 'form-control'; sessionInput.placeholder = 'Session #'; sessionInput.style.width = '7rem';
+    sessionInput.value = s.filters.session;
+    sessionInput.onchange = function (ev) { s.filters.session = ev.target.value; fetchKbChecklist(); };
+    filters.appendChild(sessionInput);
     function sel(options, current, onchange) {
         var el = document.createElement('select'); el.className = 'form-control';
         options.forEach(function (o) { var op = document.createElement('option'); op.value = o.v; op.textContent = o.t; if (o.v === current) op.selected = true; el.appendChild(op); });
@@ -6789,6 +6870,25 @@ function renderKbChecklistView() {
     applyBtn.onclick = fetchKbChecklist;
     filters.appendChild(applyBtn);
     root.appendChild(filters);
+
+    // VTID-03288: Per-session AI regeneration — visible when filtered to one session.
+    if (s.filters.session) {
+        var sessRow = kbEl('div', 'admin-toolbar');
+        sessRow.style.display = 'flex'; sessRow.style.gap = '0.5rem'; sessRow.style.flexWrap = 'wrap';
+        sessRow.style.alignItems = 'center'; sessRow.style.padding = '0.25rem 0';
+        sessRow.appendChild(kbEl('span', 'admin-screen-subtitle', 'Session ' + s.filters.session + ' — KI:'));
+        var sessInstr = document.createElement('input');
+        sessInstr.type = 'text'; sessInstr.className = 'form-control'; sessInstr.style.flex = '1'; sessInstr.style.minWidth = '14rem';
+        sessInstr.placeholder = 'AI-Anweisung für die ganze Session (optional)…';
+        sessInstr.value = s.sessionInstructions;
+        sessInstr.oninput = function (ev) { s.sessionInstructions = ev.target.value; };
+        sessRow.appendChild(sessInstr);
+        var sessBtn = kbEl('button', 'btn btn-sm btn-primary', s.regenerating ? 'Generiere…' : '✨ Session neu generieren');
+        sessBtn.disabled = !!s.regenerating;
+        sessBtn.onclick = kbRegenerateSession;
+        sessRow.appendChild(sessBtn);
+        root.appendChild(sessRow);
+    }
 
     if (s.error) {
         var err = kbEl('div', 'admin-error', s.error + ' ');
