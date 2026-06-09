@@ -202,6 +202,12 @@ const ROUTING_CASES: RoutingCase[] = [
   { utterance: 'business hub sales',                        lang: 'en', expected_screen_id: 'BUSINESS.SELL_EARN' },
   { utterance: 'open my sales',                             lang: 'en', expected_screen_id: 'BUSINESS.SELL_EARN' },
   { utterance: 'bring mich zum business hub verkäufe',      lang: 'de', expected_screen_id: 'BUSINESS.SELL_EARN' },
+  // "Business Hub Insights" must reach the Insights tab (BUSINESS.ANALYTICS),
+  // NOT the Snapshot — and must NOT steal the AI feed ("AI insights").
+  { utterance: 'business hub insights',                     lang: 'en', expected_screen_id: 'BUSINESS.ANALYTICS' },
+  { utterance: 'take me to business hub insights',          lang: 'en', expected_screen_id: 'BUSINESS.ANALYTICS' },
+  { utterance: 'business hub einblicke',                    lang: 'de', expected_screen_id: 'BUSINESS.ANALYTICS' },
+  { utterance: 'show me AI insights',                       lang: 'en', expected_screen_id: 'AI.INSIGHTS' },
   { utterance: 'open the business hub',                     lang: 'en', expected_screen_id: 'BUSINESS.OVERVIEW' },
 
   // ── WALLET ──
