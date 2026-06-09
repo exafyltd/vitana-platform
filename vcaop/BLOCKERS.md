@@ -15,4 +15,9 @@
 
 | BLK-005 | Affiliate aggregator (Phase 3) | Aggregator API/terms not verified here; needs a chosen vendor (Skimlinks/Sovrn/Wildfire) + API key + publisher id. | Built `HttpAggregatorClient` + postback-signature-verify behind the `AggregatorClient` interface, mock-only; `live` refuses without vaulted creds. | Choose the aggregator, sign up, supply `AGGREGATOR_API_KEY` (vault) + publisher id; then I wire live link decoration + postback signature verification and flip `live`. |
 
+| BLK-006 | Shopify | Admin API/OAuth app not verified here; needs a Shopify app (api key/secret) + shop. | `ShopifyOAuthClient`/`ShopifyApiClient` behind connector interfaces, mock-only; `live` refuses without vaulted creds. | Create a Shopify app → `VCAOP_SHOPIFY_API_KEY/SECRET` (vault) + shop domain; then wire live + flip. |
+| BLK-007 | Amazon (SP-API + Associates) | SP-API LWA creds + Associates tag not present; APIs not verified here. | `AmazonSpApiClient` + Associates link decorator, mock-only; `live` refuses without LWA creds. | Supply LWA client id/secret + refresh token (vault) + Associates tag; then wire live. |
+| BLK-008 | CJ (Commission Junction) | CJ personal access token + website id (PID) not present. | `CjApiClient` + CJ deep-link decorator, mock-only; `live` refuses without creds. | Supply CJ PAT + PID (vault); then wire live. |
+| BLK-009 | Rakuten Advertising | OAuth2 client creds + publisher SID not present. | `RakutenApiClient` + link decorator, mock-only; `live` refuses without creds. | Supply Rakuten client id/secret + SID (vault); then wire live. |
+
 _No fabricated credentials were used. No Tier-B action was taken to unblock (Sec. 11.3)._
