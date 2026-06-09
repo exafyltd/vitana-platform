@@ -112,6 +112,10 @@ describe('VTID-03273 Pillar D: assessOpenerQuality (content-quality guard)', () 
       'Lass uns deinen nächsten Schritt im Lebenskompass ansehen.',
       'Let me show you your sleep insights from last night.',
       'Weiter geht’s mit deinem Ernährungs-Check.',
+      // Codex review fix: a QUALIFIED "something" names the value — must pass.
+      'Let me show you something about your sleep score.',
+      'I want to introduce you to something in your profile.',
+      'Ich möchte dir etwas über deinen Schlaf zeigen.',
     ]) {
       expect(assessOpenerQuality(good).ok).toBe(true);
     }

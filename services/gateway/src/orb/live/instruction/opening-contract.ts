@@ -96,11 +96,19 @@ const FORBIDDEN_OPENER_PATTERNS: ReadonlyArray<RegExp> = [
 // Pillar D — contentless / vague openers ("I want to introduce you to
 // something", "Let me show you something") never name the value or step they
 // lead to. The spec's §1 Pillar D explicitly rejects these.
+//
+// Codex review fix: the vague-"something" patterns are END-ANCHORED — they only
+// match when the teaser stops at "something" (optionally followed by
+// punctuation). A qualified line like "Let me show you something about your
+// sleep score" NAMES the value and must pass. (The German variants are safe by
+// adjacency: a qualifier sits between "etwas" and the verb — "dir etwas über
+// deinen Schlaf zeigen" — so the adjacent "etwas zeigen" + end anchor only
+// matches the bare teaser.)
 const CONTENTLESS_OPENER_PATTERNS: ReadonlyArray<RegExp> = [
-  /introduce you (to )?something/i,
-  /show you something(\s|[.!?]|$)/i,
-  /tell you something(\s|[.!?]|$)/i,
-  /(dir|euch) (mal )?(etwas|was) (zeigen|vorstellen|erzählen)(\s|[.!?]|$)/i,
+  /introduce you (to )?something\s*[.!?…]*$/i,
+  /show you something\s*[.!?…]*$/i,
+  /tell you something\s*[.!?…]*$/i,
+  /(dir|euch) (mal )?(etwas|was) (zeigen|vorstellen|erzählen)\s*[.!?…]*$/i,
   /^(hello|hi|hey|hallo|salut|hola|здраво|ciao)[.!?\s]*$/i,
 ];
 
