@@ -1862,10 +1862,91 @@ export const NAVIGATION_CATALOG: ReadonlyArray<NavCatalogEntry> = [
     screen_id: 'SETTINGS.BILLING', route: '/settings/billing', mobile_route: '/settings?mode=billing', category: 'settings',
     access: 'authenticated', anonymous_safe: false,
     i18n: {
-      en: { title: 'Billing', description: 'Your billing information, payment methods, and invoices.', when_to_visit: 'When the user asks for the Billing tab of Settings, about billing, payment methods, invoices, payment history, credit card, or how to pay.' },
-      de: { title: 'Abrechnung', description: 'Deine Rechnungsinformationen, Zahlungsmethoden und Rechnungen.', when_to_visit: 'Wenn der Nutzer nach dem Abrechnungs-Tab der Einstellungen, Abrechnung, Zahlungsmethoden, Rechnungen, Zahlungshistorie, Kreditkarte oder wie man bezahlt fragt.' },
+      en: { title: 'Billing', description: 'Your billing information and subscription charges.', when_to_visit: 'When the user asks for the Billing tab of Settings, about billing, charges, or their billing overview.' },
+      de: { title: 'Abrechnung', description: 'Deine Abrechnungsinformationen und Abo-Kosten.', when_to_visit: 'Wenn der Nutzer nach dem Abrechnungs-Tab der Einstellungen, der Abrechnung, den Kosten oder seiner Abrechnungsübersicht fragt.' },
     },
   },
+  // ── SETTINGS sub-pills (VTID-NAV-SETTINGS-TABS) ─────────────────────────
+  // The mode pills inside Privacy / Preferences / Billing on the mobile
+  // Settings screen. mobile_route deep-links the exact sub-pill via
+  // /settings?mode=<parent.child> (MobileSettings reads ?mode=); desktop falls
+  // back to the parent's standalone page. Titles use ONLY the child's
+  // distinctive words (never the parent word) so a bare "settings privacy" /
+  // "settings billing" still resolves to the parent pill, while multi-word
+  // phrases ("data sharing", "invoices", "appearance") reach the child.
+  {
+    screen_id: 'SETTINGS.PRIVACY_VISIBILITY', route: '/settings/privacy?section=visibility', mobile_route: '/settings?mode=privacy.visibility',
+    category: 'settings', access: 'authenticated', anonymous_safe: false,
+    i18n: {
+      en: { title: 'Visibility', description: 'Control who can see your profile.', when_to_visit: 'When the user asks for the Profile Visibility tab of Privacy in Settings — who can see their profile, profile visibility, or hiding their profile.' },
+      de: { title: 'Sichtbarkeit', description: 'Steuere, wer dein Profil sehen kann.', when_to_visit: 'Wenn der Nutzer nach dem Tab Profil-Sichtbarkeit im Datenschutz fragt — wer sein Profil sehen kann oder das Verbergen seines Profils.' },
+    },
+  },
+  {
+    screen_id: 'SETTINGS.PRIVACY_DATA', route: '/settings/privacy?section=data', mobile_route: '/settings?mode=privacy.data',
+    category: 'settings', access: 'authenticated', anonymous_safe: false,
+    i18n: {
+      en: { title: 'Shared Data', description: 'Control what data is shared.', when_to_visit: 'When the user asks for the Data Sharing tab of Privacy in Settings — data sharing, what data is shared, or data-sharing consent.' },
+      de: { title: 'Datenfreigabe', description: 'Steuere, welche Daten geteilt werden.', when_to_visit: 'Wenn der Nutzer nach dem Tab Datenfreigabe im Datenschutz fragt — Datenfreigabe, welche Daten geteilt werden oder die Einwilligung zur Datenfreigabe.' },
+    },
+  },
+  {
+    screen_id: 'SETTINGS.PRIVACY_SECURITY', route: '/settings/privacy?section=security', mobile_route: '/settings?mode=privacy.security',
+    category: 'settings', access: 'authenticated', anonymous_safe: false,
+    i18n: {
+      en: { title: 'Account Security', description: 'Manage password and account security.', when_to_visit: 'When the user asks for the Security tab of Privacy in Settings — account security, password, or two-factor authentication.' },
+      de: { title: 'Konto-Sicherheit', description: 'Verwalte Passwort und Konto-Sicherheit.', when_to_visit: 'Wenn der Nutzer nach dem Tab Sicherheit im Datenschutz fragt — Konto-Sicherheit, Passwort oder Zwei-Faktor-Authentifizierung.' },
+    },
+  },
+  {
+    screen_id: 'SETTINGS.PREFERENCES_APPEARANCE', route: '/settings/preferences?section=appearance', mobile_route: '/settings?mode=preferences.appearance',
+    category: 'settings', access: 'authenticated', anonymous_safe: false,
+    i18n: {
+      en: { title: 'Appearance Theme', description: 'Theme, colors, and dark mode.', when_to_visit: 'When the user asks for the Appearance tab of Preferences in Settings — theme, dark mode, colors, or how the app looks.' },
+      de: { title: 'Erscheinungsbild', description: 'Design, Farben und Dunkelmodus.', when_to_visit: 'Wenn der Nutzer nach dem Tab Erscheinungsbild der Präferenzen fragt — Design, Dunkelmodus, Farben oder wie die App aussieht.' },
+    },
+  },
+  {
+    screen_id: 'SETTINGS.PREFERENCES_LANGUAGE', route: '/settings/preferences?section=language', mobile_route: '/settings?mode=preferences.language',
+    category: 'settings', access: 'authenticated', anonymous_safe: false,
+    i18n: {
+      en: { title: 'Language Region', description: 'App language and region.', when_to_visit: 'When the user asks for the Language and Region tab of Preferences in Settings — app language, region, or locale.' },
+      de: { title: 'Sprache Region', description: 'App-Sprache und Region.', when_to_visit: 'Wenn der Nutzer nach dem Tab Sprache und Region der Präferenzen fragt — App-Sprache, Region oder Gebietsschema.' },
+    },
+  },
+  {
+    screen_id: 'SETTINGS.BILLING_PLAN', route: '/settings/billing?section=plan', mobile_route: '/settings?mode=billing.plan',
+    category: 'settings', access: 'authenticated', anonymous_safe: false,
+    i18n: {
+      en: { title: 'Current Plan', description: 'Your current plan and membership tier.', when_to_visit: 'When the user asks for the Current Plan tab of Billing in Settings — their current plan, membership tier, or upgrading their plan.' },
+      de: { title: 'Aktueller Tarif', description: 'Dein aktueller Tarif und deine Mitgliedschaftsstufe.', when_to_visit: 'Wenn der Nutzer nach dem Tab Aktueller Tarif der Abrechnung fragt — sein aktueller Tarif, seine Mitgliedschaftsstufe oder ein Upgrade des Tarifs.' },
+    },
+  },
+  {
+    screen_id: 'SETTINGS.BILLING_PAYMENT', route: '/settings/billing?section=payment', mobile_route: '/settings?mode=billing.payment',
+    category: 'settings', access: 'authenticated', anonymous_safe: false,
+    i18n: {
+      en: { title: 'Payment Method', description: 'Manage your payment method.', when_to_visit: 'When the user asks for the Payment Method tab of Billing in Settings — payment method, credit card on file, or how they pay.' },
+      de: { title: 'Zahlungsmethode', description: 'Verwalte deine Zahlungsmethode.', when_to_visit: 'Wenn der Nutzer nach dem Tab Zahlungsmethode der Abrechnung fragt — Zahlungsmethode, hinterlegte Kreditkarte oder wie er bezahlt.' },
+    },
+  },
+  {
+    screen_id: 'SETTINGS.BILLING_INVOICES', route: '/settings/billing?section=invoices', mobile_route: '/settings?mode=billing.invoices',
+    category: 'settings', access: 'authenticated', anonymous_safe: false,
+    i18n: {
+      en: { title: 'Invoices Receipts', description: 'Your invoices and receipts.', when_to_visit: 'When the user asks for the Invoices and Receipts tab of Billing in Settings — invoices, receipts, or payment history.' },
+      de: { title: 'Rechnungen Belege', description: 'Deine Rechnungen und Belege.', when_to_visit: 'Wenn der Nutzer nach dem Tab Rechnungen und Belege der Abrechnung fragt — Rechnungen, Belege oder Zahlungsverlauf.' },
+    },
+  },
+  {
+    screen_id: 'SETTINGS.BILLING_CREATOR', route: '/settings/billing?section=creator', mobile_route: '/settings?mode=billing.creator',
+    category: 'settings', access: 'authenticated', anonymous_safe: false,
+    i18n: {
+      en: { title: 'Creator Payouts', description: 'Your creator payouts and earnings withdrawals.', when_to_visit: 'When the user asks for the Creator Payouts tab of Billing in Settings — creator payouts, earnings withdrawals, or getting paid as a creator.' },
+      de: { title: 'Creator-Auszahlungen', description: 'Deine Creator-Auszahlungen und Einnahmen-Auszahlungen.', when_to_visit: 'Wenn der Nutzer nach dem Tab Creator-Auszahlungen der Abrechnung fragt — Creator-Auszahlungen, Einnahmen-Auszahlungen oder als Creator bezahlt zu werden.' },
+    },
+  },
+
   {
     // Generic Support destination (lands on the Contact tab). Keeps the
     // canonical `/settings/support` path so route resolution stays stable;

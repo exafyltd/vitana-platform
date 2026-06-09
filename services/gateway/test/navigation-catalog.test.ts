@@ -348,6 +348,21 @@ const ROUTING_CASES: RoutingCase[] = [
   { utterance: 'settings preferences',                       lang: 'en', expected_screen_id: 'SETTINGS.PREFERENCES' },
   { utterance: 'settings billing',                           lang: 'en', expected_screen_id: 'SETTINGS.BILLING' },
   { utterance: 'einstellungen abrechnung',                   lang: 'de', expected_screen_id: 'SETTINGS.BILLING' },
+  // Settings sub-pills (the mode pills inside Privacy / Preferences / Billing).
+  // Deep-linked on mobile via /settings?mode=<parent.child>. Child titles use
+  // only their distinctive words so the bare parent phrase above still wins.
+  { utterance: 'settings privacy data sharing',              lang: 'en', expected_screen_id: 'SETTINGS.PRIVACY_DATA' },
+  { utterance: 'settings privacy security',                  lang: 'en', expected_screen_id: 'SETTINGS.PRIVACY_SECURITY' },
+  { utterance: 'settings privacy profile visibility',        lang: 'en', expected_screen_id: 'SETTINGS.PRIVACY_VISIBILITY' },
+  { utterance: 'settings preferences appearance',            lang: 'en', expected_screen_id: 'SETTINGS.PREFERENCES_APPEARANCE' },
+  { utterance: 'settings preferences language',              lang: 'en', expected_screen_id: 'SETTINGS.PREFERENCES_LANGUAGE' },
+  { utterance: 'language and region',                        lang: 'en', expected_screen_id: 'SETTINGS.PREFERENCES_LANGUAGE' },
+  { utterance: 'settings billing payment method',            lang: 'en', expected_screen_id: 'SETTINGS.BILLING_PAYMENT' },
+  { utterance: 'settings billing invoices',                  lang: 'en', expected_screen_id: 'SETTINGS.BILLING_INVOICES' },
+  { utterance: 'invoices and receipts',                      lang: 'en', expected_screen_id: 'SETTINGS.BILLING_INVOICES' },
+  { utterance: 'settings billing creator payouts',           lang: 'en', expected_screen_id: 'SETTINGS.BILLING_CREATOR' },
+  { utterance: 'erscheinungsbild',                           lang: 'de', expected_screen_id: 'SETTINGS.PREFERENCES_APPEARANCE' },
+  { utterance: 'rechnungen und belege',                      lang: 'de', expected_screen_id: 'SETTINGS.BILLING_INVOICES' },
 
   // ── HEALTH expanded ──
   { utterance: 'show me the health pillars',                 lang: 'en', expected_screen_id: 'HEALTH.PILLARS' },
