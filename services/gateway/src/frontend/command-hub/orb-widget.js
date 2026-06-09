@@ -3190,3 +3190,5 @@
 
 })(window);
 
+
+// DEV-COMHU-0508: Path Ownership marker (guided-topic ORB fixes — focusGuidedTopic teaching turn, X-close, auto-close).
