@@ -209,6 +209,17 @@ const ROUTING_CASES: RoutingCase[] = [
   { utterance: 'business hub einblicke',                    lang: 'de', expected_screen_id: 'BUSINESS.ANALYTICS' },
   { utterance: 'show me AI insights',                       lang: 'en', expected_screen_id: 'AI.INSIGHTS' },
   { utterance: 'open the business hub',                     lang: 'en', expected_screen_id: 'BUSINESS.OVERVIEW' },
+  // VTID-NAV-BUSINESS-SUBTABS: every Business Hub mobile mode-pill sub-tab is
+  // voice-addressable, and the bare words stay with their primary screens.
+  { utterance: 'business hub services',                     lang: 'en', expected_screen_id: 'BUSINESS.SERVICES' },
+  { utterance: 'business hub services events',              lang: 'en', expected_screen_id: 'BUSINESS.SERVICES_EVENTS' },
+  { utterance: 'business hub services packages',            lang: 'en', expected_screen_id: 'BUSINESS.SERVICES_PACKAGES' },
+  { utterance: 'business hub sales promotions',             lang: 'en', expected_screen_id: 'BUSINESS.SALES_PROMOTIONS' },
+  { utterance: 'business hub sales referrals',              lang: 'en', expected_screen_id: 'BUSINESS.SALES_REFERRALS' },
+  { utterance: 'business hub insights clients',             lang: 'en', expected_screen_id: 'BUSINESS.CLIENTS' },
+  { utterance: 'business hub insights performance',         lang: 'en', expected_screen_id: 'BUSINESS.ANALYTICS' },
+  { utterance: 'business hub insights earnings',            lang: 'en', expected_screen_id: 'BUSINESS.INSIGHTS_EARNINGS' },
+  { utterance: 'business hub insights growth',              lang: 'en', expected_screen_id: 'BUSINESS.INSIGHTS_GROWTH' },
 
   // ── WALLET ──
   { utterance: 'open my wallet',                            lang: 'en', expected_screen_id: 'WALLET.OVERVIEW' },
