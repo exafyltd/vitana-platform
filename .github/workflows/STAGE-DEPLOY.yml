@@ -129,15 +129,20 @@ jobs:
           # staging env vars to be authoritative on this service).
           ENV_VARS_JOINED=$(IFS=, ; echo "${ENV_VARS[*]}")
 
-          # Secrets: staging Supabase trio. JWT/ANON share with prod for Phase 0
-          # — the parent session's experiment exercises the platform from the
-          # same auth boundary; nothing about the JWT secret depends on the
-          # data store. (If isolation tightens later, swap to a staging-specific
-          # JWT secret created in GCP Secret Manager.)
+          # Secrets: Supabase.
+          # BOOTSTRAP-ORB-STAGING-SUPABASE-ALIGN: the staging FRONTEND
+          # (community-app-staging) authenticates users against the PROD Supabase
+          # project (inmkhvwdcuyhnxkgfvsb). Previously the gateway pointed at a
+          # SEPARATE staging Supabase (STAGING_SUPABASE_* → rsdakjqpvcpgomltdmxu),
+          # so logged-in users existed in the frontend's DB but NOT in the
+          # gateway's DB → identity/context resolution failed (journey/state 500,
+          # permitted_roles 404) and authenticated ORB voice hung on "connecting".
+          # Align the gateway to the SAME project the frontend uses by binding the
+          # prod SUPABASE_* secrets. (JWT secret was already shared.)
           SECRETS=(
-            "SUPABASE_URL=STAGING_SUPABASE_URL:latest"
-            "SUPABASE_SERVICE_ROLE=STAGING_SUPABASE_SERVICE_ROLE_KEY:latest"
-            "SUPABASE_ANON_KEY=STAGING_SUPABASE_ANON_KEY:latest"
+            "SUPABASE_URL=SUPABASE_URL:latest"
+            "SUPABASE_SERVICE_ROLE=SUPABASE_SERVICE_ROLE:latest"
+            "SUPABASE_ANON_KEY=SUPABASE_ANON_KEY:latest"
             "SUPABASE_JWT_SECRET=SUPABASE_JWT_SECRET:latest"
             "GOOGLE_GEMINI_API_KEY=GOOGLE_GEMINI_API_KEY:latest"
           )
