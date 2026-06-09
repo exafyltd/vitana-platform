@@ -51,6 +51,22 @@ describe('classifyAutopilotFailure', () => {
     expect(result.non_actionable_reason).toBe('policy_block');
   });
 
+  it('classifies a Cloud Run deploy concurrency race as environmental (real EXEC-DEPLOY failure 2026-06-07)', () => {
+    // Verbatim gcloud error from a failed gateway EXEC-DEPLOY run where three
+    // deploys overlapped; the same commit deployed fine on retry. A code retry
+    // can't fix a deploy-time optimistic-concurrency conflict.
+    const result = classifyAutopilotFailure({
+      failure_class: 'deploy',
+      diagnosis: {
+        summary:
+          "ERROR: (gcloud.run.deploy) ABORTED: Conflict for resource 'gateway': version '1780664786361038' was specified but current version is '1780664788904494'.",
+      },
+    });
+    expect(result.failure_class).toBe('environmental_blocker');
+    expect(result.actionable).toBe(false);
+    expect(result.non_actionable_reason).toBe('environmental');
+  });
+
   it('leaves a genuinely auto-fixable code failure actionable and unchanged', () => {
     const result = classifyAutopilotFailure({
       failure_class: 'dev_autopilot_pr_open_failed',

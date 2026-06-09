@@ -730,22 +730,29 @@ export const NAVIGATION_CATALOG: ReadonlyArray<NavCatalogEntry> = [
     },
   },
   {
+    // VTID-NAV-BUSINESS-TABS: this is the "Sales" pill of the Business Hub
+    // (mobile) / the "Sell & Earn" tab (desktop), route /business/sell-earn.
+    // The title matches the pill label the user actually sees ("Sales" / DE
+    // "Verkäufe"), and when_to_visit carries the literal "Business Hub Sales"
+    // phrase so "take me to Business Hub Sales" resolves here instead of
+    // BUSINESS.OVERVIEW (whose title is "Business Hub").
     screen_id: 'BUSINESS.SELL_EARN',
     route: '/business/sell-earn',
     category: 'business',
     access: 'authenticated',
     anonymous_safe: false,
     priority: 2,
+    aliases: ['sales', 'business-sales', 'business-hub-sales', 'sell-earn', 'sales-tab', 'verkaeufe', 'verkauf'],
     i18n: {
       en: {
-        title: 'Sell & Earn',
-        description: 'Build a new income stream by selling your services and earning rewards in the Maxina community.',
-        when_to_visit: 'When the user asks how to make money, earn income, build a side income, monetize their skills, monetize coaching, monetize fitness, monetize their expertise, sell services, become a paid creator, set up a new income stream, become a paid coach, or start earning from the Maxina community.',
+        title: 'Sales',
+        description: 'Your Sales area in the Business Hub — sell your services and build a new income stream in the Maxina community.',
+        when_to_visit: 'When the user asks for the Sales tab or the Business Hub Sales section, their sales, or how to make money, earn income, build a side income, monetize their skills, monetize coaching, monetize fitness, monetize their expertise, sell services, become a paid creator, set up a new income stream, become a paid coach, or start earning from the Maxina community.',
       },
       de: {
-        title: 'Verkaufen & Verdienen',
-        description: 'Baue eine neue Einkommensquelle auf, indem du deine Services verkaufst und in der Maxina Community Belohnungen verdienst.',
-        when_to_visit: 'Wenn der Nutzer fragt wie man Geld verdient, Einkommen generiert, ein Nebeneinkommen aufbaut, seine Fähigkeiten monetarisiert, Coaching monetarisiert, Fitness monetarisiert, seine Expertise monetarisiert, Services verkauft, bezahlter Creator wird, eine neue Einkommensquelle aufbaut oder mit der Maxina Community Geld verdienen will.',
+        title: 'Verkäufe',
+        description: 'Dein Verkaufsbereich im Business Hub — verkaufe deine Services und baue eine neue Einkommensquelle in der Maxina Community auf.',
+        when_to_visit: 'Wenn der Nutzer nach dem Tab "Verkäufe", dem Business Hub Verkäufe-Bereich oder seinen Verkäufen fragt, oder wie man Geld verdient, Einkommen generiert, ein Nebeneinkommen aufbaut, seine Fähigkeiten monetarisiert, Coaching monetarisiert, Fitness monetarisiert, seine Expertise monetarisiert, Services verkauft, bezahlter Creator wird, eine neue Einkommensquelle aufbaut oder mit der Maxina Community Geld verdienen will.',
       },
     },
   },

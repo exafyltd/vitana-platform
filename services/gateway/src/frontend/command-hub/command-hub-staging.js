@@ -283,12 +283,23 @@
     const cloudRev = version.cloud_run_revision || '(unknown revision)';
     const service = version.service || 'gateway';
     const commit = (version.git_commit || '').slice(0, 7);
+    const createdAt = version.createdAt || version.created_at || null;
+    // Backend ↔ frontend pairing — mirrors REVERT_SIBLING on the server.
+    const SIBLING = {
+      'gateway': 'community-app',
+      'community-app': 'gateway',
+      'gateway-staging': 'community-app-staging',
+      'community-app-staging': 'gateway-staging',
+    };
+    const sibling = SIBLING[service] || null;
 
-    modal.appendChild(el('div', { style: 'font-size:16px;font-weight:600;margin-bottom:10px;color:#fca5a5;' }, 'Revert ' + service));
-    modal.appendChild(el('div', { style: 'margin-bottom:6px;' }, 'Target revision: ', el('strong', {}, cloudRev)));
+    modal.appendChild(el('div', { style: 'font-size:16px;font-weight:600;margin-bottom:10px;color:#fca5a5;' }, 'Revert to previous · both repos'));
+    modal.appendChild(el('div', { style: 'margin-bottom:6px;' }, 'Anchor: ', el('strong', {}, service), ' → ', el('strong', {}, cloudRev)));
     modal.appendChild(el('div', { style: 'margin-bottom:6px;' }, 'Commit: ', el('code', { style: 'color:#fde68a;' }, commit || 'unknown')));
     modal.appendChild(el('div', { style: 'margin-bottom:14px;color:#cbd5e1;line-height:1.5;' },
-      'Traffic on ', el('strong', {}, service), ' will move to 100% of this revision within ~30s. No re-deploy; the image already exists.'
+      'This reverts ', el('strong', {}, 'both repositories'), '. Traffic on ', el('strong', {}, service),
+      ' moves to 100% of this revision, and ', el('strong', {}, sibling || 'the paired frontend'),
+      ' is rolled back to the revision it was serving at that time. Both within ~30s — no re-deploy; the images already exist.'
     ));
 
     const input = el('input', {
@@ -324,30 +335,56 @@
       go.style.opacity = ok ? '1' : '0.5';
     });
 
+    // Summarize one service's revert outcome into a single line.
+    function summarize(o) {
+      if (!o) return 'no result';
+      const svc = o.service || '?';
+      if (o.ok || o.status === 'reverted') {
+        return svc + ' → ' + (o.target_revision || '?') + (o.swv_id ? ' (SWV ' + o.swv_id + ')' : '');
+      }
+      if (o.status === 'already_active') return svc + ' already on ' + (o.target_revision || 'target');
+      return svc + ': ' + (o.detail || o.status || 'failed');
+    }
+
     go.addEventListener('click', function () {
       go.disabled = true;
-      go.textContent = 'Reverting…';
+      go.textContent = 'Reverting both…';
       result.style.display = 'block';
       result.style.color = '#9ca3af';
-      result.textContent = 'POST /api/v1/operator/revert — traffic shift in flight.';
+      result.textContent = 'POST /api/v1/operator/revert-both — backend + frontend traffic shifts in flight.';
 
-      fetch('/api/v1/operator/revert', {
+      fetch('/api/v1/operator/revert-both', {
         method: 'POST',
         credentials: 'include',
         headers: Object.assign({ 'Content-Type': 'application/json' }, headers),
-        body: JSON.stringify({ service: service, target_revision: cloudRev, confirm_short_sha: commit }),
+        body: JSON.stringify({
+          service: service,
+          target_revision: cloudRev,
+          target_created_at: createdAt,
+          confirm_short_sha: commit,
+        }),
       })
         .then(function (r) { return r.json().then(function (body) { return { status: r.status, body: body }; }); })
         .then(function (payload) {
-          if (payload.status >= 200 && payload.status < 300 && payload.body && payload.body.ok) {
-            result.style.color = '#86efac';
-            result.textContent = '✓ Revert dispatched. SWV ' + (payload.body.swv_id || '—') + '. Traffic should reach 100% within 30s.';
+          const body = payload.body || {};
+          if (payload.status >= 200 && payload.status < 300 && body.ok) {
+            const beOk = body.backend && (body.backend.ok || body.backend.status === 'reverted');
+            const feOk = body.frontend && (body.frontend.ok || body.frontend.status === 'reverted' || body.frontend.status === 'already_active');
+            result.innerHTML = '';
+            result.appendChild(el('div', { style: 'color:' + (beOk ? '#86efac' : '#fbbf24') + ';' },
+              (beOk ? '✓ ' : '⚠ ') + 'Backend: ' + summarize(body.backend)));
+            result.appendChild(el('div', { style: 'color:' + (feOk ? '#86efac' : '#fbbf24') + ';margin-top:3px;' },
+              (feOk ? '✓ ' : '⚠ ') + 'Frontend: ' + summarize(body.frontend)));
+            if (!body.both_ok) {
+              result.appendChild(el('div', { style: 'margin-top:6px;color:#94a3b8;font-size:11px;line-height:1.5;' },
+                'One half did not revert (the other still did). If the frontend failed with a permission error, grant the gateway service account roles/run.developer on the community-app service.'));
+            }
             go.textContent = 'Done';
-            if (typeof opts.onAfterRevert === 'function') opts.onAfterRevert(payload.body);
-            setTimeout(function () { overlay.remove(); }, 2500);
+            if (typeof opts.onAfterRevert === 'function') opts.onAfterRevert(body);
+            setTimeout(function () { overlay.remove(); }, body.both_ok ? 3000 : 6000);
           } else {
             result.style.color = '#fca5a5';
-            result.textContent = 'Revert refused: ' + ((payload.body && (payload.body.detail || payload.body.error)) || ('HTTP ' + payload.status));
+            result.textContent = 'Revert refused: ' + ((body.detail || body.error) || ('HTTP ' + payload.status));
             go.disabled = false;
             go.textContent = 'Revert';
           }
@@ -429,6 +466,14 @@
     const headers = (opts.buildContextHeaders ? opts.buildContextHeaders({}) : {}) || {};
     const s = (window.__vitana_state && window.__vitana_state.publishFlow) || {};
 
+    // Self-heal the "Reading state…" wedge: if a prior open already loaded the
+    // staging/prod revisions but a re-render race left the phase stuck on
+    // 'loading', advance to the correct phase instead of spinning forever. The
+    // data needed to publish is already present, so there's nothing to wait on.
+    if (s.phase === 'loading' && s.sourceRevision) {
+      s.phase = s.canaryRevision ? 'canary-active' : 'ready';
+    }
+
     const card = el('div', {
       class: 'publish-popover',
       style: 'position:absolute;top:calc(100% + 8px);left:0;width:340px;background:var(--color-sidebar-bg);' +
@@ -441,7 +486,7 @@
     const chipText = ({
       loading:           el('span', {}, spinnerSvg(11, '#cbd5e1'), ' Reading state…'),
       ready:             'Ready to publish',
-      publishing:        el('span', {}, spinnerSvg(11, '#93c5fd'), ' Dispatching canary…'),
+      publishing:        el('span', {}, spinnerSvg(11, '#93c5fd'), ' Publishing…'),
       'canary-active':   '🐤 Canary at 10%',
       promoting:         el('span', {}, spinnerSvg(11, '#93c5fd'), ' Promoting to 100%…'),
       promoted:          '✓ Promoted',
@@ -731,38 +776,50 @@
     if (dispatching) {
       primary.appendChild(spinnerSvg(14, '#93c5fd'));
       primary.appendChild(document.createTextNode(
-        phase === 'full-publishing' ? 'Publishing 100%…' :
+        phase === 'full-publishing' ? 'Publishing…' :
         phase === 'building' ? 'Building…' :
         phase === 'rolling' ? 'Rolling out…' :
-        'Dispatching canary…'
+        'Publishing…'
       ));
     } else if (phase === 'loading') {
       primary.appendChild(spinnerSvg(14, '#cbd5e1'));
       primary.appendChild(document.createTextNode('Loading…'));
     } else {
-      primary.textContent = 'Publish to canary (10%)';
+      primary.textContent = 'Publish to production';
     }
     if (phase === 'ready') {
       primary.addEventListener('click', function (e) {
         e.stopPropagation();
-        dispatchPublish('canary', headers, opts);
+        // Single-click 100% promote (image swap, ~30s). No canary step.
+        dispatchPublish('full', headers, opts);
       });
     }
     card.appendChild(primary);
 
-    if (phase === 'ready') {
-      const skipRow = el('div', { style: 'margin-top:8px;text-align:center;' },
+    // Escape hatch for the rare case where the initial revision fetch hangs and
+    // no data ever arrives: let the operator force a fresh state read from
+    // inside the popover instead of having to reload the whole Command Hub.
+    if (phase === 'loading') {
+      const retryRow = el('div', { style: 'margin-top:8px;text-align:center;' },
         el('button', {
           type: 'button',
           style: 'background:none;border:none;color:#94a3b8;font-size:11px;cursor:pointer;text-decoration:underline;',
           onclick: function (e) {
             e.stopPropagation();
-            if (!window.confirm('Skip canary and publish to 100% immediately?\n\nFor voice, canary is recommended — bad changes reach all users within seconds.')) return;
-            dispatchPublish('full', headers, opts);
+            if (window.__vitana_state) {
+              window.__vitana_state.publishFlow = { open: true, phase: 'loading' };
+            }
+            if (typeof renderApp === 'function') renderApp();
           },
-        }, 'Skip canary — publish 100% now')
+        }, 'Stuck on “Reading state…”? Re-read state')
       );
-      card.appendChild(skipRow);
+      card.appendChild(retryRow);
+    }
+
+    if (phase === 'ready') {
+      card.appendChild(el('div', {
+        style: 'margin-top:8px;text-align:center;color:#94a3b8;font-size:11px;',
+      }, 'One-click promote to 100% · ~30s, no rebuild'));
     }
 
     return card;

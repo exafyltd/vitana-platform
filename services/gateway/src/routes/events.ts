@@ -1954,3 +1954,92 @@ router.post("/api/v1/vtid/lifecycle/backfill", async (req: Request, res: Respons
     return res.status(500).json({ ok: false, error: e.message });
   }
 });
+
+/**
+ * GET /api/v1/events/verification-advisory
+ * VTID-01175: Verification engine reports (advisory mode).
+ *
+ * Surfaces vtid.stage.verification.* events from oasis_events so a developer
+ * can review what the verifier flagged and decide whether to accept the
+ * delivered work. Advisory verification never blocks the task — this is where
+ * the "fixes needed" overview lives.
+ *
+ * Query params:
+ *   - outcome: 'advisory' (needs review, default) | 'passed' | 'failed' | 'all'
+ *   - limit:   max rows (default 50, max 200)
+ *
+ * Each row is shaped from the OASIS event payload into:
+ *   { vtid, domain, outcome, recommended_action, checks_failed, fixes_needed,
+ *     reason, run_id, created_at }
+ */
+// public-route: read-only oasis_events query, consistent with the other
+// /api/v1/events/* handlers in this file (anonymous). Command Hub access is
+// gated at the page route, not per data endpoint.
+router.get("/api/v1/events/verification-advisory", async (req: Request, res: Response) => {
+  try {
+    const supabaseUrl = process.env.SUPABASE_URL;
+    const svcKey = process.env.SUPABASE_SERVICE_ROLE;
+    if (!supabaseUrl || !svcKey) {
+      return res.status(500).json({ ok: false, error: "Gateway misconfigured" });
+    }
+
+    const outcome = (req.query.outcome as string) || "advisory";
+    const limit = Math.min(parseInt(req.query.limit as string) || 50, 200);
+
+    // Filter on the `topic` column (emitOasisEvent writes event.type into `topic`).
+    // Default to advisory — the rows that need a human decision.
+    let topicFilter = "topic=like.vtid.stage.verification*";
+    if (outcome === "advisory") {
+      topicFilter = "topic=eq.vtid.stage.verification.advisory";
+    } else if (outcome === "passed") {
+      topicFilter = "topic=eq.vtid.stage.verification.passed";
+    } else if (outcome === "failed") {
+      topicFilter = "topic=eq.vtid.stage.verification.failed";
+    }
+
+    const queryParams = `select=vtid,topic,status,message,metadata,created_at&${topicFilter}&order=created_at.desc&limit=${limit}`;
+    const resp = await fetch(`${supabaseUrl}/rest/v1/oasis_events?${queryParams}`, {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+        apikey: svcKey,
+        Authorization: `Bearer ${svcKey}`,
+      },
+    });
+
+    if (!resp.ok) {
+      const detail = await resp.text().catch(() => "");
+      console.error(`[VTID-01175] verification-advisory query failed: ${resp.status} - ${detail}`);
+      return res.status(502).json({ ok: false, error: "Database query failed" });
+    }
+
+    const rows = (await resp.json()) as Array<{
+      vtid: string | null;
+      topic: string;
+      status: string;
+      message: string;
+      metadata: Record<string, any> | null;
+      created_at: string;
+    }>;
+
+    const reports = rows.map((r) => {
+      const p = r.metadata || {};
+      return {
+        vtid: r.vtid,
+        domain: p.domain ?? null,
+        outcome: (r.topic || "").replace("vtid.stage.verification.", "") || "unknown",
+        recommended_action: p.recommended_action ?? null,
+        checks_failed: Array.isArray(p.checks_failed) ? p.checks_failed : [],
+        fixes_needed: Array.isArray(p.fixes_needed) ? p.fixes_needed : [],
+        reason: r.message || null,
+        run_id: p.run_id ?? null,
+        created_at: r.created_at,
+      };
+    });
+
+    res.json({ ok: true, outcome, count: reports.length, reports });
+  } catch (error: any) {
+    console.error("[VTID-01175] verification-advisory error:", error);
+    res.status(500).json({ ok: false, error: error.message });
+  }
+});
