@@ -156,7 +156,8 @@ router.post('/topics/:id/regenerate', async (req: AuthenticatedRequest, res: Res
     });
     return res.json({ ok: true, topic, vtid: REGEN_VTID });
   } catch (err) {
-    return fail(res, err, 'regenerate_failed');
+    console.error(`[${REGEN_VTID}] regenerate_failed: ${(err as Error).message}`);
+    return res.status(500).json({ ok: false, error: 'regenerate_failed', detail: (err as Error).message, vtid: REGEN_VTID });
   }
 });
 
@@ -175,7 +176,8 @@ router.post('/sessions/:session/regenerate', async (req: AuthenticatedRequest, r
     });
     return res.json({ ok: result.failures.length === 0, ...result, vtid: REGEN_VTID });
   } catch (err) {
-    return fail(res, err, 'regenerate_session_failed');
+    console.error(`[${REGEN_VTID}] regenerate_session_failed: ${(err as Error).message}`);
+    return res.status(500).json({ ok: false, error: 'regenerate_session_failed', detail: (err as Error).message, vtid: REGEN_VTID });
   }
 });
 
