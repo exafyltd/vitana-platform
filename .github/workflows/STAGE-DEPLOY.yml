@@ -101,7 +101,14 @@ jobs:
             --cpu=1
             --timeout=300
             --max-instances=1
-            --min-instances=0
+            # BOOTSTRAP-ORB-STAGING-WARM: keep one warm instance. With
+            # min-instances=0 the gateway cold-starts, and an authenticated
+            # ORB /orb/live/session/start takes ~9.4s cold (vs ~4.4s warm) —
+            # past the widget's 8s AbortSignal.timeout, so the orb aborts and
+            # goes silent on the first open (proven by the e2e harness timing
+            # probe). One warm instance keeps session/start well under 8s,
+            # matching prod behavior.
+            --min-instances=1
           )
 
           # Env vars: VITANA_ENV is the load-bearing switch (P0.3). Anything else
