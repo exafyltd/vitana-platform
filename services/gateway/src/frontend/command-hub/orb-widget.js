@@ -1194,6 +1194,16 @@
         _s.journeyFocus = null;
       }
 
+      // VTID-03291 / DEV-COMHU-0507: Guided Journey catalog topic tap. When the
+      // host opened the orb via VitanaOrb.focusGuidedTopic(topicId), the topicId
+      // rides along so the guided-topic-narration provider LEADS turn-1 and
+      // Vitana teaches that topic from the published KB. One-shot: consumed for
+      // this session only so the next normal open reverts to default behaviour.
+      if (_s.guidedTopic) {
+        startPayload.guided_topic_id = _s.guidedTopic;
+        _s.guidedTopic = null;
+      }
+
       // VTID-02020: when this _sessionStart is happening as part of a reconnect
       // (NOT a first-time session), send the conversation history + the
       // pre-disconnect stage so the backend can route to the contextual
@@ -3056,6 +3066,16 @@
       _s.journeyFocus = (typeof stepKey === 'string' && stepKey) ? stepKey : null;
       _show();
     },
+
+    // VTID-03291 / DEV-COMHU-0507: open the orb and start a session FOCUSED on a
+    // specific Guided Journey catalog topic. The host (vitana-v1 My Journey)
+    // calls this when the user taps a session/topic; the guided-topic-narration
+    // provider then leads turn-1 and Vitana TEACHES that topic from the published
+    // KB. One-shot: consumed by the upcoming _sessionStart only.
+    focusGuidedTopic: function (topicId) {
+      _s.guidedTopic = (typeof topicId === 'string' && topicId) ? topicId : null;
+      _show();
+    },
     // DEV-COMHU-0503: intentional forget (logout / account switch / start over).
     reset: _reset,
 
@@ -3086,6 +3106,12 @@
       // carries this field) can't clobber a pending focus.
       if (typeof ctx.journey_focus_step === 'string') {
         _s.journeyFocus = ctx.journey_focus_step || null;
+      }
+      // VTID-03291 / DEV-COMHU-0507: pre-arm a one-shot guided-topic focus from
+      // the host. Set only when present so the per-route updateContext stream
+      // (which never carries this field) can't clobber a pending topic focus.
+      if (typeof ctx.guided_topic_id === 'string') {
+        _s.guidedTopic = ctx.guided_topic_id || null;
       }
     },
 
