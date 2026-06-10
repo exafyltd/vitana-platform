@@ -238,6 +238,9 @@
     // explicit user re-open (_show). Every reconnect/session-start path checks
     // it and bails, so pressing X always tears down and nothing re-opens.
     _userRequestedClose: false,
+    // VTID-03294 (#4): when true, the overlay auto-closes after the first
+    // (teaching) turn finishes — set by focusGuidedTopic, one-shot.
+    guidedAutoClose: false,
     // VTID-02020: contextual recovery state. _preDisconnectStage captures what
     // the user was doing when the network dropped (idle / listening_user_speaking
     // / thinking / speaking) so the backend's recovery prompt can decide
@@ -1633,6 +1636,17 @@
               try { _cfg.onTurnComplete({ was_greeting: !_s.greetingComplete }); }
               catch (e) { /* host callback must never break the voice loop */ }
             }
+            // VTID-03294 (#4): GUIDED auto-close. The teaching turn (turn 1,
+            // greetingComplete still false) has finished playing — close the
+            // overlay so the underlying Topic drawer's next-step buttons are
+            // usable, instead of dropping to listening. Widget-side so it does
+            // not depend on the host wiring. One-shot (cleared here).
+            if (_s.guidedAutoClose && !_s.greetingComplete) {
+              _s.guidedAutoClose = false;
+              console.log('[VTOrb] guided teaching turn complete — auto-closing overlay (reveal drawer)');
+              _hide();
+              return;
+            }
             // If the host closed the overlay in the callback (guided auto-close),
             // stop here — don't beep / arm the mic on a torn-down session.
             if (!_s.active || _s._userRequestedClose || !_s.overlayVisible) return;
@@ -2741,6 +2755,7 @@
     _s._disconnectActive = false;
     _s._disconnectStuck = false;
     _s._isReconnecting = false;
+    _s.guidedAutoClose = false; // VTID-03294 (#4): clear any pending guided auto-close
     try { clearInterval(_s._recoveryWatchdog); } catch (e) { /* noop */ }
     _s._recoveryWatchdog = null;
     // DEV-COMHU-0503: UI close preserves short-lived continuity (15 min) BEFORE
@@ -3121,6 +3136,11 @@
     // KB. One-shot: consumed by the upcoming _sessionStart only.
     focusGuidedTopic: function (topicId) {
       _s.guidedTopic = (typeof topicId === 'string' && topicId) ? topicId : null;
+      // VTID-03294 (#4): a guided-topic open AUTO-CLOSES the overlay once Vitana
+      // finishes the teaching turn (reveals the drawer's next-step buttons),
+      // instead of dropping to listening. Set AFTER _s.guidedTopic; _show() does
+      // not touch it. Consumed/reset on the first turn-complete or on _hide.
+      _s.guidedAutoClose = true;
       _show();
     },
     // DEV-COMHU-0503: intentional forget (logout / account switch / start over).
