@@ -1024,5 +1024,50 @@ training_cycle_days (
 
 ---
 
+### journey_session_index_awards (BOOTSTRAP-GUIDED-JOURNEY-POPUP)
+
+Idempotent ledger of Vitana Index points earned by **listening** to a Guided
+Journey session (+2 per distinct topic). Summed and applied as an additive
+overlay on the user-facing Vitana Index read (`fetchVitanaIndexSnapshot`) — it
+is **never** written into `vitana_index_scores`, so stored daily health history
+stays clean and the bonus is recompute-safe + trivially reversible.
+
+```
+journey_session_index_awards (
+  user_id UUID, topic_id TEXT,
+  points INT DEFAULT 2 CHECK (points >= 0),
+  created_at TIMESTAMPTZ,
+  PRIMARY KEY (user_id, topic_id)
+);
+```
+
+**Auth model:** RLS-on, `service_role` bypass; no permissive policy (gateway only).
+
+---
+
+### journey_checklist_translations (BOOTSTRAP-GUIDED-JOURNEY-POPUP)
+
+Per-locale (`en`/`es`/`sr`) translations of the user-facing Guided Journey topic
+content. The curriculum is authored in German (the source of truth lives in
+`journey_checklist_topics` / the published snapshot); the gateway overlays these
+rows onto the snapshot at read time, falling back to German for any missing
+field. Produced by `scripts/journey/generate-checklist-translations.mjs`.
+
+```
+journey_checklist_translations (
+  topic_id TEXT, locale TEXT CHECK (locale IN ('en','es','sr')),
+  display_label TEXT, short_description TEXT,
+  explanation_what_it_is TEXT, explanation_user_benefit TEXT,
+  explanation_when_to_use TEXT, explanation_try_this TEXT,
+  source_version_id UUID,            -- published version translated from
+  updated_at TIMESTAMPTZ,
+  PRIMARY KEY (topic_id, locale)
+);
+```
+
+**Auth model:** RLS-on, `service_role` bypass; no permissive policy (gateway only).
+
+---
+
 **Remember:** This file is the SINGLE SOURCE OF TRUTH for table names.
 When in doubt, CHECK HERE FIRST!
