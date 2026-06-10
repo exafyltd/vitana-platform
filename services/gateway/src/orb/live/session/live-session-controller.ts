@@ -709,9 +709,38 @@ export async function handleLiveSessionStart(
   // awaited by connectToLiveAPI's ws.on('open') handler.
   let contextReadyPromise: Promise<void> | undefined;
 
+  // VTID-03294: a Guided-Journey topic tap needs ZERO context — Vitana just
+  // picks up the KB lesson and speaks it. Detect it here so we can skip the
+  // heavy Brain/memory/history/admin bootstrap (the 7-10s first-audio delay).
+  const isGuidedTopicSession =
+    typeof (body as any).guided_topic_id === 'string' && !!(body as any).guided_topic_id;
+
   if (isAnonymousSession) {
     contextBootstrapSkippedReason = 'anonymous_session';
     console.log(`[VTID-ANON] Anonymous session ${sessionId} — skipping memory, tools, lastSessionInfo. Context: city=${clientContext.city || 'unknown'}`);
+  } else if (isGuidedTopicSession && bootstrapIdentity) {
+    // VTID-03294: GUIDED FAST PATH. The lesson (spoken verbatim) + the GUIDE-MODE
+    // (TEACH) block carry everything; the model only needs a short persona. We
+    // skip the Brain context, memory, last-session, role lookup, admin briefing
+    // and Autopilot offer entirely so first audio is ~real-time instead of
+    // 7-10s. contextReadyPromise resolves in a microtask, so the setup-message
+    // await in connectToLiveAPI is ~0ms.
+    contextBootstrapSkippedReason = 'guided_topic_minimal';
+    sseActiveRole = 'community';
+    const isDe = (lang || 'en').toLowerCase().startsWith('de');
+    const minimalGuidedContext = isDe
+      ? 'Du bist Vitana — die warme, ruhige Stimme der Vitanaland-Langlebigkeits-Community. Du stellst gerade ein Thema aus der geführten Reise vor und erklärst es. Halte dich an die dir vorgegebene Lektion.'
+      : 'You are Vitana — the warm, calm voice of the Vitanaland longevity community. You are introducing and teaching one Guided Journey topic. Stay on the lesson you are given.';
+    contextReadyPromise = Promise.resolve().then(() => {
+      session.active_role = 'community';
+      session.lastSessionInfo = null;
+      session.contextInstruction = minimalGuidedContext;
+      session.contextPack = undefined;
+      session.contextBootstrapLatencyMs = 0;
+      session.contextBootstrapSkippedReason = 'guided_topic_minimal';
+      session.contextBootstrapBuiltAt = Date.now();
+    });
+    console.log(`[VTID-03294] Guided-topic session ${sessionId}: minimal context (skipped heavy bootstrap) for fast first audio`);
   } else if (bootstrapIdentity) {
     const usingDevFallback = bootstrapIdentity.user_id === DEV_IDENTITY.USER_ID;
     console.log(`[VTID-01224] Building bootstrap context for SSE session ${sessionId} user=${bootstrapIdentity.user_id.substring(0, 8)}...${usingDevFallback ? ' (DEV_IDENTITY fallback)' : ''}`);
