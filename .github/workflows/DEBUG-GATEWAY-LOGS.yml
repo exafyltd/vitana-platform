@@ -3,13 +3,17 @@ on:
   workflow_dispatch:
     inputs:
       filter:
-        description: "Log filter (grep-style)"
+        description: "Log filter (textPayload substring). Empty = no filter (all logs)."
         required: false
         default: "SocialConnect"
       minutes:
         description: "How many minutes back to fetch"
         required: false
         default: "30"
+      service:
+        description: "Cloud Run service (gateway or gateway-staging)"
+        required: false
+        default: "gateway"
 
 jobs:
   tail:
@@ -30,10 +34,15 @@ jobs:
       - name: Read recent gateway logs
         run: |
           SINCE=$(date -u -d "${{ inputs.minutes }} minutes ago" +%Y-%m-%dT%H:%M:%SZ)
-          echo "Fetching logs since $SINCE matching \"${{ inputs.filter }}\""
-          gcloud logging read \
-            "resource.type=cloud_run_revision AND resource.labels.service_name=gateway AND timestamp>=\"$SINCE\" AND textPayload:\"${{ inputs.filter }}\"" \
+          SVC="${{ inputs.service }}"
+          FILTER='${{ inputs.filter }}'
+          QUERY="resource.type=cloud_run_revision AND resource.labels.service_name=${SVC} AND timestamp>=\"$SINCE\""
+          if [ -n "$FILTER" ]; then
+            QUERY="$QUERY AND textPayload:\"$FILTER\""
+          fi
+          echo "Service=$SVC since $SINCE filter=\"$FILTER\""
+          gcloud logging read "$QUERY" \
             --project=lovable-vitana-vers1 \
-            --limit=200 \
+            --limit=300 \
             --order=desc \
             --format='value(timestamp,textPayload)'
