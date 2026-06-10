@@ -7228,12 +7228,23 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
     // stuck-connecting, no-speech bug). We drop the "ONE short utterance" clamp so
     // the whole lesson is spoken, but keep it a quote so audio stays reliable.
     const isGuidedTeach = !!(session as any).guidedTopicNarrationContent;
-    const guidedTeachTriggerByLang: Record<string, string> = {
-      en: `Say the following VERBATIM and IN FULL — word for word, then stop and listen. Do NOT summarize, shorten, paraphrase, translate, or add a greeting/question: "${safe}"`,
-      de: `Sage Folgendes WÖRTLICH und VOLLSTÄNDIG — Wort für Wort, dann höre auf und höre zu. NICHT zusammenfassen, kürzen, umformulieren, übersetzen oder eine Begrüßung/Frage hinzufügen: "${safe}"`,
+    // VTID-03295: the KB content is German (v1). For a GERMAN session, speak it
+    // verbatim (proven-reliable audio). For ANY OTHER language, instruct the model
+    // to TRANSLATE the lesson into the session language and speak only that — a
+    // bounded transformation that keeps audio reliable (unlike a long "teach"
+    // instruction, which goes text-only). A per-language KB later removes the
+    // translation step. Fixes "English user gets a German lesson".
+    const _guidedIsDe = (lang || 'en').toLowerCase().startsWith('de');
+    const _GUIDED_LANG_NAMES: Record<string, string> = {
+      en: 'English', de: 'German', es: 'Spanish', fr: 'French',
+      sr: 'Serbian', ar: 'Arabic', zh: 'Chinese', ru: 'Russian', it: 'Italian', pt: 'Portuguese',
     };
+    const _guidedLangName = _GUIDED_LANG_NAMES[(lang || 'en').slice(0, 2).toLowerCase()] || 'English';
+    const guidedTeachTrigger = _guidedIsDe
+      ? `Sage Folgendes WÖRTLICH und VOLLSTÄNDIG — Wort für Wort, dann höre auf und höre zu. NICHT zusammenfassen, kürzen, umformulieren oder eine Begrüßung/Frage hinzufügen: "${safe}"`
+      : `Say the following lesson to the user in fluent ${_guidedLangName}. The text may be in another language — translate it faithfully and completely into ${_guidedLangName} and speak ONLY that translation, then stop and listen. Do NOT summarize, shorten, add a greeting, or ask a question: "${safe}"`;
     const wakePrompt = isGuidedTeach
-      ? (guidedTeachTriggerByLang[lang] || guidedTeachTriggerByLang.en)
+      ? guidedTeachTrigger
       : (wakeTriggerByLang[lang] || wakeTriggerByLang.en);
     const linePreview = safe.length > 160 ? safe.slice(0, 160) + '...' : safe;
     const promptPreview = wakePrompt.length > 200 ? wakePrompt.slice(0, 200) + '...' : wakePrompt;
