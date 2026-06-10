@@ -126,6 +126,19 @@ router.get('/wallet', async (req: Request, res: Response) => {
   res.json({ ok: true, data: { balance: +balance.toFixed(4), entries: data } });
 });
 
+// ===== Commissions queue (admin) =====
+router.get('/commissions', async (req: Request, res: Response) => {
+  if (!isAdmin(req)) return res.status(403).json({ ok: false, error: 'forbidden' });
+  const supabase = db(res); if (!supabase) return;
+  let q = supabase.from('commission_event')
+    .select('id,merchant,user_id,sub_id,gross_commission,currency,status,postback_ref,created_at')
+    .order('created_at', { ascending: false }).limit(200);
+  if (req.query.status) q = q.eq('status', String(req.query.status));
+  const { data, error } = await q;
+  if (error) return res.status(500).json({ ok: false, error: error.message });
+  res.json({ ok: true, data });
+});
+
 // ===== Confirm / reverse a commission (admin/system) =====
 router.post('/commissions/:id/confirm', async (req: Request, res: Response) => {
   if (!isAdmin(req)) return res.status(403).json({ ok: false, error: 'forbidden' });
