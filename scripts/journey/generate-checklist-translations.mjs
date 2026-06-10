@@ -41,6 +41,12 @@ const LOCALES = String(args.locale || 'en,es,sr')
 const LIMIT = args.limit ? Number(args.limit) : Infinity;
 const DRY_RUN = Boolean(args['dry-run']);
 const MODEL = process.env.GEMINI_TRANSLATE_MODEL || 'gemini-2.5-flash';
+const FORCE = Boolean(args.force); // re-translate even topics that already exist
+
+// Network resilience: no call may hang the whole run.
+const REST_TIMEOUT_MS = 20_000;
+const GEMINI_TIMEOUT_MS = 45_000;
+const MAX_RETRIES = 2; // per call, with backoff
 
 if (!SUPABASE_URL || !SERVICE_ROLE) {
   console.error('Missing SUPABASE_URL / SUPABASE_SERVICE_ROLE');
@@ -67,10 +73,11 @@ const FIELDS = [
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-/** PostgREST helper (service role). */
+/** PostgREST helper (service role). Times out so a stalled call can't hang the run. */
 async function rest(path, init = {}) {
   const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
     ...init,
+    signal: AbortSignal.timeout(REST_TIMEOUT_MS),
     headers: {
       apikey: SERVICE_ROLE,
       Authorization: `Bearer ${SERVICE_ROLE}`,
@@ -121,23 +128,32 @@ async function translateTopic(src, locale) {
   if (DRY_RUN) return payload; // echo source — lets you preview without spending tokens
 
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${GEMINI_API_KEY}`;
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      contents: [{ parts: [{ text: prompt }] }],
-      generationConfig: { temperature: 0.3, responseMimeType: 'application/json' },
-    }),
-  });
-  if (!res.ok) throw new Error(`Gemini ${res.status}: ${await res.text()}`);
-  const data = await res.json();
-  const text = data?.candidates?.[0]?.content?.parts?.[0]?.text ?? '{}';
-  try {
-    return JSON.parse(text);
-  } catch {
-    console.warn(`  ! unparseable response for a topic; skipping`);
-    return {};
+  // Retry with backoff; each attempt is time-boxed so a stalled connection
+  // can't hang the run. Returns null after exhausting retries → caller skips
+  // the topic (a later re-run fills it in — the script is resumable).
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        signal: AbortSignal.timeout(GEMINI_TIMEOUT_MS),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: { temperature: 0.3, responseMimeType: 'application/json' },
+        }),
+      });
+      if (!res.ok) throw new Error(`Gemini ${res.status}: ${(await res.text()).slice(0, 200)}`);
+      const data = await res.json();
+      const text = data?.candidates?.[0]?.content?.parts?.[0]?.text ?? '{}';
+      return JSON.parse(text);
+    } catch (e) {
+      const last = attempt === MAX_RETRIES;
+      console.warn(`  ! ${locale} topic translate ${last ? 'FAILED (skipping)' : `retry ${attempt + 1}/${MAX_RETRIES}`}: ${e?.message || e}`);
+      if (last) return null;
+      await sleep(1000 * (attempt + 1)); // 1s, 2s backoff
+    }
   }
+  return null;
 }
 
 async function main() {
@@ -148,10 +164,27 @@ async function main() {
   );
 
   for (const locale of LOCALES) {
+    // Resume: skip topics already translated for this locale (unless --force),
+    // so a re-run after an interruption only fills the gaps.
+    let done = new Set();
+    if (!DRY_RUN && !FORCE) {
+      const ids = slice.map((t) => t.topicId);
+      const existing = await rest(
+        `journey_checklist_translations?select=topic_id&locale=eq.${locale}&topic_id=in.(${ids.map((i) => `"${i}"`).join(',')})`,
+      );
+      done = new Set((existing || []).map((r) => r.topic_id));
+      if (done.size) console.log(`  [${locale}] resuming — ${done.size} already done, ${slice.length - done.size} to do`);
+    }
+
     let upserts = 0;
+    let skipped = 0;
+    let failed = 0;
     for (const topic of slice) {
+      if (done.has(topic.topicId)) { skipped++; continue; }
       const src = sourceFields(topic);
       const translated = await translateTopic(src, locale);
+      if (translated === null) { failed++; continue; } // skip; a re-run will retry it
+
       const row = { topic_id: topic.topicId, locale, source_version_id: versionId, updated_at: new Date().toISOString() };
       for (const [col] of FIELDS) row[col] = translated[col] ?? null;
 
@@ -163,10 +196,14 @@ async function main() {
         });
       }
       upserts++;
-      if (upserts % 25 === 0) console.log(`  [${locale}] ${upserts}/${slice.length}`);
+      if (upserts % 25 === 0) console.log(`  [${locale}] ${upserts}/${slice.length - done.size}`);
       await sleep(80); // gentle rate-limit
     }
-    console.log(`✓ [${locale}] ${upserts} topics ${DRY_RUN ? 'previewed' : 'upserted'}`);
+    console.log(
+      `✓ [${locale}] ${upserts} ${DRY_RUN ? 'previewed' : 'upserted'}` +
+        `${skipped ? `, ${skipped} skipped (already done)` : ''}` +
+        `${failed ? `, ${failed} FAILED — re-run to retry` : ''}`,
+    );
   }
   console.log('Done.');
 }
