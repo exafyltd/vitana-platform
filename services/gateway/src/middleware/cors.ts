@@ -16,6 +16,13 @@ const ALLOWED_ORIGINS = [
   "https://vitanaland.com",                                    // Production custom domain (mobile app)
   "https://www.vitanaland.com",                                // Production custom domain (www)
   "https://preview.vitanaland.com",                            // Staging frontend (community-app-staging) — staging-first cutover
+  // BOOTSTRAP-STAGING-GATEWAY-CORS: the staging gateway's OWN domains. The
+  // Command Hub on preview-gateway.vitanaland.com POSTs same-origin, and
+  // browsers send an Origin header on every POST — without these entries the
+  // cors callback errors and Express answers with an HTML 500, which broke
+  // login on staging while curl (no Origin header) looked healthy.
+  "https://preview-gateway.vitanaland.com",                    // Staging gateway custom domain (Command Hub)
+  "https://gateway-staging-q74ibpv6ia-uc.a.run.app",           // Staging gateway Cloud Run URL
 ];
 
 // VTID-01226: Dynamic origin patterns for Lovable-hosted frontends
