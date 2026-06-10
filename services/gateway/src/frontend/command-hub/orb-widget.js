@@ -2763,12 +2763,12 @@
     try { clearInterval(_s._recoveryWatchdog); } catch (e) { /* noop */ }
     _s._recoveryWatchdog = null;
     // VTID-03295 (X-close fix): STOP AUDIO + CLOSE THE OVERLAY SYNCHRONOUSLY, the
-    // instant X is pressed — BEFORE _sessionStop's async/network teardown. The bug:
-    // _sessionStop() `await`s the /session/stop fetch BEFORE it stops the scheduled
-    // audio sources, so while Vitana was mid-lesson the audio kept playing and the
+    // instant X is pressed — BEFORE the async/network teardown. The bug: the stop
+    // routine awaited the /session/stop fetch BEFORE it stopped the scheduled audio
+    // sources, so while Vitana was mid-lesson the audio kept playing and the
     // teardown stalled on the network → the overlay felt un-closeable. Here we kill
     // playback + mark the session dead first, so X always silences + closes now;
-    // the network cleanup runs fire-and-forget in _sessionStop.
+    // the network cleanup runs fire-and-forget afterwards.
     _s.active = false;
     if (_s.scheduledSources) {
       for (var _i = 0; _i < _s.scheduledSources.length; _i++) {
