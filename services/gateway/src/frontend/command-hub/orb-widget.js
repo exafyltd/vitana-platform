@@ -2732,6 +2732,17 @@
     // _sessionStart bails (see _sessionStart guard) and the overlay can't
     // silently re-open. Cleared only on an explicit re-open in _show().
     _s._userRequestedClose = true;
+    // VTID-03293 (#3 fix-2): kill the reconnect/disconnect machinery so a STALLED
+    // session (e.g. stuck "connecting" with no audio) can ALWAYS be closed. The
+    // recovery watchdog is a setInterval that re-fires _resetAndReconnect; without
+    // stopping it + clearing these flags, the probe could keep the session alive
+    // and the overlay effectively un-closeable. Belt-and-suspenders with the
+    // _userRequestedClose guard above.
+    _s._disconnectActive = false;
+    _s._disconnectStuck = false;
+    _s._isReconnecting = false;
+    try { clearInterval(_s._recoveryWatchdog); } catch (e) { /* noop */ }
+    _s._recoveryWatchdog = null;
     // DEV-COMHU-0503: UI close preserves short-lived continuity (15 min) BEFORE
     // teardown, so reopening within the window resumes instead of greeting
     // first-time. _sessionStop still tears down media/SSE exactly as before.

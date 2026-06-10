@@ -106,8 +106,10 @@ describe('guided-topic-narration provider', () => {
     expect(c.cta.type).toBe('explain');
     // the whole candidate passes the framework validator (else it errors + never wins)
     expect(validateContinuationCandidate(c).ok).toBe(true);
-    // spoken opener names the topic + is in session language (de)
-    expect(c.userFacingLine).toContain('Was ist Vitanaland');
+    // VTID-03293: the spoken LINE is now the LESSON itself (the authored voice
+    // script), so native-audio reliably speaks it; not a short opener + a long
+    // "teach more" instruction (which stalled audio).
+    expect(c.userFacingLine).toContain('Vitanaland ist deine');
     // TEACH content bundled for the controller / livekit handler
     expect(c.guidedTopicNarration.topic_id).toBe('T001');
     expect(c.guidedTopicNarration.voice_script).toContain('Vitanaland');

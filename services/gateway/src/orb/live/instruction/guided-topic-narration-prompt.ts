@@ -39,10 +39,47 @@ export function buildGuidedTopicNarrationOpenerLine(
 }
 
 /**
- * The GUIDE-MODE TEACH block. Instructs the model to teach the tapped topic FROM
- * the KB material in its own words (guidance, not verbatim), then guide the user
- * to the practice target. Governs the whole session and overrides generic
- * greeting/opening rules — like the Journey Guide block.
+ * VTID-03293 — the SPOKEN LESSON: the actual teaching Vitana speaks on turn 1.
+ *
+ * WHY this is the spoken line (not a short opener + "teach more" instruction):
+ * Gemini Live native-audio reliably produces AUDIO only for a SHORT, DIRECT
+ * user turn ("say exactly: <line>"). A long INSTRUCTIONAL trigger ("then teach
+ * across several sentences per the block…") makes it answer text-only or delay
+ * first audio past the AudioContext suspend window → no speech, UI stuck
+ * "connecting" (the VTID-03102 regression we hit on staging). So we put the
+ * teaching INTO the spoken line itself: the authored `voice_script` IS the
+ * lesson (the author wrote it as what Vitana says), and the greeting path speaks
+ * it verbatim — reliable audio + real teaching. Falls back to a short lesson
+ * built from the explanation fields when no script is authored.
+ */
+export function buildGuidedTopicSpokenLesson(
+  content: GuidedTopicNarrationContent,
+  lang: string,
+  opts?: { firstName?: string | null },
+): string {
+  const isDe = (lang || 'en').toLowerCase().startsWith('de');
+  const name = (opts?.firstName || '').trim();
+  const greet = name ? `Hey ${name}! ` : '';
+
+  let body = (content.voice_script || '').trim();
+  if (!body) {
+    const exp = content.explanation || { whatItIs: null, userBenefit: null, whenToUse: null, tryThis: null };
+    const parts: string[] = [];
+    parts.push(isDe ? `Lass uns über „${content.topic_title}" sprechen.` : `Let's talk about "${content.topic_title}".`);
+    if (exp.whatItIs) parts.push(exp.whatItIs);
+    if (exp.userBenefit) parts.push(exp.userBenefit);
+    if (exp.tryThis) parts.push(exp.tryThis);
+    body = parts.join(' ').trim();
+  }
+  return `${greet}${body}`.trim();
+}
+
+/**
+ * The GUIDE-MODE TEACH block. Governs turns 2+ (follow-up Q&A about the topic):
+ * the lesson itself is spoken on turn 1 via the spoken line (see
+ * buildGuidedTopicSpokenLesson); this block tells the model how to handle the
+ * conversation AFTER the lesson. Bundled on the candidate, injected on both
+ * transports — like the Journey Guide block.
  */
 export function buildGuidedTopicNarrationBlock(
   content: GuidedTopicNarrationContent,
