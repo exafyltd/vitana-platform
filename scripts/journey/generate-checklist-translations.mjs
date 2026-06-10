@@ -79,7 +79,10 @@ async function rest(path, init = {}) {
     },
   });
   if (!res.ok) throw new Error(`REST ${path} → ${res.status} ${await res.text()}`);
-  return res.status === 204 ? null : res.json();
+  // PostgREST returns an EMPTY body for 204 and for return=minimal upserts —
+  // res.json() would throw "Unexpected end of JSON input". Parse only non-empty.
+  const body = await res.text();
+  return body ? JSON.parse(body) : null;
 }
 
 /** Read the current published snapshot (array of topics). */
