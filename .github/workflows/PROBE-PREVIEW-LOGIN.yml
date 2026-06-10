@@ -1,0 +1,68 @@
+name: Probe Preview Login (temporary diagnostic)
+
+# TEMPORARY: full login-flow diagnosis on preview-gateway.vitanaland.com.
+# Logs in with the documented e2e test user (already public in CLAUDE.md),
+# then exercises the post-login calls the Command Hub makes. Tokens are
+# masked in output. Delete after the staging login issue is resolved.
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/PROBE-PREVIEW-LOGIN.yml'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Full login with e2e test user via preview domain
+        run: |
+          echo "=== POST /api/v1/auth/login (e2e-test@vitana.dev) via preview-gateway.vitanaland.com ==="
+          code=$(curl -sS -o /tmp/login.json -w "%{http_code}" \
+            -X POST "https://preview-gateway.vitanaland.com/api/v1/auth/login" \
+            -H "Content-Type: application/json" \
+            -d '{"email":"e2e-test@vitana.dev","password":"VitanaE2eTest2026!"}')
+          echo "HTTP $code"
+          # Mask any tokens before printing
+          python3 - <<'EOF'
+          import json
+          try:
+              d = json.load(open('/tmp/login.json'))
+          except Exception as e:
+              print('NON-JSON BODY:', open('/tmp/login.json').read()[:1500]); raise SystemExit
+          tok = d.get('access_token')
+          out = {k: (v[:12] + '...MASKED' if k in ('access_token','refresh_token') and isinstance(v,str) else v) for k,v in d.items()}
+          print(json.dumps(out, indent=2)[:1500])
+          if tok: open('/tmp/token','w').write(tok)
+          EOF
+
+      - name: Post-login calls the Command Hub makes (auth/me, me/context)
+        run: |
+          if [ ! -f /tmp/token ]; then echo "No token — login failed, skipping"; exit 0; fi
+          TOK=$(cat /tmp/token)
+          for ep in "/api/v1/auth/me" "/api/v1/me/context"; do
+            echo "=== GET $ep via preview domain ==="
+            curl -sS -o /tmp/r.json -w "HTTP %{http_code} | content-type=%{content_type}\n" \
+              -H "Authorization: Bearer $TOK" \
+              "https://preview-gateway.vitanaland.com$ep"
+            head -c 800 /tmp/r.json; echo
+          done
+
+      - name: Login with the operator email + wrong password (path check only)
+        run: |
+          echo "=== POST /api/v1/auth/login (dstevanovic@hotmail.com, wrong password) ==="
+          curl -sS -o /tmp/b.json -w "HTTP %{http_code} | content-type=%{content_type}\n" \
+            -X POST "https://preview-gateway.vitanaland.com/api/v1/auth/login" \
+            -H "Content-Type: application/json" \
+            -d '{"email":"dstevanovic@hotmail.com","password":"definitely-wrong-probe"}'
+          head -c 500 /tmp/b.json; echo
+
+      - name: Auth config endpoint (auth gate dependency)
+        run: |
+          echo "=== GET /api/v1/auth/config via preview domain ==="
+          curl -sS -o /tmp/c.json -w "HTTP %{http_code} | content-type=%{content_type}\n" \
+            "https://preview-gateway.vitanaland.com/api/v1/auth/config"
+          head -c 800 /tmp/c.json; echo
