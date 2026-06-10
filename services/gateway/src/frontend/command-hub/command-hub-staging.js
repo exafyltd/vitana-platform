@@ -895,44 +895,43 @@
         if (typeof renderApp === 'function') renderApp();
         return;
       }
-      // 1) Terminal-FAILURE check first: a failed EXEC-DEPLOY emits
-      //    deploy.<service>.failed (status=error) against the publish VTID.
-      //    Without this the modal spins "Publishing 100%…" forever on a failed
-      //    deploy instead of surfacing the error.
-      const failCheck = sf.vtid
-        ? fetch('/api/v1/oasis/events?vtid=' + encodeURIComponent(sf.vtid) + '&limit=20', { credentials: 'include', headers })
+      // 1) Positive confirmation WINS. If the promoted commit is actually live,
+      //    the publish succeeded — even if a LATER workflow stage failed and the
+      //    if:failure() handler emitted deploy.<service>.failed (Cloud Run was
+      //    already updated by then). The live commit is the authoritative
+      //    signal, so check it BEFORE treating any .failed event as terminal.
+      fetch('/api/v1/admin/build-info', { credentials: 'include' })
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (bi) {
+          if (bi && bi.git_commit && bi.git_commit.slice(0, 7) === startSha) {
+            sf.phase = 'full-verified';
+            if (typeof renderApp === 'function') renderApp();
+            if (typeof opts.onAfterPublish === 'function') opts.onAfterPublish(sf);
+            return;
+          }
+          // 2) Commit is NOT live yet — only now treat a terminal deploy FAILURE
+          //    for this publish VTID as fatal, so we surface a real failed deploy
+          //    instead of spinning "Publishing 100%…" forever.
+          if (!sf.vtid) { setTimeout(tick, 6000); return; }
+          fetch('/api/v1/oasis/events?vtid=' + encodeURIComponent(sf.vtid) + '&limit=20', { credentials: 'include', headers })
             .then(function (r) { return r.ok ? r.json() : null; })
             .then(function (body) {
               const evs = (body && body.data) || [];
-              return evs.some(function (e) {
+              const failed = evs.some(function (e) {
                 const t = (e.topic || e.type || '');
                 return /\.failed$/.test(t) && /deploy|publish/.test(t);
               });
+              if (failed) {
+                sf.phase = 'error';
+                sf.message = 'Deploy failed — production was NOT updated. Open the workflow for the error.';
+                if (typeof renderApp === 'function') renderApp();
+                return;
+              }
+              setTimeout(tick, 6000);
             })
-            .catch(function () { return false; })
-        : Promise.resolve(false);
-
-      failCheck.then(function (failed) {
-        if (failed) {
-          sf.phase = 'error';
-          sf.message = 'Deploy failed — production was NOT updated. Open the workflow for the error.';
-          if (typeof renderApp === 'function') renderApp();
-          return;
-        }
-        // 2) Positive confirmation: the live commit now matches the promoted SHA.
-        fetch('/api/v1/admin/build-info', { credentials: 'include' })
-          .then(function (r) { return r.ok ? r.json() : null; })
-          .then(function (bi) {
-            if (bi && bi.git_commit && bi.git_commit.slice(0, 7) === startSha) {
-              sf.phase = 'full-verified';
-              if (typeof renderApp === 'function') renderApp();
-              if (typeof opts.onAfterPublish === 'function') opts.onAfterPublish(sf);
-              return;
-            }
-            setTimeout(tick, 6000);
-          })
-          .catch(function () { setTimeout(tick, 6000); });
-      });
+            .catch(function () { setTimeout(tick, 6000); });
+        })
+        .catch(function () { setTimeout(tick, 6000); });
     };
     setTimeout(tick, 8000);
   }
