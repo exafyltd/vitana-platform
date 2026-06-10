@@ -66,6 +66,13 @@ out.push('-- Additive + idempotent: upserts keyed on the screen_id shared-unique
 out.push('-- only screen_ids absent from the DB at generation time are included, so existing');
 out.push('-- rows / admin edits are never touched. Overlays + developer screens excluded.');
 out.push(`-- ${entries.length} screens.`);
+out.push('--');
+out.push('-- impact-allow-solo-migration: pure data backfill into the existing nav_catalog');
+out.push('-- / nav_catalog_i18n tables. No gateway/worker code change is required — the');
+out.push('-- runtime already reads these tables (lib/nav-catalog-db.ts) and merges them with');
+out.push('-- the compile-time NAVIGATION_CATALOG; seeding rows simply makes already-served');
+out.push('-- screens admin-editable. mobile_route is re-attached from TS by screen_id at');
+out.push('-- cache-build time, so no schema/code coupling is introduced.');
 out.push('BEGIN;');
 out.push('');
 

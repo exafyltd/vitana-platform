@@ -4,6 +4,13 @@
 -- only screen_ids absent from the DB at generation time are included, so existing
 -- rows / admin edits are never touched. Overlays + developer screens excluded.
 -- 109 screens.
+--
+-- impact-allow-solo-migration: pure data backfill into the existing nav_catalog
+-- / nav_catalog_i18n tables. No gateway/worker code change is required — the
+-- runtime already reads these tables (lib/nav-catalog-db.ts) and merges them with
+-- the compile-time NAVIGATION_CATALOG; seeding rows simply makes already-served
+-- screens admin-editable. mobile_route is re-attached from TS by screen_id at
+-- cache-build time, so no schema/code coupling is introduced.
 BEGIN;
 
 -- HOME.NEWS_ALL
