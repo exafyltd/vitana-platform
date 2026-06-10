@@ -3155,6 +3155,15 @@
     // provider then leads turn-1 and Vitana TEACHES that topic from the published
     // KB. One-shot: consumed by the upcoming _sessionStart only.
     focusGuidedTopic: function (topicId) {
+      // VTID-03296 (replay fix): tear down ANY existing/in-flight session FIRST so
+      // the new guided session starts from a CLEAN slate. Without this, tapping
+      // Replay right after the teaching auto-close raced the just-closing session
+      // (`if (_s.active) return` in _sessionStart, or a stale start consuming the
+      // one-shot _s.guidedTopic), so the new session went out WITHOUT
+      // guided_topic_id → it fell into the slow non-guided (admin) bootstrap path
+      // and got stuck "Connecting...". _sessionStop is synchronous; _show() below
+      // re-arms everything cleanly.
+      try { _sessionStop(); } catch (e) { /* best-effort */ }
       _s.guidedTopic = (typeof topicId === 'string' && topicId) ? topicId : null;
       // VTID-03294 (#4): a guided-topic open AUTO-CLOSES the overlay once Vitana
       // finishes the teaching turn (reveals the drawer's next-step buttons),
