@@ -145,10 +145,15 @@ router.post('/session-listened', requireAuth, async (req: AuthenticatedRequest, 
     // +2 surfaces in the user's Index movement history. Replays award nothing →
     // no event. Best-effort: never block the response on OASIS.
     if (result.awarded) {
-      emitOasisEvent({
+      // Best-effort; emitOasisEvent never throws (internal try/catch returns
+      // { ok:false }), so `void` is safe. actor_id attributes it to the user so
+      // the +2 shows up in their Vitana Index movement history (last_movement).
+      void emitOasisEvent({
         vtid: 'SYSTEM',
         type: 'index.recomputed' as any,
         source: 'guided-journey-api',
+        actor_id: userId,
+        surface: 'api',
         status: 'info',
         message: `Vitana Index +${result.points} for listening to a guided session (${topicId.trim()})`,
         payload: {
@@ -158,7 +163,7 @@ router.post('/session-listened', requireAuth, async (req: AuthenticatedRequest, 
           total_bonus: result.totalBonus,
           reason: 'guided_session_listen',
         },
-      }).catch(() => {});
+      });
     }
     return res.json({
       ok: true,
