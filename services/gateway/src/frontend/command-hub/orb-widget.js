@@ -1445,15 +1445,19 @@
       try { __es.close(); } catch (e) { /* noop */ }
     }
 
-    // Stop backend session
+    // Stop backend session — VTID-03295: FIRE-AND-FORGET (keepalive), never
+    // `await`. Awaiting the network here stalled teardown behind a slow/hung
+    // request while audio was still playing (the un-closeable-overlay bug). The
+    // overlay + audio are already torn down synchronously in _hide; this is just
+    // best-effort server cleanup.
     if (_s.sessionId) {
       try {
         var headers = { 'Content-Type': 'application/json' };
         if (_cfg.token) headers['Authorization'] = 'Bearer ' + _cfg.token;
-        await fetch(_cfg.gw + '/api/v1/orb/live/session/stop', {
-          method: 'POST', headers: headers,
+        fetch(_cfg.gw + '/api/v1/orb/live/session/stop', {
+          method: 'POST', headers: headers, keepalive: true,
           body: JSON.stringify({ session_id: _s.sessionId })
-        });
+        }).catch(function () { /* ignore */ });
       } catch (e) { /* ignore */ }
     }
 
@@ -2758,18 +2762,34 @@
     _s.guidedAutoClose = false; // VTID-03294 (#4): clear any pending guided auto-close
     try { clearInterval(_s._recoveryWatchdog); } catch (e) { /* noop */ }
     _s._recoveryWatchdog = null;
-    // DEV-COMHU-0503: UI close preserves short-lived continuity (15 min) BEFORE
-    // teardown, so reopening within the window resumes instead of greeting
-    // first-time. _sessionStop still tears down media/SSE exactly as before.
-    _persistContinuity('hide', 15);
-    _sessionStop();
-    _restoreSoundscape();
+    // VTID-03295 (X-close fix): STOP AUDIO + CLOSE THE OVERLAY SYNCHRONOUSLY, the
+    // instant X is pressed — BEFORE _sessionStop's async/network teardown. The bug:
+    // _sessionStop() `await`s the /session/stop fetch BEFORE it stops the scheduled
+    // audio sources, so while Vitana was mid-lesson the audio kept playing and the
+    // teardown stalled on the network → the overlay felt un-closeable. Here we kill
+    // playback + mark the session dead first, so X always silences + closes now;
+    // the network cleanup runs fire-and-forget in _sessionStop.
+    _s.active = false;
+    if (_s.scheduledSources) {
+      for (var _i = 0; _i < _s.scheduledSources.length; _i++) {
+        try { _s.scheduledSources[_i].stop(); } catch (e) { /* ok */ }
+      }
+      _s.scheduledSources = [];
+    }
+    _s.audioQueue = [];
+    _s.audioPlaying = false;
     _s.overlayVisible = false;
     if (_root) {
       _root.classList.remove('vtorb-visible');
       _root.style.display = 'none';
     }
     _updateUI();
+    // DEV-COMHU-0503: UI close preserves short-lived continuity (15 min) BEFORE
+    // teardown, so reopening within the window resumes instead of greeting
+    // first-time. _sessionStop tears down media/SSE + fires /session/stop.
+    _persistContinuity('hide', 15);
+    _sessionStop();
+    _restoreSoundscape();
     if (_cfg.onClose) try { _cfg.onClose(); } catch (e) { /* ignore */ }
   }
 
