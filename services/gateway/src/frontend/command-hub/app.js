@@ -2714,11 +2714,21 @@ const NAVIGATION_CONFIG = [
             { "key": "tenants", "path": "/command-hub/admin/tenants/" },
             { "key": "content-moderation", "path": "/command-hub/admin/content-moderation/" },
             { "key": "identity-access", "path": "/command-hub/admin/identity-access/" },
-            { "key": "marketplace-shops", "path": "/command-hub/admin/marketplace-shops/" },
-            { "key": "marketplace-review", "path": "/command-hub/admin/marketplace-review/" },
             { "key": "analytics", "path": "/command-hub/admin/analytics/" },
             { "key": "billing-dashboard", "label": "Billing", "path": "/command-hub/admin/billing-dashboard/" },
             { "key": "billing-codes", "label": "Billing Codes", "path": "/command-hub/admin/billing-codes/" }
+        ]
+    },
+    {
+        "section": "commerce",
+        "basePath": "/command-hub/commerce/",
+        "tabs": [
+            { "key": "overview", "path": "/command-hub/commerce/overview/" },
+            { "key": "providers-onboarding", "label": "Providers & Onboarding", "path": "/command-hub/commerce/providers-onboarding/" },
+            { "key": "commissions-rewards", "label": "Commissions & Rewards", "path": "/command-hub/commerce/commissions-rewards/" },
+            { "key": "affiliate-programs", "label": "Affiliate Programs", "path": "/command-hub/commerce/affiliate-programs/" },
+            { "key": "marketplace-shops", "path": "/command-hub/commerce/marketplace-shops/" },
+            { "key": "marketplace-review", "path": "/command-hub/commerce/marketplace-review/" }
         ]
     },
     {
@@ -2958,6 +2968,7 @@ const NAVIGATION_CONFIG = [
 const SECTION_LABELS = {
     'overview': 'Overview',
     'admin': 'Admin',
+    'commerce': 'Commerce',
     'knowledge-base': 'Knowledge Base',
     'assistant': 'Assistant',
     'voice': 'Voice',
@@ -7082,11 +7093,23 @@ function renderModuleContent(moduleKey, tab) {
     } else if (moduleKey === 'admin' && tab === 'identity-access') {
         // VTID-01195: Admin Identity Access v1 - Auth status + access logs
         container.appendChild(renderAdminIdentityAccessView());
-    } else if (moduleKey === 'admin' && tab === 'marketplace-shops') {
-        // VTID-02000: Admin Marketplace Shops - list + add sources (Shopify/CJ)
+    } else if (moduleKey === 'commerce' && tab === 'overview') {
+        // VCAOP: Commerce overview — providers/programs/tasks/commission KPIs
+        container.appendChild(renderCommerceOverviewView());
+    } else if (moduleKey === 'commerce' && tab === 'providers-onboarding') {
+        // VCAOP: Provider catalog + batch onboarding + human-task inbox
+        container.appendChild(renderCommerceProvidersOnboardingView());
+    } else if (moduleKey === 'commerce' && tab === 'commissions-rewards') {
+        // VCAOP: Commission queue — confirm credits wallet / reverse claws back
+        container.appendChild(renderCommerceCommissionsView());
+    } else if (moduleKey === 'commerce' && tab === 'affiliate-programs') {
+        // VCAOP: Affiliate program registry
+        container.appendChild(renderCommerceAffiliateProgramsView());
+    } else if (moduleKey === 'commerce' && tab === 'marketplace-shops') {
+        // VTID-02000: Marketplace Shops - list + add sources (Shopify/CJ) — relocated from Admin
         container.appendChild(renderAdminMarketplaceShopsView());
-    } else if (moduleKey === 'admin' && tab === 'marketplace-review') {
-        // VTID-02000: Admin Marketplace Review Queue - approve/reject flagged products
+    } else if (moduleKey === 'commerce' && tab === 'marketplace-review') {
+        // VTID-02000: Marketplace Review Queue - approve/reject flagged products — relocated from Admin
         container.appendChild(renderAdminMarketplaceReviewView());
     } else if (moduleKey === 'admin' && tab === 'billing-dashboard') {
         // VTID-03107: Billing v1 operator dashboard — MRR / paywall funnel / code redemptions / voice degrade
@@ -12731,6 +12754,275 @@ function renderAdminBillingCodesView() {
     }
     container.appendChild(listCard);
 
+    return container;
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// VCAOP — Commerce section (providers, onboarding, commissions, programs)
+// Backed by /api/v1/vcaop/* (see services/gateway/src/routes/vcaop.ts).
+// ════════════════════════════════════════════════════════════════════════════
+
+async function fetchVcaop(path, opts) {
+    opts = opts || {};
+    var resp = await fetch('/api/v1/vcaop' + path, {
+        method: opts.method || 'GET',
+        headers: buildContextHeaders(),
+        body: opts.body ? JSON.stringify(opts.body) : undefined
+    });
+    var json = await resp.json();
+    if (!resp.ok || json.ok === false) {
+        if (resp.status === 401) throw new Error('Unauthenticated — sign in first');
+        if (resp.status === 403) throw new Error('Access denied — exafy_admin role required');
+        throw new Error(json.error || ('HTTP ' + resp.status));
+    }
+    return json;
+}
+
+function loadVcaopBase() {
+    // vcaopError gates too — otherwise every re-render restarts the fetch and
+    // the error state can never be displayed (perpetual "Loading…").
+    if (state.vcaopLoading || state.vcaopLoaded || state.vcaopError) return;
+    state.vcaopLoading = true;
+    Promise.all([
+        fetchVcaop('/providers'),
+        fetchVcaop('/affiliate-programs'),
+        fetchVcaop('/onboarding/inbox').catch(function () { return { data: null }; }),
+        fetchVcaop('/commissions?status=pending').catch(function () { return { data: null }; })
+    ]).then(function (r) {
+        state.vcaopProviders = r[0].data || [];
+        state.vcaopPrograms = r[1].data || [];
+        state.vcaopInbox = r[2].data; // null when not admin
+        state.vcaopPendingCommissions = r[3].data;
+        state.vcaopLoaded = true;
+    }).catch(function (err) {
+        state.vcaopError = err.message;
+    }).finally(function () {
+        state.vcaopLoading = false;
+        renderApp();
+    });
+}
+
+function vcaopScreen(title, subtitle) {
+    var container = document.createElement('div');
+    container.className = 'admin-screen-container';
+    var header = document.createElement('div');
+    header.className = 'admin-screen-header';
+    header.innerHTML = '<h2>' + escapeHtml(title) + '</h2>' +
+        '<p class="admin-screen-subtitle">' + escapeHtml(subtitle) + '</p>';
+    container.appendChild(header);
+    if (state.vcaopError) {
+        var errEl = document.createElement('div');
+        errEl.className = 'admin-error';
+        errEl.textContent = state.vcaopError;
+        var retry = document.createElement('button');
+        retry.className = 'btn btn-secondary btn-sm';
+        retry.textContent = 'Retry';
+        retry.onclick = function () { state.vcaopError = null; state.vcaopLoaded = false; loadVcaopBase(); };
+        errEl.appendChild(document.createElement('br'));
+        errEl.appendChild(retry);
+        container.appendChild(errEl);
+    } else if (!state.vcaopLoaded) {
+        var loading = document.createElement('div');
+        loading.className = 'admin-loading';
+        loading.textContent = 'Loading commerce data…';
+        container.appendChild(loading);
+    }
+    return container;
+}
+
+function vcaopTable(headers, rows) {
+    var wrap = document.createElement('div');
+    wrap.className = 'admin-list-container';
+    var html = '<table class="admin-table"><thead><tr>';
+    headers.forEach(function (h) { html += '<th>' + escapeHtml(h) + '</th>'; });
+    html += '</tr></thead><tbody>';
+    rows.forEach(function (cells) {
+        html += '<tr>';
+        cells.forEach(function (c) { html += '<td>' + c + '</td>'; });
+        html += '</tr>';
+    });
+    wrap.innerHTML = html + '</tbody></table>';
+    return wrap;
+}
+
+function renderCommerceOverviewView() {
+    loadVcaopBase();
+    var container = vcaopScreen('Commerce Overview',
+        'Vitanaland Commerce & Account-Operations — providers, affiliate programs, onboarding queue, commissions.');
+    if (!state.vcaopLoaded) return container;
+
+    var grid = document.createElement('div');
+    grid.className = 'admin-stats-grid';
+    var kpis = [
+        ['Providers', (state.vcaopProviders || []).length],
+        ['Affiliate programs', (state.vcaopPrograms || []).length],
+        ['Open human tasks', state.vcaopInbox ? state.vcaopInbox.length : '—'],
+        ['Pending commissions', state.vcaopPendingCommissions ? state.vcaopPendingCommissions.length : '—']
+    ];
+    kpis.forEach(function (k) {
+        var card = document.createElement('div');
+        card.className = 'admin-stat-card';
+        card.innerHTML = '<div class="admin-stat-value">' + escapeHtml(String(k[1])) + '</div>' +
+            '<div class="admin-stat-label">' + escapeHtml(k[0]) + '</div>';
+        grid.appendChild(card);
+    });
+    container.appendChild(grid);
+
+    var byCat = {};
+    (state.vcaopProviders || []).forEach(function (p) { byCat[p.category] = (byCat[p.category] || 0) + 1; });
+    container.appendChild(vcaopTable(['Category', 'Providers'],
+        Object.keys(byCat).sort().map(function (c) { return [escapeHtml(c), String(byCat[c])]; })));
+    return container;
+}
+
+function renderCommerceProvidersOnboardingView() {
+    loadVcaopBase();
+    var container = vcaopScreen('Providers & Onboarding',
+        'The prepared provider catalog. Batch-onboard fans providers into queued jobs + your human-task inbox; you clear the KYB/registration checkpoints, the platform pre-fills the rest.');
+    if (!state.vcaopLoaded) return container;
+
+    var toolbar = document.createElement('div');
+    toolbar.className = 'admin-filters-row';
+
+    var catFilter = document.createElement('select');
+    catFilter.className = 'admin-filter-select';
+    var cats = {};
+    (state.vcaopProviders || []).forEach(function (p) { cats[p.category] = true; });
+    catFilter.innerHTML = '<option value="">All categories</option>' + Object.keys(cats).sort().map(function (c) {
+        return '<option value="' + escapeHtml(c) + '"' + (state.vcaopProviderCat === c ? ' selected' : '') + '>' + escapeHtml(c) + '</option>';
+    }).join('');
+    catFilter.onchange = function (e) { state.vcaopProviderCat = e.target.value; renderApp(); };
+    toolbar.appendChild(catFilter);
+
+    var batchAll = document.createElement('button');
+    batchAll.className = 'btn btn-primary btn-sm';
+    batchAll.textContent = state.vcaopBatchRunning ? 'Batch running…' : 'Batch-onboard ALL providers';
+    batchAll.disabled = !!state.vcaopBatchRunning;
+    batchAll.onclick = function () {
+        if (!confirm('Queue onboarding jobs + human tasks for the entire provider catalog?')) return;
+        state.vcaopBatchRunning = true;
+        renderApp();
+        fetchVcaop('/onboarding/batch', { method: 'POST', body: {} }).then(function (j) {
+            state.vcaopBatchResult = 'Queued ' + j.data.queued + ' providers, created ' + j.data.humanTasksCreated + ' human tasks.';
+            state.vcaopLoaded = false;
+        }).catch(function (e) {
+            state.vcaopBatchResult = 'Batch failed: ' + e.message;
+        }).finally(function () {
+            state.vcaopBatchRunning = false;
+            loadVcaopBase();
+        });
+    };
+    toolbar.appendChild(batchAll);
+    if (state.vcaopBatchResult) {
+        var resEl = document.createElement('span');
+        resEl.className = 'admin-screen-subtitle';
+        resEl.textContent = state.vcaopBatchResult;
+        toolbar.appendChild(resEl);
+    }
+    container.appendChild(toolbar);
+
+    var provs = (state.vcaopProviders || []).filter(function (p) {
+        return !state.vcaopProviderCat || p.category === state.vcaopProviderCat;
+    });
+    container.appendChild(vcaopTable(['Provider', 'Category', 'Connector', 'KYB'],
+        provs.map(function (p) {
+            return [escapeHtml(p.name), escapeHtml(p.category), escapeHtml(p.connector_mode), p.kyb_required ? 'required' : '—'];
+        })));
+
+    var inboxHeader = document.createElement('h3');
+    inboxHeader.textContent = 'Human-task inbox (' + (state.vcaopInbox ? state.vcaopInbox.length : 0) + ' open)';
+    container.appendChild(inboxHeader);
+    if (!state.vcaopInbox || state.vcaopInbox.length === 0) {
+        var empty = document.createElement('p');
+        empty.className = 'admin-screen-subtitle';
+        empty.textContent = state.vcaopInbox ? 'Inbox empty — nothing awaiting a human.' : 'Sign in as exafy_admin to view the inbox.';
+        container.appendChild(empty);
+    } else {
+        container.appendChild(vcaopTable(['Type', 'Provider', 'Status', 'Created', 'Action'],
+            state.vcaopInbox.map(function (t) {
+                var action;
+                if (t.type === 'KYB') {
+                    action = '<span class="admin-screen-subtitle">KYB — staff + admin approval flow</span>';
+                } else {
+                    action = '<button class="btn btn-secondary btn-sm" data-vcaop-complete="' + escapeHtml(t.id) + '">Mark completed</button>';
+                }
+                return [escapeHtml(t.type), escapeHtml(t.provider_id || '—'), escapeHtml(t.status),
+                    escapeHtml(String(t.created_at || '').slice(0, 16)), action];
+            })));
+        container.addEventListener('click', function (ev) {
+            var btn = ev.target && ev.target.getAttribute ? ev.target : null;
+            var id = btn && btn.getAttribute('data-vcaop-complete');
+            if (!id) return;
+            fetchVcaop('/tasks/' + encodeURIComponent(id) + '/complete', { method: 'POST' }).then(function () {
+                state.vcaopLoaded = false;
+                loadVcaopBase();
+            }).catch(function (e) { alert(e.message); });
+        });
+    }
+    return container;
+}
+
+function renderCommerceCommissionsView() {
+    loadVcaopBase();
+    var container = vcaopScreen('Commissions & Rewards',
+        'Pending commissions await a confirmed purchase postback. Confirm credits the user\'s wallet; reverse claws the reward back.');
+    if (!state.vcaopLoaded) return container;
+
+    var rows = state.vcaopPendingCommissions;
+    if (!rows) {
+        var note = document.createElement('p');
+        note.className = 'admin-screen-subtitle';
+        note.textContent = 'Sign in as exafy_admin to manage commissions.';
+        container.appendChild(note);
+        return container;
+    }
+    if (rows.length === 0) {
+        var empty = document.createElement('p');
+        empty.className = 'admin-screen-subtitle';
+        empty.textContent = 'No pending commissions.';
+        container.appendChild(empty);
+        return container;
+    }
+    container.appendChild(vcaopTable(['Merchant', 'User', 'Gross', 'Status', 'Created', 'Action'],
+        rows.map(function (c) {
+            var action = '<button class="btn btn-primary btn-sm" data-vcaop-confirm="' + escapeHtml(c.id) + '">Confirm</button> ' +
+                '<button class="btn btn-secondary btn-sm" data-vcaop-reverse="' + escapeHtml(c.id) + '">Reverse</button>';
+            return [escapeHtml(c.merchant), escapeHtml(String(c.user_id || '').slice(0, 8) + '…'),
+                escapeHtml(c.gross_commission + ' ' + c.currency), escapeHtml(c.status),
+                escapeHtml(String(c.created_at || '').slice(0, 16)), action];
+        })));
+    container.addEventListener('click', function (ev) {
+        var el = ev.target && ev.target.getAttribute ? ev.target : null;
+        if (!el) return;
+        var confirmId = el.getAttribute('data-vcaop-confirm');
+        var reverseId = el.getAttribute('data-vcaop-reverse');
+        if (confirmId) {
+            var ref = prompt('Postback reference for this confirmation (required):');
+            if (!ref) return;
+            fetchVcaop('/commissions/' + encodeURIComponent(confirmId) + '/confirm', { method: 'POST', body: { postbackRef: ref } })
+                .then(function () { state.vcaopLoaded = false; loadVcaopBase(); })
+                .catch(function (e) { alert(e.message); });
+        } else if (reverseId) {
+            if (!confirm('Reverse this commission and claw back the reward?')) return;
+            fetchVcaop('/commissions/' + encodeURIComponent(reverseId) + '/reverse', { method: 'POST', body: {} })
+                .then(function () { state.vcaopLoaded = false; loadVcaopBase(); })
+                .catch(function (e) { alert(e.message); });
+        }
+    });
+    return container;
+}
+
+function renderCommerceAffiliateProgramsView() {
+    loadVcaopBase();
+    var container = vcaopScreen('Affiliate Programs',
+        'Demand-side earning routes. Cashback only flows through programs explicitly marked allowed.');
+    if (!state.vcaopLoaded) return container;
+    container.appendChild(vcaopTable(['Program', 'Network', 'Source', 'Cashback'],
+        (state.vcaopPrograms || []).map(function (p) {
+            var cb = p.affiliate_cashback_allowed === true ? 'allowed'
+                : p.affiliate_cashback_allowed === false ? 'not allowed' : 'under review';
+            return [escapeHtml(p.id), escapeHtml(p.network), escapeHtml(p.source), escapeHtml(cb)];
+        })));
     return container;
 }
 

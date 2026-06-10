@@ -291,6 +291,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const { triageAgentRouter } = require('./routes/triage-agent');
   // VTID-01148: Approvals API v1 — Pending Queue + Count + Approve/Reject
   const approvalsRouter = require('./routes/approvals').default;
+  // VCAOP: Vitanaland Commerce & Account-Operations Platform API (shop/wallet/onboarding)
+  const vcaopRouter = require('./routes/vcaop').default;
   // VTID-01169: Deploy → Ledger Terminalization (terminalize endpoint + repair job)
   const vtidTerminalizeRouter = require('./routes/vtid-terminalize').default;
   // VTID-01157: Supabase JWT Auth Middleware + /api/v1/auth/me endpoint
@@ -650,6 +652,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
 
   // VTID-01148: Approvals API v1 — Pending Queue + Count + Approve/Reject (Gateway + OASIS-backed)
   mountRouterSync(app, '/api/v1/approvals', approvalsRouter, { owner: 'approvals-api' });
+
+  // VCAOP: Vitanaland Commerce API — providers/affiliate-programs/shop/wallet/onboarding
+  mountRouterSync(app, '/api/v1/vcaop', vcaopRouter, { owner: 'vcaop' });
 
   // Email Intake — Receives emails from Cloudflare Email Worker, creates scheduled tasks
   mountRouterSync(app, '/api/v1/intake', emailIntakeRouter, { owner: 'email-intake' });
