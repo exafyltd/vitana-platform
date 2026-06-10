@@ -448,6 +448,52 @@ export const NAVIGATION_CATALOG: ReadonlyArray<NavCatalogEntry> = [
       },
     },
   },
+  // VTID-NAV-NEWS-TABS: voice-addressable filter tabs of the News feed (/home).
+  // The Home page reads ?tab=<all|longevity|community> on both mobile
+  // (MobileModePill) and desktop (SplitBar), so the deep-link lives in `route`
+  // (always applied) — no is_mobile dependency. Longevity is the default tab and
+  // is already served by HOME.OVERVIEW (/home), so only All and Community are
+  // added here.
+  {
+    screen_id: 'HOME.NEWS_ALL',
+    route: '/home?tab=all',
+    category: 'home',
+    access: 'authenticated',
+    anonymous_safe: false,
+    aliases: ['all-news', 'news-all'],
+    i18n: {
+      en: {
+        title: 'All News',
+        description: 'The News feed with all sources — longevity and community news combined.',
+        when_to_visit: 'When the user asks for the All News tab, all news, every news source, or both longevity and community news together in one feed.',
+      },
+      de: {
+        title: 'Alle News',
+        description: 'Der News-Feed mit allen Quellen — Longevity- und Community-News zusammen.',
+        when_to_visit: 'Wenn der Nutzer den Tab „Alle News“, alle Nachrichten, jede Nachrichtenquelle oder Longevity- und Community-News zusammen in einem Feed möchte.',
+      },
+    },
+  },
+  {
+    screen_id: 'HOME.NEWS_COMMUNITY',
+    route: '/home?tab=community',
+    category: 'home',
+    access: 'authenticated',
+    anonymous_safe: false,
+    aliases: ['community-news', 'news-community'],
+    i18n: {
+      en: {
+        title: 'Community News',
+        description: 'The Community tab of the News feed — updates and posts from the Maxina community.',
+        when_to_visit: 'When the user asks for the Community tab of the news feed, community news, community updates, or what is happening in the community feed.',
+      },
+      de: {
+        title: 'Community-News',
+        description: 'Der Community-Tab des News-Feeds — Updates und Beiträge aus der Maxina-Community.',
+        when_to_visit: 'Wenn der Nutzer den Community-Tab des News-Feeds, Community-Nachrichten, Community-Updates oder Neuigkeiten aus dem Community-Feed möchte.',
+      },
+    },
+  },
   {
     screen_id: 'HOME.MATCHES',
     route: '/home/matches',
