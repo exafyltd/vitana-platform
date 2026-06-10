@@ -168,12 +168,13 @@ async function main() {
     // so a re-run after an interruption only fills the gaps.
     let done = new Set();
     if (!DRY_RUN && !FORCE) {
-      const ids = slice.map((t) => t.topicId);
+      // Fetch all already-translated ids for this locale (robust — no giant
+      // in.() URL). limit high enough for the full curriculum.
       const existing = await rest(
-        `journey_checklist_translations?select=topic_id&locale=eq.${locale}&topic_id=in.(${ids.map((i) => `"${i}"`).join(',')})`,
+        `journey_checklist_translations?select=topic_id&locale=eq.${locale}&limit=5000`,
       );
       done = new Set((existing || []).map((r) => r.topic_id));
-      if (done.size) console.log(`  [${locale}] resuming — ${done.size} already done, ${slice.length - done.size} to do`);
+      if (done.size) console.log(`  [${locale}] resuming — ${done.size} already done, ${Math.max(0, slice.length - done.size)} to do`);
     }
 
     let upserts = 0;
