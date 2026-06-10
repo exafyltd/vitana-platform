@@ -37,6 +37,7 @@ import {
   lookupByRoute,
   suggestSimilar,
   suggestSimilarScored,
+  searchCatalog,
   FUZZY_NAV_MIN_SCORE,
   resolveEffectiveRoles,
   getContent,
@@ -2534,8 +2535,46 @@ export async function tool_navigate_to_screen(
 
   const { emitOasisEvent } = await import('./oasis-event-service');
 
-  // Three-tier resolution: exact → alias → fuzzy.
+  // Three-tier resolution: exact → alias → intent-recovery → fuzzy.
   let entry: NavCatalogEntry | null = lookupScreen(screenIdArg) || lookupByAlias(screenIdArg);
+
+  // VTID-NAV-RECOVER: the model sometimes invents a screen_id that does not
+  // exist (e.g. 'EVENTS.FOLLOWING', 'COMM.EVENTS_MEETUPS'). String-fuzzy then
+  // maps it by surface similarity to the wrong screen — usually the parent
+  // (COMM.EVENTS → Hot) instead of the intended tab. The natural-language
+  // `reason` the model supplies IS reliable intent, so re-derive the target
+  // with the same catalog scorer the free-text `navigate` tool uses, preferring
+  // the reason over the de-slugged (and possibly misleading) screen_id tokens.
+  // Only adopt it on a clear win, otherwise fall through to the fuzzy gate.
+  if (!entry) {
+    const reasonText = typeof args.reason === 'string' ? args.reason.trim() : '';
+    const deslug = screenIdArg.replace(/[._/\-]+/g, ' ').trim();
+    const recoverQuery = reasonText.length >= 4 ? reasonText : deslug;
+    if (recoverQuery) {
+      const recovered = searchCatalog(recoverQuery, lang);
+      const top = recovered[0];
+      const second = recovered[1];
+      if (top && top.score >= 30 && top.score - (second?.score ?? 0) >= 6) {
+        entry = top.entry;
+        emitOasisEvent({
+          vtid: 'VTID-NAV-01',
+          type: 'orb.navigator.blocked',
+          source: 'orb-tools-shared',
+          status: 'info',
+          message: `Recovered invented screen_id '${screenIdArg}' → '${entry.screen_id}' via reason/intent (score ${top.score})`,
+          payload: {
+            session_id: sessionId,
+            attempted_screen_id: screenIdArg,
+            resolved_screen_id: entry.screen_id,
+            recover_score: top.score,
+            recover_query: recoverQuery.slice(0, 120),
+            error_kind: 'intent_recovered',
+          },
+        }).catch(() => {});
+      }
+    }
+  }
+
   if (!entry) {
     // VTID-NAV-CONFIDENCE (VTID-03258): only auto-resolve a fuzzy match when it clears the
     // confidence floor. A weak best-match (title-word-only overlap) is NOT a
