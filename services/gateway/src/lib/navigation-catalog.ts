@@ -626,6 +626,90 @@ export const NAVIGATION_CATALOG: ReadonlyArray<NavCatalogEntry> = [
       },
     },
   },
+  // VTID-NAV-LIVEROOMS-TABS: voice-addressable tabs of the Live Rooms screen.
+  // The LiveRooms page reads ?tab=<all|live|scheduled|past> on both mobile
+  // (MobileModePill) and desktop (SplitBar), so the deep-link lives in `route`
+  // (always applied) — no mobile_route / is_mobile dependency needed.
+  {
+    screen_id: 'COMM.LIVE_ROOMS_LIVE',
+    route: '/comm/live-rooms?tab=live',
+    category: 'community',
+    access: 'authenticated',
+    anonymous_safe: false,
+    aliases: ['live-rooms-live', 'live_now', 'live-now'],
+    i18n: {
+      en: {
+        title: 'Live Now',
+        description: 'Live Rooms that are streaming right now.',
+        when_to_visit: 'When the user asks for the Live Now tab of Live Rooms — rooms that are live right now, currently streaming, or happening this moment.',
+      },
+      de: {
+        title: 'Jetzt live',
+        description: 'Live-Räume, die gerade jetzt streamen.',
+        when_to_visit: 'Wenn der Nutzer nach dem Tab „Jetzt live“ der Live-Räume fragt — Räume, die gerade live sind, aktuell streamen oder genau jetzt stattfinden.',
+      },
+    },
+  },
+  {
+    screen_id: 'COMM.LIVE_ROOMS_SCHEDULED',
+    route: '/comm/live-rooms?tab=scheduled',
+    category: 'community',
+    access: 'authenticated',
+    anonymous_safe: false,
+    aliases: ['live-rooms-scheduled', 'upcoming-rooms', 'scheduled-rooms'],
+    i18n: {
+      en: {
+        title: 'Scheduled Rooms',
+        description: 'Upcoming Live Rooms scheduled for later.',
+        when_to_visit: 'When the user asks for the Scheduled tab of Live Rooms — upcoming rooms, scheduled sessions, or live rooms planned for later.',
+      },
+      de: {
+        title: 'Geplante Räume',
+        description: 'Kommende Live-Räume, die für später geplant sind.',
+        when_to_visit: 'Wenn der Nutzer nach dem Tab „Geplant“ der Live-Räume fragt — kommende Räume, geplante Sitzungen oder für später geplante Live-Räume.',
+      },
+    },
+  },
+  {
+    screen_id: 'COMM.LIVE_ROOMS_PAST',
+    route: '/comm/live-rooms?tab=past',
+    category: 'community',
+    access: 'authenticated',
+    anonymous_safe: false,
+    aliases: ['live-rooms-past', 'past-rooms', 'past-sessions'],
+    i18n: {
+      en: {
+        title: 'Past Sessions',
+        description: 'Recordings and summaries from completed Live Rooms.',
+        when_to_visit: 'When the user asks for the Past tab of Live Rooms — past sessions, previous rooms, recordings, or summaries of completed live rooms.',
+      },
+      de: {
+        title: 'Vergangene Sitzungen',
+        description: 'Aufzeichnungen und Zusammenfassungen abgeschlossener Live-Räume.',
+        when_to_visit: 'Wenn der Nutzer nach dem Tab „Vergangen“ der Live-Räume fragt — vergangene Sitzungen, frühere Räume, Aufzeichnungen oder Zusammenfassungen abgeschlossener Live-Räume.',
+      },
+    },
+  },
+  {
+    screen_id: 'COMM.LIVE_ROOMS_ALL',
+    route: '/comm/live-rooms?tab=all',
+    category: 'community',
+    access: 'authenticated',
+    anonymous_safe: false,
+    aliases: ['live-rooms-all', 'all-rooms'],
+    i18n: {
+      en: {
+        title: 'All Rooms',
+        description: 'All Live Rooms — live now and scheduled — in one list.',
+        when_to_visit: 'When the user asks for the All Rooms tab of Live Rooms, or to see all live rooms (both live and scheduled) together.',
+      },
+      de: {
+        title: 'Alle Räume',
+        description: 'Alle Live-Räume — jetzt live und geplant — in einer Liste.',
+        when_to_visit: 'Wenn der Nutzer nach dem Tab „Alle Räume“ der Live-Räume fragt oder alle Live-Räume (live und geplant) zusammen sehen möchte.',
+      },
+    },
+  },
   {
     screen_id: 'COMM.MEDIA_HUB',
     route: '/comm/media-hub',
