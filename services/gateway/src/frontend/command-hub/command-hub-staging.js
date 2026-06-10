@@ -888,11 +888,18 @@
     const startMs = Date.now();
     const tick = function () {
       if (Date.now() - startMs > 8 * 60 * 1000) {
-        sf.phase = 'full-verified'; sf.message = '(taking longer than usual; check workflow)';
+        // Do NOT claim success on timeout — the deploy never confirmed live.
+        // Reporting "✓ Published" here is a lie when the deploy actually failed.
+        sf.phase = 'error';
+        sf.message = 'Publish did not confirm within 8 min — do NOT assume it is live. Check the deploy workflow.';
         if (typeof renderApp === 'function') renderApp();
-        if (typeof opts.onAfterPublish === 'function') opts.onAfterPublish(sf);
         return;
       }
+      // 1) Positive confirmation WINS. If the promoted commit is actually live,
+      //    the publish succeeded — even if a LATER workflow stage failed and the
+      //    if:failure() handler emitted deploy.<service>.failed (Cloud Run was
+      //    already updated by then). The live commit is the authoritative
+      //    signal, so check it BEFORE treating any .failed event as terminal.
       fetch('/api/v1/admin/build-info', { credentials: 'include' })
         .then(function (r) { return r.ok ? r.json() : null; })
         .then(function (bi) {
@@ -902,7 +909,27 @@
             if (typeof opts.onAfterPublish === 'function') opts.onAfterPublish(sf);
             return;
           }
-          setTimeout(tick, 6000);
+          // 2) Commit is NOT live yet — only now treat a terminal deploy FAILURE
+          //    for this publish VTID as fatal, so we surface a real failed deploy
+          //    instead of spinning "Publishing 100%…" forever.
+          if (!sf.vtid) { setTimeout(tick, 6000); return; }
+          fetch('/api/v1/oasis/events?vtid=' + encodeURIComponent(sf.vtid) + '&limit=20', { credentials: 'include', headers })
+            .then(function (r) { return r.ok ? r.json() : null; })
+            .then(function (body) {
+              const evs = (body && body.data) || [];
+              const failed = evs.some(function (e) {
+                const t = (e.topic || e.type || '');
+                return /\.failed$/.test(t) && /deploy|publish/.test(t);
+              });
+              if (failed) {
+                sf.phase = 'error';
+                sf.message = 'Deploy failed — production was NOT updated. Open the workflow for the error.';
+                if (typeof renderApp === 'function') renderApp();
+                return;
+              }
+              setTimeout(tick, 6000);
+            })
+            .catch(function () { setTimeout(tick, 6000); });
         })
         .catch(function () { setTimeout(tick, 6000); });
     };
