@@ -20,6 +20,7 @@ import {
   completePractice,
 } from '../services/guided-journey/guided-journey-state';
 import { recordSessionListen } from '../services/guided-journey/journey-index-award';
+import { emitOasisEvent } from '../services/oasis-event-service';
 import type { JourneyMode } from '../types/guided-journey';
 
 const router = Router();
@@ -139,6 +140,26 @@ router.post('/session-listened', requireAuth, async (req: AuthenticatedRequest, 
   }
   try {
     const result = await recordSessionListen(client, userId, topicId.trim());
+    // Record the index movement only on a real first-time award (the state
+    // transition), mirroring the calendar path's `index.recomputed` event so the
+    // +2 surfaces in the user's Index movement history. Replays award nothing →
+    // no event. Best-effort: never block the response on OASIS.
+    if (result.awarded) {
+      emitOasisEvent({
+        vtid: 'SYSTEM',
+        type: 'index.recomputed' as any,
+        source: 'guided-journey-api',
+        status: 'info',
+        message: `Vitana Index +${result.points} for listening to a guided session (${topicId.trim()})`,
+        payload: {
+          user_id: userId,
+          topic_id: topicId.trim(),
+          delta_total: result.points,
+          total_bonus: result.totalBonus,
+          reason: 'guided_session_listen',
+        },
+      }).catch(() => {});
+    }
     return res.json({
       ok: true,
       awarded: result.awarded,

@@ -1,0 +1,52 @@
+# BOOTSTRAP-GUIDED-JOURNEY-POPUP — backfill Guided Journey curriculum translations.
+#
+# Manual, on-demand: translates the current PUBLISHED curriculum snapshot into
+# en/es/sr via Gemini and upserts into `journey_checklist_translations`. Run it
+# after publishing a new curriculum version (or to add a locale). Idempotent —
+# safe to re-run; upserts on (topic_id, locale).
+#
+# Binds the secrets the standalone script needs (this is also what satisfies the
+# Impact Scan's env-var binding rule for GEMINI / model vars).
+name: Journey Translations Backfill
+
+on:
+  workflow_dispatch:
+    inputs:
+      locales:
+        description: 'Comma-separated locales to generate (en,es,sr)'
+        required: true
+        default: 'en,es,sr'
+      curriculum:
+        description: 'Curriculum version'
+        required: false
+        default: 'v2'
+      limit:
+        description: 'Max topics (blank = all)'
+        required: false
+        default: ''
+      dry_run:
+        description: 'Preview without writing / spending tokens'
+        type: boolean
+        required: false
+        default: false
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Run translation backfill
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
+          GEMINI_API_KEY: ${{ secrets.GOOGLE_GEMINI_API_KEY }}
+          GEMINI_TRANSLATE_MODEL: ${{ vars.GEMINI_TRANSLATE_MODEL }}
+        run: |
+          node scripts/journey/generate-checklist-translations.mjs \
+            --locale="${{ inputs.locales }}" \
+            --curriculum="${{ inputs.curriculum }}" \
+            ${{ inputs.limit && format('--limit={0}', inputs.limit) || '' }} \
+            ${{ inputs.dry_run && '--dry-run' || '' }}

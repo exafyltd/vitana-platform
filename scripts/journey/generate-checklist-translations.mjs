@@ -30,8 +30,9 @@ const args = Object.fromEntries(
 );
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
-const SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE || process.env.SUPABASE_SERVICE_ROLE_KEY;
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+const SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
+// Accept either GEMINI_API_KEY or the workflow's GOOGLE_GEMINI_API_KEY secret.
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY || process.env.GOOGLE_GEMINI_API_KEY;
 const CURRICULUM = String(args.curriculum || 'v2');
 const LOCALES = String(args.locale || 'en,es,sr')
   .split(',')
