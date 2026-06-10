@@ -40,14 +40,26 @@ export default {
     targetUrl.pathname = url.pathname;
     targetUrl.search = url.search;
 
+    // Proxy via `new Request(url, request)` — the canonical Workers rewrite
+    // pattern. It carries method/headers/body across natively. The previous
+    // form (`fetch(url, { body: request.body, … })`) passes the body as a
+    // bare ReadableStream, which modern compatibility dates reject without
+    // `duplex: 'half'` — the Worker threw on every POST/PUT (login, publish),
+    // and Cloudflare returned its HTML error page ("<!DOCTYPE …" instead of
+    // JSON). GETs have no body, which is why pages loaded while POSTs failed.
+    //
     // fetch() infers Host from the URL's hostname, so the Cloud Run origin
     // sees Host=gateway-staging-q74….run.app and routes correctly.  All
     // other headers (auth, content-type, user-agent, etc.) pass through.
-    return fetch(targetUrl.toString(), {
-      method: request.method,
-      headers: request.headers,
-      body: request.body,
-      redirect: 'manual',
-    });
+    try {
+      return await fetch(new Request(targetUrl.toString(), request), { redirect: 'manual' });
+    } catch (err) {
+      // Surface proxy failures as plain text, not Cloudflare's HTML error
+      // page — API clients parse JSON/text and choke on "<!DOCTYPE".
+      return new Response(
+        `preview-router proxy error for ${url.pathname}: ${err && err.message ? err.message : String(err)}`,
+        { status: 502, headers: { 'content-type': 'text/plain' } }
+      );
+    }
   },
 };
