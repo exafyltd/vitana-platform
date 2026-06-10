@@ -1232,17 +1232,17 @@ export const NAVIGATION_CATALOG: ReadonlyArray<NavCatalogEntry> = [
     category: 'health',
     access: 'authenticated',
     anonymous_safe: false,
-    aliases: ['health-supplements', 'my-supplements', 'supplement-tracker', 'my-stack', 'supplement-stack', 'vitamin-tracker', 'meine-supplements', 'meine-nahrungsergaenzung'],
+    aliases: ['health-supplements', 'supplements-in-health', 'supplements-health', 'my-supplements', 'supplement-tracker', 'my-stack', 'supplement-stack', 'vitamin-tracker', 'meine-supplements', 'meine-nahrungsergaenzung'],
     i18n: {
       en: {
         title: 'My Supplements',
-        description: 'Track the supplements, vitamins, and minerals you take.',
-        when_to_visit: "When the user wants to view, track, log, or manage THEIR OWN supplements — their supplement stack, the vitamins or minerals THEY take, the 'health supplements' tracker, or add a supplement to their regimen. This is the personal health tracker, NOT shopping the marketplace.",
+        description: 'The Supplements tab in Health — track the supplements, vitamins, and minerals you take.',
+        when_to_visit: "When the user asks for the Supplements tab inside the Health screen, 'supplements in Health', 'health supplements', or to open supplements in the Health section — and when they want to view, track, log, or manage THEIR OWN supplements, their supplement stack, or the vitamins and minerals THEY take. This is the Health screen's supplements tracker, NOT shopping the marketplace.",
       },
       de: {
-        title: 'Meine Nahrungsergänzung',
-        description: 'Verfolge die Nahrungsergänzungsmittel, Vitamine und Mineralien, die du nimmst.',
-        when_to_visit: 'Wenn der Nutzer SEINE EIGENEN Nahrungsergänzungsmittel ansehen, verfolgen, protokollieren oder verwalten möchte — seinen Supplement-Stack, die Vitamine oder Mineralien, die er nimmt, den "Gesundheits-Supplement"-Tracker, oder ein Supplement zu seiner Routine hinzufügen. Das ist der persönliche Gesundheits-Tracker, NICHT der Marktplatz-Einkauf.',
+        title: 'Gesundheits-Supplemente',
+        description: 'Der Supplements-Tab im Gesundheitsbereich — verfolge die Nahrungsergänzungsmittel, Vitamine und Mineralien, die du nimmst.',
+        when_to_visit: 'Wenn der Nutzer nach dem Supplements-Tab im Gesundheits-Bildschirm, „Supplements im Gesundheitsbereich", „Gesundheits-Supplements" fragt oder Supplements im Gesundheitsbereich öffnen möchte — und wenn er SEINE EIGENEN Nahrungsergänzungsmittel ansehen, verfolgen, protokollieren oder verwalten möchte, seinen Supplement-Stack oder die Vitamine und Mineralien, die er nimmt. Das ist der Supplements-Tracker des Gesundheits-Bildschirms, NICHT der Marktplatz-Einkauf.',
       },
     },
   },
@@ -1386,12 +1386,12 @@ export const NAVIGATION_CATALOG: ReadonlyArray<NavCatalogEntry> = [
       en: {
         title: 'Supplements',
         description: 'Curated supplements for longevity and wellness.',
-        when_to_visit: 'When the user wants to browse, show, shop for, or buy supplements, vitamins, minerals, or nutraceuticals in the marketplace — exploring available products, brands, or deals. NOT for tracking the supplements they personally take (that is HEALTH.SUPPLEMENTS).',
+        when_to_visit: 'When the user wants to browse, show, shop for, or buy supplements, vitamins, minerals, or nutraceuticals in the marketplace — exploring available products, brands, or deals. NOT for tracking the supplements they personally take (that is the personal tracker tab, not the shop).',
       },
       de: {
         title: 'Nahrungsergänzungsmittel',
         description: 'Kuratierte Nahrungsergänzungsmittel für Longevity und Wellness.',
-        when_to_visit: 'Wenn der Nutzer Nahrungsergänzungsmittel, Vitamine, Mineralien oder Nutraceuticals im Marktplatz durchstöbern, ansehen oder kaufen möchte — verfügbare Produkte, Marken oder Angebote erkunden. NICHT zum Verfolgen der Supplements, die er selbst einnimmt (das ist HEALTH.SUPPLEMENTS).',
+        when_to_visit: 'Wenn der Nutzer Nahrungsergänzungsmittel, Vitamine, Mineralien oder Nutraceuticals im Marktplatz durchstöbern, ansehen oder kaufen möchte — verfügbare Produkte, Marken oder Angebote erkunden. NICHT zum Verfolgen der Supplements, die er selbst einnimmt (das ist der persönliche Tracker-Tab, nicht der Shop).',
       },
     },
   },

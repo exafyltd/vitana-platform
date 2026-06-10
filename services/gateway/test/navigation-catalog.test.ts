@@ -241,9 +241,17 @@ const ROUTING_CASES: RoutingCase[] = [
   { utterance: 'meine biomarker zeigen',                    lang: 'de', expected_screen_id: 'HEALTH.MY_BIOLOGY' },
   { utterance: 'open my health plans',                      lang: 'en', expected_screen_id: 'HEALTH.PLANS' },
   { utterance: 'mein ernährungsplan',                       lang: 'de', expected_screen_id: 'HEALTH.PLANS' },
+  // Supplements disambiguation: the Health tab vs the Discover marketplace.
+  // Health-qualified phrasings must land on the Health Supplements tab, not the shop.
+  { utterance: 'open supplements in health',                lang: 'en', expected_screen_id: 'HEALTH.SUPPLEMENTS' },
+  { utterance: 'supplements in health',                     lang: 'en', expected_screen_id: 'HEALTH.SUPPLEMENTS' },
+  { utterance: 'health supplements',                        lang: 'en', expected_screen_id: 'HEALTH.SUPPLEMENTS' },
+  { utterance: 'my supplements',                            lang: 'en', expected_screen_id: 'HEALTH.SUPPLEMENTS' },
 
   // ── DISCOVER ──
+  // Generic / shopping phrasings stay on the marketplace.
   { utterance: 'show me supplements',                       lang: 'en', expected_screen_id: 'DISCOVER.SUPPLEMENTS' },
+  { utterance: 'buy supplements',                           lang: 'en', expected_screen_id: 'DISCOVER.SUPPLEMENTS' },
   { utterance: 'find me a doctor',                          lang: 'en', expected_screen_id: 'DISCOVER.DOCTORS_COACHES' },
   { utterance: 'I want to find a coach',                    lang: 'en', expected_screen_id: 'DISCOVER.DOCTORS_COACHES' },
   { utterance: 'are there any deals',                       lang: 'en', expected_screen_id: 'DISCOVER.DEALS' },
