@@ -653,6 +653,29 @@ export const NAVIGATION_CATALOG: ReadonlyArray<NavCatalogEntry> = [
     },
   },
   {
+    // The Hot tab is the Events default, but give it an explicit ?tab=hot entry
+    // so the user can switch TO it by voice when already on another tab (the
+    // bare COMM.EVENTS route has no ?tab and so can't switch tabs in-place).
+    screen_id: 'COMM.EVENTS_HOT',
+    route: '/comm/events-meetups?tab=hot',
+    category: 'community',
+    access: 'authenticated',
+    anonymous_safe: false,
+    aliases: ['hot-events', 'events-hot', 'trending-events', 'featured-events'],
+    i18n: {
+      en: {
+        title: 'Hot Events',
+        description: 'Featured and trending Maxina community events and meetups.',
+        when_to_visit: 'When the user asks for the Hot tab of Events & Meetups, hot events, trending events, featured events, or the highlighted community events.',
+      },
+      de: {
+        title: 'Angesagte Events',
+        description: 'Hervorgehobene und angesagte Maxina-Community-Events und Meetups.',
+        when_to_visit: 'Wenn der Nutzer nach dem Tab „Hot“ von Events & Meetups, angesagten Events, Trend-Events, hervorgehobenen Events oder den Top-Community-Events fragt.',
+      },
+    },
+  },
+  {
     screen_id: 'COMM.LIVE_ROOMS',
     route: '/comm/live-rooms',
     category: 'community',
