@@ -888,23 +888,51 @@
     const startMs = Date.now();
     const tick = function () {
       if (Date.now() - startMs > 8 * 60 * 1000) {
-        sf.phase = 'full-verified'; sf.message = '(taking longer than usual; check workflow)';
+        // Do NOT claim success on timeout — the deploy never confirmed live.
+        // Reporting "✓ Published" here is a lie when the deploy actually failed.
+        sf.phase = 'error';
+        sf.message = 'Publish did not confirm within 8 min — do NOT assume it is live. Check the deploy workflow.';
         if (typeof renderApp === 'function') renderApp();
-        if (typeof opts.onAfterPublish === 'function') opts.onAfterPublish(sf);
         return;
       }
-      fetch('/api/v1/admin/build-info', { credentials: 'include' })
-        .then(function (r) { return r.ok ? r.json() : null; })
-        .then(function (bi) {
-          if (bi && bi.git_commit && bi.git_commit.slice(0, 7) === startSha) {
-            sf.phase = 'full-verified';
-            if (typeof renderApp === 'function') renderApp();
-            if (typeof opts.onAfterPublish === 'function') opts.onAfterPublish(sf);
-            return;
-          }
-          setTimeout(tick, 6000);
-        })
-        .catch(function () { setTimeout(tick, 6000); });
+      // 1) Terminal-FAILURE check first: a failed EXEC-DEPLOY emits
+      //    deploy.<service>.failed (status=error) against the publish VTID.
+      //    Without this the modal spins "Publishing 100%…" forever on a failed
+      //    deploy instead of surfacing the error.
+      const failCheck = sf.vtid
+        ? fetch('/api/v1/oasis/events?vtid=' + encodeURIComponent(sf.vtid) + '&limit=20', { credentials: 'include', headers })
+            .then(function (r) { return r.ok ? r.json() : null; })
+            .then(function (body) {
+              const evs = (body && body.data) || [];
+              return evs.some(function (e) {
+                const t = (e.topic || e.type || '');
+                return /\.failed$/.test(t) && /deploy|publish/.test(t);
+              });
+            })
+            .catch(function () { return false; })
+        : Promise.resolve(false);
+
+      failCheck.then(function (failed) {
+        if (failed) {
+          sf.phase = 'error';
+          sf.message = 'Deploy failed — production was NOT updated. Open the workflow for the error.';
+          if (typeof renderApp === 'function') renderApp();
+          return;
+        }
+        // 2) Positive confirmation: the live commit now matches the promoted SHA.
+        fetch('/api/v1/admin/build-info', { credentials: 'include' })
+          .then(function (r) { return r.ok ? r.json() : null; })
+          .then(function (bi) {
+            if (bi && bi.git_commit && bi.git_commit.slice(0, 7) === startSha) {
+              sf.phase = 'full-verified';
+              if (typeof renderApp === 'function') renderApp();
+              if (typeof opts.onAfterPublish === 'function') opts.onAfterPublish(sf);
+              return;
+            }
+            setTimeout(tick, 6000);
+          })
+          .catch(function () { setTimeout(tick, 6000); });
+      });
     };
     setTimeout(tick, 8000);
   }
