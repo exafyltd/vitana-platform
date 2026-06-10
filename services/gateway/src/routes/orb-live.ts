@@ -7220,17 +7220,17 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
       ru: `Скажи ровно: "${safe}" — ОДНА короткая фраза. БЕЗ приветствия перед. БЕЗ вопроса после. НЕ перефразируй.`,
       sr: `Реци тачно: "${safe}" — ЈЕДНА кратка реченица. БЕЗ поздрава пре. БЕЗ питања после. НЕ преформулиши.`,
     };
-    // VTID-03292 (#1): guided-topic narration is a TEACHING turn, not a one-line
-    // opener. The default "ONE short utterance only / do NOT add anything after"
-    // trigger makes the model speak the opener and immediately yield to listening
-    // — which is exactly the "lists instead of teaching" bug. When the session
-    // carries guidedTopicNarrationContent, send a trigger that says: open with
-    // the line, THEN keep teaching in the SAME turn per the GUIDE-MODE (TEACH)
-    // block, do not stop after the opener.
+    // VTID-03293 (#1 fix-2): guided-topic narration speaks the LESSON itself (the
+    // authored voice script, set as `safe` by the provider). Use a DIRECT-QUOTE
+    // trigger ("say this verbatim, in full"), NOT a long instruction. Native
+    // audio reliably produces audio for a direct quote but goes text-only /
+    // stalls on a long instructional prompt (the VTID-03102 regression → the
+    // stuck-connecting, no-speech bug). We drop the "ONE short utterance" clamp so
+    // the whole lesson is spoken, but keep it a quote so audio stays reliable.
     const isGuidedTeach = !!(session as any).guidedTopicNarrationContent;
     const guidedTeachTriggerByLang: Record<string, string> = {
-      en: `Begin by saying: "${safe}" — then, in the SAME turn, immediately TEACH this topic following the "GUIDE MODE (TEACH)" block in your system instruction: explain it in your own words across several sentences. Do NOT stop after the opening line. Do NOT ask "how can I help". When you finish explaining, briefly offer the practice.`,
-      de: `Beginne mit: "${safe}" — und LEHRE dann im SELBEN Redebeitrag sofort dieses Thema gemäß dem Block „GUIDE-MODUS (LEHREN)" in deinem System-Prompt: erkläre es in eigenen Worten über mehrere Sätze. Hör NICHT nach dem ersten Satz auf. Frag NICHT „Wie kann ich helfen". Wenn du fertig erklärt hast, biete kurz die Übung an.`,
+      en: `Say the following VERBATIM and IN FULL — word for word, then stop and listen. Do NOT summarize, shorten, paraphrase, translate, or add a greeting/question: "${safe}"`,
+      de: `Sage Folgendes WÖRTLICH und VOLLSTÄNDIG — Wort für Wort, dann höre auf und höre zu. NICHT zusammenfassen, kürzen, umformulieren, übersetzen oder eine Begrüßung/Frage hinzufügen: "${safe}"`,
     };
     const wakePrompt = isGuidedTeach
       ? (guidedTeachTriggerByLang[lang] || guidedTeachTriggerByLang.en)
