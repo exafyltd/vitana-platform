@@ -40,7 +40,7 @@ const LOCALES = String(args.locale || 'en,es,sr')
   .filter((s) => ['en', 'es', 'sr'].includes(s));
 const LIMIT = args.limit ? Number(args.limit) : Infinity;
 const DRY_RUN = Boolean(args['dry-run']);
-const MODEL = process.env.GEMINI_TRANSLATE_MODEL || 'gemini-2.0-flash';
+const MODEL = process.env.GEMINI_TRANSLATE_MODEL || 'gemini-2.5-flash';
 
 if (!SUPABASE_URL || !SERVICE_ROLE) {
   console.error('Missing SUPABASE_URL / SUPABASE_SERVICE_ROLE');
