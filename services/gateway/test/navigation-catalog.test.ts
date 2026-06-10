@@ -177,6 +177,12 @@ const ROUTING_CASES: RoutingCase[] = [
   { utterance: 'I want to attend a meetup',                 lang: 'en', expected_screen_id: 'COMM.EVENTS' },
   { utterance: 'wo finde ich die treffen',                  lang: 'de', expected_screen_id: 'COMM.EVENTS' },
   { utterance: 'zeig mir die kommenden veranstaltungen',    lang: 'de', expected_screen_id: 'COMM.EVENTS_UPCOMING' },
+  // Following tab of Events & Meetups (COMM.FEED) — must not fall through to a
+  // generic events tab just because "following" matched no entry before.
+  { utterance: 'following',                                 lang: 'en', expected_screen_id: 'COMM.FEED' },
+  { utterance: 'following events',                          lang: 'en', expected_screen_id: 'COMM.FEED' },
+  { utterance: 'events from people I follow',               lang: 'en', expected_screen_id: 'COMM.FEED' },
+  { utterance: 'community feed',                            lang: 'en', expected_screen_id: 'COMM.FEED' },
 
   // ── COMM.LIVE_ROOMS ──
   { utterance: 'open the live rooms',                       lang: 'en', expected_screen_id: 'COMM.LIVE_ROOMS' },

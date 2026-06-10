@@ -2312,10 +2312,10 @@ export const NAVIGATION_CATALOG: ReadonlyArray<NavCatalogEntry> = [
   {
     screen_id: 'COMM.FEED', route: '/comm/events-meetups?tab=following', category: 'community',
     access: 'authenticated', anonymous_safe: false,
-    aliases: ['feed', 'community-feed', 'community/feed', '/community/feed'],
+    aliases: ['feed', 'community-feed', 'community/feed', '/community/feed', 'following', 'following-events', 'events-following', 'following-feed'],
     i18n: {
-      en: { title: 'Community Feed', description: 'Your community feed — posts and updates from members and groups you follow.', when_to_visit: 'When the user asks to open the community feed, see community posts, scroll the feed, or check what is new in the community.' },
-      de: { title: 'Community-Feed', description: 'Dein Community-Feed — Posts und Updates von Mitgliedern und Gruppen, denen du folgst.', when_to_visit: 'Wenn der Nutzer den Community-Feed öffnen, Community-Posts sehen, durch den Feed scrollen oder prüfen möchte, was es Neues in der Community gibt.' },
+      en: { title: 'Following Community Feed', description: 'The Following tab of Events & Meetups — your community feed of events, posts, and updates from the members and groups you follow (Following).', when_to_visit: 'When the user asks for the Following tab of Events & Meetups, following, following events, events from people they follow, the people or groups they follow, or to open the community feed and see community posts and updates.' },
+      de: { title: 'Following Community-Feed', description: 'Der „Folge ich"-Tab von Events & Meetups — dein Community-Feed mit Events, Posts und Updates von Mitgliedern und Gruppen, denen du folgst (Following).', when_to_visit: 'Wenn der Nutzer nach dem „Folge ich"-Tab von Events & Meetups, nach Following, nach Events von Personen, denen er folgt, nach den Personen oder Gruppen, denen er folgt, oder nach dem Community-Feed mit Community-Posts und Updates fragt.' },
     },
   },
 
