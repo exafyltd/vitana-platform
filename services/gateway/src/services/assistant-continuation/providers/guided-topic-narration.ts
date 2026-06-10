@@ -127,16 +127,15 @@ export function makeGuidedTopicNarrationProvider(): ContinuationProvider {
         source: seed.source,
       };
 
-      // The SPOKEN opener line. On LiveKit this is played verbatim via
-      // session.say() (no translation step); on Vertex it is wrapped "speak
-      // verbatim". So it MUST already be in the session language. It is a short,
-      // warm lead-in that names the topic — the actual teaching (paraphrase the
-      // KB material, then redirect) lives in the GUIDE-MODE TEACH block, injected
-      // as a system instruction on BOTH transports for turns 2+.
-      const { buildGuidedTopicNarrationOpenerLine } = await import(
+      // VTID-03293: the SPOKEN LINE is now the LESSON itself (the authored
+      // voice_script), spoken verbatim via the reliable "say exactly" greeting
+      // path — NOT a short opener + a long "teach more" instruction, which made
+      // native-audio go text-only / stall (the stuck-connecting bug). The lesson
+      // IS the teaching; the bundled GUIDE-MODE block governs follow-up turns.
+      const { buildGuidedTopicSpokenLesson } = await import(
         '../../../orb/live/instruction/guided-topic-narration-prompt'
       );
-      const openerLine = buildGuidedTopicNarrationOpenerLine(seed.displayLabel, inputs.lang, {
+      const spokenLesson = buildGuidedTopicSpokenLesson(content, inputs.lang, {
         firstName: inputs.firstName ?? null,
       });
 
@@ -145,7 +144,7 @@ export function makeGuidedTopicNarrationProvider(): ContinuationProvider {
         surface: 'orb_wake',
         kind: 'wake_brief',
         priority: GUIDED_TOPIC_NARRATION_PRIORITY,
-        userFacingLine: openerLine,
+        userFacingLine: spokenLesson,
         // MUST be a KNOWN_CTA_TYPES value (ask_permission|navigate|offer_demo|
         // run_tool|explain|noop) or validateContinuationCandidate rejects the
         // candidate and the provider errors out (the journey-guide 'guide_step'

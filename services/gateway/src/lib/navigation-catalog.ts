@@ -448,6 +448,52 @@ export const NAVIGATION_CATALOG: ReadonlyArray<NavCatalogEntry> = [
       },
     },
   },
+  // VTID-NAV-NEWS-TABS: voice-addressable filter tabs of the News feed (/home).
+  // The Home page reads ?tab=<all|longevity|community> on both mobile
+  // (MobileModePill) and desktop (SplitBar), so the deep-link lives in `route`
+  // (always applied) — no is_mobile dependency. Longevity is the default tab and
+  // is already served by HOME.OVERVIEW (/home), so only All and Community are
+  // added here.
+  {
+    screen_id: 'HOME.NEWS_ALL',
+    route: '/home?tab=all',
+    category: 'home',
+    access: 'authenticated',
+    anonymous_safe: false,
+    aliases: ['all-news', 'news-all'],
+    i18n: {
+      en: {
+        title: 'All News',
+        description: 'The News feed with all sources — longevity and community news combined.',
+        when_to_visit: 'When the user asks for the All News tab, all news, every news source, or both longevity and community news together in one feed.',
+      },
+      de: {
+        title: 'Alle News',
+        description: 'Der News-Feed mit allen Quellen — Longevity- und Community-News zusammen.',
+        when_to_visit: 'Wenn der Nutzer den Tab „Alle News“, alle Nachrichten, jede Nachrichtenquelle oder Longevity- und Community-News zusammen in einem Feed möchte.',
+      },
+    },
+  },
+  {
+    screen_id: 'HOME.NEWS_COMMUNITY',
+    route: '/home?tab=community',
+    category: 'home',
+    access: 'authenticated',
+    anonymous_safe: false,
+    aliases: ['community-news', 'news-community'],
+    i18n: {
+      en: {
+        title: 'Community News',
+        description: 'The Community tab of the News feed — updates and posts from the Maxina community.',
+        when_to_visit: 'When the user asks for the Community tab of the news feed, community news, community updates, or what is happening in the community feed.',
+      },
+      de: {
+        title: 'Community-News',
+        description: 'Der Community-Tab des News-Feeds — Updates und Beiträge aus der Maxina-Community.',
+        when_to_visit: 'Wenn der Nutzer den Community-Tab des News-Feeds, Community-Nachrichten, Community-Updates oder Neuigkeiten aus dem Community-Feed möchte.',
+      },
+    },
+  },
   {
     screen_id: 'HOME.MATCHES',
     route: '/home/matches',
@@ -607,6 +653,29 @@ export const NAVIGATION_CATALOG: ReadonlyArray<NavCatalogEntry> = [
     },
   },
   {
+    // The Hot tab is the Events default, but give it an explicit ?tab=hot entry
+    // so the user can switch TO it by voice when already on another tab (the
+    // bare COMM.EVENTS route has no ?tab and so can't switch tabs in-place).
+    screen_id: 'COMM.EVENTS_HOT',
+    route: '/comm/events-meetups?tab=hot',
+    category: 'community',
+    access: 'authenticated',
+    anonymous_safe: false,
+    aliases: ['hot-events', 'events-hot', 'trending-events', 'featured-events'],
+    i18n: {
+      en: {
+        title: 'Hot Events',
+        description: 'Featured and trending Maxina community events and meetups.',
+        when_to_visit: 'When the user asks for the Hot tab of Events & Meetups, hot events, trending events, featured events, or the highlighted community events.',
+      },
+      de: {
+        title: 'Angesagte Events',
+        description: 'Hervorgehobene und angesagte Maxina-Community-Events und Meetups.',
+        when_to_visit: 'Wenn der Nutzer nach dem Tab „Hot“ von Events & Meetups, angesagten Events, Trend-Events, hervorgehobenen Events oder den Top-Community-Events fragt.',
+      },
+    },
+  },
+  {
     screen_id: 'COMM.LIVE_ROOMS',
     route: '/comm/live-rooms',
     category: 'community',
@@ -623,6 +692,90 @@ export const NAVIGATION_CATALOG: ReadonlyArray<NavCatalogEntry> = [
         title: 'Live-Räume',
         description: 'Live Audio- und Video-Räume, in denen sich Community-Mitglieder in Echtzeit treffen.',
         when_to_visit: 'Wenn der Nutzer nach Live-Räumen, Live-Audio, Live-Video, Echtzeit-Gesprächen, Online-Community-Calls oder virtuellen Treffen fragt, die gerade stattfinden.',
+      },
+    },
+  },
+  // VTID-NAV-LIVEROOMS-TABS: voice-addressable tabs of the Live Rooms screen.
+  // The LiveRooms page reads ?tab=<all|live|scheduled|past> on both mobile
+  // (MobileModePill) and desktop (SplitBar), so the deep-link lives in `route`
+  // (always applied) — no mobile_route / is_mobile dependency needed.
+  {
+    screen_id: 'COMM.LIVE_ROOMS_LIVE',
+    route: '/comm/live-rooms?tab=live',
+    category: 'community',
+    access: 'authenticated',
+    anonymous_safe: false,
+    aliases: ['live-rooms-live', 'live_now', 'live-now'],
+    i18n: {
+      en: {
+        title: 'Live Now',
+        description: 'Live Rooms that are streaming right now.',
+        when_to_visit: 'When the user asks for the Live Now tab of Live Rooms — rooms that are live right now, currently streaming, or happening this moment.',
+      },
+      de: {
+        title: 'Jetzt live',
+        description: 'Live-Räume, die gerade jetzt streamen.',
+        when_to_visit: 'Wenn der Nutzer nach dem Tab „Jetzt live“ der Live-Räume fragt — Räume, die gerade live sind, aktuell streamen oder genau jetzt stattfinden.',
+      },
+    },
+  },
+  {
+    screen_id: 'COMM.LIVE_ROOMS_SCHEDULED',
+    route: '/comm/live-rooms?tab=scheduled',
+    category: 'community',
+    access: 'authenticated',
+    anonymous_safe: false,
+    aliases: ['live-rooms-scheduled', 'upcoming-rooms', 'scheduled-rooms'],
+    i18n: {
+      en: {
+        title: 'Scheduled Rooms',
+        description: 'Upcoming Live Rooms scheduled for later.',
+        when_to_visit: 'When the user asks for the Scheduled tab of Live Rooms — upcoming rooms, scheduled sessions, or live rooms planned for later.',
+      },
+      de: {
+        title: 'Geplante Räume',
+        description: 'Kommende Live-Räume, die für später geplant sind.',
+        when_to_visit: 'Wenn der Nutzer nach dem Tab „Geplant“ der Live-Räume fragt — kommende Räume, geplante Sitzungen oder für später geplante Live-Räume.',
+      },
+    },
+  },
+  {
+    screen_id: 'COMM.LIVE_ROOMS_PAST',
+    route: '/comm/live-rooms?tab=past',
+    category: 'community',
+    access: 'authenticated',
+    anonymous_safe: false,
+    aliases: ['live-rooms-past', 'past-rooms', 'past-sessions'],
+    i18n: {
+      en: {
+        title: 'Past Sessions',
+        description: 'Recordings and summaries from completed Live Rooms.',
+        when_to_visit: 'When the user asks for the Past tab of Live Rooms — past sessions, previous rooms, recordings, or summaries of completed live rooms.',
+      },
+      de: {
+        title: 'Vergangene Sitzungen',
+        description: 'Aufzeichnungen und Zusammenfassungen abgeschlossener Live-Räume.',
+        when_to_visit: 'Wenn der Nutzer nach dem Tab „Vergangen“ der Live-Räume fragt — vergangene Sitzungen, frühere Räume, Aufzeichnungen oder Zusammenfassungen abgeschlossener Live-Räume.',
+      },
+    },
+  },
+  {
+    screen_id: 'COMM.LIVE_ROOMS_ALL',
+    route: '/comm/live-rooms?tab=all',
+    category: 'community',
+    access: 'authenticated',
+    anonymous_safe: false,
+    aliases: ['live-rooms-all', 'all-rooms'],
+    i18n: {
+      en: {
+        title: 'All Rooms',
+        description: 'All Live Rooms — live now and scheduled — in one list.',
+        when_to_visit: 'When the user asks for the All Rooms tab of Live Rooms, or to see all live rooms (both live and scheduled) together.',
+      },
+      de: {
+        title: 'Alle Räume',
+        description: 'Alle Live-Räume — jetzt live und geplant — in einer Liste.',
+        when_to_visit: 'Wenn der Nutzer nach dem Tab „Alle Räume“ der Live-Räume fragt oder alle Live-Räume (live und geplant) zusammen sehen möchte.',
       },
     },
   },
@@ -1079,17 +1232,17 @@ export const NAVIGATION_CATALOG: ReadonlyArray<NavCatalogEntry> = [
     category: 'health',
     access: 'authenticated',
     anonymous_safe: false,
-    aliases: ['health-supplements', 'my-supplements', 'supplement-tracker', 'my-stack', 'supplement-stack', 'vitamin-tracker', 'meine-supplements', 'meine-nahrungsergaenzung'],
+    aliases: ['health-supplements', 'supplements-in-health', 'supplements-health', 'my-supplements', 'supplement-tracker', 'my-stack', 'supplement-stack', 'vitamin-tracker', 'meine-supplements', 'meine-nahrungsergaenzung'],
     i18n: {
       en: {
         title: 'My Supplements',
-        description: 'Track the supplements, vitamins, and minerals you take.',
-        when_to_visit: "When the user wants to view, track, log, or manage THEIR OWN supplements — their supplement stack, the vitamins or minerals THEY take, the 'health supplements' tracker, or add a supplement to their regimen. This is the personal health tracker, NOT shopping the marketplace.",
+        description: 'The Supplements tab in Health — track the supplements, vitamins, and minerals you take.',
+        when_to_visit: "When the user asks for the Supplements tab inside the Health screen, 'supplements in Health', 'health supplements', or to open supplements in the Health section — and when they want to view, track, log, or manage THEIR OWN supplements, their supplement stack, or the vitamins and minerals THEY take. This is the Health screen's supplements tracker, NOT shopping the marketplace.",
       },
       de: {
-        title: 'Meine Nahrungsergänzung',
-        description: 'Verfolge die Nahrungsergänzungsmittel, Vitamine und Mineralien, die du nimmst.',
-        when_to_visit: 'Wenn der Nutzer SEINE EIGENEN Nahrungsergänzungsmittel ansehen, verfolgen, protokollieren oder verwalten möchte — seinen Supplement-Stack, die Vitamine oder Mineralien, die er nimmt, den "Gesundheits-Supplement"-Tracker, oder ein Supplement zu seiner Routine hinzufügen. Das ist der persönliche Gesundheits-Tracker, NICHT der Marktplatz-Einkauf.',
+        title: 'Gesundheits-Supplemente',
+        description: 'Der Supplements-Tab im Gesundheitsbereich — verfolge die Nahrungsergänzungsmittel, Vitamine und Mineralien, die du nimmst.',
+        when_to_visit: 'Wenn der Nutzer nach dem Supplements-Tab im Gesundheits-Bildschirm, „Supplements im Gesundheitsbereich", „Gesundheits-Supplements" fragt oder Supplements im Gesundheitsbereich öffnen möchte — und wenn er SEINE EIGENEN Nahrungsergänzungsmittel ansehen, verfolgen, protokollieren oder verwalten möchte, seinen Supplement-Stack oder die Vitamine und Mineralien, die er nimmt. Das ist der Supplements-Tracker des Gesundheits-Bildschirms, NICHT der Marktplatz-Einkauf.',
       },
     },
   },
@@ -1233,12 +1386,12 @@ export const NAVIGATION_CATALOG: ReadonlyArray<NavCatalogEntry> = [
       en: {
         title: 'Supplements',
         description: 'Curated supplements for longevity and wellness.',
-        when_to_visit: 'When the user wants to browse, show, shop for, or buy supplements, vitamins, minerals, or nutraceuticals in the marketplace — exploring available products, brands, or deals. NOT for tracking the supplements they personally take (that is HEALTH.SUPPLEMENTS).',
+        when_to_visit: 'When the user wants to browse, show, shop for, or buy supplements, vitamins, minerals, or nutraceuticals in the marketplace — exploring available products, brands, or deals. NOT for tracking the supplements they personally take (that is the personal tracker tab, not the shop).',
       },
       de: {
         title: 'Nahrungsergänzungsmittel',
         description: 'Kuratierte Nahrungsergänzungsmittel für Longevity und Wellness.',
-        when_to_visit: 'Wenn der Nutzer Nahrungsergänzungsmittel, Vitamine, Mineralien oder Nutraceuticals im Marktplatz durchstöbern, ansehen oder kaufen möchte — verfügbare Produkte, Marken oder Angebote erkunden. NICHT zum Verfolgen der Supplements, die er selbst einnimmt (das ist HEALTH.SUPPLEMENTS).',
+        when_to_visit: 'Wenn der Nutzer Nahrungsergänzungsmittel, Vitamine, Mineralien oder Nutraceuticals im Marktplatz durchstöbern, ansehen oder kaufen möchte — verfügbare Produkte, Marken oder Angebote erkunden. NICHT zum Verfolgen der Supplements, die er selbst einnimmt (das ist der persönliche Tracker-Tab, nicht der Shop).',
       },
     },
   },
@@ -2159,10 +2312,10 @@ export const NAVIGATION_CATALOG: ReadonlyArray<NavCatalogEntry> = [
   {
     screen_id: 'COMM.FEED', route: '/comm/events-meetups?tab=following', category: 'community',
     access: 'authenticated', anonymous_safe: false,
-    aliases: ['feed', 'community-feed', 'community/feed', '/community/feed'],
+    aliases: ['feed', 'community-feed', 'community/feed', '/community/feed', 'following', 'following-events', 'events-following', 'following-feed'],
     i18n: {
-      en: { title: 'Community Feed', description: 'Your community feed — posts and updates from members and groups you follow.', when_to_visit: 'When the user asks to open the community feed, see community posts, scroll the feed, or check what is new in the community.' },
-      de: { title: 'Community-Feed', description: 'Dein Community-Feed — Posts und Updates von Mitgliedern und Gruppen, denen du folgst.', when_to_visit: 'Wenn der Nutzer den Community-Feed öffnen, Community-Posts sehen, durch den Feed scrollen oder prüfen möchte, was es Neues in der Community gibt.' },
+      en: { title: 'Following Community Feed', description: 'The Following tab of Events & Meetups — your community feed of events, posts, and updates from the members and groups you follow (Following).', when_to_visit: 'When the user asks for the Following tab of Events & Meetups, following, following events, events from people they follow, the people or groups they follow, or to open the community feed and see community posts and updates.' },
+      de: { title: 'Following Community-Feed', description: 'Der „Folge ich"-Tab von Events & Meetups — dein Community-Feed mit Events, Posts und Updates von Mitgliedern und Gruppen, denen du folgst (Following).', when_to_visit: 'Wenn der Nutzer nach dem „Folge ich"-Tab von Events & Meetups, nach Following, nach Events von Personen, denen er folgt, nach den Personen oder Gruppen, denen er folgt, oder nach dem Community-Feed mit Community-Posts und Updates fragt.' },
     },
   },
 

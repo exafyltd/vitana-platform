@@ -5271,11 +5271,22 @@ function renderApp() {
         var moduleScroller = document.querySelector('.module-content-wrapper');
         var preservedModuleScrollTop = moduleScroller ? moduleScroller.scrollTop : 0;
         var preservedWindowY = window.scrollY || 0;
+        // Views with their own scroll containers (e.g. the KB checklist's topic
+        // table) tag them with data-preserve-scroll="<unique-key>" to survive
+        // the full-DOM rebuild — same rationale as the module-wrapper restore.
+        var preservedScrollers = {};
+        document.querySelectorAll('[data-preserve-scroll]').forEach(function (el) {
+            if (el.scrollTop > 0) preservedScrollers[el.getAttribute('data-preserve-scroll')] = el.scrollTop;
+        });
         _renderAppCore();
         var newModule = document.querySelector('.module-content-wrapper');
         if (newModule && preservedModuleScrollTop > 0) {
             newModule.scrollTop = preservedModuleScrollTop;
         }
+        Object.keys(preservedScrollers).forEach(function (key) {
+            var el = document.querySelector('[data-preserve-scroll="' + key + '"]');
+            if (el) el.scrollTop = preservedScrollers[key];
+        });
         if (preservedWindowY > 0) window.scrollTo(0, preservedWindowY);
     });
 }
@@ -6461,6 +6472,10 @@ function kbSelectTopic(id) {
     s.selectedId = id;
     var t = s.topics.find(function (x) { return x.topicId === id; });
     s.editor = t ? JSON.parse(JSON.stringify(t)) : null;
+    // New topic = new editor content: start its pane at the top (zeroing it now
+    // means renderApp's scroll preservation won't carry the old position over).
+    var ed = document.querySelector('[data-preserve-scroll="kb-checklist-editor"]');
+    if (ed) ed.scrollTop = 0;
     renderApp();
 }
 
@@ -6848,36 +6863,40 @@ function renderKbChecklistView() {
 
     if (s.view === 'versions') { root.appendChild(renderKbVersions()); return root; }
 
-    // Filters
+    // Filters — single compact row. .form-control is width:100% globally, so
+    // each control must override it (flex sizing) or they stack one per line.
     var filters = kbEl('div', 'admin-toolbar');
-    filters.style.display = 'flex'; filters.style.gap = '0.5rem'; filters.style.flexWrap = 'wrap'; filters.style.padding = '0.25rem 0';
+    filters.style.display = 'flex'; filters.style.gap = '0.5rem'; filters.style.flexWrap = 'wrap';
+    filters.style.alignItems = 'center'; filters.style.padding = '0.25rem 0';
+    function inRow(el, flex) { el.style.width = 'auto'; el.style.minWidth = '0'; el.style.flex = flex; return el; }
     var search = document.createElement('input');
     search.type = 'text'; search.className = 'form-control'; search.placeholder = 'Search label…'; search.value = s.filters.search;
     search.oninput = function (ev) { s.filters.search = ev.target.value; };
     search.onkeydown = function (ev) { if (ev.key === 'Enter') fetchKbChecklist(); };
-    filters.appendChild(search);
+    filters.appendChild(inRow(search, '2 1 10rem'));
     // VTID-03288: Session # filter — also the target for per-session AI regeneration.
     var sessionInput = document.createElement('input');
     sessionInput.type = 'number'; sessionInput.min = '1'; sessionInput.max = '90';
-    sessionInput.className = 'form-control'; sessionInput.placeholder = 'Session #'; sessionInput.style.width = '7rem';
+    sessionInput.className = 'form-control'; sessionInput.placeholder = 'Session #';
     sessionInput.value = s.filters.session;
     sessionInput.onchange = function (ev) { s.filters.session = ev.target.value; fetchKbChecklist(); };
-    filters.appendChild(sessionInput);
+    filters.appendChild(inRow(sessionInput, '0 1 7rem'));
     function sel(options, current, onchange) {
         var el = document.createElement('select'); el.className = 'form-control';
         options.forEach(function (o) { var op = document.createElement('option'); op.value = o.v; op.textContent = o.t; if (o.v === current) op.selected = true; el.appendChild(op); });
         el.onchange = onchange; return el;
     }
-    filters.appendChild(sel(
+    filters.appendChild(inRow(sel(
         [{ v: '', t: 'All chapters' }, { v: 'basics', t: 'basics' }, { v: 'daily_use', t: 'daily_use' }, { v: 'community', t: 'community' }, { v: 'health', t: 'health' }, { v: 'intelligence', t: 'intelligence' }, { v: 'discovery', t: 'discovery' }],
-        s.filters.chapter, function (ev) { s.filters.chapter = ev.target.value; fetchKbChecklist(); }));
-    filters.appendChild(sel(
+        s.filters.chapter, function (ev) { s.filters.chapter = ev.target.value; fetchKbChecklist(); }), '1 1 8rem'));
+    filters.appendChild(inRow(sel(
         [{ v: '', t: 'All status' }, { v: 'draft', t: 'draft' }, { v: 'published', t: 'published' }, { v: 'disabled', t: 'disabled' }],
-        s.filters.status, function (ev) { s.filters.status = ev.target.value; fetchKbChecklist(); }));
-    filters.appendChild(sel(
+        s.filters.status, function (ev) { s.filters.status = ev.target.value; fetchKbChecklist(); }), '1 1 8rem'));
+    filters.appendChild(inRow(sel(
         [{ v: '', t: 'All gates' }, { v: 'curious', t: 'curious' }, { v: 'active', t: 'active' }, { v: 'builder', t: 'builder' }],
-        s.filters.businessGate, function (ev) { s.filters.businessGate = ev.target.value; fetchKbChecklist(); }));
+        s.filters.businessGate, function (ev) { s.filters.businessGate = ev.target.value; fetchKbChecklist(); }), '1 1 8rem'));
     var applyBtn = kbEl('button', 'btn btn-sm btn-secondary', 'Apply');
+    applyBtn.style.flex = 'none';
     applyBtn.onclick = fetchKbChecklist;
     filters.appendChild(applyBtn);
     root.appendChild(filters);
@@ -6922,6 +6941,10 @@ function renderKbChecklistView() {
     // clipping here and give each pane its own bounded scroll so all 250 topics
     // are reachable regardless of window height.
     root.style.overflowY = 'auto';
+    // Selecting a topic re-renders the whole app; these containers carry
+    // data-preserve-scroll so renderApp() restores their position instead of
+    // snapping the list/editor back to the top.
+    root.setAttribute('data-preserve-scroll', 'kb-checklist-root');
     var split = kbEl('div', 'admin-split-layout');
     split.style.display = 'flex'; split.style.gap = '1rem'; split.style.alignItems = 'flex-start';
     split.style.flex = 'none'; split.style.overflow = 'visible'; split.style.minHeight = '0';
@@ -6929,10 +6952,12 @@ function renderKbChecklistView() {
     left.style.overflow = 'visible'; left.style.minHeight = '0';
     var tbl = renderKbTable();
     tbl.style.flex = 'none'; tbl.style.maxHeight = '72vh'; tbl.style.overflowY = 'auto';
+    tbl.setAttribute('data-preserve-scroll', 'kb-checklist-table');
     left.appendChild(tbl);
     split.appendChild(left);
     var right = kbEl('div', 'admin-split-right'); right.style.flex = '1'; right.style.minWidth = '0';
     right.style.overflow = 'visible'; right.style.maxHeight = '72vh'; right.style.overflowY = 'auto';
+    right.setAttribute('data-preserve-scroll', 'kb-checklist-editor');
     right.appendChild(renderKbEditor());
     split.appendChild(right);
     root.appendChild(split);

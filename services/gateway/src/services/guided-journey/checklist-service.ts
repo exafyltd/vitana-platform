@@ -279,6 +279,74 @@ export interface PublishedChecklist {
   topics: PublicChecklistTopic[];
 }
 
+/** Locales the curriculum can be served in. 'de' is the authored source. */
+export type ChecklistLocale = 'de' | 'en' | 'es' | 'sr';
+
+interface ChecklistTranslationRow {
+  topic_id: string;
+  display_label: string | null;
+  short_description: string | null;
+  explanation_what_it_is: string | null;
+  explanation_user_benefit: string | null;
+  explanation_when_to_use: string | null;
+  explanation_try_this: string | null;
+}
+
+/**
+ * Overlay per-locale translations onto the (German) public topics. Each field
+ * falls back to the German source when a translation is absent — so a partially
+ * translated locale still renders, never a blank. Pure/synchronous: the caller
+ * fetches the rows. Exported for unit testing.
+ */
+export function applyTranslations(
+  topics: PublicChecklistTopic[],
+  translations: ChecklistTranslationRow[],
+): PublicChecklistTopic[] {
+  if (translations.length === 0) return topics;
+  const byTopic = new Map<string, ChecklistTranslationRow>();
+  for (const tr of translations) byTopic.set(tr.topic_id, tr);
+  const pick = (translated: string | null | undefined, source: string | null) =>
+    translated != null && translated !== '' ? translated : source;
+  return topics.map((t) => {
+    const tr = byTopic.get(t.topicId);
+    if (!tr) return t;
+    return {
+      ...t,
+      displayLabel: pick(tr.display_label, t.displayLabel) ?? t.displayLabel,
+      shortDescription: pick(tr.short_description, t.shortDescription),
+      explanation: {
+        whatItIs: pick(tr.explanation_what_it_is, t.explanation.whatItIs),
+        userBenefit: pick(tr.explanation_user_benefit, t.explanation.userBenefit),
+        whenToUse: pick(tr.explanation_when_to_use, t.explanation.whenToUse),
+        tryThis: pick(tr.explanation_try_this, t.explanation.tryThis),
+      },
+    };
+  });
+}
+
+/** Fetch the translation rows for a locale + topic set. Best-effort: returns
+ *  [] on any error so the German source is served rather than failing. */
+async function fetchChecklistTranslations(
+  client: SupabaseClient,
+  locale: ChecklistLocale,
+  topicIds: string[],
+): Promise<ChecklistTranslationRow[]> {
+  if (locale === 'de' || topicIds.length === 0) return [];
+  try {
+    const { data, error } = await client
+      .from('journey_checklist_translations')
+      .select(
+        'topic_id, display_label, short_description, explanation_what_it_is, explanation_user_benefit, explanation_when_to_use, explanation_try_this',
+      )
+      .eq('locale', locale)
+      .in('topic_id', topicIds);
+    if (error || !Array.isArray(data)) return [];
+    return data as ChecklistTranslationRow[];
+  } catch {
+    return [];
+  }
+}
+
 /**
  * The user-facing read for My Journey (P5). Returns the current published
  * snapshot; if nothing is published yet (early phases), falls back to the
@@ -288,6 +356,7 @@ export interface PublishedChecklist {
 export async function getPublishedChecklist(
   client: SupabaseClient,
   curriculumVersion = 'v2',
+  locale: ChecklistLocale = 'de',
 ): Promise<PublishedChecklist> {
   const { data: ver, error } = await client
     .from(V)
@@ -297,27 +366,40 @@ export async function getPublishedChecklist(
     .maybeSingle();
   if (error) throw error;
 
+  let result: PublishedChecklist;
   if (ver && Array.isArray((ver as any).snapshot)) {
     // VTID-03289: the stored snapshot now carries the internal vitanaVoiceScript
     // (for the ORB seam). Re-strip to the public shape so it never leaks over
     // this HTTP read. snapshotToPublic tolerates older voice-less snapshots.
     const snap = (ver as any).snapshot as SnapshotChecklistTopic[];
-    return {
+    result = {
       source: 'published',
       versionLabel: (ver as any).version_label ?? null,
       topics: snap.map(snapshotToPublic),
     };
+  } else {
+    // Fallback: live working draft (enabled, not disabled).
+    const working = (await listTopics(client, { curriculumVersion })).filter(
+      (t) => t.enabled && t.status !== 'disabled',
+    );
+    result = {
+      source: 'draft_fallback',
+      versionLabel: null,
+      topics: working.map(toPublicTopic),
+    };
   }
 
-  // Fallback: live working draft (enabled, not disabled).
-  const working = (await listTopics(client, { curriculumVersion })).filter(
-    (t) => t.enabled && t.status !== 'disabled',
-  );
-  return {
-    source: 'draft_fallback',
-    versionLabel: null,
-    topics: working.map(toPublicTopic),
-  };
+  // Overlay per-locale translations onto the German source (no-op for 'de' and
+  // for any field/topic without a translation — those keep the German text).
+  if (locale !== 'de' && result.topics.length > 0) {
+    const translations = await fetchChecklistTranslations(
+      client,
+      locale,
+      result.topics.map((t) => t.topicId),
+    );
+    result = { ...result, topics: applyTranslations(result.topics, translations) };
+  }
+  return result;
 }
 
 /**

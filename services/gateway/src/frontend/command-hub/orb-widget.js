@@ -238,6 +238,9 @@
     // explicit user re-open (_show). Every reconnect/session-start path checks
     // it and bails, so pressing X always tears down and nothing re-opens.
     _userRequestedClose: false,
+    // VTID-03294 (#4): when true, the overlay auto-closes after the first
+    // (teaching) turn finishes — set by focusGuidedTopic, one-shot.
+    guidedAutoClose: false,
     // VTID-02020: contextual recovery state. _preDisconnectStage captures what
     // the user was doing when the network dropped (idle / listening_user_speaking
     // / thinking / speaking) so the backend's recovery prompt can decide
@@ -1442,15 +1445,19 @@
       try { __es.close(); } catch (e) { /* noop */ }
     }
 
-    // Stop backend session
+    // Stop backend session — VTID-03295: FIRE-AND-FORGET (keepalive), never
+    // `await`. Awaiting the network here stalled teardown behind a slow/hung
+    // request while audio was still playing (the un-closeable-overlay bug). The
+    // overlay + audio are already torn down synchronously in _hide; this is just
+    // best-effort server cleanup.
     if (_s.sessionId) {
       try {
         var headers = { 'Content-Type': 'application/json' };
         if (_cfg.token) headers['Authorization'] = 'Bearer ' + _cfg.token;
-        await fetch(_cfg.gw + '/api/v1/orb/live/session/stop', {
-          method: 'POST', headers: headers,
+        fetch(_cfg.gw + '/api/v1/orb/live/session/stop', {
+          method: 'POST', headers: headers, keepalive: true,
           body: JSON.stringify({ session_id: _s.sessionId })
-        });
+        }).catch(function () { /* ignore */ });
       } catch (e) { /* ignore */ }
     }
 
@@ -1632,6 +1639,17 @@
             if (_cfg.onTurnComplete) {
               try { _cfg.onTurnComplete({ was_greeting: !_s.greetingComplete }); }
               catch (e) { /* host callback must never break the voice loop */ }
+            }
+            // VTID-03294 (#4): GUIDED auto-close. The teaching turn (turn 1,
+            // greetingComplete still false) has finished playing — close the
+            // overlay so the underlying Topic drawer's next-step buttons are
+            // usable, instead of dropping to listening. Widget-side so it does
+            // not depend on the host wiring. One-shot (cleared here).
+            if (_s.guidedAutoClose && !_s.greetingComplete) {
+              _s.guidedAutoClose = false;
+              console.log('[VTOrb] guided teaching turn complete — auto-closing overlay (reveal drawer)');
+              _hide();
+              return;
             }
             // If the host closed the overlay in the callback (guided auto-close),
             // stop here — don't beep / arm the mic on a torn-down session.
@@ -2732,18 +2750,46 @@
     // _sessionStart bails (see _sessionStart guard) and the overlay can't
     // silently re-open. Cleared only on an explicit re-open in _show().
     _s._userRequestedClose = true;
-    // DEV-COMHU-0503: UI close preserves short-lived continuity (15 min) BEFORE
-    // teardown, so reopening within the window resumes instead of greeting
-    // first-time. _sessionStop still tears down media/SSE exactly as before.
-    _persistContinuity('hide', 15);
-    _sessionStop();
-    _restoreSoundscape();
+    // VTID-03293 (#3 fix-2): kill the reconnect/disconnect machinery so a STALLED
+    // session (e.g. stuck "connecting" with no audio) can ALWAYS be closed. The
+    // recovery watchdog is a setInterval that re-fires _resetAndReconnect; without
+    // stopping it + clearing these flags, the probe could keep the session alive
+    // and the overlay effectively un-closeable. Belt-and-suspenders with the
+    // _userRequestedClose guard above.
+    _s._disconnectActive = false;
+    _s._disconnectStuck = false;
+    _s._isReconnecting = false;
+    _s.guidedAutoClose = false; // VTID-03294 (#4): clear any pending guided auto-close
+    try { clearInterval(_s._recoveryWatchdog); } catch (e) { /* noop */ }
+    _s._recoveryWatchdog = null;
+    // VTID-03295 (X-close fix): STOP AUDIO + CLOSE THE OVERLAY SYNCHRONOUSLY, the
+    // instant X is pressed — BEFORE the async/network teardown. The bug: the stop
+    // routine awaited the /session/stop fetch BEFORE it stopped the scheduled audio
+    // sources, so while Vitana was mid-lesson the audio kept playing and the
+    // teardown stalled on the network → the overlay felt un-closeable. Here we kill
+    // playback + mark the session dead first, so X always silences + closes now;
+    // the network cleanup runs fire-and-forget afterwards.
+    _s.active = false;
+    if (_s.scheduledSources) {
+      for (var _i = 0; _i < _s.scheduledSources.length; _i++) {
+        try { _s.scheduledSources[_i].stop(); } catch (e) { /* ok */ }
+      }
+      _s.scheduledSources = [];
+    }
+    _s.audioQueue = [];
+    _s.audioPlaying = false;
     _s.overlayVisible = false;
     if (_root) {
       _root.classList.remove('vtorb-visible');
       _root.style.display = 'none';
     }
     _updateUI();
+    // DEV-COMHU-0503: UI close preserves short-lived continuity (15 min) BEFORE
+    // teardown, so reopening within the window resumes instead of greeting
+    // first-time. _sessionStop tears down media/SSE + fires /session/stop.
+    _persistContinuity('hide', 15);
+    _sessionStop();
+    _restoreSoundscape();
     if (_cfg.onClose) try { _cfg.onClose(); } catch (e) { /* ignore */ }
   }
 
@@ -3109,7 +3155,21 @@
     // provider then leads turn-1 and Vitana TEACHES that topic from the published
     // KB. One-shot: consumed by the upcoming _sessionStart only.
     focusGuidedTopic: function (topicId) {
+      // VTID-03296 (replay fix): tear down ANY existing/in-flight session FIRST so
+      // the new guided session starts from a CLEAN slate. Without this, tapping
+      // Replay right after the teaching auto-close raced the just-closing session
+      // (`if (_s.active) return` in _sessionStart, or a stale start consuming the
+      // one-shot _s.guidedTopic), so the new session went out WITHOUT
+      // guided_topic_id → it fell into the slow non-guided (admin) bootstrap path
+      // and got stuck "Connecting...". _sessionStop is synchronous; _show() below
+      // re-arms everything cleanly.
+      try { _sessionStop(); } catch (e) { /* best-effort */ }
       _s.guidedTopic = (typeof topicId === 'string' && topicId) ? topicId : null;
+      // VTID-03294 (#4): a guided-topic open AUTO-CLOSES the overlay once Vitana
+      // finishes the teaching turn (reveals the drawer's next-step buttons),
+      // instead of dropping to listening. Set AFTER _s.guidedTopic; _show() does
+      // not touch it. Consumed/reset on the first turn-complete or on _hide.
+      _s.guidedAutoClose = true;
       _show();
     },
     // DEV-COMHU-0503: intentional forget (logout / account switch / start over).
