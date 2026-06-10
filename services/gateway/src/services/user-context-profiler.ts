@@ -26,6 +26,7 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { getCurrentFacts } from './memory-facts-service';
 import { getAwarenessConfig } from './awareness-registry';
+import { getJourneyEngagementBonus } from './guided-journey/journey-index-award';
 
 const TTL_MS = 10 * 60 * 1000;
 const DEFAULT_WINDOW_DAYS = 14;
@@ -473,7 +474,12 @@ async function fetchVitanaIndex(client: SupabaseClient, userId: string): Promise
   const latest = rows[rows.length - 1];
   const earliest = rows[0];
   const history_7d = rows.map(r => Number(r.score_total) || 0);
-  const total = Number(latest.score_total) || 0;
+  const baseTotal = Number(latest.score_total) || 0;
+  // Guided Journey engagement overlay: +2 per listened session, applied on top
+  // of the computed health score for the headline Index the user sees/hears.
+  // Best-effort (helper swallows errors → 0) so it never breaks the Index read.
+  const engagementBonus = await getJourneyEngagementBonus(client, userId);
+  const total = Math.min(999, baseTotal + engagementBonus);
   const pillars: Record<PillarKey, number> = {
     nutrition: Number(latest.score_nutrition) || 0,
     hydration: Number(latest.score_hydration) || 0,
@@ -485,7 +491,9 @@ async function fetchVitanaIndex(client: SupabaseClient, userId: string): Promise
   pillarEntries.sort((a, b) => a[1] - b[1]);
   const weakest_pillar = { name: pillarEntries[0][0], score: pillarEntries[0][1] };
   const strongest_pillar = { name: pillarEntries[pillarEntries.length - 1][0], score: pillarEntries[pillarEntries.length - 1][1] };
-  const trend_7d = rows.length >= 2 ? total - (Number(earliest.score_total) || 0) : 0;
+  // Trend uses the base (pre-bonus) totals on both ends so the constant
+  // engagement overlay never manufactures a fake 7-day movement.
+  const trend_7d = rows.length >= 2 ? baseTotal - (Number(earliest.score_total) || 0) : 0;
 
   const featureInputs = (latest.feature_inputs as any) || {};
   const balanceFactor = typeof featureInputs.balance_factor === 'number' ? featureInputs.balance_factor : 1.0;

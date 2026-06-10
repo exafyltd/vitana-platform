@@ -19,6 +19,7 @@ import {
   setJourneyMode,
   completePractice,
 } from '../services/guided-journey/guided-journey-state';
+import { recordSessionListen } from '../services/guided-journey/journey-index-award';
 import type { JourneyMode } from '../types/guided-journey';
 
 const router = Router();
@@ -110,6 +111,44 @@ router.post('/practice-complete', requireAuth, async (req: AuthenticatedRequest,
   } catch (err: any) {
     console.error(`[VTID-03282] practice-complete failed: ${err?.message}`);
     return res.status(500).json({ ok: false, error: 'practice_complete_failed', vtid: 'VTID-03282' });
+  }
+});
+
+// BOOTSTRAP-GUIDED-JOURNEY-POPUP — award +2 Vitana Index points for listening
+// to a session. Fired when the user taps a topic and Vitana narrates it (the
+// Topic Explanation popup then appears). Idempotent per topic: replays never
+// double-award. The bonus surfaces on the user-facing Vitana Index read.
+// POST /api/v1/journey/session-listened  { topicId } → { ok, awarded, points }.
+router.post('/session-listened', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const userId = req.identity?.user_id;
+  if (!userId) {
+    return res.status(401).json({ ok: false, error: 'unauthenticated', vtid: 'BOOTSTRAP-GUIDED-JOURNEY-POPUP' });
+  }
+  const topicId = req.body?.topicId as unknown;
+  if (typeof topicId !== 'string' || !topicId.trim()) {
+    return res.status(400).json({
+      ok: false,
+      error: 'invalid_topic_id',
+      detail: 'topicId is required',
+      vtid: 'BOOTSTRAP-GUIDED-JOURNEY-POPUP',
+    });
+  }
+  const client = getSupabase();
+  if (!client) {
+    return res.status(500).json({ ok: false, error: 'supabase_not_configured', vtid: 'BOOTSTRAP-GUIDED-JOURNEY-POPUP' });
+  }
+  try {
+    const result = await recordSessionListen(client, userId, topicId.trim());
+    return res.json({
+      ok: true,
+      awarded: result.awarded,
+      points: result.points,
+      total_bonus: result.totalBonus,
+      vtid: 'BOOTSTRAP-GUIDED-JOURNEY-POPUP',
+    });
+  } catch (err: any) {
+    console.error(`[BOOTSTRAP-GUIDED-JOURNEY-POPUP] session-listened failed: ${err?.message}`);
+    return res.status(500).json({ ok: false, error: 'session_listened_failed', vtid: 'BOOTSTRAP-GUIDED-JOURNEY-POPUP' });
   }
 });
 
