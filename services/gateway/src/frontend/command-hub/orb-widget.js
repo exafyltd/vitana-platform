@@ -669,6 +669,19 @@
     });
   }
 
+  // BOOTSTRAP-ORB-LATENCY-PHASE2: fire-and-forget gateway bootstrap pre-warm.
+  // Builds the user's context pack server-side BEFORE the first orb tap so
+  // /live/session/start hits the gateway's 5-min bootstrap cache instead of
+  // paying 400-800ms of Supabase fetches on the click-to-first-audio path.
+  // Safe to call repeatedly (server cache absorbs it); anonymous = no-op.
+  function _prewarmBootstrap() {
+    if (!_cfg.token) return; // anonymous — server would no-op anyway
+    var headers = { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + _cfg.token };
+    fetch(_cfg.gw + '/api/v1/orb/live/session/prewarm', { method: 'POST', headers: headers, body: '{}' })
+      .then(function (r) { if (r.ok) console.log('[VTOrb] Bootstrap prewarm requested'); })
+      .catch(function () { /* best-effort — never surfaces */ });
+  }
+
   // Play a cached alert clip. Returns the BufferSource so the caller can chain
   // an onended handler (used by _clearDisconnect to ring the ready beep after
   // the recovery phrase). Returns null if the clip is missing — caller is
@@ -3070,6 +3083,11 @@
       // BOOTSTRAP-ORB-MODERN-RECOVERY: preload alert clips eagerly while the
       // network is fine, so they're in memory if/when the network drops.
       _preloadAlertClips();
+      // BOOTSTRAP-ORB-LATENCY-PHASE2: pre-warm the gateway's bootstrap
+      // context cache at page load (fire-and-forget) so the user's first
+      // orb tap skips the 400-800ms context build on the
+      // click-to-first-audio path. Anonymous = server-side no-op.
+      _prewarmBootstrap();
       console.log('[VTOrb] Initialized — gateway: ' + _cfg.gw + ', lang: ' + _cfg.lang + ', showFab: ' + _cfg.showFab + ', hasToken: ' + !!_cfg.token + ', forceAnonymous: ' + _cfg.forceAnonymous);
     },
 
@@ -3119,6 +3137,9 @@
       } else {
         console.log('[VTOrb] setAuth: hasToken=true (reactive)');
       }
+      // BOOTSTRAP-ORB-LATENCY-PHASE2: warm the (possibly new) identity's
+      // bootstrap context so the next orb tap starts fast.
+      _prewarmBootstrap();
     },
 
     // DEV-COMHU-0502: explicit logout / account-switch / "start over". Tears

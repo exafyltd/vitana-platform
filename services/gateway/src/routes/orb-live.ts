@@ -2055,6 +2055,37 @@ export function buildPersonaBehavioralRule(personaKey: string): string {
 // VTID-03025: exported so the voice-lab dry-run evaluator can mirror the
 // exact bootstrap-context fetch the live session uses. No behavior change —
 // only the visibility modifier was added.
+// BOOTSTRAP-ORB-LATENCY-PHASE2: bootstrap context cache for the VERTEX
+// session-start path. The VTID-03035/03036 caches only wrap the LiveKit
+// /orb/context-bootstrap route — this path rebuilt the pack (3 parallel
+// Supabase fetches, 400-800ms) on EVERY tap, squarely on the
+// click-to-first-audio critical path. Keyed by tenant|user, 5-min TTL
+// (same staleness rationale as the LiveKit cache: memory_items /
+// identity_facts change on minute-to-hour scale). Failures and empty
+// packs are never cached. Populated by /live/session/prewarm (widget
+// fires it on init) so the first tap of a visit hits warm.
+const VERTEX_BOOTSTRAP_CACHE = new Map<string, { at: number; value: {
+  contextPack?: ContextPack;
+  contextInstruction?: string;
+  latencyMs: number;
+  skippedReason?: string;
+} }>();
+const VERTEX_BOOTSTRAP_CACHE_TTL_MS = 5 * 60_000;
+const VERTEX_BOOTSTRAP_CACHE_MAX_ENTRIES = 500;
+
+function storeVertexBootstrapCache(key: string, value: {
+  contextPack?: ContextPack;
+  contextInstruction?: string;
+  latencyMs: number;
+  skippedReason?: string;
+}): void {
+  if (VERTEX_BOOTSTRAP_CACHE.size >= VERTEX_BOOTSTRAP_CACHE_MAX_ENTRIES) {
+    const oldest = VERTEX_BOOTSTRAP_CACHE.keys().next().value;
+    if (oldest !== undefined) VERTEX_BOOTSTRAP_CACHE.delete(oldest);
+  }
+  VERTEX_BOOTSTRAP_CACHE.set(key, { at: Date.now(), value });
+}
+
 export async function buildBootstrapContextPack(
   identity: SupabaseIdentity,
   sessionId: string
@@ -2072,6 +2103,14 @@ export async function buildBootstrapContextPack(
       latencyMs: Date.now() - startTime,
       skippedReason: 'missing_identity',
     };
+  }
+
+  // BOOTSTRAP-ORB-LATENCY-PHASE2: serve from cache when fresh.
+  const bootstrapCacheKey = `${identity.tenant_id}|${identity.user_id}`;
+  const cached = VERTEX_BOOTSTRAP_CACHE.get(bootstrapCacheKey);
+  if (cached && Date.now() - cached.at < VERTEX_BOOTSTRAP_CACHE_TTL_MS) {
+    console.log(`[BOOTSTRAP-ORB-LATENCY-PHASE2] Vertex bootstrap cache HIT for session ${sessionId} (built ${Date.now() - cached.at}ms ago)`);
+    return { ...cached.value, latencyMs: Date.now() - startTime };
   }
 
   try {
@@ -2113,6 +2152,7 @@ export async function buildBootstrapContextPack(
       const base = memoryContext.formatted_context || '';
       const combined = [recentTurnsBlock, base, profileBlock].filter(Boolean).join('\n');
       if (combined) {
+        storeVertexBootstrapCache(bootstrapCacheKey, { contextInstruction: combined, latencyMs });
         return {
           contextInstruction: combined,
           latencyMs,
@@ -2135,6 +2175,7 @@ export async function buildBootstrapContextPack(
 
     console.log(`[VTID-01225] Context bootstrap complete: ${latencyMs}ms, memory=${memoryContext.items.length}, recentTurns=${recentTurns.length}, profile=${profileResult.summary.length}ch (cached=${profileResult.cached})`);
 
+    storeVertexBootstrapCache(bootstrapCacheKey, { contextInstruction, latencyMs });
     return {
       contextInstruction,
       latencyMs,
@@ -11495,6 +11536,29 @@ async function getStoredLanguagePreference(
 // A8.2.1: handler body lifted to orb/live/session/live-session-controller.ts.
 router.post('/live/session/start', optionalAuth, async (req: AuthenticatedRequest, res: Response) => {
   await handleLiveSessionStart(req, res);
+});
+
+/**
+ * BOOTSTRAP-ORB-LATENCY-PHASE2 — POST /live/session/prewarm
+ *
+ * Fire-and-forget bootstrap pre-warm for the Vertex session-start path.
+ * The widget calls this on init (page load, once authenticated) so that
+ * buildBootstrapContextPack's 400-800ms of Supabase fetches happen BEFORE
+ * the user taps the orb; the actual session start then hits the 5-min
+ * VERTEX_BOOTSTRAP_CACHE and the click-to-first-audio path skips the
+ * context-build cost entirely. Returns immediately — never blocks on the
+ * build. Anonymous callers are a no-op (no identity to key the cache on).
+ */
+router.post('/live/session/prewarm', optionalAuth, async (req: AuthenticatedRequest, res: Response) => {
+  // impact-allow-no-oasis — cache pre-fill fired on every page load; no state
+  // transition occurs (OASIS taxonomy: polling/heartbeat-class, never emitted).
+  const identity = req.identity;
+  if (!identity?.user_id || !identity?.tenant_id) {
+    return res.json({ ok: true, prewarm: 'skipped_anonymous' });
+  }
+  void buildBootstrapContextPack(identity, `prewarm-${Date.now()}`)
+    .catch((err) => console.warn('[BOOTSTRAP-ORB-LATENCY-PHASE2] prewarm failed (non-fatal):', err?.message || err));
+  return res.json({ ok: true, prewarm: 'started' });
 });
 
 
