@@ -114,10 +114,13 @@ const VTID = 'VTID-LIVEKIT-FOUNDATION';
 // 1.3-2.0s after VTID-03030 parallelization). On a normal session that's
 // 600-800ms of dead time between agent dispatch and audible greeting.
 //
-// In-memory LRU keyed by {user_id, agent_id, lang}, TTL 60s. The key
-// design lets reconnects within the TTL hit the cache (~10ms response).
-// The 60s window is short enough that stale identity_facts / memory_items
-// risk is negligible — those tables change on order of minutes-to-hours.
+// In-memory LRU keyed by {user_id, agent_id, lang}, TTL 5 min
+// (BOOTSTRAP-ORB-LATENCY-PHASE1: 60s→5min — at 60s nearly every real
+// session start missed the cache and paid the full 600-800ms rebuild;
+// identity_facts / memory_items change on the order of minutes-to-hours,
+// so a 5-min window keeps staleness risk negligible while making warm
+// starts the common case). The key design lets reconnects within the TTL
+// hit the cache (~10ms response).
 //
 // The bigger win comes from PRE-WARMING the cache: both token-mint
 // endpoints (/orb/livekit/token and /agents/:id/voice-config/test-session)
@@ -128,7 +131,7 @@ const VTID = 'VTID-LIVEKIT-FOUNDATION';
 // Cache size is bounded to 1000 entries — way more than any reasonable
 // active-user count for a single Cloud Run instance.
 // ---------------------------------------------------------------------------
-const BOOTSTRAP_CACHE_TTL_MS = 60_000;
+const BOOTSTRAP_CACHE_TTL_MS = 5 * 60_000;
 const BOOTSTRAP_CACHE_MAX_ENTRIES = 1000;
 type BootstrapCacheEntry = { value: Record<string, unknown>; cachedAt: number };
 const BOOTSTRAP_CACHE = new Map<string, BootstrapCacheEntry>();
@@ -1991,7 +1994,7 @@ first turn only. Subsequent turns follow the normal conversation flow.`;
         : null,
     };
 
-    // VTID-03035 + VTID-03036: populate both cache layers for the next 60s.
+    // VTID-03035 + VTID-03036: populate both cache layers for the next BOOTSTRAP_CACHE_TTL_MS.
     //  - L1 in-memory: instant hit on same Cloud Run instance.
     //  - L2 Supabase (fire-and-forget upsert): hit on any instance via the
     //    `bootstrap_cache` table — required for prewarm→agent to land

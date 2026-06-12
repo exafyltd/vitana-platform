@@ -13269,12 +13269,14 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
 
     // VTID-AUDIO-READY: Defer greeting until client sends audio_ready to avoid
     // truncating first words on mobile (race condition: greeting streams before
-    // client audio player is initialized). Fallback: send after 2s if no audio_ready.
+    // client audio player is initialized). Fallback: send after 1s if no audio_ready
+    // (BOOTSTRAP-ORB-LATENCY-PHASE1: 2s→1s — the ack normally arrives in <300ms;
+    // a 2s fallback only stretched session start for clients that never ack).
     if (liveSession.greetingDeferred) {
       console.log(`[VTID-AUDIO-READY] Greeting deferred — waiting for client audio_ready: session=${sessionId}`);
       setTimeout(() => {
         if (!liveSession.greetingSent && liveSession.active && liveSession.upstreamWs) {
-          console.log(`[VTID-AUDIO-READY] Fallback: sending chime + greeting after 2s timeout: session=${sessionId}`);
+          console.log(`[VTID-AUDIO-READY] Fallback: sending chime + greeting after 1s timeout: session=${sessionId}`);
           // VTID-INSTANT-FEEDBACK: Send chime before fallback greeting too
           try {
             const chimePcm = generateChimePcm();
@@ -13291,7 +13293,7 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
           sendGreetingPromptToLiveAPI(liveSession.upstreamWs, liveSession);
           liveSession.greetingDeferred = false;
         }
-      }, 2000);
+      }, 1000);
     } else {
       // SSE path or non-deferred: send greeting immediately
       sendGreetingPromptToLiveAPI(upstreamWs, liveSession);
