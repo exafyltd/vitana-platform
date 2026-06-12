@@ -1,7 +1,7 @@
 # SPEC — Vitana Assistant Conversation Flow Restructuring (Journey Conversation V2)
 
 **Status:** developer-ready, implemented behind `vitana_journey_conversation_v2_enabled`
-**Governance:** pending VTID allocation; tracked as `BOOTSTRAP-JOURNEY-CONVERSATION-V2` until then
+**Governance:** VTID-03307 (ledger spec approved 2026-06-12, approval fc1ffed6-5c54-47b7-a7a1-97e36e5fb9ed)
 **Owner:** d.stevanovic@exafy.io
 
 ## 1. Core direction

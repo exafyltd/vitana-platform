@@ -1,6 +1,6 @@
 # Journey Conversation V2 — Governance Spec
 
-VTID: assigned at allocation (see ledger row); implementation PR: exafyltd/vitana-platform#2672
+VTID: VTID-03307 (spec approved 2026-06-12); implementation PR: exafyltd/vitana-platform#2672
 Detailed design spec: `docs/SPEC-journey-conversation-v2.md`
 
 ## Goal

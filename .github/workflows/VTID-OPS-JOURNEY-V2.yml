@@ -25,6 +25,23 @@ env:
   GATEWAY_DEFAULT: 'https://gateway-q74ibpv6ia-uc.a.run.app'
 
 jobs:
+  # One-shot cleanup of the stray legacy-format row "DEV-ORB-2026-  37"
+  # minted by run #1 (the /create endpoint detour). Gated on its own marker
+  # so it can never re-run the allocation job.
+  cleanup:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && contains(github.event.head_commit.message, '[run-vtid-cleanup]')
+    steps:
+      - name: Terminalize stray legacy ledger row as cancelled
+        env:
+          GATEWAY: ${{ env.GATEWAY_DEFAULT }}
+        run: |
+          set -euo pipefail
+          RESP=$(curl -sS -X POST "$GATEWAY/api/v1/oasis/vtid/terminalize" \
+            -H 'Content-Type: application/json' \
+            -d '{"vtid":"DEV-ORB-2026-  37","outcome":"cancelled","actor":"manual"}')
+          echo "$RESP"
+
   register:
     runs-on: ubuntu-latest
     if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[run-vtid-ops]')
