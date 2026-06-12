@@ -135,7 +135,14 @@
     // { was_greeting } (true for the first turn = the teaching/opener turn).
     // The host uses this to auto-close the overlay after the guided-topic
     // teaching turn so the underlying drawer's next-step buttons are usable.
-    onTurnComplete: null
+    onTurnComplete: null,
+    // BOOTSTRAP-ORB-LATENCY-PHASE3: transport selector. 'sse' (default,
+    // production path: POST-per-chunk up / SSE down) or 'ws' (single
+    // bidirectional WebSocket to /api/v1/orb/live/ws — one connection,
+    // binary-framed JSON both ways, no per-chunk HTTP overhead, no
+    // cross-instance 404 class). Opt-in via init({transport:'ws'}) or
+    // localStorage 'vtorb.transport'='ws' for staging verification.
+    transport: 'sse'
   };
 
   var _s = {
@@ -143,6 +150,8 @@
     sessionId: null,
     active: false,
     eventSource: null,
+    // BOOTSTRAP-ORB-LATENCY-PHASE3: WebSocket transport handle (null on SSE)
+    ws: null,
 
     // Audio capture (16kHz mic)
     captureCtx: null,
@@ -669,6 +678,28 @@
     });
   }
 
+  // BOOTSTRAP-ORB-LATENCY-PHASE3: true when the WS transport is selected
+  // (init option, or the localStorage override used for staging testing).
+  function _useWsTransport() {
+    try {
+      var o = window.localStorage && localStorage.getItem('vtorb.transport');
+      if (o === 'ws') return true;
+      if (o === 'sse') return false;
+    } catch (e) { /* storage blocked — fall through to config */ }
+    return _cfg.transport === 'ws';
+  }
+
+  // BOOTSTRAP-ORB-LATENCY-PHASE3: tear down the WS transport (idempotent).
+  // sendStop=true also asks the gateway to release the upstream Live session.
+  function _closeWs(sendStop) {
+    var w = _s.ws;
+    if (!w) return;
+    _s.ws = null;
+    try { w.onopen = null; w.onmessage = null; w.onerror = null; w.onclose = null; } catch (e) { /* noop */ }
+    try { if (sendStop && w.readyState === 1) w.send(JSON.stringify({ type: 'stop' })); } catch (e) { /* noop */ }
+    try { w.close(); } catch (e) { /* noop */ }
+  }
+
   // BOOTSTRAP-ORB-LATENCY-PHASE2: fire-and-forget gateway bootstrap pre-warm.
   // Builds the user's context pack server-side BEFORE the first orb tap so
   // /live/session/start hits the gateway's 5-min bootstrap cache instead of
@@ -883,6 +914,7 @@
     if (_s.captureProcessor) { try { _s.captureProcessor.disconnect(); } catch (e) {} _s.captureProcessor = null; }
     if (_s.captureCtx) { try { _s.captureCtx.close().catch(function () {}); } catch (e) {} _s.captureCtx = null; }
     if (_s.eventSource) { try { _s.eventSource.close(); } catch (e) {} _s.eventSource = null; }
+    _closeWs(false); // BOOTSTRAP-ORB-LATENCY-PHASE3: reset path — server cleans on close
 
     _s.sessionId = null;
     _s.active = false;
@@ -937,6 +969,15 @@
       return; // no audio context available — let the server 3s timeout cover it
     }
     _s._audioReadySignaled = true;
+    // BOOTSTRAP-ORB-LATENCY-PHASE3: WS transport sends the in-band
+    // audio_ready message (the WS path defers the greeting on it).
+    if (_s.ws && _s.ws.readyState === 1) {
+      try {
+        _s.ws.send(JSON.stringify({ type: 'audio_ready' }));
+        console.log('[VTOrb] audio-ready signaled (ws) for session ' + _s.sessionId);
+      } catch (e) { /* greeting falls back to the server timeout */ }
+      return;
+    }
     try {
       var headers = { 'Content-Type': 'application/json' };
       if (_cfg.token) headers['Authorization'] = 'Bearer ' + _cfg.token;
@@ -1259,6 +1300,16 @@
           + ', conversation_id=' + (startPayload.conversation_id || '<new>'));
       }
 
+      // BOOTSTRAP-ORB-LATENCY-PHASE3: WebSocket transport branch. One
+      // bidirectional connection replaces POST /session/start + EventSource +
+      // a POST per 64ms audio chunk. Opt-in (default stays SSE) — see
+      // _useWsTransport(). Same start payload, same downstream message
+      // shapes, same _handleMessage.
+      if (_useWsTransport()) {
+        await _sessionStartWs(startPayload);
+        return;
+      }
+
       // VTID-01987: explicit 8s timeout. On Android WebView a fetch over a
       // dead TCP connection can hang indefinitely, which used to leave the
       // reconnect promise pending forever and the orb stuck on the disconnect
@@ -1389,6 +1440,83 @@
     }
   }
 
+  // BOOTSTRAP-ORB-LATENCY-PHASE3: WS-transport session start. Mirrors the
+  // SSE path's bookkeeping exactly (abort guards, session id pin,
+  // audio-ready signal, watchdogs) — only the wire changes. The gateway's
+  // WS path sends the same message shapes the SSE stream does, so all
+  // post-handshake traffic funnels into the shared _handleMessage.
+  function _sessionStartWs(startPayload) {
+    return new Promise(function (resolve, reject) {
+      var url = _cfg.gw.replace(/^http/, 'ws') + '/api/v1/orb/live/ws';
+      if (_cfg.token) url += '?token=' + encodeURIComponent(_cfg.token);
+      var w;
+      try { w = new WebSocket(url); } catch (e) { return reject(e); }
+      var settled = false;
+      // Same 8s start budget as the SSE fetch (VTID-01987 rationale).
+      var startTimer = setTimeout(function () {
+        if (settled) return;
+        settled = true;
+        try { w.close(); } catch (e) { /* noop */ }
+        reject(new Error('WS session start timed out after 8s'));
+      }, 8000);
+      function bail(reason) {
+        // User pressed X / overlay hidden mid-handshake — mirror the SSE
+        // path's stranded-session cleanup (stop + close releases upstream).
+        clearTimeout(startTimer);
+        settled = true;
+        _s.ws = w;
+        _closeWs(true);
+        console.log('[VTOrb] _sessionStartWs: aborted — ' + reason);
+        resolve();
+      }
+      w.onmessage = function (event) {
+        var msg;
+        try { msg = JSON.parse(event.data); } catch (e) { return; }
+        if (msg.type === 'connected') {
+          if (_s._userInitiatedStop || !_s.overlayVisible) return bail('overlay closed during connect');
+          try { w.send(JSON.stringify(Object.assign({ type: 'start' }, startPayload))); } catch (e) { /* onclose covers */ }
+          return;
+        }
+        if (msg.type === 'session_started' && !settled) {
+          clearTimeout(startTimer);
+          settled = true;
+          if (_s._userInitiatedStop || !_s.overlayVisible) return bail('overlay closed during start handshake');
+          _s.ws = w;
+          _s.sessionId = msg.session_id;
+          _s.active = true;
+          _signalAudioReady();
+          if (msg.conversation_id) _s.conversationId = msg.conversation_id;
+          _s._preDisconnectStage = null;
+          if (_cfg.onSessionStart) try { _cfg.onSessionStart(_s.sessionId); } catch (e) { /* ignore */ }
+          _startWatchdog();
+          _startSpeakingWatchdog();
+          console.log('[VTOrb] WS transport connected — session ' + msg.session_id);
+          _updateUI();
+          resolve();
+          return;
+        }
+        _resetWatchdog();
+        _handleMessage(msg);
+      };
+      w.onclose = function () {
+        if (!settled) {
+          settled = true;
+          clearTimeout(startTimer);
+          _s.ws = null;
+          reject(new Error('WS closed during session start'));
+          return;
+        }
+        if (_s.ws !== w) return; // deliberate teardown already detached this socket
+        // Unexpected close mid-session — same recovery path as SSE CLOSED.
+        _s.ws = null;
+        _stopWatchdog();
+        _announceDisconnect('connection');
+        _attemptReconnect();
+      };
+      w.onerror = function () { /* onclose carries the recovery decision */ };
+    });
+  }
+
   async function _sessionStop() {
     console.log('[VTOrb] Stopping session...');
     // VTID-03098: mark this as a user-initiated stop BEFORE any teardown.
@@ -1457,6 +1585,9 @@
       try { __es.onerror = null; } catch (e) { /* noop */ }
       try { __es.close(); } catch (e) { /* noop */ }
     }
+    // BOOTSTRAP-ORB-LATENCY-PHASE3: user-initiated stop — send the in-band
+    // stop so the gateway releases the upstream Live session, then close.
+    _closeWs(true);
 
     // Stop backend session — VTID-03295: FIRE-AND-FORGET (keepalive), never
     // `await`. Awaiting the network here stalled teardown behind a slow/hung
@@ -2119,6 +2250,17 @@
 
   function _sendAudio(b64) {
     if (!_s.sessionId || !_s.active) return;
+    // BOOTSTRAP-ORB-LATENCY-PHASE3: WS transport — one frame on the open
+    // socket instead of a full HTTP request per 64ms chunk.
+    if (_s.ws) {
+      if (_s.ws.readyState === 1) {
+        try {
+          _s.ws.send(JSON.stringify({ type: 'audio', data_b64: b64, mime: 'audio/pcm;rate=16000' }));
+          _s._audioSendFailCount = 0;
+        } catch (e) { _registerAudioSendFailure(); }
+      }
+      return; // never fall through to HTTP while WS transport owns the session
+    }
     var headers = { 'Content-Type': 'application/json' };
     if (_cfg.token) headers['Authorization'] = 'Bearer ' + _cfg.token;
     fetch(_cfg.gw + '/api/v1/orb/live/stream/send?session_id=' + _s.sessionId, {
@@ -2223,6 +2365,11 @@
 
   function _sendInterrupt() {
     if (!_s.sessionId || !_s.active) return;
+    // BOOTSTRAP-ORB-LATENCY-PHASE3: WS transport branch.
+    if (_s.ws) {
+      try { if (_s.ws.readyState === 1) _s.ws.send(JSON.stringify({ type: 'interrupt' })); } catch (e) { /* noop */ }
+      return;
+    }
     var headers = { 'Content-Type': 'application/json' };
     if (_cfg.token) headers['Authorization'] = 'Bearer ' + _cfg.token;
     fetch(_cfg.gw + '/api/v1/orb/live/stream/send?session_id=' + _s.sessionId, {
@@ -2905,6 +3052,7 @@
       if (_s.captureProcessor) { try { _s.captureProcessor.disconnect(); } catch (e) {} _s.captureProcessor = null; }
       if (_s.captureCtx) { try { _s.captureCtx.close().catch(function () {}); } catch (e) {} _s.captureCtx = null; }
       if (_s.eventSource) { try { _s.eventSource.close(); } catch (e) {} _s.eventSource = null; }
+      _closeWs(false); // BOOTSTRAP-ORB-LATENCY-PHASE3
 
       _s.sessionId = null;
       _s.active = false;
@@ -3051,6 +3199,8 @@
 
       if (opts.lang) _cfg.lang = opts.lang;
       if (opts.showFab !== undefined) _cfg.showFab = !!opts.showFab;
+      // BOOTSTRAP-ORB-LATENCY-PHASE3: opt-in WebSocket transport.
+      if (opts.transport === 'ws' || opts.transport === 'sse') _cfg.transport = opts.transport;
       if (typeof opts.onClose === 'function') _cfg.onClose = opts.onClose;
       if (typeof opts.onSessionStart === 'function') _cfg.onSessionStart = opts.onSessionStart;
       if (typeof opts.onSessionEnd === 'function') _cfg.onSessionEnd = opts.onSessionEnd;
