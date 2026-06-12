@@ -961,6 +961,13 @@ export interface GeminiLiveSession {
   // carry the voice-tool-routing signal into the orb.turn.responded event,
   // then cleared. Undefined when the turn dispatched no tool.
   pendingTurnToolSignal?: { toolName: string; toolArguments?: Record<string, unknown> };
+  // BOOTSTRAP-ORB-LATENCY-PHASE2: per-session cache for read-only retrieval
+  // tools (search_memory / search_knowledge). The model is mute until the
+  // function_response arrives, so a repeat lookup mid-conversation used to
+  // cost another 300-800ms of dead air. Keyed by tool+normalized args,
+  // short TTL (see TOOL_CACHE_TTL_MS). Session-scoped → torn down with the
+  // session; never crosses users.
+  toolResultCache?: Map<string, { at: number; result: { success: boolean; result: string; error?: string } }>;
   // VTID-STREAM-KEEPALIVE: Interval handle for upstream Vertex WS ping
   upstreamPingInterval?: ReturnType<typeof setInterval>;
   // VTID-STREAM-SILENCE: Interval handle for sending silence audio to Vertex
@@ -2197,6 +2204,27 @@ async function executeLiveApiTool(
     AUTOPILOT_VOICE_TOOLS.has(toolName) ? 12_000 :
     3_000;
 
+  // BOOTSTRAP-ORB-LATENCY-PHASE2: read-only retrieval tools are cacheable
+  // within a session for a short window. The model blocks (mute) on every
+  // function_response, and it routinely re-queries the same memory/knowledge
+  // mid-conversation — each repeat used to cost another 300-800ms of dead
+  // air. Mutating tools (reminders, calendar, intents, navigation) are never
+  // cached. 120s TTL bounds staleness; the cache dies with the session.
+  const CACHEABLE_READONLY_TOOLS = new Set(['search_memory', 'search_knowledge']);
+  const TOOL_CACHE_TTL_MS = 120_000;
+  const TOOL_CACHE_MAX_ENTRIES = 50;
+  const cacheKey = CACHEABLE_READONLY_TOOLS.has(toolName)
+    ? `${toolName}:${JSON.stringify(args, Object.keys(args).sort()).toLowerCase()}`
+    : null;
+  if (cacheKey && session.toolResultCache) {
+    const hit = session.toolResultCache.get(cacheKey);
+    if (hit && Date.now() - hit.at < TOOL_CACHE_TTL_MS && hit.result.success) {
+      markVoiceLatency(session, 'tool_response', { tool: toolName, ms: Date.now() - startTime, success: true, cache: 'hit' });
+      console.log(`[BOOTSTRAP-ORB-LATENCY-PHASE2] Tool cache HIT: ${toolName} (saved a blocking retrieval round-trip)`);
+      return hit.result;
+    }
+  }
+
   const executeWithTimeout = async (): Promise<{ success: boolean; result: string; error?: string }> => {
     return Promise.race([
       executeLiveApiToolInner(session, toolName, args, startTime),
@@ -2214,6 +2242,15 @@ async function executeLiveApiTool(
   const elapsed = Date.now() - startTime;
   // Phase 1 W2: tool returned — close the tool_dispatch→tool_response interval.
   markVoiceLatency(session, 'tool_response', { tool: toolName, ms: elapsed, success: result.success });
+  // BOOTSTRAP-ORB-LATENCY-PHASE2: populate the read-only tool cache.
+  if (cacheKey && result.success) {
+    if (!session.toolResultCache) session.toolResultCache = new Map();
+    if (session.toolResultCache.size >= TOOL_CACHE_MAX_ENTRIES) {
+      const oldest = session.toolResultCache.keys().next().value;
+      if (oldest !== undefined) session.toolResultCache.delete(oldest);
+    }
+    session.toolResultCache.set(cacheKey, { at: Date.now(), result });
+  }
   if (elapsed > TOOL_TIMEOUT_MS) {
     console.warn(`[VTID-STREAM-KEEPALIVE] Tool ${toolName} timed out (${elapsed}ms > ${TOOL_TIMEOUT_MS}ms)`);
   }
