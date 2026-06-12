@@ -1,0 +1,108 @@
+Bereit für Tag 21? ✨
+Autopilot-Aufgaben testen
+
+Heute geht es um Autopilot.
+
+Autopilot ist der Teil von MAXINA, der dir kleine nächste Schritte vorschlägt.
+
+Stell es dir so vor:
+
+   Vitana merkt, was für dich hilfreich sein könnte
+   und Autopilot sagt:
+   „Ich kann dir dabei helfen."
+
+Heute testen wir, ob die Vorschläge Sinn machen — und ob die Buttons richtig funktionieren.
+
+
+1. Öffne My Journey
+
+Öffne MAXINA und gehe zu My Journey.
+
+Suche dort nach der Autopilot Card oder dem Autopilot Chip.
+
+Tippe darauf und schau, was als Erstes erscheint.
+
+Frag dich:
+
+   • Was ist der erste Vorschlag, den Autopilot mir zeigt?
+   • Verstehe ich, wobei Autopilot mir helfen möchte?
+   • Fühlt sich der Vorschlag nützlich an?
+
+Sag uns bitte, was der erste Vorschlag war.
+
+
+2. Teste einen Autopilot-Vorschlag
+
+Wähle einen Autopilot-Vorschlag aus.
+
+Tippe auf den orangenen Button:
+
+   Go
+
+Schau danach, was passiert.
+
+Frag dich:
+
+   • Hat sich etwas geöffnet?
+   • Hat Autopilot mich an die richtige Stelle gebracht?
+   • War klar, was ich als Nächstes tun soll?
+
+
+3. Schließe eine Aufgabe ab, wenn möglich
+
+Wenn eine Autopilot-Aufgabe einen Button zeigt mit:
+
+   Complete
+
+dann tippe darauf.
+
+Prüfe danach genau:
+
+   • Ist die Aufgabe verschwunden?
+   • Wird sie als erledigt angezeigt?
+   • Hat sich etwas auf dem Bildschirm verändert?
+
+Das hilft uns zu sehen, ob Autopilot erledigte Aufgaben richtig speichert.
+
+
+4. Prüfe neue Vorschläge
+
+Wenn Autopilot sagt:
+
+   You're all caught up
+
+oder anzeigt, dass es gerade nichts mehr zu tun gibt, tippe auf:
+
+   Check for new
+
+Schau dann, was passiert.
+
+Frag dich:
+
+   • Sind neue Vorschläge erschienen?
+   • Hat sich nichts verändert?
+   • War die Nachricht klar verständlich?
+
+
+Deine Aufgabe für heute
+
+Öffne My Journey.
+Tippe auf die Autopilot Card oder den Autopilot Chip.
+Sag uns, was der erste Vorschlag war.
+Tippe bei einem Vorschlag auf Go.
+Wenn du Complete siehst, tippe darauf und prüfe, ob die Aufgabe erledigt ist.
+Wenn du You're all caught up siehst, tippe auf Check for new.
+
+Sag Vitana danach:
+
+   • War Autopilot hilfreich?
+   • Hat der Go-Button funktioniert?
+   • Sind erledigte Aufgaben verschwunden oder als erledigt angezeigt worden?
+   • Hat Check for new neue Vorschläge gezeigt?
+
+Und wenn etwas nicht funktioniert, sag einfach zum Vitana-Orb:
+
+   „Das hat nicht funktioniert."
+
+
+Danke, dass du uns hilfst zu testen, wie Autopilot MAXINA schlauer, einfacher und hilfreicher machen kann. 💛
