@@ -11550,6 +11550,8 @@ router.post('/live/session/start', optionalAuth, async (req: AuthenticatedReques
  * build. Anonymous callers are a no-op (no identity to key the cache on).
  */
 router.post('/live/session/prewarm', optionalAuth, async (req: AuthenticatedRequest, res: Response) => {
+  // impact-allow-no-oasis — cache pre-fill fired on every page load; no state
+  // transition occurs (OASIS taxonomy: polling/heartbeat-class, never emitted).
   const identity = req.identity;
   if (!identity?.user_id || !identity?.tenant_id) {
     return res.json({ ok: true, prewarm: 'skipped_anonymous' });
