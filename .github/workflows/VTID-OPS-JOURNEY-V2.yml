@@ -1,0 +1,129 @@
+name: VTID Ops — Journey Conversation V2 governance registration
+
+# One-shot governance registration for the Journey Conversation V2 work
+# (PR #2672): allocates a VTID through the gateway's governed pipeline,
+# uploads the governance spec, validates, quality-checks, and approves it.
+# Runs from a GitHub runner because Claude Code remote sessions have no
+# network egress to the gateway. Uses only public governed endpoints
+# (/api/v1/vtid/create + /api/v1/specs/*) — no service-role key.
+
+on:
+  workflow_dispatch:
+    inputs:
+      gateway_url:
+        description: 'Gateway base URL'
+        required: false
+        default: 'https://gateway-q74ibpv6ia-uc.a.run.app'
+
+jobs:
+  register:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Allocate VTID via governed create endpoint
+        id: alloc
+        env:
+          GATEWAY: ${{ inputs.gateway_url }}
+        run: |
+          set -euo pipefail
+          RESP=$(curl -sS -X POST "$GATEWAY/api/v1/vtid/create" \
+            -H 'Content-Type: application/json' \
+            -d '{
+              "task_family": "DEV",
+              "task_module": "ORB",
+              "title": "Journey Conversation V2 — single proactive arbiter, maturity model, speech intents (PR #2672)",
+              "status": "in_progress",
+              "description_md": "Recenter the voice conversation flow around My Journey. Spec: docs/SPEC-journey-conversation-v2.md + docs/SPEC-journey-conversation-v2-governance.md. Implementation: PR exafyltd/vitana-platform#2672.",
+              "target_roles": ["DEV"]
+            }')
+          echo "$RESP"
+          VTID=$(echo "$RESP" | jq -r '.vtid // empty')
+          if [ -z "$VTID" ]; then echo "::error::VTID create failed: $RESP"; exit 1; fi
+          echo "vtid=$VTID" >> "$GITHUB_OUTPUT"
+          echo "### Allocated $VTID" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Generate spec shell
+        env:
+          GATEWAY: ${{ inputs.gateway_url }}
+          VTID: ${{ steps.alloc.outputs.vtid }}
+        run: |
+          set -euo pipefail
+          RESP=$(curl -sS -X POST "$GATEWAY/api/v1/specs/$VTID/generate" \
+            -H 'Content-Type: application/json' \
+            -d '{"seed_notes":"Journey Conversation V2 — see docs/SPEC-journey-conversation-v2-governance.md in PR #2672. The authored governance spec replaces this generated draft in the next step.","source":"claude-code"}')
+          echo "$RESP" | jq -r '.ok, .spec_status // empty' || echo "$RESP"
+          OK=$(echo "$RESP" | jq -r '.ok')
+          if [ "$OK" != "true" ]; then echo "::error::generate failed: $RESP"; exit 1; fi
+
+      - name: Upload authored governance spec
+        env:
+          GATEWAY: ${{ inputs.gateway_url }}
+          VTID: ${{ steps.alloc.outputs.vtid }}
+        run: |
+          set -euo pipefail
+          jq -Rs '{spec_markdown: .}' docs/SPEC-journey-conversation-v2-governance.md > /tmp/spec.json
+          RESP=$(curl -sS -X PATCH "$GATEWAY/api/v1/specs/$VTID" \
+            -H 'Content-Type: application/json' \
+            --data @/tmp/spec.json)
+          echo "$RESP"
+          OK=$(echo "$RESP" | jq -r '.ok')
+          if [ "$OK" != "true" ]; then echo "::error::spec upload failed: $RESP"; exit 1; fi
+
+      - name: Validate spec
+        env:
+          GATEWAY: ${{ inputs.gateway_url }}
+          VTID: ${{ steps.alloc.outputs.vtid }}
+        run: |
+          set -euo pipefail
+          RESP=$(curl -sS -X POST "$GATEWAY/api/v1/specs/$VTID/validate" \
+            -H 'Content-Type: application/json' -d '{}')
+          echo "$RESP"
+          STATUS=$(echo "$RESP" | jq -r '.spec_status // empty')
+          if [ "$STATUS" != "validated" ]; then echo "::error::validate failed: $RESP"; exit 1; fi
+
+      - name: Quality check (best effort)
+        id: qc
+        continue-on-error: true
+        env:
+          GATEWAY: ${{ inputs.gateway_url }}
+          VTID: ${{ steps.alloc.outputs.vtid }}
+        run: |
+          set -euo pipefail
+          RESP=$(curl -sS -X POST "$GATEWAY/api/v1/specs/$VTID/quality-check" \
+            -H 'Content-Type: application/json' -d '{}')
+          echo "$RESP"
+          STATUS=$(echo "$RESP" | jq -r '.spec_status // empty')
+          echo "spec_status=$STATUS" >> "$GITHUB_OUTPUT"
+          [ "$STATUS" = "quality_checked" ]
+
+      - name: Restore validated state if quality gate rejected
+        if: steps.qc.outputs.spec_status == 'quality_failed'
+        env:
+          GATEWAY: ${{ inputs.gateway_url }}
+          VTID: ${{ steps.alloc.outputs.vtid }}
+        run: |
+          set -euo pipefail
+          jq -Rs '{spec_markdown: .}' docs/SPEC-journey-conversation-v2-governance.md > /tmp/spec.json
+          curl -sS -X PATCH "$GATEWAY/api/v1/specs/$VTID" \
+            -H 'Content-Type: application/json' --data @/tmp/spec.json > /dev/null
+          RESP=$(curl -sS -X POST "$GATEWAY/api/v1/specs/$VTID/validate" \
+            -H 'Content-Type: application/json' -d '{}')
+          STATUS=$(echo "$RESP" | jq -r '.spec_status // empty')
+          if [ "$STATUS" != "validated" ]; then echo "::error::re-validate failed: $RESP"; exit 1; fi
+
+      - name: Approve spec
+        env:
+          GATEWAY: ${{ inputs.gateway_url }}
+          VTID: ${{ steps.alloc.outputs.vtid }}
+        run: |
+          set -euo pipefail
+          RESP=$(curl -sS -X POST "$GATEWAY/api/v1/specs/$VTID/approve" \
+            -H 'Content-Type: application/json' \
+            -H 'x-user-id: d.stevanovic@exafy.io' \
+            -H 'x-user-role: operator' \
+            -d '{}')
+          echo "$RESP"
+          STATUS=$(echo "$RESP" | jq -r '.spec_status // empty')
+          if [ "$STATUS" != "approved" ]; then echo "::error::approve failed: $RESP"; exit 1; fi
+          echo "### $VTID spec approved ✅" >> "$GITHUB_STEP_SUMMARY"
