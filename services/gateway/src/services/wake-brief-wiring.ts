@@ -115,6 +115,13 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 // caller (live-session-controller / orb-livekit) so we can keep this
 // module pure on the read side.
 import { recordWakeBriefEmitted } from './wake-cadence-signals';
+// VTID-03301 — cross-session opener rotation.
+import { readOrbSessionState } from './orb/orb-session-state';
+
+/** How many recent openers to remember per user (the rotation window). */
+const RECENT_OPENERS_WINDOW = 6;
+/** TTL for the rotation memory (48h) — long enough to vary day-to-day. */
+const RECENT_OPENERS_TTL_MIN = 48 * 60;
 
 // ---------------------------------------------------------------------------
 // One-time provider registration. The default registry started empty in
@@ -463,9 +470,23 @@ export async function decideWakeBriefForSession(
     }
   }
 
+  // VTID-03301 — load the openers this user was recently served so the ranker
+  // can rotate. Most-recent first. Best-effort: a read failure just means no
+  // penalty (old behaviour). Authenticated users only (anonymous have no state).
+  let recentlyServedDedupeKeys: string[] = [];
+  if (args.supabase && args.userId) {
+    try {
+      const rec = await readOrbSessionState<string[]>(args.supabase, args.userId, 'recent_openers');
+      if (rec && Array.isArray(rec.value)) {
+        recentlyServedDedupeKeys = rec.value.filter((k) => typeof k === 'string').slice(0, RECENT_OPENERS_WINDOW);
+      }
+    } catch { /* best-effort — no penalty on read failure */ }
+  }
+
   const t0 = now();
   const decision = await decideContinuation({
     surface: 'orb_wake',
+    recentlyServedDedupeKeys,
     context: {
       sessionId: args.sessionId,
       userId: args.userId ?? undefined,
@@ -510,6 +531,20 @@ export async function decideWakeBriefForSession(
     tenantId: args.tenantId,
     surface: 'orb_wake',
   });
+
+  // VTID-03301 — persist the opener we just served so the NEXT session rotates
+  // away from it. Most-recent first, capped to the window. Only on a real
+  // emission (recordEmission) with an authenticated user + a selected opener.
+  if (args.recordEmission && args.supabase && args.userId && decision.selectedContinuation?.dedupeKey) {
+    const servedKey = decision.selectedContinuation.dedupeKey;
+    const nextList = [servedKey, ...recentlyServedDedupeKeys.filter((k) => k !== servedKey)]
+      .slice(0, RECENT_OPENERS_WINDOW);
+    void import('./orb/orb-session-state')
+      .then(({ writeOrbSessionState }) =>
+        writeOrbSessionState(args.supabase!, args.userId!, 'recent_openers', nextList, RECENT_OPENERS_TTL_MIN),
+      )
+      .catch(() => { /* best-effort — rotation degrades gracefully */ });
+  }
 
   // VTID-03081 (B1 wiring): record greeting style + timestamp so the
   // next session can dampen. Fire-and-forget — write failure is
