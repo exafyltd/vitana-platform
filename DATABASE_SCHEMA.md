@@ -1069,5 +1069,54 @@ journey_checklist_translations (
 
 ---
 
+## Product Analytics (BOOTSTRAP-PRODUCT-ANALYTICS)
+
+Dedicated product/behavior analytics pipeline backing the `/admin/insights/*`
+supervision screens in vitana-v1 (Assistant usage, journeys, features,
+interests, friction). Deliberately separate from `oasis_events` — OASIS stays
+an audit/system log; this absorbs high-volume clickstream. Ingested via
+`POST /api/v1/analytics/events/batch`, read via
+`GET /api/v1/admin/tenants/:tenantId/analytics/*` (gateway service role only).
+
+### product_analytics_events
+
+```
+product_analytics_events (
+  id UUID PK, event_id TEXT UNIQUE,  -- client-generated, idempotency key
+  event_name TEXT, event_type TEXT,  -- journey|assistant|feature|interest|friction|performance|content
+  tenant_id UUID, user_id_hash TEXT, -- SHA-256 of user id; never the raw id
+  session_id TEXT, journey_id TEXT, conversation_id TEXT,
+  screen_route TEXT, screen_id TEXT, feature_key TEXT,
+  source TEXT,                       -- web|ios|android|gateway|assistant|orb
+  app_version TEXT, language TEXT,
+  device_type TEXT,                  -- desktop|mobile|tablet|unknown
+  consent_state TEXT,                -- granted|anonymous|denied (denied = dropped pre-insert)
+  properties JSONB,                  -- metadata only — NEVER raw message text/prompts/transcripts
+  occurred_at TIMESTAMPTZ, received_at TIMESTAMPTZ, created_at TIMESTAMPTZ
+);
+```
+
+Retention: 180 days, purged by the gateway daily rollup job.
+
+### product_analytics_daily_rollups
+
+```
+product_analytics_daily_rollups (
+  id UUID PK, tenant_id UUID, rollup_date DATE,
+  metric_key TEXT,                   -- e.g. active_users, sessions, feature_opens
+  dimensions JSONB,                  -- e.g. { "feature_key": "community" }
+  metric_value NUMERIC,
+  created_at, updated_at,
+  UNIQUE (tenant_id, rollup_date, metric_key, dimensions)
+);
+```
+
+Retention: 2 years. Upsert on the unique key keeps the rollup job idempotent.
+
+**Auth model:** RLS-on, `service_role` bypass; no anon/community access
+(gateway only).
+
+---
+
 **Remember:** This file is the SINGLE SOURCE OF TRUTH for table names.
 When in doubt, CHECK HERE FIRST!

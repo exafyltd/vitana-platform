@@ -696,6 +696,11 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const { analyticsCelebrateRouter } = require('./routes/analytics-celebrate');
   mountRouterSync(app, '/api/v1/analytics', analyticsCelebrateRouter, { owner: 'analytics-celebrate' });
 
+  // BOOTSTRAP-PRODUCT-ANALYTICS: product analytics batch ingestion (clickstream,
+  // Assistant usage, features, interests, friction) — backs /admin/insights/*
+  const productAnalyticsRouter = require('./routes/product-analytics').default;
+  mountRouterSync(app, '/api/v1/analytics', productAnalyticsRouter, { owner: 'product-analytics' });
+
   // VTID-0532: Autopilot Task Extractor & Planner Handoff
   mountRouterSync(app, '/api/v1/autopilot', autopilotRouter, { owner: 'autopilot' });
 
@@ -1151,6 +1156,10 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   mountRouterSync(app, '/api/v1/admin/tenants/:tenantId/kpis', tenantKpisRouter, { owner: 'tenant-kpis' });
   // BOOTSTRAP-ADMIN-BB-CC: Admin insights
   mountRouterSync(app, '/api/v1/admin/tenants/:tenantId/insights', tenantInsightsRouter, { owner: 'tenant-insights' });
+  // BOOTSTRAP-PRODUCT-ANALYTICS: admin product analytics reads (summary,
+  // assistant, journeys, features, interests, raw event feed)
+  const tenantProductAnalyticsRouter = require('./routes/tenant-admin/product-analytics').default;
+  mountRouterSync(app, '/api/v1/admin/tenants/:tenantId/analytics', tenantProductAnalyticsRouter, { owner: 'tenant-product-analytics' });
   // BOOTSTRAP-ADMIN-GG: Tenant Health Index
   mountRouterSync(app, '/api/v1/admin/tenants/:tenantId/health-index', tenantHealthIndexRouter, { owner: 'tenant-health-index' });
   // Settings — tenant profile, branding, feature flags
@@ -1475,6 +1484,14 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
         console.log('☀️ Morning brief scheduler initialized (VTID-01949)');
       } catch (error) {
         console.warn('⚠️ Morning brief scheduler initialization failed (non-fatal):', error);
+      }
+
+      // BOOTSTRAP-PRODUCT-ANALYTICS: daily product analytics rollup + retention purge
+      try {
+        const { startProductAnalyticsRollupScheduler } = require('./services/product-analytics/rollup');
+        startProductAnalyticsRollupScheduler();
+      } catch (error) {
+        console.warn('⚠️ Product analytics rollup scheduler initialization failed (non-fatal):', error);
       }
 
       // VTID-01185: Initialize autonomous self-improvement engine
