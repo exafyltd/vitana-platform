@@ -31,25 +31,29 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Allocate VTID via governed create endpoint
+      - name: Allocate VTID via global allocator
         id: alloc
         env:
           GATEWAY: ${{ inputs.gateway_url || env.GATEWAY_DEFAULT }}
         run: |
           set -euo pipefail
-          RESP=$(curl -sS -X POST "$GATEWAY/api/v1/vtid/create" \
+          # NB: /api/v1/vtid/create mints the legacy family format
+          # (DEV-ORB-YYYY-NNNN) which the specs pipeline rejects — only
+          # /api/v1/vtid/allocate yields the global VTID-XXXXX format.
+          RESP=$(curl -sS -X POST "$GATEWAY/api/v1/vtid/allocate" \
             -H 'Content-Type: application/json' \
             -d '{
-              "task_family": "DEV",
-              "task_module": "ORB",
-              "title": "Journey Conversation V2 — single proactive arbiter, maturity model, speech intents (PR #2672)",
-              "status": "in_progress",
-              "description_md": "Recenter the voice conversation flow around My Journey. Spec: docs/SPEC-journey-conversation-v2.md + docs/SPEC-journey-conversation-v2-governance.md. Implementation: PR exafyltd/vitana-platform#2672.",
-              "target_roles": ["DEV"]
+              "source": "claude-code",
+              "layer": "DEV",
+              "module": "ORB",
+              "title": "Journey Conversation V2 — single proactive arbiter, maturity model, speech intents (PR #2672)"
             }')
           echo "$RESP"
-          VTID=$(echo "$RESP" | jq -r '.vtid // empty')
-          if [ -z "$VTID" ]; then echo "::error::VTID create failed: $RESP"; exit 1; fi
+          VTID=$(echo "$RESP" | jq -r '.vtid // empty' | tr -d '[:space:]')
+          case "$VTID" in
+            VTID-*) : ;;
+            *) echo "::error::VTID allocate failed or wrong format: $RESP"; exit 1 ;;
+          esac
           echo "vtid=$VTID" >> "$GITHUB_OUTPUT"
           echo "### Allocated $VTID" >> "$GITHUB_STEP_SUMMARY"
 
