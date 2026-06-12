@@ -29,6 +29,7 @@ import { resolveUserTimezone } from './user-timezone';
 import { getAdaptationStatus } from './adaptation-applier';
 import { getUserRoutines } from './pattern-extractor';
 import { countActiveUsageDays } from './active-usage';
+import { buildJourneyV2Awareness } from './awareness-extensions';
 import type {
   UserAwareness,
   TenureStage,
@@ -112,6 +113,25 @@ export async function getAwarenessContext(
   const tenure = buildTenure(userContext, activeUsageDays);
   const journey = buildJourney(tenure.days_since_signup);
   const community_signals = buildCommunitySignals(userContext);
+
+  // Journey Conversation V2 (spec §3) — extension block derived AFTER the
+  // base signals (it consumes tenure + community signals + goal). Fail-open:
+  // on any error journey_v2 stays undefined and every consumer behaves
+  // exactly as before V2.
+  let journeyV2: UserAwareness['journey_v2'];
+  try {
+    journeyV2 = await buildJourneyV2Awareness(userId, supabase, {
+      days_since_signup: tenure.days_since_signup,
+      active_usage_days: tenure.active_usage_days,
+      diary_streak_days: community_signals.diary_streak_days,
+      connection_count: community_signals.connection_count,
+      group_count: community_signals.group_count,
+      goal: goal ? { is_system_seeded: goal.is_system_seeded } : null,
+    });
+  } catch (err: any) {
+    console.warn(`${LOG_PREFIX} journey_v2 extension failed:`, err?.message);
+    journeyV2 = undefined;
+  }
   const last_interaction: LastInteraction | null = lastSessionInfo
     ? describeTimeSince(lastSessionInfo)
     : describeTimeSince(null); // 'first' bucket; never null so brain has a clean signal
@@ -158,6 +178,7 @@ export async function getAwarenessContext(
         }
       : null,
     user_timezone: resolvedTz,
+    journey_v2: journeyV2,
   };
 
   cache.set(cacheKey, { awareness, expires_at: Date.now() + CACHE_TTL_MS });

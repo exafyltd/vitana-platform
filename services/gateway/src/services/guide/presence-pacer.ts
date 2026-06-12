@@ -39,7 +39,10 @@ export type ProactiveSurface =
   // with executable actions (diary, autopilot activate, network message).
   // Independent daily-cap slot; mutual exclusion vs voice_opener_tour is
   // enforced inside the brain composer, not the pacer.
-  | 'voice_opener_initiative';
+  | 'voice_opener_initiative'
+  // Journey Conversation V2 — once-per-day inspirational/responsibility
+  // reflection slot (spec docs/SPEC-journey-conversation-v2.md §10).
+  | 'vitana_responsibility_message';
 
 export type PresenceLevel = 'quiet' | 'balanced' | 'engaged';
 
@@ -278,6 +281,6 @@ async function resolvePresenceLevel(userId: string): Promise<PresenceLevel> {
  * Voice channels honor voice pauses; push/in-app surfaces honor all/channel.
  */
 function surfaceToChannel(surface: ProactiveSurface): 'voice' | 'text' {
-  if (surface === 'voice_opener') return 'voice';
+  if (surface === 'voice_opener' || surface === 'vitana_responsibility_message') return 'voice';
   return 'text';
 }
