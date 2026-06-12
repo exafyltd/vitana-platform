@@ -26,6 +26,9 @@ import { AuthenticatedRequest } from '../../middleware/auth-supabase-jwt';
 import { getSupabase } from '../../lib/supabase';
 
 const router = Router({ mergeParams: true });
+
+// Every endpoint in this router is tenant-admin-gated.
+router.use(requireTenantAdmin);
 const LOG_PREFIX = '[Analytics:Product:Admin]';
 
 // PostgREST caps response sizes, so page through deterministically.
@@ -107,7 +110,7 @@ function ratio(numerator: number, denominator: number): number {
 
 // ── GET /summary ────────────────────────────────────────────────────────────
 
-router.get('/summary', requireTenantAdmin, async (req: AuthenticatedRequest, res: Response) => {
+router.get('/summary', async (req: AuthenticatedRequest, res: Response) => {
   const supabase = getSupabase();
   if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
   const tenantId = getTenantId(req);
@@ -193,7 +196,7 @@ router.get('/summary', requireTenantAdmin, async (req: AuthenticatedRequest, res
 
 // ── GET /assistant ──────────────────────────────────────────────────────────
 
-router.get('/assistant', requireTenantAdmin, async (req: AuthenticatedRequest, res: Response) => {
+router.get('/assistant', async (req: AuthenticatedRequest, res: Response) => {
   const supabase = getSupabase();
   if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
   const tenantId = getTenantId(req);
@@ -322,7 +325,7 @@ router.get('/assistant', requireTenantAdmin, async (req: AuthenticatedRequest, r
 
 // ── GET /journeys ───────────────────────────────────────────────────────────
 
-router.get('/journeys', requireTenantAdmin, async (req: AuthenticatedRequest, res: Response) => {
+router.get('/journeys', async (req: AuthenticatedRequest, res: Response) => {
   const supabase = getSupabase();
   if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
   const tenantId = getTenantId(req);
@@ -423,7 +426,7 @@ router.get('/journeys', requireTenantAdmin, async (req: AuthenticatedRequest, re
 
 // ── GET /features ───────────────────────────────────────────────────────────
 
-router.get('/features', requireTenantAdmin, async (req: AuthenticatedRequest, res: Response) => {
+router.get('/features', async (req: AuthenticatedRequest, res: Response) => {
   const supabase = getSupabase();
   if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
   const tenantId = getTenantId(req);
@@ -501,7 +504,7 @@ const INTEREST_EVENTS = new Set([
   'recommendation_clicked',
 ]);
 
-router.get('/interests', requireTenantAdmin, async (req: AuthenticatedRequest, res: Response) => {
+router.get('/interests', async (req: AuthenticatedRequest, res: Response) => {
   const supabase = getSupabase();
   if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
   const tenantId = getTenantId(req);
@@ -552,7 +555,7 @@ router.get('/interests', requireTenantAdmin, async (req: AuthenticatedRequest, r
 
 // ── GET /events ─────────────────────────────────────────────────────────────
 
-router.get('/events', requireTenantAdmin, async (req: AuthenticatedRequest, res: Response) => {
+router.get('/events', async (req: AuthenticatedRequest, res: Response) => {
   const supabase = getSupabase();
   if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
   const tenantId = getTenantId(req);

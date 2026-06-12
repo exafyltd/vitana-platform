@@ -90,7 +90,12 @@ export function sanitizeProperties(
   return clean;
 }
 
+// public-route — anonymous + authenticated clients both post analytics here
+// (same auth model as /celebrate and /rum/beacon); reads are admin-gated.
 router.post('/events/batch', async (req: Request, res: Response) => {
+  // impact-allow-no-oasis — high-volume clickstream is exactly what must NOT
+  // go to OASIS (see Developer Notes: keep oasis_events for audit/system
+  // activity); this pipeline is its own store.
   const parsed = analyticsBatchSchema.safeParse(req.body ?? {});
   if (!parsed.success) {
     return res.status(400).json({ ok: false, error: 'INVALID_ANALYTICS_BATCH' });
