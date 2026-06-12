@@ -261,7 +261,7 @@
         "user"
       ],
       "status": "live",
-      "description": "View matches on a specific intent.",
+      "description": "View matches on a specific intent, or omit intent_id to aggregate all the user's matches and open the My Matches screen.",
       "wired_in": [
         "livekit",
         "vertex"
