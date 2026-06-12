@@ -1677,14 +1677,31 @@ export function buildLiveApiTools(
         },
         {
           name: 'view_intent_matches',
-          description: 'Pull the top-N matches for one of the user\'s open intents. partner_seek matches show "(redacted)" until both parties express interest.',
+          description: [
+            'Show the user their matches. partner_seek matches show "(redacted)" until both parties express interest.',
+            '',
+            'TWO MODES — pick by what the user said:',
+            '  • Specific post — they named one of their posts ("matches for my salsa request"): pass that intent_id for the top-N matches on that single post.',
+            "  • All matches — they asked broadly (\"show me my partner matches\", \"who matched with me?\", \"any matches?\"): OMIT intent_id. The tool aggregates across all the user's open posts and navigates them to the My Matches screen.",
+            '',
+            "CRITICAL: when the user asks to see their matches without naming a post, just call this with NO intent_id. Do NOT ask which post. Do NOT say you can't show matches — this tool always succeeds and opens the matches screen, even when there are zero matches or no posts yet (it shows a friendly empty state + a CTA to post). Never offer matches and then retract.",
+            '',
+            'Optional intent_kind narrows the aggregate (e.g. partner_seek) when the user was specific about "partner" matches.',
+          ].join('\n'),
           parameters: {
             type: 'object',
             properties: {
-              intent_id: { type: 'string' },
+              intent_id: {
+                type: 'string',
+                description: "Optional. One of the user's open intent_ids to scope matches to a single post. Omit to aggregate across all open posts and open the My Matches screen.",
+              },
+              intent_kind: {
+                type: 'string',
+                enum: ['commercial_buy', 'commercial_sell', 'activity_seek', 'partner_seek', 'social_seek', 'mutual_aid', 'learning_seek', 'mentor_seek'],
+                description: 'Optional filter for the aggregate (no intent_id) mode, e.g. partner_seek for "partner matches".',
+              },
               limit: { type: 'integer' },
             },
-            required: ['intent_id'],
           },
         },
         {
