@@ -8106,6 +8106,7 @@ function startVoiceTurnLatency(session: GeminiLiveSession): void {
     actor_id: session.identity?.user_id,
     turn: session.latencyTurnIndex,
     provider: `vertex/${GEMINI_MODEL}`,
+    transport: session.clientWs ? 'websocket' : 'sse',
   });
   session.latencyTracker = tracker;
   tracker.mark('audio_in_first_byte');
@@ -11887,6 +11888,7 @@ router.get('/live/stream', optionalAuth, async (req: AuthenticatedRequest, res: 
       actor_id: session.identity?.user_id,
       turn: 0,
       provider: `vertex/${VERTEX_LIVE_MODEL}`,
+      transport: 'sse',
     });
     const liveApiPromise = connectToLiveAPI(
       session,
@@ -12904,6 +12906,9 @@ async function handleWsClientMessage(clientSession: WsClientSession, message: Ws
         }
         sendGreetingPromptToLiveAPI(liveSession.upstreamWs, liveSession);
         liveSession.greetingDeferred = false;
+        // ORB-CONVERSATION-LATENCY: greeting dispatched upstream — remaining
+        // gap to audio_out_first_chunk is the model's first-token time.
+        liveSession.establishLatency?.mark('greeting_sent', { deferred: true });
       } else {
         console.log(`[VTID-AUDIO-READY] audio_ready received but greeting already sent or not deferred: session=${liveSession.sessionId}`);
       }
@@ -13218,11 +13223,31 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
   try {
     console.log(`[VTID-01222] Connecting to Vertex AI Live API for session ${sessionId}...`);
 
+    // ORB-CONVERSATION-LATENCY: turn-0 establishment tracker for the WS
+    // transport — same phase set as the SSE path (upstream_connected /
+    // context_awaited / setup_sent fire inside connectToLiveAPI), so the
+    // Phase 3a WS-vs-SSE comparison reads from one event stream. The chime is
+    // sent directly to the client socket, so the first chunk through this
+    // audio handler is the real greeting.
+    liveSession.establishLatency = new LatencyTracker({
+      session_id: sessionId,
+      surface: 'voice',
+      actor_id: liveSession.identity?.user_id,
+      turn: 0,
+      provider: `vertex/${VERTEX_LIVE_MODEL}`,
+      transport: 'websocket',
+    });
+
     const upstreamWs = await connectToLiveAPI(
       liveSession,
       // Audio response handler - forward to client via WebSocket
       // FIX: Send raw PCM for Web Audio API scheduled playback (eliminates gaps between chunks)
       (audioB64: string) => {
+        if (liveSession.establishLatency) {
+          liveSession.establishLatency.mark('audio_out_first_chunk', { source: 'greeting' });
+          void liveSession.establishLatency.finalize('success');
+          liveSession.establishLatency = null;
+        }
         if (clientWs.readyState === WebSocket.OPEN) {
           try {
             // Send raw PCM - client uses Web Audio API scheduling for seamless playback
@@ -13393,15 +13418,24 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
           }
           sendGreetingPromptToLiveAPI(liveSession.upstreamWs, liveSession);
           liveSession.greetingDeferred = false;
+          liveSession.establishLatency?.mark('greeting_sent', { deferred: true, fallback: true });
         }
       }, 1000);
     } else {
       // SSE path or non-deferred: send greeting immediately
       sendGreetingPromptToLiveAPI(upstreamWs, liveSession);
+      liveSession.establishLatency?.mark('greeting_sent', { deferred: false });
     }
 
   } catch (err: any) {
     console.error(`[VTID-01222] Failed to connect Live API for ${sessionId}:`, err.message);
+
+    // ORB-CONVERSATION-LATENCY: connect failed before any audio — close the
+    // establishment tracker as an error so it isn't left dangling.
+    if (liveSession.establishLatency) {
+      void liveSession.establishLatency.finalize('error', err?.message);
+      liveSession.establishLatency = null;
+    }
 
     sendWsMessage(clientWs, {
       type: 'session_started',
