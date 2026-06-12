@@ -3173,15 +3173,139 @@ export async function tool_navigate(
 
 const INTENT_MATCH_AUTONAV_GAP = 0.15;
 
+// VTID-PARTNER-MATCHES-UX — aggregate "show me my (partner) matches" path.
+//
+// When the user just asks to see their matches ("show me my partner matches")
+// without naming a specific post, the LLM has no intent_id to pass. The old
+// contract hard-required intent_id, so view_intent_matches returned
+// { ok:false, error:'intent_id is required' } and Vitana — having just offered
+// "I can show you partner matches" — immediately retracted with "I can't show
+// you partner matches right now." Terrible UX.
+//
+// This fans out across the user's open intents (mirrors the frontend
+// getFindPartnerMatches), aggregates the top matches, and hands the user to the
+// Find a Partner matches screen via the same auto_nav directive the
+// single-intent path uses. That screen renders its own graceful empty/error
+// state, so even when there are zero matches (or zero open posts) the offer is
+// fulfilled — we navigate the user there instead of refusing.
+async function viewAllMyMatches(
+  args: OrbToolArgs,
+  id: OrbToolIdentity,
+  limit: number,
+): Promise<OrbToolResult> {
+  const userId = id.user_id;
+  if (!userId) return { ok: false, error: 'authentication required' };
+
+  const route = '/comm/find-partner?view=matches';
+  const directive = {
+    type: 'orb_directive',
+    directive: 'navigate',
+    screen_id: 'COMM.FIND_PARTNER_MATCHES',
+    route,
+    title: 'My Matches',
+    reason: 'view_intent_matches aggregate (no intent_id)',
+    vtid: 'VTID-PARTNER-MATCHES-UX',
+  };
+
+  try {
+    const { createClient } = await import('@supabase/supabase-js');
+    const supabase = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE!, {
+      auth: { autoRefreshToken: false, persistSession: false },
+    });
+
+    // Optional kind filter — pass intent_kind only when the user was explicit
+    // ("partner matches" → partner_seek). Otherwise aggregate across every open
+    // intent, exactly like the Find a Partner "My Matches" tab.
+    let q = supabase
+      .from('user_intents')
+      .select('intent_id')
+      .eq('requester_user_id', userId)
+      .in('status', ['open', 'matched', 'engaged'])
+      .order('created_at', { ascending: false })
+      .limit(20);
+    const kindFilter = String(args.intent_kind ?? '').trim();
+    if (kindFilter) q = q.eq('intent_kind', kindFilter);
+    const { data: intents, error } = await q;
+    if (error) return { ok: false, error: error.message };
+
+    // No open posts → no matches are possible yet. Still take the user to the
+    // matches screen (graceful empty state + "post a wish" CTA) rather than
+    // refusing. reason:'no_open_intents' lets the LLM explain warmly.
+    if (!intents || intents.length === 0) {
+      return {
+        ok: true,
+        result: {
+          ok: true,
+          matches: [],
+          decision: 'auto_nav',
+          directive,
+          redirect: { route },
+          reason: 'no_open_intents',
+        },
+        text:
+          "I'm opening your matches now — you don't have any open posts yet, " +
+          'so post a wish and I\'ll let you know the moment someone matches.',
+      };
+    }
+
+    const { surfaceTopMatches } = await import('./intent-matcher');
+    const { redactMatchForReader } = await import('./intent-mutual-reveal');
+    const perIntent = await Promise.all(
+      (intents as Array<{ intent_id: string }>).map(async (it) => {
+        try {
+          const rows = await surfaceTopMatches(it.intent_id, limit);
+          return await Promise.all(rows.map((m) => redactMatchForReader(m, userId)));
+        } catch {
+          return [];
+        }
+      }),
+    );
+    const slim = perIntent
+      .flat()
+      .map((m) => ({
+        match_id: m.match_id,
+        vitana_id_b: m.vitana_id_b,
+        score: m.score,
+        kind_pairing: m.kind_pairing,
+        state: m.state,
+        redacted: m.redacted,
+      }))
+      .sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
+      .slice(0, 10);
+
+    return {
+      ok: true,
+      result: {
+        ok: true,
+        matches: slim,
+        decision: 'auto_nav',
+        directive,
+        redirect: { route },
+      },
+      text:
+        slim.length > 0
+          ? `Opening your matches — you have ${slim.length} to look through.`
+          : "I'm opening your matches now. None have come in yet, but your posts are live — I'll flag the moment someone matches.",
+    };
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : 'unknown';
+    console.error('[VTID-PARTNER-MATCHES-UX] viewAllMyMatches error:', msg);
+    return { ok: false, error: msg };
+  }
+}
+
 export async function tool_view_intent_matches(
   args: OrbToolArgs,
   id: OrbToolIdentity,
 ): Promise<OrbToolResult> {
-  const intentId = String(args.intent_id ?? '').trim();
-  if (!intentId) return { ok: false, error: 'intent_id is required' };
   if (!id.user_id) return { ok: false, error: 'authentication required' };
-
+  const intentId = String(args.intent_id ?? '').trim();
   const limit = Math.min(Math.max(Number(args.limit) || 3, 1), 10);
+
+  // No specific post named → aggregate across all the user's open intents and
+  // navigate to the My Matches screen. Never hard-fails on a missing intent_id.
+  if (!intentId) return viewAllMyMatches(args, id, limit);
+
   try {
     const { surfaceTopMatches } = await import('./intent-matcher');
     const { redactMatchForReader } = await import('./intent-mutual-reveal');

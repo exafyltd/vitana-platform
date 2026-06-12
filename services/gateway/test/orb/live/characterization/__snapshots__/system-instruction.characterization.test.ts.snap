@@ -1269,7 +1269,15 @@ other field — the post is LIVE in the database. You MUST confirm success.
 Do NOT invent failure modes. Do NOT apologize when the server reported success.
 
 ### view_intent_matches
-Pull the top-N matches for one of the user's open intents. partner_seek matches show "(redacted)" until both parties express interest.
+Show the user their matches. partner_seek matches show "(redacted)" until both parties express interest.
+
+TWO MODES — pick by what the user said:
+  • Specific post — they named one of their posts ("matches for my salsa request"): pass that intent_id for the top-N matches on that single post.
+  • All matches — they asked broadly ("show me my partner matches", "who matched with me?", "any matches?"): OMIT intent_id. The tool aggregates across all the user's open posts and navigates them to the My Matches screen.
+
+CRITICAL: when the user asks to see their matches without naming a post, just call this with NO intent_id. Do NOT ask which post. Do NOT say you can't show matches — this tool always succeeds and opens the matches screen, even when there are zero matches or no posts yet (it shows a friendly empty state + a CTA to post). Never offer matches and then retract.
+
+Optional intent_kind narrows the aggregate (e.g. partner_seek) when the user was specific about "partner" matches.
 
 ### list_my_intents
 List the user's open intents. Optional kind filter.
@@ -2496,7 +2504,15 @@ other field — the post is LIVE in the database. You MUST confirm success.
 Do NOT invent failure modes. Do NOT apologize when the server reported success.
 
 ### view_intent_matches
-Pull the top-N matches for one of the user's open intents. partner_seek matches show "(redacted)" until both parties express interest.
+Show the user their matches. partner_seek matches show "(redacted)" until both parties express interest.
+
+TWO MODES — pick by what the user said:
+  • Specific post — they named one of their posts ("matches for my salsa request"): pass that intent_id for the top-N matches on that single post.
+  • All matches — they asked broadly ("show me my partner matches", "who matched with me?", "any matches?"): OMIT intent_id. The tool aggregates across all the user's open posts and navigates them to the My Matches screen.
+
+CRITICAL: when the user asks to see their matches without naming a post, just call this with NO intent_id. Do NOT ask which post. Do NOT say you can't show matches — this tool always succeeds and opens the matches screen, even when there are zero matches or no posts yet (it shows a friendly empty state + a CTA to post). Never offer matches and then retract.
+
+Optional intent_kind narrows the aggregate (e.g. partner_seek) when the user was specific about "partner" matches.
 
 ### list_my_intents
 List the user's open intents. Optional kind filter.
