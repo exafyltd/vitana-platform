@@ -136,6 +136,13 @@ jobs:
             # events with the per-phase timeline). staging-only — prod stays
             # off until the experiment window graduates it.
             "FEATURE_LATENCY_TELEMETRY_ENV=staging-only"
+            # VTID-01973: Vitana Intent Engine routes (/api/v1/intents,
+            # /intent-matches, /intent-board, ...) only mount when this flag
+            # is true (see services/gateway/src/index.ts). Prod sets it in
+            # EXEC-DEPLOY.yml; without it here the staging frontend's
+            # Find a Match / My Posts screens fail with
+            # "List intents failed (404)".
+            "FEATURE_INTENT_ENGINE_A=true"
           )
 
           # Comma-joined for --set-env-vars (replaces, not merges — we want the
