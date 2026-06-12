@@ -136,6 +136,14 @@ jobs:
             # events with the per-phase timeline). staging-only — prod stays
             # off until the experiment window graduates it.
             "FEATURE_LATENCY_TELEMETRY_ENV=staging-only"
+            # VTID-01973 / VTID-01975 / VTID-01976: enable the Vitana Intent
+            # Engine routes (/intents, /intent-matches, /intent-board,
+            # /intent-categories, /intent-scan, …). Prod sets this in
+            # EXEC-DEPLOY.yml; staging omitted it, and because --set-env-vars
+            # REPLACES (not merges) the env, the routes never mounted on
+            # gateway-staging — every intents/board call 404'd, so Find a
+            # Partner / matches could not load on preview.vitanaland.com.
+            "FEATURE_INTENT_ENGINE_A=true"
           )
 
           # Comma-joined for --set-env-vars (replaces, not merges — we want the
