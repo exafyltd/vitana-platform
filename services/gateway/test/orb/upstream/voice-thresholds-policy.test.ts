@@ -50,12 +50,13 @@ describe('VTID-03124 Phase D.1 voice-threshold accessors', () => {
       __resetPolicyResolverForTests();
     });
 
-    it('VAD silence duration falls back to byte-identical 850 ms', () => {
-      expect(getVadSilenceDurationMs()).toBe(850);
+    // BOOTSTRAP-ORB-LATENCY-PHASE1: 850→600 / 2000→300 latency retune.
+    it('VAD silence duration falls back to byte-identical 600 ms', () => {
+      expect(getVadSilenceDurationMs()).toBe(600);
     });
 
-    it('post-turn cooldown falls back to byte-identical 2000 ms', () => {
-      expect(getPostTurnCooldownMs()).toBe(2000);
+    it('post-turn cooldown falls back to byte-identical 300 ms', () => {
+      expect(getPostTurnCooldownMs()).toBe(300);
     });
 
     it('silence keepalive interval falls back to byte-identical 3000 ms', () => {
@@ -132,7 +133,7 @@ describe('VTID-03124 Phase D.1 voice-threshold accessors', () => {
           },
         ],
       });
-      expect(getVadSilenceDurationMs()).toBe(850);
+      expect(getVadSilenceDurationMs()).toBe(600);
     });
 
     it('future-dated row is ignored until effective_from', () => {
@@ -148,7 +149,7 @@ describe('VTID-03124 Phase D.1 voice-threshold accessors', () => {
           },
         ],
       });
-      expect(getVadSilenceDurationMs()).toBe(850);
+      expect(getVadSilenceDurationMs()).toBe(600);
     });
   });
 

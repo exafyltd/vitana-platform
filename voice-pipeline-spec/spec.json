@@ -145,7 +145,8 @@
     { "name": "extraction_throttle_ms",     "value": 60000,    "description": "Cognee fact-extraction debounce", "implementations": ["vertex"] },
     { "name": "bootstrap_rebuild_min_age_ms","value": 60000,   "description": "Re-bootstrap floor on reconnect", "implementations": ["vertex"] },
     { "name": "token_refresh_skew_ms",      "value": 300000,   "description": "5 min — refresh the cached ADC access token this far ahead of expiry so getAccessToken() never blocks the live-connect path", "implementations": ["vertex"] },
-    { "name": "token_default_ttl_ms",       "value": 3300000,  "description": "55 min — fallback ADC token TTL when the auth client doesn't expose expiry_date", "implementations": ["vertex"] }
+    { "name": "token_default_ttl_ms",       "value": 3300000,  "description": "55 min — fallback ADC token TTL when the auth client doesn't expose expiry_date", "implementations": ["vertex"] },
+    { "name": "tool_cache_ttl_ms",          "value": 120000,   "description": "2 min — per-session cache TTL for read-only retrieval tools (search_memory/search_knowledge); repeat lookups skip the blocking function_response round-trip (BOOTSTRAP-ORB-LATENCY-PHASE2)", "implementations": ["vertex"] }
   ],
 
   "documented_invariants": {

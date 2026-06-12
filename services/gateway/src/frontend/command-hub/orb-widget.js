@@ -1192,7 +1192,7 @@
         lang: _cfg.lang,
         voice_style: 'friendly, calm, empathetic',
         response_modalities: ['audio', 'text'],
-        vad_silence_ms: 850 // VTID-03019: trimmed 1200→850 to cut ~350ms off end-of-turn latency; constants.ts mirrors
+        vad_silence_ms: 600 // BOOTSTRAP-ORB-LATENCY-PHASE1: 1200→850→600 to trim end-of-turn latency; constants.ts mirrors
       };
       // VTID-03250: send the browser's OWN IANA timezone so the gateway has a
       // reliable local time even when geo-IP rate-limits (HTTP 429). Without
@@ -2075,14 +2075,18 @@
         }
       }
 
-      // Post-turn cooldown (500ms) — server-side turn_complete
-      if (_s.turnCompleteAt > 0 && (Date.now() - _s.turnCompleteAt) < 500) return;
+      // Post-turn cooldown (200ms) — server-side turn_complete.
+      // BOOTSTRAP-ORB-LATENCY-PHASE1: 500→200ms — every ms here is dead air
+      // where the user's speech is silently dropped; AEC + the playback-end
+      // echo gate below carry the echo protection.
+      if (_s.turnCompleteAt > 0 && (Date.now() - _s.turnCompleteAt) < 200) return;
 
-      // Client-side echo cooldown (500ms) — after audio playback actually ends.
-      // The server's POST_TURN_COOLDOWN_MS (2s) starts when Vertex sends turn_complete,
+      // Client-side echo cooldown (200ms) — after audio playback actually ends.
+      // The server's POST_TURN_COOLDOWN_MS starts when Vertex sends turn_complete,
       // but the client may still be playing buffered audio 1-3s later. This cooldown
       // starts when the LAST audio source actually finishes playing on the client.
-      if (_s.lastAudioEndTime > 0 && (Date.now() - _s.lastAudioEndTime) < 500) return;
+      // BOOTSTRAP-ORB-LATENCY-PHASE1: 500→200ms (see above).
+      if (_s.lastAudioEndTime > 0 && (Date.now() - _s.lastAudioEndTime) < 200) return;
 
       // Convert Float32 → Int16 PCM → base64
       var pcm = new Int16Array(input.length);
