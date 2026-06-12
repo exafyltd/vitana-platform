@@ -473,15 +473,27 @@ export async function decideWakeBriefForSession(
   // VTID-03301 — load the openers this user was recently served so the ranker
   // can rotate. Most-recent first. Best-effort: a read failure just means no
   // penalty (old behaviour). Authenticated users only (anonymous have no state).
-  let recentlyServedDedupeKeys: string[] = [];
+  //
+  // Codex review fix: rotation applies ONLY to PASSIVE/ambient opens. When the
+  // user EXPLICITLY tapped a Guided Journey topic (`guidedTopicId`) or a
+  // Foundation focus step (`journeyFocusStep`), that is a direct user action
+  // that MUST lead turn 1 — demoting it would open the wrong conversation than
+  // the one the user just asked for. So we skip rotation entirely on explicit
+  // opens and honor the tapped candidate at its true priority.
+  const isExplicitSelection = !!(args.guidedTopicId || args.journeyFocusStep);
+  let storedRecentOpeners: string[] = [];
   if (args.supabase && args.userId) {
     try {
       const rec = await readOrbSessionState<string[]>(args.supabase, args.userId, 'recent_openers');
       if (rec && Array.isArray(rec.value)) {
-        recentlyServedDedupeKeys = rec.value.filter((k) => typeof k === 'string').slice(0, RECENT_OPENERS_WINDOW);
+        storedRecentOpeners = rec.value.filter((k) => typeof k === 'string').slice(0, RECENT_OPENERS_WINDOW);
       }
     } catch { /* best-effort — no penalty on read failure */ }
   }
+  // Withhold the rotation penalty from the ranker on explicit opens (the tapped
+  // candidate must lead), but keep `storedRecentOpeners` so the write below
+  // still merges onto the real history instead of wiping it.
+  const recentlyServedDedupeKeys: string[] = isExplicitSelection ? [] : storedRecentOpeners;
 
   const t0 = now();
   const decision = await decideContinuation({
@@ -537,7 +549,7 @@ export async function decideWakeBriefForSession(
   // emission (recordEmission) with an authenticated user + a selected opener.
   if (args.recordEmission && args.supabase && args.userId && decision.selectedContinuation?.dedupeKey) {
     const servedKey = decision.selectedContinuation.dedupeKey;
-    const nextList = [servedKey, ...recentlyServedDedupeKeys.filter((k) => k !== servedKey)]
+    const nextList = [servedKey, ...storedRecentOpeners.filter((k) => k !== servedKey)]
       .slice(0, RECENT_OPENERS_WINDOW);
     void import('./orb/orb-session-state')
       .then(({ writeOrbSessionState }) =>
