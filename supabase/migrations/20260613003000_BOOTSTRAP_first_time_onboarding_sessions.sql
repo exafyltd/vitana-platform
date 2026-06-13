@@ -57,8 +57,9 @@ $mig$;
 ALTER TABLE journey_checklist_topics
   ADD CONSTRAINT journey_checklist_topics_session_check CHECK (session BETWEEN 1 AND 94);
 
--- 4. The four onboarding topics (German source; English voice scripts are LLM
---    guidance material — the narration provider teaches in the user's locale).
+-- 4. The four onboarding topics. vitana_voice_script is GERMAN: the ORB speaks
+--    it verbatim (VTID-03293 'say exactly' path), so it must be in the catalog's
+--    source language like every other topic — an English script narrates English.
 INSERT INTO journey_checklist_topics
   (topic_id, curriculum_version, session, position, chapter_id, display_label, title,
    short_description, vitana_voice_script,
@@ -68,13 +69,13 @@ VALUES
   ('T251', 'v2', 1, 1, 'basics',
    'Starte deine Longevity-Reise', 'Starte deine Longevity-Reise',
    'Hier beginnt deine Reise – Schritt für Schritt.',
-   $vs$Welcome. This is the beginning of your longevity journey. You do not need to understand everything today, and you do not need to change everything at once. We will move step by step.
+   $vs$Willkommen. Hier beginnt deine Longevity-Reise. Du musst heute noch nicht alles verstehen, und du musst auch nicht alles auf einmal ändern. Wir gehen Schritt für Schritt vor.
 
-Your journey is here to help you build a healthier, stronger, and more balanced life over time. Each session gives you one clear idea, one small action, or one moment of reflection.
+Deine Reise hilft dir dabei, mit der Zeit ein gesünderes, stärkeres und ausgeglicheneres Leben aufzubauen. Jede Sitzung gibt dir einen klaren Gedanken, eine kleine Handlung oder einen Moment zum Nachdenken.
 
-Today, your only task is to begin. I will guide you through the journey, help you understand your plan, and show you how small steps can create meaningful progress.
+Heute ist deine einzige Aufgabe: anzufangen. Ich begleite dich durch deine Reise, helfe dir, deinen Plan zu verstehen, und zeige dir, wie kleine Schritte zu echtem Fortschritt führen.
 
-Let us start with your first step.$vs$,
+Lass uns mit deinem ersten Schritt beginnen.$vs$,
    'Der Beginn deiner Longevity-Reise – ohne Druck, Schritt für Schritt.',
    'Du weißt sofort, wie deine Reise funktioniert und wie du startest.',
    'Gleich jetzt, als allerersten Schritt deiner Reise.',
@@ -84,13 +85,13 @@ Let us start with your first step.$vs$,
   ('T252', 'v2', 2, 1, 'basics',
    'Dein Plan', 'Dein Plan',
    'So findet deine Reise die richtigen nächsten Schritte für dich.',
-   $vs$Your longevity journey works best when it feels personal. That is why your plan is not about doing everything at once. It is about finding the right next steps for you.
+   $vs$Deine Longevity-Reise funktioniert am besten, wenn sie sich persönlich anfühlt. Deshalb geht es in deinem Plan nicht darum, alles auf einmal zu tun. Es geht darum, die richtigen nächsten Schritte für dich zu finden.
 
-Together, we will look at the areas that support long-term health: your energy, your routines, your movement, your nutrition, your sleep, your mindset, and your daily rhythm.
+Gemeinsam schauen wir uns die Bereiche an, die langfristige Gesundheit unterstützen: deine Energie, deine Routinen, deine Bewegung, deine Ernährung, deinen Schlaf, deine innere Haltung und deinen Tagesrhythmus.
 
-Your plan will help you focus on what matters now, while still keeping the bigger picture in view. You will always know what your next step is, and why it matters.
+Dein Plan hilft dir, dich auf das zu konzentrieren, was jetzt wichtig ist, ohne das große Ganze aus dem Blick zu verlieren. Du weißt immer, was dein nächster Schritt ist und warum er zählt.
 
-This is your path. I will help you follow it one session at a time.$vs$,
+Das ist dein Weg. Ich helfe dir, ihm zu folgen – eine Sitzung nach der anderen.$vs$,
    'Dein persönlicher Plan für langfristige Gesundheit.',
    'Du weißt immer, was dein nächster Schritt ist – und warum er zählt.',
    'Wenn du verstehen willst, wie deine Reise aufgebaut ist.',
@@ -100,13 +101,13 @@ This is your path. I will help you follow it one session at a time.$vs$,
   ('T253', 'v2', 3, 1, 'basics',
    'Dein erster Schritt', 'Dein erster Schritt',
    'Klein anfangen, dranbleiben – so wird deine Reise real.',
-   $vs$Every journey becomes real when you take the first step. It does not need to be big. In fact, the best first step is usually small, clear, and easy to repeat.
+   $vs$Jede Reise wird real, sobald du den ersten Schritt machst. Er muss nicht groß sein. Tatsächlich ist der beste erste Schritt meist klein, klar und leicht zu wiederholen.
 
-A longevity journey is not built by pressure. It is built by rhythm. One useful choice, repeated over time, can become part of the way you live.
+Eine Longevity-Reise entsteht nicht durch Druck, sondern durch Rhythmus. Eine sinnvolle Entscheidung, immer wieder wiederholt, kann zu einem Teil deines Lebens werden.
 
-Today, choose one simple action that supports your health. It might be drinking more water, taking a short walk, going to bed a little earlier, or taking one quiet minute to check in with yourself.
+Wähle heute eine einfache Handlung, die deine Gesundheit unterstützt. Das kann sein: mehr Wasser trinken, ein kurzer Spaziergang, etwas früher ins Bett gehen oder eine ruhige Minute nur für dich.
 
-Your first step matters because it turns intention into movement. Start small, and keep going.$vs$,
+Dein erster Schritt zählt, weil er aus Absicht Bewegung macht. Fang klein an und bleib dran.$vs$,
    'Eine kleine, klare Aktion, die deine Gesundheit unterstützt.',
    'Aus guten Absichten wird echte Bewegung.',
    'Heute – dein erster Schritt darf klein sein.',
@@ -116,13 +117,13 @@ Your first step matters because it turns intention into movement. Start small, a
   ('T254', 'v2', 4, 1, 'basics',
    'Dein Fortschritt', 'Dein Fortschritt',
    'Fortschritt heißt dranbleiben, nicht perfekt sein.',
-   $vs$Progress is not about being perfect. It is about noticing where you are, learning from each step, and continuing with more awareness.
+   $vs$Fortschritt bedeutet nicht, perfekt zu sein. Es bedeutet, wahrzunehmen, wo du gerade stehst, aus jedem Schritt zu lernen und mit mehr Bewusstsein weiterzugehen.
 
-Some days will feel easy. Other days will feel busy or difficult. That is normal. What matters is that you return to your journey and keep building small moments of care for yourself.
+Manche Tage fühlen sich leicht an. Andere sind voll oder schwierig. Das ist normal. Wichtig ist, dass du zu deiner Reise zurückkehrst und dir immer wieder kleine Momente der Fürsorge für dich selbst schaffst.
 
-As you complete sessions, you will see your next step, your growing progress, and the path ahead. This helps you understand that every session is part of something bigger.
+Während du Sitzungen abschließt, siehst du deinen nächsten Schritt, deinen wachsenden Fortschritt und den Weg, der vor dir liegt. So erkennst du, dass jede Sitzung Teil von etwas Größerem ist.
 
-Your progress begins with showing up. Each session brings you closer.$vs$,
+Dein Fortschritt beginnt damit, dass du da bist. Jede Sitzung bringt dich näher ans Ziel.$vs$,
    'So siehst du, wie deine Sitzungen zu echtem Fortschritt werden.',
    'Du erkennst, dass jede Sitzung Teil von etwas Größerem ist.',
    'Wenn du sehen willst, wie weit du schon gekommen bist.',
