@@ -4630,7 +4630,7 @@ async function executeLiveApiToolInner(
       // Vertex and LiveKit run identical code.
       case 'find_match': {
         const SUPABASE_URL = process.env.SUPABASE_URL;
-        const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE;
+        const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
         if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
           return { success: false, result: '', error: 'Supabase not configured' };
         }

@@ -194,7 +194,7 @@ export async function runFindMatch(
   }
 
   const url = process.env.SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE || process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const key = process.env.SUPABASE_SERVICE_ROLE;
   if (!url || !key) {
     return { ok: false, stage: 'incomplete', text: '', data: {}, error: 'supabase_not_configured' };
   }
