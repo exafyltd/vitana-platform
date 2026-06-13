@@ -1,0 +1,39 @@
+name: Debug Gateway Staging Logs
+on:
+  workflow_dispatch:
+    inputs:
+      filter:
+        description: "Log filter (substring; blank = all)"
+        required: false
+        default: ""
+      minutes:
+        description: "How many minutes back to fetch"
+        required: false
+        default: "30"
+      service:
+        description: "Cloud Run service"
+        required: false
+        default: "gateway-staging"
+
+jobs:
+  tail:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Auth to GCP
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_WIF_SA_EMAIL }}
+      - name: Setup gcloud
+        uses: google-github-actions/setup-gcloud@v2
+      - name: Read recent logs
+        run: |
+          SINCE=$(date -u -d "${{ inputs.minutes }} minutes ago" +%Y-%m-%dT%H:%M:%SZ)
+          F='${{ inputs.filter }}'
+          Q="resource.type=cloud_run_revision AND resource.labels.service_name=${{ inputs.service }} AND timestamp>=\"$SINCE\""
+          if [ -n "$F" ]; then Q="$Q AND textPayload:\"$F\""; fi
+          echo "QUERY: $Q"
+          gcloud logging read "$Q" --project=lovable-vitana-vers1 --limit=300 --order=desc --format='value(timestamp,textPayload)'
