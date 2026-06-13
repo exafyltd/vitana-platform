@@ -98,6 +98,17 @@ import {
   GUIDED_TOPIC_NARRATION_EXTRA_KEY,
   GUIDED_TOPIC_NARRATION_PROVIDER_KEY,
 } from './assistant-continuation/providers/guided-topic-narration';
+// Greeting v2: login-briefing — the unified, "My Longevity Journey"-centric
+// greeting for a normal login. Priority 93 so it LEADS over journey-guide (91),
+// new-day-return (90), Teacher (85) and wake-brief (80); it yields to the
+// explicit-tap (96), first-ever-session (95) and passed-goal-deadline (92)
+// providers. Suppresses on greetingPolicy='skip' and on the user's first-ever
+// session, so it never blocks those specialized paths.
+import {
+  makeLoginBriefingProvider,
+  LOGIN_BRIEFING_EXTRA_KEY,
+  LOGIN_BRIEFING_PROVIDER_KEY,
+} from './assistant-continuation/providers/login-briefing';
 // VTID-03061 (B0d-real Xf.1): auto-emit OASIS next_action.suggested/
 // .suppressed events when a wake-brief decision lands. Fire-and-forget;
 // never blocks the voice path.
@@ -184,6 +195,13 @@ export function ensureWakeBriefProviderRegistered(): void {
   // never blocks journey-guide / new-day-return / Teacher on a normal open.
   if (!defaultProviderRegistry.get(GUIDED_TOPIC_NARRATION_PROVIDER_KEY)) {
     defaultProviderRegistry.register(makeGuidedTopicNarrationProvider());
+  }
+  // Greeting v2: login-briefing at priority 93 — the unified journey briefing
+  // that leads a normal login. Suppresses cleanly (greeting_policy_skip /
+  // is_first_session_true) so it never blocks the silent-reconnect or
+  // first-time-welcome paths.
+  if (!defaultProviderRegistry.get(LOGIN_BRIEFING_PROVIDER_KEY)) {
+    defaultProviderRegistry.register(makeLoginBriefingProvider());
   }
   _registered = true;
 }
@@ -466,6 +484,19 @@ export async function decideWakeBriefForSession(
         lang: args.lang,
         topicId: args.guidedTopicId ?? null,
         firstName: args.firstName ?? null,
+      };
+      // Greeting v2: login-briefing inputs. The provider reads the 90-session
+      // guided-journey state + next-session title + Life Compass + Vitana Index
+      // and composes the journey-centric briefing. greetingPolicy lets it stay
+      // silent on a reconnect-class skip; timezone drives the salutation.
+      extra[LOGIN_BRIEFING_EXTRA_KEY] = {
+        supabase: args.supabase,
+        userId: args.userId,
+        tenantId: args.tenantId,
+        lang: args.lang,
+        firstName: args.firstName ?? null,
+        timezone: args.timezone ?? null,
+        greetingPolicy,
       };
     }
   }
