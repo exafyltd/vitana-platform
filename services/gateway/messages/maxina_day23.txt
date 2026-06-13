@@ -1,0 +1,138 @@
+Bereit für Tag 23? ✨
+Deine Daten, deine Regeln
+
+Heute geht es um deine persönlichen Daten in MAXINA.
+
+Deine Daten gehören dir.
+Deshalb testen wir heute, wie leicht du deine Informationen sehen, kleine Dinge ändern und entscheiden kannst, wer was sehen darf.
+
+Stell es dir so vor:
+
+   • Public bedeutet: Alle können es sehen.
+   • Private bedeutet: Nur du kannst es sehen.
+   • Connections bedeutet: Nur Menschen, die mit dir verbunden sind, können es sehen.
+
+
+1. Öffne deinen Personal Data Vault
+
+Öffne MAXINA und gehe zu deinem Profil.
+
+Dann öffne:
+
+   Account
+
+Dort solltest du deinen Personal Data Vault sehen.
+
+Hier findest du persönliche Informationen, zum Beispiel:
+
+   • Name
+   • Geburtsdatum
+   • Stadt
+   • Land
+   • Archetype
+   • Handle
+   • und mehr
+
+Schau dich in Ruhe um.
+
+Frag dich:
+
+   • Verstehe ich, welche Informationen hier gespeichert sind?
+   • Ist klar, wer jedes Feld sehen kann?
+   • Fühlt sich dieser Bereich sicher und verständlich an?
+
+
+2. Ändere die Sichtbarkeit bei zwei Feldern
+
+Wähle jetzt zwei Felder aus und ändere, wer sie sehen darf.
+
+Zum Beispiel:
+
+Stelle deine Stadt auf:
+
+   Private
+
+Und stelle deinen Longevity Archetype auf:
+
+   Connections
+
+Prüfe danach:
+
+   • Wurde die Änderung sofort gespeichert?
+   • Hat sich die Sichtbarkeits-Anzeige klar verändert?
+   • War leicht zu verstehen, was sich geändert hat?
+
+
+3. Teste das Bearbeiten eines Feldes
+
+Suche dir jetzt ein Feld aus, das du testweise bearbeiten würdest.
+
+Zum Beispiel:
+
+   Handle
+   oder Country
+
+Tippe auf das Stift-Symbol neben diesem Feld.
+
+Prüfe, ob du den Wert bearbeiten kannst.
+
+Wichtig: Wenn du nichts wirklich ändern möchtest, geh einfach zurück, ohne zu speichern.
+
+Frag dich:
+
+   • War der Bearbeiten-Button leicht zu finden?
+   • War klar, wie ich speichern oder abbrechen kann?
+   • Hatte ich das Gefühl, meine Informationen selbst kontrollieren zu können?
+
+
+4. Sag Vitana, was klar war oder gefehlt hat
+
+Tippe jetzt auf den Vitana-Orb und sag ihr ehrlich, wie sich das Datenschutz-System angefühlt hat.
+
+Du kannst sagen:
+
+   „Public, Private und Connections waren leicht zu verstehen."
+
+   oder
+
+   „Ich war nicht sicher, wer was sehen kann."
+
+   oder
+
+   „Ich hätte gerne eine klarere Erklärung für jede Sichtbarkeits-Option."
+
+Sag Vitana auch, wenn dir etwas Wichtiges fehlt.
+
+Zum Beispiel:
+
+   „Ich möchte meine Daten herunterladen können."
+
+   oder
+
+   „Ich möchte Dinge löschen können, die ich schon eingetragen habe."
+
+   oder
+
+   „Ich möchte genau sehen, wer welches Feld sehen kann."
+
+
+Deine Aufgabe für heute
+
+Öffne dein Profil und dann Account.
+Finde deinen Personal Data Vault.
+Ändere die Sichtbarkeit bei zwei Feldern.
+Teste das Bearbeiten eines Feldes über das Stift-Symbol.
+Geh zurück, ohne zu speichern, wenn du nichts ändern möchtest.
+
+Sag Vitana danach:
+
+   • War Public / Private / Connections klar verständlich?
+   • Wurden die Änderungen richtig gespeichert?
+   • Fehlt etwas Wichtiges?
+
+Und wenn etwas nicht funktioniert, sag einfach zum Vitana-Orb:
+
+   „Das hat nicht funktioniert."
+
+
+Danke, dass du uns hilfst, MAXINA sicher, klar und respektvoll im Umgang mit deinen Daten zu machen. 💛
