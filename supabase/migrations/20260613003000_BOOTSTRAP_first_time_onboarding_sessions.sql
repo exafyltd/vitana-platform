@@ -28,11 +28,10 @@
 
 BEGIN;
 
--- 1. Widen the session bound to fit the four new opening sessions.
+-- 1. Drop the session bound so the two-step renumber can use temporary high
+--    values (a direct ADD of BETWEEN 1 AND 94 here would reject the +1000 shuffle).
 ALTER TABLE journey_checklist_topics
   DROP CONSTRAINT IF EXISTS journey_checklist_topics_session_check;
-ALTER TABLE journey_checklist_topics
-  ADD CONSTRAINT journey_checklist_topics_session_check CHECK (session BETWEEN 1 AND 94);
 
 -- 2 + 3. Renumber the existing draft curriculum and user session pointers.
 DO $mig$
@@ -53,6 +52,10 @@ BEGIN
   END IF;
 END
 $mig$;
+
+-- 1b. Re-add the widened session bound now that all sessions are final (1..94).
+ALTER TABLE journey_checklist_topics
+  ADD CONSTRAINT journey_checklist_topics_session_check CHECK (session BETWEEN 1 AND 94);
 
 -- 4. The four onboarding topics (German source; English voice scripts are LLM
 --    guidance material — the narration provider teaches in the user's locale).
