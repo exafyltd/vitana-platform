@@ -33,11 +33,12 @@
  *   E — onboarding qualified/completed       → praise mastery, shift to depth
  *   (F same-day reconnect is handled upstream by greetingPolicy='skip' → suppress.)
  *
- * Priority 93: above journey-guide (91), new-day-return (90), next-action
+ * Priority 92: leads journey-guide (91), new-day-return (90), next-action
  * (90), Teacher (85) and wake-brief (80) — so the unified briefing leads the
- * normal login. Below guided-topic-narration (96, explicit tap),
- * first-time-welcome (95, first-ever session) and goal-completion (92, a
- * passed goal deadline) — those special moments still lead.
+ * normal login. Ties goal-completion-inquiry (92) and YIELDS to it (it is
+ * registered first, so it wins the tie) — a passed goal deadline still leads.
+ * Below first-time-welcome (95, first-ever session) and guided-topic-narration
+ * (96, explicit tap), which also lead.
  */
 
 import { randomUUID } from 'crypto';
@@ -61,8 +62,8 @@ import { fetchLifeCompass, fetchVitanaIndexForProfiler } from '../../user-contex
 export const LOGIN_BRIEFING_PROVIDER_KEY = 'login_briefing';
 export const LOGIN_BRIEFING_EXTRA_KEY = 'loginBriefing' as const;
 
-/** Above journey-guide (91) / new-day-return (90); below goal-completion (92). */
-const DEFAULT_PRIORITY = 93;
+/** Leads journey-guide (91) / new-day-return (90); ties-yields to goal-completion (92). */
+const DEFAULT_PRIORITY = 92;
 
 /** A gap of this many calendar days since the last session triggers State D. */
 const RETURN_GAP_DAYS = 3;
@@ -187,10 +188,15 @@ export function renderBriefingLine(args: RenderArgs, rng: () => number = Math.ra
       : `Next up is Session ${f.nextSessionNumber}: "${f.nextSessionTitle}".`;
   })();
 
+  // Use an OPEN prompt, not a yes/no. A bare "Sollen wir weitermachen?" elicits
+  // a "ja" that the voice pipeline currently has no bound action to execute — so
+  // the assistant appeared to ignore the confirmation and jump elsewhere. An open
+  // question keeps every reply conversational. (The deterministic confirm→execute
+  // flow — "yes" opens the next session — is a separate, properly-wired follow-up.)
   const invite = pickFromPool(
     de
-      ? ['Sollen wir weitermachen?', 'Lust, gleich weiterzumachen?', 'Wollen wir loslegen?']
-      : ['Shall we continue?', 'Want to keep going?', "Shall we get started?"],
+      ? ['Womit möchtest du heute weitermachen?', 'Wo möchtest du heute ansetzen?', 'Was möchtest du als Erstes angehen?']
+      : ['Where would you like to pick up today?', 'Where shall we focus today?', 'What would you like to tackle first?'],
     rng,
   );
 
@@ -224,7 +230,7 @@ export function renderBriefingLine(args: RenderArgs, rng: () => number = Math.ra
       const body = de
         ? `Schön, dass du wieder da bist. Es ist ein paar Tage her — aber deine ${f.sessionsCompleted} ${f.sessionsCompleted === 1 ? 'Session' : 'Sessions'} sind nicht verloren, du knüpfst genau dort wieder an.`
         : `Good to have you back. It has been a few days — but your ${f.sessionsCompleted} ${f.sessionsCompleted === 1 ? 'session' : 'sessions'} are not lost; you pick up right where you left off.`;
-      const invite2 = de ? 'Lass uns den Faden wieder aufnehmen?' : 'Shall we pick the thread back up?';
+      const invite2 = de ? 'Womit möchtest du wieder einsteigen?' : 'Where would you like to jump back in?';
       return [prefix, body, nextClause, invite2].filter(Boolean).join(' ');
     }
 
