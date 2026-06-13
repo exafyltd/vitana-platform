@@ -20,6 +20,11 @@
 -- es/sr overlays are untouched. T251–T254 were already German and are left as-is.
 --
 -- Idempotent: re-running re-applies the same German strings.
+--
+-- impact-allow-solo-migration: pure content backfill (no schema change). The
+-- existing read path (checklist-service.ts → published snapshot, served
+-- verbatim for 'de') already consumes these columns unchanged; no gateway/
+-- worker code change is required.
 -- =============================================================================
 
 BEGIN;
