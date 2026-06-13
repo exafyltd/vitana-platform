@@ -1,6 +1,9 @@
 // Vitana Dev Frontend Spec v2 Implementation - Task 3
 // AUTODEPLOY-TRIGGER: 2025-12-20T14:00:00Z
 // DEV-COMHU-03107: Billing v1 — admin Billing Codes + Billing Dashboard tabs
+// DEV-COMHU-0511: System Overview fixes — real-time auto-refresh (currentModuleKey/
+//                 currentTab guards), full-width loading/error/panel grid layout,
+//                 scroll-snap (anchor href) + sidebar flicker (sync scroll restore)
 
 // VTID-0539: Operator Console Chat Experience Improvements
 // DEV-COMHU-2025-0012: Task Management v1 - Persisted Specs + Lifecycle + Approvals
@@ -1677,15 +1680,25 @@ function captureAllScrollPositions() {
 function restoreAllScrollPositions(positions) {
     if (!positions || positions.size === 0) return;
 
-    requestAnimationFrame(function () {
+    function apply() {
         var containers = discoverScrollContainers();
         containers.forEach(function (container, index) {
             var key = getContainerKey(container, index);
             if (positions.has(key)) {
-                container.scrollTop = positions.get(key);
+                var want = positions.get(key);
+                if (container.scrollTop !== want) container.scrollTop = want;
             }
         });
-    });
+    }
+
+    // Apply synchronously first. By the time renderApp() calls this the new DOM
+    // is already appended to document and has layout, so the scroll position can
+    // be set immediately — this eliminates the one-frame flash at scrollTop=0
+    // that made the sidebar (and other scrollers) flicker on every poll-driven
+    // re-render. The rAF pass is a backup for any container whose scrollHeight
+    // only settles after layout (e.g. async content).
+    apply();
+    requestAnimationFrame(apply);
 }
 
 /**
@@ -27840,10 +27853,14 @@ var overviewDashboardRefreshInterval = null;
 function startOverviewDashboardPolling() {
     if (overviewDashboardRefreshInterval) return;
     overviewDashboardRefreshInterval = setInterval(function () {
-        if (state.activeModule === 'overview' && state.activeTab === 'system-overview') {
+        // BUGFIX: route state lives on currentModuleKey/currentTab; the old
+        // activeModule/activeTab keys were never assigned, so this guard was
+        // permanently false and the 60s dashboard auto-refresh never ran.
+        if (state.currentModuleKey === 'overview' && state.currentTab === 'system-overview') {
             // Silent refresh: state updated in-place, render fires once at end
             fetchOverviewDashboard();
             fetchPipelineSummary();
+            fetchTrainingStatus(true);
         }
     }, 60000);
     console.log('[Overview] Auto-refresh polling started (60 s)');
@@ -30170,10 +30187,13 @@ async function fetchOverviewDashboard() {
         state.overviewDashboard.error = error.message;
     } finally {
         state.overviewDashboard.loading = false;
-        // Only full render on initial load; subsequent poll refreshes update
-        // state in place and the next user-driven renderApp() picks it up.
-        // This prevents DOM rebuilds every 60s that destroy scroll positions.
-        if (isInitialLoad) {
+        // Render on initial load, and also on silent poll refreshes while the
+        // user is actually on the System Overview — otherwise the "live" metrics
+        // never update without a manual interaction (the disconnected / not
+        // real-time complaint). Scroll position is preserved by the scroll-
+        // retention guard, so re-rendering here no longer snaps the view.
+        if (isInitialLoad ||
+            (state.currentModuleKey === 'overview' && state.currentTab === 'system-overview')) {
             renderApp();
         }
     }
@@ -30269,7 +30289,7 @@ function renderOverviewSystemView() {
     // timer keyed on the state to avoid stacking duplicates across renders.
     if (!state._actionRequiredTimer) {
         state._actionRequiredTimer = setInterval(function () {
-            if (state.activeModule === 'overview' && state.activeTab === 'system-overview') {
+            if (state.currentModuleKey === 'overview' && state.currentTab === 'system-overview') {
                 state.actionRequired.fetched = false;
                 fetchActionRequired(true);
             }
@@ -30289,7 +30309,10 @@ function renderOverviewSystemView() {
         // First-load: show a slim progress bar at the top but still render the
         // dashboard frame so the layout is visible rather than a blank spinner.
         var progressBanner = document.createElement('div');
-        progressBanner.style.cssText = 'display:flex;align-items:center;gap:0.5rem;padding:0.5rem 0.75rem;' +
+        // grid-column:1/-1 — .overview-dashboard is a 2-col grid; without this
+        // the banner lands in a single column and gets stretched to the row
+        // height of the Action Required panel, looking like a broken empty box.
+        progressBanner.style.cssText = 'grid-column:1/-1;display:flex;align-items:center;gap:0.5rem;padding:0.5rem 0.75rem;' +
             'background:rgba(59,130,246,0.12);border:1px solid rgba(59,130,246,0.3);border-radius:6px;' +
             'margin-bottom:0.75rem;font-size:0.8rem;color:#93c5fd;';
         var pbSpinner = document.createElement('div');
@@ -30306,7 +30329,7 @@ function renderOverviewSystemView() {
     // ── Error state (inline, non-blocking) ──
     if (db.error && !db.fetched) {
         var errorBanner = document.createElement('div');
-        errorBanner.style.cssText = 'display:flex;align-items:center;gap:0.5rem;padding:0.5rem 0.75rem;' +
+        errorBanner.style.cssText = 'grid-column:1/-1;display:flex;align-items:center;gap:0.5rem;padding:0.5rem 0.75rem;' +
             'background:rgba(239,68,68,0.12);border:1px solid rgba(239,68,68,0.3);border-radius:6px;' +
             'margin-bottom:0.75rem;font-size:0.8rem;color:#fca5a5;';
         errorBanner.innerHTML = '\u26a0\ufe0f Dashboard fetch error: ' + (db.error || 'Unknown') + ' \u2014 ';
@@ -31169,7 +31192,7 @@ function renderOverviewSystemView() {
         liveHdr.className = 'overview-panel-title-row';
         liveHdr.innerHTML = '<span class="overview-panel-title">Live Activity</span>' +
             '<span class="overview-count-badge overview-count-badge-green">' + liveEvents.length + ' events</span>' +
-            '<a href="#" onclick="event.preventDefault();state.activeModule=\'overview\';state.activeTab=\'recent-events\';renderApp();" ' +
+            '<a href="#" onclick="event.preventDefault();state.currentTab=\'recent-events\';history.pushState(null,\'\',\'/command-hub/overview/recent-events/\');renderApp();" ' +
             'style="margin-left:auto;font-size:0.75rem;color:#60a5fa;text-decoration:none;">View all \u2192</a>';
         livePanel.appendChild(liveHdr);
 
@@ -31249,7 +31272,7 @@ async function fetchActionRequired(silentRefresh) {
     state.actionRequired.lastRefreshed = new Date().toISOString();
     state.actionRequired.loading = false;
     state.actionRequired.fetched = true;
-    if (state.activeModule === 'overview' && state.activeTab === 'system-overview') {
+    if (state.currentModuleKey === 'overview' && state.currentTab === 'system-overview') {
         renderApp();
     }
 }
@@ -31277,7 +31300,7 @@ async function fetchTrainingStatus(silentRefresh) {
     state.trainingStatus.lastRefreshed = new Date().toISOString();
     state.trainingStatus.loading = false;
     state.trainingStatus.fetched = true;
-    if (state.activeModule === 'overview' && state.activeTab === 'system-overview') {
+    if (state.currentModuleKey === 'overview' && state.currentTab === 'system-overview') {
         renderApp();
     }
 }
@@ -31287,7 +31310,7 @@ async function fetchTrainingStatus(silentRefresh) {
 function renderTrainingCycleSection() {
     var ts = state.trainingStatus;
     var section = document.createElement('div');
-    section.style.cssText = 'margin:0.85rem 0;border:1px solid rgba(99,102,241,0.35);border-radius:10px;' +
+    section.style.cssText = 'grid-column:1/-1;margin:0.85rem 0;border:1px solid rgba(99,102,241,0.35);border-radius:10px;' +
         'background:linear-gradient(180deg,rgba(49,46,129,0.18),rgba(15,23,42,0.25));overflow:hidden;';
 
     // ── Header ──
@@ -31456,7 +31479,8 @@ function renderActionRequiredPanel() {
     var ar = state.actionRequired;
     var wrapper = document.createElement('div');
     wrapper.className = 'action-required-panel';
-    wrapper.style.cssText = 'margin-bottom:0.85rem;border-radius:8px;overflow:hidden;border:1px solid;';
+    // Full-width: top-level summary panel must span both grid columns.
+    wrapper.style.cssText = 'grid-column:1/-1;margin-bottom:0.85rem;border-radius:8px;overflow:hidden;border:1px solid;';
 
     var hasItems = (ar.items || []).length > 0;
     var bgColor = hasItems
@@ -31538,7 +31562,15 @@ function renderActionRequiredPanel() {
 
 function renderActionRequiredCard(item) {
     var card = document.createElement('a');
-    card.href = item.deeplink || '#';
+    // Only set a real href. A bare "#" makes the browser navigate to the top
+    // of the page on click — the classic "scrolls back to the top when I select
+    // something" bug. When there's no deeplink, keep it a non-navigating anchor.
+    if (item.deeplink) {
+        card.href = item.deeplink;
+    } else {
+        card.href = '#';
+        card.onclick = function (e) { e.preventDefault(); };
+    }
     card.style.cssText = 'display:flex;flex-direction:column;gap:0.2rem;padding:0.65rem 0.85rem;' +
         'background:rgba(15,23,42,0.55);border:1px solid rgba(255,255,255,0.08);border-radius:6px;' +
         'text-decoration:none;color:inherit;cursor:pointer;transition:background 120ms ease;';
@@ -31625,7 +31657,10 @@ async function fetchPipelineSummary() {
         state.overviewPipelineSummary.error = error.message;
     } finally {
         state.overviewPipelineSummary.loading = false;
-        if (isInitialLoad) {
+        // Also re-render on silent refreshes while on the Overview so the
+        // pipeline metrics stay live (scroll is preserved by the retain guard).
+        if (isInitialLoad ||
+            (state.currentModuleKey === 'overview' && state.currentTab === 'system-overview')) {
             renderApp();
         }
     }
