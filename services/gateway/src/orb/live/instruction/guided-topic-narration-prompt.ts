@@ -39,19 +39,52 @@ export function buildGuidedTopicNarrationOpenerLine(
 }
 
 /**
- * VTID-03293 — the SPOKEN LESSON: the actual teaching Vitana speaks on turn 1.
+ * VTID-03309 (delivery fix) — the SPOKEN OPENING BEAT Vitana says on turn 1.
  *
- * WHY this is the spoken line (not a short opener + "teach more" instruction):
- * Gemini Live native-audio reliably produces AUDIO only for a SHORT, DIRECT
- * user turn ("say exactly: <line>"). A long INSTRUCTIONAL trigger ("then teach
- * across several sentences per the block…") makes it answer text-only or delay
- * first audio past the AudioContext suspend window → no speech, UI stuck
- * "connecting" (the VTID-03102 regression we hit on staging). So we put the
- * teaching INTO the spoken line itself: the authored `voice_script` IS the
- * lesson (the author wrote it as what Vitana says), and the greeting path speaks
- * it verbatim — reliable audio + real teaching. Falls back to a short lesson
- * built from the explanation fields when no script is authored.
+ * HISTORY: VTID-03293 put the ENTIRE authored script into this spoken line and
+ * spoke it verbatim. That was reliable for audio, but for the long first-time
+ * onboarding scripts (~2,500 chars ≈ 2 min) it made Vitana RECITE a single huge
+ * monologue — which native audio rushes, and which a ~2-min single turn gets
+ * interrupted mid-stream (echo / keepalive / VAD), so the audio dropped and
+ * resumed further along. It did NOT sound like a normal conversation.
+ *
+ * FIX: speak only the first NATURAL BEAT (the authored opening — a normal-length
+ * conversational turn). This keeps the reliable "say exactly: <concrete line>"
+ * shape (so we never regress to the VTID-03102 text-only / stuck-connecting
+ * failure), but at normal conversational length → natural pace, no long-turn
+ * cutting. The FULL authored script stays available to the model as TEACH
+ * material in the GUIDE-MODE block (buildGuidedTopicNarrationBlock), so Vitana
+ * continues the session conversationally — exactly like any other chat — instead
+ * of dumping a 2-minute recitation.
+ *
+ * Falls back to a short lesson built from the explanation fields when no script
+ * is authored.
  */
+// A comfortable single-turn length: long enough for a warm, substantive opener,
+// short enough to stay natural-paced and avoid the long-turn audio dropouts.
+const SPOKEN_OPENER_MAX_CHARS = 480;
+
+/** First natural beat of an authored script: whole leading paragraphs up to the
+ *  cap (never splitting a sentence). Guarantees at least the first paragraph. */
+function firstSpokenBeat(text: string, capChars = SPOKEN_OPENER_MAX_CHARS): string {
+  const paras = text
+    .split(/\n\s*\n/)
+    .map((p) => p.replace(/\s+/g, ' ').trim())
+    .filter(Boolean);
+  if (paras.length === 0) return text.replace(/\s+/g, ' ').trim();
+  let out = paras[0];
+  for (let i = 1; i < paras.length; i++) {
+    if ((out + ' ' + paras[i]).length <= capChars) out = `${out} ${paras[i]}`;
+    else break;
+  }
+  if (out.length > capChars) {
+    const slice = out.slice(0, capChars);
+    const lastEnd = Math.max(slice.lastIndexOf('. '), slice.lastIndexOf('! '), slice.lastIndexOf('? '));
+    out = lastEnd > 80 ? slice.slice(0, lastEnd + 1) : slice;
+  }
+  return out.trim();
+}
+
 export function buildGuidedTopicSpokenLesson(
   content: GuidedTopicNarrationContent,
   lang: string,
@@ -61,14 +94,18 @@ export function buildGuidedTopicSpokenLesson(
   const name = (opts?.firstName || '').trim();
   const greet = name ? `Hey ${name}! ` : '';
 
-  let body = (content.voice_script || '').trim();
-  if (!body) {
+  const script = (content.voice_script || '').trim();
+  let body: string;
+  if (script) {
+    // Speak only the natural opening beat — the rest is taught conversationally
+    // via the GUIDE-MODE block, so this never becomes a 2-minute monologue.
+    body = firstSpokenBeat(script);
+  } else {
     const exp = content.explanation || { whatItIs: null, userBenefit: null, whenToUse: null, tryThis: null };
     const parts: string[] = [];
     parts.push(isDe ? `Lass uns über „${content.topic_title}" sprechen.` : `Let's talk about "${content.topic_title}".`);
     if (exp.whatItIs) parts.push(exp.whatItIs);
     if (exp.userBenefit) parts.push(exp.userBenefit);
-    if (exp.tryThis) parts.push(exp.tryThis);
     body = parts.join(' ').trim();
   }
   return `${greet}${body}`.trim();
