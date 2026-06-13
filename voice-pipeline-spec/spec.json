@@ -61,7 +61,7 @@
 
     { "name": "post_intent",                  "implementations": ["vertex"], "safety_critical": true,  "owner_vtid": "VTID-01975" },
     { "name": "view_intent_matches",          "implementations": ["vertex"], "safety_critical": false, "owner_vtid": "VTID-01976" },
-    { "name": "find_match",                   "implementations": ["vertex", "livekit"], "safety_critical": false, "owner_vtid": null, "notes": "BOOTSTRAP-FIND-MATCH-VOICE: search-first 'find me a match' — searches the catalog and recommends matches (also posting so the user is discoverable) or posts on confirmation. Shared dispatcher route (services/intent-find-match.ts)." },
+    { "name": "find_match",                   "implementations": ["vertex"], "safety_critical": false, "owner_vtid": null, "notes": "BOOTSTRAP-FIND-MATCH-VOICE: search-first 'find me a match' — searches the catalog and recommends matches (also posting so the user is discoverable) or posts on confirmation. In the shared ORB registry; LiveKit can dispatch it but does not declare it yet (mirrors view_intent_matches)." },
     { "name": "list_my_intents",              "implementations": ["vertex"], "safety_critical": false, "owner_vtid": null },
     { "name": "respond_to_match",             "implementations": ["vertex"], "safety_critical": true,  "owner_vtid": "VTID-01976" },
     { "name": "mark_intent_fulfilled",        "implementations": ["vertex"], "safety_critical": false, "owner_vtid": null },
