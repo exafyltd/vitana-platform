@@ -4623,6 +4623,36 @@ async function executeLiveApiToolInner(
         );
       }
 
+      // ─── BOOTSTRAP-FIND-MATCH-VOICE — search-first "find me a match" ───
+      // Searches the live catalog and recommends matches (also posting so the
+      // user is discoverable) or posts the request after confirmation. Shared
+      // implementation in services/intent-find-match.ts via the registry, so
+      // Vertex and LiveKit run identical code.
+      case 'find_match': {
+        const SUPABASE_URL = process.env.SUPABASE_URL;
+        const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE;
+        if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
+          return { success: false, result: '', error: 'Supabase not configured' };
+        }
+        const { createClient } = await import('@supabase/supabase-js');
+        const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE, {
+          auth: { autoRefreshToken: false, persistSession: false },
+        });
+        const { dispatchOrbToolForVertex } = await import('../services/orb-tools-shared');
+        return await dispatchOrbToolForVertex(
+          'find_match',
+          args ?? {},
+          {
+            user_id: lens.user_id,
+            tenant_id: lens.tenant_id ?? null,
+            role: session.identity?.role ?? session.active_role ?? null,
+            vitana_id: session.identity?.vitana_id ?? null,
+            session_id: session.sessionId,
+          },
+          supabase,
+        );
+      }
+
       // ─── VTID-01975 — Vitana Intent Engine voice tools ───
       case 'post_intent': {
         const utterance = String(args.utterance || '').trim();
