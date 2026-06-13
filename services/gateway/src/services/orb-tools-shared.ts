@@ -3387,6 +3387,36 @@ export async function tool_view_intent_matches(
 }
 
 // ---------------------------------------------------------------------------
+// BOOTSTRAP-FIND-MATCH-VOICE — find_match (search-first "find me a match").
+//
+// Searches the live intent catalog for the user's spoken request and EITHER
+// recommends existing matches (and posts the request so they're discoverable
+// too) OR — when nothing matches — posts the request after a verbal
+// confirmation. The heavy lifting lives in services/intent-find-match.ts so
+// both transports (Vertex + LiveKit) share one implementation; this is just
+// the registry adapter into OrbToolResult.
+// ---------------------------------------------------------------------------
+
+export async function tool_find_match(
+  args: OrbToolArgs,
+  id: OrbToolIdentity,
+): Promise<OrbToolResult> {
+  if (!id.user_id) return { ok: false, error: 'authentication required' };
+  const { runFindMatch } = await import('./intent-find-match');
+  const r = await runFindMatch(
+    { utterance: args.utterance, kind_hint: args.kind_hint, confirmed: args.confirmed },
+    {
+      user_id: id.user_id,
+      tenant_id: id.tenant_id ?? null,
+      vitana_id: id.vitana_id ?? null,
+      session_id: id.session_id ?? null,
+    },
+  );
+  if (!r.ok) return { ok: false, error: r.error ?? 'find_match_failed' };
+  return { ok: true, result: { ...r.data, stage: r.stage }, text: r.text };
+}
+
+// ---------------------------------------------------------------------------
 // VTID-NAV-TIMEJOURNEY — get_current_screen (PR 1.B-3)
 //
 // Mirrors orb-live.ts:handleGetCurrentScreen byte-for-byte: resolves the
@@ -4150,6 +4180,10 @@ export const ORB_TOOL_REGISTRY: Record<string, OrbToolHandler> = {
   // INTENTS.MATCH_DETAIL when the top score dominates the runner-up;
   // otherwise lists matches and lets the LLM disambiguate verbally.
   view_intent_matches: tool_view_intent_matches,
+  // BOOTSTRAP-FIND-MATCH-VOICE — search-first "find me a match": searches the
+  // live catalog and recommends existing matches (and posts so the user is
+  // discoverable) or posts the request when nothing matches yet.
+  find_match: tool_find_match,
   // VTID-NAV-TIMEJOURNEY — get_current_screen (PR 1.B-3). Resolves the user's
   // LIVE current screen via the nav catalog. Anonymous-safe — pulls
   // current_route + recent_routes from args (Vertex/LiveKit pass them via
