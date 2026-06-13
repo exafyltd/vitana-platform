@@ -348,6 +348,54 @@ async function fetchChecklistTranslations(
 }
 
 /**
+ * VTID-03309 — fetch the per-locale verbatim voice OVERRIDE for a single topic.
+ *
+ * The published snapshot carries ONE authored voice script (the German base).
+ * To honor the product rule "German setting → German speech, English setting →
+ * English speech, never mixed", the spoken line MUST be in the user's language —
+ * and the narration path speaks `vitanaVoiceScript` VERBATIM (no LLM translate,
+ * see buildGuidedTopicSpokenLesson / session.say). So we store a per-locale
+ * script in `journey_checklist_translations.vitana_voice_script` and overlay it
+ * here. A 'de' row is allowed (a German override of the snapshot base); a missing
+ * row for any locale → null → the caller keeps the snapshot/base script.
+ *
+ * Best-effort: any error returns null so narration falls back to the base script
+ * rather than failing the open.
+ */
+export async function fetchVoiceOverride(
+  client: SupabaseClient,
+  locale: ChecklistLocale,
+  topicId: string,
+): Promise<string | null> {
+  try {
+    const { data, error } = await client
+      .from('journey_checklist_translations')
+      .select('vitana_voice_script')
+      .eq('locale', locale)
+      .eq('topic_id', topicId)
+      .maybeSingle();
+    if (error || !data) return null;
+    const v = (data as { vitana_voice_script: string | null }).vitana_voice_script;
+    return v && v.trim() ? v : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Map a session language ('de', 'en-US', 'de-DE', …) to a curriculum voice
+ * locale. Unknown languages fall back to 'de' (the authored base), so a user
+ * always hears one coherent language, never a German/English mix.
+ */
+export function normalizeVoiceLocale(lang: string | null | undefined): ChecklistLocale {
+  const l = (lang || '').toLowerCase();
+  if (l.startsWith('en')) return 'en';
+  if (l.startsWith('es')) return 'es';
+  if (l.startsWith('sr')) return 'sr';
+  return 'de';
+}
+
+/**
  * The user-facing read for My Journey (P5). Returns the current published
  * snapshot; if nothing is published yet (early phases), falls back to the
  * enabled working draft so the catalog can still render (documented bootstrap
@@ -414,6 +462,7 @@ export async function getOrbTopicSeed(
   client: SupabaseClient,
   topicId: string,
   curriculumVersion = 'v2',
+  locale: ChecklistLocale = 'de',
 ): Promise<OrbTopicSeed | null> {
   const { data: ver, error } = await client
     .from(V)
@@ -423,14 +472,16 @@ export async function getOrbTopicSeed(
     .maybeSingle();
   if (error) throw error;
 
-  // A published version is authoritative: if it exists, the ORB narrates ONLY
-  // what's in it. A topic absent from the snapshot (gated/disabled at publish)
-  // is intentionally not live → no seed, no draft peek.
+  // Resolve the BASE seed (German-authored): the published snapshot is
+  // authoritative when present; otherwise the live draft (bootstrap).
+  let seed: OrbTopicSeed | null = null;
   if (ver && Array.isArray((ver as any).snapshot)) {
+    // A topic absent from the snapshot (gated/disabled at publish) is
+    // intentionally not live → no seed, no draft peek.
     const snap = (ver as any).snapshot as SnapshotChecklistTopic[];
     const hit = snap.find((t) => t.topicId === topicId);
     if (!hit) return null;
-    return {
+    seed = {
       topicId: hit.topicId,
       displayLabel: hit.displayLabel,
       vitanaVoiceScript: hit.vitanaVoiceScript ?? null,
@@ -438,17 +489,26 @@ export async function getOrbTopicSeed(
       guidedPracticeTarget: hit.guidedPracticeTarget ?? null,
       source: 'published',
     };
+  } else {
+    const draft = await getTopic(client, topicId);
+    if (!draft || !draft.enabled || draft.status === 'disabled') return null;
+    seed = {
+      topicId: draft.topicId,
+      displayLabel: draft.displayLabel,
+      vitanaVoiceScript: draft.vitanaVoiceScript,
+      explanation: draft.explanation,
+      guidedPracticeTarget: draft.guidedPracticeTarget,
+      source: 'draft_fallback',
+    };
   }
 
-  // Bootstrap fallback: nothing published yet → read the live draft row.
-  const draft = await getTopic(client, topicId);
-  if (!draft || !draft.enabled || draft.status === 'disabled') return null;
-  return {
-    topicId: draft.topicId,
-    displayLabel: draft.displayLabel,
-    vitanaVoiceScript: draft.vitanaVoiceScript,
-    explanation: draft.explanation,
-    guidedPracticeTarget: draft.guidedPracticeTarget,
-    source: 'draft_fallback',
-  };
+  // VTID-03309 — overlay the per-locale VERBATIM voice script so the spoken line
+  // is in the user's language (the narration path speaks it verbatim, no LLM
+  // translate). 'de' rows are a German override of the snapshot base; any locale
+  // with no override keeps the base script. Title/explanation localization stays
+  // with the public catalog read (getPublishedChecklist) — voice is verbatim and
+  // must never be mixed, so it is overlaid here at the source.
+  const voiceOverride = await fetchVoiceOverride(client, locale, seed.topicId);
+  if (voiceOverride) seed = { ...seed, vitanaVoiceScript: voiceOverride };
+  return seed;
 }

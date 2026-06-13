@@ -19,6 +19,14 @@ import { validateContinuationCandidate } from '../../../../src/services/assistan
 const mockGetOrbTopicSeed = jest.fn();
 jest.mock('../../../../src/services/guided-journey/checklist-service', () => ({
   getOrbTopicSeed: (...args: any[]) => mockGetOrbTopicSeed(...args),
+  // VTID-03309: the provider also normalizes the session language → voice locale.
+  normalizeVoiceLocale: (lang: string | null | undefined) => {
+    const l = (lang || '').toLowerCase();
+    if (l.startsWith('en')) return 'en';
+    if (l.startsWith('es')) return 'es';
+    if (l.startsWith('sr')) return 'sr';
+    return 'de';
+  },
 }));
 
 const FAKE_SB = { from: () => ({}) } as any;
@@ -114,7 +122,9 @@ describe('guided-topic-narration provider', () => {
     expect(c.guidedTopicNarration.topic_id).toBe('T001');
     expect(c.guidedTopicNarration.voice_script).toContain('Vitanaland');
     expect(c.guidedTopicNarration.practice_target).toBe('community');
-    expect(mockGetOrbTopicSeed).toHaveBeenCalledWith(FAKE_SB, 'T001', 'v2');
+    // VTID-03309: the session language ('de') is normalized to a voice locale
+    // and threaded into the seed read so the spoken script is single-language.
+    expect(mockGetOrbTopicSeed).toHaveBeenCalledWith(FAKE_SB, 'T001', 'v2', 'de');
   });
 
   it('greets by name when firstName is provided', async () => {

@@ -14,7 +14,7 @@ import {
   rollbackChecklist,
   ChecklistValidationError,
 } from '../src/services/guided-journey/checklist-publish';
-import { getPublishedChecklist, getOrbTopicSeed } from '../src/services/guided-journey/checklist-service';
+import { getPublishedChecklist, getOrbTopicSeed, normalizeVoiceLocale } from '../src/services/guided-journey/checklist-service';
 import type { ChecklistTopic } from '../src/types/journey-checklist';
 
 // ---------------------------------------------------------------------------
@@ -119,6 +119,7 @@ function makeFakeSupabase(seedTopics: ChecklistTopic[] = []) {
     journey_checklist_topics: Array.from(topics.values()),
     journey_checklist_versions: [],
     journey_checklist_audit: [],
+    journey_checklist_translations: [],
   };
 
   function from(table: string) {
@@ -346,6 +347,56 @@ describe('ORB topic seed (VTID-03289)', () => {
     });
     // A published version exists → unpublished draft topic must NOT leak to voice.
     expect(await getOrbTopicSeed(sb, 'T777')).toBeNull();
+  });
+});
+
+describe('ORB topic seed — per-locale voice override (VTID-03309)', () => {
+  const seedTranslation = (sb: any, locale: string, script: string) =>
+    sb.__store.journey_checklist_translations.push({
+      topic_id: 'T001', locale, vitana_voice_script: script, updated_at: '2026-06-13T00:00:00Z',
+    });
+
+  it('overlays the German override on the snapshot base for a de session', async () => {
+    const sb = makeFakeSupabase(fullValidSet());
+    await publishChecklist(sb, 'admin-1', { now: '2026-06-08T10:00:00Z' });
+    seedTranslation(sb, 'de', 'NEUER deutscher Sprechtext.');
+    const seed = await getOrbTopicSeed(sb, 'T001', 'v2', 'de');
+    expect(seed!.vitanaVoiceScript).toBe('NEUER deutscher Sprechtext.');
+  });
+
+  it('speaks the English script verbatim for an en session (never the German)', async () => {
+    const sb = makeFakeSupabase(fullValidSet());
+    await publishChecklist(sb, 'admin-1', { now: '2026-06-08T10:00:00Z' });
+    seedTranslation(sb, 'de', 'Deutscher Text.');
+    seedTranslation(sb, 'en', 'English verbatim script.');
+    const seed = await getOrbTopicSeed(sb, 'T001', 'v2', 'en');
+    expect(seed!.vitanaVoiceScript).toBe('English verbatim script.');
+  });
+
+  it('keeps the base snapshot script when the locale has no override', async () => {
+    const sb = makeFakeSupabase(fullValidSet());
+    await publishChecklist(sb, 'admin-1', { now: '2026-06-08T10:00:00Z' });
+    seedTranslation(sb, 'en', 'English only.');
+    // 'es' has no row → falls back to the authored base, never a mix.
+    const seed = await getOrbTopicSeed(sb, 'T001', 'v2', 'es');
+    expect(seed!.vitanaVoiceScript).toBe('Vitana explains this topic.');
+  });
+
+  it('defaults to the German base when no locale is passed (back-compat)', async () => {
+    const sb = makeFakeSupabase(fullValidSet());
+    await publishChecklist(sb, 'admin-1', { now: '2026-06-08T10:00:00Z' });
+    seedTranslation(sb, 'de', 'Deutsch override.');
+    const seed = await getOrbTopicSeed(sb, 'T001');
+    expect(seed!.vitanaVoiceScript).toBe('Deutsch override.');
+  });
+
+  it('normalizeVoiceLocale maps session languages to a single coherent locale', () => {
+    expect(normalizeVoiceLocale('de')).toBe('de');
+    expect(normalizeVoiceLocale('de-DE')).toBe('de');
+    expect(normalizeVoiceLocale('en')).toBe('en');
+    expect(normalizeVoiceLocale('en-US')).toBe('en');
+    expect(normalizeVoiceLocale('fr')).toBe('de');
+    expect(normalizeVoiceLocale(null)).toBe('de');
   });
 });
 

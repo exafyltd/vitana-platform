@@ -24,7 +24,7 @@ import type {
   ProviderResult,
 } from '../types';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { getOrbTopicSeed } from '../../guided-journey/checklist-service';
+import { getOrbTopicSeed, normalizeVoiceLocale } from '../../guided-journey/checklist-service';
 import type { ChecklistExplanation } from '../../../types/journey-checklist';
 
 export const GUIDED_TOPIC_NARRATION_PROVIDER_KEY = 'guided_topic_narration';
@@ -102,7 +102,15 @@ export function makeGuidedTopicNarrationProvider(): ContinuationProvider {
 
       let seed: Awaited<ReturnType<typeof getOrbTopicSeed>>;
       try {
-        seed = await getOrbTopicSeed(inputs.supabase, inputs.topicId, inputs.curriculumVersion);
+        // VTID-03309: resolve the seed for the SESSION LANGUAGE so the spoken
+        // voice script is verbatim in the user's language (de→German, en→English,
+        // never mixed). Unknown langs fall back to the German base.
+        seed = await getOrbTopicSeed(
+          inputs.supabase,
+          inputs.topicId,
+          inputs.curriculumVersion,
+          normalizeVoiceLocale(inputs.lang),
+        );
       } catch (err) {
         return {
           providerKey: GUIDED_TOPIC_NARRATION_PROVIDER_KEY,
