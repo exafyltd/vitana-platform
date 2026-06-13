@@ -1045,6 +1045,19 @@ journey_session_index_awards (
 
 ---
 
+### journey_checklist_topics — session bound (BOOTSTRAP-FIRST-TIME-ONBOARDING)
+
+The Guided Journey curriculum (VTID-03277) now spans **94 sessions / 254
+topics**: migration `20260613003000` prepended four first-time onboarding
+sessions (T251 `Starte deine Longevity-Reise`, T252 `Dein Plan`, T253 `Dein
+erster Schritt`, T254 `Dein Fortschritt`) at sessions 1-4 and shifted the
+existing 90 sessions to 5-94. The `session` CHECK is now `BETWEEN 1 AND 94`.
+Existing `user_guided_journey_state.current_session` pointers (> 1) were
+shifted +4 so they keep referencing the same content. The current published
+snapshot was rewritten in place by the same migration.
+
+---
+
 ### journey_checklist_translations (BOOTSTRAP-GUIDED-JOURNEY-POPUP)
 
 Per-locale (`en`/`es`/`sr`) translations of the user-facing Guided Journey topic
