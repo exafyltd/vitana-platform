@@ -3262,14 +3262,26 @@ async function viewAllMyMatches(
     );
     const slim = perIntent
       .flat()
-      .map((m) => ({
-        match_id: m.match_id,
-        vitana_id_b: m.vitana_id_b,
-        score: m.score,
-        kind_pairing: m.kind_pairing,
-        state: m.state,
-        redacted: m.redacted,
-      }))
+      .map((m) => {
+        const r = (m.match_reasons || {}) as Record<string, unknown>;
+        return {
+          match_id: m.match_id,
+          vitana_id_b: m.vitana_id_b,
+          score: m.score,
+          kind_pairing: m.kind_pairing,
+          state: m.state,
+          redacted: m.redacted,
+          // Explainability (BOOTSTRAP-MATCHMAKING-V4): carry tier + dimension fits.
+          tier: (r.tier as string) ?? null,
+          activity_exact: r.activity_exact === true,
+          reasons: {
+            location_fit: r.location_fit ?? null,
+            time_fit: r.time_fit ?? null,
+            activity_fit: r.activity_fit ?? null,
+            profile_fit: r.profile_fit ?? null,
+          },
+        };
+      })
       .sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
       .slice(0, 10);
 
@@ -3311,14 +3323,26 @@ export async function tool_view_intent_matches(
     const { redactMatchForReader } = await import('./intent-mutual-reveal');
     const matches = await surfaceTopMatches(intentId, limit);
     const redacted = await Promise.all(matches.map((m) => redactMatchForReader(m, id.user_id)));
-    const slim = redacted.map((m) => ({
-      match_id: m.match_id,
-      vitana_id_b: m.vitana_id_b,
-      score: m.score,
-      kind_pairing: m.kind_pairing,
-      state: m.state,
-      redacted: m.redacted,
-    }));
+    const slim = redacted.map((m) => {
+      const r = (m.match_reasons || {}) as Record<string, unknown>;
+      return {
+        match_id: m.match_id,
+        vitana_id_b: m.vitana_id_b,
+        score: m.score,
+        kind_pairing: m.kind_pairing,
+        state: m.state,
+        redacted: m.redacted,
+        // Explainability (BOOTSTRAP-MATCHMAKING-V4): carry tier + dimension fits.
+        tier: (r.tier as string) ?? null,
+        activity_exact: r.activity_exact === true,
+        reasons: {
+          location_fit: r.location_fit ?? null,
+          time_fit: r.time_fit ?? null,
+          activity_fit: r.activity_fit ?? null,
+          profile_fit: r.profile_fit ?? null,
+        },
+      };
+    });
 
     // Unambiguity: 1 match OR top score - second score >= AMBIG_GAP. Ambiguous
     // results stay list-only and the LLM disambiguates verbally.
