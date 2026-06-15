@@ -121,9 +121,8 @@ router.post('/shop', async (req: Request, res: Response) => {
 // mapping so the public postback can attribute the conversion back. The rewards
 // badge is shown only when the program allows cashback (Amazon = false).
 router.post('/affiliate-link', async (req: Request, res: Response) => {
-  // impact-allow-no-oasis: issuing a tracked link (and recording the idempotent
-  // subid->member map) is not a lifecycle state transition — the OASIS-worthy
-  // events are emitted later by the postback (reward pending/confirmed/reversed).
+  // impact-allow-no-oasis: link issuance is not a lifecycle state transition; the
+  // OASIS-worthy reward events are emitted by the postback handler instead.
   const supabase = db(res); if (!supabase) return;
   const uid = userId(req);
   const tenant = tenantId(req);
@@ -145,7 +144,7 @@ router.post('/affiliate-link', async (req: Request, res: Response) => {
     network: prog.network, updated_at: now,
   }, { onConflict: 'sub_id' });
 
-  // Decorate the program's gotolink with our subid (+ optional product deeplink).
+  // Decorate the program gotolink with our subid (+ optional product deeplink).
   const policy = (prog.policy || {}) as Record<string, unknown>;
   const gotolink = String(policy.gotolink || '');
   let link = '';

@@ -107,10 +107,13 @@ async function handle(req: Request, res: Response): Promise<void> {
   res.json({ ok: true, attributed: true, state, commissionId });
 }
 
-// public-route: server-to-server affiliate postback (no user JWT); authenticated
-// instead by the shared ADMITAD_POSTBACK_KEY (fail-closed in keyOk).
-router.get('/admitad', handle);
-// public-route: see above — same key-verified anonymous handler for POST callbacks.
-router.post('/admitad', handle);
+// Server-to-server affiliate postback (no user JWT); authenticated by the shared
+// ADMITAD_POSTBACK_KEY (fail-closed in keyOk), not by user auth middleware.
+router.get('/admitad', handle); // public-route
+router.post( // public-route
+  '/admitad',
+  // impact-allow-no-oasis: handle() records reward.<state>/unattributed via a direct oasis_events insert
+  handle,
+);
 
 export default router;
