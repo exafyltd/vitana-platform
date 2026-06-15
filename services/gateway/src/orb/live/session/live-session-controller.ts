@@ -56,6 +56,9 @@ import {
   triggerDowngrade,
 } from '../../../services/voice-quota-guard';
 import { recordPaywallEvent } from '../../../services/entitlement-service';
+// ORB-FAST-START Phase 2: defer wake-brief + journey off the session/start
+// response path (flag-gated; default off → legacy inline behavior).
+import { shouldDeferWakeWork, composeContextReady } from './orb-fast-start';
 
 // VTID-03107: per-session voice-meter intervals. Keyed by session_id so cleanup
 // in handleLiveSessionStop can tear down without touching GeminiLiveSession's type.
@@ -1065,6 +1068,24 @@ export async function handleLiveSessionStart(
   // signals into decideGreetingPolicy(). Now we read them from
   // user_assistant_state, pass them through, and record after fire.
   let wakeBriefDecision: Awaited<ReturnType<typeof decideWakeBriefForSession>> | null = null;
+
+  // ORB-FAST-START Phase 2: the wake-brief continuation decision + journey
+  // greeting block + turn-1 snapshot below are wrapped in this closure so they
+  // can run inline (legacy) OR be composed into session.contextReadyPromise
+  // (fast path). The body is byte-identical to the prior inline code — only
+  // WHEN it runs changes. The stream-open gate (orb-live.ts ~6178) already
+  // awaits session.contextReadyPromise before building the Gemini setup
+  // message, so the first personalized turn keeps full wake-brief / Teacher /
+  // Journey behavior either way. `wakeBriefDecision` stays declared in the
+  // outer scope (above) so the response `meta` can still read it on the legacy
+  // path; on the fast path it is null at response time (meta.context_status
+  // reports 'pending') and is populated when this closure runs before the gate.
+  // The closure RETURNS the decision so the legacy branch can assign it — that
+  // lets TS control-flow analysis keep the union type at the meta read; the
+  // fast branch ignores the return value.
+  const assembleWakeBriefAndJourney = async (): Promise<
+    Awaited<ReturnType<typeof decideWakeBriefForSession>> | null
+  > => {
   // VTID-03085 (Lane 1): compile the AssistantDecisionContext on Vertex
   // so the 4 spine-dependent next-action sources can compete here too.
   // Before this fix Vertex passed `decisionContext: null` so:
@@ -1451,6 +1472,37 @@ export async function handleLiveSessionStart(
     timezonePresent: !!session.clientContext?.timezone,
   });
 
+  return wakeBriefDecision;
+  }; // end assembleWakeBriefAndJourney
+
+  // ORB-FAST-START Phase 2: run the wake-brief + journey work inline (legacy)
+  // or defer it onto the stream-open gate's promise (fast). Flag-gated; default
+  // off. Anonymous + guided-topic sessions always run inline (they skip or
+  // already fast-path this work).
+  const fastStartDeferWake = shouldDeferWakeWork({
+    isAnonymousSession,
+    isGuidedTopicSession,
+    hasUserId: !!orbIdentity?.user_id,
+  });
+  if (fastStartDeferWake) {
+    // Compose onto the SAME promise the stream-open gate already awaits, so
+    // first personalized audio still carries the full continuation / Teacher /
+    // Journey blocks — but session/start returns now instead of after the
+    // wake-brief + journey round-trips.
+    const brainReady = (session as any).contextReadyPromise as Promise<void> | undefined;
+    (session as any).contextReadyPromise = composeContextReady(
+      brainReady,
+      assembleWakeBriefAndJourney,
+    );
+    console.log(
+      `[ORB-FAST-START] session ${sessionId}: wake-brief + journey deferred onto contextReadyPromise (fast session/start)`,
+    );
+  } else {
+    // Legacy inline path: assign the return value so TS control-flow analysis
+    // sees wakeBriefDecision populated for the response meta below.
+    wakeBriefDecision = await assembleWakeBriefAndJourney();
+  }
+
   // Emit OASIS event with identity context.
   // ORB-FAST-START Phase 1a: fire-and-forget. session.start IS a real state
   // transition (so we still emit it), but blocking the HTTP response on the
@@ -1510,6 +1562,12 @@ export async function handleLiveSessionStart(
         skipped_reason: contextBootstrapSkippedReason || null,
         deferred: !!contextReadyPromise,
       },
+      // ORB-FAST-START Phase 2: 'pending' when wake-brief + journey were
+      // deferred onto contextReadyPromise (fast path) — they attach before the
+      // first personalized turn. 'ready' on the legacy inline path. The widget
+      // must NOT depend on meta.wake_brief being populated when this is
+      // 'pending'.
+      context_status: fastStartDeferWake ? 'pending' : 'ready',
       wake_brief: wakeBriefDecision
         ? {
             decision_id: wakeBriefDecision.decisionId,

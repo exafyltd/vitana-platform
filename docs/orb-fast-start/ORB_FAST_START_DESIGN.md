@@ -90,19 +90,34 @@ locked set.
   config) so Phase 2's deferral can be proven to change *timing only*, not
   *content*.
 
-### Phase 2 — Defer wake-brief + journey off the response path (flag-gated)
+### Phase 2 — Defer wake-brief + journey off the response path (flag-gated)  ✅ implemented (flag default off)
 Behind `FEATURE_ORB_FAST_START_ENV` (default `off` → legacy inline behavior):
-- Fold the wake-brief decision (1053-1311) and journey-greeting (1322-1432)
-  into the **existing** `contextReadyPromise` chain instead of awaiting them
-  inline. They still populate the same session fields; they are still awaited at
-  the same `connectToLiveAPI` stream-open gate, so first **personalized** audio
-  is unchanged — but the HTTP response (and thus chime → stream-open) returns
-  fast.
-- `meta.wake_brief` becomes `{ status: 'pending' }` on the fast path (widget
-  must not depend on it synchronously — verify).
-- Quota reservation: keep the hard-block gate, but make the non-blocking
-  reservation path fail-open fast (cache/timeout) so it cannot dominate p95.
-- Gated by parity tests from 1b — content must be byte-identical to legacy.
+- The wake-brief decision + journey-greeting + turn-1 snapshot are wrapped in a
+  closure (`assembleWakeBriefAndJourney`) in `live-session-controller.ts`. The
+  body is **byte-identical** to the prior inline code (diff = pure insertions,
+  zero deletions) — parity by construction.
+- On the fast path the closure is **composed into the existing
+  `session.contextReadyPromise`** via `composeContextReady()`, which the
+  stream-open gate (`orb-live.ts` ~6178) already awaits before building the
+  Gemini setup message. So the first **personalized** turn still carries full
+  wake-brief / Teacher / Journey content; only the HTTP `session/start`
+  response returns earlier.
+- `composeContextReady` uses `Promise.allSettled` → a wake-brief/journey/brain
+  rejection cannot reject the gate (fail-open, same as today's per-block
+  try/catch).
+- `meta.context_status` is `'pending'` on the fast path / `'ready'` on legacy;
+  `meta.wake_brief` is `null` when pending — **widget must not depend on it
+  synchronously** when `context_status==='pending'`.
+- New logic (`shouldDeferWakeWork`, `composeContextReady`) is unit-tested
+  (`test/orb-fast-start.test.ts`, 9 cases incl. default-off, gating, ordering,
+  fail-open). The moved body needs no new test (parity by construction);
+  end-to-end validation is the staging flag-on check via the existing
+  `orb_wake_timelines` stage-breakdown.
+- Anonymous + guided-topic sessions always run inline (they skip or already
+  fast-path this work).
+- **Remaining for a follow-up:** quota reservation still `await`s the hard-block
+  gate (correct for billing); making its non-block path fail-open-fast
+  (cache/timeout) is a separate small change.
 
 ### Phase 3 — Widget prewarm  ⚠️ gated on shared-state/strict-WS
 Only after Phase 6 (or strict WS ownership). Prewarm creates extra unclaimed
