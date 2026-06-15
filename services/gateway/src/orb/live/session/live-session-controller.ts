@@ -1451,8 +1451,14 @@ export async function handleLiveSessionStart(
     timezonePresent: !!session.clientContext?.timezone,
   });
 
-  // Emit OASIS event with identity context
-  await deps.emitLiveSessionEvent('vtid.live.session.start', {
+  // Emit OASIS event with identity context.
+  // ORB-FAST-START Phase 1a: fire-and-forget. session.start IS a real state
+  // transition (so we still emit it), but blocking the HTTP response on the
+  // Supabase write put a telemetry round-trip on the wake critical path —
+  // telemetry must never block the wake path. The event still fires; the
+  // user's response no longer waits for it. Errors are swallowed into the
+  // emitter's own logging (it already logs internally).
+  deps.emitLiveSessionEvent('vtid.live.session.start', {
     session_id: sessionId,
     user_id: orbIdentity?.user_id || 'anonymous',
     tenant_id: orbIdentity?.tenant_id || null,
@@ -1464,6 +1470,10 @@ export async function handleLiveSessionStart(
     lang,
     modalities: responseModalities,
     voice: deps.getVoiceForLang(lang),
+  }).catch((err) => {
+    console.warn(
+      `[ORB-FAST-START] emitLiveSessionEvent failed (non-blocking) for ${sessionId}: ${err instanceof Error ? err.message : String(err)}`,
+    );
   });
 
   console.log(`[VTID-ORBC] Live session created: ${sessionId} (user=${orbIdentity?.user_id || 'anonymous'}, tenant=${orbIdentity?.tenant_id || 'none'}, lang=${lang}, contextDeferred=${!!contextReadyPromise})`);
