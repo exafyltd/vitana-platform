@@ -262,14 +262,31 @@ export async function runFindMatch(
       if (persisted) postedIntentId = persisted.intent_id;
     }
 
-    const recommendations = candidates.map((c) => ({
-      intent_id: c.cand_intent_id,
-      vitana_id: isPartner ? null : c.cand_vitana_id,
-      display: isPartner ? '(a member — revealed once you both say yes)' : c.cand_vitana_id || 'a member',
-      title: c.cand_title,
-      score: Number(c.score),
-      kind: c.cand_kind,
-    }));
+    const recommendations = candidates.map((c) => {
+      const r = (c.reasons || {}) as Record<string, unknown>;
+      return {
+        intent_id: c.cand_intent_id,
+        vitana_id: isPartner ? null : c.cand_vitana_id,
+        display: isPartner ? '(a member — revealed once you both say yes)' : c.cand_vitana_id || 'a member',
+        title: c.cand_title,
+        score: Number(c.score),
+        kind: c.cand_kind,
+        // Explainability: carry the tier + per-dimension fits so the model can
+        // say WHY (location/time/activity/profile) and badge "different activity".
+        tier: (r.tier as string) ?? null,
+        context: (r.context as string) ?? null,
+        activity_exact: r.activity_exact === true,
+        reasons: {
+          location_fit: r.location_fit ?? null,
+          time_fit: r.time_fit ?? null,
+          activity_fit: r.activity_fit ?? null,
+          profile_fit: r.profile_fit ?? null,
+        },
+      };
+    });
+
+    // Did the top result match the requested activity, or only location/time?
+    const offActivity = recommendations.length > 0 && recommendations.every((m) => !m.activity_exact);
 
     const tail = postedIntentId
       ? 'Also tell them you posted their request so the other person can reach them too.'
@@ -279,8 +296,11 @@ export async function runFindMatch(
       ok: true,
       stage: 'matched',
       text:
-        `Found ${recommendations.length} potential ${recommendations.length === 1 ? 'match' : 'matches'} in the community. ` +
-        `Read them back warmly and offer to open or connect. ${tail}` +
+        `Found ${recommendations.length} ${recommendations.length === 1 ? 'match' : 'matches'} near the user, ranked by location and time first (activity is flexible). ` +
+        (offActivity
+          ? 'None are the exact activity asked for — be honest and warm: say there is no exact match for that activity yet, but these people are nearby and free around the same time for something else (name the activity), because location and timing come first. Then offer to open or connect. '
+          : 'Read the top ones back warmly (lead with how close and when, then the activity) and offer to open or connect. ') +
+        tail +
         (isPartner ? ' For partner matches, explain identities are revealed only after both people say yes.' : ''),
       data: {
         ok: true,
@@ -289,6 +309,7 @@ export async function runFindMatch(
         intent_id: postedIntentId,
         matches: recommendations,
         match_count: recommendations.length,
+        off_activity: offActivity,
         partner_seek_redacted: isPartner,
       },
     };
