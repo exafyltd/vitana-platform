@@ -116,6 +116,52 @@ router.post('/shop', async (req: Request, res: Response) => {
   res.status(201).json({ ok: true, data: { cartOrderId: cartId, total: +total.toFixed(2), disclosure: { text: FTC_DISCLOSURE, dismissible: false }, earnings, totalProjectedReward: +earnings.reduce((s, e) => s + e.projectedReward, 0).toFixed(4) } });
 });
 
+// ===== Per-user affiliate deeplink (community) =====
+// Builds the member's tracked link for a program and records the subid->member
+// mapping so the public postback can attribute the conversion back. The rewards
+// badge is shown only when the program allows cashback (Amazon = false).
+router.post('/affiliate-link', async (req: Request, res: Response) => {
+  const supabase = db(res); if (!supabase) return;
+  const uid = userId(req);
+  const tenant = tenantId(req);
+  const programId = String(req.body?.affiliateProgramId || '').trim();
+  const productUrl = String(req.body?.productUrl || '').trim();
+  if (!programId) return res.status(400).json({ ok: false, error: 'affiliateProgramId required' });
+
+  const { data: prog } = await supabase
+    .from('affiliate_program')
+    .select('id,network,policy,affiliate_cashback_allowed')
+    .eq('id', programId).maybeSingle();
+  if (!prog) return res.status(404).json({ ok: false, error: 'program not found' });
+
+  const subId = subIdFor(uid, programId);
+  const now = new Date().toISOString();
+  // Reverse-attribution map (idempotent): postback resolves subId -> this member.
+  await supabase.from('subid_map').upsert({
+    sub_id: subId, user_id: uid, tenant_id: tenant, affiliate_program_id: programId,
+    network: prog.network, updated_at: now,
+  }, { onConflict: 'sub_id' });
+
+  // Decorate the program's gotolink with our subid (+ optional product deeplink).
+  const policy = (prog.policy || {}) as Record<string, unknown>;
+  const gotolink = String(policy.gotolink || '');
+  let link = '';
+  if (gotolink) {
+    try {
+      const u = new URL(gotolink);
+      u.searchParams.set(String(policy.subid_param || 'subid'), subId);
+      if (productUrl) u.searchParams.set(String(policy.deeplink_param || 'ulp'), productUrl);
+      link = u.toString();
+    } catch { link = ''; }
+  }
+  const rewardsEnabled = prog.affiliate_cashback_allowed === true;
+  res.json({
+    ok: true,
+    data: { affiliateProgramId: programId, network: prog.network, subId, link, rewardsEnabled,
+      disclosure: { text: FTC_DISCLOSURE, dismissible: false } },
+  });
+});
+
 // ===== Wallet (community: own only) =====
 router.get('/wallet', async (req: Request, res: Response) => {
   const supabase = db(res); if (!supabase) return;
