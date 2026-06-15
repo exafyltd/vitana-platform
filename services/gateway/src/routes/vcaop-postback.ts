@@ -23,7 +23,7 @@ const router = Router();
 /** Member share of the gross commission (mirrors the /shop 50% split). */
 const MEMBER_SHARE = 0.5;
 
-function keyOk(provided: string): boolean {
+export function keyOk(provided: string): boolean {
   const expected = process.env.ADMITAD_POSTBACK_KEY || '';
   if (!expected || !provided) return false; // fail closed when unconfigured
   const a = Buffer.from(provided);
@@ -32,7 +32,7 @@ function keyOk(provided: string): boolean {
 }
 
 /** Map an affiliate-network status string to our ledger state. */
-function mapStatus(raw: string): 'pending' | 'confirmed' | 'reversed' {
+export function mapStatus(raw: string): 'pending' | 'confirmed' | 'reversed' {
   const s = (raw || '').toLowerCase().trim();
   if (['approved', 'confirmed', 'paid', 'done', '1'].includes(s)) return 'confirmed';
   if (['declined', 'rejected', 'cancelled', 'canceled', 'reversed', '2'].includes(s)) return 'reversed';
@@ -40,6 +40,10 @@ function mapStatus(raw: string): 'pending' | 'confirmed' | 'reversed' {
 }
 
 async function handle(req: Request, res: Response): Promise<void> {
+  // impact-allow-no-oasis: this handler DOES record OASIS events (reward.<state>
+  // and postback.unattributed) via a direct oasis_events insert below — the same
+  // pattern as the local emitEvent() in vcaop.ts — just not via the emitOasisEvent
+  // helper the scanner greps for.
   const supabase = getSupabase();
   if (!supabase) { res.status(503).json({ ok: false, error: 'database unavailable' }); return; }
 
@@ -103,7 +107,10 @@ async function handle(req: Request, res: Response): Promise<void> {
   res.json({ ok: true, attributed: true, state, commissionId });
 }
 
+// public-route: server-to-server affiliate postback (no user JWT); authenticated
+// instead by the shared ADMITAD_POSTBACK_KEY (fail-closed in keyOk).
 router.get('/admitad', handle);
+// public-route: see above — same key-verified anonymous handler for POST callbacks.
 router.post('/admitad', handle);
 
 export default router;

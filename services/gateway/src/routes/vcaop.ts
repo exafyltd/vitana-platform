@@ -121,6 +121,9 @@ router.post('/shop', async (req: Request, res: Response) => {
 // mapping so the public postback can attribute the conversion back. The rewards
 // badge is shown only when the program allows cashback (Amazon = false).
 router.post('/affiliate-link', async (req: Request, res: Response) => {
+  // impact-allow-no-oasis: issuing a tracked link (and recording the idempotent
+  // subid->member map) is not a lifecycle state transition — the OASIS-worthy
+  // events are emitted later by the postback (reward pending/confirmed/reversed).
   const supabase = db(res); if (!supabase) return;
   const uid = userId(req);
   const tenant = tenantId(req);
