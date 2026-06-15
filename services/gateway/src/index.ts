@@ -293,6 +293,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const approvalsRouter = require('./routes/approvals').default;
   // VCAOP: Vitanaland Commerce & Account-Operations Platform API (shop/wallet/onboarding)
   const vcaopRouter = require('./routes/vcaop').default;
+  // VCAOP: public, key-verified affiliate postback receiver (Admitad) — no user auth
+  const vcaopPostbackRouter = require('./routes/vcaop-postback').default;
   // VTID-01169: Deploy → Ledger Terminalization (terminalize endpoint + repair job)
   const vtidTerminalizeRouter = require('./routes/vtid-terminalize').default;
   // VTID-01157: Supabase JWT Auth Middleware + /api/v1/auth/me endpoint
@@ -653,6 +655,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   // VTID-01148: Approvals API v1 — Pending Queue + Count + Approve/Reject (Gateway + OASIS-backed)
   mountRouterSync(app, '/api/v1/approvals', approvalsRouter, { owner: 'approvals-api' });
 
+  // VCAOP: public affiliate postback receiver — MUST mount before the authed vcaop
+  // router so /api/v1/vcaop/postback/* resolves to the key-verified public handler.
+  mountRouterSync(app, '/api/v1/vcaop/postback', vcaopPostbackRouter, { owner: 'vcaop-postback' });
   // VCAOP: Vitanaland Commerce API — providers/affiliate-programs/shop/wallet/onboarding
   mountRouterSync(app, '/api/v1/vcaop', vcaopRouter, { owner: 'vcaop' });
 
