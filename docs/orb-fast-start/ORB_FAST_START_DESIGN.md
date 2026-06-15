@@ -124,10 +124,37 @@ Only after Phase 6 (or strict WS ownership). Prewarm creates extra unclaimed
 sessions in the in-memory map — shipping it on `--max-instances=1` worsens the
 scaling cliff. Reuse `system-controls-service` for `orb.prewarm.enabled`.
 
-### Phase 4 — Cached wake phrase
-Short, non-committal, interruptible ("I'm here." / "Ich bin da."). Never written
-to transcript (invariant 1). Bundled or gateway-hosted asset. Flag
-`FEATURE_ORB_CACHED_WAKE_PHRASE_ENV`.
+### Phase 4 — Cached wake phrase  ✅ implemented (flag default off; needs asset render + staging verify)
+This is the change that actually kills the *perceived* 7-10s dead-air: the orb
+plays Vitana's voice within ~1s of the tap while context + the Live model spin
+up behind it.
+
+- **Reuses the existing alert-clip system** (no new mechanism, no `speechSynthesis`):
+  `render-orb-alert-clips.ts` → committed MP3 in Chirp3-HD (Vitana's voice) →
+  `_preloadAlertClips` → `_playAlert`. Added `wake-cue-en` ("I'm here.") /
+  `wake-cue-de` ("Ich bin da.").
+- Widget plays the cue right after the activation chime, inside the user
+  gesture (`orb-widget.js`), and **stops it the instant the real greeting audio
+  arrives** (`audio_out` first-chunk) and on teardown. Short + non-committal so
+  it never collides with the real wake-brief / Teacher / Journey opener.
+- **Invariants honored:** local UI cue only — not a transcript turn, no memory
+  write, no Journey/Teacher/wake-brief mutation (invariants 1-5). Verbatim
+  reuse of the proven clip path.
+- **Gating:** `_cfg.wakeCue` (default off) via `init({ wakeCue: true })`, or
+  localStorage `vtorb.wakecue='on'` for per-browser staging verification
+  (mirrors the `vtorb.transport` pattern).
+- **Graceful no-op:** if the MP3 isn't rendered/committed yet, the preload 404s
+  and the cue silently does nothing (no error tone) — so shipping the code
+  before the asset is safe.
+
+**Two gates before this reaches the community:**
+1. **Render the assets** — run `npx tsx scripts/render-orb-alert-clips.ts` (default
+   mode hits the deployed gateway TTS, no creds), commit `wake-cue-en.mp3` /
+   `wake-cue-de.mp3`. *(I cannot run this — egress/TTS blocked in my env.)*
+2. **Staging browser verification** — `orb-widget.js` is plain JS (not tsc-checked)
+   and I cannot run a browser here, so this MUST be tapped on staging (flag on)
+   and confirmed: cue plays in Vitana's voice within ~1s, stops cleanly when the
+   real greeting starts, no double-audio, nothing written to transcript.
 
 ### Phase 5 — WS canary (ramp, not build)
 WS transport already exists; ramp internal → 5% → 25% → 50% → 100% with the
