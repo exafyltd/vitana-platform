@@ -757,14 +757,14 @@ export async function handleLiveSessionStart(
         ? (async () => {
             const brainStart = Date.now();
             try {
-              const { buildBrainSystemInstruction } = await import('../../../services/vitana-brain');
+              const { buildBrainSystemInstructionCached } = await import('../../../services/vitana-brain-cache');
               const bodyRoute = typeof (body as any).current_route === 'string' ? (body as any).current_route : '';
               const brainRole = clientContext.isMobile
                 ? 'community'
                 : bodyRoute.startsWith('/command-hub')
                   ? 'developer'
                   : ((bootstrapIdentity as any).active_role || 'community');
-              const { instruction, contextPack: cp } = await buildBrainSystemInstruction({
+              const { instruction, contextPack: cp } = await buildBrainSystemInstructionCached({
                 user_id: bootstrapIdentity.user_id,
                 tenant_id: bootstrapIdentity.tenant_id || 'default',
                 role: brainRole,
