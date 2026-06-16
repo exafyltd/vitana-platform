@@ -1,9 +1,19 @@
 # ORB Fast-Start — Grounded Design & Phase Plan
 
-**Status:** Phase 0/1 (foundation + parity-prep)
+**Status:** Phases 1a + 2 + 4 implemented on branch `claude/relaxed-babbage-4bmpyh` (PR #2682), **flag-gated off**. NOT yet merged → NOT on staging or prod.
 **Date:** 2026-06-15
 **Owner branch:** `claude/relaxed-babbage-4bmpyh`
 **Source brief:** "Orb Fast Start Safe Conversation Design" (2026-06-15)
+
+> **To actually change the orb on staging, ALL of these are required** (merging
+> alone does nothing — both phases default OFF):
+> 1. Merge PR #2682 → `main` → auto-deploys `gateway-staging`.
+> 2. Phase 2: `gcloud run services update gateway-staging --region=us-central1
+>    --project=lovable-vitana-vers1 --update-env-vars FEATURE_ORB_FAST_START_ENV=staging-only`
+> 3. Phase 4: render + commit `wake-cue-*.mp3` (`npx tsx scripts/render-orb-alert-clips.ts`),
+>    then in the staging orb set `localStorage.setItem('vtorb.wakecue','on')`.
+> Only after 1+2 (and 1+3 for the cue) does a tap behave differently.
+
 
 > This document re-bases the original fast-start brief on the **actual state of
 > the codebase as of 2026-06-15**. The brief is sound in spirit, but a code
