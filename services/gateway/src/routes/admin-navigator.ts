@@ -574,7 +574,13 @@ router.get('/coverage', async (req: AuthenticatedRequest, res: Response) => {
     // Desktop = its own rows).
     const navigable: NavCatalogEntryWithRules[] = getCatalogForTenant(tenantId, platform) as NavCatalogEntryWithRules[];
     const catalog: NavCatalogEntryWithRules[] = navigable.filter((e) => !!(e as { id?: string }).id);
-    const catalogRoutes = new Set(catalog.map(e => e.route));
+    // BOOTSTRAP-NAV-PLATFORM: a catalog route may carry a query string or hash
+    // (mode-pills like /health?mode=supplements, /comm/events-meetups?tab=hot).
+    // The SPA route list stores base paths only, so compare on the base path —
+    // otherwise every parameterised pill is falsely flagged "broken" and leaves
+    // its base route looking "uncovered".
+    const baseRoute = (r: string) => r.split(/[?#]/)[0];
+    const catalogRoutes = new Set(catalog.map(e => baseRoute(e.route)));
     const spaRoutes = SPA_ROUTES_FALLBACK.map(r => r.path);
     const spaSet = new Set(spaRoutes);
 
@@ -586,11 +592,7 @@ router.get('/coverage', async (req: AuthenticatedRequest, res: Response) => {
       });
 
     const broken_catalog_routes = catalog
-      .filter(e => {
-        // Allow params like /discover/product/:id → match against the matching pattern
-        // by stripping trailing params. The fallback list stores the literal patterns.
-        return !spaSet.has(e.route);
-      })
+      .filter(e => !spaSet.has(baseRoute(e.route)))
       .map(e => ({ screen_id: e.screen_id, route: e.route, title: e.i18n.en?.title || e.screen_id }));
 
     // Dead triggers: screens that never produced a catalog match in the last
