@@ -134,6 +134,42 @@ const DESKTOP_ROUTES: Array<[string, string]> = [
   ['PROFILE.PUBLIC', '/u/:identifier'],
 ];
 
+// Per-page DESKTOP tab/section deep-links — ONLY the tabs that are actually
+// URL-addressable on desktop (verified against the page components; state-only
+// <SplitBar> tabs are excluded because they have no address to navigate to).
+// Generated into their own migration via `--tabs-only`.
+const DESKTOP_TAB_ROUTES: Array<[string, string]> = [
+  // Events & Meetups (?tab=)
+  ['COMM.EVENTS_HOT', '/comm/events-meetups?tab=hot'],
+  ['COMM.EVENTS_UPCOMING', '/comm/events-meetups?tab=upcoming'],
+  ['COMM.EVENTS_TODAY', '/comm/events-meetups?tab=today'],
+  ['COMM.FEED', '/comm/events-meetups?tab=following'],
+  // Live Rooms (?tab=)
+  ['COMM.LIVE_ROOMS_ALL', '/comm/live-rooms?tab=all'],
+  ['COMM.LIVE_ROOMS_LIVE', '/comm/live-rooms?tab=live'],
+  ['COMM.LIVE_ROOMS_SCHEDULED', '/comm/live-rooms?tab=scheduled'],
+  ['COMM.LIVE_ROOMS_PAST', '/comm/live-rooms?tab=past'],
+  // Media Hub (?tab=)
+  ['COMM.MEDIA_SHORTS', '/comm/media-hub?tab=shorts'],
+  ['COMM.MEDIA_MUSIC', '/comm/media-hub?tab=music'],
+  ['COMM.MEDIA_PODCASTS', '/comm/media-hub?tab=podcasts'],
+  // Discover index (?tab=) — 'suggested' is covered by the /discover/ai-picks page
+  ['DISCOVER.CATEGORIES', '/discover?tab=categories'],
+  ['DISCOVER.SHARE_EARN', '/discover?tab=share'],
+  // Marketplace (?view=) — desktop-specific
+  ['DISCOVER.MARKETPLACE_OPEN', '/discover/marketplace?view=open'],
+  ['DISCOVER.MARKETPLACE_MINE', '/discover/marketplace?view=mine'],
+  // Home news (?tab=) — 'longevity' is the default (= HOME.OVERVIEW)
+  ['HOME.NEWS_ALL', '/home?tab=all'],
+  ['HOME.NEWS_COMMUNITY', '/home?tab=community'],
+  // Assistant (?tab=) — desktop-specific
+  ['ASSISTANT.VOICE', '/assistant?tab=voice'],
+  ['ASSISTANT.AI', '/assistant?tab=ai'],
+  ['ASSISTANT.AUTOPILOT', '/assistant?tab=autopilot'],
+  ['ASSISTANT.PROACTIVE', '/assistant?tab=proactive'],
+  ['ASSISTANT.REFERRALS', '/assistant?tab=referrals'],
+];
+
 // Desktop-only screens (no entry in NAVIGATION_CATALOG). DE-first per the i18n rule.
 const DESKTOP_ONLY: Record<string, { category: string; access: 'public' | 'authenticated'; anonymous_safe: boolean; i18n: Record<Lang, Content> }> = {
   'DISCOVER.SHOP': {
@@ -171,6 +207,56 @@ const DESKTOP_ONLY: Record<string, { category: string; access: 'public' | 'authe
       de: { title: 'Kampagnen-Detail', description: 'Die Detailansicht einer einzelnen Sharing-Kampagne — Reichweite, Performance und Inhalte.', when_to_visit: 'Wenn der Nutzer eine bestimmte Sharing-Kampagne, die Details einer Kampagne oder die Performance einer einzelnen Kampagne öffnen möchte.' },
     },
   },
+  // Desktop-specific tabs (no mobile pill to reuse).
+  'DISCOVER.MARKETPLACE_OPEN': {
+    category: 'discover', access: 'authenticated', anonymous_safe: false,
+    i18n: {
+      en: { title: 'Open Requests', description: 'The Open view of the marketplace — requests and offers open to everyone.', when_to_visit: 'When the user asks for the Open tab of the marketplace, open marketplace requests, or offers open to all.' },
+      de: { title: 'Offene Anfragen', description: 'Die Ansicht „Offen“ des Marktplatzes — Anfragen und Angebote, die allen offenstehen.', when_to_visit: 'Wenn der Nutzer nach dem Tab „Offen“ des Marktplatzes, offenen Marktplatz-Anfragen oder allgemein offenen Angeboten fragt.' },
+    },
+  },
+  'DISCOVER.MARKETPLACE_MINE': {
+    category: 'discover', access: 'authenticated', anonymous_safe: false,
+    i18n: {
+      en: { title: 'My Marketplace', description: 'The Mine view of the marketplace — your own requests, offers and listings.', when_to_visit: 'When the user asks for the Mine tab of the marketplace, their own marketplace requests, offers, or listings.' },
+      de: { title: 'Mein Marktplatz', description: 'Die Ansicht „Meine“ des Marktplatzes — deine eigenen Anfragen, Angebote und Inserate.', when_to_visit: 'Wenn der Nutzer nach dem Tab „Meine“ des Marktplatzes, seinen eigenen Marktplatz-Anfragen, Angeboten oder Inseraten fragt.' },
+    },
+  },
+  'ASSISTANT.VOICE': {
+    category: 'ai', access: 'authenticated', anonymous_safe: false,
+    i18n: {
+      en: { title: 'Voice', description: 'The Voice tab of the AI Assistant — voice settings and your voice-first ORB experience.', when_to_visit: 'When the user asks for the Voice tab of the Assistant, voice settings, voice AI, or to configure the voice assistant.' },
+      de: { title: 'Stimme', description: 'Der Voice-Tab des KI-Assistenten — Spracheinstellungen und dein Voice-First-ORB-Erlebnis.', when_to_visit: 'Wenn der Nutzer nach dem Voice-Tab des Assistenten, Spracheinstellungen, Voice-KI fragt oder den Sprachassistenten konfigurieren möchte.' },
+    },
+  },
+  'ASSISTANT.AI': {
+    category: 'ai', access: 'authenticated', anonymous_safe: false,
+    i18n: {
+      en: { title: 'AI', description: 'The AI tab of the Assistant — your text AI assistant and its settings.', when_to_visit: 'When the user asks for the AI tab of the Assistant, the text assistant, or AI assistant settings.' },
+      de: { title: 'KI', description: 'Der KI-Tab des Assistenten — dein Text-KI-Assistent und seine Einstellungen.', when_to_visit: 'Wenn der Nutzer nach dem KI-Tab des Assistenten, dem Text-Assistenten oder den KI-Assistenten-Einstellungen fragt.' },
+    },
+  },
+  'ASSISTANT.AUTOPILOT': {
+    category: 'ai', access: 'authenticated', anonymous_safe: false,
+    i18n: {
+      en: { title: 'Autopilot & Automation', description: 'The Autopilot tab of the Assistant — automations Vitana runs on your behalf.', when_to_visit: 'When the user asks for the Autopilot tab of the Assistant, automation settings, or what Vitana automates for them.' },
+      de: { title: 'Autopilot & Automatisierung', description: 'Der Autopilot-Tab des Assistenten — Automatisierungen, die Vitana für dich ausführt.', when_to_visit: 'Wenn der Nutzer nach dem Autopilot-Tab des Assistenten, Automatisierungseinstellungen oder dem fragt, was Vitana für ihn automatisiert.' },
+    },
+  },
+  'ASSISTANT.PROACTIVE': {
+    category: 'ai', access: 'authenticated', anonymous_safe: false,
+    i18n: {
+      en: { title: 'Proactive Talking', description: 'The Proactive tab of the Assistant — control when Vitana speaks up unprompted.', when_to_visit: 'When the user asks for the Proactive tab of the Assistant, proactive talking, or when Vitana should reach out unprompted.' },
+      de: { title: 'Proaktives Sprechen', description: 'Der Proaktiv-Tab des Assistenten — steuere, wann Vitana von sich aus spricht.', when_to_visit: 'Wenn der Nutzer nach dem Proaktiv-Tab des Assistenten, proaktivem Sprechen oder dem fragt, wann Vitana sich von selbst melden soll.' },
+    },
+  },
+  'ASSISTANT.REFERRALS': {
+    category: 'ai', access: 'authenticated', anonymous_safe: false,
+    i18n: {
+      en: { title: 'Referrals', description: 'The Referrals tab of the Assistant — referrals and rewards from the assistant.', when_to_visit: 'When the user asks for the Referrals tab of the Assistant, assistant referrals, or referral rewards in the Assistant.' },
+      de: { title: 'Empfehlungen', description: 'Der Empfehlungen-Tab des Assistenten — Empfehlungen und Belohnungen aus dem Assistenten.', when_to_visit: 'Wenn der Nutzer nach dem Empfehlungen-Tab des Assistenten, Assistenten-Empfehlungen oder Empfehlungsbelohnungen im Assistenten fragt.' },
+    },
+  },
 };
 
 const tsById = new Map(NAVIGATION_CATALOG.map((e) => [e.screen_id, e]));
@@ -184,9 +270,12 @@ type Resolved = {
   access: string; anonymous_safe: boolean; i18n: Record<string, Content>;
 };
 
+const TABS_ONLY = process.argv.includes('--tabs-only');
+const SOURCE = TABS_ONLY ? DESKTOP_TAB_ROUTES : DESKTOP_ROUTES;
+
 const resolved: Resolved[] = [];
 const missing: string[] = [];
-for (const [screen_id, route] of DESKTOP_ROUTES) {
+for (const [screen_id, route] of SOURCE) {
   const only = DESKTOP_ONLY[screen_id];
   const ts = tsById.get(screen_id) as { category?: string; access?: string; anonymous_safe?: boolean; i18n?: Record<string, Content> } | undefined;
   if (only) {
@@ -211,15 +300,18 @@ if (missing.length) {
 }
 
 const out: string[] = [];
-out.push('-- BOOTSTRAP-NAV-DESKTOP-CATALOG: the Desktop MAXINA navigation/routing catalog.');
+out.push(TABS_ONLY
+  ? '-- BOOTSTRAP-NAV-DESKTOP-TABS: per-page tab/section deep-links for Desktop MAXINA.'
+  : '-- BOOTSTRAP-NAV-DESKTOP-CATALOG: the Desktop MAXINA navigation/routing catalog.');
 out.push('-- Generated by services/gateway/scripts/gen-desktop-nav-seed.ts from the desktop');
-out.push('-- web app route inventory (vitana-v1/src/App.tsx). Each entry reuses the screen’s');
-out.push('-- category/access/i18n and overrides the route with the real desktop path,');
-out.push('-- scoped to platform=\'desktop\'. Admin/dev/role-gated routes + redirects excluded.');
+out.push('-- web app inventory (vitana-v1/src/App.tsx + page components). Each entry reuses');
+out.push('-- the screen’s category/access/i18n and overrides the route with the real desktop');
+out.push('-- path, scoped to platform=\'desktop\'. Tabs included here are ONLY the ones that are');
+out.push('-- actually URL-addressable on desktop (state-only <SplitBar> tabs are excluded).');
 out.push('--');
 out.push('-- impact-allow-solo-migration: pure data seed into the existing nav_catalog /');
 out.push('-- nav_catalog_i18n tables (the runtime already reads them). Additive + idempotent.');
-out.push(`-- ${resolved.length} desktop screens.`);
+out.push(`-- ${resolved.length} desktop ${TABS_ONLY ? 'tab deep-links' : 'screens'}.`);
 out.push('BEGIN;');
 out.push('');
 
