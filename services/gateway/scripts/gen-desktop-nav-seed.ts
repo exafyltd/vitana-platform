@@ -168,6 +168,44 @@ const DESKTOP_TAB_ROUTES: Array<[string, string]> = [
   ['ASSISTANT.AUTOPILOT', '/assistant?tab=autopilot'],
   ['ASSISTANT.PROACTIVE', '/assistant?tab=proactive'],
   ['ASSISTANT.REFERRALS', '/assistant?tab=referrals'],
+  // Now-URL-addressable desktop page tabs (wired via useUrlTab in vitana-v1).
+  // Defaults are omitted (they equal the parent page already in the catalog).
+  // Health · services-hub (?tab=)
+  ['HEALTH.SERVICES_MEDICAL', '/health/services-hub?tab=medicalServices'],
+  ['HEALTH.SERVICES_WELLNESS', '/health/services-hub?tab=wellnessPrograms'],
+  ['HEALTH.SERVICES_INSURANCE', '/health/services-hub?tab=insuranceSupport'],
+  ['HEALTH.SERVICES_MINE', '/health/services-hub?tab=myServices'],
+  // Health · education (?tab=)
+  ['HEALTH.EDUCATION_VIDEOS', '/health/education?tab=videos'],
+  ['HEALTH.EDUCATION_PODCASTS', '/health/education?tab=podcasts'],
+  // Health · my-biology (?tab=)
+  ['HEALTH.BIOLOGY_OMICS', '/health/my-biology?tab=omics'],
+  ['HEALTH.BIOLOGY_SUPPLEMENTS', '/health/my-biology?tab=supplements'],
+  // Health · plans (?tab=)
+  ['HEALTH.PLANS_NUTRITION', '/health/plans?tab=nutrition'],
+  ['HEALTH.PLANS_EXERCISE', '/health/plans?tab=exercise'],
+  ['HEALTH.PLANS_HYDRATION', '/health/plans?tab=hydration'],
+  ['HEALTH.PLANS_SLEEP', '/health/plans?tab=sleep'],
+  ['HEALTH.PLANS_MENTAL', '/health/plans?tab=mental'],
+  // Wallet · balance (?tab=)
+  ['WALLET.BALANCE_TOKENS', '/wallet/balance?tab=tokens'],
+  ['WALLET.BALANCE_MEMBERSHIP', '/wallet/balance?tab=membership'],
+  ['WALLET.BALANCE_OPTIMIZATION', '/wallet/balance?tab=optimization'],
+  // Wallet · rewards (?tab=)
+  ['WALLET.REWARDS_PENDING', '/wallet/rewards?tab=pending'],
+  ['WALLET.REWARDS_REFERRAL', '/wallet/rewards?tab=referral'],
+  ['WALLET.REWARDS_INTELLIGENCE', '/wallet/rewards?tab=intelligence'],
+  // Community · groups (?tab=)
+  ['COMM.GROUPS_DISCOVER', '/comm/groups?tab=recommended'],
+  // Discover · deals (?tab=)
+  ['DISCOVER.DEALS_TRENDING', '/discover/deals-offers?tab=trending'],
+  ['DISCOVER.DEALS_AI', '/discover/deals-offers?tab=ai'],
+  ['DISCOVER.DEALS_SAVED', '/discover/deals-offers?tab=saved'],
+  // Settings · preferences / privacy (?section=)
+  ['SETTINGS.PREFERENCES_LANGUAGE', '/settings/preferences?section=language'],
+  ['SETTINGS.PREFERENCES_ACCESSIBILITY', '/settings/preferences?section=accessibility'],
+  ['SETTINGS.PRIVACY_DATA', '/settings/privacy?section=data'],
+  ['SETTINGS.PRIVACY_SECURITY', '/settings/privacy?section=security'],
 ];
 
 // Desktop-only screens (no entry in NAVIGATION_CATALOG). DE-first per the i18n rule.
@@ -257,6 +295,79 @@ const DESKTOP_ONLY: Record<string, { category: string; access: 'public' | 'authe
       de: { title: 'Empfehlungen', description: 'Der Empfehlungen-Tab des Assistenten — Empfehlungen und Belohnungen aus dem Assistenten.', when_to_visit: 'Wenn der Nutzer nach dem Empfehlungen-Tab des Assistenten, Assistenten-Empfehlungen oder Empfehlungsbelohnungen im Assistenten fragt.' },
     },
   },
+  // ── Desktop page-tab deep-links (now URL-addressable via useUrlTab) ──────────
+  'HEALTH.SERVICES_MEDICAL': { category: 'health', access: 'authenticated', anonymous_safe: false, i18n: {
+    en: { title: 'Medical Services', description: 'The Medical Services tab of the Health Services hub.', when_to_visit: 'When the user asks for medical services, doctor/clinic services, or the Medical Services tab in the Health services hub.' },
+    de: { title: 'Medizinische Leistungen', description: 'Der Tab „Medizinische Leistungen“ im Gesundheits-Services-Hub.', when_to_visit: 'Wenn der Nutzer nach medizinischen Leistungen, Arzt-/Klinik-Services oder dem Tab „Medizinische Leistungen“ im Gesundheits-Services-Hub fragt.' } } },
+  'HEALTH.SERVICES_WELLNESS': { category: 'health', access: 'authenticated', anonymous_safe: false, i18n: {
+    en: { title: 'Wellness Programs', description: 'The Wellness Programs tab of the Health Services hub.', when_to_visit: 'When the user asks for wellness programs, wellness offerings, or the Wellness Programs tab in the Health services hub.' },
+    de: { title: 'Wellness-Programme', description: 'Der Tab „Wellness-Programme“ im Gesundheits-Services-Hub.', when_to_visit: 'Wenn der Nutzer nach Wellness-Programmen, Wellness-Angeboten oder dem Tab „Wellness-Programme“ im Gesundheits-Services-Hub fragt.' } } },
+  'HEALTH.SERVICES_INSURANCE': { category: 'health', access: 'authenticated', anonymous_safe: false, i18n: {
+    en: { title: 'Insurance Support', description: 'The Insurance Support tab of the Health Services hub.', when_to_visit: 'When the user asks for insurance support, health insurance help, or the Insurance Support tab in the Health services hub.' },
+    de: { title: 'Versicherungs-Support', description: 'Der Tab „Versicherungs-Support“ im Gesundheits-Services-Hub.', when_to_visit: 'Wenn der Nutzer nach Versicherungs-Support, Hilfe zur Krankenversicherung oder dem Tab „Versicherungs-Support“ im Gesundheits-Services-Hub fragt.' } } },
+  'HEALTH.SERVICES_MINE': { category: 'health', access: 'authenticated', anonymous_safe: false, i18n: {
+    en: { title: 'My Services', description: 'The My Services tab of the Health Services hub — the health services you use.', when_to_visit: 'When the user asks for their own health services, my services, or the My Services tab in the Health services hub.' },
+    de: { title: 'Meine Leistungen', description: 'Der Tab „Meine Leistungen“ im Gesundheits-Services-Hub — die Gesundheitsleistungen, die du nutzt.', when_to_visit: 'Wenn der Nutzer nach seinen eigenen Gesundheitsleistungen, „Meine Leistungen“ oder dem entsprechenden Tab im Gesundheits-Services-Hub fragt.' } } },
+  'HEALTH.EDUCATION_VIDEOS': { category: 'health', access: 'authenticated', anonymous_safe: false, i18n: {
+    en: { title: 'Education Videos', description: 'The Videos tab of Health Education & Resources.', when_to_visit: 'When the user asks for health education videos, the Videos tab of Education, or health learning videos.' },
+    de: { title: 'Lern-Videos', description: 'Der Videos-Tab von Gesundheits-Bildung & Ressourcen.', when_to_visit: 'Wenn der Nutzer nach Gesundheits-Lernvideos, dem Videos-Tab der Bildung oder Gesundheits-Lernvideos fragt.' } } },
+  'HEALTH.EDUCATION_PODCASTS': { category: 'health', access: 'authenticated', anonymous_safe: false, i18n: {
+    en: { title: 'Education Podcasts', description: 'The Podcasts tab of Health Education & Resources.', when_to_visit: 'When the user asks for health education podcasts, the Podcasts tab of Education, or health learning audio.' },
+    de: { title: 'Lern-Podcasts', description: 'Der Podcasts-Tab von Gesundheits-Bildung & Ressourcen.', when_to_visit: 'Wenn der Nutzer nach Gesundheits-Lern-Podcasts, dem Podcasts-Tab der Bildung oder Gesundheits-Lern-Audio fragt.' } } },
+  'HEALTH.BIOLOGY_OMICS': { category: 'health', access: 'authenticated', anonymous_safe: false, i18n: {
+    en: { title: 'My Omics', description: 'The Omics tab of My Biology — your genomics and omics data.', when_to_visit: 'When the user asks for their omics, genomics, DNA data, or the Omics tab in My Biology.' },
+    de: { title: 'Meine Omics', description: 'Der Omics-Tab von Meine Biologie — deine Genom- und Omics-Daten.', when_to_visit: 'Wenn der Nutzer nach seinen Omics, Genomik, DNA-Daten oder dem Omics-Tab in Meine Biologie fragt.' } } },
+  'HEALTH.BIOLOGY_SUPPLEMENTS': { category: 'health', access: 'authenticated', anonymous_safe: false, i18n: {
+    en: { title: 'My Supplements (Biology)', description: 'The Supplements tab of My Biology — the supplements in your biological profile.', when_to_visit: 'When the user asks for their supplements within My Biology, the Supplements tab of My Biology, or supplements tied to their biology.' },
+    de: { title: 'Meine Supplemente (Biologie)', description: 'Der Supplements-Tab von Meine Biologie — die Nahrungsergänzungsmittel in deinem biologischen Profil.', when_to_visit: 'Wenn der Nutzer nach seinen Supplementen innerhalb von Meine Biologie, dem Supplements-Tab von Meine Biologie oder Supplementen zu seiner Biologie fragt.' } } },
+  'HEALTH.PLANS_NUTRITION': { category: 'health', access: 'authenticated', anonymous_safe: false, i18n: {
+    en: { title: 'Nutrition Plans', description: 'The Nutrition tab of Health Plans.', when_to_visit: 'When the user asks for nutrition plans, the Nutrition tab of Plans, or their diet/nutrition plan.' },
+    de: { title: 'Ernährungspläne', description: 'Der Ernährungs-Tab der Gesundheitspläne.', when_to_visit: 'Wenn der Nutzer nach Ernährungsplänen, dem Ernährungs-Tab der Pläne oder seinem Diät-/Ernährungsplan fragt.' } } },
+  'HEALTH.PLANS_EXERCISE': { category: 'health', access: 'authenticated', anonymous_safe: false, i18n: {
+    en: { title: 'Exercise Plans', description: 'The Exercise tab of Health Plans.', when_to_visit: 'When the user asks for exercise plans, the Exercise tab of Plans, or their workout/training plan.' },
+    de: { title: 'Trainingspläne', description: 'Der Trainings-Tab der Gesundheitspläne.', when_to_visit: 'Wenn der Nutzer nach Trainingsplänen, dem Trainings-Tab der Pläne oder seinem Workout-/Trainingsplan fragt.' } } },
+  'HEALTH.PLANS_HYDRATION': { category: 'health', access: 'authenticated', anonymous_safe: false, i18n: {
+    en: { title: 'Hydration Plans', description: 'The Hydration tab of Health Plans.', when_to_visit: 'When the user asks for hydration plans, the Hydration tab of Plans, or their water/hydration plan.' },
+    de: { title: 'Hydrations-Pläne', description: 'Der Hydrations-Tab der Gesundheitspläne.', when_to_visit: 'Wenn der Nutzer nach Hydrations-Plänen, dem Hydrations-Tab der Pläne oder seinem Wasser-/Trinkplan fragt.' } } },
+  'HEALTH.PLANS_SLEEP': { category: 'health', access: 'authenticated', anonymous_safe: false, i18n: {
+    en: { title: 'Sleep Plans', description: 'The Sleep tab of Health Plans.', when_to_visit: 'When the user asks for sleep plans, the Sleep tab of Plans, or their sleep plan.' },
+    de: { title: 'Schlafpläne', description: 'Der Schlaf-Tab der Gesundheitspläne.', when_to_visit: 'Wenn der Nutzer nach Schlafplänen, dem Schlaf-Tab der Pläne oder seinem Schlafplan fragt.' } } },
+  'HEALTH.PLANS_MENTAL': { category: 'health', access: 'authenticated', anonymous_safe: false, i18n: {
+    en: { title: 'Mental Health Plans', description: 'The Mental tab of Health Plans — mental wellbeing plans.', when_to_visit: 'When the user asks for mental health plans, the Mental tab of Plans, or their mindfulness/mental wellbeing plan.' },
+    de: { title: 'Mental-Pläne', description: 'Der Mental-Tab der Gesundheitspläne — Pläne für mentales Wohlbefinden.', when_to_visit: 'Wenn der Nutzer nach Mental-Health-Plänen, dem Mental-Tab der Pläne oder seinem Achtsamkeits-/Mental-Plan fragt.' } } },
+  'WALLET.BALANCE_TOKENS': { category: 'wallet', access: 'authenticated', anonymous_safe: false, i18n: {
+    en: { title: 'Tokens', description: 'The Tokens tab of your Wallet balance.', when_to_visit: 'When the user asks for their tokens, token balance, or the Tokens tab of the Wallet.' },
+    de: { title: 'Tokens', description: 'Der Tokens-Tab deines Wallet-Guthabens.', when_to_visit: 'Wenn der Nutzer nach seinen Tokens, dem Token-Guthaben oder dem Tokens-Tab des Wallets fragt.' } } },
+  'WALLET.BALANCE_MEMBERSHIP': { category: 'wallet', access: 'authenticated', anonymous_safe: false, i18n: {
+    en: { title: 'Membership', description: 'The Membership tab of your Wallet balance.', when_to_visit: 'When the user asks for their membership, membership status, or the Membership tab of the Wallet.' },
+    de: { title: 'Mitgliedschaft', description: 'Der Mitgliedschafts-Tab deines Wallet-Guthabens.', when_to_visit: 'Wenn der Nutzer nach seiner Mitgliedschaft, dem Mitgliedsstatus oder dem Mitgliedschafts-Tab des Wallets fragt.' } } },
+  'WALLET.BALANCE_OPTIMIZATION': { category: 'wallet', access: 'authenticated', anonymous_safe: false, i18n: {
+    en: { title: 'Optimization', description: 'The Optimization tab of your Wallet balance — ways to optimize your balance.', when_to_visit: 'When the user asks to optimize their wallet, the Optimization tab of the Wallet, or balance optimization tips.' },
+    de: { title: 'Optimierung', description: 'Der Optimierungs-Tab deines Wallet-Guthabens — Wege, dein Guthaben zu optimieren.', when_to_visit: 'Wenn der Nutzer sein Wallet optimieren möchte, nach dem Optimierungs-Tab des Wallets oder Tipps zur Guthaben-Optimierung fragt.' } } },
+  'WALLET.REWARDS_PENDING': { category: 'wallet', access: 'authenticated', anonymous_safe: false, i18n: {
+    en: { title: 'Pending Rewards', description: 'The Pending tab of Wallet Rewards — rewards not yet credited.', when_to_visit: 'When the user asks for pending rewards, the Pending tab of Rewards, or rewards not yet credited.' },
+    de: { title: 'Ausstehende Belohnungen', description: 'Der Ausstehend-Tab der Wallet-Belohnungen — noch nicht gutgeschriebene Belohnungen.', when_to_visit: 'Wenn der Nutzer nach ausstehenden Belohnungen, dem Ausstehend-Tab der Belohnungen oder noch nicht gutgeschriebenen Belohnungen fragt.' } } },
+  'WALLET.REWARDS_REFERRAL': { category: 'wallet', access: 'authenticated', anonymous_safe: false, i18n: {
+    en: { title: 'Referral Rewards', description: 'The Referral tab of Wallet Rewards — rewards from referrals.', when_to_visit: 'When the user asks for referral rewards, the Referral tab of Rewards, or rewards earned from inviting people.' },
+    de: { title: 'Empfehlungs-Belohnungen', description: 'Der Empfehlungs-Tab der Wallet-Belohnungen — Belohnungen aus Empfehlungen.', when_to_visit: 'Wenn der Nutzer nach Empfehlungs-Belohnungen, dem Empfehlungs-Tab der Belohnungen oder Belohnungen aus Einladungen fragt.' } } },
+  'WALLET.REWARDS_INTELLIGENCE': { category: 'wallet', access: 'authenticated', anonymous_safe: false, i18n: {
+    en: { title: 'Rewards Intelligence', description: 'The Intelligence tab of Wallet Rewards — insights on how to earn more.', when_to_visit: 'When the user asks for rewards intelligence, the Intelligence tab of Rewards, or insights on earning more rewards.' },
+    de: { title: 'Belohnungs-Insights', description: 'Der Intelligence-Tab der Wallet-Belohnungen — Einblicke, wie du mehr verdienst.', when_to_visit: 'Wenn der Nutzer nach Belohnungs-Insights, dem Intelligence-Tab der Belohnungen oder Tipps zum Verdienen von mehr Belohnungen fragt.' } } },
+  'COMM.GROUPS_DISCOVER': { category: 'community', access: 'authenticated', anonymous_safe: false, i18n: {
+    en: { title: 'Discover Groups', description: 'The Discover tab of Groups — recommended groups to join.', when_to_visit: 'When the user asks to discover groups, find new groups, recommended groups, or the Discover tab of Groups.' },
+    de: { title: 'Gruppen entdecken', description: 'Der Entdecken-Tab der Gruppen — empfohlene Gruppen zum Beitreten.', when_to_visit: 'Wenn der Nutzer Gruppen entdecken, neue Gruppen finden, empfohlene Gruppen oder den Entdecken-Tab der Gruppen sucht.' } } },
+  'DISCOVER.DEALS_TRENDING': { category: 'discover', access: 'authenticated', anonymous_safe: false, i18n: {
+    en: { title: 'Trending Deals', description: 'The Trending tab of Deals & Offers.', when_to_visit: 'When the user asks for trending deals, popular offers, or the Trending tab of Deals & Offers.' },
+    de: { title: 'Angesagte Deals', description: 'Der Trend-Tab von Deals & Angebote.', when_to_visit: 'Wenn der Nutzer nach angesagten Deals, beliebten Angeboten oder dem Trend-Tab von Deals & Angebote fragt.' } } },
+  'DISCOVER.DEALS_AI': { category: 'discover', access: 'authenticated', anonymous_safe: false, i18n: {
+    en: { title: 'AI Deal Picks', description: 'The AI Picks tab of Deals & Offers — deals chosen for you by AI.', when_to_visit: 'When the user asks for AI deal picks, personalized deals, or the AI Picks tab of Deals & Offers.' },
+    de: { title: 'KI-Deal-Auswahl', description: 'Der KI-Auswahl-Tab von Deals & Angebote — von der KI für dich gewählte Deals.', when_to_visit: 'Wenn der Nutzer nach KI-Deal-Auswahl, personalisierten Deals oder dem KI-Auswahl-Tab von Deals & Angebote fragt.' } } },
+  'DISCOVER.DEALS_SAVED': { category: 'discover', access: 'authenticated', anonymous_safe: false, i18n: {
+    en: { title: 'Saved Deals', description: 'The Saved tab of Deals & Offers — deals you saved.', when_to_visit: 'When the user asks for their saved deals, bookmarked offers, or the Saved tab of Deals & Offers.' },
+    de: { title: 'Gespeicherte Deals', description: 'Der Gespeichert-Tab von Deals & Angebote — von dir gespeicherte Deals.', when_to_visit: 'Wenn der Nutzer nach seinen gespeicherten Deals, gemerkten Angeboten oder dem Gespeichert-Tab von Deals & Angebote fragt.' } } },
+  'SETTINGS.PREFERENCES_ACCESSIBILITY': { category: 'settings', access: 'authenticated', anonymous_safe: false, i18n: {
+    en: { title: 'Accessibility', description: 'The Accessibility section of Preferences — accessibility settings.', when_to_visit: 'When the user asks for accessibility settings, the Accessibility section of Preferences, or to adjust accessibility options.' },
+    de: { title: 'Barrierefreiheit', description: 'Der Bereich „Barrierefreiheit“ der Einstellungen — Einstellungen zur Barrierefreiheit.', when_to_visit: 'Wenn der Nutzer nach Barrierefreiheits-Einstellungen, dem Bereich „Barrierefreiheit“ der Einstellungen fragt oder Barrierefreiheits-Optionen anpassen möchte.' } } },
 };
 
 const tsById = new Map(NAVIGATION_CATALOG.map((e) => [e.screen_id, e]));
