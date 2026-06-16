@@ -130,6 +130,20 @@ jobs:
             "COMMIT_SHA=${GIT_COMMIT_SHA}"
             "BUILD_INFO_MARKER=${{ steps.commit.outputs.short }}"
             "GATEWAY_SERVICE_TOKEN=${{ secrets.GATEWAY_SERVICE_TOKEN }}"
+            # BOOTSTRAP-ORB-LATENCY-PHASE1 (Phase 0): turn on the VTID-03177
+            # per-turn voice latency telemetry on staging so the Phase 1-3
+            # latency retunes are measurable (voice.latency.measured OASIS
+            # events with the per-phase timeline). staging-only — prod stays
+            # off until the experiment window graduates it.
+            "FEATURE_LATENCY_TELEMETRY_ENV=staging-only"
+            # VTID-01973 / VTID-01975 / VTID-01976: enable the Vitana Intent
+            # Engine routes (/intents, /intent-matches, /intent-board,
+            # /intent-categories, /intent-scan, …). Prod sets this in
+            # EXEC-DEPLOY.yml; staging omitted it, and because --set-env-vars
+            # REPLACES (not merges) the env, the routes never mounted on
+            # gateway-staging — every intents/board call 404'd, so Find a
+            # Partner / matches could not load on preview.vitanaland.com.
+            "FEATURE_INTENT_ENGINE_A=true"
           )
 
           # Comma-joined for --set-env-vars (replaces, not merges — we want the

@@ -135,7 +135,23 @@
     // { was_greeting } (true for the first turn = the teaching/opener turn).
     // The host uses this to auto-close the overlay after the guided-topic
     // teaching turn so the underlying drawer's next-step buttons are usable.
-    onTurnComplete: null
+    onTurnComplete: null,
+    // BOOTSTRAP-ORB-LATENCY-PHASE3: transport selector. 'sse' (default,
+    // production path: POST-per-chunk up / SSE down) or 'ws' (single
+    // bidirectional WebSocket to /api/v1/orb/live/ws — one connection,
+    // binary-framed JSON both ways, no per-chunk HTTP overhead, no
+    // cross-instance 404 class). Opt-in via init({transport:'ws'}) or
+    // localStorage 'vtorb.transport'='ws' for staging verification.
+    transport: 'sse',
+    // ORB-FAST-START Phase 4: play a cached "I'm here."/"Ich bin da." in
+    // Vitana's voice the instant the orb is tapped, so the user hears Vitana
+    // immediately instead of 7-10s of silence while context + the Live model
+    // spin up. Default OFF. Enable via init({ wakeCue: true }) or, for staging
+    // verification, localStorage 'vtorb.wakecue'='on' (mirrors transport).
+    // It is a LOCAL UI cue only — never sent to the backend transcript, never
+    // writes memory, never advances Journey / Teacher / wake-brief; it stops
+    // the instant Vitana's real greeting audio begins.
+    wakeCue: false
   };
 
   var _s = {
@@ -143,6 +159,8 @@
     sessionId: null,
     active: false,
     eventSource: null,
+    // BOOTSTRAP-ORB-LATENCY-PHASE3: WebSocket transport handle (null on SSE)
+    ws: null,
 
     // Audio capture (16kHz mic)
     captureCtx: null,
@@ -238,6 +256,9 @@
     // explicit user re-open (_show). Every reconnect/session-start path checks
     // it and bails, so pressing X always tears down and nothing re-opens.
     _userRequestedClose: false,
+    // VTID-03294 (#4): when true, the overlay auto-closes after the first
+    // (teaching) turn finishes — set by focusGuidedTopic, one-shot.
+    guidedAutoClose: false,
     // VTID-02020: contextual recovery state. _preDisconnectStage captures what
     // the user was doing when the network dropped (idle / listening_user_speaking
     // / thinking / speaking) so the backend's recovery prompt can decide
@@ -610,6 +631,10 @@
   // Catalog of MP3 clips rendered by services/gateway/scripts/render-orb-alert-clips.ts.
   // Re-render that script if you change the wording of any label above.
   var _ALERT_CLIPS = [
+    // ORB-FAST-START Phase 4: preloaded alongside the alert clips so the wake
+    // cue plays instantly on tap. Absent MP3 (not yet rendered) → fetch 404 →
+    // clip simply not loaded → _playWakeCue no-ops (graceful, no error tone).
+    'wake-cue-en', 'wake-cue-de',
     'disconnect-mic-en', 'disconnect-mic-de',
     'disconnect-network-en', 'disconnect-network-de',
     'disconnect-connection-en', 'disconnect-connection-de',
@@ -664,6 +689,52 @@
           console.warn('[VTOrb] Failed to preload alert clip ' + id + ':', e && e.message);
         });
     });
+  }
+
+  // BOOTSTRAP-ORB-LATENCY-PHASE3: true when the WS transport is selected
+  // (init option, or the localStorage override used for staging testing).
+  function _useWsTransport() {
+    try {
+      var o = window.localStorage && localStorage.getItem('vtorb.transport');
+      if (o === 'ws') return true;
+      if (o === 'sse') return false;
+    } catch (e) { /* storage blocked — fall through to config */ }
+    return _cfg.transport === 'ws';
+  }
+
+  // ORB-FAST-START Phase 4: should the cached wake cue play on tap? localStorage
+  // 'vtorb.wakecue' wins (per-browser staging verification), else init() config.
+  function _useWakeCue() {
+    try {
+      var o = window.localStorage && localStorage.getItem('vtorb.wakecue');
+      if (o === 'on') return true;
+      if (o === 'off') return false;
+    } catch (e) { /* storage blocked — fall through to config */ }
+    return _cfg.wakeCue === true;
+  }
+
+  // BOOTSTRAP-ORB-LATENCY-PHASE3: tear down the WS transport (idempotent).
+  // sendStop=true also asks the gateway to release the upstream Live session.
+  function _closeWs(sendStop) {
+    var w = _s.ws;
+    if (!w) return;
+    _s.ws = null;
+    try { w.onopen = null; w.onmessage = null; w.onerror = null; w.onclose = null; } catch (e) { /* noop */ }
+    try { if (sendStop && w.readyState === 1) w.send(JSON.stringify({ type: 'stop' })); } catch (e) { /* noop */ }
+    try { w.close(); } catch (e) { /* noop */ }
+  }
+
+  // BOOTSTRAP-ORB-LATENCY-PHASE2: fire-and-forget gateway bootstrap pre-warm.
+  // Builds the user's context pack server-side BEFORE the first orb tap so
+  // /live/session/start hits the gateway's 5-min bootstrap cache instead of
+  // paying 400-800ms of Supabase fetches on the click-to-first-audio path.
+  // Safe to call repeatedly (server cache absorbs it); anonymous = no-op.
+  function _prewarmBootstrap() {
+    if (!_cfg.token) return; // anonymous — server would no-op anyway
+    var headers = { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + _cfg.token };
+    fetch(_cfg.gw + '/api/v1/orb/live/session/prewarm', { method: 'POST', headers: headers, body: '{}' })
+      .then(function (r) { if (r.ok) console.log('[VTOrb] Bootstrap prewarm requested'); })
+      .catch(function () { /* best-effort — never surfaces */ });
   }
 
   // Play a cached alert clip. Returns the BufferSource so the caller can chain
@@ -867,6 +938,7 @@
     if (_s.captureProcessor) { try { _s.captureProcessor.disconnect(); } catch (e) {} _s.captureProcessor = null; }
     if (_s.captureCtx) { try { _s.captureCtx.close().catch(function () {}); } catch (e) {} _s.captureCtx = null; }
     if (_s.eventSource) { try { _s.eventSource.close(); } catch (e) {} _s.eventSource = null; }
+    _closeWs(false); // BOOTSTRAP-ORB-LATENCY-PHASE3: reset path — server cleans on close
 
     _s.sessionId = null;
     _s.active = false;
@@ -921,6 +993,15 @@
       return; // no audio context available — let the server 3s timeout cover it
     }
     _s._audioReadySignaled = true;
+    // BOOTSTRAP-ORB-LATENCY-PHASE3: WS transport sends the in-band
+    // audio_ready message (the WS path defers the greeting on it).
+    if (_s.ws && _s.ws.readyState === 1) {
+      try {
+        _s.ws.send(JSON.stringify({ type: 'audio_ready' }));
+        console.log('[VTOrb] audio-ready signaled (ws) for session ' + _s.sessionId);
+      } catch (e) { /* greeting falls back to the server timeout */ }
+      return;
+    }
     try {
       var headers = { 'Content-Type': 'application/json' };
       if (_cfg.token) headers['Authorization'] = 'Bearer ' + _cfg.token;
@@ -1162,6 +1243,23 @@
     // Play activation chime immediately
     _playChime(_s.playbackCtx);
 
+    // ORB-FAST-START Phase 4: instant cached wake cue. Right after the chime,
+    // inside the user gesture, play Vitana's pre-rendered "I'm here."/"Ich bin
+    // da." so the user hears Vitana within ~1s instead of waiting 7-10s for the
+    // Live model's first token. This is a LOCAL UI cue only — it is NOT a
+    // transcript turn, writes no memory, and does not touch Journey / Teacher /
+    // wake-brief state. It is interruptible: stopped the instant the real
+    // greeting audio arrives (see the audio_out handler). No-ops gracefully if
+    // the clip isn't loaded (flag off, or MP3 not yet rendered/committed).
+    _s._wakeCueSrc = null;
+    if (_useWakeCue()) {
+      try {
+        _s._wakeCueSrc = _playAlert('wake-cue-' + _pickLang());
+      } catch (e) {
+        _s._wakeCueSrc = null;
+      }
+    }
+
     // VTID-02710: keep the ctx warm until the first Gemini audio arrives.
     // The chime ends ~400 ms after this call; without an active source after
     // that, iOS auto-suspends the ctx during the 2-5 s wait for the SSE
@@ -1189,7 +1287,7 @@
         lang: _cfg.lang,
         voice_style: 'friendly, calm, empathetic',
         response_modalities: ['audio', 'text'],
-        vad_silence_ms: 850 // VTID-03019: trimmed 1200→850 to cut ~350ms off end-of-turn latency; constants.ts mirrors
+        vad_silence_ms: 600 // BOOTSTRAP-ORB-LATENCY-PHASE1: 1200→850→600 to trim end-of-turn latency; constants.ts mirrors
       };
       // VTID-03250: send the browser's OWN IANA timezone so the gateway has a
       // reliable local time even when geo-IP rate-limits (HTTP 429). Without
@@ -1241,6 +1339,16 @@
         console.log('[VTOrb] _sessionStart: reconnect context — stage=' + startPayload.reconnect_stage
           + ', transcript=' + (startPayload.transcript_history ? startPayload.transcript_history.length : 0) + ' turns'
           + ', conversation_id=' + (startPayload.conversation_id || '<new>'));
+      }
+
+      // BOOTSTRAP-ORB-LATENCY-PHASE3: WebSocket transport branch. One
+      // bidirectional connection replaces POST /session/start + EventSource +
+      // a POST per 64ms audio chunk. Opt-in (default stays SSE) — see
+      // _useWsTransport(). Same start payload, same downstream message
+      // shapes, same _handleMessage.
+      if (_useWsTransport()) {
+        await _sessionStartWs(startPayload);
+        return;
       }
 
       // VTID-01987: explicit 8s timeout. On Android WebView a fetch over a
@@ -1373,6 +1481,83 @@
     }
   }
 
+  // BOOTSTRAP-ORB-LATENCY-PHASE3: WS-transport session start. Mirrors the
+  // SSE path's bookkeeping exactly (abort guards, session id pin,
+  // audio-ready signal, watchdogs) — only the wire changes. The gateway's
+  // WS path sends the same message shapes the SSE stream does, so all
+  // post-handshake traffic funnels into the shared _handleMessage.
+  function _sessionStartWs(startPayload) {
+    return new Promise(function (resolve, reject) {
+      var url = _cfg.gw.replace(/^http/, 'ws') + '/api/v1/orb/live/ws';
+      if (_cfg.token) url += '?token=' + encodeURIComponent(_cfg.token);
+      var w;
+      try { w = new WebSocket(url); } catch (e) { return reject(e); }
+      var settled = false;
+      // Same 8s start budget as the SSE fetch (VTID-01987 rationale).
+      var startTimer = setTimeout(function () {
+        if (settled) return;
+        settled = true;
+        try { w.close(); } catch (e) { /* noop */ }
+        reject(new Error('WS session start timed out after 8s'));
+      }, 8000);
+      function bail(reason) {
+        // User pressed X / overlay hidden mid-handshake — mirror the SSE
+        // path's stranded-session cleanup (stop + close releases upstream).
+        clearTimeout(startTimer);
+        settled = true;
+        _s.ws = w;
+        _closeWs(true);
+        console.log('[VTOrb] _sessionStartWs: aborted — ' + reason);
+        resolve();
+      }
+      w.onmessage = function (event) {
+        var msg;
+        try { msg = JSON.parse(event.data); } catch (e) { return; }
+        if (msg.type === 'connected') {
+          if (_s._userInitiatedStop || !_s.overlayVisible) return bail('overlay closed during connect');
+          try { w.send(JSON.stringify(Object.assign({ type: 'start' }, startPayload))); } catch (e) { /* onclose covers */ }
+          return;
+        }
+        if (msg.type === 'session_started' && !settled) {
+          clearTimeout(startTimer);
+          settled = true;
+          if (_s._userInitiatedStop || !_s.overlayVisible) return bail('overlay closed during start handshake');
+          _s.ws = w;
+          _s.sessionId = msg.session_id;
+          _s.active = true;
+          _signalAudioReady();
+          if (msg.conversation_id) _s.conversationId = msg.conversation_id;
+          _s._preDisconnectStage = null;
+          if (_cfg.onSessionStart) try { _cfg.onSessionStart(_s.sessionId); } catch (e) { /* ignore */ }
+          _startWatchdog();
+          _startSpeakingWatchdog();
+          console.log('[VTOrb] WS transport connected — session ' + msg.session_id);
+          _updateUI();
+          resolve();
+          return;
+        }
+        _resetWatchdog();
+        _handleMessage(msg);
+      };
+      w.onclose = function () {
+        if (!settled) {
+          settled = true;
+          clearTimeout(startTimer);
+          _s.ws = null;
+          reject(new Error('WS closed during session start'));
+          return;
+        }
+        if (_s.ws !== w) return; // deliberate teardown already detached this socket
+        // Unexpected close mid-session — same recovery path as SSE CLOSED.
+        _s.ws = null;
+        _stopWatchdog();
+        _announceDisconnect('connection');
+        _attemptReconnect();
+      };
+      w.onerror = function () { /* onclose carries the recovery decision */ };
+    });
+  }
+
   async function _sessionStop() {
     console.log('[VTOrb] Stopping session...');
     // VTID-03098: mark this as a user-initiated stop BEFORE any teardown.
@@ -1416,6 +1601,13 @@
     // the session ended before any audio arrived) before closing the ctx.
     _stopCtxKeepAlive();
 
+    // ORB-FAST-START Phase 4: stop the cached wake cue if it's still playing
+    // (user closed before the greeting arrived) so it doesn't tail past close.
+    if (_s._wakeCueSrc) {
+      try { _s._wakeCueSrc.stop(0); } catch (e) { /* already ended */ }
+      _s._wakeCueSrc = null;
+    }
+
     // Stop playback
     if (_s.playbackCtx) { _s.playbackCtx.close().catch(function () {}); _s.playbackCtx = null; }
 
@@ -1441,16 +1633,23 @@
       try { __es.onerror = null; } catch (e) { /* noop */ }
       try { __es.close(); } catch (e) { /* noop */ }
     }
+    // BOOTSTRAP-ORB-LATENCY-PHASE3: user-initiated stop — send the in-band
+    // stop so the gateway releases the upstream Live session, then close.
+    _closeWs(true);
 
-    // Stop backend session
+    // Stop backend session — VTID-03295: FIRE-AND-FORGET (keepalive), never
+    // `await`. Awaiting the network here stalled teardown behind a slow/hung
+    // request while audio was still playing (the un-closeable-overlay bug). The
+    // overlay + audio are already torn down synchronously in _hide; this is just
+    // best-effort server cleanup.
     if (_s.sessionId) {
       try {
         var headers = { 'Content-Type': 'application/json' };
         if (_cfg.token) headers['Authorization'] = 'Bearer ' + _cfg.token;
-        await fetch(_cfg.gw + '/api/v1/orb/live/session/stop', {
-          method: 'POST', headers: headers,
+        fetch(_cfg.gw + '/api/v1/orb/live/session/stop', {
+          method: 'POST', headers: headers, keepalive: true,
           body: JSON.stringify({ session_id: _s.sessionId })
-        });
+        }).catch(function () { /* ignore */ });
       } catch (e) { /* ignore */ }
     }
 
@@ -1559,6 +1758,12 @@
           if (!_s.greetingAudioReceived) {
             _s.greetingAudioReceived = true;
             clearTimeout(_s.stuckGuardTimer);
+            // ORB-FAST-START Phase 4: Vitana's real greeting is taking over —
+            // stop the cached wake cue so the two never overlap.
+            if (_s._wakeCueSrc) {
+              try { _s._wakeCueSrc.stop(0); } catch (e) { /* already ended */ }
+              _s._wakeCueSrc = null;
+            }
             // VTID-02710: real audio is taking over — release the keep-alive
             // pump so it doesn't quietly waste cycles for the rest of the
             // session.
@@ -1632,6 +1837,17 @@
             if (_cfg.onTurnComplete) {
               try { _cfg.onTurnComplete({ was_greeting: !_s.greetingComplete }); }
               catch (e) { /* host callback must never break the voice loop */ }
+            }
+            // VTID-03294 (#4): GUIDED auto-close. The teaching turn (turn 1,
+            // greetingComplete still false) has finished playing — close the
+            // overlay so the underlying Topic drawer's next-step buttons are
+            // usable, instead of dropping to listening. Widget-side so it does
+            // not depend on the host wiring. One-shot (cleared here).
+            if (_s.guidedAutoClose && !_s.greetingComplete) {
+              _s.guidedAutoClose = false;
+              console.log('[VTOrb] guided teaching turn complete — auto-closing overlay (reveal drawer)');
+              _hide();
+              return;
             }
             // If the host closed the overlay in the callback (guided auto-close),
             // stop here — don't beep / arm the mic on a torn-down session.
@@ -2057,14 +2273,18 @@
         }
       }
 
-      // Post-turn cooldown (500ms) — server-side turn_complete
-      if (_s.turnCompleteAt > 0 && (Date.now() - _s.turnCompleteAt) < 500) return;
+      // Post-turn cooldown (200ms) — server-side turn_complete.
+      // BOOTSTRAP-ORB-LATENCY-PHASE1: 500→200ms — every ms here is dead air
+      // where the user's speech is silently dropped; AEC + the playback-end
+      // echo gate below carry the echo protection.
+      if (_s.turnCompleteAt > 0 && (Date.now() - _s.turnCompleteAt) < 200) return;
 
-      // Client-side echo cooldown (500ms) — after audio playback actually ends.
-      // The server's POST_TURN_COOLDOWN_MS (2s) starts when Vertex sends turn_complete,
+      // Client-side echo cooldown (200ms) — after audio playback actually ends.
+      // The server's POST_TURN_COOLDOWN_MS starts when Vertex sends turn_complete,
       // but the client may still be playing buffered audio 1-3s later. This cooldown
       // starts when the LAST audio source actually finishes playing on the client.
-      if (_s.lastAudioEndTime > 0 && (Date.now() - _s.lastAudioEndTime) < 500) return;
+      // BOOTSTRAP-ORB-LATENCY-PHASE1: 500→200ms (see above).
+      if (_s.lastAudioEndTime > 0 && (Date.now() - _s.lastAudioEndTime) < 200) return;
 
       // Convert Float32 → Int16 PCM → base64
       var pcm = new Int16Array(input.length);
@@ -2084,6 +2304,17 @@
 
   function _sendAudio(b64) {
     if (!_s.sessionId || !_s.active) return;
+    // BOOTSTRAP-ORB-LATENCY-PHASE3: WS transport — one frame on the open
+    // socket instead of a full HTTP request per 64ms chunk.
+    if (_s.ws) {
+      if (_s.ws.readyState === 1) {
+        try {
+          _s.ws.send(JSON.stringify({ type: 'audio', data_b64: b64, mime: 'audio/pcm;rate=16000' }));
+          _s._audioSendFailCount = 0;
+        } catch (e) { _registerAudioSendFailure(); }
+      }
+      return; // never fall through to HTTP while WS transport owns the session
+    }
     var headers = { 'Content-Type': 'application/json' };
     if (_cfg.token) headers['Authorization'] = 'Bearer ' + _cfg.token;
     fetch(_cfg.gw + '/api/v1/orb/live/stream/send?session_id=' + _s.sessionId, {
@@ -2188,6 +2419,11 @@
 
   function _sendInterrupt() {
     if (!_s.sessionId || !_s.active) return;
+    // BOOTSTRAP-ORB-LATENCY-PHASE3: WS transport branch.
+    if (_s.ws) {
+      try { if (_s.ws.readyState === 1) _s.ws.send(JSON.stringify({ type: 'interrupt' })); } catch (e) { /* noop */ }
+      return;
+    }
     var headers = { 'Content-Type': 'application/json' };
     if (_cfg.token) headers['Authorization'] = 'Bearer ' + _cfg.token;
     fetch(_cfg.gw + '/api/v1/orb/live/stream/send?session_id=' + _s.sessionId, {
@@ -2741,20 +2977,37 @@
     _s._disconnectActive = false;
     _s._disconnectStuck = false;
     _s._isReconnecting = false;
+    _s.guidedAutoClose = false; // VTID-03294 (#4): clear any pending guided auto-close
     try { clearInterval(_s._recoveryWatchdog); } catch (e) { /* noop */ }
     _s._recoveryWatchdog = null;
-    // DEV-COMHU-0503: UI close preserves short-lived continuity (15 min) BEFORE
-    // teardown, so reopening within the window resumes instead of greeting
-    // first-time. _sessionStop still tears down media/SSE exactly as before.
-    _persistContinuity('hide', 15);
-    _sessionStop();
-    _restoreSoundscape();
+    // VTID-03295 (X-close fix): STOP AUDIO + CLOSE THE OVERLAY SYNCHRONOUSLY, the
+    // instant X is pressed — BEFORE the async/network teardown. The bug: the stop
+    // routine awaited the /session/stop fetch BEFORE it stopped the scheduled audio
+    // sources, so while Vitana was mid-lesson the audio kept playing and the
+    // teardown stalled on the network → the overlay felt un-closeable. Here we kill
+    // playback + mark the session dead first, so X always silences + closes now;
+    // the network cleanup runs fire-and-forget afterwards.
+    _s.active = false;
+    if (_s.scheduledSources) {
+      for (var _i = 0; _i < _s.scheduledSources.length; _i++) {
+        try { _s.scheduledSources[_i].stop(); } catch (e) { /* ok */ }
+      }
+      _s.scheduledSources = [];
+    }
+    _s.audioQueue = [];
+    _s.audioPlaying = false;
     _s.overlayVisible = false;
     if (_root) {
       _root.classList.remove('vtorb-visible');
       _root.style.display = 'none';
     }
     _updateUI();
+    // DEV-COMHU-0503: UI close preserves short-lived continuity (15 min) BEFORE
+    // teardown, so reopening within the window resumes instead of greeting
+    // first-time. _sessionStop tears down media/SSE + fires /session/stop.
+    _persistContinuity('hide', 15);
+    _sessionStop();
+    _restoreSoundscape();
     if (_cfg.onClose) try { _cfg.onClose(); } catch (e) { /* ignore */ }
   }
 
@@ -2853,6 +3106,7 @@
       if (_s.captureProcessor) { try { _s.captureProcessor.disconnect(); } catch (e) {} _s.captureProcessor = null; }
       if (_s.captureCtx) { try { _s.captureCtx.close().catch(function () {}); } catch (e) {} _s.captureCtx = null; }
       if (_s.eventSource) { try { _s.eventSource.close(); } catch (e) {} _s.eventSource = null; }
+      _closeWs(false); // BOOTSTRAP-ORB-LATENCY-PHASE3
 
       _s.sessionId = null;
       _s.active = false;
@@ -2999,6 +3253,8 @@
 
       if (opts.lang) _cfg.lang = opts.lang;
       if (opts.showFab !== undefined) _cfg.showFab = !!opts.showFab;
+      // BOOTSTRAP-ORB-LATENCY-PHASE3: opt-in WebSocket transport.
+      if (opts.transport === 'ws' || opts.transport === 'sse') _cfg.transport = opts.transport;
       if (typeof opts.onClose === 'function') _cfg.onClose = opts.onClose;
       if (typeof opts.onSessionStart === 'function') _cfg.onSessionStart = opts.onSessionStart;
       if (typeof opts.onSessionEnd === 'function') _cfg.onSessionEnd = opts.onSessionEnd;
@@ -3031,6 +3287,11 @@
       // BOOTSTRAP-ORB-MODERN-RECOVERY: preload alert clips eagerly while the
       // network is fine, so they're in memory if/when the network drops.
       _preloadAlertClips();
+      // BOOTSTRAP-ORB-LATENCY-PHASE2: pre-warm the gateway's bootstrap
+      // context cache at page load (fire-and-forget) so the user's first
+      // orb tap skips the 400-800ms context build on the
+      // click-to-first-audio path. Anonymous = server-side no-op.
+      _prewarmBootstrap();
       console.log('[VTOrb] Initialized — gateway: ' + _cfg.gw + ', lang: ' + _cfg.lang + ', showFab: ' + _cfg.showFab + ', hasToken: ' + !!_cfg.token + ', forceAnonymous: ' + _cfg.forceAnonymous);
     },
 
@@ -3080,6 +3341,9 @@
       } else {
         console.log('[VTOrb] setAuth: hasToken=true (reactive)');
       }
+      // BOOTSTRAP-ORB-LATENCY-PHASE2: warm the (possibly new) identity's
+      // bootstrap context so the next orb tap starts fast.
+      _prewarmBootstrap();
     },
 
     // DEV-COMHU-0502: explicit logout / account-switch / "start over". Tears
@@ -3120,7 +3384,21 @@
     // provider then leads turn-1 and Vitana TEACHES that topic from the published
     // KB. One-shot: consumed by the upcoming _sessionStart only.
     focusGuidedTopic: function (topicId) {
+      // VTID-03296 (replay fix): tear down ANY existing/in-flight session FIRST so
+      // the new guided session starts from a CLEAN slate. Without this, tapping
+      // Replay right after the teaching auto-close raced the just-closing session
+      // (`if (_s.active) return` in _sessionStart, or a stale start consuming the
+      // one-shot _s.guidedTopic), so the new session went out WITHOUT
+      // guided_topic_id → it fell into the slow non-guided (admin) bootstrap path
+      // and got stuck "Connecting...". _sessionStop is synchronous; _show() below
+      // re-arms everything cleanly.
+      try { _sessionStop(); } catch (e) { /* best-effort */ }
       _s.guidedTopic = (typeof topicId === 'string' && topicId) ? topicId : null;
+      // VTID-03294 (#4): a guided-topic open AUTO-CLOSES the overlay once Vitana
+      // finishes the teaching turn (reveals the drawer's next-step buttons),
+      // instead of dropping to listening. Set AFTER _s.guidedTopic; _show() does
+      // not touch it. Consumed/reset on the first turn-complete or on _hide.
+      _s.guidedAutoClose = true;
       _show();
     },
     // DEV-COMHU-0503: intentional forget (logout / account switch / start over).

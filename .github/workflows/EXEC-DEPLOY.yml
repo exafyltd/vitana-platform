@@ -317,8 +317,15 @@ jobs:
             # /admin/build-info + cloud-run-admin.describeService can surface a real
             # 7-char SHA (instead of falling back to the *.run.app revision name).
             # Mirrors what STAGE-DEPLOY.yml already does for gateway-staging.
-            EXTRA_ENV_ARGS+=(--update-env-vars=GIT_COMMIT_SHA=${{ steps.deploy_sha.outputs.sha }})
-            EXTRA_ENV_ARGS+=(--update-env-vars=COMMIT_SHA=${{ steps.deploy_sha.outputs.sha }})
+            # Stamp here ONLY in source-build mode. In image-promotion (fast
+            # publish) mode the image block below already stamps
+            # GIT_COMMIT_SHA/COMMIT_SHA from inputs.commit_sha — adding them here
+            # too makes gcloud reject the deploy with "--update-env-vars:
+            # GIT_COMMIT_SHA cannot be specified multiple times".
+            if [ -z "${{ github.event.inputs.image }}" ]; then
+              EXTRA_ENV_ARGS+=(--update-env-vars=GIT_COMMIT_SHA=${{ steps.deploy_sha.outputs.sha }})
+              EXTRA_ENV_ARGS+=(--update-env-vars=COMMIT_SHA=${{ steps.deploy_sha.outputs.sha }})
+            fi
             # VTID-01225: Cognee Extractor URL for entity extraction
             EXTRA_ENV_ARGS+=(--update-env-vars=COGNEE_EXTRACTOR_URL=https://cognee-extractor-86804897789.us-central1.run.app)
             # VTID-01175: Worker verification mode. 'advisory' (default) runs the

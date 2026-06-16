@@ -17,7 +17,7 @@
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { getSupabase } from '../lib/supabase';
-import { getUserHealthContext } from '../services/user-health-context';
+import { getUserHealthContext, type UserHealthContext } from '../services/user-health-context';
 import { applyUserLimitations, type FilterableProduct } from '../services/limitations-filter';
 import { rankFeedProducts, type FeedConfig } from '../services/feed-ranker';
 import * as jose from 'jose';
@@ -42,6 +42,50 @@ function extractUserIdOptimistic(req: Request): string | null {
   }
 }
 
+/**
+ * Public/guest context for the unauthenticated Discover landing experience.
+ *
+ * A signed-out visitor (e.g. someone evaluating the marketplace before
+ * signing up) gets the GLOBAL × onboarding starter selection: no
+ * personalization, no health-limitations filtering (a guest has no
+ * profile, so there is nothing to filter on), no past-purchase exclusion.
+ * Scope is 'international' so candidate fetch applies no origin restriction
+ * and the broadest curated starter set is shown. Carries no PII.
+ */
+function buildGuestHealthContext(): UserHealthContext {
+  return {
+    user_id: 'guest',
+    tenant_id: null,
+    active_conditions: [],
+    active_goals: [],
+    dietary_restrictions: [],
+    allergies: [],
+    contraindications: [],
+    current_medications: [],
+    pregnancy_status: null,
+    age_bracket: null,
+    religious_restrictions: [],
+    ingredient_sensitivities: [],
+    budget_max_per_product_cents: null,
+    budget_monthly_cap_cents: null,
+    budget_preferred_band: null,
+    wearable_summary_7d: null,
+    vitana_index_snapshot: null,
+    upcoming_events: [],
+    past_purchases: [],
+    recent_recommendations_dismissed: [],
+    topic_affinity: {},
+    country_code: null,
+    region_group: 'GLOBAL',
+    scope_preference: 'international',
+    currency: null,
+    lifecycle_stage: 'onboarding',
+    retrieved_at: new Date().toISOString(),
+    sources_queried: [],
+    stale: false,
+  };
+}
+
 router.get('/feed', async (req: Request, res: Response) => {
   const supabase = getSupabase();
   if (!supabase) {
@@ -56,12 +100,12 @@ router.get('/feed', async (req: Request, res: Response) => {
   }
   const { category, limit } = parsed.data;
 
+  // Public landing: a signed-out visitor gets the GLOBAL starter feed instead
+  // of a 401, so the marketplace is viewable (and indexable / reviewable)
+  // without an account. Authenticated requests get the full personalized feed.
   const user_id = extractUserIdOptimistic(req);
-  if (!user_id) {
-    res.status(401).json({ ok: false, error: 'Authentication required for feed' });
-    return;
-  }
-  const ctx = await getUserHealthContext(user_id);
+  const isGuest = !user_id;
+  const ctx = isGuest ? buildGuestHealthContext() : await getUserHealthContext(user_id as string);
 
   const regionGroup = ctx.region_group ?? 'GLOBAL';
   const lifecycleStage = ctx.lifecycle_stage ?? 'onboarding';
@@ -183,6 +227,7 @@ router.get('/feed', async (req: Request, res: Response) => {
       scope: ctx.scope_preference,
       rationale: ranked.rationale,
       config_id: feedConfig?.id ?? null,
+      guest: isGuest,
     },
     hidden_breakdown: {
       ...hidden_breakdown,

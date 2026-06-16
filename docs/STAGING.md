@@ -129,8 +129,10 @@ Server flow (`POST /api/v1/operator/publish`):
 
 1. `requireAdminAuth` — admin JWT + `exafy_admin` role.
 2. Describe `gateway-staging` → resolve active revision + commit SHA.
-3. Refuse if the staging revision is younger than
-   `STAGING_PUBLISH_BAKE_SECONDS` (default 3600s; set to 0 for smoke tests).
+3. Optional bake-time guard (opt-in, default OFF): if
+   `STAGING_PUBLISH_BAKE_SECONDS` is set >0, refuse when the staging revision is
+   younger than that many seconds. Default is `0` → no soak, publish is instant
+   the moment staging is live. Set it to e.g. `3600` to re-impose a 1h soak.
 4. Allocate a VTID via the canonical allocator (EXEC-DEPLOY needs the ledger row).
 5. Call `deployOrchestrator.executeDeploy({ service:'gateway', environment:'production' })`.
 6. Insert `software_versions` row with `source_revision`, `initiator_id`.

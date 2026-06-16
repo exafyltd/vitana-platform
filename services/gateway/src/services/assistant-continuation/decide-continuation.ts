@@ -69,6 +69,38 @@ export interface DecideContinuationOptions {
   now?: () => Date;
   /** Injected for testability. Defaults to `randomUUID`. */
   newId?: () => string;
+  /**
+   * VTID-03301 — opener dedupe keys this user was recently served, MOST-RECENT
+   * FIRST. The ranker demotes any candidate whose `dedupeKey` is in this list so
+   * the same opener does not win session after session (the "complete your
+   * profile every time" defect). It is a soft penalty, not exclusion: a single
+   * genuinely-high-priority item (e.g. a due reminder) can still win if nothing
+   * fresher is comparable.
+   */
+  recentlyServedDedupeKeys?: ReadonlyArray<string>;
+  /** Penalty applied to a recently-served candidate's effective priority. */
+  recencyPenalty?: number;
+}
+
+/** Default soft penalty — large enough to flip ties between same-tier providers. */
+export const DEFAULT_RECENCY_PENALTY = 30;
+
+/**
+ * VTID-03301 — effective priority after the rotation penalty. The exact opener
+ * served LAST time is demoted hardest (×1.5) so it almost never repeats
+ * back-to-back; anything else in the recent window gets the base penalty.
+ * Returns the unchanged priority when the key is fresh.
+ */
+export function effectivePriority(
+  basePriority: number,
+  dedupeKey: string,
+  recentlyServed: ReadonlyArray<string>,
+  penalty: number,
+): number {
+  if (recentlyServed.length === 0) return basePriority;
+  if (recentlyServed[0] === dedupeKey) return basePriority - penalty * 1.5;
+  if (recentlyServed.includes(dedupeKey)) return basePriority - penalty;
+  return basePriority;
 }
 
 /**
@@ -98,16 +130,24 @@ export async function decideContinuation(
     results.push(await invokeProviderSafely(provider, fullContext, now));
   }
 
-  // Rank: only `returned` candidates are eligible. Stable sort by
-  // descending priority. Ties keep registration order (which providers.
-  // forSurface returns in deterministic Map-iteration order).
+  // Rank: only `returned` candidates are eligible. Stable sort by descending
+  // EFFECTIVE priority (base priority minus the VTID-03301 rotation penalty for
+  // recently-served openers), then registration order on ties. The penalty is
+  // what stops the same provider+step ("journey_guide:life_compass") winning
+  // every session and lets reminders / continuity / a different step rotate in.
+  const recentlyServed = opts.recentlyServedDedupeKeys ?? [];
+  const penalty = opts.recencyPenalty ?? DEFAULT_RECENCY_PENALTY;
   const candidates = results
     .filter((r): r is ProviderResult & { candidate: AssistantContinuation } =>
       r.status === 'returned' && r.candidate !== undefined,
     )
-    .map((r, idx) => ({ result: r, idx }))
+    .map((r, idx) => ({
+      result: r,
+      idx,
+      eff: effectivePriority(r.candidate.priority, r.candidate.dedupeKey, recentlyServed, penalty),
+    }))
     .sort((a, b) => {
-      const dp = b.result.candidate.priority - a.result.candidate.priority;
+      const dp = b.eff - a.eff;
       return dp !== 0 ? dp : a.idx - b.idx;
     });
 

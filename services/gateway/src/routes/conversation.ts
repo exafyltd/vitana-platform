@@ -36,6 +36,8 @@ import { Router, Request, Response } from 'express';
 import { randomUUID } from 'crypto';
 import { z } from 'zod';
 import { emitOasisEvent } from '../services/oasis-event-service';
+// BOOTSTRAP-PRODUCT-ANALYTICS: server-side product analytics (metadata only)
+import { trackServerEvent, detectTopic, classifyIntent } from '../services/product-analytics/track-server';
 // BOOTSTRAP-VOICE-DEMO: real heartbeats from voice/text conversation paths.
 import { recordAgentHeartbeat } from './agents-registry';
 import {
@@ -324,6 +326,51 @@ router.post('/turn', async (req: Request, res: Response) => {
     const thread = getOrCreateThread(input.thread_id, tenant_id, user_id, channel);
     thread.turn_count++;
 
+    // BOOTSTRAP-PRODUCT-ANALYTICS: assistant usage signals for the
+    // /admin/insights dashboards. Metadata only — the message text is used
+    // in-memory for topic/intent matching and never persisted.
+    {
+      const analyticsBase = {
+        tenant_id,
+        user_id,
+        session_id: thread.thread_id,
+        conversation_id: thread.thread_id,
+        source: 'assistant' as const,
+        feature_key: 'assistant',
+      };
+      if (thread.turn_count === 1) {
+        void trackServerEvent({
+          ...analyticsBase,
+          event_name: 'conversation_started',
+          properties: { assistant_surface: channel, input_mode: message.type === 'voice_transcript' ? 'voice' : 'text' },
+        });
+      }
+      void trackServerEvent({
+        ...analyticsBase,
+        event_name: 'user_message_sent',
+        properties: {
+          message_length: message.text.length,
+          input_mode: message.type === 'voice_transcript' ? 'voice' : 'text',
+          turn_number: thread.turn_count,
+        },
+      });
+      const { intent, confidence } = classifyIntent(message.text);
+      void trackServerEvent({
+        ...analyticsBase,
+        event_name: 'intent_classified',
+        properties: { intent, confidence },
+      });
+      const topic = detectTopic(message.text);
+      if (topic) {
+        void trackServerEvent({
+          ...analyticsBase,
+          event_name: 'topic_detected',
+          event_type: 'interest',
+          properties: { topic, confidence: 0.6 },
+        });
+      }
+    }
+
     // VTID-01967: Resolve canonical Vitana ID handle (cached, ~free on hit).
     // Used both for tool-thread identity and for the system prompt below so
     // the assistant can answer "what is my user ID?" with the @handle.
@@ -533,8 +580,46 @@ ${channelInstructions}`;
             toolCall.duration_ms,
             { tenant_id, user_id, thread_id: thread.thread_id, channel }
           );
+
+          // BOOTSTRAP-PRODUCT-ANALYTICS: tool usage metadata (name + outcome only)
+          const toolAnalyticsBase = {
+            tenant_id,
+            user_id,
+            session_id: thread.thread_id,
+            conversation_id: thread.thread_id,
+            source: 'assistant' as const,
+            feature_key: 'assistant',
+          };
+          void trackServerEvent({
+            ...toolAnalyticsBase,
+            event_name: 'tool_called',
+            properties: { tool_name: toolCall.name, tool_category: 'conversation' },
+          });
+          void trackServerEvent({
+            ...toolAnalyticsBase,
+            event_name: toolCall.success ? 'tool_call_succeeded' : 'tool_call_failed',
+            event_type: toolCall.success ? 'assistant' : 'friction',
+            properties: { tool_name: toolCall.name, duration_ms: toolCall.duration_ms },
+          });
         }
       }
+
+      // BOOTSTRAP-PRODUCT-ANALYTICS: response quality metadata for dashboards
+      void trackServerEvent({
+        tenant_id,
+        user_id,
+        session_id: thread.thread_id,
+        conversation_id: thread.thread_id,
+        source: 'assistant',
+        feature_key: 'assistant',
+        event_name: 'assistant_response_completed',
+        properties: {
+          response_time_ms: Date.now() - llmStartTime,
+          response_length: reply.length,
+          model: modelUsed,
+          tool_call_count: toolCalls.length,
+        },
+      });
 
       // Log model called
       await emitOasisEvent({

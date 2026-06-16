@@ -32,6 +32,8 @@ import { z } from 'zod';
 import { createUserSupabaseClient } from '../lib/supabase-user';
 import { getSupabase } from '../lib/supabase';
 import { getBearerToken, getUserContext } from './universal-cart';
+import { getUserLocale } from '../i18n/server-locale';
+import { localizeCatalogRecords } from '../i18n/catalog-localizer';
 
 export const VTID = 'VTID-03237';
 
@@ -102,6 +104,37 @@ function encodeCursor(offset: number): string {
   return Buffer.from(JSON.stringify({ offset }), 'utf8').toString('base64');
 }
 
+/**
+ * Localize product title/description into the viewer's language in place.
+ * Product copy is authored in English; this mirrors the frontend i18n catalog
+ * for DB-resident text (translate-on-view + cache). Best-effort — a failure
+ * leaves the English source untouched. Mutates the passed product rows.
+ */
+async function localizeProducts(svc: any, userId: string, products: any[]): Promise<void> {
+  const rows = products.filter((p) => p && p.id);
+  if (rows.length === 0) return;
+  try {
+    const locale = await getUserLocale(svc, userId);
+    const localized = await localizeCatalogRecords(
+      svc,
+      { domain: 'product', sourceLocale: 'en', service: 'shop-feed' },
+      rows.map((p) => ({
+        id: String(p.id),
+        fields: { title: p.title ?? '', description: p.description ?? null },
+      })),
+      locale,
+    );
+    for (const p of rows) {
+      const f = localized.get(String(p.id));
+      if (!f) continue;
+      if (typeof f.title === 'string' && f.title.trim()) p.title = f.title;
+      if (typeof f.description === 'string' && f.description.trim()) p.description = f.description;
+    }
+  } catch (e: any) {
+    console.warn(`[${VTID}] product localize failed (serving English):`, e?.message);
+  }
+}
+
 /** Shape a products row into the client product card. */
 function shapeProduct(p: any): Record<string, unknown> | null {
   if (!p) return null;
@@ -165,7 +198,8 @@ function shapeVideoItem(v: any, anchor: any, product: any): Record<string, unkno
  */
 async function loadPrimaryAnchors(
   svc: any,
-  videoIds: string[]
+  videoIds: string[],
+  userId: string,
 ): Promise<Map<string, { anchor: any; product: any }>> {
   const out = new Map<string, { anchor: any; product: any }>();
   if (videoIds.length === 0) return out;
@@ -181,6 +215,9 @@ async function loadPrimaryAnchors(
   const products = await svc.from('products').select(PRODUCT_COLUMNS).in('id', productIds);
   const productById = new Map<string, any>();
   for (const p of products.data || []) productById.set(p.id, p);
+
+  // Localize product copy into the viewer's language before it's shaped.
+  await localizeProducts(svc, userId, [...productById.values()]);
 
   for (const a of anchors.data) {
     const p = productById.get(a.product_id);
@@ -273,7 +310,7 @@ router.get('/videos', async (req: Request, res: Response) => {
     const rows = batch.data || [];
     if (rows.length === 0) { exhausted = true; break; }
 
-    const anchorMap = await loadPrimaryAnchors(svc, rows.map((v: any) => v.id));
+    const anchorMap = await loadPrimaryAnchors(svc, rows.map((v: any) => v.id), id.user_id);
     let filledEarly = false;
     for (const v of rows) {
       scanOffset += 1; // advance the cursor per row consumed (never skips a row)
@@ -317,7 +354,7 @@ router.get('/videos/:id', async (req: Request, res: Response) => {
     return res.status(404).json({ ok: false, error: 'video_not_found' });
   }
 
-  const anchorMap = await loadPrimaryAnchors(svc, [videoId]);
+  const anchorMap = await loadPrimaryAnchors(svc, [videoId], id.user_id);
   const bound = anchorMap.get(videoId);
   return res.status(200).json({
     ok: true,
@@ -350,7 +387,7 @@ router.get('/videos/:id/anchor', async (req: Request, res: Response) => {
     return res.status(404).json({ ok: false, error: 'anchor_unavailable' });
   }
 
-  const anchorMap = await loadPrimaryAnchors(svc, [videoId]);
+  const anchorMap = await loadPrimaryAnchors(svc, [videoId], id.user_id);
   const bound = anchorMap.get(videoId);
   if (!bound) {
     // Either no anchor or its product is no longer purchasable.
@@ -451,6 +488,7 @@ router.get('/saved', async (req: Request, res: Response) => {
   if (svc && productIds.length) {
     const products = await svc.from('products').select(PRODUCT_COLUMNS).in('id', productIds);
     for (const p of (products.data || []) as any[]) productById.set(p.id, p);
+    await localizeProducts(svc, id.user_id, [...productById.values()]);
   }
 
   return res.status(200).json({

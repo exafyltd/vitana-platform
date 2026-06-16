@@ -46,6 +46,8 @@ import { randomUUID } from 'crypto';
 import { TextToSpeechClient, protos } from '@google-cloud/text-to-speech';
 import { processWithGemini, setThreadIdentity } from '../services/gemini-operator';
 import { emitOasisEvent } from '../services/oasis-event-service';
+// BOOTSTRAP-PRODUCT-ANALYTICS: server-side product analytics (metadata only)
+import { trackServerEvent, detectTopic } from '../services/product-analytics/track-server';
 // VTID-03250: prefer the browser's own timezone over rate-limit-prone geo-IP
 // so the assistant never loses the user's local time (context integrity).
 import { resolveSessionTimezone } from '../services/awareness-unified-context';
@@ -961,6 +963,13 @@ export interface GeminiLiveSession {
   // carry the voice-tool-routing signal into the orb.turn.responded event,
   // then cleared. Undefined when the turn dispatched no tool.
   pendingTurnToolSignal?: { toolName: string; toolArguments?: Record<string, unknown> };
+  // BOOTSTRAP-ORB-LATENCY-PHASE2: per-session cache for read-only retrieval
+  // tools (search_memory / search_knowledge). The model is mute until the
+  // function_response arrives, so a repeat lookup mid-conversation used to
+  // cost another 300-800ms of dead air. Keyed by tool+normalized args,
+  // short TTL (see TOOL_CACHE_TTL_MS). Session-scoped → torn down with the
+  // session; never crosses users.
+  toolResultCache?: Map<string, { at: number; result: { success: boolean; result: string; error?: string } }>;
   // VTID-STREAM-KEEPALIVE: Interval handle for upstream Vertex WS ping
   upstreamPingInterval?: ReturnType<typeof setInterval>;
   // VTID-STREAM-SILENCE: Interval handle for sending silence audio to Vertex
@@ -2048,6 +2057,37 @@ export function buildPersonaBehavioralRule(personaKey: string): string {
 // VTID-03025: exported so the voice-lab dry-run evaluator can mirror the
 // exact bootstrap-context fetch the live session uses. No behavior change —
 // only the visibility modifier was added.
+// BOOTSTRAP-ORB-LATENCY-PHASE2: bootstrap context cache for the VERTEX
+// session-start path. The VTID-03035/03036 caches only wrap the LiveKit
+// /orb/context-bootstrap route — this path rebuilt the pack (3 parallel
+// Supabase fetches, 400-800ms) on EVERY tap, squarely on the
+// click-to-first-audio critical path. Keyed by tenant|user, 5-min TTL
+// (same staleness rationale as the LiveKit cache: memory_items /
+// identity_facts change on minute-to-hour scale). Failures and empty
+// packs are never cached. Populated by /live/session/prewarm (widget
+// fires it on init) so the first tap of a visit hits warm.
+const VERTEX_BOOTSTRAP_CACHE = new Map<string, { at: number; value: {
+  contextPack?: ContextPack;
+  contextInstruction?: string;
+  latencyMs: number;
+  skippedReason?: string;
+} }>();
+const VERTEX_BOOTSTRAP_CACHE_TTL_MS = 5 * 60_000;
+const VERTEX_BOOTSTRAP_CACHE_MAX_ENTRIES = 500;
+
+function storeVertexBootstrapCache(key: string, value: {
+  contextPack?: ContextPack;
+  contextInstruction?: string;
+  latencyMs: number;
+  skippedReason?: string;
+}): void {
+  if (VERTEX_BOOTSTRAP_CACHE.size >= VERTEX_BOOTSTRAP_CACHE_MAX_ENTRIES) {
+    const oldest = VERTEX_BOOTSTRAP_CACHE.keys().next().value;
+    if (oldest !== undefined) VERTEX_BOOTSTRAP_CACHE.delete(oldest);
+  }
+  VERTEX_BOOTSTRAP_CACHE.set(key, { at: Date.now(), value });
+}
+
 export async function buildBootstrapContextPack(
   identity: SupabaseIdentity,
   sessionId: string
@@ -2065,6 +2105,14 @@ export async function buildBootstrapContextPack(
       latencyMs: Date.now() - startTime,
       skippedReason: 'missing_identity',
     };
+  }
+
+  // BOOTSTRAP-ORB-LATENCY-PHASE2: serve from cache when fresh.
+  const bootstrapCacheKey = `${identity.tenant_id}|${identity.user_id}`;
+  const cached = VERTEX_BOOTSTRAP_CACHE.get(bootstrapCacheKey);
+  if (cached && Date.now() - cached.at < VERTEX_BOOTSTRAP_CACHE_TTL_MS) {
+    console.log(`[BOOTSTRAP-ORB-LATENCY-PHASE2] Vertex bootstrap cache HIT for session ${sessionId} (built ${Date.now() - cached.at}ms ago)`);
+    return { ...cached.value, latencyMs: Date.now() - startTime };
   }
 
   try {
@@ -2106,6 +2154,7 @@ export async function buildBootstrapContextPack(
       const base = memoryContext.formatted_context || '';
       const combined = [recentTurnsBlock, base, profileBlock].filter(Boolean).join('\n');
       if (combined) {
+        storeVertexBootstrapCache(bootstrapCacheKey, { contextInstruction: combined, latencyMs });
         return {
           contextInstruction: combined,
           latencyMs,
@@ -2128,6 +2177,7 @@ export async function buildBootstrapContextPack(
 
     console.log(`[VTID-01225] Context bootstrap complete: ${latencyMs}ms, memory=${memoryContext.items.length}, recentTurns=${recentTurns.length}, profile=${profileResult.summary.length}ch (cached=${profileResult.cached})`);
 
+    storeVertexBootstrapCache(bootstrapCacheKey, { contextInstruction, latencyMs });
     return {
       contextInstruction,
       latencyMs,
@@ -2197,6 +2247,27 @@ async function executeLiveApiTool(
     AUTOPILOT_VOICE_TOOLS.has(toolName) ? 12_000 :
     3_000;
 
+  // BOOTSTRAP-ORB-LATENCY-PHASE2: read-only retrieval tools are cacheable
+  // within a session for a short window. The model blocks (mute) on every
+  // function_response, and it routinely re-queries the same memory/knowledge
+  // mid-conversation — each repeat used to cost another 300-800ms of dead
+  // air. Mutating tools (reminders, calendar, intents, navigation) are never
+  // cached. 120s TTL bounds staleness; the cache dies with the session.
+  const CACHEABLE_READONLY_TOOLS = new Set(['search_memory', 'search_knowledge']);
+  const TOOL_CACHE_TTL_MS = 120_000;
+  const TOOL_CACHE_MAX_ENTRIES = 50;
+  const cacheKey = CACHEABLE_READONLY_TOOLS.has(toolName)
+    ? `${toolName}:${JSON.stringify(args, Object.keys(args).sort()).toLowerCase()}`
+    : null;
+  if (cacheKey && session.toolResultCache) {
+    const hit = session.toolResultCache.get(cacheKey);
+    if (hit && Date.now() - hit.at < TOOL_CACHE_TTL_MS && hit.result.success) {
+      markVoiceLatency(session, 'tool_response', { tool: toolName, ms: Date.now() - startTime, success: true, cache: 'hit' });
+      console.log(`[BOOTSTRAP-ORB-LATENCY-PHASE2] Tool cache HIT: ${toolName} (saved a blocking retrieval round-trip)`);
+      return hit.result;
+    }
+  }
+
   const executeWithTimeout = async (): Promise<{ success: boolean; result: string; error?: string }> => {
     return Promise.race([
       executeLiveApiToolInner(session, toolName, args, startTime),
@@ -2214,6 +2285,43 @@ async function executeLiveApiTool(
   const elapsed = Date.now() - startTime;
   // Phase 1 W2: tool returned — close the tool_dispatch→tool_response interval.
   markVoiceLatency(session, 'tool_response', { tool: toolName, ms: elapsed, success: result.success });
+  // BOOTSTRAP-PRODUCT-ANALYTICS: tool-call outcome for the /admin/insights
+  // dashboards. Metadata only (tool name + latency + error code) — args and
+  // results never leave this function. Fire-and-forget.
+  if (session.identity?.tenant_id) {
+    const analyticsBase = {
+      tenant_id: session.identity.tenant_id,
+      user_id: session.identity.user_id,
+      session_id: session.sessionId,
+      conversation_id: session.sessionId,
+      source: 'orb' as const,
+      feature_key: 'assistant',
+    };
+    void trackServerEvent({
+      ...analyticsBase,
+      event_name: 'tool_called',
+      properties: { tool_name: toolName, tool_category: 'orb_live' },
+    });
+    void trackServerEvent({
+      ...analyticsBase,
+      event_name: result.success ? 'tool_call_succeeded' : 'tool_call_failed',
+      event_type: result.success ? 'assistant' : 'friction',
+      properties: {
+        tool_name: toolName,
+        duration_ms: elapsed,
+        ...(result.success ? {} : { error_code: (result.error || 'unknown').slice(0, 120) }),
+      },
+    });
+  }
+  // BOOTSTRAP-ORB-LATENCY-PHASE2: populate the read-only tool cache.
+  if (cacheKey && result.success) {
+    if (!session.toolResultCache) session.toolResultCache = new Map();
+    if (session.toolResultCache.size >= TOOL_CACHE_MAX_ENTRIES) {
+      const oldest = session.toolResultCache.keys().next().value;
+      if (oldest !== undefined) session.toolResultCache.delete(oldest);
+    }
+    session.toolResultCache.set(cacheKey, { at: Date.now(), result });
+  }
   if (elapsed > TOOL_TIMEOUT_MS) {
     console.warn(`[VTID-STREAM-KEEPALIVE] Tool ${toolName} timed out (${elapsed}ms > ${TOOL_TIMEOUT_MS}ms)`);
   }
@@ -4510,6 +4618,36 @@ async function executeLiveApiToolInner(
             tenant_id: lens.tenant_id ?? null,
             role: session.identity?.role ?? null,
             vitana_id: session.identity?.vitana_id ?? null,
+          },
+          supabase,
+        );
+      }
+
+      // ─── BOOTSTRAP-FIND-MATCH-VOICE — search-first "find me a match" ───
+      // Searches the live catalog and recommends matches (also posting so the
+      // user is discoverable) or posts the request after confirmation. Shared
+      // implementation in services/intent-find-match.ts via the registry, so
+      // Vertex and LiveKit run identical code.
+      case 'find_match': {
+        const SUPABASE_URL = process.env.SUPABASE_URL;
+        const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
+        if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
+          return { success: false, result: '', error: 'Supabase not configured' };
+        }
+        const { createClient } = await import('@supabase/supabase-js');
+        const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE, {
+          auth: { autoRefreshToken: false, persistSession: false },
+        });
+        const { dispatchOrbToolForVertex } = await import('../services/orb-tools-shared');
+        return await dispatchOrbToolForVertex(
+          'find_match',
+          args ?? {},
+          {
+            user_id: lens.user_id,
+            tenant_id: lens.tenant_id ?? null,
+            role: session.identity?.role ?? session.active_role ?? null,
+            vitana_id: session.identity?.vitana_id ?? null,
+            session_id: session.sessionId,
           },
           supabase,
         );
@@ -7228,12 +7366,23 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
     // stuck-connecting, no-speech bug). We drop the "ONE short utterance" clamp so
     // the whole lesson is spoken, but keep it a quote so audio stays reliable.
     const isGuidedTeach = !!(session as any).guidedTopicNarrationContent;
-    const guidedTeachTriggerByLang: Record<string, string> = {
-      en: `Say the following VERBATIM and IN FULL — word for word, then stop and listen. Do NOT summarize, shorten, paraphrase, translate, or add a greeting/question: "${safe}"`,
-      de: `Sage Folgendes WÖRTLICH und VOLLSTÄNDIG — Wort für Wort, dann höre auf und höre zu. NICHT zusammenfassen, kürzen, umformulieren, übersetzen oder eine Begrüßung/Frage hinzufügen: "${safe}"`,
+    // VTID-03295: the KB content is German (v1). For a GERMAN session, speak it
+    // verbatim (proven-reliable audio). For ANY OTHER language, instruct the model
+    // to TRANSLATE the lesson into the session language and speak only that — a
+    // bounded transformation that keeps audio reliable (unlike a long "teach"
+    // instruction, which goes text-only). A per-language KB later removes the
+    // translation step. Fixes "English user gets a German lesson".
+    const _guidedIsDe = (lang || 'en').toLowerCase().startsWith('de');
+    const _GUIDED_LANG_NAMES: Record<string, string> = {
+      en: 'English', de: 'German', es: 'Spanish', fr: 'French',
+      sr: 'Serbian', ar: 'Arabic', zh: 'Chinese', ru: 'Russian', it: 'Italian', pt: 'Portuguese',
     };
+    const _guidedLangName = _GUIDED_LANG_NAMES[(lang || 'en').slice(0, 2).toLowerCase()] || 'English';
+    const guidedTeachTrigger = _guidedIsDe
+      ? `Sage Folgendes WÖRTLICH und VOLLSTÄNDIG — Wort für Wort, dann höre auf und höre zu. NICHT zusammenfassen, kürzen, umformulieren oder eine Begrüßung/Frage hinzufügen: "${safe}"`
+      : `Say the following lesson to the user in fluent ${_guidedLangName}. The text may be in another language — translate it faithfully and completely into ${_guidedLangName} and speak ONLY that translation, then stop and listen. Do NOT summarize, shorten, add a greeting, or ask a question: "${safe}"`;
     const wakePrompt = isGuidedTeach
-      ? (guidedTeachTriggerByLang[lang] || guidedTeachTriggerByLang.en)
+      ? guidedTeachTrigger
       : (wakeTriggerByLang[lang] || wakeTriggerByLang.en);
     const linePreview = safe.length > 160 ? safe.slice(0, 160) + '...' : safe;
     const promptPreview = wakePrompt.length > 200 ? wakePrompt.slice(0, 200) + '...' : wakePrompt;
@@ -8017,6 +8166,7 @@ function startVoiceTurnLatency(session: GeminiLiveSession): void {
     actor_id: session.identity?.user_id,
     turn: session.latencyTurnIndex,
     provider: `vertex/${GEMINI_MODEL}`,
+    transport: session.clientWs ? 'websocket' : 'sse',
   });
   session.latencyTracker = tracker;
   tracker.mark('audio_in_first_byte');
@@ -11449,6 +11599,29 @@ router.post('/live/session/start', optionalAuth, async (req: AuthenticatedReques
   await handleLiveSessionStart(req, res);
 });
 
+/**
+ * BOOTSTRAP-ORB-LATENCY-PHASE2 — POST /live/session/prewarm
+ *
+ * Fire-and-forget bootstrap pre-warm for the Vertex session-start path.
+ * The widget calls this on init (page load, once authenticated) so that
+ * buildBootstrapContextPack's 400-800ms of Supabase fetches happen BEFORE
+ * the user taps the orb; the actual session start then hits the 5-min
+ * VERTEX_BOOTSTRAP_CACHE and the click-to-first-audio path skips the
+ * context-build cost entirely. Returns immediately — never blocks on the
+ * build. Anonymous callers are a no-op (no identity to key the cache on).
+ */
+router.post('/live/session/prewarm', optionalAuth, async (req: AuthenticatedRequest, res: Response) => {
+  // impact-allow-no-oasis — cache pre-fill fired on every page load; no state
+  // transition occurs (OASIS taxonomy: polling/heartbeat-class, never emitted).
+  const identity = req.identity;
+  if (!identity?.user_id || !identity?.tenant_id) {
+    return res.json({ ok: true, prewarm: 'skipped_anonymous' });
+  }
+  void buildBootstrapContextPack(identity, `prewarm-${Date.now()}`)
+    .catch((err) => console.warn('[BOOTSTRAP-ORB-LATENCY-PHASE2] prewarm failed (non-fatal):', err?.message || err));
+  return res.json({ ok: true, prewarm: 'started' });
+});
+
 
 /**
  * VTID-01155: POST /live/session/stop - Stop Gemini Live session
@@ -11775,6 +11948,7 @@ router.get('/live/stream', optionalAuth, async (req: AuthenticatedRequest, res: 
       actor_id: session.identity?.user_id,
       turn: 0,
       provider: `vertex/${VERTEX_LIVE_MODEL}`,
+      transport: 'sse',
     });
     const liveApiPromise = connectToLiveAPI(
       session,
@@ -12792,6 +12966,9 @@ async function handleWsClientMessage(clientSession: WsClientSession, message: Ws
         }
         sendGreetingPromptToLiveAPI(liveSession.upstreamWs, liveSession);
         liveSession.greetingDeferred = false;
+        // ORB-CONVERSATION-LATENCY: greeting dispatched upstream — remaining
+        // gap to audio_out_first_chunk is the model's first-token time.
+        liveSession.establishLatency?.mark('greeting_sent', { deferred: true });
       } else {
         console.log(`[VTID-AUDIO-READY] audio_ready received but greeting already sent or not deferred: session=${liveSession.sessionId}`);
       }
@@ -13106,11 +13283,31 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
   try {
     console.log(`[VTID-01222] Connecting to Vertex AI Live API for session ${sessionId}...`);
 
+    // ORB-CONVERSATION-LATENCY: turn-0 establishment tracker for the WS
+    // transport — same phase set as the SSE path (upstream_connected /
+    // context_awaited / setup_sent fire inside connectToLiveAPI), so the
+    // Phase 3a WS-vs-SSE comparison reads from one event stream. The chime is
+    // sent directly to the client socket, so the first chunk through this
+    // audio handler is the real greeting.
+    liveSession.establishLatency = new LatencyTracker({
+      session_id: sessionId,
+      surface: 'voice',
+      actor_id: liveSession.identity?.user_id,
+      turn: 0,
+      provider: `vertex/${VERTEX_LIVE_MODEL}`,
+      transport: 'websocket',
+    });
+
     const upstreamWs = await connectToLiveAPI(
       liveSession,
       // Audio response handler - forward to client via WebSocket
       // FIX: Send raw PCM for Web Audio API scheduled playback (eliminates gaps between chunks)
       (audioB64: string) => {
+        if (liveSession.establishLatency) {
+          liveSession.establishLatency.mark('audio_out_first_chunk', { source: 'greeting' });
+          void liveSession.establishLatency.finalize('success');
+          liveSession.establishLatency = null;
+        }
         if (clientWs.readyState === WebSocket.OPEN) {
           try {
             // Send raw PCM - client uses Web Audio API scheduling for seamless playback
@@ -13258,12 +13455,14 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
 
     // VTID-AUDIO-READY: Defer greeting until client sends audio_ready to avoid
     // truncating first words on mobile (race condition: greeting streams before
-    // client audio player is initialized). Fallback: send after 2s if no audio_ready.
+    // client audio player is initialized). Fallback: send after 1s if no audio_ready
+    // (BOOTSTRAP-ORB-LATENCY-PHASE1: 2s→1s — the ack normally arrives in <300ms;
+    // a 2s fallback only stretched session start for clients that never ack).
     if (liveSession.greetingDeferred) {
       console.log(`[VTID-AUDIO-READY] Greeting deferred — waiting for client audio_ready: session=${sessionId}`);
       setTimeout(() => {
         if (!liveSession.greetingSent && liveSession.active && liveSession.upstreamWs) {
-          console.log(`[VTID-AUDIO-READY] Fallback: sending chime + greeting after 2s timeout: session=${sessionId}`);
+          console.log(`[VTID-AUDIO-READY] Fallback: sending chime + greeting after 1s timeout: session=${sessionId}`);
           // VTID-INSTANT-FEEDBACK: Send chime before fallback greeting too
           try {
             const chimePcm = generateChimePcm();
@@ -13279,15 +13478,24 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
           }
           sendGreetingPromptToLiveAPI(liveSession.upstreamWs, liveSession);
           liveSession.greetingDeferred = false;
+          liveSession.establishLatency?.mark('greeting_sent', { deferred: true, fallback: true });
         }
-      }, 2000);
+      }, 1000);
     } else {
       // SSE path or non-deferred: send greeting immediately
       sendGreetingPromptToLiveAPI(upstreamWs, liveSession);
+      liveSession.establishLatency?.mark('greeting_sent', { deferred: false });
     }
 
   } catch (err: any) {
     console.error(`[VTID-01222] Failed to connect Live API for ${sessionId}:`, err.message);
+
+    // ORB-CONVERSATION-LATENCY: connect failed before any audio — close the
+    // establishment tracker as an error so it isn't left dangling.
+    if (liveSession.establishLatency) {
+      void liveSession.establishLatency.finalize('error', err?.message);
+      liveSession.establishLatency = null;
+    }
 
     sendWsMessage(clientWs, {
       type: 'session_started',
