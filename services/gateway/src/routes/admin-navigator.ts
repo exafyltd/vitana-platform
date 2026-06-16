@@ -565,7 +565,15 @@ router.get('/coverage', async (req: AuthenticatedRequest, res: Response) => {
   const platform: 'mobile' | 'desktop' = req.query.platform === 'desktop' ? 'desktop' : 'mobile';
 
   try {
-    const catalog: NavCatalogEntryWithRules[] = getCatalogForTenant(tenantId, platform) as NavCatalogEntryWithRules[];
+    // BOOTSTRAP-NAV-PLATFORM: the admin manages the DB-backed catalog for this
+    // platform. getCatalogForTenant also returns TS gap-fills (entries with no
+    // DB `id`) which are a *runtime* ORB navigation fallback, not editable rows
+    // — counting them would always inflate CATALOG ENTRIES to the full TS
+    // catalog size regardless of what's seeded. Scope coverage to DB-backed rows
+    // so the count + analyses match the editable list (Mobile = seeded rows,
+    // Desktop = its own rows).
+    const navigable: NavCatalogEntryWithRules[] = getCatalogForTenant(tenantId, platform) as NavCatalogEntryWithRules[];
+    const catalog: NavCatalogEntryWithRules[] = navigable.filter((e) => !!(e as { id?: string }).id);
     const catalogRoutes = new Set(catalog.map(e => e.route));
     const spaRoutes = SPA_ROUTES_FALLBACK.map(r => r.path);
     const spaSet = new Set(spaRoutes);
