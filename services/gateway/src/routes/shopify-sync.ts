@@ -26,12 +26,14 @@ router.post('/sync', async (req: Request, res: Response) => {
   if (!cfg) { res.status(400).json({ ok: false, error: 'SHOPIFY_STORE_DOMAIN not configured' }); return; }
   try {
     const result = await syncShopifyCatalog(supabase, cfg);
-    await supabase.from('oasis_events').insert({
-      id: randomUUID(), service: 'vcaop', source: 'vcaop',
-      type: 'vcaop.shopify.synced', topic: 'vcaop.shopify.synced',
-      status: 'success', message: `shopify sync ${result.upserted}/${result.fetched} products`,
-      metadata: result, created_at: new Date().toISOString(),
-    }).then(() => {}, () => {});
+    try {
+      await supabase.from('oasis_events').insert({
+        id: randomUUID(), service: 'vcaop', source: 'vcaop',
+        type: 'vcaop.shopify.synced', topic: 'vcaop.shopify.synced',
+        status: 'success', message: `shopify sync ${result.upserted}/${result.fetched} products`,
+        metadata: result, created_at: new Date().toISOString(),
+      });
+    } catch { /* never block the sync response on the audit write */ }
     res.json({ ok: true, data: result });
   } catch (e: any) {
     res.status(502).json({ ok: false, error: String((e && e.message) || e) });
