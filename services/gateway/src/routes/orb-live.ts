@@ -11619,6 +11619,22 @@ router.post('/live/session/prewarm', optionalAuth, async (req: AuthenticatedRequ
   }
   void buildBootstrapContextPack(identity, `prewarm-${Date.now()}`)
     .catch((err) => console.warn('[BOOTSTRAP-ORB-LATENCY-PHASE2] prewarm failed (non-fatal):', err?.message || err));
+  // ORB-BRAIN-CACHE (DEV-COMHU-0513): also warm the vitana-brain ORB context —
+  // the path the live session ACTUALLY uses (buildBootstrapContextPack above is
+  // the legacy path). Without this, a prewarmed tap still paid the full ~4.4s
+  // brain build that gates the Gemini setup. Community/orb is the dominant
+  // (and complaining) cohort; other roles warm on their first tap. Flag-gated
+  // (no-op when FEATURE_ORB_BRAIN_CACHE_ENV is off).
+  void import('../services/vitana-brain-cache')
+    .then(({ warmBrainCache }) =>
+      warmBrainCache({
+        user_id: identity.user_id,
+        tenant_id: identity.tenant_id || 'default',
+        role: 'community',
+        channel: 'orb',
+      }),
+    )
+    .catch(() => { /* best-effort warm */ });
   return res.json({ ok: true, prewarm: 'started' });
 });
 
