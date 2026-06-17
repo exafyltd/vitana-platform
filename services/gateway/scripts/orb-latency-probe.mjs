@@ -30,6 +30,14 @@ const ANON_KEY = process.env.SUPABASE_ANON_KEY || '';
 const EMAIL = process.env.ORB_EMAIL || 'e2e-test@vitana.dev';
 const PASSWORD = process.env.ORB_PASSWORD || '';
 const LANG = process.env.ORB_LANG || 'de';
+// Transport: 'sse' (default, the legacy probe) or 'ws' (exercises the WebSocket
+// greeting path + the DEV-COMHU-0513 prebuffer gate). In WS mode we wait
+// AUDIO_READY_DELAY_MS after session_started before sending audio_ready, to
+// simulate the client's AudioContext-unlock time. With the prebuffer flag ON,
+// model generation overlaps that delay, so raising the delay should NOT raise
+// the first-greeting time; with it OFF, first-greeting moves out ~linearly.
+const TRANSPORT = (process.env.TRANSPORT || 'sse').toLowerCase();
+const AUDIO_READY_DELAY_MS = Number(process.env.AUDIO_READY_DELAY_MS || 300);
 
 const t0Wall = Date.now();
 const marks = [];
@@ -140,4 +148,72 @@ async function run() {
   else console.log('  NO GREETING within 25s — first-greeting path stalled.');
 }
 
-run().catch((e) => { console.error('PROBE FAILED:', e.message); process.exit(1); });
+// ---------------------------------------------------------------------------
+// WS mode (DEV-COMHU-0513) — exercises the WebSocket greeting path and the
+// flag-gated greeting prebuffer. Node 18+ ships a global WebSocket.
+// ---------------------------------------------------------------------------
+async function runWs() {
+  console.log(`ORB latency probe [WS] → ${GW} (lang=${LANG}, audio_ready_delay=${AUDIO_READY_DELAY_MS}ms)`);
+  const token = await getToken();
+  mark('auth_ok');
+
+  const wsUrl = `${GW.replace(/^http/, 'ws')}/api/v1/orb/live/ws?token=${encodeURIComponent(token)}`;
+  const ws = new WebSocket(wsUrl);
+  let chimeSeen = false;
+  let greetingSeen = false;
+  let audioReadySent = false;
+
+  await new Promise((resolve, reject) => {
+    const deadline = setTimeout(() => { reject(new Error('WS: no greeting within 25s')); }, 25_000);
+    const send = (obj) => ws.send(JSON.stringify(obj));
+
+    ws.addEventListener('open', () => {
+      mark('ws_open');
+      send({ type: 'start', lang: LANG, voice_style: 'friendly, calm', response_modalities: ['audio', 'text'], current_route: '/' });
+    });
+    ws.addEventListener('error', (e) => { clearTimeout(deadline); reject(new Error(`WS error: ${e?.message || e}`)); });
+    ws.addEventListener('close', () => { if (!greetingSeen) { clearTimeout(deadline); reject(new Error('WS closed before greeting')); } });
+
+    ws.addEventListener('message', (ev) => {
+      let msg; try { msg = JSON.parse(typeof ev.data === 'string' ? ev.data : ev.data.toString()); } catch { return; }
+      const isAudio = msg.type === 'audio' || !!msg.data_b64;
+      const isChime = isAudio && msg.source === 'activation_chime';
+      if (msg.type === 'session_started') {
+        mark(`session_started (id=${msg.session_id})`);
+        // Simulate AudioContext unlock latency, then ack readiness.
+        setTimeout(() => {
+          if (audioReadySent) return;
+          audioReadySent = true;
+          mark('audio_ready_sent');
+          send({ type: 'audio_ready' });
+        }, AUDIO_READY_DELAY_MS);
+      } else if (isChime && !chimeSeen) {
+        chimeSeen = true;
+        mark(`chime (activation_chime, bytes=${(msg.data_b64 || '').length})`);
+      } else if (isAudio && !isChime && !greetingSeen) {
+        greetingSeen = true;
+        mark(`FIRST_GREETING (type=${msg.type}, bytes=${(msg.data_b64 || '').length})`);
+        clearTimeout(deadline);
+        try { ws.close(); } catch { /* noop */ }
+        resolve();
+      } else if (msg.type && !isAudio) {
+        mark(`ws:${msg.type}`);
+      }
+    });
+  });
+
+  console.log('\n=== BREAKDOWN [WS] ===');
+  const get = (n) => (marks.find((m) => m[0].startsWith(n)) || [, null])[1];
+  const sAuth = get('auth_ok'), sStart = get('session_started'), sReady = get('audio_ready_sent');
+  const sChime = get('chime'), sGreet = get('FIRST_GREETING');
+  if (sStart != null) console.log(`  start → session_started:      ${sStart - get('ws_open')}ms`);
+  if (sReady != null && sStart != null) console.log(`  session_started → audio_ready: ${sReady - sStart}ms  (simulated AudioContext unlock)`);
+  if (sChime != null && sReady != null) console.log(`  audio_ready → chime:          ${sChime - sReady}ms`);
+  if (sGreet != null && sReady != null) console.log(`  audio_ready → FIRST greeting: ${sGreet - sReady}ms  ← prebuffer ON: ~unchanged as delay grows; OFF: grows with delay`);
+  if (sGreet != null && sStart != null) console.log(`  session_started → greeting:   ${sGreet - sStart}ms  ← prebuffer ON: flat vs delay; OFF: ≈ delay + gen`);
+  if (sGreet != null && sAuth != null) console.log(`  TOTAL (auth→first greeting):  ${sGreet - sAuth}ms`);
+  else console.log('  NO GREETING — WS first-greeting path stalled.');
+}
+
+const main = TRANSPORT === 'ws' ? runWs : run;
+main().catch((e) => { console.error('PROBE FAILED:', e.message); process.exit(1); });

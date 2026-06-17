@@ -46,6 +46,7 @@ import { randomUUID } from 'crypto';
 import { TextToSpeechClient, protos } from '@google-cloud/text-to-speech';
 import { processWithGemini, setThreadIdentity } from '../services/gemini-operator';
 import { emitOasisEvent } from '../services/oasis-event-service';
+import { isFeatureLive } from '../services/feature-flags';
 // BOOTSTRAP-PRODUCT-ANALYTICS: server-side product analytics (metadata only)
 import { trackServerEvent, detectTopic } from '../services/product-analytics/track-server';
 // VTID-03250: prefer the browser's own timezone over rate-limit-prone geo-IP
@@ -991,6 +992,17 @@ export interface GeminiLiveSession {
   // VTID-AUDIO-READY: Whether greeting is deferred until client sends audio_ready.
   // Used by WebSocket (mobile) path to avoid greeting truncation from race condition.
   greetingDeferred: boolean;
+  // DEV-COMHU-0513 (greeting pre-buffer, FEATURE_ORB_GREETING_PREBUFFER_ENV):
+  // When true, the upstream greeting prompt has already been dispatched (so model
+  // generation runs DURING the client's AudioContext unlock instead of after it),
+  // and the resulting greeting audio is held server-side in bufferedGreetingChunks
+  // until the client signals audio_ready (or a fallback timer fires). This
+  // decouples "start generating" from "client ready to play", hiding the model's
+  // first-token latency behind the unlock the legacy path serially waits for.
+  prebufferGreetingAudio?: boolean;
+  bufferedGreetingChunks?: string[];
+  // Fallback timer that flushes held greeting audio if the client never acks.
+  greetingPrebufferFallbackTimer?: ReturnType<typeof setTimeout>;
   // VTID-01224-FIX: Last session info for context-aware greeting
   lastSessionInfo?: { time: string; wasFailure: boolean } | null;
   // VTID-WATCHDOG: Response watchdog timer — fires when model doesn't respond in time
@@ -1580,6 +1592,66 @@ function generateChimePcm(): string {
 
 // Pre-generate at module load
 generateChimePcm();
+
+// DEV-COMHU-0513 — greeting pre-buffer fallback. If the client never sends
+// audio_ready (e.g. an old widget build, or a stalled AudioContext), flush the
+// held greeting audio anyway so the user is never left in silence. Chosen >
+// typical model first-token time so a healthy session always flushes on the
+// real audio_ready, not the timer.
+const GREETING_PREBUFFER_FALLBACK_MS = 1500;
+
+/**
+ * DEV-COMHU-0513 — flush any greeting audio held back by the pre-buffer gate.
+ *
+ * Sends the activation chime first (instant feedback, same as the legacy paths),
+ * then replays the buffered greeting chunks in order, then disables the hold so
+ * subsequent chunks forward live. Idempotent: a no-op once the hold is cleared,
+ * so the audio_ready ack and the fallback timer can both call it safely.
+ */
+function flushPrebufferedGreeting(
+  session: GeminiLiveSession,
+  clientWs: WebSocket,
+  reason: 'audio_ready' | 'fallback',
+): void {
+  if (!session.prebufferGreetingAudio) return; // already flushed (or never armed)
+  session.prebufferGreetingAudio = false;
+  if (session.greetingPrebufferFallbackTimer) {
+    clearTimeout(session.greetingPrebufferFallbackTimer);
+    session.greetingPrebufferFallbackTimer = undefined;
+  }
+  const chunks = session.bufferedGreetingChunks || [];
+  session.bufferedGreetingChunks = [];
+  if (clientWs.readyState !== WebSocket.OPEN) return;
+  try {
+    // Instant feedback chime, mirroring the legacy deferred/audio_ready paths.
+    sendWsMessage(clientWs, {
+      type: 'audio',
+      data_b64: generateChimePcm(),
+      mime: 'audio/pcm;rate=24000',
+      chunk_number: session.audioOutChunks++,
+      source: 'activation_chime',
+    });
+  } catch (err) {
+    console.warn('[GREETING-PREBUFFER] Failed to send chime on flush:', err);
+  }
+  for (const data_b64 of chunks) {
+    if (clientWs.readyState !== WebSocket.OPEN) break;
+    try {
+      sendWsMessage(clientWs, {
+        type: 'audio',
+        data_b64,
+        mime: 'audio/pcm;rate=24000',
+        chunk_number: session.audioOutChunks,
+      });
+    } catch (err) {
+      console.error('[GREETING-PREBUFFER] Failed to flush buffered chunk:', err);
+      break;
+    }
+  }
+  console.log(
+    `[GREETING-PREBUFFER] Flushed ${chunks.length} held greeting chunk(s) on ${reason} for session ${session.sessionId}`,
+  );
+}
 
 // BOOTSTRAP-ORB-MOVE: Phase 2 (move-only) — constants + greeting phrase pool
 // that previously lived here are now imported from the orb/ tree at the top
@@ -12985,6 +13057,14 @@ async function handleWsClientMessage(clientSession: WsClientSession, message: Ws
         // ORB-CONVERSATION-LATENCY: greeting dispatched upstream — remaining
         // gap to audio_out_first_chunk is the model's first-token time.
         liveSession.establishLatency?.mark('greeting_sent', { deferred: true });
+      } else if (liveSession.prebufferGreetingAudio) {
+        // DEV-COMHU-0513 — greeting pre-buffer: generation already started at
+        // connect; the client is now ready, so release the held greeting audio
+        // (chime first, then buffered chunks). This is the common case — the ack
+        // typically arrives before the model has produced its first chunk, so the
+        // buffer is usually empty and greeting audio then forwards live.
+        console.log(`[GREETING-PREBUFFER] Client audio_ready received — flushing held greeting for session ${liveSession.sessionId}`);
+        flushPrebufferedGreeting(liveSession, clientWs, 'audio_ready');
       } else {
         console.log(`[VTID-AUDIO-READY] audio_ready received but greeting already sent or not deferred: session=${liveSession.sessionId}`);
       }
@@ -13324,6 +13404,17 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
           void liveSession.establishLatency.finalize('success');
           liveSession.establishLatency = null;
         }
+        // DEV-COMHU-0513 — greeting pre-buffer: when the greeting was dispatched
+        // early (before the client's audio_ready), hold its audio server-side
+        // instead of forwarding, so the first words can't arrive before the
+        // client's player is unlocked. flushPrebufferedGreeting() replays these
+        // in order on audio_ready (or the fallback timer). Only greeting-era
+        // audio is held; once flushed, prebufferGreetingAudio is false and all
+        // later turns forward live with zero overhead.
+        if (liveSession.prebufferGreetingAudio) {
+          (liveSession.bufferedGreetingChunks ||= []).push(audioB64);
+          return;
+        }
         if (clientWs.readyState === WebSocket.OPEN) {
           try {
             // Send raw PCM - client uses Web Audio API scheduling for seamless playback
@@ -13474,7 +13565,26 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
     // client audio player is initialized). Fallback: send after 1s if no audio_ready
     // (BOOTSTRAP-ORB-LATENCY-PHASE1: 2s→1s — the ack normally arrives in <300ms;
     // a 2s fallback only stretched session start for clients that never ack).
-    if (liveSession.greetingDeferred) {
+    if (liveSession.greetingDeferred && isFeatureLive('ORB_GREETING_PREBUFFER')) {
+      // DEV-COMHU-0513 — greeting pre-buffer (flag-gated). Instead of waiting for
+      // audio_ready before we even ASK the model for the greeting (which serially
+      // stacks model generation AFTER the client's AudioContext unlock), dispatch
+      // the greeting prompt NOW so generation overlaps the unlock, and hold the
+      // resulting audio until audio_ready (or the fallback timer) so first words
+      // still can't arrive before the client's player is ready.
+      console.log(`[GREETING-PREBUFFER] Dispatching greeting early + holding audio until audio_ready: session=${sessionId}`);
+      liveSession.prebufferGreetingAudio = true;
+      liveSession.bufferedGreetingChunks = [];
+      liveSession.greetingDeferred = false;
+      sendGreetingPromptToLiveAPI(upstreamWs, liveSession);
+      liveSession.establishLatency?.mark('greeting_sent', { prebuffer: true });
+      liveSession.greetingPrebufferFallbackTimer = setTimeout(() => {
+        if (liveSession.active && liveSession.prebufferGreetingAudio) {
+          console.log(`[GREETING-PREBUFFER] Fallback flush after ${GREETING_PREBUFFER_FALLBACK_MS}ms (no audio_ready): session=${sessionId}`);
+          flushPrebufferedGreeting(liveSession, clientWs, 'fallback');
+        }
+      }, GREETING_PREBUFFER_FALLBACK_MS);
+    } else if (liveSession.greetingDeferred) {
       console.log(`[VTID-AUDIO-READY] Greeting deferred — waiting for client audio_ready: session=${sessionId}`);
       setTimeout(() => {
         if (!liveSession.greetingSent && liveSession.active && liveSession.upstreamWs) {
