@@ -44,6 +44,7 @@ interface NavCatalogRow {
   access: 'public' | 'authenticated';
   anonymous_safe: boolean;
   priority: number;
+  platform?: 'mobile' | 'desktop';
   related_kb_topics: unknown;
   context_rules: unknown;
   override_triggers: unknown;
@@ -120,21 +121,29 @@ const REFRESH_INTERVAL_MS = 60_000;
  * so the Navigator never goes dark.
  */
 export function getCatalogForTenant(
-  tenantId: string | null | undefined
+  tenantId: string | null | undefined,
+  platform: 'mobile' | 'desktop' = 'mobile'
 ): NavCatalogEntryWithRules[] {
+  // BOOTSTRAP-NAV-PLATFORM: scope to one MAXINA surface. Entries without an
+  // explicit platform (the compile-time NAVIGATION_CATALOG / gap-filled rows)
+  // are the Mobile catalog, so they match platform='mobile'. Defaulting to
+  // 'mobile' keeps every existing caller (ORB navigation) behaving as before.
+  const onPlatform = (list: NavCatalogEntryWithRules[]) =>
+    list.filter((e) => ((e.platform as string) || 'mobile') === platform);
+
   if (!dbLoadedAtLeastOnce) {
-    return NAVIGATION_CATALOG as NavCatalogEntryWithRules[];
+    return onPlatform(NAVIGATION_CATALOG as NavCatalogEntryWithRules[]);
   }
 
   const shared = catalogCache.get(SHARED_KEY) || [];
-  if (!tenantId) return shared;
+  if (!tenantId) return onPlatform(shared);
 
   const override = catalogCache.get(tenantId);
-  if (!override || override.length === 0) return shared;
+  if (!override || override.length === 0) return onPlatform(shared);
 
   // Overlay: tenant rows win per screen_id. override already contains shared+delta
   // (built inside refreshCatalogCache), so just return it.
-  return override;
+  return onPlatform(override);
 }
 
 /**
@@ -216,7 +225,7 @@ export async function refreshNavCatalogCache(): Promise<void> {
       const { data: rows, error: rowsErr } = await supabase
         .from('nav_catalog')
         .select(
-          'id, screen_id, tenant_id, route, category, access, anonymous_safe, priority, related_kb_topics, context_rules, override_triggers, is_active, created_at, updated_at, updated_by'
+          'id, screen_id, tenant_id, route, category, access, anonymous_safe, priority, platform, related_kb_topics, context_rules, override_triggers, is_active, created_at, updated_at, updated_by'
         )
         .eq('is_active', true);
 
@@ -282,6 +291,7 @@ export async function refreshNavCatalogCache(): Promise<void> {
           access: raw.access,
           anonymous_safe: !!raw.anonymous_safe,
           priority: raw.priority || 0,
+          platform: raw.platform === 'desktop' ? 'desktop' : 'mobile',
           related_kb_topics: Array.isArray(raw.related_kb_topics) ? raw.related_kb_topics as string[] : [],
           i18n,
           tenant_id: raw.tenant_id,
