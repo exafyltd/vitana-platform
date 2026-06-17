@@ -106,6 +106,11 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const vitanaIndexRouter = require('./routes/vitana-index').default;
   // VTID-03255: Journey Foundation read path — shared snapshot for voice + Meine Reise + /autopilot.
   const journeyFoundationRouter = require('./routes/journey-foundation').default;
+  // VTID-03276: Guided Journey durable mode/progress state (guided|full UX shell).
+  const guidedJourneyRouter = require('./routes/guided-journey').default;
+  // VTID-03277: Guided Journey checklist curriculum — admin editor + public read.
+  const journeyChecklistAdminRouter = require('./routes/journey-checklist-admin').default;
+  const journeyChecklistRouter = require('./routes/journey-checklist').default;
   // VTID-03152 Slice B + J: unified my-journey payload + landing-route resolver.
   const myJourneyRouter = require('./routes/my-journey').default;
   const goalPlannerRouter = require('./routes/goal-planner').default;
@@ -286,6 +291,10 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const { triageAgentRouter } = require('./routes/triage-agent');
   // VTID-01148: Approvals API v1 — Pending Queue + Count + Approve/Reject
   const approvalsRouter = require('./routes/approvals').default;
+  // VCAOP: Vitanaland Commerce & Account-Operations Platform API (shop/wallet/onboarding)
+  const vcaopRouter = require('./routes/vcaop').default;
+  // VCAOP: public, key-verified affiliate postback receiver (Admitad) — no user auth
+  const vcaopPostbackRouter = require('./routes/vcaop-postback').default;
   // VTID-01169: Deploy → Ledger Terminalization (terminalize endpoint + repair job)
   const vtidTerminalizeRouter = require('./routes/vtid-terminalize').default;
   // VTID-01157: Supabase JWT Auth Middleware + /api/v1/auth/me endpoint
@@ -646,6 +655,12 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   // VTID-01148: Approvals API v1 — Pending Queue + Count + Approve/Reject (Gateway + OASIS-backed)
   mountRouterSync(app, '/api/v1/approvals', approvalsRouter, { owner: 'approvals-api' });
 
+  // VCAOP: public affiliate postback receiver — MUST mount before the authed vcaop
+  // router so /api/v1/vcaop/postback/* resolves to the key-verified public handler.
+  mountRouterSync(app, '/api/v1/vcaop/postback', vcaopPostbackRouter, { owner: 'vcaop-postback' });
+  // VCAOP: Vitanaland Commerce API — providers/affiliate-programs/shop/wallet/onboarding
+  mountRouterSync(app, '/api/v1/vcaop', vcaopRouter, { owner: 'vcaop' });
+
   // Email Intake — Receives emails from Cloudflare Email Worker, creates scheduled tasks
   mountRouterSync(app, '/api/v1/intake', emailIntakeRouter, { owner: 'email-intake' });
 
@@ -685,6 +700,11 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   // Vitana Index — celebrate() analytics ingestion (light-weight, fire-and-forget)
   const { analyticsCelebrateRouter } = require('./routes/analytics-celebrate');
   mountRouterSync(app, '/api/v1/analytics', analyticsCelebrateRouter, { owner: 'analytics-celebrate' });
+
+  // BOOTSTRAP-PRODUCT-ANALYTICS: product analytics batch ingestion (clickstream,
+  // Assistant usage, features, interests, friction) — backs /admin/insights/*
+  const productAnalyticsRouter = require('./routes/product-analytics').default;
+  mountRouterSync(app, '/api/v1/analytics', productAnalyticsRouter, { owner: 'product-analytics' });
 
   // VTID-0532: Autopilot Task Extractor & Planner Handoff
   mountRouterSync(app, '/api/v1/autopilot', autopilotRouter, { owner: 'autopilot' });
@@ -743,6 +763,13 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
 
   // VTID-03255: Journey Foundation — shared goal-gated, dual-axis journey snapshot.
   mountRouterSync(app, '/api/v1/journey-foundation', journeyFoundationRouter, { owner: 'journey-foundation' });
+
+  // VTID-03276: Guided Journey durable mode/progress state (additive onboarding UX layer).
+  mountRouterSync(app, '/api/v1/journey', guidedJourneyRouter, { owner: 'guided-journey' });
+
+  // VTID-03277: Guided Journey checklist curriculum — admin editor + public read.
+  mountRouterSync(app, '/api/v1/admin/journey-checklist', journeyChecklistAdminRouter, { owner: 'journey-checklist-admin' });
+  mountRouterSync(app, '/api/v1/journey-checklist', journeyChecklistRouter, { owner: 'journey-checklist' });
 
   // VTID-03152: journey-foundation endpoints.
   mountRouterSync(app, '/api/v1/my-journey', myJourneyRouter, { owner: 'my-journey' });
@@ -1134,6 +1161,10 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   mountRouterSync(app, '/api/v1/admin/tenants/:tenantId/kpis', tenantKpisRouter, { owner: 'tenant-kpis' });
   // BOOTSTRAP-ADMIN-BB-CC: Admin insights
   mountRouterSync(app, '/api/v1/admin/tenants/:tenantId/insights', tenantInsightsRouter, { owner: 'tenant-insights' });
+  // BOOTSTRAP-PRODUCT-ANALYTICS: admin product analytics reads (summary,
+  // assistant, journeys, features, interests, raw event feed)
+  const tenantProductAnalyticsRouter = require('./routes/tenant-admin/product-analytics').default;
+  mountRouterSync(app, '/api/v1/admin/tenants/:tenantId/analytics', tenantProductAnalyticsRouter, { owner: 'tenant-product-analytics' });
   // BOOTSTRAP-ADMIN-GG: Tenant Health Index
   mountRouterSync(app, '/api/v1/admin/tenants/:tenantId/health-index', tenantHealthIndexRouter, { owner: 'tenant-health-index' });
   // Settings — tenant profile, branding, feature flags
@@ -1458,6 +1489,14 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
         console.log('☀️ Morning brief scheduler initialized (VTID-01949)');
       } catch (error) {
         console.warn('⚠️ Morning brief scheduler initialization failed (non-fatal):', error);
+      }
+
+      // BOOTSTRAP-PRODUCT-ANALYTICS: daily product analytics rollup + retention purge
+      try {
+        const { startProductAnalyticsRollupScheduler } = require('./services/product-analytics/rollup');
+        startProductAnalyticsRollupScheduler();
+      } catch (error) {
+        console.warn('⚠️ Product analytics rollup scheduler initialization failed (non-fatal):', error);
       }
 
       // VTID-01185: Initialize autonomous self-improvement engine

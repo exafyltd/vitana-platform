@@ -71,6 +71,11 @@ const VALID_ACCESS = ['public', 'authenticated'] as const;
 function validateCatalogPayload(body: any, { isPartial }: { isPartial: boolean }): string | null {
   if (!body || typeof body !== 'object') return 'PAYLOAD_REQUIRED';
 
+  // BOOTSTRAP-NAV-PLATFORM: platform, when provided, must be a known surface.
+  if (body.platform != null && body.platform !== 'mobile' && body.platform !== 'desktop') {
+    return "platform must be 'mobile' or 'desktop'";
+  }
+
   if (!isPartial) {
     if (typeof body.screen_id !== 'string' || body.screen_id.trim() === '') {
       return 'screen_id required';
@@ -152,12 +157,15 @@ router.get('/catalog', async (req: AuthenticatedRequest, res: Response) => {
   const supabase = getSupabase();
   if (!supabase) return res.status(500).json({ ok: false, error: 'SUPABASE_UNAVAILABLE' });
 
-  const { tenant_id, category, q, lang: langQ, include_inactive } = req.query;
+  const { tenant_id, category, q, lang: langQ, include_inactive, platform } = req.query;
 
   try {
     let query = supabase
       .from('nav_catalog')
-      .select('id, screen_id, tenant_id, route, category, access, anonymous_safe, priority, related_kb_topics, context_rules, override_triggers, is_active, created_at, updated_at, updated_by');
+      .select('id, screen_id, tenant_id, route, category, access, anonymous_safe, priority, platform, related_kb_topics, context_rules, override_triggers, is_active, created_at, updated_at, updated_by');
+
+    // BOOTSTRAP-NAV-PLATFORM: scope to one MAXINA catalog (Mobile by default).
+    query = query.eq('platform', platform === 'desktop' ? 'desktop' : 'mobile');
 
     if (include_inactive !== 'true') query = query.eq('is_active', true);
     if (category && typeof category === 'string') query = query.eq('category', category);
@@ -263,6 +271,8 @@ router.post('/catalog', async (req: AuthenticatedRequest, res: Response) => {
       access: req.body.access,
       anonymous_safe: !!req.body.anonymous_safe,
       priority: req.body.priority || 0,
+      // BOOTSTRAP-NAV-PLATFORM: which catalog this screen belongs to (Mobile default).
+      platform: req.body.platform === 'desktop' ? 'desktop' : 'mobile',
       related_kb_topics: req.body.related_kb_topics || [],
       context_rules: req.body.context_rules || {},
       override_triggers: req.body.override_triggers || [],
@@ -551,10 +561,26 @@ router.get('/coverage', async (req: AuthenticatedRequest, res: Response) => {
   if (!supabase) return res.status(500).json({ ok: false, error: 'SUPABASE_UNAVAILABLE' });
 
   const tenantId = typeof req.query.tenant_id === 'string' ? req.query.tenant_id : null;
+  // BOOTSTRAP-NAV-PLATFORM: coverage is per-catalog (Mobile by default).
+  const platform: 'mobile' | 'desktop' = req.query.platform === 'desktop' ? 'desktop' : 'mobile';
 
   try {
-    const catalog: NavCatalogEntryWithRules[] = getCatalogForTenant(tenantId) as NavCatalogEntryWithRules[];
-    const catalogRoutes = new Set(catalog.map(e => e.route));
+    // BOOTSTRAP-NAV-PLATFORM: the admin manages the DB-backed catalog for this
+    // platform. getCatalogForTenant also returns TS gap-fills (entries with no
+    // DB `id`) which are a *runtime* ORB navigation fallback, not editable rows
+    // — counting them would always inflate CATALOG ENTRIES to the full TS
+    // catalog size regardless of what's seeded. Scope coverage to DB-backed rows
+    // so the count + analyses match the editable list (Mobile = seeded rows,
+    // Desktop = its own rows).
+    const navigable: NavCatalogEntryWithRules[] = getCatalogForTenant(tenantId, platform) as NavCatalogEntryWithRules[];
+    const catalog: NavCatalogEntryWithRules[] = navigable.filter((e) => !!(e as { id?: string }).id);
+    // BOOTSTRAP-NAV-PLATFORM: a catalog route may carry a query string or hash
+    // (mode-pills like /health?mode=supplements, /comm/events-meetups?tab=hot).
+    // The SPA route list stores base paths only, so compare on the base path —
+    // otherwise every parameterised pill is falsely flagged "broken" and leaves
+    // its base route looking "uncovered".
+    const baseRoute = (r: string) => r.split(/[?#]/)[0];
+    const catalogRoutes = new Set(catalog.map(e => baseRoute(e.route)));
     const spaRoutes = SPA_ROUTES_FALLBACK.map(r => r.path);
     const spaSet = new Set(spaRoutes);
 
@@ -566,11 +592,7 @@ router.get('/coverage', async (req: AuthenticatedRequest, res: Response) => {
       });
 
     const broken_catalog_routes = catalog
-      .filter(e => {
-        // Allow params like /discover/product/:id → match against the matching pattern
-        // by stripping trailing params. The fallback list stores the literal patterns.
-        return !spaSet.has(e.route);
-      })
+      .filter(e => !spaSet.has(baseRoute(e.route)))
       .map(e => ({ screen_id: e.screen_id, route: e.route, title: e.i18n.en?.title || e.screen_id }));
 
     // Dead triggers: screens that never produced a catalog match in the last
@@ -597,6 +619,7 @@ router.get('/coverage', async (req: AuthenticatedRequest, res: Response) => {
     return res.json({
       ok: true,
       tenant_id: tenantId,
+      platform,
       summary: {
         catalog_size: catalog.length,
         spa_route_count: spaRoutes.length,

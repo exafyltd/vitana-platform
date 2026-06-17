@@ -56,6 +56,9 @@ import {
   triggerDowngrade,
 } from '../../../services/voice-quota-guard';
 import { recordPaywallEvent } from '../../../services/entitlement-service';
+// ORB-FAST-START Phase 2: defer wake-brief + journey off the session/start
+// response path (flag-gated; default off → legacy inline behavior).
+import { shouldDeferWakeWork, composeContextReady } from './orb-fast-start';
 
 // VTID-03107: per-session voice-meter intervals. Keyed by session_id so cleanup
 // in handleLiveSessionStop can tear down without touching GeminiLiveSession's type.
@@ -709,9 +712,38 @@ export async function handleLiveSessionStart(
   // awaited by connectToLiveAPI's ws.on('open') handler.
   let contextReadyPromise: Promise<void> | undefined;
 
+  // VTID-03294: a Guided-Journey topic tap needs ZERO context — Vitana just
+  // picks up the KB lesson and speaks it. Detect it here so we can skip the
+  // heavy Brain/memory/history/admin bootstrap (the 7-10s first-audio delay).
+  const isGuidedTopicSession =
+    typeof (body as any).guided_topic_id === 'string' && !!(body as any).guided_topic_id;
+
   if (isAnonymousSession) {
     contextBootstrapSkippedReason = 'anonymous_session';
     console.log(`[VTID-ANON] Anonymous session ${sessionId} — skipping memory, tools, lastSessionInfo. Context: city=${clientContext.city || 'unknown'}`);
+  } else if (isGuidedTopicSession && bootstrapIdentity) {
+    // VTID-03294: GUIDED FAST PATH. The lesson (spoken verbatim) + the GUIDE-MODE
+    // (TEACH) block carry everything; the model only needs a short persona. We
+    // skip the Brain context, memory, last-session, role lookup, admin briefing
+    // and Autopilot offer entirely so first audio is ~real-time instead of
+    // 7-10s. contextReadyPromise resolves in a microtask, so the setup-message
+    // await in connectToLiveAPI is ~0ms.
+    contextBootstrapSkippedReason = 'guided_topic_minimal';
+    sseActiveRole = 'community';
+    const isDe = (lang || 'en').toLowerCase().startsWith('de');
+    const minimalGuidedContext = isDe
+      ? 'Du bist Vitana — die warme, ruhige Stimme der Vitanaland-Langlebigkeits-Community. Du stellst gerade ein Thema aus der geführten Reise vor und erklärst es. Halte dich an die dir vorgegebene Lektion.'
+      : 'You are Vitana — the warm, calm voice of the Vitanaland longevity community. You are introducing and teaching one Guided Journey topic. Stay on the lesson you are given.';
+    contextReadyPromise = Promise.resolve().then(() => {
+      session.active_role = 'community';
+      session.lastSessionInfo = null;
+      session.contextInstruction = minimalGuidedContext;
+      session.contextPack = undefined;
+      session.contextBootstrapLatencyMs = 0;
+      session.contextBootstrapSkippedReason = 'guided_topic_minimal';
+      session.contextBootstrapBuiltAt = Date.now();
+    });
+    console.log(`[VTID-03294] Guided-topic session ${sessionId}: minimal context (skipped heavy bootstrap) for fast first audio`);
   } else if (bootstrapIdentity) {
     const usingDevFallback = bootstrapIdentity.user_id === DEV_IDENTITY.USER_ID;
     console.log(`[VTID-01224] Building bootstrap context for SSE session ${sessionId} user=${bootstrapIdentity.user_id.substring(0, 8)}...${usingDevFallback ? ' (DEV_IDENTITY fallback)' : ''}`);
@@ -725,14 +757,14 @@ export async function handleLiveSessionStart(
         ? (async () => {
             const brainStart = Date.now();
             try {
-              const { buildBrainSystemInstruction } = await import('../../../services/vitana-brain');
+              const { buildBrainSystemInstructionCached } = await import('../../../services/vitana-brain-cache');
               const bodyRoute = typeof (body as any).current_route === 'string' ? (body as any).current_route : '';
               const brainRole = clientContext.isMobile
                 ? 'community'
                 : bodyRoute.startsWith('/command-hub')
                   ? 'developer'
                   : ((bootstrapIdentity as any).active_role || 'community');
-              const { instruction, contextPack: cp } = await buildBrainSystemInstruction({
+              const { instruction, contextPack: cp } = await buildBrainSystemInstructionCached({
                 user_id: bootstrapIdentity.user_id,
                 tenant_id: bootstrapIdentity.tenant_id || 'default',
                 role: brainRole,
@@ -907,6 +939,12 @@ export async function handleLiveSessionStart(
     journey_focus_step: typeof (body as any).journey_focus_step === 'string'
       ? (body as any).journey_focus_step
       : undefined,
+    // VTID-03290: Guided Journey catalog topic tapped. Set when the user opened
+    // the orb by tapping a session/topic; the guided-topic-narration provider
+    // leads turn-1 and teaches that topic from the published KB.
+    guided_topic_id: typeof (body as any).guided_topic_id === 'string'
+      ? (body as any).guided_topic_id
+      : undefined,
   };
 
   // VTID-SESSION-LIMIT: Terminate any existing active sessions for this user.
@@ -1030,6 +1068,24 @@ export async function handleLiveSessionStart(
   // signals into decideGreetingPolicy(). Now we read them from
   // user_assistant_state, pass them through, and record after fire.
   let wakeBriefDecision: Awaited<ReturnType<typeof decideWakeBriefForSession>> | null = null;
+
+  // ORB-FAST-START Phase 2: the wake-brief continuation decision + journey
+  // greeting block + turn-1 snapshot below are wrapped in this closure so they
+  // can run inline (legacy) OR be composed into session.contextReadyPromise
+  // (fast path). The body is byte-identical to the prior inline code — only
+  // WHEN it runs changes. The stream-open gate (orb-live.ts ~6178) already
+  // awaits session.contextReadyPromise before building the Gemini setup
+  // message, so the first personalized turn keeps full wake-brief / Teacher /
+  // Journey behavior either way. `wakeBriefDecision` stays declared in the
+  // outer scope (above) so the response `meta` can still read it on the legacy
+  // path; on the fast path it is null at response time (meta.context_status
+  // reports 'pending') and is populated when this closure runs before the gate.
+  // The closure RETURNS the decision so the legacy branch can assign it — that
+  // lets TS control-flow analysis keep the union type at the meta read; the
+  // fast branch ignores the return value.
+  const assembleWakeBriefAndJourney = async (): Promise<
+    Awaited<ReturnType<typeof decideWakeBriefForSession>> | null
+  > => {
   // VTID-03085 (Lane 1): compile the AssistantDecisionContext on Vertex
   // so the 4 spine-dependent next-action sources can compete here too.
   // Before this fix Vertex passed `decisionContext: null` so:
@@ -1143,6 +1199,9 @@ export async function handleLiveSessionStart(
       // VTID-03300: forward the tapped "My Journey" step so journey-guide leads
       // with it. Undefined for normal opens → default next-step behaviour.
       journeyFocusStep: (session as any).journey_focus_step ?? null,
+      // VTID-03290: forward the tapped Guided Journey topic so the
+      // guided-topic-narration provider leads turn-1. Null for normal opens.
+      guidedTopicId: (session as any).guided_topic_id ?? null,
       supabase: supabaseClient,
       // VTID-03085 (Lane 1): pass the compiled spine — unlocks
       // life_compass_alignment, vitana_index_pillar,
@@ -1248,6 +1307,21 @@ export async function handleLiveSessionStart(
         (session as any).journeyGuideContent = bundledJourneyGuide;
         console.log(
           `[VTID-03257] Journey guide leading for ${sessionId}: step=${bundledJourneyGuide.step_key} (${bundledJourneyGuide.step_type}) title="${bundledJourneyGuide.step_title}"`,
+        );
+      }
+
+      // VTID-03290: when guided-topic-narration won (a catalog topic was tapped),
+      // bundle its TEACH content onto the session so the envelope injects the
+      // teach-this-topic-from-the-KB block. Mirrors the journey-guide bundling.
+      const bundledGuidedTopic = (picked as {
+        guidedTopicNarration?:
+          | import('../../../services/assistant-continuation/providers/guided-topic-narration').GuidedTopicNarrationContent
+          | null;
+      }).guidedTopicNarration ?? null;
+      if (bundledGuidedTopic) {
+        (session as any).guidedTopicNarrationContent = bundledGuidedTopic;
+        console.log(
+          `[VTID-03290] Guided topic narration leading for ${sessionId}: topic=${bundledGuidedTopic.topic_id} title="${bundledGuidedTopic.topic_title}" source=${bundledGuidedTopic.source}`,
         );
       }
     }
@@ -1398,8 +1472,45 @@ export async function handleLiveSessionStart(
     timezonePresent: !!session.clientContext?.timezone,
   });
 
-  // Emit OASIS event with identity context
-  await deps.emitLiveSessionEvent('vtid.live.session.start', {
+  return wakeBriefDecision;
+  }; // end assembleWakeBriefAndJourney
+
+  // ORB-FAST-START Phase 2: run the wake-brief + journey work inline (legacy)
+  // or defer it onto the stream-open gate's promise (fast). Flag-gated; default
+  // off. Anonymous + guided-topic sessions always run inline (they skip or
+  // already fast-path this work).
+  const fastStartDeferWake = shouldDeferWakeWork({
+    isAnonymousSession,
+    isGuidedTopicSession,
+    hasUserId: !!orbIdentity?.user_id,
+  });
+  if (fastStartDeferWake) {
+    // Compose onto the SAME promise the stream-open gate already awaits, so
+    // first personalized audio still carries the full continuation / Teacher /
+    // Journey blocks — but session/start returns now instead of after the
+    // wake-brief + journey round-trips.
+    const brainReady = (session as any).contextReadyPromise as Promise<void> | undefined;
+    (session as any).contextReadyPromise = composeContextReady(
+      brainReady,
+      assembleWakeBriefAndJourney,
+    );
+    console.log(
+      `[ORB-FAST-START] session ${sessionId}: wake-brief + journey deferred onto contextReadyPromise (fast session/start)`,
+    );
+  } else {
+    // Legacy inline path: assign the return value so TS control-flow analysis
+    // sees wakeBriefDecision populated for the response meta below.
+    wakeBriefDecision = await assembleWakeBriefAndJourney();
+  }
+
+  // Emit OASIS event with identity context.
+  // ORB-FAST-START Phase 1a: fire-and-forget. session.start IS a real state
+  // transition (so we still emit it), but blocking the HTTP response on the
+  // Supabase write put a telemetry round-trip on the wake critical path —
+  // telemetry must never block the wake path. The event still fires; the
+  // user's response no longer waits for it. Errors are swallowed into the
+  // emitter's own logging (it already logs internally).
+  deps.emitLiveSessionEvent('vtid.live.session.start', {
     session_id: sessionId,
     user_id: orbIdentity?.user_id || 'anonymous',
     tenant_id: orbIdentity?.tenant_id || null,
@@ -1411,6 +1522,10 @@ export async function handleLiveSessionStart(
     lang,
     modalities: responseModalities,
     voice: deps.getVoiceForLang(lang),
+  }).catch((err) => {
+    console.warn(
+      `[ORB-FAST-START] emitLiveSessionEvent failed (non-blocking) for ${sessionId}: ${err instanceof Error ? err.message : String(err)}`,
+    );
   });
 
   console.log(`[VTID-ORBC] Live session created: ${sessionId} (user=${orbIdentity?.user_id || 'anonymous'}, tenant=${orbIdentity?.tenant_id || 'none'}, lang=${lang}, contextDeferred=${!!contextReadyPromise})`);
@@ -1447,6 +1562,12 @@ export async function handleLiveSessionStart(
         skipped_reason: contextBootstrapSkippedReason || null,
         deferred: !!contextReadyPromise,
       },
+      // ORB-FAST-START Phase 2: 'pending' when wake-brief + journey were
+      // deferred onto contextReadyPromise (fast path) — they attach before the
+      // first personalized turn. 'ready' on the legacy inline path. The widget
+      // must NOT depend on meta.wake_brief being populated when this is
+      // 'pending'.
+      context_status: fastStartDeferWake ? 'pending' : 'ready',
       wake_brief: wakeBriefDecision
         ? {
             decision_id: wakeBriefDecision.decisionId,

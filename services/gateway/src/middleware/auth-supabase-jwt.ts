@@ -92,7 +92,7 @@ export function invalidateVitanaIdCache(userId: string): void {
 /**
  * Auth source: which Supabase project signed the JWT
  */
-export type AuthSource = 'platform' | 'lovable';
+export type AuthSource = 'platform' | 'lovable' | 'jwks';
 
 /**
  * Extended Express Request with identity attached
@@ -140,6 +140,33 @@ function getJwtSecrets(): Array<{ secret: Uint8Array; source: AuthSource }> {
 }
 
 /**
+ * VTID-03292: ES256/asymmetric verification via a remote JWKS.
+ *
+ * Newer Supabase projects sign JWTs with ES256 (asymmetric "JWT signing keys")
+ * instead of the legacy HS256 shared secret. The HS256 path above can't verify
+ * those. When `SUPABASE_AUTH_JWKS_URL` is set (e.g. the staging project's
+ * `/auth/v1/.well-known/jwks.json`), we additionally try ES256 verification
+ * against that JWKS. ADDITIVE + gated: prod leaves the env unset and behaves
+ * exactly as before. `createRemoteJWKSet` caches keys + auto-refreshes on
+ * rotation, so this is a single lazily-created module-level set.
+ */
+let _remoteJwks: ReturnType<typeof jose.createRemoteJWKSet> | null = null;
+let _remoteJwksUrl: string | null = null;
+function getRemoteJwks(): ReturnType<typeof jose.createRemoteJWKSet> | null {
+  const url = process.env.SUPABASE_AUTH_JWKS_URL;
+  if (!url) return null;
+  if (_remoteJwks && _remoteJwksUrl === url) return _remoteJwks;
+  try {
+    _remoteJwks = jose.createRemoteJWKSet(new URL(url));
+    _remoteJwksUrl = url;
+    return _remoteJwks;
+  } catch (e) {
+    console.error(`[VTID-03292] Invalid SUPABASE_AUTH_JWKS_URL: ${(e as Error).message}`);
+    return null;
+  }
+}
+
+/**
  * Extract identity claims from a verified JWT payload.
  */
 function extractIdentity(payload: jose.JWTPayload): SupabaseIdentity {
@@ -167,9 +194,6 @@ export async function verifyAndExtractIdentity(
   token: string
 ): Promise<{ identity: SupabaseIdentity; claims: jose.JWTPayload; auth_source: AuthSource } | null> {
   const secrets = getJwtSecrets();
-  if (secrets.length === 0) {
-    return null;
-  }
 
   for (const { secret, source } of secrets) {
     try {
@@ -184,8 +208,25 @@ export async function verifyAndExtractIdentity(
     }
   }
 
-  // All secrets failed — log the last error type for debugging
-  console.warn('[VTID-ORBC] JWT verification failed against all configured secrets');
+  // VTID-03292: HS256 secrets failed (or none configured) — try ES256 against
+  // the remote JWKS when configured (staging Supabase signs with ES256).
+  const jwks = getRemoteJwks();
+  if (jwks) {
+    try {
+      const { payload } = await jose.jwtVerify(token, jwks, { algorithms: ['ES256'] });
+      const identity = extractIdentity(payload);
+      console.log(`[VTID-03292] JWT verified via JWKS (ES256): user=${identity.user_id}`);
+      return { identity, claims: payload, auth_source: 'jwks' };
+    } catch (_error: any) {
+      // fall through to failure
+    }
+  }
+
+  if (secrets.length === 0 && !jwks) {
+    return null;
+  }
+  // All verification paths failed — log for debugging
+  console.warn('[VTID-ORBC] JWT verification failed against all configured secrets + JWKS');
   return null;
 }
 

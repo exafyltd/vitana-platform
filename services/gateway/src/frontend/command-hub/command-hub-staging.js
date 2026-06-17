@@ -888,11 +888,18 @@
     const startMs = Date.now();
     const tick = function () {
       if (Date.now() - startMs > 8 * 60 * 1000) {
-        sf.phase = 'full-verified'; sf.message = '(taking longer than usual; check workflow)';
+        // Do NOT claim success on timeout — the deploy never confirmed live.
+        // Reporting "✓ Published" here is a lie when the deploy actually failed.
+        sf.phase = 'error';
+        sf.message = 'Publish did not confirm within 8 min — do NOT assume it is live. Check the deploy workflow.';
         if (typeof renderApp === 'function') renderApp();
-        if (typeof opts.onAfterPublish === 'function') opts.onAfterPublish(sf);
         return;
       }
+      // 1) Positive confirmation WINS. If the promoted commit is actually live,
+      //    the publish succeeded — even if a LATER workflow stage failed and the
+      //    if:failure() handler emitted deploy.<service>.failed (Cloud Run was
+      //    already updated by then). The live commit is the authoritative
+      //    signal, so check it BEFORE treating any .failed event as terminal.
       fetch('/api/v1/admin/build-info', { credentials: 'include' })
         .then(function (r) { return r.ok ? r.json() : null; })
         .then(function (bi) {
@@ -902,7 +909,47 @@
             if (typeof opts.onAfterPublish === 'function') opts.onAfterPublish(sf);
             return;
           }
-          setTimeout(tick, 6000);
+          // 2) Commit is NOT live yet. Inspect THIS attempt's OASIS events —
+          //    but publish VTIDs get REUSED, so a stale deploy.<svc>.failed (or
+          //    .success) from a previous life of this VTID must be ignored.
+          //    Only events at/after this publish started count.
+          if (!sf.vtid) { setTimeout(tick, 6000); return; }
+          var freshFloor = (sf.startedAt || startMs) - 3 * 60 * 1000; // clock-skew buffer
+          fetch('/api/v1/oasis/events?vtid=' + encodeURIComponent(sf.vtid) + '&limit=20', { credentials: 'include', headers })
+            .then(function (r) { return r.ok ? r.json() : null; })
+            .then(function (body) {
+              var evs = ((body && body.data) || []).filter(function (e) {
+                var ts = e.created_at ? Date.parse(e.created_at) : 0;
+                return ts >= freshFloor;
+              });
+              // A fresh governed SUCCESS event for this attempt also confirms the
+              // promotion is live — build-info can briefly lag traffic shifting,
+              // but deploy.<svc>.success / vtid.lifecycle.completed will not.
+              var succeeded = evs.some(function (e) {
+                var t = (e.topic || e.type || '');
+                return /deploy\.[a-z0-9_-]+\.success$/.test(t) ||
+                       (t === 'vtid.lifecycle.completed' && e.status === 'success');
+              });
+              if (succeeded) {
+                sf.phase = 'full-verified';
+                if (typeof renderApp === 'function') renderApp();
+                if (typeof opts.onAfterPublish === 'function') opts.onAfterPublish(sf);
+                return;
+              }
+              // Only a FRESH deploy/publish .failed (this attempt) is fatal.
+              var failed = evs.some(function (e) {
+                var t = (e.topic || e.type || '');
+                return /\.failed$/.test(t) && /deploy|publish/.test(t);
+              });
+              if (failed) {
+                sf.phase = 'error';
+                sf.message = 'Deploy failed — production was NOT updated. Open the workflow for the error.';
+                if (typeof renderApp === 'function') renderApp();
+                return;
+              }
+              setTimeout(tick, 6000);
+            })
+            .catch(function () { setTimeout(tick, 6000); });
         })
         .catch(function () { setTimeout(tick, 6000); });
     };

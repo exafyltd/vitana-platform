@@ -1635,6 +1635,70 @@ then read both back to the user before sending.",
         },
       },
       {
+        "description": "Find a match for the user by SEARCHING the community catalog, then
+either recommend existing matches OR post the request. This is the
+tool to use whenever the user wants to find a person or thing:
+"find me someone to play tennis", "is anybody cycling tomorrow?",
+"I'm looking for a salsa teacher", "find me a life partner",
+"who wants to grab coffee?", "anyone selling a road bike?". It works
+for every intent kind (the classifier picks the kind; pass kind_hint
+only when the user is explicit).
+
+HOW TO USE:
+1. Call find_match(utterance) with the user's words verbatim.
+2. Act on the returned \`stage\`:
+   • stage="matched"  → matches were found AND the request was
+     posted so others can reach the user too. Read the matches back
+     warmly (use the \`matches\` array: title + who) and offer to open
+     or connect. For partner_seek, say identities are revealed only
+     after BOTH people say yes.
+   • stage="awaiting_confirmation" → no match yet. Read the summary
+     back and ask if you should post it ("I didn't find anyone yet —
+     shall I post this so I can tell you the moment someone matches?").
+     When the user confirms (yes/post/ja), call find_match AGAIN with
+     the same utterance and confirmed=true.
+   • stage="posted" → the request is now live. Confirm it warmly. If
+     match_count=0, say "you're the first one looking for this — I'll
+     notify you the moment someone matches." NEVER imply it failed.
+   • stage="needs_clarification" or "incomplete" → ask the ONE short
+     question described in the \`text\` field, then call find_match again.
+
+CRITICAL: this tool ALWAYS returns actionable guidance. NEVER tell the
+user "I'm not able to find matches" or "I can't do that right now" —
+always either recommend matches or offer to post.",
+        "name": "find_match",
+        "parameters": {
+          "properties": {
+            "confirmed": {
+              "description": "Pass true ONLY on the second call, after the user verbally confirmed they want to post (when stage was "awaiting_confirmation").",
+              "type": "boolean",
+            },
+            "kind_hint": {
+              "description": "Optional. Only pass when the user is explicit about the kind.",
+              "enum": [
+                "commercial_buy",
+                "commercial_sell",
+                "activity_seek",
+                "partner_seek",
+                "social_seek",
+                "mutual_aid",
+                "learning_seek",
+                "mentor_seek",
+              ],
+              "type": "string",
+            },
+            "utterance": {
+              "description": "The user's words verbatim (what they are looking for).",
+              "type": "string",
+            },
+          },
+          "required": [
+            "utterance",
+          ],
+          "type": "object",
+        },
+      },
+      {
         "description": "Register an intent in the Vitana community catalog. Use this
 whenever the user expresses a need, an offering, a desire to find
 an activity partner / life partner / mentor, or willingness to
@@ -1715,20 +1779,40 @@ Do NOT invent failure modes. Do NOT apologize when the server reported success."
         },
       },
       {
-        "description": "Pull the top-N matches for one of the user's open intents. partner_seek matches show "(redacted)" until both parties express interest.",
+        "description": "Show the user their matches. partner_seek matches show "(redacted)" until both parties express interest.
+
+TWO MODES — pick by what the user said:
+  • Specific post — they named one of their posts ("matches for my salsa request"): pass that intent_id for the top-N matches on that single post.
+  • All matches — they asked broadly ("show me my partner matches", "who matched with me?", "any matches?"): OMIT intent_id. The tool aggregates across all the user's open posts and navigates them to the My Matches screen.
+
+CRITICAL: when the user asks to see their matches without naming a post, just call this with NO intent_id. Do NOT ask which post. Do NOT say you can't show matches — this tool always succeeds and opens the matches screen, even when there are zero matches or no posts yet (it shows a friendly empty state + a CTA to post). Never offer matches and then retract.
+
+Optional intent_kind narrows the aggregate (e.g. partner_seek) when the user was specific about "partner" matches.",
         "name": "view_intent_matches",
         "parameters": {
           "properties": {
             "intent_id": {
+              "description": "Optional. One of the user's open intent_ids to scope matches to a single post. Omit to aggregate across all open posts and open the My Matches screen.",
+              "type": "string",
+            },
+            "intent_kind": {
+              "description": "Optional filter for the aggregate (no intent_id) mode, e.g. partner_seek for "partner matches".",
+              "enum": [
+                "commercial_buy",
+                "commercial_sell",
+                "activity_seek",
+                "partner_seek",
+                "social_seek",
+                "mutual_aid",
+                "learning_seek",
+                "mentor_seek",
+              ],
               "type": "string",
             },
             "limit": {
               "type": "integer",
             },
           },
-          "required": [
-            "intent_id",
-          ],
           "type": "object",
         },
       },
@@ -3907,6 +3991,70 @@ then read both back to the user before sending.",
         },
       },
       {
+        "description": "Find a match for the user by SEARCHING the community catalog, then
+either recommend existing matches OR post the request. This is the
+tool to use whenever the user wants to find a person or thing:
+"find me someone to play tennis", "is anybody cycling tomorrow?",
+"I'm looking for a salsa teacher", "find me a life partner",
+"who wants to grab coffee?", "anyone selling a road bike?". It works
+for every intent kind (the classifier picks the kind; pass kind_hint
+only when the user is explicit).
+
+HOW TO USE:
+1. Call find_match(utterance) with the user's words verbatim.
+2. Act on the returned \`stage\`:
+   • stage="matched"  → matches were found AND the request was
+     posted so others can reach the user too. Read the matches back
+     warmly (use the \`matches\` array: title + who) and offer to open
+     or connect. For partner_seek, say identities are revealed only
+     after BOTH people say yes.
+   • stage="awaiting_confirmation" → no match yet. Read the summary
+     back and ask if you should post it ("I didn't find anyone yet —
+     shall I post this so I can tell you the moment someone matches?").
+     When the user confirms (yes/post/ja), call find_match AGAIN with
+     the same utterance and confirmed=true.
+   • stage="posted" → the request is now live. Confirm it warmly. If
+     match_count=0, say "you're the first one looking for this — I'll
+     notify you the moment someone matches." NEVER imply it failed.
+   • stage="needs_clarification" or "incomplete" → ask the ONE short
+     question described in the \`text\` field, then call find_match again.
+
+CRITICAL: this tool ALWAYS returns actionable guidance. NEVER tell the
+user "I'm not able to find matches" or "I can't do that right now" —
+always either recommend matches or offer to post.",
+        "name": "find_match",
+        "parameters": {
+          "properties": {
+            "confirmed": {
+              "description": "Pass true ONLY on the second call, after the user verbally confirmed they want to post (when stage was "awaiting_confirmation").",
+              "type": "boolean",
+            },
+            "kind_hint": {
+              "description": "Optional. Only pass when the user is explicit about the kind.",
+              "enum": [
+                "commercial_buy",
+                "commercial_sell",
+                "activity_seek",
+                "partner_seek",
+                "social_seek",
+                "mutual_aid",
+                "learning_seek",
+                "mentor_seek",
+              ],
+              "type": "string",
+            },
+            "utterance": {
+              "description": "The user's words verbatim (what they are looking for).",
+              "type": "string",
+            },
+          },
+          "required": [
+            "utterance",
+          ],
+          "type": "object",
+        },
+      },
+      {
         "description": "Register an intent in the Vitana community catalog. Use this
 whenever the user expresses a need, an offering, a desire to find
 an activity partner / life partner / mentor, or willingness to
@@ -3987,20 +4135,40 @@ Do NOT invent failure modes. Do NOT apologize when the server reported success."
         },
       },
       {
-        "description": "Pull the top-N matches for one of the user's open intents. partner_seek matches show "(redacted)" until both parties express interest.",
+        "description": "Show the user their matches. partner_seek matches show "(redacted)" until both parties express interest.
+
+TWO MODES — pick by what the user said:
+  • Specific post — they named one of their posts ("matches for my salsa request"): pass that intent_id for the top-N matches on that single post.
+  • All matches — they asked broadly ("show me my partner matches", "who matched with me?", "any matches?"): OMIT intent_id. The tool aggregates across all the user's open posts and navigates them to the My Matches screen.
+
+CRITICAL: when the user asks to see their matches without naming a post, just call this with NO intent_id. Do NOT ask which post. Do NOT say you can't show matches — this tool always succeeds and opens the matches screen, even when there are zero matches or no posts yet (it shows a friendly empty state + a CTA to post). Never offer matches and then retract.
+
+Optional intent_kind narrows the aggregate (e.g. partner_seek) when the user was specific about "partner" matches.",
         "name": "view_intent_matches",
         "parameters": {
           "properties": {
             "intent_id": {
+              "description": "Optional. One of the user's open intent_ids to scope matches to a single post. Omit to aggregate across all open posts and open the My Matches screen.",
+              "type": "string",
+            },
+            "intent_kind": {
+              "description": "Optional filter for the aggregate (no intent_id) mode, e.g. partner_seek for "partner matches".",
+              "enum": [
+                "commercial_buy",
+                "commercial_sell",
+                "activity_seek",
+                "partner_seek",
+                "social_seek",
+                "mutual_aid",
+                "learning_seek",
+                "mentor_seek",
+              ],
               "type": "string",
             },
             "limit": {
               "type": "integer",
             },
           },
-          "required": [
-            "intent_id",
-          ],
           "type": "object",
         },
       },
