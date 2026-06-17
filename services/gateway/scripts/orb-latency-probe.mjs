@@ -82,12 +82,22 @@ async function run() {
     body: '{}',
   }).then(() => mark('audio_ready_sent')).catch((e) => console.warn('audio-ready failed:', e.message));
 
-  // 5. read SSE until first audio chunk (or 20s timeout)
+  // 5. read SSE until the FIRST GREETING audio chunk (or 25s timeout).
+  //
+  // DEV-COMHU-0513 FIX: the gateway sends an "activation chime" (a locally
+  // generated PCM blip, source:'activation_chime') the instant the upstream
+  // Live API socket opens — long before the model has generated a single word.
+  // The old loop stopped at that chime and mislabeled it "FIRST_AUDIO", which
+  // hid the real click→first-greeting latency (the chime tells you nothing
+  // about model/gen time). We now mark the chime separately and KEEP READING
+  // until the first NON-chime audio chunk — the actual spoken greeting — which
+  // is the number the user perceives as "the orb takes forever to talk".
   const reader = streamResp.body.getReader();
   const dec = new TextDecoder();
   let buf = '';
-  let firstAudioSeen = false;
-  const deadline = Date.now() + 20_000;
+  let chimeSeen = false;
+  let greetingSeen = false;
+  const deadline = Date.now() + 25_000;
   while (Date.now() < deadline) {
     const { value, done } = await reader.read();
     if (done) { mark('stream_closed'); break; }
@@ -98,27 +108,36 @@ async function run() {
       const line = frame.split('\n').find((l) => l.startsWith('data:'));
       if (!line) continue;
       let msg; try { msg = JSON.parse(line.slice(5).trim()); } catch { continue; }
-      if ((msg.type === 'audio' || msg.data_b64) && !firstAudioSeen) {
-        firstAudioSeen = true;
-        mark(`FIRST_AUDIO (type=${msg.type}, bytes=${(msg.data_b64 || '').length})`);
+      const isAudio = msg.type === 'audio' || !!msg.data_b64;
+      const isChime = isAudio && msg.source === 'activation_chime';
+      if (isChime && !chimeSeen) {
+        chimeSeen = true;
+        mark(`chime (activation_chime, bytes=${(msg.data_b64 || '').length})`);
+      } else if (isAudio && !isChime && !greetingSeen) {
+        greetingSeen = true;
+        mark(`FIRST_GREETING (type=${msg.type}, bytes=${(msg.data_b64 || '').length})`);
         ctrl.abort();
         break;
-      } else if (msg.type && msg.type !== 'audio') {
+      } else if (msg.type && !isAudio) {
         mark(`sse:${msg.type}`);
       }
     }
-    if (firstAudioSeen) break;
+    if (greetingSeen) break;
   }
 
   // breakdown
   console.log('\n=== BREAKDOWN ===');
   const get = (n) => (marks.find((m) => m[0].startsWith(n)) || [, null])[1];
-  const sStart = get('session_started'), sOpen = get('stream_open'), sReady = get('audio_ready_sent'), sAudio = get('FIRST_AUDIO');
-  if (sStart != null && sOpen != null) console.log(`  session/start round-trip:     ${sOpen - get('auth_ok')}ms`);
+  const sAuth = get('auth_ok');
+  const sStart = get('session_started'), sOpen = get('stream_open'), sReady = get('audio_ready_sent');
+  const sChime = get('chime'), sGreet = get('FIRST_GREETING');
+  if (sStart != null && sOpen != null) console.log(`  session/start round-trip:     ${sOpen - sAuth}ms  ← wake-brief/journey block when fast-start off`);
   if (sReady != null && sOpen != null) console.log(`  stream_open → audio_ready:    ${sReady - sOpen}ms`);
-  if (sAudio != null && sReady != null) console.log(`  audio_ready → FIRST audio:    ${sAudio - sReady}ms  ← model+gen after greeting unblocks`);
-  if (sAudio != null) console.log(`  TOTAL session_started → audio: ${sAudio - sStart}ms`);
-  else console.log('  NO AUDIO within 20s — first-audio path stalled.');
+  if (sChime != null && sOpen != null) console.log(`  stream_open → chime:          ${sChime - sOpen}ms  (instant feedback, not the greeting)`);
+  if (sGreet != null && sChime != null) console.log(`  chime → FIRST greeting:       ${sGreet - sChime}ms  ← model first-token + gen`);
+  if (sGreet != null && sStart != null) console.log(`  session_started → greeting:   ${sGreet - sStart}ms`);
+  if (sGreet != null && sAuth != null) console.log(`  TOTAL (click→first greeting): ${sGreet - sAuth}ms  ← the number that matters`);
+  else console.log('  NO GREETING within 25s — first-greeting path stalled.');
 }
 
 run().catch((e) => { console.error('PROBE FAILED:', e.message); process.exit(1); });
