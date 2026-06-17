@@ -1,7 +1,8 @@
 /**
  * VTID-03277 — Guided Journey checklist (curriculum) shared types (P2).
  *
- * The 90-session / 250-topic onboarding curriculum. `ChecklistTopic` is the
+ * The 94-session / 254-topic onboarding curriculum (sessions 1-4 are the
+ * first-time onboarding opening, T251-T254). `ChecklistTopic` is the
  * full admin/editor view; `PublicChecklistTopic` is the user-facing subset My
  * Journey renders — it deliberately omits internal fields (voice script source,
  * safety level, manual path, audit ids) per the design spec.

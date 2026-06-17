@@ -1605,6 +1605,63 @@ export function buildLiveApiTools(
             required: ['recipient_user_id', 'recipient_label', 'target_url', 'target_kind'],
           },
         },
+        // ─── BOOTSTRAP-FIND-MATCH-VOICE — search-first matchmaking ───
+        // The PRIMARY tool when the user wants to FIND someone or something.
+        // It searches the live catalog first and either recommends existing
+        // matches (also posting so the user is discoverable) or posts the
+        // request when nothing matches yet.
+        {
+          name: 'find_match',
+          description: [
+            'Find a match for the user by SEARCHING the community catalog, then',
+            'either recommend existing matches OR post the request. This is the',
+            'tool to use whenever the user wants to find a person or thing:',
+            '"find me someone to play tennis", "is anybody cycling tomorrow?",',
+            '"I\'m looking for a salsa teacher", "find me a life partner",',
+            '"who wants to grab coffee?", "anyone selling a road bike?". It works',
+            'for every intent kind (the classifier picks the kind; pass kind_hint',
+            'only when the user is explicit).',
+            '',
+            'HOW TO USE:',
+            '1. Call find_match(utterance) with the user\'s words verbatim.',
+            '2. Act on the returned `stage`:',
+            '   • stage="matched"  → matches were found AND the request was',
+            '     posted so others can reach the user too. Read the matches back',
+            '     warmly (use the `matches` array: title + who) and offer to open',
+            '     or connect. For partner_seek, say identities are revealed only',
+            '     after BOTH people say yes.',
+            '   • stage="awaiting_confirmation" → no match yet. Read the summary',
+            '     back and ask if you should post it ("I didn\'t find anyone yet —',
+            '     shall I post this so I can tell you the moment someone matches?").',
+            '     When the user confirms (yes/post/ja), call find_match AGAIN with',
+            '     the same utterance and confirmed=true.',
+            '   • stage="posted" → the request is now live. Confirm it warmly. If',
+            '     match_count=0, say "you\'re the first one looking for this — I\'ll',
+            '     notify you the moment someone matches." NEVER imply it failed.',
+            '   • stage="needs_clarification" or "incomplete" → ask the ONE short',
+            '     question described in the `text` field, then call find_match again.',
+            '',
+            'CRITICAL: this tool ALWAYS returns actionable guidance. NEVER tell the',
+            'user "I\'m not able to find matches" or "I can\'t do that right now" —',
+            'always either recommend matches or offer to post.',
+          ].join('\n'),
+          parameters: {
+            type: 'object',
+            properties: {
+              utterance: { type: 'string', description: 'The user\'s words verbatim (what they are looking for).' },
+              kind_hint: {
+                type: 'string',
+                enum: ['commercial_buy', 'commercial_sell', 'activity_seek', 'partner_seek', 'social_seek', 'mutual_aid', 'learning_seek', 'mentor_seek'],
+                description: 'Optional. Only pass when the user is explicit about the kind.',
+              },
+              confirmed: {
+                type: 'boolean',
+                description: 'Pass true ONLY on the second call, after the user verbally confirmed they want to post (when stage was "awaiting_confirmation").',
+              },
+            },
+            required: ['utterance'],
+          },
+        },
         // ─── VTID-01975 — Vitana Intent Engine ───
         // Single voice tool that handles all six intent kinds. Same
         // confirmation contract as send_chat_message: classify → extract →

@@ -3262,14 +3262,26 @@ async function viewAllMyMatches(
     );
     const slim = perIntent
       .flat()
-      .map((m) => ({
-        match_id: m.match_id,
-        vitana_id_b: m.vitana_id_b,
-        score: m.score,
-        kind_pairing: m.kind_pairing,
-        state: m.state,
-        redacted: m.redacted,
-      }))
+      .map((m) => {
+        const r = (m.match_reasons || {}) as Record<string, unknown>;
+        return {
+          match_id: m.match_id,
+          vitana_id_b: m.vitana_id_b,
+          score: m.score,
+          kind_pairing: m.kind_pairing,
+          state: m.state,
+          redacted: m.redacted,
+          // Explainability (BOOTSTRAP-MATCHMAKING-V4): carry tier + dimension fits.
+          tier: (r.tier as string) ?? null,
+          activity_exact: r.activity_exact === true,
+          reasons: {
+            location_fit: r.location_fit ?? null,
+            time_fit: r.time_fit ?? null,
+            activity_fit: r.activity_fit ?? null,
+            profile_fit: r.profile_fit ?? null,
+          },
+        };
+      })
       .sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
       .slice(0, 10);
 
@@ -3311,14 +3323,26 @@ export async function tool_view_intent_matches(
     const { redactMatchForReader } = await import('./intent-mutual-reveal');
     const matches = await surfaceTopMatches(intentId, limit);
     const redacted = await Promise.all(matches.map((m) => redactMatchForReader(m, id.user_id)));
-    const slim = redacted.map((m) => ({
-      match_id: m.match_id,
-      vitana_id_b: m.vitana_id_b,
-      score: m.score,
-      kind_pairing: m.kind_pairing,
-      state: m.state,
-      redacted: m.redacted,
-    }));
+    const slim = redacted.map((m) => {
+      const r = (m.match_reasons || {}) as Record<string, unknown>;
+      return {
+        match_id: m.match_id,
+        vitana_id_b: m.vitana_id_b,
+        score: m.score,
+        kind_pairing: m.kind_pairing,
+        state: m.state,
+        redacted: m.redacted,
+        // Explainability (BOOTSTRAP-MATCHMAKING-V4): carry tier + dimension fits.
+        tier: (r.tier as string) ?? null,
+        activity_exact: r.activity_exact === true,
+        reasons: {
+          location_fit: r.location_fit ?? null,
+          time_fit: r.time_fit ?? null,
+          activity_fit: r.activity_fit ?? null,
+          profile_fit: r.profile_fit ?? null,
+        },
+      };
+    });
 
     // Unambiguity: 1 match OR top score - second score >= AMBIG_GAP. Ambiguous
     // results stay list-only and the LLM disambiguates verbally.
@@ -3384,6 +3408,36 @@ export async function tool_view_intent_matches(
     console.error('[VTID-01975] view_intent_matches error:', msg);
     return { ok: false, error: msg };
   }
+}
+
+// ---------------------------------------------------------------------------
+// BOOTSTRAP-FIND-MATCH-VOICE — find_match (search-first "find me a match").
+//
+// Searches the live intent catalog for the user's spoken request and EITHER
+// recommends existing matches (and posts the request so they're discoverable
+// too) OR — when nothing matches — posts the request after a verbal
+// confirmation. The heavy lifting lives in services/intent-find-match.ts so
+// both transports (Vertex + LiveKit) share one implementation; this is just
+// the registry adapter into OrbToolResult.
+// ---------------------------------------------------------------------------
+
+export async function tool_find_match(
+  args: OrbToolArgs,
+  id: OrbToolIdentity,
+): Promise<OrbToolResult> {
+  if (!id.user_id) return { ok: false, error: 'authentication required' };
+  const { runFindMatch } = await import('./intent-find-match');
+  const r = await runFindMatch(
+    { utterance: args.utterance, kind_hint: args.kind_hint, confirmed: args.confirmed },
+    {
+      user_id: id.user_id,
+      tenant_id: id.tenant_id ?? null,
+      vitana_id: id.vitana_id ?? null,
+      session_id: id.session_id ?? null,
+    },
+  );
+  if (!r.ok) return { ok: false, error: r.error ?? 'find_match_failed' };
+  return { ok: true, result: { ...r.data, stage: r.stage }, text: r.text };
 }
 
 // ---------------------------------------------------------------------------
@@ -4150,6 +4204,10 @@ export const ORB_TOOL_REGISTRY: Record<string, OrbToolHandler> = {
   // INTENTS.MATCH_DETAIL when the top score dominates the runner-up;
   // otherwise lists matches and lets the LLM disambiguate verbally.
   view_intent_matches: tool_view_intent_matches,
+  // BOOTSTRAP-FIND-MATCH-VOICE — search-first "find me a match": searches the
+  // live catalog and recommends existing matches (and posts so the user is
+  // discoverable) or posts the request when nothing matches yet.
+  find_match: tool_find_match,
   // VTID-NAV-TIMEJOURNEY — get_current_screen (PR 1.B-3). Resolves the user's
   // LIVE current screen via the nav catalog. Anonymous-safe — pulls
   // current_route + recent_routes from args (Vertex/LiveKit pass them via

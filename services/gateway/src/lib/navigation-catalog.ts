@@ -104,6 +104,13 @@ export interface NavCatalogEntry {
    * Use for entries like /daily-diary which are mobile-only flows.
    */
   viewport_only?: 'mobile' | 'desktop';
+  /**
+   * BOOTSTRAP-NAV-PLATFORM: which MAXINA surface this entry belongs to. The
+   * Navigator manages two separate catalogs (Mobile + Desktop) scoped by this
+   * field. The compile-time NAVIGATION_CATALOG is the Mobile catalog, so when a
+   * value is absent it is treated as `'mobile'` everywhere downstream.
+   */
+  platform?: 'mobile' | 'desktop';
 }
 
 /**
