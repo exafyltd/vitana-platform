@@ -88,6 +88,38 @@ export {
   type MotivationSignal,
   type LastInteraction,
 } from './temporal-bucket';
+// Journey Conversation V2 (docs/SPEC-journey-conversation-v2.md)
+export {
+  deriveExtendedTenureStage,
+  deriveJourneyExperienceLevel,
+  deriveVitanaIndexMaturity,
+  computeEngagementScore,
+  EXPERIENCE_STYLE_GUIDANCE,
+  type ExtendedTenureStage,
+  type JourneyExperienceLevel,
+  type VitanaIndexMaturity,
+  type ExperienceSignals,
+} from './journey-experience';
+export {
+  buildJourneyV2Awareness,
+  type JourneyV2BaseSignals,
+} from './awareness-extensions';
+export {
+  pickConversationFocus,
+  type ConversationFocus,
+  type ConversationFocusKind,
+  type FocusSelection,
+} from './conversation-focus';
+export {
+  buildGreetingSpeechIntent,
+  buildResponsibilitySpeechIntent,
+  renderSpeechIntentBlock,
+  RESPONSIBILITY_SURFACE,
+  RESPONSIBILITY_NUDGE_KEY,
+  type SpeechIntent,
+  type SpeechIntentType,
+} from './speech-intent';
+export { buildJourneyConversationV2Block } from './journey-conversation-v2';
 export {
   type ProactivePause,
   type ProactivePauseScope,
@@ -100,4 +132,9 @@ export {
   type AwarenessGoal,
   type CommunityAwarenessSignals,
   type RecentActivitySummary,
+  type JourneyV2Awareness,
+  type JourneyV2ProgressAwareness,
+  type ProfileCompletionStatus,
+  type PriorityTasksStatus,
+  type ProactivePauseStateSummary,
 } from './types';

@@ -36,9 +36,14 @@ import {
   listVersions,
   ChecklistValidationError,
 } from '../services/guided-journey/checklist-publish';
+import {
+  regenerateTopic,
+  regenerateSession,
+} from '../services/guided-journey/checklist-regenerate';
 
 const router = Router();
 const VTID = 'VTID-03277';
+const REGEN_VTID = 'VTID-03288';
 
 router.use(requireAuth, requireExafyAdmin);
 
@@ -131,6 +136,48 @@ router.post('/topics/:id/disable', async (req: AuthenticatedRequest, res: Respon
     return res.json({ ok: true, topic, vtid: VTID });
   } catch (err) {
     return fail(res, err, 'disable_failed');
+  }
+});
+
+// --- VTID-03288: AI regeneration engine (per-topic + per-session) -----------
+// Rewrites only the German teaching prose (voice script + explanations) from
+// freeform supervisor instructions, grounded on the Maxina manual. Persists via
+// the audited updateTopic path. Practice-loop fields are never touched.
+
+router.post('/topics/:id/regenerate', async (req: AuthenticatedRequest, res: Response) => {
+  const c = client(res);
+  if (!c) return;
+  try {
+    const existing = await getTopic(c, req.params.id);
+    if (!existing) return res.status(404).json({ ok: false, error: 'not_found', vtid: REGEN_VTID });
+    const topic = await regenerateTopic(c, req.params.id, req.identity!.user_id, {
+      instructions: req.body?.instructions,
+      language: req.body?.language || 'de',
+    });
+    return res.json({ ok: true, topic, vtid: REGEN_VTID });
+  } catch (err) {
+    console.error(`[${REGEN_VTID}] regenerate_failed: ${(err as Error).message}`);
+    return res.status(500).json({ ok: false, error: 'regenerate_failed', detail: (err as Error).message, vtid: REGEN_VTID });
+  }
+});
+
+router.post('/sessions/:session/regenerate', async (req: AuthenticatedRequest, res: Response) => {
+  const c = client(res);
+  if (!c) return;
+  const session = Number(req.params.session);
+  if (!Number.isInteger(session) || session < 1) {
+    return res.status(400).json({ ok: false, error: 'invalid_session', vtid: REGEN_VTID });
+  }
+  try {
+    const result = await regenerateSession(c, session, req.identity!.user_id, {
+      instructions: req.body?.instructions,
+      language: req.body?.language || 'de',
+      curriculumVersion: req.body?.curriculumVersion,
+    });
+    return res.json({ ok: result.failures.length === 0, ...result, vtid: REGEN_VTID });
+  } catch (err) {
+    console.error(`[${REGEN_VTID}] regenerate_session_failed: ${(err as Error).message}`);
+    return res.status(500).json({ ok: false, error: 'regenerate_session_failed', detail: (err as Error).message, vtid: REGEN_VTID });
   }
 });
 

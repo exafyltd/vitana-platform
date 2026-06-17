@@ -16,7 +16,14 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 
-export type OrbSessionStateKey = 'continuity' | 'audio_ready_ack' | 'pending_cta';
+export type OrbSessionStateKey =
+  | 'continuity'
+  | 'audio_ready_ack'
+  | 'pending_cta'
+  // VTID-03301 — rolling list of recently-served opener dedupe keys
+  // (most-recent first), used to rotate the wake-brief opener across sessions
+  // so users don't hear the same "complete your profile" line every time.
+  | 'recent_openers';
 
 export interface OrbSessionStateRecord<T = unknown> {
   value: T;

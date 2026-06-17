@@ -40,7 +40,12 @@ export type GuideEventType =
   | 'guide.initiative.consented'
   | 'guide.initiative.executed'
   | 'guide.initiative.declined'
-  | 'guide.initiative.flag_disabled';
+  | 'guide.initiative.flag_disabled'
+  // Journey Conversation V2 — single proactive arbiter
+  // (docs/SPEC-journey-conversation-v2.md §14)
+  | 'guide.focus.selected'
+  | 'guide.focus.suppressed'
+  | 'guide.focus.none';
 
 export async function emitGuideTelemetry(
   type: GuideEventType,

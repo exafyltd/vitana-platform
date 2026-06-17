@@ -65,6 +65,9 @@ import {
   resolveNextTip,
   // V2 — Proactive Initiative Engine
   pickProactiveInitiative,
+  // Journey Conversation V2 — single proactive arbiter + speech intents
+  // (docs/SPEC-journey-conversation-v2.md). Flag-gated below.
+  buildJourneyConversationV2Block,
   type OpenerCandidate,
   type UserAwareness,
 } from './guide';
@@ -818,6 +821,31 @@ GOAL-GROUNDED RECOMMENDATIONS (NON-NEGOTIABLE):
   pick one before producing domain-specific recommendations.
 - Do NOT make generic off-topic suggestions. Every piece of advice should
   visibly connect to the goal ("because your focus is X, here's Y").`;
+
+  // Journey Conversation V2 (docs/SPEC-journey-conversation-v2.md) — when
+  // the flag is ON, the single arbiter replaces ALL THREE competing
+  // proactive selectors below (opener candidate block, initiative engine,
+  // DYK tour hint) with exactly one focus + speech intents. The legacy
+  // path stays byte-for-byte identical when the flag is OFF or the V2
+  // block fails to build (fail-open fallback).
+  if (awareness) {
+    const v2Flag = await getSystemControl('vitana_journey_conversation_v2_enabled').catch(
+      () => null,
+    );
+    if (v2Flag && v2Flag.enabled) {
+      const v2Block = await buildJourneyConversationV2Block({
+        user_id: input.user_id,
+        awareness,
+        channel,
+      }).catch((err: any) => {
+        console.warn(`${LOG_PREFIX} journey-conversation-v2 block failed:`, err?.message);
+        return '';
+      });
+      if (v2Block) {
+        return rulesBlock + v2Block;
+      }
+    }
+  }
 
   // V2 Proactive Initiative Engine — pairs the opener with executable
   // actions. Computed FIRST. When it fires, the DYK tour-hint is
