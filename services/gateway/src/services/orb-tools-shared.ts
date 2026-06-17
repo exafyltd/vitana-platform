@@ -37,6 +37,7 @@ import {
   lookupByRoute,
   suggestSimilar,
   suggestSimilarScored,
+  searchCatalog,
   FUZZY_NAV_MIN_SCORE,
   resolveEffectiveRoles,
   getContent,
@@ -2534,8 +2535,46 @@ export async function tool_navigate_to_screen(
 
   const { emitOasisEvent } = await import('./oasis-event-service');
 
-  // Three-tier resolution: exact → alias → fuzzy.
+  // Three-tier resolution: exact → alias → intent-recovery → fuzzy.
   let entry: NavCatalogEntry | null = lookupScreen(screenIdArg) || lookupByAlias(screenIdArg);
+
+  // VTID-NAV-RECOVER: the model sometimes invents a screen_id that does not
+  // exist (e.g. 'EVENTS.FOLLOWING', 'COMM.EVENTS_MEETUPS'). String-fuzzy then
+  // maps it by surface similarity to the wrong screen — usually the parent
+  // (COMM.EVENTS → Hot) instead of the intended tab. The natural-language
+  // `reason` the model supplies IS reliable intent, so re-derive the target
+  // with the same catalog scorer the free-text `navigate` tool uses, preferring
+  // the reason over the de-slugged (and possibly misleading) screen_id tokens.
+  // Only adopt it on a clear win, otherwise fall through to the fuzzy gate.
+  if (!entry) {
+    const reasonText = typeof args.reason === 'string' ? args.reason.trim() : '';
+    const deslug = screenIdArg.replace(/[._/\-]+/g, ' ').trim();
+    const recoverQuery = reasonText.length >= 4 ? reasonText : deslug;
+    if (recoverQuery) {
+      const recovered = searchCatalog(recoverQuery, lang);
+      const top = recovered[0];
+      const second = recovered[1];
+      if (top && top.score >= 30 && top.score - (second?.score ?? 0) >= 6) {
+        entry = top.entry;
+        emitOasisEvent({
+          vtid: 'VTID-NAV-01',
+          type: 'orb.navigator.blocked',
+          source: 'orb-tools-shared',
+          status: 'info',
+          message: `Recovered invented screen_id '${screenIdArg}' → '${entry.screen_id}' via reason/intent (score ${top.score})`,
+          payload: {
+            session_id: sessionId,
+            attempted_screen_id: screenIdArg,
+            resolved_screen_id: entry.screen_id,
+            recover_score: top.score,
+            recover_query: recoverQuery.slice(0, 120),
+            error_kind: 'intent_recovered',
+          },
+        }).catch(() => {});
+      }
+    }
+  }
+
   if (!entry) {
     // VTID-NAV-CONFIDENCE (VTID-03258): only auto-resolve a fuzzy match when it clears the
     // confidence floor. A weak best-match (title-word-only overlap) is NOT a
@@ -3009,6 +3048,11 @@ export async function tool_navigate(
           session_id: id.session_id || null,
           screen_id: entry.screen_id,
           route: resolvedRoute,
+          // VTID-NAV-MOBILEROUTE: surface the viewport flag + whether a mobile
+          // deep-link existed, so we can tell mobile_route misses apart from a
+          // false is_mobile when a redirect lands on the wrong (desktop) page.
+          is_mobile: isMobile,
+          had_mobile_route: !!entry.mobile_route,
           drain_wait_ms: 0,
         },
       }).catch(() => {});
@@ -3025,6 +3069,8 @@ export async function tool_navigate(
           route: resolvedRoute,
           reason: question,
           is_anonymous: isAnonymous,
+          is_mobile: isMobile,
+          had_mobile_route: !!entry.mobile_route,
         },
       }).catch(() => {});
 
@@ -3047,7 +3093,13 @@ export async function tool_navigate(
           decision: 'confident',
           confidence: consultResult.confidence,
           screen_id: entry.screen_id,
-          route: entry.route,
+          // Return the RESOLVED route (honors mobile_route + overlay marker),
+          // matching the directive sent to the client and navigate_to_screen's
+          // contract. The caller stores result.route into session.current_route /
+          // pendingNavigation / navigator memory, so returning the raw desktop
+          // entry.route here would desync session state from where the client
+          // actually navigated (e.g. /settings/privacy vs /settings?mode=privacy).
+          route: resolvedRoute,
           title: content.title,
           reason: question,
           directive,
@@ -3121,28 +3173,176 @@ export async function tool_navigate(
 
 const INTENT_MATCH_AUTONAV_GAP = 0.15;
 
+// VTID-PARTNER-MATCHES-UX — aggregate "show me my (partner) matches" path.
+//
+// When the user just asks to see their matches ("show me my partner matches")
+// without naming a specific post, the LLM has no intent_id to pass. The old
+// contract hard-required intent_id, so view_intent_matches returned
+// { ok:false, error:'intent_id is required' } and Vitana — having just offered
+// "I can show you partner matches" — immediately retracted with "I can't show
+// you partner matches right now." Terrible UX.
+//
+// This fans out across the user's open intents (mirrors the frontend
+// getFindPartnerMatches), aggregates the top matches, and hands the user to the
+// Find a Partner matches screen via the same auto_nav directive the
+// single-intent path uses. That screen renders its own graceful empty/error
+// state, so even when there are zero matches (or zero open posts) the offer is
+// fulfilled — we navigate the user there instead of refusing.
+async function viewAllMyMatches(
+  args: OrbToolArgs,
+  id: OrbToolIdentity,
+  limit: number,
+): Promise<OrbToolResult> {
+  const userId = id.user_id;
+  if (!userId) return { ok: false, error: 'authentication required' };
+
+  const route = '/comm/find-partner?view=matches';
+  const directive = {
+    type: 'orb_directive',
+    directive: 'navigate',
+    screen_id: 'COMM.FIND_PARTNER_MATCHES',
+    route,
+    title: 'My Matches',
+    reason: 'view_intent_matches aggregate (no intent_id)',
+    vtid: 'VTID-PARTNER-MATCHES-UX',
+  };
+
+  try {
+    const { createClient } = await import('@supabase/supabase-js');
+    const supabase = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE!, {
+      auth: { autoRefreshToken: false, persistSession: false },
+    });
+
+    // Optional kind filter — pass intent_kind only when the user was explicit
+    // ("partner matches" → partner_seek). Otherwise aggregate across every open
+    // intent, exactly like the Find a Partner "My Matches" tab.
+    let q = supabase
+      .from('user_intents')
+      .select('intent_id')
+      .eq('requester_user_id', userId)
+      .in('status', ['open', 'matched', 'engaged'])
+      .order('created_at', { ascending: false })
+      .limit(20);
+    const kindFilter = String(args.intent_kind ?? '').trim();
+    if (kindFilter) q = q.eq('intent_kind', kindFilter);
+    const { data: intents, error } = await q;
+    if (error) return { ok: false, error: error.message };
+
+    // No open posts → no matches are possible yet. Still take the user to the
+    // matches screen (graceful empty state + "post a wish" CTA) rather than
+    // refusing. reason:'no_open_intents' lets the LLM explain warmly.
+    if (!intents || intents.length === 0) {
+      return {
+        ok: true,
+        result: {
+          ok: true,
+          matches: [],
+          decision: 'auto_nav',
+          directive,
+          redirect: { route },
+          reason: 'no_open_intents',
+        },
+        text:
+          "I'm opening your matches now — you don't have any open posts yet, " +
+          'so post a wish and I\'ll let you know the moment someone matches.',
+      };
+    }
+
+    const { surfaceTopMatches } = await import('./intent-matcher');
+    const { redactMatchForReader } = await import('./intent-mutual-reveal');
+    const perIntent = await Promise.all(
+      (intents as Array<{ intent_id: string }>).map(async (it) => {
+        try {
+          const rows = await surfaceTopMatches(it.intent_id, limit);
+          return await Promise.all(rows.map((m) => redactMatchForReader(m, userId)));
+        } catch {
+          return [];
+        }
+      }),
+    );
+    const slim = perIntent
+      .flat()
+      .map((m) => {
+        const r = (m.match_reasons || {}) as Record<string, unknown>;
+        return {
+          match_id: m.match_id,
+          vitana_id_b: m.vitana_id_b,
+          score: m.score,
+          kind_pairing: m.kind_pairing,
+          state: m.state,
+          redacted: m.redacted,
+          // Explainability (BOOTSTRAP-MATCHMAKING-V4): carry tier + dimension fits.
+          tier: (r.tier as string) ?? null,
+          activity_exact: r.activity_exact === true,
+          reasons: {
+            location_fit: r.location_fit ?? null,
+            time_fit: r.time_fit ?? null,
+            activity_fit: r.activity_fit ?? null,
+            profile_fit: r.profile_fit ?? null,
+          },
+        };
+      })
+      .sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
+      .slice(0, 10);
+
+    return {
+      ok: true,
+      result: {
+        ok: true,
+        matches: slim,
+        decision: 'auto_nav',
+        directive,
+        redirect: { route },
+      },
+      text:
+        slim.length > 0
+          ? `Opening your matches — you have ${slim.length} to look through.`
+          : "I'm opening your matches now. None have come in yet, but your posts are live — I'll flag the moment someone matches.",
+    };
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : 'unknown';
+    console.error('[VTID-PARTNER-MATCHES-UX] viewAllMyMatches error:', msg);
+    return { ok: false, error: msg };
+  }
+}
+
 export async function tool_view_intent_matches(
   args: OrbToolArgs,
   id: OrbToolIdentity,
 ): Promise<OrbToolResult> {
-  const intentId = String(args.intent_id ?? '').trim();
-  if (!intentId) return { ok: false, error: 'intent_id is required' };
   if (!id.user_id) return { ok: false, error: 'authentication required' };
-
+  const intentId = String(args.intent_id ?? '').trim();
   const limit = Math.min(Math.max(Number(args.limit) || 3, 1), 10);
+
+  // No specific post named → aggregate across all the user's open intents and
+  // navigate to the My Matches screen. Never hard-fails on a missing intent_id.
+  if (!intentId) return viewAllMyMatches(args, id, limit);
+
   try {
     const { surfaceTopMatches } = await import('./intent-matcher');
     const { redactMatchForReader } = await import('./intent-mutual-reveal');
     const matches = await surfaceTopMatches(intentId, limit);
     const redacted = await Promise.all(matches.map((m) => redactMatchForReader(m, id.user_id)));
-    const slim = redacted.map((m) => ({
-      match_id: m.match_id,
-      vitana_id_b: m.vitana_id_b,
-      score: m.score,
-      kind_pairing: m.kind_pairing,
-      state: m.state,
-      redacted: m.redacted,
-    }));
+    const slim = redacted.map((m) => {
+      const r = (m.match_reasons || {}) as Record<string, unknown>;
+      return {
+        match_id: m.match_id,
+        vitana_id_b: m.vitana_id_b,
+        score: m.score,
+        kind_pairing: m.kind_pairing,
+        state: m.state,
+        redacted: m.redacted,
+        // Explainability (BOOTSTRAP-MATCHMAKING-V4): carry tier + dimension fits.
+        tier: (r.tier as string) ?? null,
+        activity_exact: r.activity_exact === true,
+        reasons: {
+          location_fit: r.location_fit ?? null,
+          time_fit: r.time_fit ?? null,
+          activity_fit: r.activity_fit ?? null,
+          profile_fit: r.profile_fit ?? null,
+        },
+      };
+    });
 
     // Unambiguity: 1 match OR top score - second score >= AMBIG_GAP. Ambiguous
     // results stay list-only and the LLM disambiguates verbally.
@@ -3208,6 +3408,36 @@ export async function tool_view_intent_matches(
     console.error('[VTID-01975] view_intent_matches error:', msg);
     return { ok: false, error: msg };
   }
+}
+
+// ---------------------------------------------------------------------------
+// BOOTSTRAP-FIND-MATCH-VOICE — find_match (search-first "find me a match").
+//
+// Searches the live intent catalog for the user's spoken request and EITHER
+// recommends existing matches (and posts the request so they're discoverable
+// too) OR — when nothing matches — posts the request after a verbal
+// confirmation. The heavy lifting lives in services/intent-find-match.ts so
+// both transports (Vertex + LiveKit) share one implementation; this is just
+// the registry adapter into OrbToolResult.
+// ---------------------------------------------------------------------------
+
+export async function tool_find_match(
+  args: OrbToolArgs,
+  id: OrbToolIdentity,
+): Promise<OrbToolResult> {
+  if (!id.user_id) return { ok: false, error: 'authentication required' };
+  const { runFindMatch } = await import('./intent-find-match');
+  const r = await runFindMatch(
+    { utterance: args.utterance, kind_hint: args.kind_hint, confirmed: args.confirmed },
+    {
+      user_id: id.user_id,
+      tenant_id: id.tenant_id ?? null,
+      vitana_id: id.vitana_id ?? null,
+      session_id: id.session_id ?? null,
+    },
+  );
+  if (!r.ok) return { ok: false, error: r.error ?? 'find_match_failed' };
+  return { ok: true, result: { ...r.data, stage: r.stage }, text: r.text };
 }
 
 // ---------------------------------------------------------------------------
@@ -3974,6 +4204,10 @@ export const ORB_TOOL_REGISTRY: Record<string, OrbToolHandler> = {
   // INTENTS.MATCH_DETAIL when the top score dominates the runner-up;
   // otherwise lists matches and lets the LLM disambiguate verbally.
   view_intent_matches: tool_view_intent_matches,
+  // BOOTSTRAP-FIND-MATCH-VOICE — search-first "find me a match": searches the
+  // live catalog and recommends existing matches (and posts so the user is
+  // discoverable) or posts the request when nothing matches yet.
+  find_match: tool_find_match,
   // VTID-NAV-TIMEJOURNEY — get_current_screen (PR 1.B-3). Resolves the user's
   // LIVE current screen via the nav catalog. Anonymous-safe — pulls
   // current_route + recent_routes from args (Vertex/LiveKit pass them via

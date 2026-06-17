@@ -17,6 +17,7 @@ import {
   VertexLiveClient,
   buildBidiGenerateContentUrl,
   buildSetupMessage,
+  parseDurationMs,
   type VertexWebSocketLike,
 } from '../../../../src/orb/live/upstream/vertex-live-client';
 import type { UpstreamConnectOptions } from '../../../../src/orb/live/upstream/types';
@@ -698,5 +699,71 @@ describe('A8.3b.1: customSetupMessage override + getSocket() accessor', () => {
     // Default builder includes the canonical Vertex model path + AUDIO modality.
     expect(sent.setup.model).toContain('gemini-live-2.5-flash-native-audio');
     expect(sent.setup.generation_config.response_modalities).toEqual(['AUDIO']);
+  });
+
+  // VTID-03273 Pillar B — native session resumption + GoAway.
+  describe('8. Session resumption + GoAway (VTID-03273 Pillar B)', () => {
+    it('omits session_resumption + context_window_compression by default (back-compat)', () => {
+      const setup = buildSetupMessage(baseOptions()) as any;
+      expect(setup.setup.session_resumption).toBeUndefined();
+      expect(setup.setup.context_window_compression).toBeUndefined();
+    });
+
+    it('adds an empty session_resumption when enabled without a handle (fresh resumable session)', () => {
+      const setup = buildSetupMessage(baseOptions({ enableSessionResumption: true })) as any;
+      expect(setup.setup.session_resumption).toEqual({});
+    });
+
+    it('replays the handle in session_resumption when one is provided (resume)', () => {
+      const setup = buildSetupMessage(
+        baseOptions({ enableSessionResumption: true, sessionResumptionHandle: 'HANDLE-xyz' }),
+      ) as any;
+      expect(setup.setup.session_resumption).toEqual({ handle: 'HANDLE-xyz' });
+    });
+
+    it('adds sliding-window context compression when enabled', () => {
+      const setup = buildSetupMessage(baseOptions({ enableContextWindowCompression: true })) as any;
+      expect(setup.setup.context_window_compression).toEqual({ sliding_window: {} });
+    });
+
+    it('parseDurationMs handles "8s" / "8.25s" / {seconds,nanos} / number', () => {
+      expect(parseDurationMs('8s')).toBe(8000);
+      expect(parseDurationMs('8.25s')).toBe(8250);
+      expect(parseDurationMs({ seconds: 9, nanos: 500_000_000 })).toBe(9500);
+      expect(parseDurationMs({ seconds: '3' })).toBe(3000);
+      expect(parseDurationMs(5)).toBe(5000);
+      expect(parseDurationMs(undefined)).toBeUndefined();
+    });
+
+    it('emits onSessionResumption with the new handle (camelCase wire)', async () => {
+      const socket = new MockSocket();
+      const client = new VertexLiveClient({ createSocket: () => socket });
+      const events: Array<{ handle: string | null; resumable: boolean }> = [];
+      client.onSessionResumption((e) => events.push(e));
+      await connectClient(client, socket);
+      socket.fireMessage({ sessionResumptionUpdate: { newHandle: 'H1', resumable: true } });
+      expect(events).toEqual([{ handle: 'H1', resumable: true }]);
+    });
+
+    it('emits onSessionResumption with the new handle (snake_case wire)', async () => {
+      const socket = new MockSocket();
+      const client = new VertexLiveClient({ createSocket: () => socket });
+      const events: Array<{ handle: string | null; resumable: boolean }> = [];
+      client.onSessionResumption((e) => events.push(e));
+      await connectClient(client, socket);
+      socket.fireMessage({ session_resumption_update: { new_handle: 'H2', resumable: false } });
+      expect(events).toEqual([{ handle: 'H2', resumable: false }]);
+    });
+
+    it('emits onGoAway with timeLeftMs parsed from the Duration', async () => {
+      const socket = new MockSocket();
+      const client = new VertexLiveClient({ createSocket: () => socket });
+      const events: Array<{ timeLeftMs?: number }> = [];
+      client.onGoAway((e) => events.push(e));
+      await connectClient(client, socket);
+      socket.fireMessage({ goAway: { timeLeft: '7s' } });
+      socket.fireMessage({ go_away: { time_left: { seconds: 4 } } });
+      expect(events).toEqual([{ timeLeftMs: 7000 }, { timeLeftMs: 4000 }]);
+    });
   });
 });

@@ -61,6 +61,12 @@ export interface LatencyContext {
   turn?: number;
   /** Optional provider/model hint (e.g. 'vertex/gemini-2.5-flash'). */
   provider?: string;
+  /**
+   * Client transport carrying the session ('sse' = HTTP POST up + SSE down,
+   * 'websocket' = the Phase 3a WS path). Lets dashboards split WS vs SSE
+   * timelines for the same phase set.
+   */
+  transport?: 'sse' | 'websocket';
 }
 
 export class LatencyTracker {
@@ -112,6 +118,7 @@ export class LatencyTracker {
           surface: this.ctx.surface,
           turn: this.ctx.turn,
           provider: this.ctx.provider,
+          transport: this.ctx.transport,
           total_ms,
           phases,
           error,

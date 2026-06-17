@@ -39,16 +39,22 @@ import {
 // `decision_policy` table.
 // ---------------------------------------------------------------------------
 
-// VTID-RESPONSE-DELAY / VTID-03019: 1_200 → 850 ms trims ~350ms off
-// end-of-turn latency vs the original Vertex VAD default of 100 ms (too
-// aggressive — cut users off mid-thought).
-const VAD_SILENCE_DURATION_MS_FALLBACK = 850;
+// VTID-RESPONSE-DELAY / VTID-03019 / BOOTSTRAP-ORB-LATENCY-PHASE1:
+// 1_200 → 850 → 600 ms. Each step trims end-of-turn latency vs the
+// original Vertex VAD default of 100 ms (too aggressive — cut users off
+// mid-thought). 600 ms still tolerates natural mid-sentence pauses while
+// shaving another ~250 ms off every single turn.
+const VAD_SILENCE_DURATION_MS_FALLBACK = 600;
 
-// VTID-ECHO-COOLDOWN: gates mic for 2s after turn_complete so the
-// client's draining playback queue doesn't leak into the upstream WS
-// as new user speech (mobile AEC is weak; ghost-response repro under
-// PR #743).
-const POST_TURN_COOLDOWN_MS_FALLBACK = 2_000;
+// VTID-ECHO-COOLDOWN / BOOTSTRAP-ORB-LATENCY-PHASE1: gates mic after
+// turn_complete so the client's draining playback queue doesn't leak into
+// the upstream WS as new user speech (mobile AEC is weak; ghost-response
+// repro under PR #743). 2_000 → 300 ms: the 2 s gate silently discarded
+// the user's first words after every model turn (latency audit
+// 2026-06-10), and the widget keeps its own client-side echo gate that
+// starts when playback ACTUALLY ends — the long server gate was double
+// protection at a 2 s/turn cost.
+const POST_TURN_COOLDOWN_MS_FALLBACK = 300;
 
 // VTID-STREAM-SILENCE: Vertex closes the stream after ~25-30s of no
 // audio. A 250ms silence frame every 3s keeps it open during pauses.

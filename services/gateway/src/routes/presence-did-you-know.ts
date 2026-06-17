@@ -25,6 +25,9 @@ import {
 } from '../services/guide';
 import { resolveNextTip, getTipByKey } from '../services/guide/tip-curriculum';
 import { getSystemControl } from '../services/system-controls-service';
+import { getSupabase } from '../lib/supabase';
+import { getUserLocale } from '../i18n/server-locale';
+import { localizeCatalogRecords } from '../i18n/catalog-localizer';
 
 const router = Router();
 const FLAG_KEY = 'vitana_did_you_know_enabled';
@@ -137,18 +140,54 @@ router.get('/', async (req: Request, res: Response) => {
       channel: 'card',
     }).catch(() => {});
 
+    // Tip copy is authored in English (DYK_TIP_REGISTRY). Localize the
+    // user-visible fields into the viewer's language (translate-on-view +
+    // cache); falls back to the English source on any failure so a card/voice
+    // line is never blank. cta_url stays as-is (it's a route, not copy).
+    const svc = getSupabase();
+    let copy = {
+      card_copy: tip.card_copy,
+      cta_label: tip.cta_label,
+      voice_opener: tip.voice_opener,
+      voice_confirm: tip.voice_confirm,
+      voice_on_nav: tip.voice_on_nav,
+    };
+    if (svc) {
+      try {
+        const locale = await getUserLocale(svc, identity.user_id);
+        const localized = await localizeCatalogRecords(
+          svc,
+          { domain: 'dyk_tip', sourceLocale: 'en', service: 'presence-did-you-know' },
+          [{ id: tip.tip_key, fields: copy }],
+          locale,
+        );
+        const f = localized.get(tip.tip_key);
+        if (f) {
+          copy = {
+            card_copy: f.card_copy ?? copy.card_copy,
+            cta_label: f.cta_label ?? copy.cta_label,
+            voice_opener: f.voice_opener ?? copy.voice_opener,
+            voice_confirm: f.voice_confirm ?? copy.voice_confirm,
+            voice_on_nav: f.voice_on_nav ?? copy.voice_on_nav,
+          };
+        }
+      } catch (e: any) {
+        console.warn('[presence/did-you-know] localize failed (serving English):', e?.message);
+      }
+    }
+
     return res.json({
       ok: true,
       should_show: true,
       tip_key: tip.tip_key,
       feature_key: tip.feature_key,
       index_pillar_link: tip.index_pillar_link,
-      card_copy: tip.card_copy,
-      cta_label: tip.cta_label,
+      card_copy: copy.card_copy,
+      cta_label: copy.cta_label,
       cta_url: tip.cta_url,
-      voice_opener: tip.voice_opener,
-      voice_confirm: tip.voice_confirm,
-      voice_on_nav: tip.voice_on_nav,
+      voice_opener: copy.voice_opener,
+      voice_confirm: copy.voice_confirm,
+      voice_on_nav: copy.voice_on_nav,
       active_usage_days: awareness.tenure.active_usage_days,
     });
   } catch (err: any) {

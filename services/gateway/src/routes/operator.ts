@@ -1258,9 +1258,13 @@ router.get('/revisions', requireAdminAuth, async (req: Request, res: Response) =
   }
 });
 
+// Bake-time guard is OPT-IN. Publish is meant to be instant ("30s, any time"),
+// so the default is 0 (disabled): staging can be promoted to prod the moment it
+// is live. Set STAGING_PUBLISH_BAKE_SECONDS to a positive number of seconds to
+// re-enable a soak period before staging→prod promotion (e.g. for a freeze).
 const STAGING_PUBLISH_BAKE_MS = (() => {
-  const raw = parseInt(process.env.STAGING_PUBLISH_BAKE_SECONDS || '3600', 10);
-  return Number.isFinite(raw) && raw >= 0 ? raw * 1000 : 60 * 60 * 1000;
+  const raw = parseInt(process.env.STAGING_PUBLISH_BAKE_SECONDS || '0', 10);
+  return Number.isFinite(raw) && raw >= 0 ? raw * 1000 : 0;
 })();
 
 /**
@@ -1275,8 +1279,9 @@ const STAGING_PUBLISH_BAKE_MS = (() => {
  *   3. Read the commit SHA from the revision's env (GIT_COMMIT_SHA) and/or
  *      from software_versions by cloud_run_revision. Fail if neither yields a
  *      SHA — without it the audit trail breaks.
- *   4. Bake-time guard: refuse if the staging revision is <STAGING_PUBLISH_BAKE_SECONDS
- *      seconds old (default 3600 = 1h). Set env to 0 to disable for smoke tests.
+ *   4. Bake-time guard (OPT-IN, default OFF): if STAGING_PUBLISH_BAKE_SECONDS is
+ *      set >0, refuse when the staging revision is younger than that many seconds.
+ *      Default is 0 → no soak; publish is instant the moment staging is live.
  *   5. Allocate a VTID via the canonical allocator (EXEC-DEPLOY gate needs it
  *      in vtid_ledger).
  *   6. Call deployOrchestrator.executeDeploy({ service:'gateway',

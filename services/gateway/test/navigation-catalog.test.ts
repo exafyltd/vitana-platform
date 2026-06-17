@@ -177,6 +177,12 @@ const ROUTING_CASES: RoutingCase[] = [
   { utterance: 'I want to attend a meetup',                 lang: 'en', expected_screen_id: 'COMM.EVENTS' },
   { utterance: 'wo finde ich die treffen',                  lang: 'de', expected_screen_id: 'COMM.EVENTS' },
   { utterance: 'zeig mir die kommenden veranstaltungen',    lang: 'de', expected_screen_id: 'COMM.EVENTS_UPCOMING' },
+  // Following tab of Events & Meetups (COMM.FEED) — must not fall through to a
+  // generic events tab just because "following" matched no entry before.
+  { utterance: 'following',                                 lang: 'en', expected_screen_id: 'COMM.FEED' },
+  { utterance: 'following events',                          lang: 'en', expected_screen_id: 'COMM.FEED' },
+  { utterance: 'events from people I follow',               lang: 'en', expected_screen_id: 'COMM.FEED' },
+  { utterance: 'community feed',                            lang: 'en', expected_screen_id: 'COMM.FEED' },
 
   // ── COMM.LIVE_ROOMS ──
   { utterance: 'open the live rooms',                       lang: 'en', expected_screen_id: 'COMM.LIVE_ROOMS' },
@@ -202,7 +208,24 @@ const ROUTING_CASES: RoutingCase[] = [
   { utterance: 'business hub sales',                        lang: 'en', expected_screen_id: 'BUSINESS.SELL_EARN' },
   { utterance: 'open my sales',                             lang: 'en', expected_screen_id: 'BUSINESS.SELL_EARN' },
   { utterance: 'bring mich zum business hub verkäufe',      lang: 'de', expected_screen_id: 'BUSINESS.SELL_EARN' },
+  // "Business Hub Insights" must reach the Insights tab (BUSINESS.ANALYTICS),
+  // NOT the Snapshot — and must NOT steal the AI feed ("AI insights").
+  { utterance: 'business hub insights',                     lang: 'en', expected_screen_id: 'BUSINESS.ANALYTICS' },
+  { utterance: 'take me to business hub insights',          lang: 'en', expected_screen_id: 'BUSINESS.ANALYTICS' },
+  { utterance: 'business hub einblicke',                    lang: 'de', expected_screen_id: 'BUSINESS.ANALYTICS' },
+  { utterance: 'show me AI insights',                       lang: 'en', expected_screen_id: 'AI.INSIGHTS' },
   { utterance: 'open the business hub',                     lang: 'en', expected_screen_id: 'BUSINESS.OVERVIEW' },
+  // VTID-NAV-BUSINESS-SUBTABS: every Business Hub mobile mode-pill sub-tab is
+  // voice-addressable, and the bare words stay with their primary screens.
+  { utterance: 'business hub services',                     lang: 'en', expected_screen_id: 'BUSINESS.SERVICES' },
+  { utterance: 'business hub services events',              lang: 'en', expected_screen_id: 'BUSINESS.SERVICES_EVENTS' },
+  { utterance: 'business hub services packages',            lang: 'en', expected_screen_id: 'BUSINESS.SERVICES_PACKAGES' },
+  { utterance: 'business hub sales promotions',             lang: 'en', expected_screen_id: 'BUSINESS.SALES_PROMOTIONS' },
+  { utterance: 'business hub sales referrals',              lang: 'en', expected_screen_id: 'BUSINESS.SALES_REFERRALS' },
+  { utterance: 'business hub insights clients',             lang: 'en', expected_screen_id: 'BUSINESS.CLIENTS' },
+  { utterance: 'business hub insights performance',         lang: 'en', expected_screen_id: 'BUSINESS.ANALYTICS' },
+  { utterance: 'business hub insights earnings',            lang: 'en', expected_screen_id: 'BUSINESS.INSIGHTS_EARNINGS' },
+  { utterance: 'business hub insights growth',              lang: 'en', expected_screen_id: 'BUSINESS.INSIGHTS_GROWTH' },
 
   // ── WALLET ──
   { utterance: 'open my wallet',                            lang: 'en', expected_screen_id: 'WALLET.OVERVIEW' },
@@ -212,6 +235,10 @@ const ROUTING_CASES: RoutingCase[] = [
   { utterance: 'show me my referral earnings',              lang: 'en', expected_screen_id: 'WALLET.REWARDS' },
   { utterance: 'meine provisionen anzeigen',                lang: 'de', expected_screen_id: 'WALLET.REWARDS' },
   { utterance: 'meine abonnements verwalten',               lang: 'de', expected_screen_id: 'WALLET.SUBSCRIPTIONS' },
+  // VTID-NAV-WALLET-TABS: the Wallet mode pills (Activity / Actions).
+  { utterance: 'wallet activity',                           lang: 'en', expected_screen_id: 'WALLET.ACTIVITY' },
+  { utterance: 'wallet actions',                            lang: 'en', expected_screen_id: 'WALLET.ACTIONS' },
+  { utterance: 'wallet aktivität',                          lang: 'de', expected_screen_id: 'WALLET.ACTIVITY' },
 
   // ── HEALTH ──
   { utterance: 'how do I track my biology',                 lang: 'en', expected_screen_id: 'HEALTH.MY_BIOLOGY' },
@@ -220,9 +247,17 @@ const ROUTING_CASES: RoutingCase[] = [
   { utterance: 'meine biomarker zeigen',                    lang: 'de', expected_screen_id: 'HEALTH.MY_BIOLOGY' },
   { utterance: 'open my health plans',                      lang: 'en', expected_screen_id: 'HEALTH.PLANS' },
   { utterance: 'mein ernährungsplan',                       lang: 'de', expected_screen_id: 'HEALTH.PLANS' },
+  // Supplements disambiguation: the Health tab vs the Discover marketplace.
+  // Health-qualified phrasings must land on the Health Supplements tab, not the shop.
+  { utterance: 'open supplements in health',                lang: 'en', expected_screen_id: 'HEALTH.SUPPLEMENTS' },
+  { utterance: 'supplements in health',                     lang: 'en', expected_screen_id: 'HEALTH.SUPPLEMENTS' },
+  { utterance: 'health supplements',                        lang: 'en', expected_screen_id: 'HEALTH.SUPPLEMENTS' },
+  { utterance: 'my supplements',                            lang: 'en', expected_screen_id: 'HEALTH.SUPPLEMENTS' },
 
   // ── DISCOVER ──
+  // Generic / shopping phrasings stay on the marketplace.
   { utterance: 'show me supplements',                       lang: 'en', expected_screen_id: 'DISCOVER.SUPPLEMENTS' },
+  { utterance: 'buy supplements',                           lang: 'en', expected_screen_id: 'DISCOVER.SUPPLEMENTS' },
   { utterance: 'find me a doctor',                          lang: 'en', expected_screen_id: 'DISCOVER.DOCTORS_COACHES' },
   { utterance: 'I want to find a coach',                    lang: 'en', expected_screen_id: 'DISCOVER.DOCTORS_COACHES' },
   { utterance: 'are there any deals',                       lang: 'en', expected_screen_id: 'DISCOVER.DEALS' },
@@ -262,7 +297,16 @@ const ROUTING_CASES: RoutingCase[] = [
   // ── DISCOVER expanded ──
   { utterance: 'show me my orders',                          lang: 'en', expected_screen_id: 'DISCOVER.ORDERS' },
   { utterance: 'meine bestellungen',                         lang: 'de', expected_screen_id: 'DISCOVER.ORDERS' },
+  // VTID-NAV-ORDERS-TABS: the 2 Orders mode pills (Active / History).
+  { utterance: 'active orders',                              lang: 'en', expected_screen_id: 'DISCOVER.ORDERS_ACTIVE' },
+  { utterance: 'order history',                              lang: 'en', expected_screen_id: 'DISCOVER.ORDERS_HISTORY' },
+  { utterance: 'bestellverlauf',                             lang: 'de', expected_screen_id: 'DISCOVER.ORDERS_HISTORY' },
   { utterance: 'show me AI picks',                           lang: 'en', expected_screen_id: 'DISCOVER.AI_PICKS' },
+  // VTID-NAV-DISCOVER-TABS: the 3 Discover mode pills are voice-addressable.
+  { utterance: 'discover categories',                        lang: 'en', expected_screen_id: 'DISCOVER.CATEGORIES' },
+  { utterance: 'discover kategorien',                        lang: 'de', expected_screen_id: 'DISCOVER.CATEGORIES' },
+  { utterance: 'discover share and earn',                    lang: 'en', expected_screen_id: 'DISCOVER.SHARE_EARN' },
+  { utterance: 'discover ai picks',                          lang: 'en', expected_screen_id: 'DISCOVER.AI_PICKS' },
 
   // ── INBOX expanded ──
   { utterance: 'show me inspiration messages',               lang: 'en', expected_screen_id: 'INBOX.INSPIRATION' },
@@ -284,15 +328,55 @@ const ROUTING_CASES: RoutingCase[] = [
   { utterance: 'search my memories',                         lang: 'en', expected_screen_id: 'MEMORY.RECALL' },
   { utterance: 'erinnerungen durchsuchen',                   lang: 'de', expected_screen_id: 'MEMORY.RECALL' },
   { utterance: 'memory permissions',                         lang: 'en', expected_screen_id: 'MEMORY.PERMISSIONS' },
+  // VTID-NAV-DIARY-TABS: the Daily Diary mode pills (Health Diary / Bug Reports).
+  { utterance: 'health diary',                               lang: 'en', expected_screen_id: 'MEMORY.DIARY' },
+  { utterance: 'daily diary bug reports',                    lang: 'en', expected_screen_id: 'MEMORY.DIARY_BUGS' },
+  { utterance: 'fehlerberichte',                             lang: 'de', expected_screen_id: 'MEMORY.DIARY_BUGS' },
 
   // ── SETTINGS expanded ──
   { utterance: 'customize my app preferences',               lang: 'en', expected_screen_id: 'SETTINGS.PREFERENCES' },
   { utterance: 'connected apps settings',                    lang: 'en', expected_screen_id: 'SETTINGS.CONNECTED_APPS' },
   { utterance: 'social accounts settings',                   lang: 'en', expected_screen_id: 'SETTINGS.SOCIAL' },
+  // VTID-NAV-CONNECTORS-TABS: the Connectors category mode pills. "ai" is a
+  // <3-char token (filtered by the keyword scorer) so the AI pill relies on the
+  // semantic layer — not asserted here. The rest are keyword-deterministic.
+  { utterance: 'connectors',                                 lang: 'en', expected_screen_id: 'SETTINGS.CONNECTED_APPS' },
+  { utterance: 'connectors social',                          lang: 'en', expected_screen_id: 'CONNECTORS.SOCIAL' },
+  { utterance: 'connectors fitness',                         lang: 'en', expected_screen_id: 'CONNECTORS.FITNESS' },
+  { utterance: 'connectors health',                          lang: 'en', expected_screen_id: 'CONNECTORS.HEALTH' },
+  { utterance: 'connectors autopilot',                       lang: 'en', expected_screen_id: 'CONNECTORS.AGENT' },
+  { utterance: 'connectors mail and calendar',               lang: 'en', expected_screen_id: 'CONNECTORS.PRODUCTIVITY' },
+  { utterance: 'connectors music and video',                 lang: 'en', expected_screen_id: 'CONNECTORS.MEDIA' },
+  { utterance: 'connectors other',                           lang: 'en', expected_screen_id: 'CONNECTORS.OTHER' },
+  { utterance: 'konnektoren gesundheit',                     lang: 'de', expected_screen_id: 'CONNECTORS.HEALTH' },
   { utterance: 'open billing',                               lang: 'en', expected_screen_id: 'SETTINGS.BILLING' },
   { utterance: 'abrechnung öffnen',                          lang: 'de', expected_screen_id: 'SETTINGS.BILLING' },
   { utterance: 'I need help from support',                   lang: 'en', expected_screen_id: 'SETTINGS.SUPPORT' },
   { utterance: 'hilfe und support',                          lang: 'de', expected_screen_id: 'SETTINGS.SUPPORT' },
+  // VTID-NAV-SETTINGS-TABS: the Settings screen's top-level mode pills
+  // (Notifications / Privacy / Preferences / Billing). On mobile these deep-link
+  // via /settings?mode=<section>; MobileSettings reads ?mode= and selects the
+  // matching pill. Keyword-deterministic against the four top pills.
+  { utterance: 'settings notifications',                     lang: 'en', expected_screen_id: 'SETTINGS.NOTIFICATIONS' },
+  { utterance: 'settings privacy',                           lang: 'en', expected_screen_id: 'SETTINGS.PRIVACY' },
+  { utterance: 'settings preferences',                       lang: 'en', expected_screen_id: 'SETTINGS.PREFERENCES' },
+  { utterance: 'settings billing',                           lang: 'en', expected_screen_id: 'SETTINGS.BILLING' },
+  { utterance: 'einstellungen abrechnung',                   lang: 'de', expected_screen_id: 'SETTINGS.BILLING' },
+  // Settings sub-pills (the mode pills inside Privacy / Preferences / Billing).
+  // Deep-linked on mobile via /settings?mode=<parent.child>. Child titles use
+  // only their distinctive words so the bare parent phrase above still wins.
+  { utterance: 'settings privacy data sharing',              lang: 'en', expected_screen_id: 'SETTINGS.PRIVACY_DATA' },
+  { utterance: 'settings privacy security',                  lang: 'en', expected_screen_id: 'SETTINGS.PRIVACY_SECURITY' },
+  { utterance: 'settings privacy profile visibility',        lang: 'en', expected_screen_id: 'SETTINGS.PRIVACY_VISIBILITY' },
+  { utterance: 'settings preferences appearance',            lang: 'en', expected_screen_id: 'SETTINGS.PREFERENCES_APPEARANCE' },
+  { utterance: 'settings preferences language',              lang: 'en', expected_screen_id: 'SETTINGS.PREFERENCES_LANGUAGE' },
+  { utterance: 'language and region',                        lang: 'en', expected_screen_id: 'SETTINGS.PREFERENCES_LANGUAGE' },
+  { utterance: 'settings billing payment method',            lang: 'en', expected_screen_id: 'SETTINGS.BILLING_PAYMENT' },
+  { utterance: 'settings billing invoices',                  lang: 'en', expected_screen_id: 'SETTINGS.BILLING_INVOICES' },
+  { utterance: 'invoices and receipts',                      lang: 'en', expected_screen_id: 'SETTINGS.BILLING_INVOICES' },
+  { utterance: 'settings billing creator payouts',           lang: 'en', expected_screen_id: 'SETTINGS.BILLING_CREATOR' },
+  { utterance: 'erscheinungsbild',                           lang: 'de', expected_screen_id: 'SETTINGS.PREFERENCES_APPEARANCE' },
+  { utterance: 'rechnungen und belege',                      lang: 'de', expected_screen_id: 'SETTINGS.BILLING_INVOICES' },
 
   // ── HEALTH expanded ──
   { utterance: 'show me the health pillars',                 lang: 'en', expected_screen_id: 'HEALTH.PILLARS' },

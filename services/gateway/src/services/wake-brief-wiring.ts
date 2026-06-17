@@ -88,6 +88,27 @@ import {
   JOURNEY_GUIDE_EXTRA_KEY,
   JOURNEY_GUIDE_PROVIDER_KEY,
 } from './assistant-continuation/providers/journey-guide';
+// VTID-03290: guided-topic-narration — when a user taps a session/topic in the
+// Guided Journey catalog, Vitana opens and TEACHES that topic from the published
+// KB. Priority 96 (above first_time_welcome 95) so an explicit tap leads turn-1.
+// Fires ONLY when a topicId was tapped; otherwise skips, so it never blocks the
+// normal ladder.
+import {
+  makeGuidedTopicNarrationProvider,
+  GUIDED_TOPIC_NARRATION_EXTRA_KEY,
+  GUIDED_TOPIC_NARRATION_PROVIDER_KEY,
+} from './assistant-continuation/providers/guided-topic-narration';
+// Greeting v2: login-briefing — the unified, "My Longevity Journey"-centric
+// greeting for a normal login. Priority 93 so it LEADS over journey-guide (91),
+// new-day-return (90), Teacher (85) and wake-brief (80); it yields to the
+// explicit-tap (96), first-ever-session (95) and passed-goal-deadline (92)
+// providers. Suppresses on greetingPolicy='skip' and on the user's first-ever
+// session, so it never blocks those specialized paths.
+import {
+  makeLoginBriefingProvider,
+  LOGIN_BRIEFING_EXTRA_KEY,
+  LOGIN_BRIEFING_PROVIDER_KEY,
+} from './assistant-continuation/providers/login-briefing';
 // VTID-03061 (B0d-real Xf.1): auto-emit OASIS next_action.suggested/
 // .suppressed events when a wake-brief decision lands. Fire-and-forget;
 // never blocks the voice path.
@@ -105,6 +126,13 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 // caller (live-session-controller / orb-livekit) so we can keep this
 // module pure on the read side.
 import { recordWakeBriefEmitted } from './wake-cadence-signals';
+// VTID-03301 — cross-session opener rotation.
+import { readOrbSessionState } from './orb/orb-session-state';
+
+/** How many recent openers to remember per user (the rotation window). */
+const RECENT_OPENERS_WINDOW = 6;
+/** TTL for the rotation memory (48h) — long enough to vary day-to-day. */
+const RECENT_OPENERS_TTL_MIN = 48 * 60;
 
 // ---------------------------------------------------------------------------
 // One-time provider registration. The default registry started empty in
@@ -162,6 +190,19 @@ export function ensureWakeBriefProviderRegistered(): void {
   if (!defaultProviderRegistry.get(JOURNEY_GUIDE_PROVIDER_KEY)) {
     defaultProviderRegistry.register(makeJourneyGuideProvider());
   }
+  // VTID-03290: guided-topic-narration at priority 96 — leads turn-1 when a
+  // catalog topic was tapped. Skips cleanly when no topic was tapped, so it
+  // never blocks journey-guide / new-day-return / Teacher on a normal open.
+  if (!defaultProviderRegistry.get(GUIDED_TOPIC_NARRATION_PROVIDER_KEY)) {
+    defaultProviderRegistry.register(makeGuidedTopicNarrationProvider());
+  }
+  // Greeting v2: login-briefing at priority 93 — the unified journey briefing
+  // that leads a normal login. Suppresses cleanly (greeting_policy_skip /
+  // is_first_session_true) so it never blocks the silent-reconnect or
+  // first-time-welcome paths.
+  if (!defaultProviderRegistry.get(LOGIN_BRIEFING_PROVIDER_KEY)) {
+    defaultProviderRegistry.register(makeLoginBriefingProvider());
+  }
   _registered = true;
 }
 
@@ -194,6 +235,13 @@ export interface DecideWakeBriefArgs {
    * instead of the sequentially-computed `current_next_step`.
    */
   journeyFocusStep?: string | null;
+  /**
+   * VTID-03290: the Guided Journey catalog topic the user tapped to open the orb
+   * (from the session-start body's `guided_topic_id`). When set, the
+   * guided-topic-narration provider LEADS turn-1 — Vitana teaches that topic from
+   * the published KB. Undefined for normal opens.
+   */
+  guidedTopicId?: string | null;
   /** journeySurface from the ClientContextEnvelope, if any. */
   envelopeJourneySurface?: string;
   /**
@@ -426,12 +474,62 @@ export async function decideWakeBriefForSession(
         // VTID-03300 (follow-up): greet by name in the journey opener.
         firstName: args.firstName ?? null,
       };
+      // VTID-03290: guided-topic-narration inputs. The provider skips unless a
+      // catalog topic was tapped (guidedTopicId set), so passing the extra always
+      // is safe — when active it LEADS turn-1 (priority 96) and teaches the topic.
+      extra[GUIDED_TOPIC_NARRATION_EXTRA_KEY] = {
+        supabase: args.supabase,
+        userId: args.userId,
+        isReconnect: args.isReconnect,
+        lang: args.lang,
+        topicId: args.guidedTopicId ?? null,
+        firstName: args.firstName ?? null,
+      };
+      // Greeting v2: login-briefing inputs. The provider reads the 90-session
+      // guided-journey state + next-session title + Life Compass + Vitana Index
+      // and composes the journey-centric briefing. greetingPolicy lets it stay
+      // silent on a reconnect-class skip; timezone drives the salutation.
+      extra[LOGIN_BRIEFING_EXTRA_KEY] = {
+        supabase: args.supabase,
+        userId: args.userId,
+        tenantId: args.tenantId,
+        lang: args.lang,
+        firstName: args.firstName ?? null,
+        timezone: args.timezone ?? null,
+        greetingPolicy,
+      };
     }
   }
+
+  // VTID-03301 — load the openers this user was recently served so the ranker
+  // can rotate. Most-recent first. Best-effort: a read failure just means no
+  // penalty (old behaviour). Authenticated users only (anonymous have no state).
+  //
+  // Codex review fix: rotation applies ONLY to PASSIVE/ambient opens. When the
+  // user EXPLICITLY tapped a Guided Journey topic (`guidedTopicId`) or a
+  // Foundation focus step (`journeyFocusStep`), that is a direct user action
+  // that MUST lead turn 1 — demoting it would open the wrong conversation than
+  // the one the user just asked for. So we skip rotation entirely on explicit
+  // opens and honor the tapped candidate at its true priority.
+  const isExplicitSelection = !!(args.guidedTopicId || args.journeyFocusStep);
+  let storedRecentOpeners: string[] = [];
+  if (args.supabase && args.userId) {
+    try {
+      const rec = await readOrbSessionState<string[]>(args.supabase, args.userId, 'recent_openers');
+      if (rec && Array.isArray(rec.value)) {
+        storedRecentOpeners = rec.value.filter((k) => typeof k === 'string').slice(0, RECENT_OPENERS_WINDOW);
+      }
+    } catch { /* best-effort — no penalty on read failure */ }
+  }
+  // Withhold the rotation penalty from the ranker on explicit opens (the tapped
+  // candidate must lead), but keep `storedRecentOpeners` so the write below
+  // still merges onto the real history instead of wiping it.
+  const recentlyServedDedupeKeys: string[] = isExplicitSelection ? [] : storedRecentOpeners;
 
   const t0 = now();
   const decision = await decideContinuation({
     surface: 'orb_wake',
+    recentlyServedDedupeKeys,
     context: {
       sessionId: args.sessionId,
       userId: args.userId ?? undefined,
@@ -476,6 +574,20 @@ export async function decideWakeBriefForSession(
     tenantId: args.tenantId,
     surface: 'orb_wake',
   });
+
+  // VTID-03301 — persist the opener we just served so the NEXT session rotates
+  // away from it. Most-recent first, capped to the window. Only on a real
+  // emission (recordEmission) with an authenticated user + a selected opener.
+  if (args.recordEmission && args.supabase && args.userId && decision.selectedContinuation?.dedupeKey) {
+    const servedKey = decision.selectedContinuation.dedupeKey;
+    const nextList = [servedKey, ...storedRecentOpeners.filter((k) => k !== servedKey)]
+      .slice(0, RECENT_OPENERS_WINDOW);
+    void import('./orb/orb-session-state')
+      .then(({ writeOrbSessionState }) =>
+        writeOrbSessionState(args.supabase!, args.userId!, 'recent_openers', nextList, RECENT_OPENERS_TTL_MIN),
+      )
+      .catch(() => { /* best-effort — rotation degrades gracefully */ });
+  }
 
   // VTID-03081 (B1 wiring): record greeting style + timestamp so the
   // next session can dampen. Fire-and-forget — write failure is
