@@ -101,7 +101,14 @@ jobs:
             --cpu=1
             --timeout=300
             --max-instances=1
-            --min-instances=0
+            # BOOTSTRAP-ORB-STAGING-WARM: keep one warm instance. With
+            # min-instances=0 the gateway cold-starts, and an authenticated
+            # ORB /orb/live/session/start takes ~9.4s cold (vs ~4.4s warm) —
+            # past the widget's 8s AbortSignal.timeout, so the orb aborts and
+            # goes silent on the first open (proven by the e2e harness timing
+            # probe). One warm instance keeps session/start well under 8s,
+            # matching prod behavior.
+            --min-instances=1
           )
 
           # Env vars: VITANA_ENV is the load-bearing switch (P0.3). Anything else
@@ -123,21 +130,40 @@ jobs:
             "COMMIT_SHA=${GIT_COMMIT_SHA}"
             "BUILD_INFO_MARKER=${{ steps.commit.outputs.short }}"
             "GATEWAY_SERVICE_TOKEN=${{ secrets.GATEWAY_SERVICE_TOKEN }}"
+            # BOOTSTRAP-ORB-LATENCY-PHASE1 (Phase 0): turn on the VTID-03177
+            # per-turn voice latency telemetry on staging so the Phase 1-3
+            # latency retunes are measurable (voice.latency.measured OASIS
+            # events with the per-phase timeline). staging-only — prod stays
+            # off until the experiment window graduates it.
+            "FEATURE_LATENCY_TELEMETRY_ENV=staging-only"
+            # VTID-01973 / VTID-01975 / VTID-01976: enable the Vitana Intent
+            # Engine routes (/intents, /intent-matches, /intent-board,
+            # /intent-categories, /intent-scan, …). Prod sets this in
+            # EXEC-DEPLOY.yml; staging omitted it, and because --set-env-vars
+            # REPLACES (not merges) the env, the routes never mounted on
+            # gateway-staging — every intents/board call 404'd, so Find a
+            # Partner / matches could not load on preview.vitanaland.com.
+            "FEATURE_INTENT_ENGINE_A=true"
           )
 
           # Comma-joined for --set-env-vars (replaces, not merges — we want the
           # staging env vars to be authoritative on this service).
           ENV_VARS_JOINED=$(IFS=, ; echo "${ENV_VARS[*]}")
 
-          # Secrets: staging Supabase trio. JWT/ANON share with prod for Phase 0
-          # — the parent session's experiment exercises the platform from the
-          # same auth boundary; nothing about the JWT secret depends on the
-          # data store. (If isolation tightens later, swap to a staging-specific
-          # JWT secret created in GCP Secret Manager.)
+          # Secrets: Supabase.
+          # BOOTSTRAP-ORB-STAGING-SUPABASE-ALIGN: the staging FRONTEND
+          # (community-app-staging) authenticates users against the PROD Supabase
+          # project (inmkhvwdcuyhnxkgfvsb). Previously the gateway pointed at a
+          # SEPARATE staging Supabase (STAGING_SUPABASE_* → rsdakjqpvcpgomltdmxu),
+          # so logged-in users existed in the frontend's DB but NOT in the
+          # gateway's DB → identity/context resolution failed (journey/state 500,
+          # permitted_roles 404) and authenticated ORB voice hung on "connecting".
+          # Align the gateway to the SAME project the frontend uses by binding the
+          # prod SUPABASE_* secrets. (JWT secret was already shared.)
           SECRETS=(
-            "SUPABASE_URL=STAGING_SUPABASE_URL:latest"
-            "SUPABASE_SERVICE_ROLE=STAGING_SUPABASE_SERVICE_ROLE_KEY:latest"
-            "SUPABASE_ANON_KEY=STAGING_SUPABASE_ANON_KEY:latest"
+            "SUPABASE_URL=SUPABASE_URL:latest"
+            "SUPABASE_SERVICE_ROLE=SUPABASE_SERVICE_ROLE:latest"
+            "SUPABASE_ANON_KEY=SUPABASE_ANON_KEY:latest"
             "SUPABASE_JWT_SECRET=SUPABASE_JWT_SECRET:latest"
             "GOOGLE_GEMINI_API_KEY=GOOGLE_GEMINI_API_KEY:latest"
           )

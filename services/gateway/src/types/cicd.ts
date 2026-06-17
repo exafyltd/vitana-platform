@@ -801,6 +801,10 @@ export type CicdEventType =
   | 'guide.initiative.executed'
   | 'guide.initiative.declined'
   | 'guide.initiative.flag_disabled'
+  // Journey Conversation V2 — single proactive arbiter
+  | 'guide.focus.selected'
+  | 'guide.focus.suppressed'
+  | 'guide.focus.none'
   // VTID-01900: Longevity News Feed Events
   | 'news.feed.error'
   | 'news.feed.cycle_complete'

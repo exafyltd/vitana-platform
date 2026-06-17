@@ -34,6 +34,13 @@ interface Clip {
 }
 
 const CLIPS: Clip[] = [
+  // ORB-FAST-START Phase 4: instant cached wake cue. Played locally the
+  // instant the user taps the orb (Vitana's voice, no model/network) so the
+  // first thing they hear is Vitana — not 7-10s of silence while context +
+  // the Live model spin up. Short + non-committal so it never conflicts with
+  // the real wake-brief / Teacher / Journey opener that follows.
+  { id: 'wake-cue-en',              lang: 'en', text: "I'm here." },
+  { id: 'wake-cue-de',              lang: 'de', text: 'Ich bin da.' },
   // Disconnect alerts
   { id: 'disconnect-mic-en',        lang: 'en', text: "One moment, I can't hear your microphone." },
   { id: 'disconnect-mic-de',        lang: 'de', text: 'Einen Moment, Mikrofon-Problem.' },

@@ -68,7 +68,7 @@ describe('CTRL-POLICY-0003 — provider policy seeds (Sec. 4.3)', () => {
     for (const id of ['awin', 'cj', 'impact', 'rakuten_advertising', 'skimlinks', 'sovrn', 'wildfire']) {
       expect(() => pe.assertActionAllowed(id, 'cashback')).not.toThrow();
     }
-    // marketplace (null) and amazon_associates (null) and loyalty (false): denied
+    // marketplace (null) and amazon_associates (false) and loyalty (false): denied
     for (const id of ['amazon', 'amazon_associates', 'united_mileageplus']) {
       expect(() => pe.assertActionAllowed(id, 'cashback')).toThrow(PolicyDenied);
     }

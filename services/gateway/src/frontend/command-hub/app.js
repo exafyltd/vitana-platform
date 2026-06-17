@@ -2714,11 +2714,21 @@ const NAVIGATION_CONFIG = [
             { "key": "tenants", "path": "/command-hub/admin/tenants/" },
             { "key": "content-moderation", "path": "/command-hub/admin/content-moderation/" },
             { "key": "identity-access", "path": "/command-hub/admin/identity-access/" },
-            { "key": "marketplace-shops", "path": "/command-hub/admin/marketplace-shops/" },
-            { "key": "marketplace-review", "path": "/command-hub/admin/marketplace-review/" },
             { "key": "analytics", "path": "/command-hub/admin/analytics/" },
             { "key": "billing-dashboard", "label": "Billing", "path": "/command-hub/admin/billing-dashboard/" },
             { "key": "billing-codes", "label": "Billing Codes", "path": "/command-hub/admin/billing-codes/" }
+        ]
+    },
+    {
+        "section": "commerce",
+        "basePath": "/command-hub/commerce/",
+        "tabs": [
+            { "key": "overview", "path": "/command-hub/commerce/overview/" },
+            { "key": "providers-onboarding", "label": "Providers & Onboarding", "path": "/command-hub/commerce/providers-onboarding/" },
+            { "key": "commissions-rewards", "label": "Commissions & Rewards", "path": "/command-hub/commerce/commissions-rewards/" },
+            { "key": "affiliate-programs", "label": "Affiliate Programs", "path": "/command-hub/commerce/affiliate-programs/" },
+            { "key": "marketplace-shops", "path": "/command-hub/commerce/marketplace-shops/" },
+            { "key": "marketplace-review", "path": "/command-hub/commerce/marketplace-review/" }
         ]
     },
     {
@@ -2958,6 +2968,7 @@ const NAVIGATION_CONFIG = [
 const SECTION_LABELS = {
     'overview': 'Overview',
     'admin': 'Admin',
+    'commerce': 'Commerce',
     'knowledge-base': 'Knowledge Base',
     'assistant': 'Assistant',
     'voice': 'Voice',
@@ -5260,11 +5271,22 @@ function renderApp() {
         var moduleScroller = document.querySelector('.module-content-wrapper');
         var preservedModuleScrollTop = moduleScroller ? moduleScroller.scrollTop : 0;
         var preservedWindowY = window.scrollY || 0;
+        // Views with their own scroll containers (e.g. the KB checklist's topic
+        // table) tag them with data-preserve-scroll="<unique-key>" to survive
+        // the full-DOM rebuild — same rationale as the module-wrapper restore.
+        var preservedScrollers = {};
+        document.querySelectorAll('[data-preserve-scroll]').forEach(function (el) {
+            if (el.scrollTop > 0) preservedScrollers[el.getAttribute('data-preserve-scroll')] = el.scrollTop;
+        });
         _renderAppCore();
         var newModule = document.querySelector('.module-content-wrapper');
         if (newModule && preservedModuleScrollTop > 0) {
             newModule.scrollTop = preservedModuleScrollTop;
         }
+        Object.keys(preservedScrollers).forEach(function (key) {
+            var el = document.querySelector('[data-preserve-scroll="' + key + '"]');
+            if (el) el.scrollTop = preservedScrollers[key];
+        });
         if (preservedWindowY > 0) window.scrollTo(0, preservedWindowY);
     });
 }
@@ -6400,6 +6422,7 @@ function kbcState() {
             validation: null, validating: false,
             versions: [], versionsLoaded: false, publishing: false,
             view: 'topics',
+            regenerating: false, sessionInstructions: '', // VTID-03288: AI regeneration
         };
     }
     return state.kbChecklist;
@@ -6449,6 +6472,10 @@ function kbSelectTopic(id) {
     s.selectedId = id;
     var t = s.topics.find(function (x) { return x.topicId === id; });
     s.editor = t ? JSON.parse(JSON.stringify(t)) : null;
+    // New topic = new editor content: start its pane at the top (zeroing it now
+    // means renderApp's scroll preservation won't carry the old position over).
+    var ed = document.querySelector('[data-preserve-scroll="kb-checklist-editor"]');
+    if (ed) ed.scrollTop = 0;
     renderApp();
 }
 
@@ -6593,6 +6620,59 @@ async function kbExport() {
     }
 }
 
+// VTID-03288: AI regeneration — rewrite German teaching wording for one topic
+// or a whole session from freeform supervisor instructions.
+async function kbRegenerateTopic() {
+    var s = kbcState();
+    if (!s.editor) return;
+    var e = s.editor;
+    s.regenerating = true; renderApp();
+    try {
+        var resp = await fetch('/api/v1/admin/journey-checklist/topics/' + encodeURIComponent(e.topicId) + '/regenerate', {
+            method: 'POST',
+            headers: Object.assign({ 'Content-Type': 'application/json' }, buildContextHeaders()),
+            body: JSON.stringify({ instructions: e._aiInstructions || '', language: 'de' }),
+        });
+        var json = await resp.json();
+        if (!resp.ok || !json.ok) throw new Error(json.error || ('HTTP ' + resp.status));
+        showToast('KI hat ' + e.topicId + ' neu generiert', 'success');
+        var keepInstr = e._aiInstructions;
+        var idx = s.topics.findIndex(function (x) { return x.topicId === json.topic.topicId; });
+        if (idx >= 0) s.topics[idx] = json.topic;
+        s.editor = JSON.parse(JSON.stringify(json.topic));
+        s.editor._aiInstructions = keepInstr;
+    } catch (err) {
+        showToast('Regenerate failed: ' + err.message, 'error');
+    } finally {
+        s.regenerating = false; renderApp();
+    }
+}
+
+async function kbRegenerateSession() {
+    var s = kbcState();
+    var session = s.filters.session;
+    if (!session) { showToast('Set a Session # filter first', 'error'); return; }
+    if (!window.confirm('Regenerate ALL topics in session ' + session + ' with AI? This overwrites their German wording.')) return;
+    s.regenerating = true; renderApp();
+    try {
+        var resp = await fetch('/api/v1/admin/journey-checklist/sessions/' + encodeURIComponent(session) + '/regenerate', {
+            method: 'POST',
+            headers: Object.assign({ 'Content-Type': 'application/json' }, buildContextHeaders()),
+            body: JSON.stringify({ instructions: s.sessionInstructions || '', language: 'de' }),
+        });
+        var json = await resp.json();
+        if (!resp.ok) throw new Error(json.error || ('HTTP ' + resp.status));
+        var nFail = (json.failures || []).length;
+        showToast('Session ' + session + ': ' + (json.topics ? json.topics.length : 0) + ' generated'
+            + (nFail ? ', ' + nFail + ' failed' : ''), nFail ? 'error' : 'success');
+        await fetchKbChecklist();
+    } catch (err) {
+        showToast('Session regenerate failed: ' + err.message, 'error');
+    } finally {
+        s.regenerating = false; renderApp();
+    }
+}
+
 function renderKbTable() {
     var s = kbcState();
     var wrap = kbEl('div', 'admin-list-container');
@@ -6668,6 +6748,26 @@ function renderKbEditor() {
     panel.appendChild(field('Guided practice target', e.guidedPracticeTarget, { set: function (v) { e.guidedPracticeTarget = v; } }));
     panel.appendChild(field('Completion event', e.completionEvent, { set: function (v) { e.completionEvent = v; } }));
     panel.appendChild(field('Business gate', e.businessGate || '', { select: true, options: ['', 'curious', 'active', 'builder'], set: function (v) { e.businessGate = v || null; } }));
+
+    // VTID-03288: AI regeneration — supervisor types instructions, AI rewrites
+    // the German wording (voice script + explanations) for THIS topic.
+    var aiSec = kbEl('div', 'admin-detail-section');
+    aiSec.style.marginTop = '0.75rem';
+    aiSec.style.borderTop = '1px solid var(--border-color, #2a2a2a)';
+    aiSec.style.paddingTop = '0.75rem';
+    aiSec.appendChild(kbEl('label', 'admin-detail-label', 'AI-Anweisung (optional) — wie soll die KI diesen Eintrag neu schreiben?'));
+    var aiInput = document.createElement('textarea');
+    aiInput.className = 'form-control'; aiInput.rows = 2;
+    aiInput.placeholder = 'z. B. "einfacher erklären", "auf Anfänger zuschneiden", "wärmer formulieren"…';
+    aiInput.value = e._aiInstructions || '';
+    aiInput.oninput = function (ev) { e._aiInstructions = ev.target.value; };
+    aiSec.appendChild(aiInput);
+    var regenBtn = kbEl('button', 'btn btn-sm btn-secondary', s.regenerating ? 'Generiere…' : '✨ Mit KI neu generieren');
+    regenBtn.disabled = !!s.regenerating;
+    regenBtn.style.marginTop = '0.4rem';
+    regenBtn.onclick = kbRegenerateTopic;
+    aiSec.appendChild(regenBtn);
+    panel.appendChild(aiSec);
 
     var actions = kbEl('div', 'admin-detail-actions');
     var save = kbEl('button', 'btn btn-primary', s.saving ? 'Saving…' : 'Save');
@@ -6763,32 +6863,62 @@ function renderKbChecklistView() {
 
     if (s.view === 'versions') { root.appendChild(renderKbVersions()); return root; }
 
-    // Filters
+    // Filters — single compact row. .form-control is width:100% globally, so
+    // each control must override it (flex sizing) or they stack one per line.
     var filters = kbEl('div', 'admin-toolbar');
-    filters.style.display = 'flex'; filters.style.gap = '0.5rem'; filters.style.flexWrap = 'wrap'; filters.style.padding = '0.25rem 0';
+    filters.style.display = 'flex'; filters.style.gap = '0.5rem'; filters.style.flexWrap = 'wrap';
+    filters.style.alignItems = 'center'; filters.style.padding = '0.25rem 0';
+    function inRow(el, flex) { el.style.width = 'auto'; el.style.minWidth = '0'; el.style.flex = flex; return el; }
     var search = document.createElement('input');
     search.type = 'text'; search.className = 'form-control'; search.placeholder = 'Search label…'; search.value = s.filters.search;
     search.oninput = function (ev) { s.filters.search = ev.target.value; };
     search.onkeydown = function (ev) { if (ev.key === 'Enter') fetchKbChecklist(); };
-    filters.appendChild(search);
+    filters.appendChild(inRow(search, '2 1 10rem'));
+    // VTID-03288: Session # filter — also the target for per-session AI regeneration.
+    var sessionInput = document.createElement('input');
+    sessionInput.type = 'number'; sessionInput.min = '1'; sessionInput.max = '90';
+    sessionInput.className = 'form-control'; sessionInput.placeholder = 'Session #';
+    sessionInput.value = s.filters.session;
+    sessionInput.onchange = function (ev) { s.filters.session = ev.target.value; fetchKbChecklist(); };
+    filters.appendChild(inRow(sessionInput, '0 1 7rem'));
     function sel(options, current, onchange) {
         var el = document.createElement('select'); el.className = 'form-control';
         options.forEach(function (o) { var op = document.createElement('option'); op.value = o.v; op.textContent = o.t; if (o.v === current) op.selected = true; el.appendChild(op); });
         el.onchange = onchange; return el;
     }
-    filters.appendChild(sel(
+    filters.appendChild(inRow(sel(
         [{ v: '', t: 'All chapters' }, { v: 'basics', t: 'basics' }, { v: 'daily_use', t: 'daily_use' }, { v: 'community', t: 'community' }, { v: 'health', t: 'health' }, { v: 'intelligence', t: 'intelligence' }, { v: 'discovery', t: 'discovery' }],
-        s.filters.chapter, function (ev) { s.filters.chapter = ev.target.value; fetchKbChecklist(); }));
-    filters.appendChild(sel(
+        s.filters.chapter, function (ev) { s.filters.chapter = ev.target.value; fetchKbChecklist(); }), '1 1 8rem'));
+    filters.appendChild(inRow(sel(
         [{ v: '', t: 'All status' }, { v: 'draft', t: 'draft' }, { v: 'published', t: 'published' }, { v: 'disabled', t: 'disabled' }],
-        s.filters.status, function (ev) { s.filters.status = ev.target.value; fetchKbChecklist(); }));
-    filters.appendChild(sel(
+        s.filters.status, function (ev) { s.filters.status = ev.target.value; fetchKbChecklist(); }), '1 1 8rem'));
+    filters.appendChild(inRow(sel(
         [{ v: '', t: 'All gates' }, { v: 'curious', t: 'curious' }, { v: 'active', t: 'active' }, { v: 'builder', t: 'builder' }],
-        s.filters.businessGate, function (ev) { s.filters.businessGate = ev.target.value; fetchKbChecklist(); }));
+        s.filters.businessGate, function (ev) { s.filters.businessGate = ev.target.value; fetchKbChecklist(); }), '1 1 8rem'));
     var applyBtn = kbEl('button', 'btn btn-sm btn-secondary', 'Apply');
+    applyBtn.style.flex = 'none';
     applyBtn.onclick = fetchKbChecklist;
     filters.appendChild(applyBtn);
     root.appendChild(filters);
+
+    // VTID-03288: Per-session AI regeneration — visible when filtered to one session.
+    if (s.filters.session) {
+        var sessRow = kbEl('div', 'admin-toolbar');
+        sessRow.style.display = 'flex'; sessRow.style.gap = '0.5rem'; sessRow.style.flexWrap = 'wrap';
+        sessRow.style.alignItems = 'center'; sessRow.style.padding = '0.25rem 0';
+        sessRow.appendChild(kbEl('span', 'admin-screen-subtitle', 'Session ' + s.filters.session + ' — KI:'));
+        var sessInstr = document.createElement('input');
+        sessInstr.type = 'text'; sessInstr.className = 'form-control'; sessInstr.style.flex = '1'; sessInstr.style.minWidth = '14rem';
+        sessInstr.placeholder = 'AI-Anweisung für die ganze Session (optional)…';
+        sessInstr.value = s.sessionInstructions;
+        sessInstr.oninput = function (ev) { s.sessionInstructions = ev.target.value; };
+        sessRow.appendChild(sessInstr);
+        var sessBtn = kbEl('button', 'btn btn-sm btn-primary', s.regenerating ? 'Generiere…' : '✨ Session neu generieren');
+        sessBtn.disabled = !!s.regenerating;
+        sessBtn.onclick = kbRegenerateSession;
+        sessRow.appendChild(sessBtn);
+        root.appendChild(sessRow);
+    }
 
     if (s.error) {
         var err = kbEl('div', 'admin-error', s.error + ' ');
@@ -6805,12 +6935,29 @@ function renderKbChecklistView() {
     }
 
     // Split: table (screen 05) + editor (screen 06)
+    // VTID-03288 scroll fix: the shared .admin-split-* chain is overflow:hidden
+    // and (lacking min-height:0) lets the 250-row table grow to full height,
+    // which then gets CLIPPED to ~2 rows with no scrollbar. Neutralize the
+    // clipping here and give each pane its own bounded scroll so all 250 topics
+    // are reachable regardless of window height.
+    root.style.overflowY = 'auto';
+    // Selecting a topic re-renders the whole app; these containers carry
+    // data-preserve-scroll so renderApp() restores their position instead of
+    // snapping the list/editor back to the top.
+    root.setAttribute('data-preserve-scroll', 'kb-checklist-root');
     var split = kbEl('div', 'admin-split-layout');
     split.style.display = 'flex'; split.style.gap = '1rem'; split.style.alignItems = 'flex-start';
+    split.style.flex = 'none'; split.style.overflow = 'visible'; split.style.minHeight = '0';
     var left = kbEl('div', 'admin-split-left'); left.style.flex = '1'; left.style.minWidth = '0';
-    left.appendChild(renderKbTable());
+    left.style.overflow = 'visible'; left.style.minHeight = '0';
+    var tbl = renderKbTable();
+    tbl.style.flex = 'none'; tbl.style.maxHeight = '72vh'; tbl.style.overflowY = 'auto';
+    tbl.setAttribute('data-preserve-scroll', 'kb-checklist-table');
+    left.appendChild(tbl);
     split.appendChild(left);
     var right = kbEl('div', 'admin-split-right'); right.style.flex = '1'; right.style.minWidth = '0';
+    right.style.overflow = 'visible'; right.style.maxHeight = '72vh'; right.style.overflowY = 'auto';
+    right.setAttribute('data-preserve-scroll', 'kb-checklist-editor');
     right.appendChild(renderKbEditor());
     split.appendChild(right);
     root.appendChild(split);
@@ -6946,11 +7093,23 @@ function renderModuleContent(moduleKey, tab) {
     } else if (moduleKey === 'admin' && tab === 'identity-access') {
         // VTID-01195: Admin Identity Access v1 - Auth status + access logs
         container.appendChild(renderAdminIdentityAccessView());
-    } else if (moduleKey === 'admin' && tab === 'marketplace-shops') {
-        // VTID-02000: Admin Marketplace Shops - list + add sources (Shopify/CJ)
+    } else if (moduleKey === 'commerce' && tab === 'overview') {
+        // VCAOP: Commerce overview — providers/programs/tasks/commission KPIs
+        container.appendChild(renderCommerceOverviewView());
+    } else if (moduleKey === 'commerce' && tab === 'providers-onboarding') {
+        // VCAOP: Provider catalog + batch onboarding + human-task inbox
+        container.appendChild(renderCommerceProvidersOnboardingView());
+    } else if (moduleKey === 'commerce' && tab === 'commissions-rewards') {
+        // VCAOP: Commission queue — confirm credits wallet / reverse claws back
+        container.appendChild(renderCommerceCommissionsView());
+    } else if (moduleKey === 'commerce' && tab === 'affiliate-programs') {
+        // VCAOP: Affiliate program registry
+        container.appendChild(renderCommerceAffiliateProgramsView());
+    } else if (moduleKey === 'commerce' && tab === 'marketplace-shops') {
+        // VTID-02000: Marketplace Shops - list + add sources (Shopify/CJ) — relocated from Admin
         container.appendChild(renderAdminMarketplaceShopsView());
-    } else if (moduleKey === 'admin' && tab === 'marketplace-review') {
-        // VTID-02000: Admin Marketplace Review Queue - approve/reject flagged products
+    } else if (moduleKey === 'commerce' && tab === 'marketplace-review') {
+        // VTID-02000: Marketplace Review Queue - approve/reject flagged products — relocated from Admin
         container.appendChild(renderAdminMarketplaceReviewView());
     } else if (moduleKey === 'admin' && tab === 'billing-dashboard') {
         // VTID-03107: Billing v1 operator dashboard — MRR / paywall funnel / code redemptions / voice degrade
@@ -12595,6 +12754,275 @@ function renderAdminBillingCodesView() {
     }
     container.appendChild(listCard);
 
+    return container;
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// VCAOP — Commerce section (providers, onboarding, commissions, programs)
+// Backed by /api/v1/vcaop/* (see services/gateway/src/routes/vcaop.ts).
+// ════════════════════════════════════════════════════════════════════════════
+
+async function fetchVcaop(path, opts) {
+    opts = opts || {};
+    var resp = await fetch('/api/v1/vcaop' + path, {
+        method: opts.method || 'GET',
+        headers: buildContextHeaders(),
+        body: opts.body ? JSON.stringify(opts.body) : undefined
+    });
+    var json = await resp.json();
+    if (!resp.ok || json.ok === false) {
+        if (resp.status === 401) throw new Error('Unauthenticated — sign in first');
+        if (resp.status === 403) throw new Error('Access denied — exafy_admin role required');
+        throw new Error(json.error || ('HTTP ' + resp.status));
+    }
+    return json;
+}
+
+function loadVcaopBase() {
+    // vcaopError gates too — otherwise every re-render restarts the fetch and
+    // the error state can never be displayed (perpetual "Loading…").
+    if (state.vcaopLoading || state.vcaopLoaded || state.vcaopError) return;
+    state.vcaopLoading = true;
+    Promise.all([
+        fetchVcaop('/providers'),
+        fetchVcaop('/affiliate-programs'),
+        fetchVcaop('/onboarding/inbox').catch(function () { return { data: null }; }),
+        fetchVcaop('/commissions?status=pending').catch(function () { return { data: null }; })
+    ]).then(function (r) {
+        state.vcaopProviders = r[0].data || [];
+        state.vcaopPrograms = r[1].data || [];
+        state.vcaopInbox = r[2].data; // null when not admin
+        state.vcaopPendingCommissions = r[3].data;
+        state.vcaopLoaded = true;
+    }).catch(function (err) {
+        state.vcaopError = err.message;
+    }).finally(function () {
+        state.vcaopLoading = false;
+        renderApp();
+    });
+}
+
+function vcaopScreen(title, subtitle) {
+    var container = document.createElement('div');
+    container.className = 'admin-screen-container';
+    var header = document.createElement('div');
+    header.className = 'admin-screen-header';
+    header.innerHTML = '<h2>' + escapeHtml(title) + '</h2>' +
+        '<p class="admin-screen-subtitle">' + escapeHtml(subtitle) + '</p>';
+    container.appendChild(header);
+    if (state.vcaopError) {
+        var errEl = document.createElement('div');
+        errEl.className = 'admin-error';
+        errEl.textContent = state.vcaopError;
+        var retry = document.createElement('button');
+        retry.className = 'btn btn-secondary btn-sm';
+        retry.textContent = 'Retry';
+        retry.onclick = function () { state.vcaopError = null; state.vcaopLoaded = false; loadVcaopBase(); };
+        errEl.appendChild(document.createElement('br'));
+        errEl.appendChild(retry);
+        container.appendChild(errEl);
+    } else if (!state.vcaopLoaded) {
+        var loading = document.createElement('div');
+        loading.className = 'admin-loading';
+        loading.textContent = 'Loading commerce data…';
+        container.appendChild(loading);
+    }
+    return container;
+}
+
+function vcaopTable(headers, rows) {
+    var wrap = document.createElement('div');
+    wrap.className = 'admin-list-container';
+    var html = '<table class="admin-table"><thead><tr>';
+    headers.forEach(function (h) { html += '<th>' + escapeHtml(h) + '</th>'; });
+    html += '</tr></thead><tbody>';
+    rows.forEach(function (cells) {
+        html += '<tr>';
+        cells.forEach(function (c) { html += '<td>' + c + '</td>'; });
+        html += '</tr>';
+    });
+    wrap.innerHTML = html + '</tbody></table>';
+    return wrap;
+}
+
+function renderCommerceOverviewView() {
+    loadVcaopBase();
+    var container = vcaopScreen('Commerce Overview',
+        'Vitanaland Commerce & Account-Operations — providers, affiliate programs, onboarding queue, commissions.');
+    if (!state.vcaopLoaded) return container;
+
+    var grid = document.createElement('div');
+    grid.className = 'admin-stats-grid';
+    var kpis = [
+        ['Providers', (state.vcaopProviders || []).length],
+        ['Affiliate programs', (state.vcaopPrograms || []).length],
+        ['Open human tasks', state.vcaopInbox ? state.vcaopInbox.length : '—'],
+        ['Pending commissions', state.vcaopPendingCommissions ? state.vcaopPendingCommissions.length : '—']
+    ];
+    kpis.forEach(function (k) {
+        var card = document.createElement('div');
+        card.className = 'admin-stat-card';
+        card.innerHTML = '<div class="admin-stat-value">' + escapeHtml(String(k[1])) + '</div>' +
+            '<div class="admin-stat-label">' + escapeHtml(k[0]) + '</div>';
+        grid.appendChild(card);
+    });
+    container.appendChild(grid);
+
+    var byCat = {};
+    (state.vcaopProviders || []).forEach(function (p) { byCat[p.category] = (byCat[p.category] || 0) + 1; });
+    container.appendChild(vcaopTable(['Category', 'Providers'],
+        Object.keys(byCat).sort().map(function (c) { return [escapeHtml(c), String(byCat[c])]; })));
+    return container;
+}
+
+function renderCommerceProvidersOnboardingView() {
+    loadVcaopBase();
+    var container = vcaopScreen('Providers & Onboarding',
+        'The prepared provider catalog. Batch-onboard fans providers into queued jobs + your human-task inbox; you clear the KYB/registration checkpoints, the platform pre-fills the rest.');
+    if (!state.vcaopLoaded) return container;
+
+    var toolbar = document.createElement('div');
+    toolbar.className = 'admin-filters-row';
+
+    var catFilter = document.createElement('select');
+    catFilter.className = 'admin-filter-select';
+    var cats = {};
+    (state.vcaopProviders || []).forEach(function (p) { cats[p.category] = true; });
+    catFilter.innerHTML = '<option value="">All categories</option>' + Object.keys(cats).sort().map(function (c) {
+        return '<option value="' + escapeHtml(c) + '"' + (state.vcaopProviderCat === c ? ' selected' : '') + '>' + escapeHtml(c) + '</option>';
+    }).join('');
+    catFilter.onchange = function (e) { state.vcaopProviderCat = e.target.value; renderApp(); };
+    toolbar.appendChild(catFilter);
+
+    var batchAll = document.createElement('button');
+    batchAll.className = 'btn btn-primary btn-sm';
+    batchAll.textContent = state.vcaopBatchRunning ? 'Batch running…' : 'Batch-onboard ALL providers';
+    batchAll.disabled = !!state.vcaopBatchRunning;
+    batchAll.onclick = function () {
+        if (!confirm('Queue onboarding jobs + human tasks for the entire provider catalog?')) return;
+        state.vcaopBatchRunning = true;
+        renderApp();
+        fetchVcaop('/onboarding/batch', { method: 'POST', body: {} }).then(function (j) {
+            state.vcaopBatchResult = 'Queued ' + j.data.queued + ' providers, created ' + j.data.humanTasksCreated + ' human tasks.';
+            state.vcaopLoaded = false;
+        }).catch(function (e) {
+            state.vcaopBatchResult = 'Batch failed: ' + e.message;
+        }).finally(function () {
+            state.vcaopBatchRunning = false;
+            loadVcaopBase();
+        });
+    };
+    toolbar.appendChild(batchAll);
+    if (state.vcaopBatchResult) {
+        var resEl = document.createElement('span');
+        resEl.className = 'admin-screen-subtitle';
+        resEl.textContent = state.vcaopBatchResult;
+        toolbar.appendChild(resEl);
+    }
+    container.appendChild(toolbar);
+
+    var provs = (state.vcaopProviders || []).filter(function (p) {
+        return !state.vcaopProviderCat || p.category === state.vcaopProviderCat;
+    });
+    container.appendChild(vcaopTable(['Provider', 'Category', 'Connector', 'KYB'],
+        provs.map(function (p) {
+            return [escapeHtml(p.name), escapeHtml(p.category), escapeHtml(p.connector_mode), p.kyb_required ? 'required' : '—'];
+        })));
+
+    var inboxHeader = document.createElement('h3');
+    inboxHeader.textContent = 'Human-task inbox (' + (state.vcaopInbox ? state.vcaopInbox.length : 0) + ' open)';
+    container.appendChild(inboxHeader);
+    if (!state.vcaopInbox || state.vcaopInbox.length === 0) {
+        var empty = document.createElement('p');
+        empty.className = 'admin-screen-subtitle';
+        empty.textContent = state.vcaopInbox ? 'Inbox empty — nothing awaiting a human.' : 'Sign in as exafy_admin to view the inbox.';
+        container.appendChild(empty);
+    } else {
+        container.appendChild(vcaopTable(['Type', 'Provider', 'Status', 'Created', 'Action'],
+            state.vcaopInbox.map(function (t) {
+                var action;
+                if (t.type === 'KYB') {
+                    action = '<span class="admin-screen-subtitle">KYB — staff + admin approval flow</span>';
+                } else {
+                    action = '<button class="btn btn-secondary btn-sm" data-vcaop-complete="' + escapeHtml(t.id) + '">Mark completed</button>';
+                }
+                return [escapeHtml(t.type), escapeHtml(t.provider_id || '—'), escapeHtml(t.status),
+                    escapeHtml(String(t.created_at || '').slice(0, 16)), action];
+            })));
+        container.addEventListener('click', function (ev) {
+            var btn = ev.target && ev.target.getAttribute ? ev.target : null;
+            var id = btn && btn.getAttribute('data-vcaop-complete');
+            if (!id) return;
+            fetchVcaop('/tasks/' + encodeURIComponent(id) + '/complete', { method: 'POST' }).then(function () {
+                state.vcaopLoaded = false;
+                loadVcaopBase();
+            }).catch(function (e) { alert(e.message); });
+        });
+    }
+    return container;
+}
+
+function renderCommerceCommissionsView() {
+    loadVcaopBase();
+    var container = vcaopScreen('Commissions & Rewards',
+        'Pending commissions await a confirmed purchase postback. Confirm credits the user\'s wallet; reverse claws the reward back.');
+    if (!state.vcaopLoaded) return container;
+
+    var rows = state.vcaopPendingCommissions;
+    if (!rows) {
+        var note = document.createElement('p');
+        note.className = 'admin-screen-subtitle';
+        note.textContent = 'Sign in as exafy_admin to manage commissions.';
+        container.appendChild(note);
+        return container;
+    }
+    if (rows.length === 0) {
+        var empty = document.createElement('p');
+        empty.className = 'admin-screen-subtitle';
+        empty.textContent = 'No pending commissions.';
+        container.appendChild(empty);
+        return container;
+    }
+    container.appendChild(vcaopTable(['Merchant', 'User', 'Gross', 'Status', 'Created', 'Action'],
+        rows.map(function (c) {
+            var action = '<button class="btn btn-primary btn-sm" data-vcaop-confirm="' + escapeHtml(c.id) + '">Confirm</button> ' +
+                '<button class="btn btn-secondary btn-sm" data-vcaop-reverse="' + escapeHtml(c.id) + '">Reverse</button>';
+            return [escapeHtml(c.merchant), escapeHtml(String(c.user_id || '').slice(0, 8) + '…'),
+                escapeHtml(c.gross_commission + ' ' + c.currency), escapeHtml(c.status),
+                escapeHtml(String(c.created_at || '').slice(0, 16)), action];
+        })));
+    container.addEventListener('click', function (ev) {
+        var el = ev.target && ev.target.getAttribute ? ev.target : null;
+        if (!el) return;
+        var confirmId = el.getAttribute('data-vcaop-confirm');
+        var reverseId = el.getAttribute('data-vcaop-reverse');
+        if (confirmId) {
+            var ref = prompt('Postback reference for this confirmation (required):');
+            if (!ref) return;
+            fetchVcaop('/commissions/' + encodeURIComponent(confirmId) + '/confirm', { method: 'POST', body: { postbackRef: ref } })
+                .then(function () { state.vcaopLoaded = false; loadVcaopBase(); })
+                .catch(function (e) { alert(e.message); });
+        } else if (reverseId) {
+            if (!confirm('Reverse this commission and claw back the reward?')) return;
+            fetchVcaop('/commissions/' + encodeURIComponent(reverseId) + '/reverse', { method: 'POST', body: {} })
+                .then(function () { state.vcaopLoaded = false; loadVcaopBase(); })
+                .catch(function (e) { alert(e.message); });
+        }
+    });
+    return container;
+}
+
+function renderCommerceAffiliateProgramsView() {
+    loadVcaopBase();
+    var container = vcaopScreen('Affiliate Programs',
+        'Demand-side earning routes. Cashback only flows through programs explicitly marked allowed.');
+    if (!state.vcaopLoaded) return container;
+    container.appendChild(vcaopTable(['Program', 'Network', 'Source', 'Cashback'],
+        (state.vcaopPrograms || []).map(function (p) {
+            var cb = p.affiliate_cashback_allowed === true ? 'allowed'
+                : p.affiliate_cashback_allowed === false ? 'not allowed' : 'under review';
+            return [escapeHtml(p.id), escapeHtml(p.network), escapeHtml(p.source), escapeHtml(cb)];
+        })));
     return container;
 }
 

@@ -104,6 +104,13 @@ export interface NavCatalogEntry {
    * Use for entries like /daily-diary which are mobile-only flows.
    */
   viewport_only?: 'mobile' | 'desktop';
+  /**
+   * BOOTSTRAP-NAV-PLATFORM: which MAXINA surface this entry belongs to. The
+   * Navigator manages two separate catalogs (Mobile + Desktop) scoped by this
+   * field. The compile-time NAVIGATION_CATALOG is the Mobile catalog, so when a
+   * value is absent it is treated as `'mobile'` everywhere downstream.
+   */
+  platform?: 'mobile' | 'desktop';
 }
 
 /**
@@ -448,6 +455,52 @@ export const NAVIGATION_CATALOG: ReadonlyArray<NavCatalogEntry> = [
       },
     },
   },
+  // VTID-NAV-NEWS-TABS: voice-addressable filter tabs of the News feed (/home).
+  // The Home page reads ?tab=<all|longevity|community> on both mobile
+  // (MobileModePill) and desktop (SplitBar), so the deep-link lives in `route`
+  // (always applied) — no is_mobile dependency. Longevity is the default tab and
+  // is already served by HOME.OVERVIEW (/home), so only All and Community are
+  // added here.
+  {
+    screen_id: 'HOME.NEWS_ALL',
+    route: '/home?tab=all',
+    category: 'home',
+    access: 'authenticated',
+    anonymous_safe: false,
+    aliases: ['all-news', 'news-all'],
+    i18n: {
+      en: {
+        title: 'All News',
+        description: 'The News feed with all sources — longevity and community news combined.',
+        when_to_visit: 'When the user asks for the All News tab, all news, every news source, or both longevity and community news together in one feed.',
+      },
+      de: {
+        title: 'Alle News',
+        description: 'Der News-Feed mit allen Quellen — Longevity- und Community-News zusammen.',
+        when_to_visit: 'Wenn der Nutzer den Tab „Alle News“, alle Nachrichten, jede Nachrichtenquelle oder Longevity- und Community-News zusammen in einem Feed möchte.',
+      },
+    },
+  },
+  {
+    screen_id: 'HOME.NEWS_COMMUNITY',
+    route: '/home?tab=community',
+    category: 'home',
+    access: 'authenticated',
+    anonymous_safe: false,
+    aliases: ['community-news', 'news-community'],
+    i18n: {
+      en: {
+        title: 'Community News',
+        description: 'The Community tab of the News feed — updates and posts from the Maxina community.',
+        when_to_visit: 'When the user asks for the Community tab of the news feed, community news, community updates, or what is happening in the community feed.',
+      },
+      de: {
+        title: 'Community-News',
+        description: 'Der Community-Tab des News-Feeds — Updates und Beiträge aus der Maxina-Community.',
+        when_to_visit: 'Wenn der Nutzer den Community-Tab des News-Feeds, Community-Nachrichten, Community-Updates oder Neuigkeiten aus dem Community-Feed möchte.',
+      },
+    },
+  },
   {
     screen_id: 'HOME.MATCHES',
     route: '/home/matches',
@@ -607,6 +660,29 @@ export const NAVIGATION_CATALOG: ReadonlyArray<NavCatalogEntry> = [
     },
   },
   {
+    // The Hot tab is the Events default, but give it an explicit ?tab=hot entry
+    // so the user can switch TO it by voice when already on another tab (the
+    // bare COMM.EVENTS route has no ?tab and so can't switch tabs in-place).
+    screen_id: 'COMM.EVENTS_HOT',
+    route: '/comm/events-meetups?tab=hot',
+    category: 'community',
+    access: 'authenticated',
+    anonymous_safe: false,
+    aliases: ['hot-events', 'events-hot', 'trending-events', 'featured-events'],
+    i18n: {
+      en: {
+        title: 'Hot Events',
+        description: 'Featured and trending Maxina community events and meetups.',
+        when_to_visit: 'When the user asks for the Hot tab of Events & Meetups, hot events, trending events, featured events, or the highlighted community events.',
+      },
+      de: {
+        title: 'Angesagte Events',
+        description: 'Hervorgehobene und angesagte Maxina-Community-Events und Meetups.',
+        when_to_visit: 'Wenn der Nutzer nach dem Tab „Hot“ von Events & Meetups, angesagten Events, Trend-Events, hervorgehobenen Events oder den Top-Community-Events fragt.',
+      },
+    },
+  },
+  {
     screen_id: 'COMM.LIVE_ROOMS',
     route: '/comm/live-rooms',
     category: 'community',
@@ -623,6 +699,90 @@ export const NAVIGATION_CATALOG: ReadonlyArray<NavCatalogEntry> = [
         title: 'Live-Räume',
         description: 'Live Audio- und Video-Räume, in denen sich Community-Mitglieder in Echtzeit treffen.',
         when_to_visit: 'Wenn der Nutzer nach Live-Räumen, Live-Audio, Live-Video, Echtzeit-Gesprächen, Online-Community-Calls oder virtuellen Treffen fragt, die gerade stattfinden.',
+      },
+    },
+  },
+  // VTID-NAV-LIVEROOMS-TABS: voice-addressable tabs of the Live Rooms screen.
+  // The LiveRooms page reads ?tab=<all|live|scheduled|past> on both mobile
+  // (MobileModePill) and desktop (SplitBar), so the deep-link lives in `route`
+  // (always applied) — no mobile_route / is_mobile dependency needed.
+  {
+    screen_id: 'COMM.LIVE_ROOMS_LIVE',
+    route: '/comm/live-rooms?tab=live',
+    category: 'community',
+    access: 'authenticated',
+    anonymous_safe: false,
+    aliases: ['live-rooms-live', 'live_now', 'live-now'],
+    i18n: {
+      en: {
+        title: 'Live Now',
+        description: 'Live Rooms that are streaming right now.',
+        when_to_visit: 'When the user asks for the Live Now tab of Live Rooms — rooms that are live right now, currently streaming, or happening this moment.',
+      },
+      de: {
+        title: 'Jetzt live',
+        description: 'Live-Räume, die gerade jetzt streamen.',
+        when_to_visit: 'Wenn der Nutzer nach dem Tab „Jetzt live“ der Live-Räume fragt — Räume, die gerade live sind, aktuell streamen oder genau jetzt stattfinden.',
+      },
+    },
+  },
+  {
+    screen_id: 'COMM.LIVE_ROOMS_SCHEDULED',
+    route: '/comm/live-rooms?tab=scheduled',
+    category: 'community',
+    access: 'authenticated',
+    anonymous_safe: false,
+    aliases: ['live-rooms-scheduled', 'upcoming-rooms', 'scheduled-rooms'],
+    i18n: {
+      en: {
+        title: 'Scheduled Rooms',
+        description: 'Upcoming Live Rooms scheduled for later.',
+        when_to_visit: 'When the user asks for the Scheduled tab of Live Rooms — upcoming rooms, scheduled sessions, or live rooms planned for later.',
+      },
+      de: {
+        title: 'Geplante Räume',
+        description: 'Kommende Live-Räume, die für später geplant sind.',
+        when_to_visit: 'Wenn der Nutzer nach dem Tab „Geplant“ der Live-Räume fragt — kommende Räume, geplante Sitzungen oder für später geplante Live-Räume.',
+      },
+    },
+  },
+  {
+    screen_id: 'COMM.LIVE_ROOMS_PAST',
+    route: '/comm/live-rooms?tab=past',
+    category: 'community',
+    access: 'authenticated',
+    anonymous_safe: false,
+    aliases: ['live-rooms-past', 'past-rooms', 'past-sessions'],
+    i18n: {
+      en: {
+        title: 'Past Sessions',
+        description: 'Recordings and summaries from completed Live Rooms.',
+        when_to_visit: 'When the user asks for the Past tab of Live Rooms — past sessions, previous rooms, recordings, or summaries of completed live rooms.',
+      },
+      de: {
+        title: 'Vergangene Sitzungen',
+        description: 'Aufzeichnungen und Zusammenfassungen abgeschlossener Live-Räume.',
+        when_to_visit: 'Wenn der Nutzer nach dem Tab „Vergangen“ der Live-Räume fragt — vergangene Sitzungen, frühere Räume, Aufzeichnungen oder Zusammenfassungen abgeschlossener Live-Räume.',
+      },
+    },
+  },
+  {
+    screen_id: 'COMM.LIVE_ROOMS_ALL',
+    route: '/comm/live-rooms?tab=all',
+    category: 'community',
+    access: 'authenticated',
+    anonymous_safe: false,
+    aliases: ['live-rooms-all', 'all-rooms'],
+    i18n: {
+      en: {
+        title: 'All Rooms',
+        description: 'All Live Rooms — live now and scheduled — in one list.',
+        when_to_visit: 'When the user asks for the All Rooms tab of Live Rooms, or to see all live rooms (both live and scheduled) together.',
+      },
+      de: {
+        title: 'Alle Räume',
+        description: 'Alle Live-Räume — jetzt live und geplant — in einer Liste.',
+        when_to_visit: 'Wenn der Nutzer nach dem Tab „Alle Räume“ der Live-Räume fragt oder alle Live-Räume (live und geplant) zusammen sehen möchte.',
       },
     },
   },
@@ -710,22 +870,26 @@ export const NAVIGATION_CATALOG: ReadonlyArray<NavCatalogEntry> = [
     },
   },
   {
+    // VTID-NAV-BUSINESS-TABS: the "Services" pill of the Business Hub (mobile)
+    // / "My Services" tab (desktop). The "Business Hub Services" phrase in
+    // when_to_visit keeps the pill name resolving here, not to OVERVIEW.
     screen_id: 'BUSINESS.SERVICES',
     route: '/business/services',
     category: 'business',
     access: 'authenticated',
     anonymous_safe: false,
     priority: 1,
+    aliases: ['business-services', 'services-tab', 'business-hub-services', 'my-services'],
     i18n: {
       en: {
         title: 'My Services',
         description: 'Manage the services you offer to the Maxina community — coaching, classes, sessions, products.',
-        when_to_visit: 'When the user wants to manage their services, create a new service, list a coaching offering, or set up classes and sessions they offer.',
+        when_to_visit: 'When the user asks for the Services tab of the Business Hub, the Business Hub Services, their services, or wants to manage their services, create a new service, list a coaching offering, or set up classes and sessions they offer.',
       },
       de: {
         title: 'Meine Services',
         description: 'Verwalte die Services, die du der Maxina Community anbietest — Coaching, Kurse, Sessions, Produkte.',
-        when_to_visit: 'Wenn der Nutzer seine Services verwalten, einen neuen Service erstellen, ein Coaching-Angebot einstellen oder Kurse und Sessions einrichten möchte.',
+        when_to_visit: 'Wenn der Nutzer nach dem Tab "Services" im Business Hub, den Business Hub Services, seinen Services fragt, oder seine Services verwalten, einen neuen Service erstellen, ein Coaching-Angebot einstellen oder Kurse und Sessions einrichten möchte.',
       },
     },
   },
@@ -762,35 +926,182 @@ export const NAVIGATION_CATALOG: ReadonlyArray<NavCatalogEntry> = [
     category: 'business',
     access: 'authenticated',
     anonymous_safe: false,
+    priority: 1,
+    // VTID-NAV-BUSINESS-SUBTABS: the "Clients" sub-tab of the Insights pill
+    // (mobile, /business/clients -> insights.clients). when_to_visit scatters
+    // "Insights … Business Hub" (not the contiguous "Business Hub Insights")
+    // so "Business Hub Insights Clients" lands here via clients+coverage, while
+    // the bare "Business Hub Insights" query stays with BUSINESS.ANALYTICS.
+    aliases: ['business-clients', 'business-insights-clients', 'my-clients', 'clients-tab'],
     i18n: {
       en: {
         title: 'My Clients',
         description: 'Manage the clients and customers of your Maxina business.',
-        when_to_visit: 'When the user asks about their clients, customers, who they serve, or how to manage client relationships in their business.',
+        when_to_visit: 'When the user asks for the Clients tab in the Insights section of their Business Hub, their clients, customers, who they serve, or how to manage client relationships in their business.',
       },
       de: {
         title: 'Meine Kunden',
         description: 'Verwalte die Kunden deines Maxina Business.',
-        when_to_visit: 'Wenn der Nutzer nach seinen Kunden, Klienten, wen er bedient oder wie man Kundenbeziehungen im Business verwaltet, fragt.',
+        when_to_visit: 'Wenn der Nutzer nach dem Tab "Kunden" im Einblicke-Bereich seines Business Hub, seinen Kunden, Klienten, wen er bedient oder wie man Kundenbeziehungen im Business verwaltet, fragt.',
       },
     },
   },
   {
+    // VTID-NAV-BUSINESS-TABS: this is the "Insights" pill of the Business Hub
+    // (mobile) — performance, clients, earnings, growth — reached via
+    // /business/analytics, which BusinessHub maps to the Insights pill. Titled
+    // "Insights" to match the pill the user sees, with the literal "Business
+    // Hub Insights" phrase so it wins over BUSINESS.OVERVIEW ("Business Hub").
+    // NOT AI.INSIGHTS (the AI feed) — that keeps "AI insights".
     screen_id: 'BUSINESS.ANALYTICS',
     route: '/business/analytics',
     category: 'business',
     access: 'authenticated',
     anonymous_safe: false,
+    priority: 2,
+    aliases: ['business-insights', 'insights-tab', 'business-hub-insights', 'business-analytics', 'einblicke'],
     i18n: {
+      // Title stays "Business Analytics" (NOT bare "Insights") so the lone
+      // token "insights" — e.g. "AI insights", where "AI" is dropped as a
+      // <3-char token — still resolves to AI.INSIGHTS. The "Business Hub
+      // Insights" phrase lives in when_to_visit/description, which only the
+      // full multi-word query matches.
       en: {
-        title: 'Business Analytics',
-        description: 'Performance metrics for your Maxina business — bookings, revenue, growth.',
-        when_to_visit: 'When the user asks about their business performance, revenue, bookings, growth metrics, or analytics for their services.',
+        title: 'Analytics',
+        description: 'Your Business Hub Insights — performance, clients, bookings, revenue, earnings and growth for your Maxina business.',
+        when_to_visit: 'When the user asks for the Insights tab of the Business Hub, the Business Hub Insights, their business insights, business analytics, business performance, revenue, bookings, or performance metrics for their services.',
       },
       de: {
-        title: 'Business Analytics',
-        description: 'Leistungskennzahlen für dein Maxina Business — Buchungen, Umsatz, Wachstum.',
-        when_to_visit: 'Wenn der Nutzer nach seiner Business-Performance, Umsatz, Buchungen, Wachstumskennzahlen oder Analytics für seine Services fragt.',
+        title: 'Analytics',
+        description: 'Deine Business Hub Einblicke — Performance, Kunden, Buchungen, Umsatz, Einnahmen und Wachstum für dein Maxina Business.',
+        when_to_visit: 'Wenn der Nutzer nach dem Tab "Einblicke" im Business Hub, den Business Hub Insights, dem Business Hub Einblicke Bereich, seinen Business-Einblicken, Business-Analytics, seiner Business-Performance, Umsatz, Buchungen oder Performance-Kennzahlen für seine Services fragt.',
+      },
+    },
+  },
+
+  // ── BUSINESS HUB sub-tabs (VTID-NAV-BUSINESS-SUBTABS) ────────────────────
+  // Mobile-only mode-pill sub-tabs that have no standalone desktop route. The
+  // mobile BusinessHub reads /business?tab=<pill.subtab> and selects that pill.
+  // Each carries the literal "Business Hub <Pill> <Subtab>" phrase so the
+  // compound voice query lands here without stealing the bare single word
+  // (events/referrals/earnings) from its primary screen.
+  {
+    screen_id: 'BUSINESS.SERVICES_EVENTS',
+    route: '/business?tab=services.events',
+    category: 'business',
+    access: 'authenticated',
+    anonymous_safe: false,
+    aliases: ['business-services-events', 'my-events', 'hosted-events'],
+    i18n: {
+      en: {
+        title: 'My Events',
+        description: 'The events, classes and sessions you host or offer as a provider in your Maxina business.',
+        when_to_visit: 'When the user asks for the My Events tab of the Business Hub Services, the Business Hub Services Events, or the events, classes and sessions they host or offer as a provider in their own business.',
+      },
+      de: {
+        title: 'Meine Events',
+        description: 'Die Events, Kurse und Sessions, die du als Anbieter in deinem Maxina Business veranstaltest oder anbietest.',
+        when_to_visit: 'Wenn der Nutzer nach dem Tab "Meine Events" der Business Hub Services, den Business Hub Services Events oder den Events, Kursen und Sessions fragt, die er als Anbieter in seinem eigenen Business veranstaltet oder anbietet.',
+      },
+    },
+  },
+  {
+    screen_id: 'BUSINESS.SERVICES_PACKAGES',
+    route: '/business?tab=services.packages',
+    category: 'business',
+    access: 'authenticated',
+    anonymous_safe: false,
+    aliases: ['business-services-packages', 'service-packages', 'my-packages'],
+    i18n: {
+      en: {
+        title: 'Service Packages',
+        description: 'Bundled service packages you offer in your Maxina business.',
+        when_to_visit: 'When the user asks for the Packages tab of the Business Hub Services, the Business Hub Services Packages, their service packages, or bundled offerings they sell in their business.',
+      },
+      de: {
+        title: 'Service-Pakete',
+        description: 'Gebündelte Service-Pakete, die du in deinem Maxina Business anbietest.',
+        when_to_visit: 'Wenn der Nutzer nach dem Tab "Pakete" der Business Hub Services, den Business Hub Services Packages, seinen Service-Paketen oder gebündelten Angeboten fragt, die er in seinem Business verkauft.',
+      },
+    },
+  },
+  {
+    screen_id: 'BUSINESS.SALES_PROMOTIONS',
+    route: '/business?tab=sales.promotions',
+    category: 'business',
+    access: 'authenticated',
+    anonymous_safe: false,
+    aliases: ['business-sales-promotions', 'my-promotions', 'sales-promotions'],
+    i18n: {
+      en: {
+        title: 'Promotions',
+        description: 'Promotions and special offers you run on your Maxina business sales.',
+        when_to_visit: 'When the user asks for the Promotions tab of the Business Hub Sales, the Business Hub Sales Promotions, or the promotions and special offers they run on their own business sales.',
+      },
+      de: {
+        title: 'Aktionen',
+        description: 'Aktionen und Sonderangebote, die du für deine Maxina Business-Verkäufe durchführst.',
+        when_to_visit: 'Wenn der Nutzer nach dem Tab "Aktionen" der Business Hub Sales, den Business Hub Sales Promotions oder den Aktionen und Sonderangeboten fragt, die er für seine eigenen Business-Verkäufe durchführt.',
+      },
+    },
+  },
+  {
+    screen_id: 'BUSINESS.SALES_REFERRALS',
+    route: '/business?tab=sales.referrals',
+    category: 'business',
+    access: 'authenticated',
+    anonymous_safe: false,
+    aliases: ['business-sales-referrals', 'sales-referrals'],
+    i18n: {
+      en: {
+        title: 'Sales Referrals',
+        description: 'Referrals you earn through your Maxina business reselling.',
+        when_to_visit: 'When the user asks for the Referrals tab of the Business Hub Sales, or the Business Hub Sales Referrals — the referrals tied to their own reseller sales in the Business Hub.',
+      },
+      de: {
+        title: 'Verkaufs-Empfehlungen',
+        description: 'Empfehlungen, die du über dein Maxina Business-Reselling verdienst.',
+        when_to_visit: 'Wenn der Nutzer nach dem Tab "Empfehlungen" der Business Hub Sales oder den Business Hub Sales Referrals fragt — den Empfehlungen, die zu seinen eigenen Reseller-Verkäufen im Business Hub gehören.',
+      },
+    },
+  },
+  {
+    screen_id: 'BUSINESS.INSIGHTS_EARNINGS',
+    route: '/business?tab=insights.earnings',
+    category: 'business',
+    access: 'authenticated',
+    anonymous_safe: false,
+    aliases: ['business-insights-earnings', 'business-earnings'],
+    i18n: {
+      en: {
+        title: 'Earnings',
+        description: 'Earnings breakdown for your Maxina business in the Insights tab.',
+        when_to_visit: 'When the user asks for the Earnings tab of the Business Hub Insights, or the Business Hub Insights Earnings — the earnings breakdown of their own business.',
+      },
+      de: {
+        title: 'Einnahmen',
+        description: 'Einnahmen-Aufschlüsselung für dein Maxina Business im Einblicke-Tab.',
+        when_to_visit: 'Wenn der Nutzer nach dem Tab "Einnahmen" der Business Hub Insights oder den Business Hub Insights Earnings fragt — der Einnahmen-Aufschlüsselung seines eigenen Business.',
+      },
+    },
+  },
+  {
+    screen_id: 'BUSINESS.INSIGHTS_GROWTH',
+    route: '/business?tab=insights.growth',
+    category: 'business',
+    access: 'authenticated',
+    anonymous_safe: false,
+    aliases: ['business-insights-growth', 'business-growth'],
+    i18n: {
+      en: {
+        title: 'Growth',
+        description: 'Growth metrics for your Maxina business in the Insights tab.',
+        when_to_visit: 'When the user asks for the Growth tab of the Business Hub Insights, or the Business Hub Insights Growth — the growth metrics and trends of their own business.',
+      },
+      de: {
+        title: 'Wachstum',
+        description: 'Wachstumskennzahlen für dein Maxina Business im Einblicke-Tab.',
+        when_to_visit: 'Wenn der Nutzer nach dem Tab "Wachstum" der Business Hub Insights oder den Business Hub Insights Growth fragt — den Wachstumskennzahlen und Trends seines eigenen Business.',
       },
     },
   },
@@ -875,6 +1186,29 @@ export const NAVIGATION_CATALOG: ReadonlyArray<NavCatalogEntry> = [
     },
   },
 
+  // ── WALLET mode pills (VTID-NAV-WALLET-TABS) ────────────────────────────
+  // Activity / Actions tabs of the Wallet, reached via /wallet?tab=<mode>
+  // (query params, NOT new routes). Wallet.tsx reads ?tab=. Balances is the
+  // default (WALLET.OVERVIEW -> /wallet).
+  {
+    screen_id: 'WALLET.ACTIVITY', route: '/wallet?tab=activity', category: 'wallet',
+    access: 'authenticated', anonymous_safe: false,
+    aliases: ['wallet-activity', 'wallet-transactions'],
+    i18n: {
+      en: { title: 'Wallet Activity', description: 'Your wallet activity and transaction history.', when_to_visit: 'When the user asks for the Activity tab of the Wallet, their wallet activity, wallet transactions, transaction history, or recent wallet movements.' },
+      de: { title: 'Wallet-Aktivität', description: 'Deine Wallet-Aktivität und Transaktionshistorie.', when_to_visit: 'Wenn der Nutzer nach dem Tab "Aktivität" im Wallet, seiner Wallet-Aktivität, Wallet-Transaktionen, Transaktionshistorie oder den letzten Wallet-Bewegungen fragt.' },
+    },
+  },
+  {
+    screen_id: 'WALLET.ACTIONS', route: '/wallet?tab=actions', category: 'wallet',
+    access: 'authenticated', anonymous_safe: false,
+    aliases: ['wallet-actions'],
+    i18n: {
+      en: { title: 'Wallet Actions', description: 'Wallet actions — send, request, exchange, buy credits and tokens, add funds, withdraw.', when_to_visit: 'When the user asks for the Actions tab of the Wallet, wallet actions, to send or request a payment, exchange currency, buy credits or tokens, add funds, or withdraw from their wallet.' },
+      de: { title: 'Wallet-Aktionen', description: 'Wallet-Aktionen — senden, anfordern, tauschen, Credits und Tokens kaufen, Geld hinzufügen, abheben.', when_to_visit: 'Wenn der Nutzer nach dem Tab "Aktionen" im Wallet, Wallet-Aktionen, einer Zahlung senden oder anfordern, Währung tauschen, Credits oder Tokens kaufen, Geld hinzufügen oder von seinem Wallet abheben fragt.' },
+    },
+  },
+
   // ── HEALTH ──────────────────────────────────────────────────────────────
   {
     screen_id: 'HEALTH.OVERVIEW',
@@ -905,17 +1239,17 @@ export const NAVIGATION_CATALOG: ReadonlyArray<NavCatalogEntry> = [
     category: 'health',
     access: 'authenticated',
     anonymous_safe: false,
-    aliases: ['health-supplements', 'my-supplements', 'supplement-tracker', 'my-stack', 'supplement-stack', 'vitamin-tracker', 'meine-supplements', 'meine-nahrungsergaenzung'],
+    aliases: ['health-supplements', 'supplements-in-health', 'supplements-health', 'my-supplements', 'supplement-tracker', 'my-stack', 'supplement-stack', 'vitamin-tracker', 'meine-supplements', 'meine-nahrungsergaenzung'],
     i18n: {
       en: {
         title: 'My Supplements',
-        description: 'Track the supplements, vitamins, and minerals you take.',
-        when_to_visit: "When the user wants to view, track, log, or manage THEIR OWN supplements — their supplement stack, the vitamins or minerals THEY take, the 'health supplements' tracker, or add a supplement to their regimen. This is the personal health tracker, NOT shopping the marketplace.",
+        description: 'The Supplements tab in Health — track the supplements, vitamins, and minerals you take.',
+        when_to_visit: "When the user asks for the Supplements tab inside the Health screen, 'supplements in Health', 'health supplements', or to open supplements in the Health section — and when they want to view, track, log, or manage THEIR OWN supplements, their supplement stack, or the vitamins and minerals THEY take. This is the Health screen's supplements tracker, NOT shopping the marketplace.",
       },
       de: {
-        title: 'Meine Nahrungsergänzung',
-        description: 'Verfolge die Nahrungsergänzungsmittel, Vitamine und Mineralien, die du nimmst.',
-        when_to_visit: 'Wenn der Nutzer SEINE EIGENEN Nahrungsergänzungsmittel ansehen, verfolgen, protokollieren oder verwalten möchte — seinen Supplement-Stack, die Vitamine oder Mineralien, die er nimmt, den "Gesundheits-Supplement"-Tracker, oder ein Supplement zu seiner Routine hinzufügen. Das ist der persönliche Gesundheits-Tracker, NICHT der Marktplatz-Einkauf.',
+        title: 'Gesundheits-Supplemente',
+        description: 'Der Supplements-Tab im Gesundheitsbereich — verfolge die Nahrungsergänzungsmittel, Vitamine und Mineralien, die du nimmst.',
+        when_to_visit: 'Wenn der Nutzer nach dem Supplements-Tab im Gesundheits-Bildschirm, „Supplements im Gesundheitsbereich", „Gesundheits-Supplements" fragt oder Supplements im Gesundheitsbereich öffnen möchte — und wenn er SEINE EIGENEN Nahrungsergänzungsmittel ansehen, verfolgen, protokollieren oder verwalten möchte, seinen Supplement-Stack oder die Vitamine und Mineralien, die er nimmt. Das ist der Supplements-Tracker des Gesundheits-Bildschirms, NICHT der Marktplatz-Einkauf.',
       },
     },
   },
@@ -1059,12 +1393,12 @@ export const NAVIGATION_CATALOG: ReadonlyArray<NavCatalogEntry> = [
       en: {
         title: 'Supplements',
         description: 'Curated supplements for longevity and wellness.',
-        when_to_visit: 'When the user wants to browse, show, shop for, or buy supplements, vitamins, minerals, or nutraceuticals in the marketplace — exploring available products, brands, or deals. NOT for tracking the supplements they personally take (that is HEALTH.SUPPLEMENTS).',
+        when_to_visit: 'When the user wants to browse, show, shop for, or buy supplements, vitamins, minerals, or nutraceuticals in the marketplace — exploring available products, brands, or deals. NOT for tracking the supplements they personally take (that is the personal tracker tab, not the shop).',
       },
       de: {
         title: 'Nahrungsergänzungsmittel',
         description: 'Kuratierte Nahrungsergänzungsmittel für Longevity und Wellness.',
-        when_to_visit: 'Wenn der Nutzer Nahrungsergänzungsmittel, Vitamine, Mineralien oder Nutraceuticals im Marktplatz durchstöbern, ansehen oder kaufen möchte — verfügbare Produkte, Marken oder Angebote erkunden. NICHT zum Verfolgen der Supplements, die er selbst einnimmt (das ist HEALTH.SUPPLEMENTS).',
+        when_to_visit: 'Wenn der Nutzer Nahrungsergänzungsmittel, Vitamine, Mineralien oder Nutraceuticals im Marktplatz durchstöbern, ansehen oder kaufen möchte — verfügbare Produkte, Marken oder Angebote erkunden. NICHT zum Verfolgen der Supplements, die er selbst einnimmt (das ist der persönliche Tracker-Tab, nicht der Shop).',
       },
     },
   },
@@ -1154,21 +1488,43 @@ export const NAVIGATION_CATALOG: ReadonlyArray<NavCatalogEntry> = [
     // layout. On mobile the real diary surface is MobileDailyDiary at /daily-diary,
     // so redirect there — otherwise "open my daily diary" strands mobile users on
     // the read-only activity-timeline hub.
-    mobile_route: '/daily-diary',
+    mobile_route: '/daily-diary?tab=health',
     category: 'memory',
     access: 'authenticated',
     anonymous_safe: false,
-    aliases: ['diary', 'daily-diary', '/diary', '/daily-diary', 'tagebuch'],
+    aliases: ['diary', 'daily-diary', '/diary', '/daily-diary', 'tagebuch', 'health-diary'],
     i18n: {
       en: {
         title: 'Daily Diary',
         description: 'Your daily diary entries — log thoughts, moods, and reflections.',
-        when_to_visit: 'When the user asks to write a diary entry, log how they feel, journal their day, or open their daily diary.',
+        when_to_visit: 'When the user asks to write a diary entry, the Health Diary tab, log how they feel, journal their day, track symptoms, or open their daily diary.',
       },
       de: {
         title: 'Tagesbuch',
         description: 'Deine täglichen Tagebucheinträge — halte Gedanken, Stimmungen und Reflexionen fest.',
-        when_to_visit: 'Wenn der Nutzer einen Tagebucheintrag schreiben, festhalten wie er sich fühlt, seinen Tag journaling oder sein Tagebuch öffnen möchte.',
+        when_to_visit: 'Wenn der Nutzer einen Tagebucheintrag schreiben, das Gesundheitstagebuch öffnen, festhalten wie er sich fühlt, seinen Tag journaling oder sein Tagebuch öffnen möchte.',
+      },
+    },
+  },
+  {
+    // VTID-NAV-DIARY-TABS: the "Bug Reports" mode pill of the Daily Diary
+    // (mobile), reached via /daily-diary?tab=bugs. NOT the Support screen.
+    screen_id: 'MEMORY.DIARY_BUGS',
+    route: '/daily-diary?tab=bugs',
+    category: 'memory',
+    access: 'authenticated',
+    anonymous_safe: false,
+    aliases: ['bug-reports', 'diary-bug-reports', 'report-a-bug'],
+    i18n: {
+      en: {
+        title: 'Bug Reports',
+        description: 'Report a bug or a UX improvement from your Daily Diary.',
+        when_to_visit: 'When the user asks for the Bug Reports tab of the Daily Diary, to report a bug, log an app issue, or suggest a UX improvement from the diary.',
+      },
+      de: {
+        title: 'Fehlerberichte',
+        description: 'Melde einen Fehler oder eine UX-Verbesserung aus deinem Tagesbuch.',
+        when_to_visit: 'Wenn der Nutzer nach dem Tab "Fehlerberichte" im Tagesbuch fragt, einen Fehler melden, ein App-Problem festhalten oder eine UX-Verbesserung aus dem Tagesbuch vorschlagen möchte.',
       },
     },
   },
@@ -1330,19 +1686,22 @@ export const NAVIGATION_CATALOG: ReadonlyArray<NavCatalogEntry> = [
     i18n: {
       en: {
         title: 'Settings',
-        description: 'Your account settings and preferences.',
-        when_to_visit: 'When the user asks to open their settings, change preferences, or manage their account.',
+        description: 'Your account settings.',
+        when_to_visit: 'When the user asks to open their settings, the settings screen, or manage their account.',
       },
       de: {
         title: 'Einstellungen',
-        description: 'Deine Kontoeinstellungen und Präferenzen.',
-        when_to_visit: 'Wenn der Nutzer seine Einstellungen öffnen, Präferenzen ändern oder sein Konto verwalten möchte.',
+        description: 'Deine Kontoeinstellungen.',
+        when_to_visit: 'Wenn der Nutzer seine Einstellungen öffnen, den Einstellungsbildschirm öffnen oder sein Konto verwalten möchte.',
       },
     },
   },
   {
     screen_id: 'SETTINGS.PRIVACY',
     route: '/settings/privacy',
+    // VTID-NAV-SETTINGS-TABS: on mobile, land on the Privacy mode pill of the
+    // Settings screen (/settings?mode=privacy). MobileSettings reads ?mode=.
+    mobile_route: '/settings?mode=privacy',
     category: 'settings',
     access: 'authenticated',
     anonymous_safe: false,
@@ -1363,6 +1722,7 @@ export const NAVIGATION_CATALOG: ReadonlyArray<NavCatalogEntry> = [
   {
     screen_id: 'SETTINGS.NOTIFICATIONS',
     route: '/settings/notifications',
+    mobile_route: '/settings?mode=notifications',
     category: 'settings',
     access: 'authenticated',
     anonymous_safe: false,
@@ -1429,19 +1789,70 @@ export const NAVIGATION_CATALOG: ReadonlyArray<NavCatalogEntry> = [
 
   // ── DISCOVER (missing tabs) ─────────────────────────────────────────────
   {
+    // VTID-NAV-ORDERS-TABS: the generic Orders screen (default Active tab).
+    // priority keeps "my orders" here over the Active/History sub-tab entries.
     screen_id: 'DISCOVER.ORDERS', route: '/discover/orders', category: 'discover',
     access: 'authenticated', anonymous_safe: false,
+    priority: 1,
+    aliases: ['orders', 'my-orders'],
     i18n: {
-      en: { title: 'My Orders', description: 'Your order history and active orders.', when_to_visit: 'When the user asks about their orders, order history, order status, deliveries, or what they have bought.' },
-      de: { title: 'Meine Bestellungen', description: 'Deine Bestellhistorie und aktive Bestellungen.', when_to_visit: 'Wenn der Nutzer nach seinen Bestellungen, Bestellhistorie, Bestellstatus, Lieferungen oder dem fragt, was er gekauft hat.' },
+      en: { title: 'My Orders', description: 'Your orders — active and past.', when_to_visit: 'When the user asks about their orders, my orders, order status, deliveries, or what they have bought.' },
+      de: { title: 'Meine Bestellungen', description: 'Deine Bestellungen — aktive und vergangene.', when_to_visit: 'Wenn der Nutzer nach seinen Bestellungen, meinen Bestellungen, Bestellstatus, Lieferungen oder dem fragt, was er gekauft hat.' },
     },
   },
   {
-    screen_id: 'DISCOVER.AI_PICKS', route: '/discover/ai-picks', category: 'discover',
+    // VTID-NAV-ORDERS-TABS: the "Active" mode pill of My Orders.
+    screen_id: 'DISCOVER.ORDERS_ACTIVE', route: '/discover/orders?tab=active', category: 'discover',
     access: 'authenticated', anonymous_safe: false,
+    aliases: ['active-orders', 'orders-active'],
     i18n: {
-      en: { title: 'AI Picks', description: 'AI-curated product and service recommendations.', when_to_visit: 'When the user asks for AI recommendations, personalized picks, curated suggestions, or what the AI recommends for them.' },
-      de: { title: 'KI-Auswahl', description: 'KI-kuratierte Produkt- und Service-Empfehlungen.', when_to_visit: 'Wenn der Nutzer nach KI-Empfehlungen, personalisierten Vorschlägen, kuratierten Tipps fragt oder wissen will, was die KI für ihn empfiehlt.' },
+      en: { title: 'Active Orders', description: 'Your active and in-progress orders.', when_to_visit: 'When the user asks for the Active tab of My Orders, their active orders, current orders, open orders, in-progress orders, or pending deliveries.' },
+      de: { title: 'Aktive Bestellungen', description: 'Deine aktiven und laufenden Bestellungen.', when_to_visit: 'Wenn der Nutzer nach dem Tab "Aktiv" von Meine Bestellungen, seinen aktiven Bestellungen, laufenden Bestellungen, offenen Bestellungen oder ausstehenden Lieferungen fragt.' },
+    },
+  },
+  {
+    // VTID-NAV-ORDERS-TABS: the "History" mode pill of My Orders.
+    screen_id: 'DISCOVER.ORDERS_HISTORY', route: '/discover/orders?tab=history', category: 'discover',
+    access: 'authenticated', anonymous_safe: false,
+    aliases: ['order-history', 'orders-history', 'past-orders'],
+    i18n: {
+      en: { title: 'Order History', description: 'Your past and completed orders.', when_to_visit: 'When the user asks for the History tab of My Orders, their order history, past orders, completed orders, or previously delivered orders.' },
+      de: { title: 'Bestellverlauf', description: 'Deine vergangenen und abgeschlossenen Bestellungen.', when_to_visit: 'Wenn der Nutzer nach dem Tab "Verlauf" von Meine Bestellungen, seinem Bestellverlauf, vergangenen Bestellungen, abgeschlossenen Bestellungen oder bereits gelieferten Bestellungen fragt.' },
+    },
+  },
+  {
+    // VTID-NAV-DISCOVER-TABS: the "AI Picks" mode pill of Discover (the
+    // Suggested/default tab), reached via /discover?tab=suggested. Discover.tsx
+    // reads ?tab=. (Supersedes the standalone /discover/ai-picks page so voice
+    // "AI picks" lands on the actual pill, mobile + desktop.)
+    screen_id: 'DISCOVER.AI_PICKS', route: '/discover?tab=suggested', category: 'discover',
+    access: 'authenticated', anonymous_safe: false,
+    aliases: ['ai-picks', 'discover-ai-picks', 'suggested-for-you', 'discover-suggested'],
+    i18n: {
+      en: { title: 'AI Picks', description: 'AI-curated product and service recommendations — the Suggested tab of Discover.', when_to_visit: 'When the user asks for the AI Picks tab of Discover, the Suggested for You tab, AI recommendations, personalized picks, curated suggestions, or what the AI recommends for them.' },
+      de: { title: 'KI-Auswahl', description: 'KI-kuratierte Produkt- und Service-Empfehlungen — der Vorschläge-Tab von Discover.', when_to_visit: 'Wenn der Nutzer nach dem AI-Picks-Tab von Discover, dem Vorschläge-Tab, KI-Empfehlungen, personalisierten Vorschlägen, kuratierten Tipps fragt oder wissen will, was die KI für ihn empfiehlt.' },
+    },
+  },
+  {
+    // VTID-NAV-DISCOVER-TABS: the "Categories" mode pill of Discover.
+    screen_id: 'DISCOVER.CATEGORIES', route: '/discover?tab=categories', category: 'discover',
+    access: 'authenticated', anonymous_safe: false,
+    aliases: ['discover-categories', 'browse-categories'],
+    i18n: {
+      en: { title: 'Categories', description: 'Browse Discover by category.', when_to_visit: 'When the user asks for the Categories tab of Discover, to browse Discover by category, or to see all the marketplace categories.' },
+      de: { title: 'Kategorien', description: 'Durchstöbere Discover nach Kategorie.', when_to_visit: 'Wenn der Nutzer nach dem Kategorien-Tab von Discover fragt, Discover nach Kategorie durchstöbern oder alle Marktplatz-Kategorien sehen möchte.' },
+    },
+  },
+  {
+    // VTID-NAV-DISCOVER-TABS: the "Share & Earn" mode pill of Discover —
+    // sharing Discover/marketplace products for rewards (NOT the SHARING
+    // referral hub, NOT Business Sell & Earn).
+    screen_id: 'DISCOVER.SHARE_EARN', route: '/discover?tab=share', category: 'discover',
+    access: 'authenticated', anonymous_safe: false,
+    aliases: ['discover-share-earn', 'share-and-earn'],
+    i18n: {
+      en: { title: 'Share & Earn', description: 'Share Discover products and earn rewards.', when_to_visit: 'When the user asks for the Share and Earn tab of Discover, the Discover Share and Earn section, or sharing Discover marketplace products to earn rewards.' },
+      de: { title: 'Teilen & Verdienen', description: 'Teile Discover-Produkte und verdiene Belohnungen.', when_to_visit: 'Wenn der Nutzer nach dem Tab "Teilen & Verdienen" von Discover, dem Discover Share and Earn Bereich oder dem Teilen von Discover-Marktplatzprodukten fragt, um Belohnungen zu verdienen.' },
     },
   },
 
@@ -1529,7 +1940,7 @@ export const NAVIGATION_CATALOG: ReadonlyArray<NavCatalogEntry> = [
 
   // ── SETTINGS (missing tabs) ─────────────────────────────────────────────
   {
-    screen_id: 'SETTINGS.PREFERENCES', route: '/settings/preferences', category: 'settings',
+    screen_id: 'SETTINGS.PREFERENCES', route: '/settings/preferences', mobile_route: '/settings?mode=preferences', category: 'settings',
     access: 'authenticated', anonymous_safe: false,
     i18n: {
       en: { title: 'Preferences', description: 'Your personal preferences for the app experience.', when_to_visit: 'When the user asks to change their preferences, customize the app, adjust settings, or personalize their experience.' },
@@ -1539,6 +1950,7 @@ export const NAVIGATION_CATALOG: ReadonlyArray<NavCatalogEntry> = [
   {
     screen_id: 'SETTINGS.CONNECTED_APPS', route: '/settings/connected-apps', category: 'settings',
     access: 'authenticated', anonymous_safe: false,
+    priority: 1,
     aliases: ['connected-apps', 'connected_apps', 'connectors', 'integrations', 'verbundene-apps', 'connect-spotify', 'connect-youtube', 'connect-google'],
     i18n: {
       en: { title: 'Connectors & Connected Apps', description: 'Connectors to third-party apps and integrations linked to your account.', when_to_visit: 'When the user asks about connectors, a connector, connected apps, app integrations, third-party connections, linked services, or how to connect an external app.' },
@@ -1553,14 +1965,148 @@ export const NAVIGATION_CATALOG: ReadonlyArray<NavCatalogEntry> = [
       de: { title: 'Soziale Konten', description: 'Verknüpfe und verwalte deine Social-Media-Konten.', when_to_visit: 'Wenn der Nutzer nach sozialen Konten, Social-Media-Verknüpfungen, Instagram, Facebook oder anderen sozialen Plattformen verbinden fragt.' },
     },
   },
+  // ── CONNECTORS category mode pills (VTID-NAV-CONNECTORS-TABS) ────────────
+  // The category tabs of Connected Apps (/connectors), reached via
+  // /connectors?tab=<category>. MobileConnectedAppsView reads ?tab=. Scoped so
+  // "Connectors <Category>" lands here while the bare category word
+  // (health/social/fitness/ai/autopilot) stays with its primary screen.
+  { screen_id: 'CONNECTORS.AI', route: '/connectors?tab=ai', category: 'settings', access: 'authenticated', anonymous_safe: false,
+    aliases: ['ai-connectors', 'connect-ai'],
+    i18n: {
+      en: { title: 'AI Connectors', description: 'Connect AI providers and apps to your account.', when_to_visit: 'When the user asks for the AI connectors, the AI tab of Connected Apps, or to connect an AI app or provider (OpenAI, Claude, Gemini) to their account.' },
+      de: { title: 'KI-Konnektoren', description: 'Verbinde KI-Anbieter und Apps mit deinem Konto.', when_to_visit: 'Wenn der Nutzer nach den KI-Konnektoren, dem KI-Tab der verbundenen Apps oder dem Verbinden einer KI-App oder eines KI-Anbieters (OpenAI, Claude, Gemini) fragt.' },
+    } },
+  { screen_id: 'CONNECTORS.PRODUCTIVITY', route: '/connectors?tab=productivity', category: 'settings', access: 'authenticated', anonymous_safe: false,
+    aliases: ['mail-calendar-connectors', 'connect-gmail'],
+    i18n: {
+      en: { title: 'Mail & Calendar Connectors', description: 'Connect email and calendar apps.', when_to_visit: 'When the user asks for the Mail and Calendar connectors, the productivity tab of Connected Apps, or to connect an email or calendar app integration (Gmail, Google Calendar, Outlook).' },
+      de: { title: 'Mail- & Kalender-Konnektoren', description: 'Verbinde E-Mail- und Kalender-Apps.', when_to_visit: 'Wenn der Nutzer nach den Mail- und Kalender-Konnektoren, dem Produktivitäts-Tab der verbundenen Apps oder dem Verbinden einer E-Mail- oder Kalender-App-Integration (Gmail, Google Kalender, Outlook) fragt.' },
+    } },
+  { screen_id: 'CONNECTORS.MEDIA', route: '/connectors?tab=media', category: 'settings', access: 'authenticated', anonymous_safe: false,
+    aliases: ['music-video-connectors', 'connect-spotify', 'connect-youtube'],
+    i18n: {
+      en: { title: 'Music & Video Connectors', description: 'Connect music and video app integrations.', when_to_visit: 'When the user asks for the Music and Video connectors, the media tab of Connected Apps, or to connect a music or video app integration (Spotify, YouTube, Apple Music).' },
+      de: { title: 'Musik- & Video-Konnektoren', description: 'Verbinde Musik- und Video-App-Integrationen.', when_to_visit: 'Wenn der Nutzer nach den Musik- und Video-Konnektoren, dem Medien-Tab der verbundenen Apps oder dem Verbinden einer Musik- oder Video-App-Integration (Spotify, YouTube, Apple Music) fragt.' },
+    } },
+  { screen_id: 'CONNECTORS.SOCIAL', route: '/connectors?tab=social', category: 'settings', access: 'authenticated', anonymous_safe: false,
+    aliases: ['social-connectors'],
+    i18n: {
+      en: { title: 'Social Connectors', description: 'Connect your social media accounts as integrations.', when_to_visit: 'When the user asks for the Social connectors tab of Connected Apps, or to connect a social media account (LinkedIn, Instagram, X) as an app integration.' },
+      de: { title: 'Social-Konnektoren', description: 'Verbinde deine Social-Media-Konten als Integrationen.', when_to_visit: 'Wenn der Nutzer nach dem Social-Konnektoren-Tab der verbundenen Apps oder dem Verbinden eines Social-Media-Kontos (LinkedIn, Instagram, X) als App-Integration fragt.' },
+    } },
+  { screen_id: 'CONNECTORS.FITNESS', route: '/connectors?tab=fitness', category: 'settings', access: 'authenticated', anonymous_safe: false,
+    aliases: ['fitness-connectors', 'connect-wearables', 'connect-strava'],
+    i18n: {
+      en: { title: 'Fitness Connectors', description: 'Connect fitness apps and wearables.', when_to_visit: 'When the user asks for the Fitness connectors tab of Connected Apps, or to connect a fitness app or wearable integration (Strava, Garmin, Fitbit).' },
+      de: { title: 'Fitness-Konnektoren', description: 'Verbinde Fitness-Apps und Wearables.', when_to_visit: 'Wenn der Nutzer nach dem Fitness-Konnektoren-Tab der verbundenen Apps oder dem Verbinden einer Fitness-App- oder Wearable-Integration (Strava, Garmin, Fitbit) fragt.' },
+    } },
+  { screen_id: 'CONNECTORS.HEALTH', route: '/connectors?tab=health', category: 'settings', access: 'authenticated', anonymous_safe: false,
+    aliases: ['health-connectors', 'connect-health-app', 'connect-labs'],
+    i18n: {
+      en: { title: 'Health Connectors', description: 'Connect health and lab app integrations.', when_to_visit: 'When the user asks for the Health connectors tab of Connected Apps, or to connect a health or lab app (Apple Health, Oura, a lab provider) as an integration.' },
+      de: { title: 'Gesundheits-Konnektoren', description: 'Verbinde Gesundheits- und Labor-App-Integrationen.', when_to_visit: 'Wenn der Nutzer nach dem Gesundheits-Konnektoren-Tab der verbundenen Apps oder dem Verbinden einer Gesundheits- oder Labor-App (Apple Health, Oura, ein Laboranbieter) als Integration fragt.' },
+    } },
+  { screen_id: 'CONNECTORS.OTHER', route: '/connectors?tab=other', category: 'settings', access: 'authenticated', anonymous_safe: false,
+    aliases: ['other-connectors'],
+    i18n: {
+      en: { title: 'Other Connectors', description: 'Other connectors and integrations.', when_to_visit: 'When the user asks for the Other connectors tab of Connected Apps, or other integrations not in the named categories.' },
+      de: { title: 'Weitere Konnektoren', description: 'Weitere Konnektoren und Integrationen.', when_to_visit: 'Wenn der Nutzer nach dem Tab "Weitere" der Konnektoren in den verbundenen Apps oder anderen Integrationen fragt.' },
+    } },
+  { screen_id: 'CONNECTORS.AGENT', route: '/connectors?tab=agent', category: 'settings', access: 'authenticated', anonymous_safe: false,
+    aliases: ['autopilot-connectors', 'agent-connectors'],
+    i18n: {
+      en: { title: 'Autopilot Connectors', description: 'Connect Autopilot agent integrations.', when_to_visit: 'When the user asks for the Autopilot connectors tab of Connected Apps, or to connect an agent or Autopilot app integration.' },
+      de: { title: 'Autopilot-Konnektoren', description: 'Verbinde Autopilot-Agent-Integrationen.', when_to_visit: 'Wenn der Nutzer nach dem Autopilot-Konnektoren-Tab der verbundenen Apps oder dem Verbinden einer Agent- oder Autopilot-App-Integration fragt.' },
+    } },
   {
-    screen_id: 'SETTINGS.BILLING', route: '/settings/billing', category: 'settings',
+    screen_id: 'SETTINGS.BILLING', route: '/settings/billing', mobile_route: '/settings?mode=billing', category: 'settings',
     access: 'authenticated', anonymous_safe: false,
     i18n: {
-      en: { title: 'Billing', description: 'Your billing information, payment methods, and invoices.', when_to_visit: 'When the user asks about billing, payment methods, invoices, payment history, credit card, or how to pay.' },
-      de: { title: 'Abrechnung', description: 'Deine Rechnungsinformationen, Zahlungsmethoden und Rechnungen.', when_to_visit: 'Wenn der Nutzer nach Abrechnung, Zahlungsmethoden, Rechnungen, Zahlungshistorie, Kreditkarte oder wie man bezahlt fragt.' },
+      en: { title: 'Billing', description: 'Your billing information and subscription charges.', when_to_visit: 'When the user asks for the Billing tab of Settings, about billing, charges, or their billing overview.' },
+      de: { title: 'Abrechnung', description: 'Deine Abrechnungsinformationen und Abo-Kosten.', when_to_visit: 'Wenn der Nutzer nach dem Abrechnungs-Tab der Einstellungen, der Abrechnung, den Kosten oder seiner Abrechnungsübersicht fragt.' },
     },
   },
+  // ── SETTINGS sub-pills (VTID-NAV-SETTINGS-TABS) ─────────────────────────
+  // The mode pills inside Privacy / Preferences / Billing on the mobile
+  // Settings screen. mobile_route deep-links the exact sub-pill via
+  // /settings?mode=<parent.child> (MobileSettings reads ?mode=); desktop falls
+  // back to the parent's standalone page. Titles use ONLY the child's
+  // distinctive words (never the parent word) so a bare "settings privacy" /
+  // "settings billing" still resolves to the parent pill, while multi-word
+  // phrases ("data sharing", "invoices", "appearance") reach the child.
+  {
+    screen_id: 'SETTINGS.PRIVACY_VISIBILITY', route: '/settings/privacy?section=visibility', mobile_route: '/settings?mode=privacy.visibility',
+    category: 'settings', access: 'authenticated', anonymous_safe: false,
+    i18n: {
+      en: { title: 'Visibility', description: 'Control who can see your profile.', when_to_visit: 'When the user asks for the Profile Visibility tab of Privacy in Settings — who can see their profile, profile visibility, or hiding their profile.' },
+      de: { title: 'Sichtbarkeit', description: 'Steuere, wer dein Profil sehen kann.', when_to_visit: 'Wenn der Nutzer nach dem Tab Profil-Sichtbarkeit im Datenschutz fragt — wer sein Profil sehen kann oder das Verbergen seines Profils.' },
+    },
+  },
+  {
+    screen_id: 'SETTINGS.PRIVACY_DATA', route: '/settings/privacy?section=data', mobile_route: '/settings?mode=privacy.data',
+    category: 'settings', access: 'authenticated', anonymous_safe: false,
+    i18n: {
+      en: { title: 'Shared Data', description: 'Control what data is shared.', when_to_visit: 'When the user asks for the Data Sharing tab of Privacy in Settings — data sharing, what data is shared, or data-sharing consent.' },
+      de: { title: 'Datenfreigabe', description: 'Steuere, welche Daten geteilt werden.', when_to_visit: 'Wenn der Nutzer nach dem Tab Datenfreigabe im Datenschutz fragt — Datenfreigabe, welche Daten geteilt werden oder die Einwilligung zur Datenfreigabe.' },
+    },
+  },
+  {
+    screen_id: 'SETTINGS.PRIVACY_SECURITY', route: '/settings/privacy?section=security', mobile_route: '/settings?mode=privacy.security',
+    category: 'settings', access: 'authenticated', anonymous_safe: false,
+    i18n: {
+      en: { title: 'Account Security', description: 'Manage password and account security.', when_to_visit: 'When the user asks for the Security tab of Privacy in Settings — account security, password, or two-factor authentication.' },
+      de: { title: 'Konto-Sicherheit', description: 'Verwalte Passwort und Konto-Sicherheit.', when_to_visit: 'Wenn der Nutzer nach dem Tab Sicherheit im Datenschutz fragt — Konto-Sicherheit, Passwort oder Zwei-Faktor-Authentifizierung.' },
+    },
+  },
+  {
+    screen_id: 'SETTINGS.PREFERENCES_APPEARANCE', route: '/settings/preferences?section=appearance', mobile_route: '/settings?mode=preferences.appearance',
+    category: 'settings', access: 'authenticated', anonymous_safe: false,
+    i18n: {
+      en: { title: 'Appearance Theme', description: 'Theme, colors, and dark mode.', when_to_visit: 'When the user asks for the Appearance tab of Preferences in Settings — theme, dark mode, colors, or how the app looks.' },
+      de: { title: 'Erscheinungsbild', description: 'Design, Farben und Dunkelmodus.', when_to_visit: 'Wenn der Nutzer nach dem Tab Erscheinungsbild der Präferenzen fragt — Design, Dunkelmodus, Farben oder wie die App aussieht.' },
+    },
+  },
+  {
+    screen_id: 'SETTINGS.PREFERENCES_LANGUAGE', route: '/settings/preferences?section=language', mobile_route: '/settings?mode=preferences.language',
+    category: 'settings', access: 'authenticated', anonymous_safe: false,
+    i18n: {
+      en: { title: 'Language Region', description: 'App language and region.', when_to_visit: 'When the user asks for the Language and Region tab of Preferences in Settings — app language, region, or locale.' },
+      de: { title: 'Sprache Region', description: 'App-Sprache und Region.', when_to_visit: 'Wenn der Nutzer nach dem Tab Sprache und Region der Präferenzen fragt — App-Sprache, Region oder Gebietsschema.' },
+    },
+  },
+  {
+    screen_id: 'SETTINGS.BILLING_PLAN', route: '/settings/billing?section=plan', mobile_route: '/settings?mode=billing.plan',
+    category: 'settings', access: 'authenticated', anonymous_safe: false,
+    i18n: {
+      en: { title: 'Current Plan', description: 'Your current plan and membership tier.', when_to_visit: 'When the user asks for the Current Plan tab of Billing in Settings — their current plan, membership tier, or upgrading their plan.' },
+      de: { title: 'Aktueller Tarif', description: 'Dein aktueller Tarif und deine Mitgliedschaftsstufe.', when_to_visit: 'Wenn der Nutzer nach dem Tab Aktueller Tarif der Abrechnung fragt — sein aktueller Tarif, seine Mitgliedschaftsstufe oder ein Upgrade des Tarifs.' },
+    },
+  },
+  {
+    screen_id: 'SETTINGS.BILLING_PAYMENT', route: '/settings/billing?section=payment', mobile_route: '/settings?mode=billing.payment',
+    category: 'settings', access: 'authenticated', anonymous_safe: false,
+    i18n: {
+      en: { title: 'Payment Method', description: 'Manage your payment method.', when_to_visit: 'When the user asks for the Payment Method tab of Billing in Settings — payment method, credit card on file, or how they pay.' },
+      de: { title: 'Zahlungsmethode', description: 'Verwalte deine Zahlungsmethode.', when_to_visit: 'Wenn der Nutzer nach dem Tab Zahlungsmethode der Abrechnung fragt — Zahlungsmethode, hinterlegte Kreditkarte oder wie er bezahlt.' },
+    },
+  },
+  {
+    screen_id: 'SETTINGS.BILLING_INVOICES', route: '/settings/billing?section=invoices', mobile_route: '/settings?mode=billing.invoices',
+    category: 'settings', access: 'authenticated', anonymous_safe: false,
+    i18n: {
+      en: { title: 'Invoices Receipts', description: 'Your invoices and receipts.', when_to_visit: 'When the user asks for the Invoices and Receipts tab of Billing in Settings — invoices, receipts, or payment history.' },
+      de: { title: 'Rechnungen Belege', description: 'Deine Rechnungen und Belege.', when_to_visit: 'Wenn der Nutzer nach dem Tab Rechnungen und Belege der Abrechnung fragt — Rechnungen, Belege oder Zahlungsverlauf.' },
+    },
+  },
+  {
+    screen_id: 'SETTINGS.BILLING_CREATOR', route: '/settings/billing?section=creator', mobile_route: '/settings?mode=billing.creator',
+    category: 'settings', access: 'authenticated', anonymous_safe: false,
+    i18n: {
+      en: { title: 'Creator Payouts', description: 'Your creator payouts and earnings withdrawals.', when_to_visit: 'When the user asks for the Creator Payouts tab of Billing in Settings — creator payouts, earnings withdrawals, or getting paid as a creator.' },
+      de: { title: 'Creator-Auszahlungen', description: 'Deine Creator-Auszahlungen und Einnahmen-Auszahlungen.', when_to_visit: 'Wenn der Nutzer nach dem Tab Creator-Auszahlungen der Abrechnung fragt — Creator-Auszahlungen, Einnahmen-Auszahlungen oder als Creator bezahlt zu werden.' },
+    },
+  },
+
   {
     // Generic Support destination (lands on the Contact tab). Keeps the
     // canonical `/settings/support` path so route resolution stays stable;
@@ -1773,10 +2319,10 @@ export const NAVIGATION_CATALOG: ReadonlyArray<NavCatalogEntry> = [
   {
     screen_id: 'COMM.FEED', route: '/comm/events-meetups?tab=following', category: 'community',
     access: 'authenticated', anonymous_safe: false,
-    aliases: ['feed', 'community-feed', 'community/feed', '/community/feed'],
+    aliases: ['feed', 'community-feed', 'community/feed', '/community/feed', 'following', 'following-events', 'events-following', 'following-feed'],
     i18n: {
-      en: { title: 'Community Feed', description: 'Your community feed — posts and updates from members and groups you follow.', when_to_visit: 'When the user asks to open the community feed, see community posts, scroll the feed, or check what is new in the community.' },
-      de: { title: 'Community-Feed', description: 'Dein Community-Feed — Posts und Updates von Mitgliedern und Gruppen, denen du folgst.', when_to_visit: 'Wenn der Nutzer den Community-Feed öffnen, Community-Posts sehen, durch den Feed scrollen oder prüfen möchte, was es Neues in der Community gibt.' },
+      en: { title: 'Following Community Feed', description: 'The Following tab of Events & Meetups — your community feed of events, posts, and updates from the members and groups you follow (Following).', when_to_visit: 'When the user asks for the Following tab of Events & Meetups, following, following events, events from people they follow, the people or groups they follow, or to open the community feed and see community posts and updates.' },
+      de: { title: 'Following Community-Feed', description: 'Der „Folge ich"-Tab von Events & Meetups — dein Community-Feed mit Events, Posts und Updates von Mitgliedern und Gruppen, denen du folgst (Following).', when_to_visit: 'Wenn der Nutzer nach dem „Folge ich"-Tab von Events & Meetups, nach Following, nach Events von Personen, denen er folgt, nach den Personen oder Gruppen, denen er folgt, oder nach dem Community-Feed mit Community-Posts und Updates fragt.' },
     },
   },
 

@@ -98,6 +98,28 @@ export interface UpstreamConnectOptions {
   customSetupMessage?: () =>
     | Record<string, unknown>
     | Promise<Record<string, unknown>>;
+
+  /**
+   * VTID-03273 Pillar B — enable native Gemini session resumption. When true,
+   * the setup envelope carries `session_resumption` (empty to start a fresh
+   * resumable session, or `{ handle }` to resume). The default builder reads
+   * `sessionResumptionHandle` to decide which.
+   */
+  enableSessionResumption?: boolean;
+
+  /**
+   * VTID-03273 Pillar B — opaque resumption handle from a prior connection.
+   * When present (and `enableSessionResumption`), the new connection resumes
+   * the SAME server-side conversation instead of starting fresh.
+   */
+  sessionResumptionHandle?: string | null;
+
+  /**
+   * VTID-03273 Pillar B — enable sliding-window context compression so a long
+   * conversation does not hit the context cap before the GoAway/resume cycle
+   * can rotate the connection.
+   */
+  enableContextWindowCompression?: boolean;
 }
 
 /**
@@ -182,6 +204,36 @@ export interface UpstreamErrorEvent {
 }
 
 /**
+ * Native session-resumption handle update (VTID-03273 Pillar B).
+ *
+ * Gemini Live periodically emits `sessionResumptionUpdate` with a fresh
+ * opaque `newHandle`. When `resumable` is true, the handle can be passed in a
+ * later `setup.session_resumption.handle` to resume the SAME server-side
+ * conversation across a dropped/rebuilt connection — natively, with no
+ * transcript re-injection and no re-greeting. The session layer stores the
+ * latest handle on the durable Conversation, not the connection.
+ */
+export interface SessionResumptionEvent {
+  /** Opaque resumption handle to store and replay on reconnect. */
+  handle: string | null;
+  /** Whether the server considers the current point resumable. */
+  resumable: boolean;
+}
+
+/**
+ * Server "GoAway" notice (VTID-03273 Pillar B).
+ *
+ * Gemini Live caps a single connection (~10 min) and warns before it drops
+ * via `goAway` carrying `timeLeft`. The session layer reconnects PROACTIVELY
+ * with the resumption handle before the deadline so the user perceives no
+ * break and the thread is preserved.
+ */
+export interface GoAwayEvent {
+  /** Milliseconds left before the server closes this connection, when known. */
+  timeLeftMs?: number;
+}
+
+/**
  * Final close event. Emitted exactly once per `UpstreamLiveClient` instance.
  */
 export interface UpstreamCloseEvent {
@@ -255,6 +307,19 @@ export interface UpstreamLiveClient {
 
   /** Register a handler for model-interrupted events. */
   onInterrupted(handler: (event: InterruptedEvent) => void): void;
+
+  /**
+   * Register a handler for native session-resumption handle updates
+   * (VTID-03273 Pillar B). Optional on implementations that do not support
+   * resumption — the session layer treats absence as "no native resumption".
+   */
+  onSessionResumption?(handler: (event: SessionResumptionEvent) => void): void;
+
+  /**
+   * Register a handler for the server's GoAway notice (VTID-03273 Pillar B),
+   * used to reconnect proactively before the connection cap.
+   */
+  onGoAway?(handler: (event: GoAwayEvent) => void): void;
 
   /** Register a handler for transport / protocol errors. */
   onError(handler: (event: UpstreamErrorEvent) => void): void;

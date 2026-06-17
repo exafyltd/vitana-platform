@@ -10,6 +10,11 @@
  */
 
 import type { LastInteraction } from './temporal-bucket';
+import type {
+  ExtendedTenureStage,
+  JourneyExperienceLevel,
+  VitanaIndexMaturity,
+} from './journey-experience';
 
 // =============================================================================
 // Awareness Context (Phase A — single source of truth for "who is on the line")
@@ -44,6 +49,66 @@ export interface RecentActivitySummary {
   dismissed_recs_last_7d: number;
   overdue_calendar_count: number;
   upcoming_calendar_24h_count: number;
+}
+
+// =============================================================================
+// Journey Conversation V2 awareness extension (spec: docs/SPEC-journey-conversation-v2.md §3)
+// =============================================================================
+
+export interface JourneyV2ProgressAwareness {
+  /** Durable mode from user_guided_journey_state — server-side source of truth. */
+  mode: 'guided' | 'full';
+  onboarding_status: string;
+  /** Usage session the user is on (NOT a calendar day). */
+  current_session: number;
+  completed_topic_count: number;
+  last_opened_topic_id: string | null;
+  /** First published+enabled checklist topic not yet completed (session, position order). */
+  next_recommended_topic_id: string | null;
+  next_recommended_session: number | null;
+}
+
+export interface ProfileCompletionStatus {
+  first_name: boolean;
+  last_name: boolean;
+  birthday: boolean;
+  profile_picture: boolean;
+  gender: boolean;
+  location: boolean;
+  completion_percent: number;
+}
+
+export interface PriorityTasksStatus {
+  /** True only for a USER-defined Life Compass — the system-seeded default does not count. */
+  life_compass_defined: boolean;
+  profile_completed: boolean;
+  diary_started: boolean;
+  autopilot_used: boolean;
+}
+
+export interface ProactivePauseStateSummary {
+  paused_all: boolean;
+  paused_categories: string[];
+  paused_nudge_keys: string[];
+}
+
+/**
+ * Optional V2 extension block on UserAwareness. Absent whenever the
+ * extension fetch failed or the V2 flow is unavailable — every existing
+ * consumer of UserAwareness is unaffected by its presence.
+ */
+export interface JourneyV2Awareness {
+  extended_tenure_stage: ExtendedTenureStage;
+  experience_level: JourneyExperienceLevel;
+  vitana_index_maturity: VitanaIndexMaturity;
+  journey_progress: JourneyV2ProgressAwareness | null;
+  profile_completion_status: ProfileCompletionStatus;
+  completed_priority_tasks: PriorityTasksStatus;
+  diary_entry_today: boolean;
+  proactive_pause_state: ProactivePauseStateSummary;
+  /** Anti-repetition memory (user_journey.recent_greeting_openings, capped 5). */
+  recent_greeting_openings: string[];
+  autopilot_activations_lifetime: number;
 }
 
 /**
@@ -130,6 +195,10 @@ export interface UserAwareness {
 
   // Reserved for future (null until then)
   tastes_preferences: null;
+
+  // Journey Conversation V2 (spec §3) — optional so legacy consumers and
+  // fail-open paths are unaffected when the extension fetch is unavailable.
+  journey_v2?: JourneyV2Awareness;
 }
 
 // =============================================================================

@@ -22,8 +22,8 @@ export const meta = {
 
 const AUTH_NAMES = [
   'requireAuth', 'requireAdmin', 'requireDevRole', 'requirePlatformAdmin',
-  'optionalAuth', 'requireTenant', 'requireAuthOptional', 'requireServiceRole',
-  'requireApiKey', 'requireScanToken',
+  'optionalAuth', 'requireTenant', 'requireTenantAdmin', 'requireAuthOptional',
+  'requireServiceRole', 'requireApiKey', 'requireScanToken',
 ];
 const ROUTE_PREFIX_RE = /^\s*router\.(get|post|put|patch|delete)\s*\(/;
 

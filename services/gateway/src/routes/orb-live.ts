@@ -46,6 +46,8 @@ import { randomUUID } from 'crypto';
 import { TextToSpeechClient, protos } from '@google-cloud/text-to-speech';
 import { processWithGemini, setThreadIdentity } from '../services/gemini-operator';
 import { emitOasisEvent } from '../services/oasis-event-service';
+// BOOTSTRAP-PRODUCT-ANALYTICS: server-side product analytics (metadata only)
+import { trackServerEvent, detectTopic } from '../services/product-analytics/track-server';
 // VTID-03250: prefer the browser's own timezone over rate-limit-prone geo-IP
 // so the assistant never loses the user's local time (context integrity).
 import { resolveSessionTimezone } from '../services/awareness-unified-context';
@@ -87,6 +89,17 @@ import { decideWakeBriefForSession } from '../services/wake-brief-wiring';
 // distills. NO raw rows cross this boundary.
 import { compileAssistantDecisionContext } from '../orb/context/compile-assistant-decision-context';
 import { renderDecisionContract } from '../orb/live/instruction/decision-contract-renderer';
+// VTID-03273 Pillar A — the single First-Utterance Authority. Both the
+// fresh-start greeting path and the reconnect-recovery path consult this
+// instead of deciding their own first line.
+import {
+  decideOpening,
+  formatOpeningDecisionLog,
+} from '../orb/live/instruction/opening-contract';
+// VTID-03273 Pillar C — explicit conversation state machine. `openingDelivered`
+// is a property of the state (replacing the scattered greetingSent boolean);
+// the opener fires exactly once, in OPENING, for the life of the conversation.
+import { ConversationStateMachine } from '../orb/live/session/conversation-state-machine';
 // VTID-03252: ENVIRONMENT block formatter, extracted for testability.
 import { formatClientContextForInstruction } from '../orb/live/instruction/client-context-format';
 // BOOTSTRAP-ORB-R0-INSTRUCTION-CAP: aggregate byte-budget guard for the final
@@ -927,6 +940,13 @@ export interface GeminiLiveSession {
   // When true, inbound mic audio is dropped to prevent the speaker output
   // being picked up by the mic and causing overlapping response streams.
   isModelSpeaking: boolean;
+  // VTID-03273 Pillar B — native Gemini session resumption. The latest
+  // resumable handle the server emitted via `sessionResumptionUpdate`. It is a
+  // property of the durable CONVERSATION (survives reconnects on the session
+  // object), and is replayed in the next setup envelope so a rebuilt
+  // connection resumes the SAME server-side session — no transcript re-inject,
+  // no fresh greeting, no thread loss.
+  resumptionHandle?: string | null;
   // VTID-ECHO-COOLDOWN: Timestamp when turn_complete was received.
   // Mic audio is gated for getPostTurnCooldownMs() after this to let client-side
   // audio playback finish draining — prevents speaker echo being picked up as input.
@@ -943,6 +963,13 @@ export interface GeminiLiveSession {
   // carry the voice-tool-routing signal into the orb.turn.responded event,
   // then cleared. Undefined when the turn dispatched no tool.
   pendingTurnToolSignal?: { toolName: string; toolArguments?: Record<string, unknown> };
+  // BOOTSTRAP-ORB-LATENCY-PHASE2: per-session cache for read-only retrieval
+  // tools (search_memory / search_knowledge). The model is mute until the
+  // function_response arrives, so a repeat lookup mid-conversation used to
+  // cost another 300-800ms of dead air. Keyed by tool+normalized args,
+  // short TTL (see TOOL_CACHE_TTL_MS). Session-scoped → torn down with the
+  // session; never crosses users.
+  toolResultCache?: Map<string, { at: number; result: { success: boolean; result: string; error?: string } }>;
   // VTID-STREAM-KEEPALIVE: Interval handle for upstream Vertex WS ping
   upstreamPingInterval?: ReturnType<typeof setInterval>;
   // VTID-STREAM-SILENCE: Interval handle for sending silence audio to Vertex
@@ -1030,6 +1057,10 @@ export interface GeminiLiveSession {
   // journey-guide provider LEADS with that exact step rather than the
   // sequentially-computed current_next_step. One-shot per session.
   journey_focus_step?: string;
+  // VTID-03290: Guided Journey catalog topic the user tapped to open the orb.
+  // When set, the guided-topic-narration provider LEADS turn-1 and Vitana
+  // teaches that topic from the published KB. One-shot per session.
+  guided_topic_id?: string;
   // VTID-NAV: Cached memory pack from the first navigator_consult call this
   // session, with a 30s TTL — subsequent consult calls reuse it instead of
   // re-paying retrieval cost.
@@ -1323,6 +1354,7 @@ export { buildLiveApiTools } from '../orb/live/tools/live-tool-catalog';
 import { buildTeacherModeBlock } from '../orb/teacher/teacher-mode-prompt';
 // VTID-03257 (Fix-1): GUIDE MODE block — Vitana leads the Foundation checklist.
 import { buildJourneyGuideBlock } from '../orb/live/instruction/journey-guide-prompt';
+import { buildGuidedTopicNarrationBlock } from '../orb/live/instruction/guided-topic-narration-prompt';
 // A6.2 (orb-live-refactor): SessionContext + SessionMutator + first
 // lifted navigator handler. orb-live.ts keeps compat shims that build
 // the typed views and forward to handlers under orb/live/tools/handlers/.
@@ -2025,6 +2057,37 @@ export function buildPersonaBehavioralRule(personaKey: string): string {
 // VTID-03025: exported so the voice-lab dry-run evaluator can mirror the
 // exact bootstrap-context fetch the live session uses. No behavior change —
 // only the visibility modifier was added.
+// BOOTSTRAP-ORB-LATENCY-PHASE2: bootstrap context cache for the VERTEX
+// session-start path. The VTID-03035/03036 caches only wrap the LiveKit
+// /orb/context-bootstrap route — this path rebuilt the pack (3 parallel
+// Supabase fetches, 400-800ms) on EVERY tap, squarely on the
+// click-to-first-audio critical path. Keyed by tenant|user, 5-min TTL
+// (same staleness rationale as the LiveKit cache: memory_items /
+// identity_facts change on minute-to-hour scale). Failures and empty
+// packs are never cached. Populated by /live/session/prewarm (widget
+// fires it on init) so the first tap of a visit hits warm.
+const VERTEX_BOOTSTRAP_CACHE = new Map<string, { at: number; value: {
+  contextPack?: ContextPack;
+  contextInstruction?: string;
+  latencyMs: number;
+  skippedReason?: string;
+} }>();
+const VERTEX_BOOTSTRAP_CACHE_TTL_MS = 5 * 60_000;
+const VERTEX_BOOTSTRAP_CACHE_MAX_ENTRIES = 500;
+
+function storeVertexBootstrapCache(key: string, value: {
+  contextPack?: ContextPack;
+  contextInstruction?: string;
+  latencyMs: number;
+  skippedReason?: string;
+}): void {
+  if (VERTEX_BOOTSTRAP_CACHE.size >= VERTEX_BOOTSTRAP_CACHE_MAX_ENTRIES) {
+    const oldest = VERTEX_BOOTSTRAP_CACHE.keys().next().value;
+    if (oldest !== undefined) VERTEX_BOOTSTRAP_CACHE.delete(oldest);
+  }
+  VERTEX_BOOTSTRAP_CACHE.set(key, { at: Date.now(), value });
+}
+
 export async function buildBootstrapContextPack(
   identity: SupabaseIdentity,
   sessionId: string
@@ -2042,6 +2105,14 @@ export async function buildBootstrapContextPack(
       latencyMs: Date.now() - startTime,
       skippedReason: 'missing_identity',
     };
+  }
+
+  // BOOTSTRAP-ORB-LATENCY-PHASE2: serve from cache when fresh.
+  const bootstrapCacheKey = `${identity.tenant_id}|${identity.user_id}`;
+  const cached = VERTEX_BOOTSTRAP_CACHE.get(bootstrapCacheKey);
+  if (cached && Date.now() - cached.at < VERTEX_BOOTSTRAP_CACHE_TTL_MS) {
+    console.log(`[BOOTSTRAP-ORB-LATENCY-PHASE2] Vertex bootstrap cache HIT for session ${sessionId} (built ${Date.now() - cached.at}ms ago)`);
+    return { ...cached.value, latencyMs: Date.now() - startTime };
   }
 
   try {
@@ -2083,6 +2154,7 @@ export async function buildBootstrapContextPack(
       const base = memoryContext.formatted_context || '';
       const combined = [recentTurnsBlock, base, profileBlock].filter(Boolean).join('\n');
       if (combined) {
+        storeVertexBootstrapCache(bootstrapCacheKey, { contextInstruction: combined, latencyMs });
         return {
           contextInstruction: combined,
           latencyMs,
@@ -2105,6 +2177,7 @@ export async function buildBootstrapContextPack(
 
     console.log(`[VTID-01225] Context bootstrap complete: ${latencyMs}ms, memory=${memoryContext.items.length}, recentTurns=${recentTurns.length}, profile=${profileResult.summary.length}ch (cached=${profileResult.cached})`);
 
+    storeVertexBootstrapCache(bootstrapCacheKey, { contextInstruction, latencyMs });
     return {
       contextInstruction,
       latencyMs,
@@ -2174,6 +2247,27 @@ async function executeLiveApiTool(
     AUTOPILOT_VOICE_TOOLS.has(toolName) ? 12_000 :
     3_000;
 
+  // BOOTSTRAP-ORB-LATENCY-PHASE2: read-only retrieval tools are cacheable
+  // within a session for a short window. The model blocks (mute) on every
+  // function_response, and it routinely re-queries the same memory/knowledge
+  // mid-conversation — each repeat used to cost another 300-800ms of dead
+  // air. Mutating tools (reminders, calendar, intents, navigation) are never
+  // cached. 120s TTL bounds staleness; the cache dies with the session.
+  const CACHEABLE_READONLY_TOOLS = new Set(['search_memory', 'search_knowledge']);
+  const TOOL_CACHE_TTL_MS = 120_000;
+  const TOOL_CACHE_MAX_ENTRIES = 50;
+  const cacheKey = CACHEABLE_READONLY_TOOLS.has(toolName)
+    ? `${toolName}:${JSON.stringify(args, Object.keys(args).sort()).toLowerCase()}`
+    : null;
+  if (cacheKey && session.toolResultCache) {
+    const hit = session.toolResultCache.get(cacheKey);
+    if (hit && Date.now() - hit.at < TOOL_CACHE_TTL_MS && hit.result.success) {
+      markVoiceLatency(session, 'tool_response', { tool: toolName, ms: Date.now() - startTime, success: true, cache: 'hit' });
+      console.log(`[BOOTSTRAP-ORB-LATENCY-PHASE2] Tool cache HIT: ${toolName} (saved a blocking retrieval round-trip)`);
+      return hit.result;
+    }
+  }
+
   const executeWithTimeout = async (): Promise<{ success: boolean; result: string; error?: string }> => {
     return Promise.race([
       executeLiveApiToolInner(session, toolName, args, startTime),
@@ -2191,6 +2285,43 @@ async function executeLiveApiTool(
   const elapsed = Date.now() - startTime;
   // Phase 1 W2: tool returned — close the tool_dispatch→tool_response interval.
   markVoiceLatency(session, 'tool_response', { tool: toolName, ms: elapsed, success: result.success });
+  // BOOTSTRAP-PRODUCT-ANALYTICS: tool-call outcome for the /admin/insights
+  // dashboards. Metadata only (tool name + latency + error code) — args and
+  // results never leave this function. Fire-and-forget.
+  if (session.identity?.tenant_id) {
+    const analyticsBase = {
+      tenant_id: session.identity.tenant_id,
+      user_id: session.identity.user_id,
+      session_id: session.sessionId,
+      conversation_id: session.sessionId,
+      source: 'orb' as const,
+      feature_key: 'assistant',
+    };
+    void trackServerEvent({
+      ...analyticsBase,
+      event_name: 'tool_called',
+      properties: { tool_name: toolName, tool_category: 'orb_live' },
+    });
+    void trackServerEvent({
+      ...analyticsBase,
+      event_name: result.success ? 'tool_call_succeeded' : 'tool_call_failed',
+      event_type: result.success ? 'assistant' : 'friction',
+      properties: {
+        tool_name: toolName,
+        duration_ms: elapsed,
+        ...(result.success ? {} : { error_code: (result.error || 'unknown').slice(0, 120) }),
+      },
+    });
+  }
+  // BOOTSTRAP-ORB-LATENCY-PHASE2: populate the read-only tool cache.
+  if (cacheKey && result.success) {
+    if (!session.toolResultCache) session.toolResultCache = new Map();
+    if (session.toolResultCache.size >= TOOL_CACHE_MAX_ENTRIES) {
+      const oldest = session.toolResultCache.keys().next().value;
+      if (oldest !== undefined) session.toolResultCache.delete(oldest);
+    }
+    session.toolResultCache.set(cacheKey, { at: Date.now(), result });
+  }
   if (elapsed > TOOL_TIMEOUT_MS) {
     console.warn(`[VTID-STREAM-KEEPALIVE] Tool ${toolName} timed out (${elapsed}ms > ${TOOL_TIMEOUT_MS}ms)`);
   }
@@ -2278,6 +2409,10 @@ async function handleNavigate(
       session_id: session.sessionId,
       session_started_iso: session.createdAt.toISOString(),
       turn_number: session.turn_count,
+      // VTID-02789: thread the mobile-viewport flag so tool_navigate applies the
+      // mobile_route override (e.g. Settings pills → /settings?mode=<section>).
+      // Without this the unified navigate path always used the desktop route.
+      is_mobile: session.is_mobile === true,
     },
     sb,
   );
@@ -4488,6 +4623,36 @@ async function executeLiveApiToolInner(
         );
       }
 
+      // ─── BOOTSTRAP-FIND-MATCH-VOICE — search-first "find me a match" ───
+      // Searches the live catalog and recommends matches (also posting so the
+      // user is discoverable) or posts the request after confirmation. Shared
+      // implementation in services/intent-find-match.ts via the registry, so
+      // Vertex and LiveKit run identical code.
+      case 'find_match': {
+        const SUPABASE_URL = process.env.SUPABASE_URL;
+        const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
+        if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
+          return { success: false, result: '', error: 'Supabase not configured' };
+        }
+        const { createClient } = await import('@supabase/supabase-js');
+        const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE, {
+          auth: { autoRefreshToken: false, persistSession: false },
+        });
+        const { dispatchOrbToolForVertex } = await import('../services/orb-tools-shared');
+        return await dispatchOrbToolForVertex(
+          'find_match',
+          args ?? {},
+          {
+            user_id: lens.user_id,
+            tenant_id: lens.tenant_id ?? null,
+            role: session.identity?.role ?? session.active_role ?? null,
+            vitana_id: session.identity?.vitana_id ?? null,
+            session_id: session.sessionId,
+          },
+          supabase,
+        );
+      }
+
       // ─── VTID-01975 — Vitana Intent Engine voice tools ───
       case 'post_intent': {
         const utterance = String(args.utterance || '').trim();
@@ -5950,6 +6115,38 @@ async function connectToLiveAPI(
   return new Promise<WebSocket>(async (resolve, reject) => {
     const vertex = new VertexLiveClient();
 
+    // VTID-03273 Pillar B — capture the rolling native session-resumption handle.
+    // Stored on the session (the durable Conversation), replayed in the next
+    // setup envelope so a rebuilt connection resumes the SAME server-side
+    // session: the model continues the thread instead of improvising a new
+    // greeting. This is the structural fix for "what can I help you with after
+    // reconnect" / "same summary every 2 minutes".
+    vertex.onSessionResumption((e) => {
+      if (e.resumable && e.handle) {
+        const first = !session.resumptionHandle;
+        session.resumptionHandle = e.handle;
+        if (first) {
+          emitDiag(session, 'session_resumption_armed', { has_handle: true });
+        }
+      }
+    });
+
+    // VTID-03273 Pillar B — proactive GoAway handling. The server warns
+    // ~before the ~10-min connection cap via `goAway{timeLeft}`. We reconnect
+    // PROACTIVELY (with the resumption handle) a moment before the deadline,
+    // while the model is idle, so the user perceives nothing. If the model is
+    // mid-utterance at the deadline we defer to the natural close, which also
+    // resumes natively now.
+    vertex.onGoAway((e) => {
+      const timeLeftMs = typeof e.timeLeftMs === 'number' ? e.timeLeftMs : 0;
+      (session as any)._goAwayDeadlineAt = Date.now() + timeLeftMs;
+      emitDiag(session, 'goaway_received', {
+        time_left_ms: timeLeftMs,
+        has_handle: !!session.resumptionHandle,
+      });
+      scheduleProactiveGoAwayResume(session, timeLeftMs);
+    });
+
     let setupComplete = false;
     const connectionTimeout = setTimeout(() => {
       if (!setupComplete) {
@@ -6035,6 +6232,18 @@ async function connectToLiveAPI(
       _personaVoice = _personaVoice || getLiveApiVoice(session.lang);
       console.log(`[VTID-02047] Setup voice for session ${session.sessionId}: persona=${_persona} voice=${_personaVoice}`);
 
+      // VTID-03273 Pillar B (Codex review fix) — when resuming a NATIVE session
+      // (resumptionHandle present), the server restores the prior context, so
+      // re-injecting transcript turns into system_instruction would DUPLICATE
+      // recent conversation on every GoAway/transparent reconnect and make the
+      // model repeat summaries / re-answer old turns — the exact "same summary
+      // every 2 minutes" defect the plan kills. Inject transcript history ONLY
+      // on a cold connection with no handle (rare fallback); native resume
+      // carries the thread itself.
+      const reconnectHistory = session.resumptionHandle
+        ? undefined
+        : renderConversationHistoryWithPersonas(session.transcriptTurns, 10);
+
       const setupMessage = {
         setup: {
           model: `projects/${VERTEX_PROJECT_ID}/locations/${VERTEX_LOCATION}/publishers/google/models/${VERTEX_LIVE_MODEL}`,
@@ -6062,6 +6271,18 @@ async function connectToLiveAPI(
           // VTID-01225: Enable transcription at setup level (not in generation_config)
           output_audio_transcription: {},
           input_audio_transcription: {},
+          // VTID-03273 Pillar B — native session resumption. Empty object on a
+          // fresh connect starts a resumable session; `{ handle }` on a rebuilt
+          // connection resumes the SAME server-side conversation, so the model
+          // continues the thread instead of re-greeting. The handle is captured
+          // from `sessionResumptionUpdate` (see vertex.onSessionResumption wiring).
+          session_resumption: session.resumptionHandle
+            ? { handle: session.resumptionHandle }
+            : {},
+          // VTID-03273 Pillar B — sliding-window context compression keeps long
+          // conversations under the context cap so the GoAway/resume rotation,
+          // not a hard overflow, governs connection lifetime.
+          context_window_compression: { sliding_window: {} },
           system_instruction: {
             parts: [{
               // VTID-02047 voice channel-swap: when activePersona is a specialist
@@ -6094,7 +6315,7 @@ async function connectToLiveAPI(
                         // VTID-ANON-RECONNECT: Pass conversation history for reconnection continuity.
                         // Forwarding v2d: persona-labeled so the receiving
                         // persona doesn't absorb another persona's lines as their own.
-                        renderConversationHistoryWithPersonas(session.transcriptTurns, 10),
+                        reconnectHistory,
                         // VTID-02047: persona swap to Vitana is NOT a generic
                         // v2e: REVERSED. The old behavior forced isReconnect=false
                         // on swap-back so Vitana would greet. That caused two
@@ -6193,6 +6414,16 @@ async function connectToLiveAPI(
                                   (session as any).journeyGuideContent,
                                   session.lang,
                                 )
+                              : '')
+                          // VTID-03290: GUIDE MODE (TEACH) — when the user tapped
+                          // a Guided Journey catalog topic, inject the teach-this-
+                          // topic-from-the-KB block so Vitana introduces + teaches
+                          // it (paraphrased) then guides to the practice target.
+                          + ((session as any).guidedTopicNarrationContent
+                              ? buildGuidedTopicNarrationBlock(
+                                  (session as any).guidedTopicNarrationContent,
+                                  session.lang,
+                                )
                               : ''),
                         session.active_role,
                         session.conversationSummary,
@@ -6200,7 +6431,7 @@ async function connectToLiveAPI(
                         // Forwarding v2d: persona-labeled so Vitana doesn't
                         // absorb Devon/Sage/Atlas/Mira lines as her own past
                         // speech ("Hi I'm Devon" with Vitana's voice).
-                        renderConversationHistoryWithPersonas(session.transcriptTurns, 10),
+                        reconnectHistory,
                         // v3: REVERSED v2e. On swap-back to Vitana,
                         // isReconnect=FALSE so she greets with the structured
                         // welcome (see buildSwapBackWelcomeBlock).
@@ -6529,6 +6760,12 @@ async function connectToLiveAPI(
         clearInterval(session.silenceKeepaliveInterval);
         session.silenceKeepaliveInterval = undefined;
       }
+      // VTID-03273 Pillar B — a proactive GoAway timer for THIS connection is
+      // moot once it's closing; the reconnect (if any) arms a fresh one.
+      if ((session as any)._goAwayTimer) {
+        clearTimeout((session as any)._goAwayTimer);
+        (session as any)._goAwayTimer = undefined;
+      }
 
       session.upstreamWs = null;
 
@@ -6681,6 +6918,58 @@ async function connectToLiveAPI(
  */
 // A2 (orb-live-refactor): MAX_RECONNECTS lifted to orb/live/config.ts.
 import { MAX_RECONNECTS } from '../orb/live/config';
+
+// VTID-03273 Pillar B — how long before the server's GoAway deadline we
+// proactively rotate the connection. Small enough to overlap the warning
+// window, large enough to finish the new handshake before the old socket dies.
+const PROACTIVE_GOAWAY_LEAD_MS = 2000;
+// VTID-03273 Pillar B (Codex review fix) — treat the user as "mid-utterance" if
+// real mic audio was forwarded upstream within this window. Rotating during it
+// would truncate/lose live input (no resend after the last handle), so we defer.
+const PROACTIVE_GOAWAY_USER_AUDIO_IDLE_MS = 1500;
+
+/**
+ * VTID-03273 Pillar B — schedule a proactive, seamless connection rotation
+ * before the server closes this one (GoAway). At the scheduled moment, if the
+ * model is idle we close the upstream with code 1000, which the existing
+ * `ws.on('close')` transparent-reconnect path picks up — and because
+ * `session.resumptionHandle` is now set, the rebuilt setup envelope resumes the
+ * SAME server-side conversation natively (no re-greet, no thread loss). If the
+ * model is still speaking we re-check shortly so we never cut Vitana off; past
+ * the deadline we let the natural close drive the (also-native) reconnect.
+ */
+function scheduleProactiveGoAwayResume(session: GeminiLiveSession, timeLeftMs: number): void {
+  const existing = (session as any)._goAwayTimer as NodeJS.Timeout | undefined;
+  if (existing) { clearTimeout(existing); (session as any)._goAwayTimer = undefined; }
+
+  const deadlineAt = Date.now() + timeLeftMs;
+  const fireIn = Math.max(0, timeLeftMs - PROACTIVE_GOAWAY_LEAD_MS);
+
+  const attempt = () => {
+    (session as any)._goAwayTimer = undefined;
+    if (!session.active) return;
+    const ws = session.upstreamWs;
+    if (!ws || ws.readyState !== WebSocket.OPEN) return; // already gone — natural close handles it
+    // Never rotate while EITHER party is mid-turn: not while the model speaks,
+    // and not while the user is speaking (recent forwarded mic audio). Closing
+    // then would cut Vitana off OR truncate the user's live utterance (which is
+    // not buffered/resent past the last handle). Defer until both are idle; if
+    // we pass the deadline first, the server's own close drives the (native)
+    // reconnect instead.
+    const userMidUtterance =
+      Date.now() - (session.lastAudioForwardedTime || 0) < PROACTIVE_GOAWAY_USER_AUDIO_IDLE_MS;
+    if ((session.isModelSpeaking || userMidUtterance) && Date.now() < deadlineAt) {
+      (session as any)._goAwayTimer = setTimeout(attempt, 750);
+      return;
+    }
+    try {
+      emitDiag(session, 'goaway_proactive_reconnect', { has_handle: !!session.resumptionHandle });
+      ws.close(1000, 'goaway_proactive_resume');
+    } catch { /* natural close will still reconnect natively */ }
+  };
+
+  (session as any)._goAwayTimer = setTimeout(attempt, fireIn);
+}
 
 async function attemptTransparentReconnect(
   session: GeminiLiveSession,
@@ -6971,6 +7260,57 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
 
   const lang = session.lang;
 
+  // VTID-03273 Pillar A — the SINGLE opening decision + the one
+  // `[opening-decision]` log per conversation (§2 acceptance #6). The
+  // wake-brief ranker and greeting policy are inputs; this is the authority the
+  // rest of this function OBEYS (not just telemetry — Codex review fix):
+  //   - a reconnect-silence decision short-circuits here (no fresh greeting);
+  //   - the `Say exactly` branch below uses `_openDecision.line`, so the
+  //     no-verbatim-repeat downgrade (line=null) actually varies the opener
+  //     instead of replaying the identical line.
+  // VTID-03273 Pillar C — drive the explicit state machine. Lazily attach one
+  // per conversation and move PREWARM→OPENING; the opener is delivered exactly
+  // once, in OPENING. `markOpeningDelivered()` is the property-of-state
+  // equivalent of setting greetingSent (which stays for the legacy read sites).
+  const _sm: ConversationStateMachine =
+    (session as any).conversationSM ?? ((session as any).conversationSM = new ConversationStateMachine());
+  if (_sm.state === 'PREWARM') _sm.transition('OPENING', 'session_start');
+
+  const _wb = (session as any).wakeBriefDecision || null;
+  const _openDecision = decideOpening({
+    isAnonymous: !!session.isAnonymous,
+    hasResumptionHandle: !!session.resumptionHandle,
+    isReconnect: ((session as any)._reconnectCount || 0) > 0,
+    wakeSelectedLine: _wb?.selectedContinuation?.userFacingLine ?? null,
+    wakeSelectedKind: _wb?.selectedContinuation?.kind ?? null,
+    lastOpenerLine: (session as any)._lastOpenerLine ?? null,
+  });
+  console.log(formatOpeningDecisionLog(session.sessionId, _openDecision));
+  (session as any)._openingDecision = _openDecision;
+
+  // Honor a reconnect-silence decision: this fresh-start path was reached on a
+  // reconnect (e.g. greeting stall re-send with _reconnectCount > 0). The model
+  // resumes the thread (native) or the recovery path owns continuity — either
+  // way we must NOT emit a fresh greeting. Cadence-class silence is handled by
+  // its own kill-switchable block below, so we only short-circuit the
+  // reconnect sources here.
+  if (
+    _openDecision.mode === 'silent' &&
+    !session.isAnonymous &&
+    (_openDecision.source === 'native_resume' || _openDecision.source === 'reconnect_no_handle')
+  ) {
+    session.greetingSent = true;
+    session.greetingTurnIndex = session.turn_count;
+    _sm.markOpeningDelivered(); // VTID-03273 Pillar C — opening delivered (state)
+    emitDiag(session, 'greeting_sent', {
+      lang,
+      prompt_len: 0,
+      wake_opener: 'silent_reconnect',
+      opening_source: _openDecision.source,
+    });
+    return true;
+  }
+
   // VTID-03104 (Teacher opener v2): when the wake-brief decider produced
   // a user_facing_line on /live/session/start, replace the legacy menu
   // prompt with the SAME `Say exactly: "..."` shape the wasFailure bucket
@@ -6999,7 +7339,12 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
   // is known to keep audio flowing. B1 cadence is a separate slice.
   const wakeBriefDecision: { selectedContinuation?: { userFacingLine?: string } | null; decisionId?: string } | null =
     (session as any).wakeBriefDecision || null;
-  const wakeOverrideLine = wakeBriefDecision?.selectedContinuation?.userFacingLine?.trim();
+  // VTID-03273 Pillar A (Codex review fix) — speak the line the CONTRACT chose,
+  // not the raw wake-brief line. When the no-verbatim-repeat guard downgraded
+  // the opener it returns `line: null`, so this branch is skipped and we fall
+  // through to the lead menu below (a varied opener) instead of replaying the
+  // identical line word-for-word.
+  const wakeOverrideLine = _openDecision.mode === 'speak' ? (_openDecision.line ?? '').trim() : '';
   if (wakeOverrideLine && wakeOverrideLine.length > 0 && !session.isAnonymous) {
     // Escape double-quotes so the line cannot terminate the wrapper early.
     const safe = wakeOverrideLine.replace(/"/g, '\\"');
@@ -7013,7 +7358,32 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
       ru: `Скажи ровно: "${safe}" — ОДНА короткая фраза. БЕЗ приветствия перед. БЕЗ вопроса после. НЕ перефразируй.`,
       sr: `Реци тачно: "${safe}" — ЈЕДНА кратка реченица. БЕЗ поздрава пре. БЕЗ питања после. НЕ преформулиши.`,
     };
-    const wakePrompt = wakeTriggerByLang[lang] || wakeTriggerByLang.en;
+    // VTID-03293 (#1 fix-2): guided-topic narration speaks the LESSON itself (the
+    // authored voice script, set as `safe` by the provider). Use a DIRECT-QUOTE
+    // trigger ("say this verbatim, in full"), NOT a long instruction. Native
+    // audio reliably produces audio for a direct quote but goes text-only /
+    // stalls on a long instructional prompt (the VTID-03102 regression → the
+    // stuck-connecting, no-speech bug). We drop the "ONE short utterance" clamp so
+    // the whole lesson is spoken, but keep it a quote so audio stays reliable.
+    const isGuidedTeach = !!(session as any).guidedTopicNarrationContent;
+    // VTID-03295: the KB content is German (v1). For a GERMAN session, speak it
+    // verbatim (proven-reliable audio). For ANY OTHER language, instruct the model
+    // to TRANSLATE the lesson into the session language and speak only that — a
+    // bounded transformation that keeps audio reliable (unlike a long "teach"
+    // instruction, which goes text-only). A per-language KB later removes the
+    // translation step. Fixes "English user gets a German lesson".
+    const _guidedIsDe = (lang || 'en').toLowerCase().startsWith('de');
+    const _GUIDED_LANG_NAMES: Record<string, string> = {
+      en: 'English', de: 'German', es: 'Spanish', fr: 'French',
+      sr: 'Serbian', ar: 'Arabic', zh: 'Chinese', ru: 'Russian', it: 'Italian', pt: 'Portuguese',
+    };
+    const _guidedLangName = _GUIDED_LANG_NAMES[(lang || 'en').slice(0, 2).toLowerCase()] || 'English';
+    const guidedTeachTrigger = _guidedIsDe
+      ? `Sage Folgendes WÖRTLICH und VOLLSTÄNDIG — Wort für Wort, dann höre auf und höre zu. NICHT zusammenfassen, kürzen, umformulieren oder eine Begrüßung/Frage hinzufügen: "${safe}"`
+      : `Say the following lesson to the user in fluent ${_guidedLangName}. The text may be in another language — translate it faithfully and completely into ${_guidedLangName} and speak ONLY that translation, then stop and listen. Do NOT summarize, shorten, add a greeting, or ask a question: "${safe}"`;
+    const wakePrompt = isGuidedTeach
+      ? guidedTeachTrigger
+      : (wakeTriggerByLang[lang] || wakeTriggerByLang.en);
     const linePreview = safe.length > 160 ? safe.slice(0, 160) + '...' : safe;
     const promptPreview = wakePrompt.length > 200 ? wakePrompt.slice(0, 200) + '...' : wakePrompt;
     console.log(
@@ -7030,6 +7400,7 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
     ws.send(JSON.stringify(wakeMessage));
     session.greetingSent = true;
     session.greetingTurnIndex = session.turn_count;
+    _sm.markOpeningDelivered(); // VTID-03273 Pillar C — opening delivered (state)
     emitDiag(session, 'greeting_sent', {
       lang,
       prompt_len: wakePrompt.length,
@@ -7096,6 +7467,7 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
       console.log(`[VTID-WAKE-OPENER] prompt_sent=<skipped>`);
       session.greetingSent = true;
       session.greetingTurnIndex = session.turn_count;
+      _sm.markOpeningDelivered(); // VTID-03273 Pillar C — opening delivered (silent, state)
       emitDiag(session, 'greeting_sent', {
         lang,
         prompt_len: 0,
@@ -7122,12 +7494,18 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
   const greetingPrompts: Record<string, string> = {
     'en': 'Open with ONE single short phrase that LEADS — propose the next move, never ask the user\'s preference. NEVER use two-part sentences with dashes. Do NOT say "Hello", "Hi", or the user\'s name. Do NOT introduce yourself. If your system instruction\'s OPENING SHAPE MATRIX provides a Proactive Opener Candidate, USE IT. Otherwise pick ONE of: "Let me show you where we are." / "Let me show you your next step." / "I am listening." / "Let\'s keep going.". NEVER "How can I help?" / "What would you like?". Vary across sessions.',
     'de': 'Beginne mit EINER einzelnen kurzen Aussage, die FÜHRT — schlage den nächsten Schritt vor, frage nie nach der Vorliebe des Benutzers. NIEMALS zweiteilige Sätze mit Gedankenstrichen. Sage KEIN "Hallo", kein "Hi" und nicht den Namen des Benutzers. Stelle dich NICHT vor. Wenn die OPENING SHAPE MATRIX in deinem System-Prompt einen Proactive Opener Candidate enthält, NUTZE IHN. Ansonsten wähle EINE: "Lass mich dir zeigen, wo wir stehen." / "Lass mich dir den nächsten Schritt zeigen." / "Ich höre dir zu." / "Lass uns weitermachen.". NIEMALS "Womit kann ich helfen?" / "Was möchtest du?". Variiere zwischen Sitzungen.',
-    'fr': 'Commence par UNE seule courte phrase. JAMAIS de phrases en deux parties avec des tirets. Ne dis PAS "Bonjour" ni le prénom. Ne te présente PAS. Choisis UNE : "En quoi puis-je aider ?" / "Que puis-je faire pour vous ?" / "Je vous écoute." / "Qu\'aimeriez-vous savoir ?". Varie entre les sessions.',
-    'es': 'Comienza con UNA sola frase corta. NUNCA frases de dos partes con guiones. NO digas "Hola" ni el nombre del usuario. NO te presentes. Elige UNA: "¿En qué puedo ayudar?" / "¿Qué necesitas?" / "Te escucho." / "¿Qué te gustaría saber?". Varía entre sesiones.',
-    'ar': 'ابدأ بعبارة واحدة قصيرة. لا تستخدم جملاً من جزأين. لا تقل "مرحبا" أو اسم المستخدم. لا تقدم نفسك. اختر واحدة: "كيف يمكنني المساعدة؟" / "ماذا تود أن تعرف؟" / "أنا أستمع." / "ماذا يمكنني أن أفعل لك؟"',
-    'zh': '用一个简短的短语开场。不要使用两部分的句子。不要说"你好"或用户名字。不要自我介绍。选一个："有什么我可以帮忙的？" / "你想知道什么？" / "我在听。" / "我能为你做什么？"',
-    'ru': 'Начни с ОДНОЙ короткой фразы. НИКОГДА не используй двухчастные предложения с тире. НЕ говори "Здравствуйте" или имя пользователя. НЕ представляйся. Выбери одну: "Чем могу помочь?" / "Что вас интересует?" / "Я слушаю." / "Что я могу для вас сделать?"',
-    'sr': 'Почни са ЈЕДНОМ кратком фразом. НИКАД не користи дводелне реченице са цртама. НЕ говори "Здраво" или име корисника. НЕ представљај се. Изабери једну: "Како могу да помогнем?" / "Шта те занима?" / "Слушам те." / "Шта могу да урадим за тебе?"',
+    // VTID-03273 Pillar D (Codex review fix): FR/ES/AR/ZH/RU/SR were never
+    // migrated to the VTID-03271 lead doctrine and still offered forbidden
+    // preference questions ("En quoi puis-je aider ?", "¿En qué puedo
+    // ayudar?", "Како могу да помогнем?"). The quality-guard downgrade routes
+    // rejected openers HERE, so this fallback itself must obey the doctrine:
+    // lead with the next move, never ask the user's preference.
+    'fr': 'Commence par UNE seule courte phrase qui MÈNE — propose la prochaine étape, ne demande jamais la préférence de l\'utilisateur. JAMAIS de phrases en deux parties avec des tirets. Ne dis PAS "Bonjour" ni le prénom. Ne te présente PAS. Si l\'OPENING SHAPE MATRIX de ton instruction système fournit un Proactive Opener Candidate, UTILISE-LE. Sinon choisis UNE : "Laisse-moi te montrer où nous en sommes." / "Laisse-moi te montrer ta prochaine étape." / "Je t\'écoute." / "On continue.". JAMAIS "En quoi puis-je aider ?" / "Que puis-je faire pour vous ?". Varie entre les sessions.',
+    'es': 'Comienza con UNA sola frase corta que LIDERA — propone el siguiente paso, nunca preguntes la preferencia del usuario. NUNCA frases de dos partes con guiones. NO digas "Hola" ni el nombre del usuario. NO te presentes. Si la OPENING SHAPE MATRIX de tu instrucción de sistema ofrece un Proactive Opener Candidate, ÚSALO. Si no, elige UNA: "Déjame mostrarte dónde estamos." / "Déjame mostrarte tu siguiente paso." / "Te escucho." / "Sigamos.". NUNCA "¿En qué puedo ayudar?" / "¿Qué necesitas?". Varía entre sesiones.',
+    'ar': 'ابدأ بعبارة واحدة قصيرة تقود — اقترح الخطوة التالية، ولا تسأل المستخدم أبداً عن تفضيله. لا تستخدم جملاً من جزأين. لا تقل "مرحبا" أو اسم المستخدم. لا تقدم نفسك. إذا وفرت OPENING SHAPE MATRIX مرشحاً استباقياً فاستخدمه. وإلا اختر واحدة: "دعني أريك أين وصلنا." / "دعني أريك خطوتك التالية." / "أنا أستمع." / "لنواصل.". أبداً "كيف يمكنني المساعدة؟"',
+    'zh': '用一句简短、引导性的话开场——提出下一步，绝不询问用户的偏好。不要使用两部分的句子。不要说"你好"或用户名字。不要自我介绍。如果系统指令的 OPENING SHAPE MATRIX 提供了主动开场候选，请使用它。否则选一个："让我带你看看我们的进展。" / "让我带你看看你的下一步。" / "我在听。" / "我们继续。"。绝不说"有什么我可以帮忙的？"',
+    'ru': 'Начни с ОДНОЙ короткой фразы, которая ВЕДЁТ — предложи следующий шаг, никогда не спрашивай предпочтение пользователя. НИКОГДА не используй двухчастные предложения с тире. НЕ говори "Здравствуйте" или имя пользователя. НЕ представляйся. Если OPENING SHAPE MATRIX в системной инструкции даёт Proactive Opener Candidate — ИСПОЛЬЗУЙ ЕГО. Иначе выбери одну: "Давай покажу, где мы остановились." / "Давай покажу твой следующий шаг." / "Я слушаю." / "Продолжаем.". НИКОГДА "Чем могу помочь?" / "Что вас интересует?"',
+    'sr': 'Почни са ЈЕДНОМ кратком реченицом која ВОДИ — предложи следећи корак, никад не питај корисника шта жели. НИКАД не користи дводелне реченице са цртама. НЕ говори "Здраво" или име корисника. НЕ представљај се. Ако OPENING SHAPE MATRIX у системској инструкцији нуди Proactive Opener Candidate — КОРИСТИ ГА. Иначе изабери једну: "Да ти покажем докле смо стигли." / "Да ти покажем твој следећи корак." / "Слушам те." / "Настављамо.". НИКАД "Како могу да помогнем?" / "Шта те занима?"',
   };
 
   let prompt = greetingPrompts[lang] || greetingPrompts['en'];
@@ -7271,6 +7649,39 @@ function sendReconnectRecoveryPromptToLiveAPI(ws: WebSocket, session: GeminiLive
   if (session.greetingSent) {
     console.log('[VTID-02020] Recovery prompt already sent, skipping');
     return false;
+  }
+
+  // VTID-03273 Pillar A+B — defer to the single Opening Contract. When this
+  // reconnection can resume the SAME server-side session natively (Phase 0
+  // resumption handle), the model continues the thread on its own, so emitting
+  // a recovery intro ("Sorry, we lost the connection…" / "I'm back…") would be
+  // a redundant re-introduction — exactly the "what can I help you with after
+  // reconnect" defect. Stay silent: mark the opening delivered, emit the one
+  // [opening-decision] log, send NO prompt. Cold reconnects (no handle) fall
+  // through to the legacy recovery intro below, which owns continuity there.
+  {
+    const _recoveryDecision = decideOpening({
+      isAnonymous: !!session.isAnonymous,
+      hasResumptionHandle: !!session.resumptionHandle,
+      isReconnect: true,
+      lastOpenerLine: (session as any)._lastOpenerLine ?? null,
+    });
+    if (_recoveryDecision.source === 'native_resume') {
+      console.log(formatOpeningDecisionLog(session.sessionId, _recoveryDecision));
+      session.greetingSent = true;
+      session.greetingTurnIndex = session.turn_count;
+      (session as any)._openingDecision = _recoveryDecision;
+      // VTID-03273 Pillar C — recovery is the orthogonal axis: RECONNECTING →
+      // RESUMED → prior active state (never OPENING). The opening stays
+      // delivered, so the model resumes the thread instead of re-greeting.
+      const _smR: ConversationStateMachine | undefined = (session as any).conversationSM;
+      if (_smR) {
+        if (_smR.state !== 'RECONNECTING') _smR.transition('RECONNECTING', 'upstream_drop');
+        _smR.resumeToPriorState('native_resume');
+      }
+      emitDiag(session, 'reconnect_opening_silent', { source: _recoveryDecision.source });
+      return true;
+    }
   }
 
   const lang = session.lang;
@@ -7755,6 +8166,7 @@ function startVoiceTurnLatency(session: GeminiLiveSession): void {
     actor_id: session.identity?.user_id,
     turn: session.latencyTurnIndex,
     provider: `vertex/${GEMINI_MODEL}`,
+    transport: session.clientWs ? 'websocket' : 'sse',
   });
   session.latencyTracker = tracker;
   tracker.mark('audio_in_first_byte');
@@ -11187,6 +11599,45 @@ router.post('/live/session/start', optionalAuth, async (req: AuthenticatedReques
   await handleLiveSessionStart(req, res);
 });
 
+/**
+ * BOOTSTRAP-ORB-LATENCY-PHASE2 — POST /live/session/prewarm
+ *
+ * Fire-and-forget bootstrap pre-warm for the Vertex session-start path.
+ * The widget calls this on init (page load, once authenticated) so that
+ * buildBootstrapContextPack's 400-800ms of Supabase fetches happen BEFORE
+ * the user taps the orb; the actual session start then hits the 5-min
+ * VERTEX_BOOTSTRAP_CACHE and the click-to-first-audio path skips the
+ * context-build cost entirely. Returns immediately — never blocks on the
+ * build. Anonymous callers are a no-op (no identity to key the cache on).
+ */
+router.post('/live/session/prewarm', optionalAuth, async (req: AuthenticatedRequest, res: Response) => {
+  // impact-allow-no-oasis — cache pre-fill fired on every page load; no state
+  // transition occurs (OASIS taxonomy: polling/heartbeat-class, never emitted).
+  const identity = req.identity;
+  if (!identity?.user_id || !identity?.tenant_id) {
+    return res.json({ ok: true, prewarm: 'skipped_anonymous' });
+  }
+  void buildBootstrapContextPack(identity, `prewarm-${Date.now()}`)
+    .catch((err) => console.warn('[BOOTSTRAP-ORB-LATENCY-PHASE2] prewarm failed (non-fatal):', err?.message || err));
+  // ORB-BRAIN-CACHE (DEV-COMHU-0513): also warm the vitana-brain ORB context —
+  // the path the live session ACTUALLY uses (buildBootstrapContextPack above is
+  // the legacy path). Without this, a prewarmed tap still paid the full ~4.4s
+  // brain build that gates the Gemini setup. Community/orb is the dominant
+  // (and complaining) cohort; other roles warm on their first tap. Flag-gated
+  // (no-op when FEATURE_ORB_BRAIN_CACHE_ENV is off).
+  void import('../services/vitana-brain-cache')
+    .then(({ warmBrainCache }) =>
+      warmBrainCache({
+        user_id: identity.user_id,
+        tenant_id: identity.tenant_id || 'default',
+        role: 'community',
+        channel: 'orb',
+      }),
+    )
+    .catch(() => { /* best-effort warm */ });
+  return res.json({ ok: true, prewarm: 'started' });
+});
+
 
 /**
  * VTID-01155: POST /live/session/stop - Stop Gemini Live session
@@ -11513,6 +11964,7 @@ router.get('/live/stream', optionalAuth, async (req: AuthenticatedRequest, res: 
       actor_id: session.identity?.user_id,
       turn: 0,
       provider: `vertex/${VERTEX_LIVE_MODEL}`,
+      transport: 'sse',
     });
     const liveApiPromise = connectToLiveAPI(
       session,
@@ -12530,6 +12982,9 @@ async function handleWsClientMessage(clientSession: WsClientSession, message: Ws
         }
         sendGreetingPromptToLiveAPI(liveSession.upstreamWs, liveSession);
         liveSession.greetingDeferred = false;
+        // ORB-CONVERSATION-LATENCY: greeting dispatched upstream — remaining
+        // gap to audio_out_first_chunk is the model's first-token time.
+        liveSession.establishLatency?.mark('greeting_sent', { deferred: true });
       } else {
         console.log(`[VTID-AUDIO-READY] audio_ready received but greeting already sent or not deferred: session=${liveSession.sessionId}`);
       }
@@ -12844,11 +13299,31 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
   try {
     console.log(`[VTID-01222] Connecting to Vertex AI Live API for session ${sessionId}...`);
 
+    // ORB-CONVERSATION-LATENCY: turn-0 establishment tracker for the WS
+    // transport — same phase set as the SSE path (upstream_connected /
+    // context_awaited / setup_sent fire inside connectToLiveAPI), so the
+    // Phase 3a WS-vs-SSE comparison reads from one event stream. The chime is
+    // sent directly to the client socket, so the first chunk through this
+    // audio handler is the real greeting.
+    liveSession.establishLatency = new LatencyTracker({
+      session_id: sessionId,
+      surface: 'voice',
+      actor_id: liveSession.identity?.user_id,
+      turn: 0,
+      provider: `vertex/${VERTEX_LIVE_MODEL}`,
+      transport: 'websocket',
+    });
+
     const upstreamWs = await connectToLiveAPI(
       liveSession,
       // Audio response handler - forward to client via WebSocket
       // FIX: Send raw PCM for Web Audio API scheduled playback (eliminates gaps between chunks)
       (audioB64: string) => {
+        if (liveSession.establishLatency) {
+          liveSession.establishLatency.mark('audio_out_first_chunk', { source: 'greeting' });
+          void liveSession.establishLatency.finalize('success');
+          liveSession.establishLatency = null;
+        }
         if (clientWs.readyState === WebSocket.OPEN) {
           try {
             // Send raw PCM - client uses Web Audio API scheduling for seamless playback
@@ -12996,12 +13471,14 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
 
     // VTID-AUDIO-READY: Defer greeting until client sends audio_ready to avoid
     // truncating first words on mobile (race condition: greeting streams before
-    // client audio player is initialized). Fallback: send after 2s if no audio_ready.
+    // client audio player is initialized). Fallback: send after 1s if no audio_ready
+    // (BOOTSTRAP-ORB-LATENCY-PHASE1: 2s→1s — the ack normally arrives in <300ms;
+    // a 2s fallback only stretched session start for clients that never ack).
     if (liveSession.greetingDeferred) {
       console.log(`[VTID-AUDIO-READY] Greeting deferred — waiting for client audio_ready: session=${sessionId}`);
       setTimeout(() => {
         if (!liveSession.greetingSent && liveSession.active && liveSession.upstreamWs) {
-          console.log(`[VTID-AUDIO-READY] Fallback: sending chime + greeting after 2s timeout: session=${sessionId}`);
+          console.log(`[VTID-AUDIO-READY] Fallback: sending chime + greeting after 1s timeout: session=${sessionId}`);
           // VTID-INSTANT-FEEDBACK: Send chime before fallback greeting too
           try {
             const chimePcm = generateChimePcm();
@@ -13017,15 +13494,24 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
           }
           sendGreetingPromptToLiveAPI(liveSession.upstreamWs, liveSession);
           liveSession.greetingDeferred = false;
+          liveSession.establishLatency?.mark('greeting_sent', { deferred: true, fallback: true });
         }
-      }, 2000);
+      }, 1000);
     } else {
       // SSE path or non-deferred: send greeting immediately
       sendGreetingPromptToLiveAPI(upstreamWs, liveSession);
+      liveSession.establishLatency?.mark('greeting_sent', { deferred: false });
     }
 
   } catch (err: any) {
     console.error(`[VTID-01222] Failed to connect Live API for ${sessionId}:`, err.message);
+
+    // ORB-CONVERSATION-LATENCY: connect failed before any audio — close the
+    // establishment tracker as an error so it isn't left dangling.
+    if (liveSession.establishLatency) {
+      void liveSession.establishLatency.finalize('error', err?.message);
+      liveSession.establishLatency = null;
+    }
 
     sendWsMessage(clientWs, {
       type: 'session_started',
