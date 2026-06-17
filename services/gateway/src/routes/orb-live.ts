@@ -46,6 +46,8 @@ import { randomUUID } from 'crypto';
 import { TextToSpeechClient, protos } from '@google-cloud/text-to-speech';
 import { processWithGemini, setThreadIdentity } from '../services/gemini-operator';
 import { emitOasisEvent } from '../services/oasis-event-service';
+// BOOTSTRAP-PRODUCT-ANALYTICS: server-side product analytics (metadata only)
+import { trackServerEvent, detectTopic } from '../services/product-analytics/track-server';
 // VTID-03250: prefer the browser's own timezone over rate-limit-prone geo-IP
 // so the assistant never loses the user's local time (context integrity).
 import { resolveSessionTimezone } from '../services/awareness-unified-context';
@@ -2283,6 +2285,34 @@ async function executeLiveApiTool(
   const elapsed = Date.now() - startTime;
   // Phase 1 W2: tool returned — close the tool_dispatch→tool_response interval.
   markVoiceLatency(session, 'tool_response', { tool: toolName, ms: elapsed, success: result.success });
+  // BOOTSTRAP-PRODUCT-ANALYTICS: tool-call outcome for the /admin/insights
+  // dashboards. Metadata only (tool name + latency + error code) — args and
+  // results never leave this function. Fire-and-forget.
+  if (session.identity?.tenant_id) {
+    const analyticsBase = {
+      tenant_id: session.identity.tenant_id,
+      user_id: session.identity.user_id,
+      session_id: session.sessionId,
+      conversation_id: session.sessionId,
+      source: 'orb' as const,
+      feature_key: 'assistant',
+    };
+    void trackServerEvent({
+      ...analyticsBase,
+      event_name: 'tool_called',
+      properties: { tool_name: toolName, tool_category: 'orb_live' },
+    });
+    void trackServerEvent({
+      ...analyticsBase,
+      event_name: result.success ? 'tool_call_succeeded' : 'tool_call_failed',
+      event_type: result.success ? 'assistant' : 'friction',
+      properties: {
+        tool_name: toolName,
+        duration_ms: elapsed,
+        ...(result.success ? {} : { error_code: (result.error || 'unknown').slice(0, 120) }),
+      },
+    });
+  }
   // BOOTSTRAP-ORB-LATENCY-PHASE2: populate the read-only tool cache.
   if (cacheKey && result.success) {
     if (!session.toolResultCache) session.toolResultCache = new Map();
@@ -4588,6 +4618,36 @@ async function executeLiveApiToolInner(
             tenant_id: lens.tenant_id ?? null,
             role: session.identity?.role ?? null,
             vitana_id: session.identity?.vitana_id ?? null,
+          },
+          supabase,
+        );
+      }
+
+      // ─── BOOTSTRAP-FIND-MATCH-VOICE — search-first "find me a match" ───
+      // Searches the live catalog and recommends matches (also posting so the
+      // user is discoverable) or posts the request after confirmation. Shared
+      // implementation in services/intent-find-match.ts via the registry, so
+      // Vertex and LiveKit run identical code.
+      case 'find_match': {
+        const SUPABASE_URL = process.env.SUPABASE_URL;
+        const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
+        if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
+          return { success: false, result: '', error: 'Supabase not configured' };
+        }
+        const { createClient } = await import('@supabase/supabase-js');
+        const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE, {
+          auth: { autoRefreshToken: false, persistSession: false },
+        });
+        const { dispatchOrbToolForVertex } = await import('../services/orb-tools-shared');
+        return await dispatchOrbToolForVertex(
+          'find_match',
+          args ?? {},
+          {
+            user_id: lens.user_id,
+            tenant_id: lens.tenant_id ?? null,
+            role: session.identity?.role ?? session.active_role ?? null,
+            vitana_id: session.identity?.vitana_id ?? null,
+            session_id: session.sessionId,
           },
           supabase,
         );
@@ -11559,6 +11619,22 @@ router.post('/live/session/prewarm', optionalAuth, async (req: AuthenticatedRequ
   }
   void buildBootstrapContextPack(identity, `prewarm-${Date.now()}`)
     .catch((err) => console.warn('[BOOTSTRAP-ORB-LATENCY-PHASE2] prewarm failed (non-fatal):', err?.message || err));
+  // ORB-BRAIN-CACHE (DEV-COMHU-0513): also warm the vitana-brain ORB context —
+  // the path the live session ACTUALLY uses (buildBootstrapContextPack above is
+  // the legacy path). Without this, a prewarmed tap still paid the full ~4.4s
+  // brain build that gates the Gemini setup. Community/orb is the dominant
+  // (and complaining) cohort; other roles warm on their first tap. Flag-gated
+  // (no-op when FEATURE_ORB_BRAIN_CACHE_ENV is off).
+  void import('../services/vitana-brain-cache')
+    .then(({ warmBrainCache }) =>
+      warmBrainCache({
+        user_id: identity.user_id,
+        tenant_id: identity.tenant_id || 'default',
+        role: 'community',
+        channel: 'orb',
+      }),
+    )
+    .catch(() => { /* best-effort warm */ });
   return res.json({ ok: true, prewarm: 'started' });
 });
 

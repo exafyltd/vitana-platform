@@ -878,3 +878,67 @@ describe('B0d.1 decideContinuation — rollUpSuppressionReason helper', () => {
     ).toBe('no_provider_returned_a_candidate');
   });
 });
+
+// ---------------------------------------------------------------------------
+// VTID-03301 — cross-session opener rotation penalty
+// ---------------------------------------------------------------------------
+import {
+  effectivePriority,
+  DEFAULT_RECENCY_PENALTY,
+} from '../../../src/services/assistant-continuation/decide-continuation';
+
+describe('VTID-03301 rotation penalty', () => {
+  it('effectivePriority: fresh key unchanged; last-served demoted hardest; in-window demoted', () => {
+    const recent = ['journey_guide:life_compass', 'reminder_due:abc'];
+    // fresh
+    expect(effectivePriority(91, 'calendar_upcoming:x', recent, 30)).toBe(91);
+    // most-recent (index 0) → base - 30*1.5
+    expect(effectivePriority(91, 'journey_guide:life_compass', recent, 30)).toBe(91 - 45);
+    // in window but not most-recent → base - 30
+    expect(effectivePriority(90, 'reminder_due:abc', recent, 30)).toBe(90 - 30);
+    // empty recent → no penalty
+    expect(effectivePriority(91, 'anything', [], 30)).toBe(91);
+  });
+
+  it('without recency, the highest base priority wins (baseline behaviour preserved)', async () => {
+    const registry = createProviderRegistry();
+    registry.register(returningProvider('journey', wakeBriefCandidate({ id: 'j', priority: 91, line: 'complete your profile', dedupeKey: 'journey_guide:life_compass' })));
+    registry.register(returningProvider('reminder', wakeBriefCandidate({ id: 'r', priority: 90, line: 'your reminder is due', dedupeKey: 'reminder_due:abc' })));
+    const d = await decideContinuation({
+      surface: 'orb_wake',
+      context: { sessionId: 's', userId: 'u' },
+      registry, now: frozenNow(), newId: newIdFactory(),
+    });
+    expect(d.selectedContinuation?.dedupeKey).toBe('journey_guide:life_compass');
+  });
+
+  it('when the top opener was just served, a DIFFERENT relevant opener wins instead', async () => {
+    const registry = createProviderRegistry();
+    registry.register(returningProvider('journey', wakeBriefCandidate({ id: 'j', priority: 91, line: 'complete your profile', dedupeKey: 'journey_guide:life_compass' })));
+    registry.register(returningProvider('reminder', wakeBriefCandidate({ id: 'r', priority: 90, line: 'your reminder is due', dedupeKey: 'reminder_due:abc' })));
+    const d = await decideContinuation({
+      surface: 'orb_wake',
+      context: { sessionId: 's', userId: 'u' },
+      registry, now: frozenNow(), newId: newIdFactory(),
+      recentlyServedDedupeKeys: ['journey_guide:life_compass'],
+    });
+    // journey 91 - 45 = 46 < reminder 90 → reminder rotates in
+    expect(d.selectedContinuation?.dedupeKey).toBe('reminder_due:abc');
+  });
+
+  it('rotation is a soft penalty: a lone recently-served opener still wins if nothing else qualifies', async () => {
+    const registry = createProviderRegistry();
+    registry.register(returningProvider('journey', wakeBriefCandidate({ id: 'j', priority: 91, line: 'complete your profile', dedupeKey: 'journey_guide:life_compass' })));
+    const d = await decideContinuation({
+      surface: 'orb_wake',
+      context: { sessionId: 's', userId: 'u' },
+      registry, now: frozenNow(), newId: newIdFactory(),
+      recentlyServedDedupeKeys: ['journey_guide:life_compass'],
+    });
+    expect(d.selectedContinuation?.dedupeKey).toBe('journey_guide:life_compass');
+  });
+
+  it('DEFAULT_RECENCY_PENALTY is exported and positive', () => {
+    expect(DEFAULT_RECENCY_PENALTY).toBeGreaterThan(0);
+  });
+});

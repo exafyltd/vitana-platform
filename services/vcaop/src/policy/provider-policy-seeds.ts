@@ -67,7 +67,19 @@ export const PROVIDER_POLICY_SEEDS: Readonly<Record<string, ProviderPolicy>> = O
   target: marketplace('manual_only'), // no suitable ops API — human/manual
 
   // --- Affiliate networks & aggregators (L2) ---
-  amazon_associates: marketplace('api_only', 'Amazon Associates restricts incentivized/cashback to users; ' + REVIEW), // cashback stays null (off) until reviewed
+  // Amazon.ae Associates is LIVE (associate tag `vitanaland-21`). VERIFIED 2026-06-15:
+  // the Amazon Associates Operating Agreement PROHIBITS offering users any incentive —
+  // cashback, rebate, points, rewards — for using affiliate links. So Amazon items are
+  // recommendations only and must NEVER carry Vitana rewards → affiliate_cashback_allowed=false.
+  // PA-API product data is sales-gated (~3 qualifying sales / 180 days) so catalog auto-pull is
+  // deferred; per-user affiliate-link decoration (`ascsubtag`) is all that's needed meanwhile.
+  amazon_associates: {
+    ...marketplace('api_only'),
+    affiliate_cashback_allowed: false, // reviewed: Amazon forbids user cashback on affiliate links
+    notes:
+      'Amazon.ae Associates LIVE (tag vitanaland-21); recommendations only, NO user rewards on ' +
+      'Amazon items per Operating Agreement; PA-API product data sales-gated. ' + REVIEW,
+  },
   awin: affiliateNetwork(),
   cj: affiliateNetwork(), // Commission Junction
   impact: affiliateNetwork(),
