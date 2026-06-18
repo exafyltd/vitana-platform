@@ -56,6 +56,31 @@ describe('pickBriefingState', () => {
 describe('renderBriefingLine (DE)', () => {
   const det = () => 0; // deterministic pool pick
 
+  // RULE 0 (VTID-03307): the briefing line must NEVER end on / contain a passive
+  // preference question — Vitana leads and proposes. Guards against the staging
+  // "was möchtest du als nächstes tun?" regression returning.
+  it('NEVER asks a passive preference question, in any state or language', () => {
+    const PASSIVE = /(möchtest du|willst du|what would you like|where would you like|where shall we|what.*tackle|wo möchtest|womit möchtest)/i;
+    const states: Array<Partial<BriefingFacts>> = [
+      { sessionsCompleted: 0, hasGoal: false },                 // orient
+      { indexDeltaUp: null, daysSinceLastSession: 1 },          // building
+      { indexDeltaUp: 8, daysSinceLastSession: 1 },             // momentum
+      { daysSinceLastSession: 4 },                              // returning
+      { graduated: true },                                      // graduated
+    ];
+    for (const lang of ['de', 'en'] as const) {
+      for (const f of states) {
+        for (const rng of [() => 0, () => 0.5, () => 0.99]) {
+          const line = renderBriefingLine(
+            { lang, salutation: 'morning', firstName: 'Maria', facts: { ...BASE_FACTS, ...f } },
+            rng,
+          );
+          expect(line).not.toMatch(PASSIVE);
+        }
+      }
+    }
+  });
+
   it('always opens with a time-aware, named salutation', () => {
     const morning = renderBriefingLine({ lang: 'de', salutation: 'morning', firstName: 'Maria', facts: BASE_FACTS }, det);
     expect(morning.startsWith('Guten Morgen, Maria.')).toBe(true);
