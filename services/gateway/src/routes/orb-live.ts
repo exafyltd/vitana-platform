@@ -1600,6 +1600,19 @@ generateChimePcm();
 // real audio_ready, not the timer.
 const GREETING_PREBUFFER_FALLBACK_MS = 1500;
 
+// DEV-COMHU-0513 — upper bound on how long the upstream-setup path will wait on
+// session.contextReadyPromise before building the Gemini setup message (and thus
+// before the greeting can be generated). The legacy inline path ran the
+// wake-brief/journey work INSIDE session/start (request-timeout-bounded); when
+// FEATURE_ORB_FAST_START_ENV composes that work onto contextReadyPromise, the
+// gate's previously-unbounded `await` could be blocked indefinitely by a slow or
+// hung context call — stranding the greeting entirely (observed ~60% no-greeting
+// on staging). Capping the wait makes the gate fail-open: proceed with whatever
+// context is populated rather than never greeting. With fast-start OFF the
+// promise resolves well under this cap, so behavior is unchanged. Env-tunable
+// for staging without a redeploy.
+const CONTEXT_READY_GATE_TIMEOUT_MS = Number(process.env.ORB_CONTEXT_READY_GATE_TIMEOUT_MS || 4000);
+
 /**
  * DEV-COMHU-0513 — flush any greeting audio held back by the pre-buffer gate.
  *
@@ -6250,17 +6263,39 @@ async function connectToLiveAPI(
       const ctxPromise = (session as any).contextReadyPromise as Promise<void> | undefined;
       if (ctxPromise) {
         const awaitStart = Date.now();
+        // DEV-COMHU-0513: bound this await. Previously an unbounded `await
+        // ctxPromise` — fine when the promise resolved fast (legacy inline path),
+        // but under fast-start the heavy wake-brief/journey work is composed onto
+        // it, so a slow/hung context call blocked the Gemini setup forever and the
+        // greeting never fired. Race against a timeout so we always proceed (with
+        // whatever context is populated) instead of stranding the user.
+        let ctxTimedOut = false;
         try {
-          await ctxPromise;
+          await Promise.race([
+            ctxPromise.catch(() => {
+              // Promise's own .catch already logged; treat as resolved so the
+              // race settles and we proceed with partial context.
+            }),
+            new Promise<void>((resolve) =>
+              setTimeout(() => {
+                ctxTimedOut = true;
+                resolve();
+              }, CONTEXT_READY_GATE_TIMEOUT_MS),
+            ),
+          ]);
         } catch (e) {
-          // Promise's own .catch already logged; proceed with whatever session fields are populated.
+          // Defensive: proceed with whatever session fields are populated.
         }
         const ctxAwaitMs = Date.now() - awaitStart;
         // ORB-CONVERSATION-LATENCY: residual context-build time that did NOT
         // overlap the handshake. This is the number a context-slim (D.2) would
         // move; if it's already ~0, the win is in the model's first-token time.
-        session.establishLatency?.mark('context_awaited', { awaited_ms: ctxAwaitMs });
-        console.log(`[BOOTSTRAP-ORB-CRITICAL-PATH] Awaited contextReadyPromise for ${ctxAwaitMs}ms before Gemini setup for session ${session.sessionId}`);
+        session.establishLatency?.mark('context_awaited', { awaited_ms: ctxAwaitMs, timed_out: ctxTimedOut });
+        console.log(
+          `[BOOTSTRAP-ORB-CRITICAL-PATH] Awaited contextReadyPromise for ${ctxAwaitMs}ms` +
+            (ctxTimedOut ? ` (TIMED OUT at ${CONTEXT_READY_GATE_TIMEOUT_MS}ms — proceeding with partial context)` : '') +
+            ` before Gemini setup for session ${session.sessionId}`,
+        );
       }
 
       // Send setup message with model and configuration
