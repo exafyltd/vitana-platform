@@ -6526,6 +6526,11 @@ async function connectToLiveAPI(
                               ? buildJourneyGuideBlock(
                                   (session as any).journeyGuideContent,
                                   session.lang,
+                                  // DEV-COMHU double-speak fix: when a wake-brief
+                                  // override owns turn 1 (it carries this exact
+                                  // opener verbatim), suppress the guide block's
+                                  // restatement so the line is spoken once.
+                                  { wakeBriefOwnsTurn1: !!session.wakeBriefOverrideBlock },
                                 )
                               : '')
                           // VTID-03290: GUIDE MODE (TEACH) — when the user tapped

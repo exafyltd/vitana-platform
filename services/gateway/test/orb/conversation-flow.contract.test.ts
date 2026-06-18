@@ -213,4 +213,12 @@ describe('Vitana RULE 0 prompt contract — governs every improvised LLM turn', 
     expect(block).toMatch(/WHEN THE USER ASKS AN OPEN QUESTION/i);
     expect(block).toMatch(/was gibt's Neues|what's the news/i);
   });
+
+  // DEV-COMHU broken-promise fix: after a "shall I show you" + yes, Vitana must
+  // deliver conversationally and never claim it "can't retrieve" the next steps.
+  it('forbids the "can\'t retrieve the next steps" broken-promise failure', () => {
+    expect(block).toMatch(/DELIVERING WHAT YOU PROPOSED/i);
+    expect(block).toMatch(/nicht abrufen/i);     // names the exact failure phrase
+    expect(block).toMatch(/DELIVER IT NOW/i);     // the required behavior on "yes"
+  });
 });
