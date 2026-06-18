@@ -17,6 +17,7 @@ import {
   LOGIN_BRIEFING_PROVIDER_KEY,
   pickBriefingState,
   renderBriefingLine,
+  buildWeaknessRider,
   type BriefingFacts,
 } from '../../../../src/services/assistant-continuation/providers/login-briefing';
 
@@ -136,6 +137,77 @@ describe('renderBriefingLine (DE)', () => {
       det,
     );
     expect(withGoal).not.toContain('persönliches Ziel');
+  });
+});
+
+// Advice #1 — "understood weakness": goal-anchored reversing step.
+describe('buildWeaknessRider (advice #1)', () => {
+  it('returns empty when no pillar slipped', () => {
+    expect(buildWeaknessRider('de', { ...BASE_FACTS })).toBe('');
+    expect(buildWeaknessRider('de', { ...BASE_FACTS, weakestPillarDrop: null })).toBe('');
+  });
+
+  it('ignores immaterial drops (below the 3-point floor)', () => {
+    expect(
+      buildWeaknessRider('de', { ...BASE_FACTS, weakestPillarDrop: { pillar: 'sleep', deltaDown: 2 } }),
+    ).toBe('');
+  });
+
+  it('names the localized pillar + magnitude and proposes ONE reversing step', () => {
+    const line = buildWeaknessRider('de', {
+      ...BASE_FACTS,
+      weakestPillarDrop: { pillar: 'sleep', deltaDown: 7 },
+      primaryGoalLabel: null,
+    });
+    expect(line).toContain('Schlaf');
+    expect(line).toContain('7 Punkte');
+    expect(line).toContain('ich zeige dir den ersten Schritt'); // proposal, not a question
+  });
+
+  it('anchors the weakness to the user goal (the WHY) when present', () => {
+    const line = buildWeaknessRider('de', {
+      ...BASE_FACTS,
+      weakestPillarDrop: { pillar: 'exercise', deltaDown: 5 },
+      primaryGoalLabel: 'mehr Energie',
+    });
+    expect(line).toContain('Bewegung');
+    expect(line).toContain('„mehr Energie"');
+  });
+
+  it('NEVER contains a passive RULE 0 question, DE or EN, with or without a goal', () => {
+    const PASSIVE = /(möchtest du|willst du|was möchtest|what would you like|how can i help|what can i do)/i;
+    for (const lang of ['de', 'en'] as const) {
+      for (const goal of [null, 'more energy']) {
+        const line = buildWeaknessRider(lang, {
+          ...BASE_FACTS,
+          weakestPillarDrop: { pillar: 'mental', deltaDown: 9 },
+          primaryGoalLabel: goal,
+        });
+        expect(line).not.toMatch(PASSIVE);
+        expect(line.length).toBeGreaterThan(0);
+      }
+    }
+  });
+
+  it('weakness rider takes over the building-state lead', () => {
+    const line = renderBriefingLine(
+      {
+        lang: 'de',
+        salutation: 'morning',
+        firstName: 'Maria',
+        facts: {
+          ...BASE_FACTS,
+          indexDeltaUp: null,
+          daysSinceLastSession: 1,
+          weakestPillarDrop: { pillar: 'sleep', deltaDown: 6 },
+          primaryGoalLabel: 'besser schlafen',
+        },
+      },
+      () => 0,
+    );
+    expect(pickBriefingState({ ...BASE_FACTS, indexDeltaUp: null, daysSinceLastSession: 1 })).toBe('building');
+    expect(line).toContain('Schlaf ist diese Woche um 6 Punkte gesunken');
+    expect(line).toContain('„besser schlafen"');
   });
 });
 
