@@ -1640,7 +1640,10 @@ export async function tool_resolve_recipient(
     p_actor: id.user_id,
     p_token: spoken,
     p_limit: limit,
-    p_global: false,
+    // Cross-tenant: the resolver ranks the actor's own tenant first (+0.15
+    // same-tenant boost) but still surfaces a registered member who sits in
+    // the sibling tenant, so voice can reach anyone with a Vitana account.
+    p_global: true,
   });
   if (error) {
     return { ok: false, error: error.message };
@@ -1713,6 +1716,164 @@ async function emitChatSendFailure(
   }
 }
 
+interface ValidatedRecipient {
+  recipientUserId: string;
+  recipientVitanaId: string | null;
+  recipientDisplayName: string | null;
+  tenantId: string;
+}
+
+/**
+ * Shared recipient resolution + validation for every voice "send to a person"
+ * tool (message, share-link, …). This is the hardening tool_send_chat_message
+ * gained under VTID-02966, lifted into one place so tool_share_link — which
+ * previously had none of it and silently failed the chat_messages insert when
+ * Gemini passed a spoken label instead of a UUID, or when the voice session
+ * carried a null tenant — gets identical safety:
+ *   1. Re-resolve a spoken label to a UUID when Gemini drops the id across a
+ *      turn boundary (cross-tenant resolve; same-tenant ranked first).
+ *   2. Reject missing / non-UUID / self recipients.
+ *   3. Backfill tenant from app_users (chat_messages.tenant_id is NOT NULL).
+ *   4. Confirm the receiver still exists in app_users.
+ *   5. Confirm the spoken label still matches the resolved person.
+ * The optional onFailure callback lets callers keep their OASIS telemetry.
+ */
+async function resolveAndValidateRecipient(
+  rawRecipientId: string,
+  recipientLabel: string,
+  id: OrbToolIdentity,
+  sb: SupabaseClient,
+  onFailure?: (reason: string, extra?: Record<string, unknown>) => Promise<void>,
+): Promise<{ ok: true; data: ValidatedRecipient } | { ok: false; error: string }> {
+  const fail = async (reason: string, extra?: Record<string, unknown>) => {
+    if (onFailure) await onFailure(reason, extra);
+  };
+  let recipientUserId = String(rawRecipientId ?? '').trim();
+  const label = String(recipientLabel ?? '').trim();
+
+  // 1. Re-resolve label -> UUID when Gemini handed us a name (or nothing).
+  if (!UUID_REGEX.test(recipientUserId) && label) {
+    try {
+      const { data, error } = await sb.rpc('resolve_recipient_candidates', {
+        p_actor: id.user_id,
+        p_token: label,
+        p_limit: 3,
+        p_global: true,
+      });
+      if (error) {
+        await fail('label_recovery_rpc_error', { rpc_error: error.message, label });
+        return { ok: false, error: `I had a problem looking up ${label}. Want me to try once more?` };
+      }
+      const candidates = (data || []) as Array<{ user_id: string; score: number }>;
+      const top = candidates[0];
+      const topScore = top ? Number(top.score) : 0;
+      const secondScore = candidates[1] ? Number(candidates[1].score) : 0;
+      const recoverable = Boolean(top) && topScore >= 0.9 && secondScore / Math.max(topScore, 0.0001) < 0.85;
+      if (!recoverable) {
+        await fail(candidates.length === 0 ? 'label_recovery_no_match' : 'label_recovery_ambiguous', {
+          label,
+          candidate_count: candidates.length,
+          top_score: topScore,
+        });
+        return {
+          ok: false,
+          error:
+            candidates.length === 0
+              ? `I couldn't find ${label} in the community right now.`
+              : `I'm not sure which ${label} you meant — can you say their Vitana ID?`,
+        };
+      }
+      recipientUserId = top.user_id;
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'label resolve failed';
+      await fail('label_recovery_exception', { error: msg, label });
+      return { ok: false, error: `I had a problem looking up ${label}. Want me to try once more?` };
+    }
+  }
+
+  // 2. Basic shape checks.
+  if (!recipientUserId) {
+    await fail('missing_recipient');
+    return { ok: false, error: 'Who would you like me to send this to?' };
+  }
+  if (!UUID_REGEX.test(recipientUserId)) {
+    await fail('recipient_not_uuid', { recipient_value: recipientUserId });
+    return { ok: false, error: `I lost track of who you meant — can you say their name again?` };
+  }
+  if (recipientUserId === id.user_id) {
+    await fail('self_message');
+    return { ok: false, error: 'cannot message yourself' };
+  }
+
+  // 3. Tenant backfill — chat_messages.tenant_id is NOT NULL.
+  let tenantId = id.tenant_id;
+  if (!tenantId) {
+    const { data: appUser } = await sb
+      .from('app_users')
+      .select('tenant_id')
+      .eq('user_id', id.user_id)
+      .maybeSingle();
+    tenantId = (appUser as { tenant_id?: string } | null)?.tenant_id ?? null;
+    if (!tenantId) {
+      await fail('missing_tenant');
+      return {
+        ok: false,
+        error: `I can't send right now — I'm missing some account context. Try once more in a moment.`,
+      };
+    }
+  }
+
+  // 4. Receiver must still exist.
+  const { data: receiverRow, error: receiverErr } = await sb
+    .from('app_users')
+    .select('user_id, display_name, vitana_id')
+    .eq('user_id', recipientUserId)
+    .maybeSingle();
+  if (receiverErr) {
+    await fail('receiver_lookup_error', { recipient_user_id: recipientUserId, db_error: receiverErr.message });
+    return { ok: false, error: `I had a problem checking who you meant. Want me to try once more?` };
+  }
+  if (!receiverRow) {
+    await fail('receiver_not_found', { recipient_user_id: recipientUserId, recipient_label: label || null });
+    return {
+      ok: false,
+      error: label
+        ? `I couldn't find ${label} — they may have left the community.`
+        : `I couldn't find that person — they may have left the community.`,
+    };
+  }
+  const recipientVitanaId = (receiverRow as { vitana_id?: string | null }).vitana_id ?? null;
+  const recipientDisplayName = (receiverRow as { display_name?: string | null }).display_name ?? null;
+
+  // 5. Label/identity consistency: a spoken label must share a 3+ char token
+  // with the resolved person's display name or vitana_id.
+  if (label) {
+    const lbl = label.toLowerCase();
+    const dn = (recipientDisplayName ?? '').toLowerCase();
+    const vid = (recipientVitanaId ?? '').toLowerCase();
+    const tokens = lbl.split(/\s+/).filter((t) => t.length >= 3);
+    const anyMatch =
+      tokens.length === 0 ||
+      tokens.some((t) => dn.includes(t) || vid.includes(t)) ||
+      dn === lbl ||
+      vid === lbl;
+    if (!anyMatch) {
+      await fail('label_id_mismatch', {
+        recipient_user_id: recipientUserId,
+        recipient_label: label,
+        resolved_display_name: recipientDisplayName,
+        resolved_vitana_id: recipientVitanaId,
+      });
+      return { ok: false, error: `I'm not sure I got the right person — can you say their name again?` };
+    }
+  }
+
+  return {
+    ok: true,
+    data: { recipientUserId, recipientVitanaId, recipientDisplayName, tenantId },
+  };
+}
+
 export async function tool_send_chat_message(
   args: OrbToolArgs,
   id: OrbToolIdentity,
@@ -1750,7 +1911,7 @@ export async function tool_send_chat_message(
         p_actor: id.user_id,
         p_token: recipientLabel,
         p_limit: 3,
-        p_global: false,
+        p_global: true,
       });
       if (error) {
         await emitChatSendFailure('label_recovery_rpc_error', id, args, {
@@ -2225,23 +2386,43 @@ export async function tool_share_link(
   // self-share guard, voice-send quota check, and metadata shape.
   // Accepts the legacy LiveKit args (url, with_recipient) AND Vertex args
   // (target_url, recipient_user_id, recipient_label, target_kind).
-  const recipientUserId = String(args.recipient_user_id ?? args.with_recipient ?? '').trim();
+  //
+  // FIX (people-search bootstrap): previously this tool required
+  // recipient_user_id to already be a UUID, never re-resolved a spoken label,
+  // and inserted id.tenant_id raw. So when Gemini handed it the verbal name
+  // (common across the confirm turn) or the voice session carried a null
+  // tenant, the chat_messages insert was rejected and the user heard "I could
+  // not send the post" AFTER the resolver had confidently found the person.
+  // It now runs the same resolveAndValidateRecipient() path as
+  // tool_send_chat_message: label->UUID recovery, tenant backfill, receiver
+  // existence + label-consistency checks.
+  const rawRecipient = String(args.recipient_user_id ?? args.with_recipient ?? '').trim();
   const recipientLabel = String(args.recipient_label ?? '').trim();
   const targetUrl = String(args.target_url ?? args.url ?? '').trim();
   const targetKind = String(args.target_kind ?? 'page').trim();
 
-  if (!recipientUserId || !targetUrl) {
-    return { ok: false, error: 'recipient_user_id and target_url are required' };
+  if (!targetUrl) {
+    return { ok: false, error: 'target_url is required' };
   }
-  if (recipientUserId === id.user_id) {
-    return { ok: false, error: 'cannot share with yourself' };
+  if (!rawRecipient && !recipientLabel) {
+    return { ok: false, error: 'recipient_user_id or recipient_label is required' };
   }
+
+  const resolved = await resolveAndValidateRecipient(
+    rawRecipient,
+    recipientLabel,
+    id,
+    sb,
+    (reason, extra) => emitChatSendFailure(reason, id, args, extra),
+  );
+  if (!resolved.ok) {
+    return { ok: false, error: resolved.error };
+  }
+  const { recipientUserId, recipientVitanaId, recipientDisplayName, tenantId } = resolved.data;
 
   try {
     const { checkVoiceSendQuota } = await import('./voice-message-guard');
     const { resolveVitanaId } = await import('../middleware/auth-supabase-jwt');
-
-    const recipientVitanaId = await resolveVitanaId(recipientUserId);
 
     const quota = await checkVoiceSendQuota({
       // session_id is Vertex-specific; pass user_id so the quota guard can
@@ -2268,7 +2449,7 @@ export async function tool_share_link(
     const previewBody = `🔗 ${targetUrl}`;
 
     const { error: insErr } = await sb.from('chat_messages').insert({
-      tenant_id: id.tenant_id,
+      tenant_id: tenantId,
       sender_id: id.user_id,
       receiver_id: recipientUserId,
       content: previewBody,
@@ -2281,14 +2462,19 @@ export async function tool_share_link(
         kind: 'shared_link',
         target_url: targetUrl,
         target_kind: targetKind,
-        recipient_label: recipientLabel || recipientVitanaId,
+        recipient_label: recipientLabel || recipientDisplayName || recipientVitanaId,
       },
     });
     if (insErr) {
-      return { ok: false, error: insErr.message };
+      await emitChatSendFailure('share_link_insert_error', id, args, {
+        db_error: insErr.message,
+        recipient_user_id: recipientUserId,
+      });
+      return { ok: false, error: `I couldn't send the link just now — want me to try once more?` };
     }
 
-    const recipDisplay = recipientLabel || recipientVitanaId || recipientUserId;
+    const recipDisplay =
+      recipientLabel || recipientDisplayName || recipientVitanaId || recipientUserId;
     return {
       ok: true,
       result: {
@@ -2300,7 +2486,8 @@ export async function tool_share_link(
     };
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : 'share_link error';
-    return { ok: false, error: msg };
+    await emitChatSendFailure('share_link_exception', id, args, { error: msg });
+    return { ok: false, error: `I hit a snag sharing that — want me to try once more?` };
   }
 }
 
