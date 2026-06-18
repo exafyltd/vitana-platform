@@ -61,6 +61,7 @@
 
     { "name": "post_intent",                  "implementations": ["vertex"], "safety_critical": true,  "owner_vtid": "VTID-01975" },
     { "name": "view_intent_matches",          "implementations": ["vertex"], "safety_critical": false, "owner_vtid": "VTID-01976" },
+    { "name": "find_match",                   "implementations": ["vertex"], "safety_critical": false, "owner_vtid": null, "notes": "BOOTSTRAP-FIND-MATCH-VOICE: search-first 'find me a match' — searches the catalog and recommends matches (also posting so the user is discoverable) or posts on confirmation. In the shared ORB registry; LiveKit can dispatch it but does not declare it yet (mirrors view_intent_matches)." },
     { "name": "list_my_intents",              "implementations": ["vertex"], "safety_critical": false, "owner_vtid": null },
     { "name": "respond_to_match",             "implementations": ["vertex"], "safety_critical": true,  "owner_vtid": "VTID-01976" },
     { "name": "mark_intent_fulfilled",        "implementations": ["vertex"], "safety_critical": false, "owner_vtid": null },
@@ -143,6 +144,7 @@
     { "name": "max_tool_response_chars",    "value": 4000,     "description": "Default cap; some sites use 2000/3000", "implementations": ["vertex"] },
     { "name": "max_history_chars",          "value": 4000,     "description": "System-instruction last-turns budget", "implementations": ["vertex"] },
     { "name": "extraction_throttle_ms",     "value": 60000,    "description": "Cognee fact-extraction debounce", "implementations": ["vertex"] },
+    { "name": "greeting_prebuffer_fallback_ms","value": 1500,   "description": "DEV-COMHU-0513 — GREETING_PREBUFFER_FALLBACK_MS in orb-live.ts. When FEATURE_ORB_GREETING_PREBUFFER_ENV is live, the WS greeting prompt is dispatched on connect and its audio held until the client's audio_ready; if that ack never arrives, the held greeting is flushed after this timeout so the user is never left in silence.", "implementations": ["vertex"] },
     { "name": "bootstrap_rebuild_min_age_ms","value": 60000,   "description": "Re-bootstrap floor on reconnect", "implementations": ["vertex"] },
     { "name": "token_refresh_skew_ms",      "value": 300000,   "description": "5 min — refresh the cached ADC access token this far ahead of expiry so getAccessToken() never blocks the live-connect path", "implementations": ["vertex"] },
     { "name": "token_default_ttl_ms",       "value": 3300000,  "description": "55 min — fallback ADC token TTL when the auth client doesn't expose expiry_date", "implementations": ["vertex"] },

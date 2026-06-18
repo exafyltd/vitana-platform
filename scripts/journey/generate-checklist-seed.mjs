@@ -26,6 +26,14 @@ const DOC = resolve(
 const sq = (s) => (s == null ? null : String(s).replace(/'/g, "''"));
 const lit = (s) => (s == null ? 'NULL' : `'${sq(s)}'`);
 
+/**
+ * BOOTSTRAP-FIRST-TIME-ONBOARDING: DB sessions 1-4 are the first-time
+ * onboarding topics (T251-T254, authored in their own migration). The doc's
+ * sessions 1-90 therefore live at DB sessions 5-94. Chapter/business-gate
+ * mapping stays keyed to the DOC session so the grouping is unchanged.
+ */
+const SESSION_OFFSET = 4;
+
 /** 6 chapters of 15 sessions (design-spec catalog structure). */
 function chapterFor(session) {
   if (session <= 15) return 'basics';
@@ -117,7 +125,7 @@ function main() {
     r.cards.forEach((c, i) => {
       const position = i + 1;
       values.push(
-        `  (${lit(c.topicId)}, 'v2', ${r.session}, ${position}, ${lit(chapterFor(r.session))}, ` +
+        `  (${lit(c.topicId)}, 'v2', ${r.session + SESSION_OFFSET}, ${position}, ${lit(chapterFor(r.session))}, ` +
           `${lit(c.label)}, ${lit(r.purpose)}, ${lit(businessGateFor(r.session))}, 'draft')`,
       );
     });

@@ -293,6 +293,10 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const approvalsRouter = require('./routes/approvals').default;
   // VCAOP: Vitanaland Commerce & Account-Operations Platform API (shop/wallet/onboarding)
   const vcaopRouter = require('./routes/vcaop').default;
+  // VCAOP: public, key-verified affiliate postback receiver (Admitad) — no user auth
+  const vcaopPostbackRouter = require('./routes/vcaop-postback').default;
+  // VCAOP: Shopify own-store catalog sync (admin trigger; background worker in services)
+  const shopifySyncRouter = require('./routes/shopify-sync').default;
   // VTID-01169: Deploy → Ledger Terminalization (terminalize endpoint + repair job)
   const vtidTerminalizeRouter = require('./routes/vtid-terminalize').default;
   // VTID-01157: Supabase JWT Auth Middleware + /api/v1/auth/me endpoint
@@ -653,6 +657,11 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   // VTID-01148: Approvals API v1 — Pending Queue + Count + Approve/Reject (Gateway + OASIS-backed)
   mountRouterSync(app, '/api/v1/approvals', approvalsRouter, { owner: 'approvals-api' });
 
+  // VCAOP: public affiliate postback receiver — MUST mount before the authed vcaop
+  // router so /api/v1/vcaop/postback/* resolves to the key-verified public handler.
+  mountRouterSync(app, '/api/v1/vcaop/postback', vcaopPostbackRouter, { owner: 'vcaop-postback' });
+  // VCAOP: Shopify catalog sync — mount before the vcaop router so the sub-path resolves.
+  mountRouterSync(app, '/api/v1/vcaop/shopify', shopifySyncRouter, { owner: 'vcaop-shopify' });
   // VCAOP: Vitanaland Commerce API — providers/affiliate-programs/shop/wallet/onboarding
   mountRouterSync(app, '/api/v1/vcaop', vcaopRouter, { owner: 'vcaop' });
 
@@ -695,6 +704,11 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   // Vitana Index — celebrate() analytics ingestion (light-weight, fire-and-forget)
   const { analyticsCelebrateRouter } = require('./routes/analytics-celebrate');
   mountRouterSync(app, '/api/v1/analytics', analyticsCelebrateRouter, { owner: 'analytics-celebrate' });
+
+  // BOOTSTRAP-PRODUCT-ANALYTICS: product analytics batch ingestion (clickstream,
+  // Assistant usage, features, interests, friction) — backs /admin/insights/*
+  const productAnalyticsRouter = require('./routes/product-analytics').default;
+  mountRouterSync(app, '/api/v1/analytics', productAnalyticsRouter, { owner: 'product-analytics' });
 
   // VTID-0532: Autopilot Task Extractor & Planner Handoff
   mountRouterSync(app, '/api/v1/autopilot', autopilotRouter, { owner: 'autopilot' });
@@ -1151,6 +1165,10 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   mountRouterSync(app, '/api/v1/admin/tenants/:tenantId/kpis', tenantKpisRouter, { owner: 'tenant-kpis' });
   // BOOTSTRAP-ADMIN-BB-CC: Admin insights
   mountRouterSync(app, '/api/v1/admin/tenants/:tenantId/insights', tenantInsightsRouter, { owner: 'tenant-insights' });
+  // BOOTSTRAP-PRODUCT-ANALYTICS: admin product analytics reads (summary,
+  // assistant, journeys, features, interests, raw event feed)
+  const tenantProductAnalyticsRouter = require('./routes/tenant-admin/product-analytics').default;
+  mountRouterSync(app, '/api/v1/admin/tenants/:tenantId/analytics', tenantProductAnalyticsRouter, { owner: 'tenant-product-analytics' });
   // BOOTSTRAP-ADMIN-GG: Tenant Health Index
   mountRouterSync(app, '/api/v1/admin/tenants/:tenantId/health-index', tenantHealthIndexRouter, { owner: 'tenant-health-index' });
   // Settings — tenant profile, branding, feature flags
@@ -1477,6 +1495,14 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
         console.warn('⚠️ Morning brief scheduler initialization failed (non-fatal):', error);
       }
 
+      // BOOTSTRAP-PRODUCT-ANALYTICS: daily product analytics rollup + retention purge
+      try {
+        const { startProductAnalyticsRollupScheduler } = require('./services/product-analytics/rollup');
+        startProductAnalyticsRollupScheduler();
+      } catch (error) {
+        console.warn('⚠️ Product analytics rollup scheduler initialization failed (non-fatal):', error);
+      }
+
       // VTID-01185: Initialize autonomous self-improvement engine
       try {
         const { initializeAutonomousEngine } = require('./services/recommendation-engine/autonomous-engine');
@@ -1549,6 +1575,15 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
         }
       } catch (error) {
         console.warn('⚠️ Admin awareness worker initialization failed (non-fatal):', error);
+      }
+
+      // VCAOP: Shopify own-store catalog sync. Opt-in (SHOPIFY_SYNC_ENABLED=true +
+      // SHOPIFY_STORE_DOMAIN). Pulls products.json on an interval into /discover.
+      try {
+        const { startShopifySyncWorker } = require('./services/shopify-sync');
+        startShopifySyncWorker();
+      } catch (error) {
+        console.warn('⚠️ Shopify sync worker initialization failed (non-fatal):', error);
       }
 
       // Dev Autopilot background executor (cooling→running→ci loop).

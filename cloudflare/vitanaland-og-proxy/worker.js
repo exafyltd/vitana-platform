@@ -109,6 +109,77 @@ async function pickUsableImage(candidates, defaultImage) {
 const PROFILE_DEFAULT_IMAGE =
   'https://inmkhvwdcuyhnxkgfvsb.supabase.co/storage/v1/object/public/covers/vitana-og-default.jpg';
 
+// --- Auto-generated default avatar (parity with the in-app placeholder) -----
+//
+// Members who never uploaded a photo have `avatar_url = null`, yet the app
+// still renders a friendly DiceBear avatar for them (see
+// `vitana-v1/src/lib/autoAvatar.ts`, used by `MobileIdentityCard.tsx` — the
+// screen profiles are shared from). Crawlers can't run that client-side JS, so
+// without help they'd only ever see the branded fallback. We regenerate the
+// SAME avatar here so shared previews match what the member sees in-app.
+//
+// SOURCE OF TRUTH: vitana-v1/src/lib/autoAvatar.ts. The arrays + hash below are
+// copied verbatim and MUST stay byte-for-byte identical (same entries, same
+// order) or the style/background picked here won't match the in-app SVG. The
+// only deviation: we request the `/png` raster (crawlers don't preview SVG).
+const DICEBEAR_STYLES = [
+  'lorelei',
+  'lorelei-neutral',
+  'adventurer',
+  'big-ears',
+  'big-smile',
+  'bottts',
+  'bottts-neutral',
+  'croodles',
+  'fun-emoji',
+  'icons',
+  'notionists',
+  'notionists-neutral',
+  'personas',
+  'pixel-art',
+  'shapes',
+  'thumbs',
+];
+
+const BG_COLORS = [
+  'b6e3f4',
+  'c0aede',
+  'd1d4f9',
+  'ffd5dc',
+  'ffdfbf',
+  'a3e7c5',
+  'fde68a',
+  'fca5a5',
+  '9ecbff',
+  'fbcfe8',
+];
+
+function djb2(s) {
+  let h = 5381;
+  for (let i = 0; i < s.length; i++) {
+    h = ((h << 5) + h + s.charCodeAt(i)) | 0;
+  }
+  return h >>> 0; // unsigned
+}
+
+// Deterministic DiceBear PNG URL for the given seed. Mirrors autoAvatar.ts'
+// getAutoAvatarUrl(), but emits a 512×512 PNG so WhatsApp/Facebook/etc. can
+// actually render it as an og:image.
+function autoAvatarPngUrl(seed) {
+  const safeSeed = (seed && String(seed).trim().length > 0) ? String(seed) : 'vitana';
+  const h = djb2(safeSeed);
+  const style = DICEBEAR_STYLES[h % DICEBEAR_STYLES.length];
+  const bg = BG_COLORS[(h >>> 8) % BG_COLORS.length];
+  const params = new URLSearchParams({
+    seed: safeSeed,
+    backgroundType: 'gradientLinear',
+    backgroundColor: bg,
+    radius: '50',
+    size: '512',
+  });
+  return `https://api.dicebear.com/9.x/${style}/png?${params.toString()}`;
+}
+
 /**
  * Build a minimal-but-valid OG response for cases where the gateway
  * lookup failed (404, 5xx, network blip, or empty body). Returning a
@@ -147,7 +218,6 @@ function renderProfileFallback(canonicalUrl, destinationUrl) {
   <meta name="twitter:description" content="${escapeHtml(description)}">
   <meta name="twitter:image" content="${escapeHtml(image)}">
 
-  <meta http-equiv="refresh" content="0;url=${escapeHtml(destinationUrl)}">
 </head>
 <body>
   <h1>${escapeHtml(title)}</h1>
@@ -209,9 +279,15 @@ async function renderProfileOg(id, canonicalUrl, destinationUrl, config) {
   // intentionally NOT in the candidate list: there is no user-facing UI to
   // update it, so legacy rows drift out of sync with the in-app avatar and
   // produce surprising previews (e.g. an unrelated old photo for a user
-  // whose current avatar is a headshot). Fall through to the branded
-  // DEFAULT_IMAGE hero when avatar_url is missing or not crawler-fetchable.
-  const picked = await pickUsableImage([p.avatar_url], DEFAULT_IMAGE);
+  // whose current avatar is a headshot).
+  //
+  // When avatar_url is missing/unfetchable we fall back to the SAME
+  // auto-generated DiceBear avatar the app renders in-app (seeded by handle,
+  // matching MobileIdentityCard) — NOT straight to the branded hero — so an
+  // avatar-less member still shares a personal-looking card. The branded
+  // DEFAULT_IMAGE remains the last resort if DiceBear is unreachable.
+  const autoAvatar = autoAvatarPngUrl(p.handle || p.display_name || p.user_id || id);
+  const picked = await pickUsableImage([p.avatar_url, autoAvatar], DEFAULT_IMAGE);
   const image = picked.url;
   const imageType = picked.contentType;
   // avatar_url is square (512×512); DEFAULT_IMAGE is landscape (1200×630).
@@ -245,7 +321,6 @@ async function renderProfileOg(id, canonicalUrl, destinationUrl, config) {
   <meta name="twitter:description" content="${escapeHtml(description)}">
   <meta name="twitter:image" content="${escapeHtml(image)}">
 
-  <meta http-equiv="refresh" content="0;url=${escapeHtml(destinationUrl)}">
 </head>
 <body>
   <h1>${escapeHtml(title)}</h1>
