@@ -135,7 +135,11 @@ export function buildJourneyGuideOpenerLine(
     : `${greet}Let's work on your next step together: ${stepTitle}. I'll get us started.`;
 }
 
-export function buildJourneyGuideBlock(guide: JourneyGuideContent, lang: string): string {
+export function buildJourneyGuideBlock(
+  guide: JourneyGuideContent,
+  lang: string,
+  opts?: { wakeBriefOwnsTurn1?: boolean },
+): string {
   const isDe = (lang || 'en').toLowerCase().startsWith('de');
   const done = guide.focus_done === true;
 
@@ -144,6 +148,18 @@ export function buildJourneyGuideBlock(guide: JourneyGuideContent, lang: string)
   // tapped an already-done step, the opener uses "enrich" framing.
   const stepLine = buildJourneyGuideOpenerLine(guide.opener_key, guide.step_title, lang, { done });
   const upcoming = guide.upcoming_steps ?? [];
+
+  // DEV-COMHU double-speak fix: when a wake-brief override owns turn 1, it
+  // ALREADY carries this exact opener line as the verbatim first utterance.
+  // Restating it here ("Lead with this: <line>") made Gemini speak the same
+  // sentence twice. When the override owns turn 1, suppress the restatement and
+  // let this block govern turns 2+ only. When there is NO override, this block
+  // still owns turn 1 and leads with the line as before.
+  const ownsTurn1 = opts?.wakeBriefOwnsTurn1 === true;
+  const suppressDe =
+    'WICHTIG: Die erste gesprochene Zeile ist oben bereits festgelegt und wird genau EINMAL gesprochen — wiederhole sie NICHT und sprich sie NICHT erneut. Führe das Gespräch ab da natürlich weiter.';
+  const suppressEn =
+    'IMPORTANT: the first spoken line is already set above and is spoken exactly ONCE — do NOT repeat it or say it again. Continue the conversation naturally from there.';
 
   // VTID-03300 (follow-up): ENRICH MODE — the user tapped a step they've already
   // completed. Vitana must NOT restart it or treat them as a new user; she
@@ -165,7 +181,7 @@ export function buildJourneyGuideBlock(guide: JourneyGuideContent, lang: string)
         '',
         `SCHRITT (bereits erledigt): ${guide.step_title}`,
         `Warum ein Ausbau lohnt: ${guide.benefit}`,
-        `Führe so (anerkennen + konkret verbessern, NICHT als offene Frage): ${stepLine}`,
+        ownsTurn1 ? suppressDe : `Führe so (anerkennen + konkret verbessern, NICHT als offene Frage): ${stepLine}`,
         'Schlage 1–2 KONKRETE Verbesserungen vor und mach sie GEMEINSAM (z. B. fehlende Details ergänzen, schärfen, aktualisieren).',
         upcoming.length
           ? `Wenn hier nichts mehr zu verbessern ist, GEH zum nächsten offenen Schritt über: ${upcoming.join(', ')}.`
@@ -187,7 +203,7 @@ export function buildJourneyGuideBlock(guide: JourneyGuideContent, lang: string)
       '',
       `STEP (already done): ${guide.step_title}`,
       `Why enriching it is worth it: ${guide.benefit}`,
-      `Lead with this (acknowledge + improve concretely, NOT an open question): ${stepLine}`,
+      ownsTurn1 ? suppressEn : `Lead with this (acknowledge + improve concretely, NOT an open question): ${stepLine}`,
       'Propose 1–2 CONCRETE improvements and do them TOGETHER (e.g. fill missing details, sharpen, update).',
       upcoming.length
         ? `When there is nothing left to improve here, move on to the next open step: ${upcoming.join(', ')}.`
@@ -211,7 +227,7 @@ export function buildJourneyGuideBlock(guide: JourneyGuideContent, lang: string)
       '',
       `AKTUELLER SCHRITT: ${guide.step_title}`,
       `Warum jetzt wichtig: ${guide.benefit}`,
-      `Führe so (als Vorschlag/Aufforderung, NICHT als offene Frage): ${stepLine}`,
+      ownsTurn1 ? suppressDe : `Führe so (als Vorschlag/Aufforderung, NICHT als offene Frage): ${stepLine}`,
       upcoming.length
         ? `DANACH kommen (in dieser Reihenfolge): ${upcoming.join(', ')}. Wenn der aktuelle Schritt erledigt ist, GEH SOFORT zum nächsten über und schlage ihn konkret vor.`
         : 'Wenn dieser Schritt erledigt ist, freu dich kurz mit ihr — es ist der letzte offene Schritt.',
@@ -239,7 +255,7 @@ export function buildJourneyGuideBlock(guide: JourneyGuideContent, lang: string)
     '',
     `CURRENT STEP: ${guide.step_title}`,
     `Why it matters now: ${guide.benefit}`,
-    `Lead with this (as a proposal/directive, NOT an open question): ${stepLine}`,
+    ownsTurn1 ? suppressEn : `Lead with this (as a proposal/directive, NOT an open question): ${stepLine}`,
     upcoming.length
       ? `AFTER that, in order: ${upcoming.join(', ')}. When the current step is done, IMMEDIATELY move to the next one and propose it concretely.`
       : 'When this step is done, briefly celebrate — it is the last open step.',
