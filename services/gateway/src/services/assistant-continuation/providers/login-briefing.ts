@@ -58,6 +58,7 @@ import {
 import { getJourneyState } from '../../guided-journey/guided-journey-state';
 import { getPublishedChecklist } from '../../guided-journey/checklist-service';
 import { fetchLifeCompass, fetchVitanaIndexForProfiler } from '../../user-context-profiler';
+import { PILLAR_KEYS, type PillarKey } from '../../../lib/vitana-pillars';
 
 export const LOGIN_BRIEFING_PROVIDER_KEY = 'login_briefing';
 export const LOGIN_BRIEFING_EXTRA_KEY = 'loginBriefing' as const;
@@ -69,6 +70,12 @@ const DEFAULT_PRIORITY = 92;
 const RETURN_GAP_DAYS = 3;
 /** An Index 7-day delta of at least this magnitude is "material" enough to praise. */
 const MATERIAL_INDEX_DELTA = 5;
+/**
+ * A single pillar must drop at least this many points over the week before we
+ * surface it as an "understood weakness". Below this it is noise, and flagging
+ * it would feel like nagging rather than understanding (VTID-03307 / advice #1).
+ */
+const MATERIAL_PILLAR_DROP = 3;
 
 export interface LoginBriefingInputs {
   supabase: SupabaseClient;
@@ -110,6 +117,18 @@ export interface BriefingFacts {
   indexDeltaUp: number | null;
   /** Days since the last session (in user TZ), when known. */
   daysSinceLastSession: number | null;
+  /**
+   * Advice #1 — "understood weakness". A single pillar that dropped this week
+   * (name + magnitude of the drop), or null when nothing material slipped.
+   * Drives the goal-anchored reversing-step rider. Optional so existing
+   * callers/fixtures that predate the signal degrade cleanly to "no weakness".
+   */
+  weakestPillarDrop?: { pillar: PillarKey; deltaDown: number } | null;
+  /**
+   * The user's Life Compass primary-goal label. Anchors the weakness to WHY it
+   * matters ("because 'more energy' matters to you …"). Null when unset.
+   */
+  primaryGoalLabel?: string | null;
 }
 
 /** Pick the state purely from the gathered facts. Exported for tests. */
@@ -160,6 +179,47 @@ function buildNudge(lang: string, f: BriefingFacts): string {
       : 'If you like, we can set your personal goal too — then I can tailor your journey precisely to it.';
   }
   return '';
+}
+
+/** Localized pillar name for the weakness rider. DE is du-form brand voice. */
+function pillarLabelLocalized(lang: string, p: PillarKey): string {
+  const de: Record<PillarKey, string> = {
+    nutrition: 'Ernährung',
+    hydration: 'Flüssigkeit',
+    exercise: 'Bewegung',
+    sleep: 'Schlaf',
+    mental: 'mentale Stärke',
+  };
+  const en: Record<PillarKey, string> = {
+    nutrition: 'nutrition',
+    hydration: 'hydration',
+    exercise: 'movement',
+    sleep: 'sleep',
+    mental: 'mental',
+  };
+  return (lang === 'de' ? de : en)[p];
+}
+
+/**
+ * Advice #1 — the "understood weakness" rider. Names the slipping pillar,
+ * anchors it to the user's goal (the WHY), and proposes ONE small reversing
+ * step. It is always a PROPOSAL ("lass uns … ich zeige dir"), never a passive
+ * question — so it stays RULE 0 compliant. Empty string when nothing slipped.
+ */
+export function buildWeaknessRider(lang: string, f: BriefingFacts): string {
+  const drop = f.weakestPillarDrop;
+  if (!drop || drop.deltaDown < MATERIAL_PILLAR_DROP) return '';
+  const de = lang === 'de';
+  const pillar = pillarLabelLocalized(lang, drop.pillar);
+  const d = drop.deltaDown;
+  const why = f.primaryGoalLabel
+    ? de
+      ? ` Weil dir „${f.primaryGoalLabel}" wichtig ist, lohnt sich genau hier ein kleiner Schritt.`
+      : ` Because "${f.primaryGoalLabel}" matters to you, one small step right here is worth it.`
+    : '';
+  return de
+    ? `Mir ist aufgefallen: dein Bereich ${pillar} ist diese Woche um ${d} Punkte gesunken.${why} Lass uns das gemeinsam umkehren — ich zeige dir den ersten Schritt.`
+    : `I noticed your ${pillar} dropped ${d} points this week.${why} Let's turn it around together — I'll show you the first step.`;
 }
 
 interface RenderArgs {
@@ -215,6 +275,10 @@ export function renderBriefingLine(args: RenderArgs, rng: () => number = Math.ra
       const praise = de
         ? `Stark — du hast schon ${f.sessionsCompleted} ${f.sessionsCompleted === 1 ? 'Session' : 'Sessions'} geschafft.`
         : `Strong work — you have already completed ${f.sessionsCompleted} ${f.sessionsCompleted === 1 ? 'session' : 'sessions'}.`;
+      // Advice #1: when a pillar slipped, the goal-anchored reversing step IS
+      // the single next move — keep the briefing to ONE clear lead.
+      const rider = buildWeaknessRider(args.lang, f);
+      if (rider) return [prefix, praise, rider].filter(Boolean).join(' ');
       const nudge = buildNudge(args.lang, f);
       return [prefix, praise, nextClause, nudge, lead].filter(Boolean).join(' ');
     }
@@ -232,6 +296,10 @@ export function renderBriefingLine(args: RenderArgs, rng: () => number = Math.ra
       const body = de
         ? `Schön, dass du wieder da bist. Es ist ein paar Tage her — aber deine ${f.sessionsCompleted} ${f.sessionsCompleted === 1 ? 'Session' : 'Sessions'} sind nicht verloren, du knüpfst genau dort wieder an.`
         : `Good to have you back. It has been a few days — but your ${f.sessionsCompleted} ${f.sessionsCompleted === 1 ? 'session' : 'sessions'} are not lost; you pick up right where you left off.`;
+      // Advice #1: a returning user who also slipped a pillar hears the
+      // goal-anchored reversing step as the lead instead of the generic resume.
+      const rider = buildWeaknessRider(args.lang, f);
+      if (rider) return [prefix, body, rider].filter(Boolean).join(' ');
       const lead2 = de ? 'Lass uns genau dort wieder anknüpfen — ich führe dich.' : "Let's pick up right where you left off — I'll guide you.";
       return [prefix, body, nextClause, lead2].filter(Boolean).join(' ');
     }
@@ -398,14 +466,26 @@ export function makeLoginBriefingProvider(
       const todayIso = todayInTimezone(nowDate, inputs.timezone);
       const daysSinceLastSession = dayDiff(todayIso, userJourney?.last_session_date ?? null);
 
+      const primaryGoalRaw = (lifeCompass as { primary_goal?: unknown } | null)?.primary_goal;
+      const primaryGoalLabel =
+        typeof primaryGoalRaw === 'string' && primaryGoalRaw.trim().length > 0
+          ? primaryGoalRaw.trim()
+          : null;
+
       const facts: BriefingFacts = {
         sessionsCompleted,
         nextSessionNumber: currentSession,
         nextSessionTitle,
         graduated,
-        hasGoal: !!(lifeCompass && (lifeCompass as { primary_goal?: unknown }).primary_goal),
+        hasGoal: !!primaryGoalLabel,
         indexDeltaUp,
         daysSinceLastSession,
+        // Advice #1 — understood weakness: the pillar that slipped this week
+        // (from the Index snapshot's per-pillar last_movement) + the goal it
+        // ties to. Both degrade to null so the briefing is unaffected when the
+        // signal is absent.
+        weakestPillarDrop: readWeakestPillarDrop(indexSnap),
+        primaryGoalLabel,
       };
 
       const localHour = localHourInTimezone(nowDate, inputs.timezone);
@@ -435,6 +515,9 @@ export function makeLoginBriefingProvider(
           { kind: 'login_briefing_state', detail: state },
           { kind: 'sessions_completed', detail: String(sessionsCompleted) },
           { kind: 'next_session', detail: nextSessionTitle ? `${currentSession}:${nextSessionTitle}` : String(currentSession) },
+          ...(facts.weakestPillarDrop
+            ? [{ kind: 'weakest_pillar_drop', detail: `${facts.weakestPillarDrop.pillar}:-${facts.weakestPillarDrop.deltaDown}` }]
+            : []),
         ],
         // One briefing per (user × calendar day × state) so the rotation
         // window does not replay the exact same opener back-to-back.
@@ -471,4 +554,21 @@ function readIndexTrend(snap: unknown): number | null {
   if (!snap || typeof snap !== 'object') return null;
   const t = (snap as { trend_7d?: unknown }).trend_7d;
   return typeof t === 'number' && Number.isFinite(t) ? t : null;
+}
+
+/**
+ * Advice #1 — read the slipping pillar from the Index snapshot. The snapshot's
+ * `last_movement` carries the most recent per-pillar delta; a negative delta is
+ * the "this pillar fell" signal. Defensive: any unexpected shape → null, so the
+ * briefing never breaks on a missing field.
+ */
+function readWeakestPillarDrop(snap: unknown): { pillar: PillarKey; deltaDown: number } | null {
+  if (!snap || typeof snap !== 'object') return null;
+  const lm = (snap as { last_movement?: { pillar?: unknown; delta?: unknown } }).last_movement;
+  if (!lm || typeof lm !== 'object') return null;
+  const delta = typeof lm.delta === 'number' && Number.isFinite(lm.delta) ? lm.delta : null;
+  const pillar = typeof lm.pillar === 'string' ? lm.pillar : null;
+  if (delta === null || delta >= 0 || pillar === null) return null;
+  if (!PILLAR_KEYS.includes(pillar as PillarKey)) return null;
+  return { pillar: pillar as PillarKey, deltaDown: Math.abs(Math.round(delta)) };
 }

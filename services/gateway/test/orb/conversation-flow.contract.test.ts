@@ -127,6 +127,24 @@ function buildScenarios(): Scenario[] {
   });
   out.push({ n: 10, label: `flow-v3/${all.kind} (all-three→match-wins)`, line: flowLine(all.kind, all.name), spoken: true });
 
+  // #11 — advice #1: understood weakness (goal-anchored reversing step).
+  const weaknessLine = renderBriefingLine(
+    {
+      lang: 'de',
+      salutation: 'morning',
+      firstName: 'Maria',
+      facts: {
+        ...BASE,
+        indexDeltaUp: null,
+        daysSinceLastSession: 1,
+        weakestPillarDrop: { pillar: 'sleep', deltaDown: 6 },
+        primaryGoalLabel: 'besser schlafen',
+      },
+    },
+    det,
+  );
+  out.push({ n: 11, label: 'login-briefing/building+weakness (advice #1)', line: weaknessLine, spoken: true });
+
   return out;
 }
 
