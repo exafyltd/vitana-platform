@@ -22,5 +22,7 @@ exports[`Vitana conversation-flow contract — 10 standard scenarios INVARIANT B
 #10 flow-v3/community_match (all-three→match-wins)
    → "Du hast ein neues Match! Lass es uns gemeinsam anschauen — ich führe dich gleich hin."
 #11 login-briefing/building+weakness (advice #1)
-   → "Guten Morgen, Maria. Stark — du hast schon 3 Sessions geschafft. Mir ist aufgefallen: dein Bereich Schlaf ist diese Woche um 6 Punkte gesunken. Weil dir „besser schlafen" wichtig ist, lohnt sich genau hier ein kleiner Schritt. Lass uns das gemeinsam umkehren — ich zeige dir den ersten Schritt.""
+   → "Guten Morgen, Maria. Stark — du hast schon 3 Sessions geschafft. Mir ist aufgefallen: dein Bereich Schlaf ist diese Woche um 6 Punkte gesunken. Weil dir „besser schlafen" wichtig ist, lohnt sich genau hier ein kleiner Schritt. Lass uns das gemeinsam umkehren — ich zeige dir den ersten Schritt."
+#12 login-briefing/momentum+progress (advice #2)
+   → "Guten Morgen, Maria. Schön, dich zu hören. Du bist bei Session 4 — und dein Vitana Index ist diese Woche um 12 Punkte gestiegen. Das ist echte Konstanz. Auf deiner Lernkarte stehen schon 30 von 254 Themen auf grün — das sind 12% deiner Reise. Als Nächstes käme Session 4: „Schlaf-Routine". Lass uns genau da weitermachen — ich führe dich.""
 `;

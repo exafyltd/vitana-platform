@@ -18,6 +18,7 @@ import {
   pickBriefingState,
   renderBriefingLine,
   buildWeaknessRider,
+  buildProgressBeat,
   type BriefingFacts,
 } from '../../../../src/services/assistant-continuation/providers/login-briefing';
 
@@ -208,6 +209,55 @@ describe('buildWeaknessRider (advice #1)', () => {
     expect(pickBriefingState({ ...BASE_FACTS, indexDeltaUp: null, daysSinceLastSession: 1 })).toBe('building');
     expect(line).toContain('Schlaf ist diese Woche um 6 Punkte gesunken');
     expect(line).toContain('„besser schlafen"');
+  });
+});
+
+// Advice #2 — "visible momentum": progress beat.
+describe('buildProgressBeat (advice #2)', () => {
+  it('returns empty when nothing is learned or total is unknown', () => {
+    expect(buildProgressBeat('de', { ...BASE_FACTS })).toBe('');
+    expect(buildProgressBeat('de', { ...BASE_FACTS, topicsLearned: 0, topicsTotal: 254 })).toBe('');
+    expect(buildProgressBeat('de', { ...BASE_FACTS, topicsLearned: 12, topicsTotal: 0 })).toBe('');
+  });
+
+  it('states X of N green-checked topics + the percentage of the journey', () => {
+    const line = buildProgressBeat('de', { ...BASE_FACTS, topicsLearned: 12, topicsTotal: 254 });
+    expect(line).toContain('12 von 254');
+    expect(line).toContain('auf grün');
+    expect(line).toContain('5%'); // round(12/254*100)
+  });
+
+  it('celebrates the 100% completion case specially', () => {
+    const line = buildProgressBeat('de', { ...BASE_FACTS, topicsLearned: 254, topicsTotal: 254 });
+    expect(line).toContain('alle 254 Themen gemeistert');
+    expect(line).not.toContain('%');
+  });
+
+  it('floors the percentage at 1% so a single topic still reads as progress', () => {
+    const line = buildProgressBeat('en', { ...BASE_FACTS, topicsLearned: 1, topicsTotal: 254 });
+    expect(line).toContain('1 of 254');
+    expect(line).toContain('1%');
+  });
+
+  it('NEVER contains a passive RULE 0 question', () => {
+    const PASSIVE = /(möchtest du|willst du|what would you like|how can i help)/i;
+    for (const lang of ['de', 'en'] as const) {
+      const line = buildProgressBeat(lang, { ...BASE_FACTS, topicsLearned: 40, topicsTotal: 254 });
+      expect(line).not.toMatch(PASSIVE);
+    }
+  });
+
+  it('appears in the building state as an earned compliment', () => {
+    const line = renderBriefingLine(
+      {
+        lang: 'de',
+        salutation: 'morning',
+        firstName: 'Maria',
+        facts: { ...BASE_FACTS, indexDeltaUp: null, daysSinceLastSession: 1, topicsLearned: 30, topicsTotal: 254 },
+      },
+      () => 0,
+    );
+    expect(line).toContain('30 von 254');
   });
 });
 

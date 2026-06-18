@@ -129,6 +129,14 @@ export interface BriefingFacts {
    * matters ("because 'more energy' matters to you …"). Null when unset.
    */
   primaryGoalLabel?: string | null;
+  /**
+   * Advice #2 — visible momentum. How many curriculum topics the user has
+   * green-checked and the total in the published journey. Drives the
+   * "X of N topics in green — that's P% of your journey" progress beat.
+   * Optional → degrades to "no beat" when unknown.
+   */
+  topicsLearned?: number | null;
+  topicsTotal?: number | null;
 }
 
 /** Pick the state purely from the gathered facts. Exported for tests. */
@@ -222,6 +230,28 @@ export function buildWeaknessRider(lang: string, f: BriefingFacts): string {
     : `I noticed your ${pillar} dropped ${d} points this week.${why} Let's turn it around together — I'll show you the first step.`;
 }
 
+/**
+ * Advice #2 — the "visible momentum" progress beat. Turns the flat topic
+ * checklist into a felt sense of progress: "X of N topics in green — that's P%
+ * of your journey", with a special celebration at 100%. Earned-only (empty when
+ * nothing is learned yet) and RULE 0 safe (a statement, never a question).
+ */
+export function buildProgressBeat(lang: string, f: BriefingFacts): string {
+  const learned = f.topicsLearned ?? 0;
+  const total = f.topicsTotal ?? 0;
+  if (learned <= 0 || total <= 0) return '';
+  const de = lang === 'de';
+  if (learned >= total) {
+    return de
+      ? `Und das Größte: du hast alle ${total} Themen gemeistert — das schaffen die wenigsten.`
+      : `And the big one: you've mastered all ${total} topics — almost no one gets there.`;
+  }
+  const pct = Math.max(1, Math.round((learned / total) * 100));
+  return de
+    ? `Auf deiner Lernkarte stehen schon ${learned} von ${total} Themen auf grün — das sind ${pct}% deiner Reise.`
+    : `Your learning map already shows ${learned} of ${total} topics in green — that's ${pct}% of your journey.`;
+}
+
 interface RenderArgs {
   lang: string;
   salutation: SalutationKind;
@@ -279,8 +309,11 @@ export function renderBriefingLine(args: RenderArgs, rng: () => number = Math.ra
       // the single next move — keep the briefing to ONE clear lead.
       const rider = buildWeaknessRider(args.lang, f);
       if (rider) return [prefix, praise, rider].filter(Boolean).join(' ');
+      // Advice #2: visible momentum — show how far through the curriculum the
+      // user is as an earned compliment, before the next-session lead.
+      const beat = buildProgressBeat(args.lang, f);
       const nudge = buildNudge(args.lang, f);
-      return [prefix, praise, nextClause, nudge, lead].filter(Boolean).join(' ');
+      return [prefix, praise, beat, nextClause, nudge, lead].filter(Boolean).join(' ');
     }
 
     case 'momentum': {
@@ -288,8 +321,9 @@ export function renderBriefingLine(args: RenderArgs, rng: () => number = Math.ra
       const praise = de
         ? `Schön, dich zu hören. Du bist bei Session ${f.nextSessionNumber} — und dein Vitana Index ist diese Woche um ${delta} Punkte gestiegen. Das ist echte Konstanz.`
         : `Good to hear you. You are on Session ${f.nextSessionNumber} — and your Vitana Index is up ${delta} points this week. That is real consistency.`;
+      const beat = buildProgressBeat(args.lang, f); // Advice #2
       const nudge = buildNudge(args.lang, f);
-      return [prefix, praise, nextClause, nudge, lead].filter(Boolean).join(' ');
+      return [prefix, praise, beat, nextClause, nudge, lead].filter(Boolean).join(' ');
     }
 
     case 'returning': {
@@ -313,10 +347,11 @@ export function renderBriefingLine(args: RenderArgs, rng: () => number = Math.ra
           : de
             ? 'Du hast deine Onboarding-Journey gemeistert. Jetzt geht es um Tiefe.'
             : 'You have mastered your onboarding journey. Now it is about depth.';
+      const beat = buildProgressBeat(args.lang, f); // Advice #2
       const lead2 = de
         ? 'Lass uns gleich eine Stufe tiefer gehen — ich zeige dir den ersten Schritt.'
         : "Let's go one level deeper — I'll show you the first step.";
-      return [prefix, body, lead2].filter(Boolean).join(' ');
+      return [prefix, body, beat, lead2].filter(Boolean).join(' ');
     }
   }
 }
@@ -365,24 +400,28 @@ function checklistLocale(lang: string): 'de' | 'en' {
 }
 
 /**
- * Resolve the title of the session the user is about to do (the lowest-position
- * topic whose `session` equals `nextSessionNumber`). Best-effort: returns null
- * on any failure so the briefing degrades to "your next session is ready".
+ * Resolve, from a single published-checklist read: the title of the session the
+ * user is about to do (lowest-position topic whose `session` equals
+ * `nextSessionNumber`) AND the total topic count in the curriculum (advice #2,
+ * the "N" in "X of N topics"). Best-effort: any failure degrades to nulls so the
+ * briefing still renders ("your next session is ready", no progress beat).
  */
-async function resolveNextSessionTitle(
+async function resolveCurriculumFacts(
   supabase: SupabaseClient,
   lang: string,
   nextSessionNumber: number,
-): Promise<string | null> {
+): Promise<{ title: string | null; totalTopics: number | null }> {
   try {
     const checklist = await getPublishedChecklist(supabase, 'v2', checklistLocale(lang));
     const inSession = checklist.topics
       .filter((t) => t.session === nextSessionNumber)
       .sort((a, b) => a.position - b.position);
-    const title = inSession[0]?.displayLabel;
-    return typeof title === 'string' && title.trim().length > 0 ? title.trim() : null;
+    const rawTitle = inSession[0]?.displayLabel;
+    const title = typeof rawTitle === 'string' && rawTitle.trim().length > 0 ? rawTitle.trim() : null;
+    const totalTopics = Array.isArray(checklist.topics) && checklist.topics.length > 0 ? checklist.topics.length : null;
+    return { title, totalTopics };
   } catch {
-    return null;
+    return { title: null, totalTopics: null };
   }
 }
 
@@ -454,11 +493,16 @@ export function makeLoginBriefingProvider(
         journeyState?.onboardingStatus === 'qualified' ||
         journeyState?.onboardingStatus === 'completed';
 
-      const nextSessionTitle = await resolveNextSessionTitle(
+      const { title: nextSessionTitle, totalTopics } = await resolveCurriculumFacts(
         inputs.supabase,
         inputs.lang,
         currentSession,
       );
+
+      // Advice #2 — visible momentum: count of green-checked curriculum topics.
+      const topicsLearned = Array.isArray(journeyState?.completedTopicIds)
+        ? journeyState.completedTopicIds.length
+        : 0;
 
       const trend = readIndexTrend(indexSnap);
       const indexDeltaUp = trend !== null && trend >= MATERIAL_INDEX_DELTA ? trend : null;
@@ -486,6 +530,9 @@ export function makeLoginBriefingProvider(
         // signal is absent.
         weakestPillarDrop: readWeakestPillarDrop(indexSnap),
         primaryGoalLabel,
+        // Advice #2 — visible momentum: progress through the curriculum.
+        topicsLearned,
+        topicsTotal: totalTopics,
       };
 
       const localHour = localHourInTimezone(nowDate, inputs.timezone);
