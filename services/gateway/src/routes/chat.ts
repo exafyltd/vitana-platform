@@ -319,6 +319,9 @@ router.post('/read-all', requireAuth, requireTenant, async (req: Request, res: R
   const { identity } = req as AuthenticatedRequest;
   if (!identity) return res.status(401).json({ ok: false, error: 'unauthorized' });
 
+  // impact-allow-no-oasis: marking chat messages as read is a routine user
+  // read-receipt, not a governed state transition — consistent with the sibling
+  // POST /read handler, which likewise emits no OASIS event.
   const supabase = getSupabase();
   const { error, count } = await supabase
     .from('chat_messages')
