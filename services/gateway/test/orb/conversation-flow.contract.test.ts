@@ -33,6 +33,7 @@ import {
   type JourneyTopicInput,
 } from '../../src/services/guide/conversation-flow-v3';
 import { renderLine as renderMatchLine } from '../../src/services/assistant-continuation/providers/next-action/sources/match-activity-plan';
+import { pickInviteActivity, buildInviteProposal } from '../../src/services/guide/real-life-invite';
 import { buildLiveSystemInstruction } from '../../src/orb/live/instruction/live-system-instruction';
 
 // The passive-question gate. Any match in a SPOKEN opener = RULE 0 violation.
@@ -161,6 +162,10 @@ function buildScenarios(): Scenario[] {
   // #13 — advice #3: a mutual real-world activity match proposes a time + calendar.
   const matchScheduleLine = renderMatchLine('mutual_interest', 'hike', 'de', true);
   out.push({ n: 13, label: 'match-activity/mutual+schedulable (advice #3)', line: matchScheduleLine, spoken: true });
+
+  // #14 — advice #4: inspire inviting someone to a real-life activity.
+  const inviteLine = buildInviteProposal('de', pickInviteActivity({ strongestPillar: 'exercise', dateKey: '2026-06-18' }));
+  out.push({ n: 14, label: 'real-life-invite/exercise→walk (advice #4)', line: inviteLine, spoken: true });
 
   return out;
 }

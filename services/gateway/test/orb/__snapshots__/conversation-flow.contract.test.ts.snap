@@ -26,5 +26,7 @@ exports[`Vitana conversation-flow contract — 10 standard scenarios INVARIANT B
 #12 login-briefing/momentum+progress (advice #2)
    → "Guten Morgen, Maria. Schön, dich zu hören. Du bist bei Session 4 — und dein Vitana Index ist diese Woche um 12 Punkte gestiegen. Das ist echte Konstanz. Auf deiner Lernkarte stehen schon 30 von 254 Themen auf grün — das sind 12% deiner Reise. Als Nächstes käme Session 4: „Schlaf-Routine". Lass uns genau da weitermachen — ich führe dich."
 #13 match-activity/mutual+schedulable (advice #3)
-   → "Du hast ein gegenseitiges hike-Match — lass uns gleich einen Termin festmachen, ich trage ihn dir direkt in den Kalender ein.""
+   → "Du hast ein gegenseitiges hike-Match — lass uns gleich einen Termin festmachen, ich trage ihn dir direkt in den Kalender ein."
+#14 real-life-invite/exercise→walk (advice #4)
+   → "Du machst das gerade richtig stark. Solche Dinge halten noch besser, wenn man sie teilt — lass uns jemanden einladen, mit dir einen Spaziergang zu machen. Ich helfe dir, die Einladung rauszuschicken.""
 `;
