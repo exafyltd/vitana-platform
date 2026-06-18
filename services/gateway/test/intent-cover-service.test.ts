@@ -105,6 +105,7 @@ beforeEach(() => {
   process.env.VERTEX_LOCATION = 'us-central1';
   process.env.INTENT_COVER_DRY_RUN = '';
   process.env.INTENT_COVER_RATE_LIMIT_PER_DAY = '10';
+  delete process.env.INTENT_COVER_COMMUNITY_DEMOGRAPHICS;
 });
 
 // Standard mock-chain order for the AI path (no library, no universal):
@@ -442,7 +443,9 @@ describe('buildCoverPrompt', () => {
     expect(male).toMatch(/not a cartoon/i);
     expect(male).toMatch(/one smiling man/i);
     expect(male).toMatch(/tennis/i);
-    expect(male).toMatch(/mixed group of men and women/i);
+    expect(male).toMatch(/predominantly local white\/European-presenting/i);
+    expect(male).toMatch(/avoid generic stock-photo diversity/i);
+    expect(male).not.toMatch(/mixed ethnicity|varied ethnicities/i);
 
     const female = buildCoverPrompt('cooking', 'female');
     expect(female).toMatch(/one smiling woman/i);
@@ -472,5 +475,17 @@ describe('buildCoverPrompt', () => {
       expect(p).toMatch(/photorealistic/i);
       expect(p).toMatch(/not a cartoon/i);
     }
+  });
+
+  it('allows deployments to override the local demographic guidance', async () => {
+    process.env.INTENT_COVER_COMMUNITY_DEMOGRAPHICS =
+      'local residents matching the configured test community demographics';
+
+    const { buildCoverPrompt } = await import('../src/services/intent-cover-service');
+    const prompt = buildCoverPrompt('dance', null);
+
+    expect(prompt).toMatch(/configured test community demographics/i);
+    expect(prompt).not.toMatch(/predominantly local white\/European-presenting/i);
+    expect(prompt).not.toMatch(/mixed ethnicity|varied ethnicities/i);
   });
 });

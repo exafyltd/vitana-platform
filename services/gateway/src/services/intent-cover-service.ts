@@ -122,7 +122,8 @@ function getGoogleAuth(): GoogleAuth {
 // Per-theme scene primitives. The full prompt is built at request time so
 // we can splice the requesting user's gender into the foreground subject.
 // Goal: realistic, location-appropriate photos with one smiling person of
-// the user's gender up front and a mixed group blurred behind them.
+// the user's gender up front and a locally representative group blurred
+// behind them.
 const THEME_SCENES: Record<
   CoverTheme,
   { subject: string; location: string; group: string }
@@ -193,14 +194,24 @@ const THEME_SCENES: Record<
   },
 };
 
+const DEFAULT_COMMUNITY_DEMOGRAPHICS =
+  'predominantly local white/European-presenting adults, reflecting the Mallorca community demographics; any visible minority representation should be incidental and proportionate to the local population';
+
+function communityDemographicGuidance(): string {
+  return (
+    process.env.INTENT_COVER_COMMUNITY_DEMOGRAPHICS?.trim() ||
+    DEFAULT_COMMUNITY_DEMOGRAPHICS
+  );
+}
+
 function describeForegroundSubject(gender: Gender): string {
   if (gender === 'male') {
-    return 'one smiling man, mid-twenties to late-thirties, of mixed ethnicity';
+    return 'one smiling man from the local community, mid-twenties to late-thirties';
   }
   if (gender === 'female') {
-    return 'one smiling woman, mid-twenties to late-thirties, of mixed ethnicity';
+    return 'one smiling woman from the local community, mid-twenties to late-thirties';
   }
-  return 'one smiling adult — either a man or a woman — mid-twenties to late-thirties, of mixed ethnicity';
+  return 'one smiling adult from the local community, either a man or a woman, mid-twenties to late-thirties';
 }
 
 /**
@@ -214,15 +225,18 @@ function describeForegroundSubject(gender: Gender): string {
 export function buildCoverPrompt(theme: CoverTheme, gender: Gender): string {
   const scene = THEME_SCENES[theme] ?? THEME_SCENES.generic;
   const subject = describeForegroundSubject(gender);
+  const demographics = communityDemographicGuidance();
   return [
     'A photorealistic, high-quality DSLR landscape photograph — documentary style,',
     'natural light, shallow depth of field, real human skin and clothing detail.',
     'Absolutely not a cartoon, anime, illustration, painting, 3D render, CGI,',
     'stylised art, or AI-art look. Looks like an unedited modern stock photo.',
+    `Community demographics: ${demographics}.`,
     `Foreground: ${subject}, ${scene.subject}, in sharp focus, looking warmly at the camera.`,
-    `Background (softly blurred): a mixed group of men and women of varied ethnicities, ${scene.group}.`,
+    `Background (softly blurred): a small group of men and women matching the same community demographics, ${scene.group}.`,
     `Setting: ${scene.location}.`,
     'Wide 16:9 composition. Friendly, welcoming, optimistic mood.',
+    'Avoid generic stock-photo diversity and do not overrepresent any demographic group relative to the configured community.',
     'No text, no captions, no logos, no watermarks.',
   ].join(' ');
 }
@@ -242,16 +256,18 @@ function fallbackDir(): string {
 // reached when the AI provider is unavailable, so freshness here is
 // secondary to never-empty.
 const FALLBACK_FILES: Record<CoverTheme, string[]> = {
-  dance: ['dance/01.jpg', 'dance/02.jpg', 'dance/03.jpg'],
+  // Retire dance/01.jpg and generic/02.jpg from rotation: both are
+  // demographically mismatched for the current Mallorca community.
+  dance: ['dance/02.jpg', 'dance/03.jpg', 'generic/01.jpg'],
   fitness: ['fitness/01.jpg', 'fitness/02.jpg', 'fitness/03.jpg'],
   walking: ['fitness/01.jpg', 'fitness/02.jpg', 'fitness/03.jpg'],
   tennis: ['fitness/01.jpg', 'fitness/02.jpg', 'fitness/03.jpg'],
   soccer: ['fitness/01.jpg', 'fitness/02.jpg', 'fitness/03.jpg'],
   basketball: ['fitness/01.jpg', 'fitness/02.jpg', 'fitness/03.jpg'],
   biking: ['fitness/01.jpg', 'fitness/02.jpg', 'fitness/03.jpg'],
-  cooking: ['generic/01.jpg', 'generic/02.jpg'],
-  panel: ['generic/01.jpg', 'generic/02.jpg'],
-  generic: ['generic/01.jpg', 'generic/02.jpg'],
+  cooking: ['generic/01.jpg'],
+  panel: ['generic/01.jpg'],
+  generic: ['generic/01.jpg'],
 };
 
 function fallbackKeyForSeed(theme: CoverTheme, seed: string): string {
