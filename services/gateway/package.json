@@ -11,6 +11,7 @@
     "copy-data": "mkdir -p dist/services && cp src/services/tool-manifest.json dist/services/tool-manifest.json && mkdir -p dist/kb && cp -r src/kb/instruction-manual dist/kb/",
     "start": "node dist/index.js",
     "test": "jest",
+    "test:flow": "jest test/orb/conversation-flow.contract.test.ts --silent=false",
     "lint": "eslint src/**/*.ts",
     "typecheck": "tsc --noEmit",
     "validate:dev-frontend-spec": "node ./scripts/validate-dev-frontend-spec.mjs",
