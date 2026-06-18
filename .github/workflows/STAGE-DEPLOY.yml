@@ -144,6 +144,20 @@ jobs:
             # gateway-staging — every intents/board call 404'd, so Find a
             # Partner / matches could not load on preview.vitanaland.com.
             "FEATURE_INTENT_ENGINE_A=true"
+            # DEV-COMHU-0513 (ORB first-greeting latency): bake the fast-greeting
+            # stack into the staging env so it PERSISTS across every STAGE-DEPLOY
+            # (--set-env-vars REPLACES, so hand-set gcloud flags were wiped on the
+            # next deploy — the cause of "fast-start keeps reverting to off").
+            #   FAST_START      → defer wake-brief/journey off session/start
+            #   SAFE_FAST_GREETING → short audio-safe opener when context is still
+            #                        pending (else the long intro makes Gemini go
+            #                        text-only → no audio greeting)
+            #   GATE cap 300ms  → greeting fires ~immediately after session-ready,
+            #                     targeting a ~3s spoken greeting (vs ~7s legacy)
+            # staging-only; prod stays on the legacy path until this graduates.
+            "FEATURE_ORB_FAST_START_ENV=staging-only"
+            "FEATURE_ORB_SAFE_FAST_GREETING_ENV=staging-only"
+            "ORB_CONTEXT_READY_GATE_TIMEOUT_MS=300"
           )
 
           # Comma-joined for --set-env-vars (replaces, not merges — we want the
