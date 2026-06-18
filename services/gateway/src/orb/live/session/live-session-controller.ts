@@ -1490,10 +1490,21 @@ export async function handleLiveSessionStart(
     // Journey blocks — but session/start returns now instead of after the
     // wake-brief + journey round-trips.
     const brainReady = (session as any).contextReadyPromise as Promise<void> | undefined;
-    (session as any).contextReadyPromise = composeContextReady(
+    // DEV-COMHU-0513 B2: mark context as not-yet-resolved while the deferred
+    // wake-brief/journey work runs, so the greeting builder can detect "context
+    // still pending" and (under FEATURE_ORB_SAFE_FAST_GREETING) emit a short,
+    // audio-safe opener instead of a temporal-misclassified long intro that
+    // makes Gemini Live go text-only. Only the fast-start (deferred) path starts
+    // false; legacy/inline sessions never set it, so they read as resolved.
+    (session as any).contextReadyResolved = false;
+    const composedContextReady = composeContextReady(
       brainReady,
       assembleWakeBriefAndJourney,
     );
+    (session as any).contextReadyPromise = composedContextReady;
+    void composedContextReady.finally(() => {
+      (session as any).contextReadyResolved = true;
+    });
     console.log(
       `[ORB-FAST-START] session ${sessionId}: wake-brief + journey deferred onto contextReadyPromise (fast session/start)`,
     );

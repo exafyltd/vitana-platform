@@ -1001,6 +1001,12 @@ export interface GeminiLiveSession {
   // first-token latency behind the unlock the legacy path serially waits for.
   prebufferGreetingAudio?: boolean;
   bufferedGreetingChunks?: string[];
+  // DEV-COMHU-0513 B2: false while fast-start's deferred wake-brief/journey work
+  // is still running; flips true when contextReadyPromise settles. Lets the
+  // greeting builder detect "context still pending" and emit a short audio-safe
+  // opener (under FEATURE_ORB_SAFE_FAST_GREETING) instead of a misclassified
+  // long intro. Unset (undefined) for legacy/inline sessions = treated resolved.
+  contextReadyResolved?: boolean;
   // Fallback timer that flushes held greeting audio if the client never acks.
   greetingPrebufferFallbackTimer?: ReturnType<typeof setTimeout>;
   // VTID-01224-FIX: Last session info for context-aware greeting
@@ -7382,6 +7388,48 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
   const _sm: ConversationStateMachine =
     (session as any).conversationSM ?? ((session as any).conversationSM = new ConversationStateMachine());
   if (_sm.state === 'PREWARM') _sm.transition('OPENING', 'session_start');
+
+  // DEV-COMHU-0513 B2 — short, audio-safe opener when the greeting is reached
+  // BEFORE the deferred context resolved (fast-start + a low context-gate cap).
+  // With context unresolved, session.lastSessionInfo is empty, so the temporal
+  // bucket below falls to `first`/default and emits the long "FULL INTRODUCTION"
+  // prompt — the exact shape (per VTID-03102) that makes Gemini Live go
+  // text-only / stall, producing NO audio greeting (observed ~75% no-greeting at
+  // a 1s cap). The diagnostic below fires regardless of the flag so a single
+  // staging run confirms the mechanism; the fix (flag-gated, default off) sends
+  // a guaranteed-short verbatim opener instead, then lets the next turn carry
+  // full personalization once context lands. Anonymous sessions keep their own
+  // intro path untouched.
+  if ((session as any).contextReadyResolved === false && !session.isAnonymous) {
+    const _safeFastLive = isFeatureLive('ORB_SAFE_FAST_GREETING');
+    console.log(
+      `[GREETING-CONTEXT-PENDING] session ${session.sessionId} reached greeting before context resolved (lang=${lang}, safe_fast=${_safeFastLive})`,
+    );
+    emitDiag(session, 'greeting_context_pending', { lang, safe_fast_greeting: _safeFastLive });
+    if (_safeFastLive && ws.readyState === WebSocket.OPEN) {
+      const _menu = pickShortGapGreetings(lang, 6).map((p) => `"${p}"`).join(', ');
+      const _safePrompt =
+        `Open with EXACTLY ONE short phrase, picked from this menu and used VERBATIM ` +
+        `(already in the user's language): ${_menu}. Do NOT say "Hello" or the user's name. ` +
+        `Do NOT introduce yourself. NEVER use two-part sentences. Speak it as audio.`;
+      ws.send(
+        JSON.stringify({
+          client_content: { turns: [{ role: 'user', parts: [{ text: _safePrompt }] }], turn_complete: true },
+        }),
+      );
+      session.greetingSent = true;
+      session.greetingTurnIndex = session.turn_count;
+      _sm.markOpeningDelivered();
+      emitDiag(session, 'greeting_sent', {
+        lang,
+        prompt_len: _safePrompt.length,
+        wake_opener: 'safe_fast_pending_context',
+      });
+      startResponseWatchdog(session, getGreetingResponseTimeoutMs(), 'greeting_timeout');
+      console.log(`[GREETING-SAFE-FAST] session ${session.sessionId} sent short audio-safe opener (context still pending)`);
+      return true;
+    }
+  }
 
   const _wb = (session as any).wakeBriefDecision || null;
   const _openDecision = decideOpening({
