@@ -313,6 +313,28 @@ router.post('/read', requireAuth, requireTenant, async (req: Request, res: Respo
   return res.json({ ok: true });
 });
 
+// ── POST /read-all — Mark ALL of the caller's unread DMs as read ──
+
+router.post('/read-all', requireAuth, requireTenant, async (req: Request, res: Response) => {
+  const { identity } = req as AuthenticatedRequest;
+  if (!identity) return res.status(401).json({ ok: false, error: 'unauthorized' });
+
+  const supabase = getSupabase();
+  const { error, count } = await supabase
+    .from('chat_messages')
+    .update({ read_at: new Date().toISOString() }, { count: 'exact' })
+    .eq('tenant_id', identity.tenant_id)
+    .eq('receiver_id', identity.user_id)
+    .is('read_at', null);
+
+  if (error) {
+    console.error('[Chat] Mark all read error:', error);
+    return res.status(500).json({ ok: false, error: error.message });
+  }
+
+  return res.json({ ok: true, updated: count ?? 0 });
+});
+
 // ── GET /unread-count — Total unread messages ────────────────
 
 router.get('/unread-count', requireAuth, requireTenant, async (req: Request, res: Response) => {
