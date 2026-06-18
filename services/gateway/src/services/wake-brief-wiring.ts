@@ -52,6 +52,18 @@ import {
   TEACHER_EXTRA_KEY,
   TEACHER_PROVIDER_KEY,
 } from './assistant-continuation/providers/teacher/feature-discovery-teacher';
+// Conversation Flow v3 (VTID-03307): flag-gated primary turn-1 author for
+// community voice — match → un-learned journey topic → song. When the flag
+// `vitana_journey_conversation_v2_enabled` is ON it replaces the legacy
+// Teacher (the Teacher extra is withheld below so it suppresses); when OFF
+// the v3 provider self-suppresses and the legacy ladder is unchanged.
+import { getSystemControl } from './system-controls-service';
+import {
+  makeConversationFlowV3Provider,
+  FLOW_V3_EXTRA_KEY,
+  FLOW_V3_PROVIDER_KEY,
+  FLOW_V3_FLAG,
+} from './assistant-continuation/providers/conversation-flow-v3-provider';
 // VTID-03164: new-day-return provider — fires first session of a new
 // calendar day in user's local TZ. Priority 90 so it beats Teacher (85)
 // and wake-brief (80). Suppresses cleanly when same-day repeat or when
@@ -184,6 +196,12 @@ export function ensureWakeBriefProviderRegistered(): void {
   // never blocks journey-guide / new-day-return / Teacher on a normal open.
   if (!defaultProviderRegistry.get(GUIDED_TOPIC_NARRATION_PROVIDER_KEY)) {
     defaultProviderRegistry.register(makeGuidedTopicNarrationProvider());
+  }
+  // VTID-03307: Conversation Flow v3 at priority 88 — above the legacy Teacher
+  // (85) + bare wake-brief (80), below the genuinely-higher specific authors.
+  // Self-suppresses when its flag is off, so registering always is safe.
+  if (!defaultProviderRegistry.get(FLOW_V3_PROVIDER_KEY)) {
+    defaultProviderRegistry.register(makeConversationFlowV3Provider());
   }
   _registered = true;
 }
@@ -394,22 +412,40 @@ export async function decideWakeBriefForSession(
       decisionContext: args.decisionContext ?? null,
       lang: args.lang,
     };
+    // VTID-03307: when Conversation Flow v3 is ON it OWNS the teaching turn —
+    // forward its inputs and WITHHOLD the legacy Teacher's (so the Teacher
+    // returns skipped:no_teacher_inputs and never fires the old abstract
+    // "darf ich dir etwas zeigen?"). When OFF, the legacy ladder is unchanged.
+    // Read once here (cached); the provider re-checks defensively.
+    const flowV3Flag = await getSystemControl(FLOW_V3_FLAG).catch(() => null);
+    const flowV3On = !!(flowV3Flag && flowV3Flag.enabled);
+
     // VTID-03093 (Teacher PR 3): forward Teacher inputs when identity is
     // known. Anonymous sessions are skipped at the provider level.
     if (args.tenantId && args.userId) {
-      extra[TEACHER_EXTRA_KEY] = {
-        supabase: args.supabase,
-        tenantId: args.tenantId,
-        userId: args.userId,
-        lang: args.lang,
-        firstName: args.firstName ?? null,
-        greetingPolicy,
-        // VTID-03108 (Item 2): forward the explicit skip reason so the
-        // Teacher can distinguish isReconnect-class forced skips
-        // (suppress) from cadence-class skips (still fire — different
-        // capability via per-capability dedupe).
-        skipReason: greetingDecision.reason,
-      };
+      if (flowV3On) {
+        extra[FLOW_V3_EXTRA_KEY] = {
+          supabase: args.supabase,
+          tenantId: args.tenantId,
+          userId: args.userId,
+          lang: args.lang,
+          firstName: args.firstName ?? null,
+        };
+      } else {
+        extra[TEACHER_EXTRA_KEY] = {
+          supabase: args.supabase,
+          tenantId: args.tenantId,
+          userId: args.userId,
+          lang: args.lang,
+          firstName: args.firstName ?? null,
+          greetingPolicy,
+          // VTID-03108 (Item 2): forward the explicit skip reason so the
+          // Teacher can distinguish isReconnect-class forced skips
+          // (suppress) from cadence-class skips (still fire — different
+          // capability via per-capability dedupe).
+          skipReason: greetingDecision.reason,
+        };
+      }
       // VTID-03164: forward new-day-return inputs. Provider suppresses
       // unless trigger conditions hold (new calendar day in user TZ AND
       // is_first_session=false AND timezone present), so passing the
