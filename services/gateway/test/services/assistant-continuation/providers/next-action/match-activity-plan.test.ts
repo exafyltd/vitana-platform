@@ -24,6 +24,7 @@ import {
   bandForStage,
   renderKindLabel,
   renderLine,
+  isSchedulableActivity,
 } from '../../../../../src/services/assistant-continuation/providers/next-action/sources/match-activity-plan';
 import type { MatchRow } from '../../../../../src/services/assistant-continuation/providers/next-action/sources/match-activity-plan';
 import type { NextActionSourceContext } from '../../../../../src/services/assistant-continuation/providers/next-action/types';
@@ -92,6 +93,48 @@ function ctxWith(
 // ---------------------------------------------------------------------------
 // Pure helpers
 // ---------------------------------------------------------------------------
+
+// Advice #3 — make community proactive: wire mutual activity matches to the calendar.
+describe('match → calendar scheduling (advice #3)', () => {
+  test('isSchedulableActivity recognizes real-world activity kinds only', () => {
+    expect(isSchedulableActivity('hike::hike')).toBe(true);
+    expect(isSchedulableActivity('coffee::coffee')).toBe(true);
+    expect(isSchedulableActivity('language_exchange::language_exchange')).toBe(true);
+    expect(isSchedulableActivity('partner_seek::partner_seek')).toBe(false);
+    expect(isSchedulableActivity('commercial_buy::product')).toBe(false);
+    expect(isSchedulableActivity(null)).toBe(false);
+  });
+
+  test('mutual + schedulable proposes a time AND a calendar entry', () => {
+    const en = renderLine('mutual_interest', 'hike', 'en', true);
+    const de = renderLine('mutual_interest', 'hike', 'de', true);
+    expect(en).toMatch(/lock in a time/i);
+    expect(en).toMatch(/calendar/i);
+    expect(de).toMatch(/Termin/);
+    expect(de).toMatch(/Kalender/);
+  });
+
+  test('mutual + NON-schedulable falls back to opening the conversation', () => {
+    const en = renderLine('mutual_interest', 'partner', 'en', false);
+    expect(en).toMatch(/open the conversation/i);
+    expect(en).not.toMatch(/calendar/i);
+  });
+
+  test('NO match line in any stage/lang contains a passive RULE 0 question', () => {
+    const PASSIVE = /(möchtest du|willst du|was möchtest|what would you like|want to decide|how can i help)/i;
+    const stages = ['pending_user_decision', 'mutual_interest', 'new'] as const;
+    for (const stage of stages) {
+      for (const lang of ['de', 'en'] as const) {
+        for (const kind of ['hike', 'partner', null]) {
+          for (const sched of [true, false]) {
+            const line = renderLine(stage, kind, lang, sched);
+            expect(line).not.toMatch(PASSIVE);
+          }
+        }
+      }
+    }
+  });
+});
 
 describe('match-activity-plan pure helpers', () => {
   test('renderKindLabel — known kinds get a friendly label, unknown returns null', () => {
