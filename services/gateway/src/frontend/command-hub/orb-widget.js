@@ -702,15 +702,17 @@
     return _cfg.transport === 'ws';
   }
 
-  // ORB-FAST-START Phase 4: should the cached wake cue play on tap? localStorage
-  // 'vtorb.wakecue' wins (per-browser staging verification), else init() config.
+  // ORB-FAST-START Phase 4: should the cached wake cue play on tap?
+  // DEV-COMHU-0513: DISABLED per product decision. The instant cached "Ich bin
+  // da."/"I'm here." clip is a DIFFERENT voice from the real Live (voice-to-
+  // voice) greeting, so it lands as jarring/irritating rather than helpful — and
+  // with the fast-greeting work the real greeting now arrives in ~2s anyway, so
+  // the stop-gap cue is no longer needed. Hard-off here (ignores init({wakeCue})
+  // and any leftover localStorage 'vtorb.wakecue'='on') so it never plays on any
+  // surface. The chime (tone, not speech) is unaffected. To re-enable, restore
+  // the original flag check below.
   function _useWakeCue() {
-    try {
-      var o = window.localStorage && localStorage.getItem('vtorb.wakecue');
-      if (o === 'on') return true;
-      if (o === 'off') return false;
-    } catch (e) { /* storage blocked — fall through to config */ }
-    return _cfg.wakeCue === true;
+    return false;
   }
 
   // BOOTSTRAP-ORB-LATENCY-PHASE3: tear down the WS transport (idempotent).
