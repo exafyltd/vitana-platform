@@ -188,25 +188,27 @@ export function renderBriefingLine(args: RenderArgs, rng: () => number = Math.ra
       : `Next up is Session ${f.nextSessionNumber}: "${f.nextSessionTitle}".`;
   })();
 
-  // Use an OPEN prompt, not a yes/no. A bare "Sollen wir weitermachen?" elicits
-  // a "ja" that the voice pipeline currently has no bound action to execute — so
-  // the assistant appeared to ignore the confirmation and jump elsewhere. An open
-  // question keeps every reply conversational. (The deterministic confirm→execute
-  // flow — "yes" opens the next session — is a separate, properly-wired follow-up.)
-  const invite = pickFromPool(
+  // RULE 0 (VTID-03307): Vitana LEADS — it never asks the user to choose the
+  // direction ("Womit möchtest du weitermachen?" / "What would you like to
+  // do?"). That passive close was the source of the staging "was möchtest du
+  // als nächstes tun?" violation. Replace it with a PROPOSAL: name the next
+  // move and offer to take it. (The deterministic confirm→execute flow — "yes"
+  // opens the next session — is a separate, properly-wired follow-up.)
+  const lead = pickFromPool(
     de
-      ? ['Womit möchtest du heute weitermachen?', 'Wo möchtest du heute ansetzen?', 'Was möchtest du als Erstes angehen?']
-      : ['Where would you like to pick up today?', 'Where shall we focus today?', 'What would you like to tackle first?'],
+      ? ['Lass uns genau da weitermachen — ich führe dich.', 'Lass uns gleich loslegen, ich begleite dich Schritt für Schritt.', 'Ich nehme dich mit zum nächsten Schritt.']
+      : ["Let's pick up right there — I'll guide you.", "Let's get going — I'll walk you through it step by step.", "I'll take you to the next step."],
     rng,
   );
 
   switch (state) {
     case 'orient': {
-      // No measurable progress → orient + invite. No compliment (earned-only).
+      // No measurable progress → orient + LEAD (propose setting the goal
+      // together). No compliment (earned-only). No preference question.
       const body = de
-        ? 'Deine Longevity-Journey wartet noch auf ihren ersten Schritt. Lass uns kurz dein Ziel setzen — das gibt allem eine Richtung.'
-        : 'Your longevity journey is still waiting for its first step. Let us set your goal — it gives everything direction.';
-      return [prefix, body, invite].filter(Boolean).join(' ');
+        ? 'Deine Longevity-Journey wartet noch auf ihren ersten Schritt. Lass uns kurz dein Ziel setzen — das gibt allem eine Richtung. Ich starte das gleich mit dir.'
+        : 'Your longevity journey is still waiting for its first step. Let us set your goal — it gives everything direction. I will start that with you now.';
+      return [prefix, body].filter(Boolean).join(' ');
     }
 
     case 'building': {
@@ -214,7 +216,7 @@ export function renderBriefingLine(args: RenderArgs, rng: () => number = Math.ra
         ? `Stark — du hast schon ${f.sessionsCompleted} ${f.sessionsCompleted === 1 ? 'Session' : 'Sessions'} geschafft.`
         : `Strong work — you have already completed ${f.sessionsCompleted} ${f.sessionsCompleted === 1 ? 'session' : 'sessions'}.`;
       const nudge = buildNudge(args.lang, f);
-      return [prefix, praise, nextClause, nudge, invite].filter(Boolean).join(' ');
+      return [prefix, praise, nextClause, nudge, lead].filter(Boolean).join(' ');
     }
 
     case 'momentum': {
@@ -223,15 +225,15 @@ export function renderBriefingLine(args: RenderArgs, rng: () => number = Math.ra
         ? `Schön, dich zu hören. Du bist bei Session ${f.nextSessionNumber} — und dein Vitana Index ist diese Woche um ${delta} Punkte gestiegen. Das ist echte Konstanz.`
         : `Good to hear you. You are on Session ${f.nextSessionNumber} — and your Vitana Index is up ${delta} points this week. That is real consistency.`;
       const nudge = buildNudge(args.lang, f);
-      return [prefix, praise, nextClause, nudge, invite].filter(Boolean).join(' ');
+      return [prefix, praise, nextClause, nudge, lead].filter(Boolean).join(' ');
     }
 
     case 'returning': {
       const body = de
         ? `Schön, dass du wieder da bist. Es ist ein paar Tage her — aber deine ${f.sessionsCompleted} ${f.sessionsCompleted === 1 ? 'Session' : 'Sessions'} sind nicht verloren, du knüpfst genau dort wieder an.`
         : `Good to have you back. It has been a few days — but your ${f.sessionsCompleted} ${f.sessionsCompleted === 1 ? 'session' : 'sessions'} are not lost; you pick up right where you left off.`;
-      const invite2 = de ? 'Womit möchtest du wieder einsteigen?' : 'Where would you like to jump back in?';
-      return [prefix, body, nextClause, invite2].filter(Boolean).join(' ');
+      const lead2 = de ? 'Lass uns genau dort wieder anknüpfen — ich führe dich.' : "Let's pick up right where you left off — I'll guide you.";
+      return [prefix, body, nextClause, lead2].filter(Boolean).join(' ');
     }
 
     case 'graduated': {
@@ -243,10 +245,10 @@ export function renderBriefingLine(args: RenderArgs, rng: () => number = Math.ra
           : de
             ? 'Du hast deine Onboarding-Journey gemeistert. Jetzt geht es um Tiefe.'
             : 'You have mastered your onboarding journey. Now it is about depth.';
-      const invite2 = de
-        ? 'Wo möchtest du heute ansetzen?'
-        : 'Where would you like to focus today?';
-      return [prefix, body, invite2].filter(Boolean).join(' ');
+      const lead2 = de
+        ? 'Lass uns gleich eine Stufe tiefer gehen — ich zeige dir den ersten Schritt.'
+        : "Let's go one level deeper — I'll show you the first step.";
+      return [prefix, body, lead2].filter(Boolean).join(' ');
     }
   }
 }
