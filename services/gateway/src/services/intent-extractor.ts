@@ -14,11 +14,18 @@
 
 import { VertexAI } from '@google-cloud/vertexai';
 import type { IntentKind } from './intent-classifier';
+import { withGeminiLog } from './gemini-call-log';
 
-const GOOGLE_GEMINI_API_KEY = process.env.GOOGLE_GEMINI_API_KEY;
+// Accept either name — CLAUDE.md documents GEMINI_API_KEY, older code used GOOGLE_GEMINI_API_KEY.
+const GEMINI_API_KEY = process.env.GOOGLE_GEMINI_API_KEY || process.env.GEMINI_API_KEY;
 const VERTEX_PROJECT = process.env.GOOGLE_CLOUD_PROJECT || process.env.GCP_PROJECT || 'lovable-vitana-vers1';
 const VERTEX_LOCATION = process.env.VERTEX_LOCATION || 'us-central1';
-const EXTRACT_MODEL = 'gemini-2.0-flash';
+// BOOTSTRAP-FIND-MATCH-CLASSIFY-FIX: same failure mode as the classifier — the
+// bare gemini-2.0-flash call (no JSON mode) returned empty/unparseable output on
+// the gateway and the only fallback was gated on an unset env var. Use JSON mode
+// + a model fallback chain ending in the proven-working Pro model, and log each
+// attempt so silent breakage surfaces in gemini_call_log.
+const EXTRACT_MODELS = ['gemini-2.0-flash', 'gemini-2.5-pro'];
 
 let vertexAI: VertexAI | null = null;
 try {
@@ -133,11 +140,25 @@ Set "dance" only if the topic is a dance variety; leave the whole "dance" object
 "dance" only when teaching a dance variety. price_cents=null means "free" or "not stated"; the dispatcher confirms free-vs-paid with the user.`,
 };
 
-function parseExtractorResponse(raw: string, kind: IntentKind): ExtractedIntent {
+/** Pull the first balanced JSON object out of a model response, tolerating fences/prose. */
+function extractJsonObject(raw: string): string {
   const cleaned = raw.trim().replace(/^```(?:json)?/i, '').replace(/```$/, '').trim();
+  if (cleaned.startsWith('{')) return cleaned;
+  const start = cleaned.indexOf('{');
+  const end = cleaned.lastIndexOf('}');
+  return start >= 0 && end > start ? cleaned.slice(start, end + 1) : cleaned;
+}
+
+/** Confidence may arrive as a number or a stringified number ("0.9"); coerce + clamp. */
+function coerceConfidence(v: unknown): number {
+  const n = typeof v === 'number' ? v : typeof v === 'string' ? parseFloat(v) : NaN;
+  return Number.isFinite(n) ? Math.max(0, Math.min(1, n)) : 0;
+}
+
+function parseExtractorResponse(raw: string, kind: IntentKind): ExtractedIntent {
   let parsed: any;
   try {
-    parsed = JSON.parse(cleaned);
+    parsed = JSON.parse(extractJsonObject(raw));
   } catch {
     return {
       intent_kind: kind,
@@ -156,7 +177,7 @@ function parseExtractorResponse(raw: string, kind: IntentKind): ExtractedIntent 
     title: typeof parsed.title === 'string' && parsed.title ? parsed.title.slice(0, 140) : null,
     scope: typeof parsed.scope === 'string' && parsed.scope ? parsed.scope.slice(0, 1500) : null,
     kind_payload: typeof parsed.kind_payload === 'object' && parsed.kind_payload ? parsed.kind_payload : {},
-    confidence: typeof parsed.confidence === 'number' ? Math.max(0, Math.min(1, parsed.confidence)) : 0,
+    confidence: coerceConfidence(parsed.confidence),
     missing_critical: [],
   };
 
@@ -188,43 +209,59 @@ export async function extractIntent(utterance: string, kind: IntentKind): Promis
   }
 
   const systemPrompt = SYSTEM_PROMPT_BY_KIND[kind];
+  const prompt = `${systemPrompt}\n\nUtterance to extract from:\n${trimmed}`;
 
+  // Primary: Vertex AI with JSON mode + model fallback chain.
   if (vertexAI) {
-    try {
-      const model = vertexAI.getGenerativeModel({
-        model: EXTRACT_MODEL,
-        generationConfig: { temperature: 0.1, maxOutputTokens: 800, topP: 0.8 },
-        systemInstruction: { role: 'system', parts: [{ text: systemPrompt }] },
-      });
-      const response = await model.generateContent({
-        contents: [{ role: 'user', parts: [{ text: trimmed }] }],
-      });
-      const textPart = response.response?.candidates?.[0]?.content?.parts?.find((p: any) => 'text' in p);
-      const raw = textPart ? (textPart as any).text : '';
-      if (raw) return parseExtractorResponse(raw, kind);
-    } catch (err: any) {
-      console.warn(`[VTID-01973] Vertex extractor failed (kind=${kind}): ${err.message}`);
+    for (let i = 0; i < EXTRACT_MODELS.length; i++) {
+      const modelName = EXTRACT_MODELS[i];
+      try {
+        const raw = await withGeminiLog(
+          { feature: 'extractor', model: modelName },
+          async () => {
+            const model = vertexAI!.getGenerativeModel({
+              model: modelName,
+              generationConfig: { temperature: 0.1, maxOutputTokens: 800, topP: 0.8, responseMimeType: 'application/json' },
+            });
+            const response = await model.generateContent({
+              contents: [{ role: 'user', parts: [{ text: prompt }] }],
+            });
+            const candidate = response.response?.candidates?.[0];
+            const textPart = candidate?.content?.parts?.find((p: any) => 'text' in p);
+            const text = textPart ? (textPart as any).text : '';
+            if (!text) throw new Error(`empty Vertex response (finishReason=${candidate?.finishReason ?? 'unknown'})`);
+            return text as string;
+          },
+        );
+        if (raw) {
+          if (i > 0) console.warn(`[VTID-01973] extractor fell back to ${modelName} (kind=${kind})`);
+          return parseExtractorResponse(raw, kind);
+        }
+      } catch (err: any) {
+        console.warn(`[VTID-01973] Vertex extractor model ${modelName} failed (kind=${kind}): ${err?.message}`);
+        // try the next model in the chain
+      }
     }
   }
 
-  if (GOOGLE_GEMINI_API_KEY) {
+  // Fallback: Gemini API key (only when configured — usually not on the gateway).
+  if (GEMINI_API_KEY) {
     try {
       const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${EXTRACT_MODEL}:generateContent?key=${GOOGLE_GEMINI_API_KEY}`,
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            contents: [{ parts: [{ text: trimmed }] }],
-            systemInstruction: { parts: [{ text: systemPrompt }] },
-            generationConfig: { temperature: 0.1, maxOutputTokens: 800 },
+            contents: [{ parts: [{ text: prompt }] }],
+            generationConfig: { temperature: 0.1, maxOutputTokens: 800, responseMimeType: 'application/json' },
           }),
         }
       );
       if (response.ok) {
         const data = await response.json() as any;
         const raw = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-        return parseExtractorResponse(raw, kind);
+        if (raw) return parseExtractorResponse(raw, kind);
       }
     } catch (err: any) {
       console.warn(`[VTID-01973] Gemini API extractor failed (kind=${kind}): ${err.message}`);
