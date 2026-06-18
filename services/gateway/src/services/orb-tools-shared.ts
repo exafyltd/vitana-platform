@@ -3470,7 +3470,7 @@ export async function tool_get_current_screen(
     return {
       ok: true,
       result: { route: null, recent_screens: [] },
-      text: "The host app has not reported a current screen for this session. Tell the user you can see they're in the Vitana app but not which specific screen, and ask what they'd like to do next.",
+      text: "The host app has not reported a current screen for this session. Tell the user you can see they're in the Vitana app but not which specific screen — then PROPOSE one concrete next step (e.g. continuing their journey, or opening their dashboard) and offer to take them there. RULE 0: do NOT ask them what they'd like to do.",
     };
   }
 
