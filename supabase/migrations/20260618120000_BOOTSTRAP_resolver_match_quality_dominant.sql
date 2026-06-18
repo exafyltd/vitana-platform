@@ -53,6 +53,11 @@
 --   Nothing else changes: the candidate pool, tenant resolution, exact lanes
 --   (vitana_id/@handle/email/legacy alias), the >=0.2 fuzzy floor and the
 --   global/same-tenant eligibility rules are all identical to 20260618000000.
+--
+-- impact-allow-solo-migration: CREATE OR REPLACE of an existing RPC with an
+--   unchanged signature; the gateway callers (tool_resolve_recipient,
+--   resolveAndValidateRecipient, tool_send_chat_message) already consume it as
+--   is, so the new ranking is usable without any code change.
 
 CREATE OR REPLACE FUNCTION public.resolve_recipient_candidates(
   p_actor  uuid,
