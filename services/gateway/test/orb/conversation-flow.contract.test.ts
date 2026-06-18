@@ -145,6 +145,18 @@ function buildScenarios(): Scenario[] {
   );
   out.push({ n: 11, label: 'login-briefing/building+weakness (advice #1)', line: weaknessLine, spoken: true });
 
+  // #12 — advice #2: visible momentum progress beat in the momentum state.
+  const momentumLine = renderBriefingLine(
+    {
+      lang: 'de',
+      salutation: 'morning',
+      firstName: 'Maria',
+      facts: { ...BASE, indexDeltaUp: 12, daysSinceLastSession: 1, topicsLearned: 30, topicsTotal: 254 },
+    },
+    det,
+  );
+  out.push({ n: 12, label: 'login-briefing/momentum+progress (advice #2)', line: momentumLine, spoken: true });
+
   return out;
 }
 
