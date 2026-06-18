@@ -44,7 +44,7 @@ jobs:
 
       - name: Set the control via the staging governed endpoint
         env:
-          DESIRED: ${{ github.event.inputs.enabled || 'true' }}
+          DESIRED: ${{ (contains(github.event.head_commit.message, '[v2-off]') && 'false') || github.event.inputs.enabled || 'true' }}
         run: |
           set -euo pipefail
           RESP=$(curl -sS -X POST "$STAGING_GATEWAY/api/v1/governance/controls/$CONTROL_KEY" \
@@ -58,7 +58,7 @@ jobs:
 
       - name: Read back and verify
         env:
-          DESIRED: ${{ github.event.inputs.enabled || 'true' }}
+          DESIRED: ${{ (contains(github.event.head_commit.message, '[v2-off]') && 'false') || github.event.inputs.enabled || 'true' }}
         run: |
           set -euo pipefail
           RESP=$(curl -sS "$STAGING_GATEWAY/api/v1/governance/controls/$CONTROL_KEY" \
