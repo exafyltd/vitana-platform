@@ -2199,10 +2199,10 @@ export const NAVIGATION_CATALOG: ReadonlyArray<NavCatalogEntry> = [
   {
     screen_id: 'INTENTS.BOARD', route: '/intents/board', category: 'community',
     access: 'authenticated', anonymous_safe: false, priority: 2,
-    aliases: ['intent-board', 'intent_board', 'community/intent-board', 'intents-board', 'all-intents'],
+    aliases: ['intent-board', 'intent_board', 'community/intent-board', 'intents-board', 'all-intents', 'community-board', 'community_board'],
     i18n: {
-      en: { title: 'Intent Board', description: 'Browse all open community intents and asks across categories.', when_to_visit: 'When the user asks for the intent board, all community posts, what people are asking for, the dance board, or the open community board.' },
-      de: { title: 'Intent-Board', description: 'Durchstöbere alle offenen Community-Anliegen und Anfragen über alle Kategorien hinweg.', when_to_visit: 'Wenn der Nutzer nach dem Intent-Board, allen Community-Posts, was die Leute suchen, dem Tanz-Board oder dem offenen Community-Board fragt.' },
+      en: { title: 'Community Board', description: 'The all-category Community Board — browse every open community intent and ask (learning, mentoring, buying, selling, activity partners, coffee chats, lending) across all categories.', when_to_visit: 'When the user asks to open the community board, the Community Board, all community posts, what people are looking for, what people are asking for, or the open intent board across every category. This is the general all-category board — NOT the dance/fitness partner board.' },
+      de: { title: 'Community-Board', description: 'Das Community-Board über alle Kategorien — durchstöbere jedes offene Community-Anliegen und jede Anfrage (Lernen, Unterrichten, Kaufen, Verkaufen, Aktivitätspartner, Kaffee-Chats, Verleihen) über alle Kategorien hinweg.', when_to_visit: 'Wenn der Nutzer das Community-Board öffnen, das Community-Board, alle Community-Posts, was die Leute suchen oder anbieten oder das offene Intent-Board über alle Kategorien hinweg sehen möchte. Das ist das allgemeine Board über alle Kategorien — NICHT das Tanz-/Fitness-Partner-Board.' },
     },
   },
   {
@@ -2248,8 +2248,8 @@ export const NAVIGATION_CATALOG: ReadonlyArray<NavCatalogEntry> = [
     access: 'authenticated', anonymous_safe: false,
     aliases: ['find-partner-board', 'partner-board'],
     i18n: {
-      en: { title: 'Partner Board', description: 'The community board view of dance and fitness partner posts.', when_to_visit: 'When the user asks for the partner board, dance board, the community board for partner posts, or wants to see who is looking.' },
-      de: { title: 'Partner-Board', description: 'Die Community-Board-Ansicht der Tanz- und Fitness-Partner-Posts.', when_to_visit: 'Wenn der Nutzer nach dem Partner-Board, Tanz-Board, dem Community-Board für Partner-Posts fragt oder sehen möchte, wer sucht.' },
+      en: { title: 'Partner Board', description: 'The board view of dance and fitness partner posts — who is looking for a dance or workout partner.', when_to_visit: 'When the user asks specifically for the partner board, the dance partner board, the fitness partner board, or wants to see who is looking for a dance or workout partner. For the general all-category community board, use the Community Board (INTENTS.BOARD) instead.' },
+      de: { title: 'Partner-Board', description: 'Die Board-Ansicht der Tanz- und Fitness-Partner-Posts — wer einen Tanz- oder Trainingspartner sucht.', when_to_visit: 'Wenn der Nutzer ausdrücklich nach dem Partner-Board, dem Tanzpartner-Board, dem Fitnesspartner-Board fragt oder sehen möchte, wer einen Tanz- oder Trainingspartner sucht. Für das allgemeine Community-Board über alle Kategorien ist stattdessen das Community-Board (INTENTS.BOARD) zuständig.' },
     },
   },
   {
