@@ -1,0 +1,65 @@
+name: OPS — Toggle Journey Conversation V2 flag on staging
+
+# Flips the `vitana_journey_conversation_v2_enabled` system control via the
+# STAGING gateway's governed controls endpoint. Runs from a GitHub runner
+# (Claude Code remote sessions have no gateway egress). Header-authed
+# (dev_admin). Commit-message markers:
+#   [run-v2-flag]            → trigger this job
+#   [v2-off]                 → set the flag to false (default is true)
+# Staging-only: hits gateway-staging; never prod.
+
+on:
+  workflow_dispatch:
+    inputs:
+      enabled:
+        description: 'true to enable, false to disable'
+        required: false
+        default: 'true'
+  push:
+    branches: ['claude/flow-v3-rebuild']
+    paths: ['.github/workflows/OPS-TOGGLE-FLOW-V3-STAGING.yml']
+
+env:
+  STAGING_GATEWAY: 'https://gateway-staging-q74ibpv6ia-uc.a.run.app'
+  CONTROL_KEY: 'vitana_journey_conversation_v2_enabled'
+
+jobs:
+  toggle:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[run-v2-flag]')
+    steps:
+      - name: Confirm staging gateway is live
+        run: |
+          set -euo pipefail
+          HEALTH=$(curl -sS "$STAGING_GATEWAY/api/v1/admin/health" || true)
+          echo "health: $HEALTH"
+          ENVV=$(echo "$HEALTH" | jq -r '.env // empty')
+          [ "$ENVV" = "staging" ] || echo "::warning::admin/health env != staging (got '$ENVV')"
+
+      - name: Set the control
+        env:
+          DESIRED: ${{ (contains(github.event.head_commit.message, '[v2-off]') && 'false') || github.event.inputs.enabled || 'true' }}
+        run: |
+          set -euo pipefail
+          RESP=$(curl -sS -X POST "$STAGING_GATEWAY/api/v1/governance/controls/$CONTROL_KEY" \
+            -H 'Content-Type: application/json' \
+            -H 'x-user-id: d.stevanovic@exafy.io' \
+            -H 'x-user-role: dev_admin' \
+            -d "{\"enabled\": ${DESIRED}, \"reason\": \"Conversation Flow v3 staging voice test (VTID-03307)\"}")
+          echo "$RESP"
+          [ "$(echo "$RESP" | jq -r '.ok')" = "true" ] || { echo "::error::set failed: $RESP"; exit 1; }
+
+      - name: Read back and verify
+        env:
+          DESIRED: ${{ (contains(github.event.head_commit.message, '[v2-off]') && 'false') || github.event.inputs.enabled || 'true' }}
+        run: |
+          set -euo pipefail
+          RESP=$(curl -sS "$STAGING_GATEWAY/api/v1/governance/controls/$CONTROL_KEY" \
+            -H 'x-user-id: d.stevanovic@exafy.io' -H 'x-user-role: dev_admin')
+          echo "$RESP"
+          # NB: jq '//' treats `false` as null, so derive the boolean explicitly.
+          ENABLED=$(echo "$RESP" | jq -r 'if (.data.enabled) == true then "true" elif (.data.enabled) == false then "false" else "missing" end')
+          if [ "$ENABLED" != "$DESIRED" ]; then
+            echo "::error::read-back mismatch: wanted $DESIRED, got '$ENABLED'"; exit 1
+          fi
+          echo "### $CONTROL_KEY = $ENABLED on staging ✅" >> "$GITHUB_STEP_SUMMARY"
