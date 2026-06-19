@@ -1167,6 +1167,33 @@
     // acks its new session_id, forcing the greeting gate to the 3s timeout.
     _s._audioReadySignaled = false;
 
+    // DEV-COMHU-ORB-AUDIO-FIRST-GREETING: unlock the playback AudioContext
+    // SYNCHRONOUSLY, before ANY await in this function. On mobile (iOS/Android)
+    // the user-gesture activation token is consumed by the first await — and the
+    // continuity fetch below awaited BEFORE this unlock, so the silent-buffer
+    // unlock + resume() landed OUTSIDE the gesture window, the context stayed
+    // suspended, and the FIRST greeting's PCM was dropped (the second press
+    // worked because the context was already running). Creating + unlocking here,
+    // ahead of the fetch, restores the in-gesture guarantee. Idempotent: reuses
+    // an existing, non-closed context on later presses.
+    if (!_s.playbackCtx || _s.playbackCtx.state === 'closed') {
+      _s.playbackCtx = new (window.AudioContext || window.webkitAudioContext)();
+    }
+    try {
+      var _silentUnlock = _s.playbackCtx.createBuffer(1, 1, 22050);
+      var _silentUnlockSrc = _s.playbackCtx.createBufferSource();
+      _silentUnlockSrc.buffer = _silentUnlock;
+      _silentUnlockSrc.connect(_s.playbackCtx.destination);
+      _silentUnlockSrc.start(0);
+    } catch (e) {
+      console.warn('[VTOrb] silent-buffer iOS unlock failed:', e && e.message);
+    }
+    if (_s.playbackCtx.state === 'suspended') {
+      _s.playbackCtx.resume().catch(function (e) {
+        console.warn('[VTOrb] playbackCtx resume rejected at session start:', e && e.message);
+      });
+    }
+
     // DEV-COMHU-0503 (review fix): hydrate persisted continuity on a fresh
     // reopen. _hide() persisted continuity then _sessionStop cleared the
     // in-memory fields, so without this the reconnect-context builder below
@@ -1218,31 +1245,11 @@
     _s.navigationPending = false;
     _s.signupClosing = false;
 
-    // BOOTSTRAP-ORB-IOS-UNLOCK: Create playback AudioContext inside the user
-    // gesture (critical for iOS — creating later or resuming later is
-    // unreliable across awaits). Also play a 1-sample silent buffer
-    // immediately: this is the canonical iOS unlock primitive. The chime
-    // below used to be the de-facto unlock but it fires *after* the fetch
-    // below on slower devices, losing the gesture window.
-    if (!_s.playbackCtx || _s.playbackCtx.state === 'closed') {
-      _s.playbackCtx = new (window.AudioContext || window.webkitAudioContext)();
-    }
-    try {
-      var _silent = _s.playbackCtx.createBuffer(1, 1, 22050);
-      var _silentSrc = _s.playbackCtx.createBufferSource();
-      _silentSrc.buffer = _silent;
-      _silentSrc.connect(_s.playbackCtx.destination);
-      _silentSrc.start(0);
-    } catch (e) {
-      console.warn('[VTOrb] silent-buffer iOS unlock failed:', e && e.message);
-    }
-    if (_s.playbackCtx.state === 'suspended') {
-      _s.playbackCtx.resume().catch(function (e) {
-        console.warn('[VTOrb] playbackCtx resume rejected at session start:', e && e.message);
-      });
-    }
-
-    // Play activation chime immediately
+    // BOOTSTRAP-ORB-IOS-UNLOCK: the playback AudioContext create + 1-sample
+    // silent-buffer unlock + resume() was MOVED UP to before the continuity
+    // fetch above (DEV-COMHU-ORB-AUDIO-FIRST-GREETING) — it MUST run before any
+    // await so the mobile gesture window is not lost. The ctx is already unlocked
+    // by here; just play the activation chime into it.
     _playChime(_s.playbackCtx);
 
     // ORB-FAST-START Phase 4: instant cached wake cue. Right after the chime,
