@@ -86,6 +86,9 @@ import {
 } from '../instruction/wake-decision-snapshot';
 // VTID-03248 (R1 slice 1): single canonical spoken-first-name resolver.
 import { resolveSpokenFirstName } from '../../../services/awareness-unified-context';
+// DEV-COMHU-0513 (new-day): gate the fast greeting-facts pre-fetch on the
+// EXISTING ORB_SAFE_FAST_GREETING feature flag (no new flag).
+import { isFeatureLive } from '../../../services/feature-flags';
 import { recordAgentHeartbeat } from '../../../routes/agents-registry';
 import {
   fetchAdminBriefingBlock,
@@ -712,6 +715,19 @@ export async function handleLiveSessionStart(
   // awaited by connectToLiveAPI's ws.on('open') handler.
   let contextReadyPromise: Promise<void> | undefined;
 
+  // DEV-COMHU-0513 (new-day): FAST greeting-facts pre-fetch. Independent of the
+  // heavy bootstrapWork above so the new-day personalized opener has a spoken
+  // first name + last-session info ready at greeting time even under fast-start
+  // (where the heavy block has NOT resolved yet). Populated only for authed,
+  // non-anon, non-guided sessions AND only when FEATURE_ORB_SAFE_FAST_GREETING
+  // is live. Resolved values are copied onto the session after it is created
+  // (the session object is constructed further below). Fail-open: any error
+  // leaves greetingFirstName null and the greeting builder falls through to the
+  // existing generic opener.
+  let greetingFirstName: string | null = null;
+  let greetingEarlyLastSessionInfo: { time: string; wasFailure: boolean } | null = null;
+  let greetingFactsReady: Promise<void> | undefined;
+
   // VTID-03294: a Guided-Journey topic tap needs ZERO context — Vitana just
   // picks up the KB lesson and speaks it. Detect it here so we can skip the
   // heavy Brain/memory/history/admin bootstrap (the 7-10s first-audio delay).
@@ -874,6 +890,70 @@ export async function handleLiveSessionStart(
       .catch((err) => {
         console.warn(`[BOOTSTRAP-ORB-CRITICAL-PATH] Context build rejected for ${sessionId}, proceeding with empty context:`, err?.message || err);
       });
+
+    // DEV-COMHU-0513 (new-day): kick off a FAST, parallel pre-fetch of the two
+    // facts the new-day personalized opener needs — the spoken first name and
+    // the last-session timestamp — so they are ready at greeting time even when
+    // the heavy bootstrapWork above has not resolved yet (fast-start). This runs
+    // independently of bootstrapWork and never blocks session start. Gated on
+    // the EXISTING FEATURE_ORB_SAFE_FAST_GREETING flag — a no-op when off, so
+    // default behavior is 100% unchanged. Fail-open: every fetch failure leaves
+    // greetingFirstName null (→ generic opener). The name-resolution mirrors the
+    // canonical block (~memory_facts.user_name → app_users.display_name → email
+    // via resolveSpokenFirstName); setting lastSessionInfo early is idempotent
+    // with the heavy block, which sets the same field later.
+    if (isFeatureLive('ORB_SAFE_FAST_GREETING')) {
+      const _ndIdentity = bootstrapIdentity;
+      greetingFactsReady = (async () => {
+        try {
+          const { getSupabase } = await import('../../../lib/supabase');
+          const supa = getSupabase() ?? undefined;
+          const [lastInfo, factResult, profileResult] = await Promise.allSettled([
+            deps.fetchLastSessionInfo(_ndIdentity.user_id),
+            supa
+              ? supa
+                  .from('memory_facts')
+                  .select('fact_value')
+                  .eq('user_id', _ndIdentity.user_id)
+                  .eq('fact_key', 'user_name')
+                  .maybeSingle()
+              : Promise.resolve(null as any),
+            supa
+              ? supa
+                  .from('app_users')
+                  .select('display_name')
+                  .eq('user_id', _ndIdentity.user_id)
+                  .maybeSingle()
+              : Promise.resolve(null as any),
+          ]);
+
+          if (lastInfo.status === 'fulfilled') {
+            greetingEarlyLastSessionInfo = lastInfo.value;
+          }
+
+          const factValue =
+            factResult.status === 'fulfilled' && factResult.value && !factResult.value.error
+              ? (factResult.value.data as { fact_value?: string | null } | null)?.fact_value ?? null
+              : null;
+          const profileValue =
+            profileResult.status === 'fulfilled' && profileResult.value && !profileResult.value.error
+              ? (profileResult.value.data as { display_name?: string | null } | null)?.display_name ?? null
+              : null;
+          const resolved = resolveSpokenFirstName({
+            memoryFactUserName: factValue,
+            displayName: profileValue,
+            email: _ndIdentity.email ?? null,
+          });
+          greetingFirstName = resolved.firstName;
+          console.log(
+            `[GREETING-FACTS-PREFETCH] session ${sessionId} resolved firstName=${greetingFirstName ? '<set>' : 'null'} lastSession=${greetingEarlyLastSessionInfo ? 'yes' : 'no'}`,
+          );
+        } catch (err: any) {
+          // Fail-open to nulls — never reject.
+          console.warn(`[GREETING-FACTS-PREFETCH] session ${sessionId} pre-fetch failed (non-fatal): ${err?.message || err}`);
+        }
+      })();
+    }
   } else {
     contextBootstrapSkippedReason = 'no_identity';
     console.log(`[VTID-01224] Skipping context bootstrap for ${sessionId}: no identity`);
@@ -966,6 +1046,27 @@ export async function handleLiveSessionStart(
 
   // Store session
   liveSessions.set(sessionId, session);
+
+  // DEV-COMHU-0513 (new-day): expose the fast greeting-facts pre-fetch on the
+  // session so the greeting builder (sendGreetingPromptToLiveAPI) can do a
+  // bounded wait for the spoken first name + last-session info under fast-start.
+  // greetingFactsReady is undefined when FEATURE_ORB_SAFE_FAST_GREETING is off
+  // (default → builder treats it as immediately ready and uses the generic
+  // opener, i.e. behavior unchanged). When it resolves, copy the resolved facts
+  // onto the session. Also seed from any value that already resolved.
+  if (greetingFactsReady) {
+    (session as any).greetingFirstName = greetingFirstName;
+    if (greetingEarlyLastSessionInfo && !session.lastSessionInfo) {
+      session.lastSessionInfo = greetingEarlyLastSessionInfo;
+    }
+    (session as any).greetingFactsReady = greetingFactsReady.then(() => {
+      (session as any).greetingFirstName = greetingFirstName;
+      // Idempotent with the heavy bootstrap block, which also sets this later.
+      if (greetingEarlyLastSessionInfo && !session.lastSessionInfo) {
+        session.lastSessionInfo = greetingEarlyLastSessionInfo;
+      }
+    });
+  }
 
   // VTID-03107: arm the per-minute voice meter for authenticated sessions
   // whose quota gate is in 'allow' or 'degrade' state. 'deferred' sessions

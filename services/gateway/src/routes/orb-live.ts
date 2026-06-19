@@ -7412,27 +7412,139 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
     );
     emitDiag(session, 'greeting_context_pending', { lang, safe_fast_greeting: _safeFastLive });
     if (_safeFastLive && ws.readyState === WebSocket.OPEN) {
-      const _menu = pickShortGapGreetings(lang, 6).map((p) => `"${p}"`).join(', ');
-      const _safePrompt =
-        `Open with EXACTLY ONE short phrase, picked from this menu and used VERBATIM ` +
-        `(already in the user's language): ${_menu}. Do NOT say "Hello" or the user's name. ` +
-        `Do NOT introduce yourself. NEVER use two-part sentences. Speak it as audio.`;
-      ws.send(
-        JSON.stringify({
-          client_content: { turns: [{ role: 'user', parts: [{ text: _safePrompt }] }], turn_complete: true },
-        }),
-      );
-      session.greetingSent = true;
-      session.greetingTurnIndex = session.turn_count;
-      _sm.markOpeningDelivered();
-      emitDiag(session, 'greeting_sent', {
-        lang,
-        prompt_len: _safePrompt.length,
-        wake_opener: 'safe_fast_pending_context',
-      });
-      startResponseWatchdog(session, getGreetingResponseTimeoutMs(), 'greeting_timeout');
-      console.log(`[GREETING-SAFE-FAST] session ${session.sessionId} sent short audio-safe opener (context still pending)`);
-      return true;
+      // DEV-COMHU-0513 (new-day): when this fast-greeting fires on a genuine
+      // NEW-DAY return, speak a short personalized "Good <tod>, <Name>." instead
+      // of the generic opener — while staying fast. The greeting-facts pre-fetch
+      // (live-session-controller) resolves the spoken first name + last-session
+      // info independently of the heavy bootstrap; here we do a BOUNDED wait for
+      // it so we don't lose the speed, then check the temporal bucket. Same-day
+      // reconnects ('reconnect'|'recent'|'same_day') and missing names fall
+      // through to the EXISTING generic opener below (unchanged). This whole
+      // branch is reachable only under FEATURE_ORB_SAFE_FAST_GREETING.
+      //
+      // The bounded wait + send runs in an async IIFE so the synchronous
+      // function signature (and all its fire-and-forget call sites) stay
+      // unchanged; greetingSent is claimed synchronously to prevent a duplicate
+      // greeting while the wait is in flight.
+      {
+        const _greetingFactsReady: Promise<void> | undefined = (session as any).greetingFactsReady;
+        // Mark sent synchronously so no other path emits a second greeting while
+        // we await the bounded facts wait below.
+        session.greetingSent = true;
+        session.greetingTurnIndex = session.turn_count;
+        _sm.markOpeningDelivered();
+        void (async () => {
+          try {
+            await Promise.race([
+              _greetingFactsReady ?? Promise.resolve(),
+              new Promise<void>((r) => setTimeout(r, Number(process.env.ORB_GREETING_FACTS_WAIT_MS || 700))),
+            ]);
+            if (ws.readyState !== WebSocket.OPEN) return;
+
+            const temporal = describeTimeSince((session as any).lastSessionInfo);
+            const firstName = (session as any).greetingFirstName;
+            const isNewDay =
+              temporal.bucket === 'today' ||
+              temporal.bucket === 'yesterday' ||
+              temporal.bucket === 'week' ||
+              temporal.bucket === 'long';
+
+            if (isNewDay && typeof firstName === 'string' && firstName.trim().length > 0) {
+              const name = firstName.trim();
+              // Map time-of-day → greeting; 'night' → evening (avoid "good night"
+              // farewell), default 'day'.
+              const tod =
+                session.clientContext?.timeOfDay === 'night'
+                  ? 'evening'
+                  : session.clientContext?.timeOfDay || 'day';
+              // Localized "Good <tod>, <Name>." — en + de are real; other langs
+              // get an easy localized good-<tod> where known, else the en line.
+              const greetingByLang: Record<string, string> = {
+                en:
+                  tod === 'morning'
+                    ? `Good morning, ${name}.`
+                    : tod === 'afternoon'
+                      ? `Good afternoon, ${name}.`
+                      : tod === 'evening'
+                        ? `Good evening, ${name}.`
+                        : `Hello, ${name}.`,
+                de:
+                  tod === 'morning'
+                    ? `Guten Morgen, ${name}.`
+                    : tod === 'evening'
+                      ? `Guten Abend, ${name}.`
+                      : `Guten Tag, ${name}.`,
+                es:
+                  tod === 'morning'
+                    ? `Buenos días, ${name}.`
+                    : tod === 'evening'
+                      ? `Buenas noches, ${name}.`
+                      : `Buenas tardes, ${name}.`,
+                fr:
+                  tod === 'evening'
+                    ? `Bonsoir, ${name}.`
+                    : `Bonjour, ${name}.`,
+                sr:
+                  tod === 'morning'
+                    ? `Добро јутро, ${name}.`
+                    : tod === 'evening'
+                      ? `Добро вече, ${name}.`
+                      : `Добар дан, ${name}.`,
+              };
+              const langKey = (lang || 'en').slice(0, 2).toLowerCase();
+              const spoken = greetingByLang[langKey] || greetingByLang.en;
+              const safe = spoken.replace(/"/g, '\\"');
+              // Mirror the existing `Say exactly: "..."` shape used elsewhere in
+              // this function — keep it SHORT so Gemini reliably emits audio.
+              const newDayPrompt =
+                `Say exactly: "${safe}" — ONE short utterance only. Do NOT add anything before or after. Do NOT paraphrase. Speak it as audio.`;
+              ws.send(
+                JSON.stringify({
+                  client_content: { turns: [{ role: 'user', parts: [{ text: newDayPrompt }] }], turn_complete: true },
+                }),
+              );
+              emitDiag(session, 'greeting_sent', {
+                lang,
+                prompt_len: newDayPrompt.length,
+                wake_opener: 'safe_fast_newday',
+                bucket: temporal.bucket,
+              });
+              startResponseWatchdog(session, getGreetingResponseTimeoutMs(), 'greeting_timeout');
+              console.log(
+                `[GREETING-SAFE-FAST-NEWDAY] session ${session.sessionId} sent personalized new-day opener (bucket=${temporal.bucket}, lang=${lang})`,
+              );
+              return;
+            }
+
+            // ELSE — fall through to the EXISTING generic opener (unchanged
+            // behavior). Same-day reconnects and no-name sessions take this path.
+            const _menu = pickShortGapGreetings(lang, 6).map((p) => `"${p}"`).join(', ');
+            const _safePrompt =
+              `Open with EXACTLY ONE short phrase, picked from this menu and used VERBATIM ` +
+              `(already in the user's language): ${_menu}. Do NOT say "Hello" or the user's name. ` +
+              `Do NOT introduce yourself. NEVER use two-part sentences. Speak it as audio.`;
+            ws.send(
+              JSON.stringify({
+                client_content: { turns: [{ role: 'user', parts: [{ text: _safePrompt }] }], turn_complete: true },
+              }),
+            );
+            emitDiag(session, 'greeting_sent', {
+              lang,
+              prompt_len: _safePrompt.length,
+              wake_opener: 'safe_fast_pending_context',
+            });
+            startResponseWatchdog(session, getGreetingResponseTimeoutMs(), 'greeting_timeout');
+            console.log(
+              `[GREETING-SAFE-FAST] session ${session.sessionId} sent short audio-safe opener (context still pending)`,
+            );
+          } catch (err: any) {
+            console.warn(
+              `[GREETING-SAFE-FAST-NEWDAY] session ${session.sessionId} bounded greeting send failed (non-fatal): ${err?.message || err}`,
+            );
+          }
+        })();
+        return true;
+      }
     }
   }
 
