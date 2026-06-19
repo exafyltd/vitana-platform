@@ -1609,11 +1609,26 @@ export async function handleLiveSessionStart(
     console.log(
       `[ORB-FAST-START] session ${sessionId}: wake-brief + journey deferred onto contextReadyPromise (fast session/start)`,
     );
-  } else {
+  } else if (!isAnonymousSession) {
     // Legacy inline path: assign the return value so TS control-flow analysis
     // sees wakeBriefDecision populated for the response meta below.
     wakeBriefDecision = await assembleWakeBriefAndJourney();
   }
+  // ANON-WAKE-SKIP: anonymous (pre-login) sessions deliberately do NOT run the
+  // authenticated wake-brief / journey / decision-context pipeline. Its result
+  // is discarded for anonymous sessions anyway — every greeting-builder branch
+  // that consumes wakeBriefDecision is gated behind `!session.isAnonymous`
+  // (orb-live.ts: wake-override speak, cadence-silence, context-pending), and the
+  // pre-login intro speech is driven by buildAnonymousSystemInstruction's own
+  // verbatim-speech path. Running it inline only piled Supabase round-trips +
+  // emission writes onto the pre-login critical path (session/start observed at
+  // ~4.5s), pushing slow/mobile clients past the orb-widget's 8s session-start
+  // timeout — so the orb opened, flipped to "listening", and never received the
+  // greeting (the "pre-login speech doesn't start / doesn't react to input"
+  // report). The fast-start path already defers this work for authenticated
+  // users (shouldDeferWakeWork), which is why post-login was unaffected.
+  // wakeBriefDecision stays null → response meta reports wake_brief:null, which
+  // the widget does not depend on for anonymous sessions.
 
   // Emit OASIS event with identity context.
   // ORB-FAST-START Phase 1a: fire-and-forget. session.start IS a real state
