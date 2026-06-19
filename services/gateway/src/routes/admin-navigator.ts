@@ -109,6 +109,11 @@ function validateCatalogPayload(body: any, { isPartial }: { isPartial: boolean }
   if (body.related_kb_topics && !Array.isArray(body.related_kb_topics)) {
     return 'related_kb_topics must be an array';
   }
+  if (body.allowed_roles != null) {
+    if (!Array.isArray(body.allowed_roles) || body.allowed_roles.some((r: unknown) => typeof r !== 'string')) {
+      return 'allowed_roles must be an array of role strings';
+    }
+  }
   if (body.context_rules && typeof body.context_rules !== 'object') {
     return 'context_rules must be an object';
   }
@@ -162,7 +167,7 @@ router.get('/catalog', async (req: AuthenticatedRequest, res: Response) => {
   try {
     let query = supabase
       .from('nav_catalog')
-      .select('id, screen_id, tenant_id, route, category, access, anonymous_safe, priority, platform, related_kb_topics, context_rules, override_triggers, is_active, created_at, updated_at, updated_by');
+      .select('id, screen_id, tenant_id, route, category, access, anonymous_safe, priority, platform, allowed_roles, related_kb_topics, context_rules, override_triggers, is_active, created_at, updated_at, updated_by');
 
     // BOOTSTRAP-NAV-PLATFORM: scope to one MAXINA catalog (Mobile by default).
     query = query.eq('platform', platform === 'desktop' ? 'desktop' : 'mobile');
@@ -273,6 +278,11 @@ router.post('/catalog', async (req: AuthenticatedRequest, res: Response) => {
       priority: req.body.priority || 0,
       // BOOTSTRAP-NAV-PLATFORM: which catalog this screen belongs to (Mobile default).
       platform: req.body.platform === 'desktop' ? 'desktop' : 'mobile',
+      // BOOTSTRAP-NAV-ROLE-SCOPING: explicit role scope (NULL = inferred).
+      allowed_roles:
+        Array.isArray(req.body.allowed_roles) && req.body.allowed_roles.length > 0
+          ? req.body.allowed_roles
+          : null,
       related_kb_topics: req.body.related_kb_topics || [],
       context_rules: req.body.context_rules || {},
       override_triggers: req.body.override_triggers || [],
@@ -345,9 +355,11 @@ router.patch('/catalog/:id', async (req: AuthenticatedRequest, res: Response) =>
     const { data: existingI18n } = await supabase.from('nav_catalog_i18n').select('*').eq('catalog_id', id);
 
     const patch: any = { updated_by: auth.user_id };
-    for (const key of ['route', 'category', 'access', 'anonymous_safe', 'priority', 'related_kb_topics', 'context_rules', 'override_triggers', 'is_active']) {
+    for (const key of ['route', 'category', 'access', 'anonymous_safe', 'priority', 'allowed_roles', 'related_kb_topics', 'context_rules', 'override_triggers', 'is_active']) {
       if (req.body[key] !== undefined) patch[key] = req.body[key];
     }
+    // Normalize an empty allowed_roles array to NULL (= inferred scope).
+    if (Array.isArray(patch.allowed_roles) && patch.allowed_roles.length === 0) patch.allowed_roles = null;
 
     const { data: updated, error: updErr } = await supabase
       .from('nav_catalog')
@@ -467,6 +479,10 @@ router.post('/catalog/:id/restore/:audit_id', async (req: AuthenticatedRequest, 
       access: snapshot.access,
       anonymous_safe: snapshot.anonymous_safe,
       priority: snapshot.priority || 0,
+      allowed_roles:
+        Array.isArray(snapshot.allowed_roles) && snapshot.allowed_roles.length > 0
+          ? snapshot.allowed_roles
+          : null,
       related_kb_topics: snapshot.related_kb_topics || [],
       context_rules: snapshot.context_rules || {},
       override_triggers: snapshot.override_triggers || [],
