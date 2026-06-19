@@ -133,6 +133,53 @@ export async function setJourneyMode(
 }
 
 /**
+ * BOOTSTRAP-GUIDED-JOURNEY-SESSION-PERSIST — durably record that the user
+ * listened to guided session `session`.
+ *
+ * THE BUG THIS FIXES: the "Sitzung N" ring was driven ONLY by per-browser
+ * localStorage (see useGuidedJourneyProgress.ts) — nothing was persisted
+ * server-side, so the count reset whenever localStorage was cleared and
+ * differed between origins (staging vs production showed different numbers
+ * for the same account). We now advance `current_session` — the durable,
+ * account-scoped marker — so progress survives device/browser changes.
+ *
+ * `current_session` is "the session the user is ON"; listening to N advances
+ * to N+1. Monotonic: replaying an already-passed session never rewinds.
+ */
+export async function recordListenedSession(
+  client: SupabaseClient,
+  userId: string,
+  session: number,
+  now: string = new Date().toISOString(),
+): Promise<JourneyState> {
+  const row = await ensureState(client, userId);
+
+  const safeSession = Number.isInteger(session) && session > 0 ? session : 1;
+  // Listening to session N means the user is now on N+1. Never rewind.
+  const nextCurrent = Math.max(row.current_session, safeSession + 1);
+
+  const patch: Record<string, unknown> = { updated_at: now };
+  if (nextCurrent !== row.current_session) patch.current_session = nextCurrent;
+  // A not_started user who listens is now in progress.
+  if (row.onboarding_status === 'not_started') patch.onboarding_status = 'in_progress';
+
+  // Nothing actually advanced (replay of an already-passed session, status
+  // already moved) — skip the write and return the current state.
+  const advances = 'current_session' in patch || 'onboarding_status' in patch;
+  if (!advances) return toJourneyState(row);
+
+  const updated = await client
+    .from(TABLE)
+    .update(patch)
+    .eq('user_id', userId)
+    .select('*')
+    .single();
+
+  if (updated.error) throw updated.error;
+  return toJourneyState(updated.data as GuidedJourneyStateRow);
+}
+
+/**
  * VTID-03282 (P7) — record a completed guided-practice action for a topic.
  *
  * Idempotent per topic: the first completion of a topic appends it to
