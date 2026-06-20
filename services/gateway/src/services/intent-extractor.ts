@@ -23,9 +23,12 @@ const VERTEX_LOCATION = process.env.VERTEX_LOCATION || 'us-central1';
 // BOOTSTRAP-FIND-MATCH-CLASSIFY-FIX: same failure mode as the classifier — the
 // bare gemini-2.0-flash call (no JSON mode) returned empty/unparseable output on
 // the gateway and the only fallback was gated on an unset env var. Use JSON mode
-// + a model fallback chain ending in the proven-working Pro model, and log each
-// attempt so silent breakage surfaces in gemini_call_log.
-const EXTRACT_MODELS = ['gemini-2.0-flash', 'gemini-2.5-pro'];
+// + the model family proven to work on this Vertex project (2.5-flash → the
+// matchmaker-proven 2.5-pro), and log each attempt so silent breakage surfaces
+// in gemini_call_log. Both are "thinking" models, so the token budget must leave
+// room for reasoning before the JSON payload.
+const EXTRACT_MODELS = ['gemini-2.5-flash', 'gemini-2.5-pro'];
+const EXTRACT_MAX_OUTPUT_TOKENS = 2048;
 
 let vertexAI: VertexAI | null = null;
 try {
@@ -221,7 +224,7 @@ export async function extractIntent(utterance: string, kind: IntentKind): Promis
           async () => {
             const model = vertexAI!.getGenerativeModel({
               model: modelName,
-              generationConfig: { temperature: 0.1, maxOutputTokens: 800, topP: 0.8, responseMimeType: 'application/json' },
+              generationConfig: { temperature: 0.1, maxOutputTokens: EXTRACT_MAX_OUTPUT_TOKENS, topP: 0.8, responseMimeType: 'application/json' },
             });
             const response = await model.generateContent({
               contents: [{ role: 'user', parts: [{ text: prompt }] }],
@@ -254,7 +257,7 @@ export async function extractIntent(utterance: string, kind: IntentKind): Promis
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             contents: [{ parts: [{ text: prompt }] }],
-            generationConfig: { temperature: 0.1, maxOutputTokens: 800, responseMimeType: 'application/json' },
+            generationConfig: { temperature: 0.1, maxOutputTokens: EXTRACT_MAX_OUTPUT_TOKENS, responseMimeType: 'application/json' },
           }),
         }
       );

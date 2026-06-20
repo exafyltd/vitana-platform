@@ -29,9 +29,14 @@ import { withGeminiLog } from './gemini-call-log';
 const GEMINI_API_KEY = process.env.GOOGLE_GEMINI_API_KEY || process.env.GEMINI_API_KEY;
 const VERTEX_PROJECT = process.env.GOOGLE_CLOUD_PROJECT || process.env.GCP_PROJECT || 'lovable-vitana-vers1';
 const VERTEX_LOCATION = process.env.VERTEX_LOCATION || 'us-central1';
-// Fast model first; fall back to the matchmaker's proven-working Pro model if
-// the fast model throws or returns an empty candidate. Each attempt is logged.
-const CLASSIFY_MODELS = ['gemini-2.0-flash', 'gemini-2.5-pro'];
+// Use the model family proven to work on this Vertex project. The matchmaker
+// succeeds on gemini-2.5-pro; gemini-2.0-flash is never actually exercised
+// there (no fallback rows) and returned empty/errored for the classifier, so
+// we lead with 2.5-flash and fall back to the proven 2.5-pro. Both are
+// "thinking" models, so maxOutputTokens must leave room for reasoning BEFORE
+// the JSON (a 256-token budget made 2.5-pro emit an empty candidate).
+const CLASSIFY_MODELS = ['gemini-2.5-flash', 'gemini-2.5-pro'];
+const CLASSIFY_MAX_OUTPUT_TOKENS = 2048;
 
 let vertexAI: VertexAI | null = null;
 try {
@@ -144,7 +149,7 @@ async function runVertexClassify(userText: string): Promise<string> {
         async () => {
           const model = vertexAI!.getGenerativeModel({
             model: modelName,
-            generationConfig: { temperature: 0.1, maxOutputTokens: 256, topP: 0.8, responseMimeType: 'application/json' },
+            generationConfig: { temperature: 0.1, maxOutputTokens: CLASSIFY_MAX_OUTPUT_TOKENS, topP: 0.8, responseMimeType: 'application/json' },
           });
           const response = await model.generateContent({
             contents: [{ role: 'user', parts: [{ text: `${CLASSIFIER_SYSTEM_PROMPT}\n\nUtterance to classify:\n${userText}` }] }],
@@ -189,7 +194,7 @@ export async function classifyIntentKind(utterance: string): Promise<IntentClass
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             contents: [{ parts: [{ text: `${CLASSIFIER_SYSTEM_PROMPT}\n\nUtterance to classify:\n${trimmed}` }] }],
-            generationConfig: { temperature: 0.1, maxOutputTokens: 256, responseMimeType: 'application/json' },
+            generationConfig: { temperature: 0.1, maxOutputTokens: CLASSIFY_MAX_OUTPUT_TOKENS, responseMimeType: 'application/json' },
           }),
         }
       );
