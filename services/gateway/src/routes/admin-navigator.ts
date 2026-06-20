@@ -516,7 +516,7 @@ router.post('/catalog/:id/restore/:audit_id', async (req: AuthenticatedRequest, 
 router.post('/simulate', async (req: AuthenticatedRequest, res: Response) => {
   const auth = actorFromReq(req as any);
 
-  const { utterance, lang, current_route, recent_routes, is_anonymous, tenant_id, user_id } = req.body || {};
+  const { utterance, lang, current_route, recent_routes, is_anonymous, tenant_id, user_id, platform } = req.body || {};
   if (typeof utterance !== 'string' || utterance.trim().length === 0) {
     return res.status(400).json({ ok: false, error: 'utterance required' });
   }
@@ -531,6 +531,10 @@ router.post('/simulate', async (req: AuthenticatedRequest, res: Response) => {
       is_anonymous: !!is_anonymous,
       current_route: typeof current_route === 'string' ? current_route : undefined,
       recent_routes: Array.isArray(recent_routes) ? recent_routes : [],
+      // NAV-PHASE1: let the admin simulator exercise platform-aware resolution
+      // exactly as production will (matches the catalog tab the admin is on).
+      platform: platform === 'desktop' ? 'desktop' : platform === 'mobile' ? 'mobile' : undefined,
+      platform_source: 'admin_simulator',
       session_id: `admin-sim-${Date.now()}`,
       turn_number: 0,
       conversation_start: new Date().toISOString(),
