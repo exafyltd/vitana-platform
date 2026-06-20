@@ -232,4 +232,14 @@ describe('Vitana RULE 0 prompt contract — governs every improvised LLM turn', 
     expect(block).toMatch(/nicht abrufen/i);     // names the exact failure phrase
     expect(block).toMatch(/DELIVER IT NOW/i);     // the required behavior on "yes"
   });
+
+  // Immediate fix: channel new users into the Guided Journey, coherently.
+  it('anchors the conversation on the Guided Journey and bans incoherent topic-jumping', () => {
+    const full = buildLiveSystemInstruction('de', 'warm', undefined, 'community');
+    const gj = full.slice(full.indexOf('GUIDED JOURNEY — YOUR COHERENT THROUGH-LINE'), full.indexOf('GREETING RULES (CRITICAL)'));
+    expect(gj).toMatch(/GUIDED JOURNEY — YOUR COHERENT THROUGH-LINE/);
+    expect(gj).toMatch(/Session 1 → 2 → 3/);
+    expect(gj).toMatch(/COHERENCE IS ABSOLUTE/);
+    expect(gj).toMatch(/Community Members/); // names the exact forbidden jump the user hit
+  });
 });
