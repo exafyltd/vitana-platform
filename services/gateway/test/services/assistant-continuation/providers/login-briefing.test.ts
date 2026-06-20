@@ -19,6 +19,7 @@ import {
   renderBriefingLine,
   buildWeaknessRider,
   buildProgressBeat,
+  buildFastProactiveOpener,
   type BriefingFacts,
 } from '../../../../src/services/assistant-continuation/providers/login-briefing';
 
@@ -258,6 +259,61 @@ describe('buildProgressBeat (advice #2)', () => {
       () => 0,
     );
     expect(line).toContain('30 von 254');
+  });
+});
+
+// DEV-COMHU-0513 — the SHORT proactive opener spoken on the fast greeting path.
+describe('buildFastProactiveOpener (proactive fast greeting)', () => {
+  const GENERIC = [
+    'Lass uns weitermachen.',
+    'Lass uns dort weitermachen, wo wir aufgehört haben.',
+    'Willkommen zurück.',
+  ];
+  const PASSIVE = /(möchtest du|willst du|was möchtest|what would you like|how can i help|what can i do)/i;
+
+  const mk = (f: Partial<BriefingFacts>) =>
+    buildFastProactiveOpener({ lang: 'de', salutation: 'morning', firstName: 'Maria', facts: { ...BASE_FACTS, ...f } });
+
+  it('opens with the named salutation and is NOT a generic SHORT_GAP phrase', () => {
+    const line = mk({ indexDeltaUp: null, daysSinceLastSession: 1 });
+    expect(line.startsWith('Guten Morgen, Maria.')).toBe(true);
+    for (const g of GENERIC) expect(line).not.toBe(g);
+    expect(line).not.toContain('Willkommen zurück');
+  });
+
+  it('weakness → goal/pillar reversing step as the lead', () => {
+    const line = mk({ weakestPillarDrop: { pillar: 'sleep', deltaDown: 6 } });
+    expect(line).toContain('Schlaf');
+    expect(line).toContain('ich zeige dir den ersten Schritt');
+  });
+
+  it('building → continues at the named next session, and LEADS', () => {
+    const line = mk({ indexDeltaUp: null, daysSinceLastSession: 1, nextSessionTitle: 'Schlaf-Routine' });
+    expect(line).toContain('Schlaf-Routine');
+    expect(line).toContain('ich führe dich');
+  });
+
+  it('orient (no progress) → proposes setting the goal', () => {
+    const line = mk({ sessionsCompleted: 0, hasGoal: false });
+    expect(line).toContain('Ziel');
+    expect(line).toContain('ich starte das gleich mit dir');
+  });
+
+  it('stays SHORT (audio-safe) and RULE-0 clean across states/langs', () => {
+    const variants: Array<Partial<BriefingFacts>> = [
+      { sessionsCompleted: 0, hasGoal: false },
+      { indexDeltaUp: null, daysSinceLastSession: 1 },
+      { weakestPillarDrop: { pillar: 'exercise', deltaDown: 8 } },
+      { graduated: true },
+    ];
+    for (const lang of ['de', 'en'] as const) {
+      for (const v of variants) {
+        const line = buildFastProactiveOpener({ lang, salutation: 'morning', firstName: 'Maria', facts: { ...BASE_FACTS, ...v } });
+        expect(line).not.toMatch(PASSIVE);
+        expect(line.length).toBeLessThanOrEqual(170); // ~2 short sentences → reliable audio
+        expect(line.length).toBeGreaterThan(0);
+      }
+    }
   });
 });
 

@@ -727,6 +727,10 @@ export async function handleLiveSessionStart(
   let greetingFirstName: string | null = null;
   let greetingEarlyLastSessionInfo: { time: string; wasFailure: boolean } | null = null;
   let greetingFactsReady: Promise<void> | undefined;
+  // DEV-COMHU-0513 (proactive fast greeting): a SHORT proactive opener (name +
+  // concrete next step / weakness lead) computed in the fast pre-fetch window so
+  // the SAFE-FAST greeting can speak IT instead of a generic SHORT_GAP phrase.
+  let greetingProactiveLine: string | null = null;
 
   // VTID-03294: a Guided-Journey topic tap needs ZERO context — Vitana just
   // picks up the KB lesson and speaks it. Detect it here so we can skip the
@@ -945,8 +949,25 @@ export async function handleLiveSessionStart(
             email: _ndIdentity.email ?? null,
           });
           greetingFirstName = resolved.firstName;
+
+          // DEV-COMHU-0513: compute the SHORT proactive opener from the same fast
+          // window (one extra parallel-read round-trip). Fail-open → null leaves
+          // the greeting path on the name / generic fallback ladder.
+          if (supa) {
+            const { computeFastProactiveOpener } = await import(
+              '../../../services/assistant-continuation/providers/login-briefing'
+            );
+            greetingProactiveLine = await computeFastProactiveOpener({
+              supabase: supa,
+              userId: _ndIdentity.user_id,
+              lang,
+              firstName: greetingFirstName,
+              timezone: clientContext?.timezone ?? null,
+              nowMs: Date.now(),
+            });
+          }
           console.log(
-            `[GREETING-FACTS-PREFETCH] session ${sessionId} resolved firstName=${greetingFirstName ? '<set>' : 'null'} lastSession=${greetingEarlyLastSessionInfo ? 'yes' : 'no'}`,
+            `[GREETING-FACTS-PREFETCH] session ${sessionId} resolved firstName=${greetingFirstName ? '<set>' : 'null'} lastSession=${greetingEarlyLastSessionInfo ? 'yes' : 'no'} proactive=${greetingProactiveLine ? '<set>' : 'null'}`,
           );
         } catch (err: any) {
           // Fail-open to nulls — never reject.
@@ -1056,11 +1077,15 @@ export async function handleLiveSessionStart(
   // onto the session. Also seed from any value that already resolved.
   if (greetingFactsReady) {
     (session as any).greetingFirstName = greetingFirstName;
+    (session as any).greetingProactiveLine = greetingProactiveLine;
     if (greetingEarlyLastSessionInfo && !session.lastSessionInfo) {
       session.lastSessionInfo = greetingEarlyLastSessionInfo;
     }
     (session as any).greetingFactsReady = greetingFactsReady.then(() => {
       (session as any).greetingFirstName = greetingFirstName;
+      // DEV-COMHU-0513: the proactive opener resolves with the rest of the fast
+      // facts; copy it onto the session so the greeting builder can prefer it.
+      (session as any).greetingProactiveLine = greetingProactiveLine;
       // Idempotent with the heavy bootstrap block, which also sets this later.
       if (greetingEarlyLastSessionInfo && !session.lastSessionInfo) {
         session.lastSessionInfo = greetingEarlyLastSessionInfo;

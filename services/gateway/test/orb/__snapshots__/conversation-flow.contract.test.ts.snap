@@ -28,5 +28,7 @@ exports[`Vitana conversation-flow contract — 10 standard scenarios INVARIANT B
 #13 match-activity/mutual+schedulable (advice #3)
    → "Du hast ein gegenseitiges hike-Match — lass uns gleich einen Termin festmachen, ich trage ihn dir direkt in den Kalender ein."
 #14 real-life-invite/exercise→walk (advice #4)
-   → "Du machst das gerade richtig stark. Solche Dinge halten noch besser, wenn man sie teilt — lass uns jemanden einladen, mit dir einen Spaziergang zu machen. Ich helfe dir, die Einladung rauszuschicken.""
+   → "Du machst das gerade richtig stark. Solche Dinge halten noch besser, wenn man sie teilt — lass uns jemanden einladen, mit dir einen Spaziergang zu machen. Ich helfe dir, die Einladung rauszuschicken."
+#15 fast-proactive-opener (DEV-COMHU-0513)
+   → "Guten Morgen, Maria. Dein Bereich Schlaf ist diese Woche gesunken — lass uns das gemeinsam umkehren, ich zeige dir den ersten Schritt.""
 `;

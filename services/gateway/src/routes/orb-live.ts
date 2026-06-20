@@ -7441,6 +7441,34 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
             ]);
             if (ws.readyState !== WebSocket.OPEN) return;
 
+            // DEV-COMHU-0513 (proactive fast greeting): when the fast pre-fetch
+            // produced a SHORT proactive opener (name + concrete next step /
+            // weakness lead), speak THAT instead of the generic SHORT_GAP phrase
+            // or the bare "Good <tod>, <Name>". It is kept to ~2 short sentences
+            // so Gemini Live reliably emits audio. This is the top of the fast-
+            // greeting ladder: proactive line → name greeting → generic opener.
+            const proactiveLine: unknown = (session as any).greetingProactiveLine;
+            if (typeof proactiveLine === 'string' && proactiveLine.trim().length > 0) {
+              const safeProactive = proactiveLine.trim().replace(/"/g, '\\"');
+              const proactivePrompt =
+                `Say exactly: "${safeProactive}" — speak it verbatim as audio, as ONE greeting. Do NOT add, paraphrase, or split it.`;
+              ws.send(
+                JSON.stringify({
+                  client_content: { turns: [{ role: 'user', parts: [{ text: proactivePrompt }] }], turn_complete: true },
+                }),
+              );
+              emitDiag(session, 'greeting_sent', {
+                lang,
+                prompt_len: proactivePrompt.length,
+                wake_opener: 'safe_fast_proactive',
+              });
+              startResponseWatchdog(session, getGreetingResponseTimeoutMs(), 'greeting_timeout');
+              console.log(
+                `[GREETING-SAFE-FAST-PROACTIVE] session ${session.sessionId} sent proactive fast opener (lang=${lang})`,
+              );
+              return;
+            }
+
             const temporal = describeTimeSince((session as any).lastSessionInfo);
             const firstName = (session as any).greetingFirstName;
             const isNewDay =
