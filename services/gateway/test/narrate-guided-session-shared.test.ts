@@ -28,11 +28,17 @@ function makeSb(opts: {
   stateData?: { completed_topic_ids?: string[]; current_session?: number } | null;
   topics?: Array<Record<string, unknown>>;
   topicsError?: { message: string } | null;
-}): any {
+}, upserts?: Array<Record<string, unknown>>): any {
   return {
     from(table: string) {
       if (table === 'user_guided_journey_state') {
-        return { select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: opts.stateData ?? null, error: null }) }) }) };
+        return {
+          select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: opts.stateData ?? null, error: null }) }) }),
+          upsert: async (row: Record<string, unknown>) => {
+            upserts?.push(row);
+            return { error: null };
+          },
+        };
       }
       if (table === 'journey_checklist_topics') {
         const res = { data: opts.topics ?? [], error: opts.topicsError ?? null };
@@ -89,6 +95,23 @@ describe('tool_narrate_guided_session', () => {
     const r = await tool_narrate_guided_session({} as any, IDENT, sb);
     expect((r as any).result.has_script).toBe(false);
     expect(r.text).toMatch(/No authored script/i);
+  });
+
+  it('PROGRESSION: marks the narrated topic complete (green + advance) via upsert', async () => {
+    const upserts: Array<Record<string, unknown>> = [];
+    const sb = makeSb({ stateData: { completed_topic_ids: [], current_session: 1 }, topics: TOPICS }, upserts);
+    await tool_narrate_guided_session({} as any, IDENT, sb);
+    expect(upserts).toHaveLength(1);
+    expect(upserts[0].completed_topic_ids).toEqual(['t1']); // session 1 now green
+    expect(upserts[0].current_session).toBe(1);
+  });
+
+  it('FAIL-OPEN: a checklist read error never dead-ends ("das hat nicht geklappt")', async () => {
+    const sb = makeSb({ stateData: { completed_topic_ids: [], current_session: 1 }, topicsError: { message: 'relation does not exist' } });
+    const r = await tool_narrate_guided_session({} as any, IDENT, sb);
+    expect(r.ok).toBe(true); // NOT a hard failure
+    expect((r as any).result.degraded).toBe(true);
+    expect(r.text).toMatch(/Guided Journey/i);
   });
 
   it('missing user_id → ok:false', async () => {
