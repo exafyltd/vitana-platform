@@ -5398,7 +5398,30 @@ async function executeLiveApiToolInner(
         );
       }
 
-      // VTID-03112 (T1): Teacher Mode tool handlers. The LLM calls these
+      // DEV-COMHU: speak the next Guided Journey session's FULL authored script.
+      // (Without this Vertex case the tool hit the default → "Unknown tool" →
+      // "Das hat nicht geklappt".) Mirrors get_life_compass.
+      case 'narrate_guided_session': {
+        const SUPABASE_URL = process.env.SUPABASE_URL;
+        const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
+        if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
+          return { success: false, result: '', error: 'Service unavailable — Supabase creds not configured' };
+        }
+        const { createClient } = await import('@supabase/supabase-js');
+        const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE);
+        const { dispatchOrbToolForVertex } = await import('../services/orb-tools-shared');
+        return await dispatchOrbToolForVertex(
+          toolName,
+          args ?? {},
+          {
+            user_id: lens.user_id,
+            tenant_id: lens.tenant_id ?? null,
+            role: session.identity?.role ?? null,
+            vitana_id: session.identity?.vitana_id ?? null,
+          },
+          supabase,
+        );
+      }
       // during Teacher Mode (system_instruction block injected at session
       // start when wakeBriefDecision picked the Teacher). The model
       // decides WHEN to call based on the user's transcribed reply —

@@ -4372,7 +4372,17 @@ export async function tool_narrate_guided_session(
       .order('position', { ascending: true })
       .limit(80);
     if (topics.error) {
-      return { ok: false, error: `narrate_guided_session failed: ${topics.error.message}` };
+      // Fail-OPEN: never dead-end the user with "that didn't work". If the
+      // checklist can't be read, tell Vitana to introduce the onboarding step
+      // from her own knowledge instead.
+      return {
+        ok: true,
+        result: { has_script: false, degraded: true },
+        text:
+          'Begin the Vitanaland Guided Journey: introduce the first onboarding step clearly and concretely ' +
+          'from your own knowledge of the app (several sentences, not one line) — e.g. what the Vitana Index is ' +
+          'and how it works — then offer to continue with the next step. Do NOT say it did not work and do NOT ask "what do you want".',
+      };
     }
     type Row = {
       topic_id: string;
@@ -4391,6 +4401,22 @@ export async function tool_narrate_guided_session(
           'JOURNEY COMPLETE: the user has finished every Guided Journey session. ' +
           'Congratulate them warmly in one or two sentences and offer to go one level deeper. Do NOT ask "what do you want to do".',
       };
+    }
+
+    // PROGRESSION: mark this session as done so it turns green on the Guided
+    // Journey screen AND the NEXT call advances to the following session
+    // (1 → 2 → 3 …, never repeating). Best-effort: a write failure must not
+    // block the narration.
+    try {
+      const newCompleted = Array.from(new Set([...completed, next.topic_id]));
+      await sb
+        .from('user_guided_journey_state')
+        .upsert(
+          { user_id: identity.user_id, completed_topic_ids: newCompleted, current_session: Math.max(fromSession, next.session) },
+          { onConflict: 'user_id' },
+        );
+    } catch {
+      /* progression is best-effort; the narration still returns below */
     }
     const title = (next.title || next.display_label || 'diese Session').trim();
     const script = (next.vitana_voice_script || next.short_description || '').trim();
@@ -4412,7 +4438,15 @@ export async function tool_narrate_guided_session(
         `After you finish speaking it, briefly offer to continue with the next session.\n\n${script}`,
     };
   } catch (e: any) {
-    return { ok: false, error: `narrate_guided_session failed: ${e?.message || e}` };
+    // Fail-OPEN — never surface "that didn't work" to the user.
+    console.warn(`[narrate_guided_session] non-fatal: ${e?.message || e}`);
+    return {
+      ok: true,
+      result: { has_script: false, degraded: true },
+      text:
+        'Begin the Vitanaland Guided Journey: introduce the first onboarding step clearly from your own knowledge ' +
+        '(several sentences), then offer to continue. Do NOT say it did not work and do NOT ask "what do you want".',
+    };
   }
 }
 
