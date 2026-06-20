@@ -34,6 +34,7 @@ import {
 } from '../../src/services/guide/conversation-flow-v3';
 import { renderLine as renderMatchLine } from '../../src/services/assistant-continuation/providers/next-action/sources/match-activity-plan';
 import { pickInviteActivity, buildInviteProposal } from '../../src/services/guide/real-life-invite';
+import { buildFastProactiveOpener } from '../../src/services/assistant-continuation/providers/login-briefing';
 import { buildLiveSystemInstruction } from '../../src/orb/live/instruction/live-system-instruction';
 
 // The passive-question gate. Any match in a SPOKEN opener = RULE 0 violation.
@@ -166,6 +167,16 @@ function buildScenarios(): Scenario[] {
   // #14 — advice #4: inspire inviting someone to a real-life activity.
   const inviteLine = buildInviteProposal('de', pickInviteActivity({ strongestPillar: 'exercise', dateKey: '2026-06-18' }));
   out.push({ n: 14, label: 'real-life-invite/exercise→walk (advice #4)', line: inviteLine, spoken: true });
+
+  // #15 — DEV-COMHU-0513: the SHORT proactive opener spoken on the fast path
+  // (replaces the generic "Lass uns weitermachen" canned phrase).
+  const fastProactive = buildFastProactiveOpener({
+    lang: 'de',
+    salutation: 'morning',
+    firstName: 'Maria',
+    facts: { ...BASE, weakestPillarDrop: { pillar: 'sleep', deltaDown: 6 }, primaryGoalLabel: 'besser schlafen' },
+  });
+  out.push({ n: 15, label: 'fast-proactive-opener (DEV-COMHU-0513)', line: fastProactive, spoken: true });
 
   return out;
 }

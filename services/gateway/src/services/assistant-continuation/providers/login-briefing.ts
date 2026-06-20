@@ -619,3 +619,144 @@ function readWeakestPillarDrop(snap: unknown): { pillar: PillarKey; deltaDown: n
   if (!PILLAR_KEYS.includes(pillar as PillarKey)) return null;
   return { pillar: pillar as PillarKey, deltaDown: Math.abs(Math.round(delta)) };
 }
+
+// ---------------------------------------------------------------------------
+// FAST-PATH PROACTIVE OPENER (DEV-COMHU-0513 — proactive greeting on the fast
+// path). The SAFE-FAST greeting fires BEFORE the heavy wake-brief context (and
+// thus the full renderBriefingLine opener) is ready, so it used to speak a
+// generic SHORT_GAP phrase ("Lass uns weitermachen"). These helpers compute a
+// SHORT but genuinely PROACTIVE opener from a fast parallel pre-fetch, so the
+// fast path can speak it instead. Deliberately ~2 short sentences: long
+// greetings make Gemini Live stall → NO audio (see orb-live.ts:7400), so the
+// full weakness/progress richness flows in the NEXT turn, not the opener.
+// ---------------------------------------------------------------------------
+
+/**
+ * Build a short, proactive fast-path opener: salutation + name + exactly ONE
+ * concrete next-step / weakness lead. Always a PROPOSAL + lead (RULE 0), never a
+ * passive question. Pure; exported for tests.
+ */
+export function buildFastProactiveOpener(args: RenderArgs): string {
+  const de = args.lang === 'de';
+  const prefix = salutationPrefix(args.lang, args.salutation, args.firstName);
+  const f = args.facts;
+  const state = pickBriefingState(f);
+
+  // Priority of the single proactive beat: weakness > graduated > orient > continue.
+  const drop = f.weakestPillarDrop;
+  if (drop && drop.deltaDown >= MATERIAL_PILLAR_DROP) {
+    const pillar = pillarLabelLocalized(args.lang, drop.pillar);
+    return [
+      prefix,
+      de
+        ? `Dein Bereich ${pillar} ist diese Woche gesunken — lass uns das gemeinsam umkehren, ich zeige dir den ersten Schritt.`
+        : `Your ${pillar} slipped this week — let's turn it around together, I'll show you the first step.`,
+    ].join(' ');
+  }
+  if (state === 'graduated') {
+    return [
+      prefix,
+      de
+        ? 'Du hast deine Journey gemeistert — lass uns eine Stufe tiefer gehen, ich zeige dir den ersten Schritt.'
+        : "You've mastered your journey — let's go one level deeper, I'll show you the first step.",
+    ].join(' ');
+  }
+  if (state === 'orient') {
+    return [
+      prefix,
+      de
+        ? 'Lass uns dein persönliches Ziel setzen — ich starte das gleich mit dir.'
+        : "Let's set your personal goal — I'll start it with you now.",
+    ].join(' ');
+  }
+  // building / momentum / returning → continue the journey at the next session.
+  const where = f.nextSessionTitle
+    ? de
+      ? `bei „${f.nextSessionTitle}"`
+      : `with "${f.nextSessionTitle}"`
+    : de
+      ? 'bei deinem nächsten Schritt'
+      : 'with your next step';
+  return [
+    prefix,
+    de ? `Lass uns ${where} weitermachen — ich führe dich.` : `Let's continue ${where} — I'll guide you.`,
+  ].join(' ');
+}
+
+/**
+ * Fast, parallel gather of the BriefingFacts the fast proactive opener needs.
+ * Mirrors the provider's reads but standalone so the SAFE-FAST greeting path can
+ * compute a proactive line within its bounded window. Fail-open: any read
+ * failure degrades that fact to a safe default; the opener still renders.
+ */
+export async function gatherBriefingFactsForFastOpener(
+  supabase: SupabaseClient,
+  userId: string,
+  lang: string,
+  nowMs: number,
+  timezone: string | null,
+): Promise<BriefingFacts> {
+  const [journeyState, userJourney, lifeCompass, indexSnap] = await Promise.all([
+    getJourneyState(supabase, userId).catch(() => null),
+    fetchUserJourneyRow(supabase, userId).catch(() => null),
+    fetchLifeCompass(supabase, userId).catch(() => null),
+    fetchVitanaIndexForProfiler(supabase, userId).catch(() => null),
+  ]);
+  const currentSession =
+    journeyState && Number.isFinite(journeyState.currentSession) ? Math.max(1, journeyState.currentSession) : 1;
+  const sessionsCompleted = Math.max(0, currentSession - 1);
+  const graduated =
+    journeyState?.onboardingStatus === 'qualified' || journeyState?.onboardingStatus === 'completed';
+  const { title: nextSessionTitle, totalTopics } = await resolveCurriculumFacts(supabase, lang, currentSession);
+  const trend = readIndexTrend(indexSnap);
+  const indexDeltaUp = trend !== null && trend >= MATERIAL_INDEX_DELTA ? trend : null;
+  const todayIso = todayInTimezone(new Date(nowMs), timezone);
+  const daysSinceLastSession = dayDiff(todayIso, userJourney?.last_session_date ?? null);
+  const primaryGoalRaw = (lifeCompass as { primary_goal?: unknown } | null)?.primary_goal;
+  const primaryGoalLabel =
+    typeof primaryGoalRaw === 'string' && primaryGoalRaw.trim().length > 0 ? primaryGoalRaw.trim() : null;
+  const topicsLearned = Array.isArray(journeyState?.completedTopicIds) ? journeyState.completedTopicIds.length : 0;
+  return {
+    sessionsCompleted,
+    nextSessionNumber: currentSession,
+    nextSessionTitle,
+    graduated,
+    hasGoal: !!primaryGoalLabel,
+    indexDeltaUp,
+    daysSinceLastSession,
+    weakestPillarDrop: readWeakestPillarDrop(indexSnap),
+    primaryGoalLabel,
+    topicsLearned,
+    topicsTotal: totalTopics,
+  };
+}
+
+/**
+ * One-call entry point for the SAFE-FAST greeting path: gather facts fast +
+ * render the short proactive opener. Returns null on any failure so the caller
+ * cleanly falls back to the name / generic opener. Salutation is derived from
+ * the timezone (consistent with the provider).
+ */
+export async function computeFastProactiveOpener(args: {
+  supabase: SupabaseClient;
+  userId: string;
+  lang: string;
+  firstName: string | null;
+  timezone: string | null;
+  nowMs: number;
+}): Promise<string | null> {
+  try {
+    const facts = await gatherBriefingFactsForFastOpener(
+      args.supabase,
+      args.userId,
+      args.lang,
+      args.nowMs,
+      args.timezone,
+    );
+    const salutation = pickSalutationKind(localHourInTimezone(new Date(args.nowMs), args.timezone));
+    const line = buildFastProactiveOpener({ lang: args.lang, salutation, firstName: args.firstName, facts });
+    return line && line.trim().length > 0 ? line : null;
+  } catch {
+    return null;
+  }
+}
