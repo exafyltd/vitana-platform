@@ -551,6 +551,7 @@ export const NAVIGATION_CATALOG: ReadonlyArray<NavCatalogEntry> = [
     category: 'autopilot',
     access: 'authenticated',
     anonymous_safe: false,
+    aliases: ['journey', 'my-journey', 'meine-journey', 'autopilot', 'autopilot-dashboard', 'autopilot-journey', '90-day-journey', '90-day-plan', 'meine-reise'],
     i18n: {
       en: {
         title: 'My Journey',
@@ -3111,6 +3112,21 @@ export function searchCatalog(
     const hintWords = buildWordSet(hintLower);
     const descWords = buildWordSet(descLower);
 
+    // NAV-PHASE: language-agnostic brand PHRASES. A German user says the English
+    // brand name ("Life Compass", "My Journey") even in a German session, but
+    // the active-language i18n content uses the translated term ("Lebenskompass",
+    // "Reise"). The curated multi-word `aliases` carry the canonical brand name;
+    // match them as CONTIGUOUS phrases so distinctive brand navigation works
+    // regardless of UI language. Single-word aliases are intentionally excluded
+    // — generic words ("profile", "results", "matches") would false-positive.
+    const brandPhrases: string[] = [];
+    if (entry.aliases) {
+      for (const a of entry.aliases) {
+        const norm = a.toLowerCase().replace(/[-_]+/g, ' ').trim();
+        if (norm.includes(' ')) brandPhrases.push(norm);
+      }
+    }
+
     let score = 0;
 
     // Direct phrase match (highest signal — query appears verbatim somewhere)
@@ -3160,6 +3176,16 @@ export function searchCatalog(
     // a multi-token query.
     if (effectiveTokens.length > 1 && matchedTokens.size >= effectiveTokens.length) {
       score += effectiveTokens.length * 6;
+    }
+
+    // Language-agnostic brand-phrase RESCUE: only when the active-language
+    // content matched nothing (score still 0). This targets exactly the
+    // cross-language case (English brand name in a German session) without ever
+    // overriding a real content match or perturbing intra-family ranking.
+    if (score === 0 && brandPhrases.length > 0) {
+      for (const ph of brandPhrases) {
+        if (lowerQuery.includes(ph)) { score += 12; break; }
+      }
     }
 
     // Priority boost for promoted destinations (Maxina growth focus).
