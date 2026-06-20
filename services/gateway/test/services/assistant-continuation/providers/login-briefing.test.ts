@@ -293,10 +293,11 @@ describe('buildFastProactiveOpener (proactive fast greeting)', () => {
     expect(line).toContain('ich führe dich');
   });
 
-  it('orient (no progress) → proposes setting the goal', () => {
+  it('orient (first-time) → proposes the Guided Journey (session one), not a standalone goal', () => {
     const line = mk({ sessionsCompleted: 0, hasGoal: false });
-    expect(line).toContain('Ziel');
-    expect(line).toContain('ich starte das gleich mit dir');
+    expect(line).toContain('Vitanaland');
+    expect(line).toContain('Session');
+    expect(line).not.toContain('persönliches Ziel'); // no chaotic standalone goal proposal
   });
 
   it('stays SHORT (audio-safe) and RULE-0 clean across states/langs', () => {

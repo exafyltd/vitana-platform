@@ -662,11 +662,13 @@ export function buildFastProactiveOpener(args: RenderArgs): string {
     ].join(' ');
   }
   if (state === 'orient') {
+    // Immediate fix (first-time users): channel into the Guided Journey, not a
+    // standalone goal/profile proposal (that was the chaotic, confusing path).
     return [
       prefix,
       de
-        ? 'Lass uns dein persönliches Ziel setzen — ich starte das gleich mit dir.'
-        : "Let's set your personal goal — I'll start it with you now.",
+        ? 'Ich nehme dich Schritt für Schritt durch Vitanaland — sollen wir mit deiner ersten Session starten?'
+        : "I'll take you through Vitanaland step by step — shall we start with your first session?",
     ].join(' ');
   }
   // building / momentum / returning → continue the journey at the next session.
