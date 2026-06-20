@@ -947,6 +947,28 @@ export function buildLiveApiTools(
             properties: {},
           },
         },
+        {
+          name: 'narrate_guided_session',
+          description: [
+            'Speak the FULL authored script of the user\'s next Guided Journey session.',
+            'The Guided Journey is the ordered onboarding catalog (94 sessions / 254 topics)',
+            'that teaches a new user how to use Vitanaland, one session at a time.',
+            '',
+            'CALL THIS the moment the user AGREES to start or continue the Guided Journey —',
+            'e.g. you asked "Sollen wir mit Session eins starten?" and they say',
+            '"ja" / "yes" / "los" / "mach" / "weiter" / "nächste Session" / "start".',
+            '',
+            'It returns the next un-learned session\'s AUTHORED script in the result text.',
+            'You MUST then speak that script to the user IN FULL, word for word, as audio —',
+            'it is the real session content, not a hint. NEVER replace it with a one-line',
+            'summary, NEVER paraphrase or shorten it. After you finish speaking the whole',
+            'script, briefly offer to continue with the next session.',
+          ].join('\n'),
+          parameters: {
+            type: 'object',
+            properties: {},
+          },
+        },
         // ─── BOOTSTRAP-ORB-INDEX-AWARENESS-R4 — Vitana Index tools (5-pillar) ───
         {
           name: 'get_vitana_index',
