@@ -2333,9 +2333,19 @@ async function executeLiveApiTool(
   // which can exceed the default 3 s. Replenishment is skipped inline for voice
   // (the popup auto-generates on next open) so these stay bounded.
   const AUTOPILOT_VOICE_TOOLS = new Set(['get_autopilot_recommendations', 'activate_autopilot_recommendations']);
+  // BOOTSTRAP-FIND-MATCH-CLASSIFY-FIX: the community intent tools run TWO
+  // sequential Gemini calls (classify → extract) plus an embed + catalog
+  // search before they can answer. While the classifier was broken it failed
+  // instantly (confidence 0), so it never approached the 3 s cap; with the
+  // corrected gemini-2.5 classifier/extractor the round-trip legitimately runs
+  // ~3-4 s, so the tool timed out at 3000ms and the model apologised ("Das
+  // Posten klappt gerade nicht") even though the row was already inserted in
+  // the background. Give them the same extended budget as the Autopilot tools.
+  const INTENT_VOICE_TOOLS = new Set(['find_match', 'post_intent', 'scan_existing_matches']);
   const TOOL_TIMEOUT_MS =
     toolName === 'consult_external_ai' ? 16_000 :
     AUTOPILOT_VOICE_TOOLS.has(toolName) ? 12_000 :
+    INTENT_VOICE_TOOLS.has(toolName) ? 12_000 :
     3_000;
 
   // BOOTSTRAP-ORB-LATENCY-PHASE2: read-only retrieval tools are cacheable
