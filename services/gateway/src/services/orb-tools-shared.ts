@@ -4338,6 +4338,84 @@ export async function tool_find_community_member(
 // Registry + dispatcher
 // ---------------------------------------------------------------------------
 
+/**
+ * DEV-COMHU — narrate the next Guided Journey session by VOICE. Fetches the
+ * next un-learned topic's AUTHORED full script (vitana_voice_script, the exact
+ * speech the tap-to-open path plays) and returns it under a strict "speak it in
+ * full, verbatim" contract. This is what makes "yes, start session one" play the
+ * REAL session speech instead of a one-line LLM improvisation.
+ */
+export async function tool_narrate_guided_session(
+  _args: OrbToolArgs,
+  identity: OrbToolIdentity,
+  sb: SupabaseClient,
+): Promise<OrbToolResult> {
+  if (!identity.user_id) {
+    return { ok: false, error: 'narrate_guided_session requires an authenticated user.' };
+  }
+  try {
+    const state = await sb
+      .from('user_guided_journey_state')
+      .select('completed_topic_ids, current_session')
+      .eq('user_id', identity.user_id)
+      .maybeSingle();
+    const completed = new Set<string>((state.data?.completed_topic_ids as string[] | null | undefined) ?? []);
+    const fromSession = Math.max(1, Number(state.data?.current_session ?? 1) || 1);
+
+    const topics = await sb
+      .from('journey_checklist_topics')
+      .select('topic_id, title, display_label, short_description, vitana_voice_script, session, position')
+      .eq('status', 'published')
+      .eq('enabled', true)
+      .gte('session', fromSession)
+      .order('session', { ascending: true })
+      .order('position', { ascending: true })
+      .limit(80);
+    if (topics.error) {
+      return { ok: false, error: `narrate_guided_session failed: ${topics.error.message}` };
+    }
+    type Row = {
+      topic_id: string;
+      title: string | null;
+      display_label: string | null;
+      short_description: string | null;
+      vitana_voice_script: string | null;
+      session: number;
+    };
+    const next = (topics.data as Row[] | null | undefined ?? []).find((r) => !completed.has(r.topic_id));
+    if (!next) {
+      return {
+        ok: true,
+        result: { done: true },
+        text:
+          'JOURNEY COMPLETE: the user has finished every Guided Journey session. ' +
+          'Congratulate them warmly in one or two sentences and offer to go one level deeper. Do NOT ask "what do you want to do".',
+      };
+    }
+    const title = (next.title || next.display_label || 'diese Session').trim();
+    const script = (next.vitana_voice_script || next.short_description || '').trim();
+    if (!script) {
+      return {
+        ok: true,
+        result: { session: next.session, topic_id: next.topic_id, topic_title: title, has_script: false },
+        text:
+          `SESSION ${next.session} — "${title}". No authored script exists yet for this topic. ` +
+          `Introduce it clearly and concretely from your own knowledge (several sentences, not one line), then guide the user to the practice. Do NOT ask "what do you want".`,
+      };
+    }
+    return {
+      ok: true,
+      result: { session: next.session, topic_id: next.topic_id, topic_title: title, has_script: true },
+      text:
+        `SESSION ${next.session} — "${title}". SPEAK THE FOLLOWING SCRIPT TO THE USER IN FULL, WORD FOR WORD, AS AUDIO. ` +
+        `Do NOT summarize, shorten, translate, or paraphrase it — it IS the actual session content and must be delivered complete. ` +
+        `After you finish speaking it, briefly offer to continue with the next session.\n\n${script}`,
+    };
+  } catch (e: any) {
+    return { ok: false, error: `narrate_guided_session failed: ${e?.message || e}` };
+  }
+}
+
 type OrbToolHandler = (
   args: OrbToolArgs,
   identity: OrbToolIdentity,
@@ -4345,6 +4423,7 @@ type OrbToolHandler = (
 ) => Promise<OrbToolResult>;
 
 export const ORB_TOOL_REGISTRY: Record<string, OrbToolHandler> = {
+  narrate_guided_session: tool_narrate_guided_session,
   search_memory: tool_search_memory,
   search_web: tool_search_web,
   recall_conversation_at_time: tool_recall_conversation_at_time,

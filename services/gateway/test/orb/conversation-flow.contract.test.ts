@@ -242,4 +242,13 @@ describe('Vitana RULE 0 prompt contract — governs every improvised LLM turn', 
     expect(gj).toMatch(/COHERENCE IS ABSOLUTE/);
     expect(gj).toMatch(/Community Members/); // names the exact forbidden jump the user hit
   });
+
+  // On "yes", Vitana must call narrate_guided_session and speak the FULL script.
+  it('mandates narrate_guided_session + full-script delivery on agreement (not a one-liner)', () => {
+    const full = buildLiveSystemInstruction('de', 'warm', undefined, 'community');
+    const gj = full.slice(full.indexOf('GUIDED JOURNEY — YOUR COHERENT THROUGH-LINE'), full.indexOf('GREETING RULES (CRITICAL)'));
+    expect(gj).toMatch(/narrate_guided_session/);
+    expect(gj).toMatch(/IN FULL/);
+    expect(gj).toMatch(/one-sentence introduction|one-line intro/i); // bans the observed failure
+  });
 });
