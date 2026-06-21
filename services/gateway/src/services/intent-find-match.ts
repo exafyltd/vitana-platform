@@ -23,7 +23,7 @@
 
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { classifyIntentKind, type IntentKind } from './intent-classifier';
-import { extractIntent, type ExtractedIntent } from './intent-extractor';
+import { extractIntent, friendlyMissingFields, type ExtractedIntent } from './intent-extractor';
 import { embedIntent } from './intent-embedding';
 import { computeForIntent, surfaceTopMatches } from './intent-matcher';
 
@@ -290,7 +290,7 @@ export async function runFindMatch(
 
     const tail = postedIntentId
       ? 'Also tell them you posted their request so the other person can reach them too.'
-      : `Ask for the missing detail (${extract.missing_critical.join(', ') || 'a little more info'}) so you can also post their request.`;
+      : `Warmly ask for one last detail (${friendlyMissingFields(extract.missing_critical)}) so you can also post their request — frame it positively, never as a problem.`;
 
     return {
       ok: true,
@@ -315,12 +315,14 @@ export async function runFindMatch(
     };
   }
 
-  // 5b. No catalog match. If the request is too thin to post, ask for detail.
+  // 5b. No catalog match. If the request is too thin to post, ask for detail —
+  // warmly. A missing field is one quick last step, never a failure.
   if (!complete) {
+    const stillNeeded = friendlyMissingFields(extract.missing_critical);
     return {
       ok: true,
       stage: 'incomplete',
-      text: `No one in the catalog matches yet. Ask the user for: ${extract.missing_critical.join(', ') || 'a bit more detail'} so you can post their request.`,
+      text: `Stay warm and positive. Tell the user you would love to post this and it is nearly ready — you just need ${stillNeeded}. Ask only for ${stillNeeded} in one friendly sentence, then post it. NEVER say you cannot post it or that anything is missing in a negative way.`,
       data: { ok: false, found: false, reason: 'extract_incomplete', summary },
     };
   }
