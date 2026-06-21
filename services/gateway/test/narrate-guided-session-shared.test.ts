@@ -145,6 +145,45 @@ describe('tool_narrate_guided_session', () => {
     expect(r.text).toContain('to 2'); // max session is 2
   });
 
+  // A session with 2–3 topics: play one at a time, report how many remain.
+  const SESSION15 = [
+    { topic_id: 's15a', title: 'Index Grundlagen', display_label: null, short_description: '', vitana_voice_script: 'Session 15, Thema eins.', session: 15, position: 1 },
+    { topic_id: 's15b', title: 'Index vertiefen', display_label: null, short_description: '', vitana_voice_script: 'Session 15, Thema zwei.', session: 15, position: 2 },
+    { topic_id: 's15c', title: 'Index anwenden', display_label: null, short_description: '', vitana_voice_script: 'Session 15, Thema drei.', session: 15, position: 3 },
+  ];
+
+  it('SESSION with multiple topics: plays the FIRST topic + reports the remaining count', async () => {
+    const sb = makeSb({ stateData: { completed_topic_ids: [], current_session: 1 }, topics: SESSION15 });
+    const r = await tool_narrate_guided_session({ session_number: 15 } as any, IDENT, sb);
+    expect((r as any).result.topic_id).toBe('s15a'); // first topic of session 15
+    expect((r as any).result.remaining_in_session).toBe(2); // 2 more topics in the session
+    expect(r.text).toContain('Session 15, Thema eins.');
+    expect(r.text).toMatch(/2 more topics in session 15/i);
+  });
+
+  it('SESSION topic-by-topic: after the first is heard, the next "session 15" plays topic two', async () => {
+    const sb = makeSb({ stateData: { completed_topic_ids: ['s15a'], current_session: 15 }, topics: SESSION15 });
+    const r = await tool_narrate_guided_session({ session_number: 15 } as any, IDENT, sb);
+    expect((r as any).result.topic_id).toBe('s15b'); // advanced to topic two
+    expect((r as any).result.remaining_in_session).toBe(1);
+  });
+
+  it('NAMED topic: topic_query matches the specific topic across the catalog', async () => {
+    const sb = makeSb({ stateData: { completed_topic_ids: [], current_session: 1 }, topics: SESSION15 });
+    const r = await tool_narrate_guided_session({ topic_query: 'Index vertiefen' } as any, IDENT, sb);
+    expect((r as any).result.topic_id).toBe('s15b');
+    expect(r.text).toContain('Session 15, Thema zwei.');
+  });
+
+  it('NAMED topic: no match → not_found_topic, no dead-end', async () => {
+    const sb = makeSb({ stateData: { completed_topic_ids: [], current_session: 1 }, topics: SESSION15 });
+    const r = await tool_narrate_guided_session({ topic_query: 'völlig unbekannt' } as any, IDENT, sb);
+    expect(r.ok).toBe(true);
+    expect((r as any).result.not_found_topic).toBe(true);
+    expect(r.text).toMatch(/couldn't find/i);          // names the miss
+    expect(r.text).toMatch(/offer to play a session/i); // and offers a real alternative
+  });
+
   it('missing user_id → ok:false', async () => {
     const r = await tool_narrate_guided_session({} as any, { user_id: null } as any, makeSb({}));
     expect(r.ok).toBe(false);

@@ -964,16 +964,25 @@ export function buildLiveApiTools(
             'summary, NEVER paraphrase or shorten it. After you finish speaking the whole',
             'script, briefly offer to continue with the next session.',
             '',
+            'Each session has 2–3 topics; this plays ONE topic at a time and tells you how many',
+            'remain in the session, so on "more"/"yes" you call it again for the next topic.',
+            '',
             'If the user asks for a SPECIFIC session ("play session three", "spiel mir Session 3",',
-            '"repeat session two"), pass that number as session_number. Otherwise omit it and the',
-            'next un-learned session is played.',
+            '"repeat session two"), pass that number as session_number — it plays the first topic',
+            'of that session. If the user NAMES a topic ("play the topic about the Vitana Index",',
+            '"das Thema Schlaf"), pass it as topic_query to match that exact topic. Otherwise omit',
+            'both and the next un-learned topic is played.',
           ].join('\n'),
           parameters: {
             type: 'object',
             properties: {
               session_number: {
                 type: 'integer',
-                description: 'Optional. The specific session number the user asked for (e.g. 3). Omit to play the next un-learned session.',
+                description: 'Optional. The session number the user asked for (e.g. 15). Plays the first un-heard topic of that session.',
+              },
+              topic_query: {
+                type: 'string',
+                description: 'Optional. A topic name/keyword the user named (e.g. "Vitana Index", "Schlaf"). Matches that specific topic across all 254.',
               },
             },
           },
