@@ -172,6 +172,35 @@ describe('tool_narrate_guided_session', () => {
     { topic_id: 's15c', title: 'Index anwenden', display_label: null, short_description: '', vitana_voice_script: 'Session 15, Thema drei.', session: 15, position: 3 },
   ];
 
+  it('INFO-ONLY: "what is the title of session 1" returns the real title, does NOT play or mark progress', async () => {
+    const upserts: Array<Record<string, unknown>> = [];
+    const sb = makeSb({ stateData: { completed_topic_ids: [], current_session: 1 }, topics: TOPICS }, upserts);
+    const r = await tool_narrate_guided_session({ session_number: 1, info_only: true } as any, IDENT, sb);
+    expect((r as any).result.info_only).toBe(true);
+    expect((r as any).result.session_title).toBe('Dein Vitana Index'); // the REAL title
+    expect(r.text).toContain('Dein Vitana Index');
+    expect(r.text).not.toContain(TOPICS[0].vitana_voice_script); // does NOT speak the script
+    expect(r.text).toMatch(/do NOT use a Journey\s+Foundation step/i); // guards against the bug
+    expect(upserts).toHaveLength(0); // a question never advances progress
+  });
+
+  it('INFO-ONLY: lists the session\'s topics for a multi-topic session', async () => {
+    const sb = makeSb({ stateData: { completed_topic_ids: [], current_session: 1 }, topics: SESSION15 });
+    const r = await tool_narrate_guided_session({ session_number: 15, info_only: true } as any, IDENT, sb);
+    expect((r as any).result.topic_count).toBe(3);
+    expect((r as any).result.topic_titles).toEqual(['Index Grundlagen', 'Index vertiefen', 'Index anwenden']);
+    expect(r.text).not.toContain('Session 15, Thema eins.'); // no script playback
+  });
+
+  it('INFO-ONLY: session title is STABLE — same title regardless of progress in the session', async () => {
+    // User already heard topic one (s15a). The session TITLE must still be the
+    // session's first-topic title, not drift to topic two.
+    const sb = makeSb({ stateData: { completed_topic_ids: ['s15a'], current_session: 15 }, topics: SESSION15 });
+    const r = await tool_narrate_guided_session({ session_number: 15, info_only: true } as any, IDENT, sb);
+    expect((r as any).result.session_title).toBe('Index Grundlagen'); // first topic, NOT 'Index vertiefen'
+    expect(r.text).toContain('Index Grundlagen');
+  });
+
   it('SESSION with multiple topics: plays the FIRST topic + reports the remaining count', async () => {
     const sb = makeSb({ stateData: { completed_topic_ids: [], current_session: 1 }, topics: SESSION15 });
     const r = await tool_narrate_guided_session({ session_number: 15 } as any, IDENT, sb);
