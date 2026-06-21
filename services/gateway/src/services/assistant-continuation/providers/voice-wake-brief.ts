@@ -239,9 +239,12 @@ export interface VoiceWakeBriefRenderer {
 const DEFAULT_LINES: Record<GreetingPolicy, Record<string, string>> = {
   // Suppressed at provider boundary; never reaches the renderer.
   skip: { en: '', de: '' },
+  // Lead to the next step, NOT "pick up where we left off": this default line
+  // carries no recalled last-session content, so the resume promise is empty and
+  // the user calls it ("I don't remember where we ended").
   brief_resume: {
-    en: "Welcome back. Let's pick up right where we left off.",
-    de: 'Schön, dich wieder zu hören. Lass uns genau dort weitermachen, wo wir aufgehört haben.',
+    en: 'Welcome back. Let me show you your next step.',
+    de: 'Schön, dich wieder zu hören. Lass mich dir deinen nächsten Schritt zeigen.',
   },
   warm_return: {
     en: 'Welcome back. Let me show you where we are.',
