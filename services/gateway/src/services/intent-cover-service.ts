@@ -184,7 +184,7 @@ const THEME_SCENES: Record<
     subject:
       'seated, microphone in hand, smiling warmly at the camera',
     location:
-      'a warm panel-discussion lounge with soft lighting and a small audience',
+      'a warm panel-discussion lounge with soft lighting and rows of empty chairs',
     group: 'seated at a long table mid-discussion',
   },
   generic: {
@@ -194,24 +194,19 @@ const THEME_SCENES: Record<
   },
 };
 
-const DEFAULT_COMMUNITY_DEMOGRAPHICS =
-  'predominantly local white/European-presenting adults, reflecting the Mallorca community demographics; any visible minority representation should be incidental and proportionate to the local population';
-
-function communityDemographicGuidance(): string {
-  return (
-    process.env.INTENT_COVER_COMMUNITY_DEMOGRAPHICS?.trim() ||
-    DEFAULT_COMMUNITY_DEMOGRAPHICS
-  );
-}
-
 function describeForegroundSubject(gender: Gender): string {
+  const override = process.env.INTENT_COVER_COMMUNITY_DEMOGRAPHICS?.trim();
+  if (override) {
+    const noun = gender === 'male' ? 'man' : gender === 'female' ? 'woman' : 'adult';
+    return `one smiling ${noun} matching this exact demographic: ${override}`;
+  }
   if (gender === 'male') {
-    return 'one smiling man from the local community, mid-twenties to late-thirties';
+    return 'one smiling white German man of Central or Northern European appearance with light skin, mid-twenties to late-thirties';
   }
   if (gender === 'female') {
-    return 'one smiling woman from the local community, mid-twenties to late-thirties';
+    return 'one smiling white German woman of Central or Northern European appearance with light skin, mid-twenties to late-thirties';
   }
-  return 'one smiling adult from the local community, either a man or a woman, mid-twenties to late-thirties';
+  return 'one smiling white German adult of Central or Northern European appearance with light skin, mid-twenties to late-thirties';
 }
 
 /**
@@ -225,18 +220,15 @@ function describeForegroundSubject(gender: Gender): string {
 export function buildCoverPrompt(theme: CoverTheme, gender: Gender): string {
   const scene = THEME_SCENES[theme] ?? THEME_SCENES.generic;
   const subject = describeForegroundSubject(gender);
-  const demographics = communityDemographicGuidance();
   return [
     'A photorealistic, high-quality DSLR landscape photograph — documentary style,',
     'natural light, shallow depth of field, real human skin and clothing detail.',
     'Absolutely not a cartoon, anime, illustration, painting, 3D render, CGI,',
     'stylised art, or AI-art look. Looks like an unedited modern stock photo.',
-    `Community demographics: ${demographics}.`,
-    `Foreground: ${subject}, ${scene.subject}, in sharp focus, looking warmly at the camera.`,
-    `Background (softly blurred): a small group of men and women matching the same community demographics, ${scene.group}.`,
+    `Visible subject: ${subject}, ${scene.subject}, in sharp focus, looking warmly at the camera.`,
+    'This is a single-person portrait. No other people, group, crowd, background figures, silhouettes, reflections, or additional faces anywhere in the image.',
     `Setting: ${scene.location}.`,
     'Wide 16:9 composition. Friendly, welcoming, optimistic mood.',
-    'Avoid generic stock-photo diversity and do not overrepresent any demographic group relative to the configured community.',
     'No text, no captions, no logos, no watermarks.',
   ].join(' ');
 }

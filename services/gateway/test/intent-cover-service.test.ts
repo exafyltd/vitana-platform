@@ -325,7 +325,11 @@ describe('generateCoverForIntent', () => {
     const sentBody = JSON.parse(vertexFetch.mock.calls[0][1].body) as {
       instances: { prompt: string }[];
     };
-    expect(sentBody.instances[0].prompt).toMatch(/one smiling man/i);
+    expect(sentBody.instances[0].prompt).toMatch(
+      /one smiling white German man of Central or Northern European appearance with light skin/i,
+    );
+    expect(sentBody.instances[0].prompt).toMatch(/single-person portrait/i);
+    expect(sentBody.instances[0].prompt).toMatch(/no other people/i);
     expect(sentBody.instances[0].prompt).toMatch(/dance studio/i);
   });
 
@@ -402,7 +406,9 @@ describe('generateCoverForIntent', () => {
     const sentBody = JSON.parse(vertexFetch.mock.calls[0][1].body) as {
       instances: { prompt: string }[];
     };
-    expect(sentBody.instances[0].prompt).toMatch(/one smiling woman/i);
+    expect(sentBody.instances[0].prompt).toMatch(
+      /one smiling white German woman of Central or Northern European appearance with light skin/i,
+    );
     expect(sentBody.instances[0].prompt).toMatch(/tennis/i);
     // 5 chains: intent, library, universal, rate-limit, persist.
     expect(supabaseMock.from).toHaveBeenCalledTimes(5);
@@ -441,18 +447,24 @@ describe('buildCoverPrompt', () => {
     const male = buildCoverPrompt('tennis', 'male');
     expect(male).toMatch(/photorealistic/i);
     expect(male).toMatch(/not a cartoon/i);
-    expect(male).toMatch(/one smiling man/i);
+    expect(male).toMatch(
+      /one smiling white German man of Central or Northern European appearance with light skin/i,
+    );
     expect(male).toMatch(/tennis/i);
-    expect(male).toMatch(/predominantly local white\/European-presenting/i);
-    expect(male).toMatch(/avoid generic stock-photo diversity/i);
-    expect(male).not.toMatch(/mixed ethnicity|varied ethnicities/i);
+    expect(male).toMatch(/single-person portrait/i);
+    expect(male).toMatch(/no other people/i);
+    expect(male).not.toMatch(/background.*group|predominantly|incidental|proportionate/i);
 
     const female = buildCoverPrompt('cooking', 'female');
-    expect(female).toMatch(/one smiling woman/i);
+    expect(female).toMatch(
+      /one smiling white German woman of Central or Northern European appearance with light skin/i,
+    );
     expect(female).toMatch(/kitchen/i);
 
     const neutral = buildCoverPrompt('panel', null);
-    expect(neutral).toMatch(/either a man or a woman/i);
+    expect(neutral).toMatch(
+      /one smiling white German adult of Central or Northern European appearance with light skin/i,
+    );
   });
 
   it('covers every theme without throwing', async () => {
@@ -474,6 +486,7 @@ describe('buildCoverPrompt', () => {
       expect(p.length).toBeGreaterThan(120);
       expect(p).toMatch(/photorealistic/i);
       expect(p).toMatch(/not a cartoon/i);
+      expect(p).not.toMatch(/small audience/i);
     }
   });
 
@@ -484,8 +497,10 @@ describe('buildCoverPrompt', () => {
     const { buildCoverPrompt } = await import('../src/services/intent-cover-service');
     const prompt = buildCoverPrompt('dance', null);
 
-    expect(prompt).toMatch(/configured test community demographics/i);
-    expect(prompt).not.toMatch(/predominantly local white\/European-presenting/i);
-    expect(prompt).not.toMatch(/mixed ethnicity|varied ethnicities/i);
+    expect(prompt).toMatch(
+      /one smiling adult matching this exact demographic: local residents matching the configured test community demographics/i,
+    );
+    expect(prompt).toMatch(/single-person portrait/i);
+    expect(prompt).toMatch(/no other people/i);
   });
 });
