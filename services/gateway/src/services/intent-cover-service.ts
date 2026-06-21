@@ -184,7 +184,7 @@ const THEME_SCENES: Record<
     subject:
       'seated, microphone in hand, smiling warmly at the camera',
     location:
-      'a warm panel-discussion lounge with soft lighting and rows of empty chairs',
+      'a warm panel-discussion lounge with soft lighting and a small audience',
     group: 'seated at a long table mid-discussion',
   },
   generic: {
@@ -193,6 +193,16 @@ const THEME_SCENES: Record<
     group: 'chatting in small clusters around the room',
   },
 };
+
+const DEFAULT_COMMUNITY_DEMOGRAPHIC =
+  'white German adults of Central or Northern European appearance with light skin';
+
+function communityDemographic(): string {
+  return (
+    process.env.INTENT_COVER_COMMUNITY_DEMOGRAPHICS?.trim() ||
+    DEFAULT_COMMUNITY_DEMOGRAPHIC
+  );
+}
 
 function describeForegroundSubject(gender: Gender): string {
   const override = process.env.INTENT_COVER_COMMUNITY_DEMOGRAPHICS?.trim();
@@ -209,6 +219,14 @@ function describeForegroundSubject(gender: Gender): string {
   return 'one smiling white German adult of Central or Northern European appearance with light skin, mid-twenties to late-thirties';
 }
 
+function describeBackgroundGroup(): string {
+  const override = process.env.INTENT_COVER_COMMUNITY_DEMOGRAPHICS?.trim();
+  if (override) {
+    return `a small social group of 4-6 men and women matching this exact demographic: ${override}`;
+  }
+  return 'a small social group of 4-6 white German men and women of Central or Northern European appearance with light skin';
+}
+
 /**
  * Compose the full Imagen prompt for one (theme, gender) pair.
  *
@@ -220,13 +238,16 @@ function describeForegroundSubject(gender: Gender): string {
 export function buildCoverPrompt(theme: CoverTheme, gender: Gender): string {
   const scene = THEME_SCENES[theme] ?? THEME_SCENES.generic;
   const subject = describeForegroundSubject(gender);
+  const group = describeBackgroundGroup();
+  const demographic = communityDemographic();
   return [
     'A photorealistic, high-quality DSLR landscape photograph — documentary style,',
     'natural light, shallow depth of field, real human skin and clothing detail.',
     'Absolutely not a cartoon, anime, illustration, painting, 3D render, CGI,',
     'stylised art, or AI-art look. Looks like an unedited modern stock photo.',
-    `Visible subject: ${subject}, ${scene.subject}, in sharp focus, looking warmly at the camera.`,
-    'This is a single-person portrait. No other people, group, crowd, background figures, silhouettes, reflections, or additional faces anywhere in the image.',
+    `Foreground: ${subject}, ${scene.subject}, in sharp focus, looking warmly at the camera.`,
+    `Background (softly blurred but visibly social): ${group}, ${scene.group}.`,
+    `Every visible person, including foreground, background, partial, reflected, and audience figures, must match this community demographic: ${demographic}. Do not introduce people with a different demographic appearance.`,
     `Setting: ${scene.location}.`,
     'Wide 16:9 composition. Friendly, welcoming, optimistic mood.',
     'No text, no captions, no logos, no watermarks.',

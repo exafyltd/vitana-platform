@@ -328,8 +328,12 @@ describe('generateCoverForIntent', () => {
     expect(sentBody.instances[0].prompt).toMatch(
       /one smiling white German man of Central or Northern European appearance with light skin/i,
     );
-    expect(sentBody.instances[0].prompt).toMatch(/single-person portrait/i);
-    expect(sentBody.instances[0].prompt).toMatch(/no other people/i);
+    expect(sentBody.instances[0].prompt).toMatch(
+      /background.*small social group of 4-6 white German men and women of Central or Northern European appearance with light skin/i,
+    );
+    expect(sentBody.instances[0].prompt).toMatch(
+      /every visible person.*must match.*white German adults of Central or Northern European appearance with light skin/i,
+    );
     expect(sentBody.instances[0].prompt).toMatch(/dance studio/i);
   });
 
@@ -451,9 +455,13 @@ describe('buildCoverPrompt', () => {
       /one smiling white German man of Central or Northern European appearance with light skin/i,
     );
     expect(male).toMatch(/tennis/i);
-    expect(male).toMatch(/single-person portrait/i);
-    expect(male).toMatch(/no other people/i);
-    expect(male).not.toMatch(/background.*group|predominantly|incidental|proportionate/i);
+    expect(male).toMatch(
+      /background.*small social group of 4-6 white German men and women of Central or Northern European appearance with light skin/i,
+    );
+    expect(male).toMatch(
+      /every visible person.*must match.*white German adults of Central or Northern European appearance with light skin/i,
+    );
+    expect(male).not.toMatch(/single-person portrait|no other people|predominantly|incidental|proportionate/i);
 
     const female = buildCoverPrompt('cooking', 'female');
     expect(female).toMatch(
@@ -486,8 +494,9 @@ describe('buildCoverPrompt', () => {
       expect(p.length).toBeGreaterThan(120);
       expect(p).toMatch(/photorealistic/i);
       expect(p).toMatch(/not a cartoon/i);
-      expect(p).not.toMatch(/small audience/i);
+      expect(p).toMatch(/small social group of 4-6/i);
     }
+    expect(buildCoverPrompt('panel', null)).toMatch(/small audience/i);
   });
 
   it('allows deployments to override the local demographic guidance', async () => {
@@ -500,7 +509,11 @@ describe('buildCoverPrompt', () => {
     expect(prompt).toMatch(
       /one smiling adult matching this exact demographic: local residents matching the configured test community demographics/i,
     );
-    expect(prompt).toMatch(/single-person portrait/i);
-    expect(prompt).toMatch(/no other people/i);
+    expect(prompt).toMatch(
+      /background.*small social group of 4-6 men and women matching this exact demographic: local residents matching the configured test community demographics/i,
+    );
+    expect(prompt).toMatch(
+      /every visible person.*must match.*local residents matching the configured test community demographics/i,
+    );
   });
 });
