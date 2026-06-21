@@ -4464,6 +4464,13 @@ export async function tool_narrate_guided_session(
     const wantsSpecific = Number.isFinite(requested) && requested >= 1;
     const topicQueryRaw = (args as Record<string, unknown>)?.topic_query;
     const topicQuery = typeof topicQueryRaw === 'string' ? topicQueryRaw.trim() : '';
+    // INFO-ONLY: the user is ASKING about a session (its title / what it covers /
+    // which session is which) rather than asking to PLAY it. Return the real
+    // title + description from the catalog — do NOT speak the script, do NOT mark
+    // progress. This is what lets Vitana answer "what is the title of session 1"
+    // correctly instead of guessing from the Journey Foundation steps.
+    const infoRaw = (args as Record<string, unknown>)?.info_only;
+    const infoOnly = infoRaw === true || infoRaw === 'true' || infoRaw === 1;
 
     const textOf = (r: Row) => `${r.title ?? ''} ${r.display_label ?? ''} ${r.short_description ?? ''}`.toLowerCase();
     const maxSession = rows.reduce((m, r) => Math.max(m, r.session), 0);
@@ -4515,6 +4522,37 @@ export async function tool_narrate_guided_session(
       remainingInSession = rows.filter(
         (r) => r.session === target!.session && !completed.has(r.topic_id) && r.topic_id !== target!.topic_id,
       ).length;
+    }
+
+    if (infoOnly) {
+      // The user ASKED about the session (title / contents), not to play it.
+      // Return the authored title + description and tell Vitana to answer with
+      // EXACTLY that — never invent it, never use a Foundation step as the title.
+      const sessionTopics = rows.filter((r) => r.session === target!.session);
+      const sessionTitle = (target.title || target.display_label || '').trim();
+      const topicTitles = sessionTopics
+        .map((r) => (r.title || r.display_label || '').trim())
+        .filter(Boolean);
+      const about = (target.short_description || '').trim();
+      return {
+        ok: true,
+        result: {
+          info_only: true,
+          session: target.session,
+          topic_id: target.topic_id,
+          session_title: sessionTitle,
+          topic_titles: topicTitles,
+          topic_count: sessionTopics.length,
+          about,
+        },
+        text:
+          `Guided Journey — session ${target.session} is titled "${sessionTitle}"` +
+          (about ? ` (${about})` : '') +
+          (topicTitles.length > 1 ? `. It covers: ${topicTitles.join('; ')}.` : '.') +
+          ` Tell the user the title using EXACTLY this wording — do NOT invent a title and do NOT use a Journey ` +
+          `Foundation step (e.g. "Vitana Index", "Life Compass") as the session title. Then offer to play it. ` +
+          `Do NOT play the script now, do NOT mark progress, and do NOT ask "what do you want".`,
+      };
     }
 
     // PROGRESSION: mark THIS topic done (green) so the next call advances. This
