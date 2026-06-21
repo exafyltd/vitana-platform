@@ -2705,6 +2705,7 @@ export async function tool_respond_to_match(
 export async function tool_navigate_to_screen(
   args: OrbToolArgs,
   id: OrbToolIdentity,
+  sb?: SupabaseClient,
 ): Promise<OrbToolResult> {
   const screenIdArg = String(args.screen_id ?? args.target ?? '').trim();
   if (!screenIdArg) return { ok: false, error: 'screen_id (or legacy target) is required' };
@@ -2906,6 +2907,61 @@ export async function tool_navigate_to_screen(
         ok: false,
         error: `Screen '${entry.screen_id}' is only available on ${entry.viewport_only}. Suggest a different screen or stay in voice.`,
       };
+    }
+  }
+
+  // NAV-ENTITY-RESOLVE: a person-profile route (/u/:identifier) must NEVER
+  // dispatch a model-supplied identifier — the model invents slugs like
+  // "maria-maksina" that 404 ("Benutzer nicht gefunden"). Resolve the name
+  // through the canonical member directory instead (design invariants #1/#5/#7).
+  // Flag-gated; verify on staging. Only triggers when the identifier looks like
+  // a de-slugged NAME (has a separator) or an explicit name/query was supplied
+  // — a concrete @vitana_id handle still passes straight through.
+  if (
+    process.env.NAV_ENTITY_RESOLVE === 'true' &&
+    sb &&
+    entry.screen_id === 'PROFILE.PUBLIC' &&
+    id.user_id && id.tenant_id
+  ) {
+    const rawId = String(args.identifier ?? args.target ?? '').trim();
+    const explicitName = String(args.name ?? args.query ?? args.reason ?? '').trim();
+    const nameQuery = explicitName || rawId.replace(/[-_]+/g, ' ').trim();
+    const looksLikeName = !!explicitName || /[-_\s]/.test(rawId);
+    if (nameQuery && looksLikeName) {
+      emitOasisEvent({
+        vtid: 'VTID-NAV-01',
+        type: 'orb.navigator.blocked',
+        source: 'orb-tools-shared',
+        status: 'info',
+        message: `Profile-by-name '${nameQuery}' routed through member resolver (not trusting model identifier '${rawId}')`,
+        payload: {
+          session_id: sessionId,
+          attempted_screen_id: screenIdArg,
+          entity_query: nameQuery.slice(0, 120),
+          error_kind: 'entity_resolve',
+        },
+      }).catch(() => {});
+      const memberRes = await tool_find_community_member({ query: nameQuery }, id, sb);
+      if (memberRes.ok === false) return memberRes;
+      // Adapt the resolver's result to the navigate_to_screen contract so BOTH
+      // pipelines dispatch it (Vertex reads top-level screen_id/route/title;
+      // LiveKit reads result.directive). The resolver already built the correct
+      // profile directive (its own route + search_id for the match card).
+      const d = (memberRes.result as { directive?: { screen_id?: string; route?: string; title?: string } } | undefined)?.directive;
+      if (d && d.route) {
+        return {
+          ok: true,
+          result: {
+            screen_id: d.screen_id || 'profile_with_match',
+            route: d.route,
+            title: d.title || 'Profile',
+            entry_kind: 'route',
+            directive: d,
+          },
+          text: memberRes.text,
+        };
+      }
+      return memberRes;
     }
   }
 
@@ -4338,6 +4394,170 @@ export async function tool_find_community_member(
 // Registry + dispatcher
 // ---------------------------------------------------------------------------
 
+/**
+ * DEV-COMHU — narrate a Guided Journey session by VOICE. Fetches the authored
+ * full script (vitana_voice_script, the exact speech the tap-to-open path plays)
+ * and returns it under a strict "speak it in full, verbatim" contract.
+ *
+ * args.session_number (optional): when the user names a session ("play session
+ * three"), narrate THAT session. Otherwise narrate the next un-learned one.
+ *
+ * Robustness: an EMPTY curriculum (zero published topics) is NOT "complete" — it
+ * means the journey content isn't seeded in this environment, so we degrade to
+ * "introduce from knowledge" rather than falsely congratulating the user.
+ */
+export async function tool_narrate_guided_session(
+  args: OrbToolArgs,
+  identity: OrbToolIdentity,
+  sb: SupabaseClient,
+): Promise<OrbToolResult> {
+  if (!identity.user_id) {
+    return { ok: false, error: 'narrate_guided_session requires an authenticated user.' };
+  }
+  const degraded: OrbToolResult = {
+    ok: true,
+    result: { has_script: false, degraded: true },
+    text:
+      'Begin the Vitanaland Guided Journey: introduce the first onboarding step clearly and concretely ' +
+      'from your own knowledge of the app (several sentences, not one line) — e.g. what the Vitana Index is ' +
+      'and how it works — then offer to continue with the next step. Do NOT say it did not work, do NOT claim ' +
+      'the user has completed everything, and do NOT ask "what do you want".',
+  };
+  try {
+    const state = await sb
+      .from('user_guided_journey_state')
+      .select('completed_topic_ids')
+      .eq('user_id', identity.user_id)
+      .maybeSingle();
+    const completed = new Set<string>((state.data?.completed_topic_ids as string[] | null | undefined) ?? []);
+
+    // ALL published topics, ordered — NO session floor (the floor caused a false
+    // "you completed everything" once current_session advanced past the rows).
+    const topics = await sb
+      .from('journey_checklist_topics')
+      .select('topic_id, title, display_label, short_description, vitana_voice_script, session, position')
+      .eq('status', 'published')
+      .eq('enabled', true)
+      .order('session', { ascending: true })
+      .order('position', { ascending: true })
+      .limit(300);
+    if (topics.error) return degraded;
+
+    type Row = {
+      topic_id: string;
+      title: string | null;
+      display_label: string | null;
+      short_description: string | null;
+      vitana_voice_script: string | null;
+      session: number;
+    };
+    const rows = (topics.data as Row[] | null | undefined) ?? [];
+    // Empty curriculum → NOT complete; the content simply isn't here.
+    if (rows.length === 0) return degraded;
+
+    // What did the user ask for? a SPECIFIC session number, a NAMED topic, or
+    // (default) the next un-learned topic.
+    const reqRaw = (args as Record<string, unknown>)?.session_number;
+    const requested = typeof reqRaw === 'number' ? reqRaw : Number(reqRaw);
+    const wantsSpecific = Number.isFinite(requested) && requested >= 1;
+    const topicQueryRaw = (args as Record<string, unknown>)?.topic_query;
+    const topicQuery = typeof topicQueryRaw === 'string' ? topicQueryRaw.trim() : '';
+
+    const textOf = (r: Row) => `${r.title ?? ''} ${r.display_label ?? ''} ${r.short_description ?? ''}`.toLowerCase();
+    const maxSession = rows.reduce((m, r) => Math.max(m, r.session), 0);
+
+    let target: Row | undefined;
+    let remainingInSession = 0;
+
+    if (topicQuery) {
+      // NAMED topic → match across all 254 topics (exact title first, then contains).
+      const q = topicQuery.toLowerCase();
+      target =
+        rows.find((r) => (r.title ?? '').toLowerCase() === q || (r.display_label ?? '').toLowerCase() === q) ??
+        rows.find((r) => textOf(r).includes(q));
+      if (!target) {
+        return {
+          ok: true,
+          result: { not_found_topic: true, query: topicQuery },
+          text:
+            `No Guided Journey topic matches "${topicQuery}". Tell the user briefly you couldn't find that topic, ` +
+            `and offer to play a session by number instead (the journey has sessions 1 to ${maxSession}). Do NOT say it did not work.`,
+        };
+      }
+    } else if (wantsSpecific) {
+      const inSession = rows.filter((r) => r.session === requested); // ordered by position
+      if (inSession.length === 0) {
+        return {
+          ok: true,
+          result: { not_found: true, requested_session: requested, max_session: maxSession },
+          text:
+            `There is no session ${requested} in the Guided Journey — it runs from session 1 to ${maxSession}. ` +
+            `Tell the user that briefly and offer a valid session. Do NOT say it did not work.`,
+        };
+      }
+      // A session has 2–3 topics; play the FIRST topic the user hasn't heard yet
+      // so the session is delivered one topic at a time (then "more" → next topic).
+      target = inSession.find((r) => !completed.has(r.topic_id)) ?? inSession[0]; // all heard → replay from the top
+      remainingInSession = inSession.filter((r) => !completed.has(r.topic_id) && r.topic_id !== target!.topic_id).length;
+    } else {
+      target = rows.find((r) => !completed.has(r.topic_id));
+      if (!target) {
+        return {
+          ok: true,
+          result: { done: true },
+          text:
+            'JOURNEY COMPLETE: the user has finished every Guided Journey session. ' +
+            'Congratulate them warmly in one or two sentences and offer to go one level deeper. Do NOT ask "what do you want to do".',
+        };
+      }
+      remainingInSession = rows.filter(
+        (r) => r.session === target!.session && !completed.has(r.topic_id) && r.topic_id !== target!.topic_id,
+      ).length;
+    }
+
+    // PROGRESSION: mark this topic done (green) so the next call advances.
+    try {
+      const newCompleted = Array.from(new Set([...completed, target.topic_id]));
+      await sb
+        .from('user_guided_journey_state')
+        .upsert(
+          { user_id: identity.user_id, completed_topic_ids: newCompleted, current_session: target.session },
+          { onConflict: 'user_id' },
+        );
+    } catch {
+      /* progression is best-effort; the narration still returns below */
+    }
+
+    const title = (target.title || target.display_label || 'dieses Thema').trim();
+    const script = (target.vitana_voice_script || target.short_description || '').trim();
+    // After this topic: offer the next topic in the same session, else next session.
+    const afterClause =
+      remainingInSession > 0
+        ? `After you finish, tell the user there ${remainingInSession === 1 ? 'is 1 more topic' : `are ${remainingInSession} more topics`} in session ${target.session}, and offer to continue with the next topic.`
+        : `After you finish, this was the last topic of session ${target.session} — offer to continue with session ${target.session + 1}.`;
+
+    if (!script) {
+      return {
+        ok: true,
+        result: { session: target.session, topic_id: target.topic_id, topic_title: title, has_script: false, remaining_in_session: remainingInSession },
+        text:
+          `SESSION ${target.session} — topic "${title}". No authored script exists yet for this topic. ` +
+          `Introduce it clearly and concretely from your own knowledge (several sentences, not one line), then guide the user to the practice. ${afterClause} Do NOT ask "what do you want".`,
+      };
+    }
+    return {
+      ok: true,
+      result: { session: target.session, topic_id: target.topic_id, topic_title: title, has_script: true, remaining_in_session: remainingInSession },
+      text:
+        `SESSION ${target.session} — topic "${title}". SPEAK THE FOLLOWING SCRIPT TO THE USER IN FULL, WORD FOR WORD, AS AUDIO. ` +
+        `Do NOT summarize, shorten, translate, or paraphrase it — it IS the actual topic content and must be delivered complete. ${afterClause}\n\n${script}`,
+    };
+  } catch (e: any) {
+    console.warn(`[narrate_guided_session] non-fatal: ${e?.message || e}`);
+    return degraded;
+  }
+}
+
 type OrbToolHandler = (
   args: OrbToolArgs,
   identity: OrbToolIdentity,
@@ -4345,6 +4565,7 @@ type OrbToolHandler = (
 ) => Promise<OrbToolResult>;
 
 export const ORB_TOOL_REGISTRY: Record<string, OrbToolHandler> = {
+  narrate_guided_session: tool_narrate_guided_session,
   search_memory: tool_search_memory,
   search_web: tool_search_web,
   recall_conversation_at_time: tool_recall_conversation_at_time,
@@ -4383,7 +4604,7 @@ export const ORB_TOOL_REGISTRY: Record<string, OrbToolHandler> = {
   scan_existing_matches: tool_scan_existing_matches,
   share_intent_post: tool_share_intent_post,
   respond_to_match: tool_respond_to_match,
-  navigate_to_screen: (args, id) => tool_navigate_to_screen(args, id),
+  navigate_to_screen: (args, id, sb) => tool_navigate_to_screen(args, id, sb),
   // VTID-NAV-UNIFIED — free-text navigate (PR 1.B-4). Runs consultNavigator's
   // 8-step resolution and constructs the redirect directive.
   navigate: tool_navigate,

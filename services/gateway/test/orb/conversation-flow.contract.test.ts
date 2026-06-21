@@ -34,6 +34,7 @@ import {
 } from '../../src/services/guide/conversation-flow-v3';
 import { renderLine as renderMatchLine } from '../../src/services/assistant-continuation/providers/next-action/sources/match-activity-plan';
 import { pickInviteActivity, buildInviteProposal } from '../../src/services/guide/real-life-invite';
+import { buildFastProactiveOpener } from '../../src/services/assistant-continuation/providers/login-briefing';
 import { buildLiveSystemInstruction } from '../../src/orb/live/instruction/live-system-instruction';
 
 // The passive-question gate. Any match in a SPOKEN opener = RULE 0 violation.
@@ -167,6 +168,16 @@ function buildScenarios(): Scenario[] {
   const inviteLine = buildInviteProposal('de', pickInviteActivity({ strongestPillar: 'exercise', dateKey: '2026-06-18' }));
   out.push({ n: 14, label: 'real-life-invite/exercise→walk (advice #4)', line: inviteLine, spoken: true });
 
+  // #15 — DEV-COMHU-0513: the SHORT proactive opener spoken on the fast path
+  // (replaces the generic "Lass uns weitermachen" canned phrase).
+  const fastProactive = buildFastProactiveOpener({
+    lang: 'de',
+    salutation: 'morning',
+    firstName: 'Maria',
+    facts: { ...BASE, weakestPillarDrop: { pillar: 'sleep', deltaDown: 6 }, primaryGoalLabel: 'besser schlafen' },
+  }, () => 0);
+  out.push({ n: 15, label: 'fast-proactive-opener (DEV-COMHU-0513)', line: fastProactive, spoken: true });
+
   return out;
 }
 
@@ -212,5 +223,52 @@ describe('Vitana RULE 0 prompt contract — governs every improvised LLM turn', 
   it('mandates concrete answers when the USER asks an open question', () => {
     expect(block).toMatch(/WHEN THE USER ASKS AN OPEN QUESTION/i);
     expect(block).toMatch(/was gibt's Neues|what's the news/i);
+  });
+
+  // DEV-COMHU broken-promise fix: after a "shall I show you" + yes, Vitana must
+  // deliver conversationally and never claim it "can't retrieve" the next steps.
+  it('forbids the "can\'t retrieve the next steps" broken-promise failure', () => {
+    expect(block).toMatch(/DELIVERING WHAT YOU PROPOSED/i);
+    expect(block).toMatch(/nicht abrufen/i);     // names the exact failure phrase
+    expect(block).toMatch(/DELIVER IT NOW/i);     // the required behavior on "yes"
+  });
+
+  const gjBlock = (() => {
+    const full = buildLiveSystemInstruction('de', 'warm', undefined, 'community');
+    return full.slice(full.indexOf('GUIDED JOURNEY — A COHERENT THROUGH-LINE'), full.indexOf('GREETING RULES (CRITICAL)'));
+  })();
+
+  it('keeps the Guided Journey as a coherent through-line + bans the Community-Members jump', () => {
+    expect(gjBlock).toMatch(/GUIDED JOURNEY — A COHERENT THROUGH-LINE/);
+    expect(gjBlock).toMatch(/COHERENCE/);
+    expect(gjBlock).toMatch(/Community Members/); // the exact forbidden jump the user hit
+  });
+
+  it('mandates FLEXIBLE wording — never a fixed/memorised greeting', () => {
+    expect(gjBlock).toMatch(/FLEXIBLE WORDING/i);
+    expect(gjBlock).toMatch(/never .*same sentence|Vary your phrasing/i);
+  });
+
+  it('handles an empty/degraded curriculum — no false "completed everything", pivot instead', () => {
+    expect(gjBlock).toMatch(/degraded|curriculum isn't available|no script/i);
+    expect(gjBlock).toMatch(/do NOT claim the user finished everything/i);
+  });
+
+  it('mandates narrate_guided_session + full-script delivery on agreement (not a one-liner)', () => {
+    expect(gjBlock).toMatch(/narrate_guided_session/);
+    expect(gjBlock).toMatch(/IN FULL/);
+    expect(gjBlock).toMatch(/one-sentence introduction|one-line intro/i);
+  });
+
+  it('supports playing a SPECIFIC session by number', () => {
+    expect(gjBlock).toMatch(/session_number/);
+    expect(gjBlock).toMatch(/I can't play a specific session/i); // the failure it forbids
+  });
+
+  it('answers "what is X" SHORT first, then offers the deeper authored version', () => {
+    const full = buildLiveSystemInstruction('de', 'warm', undefined, 'community');
+    expect(full).toMatch(/SHORT-FIRST, THEN OFFER THE DEEP DIVE/i);
+    expect(full).toMatch(/topic_query/);                 // deep dive plays the authored topic
+    expect(full).toMatch(/short version|Kurzfassung/i);  // the short-then-offer shape
   });
 });

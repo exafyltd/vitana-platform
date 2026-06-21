@@ -19,6 +19,7 @@ import {
   renderBriefingLine,
   buildWeaknessRider,
   buildProgressBeat,
+  buildFastProactiveOpener,
   type BriefingFacts,
 } from '../../../../src/services/assistant-continuation/providers/login-briefing';
 
@@ -258,6 +259,72 @@ describe('buildProgressBeat (advice #2)', () => {
       () => 0,
     );
     expect(line).toContain('30 von 254');
+  });
+});
+
+// DEV-COMHU-0513 — the SHORT proactive opener spoken on the fast greeting path.
+describe('buildFastProactiveOpener (proactive fast greeting)', () => {
+  const GENERIC = [
+    'Lass uns weitermachen.',
+    'Lass uns dort weitermachen, wo wir aufgehört haben.',
+    'Willkommen zurück.',
+  ];
+  const PASSIVE = /(möchtest du|willst du|was möchtest|what would you like|how can i help|what can i do)/i;
+
+  const mk = (f: Partial<BriefingFacts>) =>
+    buildFastProactiveOpener({ lang: 'de', salutation: 'morning', firstName: 'Maria', facts: { ...BASE_FACTS, ...f } }, () => 0);
+
+  it('opens with the named salutation and is NOT a generic SHORT_GAP phrase', () => {
+    const line = mk({ indexDeltaUp: null, daysSinceLastSession: 1 });
+    expect(line.startsWith('Guten Morgen, Maria.')).toBe(true);
+    for (const g of GENERIC) expect(line).not.toBe(g);
+    expect(line).not.toContain('Willkommen zurück');
+  });
+
+  it('weakness → goal/pillar reversing step as the lead', () => {
+    const line = mk({ weakestPillarDrop: { pillar: 'sleep', deltaDown: 6 } });
+    expect(line).toContain('Schlaf');
+    expect(line).toContain('ich zeige dir den ersten Schritt');
+  });
+
+  it('building → continues at the named next session, and LEADS', () => {
+    const line = mk({ indexDeltaUp: null, daysSinceLastSession: 1, nextSessionTitle: 'Schlaf-Routine' });
+    expect(line).toContain('Schlaf-Routine');
+    expect(line).toContain('ich führe dich');
+  });
+
+  it('orient (first-time) → proposes a concrete deliverable step, NOT a fixed journey pitch', () => {
+    const line = mk({ sessionsCompleted: 0, hasGoal: false });
+    expect(line.startsWith('Guten Morgen, Maria.')).toBe(true);
+    expect(line).toContain('Lass uns'); // it LEADS (proposal)
+    expect(line).not.toContain('durch Vitanaland'); // no fixed "step by step through Vitanaland" line
+    expect(line).not.toMatch(/Session eins|ersten Session/); // does not pitch the (possibly empty) journey
+  });
+
+  it('FLEXIBLE WORDING — different rng yields different greetings (never hard-coded)', () => {
+    const facts = { ...BASE_FACTS, sessionsCompleted: 0, hasGoal: false };
+    const a = buildFastProactiveOpener({ lang: 'de', salutation: 'morning', firstName: 'Maria', facts }, () => 0);
+    const b = buildFastProactiveOpener({ lang: 'de', salutation: 'morning', firstName: 'Maria', facts }, () => 0.6);
+    expect(a).not.toBe(b); // the wording varies — no single hard-coded sentence
+  });
+
+  it('stays SHORT (audio-safe) and RULE-0 clean across states/langs/variations', () => {
+    const variants: Array<Partial<BriefingFacts>> = [
+      { sessionsCompleted: 0, hasGoal: false },
+      { indexDeltaUp: null, daysSinceLastSession: 1 },
+      { weakestPillarDrop: { pillar: 'exercise', deltaDown: 8 } },
+      { graduated: true },
+    ];
+    for (const lang of ['de', 'en'] as const) {
+      for (const v of variants) {
+        for (const rng of [() => 0, () => 0.5, () => 0.99]) {
+          const line = buildFastProactiveOpener({ lang, salutation: 'morning', firstName: 'Maria', facts: { ...BASE_FACTS, ...v } }, rng);
+          expect(line).not.toMatch(PASSIVE);
+          expect(line.length).toBeLessThanOrEqual(180); // ~2 short sentences → reliable audio
+          expect(line.length).toBeGreaterThan(0);
+        }
+      }
+    }
   });
 });
 

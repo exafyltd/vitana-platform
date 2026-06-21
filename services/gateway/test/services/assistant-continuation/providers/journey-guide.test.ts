@@ -280,4 +280,27 @@ describe('VTID-03257 buildJourneyGuideBlock', () => {
     expect(block).toMatch(/keine .*Vorschläge/i);
     expect(block).toMatch(/DANACH kommen[\s\S]*Weakest habit, Reminder/);
   });
+
+  // DEV-COMHU double-speak fix: when a wake-brief override owns turn 1, the guide
+  // block must NOT restate the opener line (that made Gemini speak it twice).
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { buildJourneyGuideOpenerLine } = require('../../../../src/orb/live/instruction/journey-guide-prompt');
+
+  it('default (no override): the guide block STILL leads with the opener line (turn 1 unchanged)', () => {
+    const stepLine = buildJourneyGuideOpenerLine(guide.opener_key, guide.step_title, 'de');
+    const block = buildJourneyGuideBlock(guide, 'de');
+    expect(block).toContain(stepLine);
+    expect(block).toMatch(/Führe so/);
+  });
+
+  it('wakeBriefOwnsTurn1=true: the opener line is NOT restated, replaced by a speak-once directive', () => {
+    for (const lang of ['de', 'en'] as const) {
+      const stepLine = buildJourneyGuideOpenerLine(guide.opener_key, guide.step_title, lang);
+      const block = buildJourneyGuideBlock(guide, lang, { wakeBriefOwnsTurn1: true });
+      expect(block).not.toContain(stepLine); // no duplicate turn-1 line
+      expect(block).toMatch(/exactly ONCE|genau EINMAL/); // the speak-once directive
+      // session-long guide behavior is preserved
+      expect(block).toMatch(/STRICTLY FORBIDDEN|STRENG VERBOTEN/);
+    }
+  });
 });

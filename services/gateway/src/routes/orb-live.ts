@@ -2333,9 +2333,19 @@ async function executeLiveApiTool(
   // which can exceed the default 3 s. Replenishment is skipped inline for voice
   // (the popup auto-generates on next open) so these stay bounded.
   const AUTOPILOT_VOICE_TOOLS = new Set(['get_autopilot_recommendations', 'activate_autopilot_recommendations']);
+  // BOOTSTRAP-FIND-MATCH-CLASSIFY-FIX: the community intent tools run TWO
+  // sequential Gemini calls (classify → extract) plus an embed + catalog
+  // search before they can answer. While the classifier was broken it failed
+  // instantly (confidence 0), so it never approached the 3 s cap; with the
+  // corrected gemini-2.5 classifier/extractor the round-trip legitimately runs
+  // ~3-4 s, so the tool timed out at 3000ms and the model apologised ("Das
+  // Posten klappt gerade nicht") even though the row was already inserted in
+  // the background. Give them the same extended budget as the Autopilot tools.
+  const INTENT_VOICE_TOOLS = new Set(['find_match', 'post_intent', 'scan_existing_matches']);
   const TOOL_TIMEOUT_MS =
     toolName === 'consult_external_ai' ? 16_000 :
     AUTOPILOT_VOICE_TOOLS.has(toolName) ? 12_000 :
+    INTENT_VOICE_TOOLS.has(toolName) ? 12_000 :
     3_000;
 
   // BOOTSTRAP-ORB-LATENCY-PHASE2: read-only retrieval tools are cacheable
@@ -4758,7 +4768,7 @@ async function executeLiveApiToolInner(
         let postedKind: string | null = null;
         try {
           const { classifyIntentKind } = await import('../services/intent-classifier');
-          const { extractIntent } = await import('../services/intent-extractor');
+          const { extractIntent, friendlyMissingFields } = await import('../services/intent-extractor');
           const { embedIntent } = await import('../services/intent-embedding');
           const { computeForIntent, surfaceTopMatches } = await import('../services/intent-matcher');
           const { checkIntentContent } = await import('../services/intent-content-filter');
@@ -4781,7 +4791,7 @@ async function executeLiveApiToolInner(
                   ok: false,
                   reason: 'classify_low_confidence',
                   classifier_confidence: cls.confidence,
-                  message: 'Could not confidently classify the utterance. Ask the user to clarify what kind of intent they want to post.',
+                  message: 'Stay warm and upbeat — never say you cannot help. In ONE friendly sentence, say you would love to set this up and ask what they would like to post (an activity partner, something to buy or sell, a teacher, a partner, or help lending/borrowing).',
                 }),
               };
             }
@@ -4815,13 +4825,18 @@ async function executeLiveApiToolInner(
 
           // Step 2 (confirmed=true): validate + write.
           if (extract.missing_critical.length > 0 || extract.confidence < 0.6) {
+            const stillNeeded = friendlyMissingFields(extract.missing_critical);
             return {
               success: true,
               result: JSON.stringify({
                 ok: false,
                 reason: 'extract_incomplete',
                 summary,
-                message: 'Single-shot extraction missed required fields. Ask the user for ' + extract.missing_critical.join(', '),
+                still_needed: stillNeeded,
+                // Positive conversation flow: a missing field is NOT a failure.
+                // Tell the model to keep it warm and forward-looking — never
+                // "I can't post this" — and ask only for the one or two details.
+                message: `Almost there — the post is ready except for ${stillNeeded}. Stay positive and warm: tell the user it is nearly ready and, in one friendly sentence, ask only for ${stillNeeded}, then post it for them once they answer. NEVER say you cannot post it or that anything is wrong — frame it as one quick last detail.`,
               }),
             };
           }
@@ -5388,7 +5403,30 @@ async function executeLiveApiToolInner(
         );
       }
 
-      // VTID-03112 (T1): Teacher Mode tool handlers. The LLM calls these
+      // DEV-COMHU: speak the next Guided Journey session's FULL authored script.
+      // (Without this Vertex case the tool hit the default → "Unknown tool" →
+      // "Das hat nicht geklappt".) Mirrors get_life_compass.
+      case 'narrate_guided_session': {
+        const SUPABASE_URL = process.env.SUPABASE_URL;
+        const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
+        if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
+          return { success: false, result: '', error: 'Service unavailable — Supabase creds not configured' };
+        }
+        const { createClient } = await import('@supabase/supabase-js');
+        const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE);
+        const { dispatchOrbToolForVertex } = await import('../services/orb-tools-shared');
+        return await dispatchOrbToolForVertex(
+          toolName,
+          args ?? {},
+          {
+            user_id: lens.user_id,
+            tenant_id: lens.tenant_id ?? null,
+            role: session.identity?.role ?? null,
+            vitana_id: session.identity?.vitana_id ?? null,
+          },
+          supabase,
+        );
+      }
       // during Teacher Mode (system_instruction block injected at session
       // start when wakeBriefDecision picked the Teacher). The model
       // decides WHEN to call based on the user's transcribed reply —
@@ -6526,6 +6564,11 @@ async function connectToLiveAPI(
                               ? buildJourneyGuideBlock(
                                   (session as any).journeyGuideContent,
                                   session.lang,
+                                  // DEV-COMHU double-speak fix: when a wake-brief
+                                  // override owns turn 1 (it carries this exact
+                                  // opener verbatim), suppress the guide block's
+                                  // restatement so the line is spoken once.
+                                  { wakeBriefOwnsTurn1: !!session.wakeBriefOverrideBlock },
                                 )
                               : '')
                           // VTID-03290: GUIDE MODE (TEACH) — when the user tapped
@@ -7407,27 +7450,167 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
     );
     emitDiag(session, 'greeting_context_pending', { lang, safe_fast_greeting: _safeFastLive });
     if (_safeFastLive && ws.readyState === WebSocket.OPEN) {
-      const _menu = pickShortGapGreetings(lang, 6).map((p) => `"${p}"`).join(', ');
-      const _safePrompt =
-        `Open with EXACTLY ONE short phrase, picked from this menu and used VERBATIM ` +
-        `(already in the user's language): ${_menu}. Do NOT say "Hello" or the user's name. ` +
-        `Do NOT introduce yourself. NEVER use two-part sentences. Speak it as audio.`;
-      ws.send(
-        JSON.stringify({
-          client_content: { turns: [{ role: 'user', parts: [{ text: _safePrompt }] }], turn_complete: true },
-        }),
-      );
-      session.greetingSent = true;
-      session.greetingTurnIndex = session.turn_count;
-      _sm.markOpeningDelivered();
-      emitDiag(session, 'greeting_sent', {
-        lang,
-        prompt_len: _safePrompt.length,
-        wake_opener: 'safe_fast_pending_context',
-      });
-      startResponseWatchdog(session, getGreetingResponseTimeoutMs(), 'greeting_timeout');
-      console.log(`[GREETING-SAFE-FAST] session ${session.sessionId} sent short audio-safe opener (context still pending)`);
-      return true;
+      // DEV-COMHU-0513 (new-day): when this fast-greeting fires on a genuine
+      // NEW-DAY return, speak a short personalized "Good <tod>, <Name>." instead
+      // of the generic opener — while staying fast. The greeting-facts pre-fetch
+      // (live-session-controller) resolves the spoken first name + last-session
+      // info independently of the heavy bootstrap; here we do a BOUNDED wait for
+      // it so we don't lose the speed, then check the temporal bucket. Same-day
+      // reconnects ('reconnect'|'recent'|'same_day') and missing names fall
+      // through to the EXISTING generic opener below (unchanged). This whole
+      // branch is reachable only under FEATURE_ORB_SAFE_FAST_GREETING.
+      //
+      // The bounded wait + send runs in an async IIFE so the synchronous
+      // function signature (and all its fire-and-forget call sites) stay
+      // unchanged; greetingSent is claimed synchronously to prevent a duplicate
+      // greeting while the wait is in flight.
+      {
+        const _greetingFactsReady: Promise<void> | undefined = (session as any).greetingFactsReady;
+        // Mark sent synchronously so no other path emits a second greeting while
+        // we await the bounded facts wait below.
+        session.greetingSent = true;
+        session.greetingTurnIndex = session.turn_count;
+        _sm.markOpeningDelivered();
+        void (async () => {
+          try {
+            await Promise.race([
+              _greetingFactsReady ?? Promise.resolve(),
+              new Promise<void>((r) => setTimeout(r, Number(process.env.ORB_GREETING_FACTS_WAIT_MS || 700))),
+            ]);
+            if (ws.readyState !== WebSocket.OPEN) return;
+
+            // DEV-COMHU-0513 (proactive fast greeting): when the fast pre-fetch
+            // produced a SHORT proactive opener (name + concrete next step /
+            // weakness lead), speak THAT instead of the generic SHORT_GAP phrase
+            // or the bare "Good <tod>, <Name>". It is kept to ~2 short sentences
+            // so Gemini Live reliably emits audio. This is the top of the fast-
+            // greeting ladder: proactive line → name greeting → generic opener.
+            const proactiveLine: unknown = (session as any).greetingProactiveLine;
+            if (typeof proactiveLine === 'string' && proactiveLine.trim().length > 0) {
+              const safeProactive = proactiveLine.trim().replace(/"/g, '\\"');
+              const proactivePrompt =
+                `Say exactly: "${safeProactive}" — speak it verbatim as audio, as ONE greeting. Do NOT add, paraphrase, or split it.`;
+              ws.send(
+                JSON.stringify({
+                  client_content: { turns: [{ role: 'user', parts: [{ text: proactivePrompt }] }], turn_complete: true },
+                }),
+              );
+              emitDiag(session, 'greeting_sent', {
+                lang,
+                prompt_len: proactivePrompt.length,
+                wake_opener: 'safe_fast_proactive',
+              });
+              startResponseWatchdog(session, getGreetingResponseTimeoutMs(), 'greeting_timeout');
+              console.log(
+                `[GREETING-SAFE-FAST-PROACTIVE] session ${session.sessionId} sent proactive fast opener (lang=${lang})`,
+              );
+              return;
+            }
+
+            const temporal = describeTimeSince((session as any).lastSessionInfo);
+            const firstName = (session as any).greetingFirstName;
+            const isNewDay =
+              temporal.bucket === 'today' ||
+              temporal.bucket === 'yesterday' ||
+              temporal.bucket === 'week' ||
+              temporal.bucket === 'long';
+
+            if (isNewDay && typeof firstName === 'string' && firstName.trim().length > 0) {
+              const name = firstName.trim();
+              // Map time-of-day → greeting; 'night' → evening (avoid "good night"
+              // farewell), default 'day'.
+              const tod =
+                session.clientContext?.timeOfDay === 'night'
+                  ? 'evening'
+                  : session.clientContext?.timeOfDay || 'day';
+              // Localized "Good <tod>, <Name>." — en + de are real; other langs
+              // get an easy localized good-<tod> where known, else the en line.
+              const greetingByLang: Record<string, string> = {
+                en:
+                  tod === 'morning'
+                    ? `Good morning, ${name}.`
+                    : tod === 'afternoon'
+                      ? `Good afternoon, ${name}.`
+                      : tod === 'evening'
+                        ? `Good evening, ${name}.`
+                        : `Hello, ${name}.`,
+                de:
+                  tod === 'morning'
+                    ? `Guten Morgen, ${name}.`
+                    : tod === 'evening'
+                      ? `Guten Abend, ${name}.`
+                      : `Guten Tag, ${name}.`,
+                es:
+                  tod === 'morning'
+                    ? `Buenos días, ${name}.`
+                    : tod === 'evening'
+                      ? `Buenas noches, ${name}.`
+                      : `Buenas tardes, ${name}.`,
+                fr:
+                  tod === 'evening'
+                    ? `Bonsoir, ${name}.`
+                    : `Bonjour, ${name}.`,
+                sr:
+                  tod === 'morning'
+                    ? `Добро јутро, ${name}.`
+                    : tod === 'evening'
+                      ? `Добро вече, ${name}.`
+                      : `Добар дан, ${name}.`,
+              };
+              const langKey = (lang || 'en').slice(0, 2).toLowerCase();
+              const spoken = greetingByLang[langKey] || greetingByLang.en;
+              const safe = spoken.replace(/"/g, '\\"');
+              // Mirror the existing `Say exactly: "..."` shape used elsewhere in
+              // this function — keep it SHORT so Gemini reliably emits audio.
+              const newDayPrompt =
+                `Say exactly: "${safe}" — ONE short utterance only. Do NOT add anything before or after. Do NOT paraphrase. Speak it as audio.`;
+              ws.send(
+                JSON.stringify({
+                  client_content: { turns: [{ role: 'user', parts: [{ text: newDayPrompt }] }], turn_complete: true },
+                }),
+              );
+              emitDiag(session, 'greeting_sent', {
+                lang,
+                prompt_len: newDayPrompt.length,
+                wake_opener: 'safe_fast_newday',
+                bucket: temporal.bucket,
+              });
+              startResponseWatchdog(session, getGreetingResponseTimeoutMs(), 'greeting_timeout');
+              console.log(
+                `[GREETING-SAFE-FAST-NEWDAY] session ${session.sessionId} sent personalized new-day opener (bucket=${temporal.bucket}, lang=${lang})`,
+              );
+              return;
+            }
+
+            // ELSE — fall through to the EXISTING generic opener (unchanged
+            // behavior). Same-day reconnects and no-name sessions take this path.
+            const _menu = pickShortGapGreetings(lang, 6).map((p) => `"${p}"`).join(', ');
+            const _safePrompt =
+              `Open with EXACTLY ONE short phrase, picked from this menu and used VERBATIM ` +
+              `(already in the user's language): ${_menu}. Do NOT say "Hello" or the user's name. ` +
+              `Do NOT introduce yourself. NEVER use two-part sentences. Speak it as audio.`;
+            ws.send(
+              JSON.stringify({
+                client_content: { turns: [{ role: 'user', parts: [{ text: _safePrompt }] }], turn_complete: true },
+              }),
+            );
+            emitDiag(session, 'greeting_sent', {
+              lang,
+              prompt_len: _safePrompt.length,
+              wake_opener: 'safe_fast_pending_context',
+            });
+            startResponseWatchdog(session, getGreetingResponseTimeoutMs(), 'greeting_timeout');
+            console.log(
+              `[GREETING-SAFE-FAST] session ${session.sessionId} sent short audio-safe opener (context still pending)`,
+            );
+          } catch (err: any) {
+            console.warn(
+              `[GREETING-SAFE-FAST-NEWDAY] session ${session.sessionId} bounded greeting send failed (non-fatal): ${err?.message || err}`,
+            );
+          }
+        })();
+        return true;
+      }
     }
   }
 
