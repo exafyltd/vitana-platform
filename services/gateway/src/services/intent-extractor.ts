@@ -49,6 +49,33 @@ export interface ExtractedIntent {
   missing_critical: string[];
 }
 
+/**
+ * Human-friendly labels for the technical missing_critical field paths, used to
+ * build a warm "just one more thing" ask instead of leaking raw field names
+ * like "kind_payload.activity" into the voice/assistant copy.
+ */
+const FRIENDLY_FIELD_LABELS: Record<string, string> = {
+  title: 'a short title',
+  scope: 'a sentence about what you are looking for',
+  'kind_payload.activity': 'which activity',
+  'kind_payload.topic': 'the topic',
+  'kind_payload.direction': 'whether you want to lend, borrow, give or receive',
+  'kind_payload.object_or_skill': 'what exactly you need',
+  'kind_payload.learning': 'what you would like to learn',
+  'kind_payload.teaching': 'what you would like to teach',
+};
+
+/** Turn missing_critical paths into a friendly, comma/"and"-joined phrase. */
+export function friendlyMissingFields(missing: string[]): string {
+  const labels = missing.map(
+    (f) => FRIENDLY_FIELD_LABELS[f] || f.replace(/^kind_payload\./, ''),
+  );
+  if (labels.length === 0) return 'a little more detail';
+  if (labels.length === 1) return labels[0];
+  if (labels.length === 2) return `${labels[0]} and ${labels[1]}`;
+  return `${labels.slice(0, -1).join(', ')} and ${labels[labels.length - 1]}`;
+}
+
 const CRITICAL_FIELDS_BY_KIND: Record<IntentKind, string[]> = {
   commercial_buy: ['title', 'scope'],
   commercial_sell: ['title', 'scope'],

@@ -4768,7 +4768,7 @@ async function executeLiveApiToolInner(
         let postedKind: string | null = null;
         try {
           const { classifyIntentKind } = await import('../services/intent-classifier');
-          const { extractIntent } = await import('../services/intent-extractor');
+          const { extractIntent, friendlyMissingFields } = await import('../services/intent-extractor');
           const { embedIntent } = await import('../services/intent-embedding');
           const { computeForIntent, surfaceTopMatches } = await import('../services/intent-matcher');
           const { checkIntentContent } = await import('../services/intent-content-filter');
@@ -4791,7 +4791,7 @@ async function executeLiveApiToolInner(
                   ok: false,
                   reason: 'classify_low_confidence',
                   classifier_confidence: cls.confidence,
-                  message: 'Could not confidently classify the utterance. Ask the user to clarify what kind of intent they want to post.',
+                  message: 'Stay warm and upbeat — never say you cannot help. In ONE friendly sentence, say you would love to set this up and ask what they would like to post (an activity partner, something to buy or sell, a teacher, a partner, or help lending/borrowing).',
                 }),
               };
             }
@@ -4825,13 +4825,18 @@ async function executeLiveApiToolInner(
 
           // Step 2 (confirmed=true): validate + write.
           if (extract.missing_critical.length > 0 || extract.confidence < 0.6) {
+            const stillNeeded = friendlyMissingFields(extract.missing_critical);
             return {
               success: true,
               result: JSON.stringify({
                 ok: false,
                 reason: 'extract_incomplete',
                 summary,
-                message: 'Single-shot extraction missed required fields. Ask the user for ' + extract.missing_critical.join(', '),
+                still_needed: stillNeeded,
+                // Positive conversation flow: a missing field is NOT a failure.
+                // Tell the model to keep it warm and forward-looking — never
+                // "I can't post this" — and ask only for the one or two details.
+                message: `Almost there — the post is ready except for ${stillNeeded}. Stay positive and warm: tell the user it is nearly ready and, in one friendly sentence, ask only for ${stillNeeded}, then post it for them once they answer. NEVER say you cannot post it or that anything is wrong — frame it as one quick last detail.`,
               }),
             };
           }
