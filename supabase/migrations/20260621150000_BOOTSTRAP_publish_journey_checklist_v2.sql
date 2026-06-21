@@ -1,5 +1,9 @@
 -- BOOTSTRAP — publish the v2 Guided Journey curriculum (durable source of truth).
 --
+-- impact-allow-solo-migration: pure data backfill (status draft→published). No
+-- code change needed — narrate_guided_session already queries status='published';
+-- this migration only flips existing rows to the state the code expects.
+--
 -- WHY: the seed (20260608170100_VTID_03277_journey_checklist_seed) and the
 -- onboarding sessions (20260613003000_BOOTSTRAP_first_time_onboarding_sessions)
 -- both INSERT their topics with status='draft'. Publishing the curriculum was
