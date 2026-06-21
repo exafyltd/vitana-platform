@@ -4418,10 +4418,12 @@ export async function tool_narrate_guided_session(
     ok: true,
     result: { has_script: false, degraded: true },
     text:
-      'Begin the Vitanaland Guided Journey: introduce the first onboarding step clearly and concretely ' +
-      'from your own knowledge of the app (several sentences, not one line) — e.g. what the Vitana Index is ' +
-      'and how it works — then offer to continue with the next step. Do NOT say it did not work, do NOT claim ' +
-      'the user has completed everything, and do NOT ask "what do you want".',
+      'Begin the Vitanaland Guided Journey: warmly welcome the user to the start of their longevity ' +
+      'journey and introduce this first onboarding step clearly and concretely from your own knowledge ' +
+      'of the app (several sentences, not one line) — what the journey is and what they will get out of ' +
+      'starting it — then offer to continue with the next step. Do NOT name a specific later topic as if ' +
+      'it were the first step. Do NOT say it did not work, do NOT claim the user has completed everything, ' +
+      'and do NOT ask "what do you want".',
   };
   try {
     const state = await sb
