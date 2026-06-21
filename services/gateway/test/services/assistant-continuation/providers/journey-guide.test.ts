@@ -281,6 +281,21 @@ describe('VTID-03257 buildJourneyGuideBlock', () => {
     expect(block).toMatch(/DANACH kommen[\s\S]*Weakest habit, Reminder/);
   });
 
+  // The Journey FOUNDATION step (e.g. "Vitana Index") must NOT be conflated with
+  // a NUMBERED Guided Journey session. "play session 1" must route to
+  // narrate_guided_session, never be described AS the foundation step.
+  it('disambiguates foundation step vs numbered Guided Journey session (EN + DE)', () => {
+    const en = buildJourneyGuideBlock(guide, 'en');
+    expect(en).toMatch(/TWO DIFFERENT THINGS/);
+    expect(en).toMatch(/numbered session[\s\S]*narrate_guided_session/i);
+    expect(en).toMatch(/NEVER describe the foundation step above as if it were "Session 1"/);
+
+    const de = buildJourneyGuideBlock(guide, 'de');
+    expect(de).toMatch(/ZWEI VERSCHIEDENE DINGE/);
+    expect(de).toMatch(/narrate_guided_session/);
+    expect(de).toMatch(/NIEMALS so, als wäre er „Session 1"/);
+  });
+
   // DEV-COMHU double-speak fix: when a wake-brief override owns turn 1, the guide
   // block must NOT restate the opener line (that made Gemini speak it twice).
   // eslint-disable-next-line @typescript-eslint/no-var-requires
