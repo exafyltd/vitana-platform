@@ -106,18 +106,24 @@ describe('tool_narrate_guided_session', () => {
     expect(upserts[0].current_session).toBe(1);
   });
 
-  it('NO PROGRESSION on explicit session_number play: a deliberate listen/replay must NOT mark complete', async () => {
+  it('PROGRESSION on explicit session_number play: marks ONLY the played topic so the session advances topic-by-topic', async () => {
     const upserts: Array<Record<string, unknown>> = [];
     const sb = makeSb({ stateData: { completed_topic_ids: [], current_session: 1 }, topics: TOPICS }, upserts);
     await tool_narrate_guided_session({ session_number: 1 } as any, IDENT, sb);
-    expect(upserts).toHaveLength(0); // explicit "play session 1" does not pollute progress
+    // The played topic IS marked (so the next "more" call serves the next topic),
+    // but ONLY that topic — never sessions the user hasn't heard.
+    expect(upserts).toHaveLength(1);
+    expect(upserts[0].completed_topic_ids).toEqual(['t1']);
   });
 
-  it('NO PROGRESSION on explicit topic_query play: naming a topic must NOT advance the journey', async () => {
+  it('PROGRESSION cursor never jumps ahead: playing session 2 marks only session 2 (session 1 stays un-heard)', async () => {
     const upserts: Array<Record<string, unknown>> = [];
     const sb = makeSb({ stateData: { completed_topic_ids: [], current_session: 1 }, topics: TOPICS }, upserts);
-    await tool_narrate_guided_session({ topic_query: TOPICS[0].title } as any, IDENT, sb);
-    expect(upserts).toHaveLength(0); // explicit named play does not pollute progress
+    await tool_narrate_guided_session({ session_number: 2 } as any, IDENT, sb);
+    // Only session 2's topic is marked — session 1 (t1) is NOT, so the journey's
+    // "next recommended" cursor still correctly points at the earliest un-heard topic.
+    expect(upserts[0].completed_topic_ids).toEqual(['t2']);
+    expect(upserts[0].completed_topic_ids).not.toContain('t1');
   });
 
   it('FAIL-OPEN: a checklist read error never dead-ends ("das hat nicht geklappt")', async () => {
