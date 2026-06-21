@@ -4529,11 +4529,16 @@ export async function tool_narrate_guided_session(
       // Return the authored title + description and tell Vitana to answer with
       // EXACTLY that — never invent it, never use a Foundation step as the title.
       const sessionTopics = rows.filter((r) => r.session === target!.session);
-      const sessionTitle = (target.title || target.display_label || '').trim();
+      // The session title must be STABLE regardless of the user's progress within
+      // the session — derive it from the session's FIRST topic (rows are ordered
+      // by position), NOT from `target` (which is the first UN-heard topic and so
+      // would drift to topic two's title once topic one is completed).
+      const firstTopic = sessionTopics[0] ?? target;
+      const sessionTitle = (firstTopic.title || firstTopic.display_label || '').trim();
       const topicTitles = sessionTopics
         .map((r) => (r.title || r.display_label || '').trim())
         .filter(Boolean);
-      const about = (target.short_description || '').trim();
+      const about = (firstTopic.short_description || '').trim();
       return {
         ok: true,
         result: {

@@ -192,6 +192,15 @@ describe('tool_narrate_guided_session', () => {
     expect(r.text).not.toContain('Session 15, Thema eins.'); // no script playback
   });
 
+  it('INFO-ONLY: session title is STABLE — same title regardless of progress in the session', async () => {
+    // User already heard topic one (s15a). The session TITLE must still be the
+    // session's first-topic title, not drift to topic two.
+    const sb = makeSb({ stateData: { completed_topic_ids: ['s15a'], current_session: 15 }, topics: SESSION15 });
+    const r = await tool_narrate_guided_session({ session_number: 15, info_only: true } as any, IDENT, sb);
+    expect((r as any).result.session_title).toBe('Index Grundlagen'); // first topic, NOT 'Index vertiefen'
+    expect(r.text).toContain('Index Grundlagen');
+  });
+
   it('SESSION with multiple topics: plays the FIRST topic + reports the remaining count', async () => {
     const sb = makeSb({ stateData: { completed_topic_ids: [], current_session: 1 }, topics: SESSION15 });
     const r = await tool_narrate_guided_session({ session_number: 15 } as any, IDENT, sb);
