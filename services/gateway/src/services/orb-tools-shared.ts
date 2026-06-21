@@ -2705,6 +2705,7 @@ export async function tool_respond_to_match(
 export async function tool_navigate_to_screen(
   args: OrbToolArgs,
   id: OrbToolIdentity,
+  sb?: SupabaseClient,
 ): Promise<OrbToolResult> {
   const screenIdArg = String(args.screen_id ?? args.target ?? '').trim();
   if (!screenIdArg) return { ok: false, error: 'screen_id (or legacy target) is required' };
@@ -2906,6 +2907,61 @@ export async function tool_navigate_to_screen(
         ok: false,
         error: `Screen '${entry.screen_id}' is only available on ${entry.viewport_only}. Suggest a different screen or stay in voice.`,
       };
+    }
+  }
+
+  // NAV-ENTITY-RESOLVE: a person-profile route (/u/:identifier) must NEVER
+  // dispatch a model-supplied identifier — the model invents slugs like
+  // "maria-maksina" that 404 ("Benutzer nicht gefunden"). Resolve the name
+  // through the canonical member directory instead (design invariants #1/#5/#7).
+  // Flag-gated; verify on staging. Only triggers when the identifier looks like
+  // a de-slugged NAME (has a separator) or an explicit name/query was supplied
+  // — a concrete @vitana_id handle still passes straight through.
+  if (
+    process.env.NAV_ENTITY_RESOLVE === 'true' &&
+    sb &&
+    entry.screen_id === 'PROFILE.PUBLIC' &&
+    id.user_id && id.tenant_id
+  ) {
+    const rawId = String(args.identifier ?? args.target ?? '').trim();
+    const explicitName = String(args.name ?? args.query ?? args.reason ?? '').trim();
+    const nameQuery = explicitName || rawId.replace(/[-_]+/g, ' ').trim();
+    const looksLikeName = !!explicitName || /[-_\s]/.test(rawId);
+    if (nameQuery && looksLikeName) {
+      emitOasisEvent({
+        vtid: 'VTID-NAV-01',
+        type: 'orb.navigator.blocked',
+        source: 'orb-tools-shared',
+        status: 'info',
+        message: `Profile-by-name '${nameQuery}' routed through member resolver (not trusting model identifier '${rawId}')`,
+        payload: {
+          session_id: sessionId,
+          attempted_screen_id: screenIdArg,
+          entity_query: nameQuery.slice(0, 120),
+          error_kind: 'entity_resolve',
+        },
+      }).catch(() => {});
+      const memberRes = await tool_find_community_member({ query: nameQuery }, id, sb);
+      if (memberRes.ok === false) return memberRes;
+      // Adapt the resolver's result to the navigate_to_screen contract so BOTH
+      // pipelines dispatch it (Vertex reads top-level screen_id/route/title;
+      // LiveKit reads result.directive). The resolver already built the correct
+      // profile directive (its own route + search_id for the match card).
+      const d = (memberRes.result as { directive?: { screen_id?: string; route?: string; title?: string } } | undefined)?.directive;
+      if (d && d.route) {
+        return {
+          ok: true,
+          result: {
+            screen_id: d.screen_id || 'profile_with_match',
+            route: d.route,
+            title: d.title || 'Profile',
+            entry_kind: 'route',
+            directive: d,
+          },
+          text: memberRes.text,
+        };
+      }
+      return memberRes;
     }
   }
 
@@ -4548,7 +4604,7 @@ export const ORB_TOOL_REGISTRY: Record<string, OrbToolHandler> = {
   scan_existing_matches: tool_scan_existing_matches,
   share_intent_post: tool_share_intent_post,
   respond_to_match: tool_respond_to_match,
-  navigate_to_screen: (args, id) => tool_navigate_to_screen(args, id),
+  navigate_to_screen: (args, id, sb) => tool_navigate_to_screen(args, id, sb),
   // VTID-NAV-UNIFIED — free-text navigate (PR 1.B-4). Runs consultNavigator's
   // 8-step resolution and constructs the redirect directive.
   navigate: tool_navigate,
