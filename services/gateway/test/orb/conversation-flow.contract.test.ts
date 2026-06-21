@@ -264,4 +264,11 @@ describe('Vitana RULE 0 prompt contract — governs every improvised LLM turn', 
     expect(gjBlock).toMatch(/session_number/);
     expect(gjBlock).toMatch(/I can't play a specific session/i); // the failure it forbids
   });
+
+  it('answers "what is X" SHORT first, then offers the deeper authored version', () => {
+    const full = buildLiveSystemInstruction('de', 'warm', undefined, 'community');
+    expect(full).toMatch(/SHORT-FIRST, THEN OFFER THE DEEP DIVE/i);
+    expect(full).toMatch(/topic_query/);                 // deep dive plays the authored topic
+    expect(full).toMatch(/short version|Kurzfassung/i);  // the short-then-offer shape
+  });
 });
