@@ -272,7 +272,7 @@ describe('buildFastProactiveOpener (proactive fast greeting)', () => {
   const PASSIVE = /(möchtest du|willst du|was möchtest|what would you like|how can i help|what can i do)/i;
 
   const mk = (f: Partial<BriefingFacts>) =>
-    buildFastProactiveOpener({ lang: 'de', salutation: 'morning', firstName: 'Maria', facts: { ...BASE_FACTS, ...f } });
+    buildFastProactiveOpener({ lang: 'de', salutation: 'morning', firstName: 'Maria', facts: { ...BASE_FACTS, ...f } }, () => 0);
 
   it('opens with the named salutation and is NOT a generic SHORT_GAP phrase', () => {
     const line = mk({ indexDeltaUp: null, daysSinceLastSession: 1 });
@@ -293,14 +293,22 @@ describe('buildFastProactiveOpener (proactive fast greeting)', () => {
     expect(line).toContain('ich führe dich');
   });
 
-  it('orient (first-time) → proposes the Guided Journey (session one), not a standalone goal', () => {
+  it('orient (first-time) → proposes a concrete deliverable step, NOT a fixed journey pitch', () => {
     const line = mk({ sessionsCompleted: 0, hasGoal: false });
-    expect(line).toContain('Vitanaland');
-    expect(line).toContain('Session');
-    expect(line).not.toContain('persönliches Ziel'); // no chaotic standalone goal proposal
+    expect(line.startsWith('Guten Morgen, Maria.')).toBe(true);
+    expect(line).toContain('Lass uns'); // it LEADS (proposal)
+    expect(line).not.toContain('durch Vitanaland'); // no fixed "step by step through Vitanaland" line
+    expect(line).not.toMatch(/Session eins|ersten Session/); // does not pitch the (possibly empty) journey
   });
 
-  it('stays SHORT (audio-safe) and RULE-0 clean across states/langs', () => {
+  it('FLEXIBLE WORDING — different rng yields different greetings (never hard-coded)', () => {
+    const facts = { ...BASE_FACTS, sessionsCompleted: 0, hasGoal: false };
+    const a = buildFastProactiveOpener({ lang: 'de', salutation: 'morning', firstName: 'Maria', facts }, () => 0);
+    const b = buildFastProactiveOpener({ lang: 'de', salutation: 'morning', firstName: 'Maria', facts }, () => 0.6);
+    expect(a).not.toBe(b); // the wording varies — no single hard-coded sentence
+  });
+
+  it('stays SHORT (audio-safe) and RULE-0 clean across states/langs/variations', () => {
     const variants: Array<Partial<BriefingFacts>> = [
       { sessionsCompleted: 0, hasGoal: false },
       { indexDeltaUp: null, daysSinceLastSession: 1 },
@@ -309,10 +317,12 @@ describe('buildFastProactiveOpener (proactive fast greeting)', () => {
     ];
     for (const lang of ['de', 'en'] as const) {
       for (const v of variants) {
-        const line = buildFastProactiveOpener({ lang, salutation: 'morning', firstName: 'Maria', facts: { ...BASE_FACTS, ...v } });
-        expect(line).not.toMatch(PASSIVE);
-        expect(line.length).toBeLessThanOrEqual(170); // ~2 short sentences → reliable audio
-        expect(line.length).toBeGreaterThan(0);
+        for (const rng of [() => 0, () => 0.5, () => 0.99]) {
+          const line = buildFastProactiveOpener({ lang, salutation: 'morning', firstName: 'Maria', facts: { ...BASE_FACTS, ...v } }, rng);
+          expect(line).not.toMatch(PASSIVE);
+          expect(line.length).toBeLessThanOrEqual(180); // ~2 short sentences → reliable audio
+          expect(line.length).toBeGreaterThan(0);
+        }
       }
     }
   });

@@ -636,7 +636,14 @@ function readWeakestPillarDrop(snap: unknown): { pillar: PillarKey; deltaDown: n
  * concrete next-step / weakness lead. Always a PROPOSAL + lead (RULE 0), never a
  * passive question. Pure; exported for tests.
  */
-export function buildFastProactiveOpener(args: RenderArgs): string {
+/**
+ * Build a short, proactive fast-path opener: salutation + name + exactly ONE
+ * concrete next-step / weakness lead. Always a PROPOSAL + lead (RULE 0), never a
+ * passive question. FLEXIBLE WORDING — each state draws from a small pool via
+ * `rng`, so the greeting is NEVER the identical sentence twice (no hard-coded
+ * line). Pure; exported for tests.
+ */
+export function buildFastProactiveOpener(args: RenderArgs, rng: () => number = Math.random): string {
   const de = args.lang === 'de';
   const prefix = salutationPrefix(args.lang, args.salutation, args.firstName);
   const f = args.facts;
@@ -646,32 +653,52 @@ export function buildFastProactiveOpener(args: RenderArgs): string {
   const drop = f.weakestPillarDrop;
   if (drop && drop.deltaDown >= MATERIAL_PILLAR_DROP) {
     const pillar = pillarLabelLocalized(args.lang, drop.pillar);
-    return [
-      prefix,
-      de
-        ? `Dein Bereich ${pillar} ist diese Woche gesunken — lass uns das gemeinsam umkehren, ich zeige dir den ersten Schritt.`
-        : `Your ${pillar} slipped this week — let's turn it around together, I'll show you the first step.`,
-    ].join(' ');
+    const pool = de
+      ? [
+          `Dein Bereich ${pillar} ist diese Woche gesunken — lass uns das gemeinsam umkehren, ich zeige dir den ersten Schritt.`,
+          `Mir ist aufgefallen, dass ${pillar} diese Woche nachgelassen hat — lass uns da gemeinsam ansetzen, ich begleite dich.`,
+          `Bei ${pillar} ist diese Woche etwas Luft nach oben — packen wir das zusammen an, ich gehe mit dir den ersten Schritt.`,
+        ]
+      : [
+          `Your ${pillar} slipped this week — let's turn it around together, I'll show you the first step.`,
+          `I noticed ${pillar} dipped this week — let's pick it back up together, I'll walk with you.`,
+          `There's room to lift your ${pillar} this week — let's tackle it together, I'll take the first step with you.`,
+        ];
+    return [prefix, pickFromPool(pool, rng)].join(' ');
   }
   if (state === 'graduated') {
-    return [
-      prefix,
-      de
-        ? 'Du hast deine Journey gemeistert — lass uns eine Stufe tiefer gehen, ich zeige dir den ersten Schritt.'
-        : "You've mastered your journey — let's go one level deeper, I'll show you the first step.",
-    ].join(' ');
+    const pool = de
+      ? [
+          'Du hast schon viel erreicht — lass uns eine Stufe tiefer gehen, ich zeige dir den nächsten Schritt.',
+          'Stark, wie weit du gekommen bist — lass uns gemeinsam tiefer einsteigen, ich begleite dich.',
+          'Die Grundlagen sitzen — jetzt gehen wir gemeinsam in die Tiefe, ich nehme dich mit.',
+        ]
+      : [
+          "You've come a long way — let's go one level deeper, I'll show you the next step.",
+          "Great how far you've come — let's dig deeper together, I'll be right with you.",
+          "The foundations are solid — now let's go deeper together, I'll take you there.",
+        ];
+    return [prefix, pickFromPool(pool, rng)].join(' ');
   }
   if (state === 'orient') {
-    // Immediate fix (first-time users): channel into the Guided Journey, not a
-    // standalone goal/profile proposal (that was the chaotic, confusing path).
-    return [
-      prefix,
-      de
-        ? 'Ich nehme dich Schritt für Schritt durch Vitanaland — sollen wir mit deiner ersten Session starten?'
-        : "I'll take you through Vitanaland step by step — shall we start with your first session?",
-    ].join(' ');
+    // First-time / no progress. Propose a CONCRETE, deliverable next step (goal,
+    // Index, first move) — VARIED, warm, proactive. We do NOT pitch a fixed
+    // "guided journey session" here (it would repeat verbatim and, when the
+    // curriculum is empty, dead-end).
+    const pool = de
+      ? [
+          'Schön, dass du da bist! Lass uns gemeinsam dein persönliches Ziel setzen — das gibt deinem Weg eine klare Richtung.',
+          'Willkommen! Lass uns mit deinem Vitana Index beginnen — ich zeige dir, wo du gerade stehst.',
+          'Schön, dich zu hören! Lass uns deinen ersten Schritt gemeinsam machen — ich begleite dich dabei.',
+        ]
+      : [
+          "Good to have you here! Let's set your personal goal together — it gives your path a clear direction.",
+          "Welcome! Let's start with your Vitana Index — I'll show you where you stand right now.",
+          "Lovely to hear you! Let's take your first step together — I'll be right there with you.",
+        ];
+    return [prefix, pickFromPool(pool, rng)].join(' ');
   }
-  // building / momentum / returning → continue the journey at the next session.
+  // building / momentum / returning → continue at the next step (varied wording).
   const where = f.nextSessionTitle
     ? de
       ? `bei „${f.nextSessionTitle}"`
@@ -679,10 +706,18 @@ export function buildFastProactiveOpener(args: RenderArgs): string {
     : de
       ? 'bei deinem nächsten Schritt'
       : 'with your next step';
-  return [
-    prefix,
-    de ? `Lass uns ${where} weitermachen — ich führe dich.` : `Let's continue ${where} — I'll guide you.`,
-  ].join(' ');
+  const pool = de
+    ? [
+        `Lass uns ${where} weitermachen — ich führe dich.`,
+        `Knüpfen wir ${where} an — ich nehme dich mit.`,
+        `Lass uns gleich ${where} weitermachen, ich begleite dich Schritt für Schritt.`,
+      ]
+    : [
+        `Let's continue ${where} — I'll guide you.`,
+        `Let's pick up ${where} — I'll walk with you.`,
+        `Let's get right back to it ${where} — I'll take you there.`,
+      ];
+  return [prefix, pickFromPool(pool, rng)].join(' ');
 }
 
 /**

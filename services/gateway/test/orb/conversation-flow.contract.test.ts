@@ -175,7 +175,7 @@ function buildScenarios(): Scenario[] {
     salutation: 'morning',
     firstName: 'Maria',
     facts: { ...BASE, weakestPillarDrop: { pillar: 'sleep', deltaDown: 6 }, primaryGoalLabel: 'besser schlafen' },
-  });
+  }, () => 0);
   out.push({ n: 15, label: 'fast-proactive-opener (DEV-COMHU-0513)', line: fastProactive, spoken: true });
 
   return out;
@@ -233,22 +233,35 @@ describe('Vitana RULE 0 prompt contract — governs every improvised LLM turn', 
     expect(block).toMatch(/DELIVER IT NOW/i);     // the required behavior on "yes"
   });
 
-  // Immediate fix: channel new users into the Guided Journey, coherently.
-  it('anchors the conversation on the Guided Journey and bans incoherent topic-jumping', () => {
+  const gjBlock = (() => {
     const full = buildLiveSystemInstruction('de', 'warm', undefined, 'community');
-    const gj = full.slice(full.indexOf('GUIDED JOURNEY — YOUR COHERENT THROUGH-LINE'), full.indexOf('GREETING RULES (CRITICAL)'));
-    expect(gj).toMatch(/GUIDED JOURNEY — YOUR COHERENT THROUGH-LINE/);
-    expect(gj).toMatch(/Session 1 → 2 → 3/);
-    expect(gj).toMatch(/COHERENCE IS ABSOLUTE/);
-    expect(gj).toMatch(/Community Members/); // names the exact forbidden jump the user hit
+    return full.slice(full.indexOf('GUIDED JOURNEY — A COHERENT THROUGH-LINE'), full.indexOf('GREETING RULES (CRITICAL)'));
+  })();
+
+  it('keeps the Guided Journey as a coherent through-line + bans the Community-Members jump', () => {
+    expect(gjBlock).toMatch(/GUIDED JOURNEY — A COHERENT THROUGH-LINE/);
+    expect(gjBlock).toMatch(/COHERENCE/);
+    expect(gjBlock).toMatch(/Community Members/); // the exact forbidden jump the user hit
   });
 
-  // On "yes", Vitana must call narrate_guided_session and speak the FULL script.
+  it('mandates FLEXIBLE wording — never a fixed/memorised greeting', () => {
+    expect(gjBlock).toMatch(/FLEXIBLE WORDING/i);
+    expect(gjBlock).toMatch(/never .*same sentence|Vary your phrasing/i);
+  });
+
+  it('handles an empty/degraded curriculum — no false "completed everything", pivot instead', () => {
+    expect(gjBlock).toMatch(/degraded|curriculum isn't available|no script/i);
+    expect(gjBlock).toMatch(/do NOT claim the user finished everything/i);
+  });
+
   it('mandates narrate_guided_session + full-script delivery on agreement (not a one-liner)', () => {
-    const full = buildLiveSystemInstruction('de', 'warm', undefined, 'community');
-    const gj = full.slice(full.indexOf('GUIDED JOURNEY — YOUR COHERENT THROUGH-LINE'), full.indexOf('GREETING RULES (CRITICAL)'));
-    expect(gj).toMatch(/narrate_guided_session/);
-    expect(gj).toMatch(/IN FULL/);
-    expect(gj).toMatch(/one-sentence introduction|one-line intro/i); // bans the observed failure
+    expect(gjBlock).toMatch(/narrate_guided_session/);
+    expect(gjBlock).toMatch(/IN FULL/);
+    expect(gjBlock).toMatch(/one-sentence introduction|one-line intro/i);
+  });
+
+  it('supports playing a SPECIFIC session by number', () => {
+    expect(gjBlock).toMatch(/session_number/);
+    expect(gjBlock).toMatch(/I can't play a specific session/i); // the failure it forbids
   });
 });
