@@ -3126,6 +3126,7 @@ function deriveNavigatorSurfaceRole(currentRoute: string | undefined | null): st
 export async function tool_navigate(
   args: OrbToolArgs,
   id: OrbToolIdentity,
+  sb?: SupabaseClient,
 ): Promise<OrbToolResult> {
   const question = String(args.question ?? '').trim();
   if (!question) {
@@ -3258,6 +3259,29 @@ export async function tool_navigate(
   if (consultResult.primary && consultResult.confidence !== 'low' && !consultResult.blocked_reason) {
     const entry = lookupScreen(consultResult.primary.screen_id);
     if (entry) {
+      // NAV-GUIDED-JOURNEY: "Guided Journey" is NOT a separate screen — it's the
+      // durable GUIDED mode of My Journey (GuidedModeProvider, VTID-03279). The
+      // Navigator can only emit /autopilot, which renders in the user's current
+      // mode (defaults Full). So when the user asks for their GUIDED journey,
+      // flip the durable mode to 'guided' BEFORE opening the screen, so they
+      // land in the guided view instead of the full app. Flag-gated; reuses the
+      // existing journey-mode service.
+      if (
+        process.env.NAV_GUIDED_JOURNEY === 'true' &&
+        sb && id.user_id &&
+        entry.screen_id === 'AUTOPILOT.MY_JOURNEY' &&
+        /guided|gef[üu]hrt|einf[üu]hrung|guided[\s-]?journey|guided[\s-]?mode/i.test(`${question} ${transcriptExcerpt}`)
+      ) {
+        try {
+          const { setJourneyMode } = await import('./guided-journey/guided-journey-state');
+          await setJourneyMode(sb, id.user_id, 'guided');
+          console.log(`[NAV-GUIDED-JOURNEY] set journey mode = guided for ${id.user_id} before opening My Journey`);
+        } catch (e) {
+          // Don't block navigation — the screen is still correct, just in Full mode.
+          console.error('[NAV-GUIDED-JOURNEY] setJourneyMode failed:', e instanceof Error ? e.message : e);
+        }
+      }
+
       const content = getContent(entry, lang);
       // VTID-NAV-OVERLAY: resolve the route the SAME way navigate_to_screen
       // does — honor mobile_route, and for overlay entries append the
@@ -4658,7 +4682,7 @@ export const ORB_TOOL_REGISTRY: Record<string, OrbToolHandler> = {
   navigate_to_screen: (args, id, sb) => tool_navigate_to_screen(args, id, sb),
   // VTID-NAV-UNIFIED — free-text navigate (PR 1.B-4). Runs consultNavigator's
   // 8-step resolution and constructs the redirect directive.
-  navigate: tool_navigate,
+  navigate: (args, id, sb) => tool_navigate(args, id, sb),
   // VTID-01975 — view_intent_matches (PR 1.B-6). Auto-redirects to
   // INTENTS.MATCH_DETAIL when the top score dominates the runner-up;
   // otherwise lists matches and lets the LLM disambiguate verbally.
