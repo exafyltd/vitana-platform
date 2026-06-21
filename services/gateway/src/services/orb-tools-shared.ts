@@ -4515,17 +4515,26 @@ export async function tool_narrate_guided_session(
       ).length;
     }
 
-    // PROGRESSION: mark this topic done (green) so the next call advances.
-    try {
-      const newCompleted = Array.from(new Set([...completed, target.topic_id]));
-      await sb
-        .from('user_guided_journey_state')
-        .upsert(
-          { user_id: identity.user_id, completed_topic_ids: newCompleted, current_session: target.session },
-          { onConflict: 'user_id' },
-        );
-    } catch {
-      /* progression is best-effort; the narration still returns below */
+    // PROGRESSION: mark this topic done (green) so the next call advances —
+    // ONLY on the natural "continue my journey" flow. An EXPLICIT play (the user
+    // named a session number or a topic) is a deliberate listen/replay and must
+    // NOT advance progress; otherwise testing/replaying a session pollutes
+    // completed_topic_ids and drifts the "next recommended session" forward
+    // (e.g. "play session 1" silently marked 1..N done → recommendation jumped
+    // to a later, unrelated session, which Vitana then described as session 1).
+    const isExplicitPlay = wantsSpecific || !!topicQuery;
+    if (!isExplicitPlay) {
+      try {
+        const newCompleted = Array.from(new Set([...completed, target.topic_id]));
+        await sb
+          .from('user_guided_journey_state')
+          .upsert(
+            { user_id: identity.user_id, completed_topic_ids: newCompleted, current_session: target.session },
+            { onConflict: 'user_id' },
+          );
+      } catch {
+        /* progression is best-effort; the narration still returns below */
+      }
     }
 
     const title = (target.title || target.display_label || 'dieses Thema').trim();

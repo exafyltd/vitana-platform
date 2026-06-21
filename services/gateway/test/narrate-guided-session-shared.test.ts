@@ -106,6 +106,20 @@ describe('tool_narrate_guided_session', () => {
     expect(upserts[0].current_session).toBe(1);
   });
 
+  it('NO PROGRESSION on explicit session_number play: a deliberate listen/replay must NOT mark complete', async () => {
+    const upserts: Array<Record<string, unknown>> = [];
+    const sb = makeSb({ stateData: { completed_topic_ids: [], current_session: 1 }, topics: TOPICS }, upserts);
+    await tool_narrate_guided_session({ session_number: 1 } as any, IDENT, sb);
+    expect(upserts).toHaveLength(0); // explicit "play session 1" does not pollute progress
+  });
+
+  it('NO PROGRESSION on explicit topic_query play: naming a topic must NOT advance the journey', async () => {
+    const upserts: Array<Record<string, unknown>> = [];
+    const sb = makeSb({ stateData: { completed_topic_ids: [], current_session: 1 }, topics: TOPICS }, upserts);
+    await tool_narrate_guided_session({ topic_query: TOPICS[0].title } as any, IDENT, sb);
+    expect(upserts).toHaveLength(0); // explicit named play does not pollute progress
+  });
+
   it('FAIL-OPEN: a checklist read error never dead-ends ("das hat nicht geklappt")', async () => {
     const sb = makeSb({ stateData: { completed_topic_ids: [], current_session: 1 }, topicsError: { message: 'relation does not exist' } });
     const r = await tool_narrate_guided_session({} as any, IDENT, sb);
