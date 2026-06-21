@@ -43,6 +43,23 @@ describe('pickBriefingState', () => {
     expect(pickBriefingState({ ...BASE_FACTS, sessionsCompleted: 0 })).toBe('orient');
   });
 
+  // BOOTSTRAP-ORB-GREETING-RETURNING-USER: a returning user (any prior ORB
+  // session) must never be re-classified as a first-timer just because the
+  // guided-curriculum pointer (current_session) has not advanced.
+  it('no curriculum progress BUT has a prior session → not orient (returning user)', () => {
+    expect(pickBriefingState({ ...BASE_FACTS, sessionsCompleted: 0, hasPriorSession: true, daysSinceLastSession: 0 }))
+      .toBe('building');
+  });
+
+  it('no curriculum progress + prior session + multi-day gap → returning', () => {
+    expect(pickBriefingState({ ...BASE_FACTS, sessionsCompleted: 0, hasPriorSession: true, daysSinceLastSession: 4 }))
+      .toBe('returning');
+  });
+
+  it('genuine first-timer (no progress, no prior session) → orient', () => {
+    expect(pickBriefingState({ ...BASE_FACTS, sessionsCompleted: 0, hasPriorSession: false })).toBe('orient');
+  });
+
   it('multi-day gap → returning', () => {
     expect(pickBriefingState({ ...BASE_FACTS, daysSinceLastSession: 4 })).toBe('returning');
   });

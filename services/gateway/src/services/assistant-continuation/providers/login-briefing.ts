@@ -76,6 +76,13 @@ const MATERIAL_INDEX_DELTA = 5;
  * it would feel like nagging rather than understanding (VTID-03307 / advice #1).
  */
 const MATERIAL_PILLAR_DROP = 3;
+/**
+ * BOOTSTRAP-ORB-GREETING-RETURNING-USER (fix #2): if the user's previous ORB
+ * session was within this window, the fast proactive opener stays silent and
+ * lets the wake-brief path handle turn 1 (brief-resume/skip). Mirrors the
+ * 15-minute greet-once cap in greeting-policy.ts (RECENT_GREETING_WINDOW_MS).
+ */
+const FAST_OPENER_GREET_ONCE_WINDOW_MS = 15 * 60 * 1000;
 
 export interface LoginBriefingInputs {
   supabase: SupabaseClient;
@@ -137,12 +144,31 @@ export interface BriefingFacts {
    */
   topicsLearned?: number | null;
   topicsTotal?: number | null;
+  /**
+   * BOOTSTRAP-ORB-GREETING-RETURNING-USER — true when the user has ANY prior
+   * ORB conversation on record (`user_journey.is_first_session === false` OR a
+   * non-null `last_session_date`). This is the real "have we met before?"
+   * signal. Previously the briefing inferred first-timer status SOLELY from the
+   * guided-curriculum pointer (`current_session`), which only advances when the
+   * user walks the formal teaching topics — so a member who talks to Vitana
+   * conversationally was permanently classified as a first-timer and greeted
+   * with the one-time onboarding opener on EVERY session. Optional so existing
+   * fixtures/callers degrade cleanly to the old behavior. */
+  hasPriorSession?: boolean;
 }
 
 /** Pick the state purely from the gathered facts. Exported for tests. */
 export function pickBriefingState(f: BriefingFacts): BriefingState {
   if (f.graduated) return 'graduated';
-  if (f.sessionsCompleted <= 0) return 'orient';
+  // BOOTSTRAP-ORB-GREETING-RETURNING-USER: a genuine first-timer is someone we
+  // have NO record of — not merely someone whose guided-curriculum pointer is
+  // still 1. Any prior ORB conversation (hasPriorSession) proves an established
+  // user who must NEVER hear the one-time "let's take your first step together"
+  // onboarding opener. Only fall to 'orient' when the curriculum shows no
+  // progress AND we have no record of a prior session. (hasGoal/indexDeltaUp are
+  // intentionally NOT part of this gate — 'orient' historically keys on session
+  // progress, and a goal alone does not make someone a returning user.)
+  if (f.sessionsCompleted <= 0 && f.hasPriorSession !== true) return 'orient';
   if (f.daysSinceLastSession !== null && f.daysSinceLastSession >= RETURN_GAP_DAYS) {
     return 'returning';
   }
@@ -516,6 +542,11 @@ export function makeLoginBriefingProvider(
           ? primaryGoalRaw.trim()
           : null;
 
+      // BOOTSTRAP-ORB-GREETING-RETURNING-USER: established-user signal from the
+      // user_journey row (see gatherBriefingFactsForFastOpener for rationale).
+      const hasPriorSession =
+        !!userJourney && (userJourney.is_first_session === false || userJourney.last_session_date != null);
+
       const facts: BriefingFacts = {
         sessionsCompleted,
         nextSessionNumber: currentSession,
@@ -524,6 +555,7 @@ export function makeLoginBriefingProvider(
         hasGoal: !!primaryGoalLabel,
         indexDeltaUp,
         daysSinceLastSession,
+        hasPriorSession,
         // Advice #1 — understood weakness: the pillar that slipped this week
         // (from the Index snapshot's per-pillar last_movement) + the goal it
         // ties to. Both degrade to null so the briefing is unaffected when the
@@ -753,6 +785,12 @@ export async function gatherBriefingFactsForFastOpener(
   const primaryGoalLabel =
     typeof primaryGoalRaw === 'string' && primaryGoalRaw.trim().length > 0 ? primaryGoalRaw.trim() : null;
   const topicsLearned = Array.isArray(journeyState?.completedTopicIds) ? journeyState.completedTopicIds.length : 0;
+  // BOOTSTRAP-ORB-GREETING-RETURNING-USER: "have we met before?" comes from the
+  // user_journey row, NOT the curriculum pointer. is_first_session is cleared at
+  // session end, and last_session_date is stamped on every session — so either
+  // being set means the user has talked to Vitana before.
+  const hasPriorSession =
+    !!userJourney && (userJourney.is_first_session === false || userJourney.last_session_date != null);
   return {
     sessionsCompleted,
     nextSessionNumber: currentSession,
@@ -765,6 +803,7 @@ export async function gatherBriefingFactsForFastOpener(
     primaryGoalLabel,
     topicsLearned,
     topicsTotal: totalTopics,
+    hasPriorSession,
   };
 }
 
@@ -781,8 +820,32 @@ export async function computeFastProactiveOpener(args: {
   firstName: string | null;
   timezone: string | null;
   nowMs: number;
+  /**
+   * BOOTSTRAP-ORB-GREETING-RETURNING-USER (fix #2 — cadence gate): the previous
+   * session's timestamp, as resolved by `fetchLastSessionInfo`. When the last
+   * session was within the greet-once window we return null so the fast opener
+   * does NOT emit a fresh full greeting — the richer wake-brief path (which has
+   * its own brief-resume/skip cadence handling) owns turn 1 instead. This is
+   * what stops a second session a minute later from re-greeting from scratch.
+   * Optional → omitting it preserves the prior always-greet behavior.
+   */
+  lastSessionInfo?: { time: string } | null;
 }): Promise<string | null> {
   try {
+    // Cadence gate: suppress the fast proactive opener when we greeted/served
+    // this user very recently (default 15-min greet-once window, mirroring
+    // RECENT_GREETING_WINDOW_MS in greeting-policy.ts). Day-granularity
+    // daysSinceLastSession can't see this; the raw timestamp can.
+    const lastTime = args.lastSessionInfo?.time;
+    if (typeof lastTime === 'string' && lastTime.length > 0) {
+      const lastMs = Date.parse(lastTime);
+      if (Number.isFinite(lastMs)) {
+        const sinceMs = args.nowMs - lastMs;
+        if (sinceMs >= 0 && sinceMs < FAST_OPENER_GREET_ONCE_WINDOW_MS) {
+          return null;
+        }
+      }
+    }
     const facts = await gatherBriefingFactsForFastOpener(
       args.supabase,
       args.userId,
