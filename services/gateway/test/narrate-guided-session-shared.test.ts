@@ -114,6 +114,37 @@ describe('tool_narrate_guided_session', () => {
     expect(r.text).toMatch(/Guided Journey/i);
   });
 
+  it('EMPTY curriculum (zero topics) → degraded, NOT a false "journey complete"', async () => {
+    const sb = makeSb({ stateData: { completed_topic_ids: [], current_session: 1 }, topics: [] });
+    const r = await tool_narrate_guided_session({} as any, IDENT, sb);
+    expect(r.ok).toBe(true);
+    expect((r as any).result.done).toBeUndefined(); // must NOT claim complete
+    expect((r as any).result.degraded).toBe(true);
+  });
+
+  it('SPECIFIC session: session_number plays that exact session', async () => {
+    const sb = makeSb({ stateData: { completed_topic_ids: [], current_session: 1 }, topics: TOPICS });
+    const r = await tool_narrate_guided_session({ session_number: 2 } as any, IDENT, sb);
+    expect((r as any).result.session).toBe(2);
+    expect(r.text).toContain(TOPICS[1].vitana_voice_script);
+  });
+
+  it('SPECIFIC session: can REPLAY an already-completed session', async () => {
+    const sb = makeSb({ stateData: { completed_topic_ids: ['t1', 't2'], current_session: 2 }, topics: TOPICS });
+    const r = await tool_narrate_guided_session({ session_number: 1 } as any, IDENT, sb);
+    expect((r as any).result.session).toBe(1);
+    expect(r.text).toContain(TOPICS[0].vitana_voice_script); // replays despite being completed
+  });
+
+  it('SPECIFIC session: out-of-range → not_found, names the valid range (no dead-end)', async () => {
+    const sb = makeSb({ stateData: { completed_topic_ids: [], current_session: 1 }, topics: TOPICS });
+    const r = await tool_narrate_guided_session({ session_number: 99 } as any, IDENT, sb);
+    expect(r.ok).toBe(true);
+    expect((r as any).result.not_found).toBe(true);
+    expect(r.text).toMatch(/no session 99/i);
+    expect(r.text).toContain('to 2'); // max session is 2
+  });
+
   it('missing user_id → ok:false', async () => {
     const r = await tool_narrate_guided_session({} as any, { user_id: null } as any, makeSb({}));
     expect(r.ok).toBe(false);

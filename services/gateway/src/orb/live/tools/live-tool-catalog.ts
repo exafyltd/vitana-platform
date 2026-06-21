@@ -963,10 +963,19 @@ export function buildLiveApiTools(
             'it is the real session content, not a hint. NEVER replace it with a one-line',
             'summary, NEVER paraphrase or shorten it. After you finish speaking the whole',
             'script, briefly offer to continue with the next session.',
+            '',
+            'If the user asks for a SPECIFIC session ("play session three", "spiel mir Session 3",',
+            '"repeat session two"), pass that number as session_number. Otherwise omit it and the',
+            'next un-learned session is played.',
           ].join('\n'),
           parameters: {
             type: 'object',
-            properties: {},
+            properties: {
+              session_number: {
+                type: 'integer',
+                description: 'Optional. The specific session number the user asked for (e.g. 3). Omit to play the next un-learned session.',
+              },
+            },
           },
         },
         // ─── BOOTSTRAP-ORB-INDEX-AWARENESS-R4 — Vitana Index tools (5-pillar) ───

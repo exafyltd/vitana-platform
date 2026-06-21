@@ -4339,51 +4339,54 @@ export async function tool_find_community_member(
 // ---------------------------------------------------------------------------
 
 /**
- * DEV-COMHU — narrate the next Guided Journey session by VOICE. Fetches the
- * next un-learned topic's AUTHORED full script (vitana_voice_script, the exact
- * speech the tap-to-open path plays) and returns it under a strict "speak it in
- * full, verbatim" contract. This is what makes "yes, start session one" play the
- * REAL session speech instead of a one-line LLM improvisation.
+ * DEV-COMHU — narrate a Guided Journey session by VOICE. Fetches the authored
+ * full script (vitana_voice_script, the exact speech the tap-to-open path plays)
+ * and returns it under a strict "speak it in full, verbatim" contract.
+ *
+ * args.session_number (optional): when the user names a session ("play session
+ * three"), narrate THAT session. Otherwise narrate the next un-learned one.
+ *
+ * Robustness: an EMPTY curriculum (zero published topics) is NOT "complete" — it
+ * means the journey content isn't seeded in this environment, so we degrade to
+ * "introduce from knowledge" rather than falsely congratulating the user.
  */
 export async function tool_narrate_guided_session(
-  _args: OrbToolArgs,
+  args: OrbToolArgs,
   identity: OrbToolIdentity,
   sb: SupabaseClient,
 ): Promise<OrbToolResult> {
   if (!identity.user_id) {
     return { ok: false, error: 'narrate_guided_session requires an authenticated user.' };
   }
+  const degraded: OrbToolResult = {
+    ok: true,
+    result: { has_script: false, degraded: true },
+    text:
+      'Begin the Vitanaland Guided Journey: introduce the first onboarding step clearly and concretely ' +
+      'from your own knowledge of the app (several sentences, not one line) — e.g. what the Vitana Index is ' +
+      'and how it works — then offer to continue with the next step. Do NOT say it did not work, do NOT claim ' +
+      'the user has completed everything, and do NOT ask "what do you want".',
+  };
   try {
     const state = await sb
       .from('user_guided_journey_state')
-      .select('completed_topic_ids, current_session')
+      .select('completed_topic_ids')
       .eq('user_id', identity.user_id)
       .maybeSingle();
     const completed = new Set<string>((state.data?.completed_topic_ids as string[] | null | undefined) ?? []);
-    const fromSession = Math.max(1, Number(state.data?.current_session ?? 1) || 1);
 
+    // ALL published topics, ordered — NO session floor (the floor caused a false
+    // "you completed everything" once current_session advanced past the rows).
     const topics = await sb
       .from('journey_checklist_topics')
       .select('topic_id, title, display_label, short_description, vitana_voice_script, session, position')
       .eq('status', 'published')
       .eq('enabled', true)
-      .gte('session', fromSession)
       .order('session', { ascending: true })
       .order('position', { ascending: true })
-      .limit(80);
-    if (topics.error) {
-      // Fail-OPEN: never dead-end the user with "that didn't work". If the
-      // checklist can't be read, tell Vitana to introduce the onboarding step
-      // from her own knowledge instead.
-      return {
-        ok: true,
-        result: { has_script: false, degraded: true },
-        text:
-          'Begin the Vitanaland Guided Journey: introduce the first onboarding step clearly and concretely ' +
-          'from your own knowledge of the app (several sentences, not one line) — e.g. what the Vitana Index is ' +
-          'and how it works — then offer to continue with the next step. Do NOT say it did not work and do NOT ask "what do you want".',
-      };
-    }
+      .limit(300);
+    if (topics.error) return degraded;
+
     type Row = {
       topic_id: string;
       title: string | null;
@@ -4392,61 +4395,78 @@ export async function tool_narrate_guided_session(
       vitana_voice_script: string | null;
       session: number;
     };
-    const next = (topics.data as Row[] | null | undefined ?? []).find((r) => !completed.has(r.topic_id));
-    if (!next) {
-      return {
-        ok: true,
-        result: { done: true },
-        text:
-          'JOURNEY COMPLETE: the user has finished every Guided Journey session. ' +
-          'Congratulate them warmly in one or two sentences and offer to go one level deeper. Do NOT ask "what do you want to do".',
-      };
+    const rows = (topics.data as Row[] | null | undefined) ?? [];
+    // Empty curriculum → NOT complete; the content simply isn't here.
+    if (rows.length === 0) return degraded;
+
+    // Specific session requested? ("play session three")
+    const reqRaw = (args as Record<string, unknown>)?.session_number;
+    const requested = typeof reqRaw === 'number' ? reqRaw : Number(reqRaw);
+    const wantsSpecific = Number.isFinite(requested) && requested >= 1;
+
+    let target: Row | undefined;
+    if (wantsSpecific) {
+      target = rows.find((r) => r.session === requested); // already ordered by position
+      if (!target) {
+        const maxSession = rows.reduce((m, r) => Math.max(m, r.session), 0);
+        return {
+          ok: true,
+          result: { not_found: true, requested_session: requested, max_session: maxSession },
+          text:
+            `There is no session ${requested} in the Guided Journey — it runs from session 1 to ${maxSession}. ` +
+            `Tell the user that briefly and offer to play a valid session (e.g. the next un-learned one). Do NOT say it did not work.`,
+        };
+      }
+    } else {
+      target = rows.find((r) => !completed.has(r.topic_id));
+      if (!target) {
+        // Rows existed AND all are completed → genuinely complete.
+        return {
+          ok: true,
+          result: { done: true },
+          text:
+            'JOURNEY COMPLETE: the user has finished every Guided Journey session. ' +
+            'Congratulate them warmly in one or two sentences and offer to go one level deeper. Do NOT ask "what do you want to do".',
+        };
+      }
     }
 
-    // PROGRESSION: mark this session as done so it turns green on the Guided
-    // Journey screen AND the NEXT call advances to the following session
-    // (1 → 2 → 3 …, never repeating). Best-effort: a write failure must not
-    // block the narration.
+    // PROGRESSION: mark this session done so it turns green on the Guided Journey
+    // screen AND the next un-learned call advances (1 → 2 → 3 …). Best-effort.
     try {
-      const newCompleted = Array.from(new Set([...completed, next.topic_id]));
+      const newCompleted = Array.from(new Set([...completed, target.topic_id]));
       await sb
         .from('user_guided_journey_state')
         .upsert(
-          { user_id: identity.user_id, completed_topic_ids: newCompleted, current_session: Math.max(fromSession, next.session) },
+          { user_id: identity.user_id, completed_topic_ids: newCompleted, current_session: target.session },
           { onConflict: 'user_id' },
         );
     } catch {
       /* progression is best-effort; the narration still returns below */
     }
-    const title = (next.title || next.display_label || 'diese Session').trim();
-    const script = (next.vitana_voice_script || next.short_description || '').trim();
+
+    const title = (target.title || target.display_label || 'diese Session').trim();
+    const script = (target.vitana_voice_script || target.short_description || '').trim();
     if (!script) {
       return {
         ok: true,
-        result: { session: next.session, topic_id: next.topic_id, topic_title: title, has_script: false },
+        result: { session: target.session, topic_id: target.topic_id, topic_title: title, has_script: false },
         text:
-          `SESSION ${next.session} — "${title}". No authored script exists yet for this topic. ` +
+          `SESSION ${target.session} — "${title}". No authored script exists yet for this topic. ` +
           `Introduce it clearly and concretely from your own knowledge (several sentences, not one line), then guide the user to the practice. Do NOT ask "what do you want".`,
       };
     }
     return {
       ok: true,
-      result: { session: next.session, topic_id: next.topic_id, topic_title: title, has_script: true },
+      result: { session: target.session, topic_id: target.topic_id, topic_title: title, has_script: true },
       text:
-        `SESSION ${next.session} — "${title}". SPEAK THE FOLLOWING SCRIPT TO THE USER IN FULL, WORD FOR WORD, AS AUDIO. ` +
+        `SESSION ${target.session} — "${title}". SPEAK THE FOLLOWING SCRIPT TO THE USER IN FULL, WORD FOR WORD, AS AUDIO. ` +
         `Do NOT summarize, shorten, translate, or paraphrase it — it IS the actual session content and must be delivered complete. ` +
         `After you finish speaking it, briefly offer to continue with the next session.\n\n${script}`,
     };
   } catch (e: any) {
-    // Fail-OPEN — never surface "that didn't work" to the user.
     console.warn(`[narrate_guided_session] non-fatal: ${e?.message || e}`);
-    return {
-      ok: true,
-      result: { has_script: false, degraded: true },
-      text:
-        'Begin the Vitanaland Guided Journey: introduce the first onboarding step clearly from your own knowledge ' +
-        '(several sentences), then offer to continue. Do NOT say it did not work and do NOT ask "what do you want".',
-    };
+    return degraded;
   }
 }
 
