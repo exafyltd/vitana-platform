@@ -531,11 +531,6 @@ export function makeLoginBriefingProvider(
         inputs.lang,
         currentSession,
       );
-      // Last session the user actually did — for the grounded "where we left off" recall.
-      const lastSessionTitle =
-        sessionsCompleted > 0
-          ? (await resolveCurriculumFacts(inputs.supabase, inputs.lang, currentSession - 1).catch(() => ({ title: null as string | null }))).title
-          : null;
 
       // Advice #2 — visible momentum: count of green-checked curriculum topics.
       const topicsLearned = Array.isArray(journeyState?.completedTopicIds)
@@ -563,7 +558,10 @@ export function makeLoginBriefingProvider(
         sessionsCompleted,
         nextSessionNumber: currentSession,
         nextSessionTitle,
-        lastSessionTitle,
+        // Recall the session the user most recently heard = current_session
+        // (narrate persists it as the just-played session), only when they have
+        // actually completed a topic. See the fast-gather note.
+        lastSessionTitle: topicsLearned > 0 ? nextSessionTitle : null,
         graduated,
         hasGoal: !!primaryGoalLabel,
         indexDeltaUp,
@@ -752,13 +750,19 @@ export function buildFastProactiveOpener(args: RenderArgs, rng: () => number = M
       ? `Letztes Mal ging es um „${f.lastSessionTitle}". `
       : `Last time we were on "${f.lastSessionTitle}". `
     : '';
-  const where = f.nextSessionTitle
+  // When we just named the session in the recall, continue "there" rather than
+  // repeating the same title; otherwise name the next step.
+  const where = recall
     ? de
-      ? `bei „${f.nextSessionTitle}"`
-      : `with "${f.nextSessionTitle}"`
-    : de
-      ? 'bei deinem nächsten Schritt'
-      : 'with your next step';
+      ? 'da'
+      : 'there'
+    : f.nextSessionTitle
+      ? de
+        ? `bei „${f.nextSessionTitle}"`
+        : `with "${f.nextSessionTitle}"`
+      : de
+        ? 'bei deinem nächsten Schritt'
+        : 'with your next step';
   const pool = de
     ? [
         `${recall}Lass uns ${where} weitermachen — ich führe dich.`,
@@ -798,12 +802,6 @@ export async function gatherBriefingFactsForFastOpener(
   const graduated =
     journeyState?.onboardingStatus === 'qualified' || journeyState?.onboardingStatus === 'completed';
   const { title: nextSessionTitle, totalTopics } = await resolveCurriculumFacts(supabase, lang, currentSession);
-  // The LAST session the user actually did — for the grounded "last time we were
-  // on X" recall. Only when there IS a completed session; else null (no recall).
-  const lastSessionTitle =
-    sessionsCompleted > 0
-      ? (await resolveCurriculumFacts(supabase, lang, currentSession - 1).catch(() => ({ title: null as string | null }))).title
-      : null;
   const trend = readIndexTrend(indexSnap);
   const indexDeltaUp = trend !== null && trend >= MATERIAL_INDEX_DELTA ? trend : null;
   const todayIso = todayInTimezone(new Date(nowMs), timezone);
@@ -822,7 +820,12 @@ export async function gatherBriefingFactsForFastOpener(
     sessionsCompleted,
     nextSessionNumber: currentSession,
     nextSessionTitle,
-    lastSessionTitle,
+    // narrate persists current_session = the session of the topic it just
+    // played, so the session the user MOST RECENTLY HEARD is current_session
+    // itself (title = nextSessionTitle), NOT current_session - 1. Recall it only
+    // when the user has actually completed a topic; otherwise there is nothing to
+    // recall and we must not bluff.
+    lastSessionTitle: topicsLearned > 0 ? nextSessionTitle : null,
     graduated,
     hasGoal: !!primaryGoalLabel,
     indexDeltaUp,

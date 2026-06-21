@@ -310,10 +310,10 @@ describe('buildFastProactiveOpener (proactive fast greeting)', () => {
     expect(line).toContain('ich führe dich');
   });
 
-  it('returning user → GROUNDED recall of the last session ("Letztes Mal ging es um X"), then continues', () => {
-    const line = mk({ daysSinceLastSession: 2, lastSessionTitle: 'Dein Plan', nextSessionTitle: 'Dein erster Schritt' });
+  it('returning user → GROUNDED recall of the last session ("Letztes Mal ging es um X"), then continues there', () => {
+    const line = mk({ daysSinceLastSession: 2, lastSessionTitle: 'Dein Plan', nextSessionTitle: 'Dein Plan' });
     expect(line).toContain('Letztes Mal ging es um „Dein Plan"'); // the REAL last session, recalled
-    expect(line).toContain('Dein erster Schritt'); // then leads to the next
+    expect(line).toMatch(/da (weitermachen|weiter|an)|da\b/); // continues "there", not repeating the title
   });
 
   it('NO false recall when there is no last session — never bluffs "where we left off"', () => {
