@@ -116,6 +116,13 @@ export interface BriefingFacts {
   nextSessionNumber: number;
   /** Title of the next session, when the published checklist resolved it. */
   nextSessionTitle: string | null;
+  /**
+   * Title of the LAST session the user actually did — the concrete "where we
+   * left off" the greeting RECALLS ("last time we were on X"). Null for a user
+   * with no completed session yet (then we never claim a recall). Grounds the
+   * continuity promise so it is real, not a bluff the user calls.
+   */
+  lastSessionTitle?: string | null;
   /** Onboarding lifecycle from the guided-journey state. */
   graduated: boolean;
   /** True when the user has set a Life Compass primary goal. */
@@ -524,6 +531,11 @@ export function makeLoginBriefingProvider(
         inputs.lang,
         currentSession,
       );
+      // Last session the user actually did — for the grounded "where we left off" recall.
+      const lastSessionTitle =
+        sessionsCompleted > 0
+          ? (await resolveCurriculumFacts(inputs.supabase, inputs.lang, currentSession - 1).catch(() => ({ title: null as string | null }))).title
+          : null;
 
       // Advice #2 — visible momentum: count of green-checked curriculum topics.
       const topicsLearned = Array.isArray(journeyState?.completedTopicIds)
@@ -551,6 +563,7 @@ export function makeLoginBriefingProvider(
         sessionsCompleted,
         nextSessionNumber: currentSession,
         nextSessionTitle,
+        lastSessionTitle,
         graduated,
         hasGoal: !!primaryGoalLabel,
         indexDeltaUp,
@@ -730,7 +743,15 @@ export function buildFastProactiveOpener(args: RenderArgs, rng: () => number = M
         ];
     return [prefix, pickFromPool(pool, rng)].join(' ');
   }
-  // building / momentum / returning → continue at the next step (varied wording).
+  // building / momentum / returning → RECALL the actual last session (grounded
+  // "where we left off" the user can verify), THEN continue at the next step.
+  // When there is no real last session to name, we DON'T fake a recall — we just
+  // lead to the next step (no bluff the user can call).
+  const recall = f.lastSessionTitle
+    ? de
+      ? `Letztes Mal ging es um „${f.lastSessionTitle}". `
+      : `Last time we were on "${f.lastSessionTitle}". `
+    : '';
   const where = f.nextSessionTitle
     ? de
       ? `bei „${f.nextSessionTitle}"`
@@ -740,14 +761,14 @@ export function buildFastProactiveOpener(args: RenderArgs, rng: () => number = M
       : 'with your next step';
   const pool = de
     ? [
-        `Lass uns ${where} weitermachen — ich führe dich.`,
-        `Knüpfen wir ${where} an — ich nehme dich mit.`,
-        `Lass uns gleich ${where} weitermachen, ich begleite dich Schritt für Schritt.`,
+        `${recall}Lass uns ${where} weitermachen — ich führe dich.`,
+        `${recall}Knüpfen wir ${where} an — ich nehme dich mit.`,
+        `${recall}Lass uns ${where} weitermachen, ich begleite dich.`,
       ]
     : [
-        `Let's continue ${where} — I'll guide you.`,
-        `Let's pick up ${where} — I'll walk with you.`,
-        `Let's get right back to it ${where} — I'll take you there.`,
+        `${recall}Let's continue ${where} — I'll guide you.`,
+        `${recall}Let's pick up ${where} — I'll walk with you.`,
+        `${recall}Let's get right back to it ${where} — I'll take you there.`,
       ];
   return [prefix, pickFromPool(pool, rng)].join(' ');
 }
@@ -777,6 +798,12 @@ export async function gatherBriefingFactsForFastOpener(
   const graduated =
     journeyState?.onboardingStatus === 'qualified' || journeyState?.onboardingStatus === 'completed';
   const { title: nextSessionTitle, totalTopics } = await resolveCurriculumFacts(supabase, lang, currentSession);
+  // The LAST session the user actually did — for the grounded "last time we were
+  // on X" recall. Only when there IS a completed session; else null (no recall).
+  const lastSessionTitle =
+    sessionsCompleted > 0
+      ? (await resolveCurriculumFacts(supabase, lang, currentSession - 1).catch(() => ({ title: null as string | null }))).title
+      : null;
   const trend = readIndexTrend(indexSnap);
   const indexDeltaUp = trend !== null && trend >= MATERIAL_INDEX_DELTA ? trend : null;
   const todayIso = todayInTimezone(new Date(nowMs), timezone);
@@ -795,6 +822,7 @@ export async function gatherBriefingFactsForFastOpener(
     sessionsCompleted,
     nextSessionNumber: currentSession,
     nextSessionTitle,
+    lastSessionTitle,
     graduated,
     hasGoal: !!primaryGoalLabel,
     indexDeltaUp,

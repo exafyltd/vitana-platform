@@ -197,8 +197,9 @@ describe('VTID-03053 — defaultVoiceWakeBriefRenderer emits pillar-specific lin
       { greetingPolicy: 'brief_resume', lang: 'en', pillarMomentum: makePm() },
       makeCtx({ greetingPolicy: 'brief_resume', lang: 'en' }),
     );
-    // VTID-03256: proactive-lead copy — propose the next move, never ask preference.
-    expect(line).toBe("Welcome back. Let's pick up right where we left off.");
+    // Proactive-lead copy that leads to the next step — NOT a bluffed "pick up
+    // where we left off" with no recalled content behind it.
+    expect(line).toBe('Welcome back. Let me show you your next step.');
   });
 });
 
