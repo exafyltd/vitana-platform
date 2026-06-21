@@ -52,6 +52,18 @@ describe('NAV-GUIDED-JOURNEY', () => {
     expect(mockSetMode.mock.calls[0]).toEqual([sbStub, 'u-1', 'guided']);
     expect(r.ok).toBe(true);
     expect(r.result.route).toBe('/autopilot');
+    // Vitana is told to explain the difference + how to switch.
+    expect(r.text).toContain('GUIDED JOURNEY');
+    expect(r.text).toContain('Einführung/Vollversion');
+  });
+
+  test('full-app intent → flips durable mode to full + explains the difference', async () => {
+    process.env.NAV_GUIDED_JOURNEY = 'true';
+    const r: any = await tool_navigate({ question: 'show me the full app version' }, authedId, sbStub);
+    expect(mockSetMode).toHaveBeenCalledTimes(1);
+    expect(mockSetMode.mock.calls[0]).toEqual([sbStub, 'u-1', 'full']);
+    expect(r.text).toContain('FULL app');
+    expect(r.text).toContain('Einführung/Vollversion');
   });
 
   test('German "geführte" / "Einführung" intent also flips the mode', async () => {
