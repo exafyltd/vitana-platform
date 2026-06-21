@@ -3260,25 +3260,33 @@ export async function tool_navigate(
     const entry = lookupScreen(consultResult.primary.screen_id);
     if (entry) {
       // NAV-GUIDED-JOURNEY: "Guided Journey" is NOT a separate screen — it's the
-      // durable GUIDED mode of My Journey (GuidedModeProvider, VTID-03279). The
-      // Navigator can only emit /autopilot, which renders in the user's current
-      // mode (defaults Full). So when the user asks for their GUIDED journey,
-      // flip the durable mode to 'guided' BEFORE opening the screen, so they
-      // land in the guided view instead of the full app. Flag-gated; reuses the
+      // durable GUIDED vs FULL mode of My Journey (GuidedModeProvider, VTID-03279;
+      // the Einführung/Vollversion toggle). The Navigator can only emit /autopilot,
+      // which renders in the user's current durable mode. So when the user asks for
+      // their GUIDED journey (or the FULL app), flip the durable mode to match
+      // BEFORE opening the screen, so they land in the right view. We also tell
+      // Vitana to explain the difference + how to switch. Flag-gated; reuses the
       // existing journey-mode service.
+      let journeyModeSwitched: 'guided' | 'full' | null = null;
       if (
         process.env.NAV_GUIDED_JOURNEY === 'true' &&
         sb && id.user_id &&
-        entry.screen_id === 'AUTOPILOT.MY_JOURNEY' &&
-        /guided|gef[üu]hrt|einf[üu]hrung|guided[\s-]?journey|guided[\s-]?mode/i.test(`${question} ${transcriptExcerpt}`)
+        entry.screen_id === 'AUTOPILOT.MY_JOURNEY'
       ) {
-        try {
-          const { setJourneyMode } = await import('./guided-journey/guided-journey-state');
-          await setJourneyMode(sb, id.user_id, 'guided');
-          console.log(`[NAV-GUIDED-JOURNEY] set journey mode = guided for ${id.user_id} before opening My Journey`);
-        } catch (e) {
-          // Don't block navigation — the screen is still correct, just in Full mode.
-          console.error('[NAV-GUIDED-JOURNEY] setJourneyMode failed:', e instanceof Error ? e.message : e);
+        const intentText = `${question} ${transcriptExcerpt}`.toLowerCase();
+        const wantsGuided = /guided|gef[üu]hrt|einf[üu]hrung/.test(intentText);
+        const wantsFull = /full[\s-]?app|full[\s-]?version|full[\s-]?mode|vollversion|volle\s+version|komplette\s+app|kompletten?\s+app/.test(intentText);
+        const targetMode: 'guided' | 'full' | null = wantsGuided ? 'guided' : wantsFull ? 'full' : null;
+        if (targetMode) {
+          try {
+            const { setJourneyMode } = await import('./guided-journey/guided-journey-state');
+            await setJourneyMode(sb, id.user_id, targetMode);
+            journeyModeSwitched = targetMode;
+            console.log(`[NAV-GUIDED-JOURNEY] set journey mode = ${targetMode} for ${id.user_id} before opening My Journey`);
+          } catch (e) {
+            // Don't block navigation — the screen is still correct, just in the prior mode.
+            console.error('[NAV-GUIDED-JOURNEY] setJourneyMode failed:', e instanceof Error ? e.message : e);
+          }
         }
       }
 
@@ -3353,6 +3361,22 @@ export async function tool_navigate(
       lines.push('explain the feature, tell them what they can do on that screen,');
       lines.push('and let them know you are taking them there. The redirect happens');
       lines.push('automatically when you finish speaking.');
+      if (journeyModeSwitched === 'guided') {
+        lines.push('');
+        lines.push('MODE_SWITCH: You switched the user into the GUIDED JOURNEY — the');
+        lines.push('step-by-step guided experience that walks them through one focused');
+        lines.push('move at a time. Briefly explain how this differs from the FULL app');
+        lines.push('(the complete version with everything available at once), and tell');
+        lines.push('them they can switch back anytime with the Einführung/Vollversion');
+        lines.push('toggle at the top of this screen — or just ask you to switch.');
+      } else if (journeyModeSwitched === 'full') {
+        lines.push('');
+        lines.push('MODE_SWITCH: You switched the user into the FULL app — the complete');
+        lines.push('version with everything available at once. Briefly explain how this');
+        lines.push('differs from the GUIDED Journey (the step-by-step guided experience),');
+        lines.push('and tell them they can switch back anytime with the');
+        lines.push('Einführung/Vollversion toggle at the top of this screen — or just ask you.');
+      }
 
       return {
         ok: true,
