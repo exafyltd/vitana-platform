@@ -4455,28 +4455,53 @@ export async function tool_narrate_guided_session(
     // Empty curriculum → NOT complete; the content simply isn't here.
     if (rows.length === 0) return degraded;
 
-    // Specific session requested? ("play session three")
+    // What did the user ask for? a SPECIFIC session number, a NAMED topic, or
+    // (default) the next un-learned topic.
     const reqRaw = (args as Record<string, unknown>)?.session_number;
     const requested = typeof reqRaw === 'number' ? reqRaw : Number(reqRaw);
     const wantsSpecific = Number.isFinite(requested) && requested >= 1;
+    const topicQueryRaw = (args as Record<string, unknown>)?.topic_query;
+    const topicQuery = typeof topicQueryRaw === 'string' ? topicQueryRaw.trim() : '';
+
+    const textOf = (r: Row) => `${r.title ?? ''} ${r.display_label ?? ''} ${r.short_description ?? ''}`.toLowerCase();
+    const maxSession = rows.reduce((m, r) => Math.max(m, r.session), 0);
 
     let target: Row | undefined;
-    if (wantsSpecific) {
-      target = rows.find((r) => r.session === requested); // already ordered by position
+    let remainingInSession = 0;
+
+    if (topicQuery) {
+      // NAMED topic → match across all 254 topics (exact title first, then contains).
+      const q = topicQuery.toLowerCase();
+      target =
+        rows.find((r) => (r.title ?? '').toLowerCase() === q || (r.display_label ?? '').toLowerCase() === q) ??
+        rows.find((r) => textOf(r).includes(q));
       if (!target) {
-        const maxSession = rows.reduce((m, r) => Math.max(m, r.session), 0);
+        return {
+          ok: true,
+          result: { not_found_topic: true, query: topicQuery },
+          text:
+            `No Guided Journey topic matches "${topicQuery}". Tell the user briefly you couldn't find that topic, ` +
+            `and offer to play a session by number instead (the journey has sessions 1 to ${maxSession}). Do NOT say it did not work.`,
+        };
+      }
+    } else if (wantsSpecific) {
+      const inSession = rows.filter((r) => r.session === requested); // ordered by position
+      if (inSession.length === 0) {
         return {
           ok: true,
           result: { not_found: true, requested_session: requested, max_session: maxSession },
           text:
             `There is no session ${requested} in the Guided Journey — it runs from session 1 to ${maxSession}. ` +
-            `Tell the user that briefly and offer to play a valid session (e.g. the next un-learned one). Do NOT say it did not work.`,
+            `Tell the user that briefly and offer a valid session. Do NOT say it did not work.`,
         };
       }
+      // A session has 2–3 topics; play the FIRST topic the user hasn't heard yet
+      // so the session is delivered one topic at a time (then "more" → next topic).
+      target = inSession.find((r) => !completed.has(r.topic_id)) ?? inSession[0]; // all heard → replay from the top
+      remainingInSession = inSession.filter((r) => !completed.has(r.topic_id) && r.topic_id !== target!.topic_id).length;
     } else {
       target = rows.find((r) => !completed.has(r.topic_id));
       if (!target) {
-        // Rows existed AND all are completed → genuinely complete.
         return {
           ok: true,
           result: { done: true },
@@ -4485,10 +4510,12 @@ export async function tool_narrate_guided_session(
             'Congratulate them warmly in one or two sentences and offer to go one level deeper. Do NOT ask "what do you want to do".',
         };
       }
+      remainingInSession = rows.filter(
+        (r) => r.session === target!.session && !completed.has(r.topic_id) && r.topic_id !== target!.topic_id,
+      ).length;
     }
 
-    // PROGRESSION: mark this session done so it turns green on the Guided Journey
-    // screen AND the next un-learned call advances (1 → 2 → 3 …). Best-effort.
+    // PROGRESSION: mark this topic done (green) so the next call advances.
     try {
       const newCompleted = Array.from(new Set([...completed, target.topic_id]));
       await sb
@@ -4501,24 +4528,29 @@ export async function tool_narrate_guided_session(
       /* progression is best-effort; the narration still returns below */
     }
 
-    const title = (target.title || target.display_label || 'diese Session').trim();
+    const title = (target.title || target.display_label || 'dieses Thema').trim();
     const script = (target.vitana_voice_script || target.short_description || '').trim();
+    // After this topic: offer the next topic in the same session, else next session.
+    const afterClause =
+      remainingInSession > 0
+        ? `After you finish, tell the user there ${remainingInSession === 1 ? 'is 1 more topic' : `are ${remainingInSession} more topics`} in session ${target.session}, and offer to continue with the next topic.`
+        : `After you finish, this was the last topic of session ${target.session} — offer to continue with session ${target.session + 1}.`;
+
     if (!script) {
       return {
         ok: true,
-        result: { session: target.session, topic_id: target.topic_id, topic_title: title, has_script: false },
+        result: { session: target.session, topic_id: target.topic_id, topic_title: title, has_script: false, remaining_in_session: remainingInSession },
         text:
-          `SESSION ${target.session} — "${title}". No authored script exists yet for this topic. ` +
-          `Introduce it clearly and concretely from your own knowledge (several sentences, not one line), then guide the user to the practice. Do NOT ask "what do you want".`,
+          `SESSION ${target.session} — topic "${title}". No authored script exists yet for this topic. ` +
+          `Introduce it clearly and concretely from your own knowledge (several sentences, not one line), then guide the user to the practice. ${afterClause} Do NOT ask "what do you want".`,
       };
     }
     return {
       ok: true,
-      result: { session: target.session, topic_id: target.topic_id, topic_title: title, has_script: true },
+      result: { session: target.session, topic_id: target.topic_id, topic_title: title, has_script: true, remaining_in_session: remainingInSession },
       text:
-        `SESSION ${target.session} — "${title}". SPEAK THE FOLLOWING SCRIPT TO THE USER IN FULL, WORD FOR WORD, AS AUDIO. ` +
-        `Do NOT summarize, shorten, translate, or paraphrase it — it IS the actual session content and must be delivered complete. ` +
-        `After you finish speaking it, briefly offer to continue with the next session.\n\n${script}`,
+        `SESSION ${target.session} — topic "${title}". SPEAK THE FOLLOWING SCRIPT TO THE USER IN FULL, WORD FOR WORD, AS AUDIO. ` +
+        `Do NOT summarize, shorten, translate, or paraphrase it — it IS the actual topic content and must be delivered complete. ${afterClause}\n\n${script}`,
     };
   } catch (e: any) {
     console.warn(`[narrate_guided_session] non-fatal: ${e?.message || e}`);
