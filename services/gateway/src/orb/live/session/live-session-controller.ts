@@ -964,6 +964,10 @@ export async function handleLiveSessionStart(
               firstName: greetingFirstName,
               timezone: clientContext?.timezone ?? null,
               nowMs: Date.now(),
+              // BOOTSTRAP-ORB-GREETING-RETURNING-USER (fix #2): feed the prior
+              // session timestamp so the fast opener honors the greet-once
+              // cadence and won't re-greet from scratch on a quick re-open.
+              lastSessionInfo: greetingEarlyLastSessionInfo,
             });
           }
           console.log(
