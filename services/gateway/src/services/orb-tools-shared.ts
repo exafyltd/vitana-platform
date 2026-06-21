@@ -4418,10 +4418,12 @@ export async function tool_narrate_guided_session(
     ok: true,
     result: { has_script: false, degraded: true },
     text:
-      'Begin the Vitanaland Guided Journey: introduce the first onboarding step clearly and concretely ' +
-      'from your own knowledge of the app (several sentences, not one line) — e.g. what the Vitana Index is ' +
-      'and how it works — then offer to continue with the next step. Do NOT say it did not work, do NOT claim ' +
-      'the user has completed everything, and do NOT ask "what do you want".',
+      'Begin the Vitanaland Guided Journey: warmly welcome the user to the start of their longevity ' +
+      'journey and introduce this first onboarding step clearly and concretely from your own knowledge ' +
+      'of the app (several sentences, not one line) — what the journey is and what they will get out of ' +
+      'starting it — then offer to continue with the next step. Do NOT name a specific later topic as if ' +
+      'it were the first step. Do NOT say it did not work, do NOT claim the user has completed everything, ' +
+      'and do NOT ask "what do you want".',
   };
   try {
     const state = await sb
@@ -4515,7 +4517,13 @@ export async function tool_narrate_guided_session(
       ).length;
     }
 
-    // PROGRESSION: mark this topic done (green) so the next call advances.
+    // PROGRESSION: mark THIS topic done (green) so the next call advances. This
+    // is what makes a multi-topic session play topic-by-topic — "play session 15"
+    // marks s15a, then the user's "next" call sees s15a done and serves s15b.
+    // It is safe for explicit plays too: only the topic actually played is marked
+    // (in session/position order), so the journey's "next recommended" cursor
+    // (awareness-extensions: first un-completed topic) never jumps past topics the
+    // user hasn't heard — playing session 15 does NOT mark sessions 1..14.
     try {
       const newCompleted = Array.from(new Set([...completed, target.topic_id]));
       await sb
