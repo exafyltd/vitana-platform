@@ -67,7 +67,7 @@ describe('tool_narrate_guided_session', () => {
     expect(r.ok).toBe(true);
     expect((r as any).result.session).toBe(1);
     expect((r as any).result.has_script).toBe(true);
-    expect(r.text).toContain('IN FULL'); // strict verbatim contract
+    expect(r.text).toMatch(/word for word/i); // strict verbatim contract
     expect(r.text).toContain(TOPICS[0].vitana_voice_script); // the WHOLE authored script
   });
 
@@ -205,9 +205,14 @@ describe('tool_narrate_guided_session', () => {
     const sb = makeSb({ stateData: { completed_topic_ids: [], current_session: 1 }, topics: SESSION15 });
     const r = await tool_narrate_guided_session({ session_number: 15 } as any, IDENT, sb);
     expect((r as any).result.topic_id).toBe('s15a'); // first topic of session 15
-    expect((r as any).result.remaining_in_session).toBe(2); // 2 more topics in the session
-    expect(r.text).toContain('Session 15, Thema eins.');
-    expect(r.text).toMatch(/2 more topics in session 15/i);
+    expect((r as any).result.remaining_in_session).toBe(2); // 2 more topics in the session (metadata only)
+    expect(r.text).toContain('Session 15, Thema eins.'); // the script IS in the spoken text
+    // The OLD parrotable "after you finish, offer the next" guidance must be GONE
+    // from the spoken text — bundling it made the model recite it and skip the
+    // script. (The directive may still *forbid* offering early; that's fine.)
+    expect(r.text).not.toMatch(/After you finish/i);
+    expect(r.text).not.toMatch(/more topics in session/i);
+    expect(r.text).not.toMatch(/offer to continue with session/i);
   });
 
   it('SESSION topic-by-topic: after the first is heard, the next "session 15" plays topic two', async () => {

@@ -4605,27 +4605,26 @@ export async function tool_narrate_guided_session(
 
     const title = (target.title || target.display_label || 'dieses Thema').trim();
     const script = (target.vitana_voice_script || target.short_description || '').trim();
-    // After this topic: offer the next topic in the same session, else next session.
-    const afterClause =
-      remainingInSession > 0
-        ? `After you finish, tell the user there ${remainingInSession === 1 ? 'is 1 more topic' : `are ${remainingInSession} more topics`} in session ${target.session}, and offer to continue with the next topic.`
-        : `After you finish, this was the last topic of session ${target.session} — offer to continue with session ${target.session + 1}.`;
 
+    // CRITICAL: the function-response `text` is the ONLY thing the live model
+    // receives (see dispatchOrbToolForVertex — it sends r.text). Do NOT put any
+    // "after you finish, offer the next session" instruction in here: the model
+    // PARROTS that meta-line ("now we finished session 3, want session 4?") and
+    // skips reading the script aloud entirely. The "offer the next topic AFTER
+    // speaking" behavior lives in the standing system instruction, not here.
     if (!script) {
       return {
         ok: true,
         result: { session: target.session, topic_id: target.topic_id, topic_title: title, has_script: false, remaining_in_session: remainingInSession },
         text:
-          `SESSION ${target.session} — topic "${title}". No authored script exists yet for this topic. ` +
-          `Introduce it clearly and concretely from your own knowledge (several sentences, not one line), then guide the user to the practice. ${afterClause} Do NOT ask "what do you want".`,
+          `There is no authored script yet for the topic "${title}". Introduce it concretely from your own knowledge as spoken audio — several real sentences, not one line — then guide the user into the practice. Speak it now; do NOT merely acknowledge, summarize, or skip ahead.`,
       };
     }
     return {
       ok: true,
       result: { session: target.session, topic_id: target.topic_id, topic_title: title, has_script: true, remaining_in_session: remainingInSession },
       text:
-        `SESSION ${target.session} — topic "${title}". SPEAK THE FOLLOWING SCRIPT TO THE USER IN FULL, WORD FOR WORD, AS AUDIO. ` +
-        `Do NOT summarize, shorten, translate, or paraphrase it — it IS the actual topic content and must be delivered complete. ${afterClause}\n\n${script}`,
+        `SPEAK THE TEXT BELOW NOW, as your spoken audio, in full, word for word, exactly as written — it IS the session's real narration, not a summary to describe. Say ONLY the text below: do NOT add an acknowledgement before it, do NOT summarize or shorten it, and do NOT say "we finished" or offer another session until you have spoken every single word of it.\n\n${script}`,
     };
   } catch (e: any) {
     console.warn(`[narrate_guided_session] non-fatal: ${e?.message || e}`);
