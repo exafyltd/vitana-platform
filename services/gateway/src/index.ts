@@ -199,6 +199,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const longevityRouter = require('./routes/longevity').default;
   // VTID-01900: Longevity News Feed — curated RSS sources
   const longevityNewsRouter = require('./routes/longevity-news').default;
+  // VTID-03319: News Feed — consent-gated community spotlight (most improved)
+  const newsFeedRouter = require('./routes/news-feed').default;
   // VTID-01120: D28 Emotional & Cognitive Signal Interpretation Engine
   const emotionalCognitiveRouter = require('./routes/emotional-cognitive').default;
   // VTID-01084: Community Personalization v1 - longevity-focused groups/meetups
@@ -295,6 +297,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const vcaopRouter = require('./routes/vcaop').default;
   // VCAOP: public, key-verified affiliate postback receiver (Admitad) — no user auth
   const vcaopPostbackRouter = require('./routes/vcaop-postback').default;
+  // VCAOP: Shopify own-store catalog sync (admin trigger; background worker in services)
+  const shopifySyncRouter = require('./routes/shopify-sync').default;
   // VTID-01169: Deploy → Ledger Terminalization (terminalize endpoint + repair job)
   const vtidTerminalizeRouter = require('./routes/vtid-terminalize').default;
   // VTID-01157: Supabase JWT Auth Middleware + /api/v1/auth/me endpoint
@@ -658,6 +662,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   // VCAOP: public affiliate postback receiver — MUST mount before the authed vcaop
   // router so /api/v1/vcaop/postback/* resolves to the key-verified public handler.
   mountRouterSync(app, '/api/v1/vcaop/postback', vcaopPostbackRouter, { owner: 'vcaop-postback' });
+  // VCAOP: Shopify catalog sync — mount before the vcaop router so the sub-path resolves.
+  mountRouterSync(app, '/api/v1/vcaop/shopify', shopifySyncRouter, { owner: 'vcaop-shopify' });
   // VCAOP: Vitanaland Commerce API — providers/affiliate-programs/shop/wallet/onboarding
   mountRouterSync(app, '/api/v1/vcaop', vcaopRouter, { owner: 'vcaop' });
 
@@ -1045,6 +1051,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
 
   // VTID-01900: Longevity News Feed — curated RSS sources
   mountRouterSync(app, '/api/v1/longevity-news', longevityNewsRouter, { owner: 'longevity-news' });
+
+  // VTID-03319: News Feed — consent-gated community spotlight
+  mountRouterSync(app, '/api/v1/news-feed', newsFeedRouter, { owner: 'news-feed' });
 
   // VTID-01120: D28 Emotional & Cognitive Signal Interpretation Engine
   mountRouterSync(app, '/api/v1/signals', emotionalCognitiveRouter, { owner: 'emotional-cognitive' });
@@ -1571,6 +1580,15 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
         }
       } catch (error) {
         console.warn('⚠️ Admin awareness worker initialization failed (non-fatal):', error);
+      }
+
+      // VCAOP: Shopify own-store catalog sync. Opt-in (SHOPIFY_SYNC_ENABLED=true +
+      // SHOPIFY_STORE_DOMAIN). Pulls products.json on an interval into /discover.
+      try {
+        const { startShopifySyncWorker } = require('./services/shopify-sync');
+        startShopifySyncWorker();
+      } catch (error) {
+        console.warn('⚠️ Shopify sync worker initialization failed (non-fatal):', error);
       }
 
       // Dev Autopilot background executor (cooling→running→ci loop).

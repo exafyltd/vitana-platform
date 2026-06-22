@@ -133,7 +133,10 @@ export async function produceMatchActivityPlan(
 
   const { priority, confidence } = bandForStage(top.stage);
   const kindLabel = renderKindLabel(top.row.kind_pairing);
-  const userFacingLine = renderLine(top.stage, kindLabel, ctx.lang);
+  // Advice #3 — a mutual match on a real-world activity is schedulable: the
+  // line proposes a time + calendar entry instead of stopping at "open chat".
+  const schedulable = top.stage === 'mutual_interest' && isSchedulableActivity(top.row.kind_pairing);
+  const userFacingLine = renderLine(top.stage, kindLabel, ctx.lang, schedulable);
 
   const candidate: ScoredCandidate = {
     source: KEY,
@@ -143,13 +146,13 @@ export async function produceMatchActivityPlan(
     reasons: [
       {
         kind: reasonKindFor(top.stage),
-        detail: `match=${top.row.match_id} kind=${top.row.kind_pairing} state=${top.row.state}`,
+        detail: `match=${top.row.match_id} kind=${top.row.kind_pairing} state=${top.row.state}${schedulable ? ' schedulable=1' : ''}`,
       },
     ],
     dedupeKey: `match_activity_plan:${top.row.match_id}:${top.stage}`,
     cta: {
       type: 'ask_permission',
-      payload: { match_id: top.row.match_id, stage: top.stage },
+      payload: { match_id: top.row.match_id, stage: top.stage, propose_schedule: schedulable },
     },
   };
   return { source: KEY, candidate };
@@ -269,39 +272,79 @@ export function renderKindLabel(kindPairing: string | null): string | null {
   return known[left] ?? null;
 }
 
+/**
+ * Activity kinds that map to a real-world meet-up worth putting on a calendar
+ * (advice #3 — make community proactive, add the real-life dimension). A
+ * mutual match on one of these is the moment to propose a TIME, not just a
+ * chat. Keyed on the left token of `kind_pairing` ("hike::hike" → "hike").
+ */
+const SCHEDULABLE_ACTIVITY_KINDS = new Set<string>([
+  'hike',
+  'run',
+  'chess',
+  'language_exchange',
+  'coffee',
+  'activity_seek',
+]);
+
+/** Whether a kind_pairing represents a schedulable real-world activity. */
+export function isSchedulableActivity(kindPairing: string | null): boolean {
+  if (!kindPairing) return false;
+  const left = String(kindPairing).split('::')[0] || '';
+  return SCHEDULABLE_ACTIVITY_KINDS.has(left);
+}
+
+/**
+ * RULE 0 (VTID-03307): every line is a PROPOSAL + lead, never a passive
+ * preference question. (This file previously shipped "Willst du entscheiden,
+ * wie es weitergeht?" / "Want to decide what's next?" — both banned.)
+ *
+ * Advice #3: when a MUTUAL match is on a schedulable real-world activity,
+ * Vitana does not stop at "open the conversation" — it offers to lock in a time
+ * and put it straight in the calendar (the LLM fires create_calendar_event on
+ * the user's yes). `schedulable` is derived from the kind via
+ * isSchedulableActivity in the producer.
+ */
 export function renderLine(
   stage: MatchStage,
   kindLabel: string | null,
   lang: string,
+  schedulable = false,
 ): string {
   const isDe = (lang || 'en').toLowerCase().startsWith('de');
   if (stage === 'pending_user_decision') {
     if (kindLabel) {
       return isDe
-        ? `Es gibt eine Antwort auf deine ${kindLabel}-Anfrage. Willst du entscheiden, wie es weitergeht?`
-        : `Someone has responded to your ${kindLabel} request. Want to decide what's next?`;
+        ? `Es gibt eine Antwort auf deine ${kindLabel}-Anfrage — lass uns gemeinsam den nächsten Schritt entscheiden. Ich führe dich hin.`
+        : `Someone has responded to your ${kindLabel} request — let's decide the next step together. I'll take you there.`;
     }
     return isDe
-      ? `Jemand hat auf deine Anfrage geantwortet. Willst du entscheiden, wie es weitergeht?`
-      : `Someone has responded to your request. Want to decide what's next?`;
+      ? `Jemand hat auf deine Anfrage geantwortet — lass uns gemeinsam den nächsten Schritt entscheiden. Ich führe dich hin.`
+      : `Someone has responded to your request — let's decide the next step together. I'll take you there.`;
   }
   if (stage === 'mutual_interest') {
+    // Advice #3 — schedulable activity → propose a time + calendar entry.
+    if (schedulable && kindLabel) {
+      return isDe
+        ? `Du hast ein gegenseitiges ${kindLabel}-Match — lass uns gleich einen Termin festmachen, ich trage ihn dir direkt in den Kalender ein.`
+        : `You have a mutual ${kindLabel} match — let's lock in a time, and I'll put it straight in your calendar.`;
+    }
     if (kindLabel) {
       return isDe
-        ? `Du hast ein neues gegenseitiges Match auf ${kindLabel}. Sollen wir das Gespräch eröffnen?`
-        : `You have a new mutual ${kindLabel} match. Want to open the conversation?`;
+        ? `Du hast ein neues gegenseitiges ${kindLabel}-Match — lass uns das Gespräch eröffnen, ich bringe dich hin.`
+        : `You have a new mutual ${kindLabel} match — let's open the conversation, I'll take you there.`;
     }
     return isDe
-      ? `Du hast ein neues gegenseitiges Match. Sollen wir das Gespräch eröffnen?`
-      : `You have a new mutual match. Want to open the conversation?`;
+      ? `Du hast ein neues gegenseitiges Match — lass uns das Gespräch eröffnen, ich bringe dich hin.`
+      : `You have a new mutual match — let's open the conversation, I'll take you there.`;
   }
   // stage === 'new'
   if (kindLabel) {
     return isDe
-      ? `Es gibt ein frisches ${kindLabel}-Match für dich. Soll ich es dir vorstellen?`
-      : `You have a fresh ${kindLabel} match. Want me to walk you through it?`;
+      ? `Es gibt ein frisches ${kindLabel}-Match für dich — lass es mich dir kurz vorstellen.`
+      : `You have a fresh ${kindLabel} match — let me walk you through it.`;
   }
   return isDe
-    ? `Es gibt ein frisches Match für dich. Soll ich es dir vorstellen?`
-    : `You have a fresh match. Want me to walk you through it?`;
+    ? `Es gibt ein frisches Match für dich — lass es mich dir kurz vorstellen.`
+    : `You have a fresh match — let me walk you through it.`;
 }

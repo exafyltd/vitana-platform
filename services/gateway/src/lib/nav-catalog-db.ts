@@ -165,11 +165,12 @@ export function getCatalogEntryById(id: string): NavCatalogEntryWithRules | null
 export function findOverrideTriggerMatch(
   utterance: string,
   lang: LangCode,
-  tenantId: string | null | undefined
+  tenantId: string | null | undefined,
+  platform: 'mobile' | 'desktop' = 'mobile'
 ): NavCatalogEntryWithRules | null {
   const normalized = normalizePhrase(utterance);
   if (!normalized) return null;
-  const entries = getCatalogForTenant(tenantId);
+  const entries = getCatalogForTenant(tenantId, platform);
   const langKey = (lang || 'en').slice(0, 2).toLowerCase();
 
   for (const entry of entries) {

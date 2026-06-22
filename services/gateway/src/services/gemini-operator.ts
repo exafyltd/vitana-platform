@@ -3678,8 +3678,8 @@ async function processLocalRouting(text: string, threadId: string): Promise<Gemi
     { pattern: /^(thanks|thank\s*you|thx|ty)/i, response: "You're welcome! Let me know if you need anything else." },
     { pattern: /^(bye|goodbye|see\s*you|later)/i, response: "Goodbye! Feel free to return anytime you need assistance." },
     { pattern: /^(help|what\s+can\s+you\s+do|\?+)$/i, response: null }, // Will fall through to help message below
-    { pattern: /^(ok|okay|sure|got\s*it|understood|alright)/i, response: "Great! Let me know what you'd like to do next." },
-    { pattern: /^(yes|no|yeah|nope|yep|nah)/i, response: "I understand. What would you like me to help you with?" },
+    { pattern: /^(ok|okay|sure|got\s*it|understood|alright)/i, response: "Great. I'd suggest we create a task or check the status of an existing VTID next — tell me which and I'll get it going." },
+    { pattern: /^(yes|no|yeah|nope|yep|nah)/i, response: "Got it. Let's create a task or look up a VTID's status — just say the word and I'll handle it." },
   ];
 
   for (const { pattern, response } of conversationalPatterns) {

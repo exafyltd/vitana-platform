@@ -17,6 +17,9 @@ import {
   LOGIN_BRIEFING_PROVIDER_KEY,
   pickBriefingState,
   renderBriefingLine,
+  buildWeaknessRider,
+  buildProgressBeat,
+  buildFastProactiveOpener,
   type BriefingFacts,
 } from '../../../../src/services/assistant-continuation/providers/login-briefing';
 
@@ -40,6 +43,23 @@ describe('pickBriefingState', () => {
     expect(pickBriefingState({ ...BASE_FACTS, sessionsCompleted: 0 })).toBe('orient');
   });
 
+  // BOOTSTRAP-ORB-GREETING-RETURNING-USER: a returning user (any prior ORB
+  // session) must never be re-classified as a first-timer just because the
+  // guided-curriculum pointer (current_session) has not advanced.
+  it('no curriculum progress BUT has a prior session → not orient (returning user)', () => {
+    expect(pickBriefingState({ ...BASE_FACTS, sessionsCompleted: 0, hasPriorSession: true, daysSinceLastSession: 0 }))
+      .toBe('building');
+  });
+
+  it('no curriculum progress + prior session + multi-day gap → returning', () => {
+    expect(pickBriefingState({ ...BASE_FACTS, sessionsCompleted: 0, hasPriorSession: true, daysSinceLastSession: 4 }))
+      .toBe('returning');
+  });
+
+  it('genuine first-timer (no progress, no prior session) → orient', () => {
+    expect(pickBriefingState({ ...BASE_FACTS, sessionsCompleted: 0, hasPriorSession: false })).toBe('orient');
+  });
+
   it('multi-day gap → returning', () => {
     expect(pickBriefingState({ ...BASE_FACTS, daysSinceLastSession: 4 })).toBe('returning');
   });
@@ -55,6 +75,31 @@ describe('pickBriefingState', () => {
 
 describe('renderBriefingLine (DE)', () => {
   const det = () => 0; // deterministic pool pick
+
+  // RULE 0 (VTID-03307): the briefing line must NEVER end on / contain a passive
+  // preference question — Vitana leads and proposes. Guards against the staging
+  // "was möchtest du als nächstes tun?" regression returning.
+  it('NEVER asks a passive preference question, in any state or language', () => {
+    const PASSIVE = /(möchtest du|willst du|what would you like|where would you like|where shall we|what.*tackle|wo möchtest|womit möchtest)/i;
+    const states: Array<Partial<BriefingFacts>> = [
+      { sessionsCompleted: 0, hasGoal: false },                 // orient
+      { indexDeltaUp: null, daysSinceLastSession: 1 },          // building
+      { indexDeltaUp: 8, daysSinceLastSession: 1 },             // momentum
+      { daysSinceLastSession: 4 },                              // returning
+      { graduated: true },                                      // graduated
+    ];
+    for (const lang of ['de', 'en'] as const) {
+      for (const f of states) {
+        for (const rng of [() => 0, () => 0.5, () => 0.99]) {
+          const line = renderBriefingLine(
+            { lang, salutation: 'morning', firstName: 'Maria', facts: { ...BASE_FACTS, ...f } },
+            rng,
+          );
+          expect(line).not.toMatch(PASSIVE);
+        }
+      }
+    }
+  });
 
   it('always opens with a time-aware, named salutation', () => {
     const morning = renderBriefingLine({ lang: 'de', salutation: 'morning', firstName: 'Maria', facts: BASE_FACTS }, det);
@@ -111,6 +156,204 @@ describe('renderBriefingLine (DE)', () => {
       det,
     );
     expect(withGoal).not.toContain('persönliches Ziel');
+  });
+});
+
+// Advice #1 — "understood weakness": goal-anchored reversing step.
+describe('buildWeaknessRider (advice #1)', () => {
+  it('returns empty when no pillar slipped', () => {
+    expect(buildWeaknessRider('de', { ...BASE_FACTS })).toBe('');
+    expect(buildWeaknessRider('de', { ...BASE_FACTS, weakestPillarDrop: null })).toBe('');
+  });
+
+  it('ignores immaterial drops (below the 3-point floor)', () => {
+    expect(
+      buildWeaknessRider('de', { ...BASE_FACTS, weakestPillarDrop: { pillar: 'sleep', deltaDown: 2 } }),
+    ).toBe('');
+  });
+
+  it('names the localized pillar + magnitude and proposes ONE reversing step', () => {
+    const line = buildWeaknessRider('de', {
+      ...BASE_FACTS,
+      weakestPillarDrop: { pillar: 'sleep', deltaDown: 7 },
+      primaryGoalLabel: null,
+    });
+    expect(line).toContain('Schlaf');
+    expect(line).toContain('7 Punkte');
+    expect(line).toContain('ich zeige dir den ersten Schritt'); // proposal, not a question
+  });
+
+  it('anchors the weakness to the user goal (the WHY) when present', () => {
+    const line = buildWeaknessRider('de', {
+      ...BASE_FACTS,
+      weakestPillarDrop: { pillar: 'exercise', deltaDown: 5 },
+      primaryGoalLabel: 'mehr Energie',
+    });
+    expect(line).toContain('Bewegung');
+    expect(line).toContain('„mehr Energie"');
+  });
+
+  it('NEVER contains a passive RULE 0 question, DE or EN, with or without a goal', () => {
+    const PASSIVE = /(möchtest du|willst du|was möchtest|what would you like|how can i help|what can i do)/i;
+    for (const lang of ['de', 'en'] as const) {
+      for (const goal of [null, 'more energy']) {
+        const line = buildWeaknessRider(lang, {
+          ...BASE_FACTS,
+          weakestPillarDrop: { pillar: 'mental', deltaDown: 9 },
+          primaryGoalLabel: goal,
+        });
+        expect(line).not.toMatch(PASSIVE);
+        expect(line.length).toBeGreaterThan(0);
+      }
+    }
+  });
+
+  it('weakness rider takes over the building-state lead', () => {
+    const line = renderBriefingLine(
+      {
+        lang: 'de',
+        salutation: 'morning',
+        firstName: 'Maria',
+        facts: {
+          ...BASE_FACTS,
+          indexDeltaUp: null,
+          daysSinceLastSession: 1,
+          weakestPillarDrop: { pillar: 'sleep', deltaDown: 6 },
+          primaryGoalLabel: 'besser schlafen',
+        },
+      },
+      () => 0,
+    );
+    expect(pickBriefingState({ ...BASE_FACTS, indexDeltaUp: null, daysSinceLastSession: 1 })).toBe('building');
+    expect(line).toContain('Schlaf ist diese Woche um 6 Punkte gesunken');
+    expect(line).toContain('„besser schlafen"');
+  });
+});
+
+// Advice #2 — "visible momentum": progress beat.
+describe('buildProgressBeat (advice #2)', () => {
+  it('returns empty when nothing is learned or total is unknown', () => {
+    expect(buildProgressBeat('de', { ...BASE_FACTS })).toBe('');
+    expect(buildProgressBeat('de', { ...BASE_FACTS, topicsLearned: 0, topicsTotal: 254 })).toBe('');
+    expect(buildProgressBeat('de', { ...BASE_FACTS, topicsLearned: 12, topicsTotal: 0 })).toBe('');
+  });
+
+  it('states X of N green-checked topics + the percentage of the journey', () => {
+    const line = buildProgressBeat('de', { ...BASE_FACTS, topicsLearned: 12, topicsTotal: 254 });
+    expect(line).toContain('12 von 254');
+    expect(line).toContain('auf grün');
+    expect(line).toContain('5%'); // round(12/254*100)
+  });
+
+  it('celebrates the 100% completion case specially', () => {
+    const line = buildProgressBeat('de', { ...BASE_FACTS, topicsLearned: 254, topicsTotal: 254 });
+    expect(line).toContain('alle 254 Themen gemeistert');
+    expect(line).not.toContain('%');
+  });
+
+  it('floors the percentage at 1% so a single topic still reads as progress', () => {
+    const line = buildProgressBeat('en', { ...BASE_FACTS, topicsLearned: 1, topicsTotal: 254 });
+    expect(line).toContain('1 of 254');
+    expect(line).toContain('1%');
+  });
+
+  it('NEVER contains a passive RULE 0 question', () => {
+    const PASSIVE = /(möchtest du|willst du|what would you like|how can i help)/i;
+    for (const lang of ['de', 'en'] as const) {
+      const line = buildProgressBeat(lang, { ...BASE_FACTS, topicsLearned: 40, topicsTotal: 254 });
+      expect(line).not.toMatch(PASSIVE);
+    }
+  });
+
+  it('appears in the building state as an earned compliment', () => {
+    const line = renderBriefingLine(
+      {
+        lang: 'de',
+        salutation: 'morning',
+        firstName: 'Maria',
+        facts: { ...BASE_FACTS, indexDeltaUp: null, daysSinceLastSession: 1, topicsLearned: 30, topicsTotal: 254 },
+      },
+      () => 0,
+    );
+    expect(line).toContain('30 von 254');
+  });
+});
+
+// DEV-COMHU-0513 — the SHORT proactive opener spoken on the fast greeting path.
+describe('buildFastProactiveOpener (proactive fast greeting)', () => {
+  const GENERIC = [
+    'Lass uns weitermachen.',
+    'Lass uns dort weitermachen, wo wir aufgehört haben.',
+    'Willkommen zurück.',
+  ];
+  const PASSIVE = /(möchtest du|willst du|was möchtest|what would you like|how can i help|what can i do)/i;
+
+  const mk = (f: Partial<BriefingFacts>) =>
+    buildFastProactiveOpener({ lang: 'de', salutation: 'morning', firstName: 'Maria', facts: { ...BASE_FACTS, ...f } }, () => 0);
+
+  it('opens with the named salutation and is NOT a generic SHORT_GAP phrase', () => {
+    const line = mk({ indexDeltaUp: null, daysSinceLastSession: 1 });
+    expect(line.startsWith('Guten Morgen, Maria.')).toBe(true);
+    for (const g of GENERIC) expect(line).not.toBe(g);
+    expect(line).not.toContain('Willkommen zurück');
+  });
+
+  it('weakness → goal/pillar reversing step as the lead', () => {
+    const line = mk({ weakestPillarDrop: { pillar: 'sleep', deltaDown: 6 } });
+    expect(line).toContain('Schlaf');
+    expect(line).toContain('ich zeige dir den ersten Schritt');
+  });
+
+  it('building → continues at the named next session, and LEADS', () => {
+    const line = mk({ indexDeltaUp: null, daysSinceLastSession: 1, nextSessionTitle: 'Schlaf-Routine' });
+    expect(line).toContain('Schlaf-Routine');
+    expect(line).toContain('ich führe dich');
+  });
+
+  it('returning user → GROUNDED recall of the last session ("Letztes Mal ging es um X"), then continues there', () => {
+    const line = mk({ daysSinceLastSession: 2, lastSessionTitle: 'Dein Plan', nextSessionTitle: 'Dein Plan' });
+    expect(line).toContain('Letztes Mal ging es um „Dein Plan"'); // the REAL last session, recalled
+    expect(line).toMatch(/da (weitermachen|weiter|an)|da\b/); // continues "there", not repeating the title
+  });
+
+  it('NO false recall when there is no last session — never bluffs "where we left off"', () => {
+    const line = mk({ lastSessionTitle: null, nextSessionTitle: 'Schlaf-Routine' });
+    expect(line).not.toMatch(/Letztes Mal|wo wir aufgehört|anknüpfen/i); // no recall claim without data
+    expect(line).toContain('Schlaf-Routine'); // still leads to the next step
+  });
+
+  it('orient (first-time) → proposes a concrete deliverable step, NOT a fixed journey pitch', () => {
+    const line = mk({ sessionsCompleted: 0, hasGoal: false });
+    expect(line.startsWith('Guten Morgen, Maria.')).toBe(true);
+    expect(line).toContain('Lass uns'); // it LEADS (proposal)
+    expect(line).not.toContain('durch Vitanaland'); // no fixed "step by step through Vitanaland" line
+    expect(line).not.toMatch(/Session eins|ersten Session/); // does not pitch the (possibly empty) journey
+  });
+
+  it('FLEXIBLE WORDING — different rng yields different greetings (never hard-coded)', () => {
+    const facts = { ...BASE_FACTS, sessionsCompleted: 0, hasGoal: false };
+    const a = buildFastProactiveOpener({ lang: 'de', salutation: 'morning', firstName: 'Maria', facts }, () => 0);
+    const b = buildFastProactiveOpener({ lang: 'de', salutation: 'morning', firstName: 'Maria', facts }, () => 0.6);
+    expect(a).not.toBe(b); // the wording varies — no single hard-coded sentence
+  });
+
+  it('stays SHORT (audio-safe) and RULE-0 clean across states/langs/variations', () => {
+    const variants: Array<Partial<BriefingFacts>> = [
+      { sessionsCompleted: 0, hasGoal: false },
+      { indexDeltaUp: null, daysSinceLastSession: 1 },
+      { weakestPillarDrop: { pillar: 'exercise', deltaDown: 8 } },
+      { graduated: true },
+    ];
+    for (const lang of ['de', 'en'] as const) {
+      for (const v of variants) {
+        for (const rng of [() => 0, () => 0.5, () => 0.99]) {
+          const line = buildFastProactiveOpener({ lang, salutation: 'morning', firstName: 'Maria', facts: { ...BASE_FACTS, ...v } }, rng);
+          expect(line).not.toMatch(PASSIVE);
+          expect(line.length).toBeLessThanOrEqual(180); // ~2 short sentences → reliable audio
+          expect(line.length).toBeGreaterThan(0);
+        }
+      }
+    }
   });
 });
 

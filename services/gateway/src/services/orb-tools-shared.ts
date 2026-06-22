@@ -1640,7 +1640,10 @@ export async function tool_resolve_recipient(
     p_actor: id.user_id,
     p_token: spoken,
     p_limit: limit,
-    p_global: false,
+    // Cross-tenant: the resolver ranks the actor's own tenant first (+0.15
+    // same-tenant boost) but still surfaces a registered member who sits in
+    // the sibling tenant, so voice can reach anyone with a Vitana account.
+    p_global: true,
   });
   if (error) {
     return { ok: false, error: error.message };
@@ -1713,6 +1716,164 @@ async function emitChatSendFailure(
   }
 }
 
+interface ValidatedRecipient {
+  recipientUserId: string;
+  recipientVitanaId: string | null;
+  recipientDisplayName: string | null;
+  tenantId: string;
+}
+
+/**
+ * Shared recipient resolution + validation for every voice "send to a person"
+ * tool (message, share-link, …). This is the hardening tool_send_chat_message
+ * gained under VTID-02966, lifted into one place so tool_share_link — which
+ * previously had none of it and silently failed the chat_messages insert when
+ * Gemini passed a spoken label instead of a UUID, or when the voice session
+ * carried a null tenant — gets identical safety:
+ *   1. Re-resolve a spoken label to a UUID when Gemini drops the id across a
+ *      turn boundary (cross-tenant resolve; same-tenant ranked first).
+ *   2. Reject missing / non-UUID / self recipients.
+ *   3. Backfill tenant from app_users (chat_messages.tenant_id is NOT NULL).
+ *   4. Confirm the receiver still exists in app_users.
+ *   5. Confirm the spoken label still matches the resolved person.
+ * The optional onFailure callback lets callers keep their OASIS telemetry.
+ */
+async function resolveAndValidateRecipient(
+  rawRecipientId: string,
+  recipientLabel: string,
+  id: OrbToolIdentity,
+  sb: SupabaseClient,
+  onFailure?: (reason: string, extra?: Record<string, unknown>) => Promise<void>,
+): Promise<{ ok: true; data: ValidatedRecipient } | { ok: false; error: string }> {
+  const fail = async (reason: string, extra?: Record<string, unknown>) => {
+    if (onFailure) await onFailure(reason, extra);
+  };
+  let recipientUserId = String(rawRecipientId ?? '').trim();
+  const label = String(recipientLabel ?? '').trim();
+
+  // 1. Re-resolve label -> UUID when Gemini handed us a name (or nothing).
+  if (!UUID_REGEX.test(recipientUserId) && label) {
+    try {
+      const { data, error } = await sb.rpc('resolve_recipient_candidates', {
+        p_actor: id.user_id,
+        p_token: label,
+        p_limit: 3,
+        p_global: true,
+      });
+      if (error) {
+        await fail('label_recovery_rpc_error', { rpc_error: error.message, label });
+        return { ok: false, error: `I had a problem looking up ${label}. Want me to try once more?` };
+      }
+      const candidates = (data || []) as Array<{ user_id: string; score: number }>;
+      const top = candidates[0];
+      const topScore = top ? Number(top.score) : 0;
+      const secondScore = candidates[1] ? Number(candidates[1].score) : 0;
+      const recoverable = Boolean(top) && topScore >= 0.9 && secondScore / Math.max(topScore, 0.0001) < 0.85;
+      if (!recoverable) {
+        await fail(candidates.length === 0 ? 'label_recovery_no_match' : 'label_recovery_ambiguous', {
+          label,
+          candidate_count: candidates.length,
+          top_score: topScore,
+        });
+        return {
+          ok: false,
+          error:
+            candidates.length === 0
+              ? `I couldn't find ${label} in the community right now.`
+              : `I'm not sure which ${label} you meant — can you say their Vitana ID?`,
+        };
+      }
+      recipientUserId = top.user_id;
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'label resolve failed';
+      await fail('label_recovery_exception', { error: msg, label });
+      return { ok: false, error: `I had a problem looking up ${label}. Want me to try once more?` };
+    }
+  }
+
+  // 2. Basic shape checks.
+  if (!recipientUserId) {
+    await fail('missing_recipient');
+    return { ok: false, error: 'Who would you like me to send this to?' };
+  }
+  if (!UUID_REGEX.test(recipientUserId)) {
+    await fail('recipient_not_uuid', { recipient_value: recipientUserId });
+    return { ok: false, error: `I lost track of who you meant — can you say their name again?` };
+  }
+  if (recipientUserId === id.user_id) {
+    await fail('self_message');
+    return { ok: false, error: 'cannot message yourself' };
+  }
+
+  // 3. Tenant backfill — chat_messages.tenant_id is NOT NULL.
+  let tenantId = id.tenant_id;
+  if (!tenantId) {
+    const { data: appUser } = await sb
+      .from('app_users')
+      .select('tenant_id')
+      .eq('user_id', id.user_id)
+      .maybeSingle();
+    tenantId = (appUser as { tenant_id?: string } | null)?.tenant_id ?? null;
+    if (!tenantId) {
+      await fail('missing_tenant');
+      return {
+        ok: false,
+        error: `I can't send right now — I'm missing some account context. Try once more in a moment.`,
+      };
+    }
+  }
+
+  // 4. Receiver must still exist.
+  const { data: receiverRow, error: receiverErr } = await sb
+    .from('app_users')
+    .select('user_id, display_name, vitana_id')
+    .eq('user_id', recipientUserId)
+    .maybeSingle();
+  if (receiverErr) {
+    await fail('receiver_lookup_error', { recipient_user_id: recipientUserId, db_error: receiverErr.message });
+    return { ok: false, error: `I had a problem checking who you meant. Want me to try once more?` };
+  }
+  if (!receiverRow) {
+    await fail('receiver_not_found', { recipient_user_id: recipientUserId, recipient_label: label || null });
+    return {
+      ok: false,
+      error: label
+        ? `I couldn't find ${label} — they may have left the community.`
+        : `I couldn't find that person — they may have left the community.`,
+    };
+  }
+  const recipientVitanaId = (receiverRow as { vitana_id?: string | null }).vitana_id ?? null;
+  const recipientDisplayName = (receiverRow as { display_name?: string | null }).display_name ?? null;
+
+  // 5. Label/identity consistency: a spoken label must share a 3+ char token
+  // with the resolved person's display name or vitana_id.
+  if (label) {
+    const lbl = label.toLowerCase();
+    const dn = (recipientDisplayName ?? '').toLowerCase();
+    const vid = (recipientVitanaId ?? '').toLowerCase();
+    const tokens = lbl.split(/\s+/).filter((t) => t.length >= 3);
+    const anyMatch =
+      tokens.length === 0 ||
+      tokens.some((t) => dn.includes(t) || vid.includes(t)) ||
+      dn === lbl ||
+      vid === lbl;
+    if (!anyMatch) {
+      await fail('label_id_mismatch', {
+        recipient_user_id: recipientUserId,
+        recipient_label: label,
+        resolved_display_name: recipientDisplayName,
+        resolved_vitana_id: recipientVitanaId,
+      });
+      return { ok: false, error: `I'm not sure I got the right person — can you say their name again?` };
+    }
+  }
+
+  return {
+    ok: true,
+    data: { recipientUserId, recipientVitanaId, recipientDisplayName, tenantId },
+  };
+}
+
 export async function tool_send_chat_message(
   args: OrbToolArgs,
   id: OrbToolIdentity,
@@ -1750,7 +1911,7 @@ export async function tool_send_chat_message(
         p_actor: id.user_id,
         p_token: recipientLabel,
         p_limit: 3,
-        p_global: false,
+        p_global: true,
       });
       if (error) {
         await emitChatSendFailure('label_recovery_rpc_error', id, args, {
@@ -2225,23 +2386,43 @@ export async function tool_share_link(
   // self-share guard, voice-send quota check, and metadata shape.
   // Accepts the legacy LiveKit args (url, with_recipient) AND Vertex args
   // (target_url, recipient_user_id, recipient_label, target_kind).
-  const recipientUserId = String(args.recipient_user_id ?? args.with_recipient ?? '').trim();
+  //
+  // FIX (people-search bootstrap): previously this tool required
+  // recipient_user_id to already be a UUID, never re-resolved a spoken label,
+  // and inserted id.tenant_id raw. So when Gemini handed it the verbal name
+  // (common across the confirm turn) or the voice session carried a null
+  // tenant, the chat_messages insert was rejected and the user heard "I could
+  // not send the post" AFTER the resolver had confidently found the person.
+  // It now runs the same resolveAndValidateRecipient() path as
+  // tool_send_chat_message: label->UUID recovery, tenant backfill, receiver
+  // existence + label-consistency checks.
+  const rawRecipient = String(args.recipient_user_id ?? args.with_recipient ?? '').trim();
   const recipientLabel = String(args.recipient_label ?? '').trim();
   const targetUrl = String(args.target_url ?? args.url ?? '').trim();
   const targetKind = String(args.target_kind ?? 'page').trim();
 
-  if (!recipientUserId || !targetUrl) {
-    return { ok: false, error: 'recipient_user_id and target_url are required' };
+  if (!targetUrl) {
+    return { ok: false, error: 'target_url is required' };
   }
-  if (recipientUserId === id.user_id) {
-    return { ok: false, error: 'cannot share with yourself' };
+  if (!rawRecipient && !recipientLabel) {
+    return { ok: false, error: 'recipient_user_id or recipient_label is required' };
   }
+
+  const resolved = await resolveAndValidateRecipient(
+    rawRecipient,
+    recipientLabel,
+    id,
+    sb,
+    (reason, extra) => emitChatSendFailure(reason, id, args, extra),
+  );
+  if (!resolved.ok) {
+    return { ok: false, error: resolved.error };
+  }
+  const { recipientUserId, recipientVitanaId, recipientDisplayName, tenantId } = resolved.data;
 
   try {
     const { checkVoiceSendQuota } = await import('./voice-message-guard');
     const { resolveVitanaId } = await import('../middleware/auth-supabase-jwt');
-
-    const recipientVitanaId = await resolveVitanaId(recipientUserId);
 
     const quota = await checkVoiceSendQuota({
       // session_id is Vertex-specific; pass user_id so the quota guard can
@@ -2268,7 +2449,7 @@ export async function tool_share_link(
     const previewBody = `🔗 ${targetUrl}`;
 
     const { error: insErr } = await sb.from('chat_messages').insert({
-      tenant_id: id.tenant_id,
+      tenant_id: tenantId,
       sender_id: id.user_id,
       receiver_id: recipientUserId,
       content: previewBody,
@@ -2281,14 +2462,19 @@ export async function tool_share_link(
         kind: 'shared_link',
         target_url: targetUrl,
         target_kind: targetKind,
-        recipient_label: recipientLabel || recipientVitanaId,
+        recipient_label: recipientLabel || recipientDisplayName || recipientVitanaId,
       },
     });
     if (insErr) {
-      return { ok: false, error: insErr.message };
+      await emitChatSendFailure('share_link_insert_error', id, args, {
+        db_error: insErr.message,
+        recipient_user_id: recipientUserId,
+      });
+      return { ok: false, error: `I couldn't send the link just now — want me to try once more?` };
     }
 
-    const recipDisplay = recipientLabel || recipientVitanaId || recipientUserId;
+    const recipDisplay =
+      recipientLabel || recipientDisplayName || recipientVitanaId || recipientUserId;
     return {
       ok: true,
       result: {
@@ -2300,7 +2486,8 @@ export async function tool_share_link(
     };
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : 'share_link error';
-    return { ok: false, error: msg };
+    await emitChatSendFailure('share_link_exception', id, args, { error: msg });
+    return { ok: false, error: `I hit a snag sharing that — want me to try once more?` };
   }
 }
 
@@ -2518,6 +2705,7 @@ export async function tool_respond_to_match(
 export async function tool_navigate_to_screen(
   args: OrbToolArgs,
   id: OrbToolIdentity,
+  sb?: SupabaseClient,
 ): Promise<OrbToolResult> {
   const screenIdArg = String(args.screen_id ?? args.target ?? '').trim();
   if (!screenIdArg) return { ok: false, error: 'screen_id (or legacy target) is required' };
@@ -2722,6 +2910,61 @@ export async function tool_navigate_to_screen(
     }
   }
 
+  // NAV-ENTITY-RESOLVE: a person-profile route (/u/:identifier) must NEVER
+  // dispatch a model-supplied identifier — the model invents slugs like
+  // "maria-maksina" that 404 ("Benutzer nicht gefunden"). Resolve the name
+  // through the canonical member directory instead (design invariants #1/#5/#7).
+  // Flag-gated; verify on staging. Only triggers when the identifier looks like
+  // a de-slugged NAME (has a separator) or an explicit name/query was supplied
+  // — a concrete @vitana_id handle still passes straight through.
+  if (
+    process.env.NAV_ENTITY_RESOLVE === 'true' &&
+    sb &&
+    entry.screen_id === 'PROFILE.PUBLIC' &&
+    id.user_id && id.tenant_id
+  ) {
+    const rawId = String(args.identifier ?? args.target ?? '').trim();
+    const explicitName = String(args.name ?? args.query ?? args.reason ?? '').trim();
+    const nameQuery = explicitName || rawId.replace(/[-_]+/g, ' ').trim();
+    const looksLikeName = !!explicitName || /[-_\s]/.test(rawId);
+    if (nameQuery && looksLikeName) {
+      emitOasisEvent({
+        vtid: 'VTID-NAV-01',
+        type: 'orb.navigator.blocked',
+        source: 'orb-tools-shared',
+        status: 'info',
+        message: `Profile-by-name '${nameQuery}' routed through member resolver (not trusting model identifier '${rawId}')`,
+        payload: {
+          session_id: sessionId,
+          attempted_screen_id: screenIdArg,
+          entity_query: nameQuery.slice(0, 120),
+          error_kind: 'entity_resolve',
+        },
+      }).catch(() => {});
+      const memberRes = await tool_find_community_member({ query: nameQuery }, id, sb);
+      if (memberRes.ok === false) return memberRes;
+      // Adapt the resolver's result to the navigate_to_screen contract so BOTH
+      // pipelines dispatch it (Vertex reads top-level screen_id/route/title;
+      // LiveKit reads result.directive). The resolver already built the correct
+      // profile directive (its own route + search_id for the match card).
+      const d = (memberRes.result as { directive?: { screen_id?: string; route?: string; title?: string } } | undefined)?.directive;
+      if (d && d.route) {
+        return {
+          ok: true,
+          result: {
+            screen_id: d.screen_id || 'profile_with_match',
+            route: d.route,
+            title: d.title || 'Profile',
+            entry_kind: 'route',
+            directive: d,
+          },
+          text: memberRes.text,
+        };
+      }
+      return memberRes;
+    }
+  }
+
   // GATE 3: mobile_route override (VTID-02789).
   const baseRoute = (isMobile && entry.mobile_route) ? entry.mobile_route : entry.route;
 
@@ -2883,6 +3126,7 @@ function deriveNavigatorSurfaceRole(currentRoute: string | undefined | null): st
 export async function tool_navigate(
   args: OrbToolArgs,
   id: OrbToolIdentity,
+  sb?: SupabaseClient,
 ): Promise<OrbToolResult> {
   const question = String(args.question ?? '').trim();
   if (!question) {
@@ -3015,6 +3259,37 @@ export async function tool_navigate(
   if (consultResult.primary && consultResult.confidence !== 'low' && !consultResult.blocked_reason) {
     const entry = lookupScreen(consultResult.primary.screen_id);
     if (entry) {
+      // NAV-GUIDED-JOURNEY: "Guided Journey" is NOT a separate screen — it's the
+      // durable GUIDED vs FULL mode of My Journey (GuidedModeProvider, VTID-03279;
+      // the Einführung/Vollversion toggle). The Navigator can only emit /autopilot,
+      // which renders in the user's current durable mode. So when the user asks for
+      // their GUIDED journey (or the FULL app), flip the durable mode to match
+      // BEFORE opening the screen, so they land in the right view. We also tell
+      // Vitana to explain the difference + how to switch. Flag-gated; reuses the
+      // existing journey-mode service.
+      let journeyModeSwitched: 'guided' | 'full' | null = null;
+      if (
+        process.env.NAV_GUIDED_JOURNEY === 'true' &&
+        sb && id.user_id &&
+        entry.screen_id === 'AUTOPILOT.MY_JOURNEY'
+      ) {
+        const intentText = `${question} ${transcriptExcerpt}`.toLowerCase();
+        const wantsGuided = /guided|gef[üu]hrt|einf[üu]hrung/.test(intentText);
+        const wantsFull = /full[\s-]?app|full[\s-]?version|full[\s-]?mode|vollversion|volle\s+version|komplette\s+app|kompletten?\s+app/.test(intentText);
+        const targetMode: 'guided' | 'full' | null = wantsGuided ? 'guided' : wantsFull ? 'full' : null;
+        if (targetMode) {
+          try {
+            const { setJourneyMode } = await import('./guided-journey/guided-journey-state');
+            await setJourneyMode(sb, id.user_id, targetMode);
+            journeyModeSwitched = targetMode;
+            console.log(`[NAV-GUIDED-JOURNEY] set journey mode = ${targetMode} for ${id.user_id} before opening My Journey`);
+          } catch (e) {
+            // Don't block navigation — the screen is still correct, just in the prior mode.
+            console.error('[NAV-GUIDED-JOURNEY] setJourneyMode failed:', e instanceof Error ? e.message : e);
+          }
+        }
+      }
+
       const content = getContent(entry, lang);
       // VTID-NAV-OVERLAY: resolve the route the SAME way navigate_to_screen
       // does — honor mobile_route, and for overlay entries append the
@@ -3086,6 +3361,22 @@ export async function tool_navigate(
       lines.push('explain the feature, tell them what they can do on that screen,');
       lines.push('and let them know you are taking them there. The redirect happens');
       lines.push('automatically when you finish speaking.');
+      if (journeyModeSwitched === 'guided') {
+        lines.push('');
+        lines.push('MODE_SWITCH: You switched the user into the GUIDED JOURNEY — the');
+        lines.push('step-by-step guided experience that walks them through one focused');
+        lines.push('move at a time. Briefly explain how this differs from the FULL app');
+        lines.push('(the complete version with everything available at once), and tell');
+        lines.push('them they can switch back anytime with the Einführung/Vollversion');
+        lines.push('toggle at the top of this screen — or just ask you to switch.');
+      } else if (journeyModeSwitched === 'full') {
+        lines.push('');
+        lines.push('MODE_SWITCH: You switched the user into the FULL app — the complete');
+        lines.push('version with everything available at once. Briefly explain how this');
+        lines.push('differs from the GUIDED Journey (the step-by-step guided experience),');
+        lines.push('and tell them they can switch back anytime with the');
+        lines.push('Einführung/Vollversion toggle at the top of this screen — or just ask you.');
+      }
 
       return {
         ok: true,
@@ -3470,7 +3761,7 @@ export async function tool_get_current_screen(
     return {
       ok: true,
       result: { route: null, recent_screens: [] },
-      text: "The host app has not reported a current screen for this session. Tell the user you can see they're in the Vitana app but not which specific screen, and ask what they'd like to do next.",
+      text: "The host app has not reported a current screen for this session. Tell the user you can see they're in the Vitana app but not which specific screen — then PROPOSE one concrete next step (e.g. continuing their journey, or opening their dashboard) and offer to take them there. RULE 0: do NOT ask them what they'd like to do.",
     };
   }
 
@@ -4151,6 +4442,220 @@ export async function tool_find_community_member(
 // Registry + dispatcher
 // ---------------------------------------------------------------------------
 
+/**
+ * DEV-COMHU — narrate a Guided Journey session by VOICE. Fetches the authored
+ * full script (vitana_voice_script, the exact speech the tap-to-open path plays)
+ * and returns it under a strict "speak it in full, verbatim" contract.
+ *
+ * args.session_number (optional): when the user names a session ("play session
+ * three"), narrate THAT session. Otherwise narrate the next un-learned one.
+ *
+ * Robustness: an EMPTY curriculum (zero published topics) is NOT "complete" — it
+ * means the journey content isn't seeded in this environment, so we degrade to
+ * "introduce from knowledge" rather than falsely congratulating the user.
+ */
+export async function tool_narrate_guided_session(
+  args: OrbToolArgs,
+  identity: OrbToolIdentity,
+  sb: SupabaseClient,
+): Promise<OrbToolResult> {
+  if (!identity.user_id) {
+    return { ok: false, error: 'narrate_guided_session requires an authenticated user.' };
+  }
+  const degraded: OrbToolResult = {
+    ok: true,
+    result: { has_script: false, degraded: true },
+    text:
+      'Begin the Vitanaland Guided Journey: warmly welcome the user to the start of their longevity ' +
+      'journey and introduce this first onboarding step clearly and concretely from your own knowledge ' +
+      'of the app (several sentences, not one line) — what the journey is and what they will get out of ' +
+      'starting it — then offer to continue with the next step. Do NOT name a specific later topic as if ' +
+      'it were the first step. Do NOT say it did not work, do NOT claim the user has completed everything, ' +
+      'and do NOT ask "what do you want".',
+  };
+  try {
+    const state = await sb
+      .from('user_guided_journey_state')
+      .select('completed_topic_ids')
+      .eq('user_id', identity.user_id)
+      .maybeSingle();
+    const completed = new Set<string>((state.data?.completed_topic_ids as string[] | null | undefined) ?? []);
+
+    // ALL published topics, ordered — NO session floor (the floor caused a false
+    // "you completed everything" once current_session advanced past the rows).
+    const topics = await sb
+      .from('journey_checklist_topics')
+      .select('topic_id, title, display_label, short_description, vitana_voice_script, session, position')
+      .eq('status', 'published')
+      .eq('enabled', true)
+      .order('session', { ascending: true })
+      .order('position', { ascending: true })
+      .limit(300);
+    if (topics.error) return degraded;
+
+    type Row = {
+      topic_id: string;
+      title: string | null;
+      display_label: string | null;
+      short_description: string | null;
+      vitana_voice_script: string | null;
+      session: number;
+    };
+    const rows = (topics.data as Row[] | null | undefined) ?? [];
+    // Empty curriculum → NOT complete; the content simply isn't here.
+    if (rows.length === 0) return degraded;
+
+    // What did the user ask for? a SPECIFIC session number, a NAMED topic, or
+    // (default) the next un-learned topic.
+    const reqRaw = (args as Record<string, unknown>)?.session_number;
+    const requested = typeof reqRaw === 'number' ? reqRaw : Number(reqRaw);
+    const wantsSpecific = Number.isFinite(requested) && requested >= 1;
+    const topicQueryRaw = (args as Record<string, unknown>)?.topic_query;
+    const topicQuery = typeof topicQueryRaw === 'string' ? topicQueryRaw.trim() : '';
+    // INFO-ONLY: the user is ASKING about a session (its title / what it covers /
+    // which session is which) rather than asking to PLAY it. Return the real
+    // title + description from the catalog — do NOT speak the script, do NOT mark
+    // progress. This is what lets Vitana answer "what is the title of session 1"
+    // correctly instead of guessing from the Journey Foundation steps.
+    const infoRaw = (args as Record<string, unknown>)?.info_only;
+    const infoOnly = infoRaw === true || infoRaw === 'true' || infoRaw === 1;
+
+    const textOf = (r: Row) => `${r.title ?? ''} ${r.display_label ?? ''} ${r.short_description ?? ''}`.toLowerCase();
+    const maxSession = rows.reduce((m, r) => Math.max(m, r.session), 0);
+
+    let target: Row | undefined;
+    let remainingInSession = 0;
+
+    if (topicQuery) {
+      // NAMED topic → match across all 254 topics (exact title first, then contains).
+      const q = topicQuery.toLowerCase();
+      target =
+        rows.find((r) => (r.title ?? '').toLowerCase() === q || (r.display_label ?? '').toLowerCase() === q) ??
+        rows.find((r) => textOf(r).includes(q));
+      if (!target) {
+        return {
+          ok: true,
+          result: { not_found_topic: true, query: topicQuery },
+          text:
+            `No Guided Journey topic matches "${topicQuery}". Tell the user briefly you couldn't find that topic, ` +
+            `and offer to play a session by number instead (the journey has sessions 1 to ${maxSession}). Do NOT say it did not work.`,
+        };
+      }
+    } else if (wantsSpecific) {
+      const inSession = rows.filter((r) => r.session === requested); // ordered by position
+      if (inSession.length === 0) {
+        return {
+          ok: true,
+          result: { not_found: true, requested_session: requested, max_session: maxSession },
+          text:
+            `There is no session ${requested} in the Guided Journey — it runs from session 1 to ${maxSession}. ` +
+            `Tell the user that briefly and offer a valid session. Do NOT say it did not work.`,
+        };
+      }
+      // A session has 2–3 topics; play the FIRST topic the user hasn't heard yet
+      // so the session is delivered one topic at a time (then "more" → next topic).
+      target = inSession.find((r) => !completed.has(r.topic_id)) ?? inSession[0]; // all heard → replay from the top
+      remainingInSession = inSession.filter((r) => !completed.has(r.topic_id) && r.topic_id !== target!.topic_id).length;
+    } else {
+      target = rows.find((r) => !completed.has(r.topic_id));
+      if (!target) {
+        return {
+          ok: true,
+          result: { done: true },
+          text:
+            'JOURNEY COMPLETE: the user has finished every Guided Journey session. ' +
+            'Congratulate them warmly in one or two sentences and offer to go one level deeper. Do NOT ask "what do you want to do".',
+        };
+      }
+      remainingInSession = rows.filter(
+        (r) => r.session === target!.session && !completed.has(r.topic_id) && r.topic_id !== target!.topic_id,
+      ).length;
+    }
+
+    if (infoOnly) {
+      // The user ASKED about the session (title / contents), not to play it.
+      // Return the authored title + description and tell Vitana to answer with
+      // EXACTLY that — never invent it, never use a Foundation step as the title.
+      const sessionTopics = rows.filter((r) => r.session === target!.session);
+      // The session title must be STABLE regardless of the user's progress within
+      // the session — derive it from the session's FIRST topic (rows are ordered
+      // by position), NOT from `target` (which is the first UN-heard topic and so
+      // would drift to topic two's title once topic one is completed).
+      const firstTopic = sessionTopics[0] ?? target;
+      const sessionTitle = (firstTopic.title || firstTopic.display_label || '').trim();
+      const topicTitles = sessionTopics
+        .map((r) => (r.title || r.display_label || '').trim())
+        .filter(Boolean);
+      const about = (firstTopic.short_description || '').trim();
+      return {
+        ok: true,
+        result: {
+          info_only: true,
+          session: target.session,
+          topic_id: target.topic_id,
+          session_title: sessionTitle,
+          topic_titles: topicTitles,
+          topic_count: sessionTopics.length,
+          about,
+        },
+        text:
+          `Guided Journey — session ${target.session} is titled "${sessionTitle}"` +
+          (about ? ` (${about})` : '') +
+          (topicTitles.length > 1 ? `. It covers: ${topicTitles.join('; ')}.` : '.') +
+          ` Tell the user the title using EXACTLY this wording — do NOT invent a title and do NOT use a Journey ` +
+          `Foundation step (e.g. "Vitana Index", "Life Compass") as the session title. Then offer to play it. ` +
+          `Do NOT play the script now, do NOT mark progress, and do NOT ask "what do you want".`,
+      };
+    }
+
+    // PROGRESSION: mark THIS topic done (green) so the next call advances. This
+    // is what makes a multi-topic session play topic-by-topic — "play session 15"
+    // marks s15a, then the user's "next" call sees s15a done and serves s15b.
+    // It is safe for explicit plays too: only the topic actually played is marked
+    // (in session/position order), so the journey's "next recommended" cursor
+    // (awareness-extensions: first un-completed topic) never jumps past topics the
+    // user hasn't heard — playing session 15 does NOT mark sessions 1..14.
+    try {
+      const newCompleted = Array.from(new Set([...completed, target.topic_id]));
+      await sb
+        .from('user_guided_journey_state')
+        .upsert(
+          { user_id: identity.user_id, completed_topic_ids: newCompleted, current_session: target.session },
+          { onConflict: 'user_id' },
+        );
+    } catch {
+      /* progression is best-effort; the narration still returns below */
+    }
+
+    const title = (target.title || target.display_label || 'dieses Thema').trim();
+    const script = (target.vitana_voice_script || target.short_description || '').trim();
+
+    // CRITICAL: the function-response `text` is the ONLY thing the live model
+    // receives (see dispatchOrbToolForVertex — it sends r.text). Do NOT put any
+    // "after you finish, offer the next session" instruction in here: the model
+    // PARROTS that meta-line ("now we finished session 3, want session 4?") and
+    // skips reading the script aloud entirely. The "offer the next topic AFTER
+    // speaking" behavior lives in the standing system instruction, not here.
+    if (!script) {
+      return {
+        ok: true,
+        result: { session: target.session, topic_id: target.topic_id, topic_title: title, has_script: false, remaining_in_session: remainingInSession },
+        text:
+          `There is no authored script yet for the topic "${title}". Introduce it concretely from your own knowledge as spoken audio — several real sentences, not one line — then guide the user into the practice. Speak it now; do NOT merely acknowledge, summarize, or skip ahead.`,
+      };
+    }
+    return {
+      ok: true,
+      result: { session: target.session, topic_id: target.topic_id, topic_title: title, has_script: true, remaining_in_session: remainingInSession },
+      text:
+        `SPEAK THE TEXT BELOW NOW, as your spoken audio, in full, word for word, exactly as written — it IS the session's real narration, not a summary to describe. Say ONLY the text below: do NOT add an acknowledgement before it, do NOT summarize or shorten it, and do NOT say "we finished" or offer another session until you have spoken every single word of it.\n\n${script}`,
+    };
+  } catch (e: any) {
+    console.warn(`[narrate_guided_session] non-fatal: ${e?.message || e}`);
+    return degraded;
+  }
+}
+
 type OrbToolHandler = (
   args: OrbToolArgs,
   identity: OrbToolIdentity,
@@ -4158,6 +4663,7 @@ type OrbToolHandler = (
 ) => Promise<OrbToolResult>;
 
 export const ORB_TOOL_REGISTRY: Record<string, OrbToolHandler> = {
+  narrate_guided_session: tool_narrate_guided_session,
   search_memory: tool_search_memory,
   search_web: tool_search_web,
   recall_conversation_at_time: tool_recall_conversation_at_time,
@@ -4196,10 +4702,10 @@ export const ORB_TOOL_REGISTRY: Record<string, OrbToolHandler> = {
   scan_existing_matches: tool_scan_existing_matches,
   share_intent_post: tool_share_intent_post,
   respond_to_match: tool_respond_to_match,
-  navigate_to_screen: (args, id) => tool_navigate_to_screen(args, id),
+  navigate_to_screen: (args, id, sb) => tool_navigate_to_screen(args, id, sb),
   // VTID-NAV-UNIFIED — free-text navigate (PR 1.B-4). Runs consultNavigator's
   // 8-step resolution and constructs the redirect directive.
-  navigate: tool_navigate,
+  navigate: (args, id, sb) => tool_navigate(args, id, sb),
   // VTID-01975 — view_intent_matches (PR 1.B-6). Auto-redirects to
   // INTENTS.MATCH_DETAIL when the top score dominates the runner-up;
   // otherwise lists matches and lets the LLM disambiguate verbally.

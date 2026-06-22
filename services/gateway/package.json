@@ -11,12 +11,13 @@
     "copy-data": "mkdir -p dist/services && cp src/services/tool-manifest.json dist/services/tool-manifest.json && mkdir -p dist/kb && cp -r src/kb/instruction-manual dist/kb/",
     "start": "node dist/index.js",
     "test": "jest",
+    "test:flow": "jest test/orb/conversation-flow.contract.test.ts --silent=false",
     "lint": "eslint src/**/*.ts",
     "typecheck": "tsc --noEmit",
     "validate:dev-frontend-spec": "node ./scripts/validate-dev-frontend-spec.mjs",
     "nav:sync": "tsx scripts/sync-nav-catalog-from-manifest.ts",
     "nav:check": "tsx scripts/sync-nav-catalog-from-manifest.ts --check",
-    "smoke:orb-widget": "node ./scripts/orb-widget-stop-regression.mjs && node ./scripts/orb-widget-audio-playback-regression.mjs && node ./scripts/orb-widget-speaking-watchdog-regression.mjs"
+    "smoke:orb-widget": "node ./scripts/orb-widget-stop-regression.mjs && node ./scripts/orb-widget-audio-playback-regression.mjs && node ./scripts/orb-widget-speaking-watchdog-regression.mjs && node ./scripts/orb-widget-greeting-unlock-regression.mjs && node ./scripts/orb-widget-no-startup-tts-regression.mjs && node ./scripts/orb-anon-wake-skip-regression.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.90.0",

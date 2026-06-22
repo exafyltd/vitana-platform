@@ -947,6 +947,51 @@ export function buildLiveApiTools(
             properties: {},
           },
         },
+        {
+          name: 'narrate_guided_session',
+          description: [
+            'Speak the FULL authored script of the user\'s next Guided Journey session.',
+            'The Guided Journey is the ordered onboarding catalog (94 sessions / 254 topics)',
+            'that teaches a new user how to use Vitanaland, one session at a time.',
+            '',
+            'CALL THIS the moment the user AGREES to start or continue the Guided Journey —',
+            'e.g. you asked "Sollen wir mit Session eins starten?" and they say',
+            '"ja" / "yes" / "los" / "mach" / "weiter" / "nächste Session" / "start".',
+            '',
+            'It returns the next un-learned session\'s AUTHORED script in the result text.',
+            'You MUST then speak that script to the user IN FULL, word for word, as audio —',
+            'it is the real session content, not a hint. NEVER replace it with a one-line',
+            'summary, NEVER paraphrase or shorten it. After you finish speaking the whole',
+            'script, briefly offer to continue with the next session.',
+            '',
+            'Each session has 2–3 topics; this plays ONE topic at a time and tells you how many',
+            'remain in the session, so on "more"/"yes" you call it again for the next topic.',
+            '',
+            'If the user asks for a SPECIFIC session ("play session three", "spiel mir Session 3",',
+            '"repeat session two"), pass that number as session_number — it plays the first topic',
+            'of that session. If the user NAMES a topic ("play the topic about the Vitana Index",',
+            '"das Thema Schlaf"), pass it as topic_query to match that exact topic. Otherwise omit',
+            'both and the next un-learned topic is played.',
+          ].join('\n'),
+          parameters: {
+            type: 'object',
+            properties: {
+              session_number: {
+                type: 'integer',
+                description: 'Optional. The session number the user asked for (e.g. 15). Plays the first un-heard topic of that session.',
+              },
+              topic_query: {
+                type: 'string',
+                description: 'Optional. A topic name/keyword the user named (e.g. "Vitana Index", "Schlaf"). Matches that specific topic across all 254.',
+              },
+              info_only: {
+                type: 'boolean',
+                description:
+                  'Optional. Set true when the user ASKS ABOUT a session (its title, what it covers, "what is session 1", "which session is X") instead of asking to PLAY it. Returns the authored title + description WITHOUT speaking the script or advancing progress, so you can answer with the REAL title. Use the returned session_title verbatim — never guess a title from the Journey Foundation steps.',
+              },
+            },
+          },
+        },
         // ─── BOOTSTRAP-ORB-INDEX-AWARENESS-R4 — Vitana Index tools (5-pillar) ───
         {
           name: 'get_vitana_index',

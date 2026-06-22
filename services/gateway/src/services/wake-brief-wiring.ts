@@ -52,6 +52,25 @@ import {
   TEACHER_EXTRA_KEY,
   TEACHER_PROVIDER_KEY,
 } from './assistant-continuation/providers/teacher/feature-discovery-teacher';
+// Conversation Flow v3 (VTID-03307, SAFE rebuild): flag-gated primary turn-1
+// author for community voice — match → un-learned journey topic → song.
+// SPEAK-ONLY opener (benign offer_demo cta, NO navigation at greeting). When
+// the flag is ON it replaces the legacy Teacher (Teacher extra withheld so it
+// suppresses); when OFF it self-suppresses and the legacy ladder is unchanged.
+import { getSystemControl } from './system-controls-service';
+import {
+  makeConversationFlowV3Provider,
+  FLOW_V3_EXTRA_KEY,
+  FLOW_V3_PROVIDER_KEY,
+  FLOW_V3_FLAG,
+} from './assistant-continuation/providers/conversation-flow-v3-provider';
+// Advice #4: real-life-invite provider — flag-gated (vitana_real_life_invite_enabled,
+// default OFF), speak-only, priority 70. Self-suppresses when the flag is off.
+import {
+  makeRealLifeInviteProvider,
+  REAL_LIFE_INVITE_EXTRA_KEY,
+  REAL_LIFE_INVITE_PROVIDER_KEY,
+} from './assistant-continuation/providers/real-life-invite-provider';
 // VTID-03164: new-day-return provider — fires first session of a new
 // calendar day in user's local TZ. Priority 90 so it beats Teacher (85)
 // and wake-brief (80). Suppresses cleanly when same-day repeat or when
@@ -202,6 +221,16 @@ export function ensureWakeBriefProviderRegistered(): void {
   // first-time-welcome paths.
   if (!defaultProviderRegistry.get(LOGIN_BRIEFING_PROVIDER_KEY)) {
     defaultProviderRegistry.register(makeLoginBriefingProvider());
+  }
+  // VTID-03307 (SAFE rebuild): Conversation Flow v3 at priority 88. Speak-only;
+  // self-suppresses when its flag is off, so registering always is safe.
+  if (!defaultProviderRegistry.get(FLOW_V3_PROVIDER_KEY)) {
+    defaultProviderRegistry.register(makeConversationFlowV3Provider());
+  }
+  // Advice #4: real-life-invite at priority 70. Speak-only; self-suppresses
+  // when vitana_real_life_invite_enabled is off, so registering always is safe.
+  if (!defaultProviderRegistry.get(REAL_LIFE_INVITE_PROVIDER_KEY)) {
+    defaultProviderRegistry.register(makeRealLifeInviteProvider());
   }
   _registered = true;
 }
@@ -412,9 +441,24 @@ export async function decideWakeBriefForSession(
       decisionContext: args.decisionContext ?? null,
       lang: args.lang,
     };
+    // VTID-03307 (SAFE rebuild): when Conversation Flow v3 is ON it OWNS the
+    // teaching turn — forward its inputs and WITHHOLD the legacy Teacher's
+    // (Teacher → skipped:no_teacher_inputs). When OFF, the legacy ladder is
+    // unchanged. Read once here (cached); the provider re-checks defensively.
+    const flowV3On = !!(await getSystemControl(FLOW_V3_FLAG).catch(() => null))?.enabled;
+
     // VTID-03093 (Teacher PR 3): forward Teacher inputs when identity is
     // known. Anonymous sessions are skipped at the provider level.
     if (args.tenantId && args.userId) {
+      if (flowV3On) {
+        extra[FLOW_V3_EXTRA_KEY] = {
+          supabase: args.supabase,
+          tenantId: args.tenantId,
+          userId: args.userId,
+          lang: args.lang,
+          firstName: args.firstName ?? null,
+        };
+      } else {
       extra[TEACHER_EXTRA_KEY] = {
         supabase: args.supabase,
         tenantId: args.tenantId,
@@ -428,6 +472,7 @@ export async function decideWakeBriefForSession(
         // capability via per-capability dedupe).
         skipReason: greetingDecision.reason,
       };
+      } // end legacy-Teacher branch (flowV3 off)
       // VTID-03164: forward new-day-return inputs. Provider suppresses
       // unless trigger conditions hold (new calendar day in user TZ AND
       // is_first_session=false AND timezone present), so passing the
@@ -497,6 +542,15 @@ export async function decideWakeBriefForSession(
         firstName: args.firstName ?? null,
         timezone: args.timezone ?? null,
         greetingPolicy,
+      };
+      // Advice #4: real-life-invite inputs. Always forwarded — the provider
+      // self-suppresses unless its flag is on, so passing it is safe.
+      extra[REAL_LIFE_INVITE_EXTRA_KEY] = {
+        supabase: args.supabase,
+        userId: args.userId,
+        tenantId: args.tenantId,
+        lang: args.lang,
+        firstName: args.firstName ?? null,
       };
     }
   }

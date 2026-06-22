@@ -46,6 +46,7 @@ import { randomUUID } from 'crypto';
 import { TextToSpeechClient, protos } from '@google-cloud/text-to-speech';
 import { processWithGemini, setThreadIdentity } from '../services/gemini-operator';
 import { emitOasisEvent } from '../services/oasis-event-service';
+import { isFeatureLive } from '../services/feature-flags';
 // BOOTSTRAP-PRODUCT-ANALYTICS: server-side product analytics (metadata only)
 import { trackServerEvent, detectTopic } from '../services/product-analytics/track-server';
 // VTID-03250: prefer the browser's own timezone over rate-limit-prone geo-IP
@@ -991,6 +992,23 @@ export interface GeminiLiveSession {
   // VTID-AUDIO-READY: Whether greeting is deferred until client sends audio_ready.
   // Used by WebSocket (mobile) path to avoid greeting truncation from race condition.
   greetingDeferred: boolean;
+  // DEV-COMHU-0513 (greeting pre-buffer, FEATURE_ORB_GREETING_PREBUFFER_ENV):
+  // When true, the upstream greeting prompt has already been dispatched (so model
+  // generation runs DURING the client's AudioContext unlock instead of after it),
+  // and the resulting greeting audio is held server-side in bufferedGreetingChunks
+  // until the client signals audio_ready (or a fallback timer fires). This
+  // decouples "start generating" from "client ready to play", hiding the model's
+  // first-token latency behind the unlock the legacy path serially waits for.
+  prebufferGreetingAudio?: boolean;
+  bufferedGreetingChunks?: string[];
+  // DEV-COMHU-0513 B2: false while fast-start's deferred wake-brief/journey work
+  // is still running; flips true when contextReadyPromise settles. Lets the
+  // greeting builder detect "context still pending" and emit a short audio-safe
+  // opener (under FEATURE_ORB_SAFE_FAST_GREETING) instead of a misclassified
+  // long intro. Unset (undefined) for legacy/inline sessions = treated resolved.
+  contextReadyResolved?: boolean;
+  // Fallback timer that flushes held greeting audio if the client never acks.
+  greetingPrebufferFallbackTimer?: ReturnType<typeof setTimeout>;
   // VTID-01224-FIX: Last session info for context-aware greeting
   lastSessionInfo?: { time: string; wasFailure: boolean } | null;
   // VTID-WATCHDOG: Response watchdog timer — fires when model doesn't respond in time
@@ -1580,6 +1598,79 @@ function generateChimePcm(): string {
 
 // Pre-generate at module load
 generateChimePcm();
+
+// DEV-COMHU-0513 — greeting pre-buffer fallback. If the client never sends
+// audio_ready (e.g. an old widget build, or a stalled AudioContext), flush the
+// held greeting audio anyway so the user is never left in silence. Chosen >
+// typical model first-token time so a healthy session always flushes on the
+// real audio_ready, not the timer.
+const GREETING_PREBUFFER_FALLBACK_MS = 1500;
+
+// DEV-COMHU-0513 — upper bound on how long the upstream-setup path will wait on
+// session.contextReadyPromise before building the Gemini setup message (and thus
+// before the greeting can be generated). The legacy inline path ran the
+// wake-brief/journey work INSIDE session/start (request-timeout-bounded); when
+// FEATURE_ORB_FAST_START_ENV composes that work onto contextReadyPromise, the
+// gate's previously-unbounded `await` could be blocked indefinitely by a slow or
+// hung context call — stranding the greeting entirely (observed ~60% no-greeting
+// on staging). Capping the wait makes the gate fail-open: proceed with whatever
+// context is populated rather than never greeting. With fast-start OFF the
+// promise resolves well under this cap, so behavior is unchanged. Env-tunable
+// for staging without a redeploy.
+const CONTEXT_READY_GATE_TIMEOUT_MS = Number(process.env.ORB_CONTEXT_READY_GATE_TIMEOUT_MS || 4000);
+
+/**
+ * DEV-COMHU-0513 — flush any greeting audio held back by the pre-buffer gate.
+ *
+ * Sends the activation chime first (instant feedback, same as the legacy paths),
+ * then replays the buffered greeting chunks in order, then disables the hold so
+ * subsequent chunks forward live. Idempotent: a no-op once the hold is cleared,
+ * so the audio_ready ack and the fallback timer can both call it safely.
+ */
+function flushPrebufferedGreeting(
+  session: GeminiLiveSession,
+  clientWs: WebSocket,
+  reason: 'audio_ready' | 'fallback',
+): void {
+  if (!session.prebufferGreetingAudio) return; // already flushed (or never armed)
+  session.prebufferGreetingAudio = false;
+  if (session.greetingPrebufferFallbackTimer) {
+    clearTimeout(session.greetingPrebufferFallbackTimer);
+    session.greetingPrebufferFallbackTimer = undefined;
+  }
+  const chunks = session.bufferedGreetingChunks || [];
+  session.bufferedGreetingChunks = [];
+  if (clientWs.readyState !== WebSocket.OPEN) return;
+  try {
+    // Instant feedback chime, mirroring the legacy deferred/audio_ready paths.
+    sendWsMessage(clientWs, {
+      type: 'audio',
+      data_b64: generateChimePcm(),
+      mime: 'audio/pcm;rate=24000',
+      chunk_number: session.audioOutChunks++,
+      source: 'activation_chime',
+    });
+  } catch (err) {
+    console.warn('[GREETING-PREBUFFER] Failed to send chime on flush:', err);
+  }
+  for (const data_b64 of chunks) {
+    if (clientWs.readyState !== WebSocket.OPEN) break;
+    try {
+      sendWsMessage(clientWs, {
+        type: 'audio',
+        data_b64,
+        mime: 'audio/pcm;rate=24000',
+        chunk_number: session.audioOutChunks,
+      });
+    } catch (err) {
+      console.error('[GREETING-PREBUFFER] Failed to flush buffered chunk:', err);
+      break;
+    }
+  }
+  console.log(
+    `[GREETING-PREBUFFER] Flushed ${chunks.length} held greeting chunk(s) on ${reason} for session ${session.sessionId}`,
+  );
+}
 
 // BOOTSTRAP-ORB-MOVE: Phase 2 (move-only) — constants + greeting phrase pool
 // that previously lived here are now imported from the orb/ tree at the top
@@ -2242,9 +2333,19 @@ async function executeLiveApiTool(
   // which can exceed the default 3 s. Replenishment is skipped inline for voice
   // (the popup auto-generates on next open) so these stay bounded.
   const AUTOPILOT_VOICE_TOOLS = new Set(['get_autopilot_recommendations', 'activate_autopilot_recommendations']);
+  // BOOTSTRAP-FIND-MATCH-CLASSIFY-FIX: the community intent tools run TWO
+  // sequential Gemini calls (classify → extract) plus an embed + catalog
+  // search before they can answer. While the classifier was broken it failed
+  // instantly (confidence 0), so it never approached the 3 s cap; with the
+  // corrected gemini-2.5 classifier/extractor the round-trip legitimately runs
+  // ~3-4 s, so the tool timed out at 3000ms and the model apologised ("Das
+  // Posten klappt gerade nicht") even though the row was already inserted in
+  // the background. Give them the same extended budget as the Autopilot tools.
+  const INTENT_VOICE_TOOLS = new Set(['find_match', 'post_intent', 'scan_existing_matches']);
   const TOOL_TIMEOUT_MS =
     toolName === 'consult_external_ai' ? 16_000 :
     AUTOPILOT_VOICE_TOOLS.has(toolName) ? 12_000 :
+    INTENT_VOICE_TOOLS.has(toolName) ? 12_000 :
     3_000;
 
   // BOOTSTRAP-ORB-LATENCY-PHASE2: read-only retrieval tools are cacheable
@@ -4667,7 +4768,7 @@ async function executeLiveApiToolInner(
         let postedKind: string | null = null;
         try {
           const { classifyIntentKind } = await import('../services/intent-classifier');
-          const { extractIntent } = await import('../services/intent-extractor');
+          const { extractIntent, friendlyMissingFields } = await import('../services/intent-extractor');
           const { embedIntent } = await import('../services/intent-embedding');
           const { computeForIntent, surfaceTopMatches } = await import('../services/intent-matcher');
           const { checkIntentContent } = await import('../services/intent-content-filter');
@@ -4690,7 +4791,7 @@ async function executeLiveApiToolInner(
                   ok: false,
                   reason: 'classify_low_confidence',
                   classifier_confidence: cls.confidence,
-                  message: 'Could not confidently classify the utterance. Ask the user to clarify what kind of intent they want to post.',
+                  message: 'Stay warm and upbeat — never say you cannot help. In ONE friendly sentence, say you would love to set this up and ask what they would like to post (an activity partner, something to buy or sell, a teacher, a partner, or help lending/borrowing).',
                 }),
               };
             }
@@ -4724,13 +4825,18 @@ async function executeLiveApiToolInner(
 
           // Step 2 (confirmed=true): validate + write.
           if (extract.missing_critical.length > 0 || extract.confidence < 0.6) {
+            const stillNeeded = friendlyMissingFields(extract.missing_critical);
             return {
               success: true,
               result: JSON.stringify({
                 ok: false,
                 reason: 'extract_incomplete',
                 summary,
-                message: 'Single-shot extraction missed required fields. Ask the user for ' + extract.missing_critical.join(', '),
+                still_needed: stillNeeded,
+                // Positive conversation flow: a missing field is NOT a failure.
+                // Tell the model to keep it warm and forward-looking — never
+                // "I can't post this" — and ask only for the one or two details.
+                message: `Almost there — the post is ready except for ${stillNeeded}. Stay positive and warm: tell the user it is nearly ready and, in one friendly sentence, ask only for ${stillNeeded}, then post it for them once they answer. NEVER say you cannot post it or that anything is wrong — frame it as one quick last detail.`,
               }),
             };
           }
@@ -5297,7 +5403,30 @@ async function executeLiveApiToolInner(
         );
       }
 
-      // VTID-03112 (T1): Teacher Mode tool handlers. The LLM calls these
+      // DEV-COMHU: speak the next Guided Journey session's FULL authored script.
+      // (Without this Vertex case the tool hit the default → "Unknown tool" →
+      // "Das hat nicht geklappt".) Mirrors get_life_compass.
+      case 'narrate_guided_session': {
+        const SUPABASE_URL = process.env.SUPABASE_URL;
+        const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
+        if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
+          return { success: false, result: '', error: 'Service unavailable — Supabase creds not configured' };
+        }
+        const { createClient } = await import('@supabase/supabase-js');
+        const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE);
+        const { dispatchOrbToolForVertex } = await import('../services/orb-tools-shared');
+        return await dispatchOrbToolForVertex(
+          toolName,
+          args ?? {},
+          {
+            user_id: lens.user_id,
+            tenant_id: lens.tenant_id ?? null,
+            role: session.identity?.role ?? null,
+            vitana_id: session.identity?.vitana_id ?? null,
+          },
+          supabase,
+        );
+      }
       // during Teacher Mode (system_instruction block injected at session
       // start when wakeBriefDecision picked the Teacher). The model
       // decides WHEN to call based on the user's transcribed reply —
@@ -6178,17 +6307,39 @@ async function connectToLiveAPI(
       const ctxPromise = (session as any).contextReadyPromise as Promise<void> | undefined;
       if (ctxPromise) {
         const awaitStart = Date.now();
+        // DEV-COMHU-0513: bound this await. Previously an unbounded `await
+        // ctxPromise` — fine when the promise resolved fast (legacy inline path),
+        // but under fast-start the heavy wake-brief/journey work is composed onto
+        // it, so a slow/hung context call blocked the Gemini setup forever and the
+        // greeting never fired. Race against a timeout so we always proceed (with
+        // whatever context is populated) instead of stranding the user.
+        let ctxTimedOut = false;
         try {
-          await ctxPromise;
+          await Promise.race([
+            ctxPromise.catch(() => {
+              // Promise's own .catch already logged; treat as resolved so the
+              // race settles and we proceed with partial context.
+            }),
+            new Promise<void>((resolve) =>
+              setTimeout(() => {
+                ctxTimedOut = true;
+                resolve();
+              }, CONTEXT_READY_GATE_TIMEOUT_MS),
+            ),
+          ]);
         } catch (e) {
-          // Promise's own .catch already logged; proceed with whatever session fields are populated.
+          // Defensive: proceed with whatever session fields are populated.
         }
         const ctxAwaitMs = Date.now() - awaitStart;
         // ORB-CONVERSATION-LATENCY: residual context-build time that did NOT
         // overlap the handshake. This is the number a context-slim (D.2) would
         // move; if it's already ~0, the win is in the model's first-token time.
-        session.establishLatency?.mark('context_awaited', { awaited_ms: ctxAwaitMs });
-        console.log(`[BOOTSTRAP-ORB-CRITICAL-PATH] Awaited contextReadyPromise for ${ctxAwaitMs}ms before Gemini setup for session ${session.sessionId}`);
+        session.establishLatency?.mark('context_awaited', { awaited_ms: ctxAwaitMs, timed_out: ctxTimedOut });
+        console.log(
+          `[BOOTSTRAP-ORB-CRITICAL-PATH] Awaited contextReadyPromise for ${ctxAwaitMs}ms` +
+            (ctxTimedOut ? ` (TIMED OUT at ${CONTEXT_READY_GATE_TIMEOUT_MS}ms — proceeding with partial context)` : '') +
+            ` before Gemini setup for session ${session.sessionId}`,
+        );
       }
 
       // Send setup message with model and configuration
@@ -6413,6 +6564,11 @@ async function connectToLiveAPI(
                               ? buildJourneyGuideBlock(
                                   (session as any).journeyGuideContent,
                                   session.lang,
+                                  // DEV-COMHU double-speak fix: when a wake-brief
+                                  // override owns turn 1 (it carries this exact
+                                  // opener verbatim), suppress the guide block's
+                                  // restatement so the line is spoken once.
+                                  { wakeBriefOwnsTurn1: !!session.wakeBriefOverrideBlock },
                                 )
                               : '')
                           // VTID-03290: GUIDE MODE (TEACH) — when the user tapped
@@ -7275,6 +7431,188 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
   const _sm: ConversationStateMachine =
     (session as any).conversationSM ?? ((session as any).conversationSM = new ConversationStateMachine());
   if (_sm.state === 'PREWARM') _sm.transition('OPENING', 'session_start');
+
+  // DEV-COMHU-0513 B2 — short, audio-safe opener when the greeting is reached
+  // BEFORE the deferred context resolved (fast-start + a low context-gate cap).
+  // With context unresolved, session.lastSessionInfo is empty, so the temporal
+  // bucket below falls to `first`/default and emits the long "FULL INTRODUCTION"
+  // prompt — the exact shape (per VTID-03102) that makes Gemini Live go
+  // text-only / stall, producing NO audio greeting (observed ~75% no-greeting at
+  // a 1s cap). The diagnostic below fires regardless of the flag so a single
+  // staging run confirms the mechanism; the fix (flag-gated, default off) sends
+  // a guaranteed-short verbatim opener instead, then lets the next turn carry
+  // full personalization once context lands. Anonymous sessions keep their own
+  // intro path untouched.
+  if ((session as any).contextReadyResolved === false && !session.isAnonymous) {
+    const _safeFastLive = isFeatureLive('ORB_SAFE_FAST_GREETING');
+    console.log(
+      `[GREETING-CONTEXT-PENDING] session ${session.sessionId} reached greeting before context resolved (lang=${lang}, safe_fast=${_safeFastLive})`,
+    );
+    emitDiag(session, 'greeting_context_pending', { lang, safe_fast_greeting: _safeFastLive });
+    if (_safeFastLive && ws.readyState === WebSocket.OPEN) {
+      // DEV-COMHU-0513 (new-day): when this fast-greeting fires on a genuine
+      // NEW-DAY return, speak a short personalized "Good <tod>, <Name>." instead
+      // of the generic opener — while staying fast. The greeting-facts pre-fetch
+      // (live-session-controller) resolves the spoken first name + last-session
+      // info independently of the heavy bootstrap; here we do a BOUNDED wait for
+      // it so we don't lose the speed, then check the temporal bucket. Same-day
+      // reconnects ('reconnect'|'recent'|'same_day') and missing names fall
+      // through to the EXISTING generic opener below (unchanged). This whole
+      // branch is reachable only under FEATURE_ORB_SAFE_FAST_GREETING.
+      //
+      // The bounded wait + send runs in an async IIFE so the synchronous
+      // function signature (and all its fire-and-forget call sites) stay
+      // unchanged; greetingSent is claimed synchronously to prevent a duplicate
+      // greeting while the wait is in flight.
+      {
+        const _greetingFactsReady: Promise<void> | undefined = (session as any).greetingFactsReady;
+        // Mark sent synchronously so no other path emits a second greeting while
+        // we await the bounded facts wait below.
+        session.greetingSent = true;
+        session.greetingTurnIndex = session.turn_count;
+        _sm.markOpeningDelivered();
+        void (async () => {
+          try {
+            await Promise.race([
+              _greetingFactsReady ?? Promise.resolve(),
+              new Promise<void>((r) => setTimeout(r, Number(process.env.ORB_GREETING_FACTS_WAIT_MS || 700))),
+            ]);
+            if (ws.readyState !== WebSocket.OPEN) return;
+
+            // DEV-COMHU-0513 (proactive fast greeting): when the fast pre-fetch
+            // produced a SHORT proactive opener (name + concrete next step /
+            // weakness lead), speak THAT instead of the generic SHORT_GAP phrase
+            // or the bare "Good <tod>, <Name>". It is kept to ~2 short sentences
+            // so Gemini Live reliably emits audio. This is the top of the fast-
+            // greeting ladder: proactive line → name greeting → generic opener.
+            const proactiveLine: unknown = (session as any).greetingProactiveLine;
+            if (typeof proactiveLine === 'string' && proactiveLine.trim().length > 0) {
+              const safeProactive = proactiveLine.trim().replace(/"/g, '\\"');
+              const proactivePrompt =
+                `Say exactly: "${safeProactive}" — speak it verbatim as audio, as ONE greeting. Do NOT add, paraphrase, or split it.`;
+              ws.send(
+                JSON.stringify({
+                  client_content: { turns: [{ role: 'user', parts: [{ text: proactivePrompt }] }], turn_complete: true },
+                }),
+              );
+              emitDiag(session, 'greeting_sent', {
+                lang,
+                prompt_len: proactivePrompt.length,
+                wake_opener: 'safe_fast_proactive',
+              });
+              startResponseWatchdog(session, getGreetingResponseTimeoutMs(), 'greeting_timeout');
+              console.log(
+                `[GREETING-SAFE-FAST-PROACTIVE] session ${session.sessionId} sent proactive fast opener (lang=${lang})`,
+              );
+              return;
+            }
+
+            const temporal = describeTimeSince((session as any).lastSessionInfo);
+            const firstName = (session as any).greetingFirstName;
+            const isNewDay =
+              temporal.bucket === 'today' ||
+              temporal.bucket === 'yesterday' ||
+              temporal.bucket === 'week' ||
+              temporal.bucket === 'long';
+
+            if (isNewDay && typeof firstName === 'string' && firstName.trim().length > 0) {
+              const name = firstName.trim();
+              // Map time-of-day → greeting; 'night' → evening (avoid "good night"
+              // farewell), default 'day'.
+              const tod =
+                session.clientContext?.timeOfDay === 'night'
+                  ? 'evening'
+                  : session.clientContext?.timeOfDay || 'day';
+              // Localized "Good <tod>, <Name>." — en + de are real; other langs
+              // get an easy localized good-<tod> where known, else the en line.
+              const greetingByLang: Record<string, string> = {
+                en:
+                  tod === 'morning'
+                    ? `Good morning, ${name}.`
+                    : tod === 'afternoon'
+                      ? `Good afternoon, ${name}.`
+                      : tod === 'evening'
+                        ? `Good evening, ${name}.`
+                        : `Hello, ${name}.`,
+                de:
+                  tod === 'morning'
+                    ? `Guten Morgen, ${name}.`
+                    : tod === 'evening'
+                      ? `Guten Abend, ${name}.`
+                      : `Guten Tag, ${name}.`,
+                es:
+                  tod === 'morning'
+                    ? `Buenos días, ${name}.`
+                    : tod === 'evening'
+                      ? `Buenas noches, ${name}.`
+                      : `Buenas tardes, ${name}.`,
+                fr:
+                  tod === 'evening'
+                    ? `Bonsoir, ${name}.`
+                    : `Bonjour, ${name}.`,
+                sr:
+                  tod === 'morning'
+                    ? `Добро јутро, ${name}.`
+                    : tod === 'evening'
+                      ? `Добро вече, ${name}.`
+                      : `Добар дан, ${name}.`,
+              };
+              const langKey = (lang || 'en').slice(0, 2).toLowerCase();
+              const spoken = greetingByLang[langKey] || greetingByLang.en;
+              const safe = spoken.replace(/"/g, '\\"');
+              // Mirror the existing `Say exactly: "..."` shape used elsewhere in
+              // this function — keep it SHORT so Gemini reliably emits audio.
+              const newDayPrompt =
+                `Say exactly: "${safe}" — ONE short utterance only. Do NOT add anything before or after. Do NOT paraphrase. Speak it as audio.`;
+              ws.send(
+                JSON.stringify({
+                  client_content: { turns: [{ role: 'user', parts: [{ text: newDayPrompt }] }], turn_complete: true },
+                }),
+              );
+              emitDiag(session, 'greeting_sent', {
+                lang,
+                prompt_len: newDayPrompt.length,
+                wake_opener: 'safe_fast_newday',
+                bucket: temporal.bucket,
+              });
+              startResponseWatchdog(session, getGreetingResponseTimeoutMs(), 'greeting_timeout');
+              console.log(
+                `[GREETING-SAFE-FAST-NEWDAY] session ${session.sessionId} sent personalized new-day opener (bucket=${temporal.bucket}, lang=${lang})`,
+              );
+              return;
+            }
+
+            // ELSE — fall through to the EXISTING generic opener (unchanged
+            // behavior). Same-day reconnects and no-name sessions take this path.
+            const _menu = pickShortGapGreetings(lang, 6).map((p) => `"${p}"`).join(', ');
+            const _safePrompt =
+              `Open with EXACTLY ONE short phrase, picked from this menu and used VERBATIM ` +
+              `(already in the user's language): ${_menu}. Do NOT say "Hello" or the user's name. ` +
+              `Do NOT introduce yourself. NEVER use two-part sentences. Speak it as audio.`;
+            ws.send(
+              JSON.stringify({
+                client_content: { turns: [{ role: 'user', parts: [{ text: _safePrompt }] }], turn_complete: true },
+              }),
+            );
+            emitDiag(session, 'greeting_sent', {
+              lang,
+              prompt_len: _safePrompt.length,
+              wake_opener: 'safe_fast_pending_context',
+            });
+            startResponseWatchdog(session, getGreetingResponseTimeoutMs(), 'greeting_timeout');
+            console.log(
+              `[GREETING-SAFE-FAST] session ${session.sessionId} sent short audio-safe opener (context still pending)`,
+            );
+          } catch (err: any) {
+            console.warn(
+              `[GREETING-SAFE-FAST-NEWDAY] session ${session.sessionId} bounded greeting send failed (non-fatal): ${err?.message || err}`,
+            );
+          }
+        })();
+        return true;
+      }
+    }
+  }
 
   const _wb = (session as any).wakeBriefDecision || null;
   const _openDecision = decideOpening({
@@ -11619,6 +11957,22 @@ router.post('/live/session/prewarm', optionalAuth, async (req: AuthenticatedRequ
   }
   void buildBootstrapContextPack(identity, `prewarm-${Date.now()}`)
     .catch((err) => console.warn('[BOOTSTRAP-ORB-LATENCY-PHASE2] prewarm failed (non-fatal):', err?.message || err));
+  // ORB-BRAIN-CACHE (DEV-COMHU-0513): also warm the vitana-brain ORB context —
+  // the path the live session ACTUALLY uses (buildBootstrapContextPack above is
+  // the legacy path). Without this, a prewarmed tap still paid the full ~4.4s
+  // brain build that gates the Gemini setup. Community/orb is the dominant
+  // (and complaining) cohort; other roles warm on their first tap. Flag-gated
+  // (no-op when FEATURE_ORB_BRAIN_CACHE_ENV is off).
+  void import('../services/vitana-brain-cache')
+    .then(({ warmBrainCache }) =>
+      warmBrainCache({
+        user_id: identity.user_id,
+        tenant_id: identity.tenant_id || 'default',
+        role: 'community',
+        channel: 'orb',
+      }),
+    )
+    .catch(() => { /* best-effort warm */ });
   return res.json({ ok: true, prewarm: 'started' });
 });
 
@@ -12969,6 +13323,14 @@ async function handleWsClientMessage(clientSession: WsClientSession, message: Ws
         // ORB-CONVERSATION-LATENCY: greeting dispatched upstream — remaining
         // gap to audio_out_first_chunk is the model's first-token time.
         liveSession.establishLatency?.mark('greeting_sent', { deferred: true });
+      } else if (liveSession.prebufferGreetingAudio) {
+        // DEV-COMHU-0513 — greeting pre-buffer: generation already started at
+        // connect; the client is now ready, so release the held greeting audio
+        // (chime first, then buffered chunks). This is the common case — the ack
+        // typically arrives before the model has produced its first chunk, so the
+        // buffer is usually empty and greeting audio then forwards live.
+        console.log(`[GREETING-PREBUFFER] Client audio_ready received — flushing held greeting for session ${liveSession.sessionId}`);
+        flushPrebufferedGreeting(liveSession, clientWs, 'audio_ready');
       } else {
         console.log(`[VTID-AUDIO-READY] audio_ready received but greeting already sent or not deferred: session=${liveSession.sessionId}`);
       }
@@ -13308,6 +13670,17 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
           void liveSession.establishLatency.finalize('success');
           liveSession.establishLatency = null;
         }
+        // DEV-COMHU-0513 — greeting pre-buffer: when the greeting was dispatched
+        // early (before the client's audio_ready), hold its audio server-side
+        // instead of forwarding, so the first words can't arrive before the
+        // client's player is unlocked. flushPrebufferedGreeting() replays these
+        // in order on audio_ready (or the fallback timer). Only greeting-era
+        // audio is held; once flushed, prebufferGreetingAudio is false and all
+        // later turns forward live with zero overhead.
+        if (liveSession.prebufferGreetingAudio) {
+          (liveSession.bufferedGreetingChunks ||= []).push(audioB64);
+          return;
+        }
         if (clientWs.readyState === WebSocket.OPEN) {
           try {
             // Send raw PCM - client uses Web Audio API scheduling for seamless playback
@@ -13458,7 +13831,26 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
     // client audio player is initialized). Fallback: send after 1s if no audio_ready
     // (BOOTSTRAP-ORB-LATENCY-PHASE1: 2s→1s — the ack normally arrives in <300ms;
     // a 2s fallback only stretched session start for clients that never ack).
-    if (liveSession.greetingDeferred) {
+    if (liveSession.greetingDeferred && isFeatureLive('ORB_GREETING_PREBUFFER')) {
+      // DEV-COMHU-0513 — greeting pre-buffer (flag-gated). Instead of waiting for
+      // audio_ready before we even ASK the model for the greeting (which serially
+      // stacks model generation AFTER the client's AudioContext unlock), dispatch
+      // the greeting prompt NOW so generation overlaps the unlock, and hold the
+      // resulting audio until audio_ready (or the fallback timer) so first words
+      // still can't arrive before the client's player is ready.
+      console.log(`[GREETING-PREBUFFER] Dispatching greeting early + holding audio until audio_ready: session=${sessionId}`);
+      liveSession.prebufferGreetingAudio = true;
+      liveSession.bufferedGreetingChunks = [];
+      liveSession.greetingDeferred = false;
+      sendGreetingPromptToLiveAPI(upstreamWs, liveSession);
+      liveSession.establishLatency?.mark('greeting_sent', { prebuffer: true });
+      liveSession.greetingPrebufferFallbackTimer = setTimeout(() => {
+        if (liveSession.active && liveSession.prebufferGreetingAudio) {
+          console.log(`[GREETING-PREBUFFER] Fallback flush after ${GREETING_PREBUFFER_FALLBACK_MS}ms (no audio_ready): session=${sessionId}`);
+          flushPrebufferedGreeting(liveSession, clientWs, 'fallback');
+        }
+      }, GREETING_PREBUFFER_FALLBACK_MS);
+    } else if (liveSession.greetingDeferred) {
       console.log(`[VTID-AUDIO-READY] Greeting deferred — waiting for client audio_ready: session=${sessionId}`);
       setTimeout(() => {
         if (!liveSession.greetingSent && liveSession.active && liveSession.upstreamWs) {

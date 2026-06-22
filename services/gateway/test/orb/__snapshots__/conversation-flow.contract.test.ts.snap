@@ -1,0 +1,34 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`Vitana conversation-flow contract — 10 standard scenarios INVARIANT B — the exact spoken lines are locked (snapshot) 1`] = `
+"#1 login-briefing/orient [state=orient]
+   → "Guten Morgen, Maria. Deine Longevity-Journey wartet noch auf ihren ersten Schritt. Lass uns kurz dein Ziel setzen — das gibt allem eine Richtung. Ich starte das gleich mit dir."
+#2 login-briefing/building [state=building]
+   → "Guten Morgen, Maria. Stark — du hast schon 3 Sessions geschafft. Als Nächstes käme Session 4: „Schlaf-Routine". Lass uns genau da weitermachen — ich führe dich."
+#3 login-briefing/momentum [state=momentum]
+   → "Guten Morgen, Maria. Schön, dich zu hören. Du bist bei Session 4 — und dein Vitana Index ist diese Woche um 12 Punkte gestiegen. Das ist echte Konstanz. Als Nächstes käme Session 4: „Schlaf-Routine". Lass uns genau da weitermachen — ich führe dich."
+#4 login-briefing/returning [state=returning]
+   → "Guten Morgen, Maria. Schön, dass du wieder da bist. Es ist ein paar Tage her — aber deine 3 Sessions sind nicht verloren, du knüpfst genau dort wieder an. Als Nächstes käme Session 4: „Schlaf-Routine". Lass uns genau dort wieder anknüpfen — ich führe dich."
+#5 login-briefing/graduated [state=graduated]
+   → "Guten Morgen, Maria. Du hast deine Onboarding-Journey komplett gemeistert — 3 Sessions, alle dein. Jetzt geht es um Tiefe. Lass uns gleich eine Stufe tiefer gehen — ich zeige dir den ersten Schritt."
+#6 flow-v3/community_match
+   → "Du hast ein neues Match! Lass es uns gemeinsam anschauen — ich führe dich gleich hin."
+#7 flow-v3/journey_topic
+   → "Darf ich dir Life Compass kurz vorstellen und erklären, wie es funktioniert?"
+#8 flow-v3/song
+   → "Ich würde dir gern einen Song vorspielen — darf ich?"
+#9 flow-v3/greeting
+   → (suppressed)
+#10 flow-v3/community_match (all-three→match-wins)
+   → "Du hast ein neues Match! Lass es uns gemeinsam anschauen — ich führe dich gleich hin."
+#11 login-briefing/building+weakness (advice #1)
+   → "Guten Morgen, Maria. Stark — du hast schon 3 Sessions geschafft. Mir ist aufgefallen: dein Bereich Schlaf ist diese Woche um 6 Punkte gesunken. Weil dir „besser schlafen" wichtig ist, lohnt sich genau hier ein kleiner Schritt. Lass uns das gemeinsam umkehren — ich zeige dir den ersten Schritt."
+#12 login-briefing/momentum+progress (advice #2)
+   → "Guten Morgen, Maria. Schön, dich zu hören. Du bist bei Session 4 — und dein Vitana Index ist diese Woche um 12 Punkte gestiegen. Das ist echte Konstanz. Auf deiner Lernkarte stehen schon 30 von 254 Themen auf grün — das sind 12% deiner Reise. Als Nächstes käme Session 4: „Schlaf-Routine". Lass uns genau da weitermachen — ich führe dich."
+#13 match-activity/mutual+schedulable (advice #3)
+   → "Du hast ein gegenseitiges hike-Match — lass uns gleich einen Termin festmachen, ich trage ihn dir direkt in den Kalender ein."
+#14 real-life-invite/exercise→walk (advice #4)
+   → "Du machst das gerade richtig stark. Solche Dinge halten noch besser, wenn man sie teilt — lass uns jemanden einladen, mit dir einen Spaziergang zu machen. Ich helfe dir, die Einladung rauszuschicken."
+#15 fast-proactive-opener (DEV-COMHU-0513)
+   → "Guten Morgen, Maria. Dein Bereich Schlaf ist diese Woche gesunken — lass uns das gemeinsam umkehren, ich zeige dir den ersten Schritt.""
+`;

@@ -86,6 +86,9 @@ import {
 } from '../instruction/wake-decision-snapshot';
 // VTID-03248 (R1 slice 1): single canonical spoken-first-name resolver.
 import { resolveSpokenFirstName } from '../../../services/awareness-unified-context';
+// DEV-COMHU-0513 (new-day): gate the fast greeting-facts pre-fetch on the
+// EXISTING ORB_SAFE_FAST_GREETING feature flag (no new flag).
+import { isFeatureLive } from '../../../services/feature-flags';
 import { recordAgentHeartbeat } from '../../../routes/agents-registry';
 import {
   fetchAdminBriefingBlock,
@@ -712,6 +715,23 @@ export async function handleLiveSessionStart(
   // awaited by connectToLiveAPI's ws.on('open') handler.
   let contextReadyPromise: Promise<void> | undefined;
 
+  // DEV-COMHU-0513 (new-day): FAST greeting-facts pre-fetch. Independent of the
+  // heavy bootstrapWork above so the new-day personalized opener has a spoken
+  // first name + last-session info ready at greeting time even under fast-start
+  // (where the heavy block has NOT resolved yet). Populated only for authed,
+  // non-anon, non-guided sessions AND only when FEATURE_ORB_SAFE_FAST_GREETING
+  // is live. Resolved values are copied onto the session after it is created
+  // (the session object is constructed further below). Fail-open: any error
+  // leaves greetingFirstName null and the greeting builder falls through to the
+  // existing generic opener.
+  let greetingFirstName: string | null = null;
+  let greetingEarlyLastSessionInfo: { time: string; wasFailure: boolean } | null = null;
+  let greetingFactsReady: Promise<void> | undefined;
+  // DEV-COMHU-0513 (proactive fast greeting): a SHORT proactive opener (name +
+  // concrete next step / weakness lead) computed in the fast pre-fetch window so
+  // the SAFE-FAST greeting can speak IT instead of a generic SHORT_GAP phrase.
+  let greetingProactiveLine: string | null = null;
+
   // VTID-03294: a Guided-Journey topic tap needs ZERO context — Vitana just
   // picks up the KB lesson and speaks it. Detect it here so we can skip the
   // heavy Brain/memory/history/admin bootstrap (the 7-10s first-audio delay).
@@ -757,14 +777,14 @@ export async function handleLiveSessionStart(
         ? (async () => {
             const brainStart = Date.now();
             try {
-              const { buildBrainSystemInstruction } = await import('../../../services/vitana-brain');
+              const { buildBrainSystemInstructionCached } = await import('../../../services/vitana-brain-cache');
               const bodyRoute = typeof (body as any).current_route === 'string' ? (body as any).current_route : '';
               const brainRole = clientContext.isMobile
                 ? 'community'
                 : bodyRoute.startsWith('/command-hub')
                   ? 'developer'
                   : ((bootstrapIdentity as any).active_role || 'community');
-              const { instruction, contextPack: cp } = await buildBrainSystemInstruction({
+              const { instruction, contextPack: cp } = await buildBrainSystemInstructionCached({
                 user_id: bootstrapIdentity.user_id,
                 tenant_id: bootstrapIdentity.tenant_id || 'default',
                 role: brainRole,
@@ -874,6 +894,91 @@ export async function handleLiveSessionStart(
       .catch((err) => {
         console.warn(`[BOOTSTRAP-ORB-CRITICAL-PATH] Context build rejected for ${sessionId}, proceeding with empty context:`, err?.message || err);
       });
+
+    // DEV-COMHU-0513 (new-day): kick off a FAST, parallel pre-fetch of the two
+    // facts the new-day personalized opener needs — the spoken first name and
+    // the last-session timestamp — so they are ready at greeting time even when
+    // the heavy bootstrapWork above has not resolved yet (fast-start). This runs
+    // independently of bootstrapWork and never blocks session start. Gated on
+    // the EXISTING FEATURE_ORB_SAFE_FAST_GREETING flag — a no-op when off, so
+    // default behavior is 100% unchanged. Fail-open: every fetch failure leaves
+    // greetingFirstName null (→ generic opener). The name-resolution mirrors the
+    // canonical block (~memory_facts.user_name → app_users.display_name → email
+    // via resolveSpokenFirstName); setting lastSessionInfo early is idempotent
+    // with the heavy block, which sets the same field later.
+    if (isFeatureLive('ORB_SAFE_FAST_GREETING')) {
+      const _ndIdentity = bootstrapIdentity;
+      greetingFactsReady = (async () => {
+        try {
+          const { getSupabase } = await import('../../../lib/supabase');
+          const supa = getSupabase() ?? undefined;
+          const [lastInfo, factResult, profileResult] = await Promise.allSettled([
+            deps.fetchLastSessionInfo(_ndIdentity.user_id),
+            supa
+              ? supa
+                  .from('memory_facts')
+                  .select('fact_value')
+                  .eq('user_id', _ndIdentity.user_id)
+                  .eq('fact_key', 'user_name')
+                  .maybeSingle()
+              : Promise.resolve(null as any),
+            supa
+              ? supa
+                  .from('app_users')
+                  .select('display_name')
+                  .eq('user_id', _ndIdentity.user_id)
+                  .maybeSingle()
+              : Promise.resolve(null as any),
+          ]);
+
+          if (lastInfo.status === 'fulfilled') {
+            greetingEarlyLastSessionInfo = lastInfo.value;
+          }
+
+          const factValue =
+            factResult.status === 'fulfilled' && factResult.value && !factResult.value.error
+              ? (factResult.value.data as { fact_value?: string | null } | null)?.fact_value ?? null
+              : null;
+          const profileValue =
+            profileResult.status === 'fulfilled' && profileResult.value && !profileResult.value.error
+              ? (profileResult.value.data as { display_name?: string | null } | null)?.display_name ?? null
+              : null;
+          const resolved = resolveSpokenFirstName({
+            memoryFactUserName: factValue,
+            displayName: profileValue,
+            email: _ndIdentity.email ?? null,
+          });
+          greetingFirstName = resolved.firstName;
+
+          // DEV-COMHU-0513: compute the SHORT proactive opener from the same fast
+          // window (one extra parallel-read round-trip). Fail-open → null leaves
+          // the greeting path on the name / generic fallback ladder.
+          if (supa) {
+            const { computeFastProactiveOpener } = await import(
+              '../../../services/assistant-continuation/providers/login-briefing'
+            );
+            greetingProactiveLine = await computeFastProactiveOpener({
+              supabase: supa,
+              userId: _ndIdentity.user_id,
+              lang,
+              firstName: greetingFirstName,
+              timezone: clientContext?.timezone ?? null,
+              nowMs: Date.now(),
+              // BOOTSTRAP-ORB-GREETING-RETURNING-USER (fix #2): feed the prior
+              // session timestamp so the fast opener honors the greet-once
+              // cadence and won't re-greet from scratch on a quick re-open.
+              lastSessionInfo: greetingEarlyLastSessionInfo,
+            });
+          }
+          console.log(
+            `[GREETING-FACTS-PREFETCH] session ${sessionId} resolved firstName=${greetingFirstName ? '<set>' : 'null'} lastSession=${greetingEarlyLastSessionInfo ? 'yes' : 'no'} proactive=${greetingProactiveLine ? '<set>' : 'null'}`,
+          );
+        } catch (err: any) {
+          // Fail-open to nulls — never reject.
+          console.warn(`[GREETING-FACTS-PREFETCH] session ${sessionId} pre-fetch failed (non-fatal): ${err?.message || err}`);
+        }
+      })();
+    }
   } else {
     contextBootstrapSkippedReason = 'no_identity';
     console.log(`[VTID-01224] Skipping context bootstrap for ${sessionId}: no identity`);
@@ -966,6 +1071,31 @@ export async function handleLiveSessionStart(
 
   // Store session
   liveSessions.set(sessionId, session);
+
+  // DEV-COMHU-0513 (new-day): expose the fast greeting-facts pre-fetch on the
+  // session so the greeting builder (sendGreetingPromptToLiveAPI) can do a
+  // bounded wait for the spoken first name + last-session info under fast-start.
+  // greetingFactsReady is undefined when FEATURE_ORB_SAFE_FAST_GREETING is off
+  // (default → builder treats it as immediately ready and uses the generic
+  // opener, i.e. behavior unchanged). When it resolves, copy the resolved facts
+  // onto the session. Also seed from any value that already resolved.
+  if (greetingFactsReady) {
+    (session as any).greetingFirstName = greetingFirstName;
+    (session as any).greetingProactiveLine = greetingProactiveLine;
+    if (greetingEarlyLastSessionInfo && !session.lastSessionInfo) {
+      session.lastSessionInfo = greetingEarlyLastSessionInfo;
+    }
+    (session as any).greetingFactsReady = greetingFactsReady.then(() => {
+      (session as any).greetingFirstName = greetingFirstName;
+      // DEV-COMHU-0513: the proactive opener resolves with the rest of the fast
+      // facts; copy it onto the session so the greeting builder can prefer it.
+      (session as any).greetingProactiveLine = greetingProactiveLine;
+      // Idempotent with the heavy bootstrap block, which also sets this later.
+      if (greetingEarlyLastSessionInfo && !session.lastSessionInfo) {
+        session.lastSessionInfo = greetingEarlyLastSessionInfo;
+      }
+    });
+  }
 
   // VTID-03107: arm the per-minute voice meter for authenticated sessions
   // whose quota gate is in 'allow' or 'degrade' state. 'deferred' sessions
@@ -1490,18 +1620,44 @@ export async function handleLiveSessionStart(
     // Journey blocks — but session/start returns now instead of after the
     // wake-brief + journey round-trips.
     const brainReady = (session as any).contextReadyPromise as Promise<void> | undefined;
-    (session as any).contextReadyPromise = composeContextReady(
+    // DEV-COMHU-0513 B2: mark context as not-yet-resolved while the deferred
+    // wake-brief/journey work runs, so the greeting builder can detect "context
+    // still pending" and (under FEATURE_ORB_SAFE_FAST_GREETING) emit a short,
+    // audio-safe opener instead of a temporal-misclassified long intro that
+    // makes Gemini Live go text-only. Only the fast-start (deferred) path starts
+    // false; legacy/inline sessions never set it, so they read as resolved.
+    (session as any).contextReadyResolved = false;
+    const composedContextReady = composeContextReady(
       brainReady,
       assembleWakeBriefAndJourney,
     );
+    (session as any).contextReadyPromise = composedContextReady;
+    void composedContextReady.finally(() => {
+      (session as any).contextReadyResolved = true;
+    });
     console.log(
       `[ORB-FAST-START] session ${sessionId}: wake-brief + journey deferred onto contextReadyPromise (fast session/start)`,
     );
-  } else {
+  } else if (!isAnonymousSession) {
     // Legacy inline path: assign the return value so TS control-flow analysis
     // sees wakeBriefDecision populated for the response meta below.
     wakeBriefDecision = await assembleWakeBriefAndJourney();
   }
+  // ANON-WAKE-SKIP: anonymous (pre-login) sessions deliberately do NOT run the
+  // authenticated wake-brief / journey / decision-context pipeline. Its result
+  // is discarded for anonymous sessions anyway — every greeting-builder branch
+  // that consumes wakeBriefDecision is gated behind `!session.isAnonymous`
+  // (orb-live.ts: wake-override speak, cadence-silence, context-pending), and the
+  // pre-login intro speech is driven by buildAnonymousSystemInstruction's own
+  // verbatim-speech path. Running it inline only piled Supabase round-trips +
+  // emission writes onto the pre-login critical path (session/start observed at
+  // ~4.5s), pushing slow/mobile clients past the orb-widget's 8s session-start
+  // timeout — so the orb opened, flipped to "listening", and never received the
+  // greeting (the "pre-login speech doesn't start / doesn't react to input"
+  // report). The fast-start path already defers this work for authenticated
+  // users (shouldDeferWakeWork), which is why post-login was unaffected.
+  // wakeBriefDecision stays null → response meta reports wake_brief:null, which
+  // the widget does not depend on for anonymous sessions.
 
   // Emit OASIS event with identity context.
   // ORB-FAST-START Phase 1a: fire-and-forget. session.start IS a real state
