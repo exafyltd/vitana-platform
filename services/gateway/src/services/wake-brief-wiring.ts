@@ -542,6 +542,12 @@ export async function decideWakeBriefForSession(
         firstName: args.firstName ?? null,
         timezone: args.timezone ?? null,
         greetingPolicy,
+        // Forward the decision reason so login-briefing stays silent ONLY on a
+        // transparent-reconnect-class skip (network blip), and LEADS with the
+        // grounded opener on a deliberate re-open (cadence skip). Without this
+        // the grounded opener fell silent on every <15-min re-tap and a
+        // hard-coded fallback provider won the turn.
+        skipReason: greetingDecision.reason,
       };
       // Advice #4: real-life-invite inputs. Always forwarded — the provider
       // self-suppresses unless its flag is on, so passing it is safe.

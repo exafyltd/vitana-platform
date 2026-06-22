@@ -94,6 +94,17 @@ export interface LoginBriefingInputs {
   timezone: string | null;
   /** From the greeting-policy decision. `skip` → suppress (silent reconnect). */
   greetingPolicy: string;
+  /**
+   * The greeting-policy DECISION reason behind a `skip`. We only stay silent
+   * on TRANSPARENT-RECONNECT-class skips (network blip / bucket=reconnect) —
+   * those are not a deliberate open, so re-greeting would feel like a bug.
+   * A cadence-class skip (greeted_recently_within_window, heavy-day) is still
+   * a DELIBERATE re-open: the user tapped the orb on purpose, so we LEAD with
+   * the grounded journey opener rather than fall silent (which used to let a
+   * hard-coded fallback provider win the turn). Mirrors feature-discovery-
+   * teacher's skipReason gate. Undefined/absent when policy is non-skip.
+   */
+  skipReason?: string | null;
 }
 
 export interface LoginBriefingProviderOptions {
@@ -420,6 +431,7 @@ function readInputs(ctx: ContinuationDecisionContext): LoginBriefingInputs | nul
     firstName: typeof o.firstName === 'string' && o.firstName.length > 0 ? o.firstName : null,
     timezone: typeof o.timezone === 'string' && o.timezone.length > 0 ? o.timezone : null,
     greetingPolicy: typeof o.greetingPolicy === 'string' ? o.greetingPolicy : 'fresh_intro',
+    skipReason: typeof o.skipReason === 'string' ? o.skipReason : null,
   };
 }
 
@@ -523,14 +535,29 @@ export function makeLoginBriefingProvider(
         };
       }
 
-      // Silent reconnect / greeted-too-recently: stay quiet and let the
-      // upstream skip policy hold. (State F — same-day quick reconnect.)
-      if (inputs.greetingPolicy === 'skip') {
+      // Stay silent ONLY on a transparent-reconnect-class skip — a network
+      // blip / server-side resume the user never perceived. Those are not a
+      // deliberate open, so speaking would read as an apology/bug.
+      //
+      // A CADENCE-class skip (greeted_recently_within_window, heavy-day) is a
+      // DELIBERATE re-open — the user tapped the orb on purpose. We LEAD with
+      // the grounded journey briefing instead of falling silent. Falling
+      // silent here is exactly what let a lower-priority HARD-CODED fallback
+      // provider (voice-wake-brief / feature-discovery-teacher) win the turn
+      // and speak a canned greeting. The grounded opener (priority 92) now
+      // owns every deliberate open; nothing canned can override it.
+      // Mirrors feature-discovery-teacher's skipReason gate.
+      if (
+        inputs.greetingPolicy === 'skip' &&
+        (inputs.skipReason === 'isReconnect_forces_skip' ||
+          inputs.skipReason === 'transparent_reconnect_forces_skip' ||
+          inputs.skipReason === 'bucket_reconnect_forces_skip')
+      ) {
         return {
           providerKey: LOGIN_BRIEFING_PROVIDER_KEY,
           status: 'suppressed',
           latencyMs: Math.max(0, now() - t0),
-          reason: 'greeting_policy_skip',
+          reason: `forced_skip_${inputs.skipReason}`,
         };
       }
 
