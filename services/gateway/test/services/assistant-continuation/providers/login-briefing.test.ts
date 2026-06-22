@@ -310,14 +310,48 @@ describe('buildFastProactiveOpener (proactive fast greeting)', () => {
     expect(line).toContain('ich führe dich');
   });
 
-  it('returning user → GROUNDED recall of the last session ("Letztes Mal ging es um X"), then continues there', () => {
+  it('returning user → GROUNDED recall of the last session ("Letztes Mal ging es um X"), then LEADS forward', () => {
+    // recall title == next title (same session) → no distinct step to name, so
+    // it recalls where we left off and leads to the next session (no bluff, no
+    // passive "what do you want").
     const line = mk({ daysSinceLastSession: 2, lastSessionTitle: 'Dein Plan', nextSessionTitle: 'Dein Plan' });
     expect(line).toContain('Letztes Mal ging es um „Dein Plan"'); // the REAL last session, recalled
-    expect(line).toMatch(/da (weitermachen|weiter|an)|da\b/); // continues "there", not repeating the title
+    expect(line).toMatch(/nächsten Session|sag Bescheid|übernehme/); // proactively leads forward
+    expect(line).not.toMatch(PASSIVE);
+  });
+
+  it('returning user with a DISTINCT next step → names BOTH where we left off AND the next step', () => {
+    // lastOpenedTitle (where we left off) ≠ nextStepTitle (the genuine next
+    // step) → the opener names both, then offers to lead. This is the core
+    // "always know where we left off + proactively the next step" behavior.
+    const line = mk({
+      daysSinceLastSession: 2,
+      lastOpenedTitle: 'Schlaf-Grundlagen',
+      nextStepTitle: 'Abendroutine',
+    });
+    expect(line).toContain('Letztes Mal ging es um „Schlaf-Grundlagen"'); // where we left off
+    expect(line).toContain('Abendroutine'); // the distinct next step, named
+    expect(line).toContain('ich führe dich'); // and Vitana leads / offers to do it
+    expect(line).not.toMatch(PASSIVE);
+  });
+
+  it('rotates across three proactive proposals (journey / community / match) — each offers to DO it for the user', () => {
+    const facts = { ...BASE_FACTS, daysSinceLastSession: 2, lastOpenedTitle: 'Schlaf-Grundlagen', nextStepTitle: 'Abendroutine' };
+    const journey = buildFastProactiveOpener({ lang: 'de', salutation: 'morning', firstName: 'Maria', facts }, () => 0);
+    const community = buildFastProactiveOpener({ lang: 'de', salutation: 'morning', firstName: 'Maria', facts }, () => 0.5);
+    const match = buildFastProactiveOpener({ lang: 'de', salutation: 'morning', firstName: 'Maria', facts }, () => 0.99);
+    expect(journey).toContain('Abendroutine'); // proposal 1: the next session/step
+    expect(community).toMatch(/Community/); // proposal 2: post to the community
+    expect(match).toMatch(/Aktivitätspartner/); // proposal 3: find a match
+    // Every rotation recalls where we left off and offers to do the work.
+    for (const l of [journey, community, match]) {
+      expect(l).toContain('Letztes Mal ging es um „Schlaf-Grundlagen"');
+      expect(l).toMatch(/ich (führe|poste|kümmere|übernehme)/i);
+    }
   });
 
   it('NO false recall when there is no last session — never bluffs "where we left off"', () => {
-    const line = mk({ lastSessionTitle: null, nextSessionTitle: 'Schlaf-Routine' });
+    const line = mk({ lastSessionTitle: null, lastOpenedTitle: null, nextSessionTitle: 'Schlaf-Routine', nextStepTitle: null });
     expect(line).not.toMatch(/Letztes Mal|wo wir aufgehört|anknüpfen/i); // no recall claim without data
     expect(line).toContain('Schlaf-Routine'); // still leads to the next step
   });

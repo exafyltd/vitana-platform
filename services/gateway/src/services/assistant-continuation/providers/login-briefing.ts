@@ -123,6 +123,16 @@ export interface BriefingFacts {
    * continuity promise so it is real, not a bluff the user calls.
    */
   lastSessionTitle?: string | null;
+  /**
+   * Journey-continuation grounding (proactive "where we left off"). The REAL
+   * label of the last topic the user opened (`last_opened_topic_id`), and the
+   * genuinely-distinct NEXT step — the first curriculum topic they have NOT
+   * completed. These let the opener say BOTH "last time we worked on X" AND
+   * "the next step is Y" truthfully (X ≠ Y), instead of a vague "continue
+   * there". Optional → degrade cleanly to the session-title recall when unknown.
+   */
+  lastOpenedTitle?: string | null;
+  nextStepTitle?: string | null;
   /** Onboarding lifecycle from the guided-journey state. */
   graduated: boolean;
   /** True when the user has set a Life Compass primary goal. */
@@ -443,7 +453,17 @@ async function resolveCurriculumFacts(
   supabase: SupabaseClient,
   lang: string,
   nextSessionNumber: number,
-): Promise<{ title: string | null; totalTopics: number | null }> {
+  // Journey-continuation grounding: when the user's completed-topic set and
+  // last-opened topic are passed, we also resolve the REAL "where we left off"
+  // (last-opened topic label) and the genuinely-distinct "next step" (the first
+  // topic in curriculum order the user has NOT completed). Both best-effort.
+  steps?: { completedTopicIds: string[]; lastOpenedTopicId: string | null } | null,
+): Promise<{
+  title: string | null;
+  totalTopics: number | null;
+  lastOpenedTitle: string | null;
+  nextStepTitle: string | null;
+}> {
   try {
     const checklist = await getPublishedChecklist(supabase, 'v2', checklistLocale(lang));
     const inSession = checklist.topics
@@ -452,9 +472,27 @@ async function resolveCurriculumFacts(
     const rawTitle = inSession[0]?.displayLabel;
     const title = typeof rawTitle === 'string' && rawTitle.trim().length > 0 ? rawTitle.trim() : null;
     const totalTopics = Array.isArray(checklist.topics) && checklist.topics.length > 0 ? checklist.topics.length : null;
-    return { title, totalTopics };
+
+    let lastOpenedTitle: string | null = null;
+    let nextStepTitle: string | null = null;
+    if (steps) {
+      // Curriculum order = session asc, then position asc.
+      const ordered = checklist.topics
+        .slice()
+        .sort((a, b) => a.session - b.session || a.position - b.position);
+      const cleanLabel = (l: unknown): string | null =>
+        typeof l === 'string' && l.trim().length > 0 ? l.trim() : null;
+      if (steps.lastOpenedTopicId) {
+        const lo = ordered.find((t) => t.topicId === steps.lastOpenedTopicId);
+        lastOpenedTitle = cleanLabel(lo?.displayLabel);
+      }
+      const done = new Set(steps.completedTopicIds ?? []);
+      const next = ordered.find((t) => !done.has(t.topicId));
+      nextStepTitle = cleanLabel(next?.displayLabel);
+    }
+    return { title, totalTopics, lastOpenedTitle, nextStepTitle };
   } catch {
-    return { title: null, totalTopics: null };
+    return { title: null, totalTopics: null, lastOpenedTitle: null, nextStepTitle: null };
   }
 }
 
@@ -526,11 +564,18 @@ export function makeLoginBriefingProvider(
         journeyState?.onboardingStatus === 'qualified' ||
         journeyState?.onboardingStatus === 'completed';
 
-      const { title: nextSessionTitle, totalTopics } = await resolveCurriculumFacts(
-        inputs.supabase,
-        inputs.lang,
-        currentSession,
-      );
+      const { title: nextSessionTitle, totalTopics, lastOpenedTitle, nextStepTitle } =
+        await resolveCurriculumFacts(
+          inputs.supabase,
+          inputs.lang,
+          currentSession,
+          journeyState
+            ? {
+                completedTopicIds: journeyState.completedTopicIds ?? [],
+                lastOpenedTopicId: journeyState.lastOpenedTopicId ?? null,
+              }
+            : null,
+        );
 
       // Advice #2 — visible momentum: count of green-checked curriculum topics.
       const topicsLearned = Array.isArray(journeyState?.completedTopicIds)
@@ -562,6 +607,8 @@ export function makeLoginBriefingProvider(
         // (narrate persists it as the just-played session), only when they have
         // actually completed a topic. See the fast-gather note.
         lastSessionTitle: topicsLearned > 0 ? nextSessionTitle : null,
+        lastOpenedTitle,
+        nextStepTitle,
         graduated,
         hasGoal: !!primaryGoalLabel,
         indexDeltaUp,
@@ -741,40 +788,52 @@ export function buildFastProactiveOpener(args: RenderArgs, rng: () => number = M
         ];
     return [prefix, pickFromPool(pool, rng)].join(' ');
   }
-  // building / momentum / returning → RECALL the actual last session (grounded
-  // "where we left off" the user can verify), THEN continue at the next step.
-  // When there is no real last session to name, we DON'T fake a recall — we just
-  // lead to the next step (no bluff the user can call).
-  const recall = f.lastSessionTitle
+  // building / momentum / returning → JOURNEY-CONTINUATION LEAD. The journey is
+  // ONE ongoing thing: Vitana always grounds the opener in WHERE WE LEFT OFF
+  // (the real last-opened topic the user can verify — never a bluff) and then
+  // PROACTIVELY proposes ONE concrete next action AND offers to do it FOR the
+  // user ("just say the word, I'll do it"). She never asks "what do you want?".
+  //
+  // The proposal ROTATES across three action types so each login inspires a
+  // fresh next action (one per session, never a menu):
+  //   1) continue the guided journey — the next un-learned session/topic;
+  //   2) post a community update — the user dictates, Vitana posts it;
+  //   3) find an activity match — and if none yet, post the request for them.
+  // Type 1 names the genuinely-distinct next step (nextStepTitle ≠ recall).
+  const recallTitle = f.lastOpenedTitle ?? f.lastSessionTitle ?? null;
+  const nextTitle = f.nextStepTitle ?? f.nextSessionTitle ?? null;
+  const nextDistinct = nextTitle && nextTitle !== recallTitle ? nextTitle : null;
+
+  const recall = recallTitle
     ? de
-      ? `Letztes Mal ging es um „${f.lastSessionTitle}". `
-      : `Last time we were on "${f.lastSessionTitle}". `
+      ? `Letztes Mal ging es um „${recallTitle}". `
+      : `Last time we worked on "${recallTitle}". `
     : '';
-  // When we just named the session in the recall, continue "there" rather than
-  // repeating the same title; otherwise name the next step.
-  const where = recall
+
+  // 1) Continue the guided journey — name the concrete next step when we have a
+  //    distinct one; otherwise lead to "the next session" without bluffing a title.
+  const journeyProposal = nextDistinct
     ? de
-      ? 'da'
-      : 'there'
-    : f.nextSessionTitle
-      ? de
-        ? `bei „${f.nextSessionTitle}"`
-        : `with "${f.nextSessionTitle}"`
-      : de
-        ? 'bei deinem nächsten Schritt'
-        : 'with your next step';
-  const pool = de
-    ? [
-        `${recall}Lass uns ${where} weitermachen — ich führe dich.`,
-        `${recall}Knüpfen wir ${where} an — ich nehme dich mit.`,
-        `${recall}Lass uns ${where} weitermachen, ich begleite dich.`,
-      ]
-    : [
-        `${recall}Let's continue ${where} — I'll guide you.`,
-        `${recall}Let's pick up ${where} — I'll walk with you.`,
-        `${recall}Let's get right back to it ${where} — I'll take you there.`,
-      ];
-  return [prefix, pickFromPool(pool, rng)].join(' ');
+      ? `${recall}Als Nächstes nehmen wir „${nextDistinct}" — sag Bescheid, ich führe dich.`
+      : `${recall}Next up is "${nextDistinct}" — say the word and I'll guide you.`
+    : de
+      ? `${recall}Machen wir mit deiner nächsten Session weiter — sag Bescheid, ich übernehme das.`
+      : `${recall}Let's continue with your next session — say the word and I'll take it from here.`;
+
+  // 2) Community post — Vitana does the posting; the user only dictates. (The
+  //    actual publish runs via the create_community_post tool when they agree.)
+  const communityProposal = de
+    ? `${recall}Sollen wir der Community ein kurzes Update posten? Du diktierst, ich poste es.`
+    : `${recall}Shall we post a quick update to the community? You dictate it, I'll post it.`;
+
+  // 3) Find an activity match — post_intent's always-post contract handles the
+  //    "no match yet → keep the request live" case once they accept.
+  const matchProposal = de
+    ? `${recall}Soll ich dir einen Aktivitätspartner suchen? Ich kümmere mich darum.`
+    : `${recall}Want me to find you an activity partner? I'll take care of it.`;
+
+  const proposals = [journeyProposal, communityProposal, matchProposal];
+  return [prefix, pickFromPool(proposals, rng)].join(' ');
 }
 
 /**
@@ -801,7 +860,17 @@ export async function gatherBriefingFactsForFastOpener(
   const sessionsCompleted = Math.max(0, currentSession - 1);
   const graduated =
     journeyState?.onboardingStatus === 'qualified' || journeyState?.onboardingStatus === 'completed';
-  const { title: nextSessionTitle, totalTopics } = await resolveCurriculumFacts(supabase, lang, currentSession);
+  const { title: nextSessionTitle, totalTopics, lastOpenedTitle, nextStepTitle } = await resolveCurriculumFacts(
+    supabase,
+    lang,
+    currentSession,
+    journeyState
+      ? {
+          completedTopicIds: journeyState.completedTopicIds ?? [],
+          lastOpenedTopicId: journeyState.lastOpenedTopicId ?? null,
+        }
+      : null,
+  );
   const trend = readIndexTrend(indexSnap);
   const indexDeltaUp = trend !== null && trend >= MATERIAL_INDEX_DELTA ? trend : null;
   const todayIso = todayInTimezone(new Date(nowMs), timezone);
@@ -826,6 +895,8 @@ export async function gatherBriefingFactsForFastOpener(
     // when the user has actually completed a topic; otherwise there is nothing to
     // recall and we must not bluff.
     lastSessionTitle: topicsLearned > 0 ? nextSessionTitle : null,
+    lastOpenedTitle,
+    nextStepTitle,
     graduated,
     hasGoal: !!primaryGoalLabel,
     indexDeltaUp,

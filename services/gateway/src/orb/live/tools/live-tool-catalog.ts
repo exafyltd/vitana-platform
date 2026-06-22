@@ -1841,6 +1841,50 @@ export function buildLiveApiTools(
             required: ['intent_id'],
           },
         },
+        {
+          name: 'create_community_post',
+          description: [
+            "Compose and publish a post to the user's community feed ON THEIR BEHALF.",
+            'Use when the user wants to SHARE an update, milestone, thought, or progress',
+            'with the community ("post that I hit day 30", "share an update", "tell the',
+            'community how my week went"). This is a GENERAL feed post — NOT a matchmaking',
+            'intent (use post_intent for "find me a partner / teacher / activity").',
+            '',
+            'PROACTIVE OFFER: Vitana does the posting; the user only dictates. After they',
+            'agree to post, you draft it FOR them — never make them type it themselves.',
+            '',
+            'CONFIRMATION CONTRACT (mandatory — never auto-publish):',
+            '1. Call create_community_post(content) WITHOUT confirmed=true. The server',
+            '   returns the cleaned post text for read-back.',
+            '2. Read the post back to the user verbatim ("Here is your post: ...").',
+            '3. Wait for explicit confirmation (post / yes / confirm / ja).',
+            '4. Call create_community_post again WITH confirmed=true to publish.',
+            '',
+            'SUCCESS CONTRACT: when the response contains stage:"posted", the post is LIVE',
+            'on the feed — confirm success warmly ("Done — it is on your community feed.").',
+            'When stage:"awaiting_confirmation", do the read-back; do NOT claim it is posted.',
+          ].join('\n'),
+          parameters: {
+            type: 'object',
+            properties: {
+              content: {
+                type: 'string',
+                description:
+                  "The post body, in the user's words. You may tidy grammar but keep their voice and meaning.",
+              },
+              is_public: {
+                type: 'boolean',
+                description:
+                  'Optional. Defaults to true (visible on the community feed). Pass false only if the user asks for a private/profile-only post.',
+              },
+              confirmed: {
+                type: 'boolean',
+                description: 'Pass true ONLY after the user explicitly confirmed the read-back.',
+              },
+            },
+            required: ['content'],
+          },
+        },
         // VTID-DANCE-D10: voice-driven direct invite.
         {
           name: 'share_intent_post',
