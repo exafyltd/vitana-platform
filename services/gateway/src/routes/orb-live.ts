@@ -7668,16 +7668,15 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
             {
               const _ift = (session as any).greetingIsFirstTime;
               const _needsOnboarding = (session as any).greetingNeedsOnboarding;
-              const _hasPrior = !!(session as any).lastSessionInfo?.time;
-              // First-time when: never been onboarded (0 completed journey topics,
-              // not graduated — the authoritative signal that survives the eager
-              // is_first_session clear), OR is_first_session is still true, OR
-              // (both signals unknown AND no prior-session evidence). "Welcome
-              // back" is reserved for users who have ACTUALLY made journey progress.
-              const _isFirstTime =
-                _needsOnboarding === true ||
-                _ift === true ||
-                (_needsOnboarding !== false && _ift !== false && !_hasPrior);
+              // Require a POSITIVE first-time signal (Codex P2). The pre-fetch
+              // copies these onto the session only when greetingFactsReady
+              // resolves; if the bounded wait times out (or a read failed) the
+              // signal is UNKNOWN — and we must NOT then treat a returning user as
+              // first-time. So welcome ONLY a known first-timer: never-onboarded
+              // (0 completed journey topics and not graduated/opted-out — survives
+              // the eager is_first_session clear) OR is_first_session still true.
+              // Unknown → fall through to the normal proactive/name/menu ladder.
+              const _isFirstTime = _needsOnboarding === true || _ift === true;
               if (_isFirstTime) {
                 const _welcome = buildFirstTimeWelcomeLine(lang, (session as any).greetingFirstName ?? null);
                 const _safeWel = _welcome.replace(/"/g, '\\"');
@@ -7695,7 +7694,7 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
                 });
                 startResponseWatchdog(session, getGreetingResponseTimeoutMs(), 'greeting_timeout');
                 console.log(
-                  `[GREETING-SAFE-FAST-FIRST-TIME] session ${session.sessionId} sent first-time welcome (is_first_session=${String(_ift)}, hasPrior=${_hasPrior}, lang=${lang})`,
+                  `[GREETING-SAFE-FAST-FIRST-TIME] session ${session.sessionId} sent first-time welcome (is_first_session=${String(_ift)}, needs_onboarding=${String(_needsOnboarding)}, lang=${lang})`,
                 );
                 return;
               }

@@ -955,7 +955,7 @@ export async function handleLiveSessionStart(
             supa
               ? supa
                   .from('user_guided_journey_state')
-                  .select('completed_topic_ids, onboarding_status')
+                  .select('completed_topic_ids, onboarding_status, mode')
                   .eq('user_id', _ndIdentity.user_id)
                   .maybeSingle()
               : Promise.resolve(null as any),
@@ -979,13 +979,21 @@ export async function handleLiveSessionStart(
             !journeyStateResult.value.error
           ) {
             const _jsRow = journeyStateResult.value.data as
-              | { completed_topic_ids?: string[] | null; onboarding_status?: string | null }
+              | { completed_topic_ids?: string[] | null; onboarding_status?: string | null; mode?: string | null }
               | null;
-            // No journey row, OR zero completed topics while not graduated, means
-            // the user has not been onboarded yet → first-time welcome.
+            // "Needs onboarding" = no journey row, OR zero completed topics while
+            // NOT having opted out of guided onboarding. Opted-out covers the
+            // terminal states (qualified/completed) AND a user who deliberately
+            // switched to full mode or skipped onboarding (onboarding_status
+            // 'skipped' or mode 'full') — they must NOT get the first-session
+            // welcome despite 0 completed topics (Codex P2).
             const _completed = Array.isArray(_jsRow?.completed_topic_ids) ? _jsRow!.completed_topic_ids!.length : 0;
-            const _graduated = _jsRow?.onboarding_status === 'qualified' || _jsRow?.onboarding_status === 'completed';
-            greetingNeedsOnboarding = !_jsRow ? true : _completed === 0 && !_graduated;
+            const _optedOut =
+              _jsRow?.onboarding_status === 'qualified' ||
+              _jsRow?.onboarding_status === 'completed' ||
+              _jsRow?.onboarding_status === 'skipped' ||
+              _jsRow?.mode === 'full';
+            greetingNeedsOnboarding = !_jsRow ? true : _completed === 0 && !_optedOut;
           }
 
           const factValue =
