@@ -76,13 +76,6 @@ const MATERIAL_INDEX_DELTA = 5;
  * it would feel like nagging rather than understanding (VTID-03307 / advice #1).
  */
 const MATERIAL_PILLAR_DROP = 3;
-/**
- * BOOTSTRAP-ORB-GREETING-RETURNING-USER (fix #2): if the user's previous ORB
- * session was within this window, the fast proactive opener stays silent and
- * lets the wake-brief path handle turn 1 (brief-resume/skip). Mirrors the
- * 15-minute greet-once cap in greeting-policy.ts (RECENT_GREETING_WINDOW_MS).
- */
-const FAST_OPENER_GREET_ONCE_WINDOW_MS = 15 * 60 * 1000;
 
 export interface LoginBriefingInputs {
   supabase: SupabaseClient;
@@ -94,6 +87,17 @@ export interface LoginBriefingInputs {
   timezone: string | null;
   /** From the greeting-policy decision. `skip` → suppress (silent reconnect). */
   greetingPolicy: string;
+  /**
+   * The greeting-policy DECISION reason behind a `skip`. We only stay silent
+   * on TRANSPARENT-RECONNECT-class skips (network blip / bucket=reconnect) —
+   * those are not a deliberate open, so re-greeting would feel like a bug.
+   * A cadence-class skip (greeted_recently_within_window, heavy-day) is still
+   * a DELIBERATE re-open: the user tapped the orb on purpose, so we LEAD with
+   * the grounded journey opener rather than fall silent (which used to let a
+   * hard-coded fallback provider win the turn). Mirrors feature-discovery-
+   * teacher's skipReason gate. Undefined/absent when policy is non-skip.
+   */
+  skipReason?: string | null;
 }
 
 export interface LoginBriefingProviderOptions {
@@ -420,6 +424,7 @@ function readInputs(ctx: ContinuationDecisionContext): LoginBriefingInputs | nul
     firstName: typeof o.firstName === 'string' && o.firstName.length > 0 ? o.firstName : null,
     timezone: typeof o.timezone === 'string' && o.timezone.length > 0 ? o.timezone : null,
     greetingPolicy: typeof o.greetingPolicy === 'string' ? o.greetingPolicy : 'fresh_intro',
+    skipReason: typeof o.skipReason === 'string' ? o.skipReason : null,
   };
 }
 
@@ -523,14 +528,29 @@ export function makeLoginBriefingProvider(
         };
       }
 
-      // Silent reconnect / greeted-too-recently: stay quiet and let the
-      // upstream skip policy hold. (State F — same-day quick reconnect.)
-      if (inputs.greetingPolicy === 'skip') {
+      // Stay silent ONLY on a transparent-reconnect-class skip — a network
+      // blip / server-side resume the user never perceived. Those are not a
+      // deliberate open, so speaking would read as an apology/bug.
+      //
+      // A CADENCE-class skip (greeted_recently_within_window, heavy-day) is a
+      // DELIBERATE re-open — the user tapped the orb on purpose. We LEAD with
+      // the grounded journey briefing instead of falling silent. Falling
+      // silent here is exactly what let a lower-priority HARD-CODED fallback
+      // provider (voice-wake-brief / feature-discovery-teacher) win the turn
+      // and speak a canned greeting. The grounded opener (priority 92) now
+      // owns every deliberate open; nothing canned can override it.
+      // Mirrors feature-discovery-teacher's skipReason gate.
+      if (
+        inputs.greetingPolicy === 'skip' &&
+        (inputs.skipReason === 'isReconnect_forces_skip' ||
+          inputs.skipReason === 'transparent_reconnect_forces_skip' ||
+          inputs.skipReason === 'bucket_reconnect_forces_skip')
+      ) {
         return {
           providerKey: LOGIN_BRIEFING_PROVIDER_KEY,
           status: 'suppressed',
           latencyMs: Math.max(0, now() - t0),
-          reason: 'greeting_policy_skip',
+          reason: `forced_skip_${inputs.skipReason}`,
         };
       }
 
@@ -934,20 +954,15 @@ export async function computeFastProactiveOpener(args: {
   lastSessionInfo?: { time: string } | null;
 }): Promise<string | null> {
   try {
-    // Cadence gate: suppress the fast proactive opener when we greeted/served
-    // this user very recently (default 15-min greet-once window, mirroring
-    // RECENT_GREETING_WINDOW_MS in greeting-policy.ts). Day-granularity
-    // daysSinceLastSession can't see this; the raw timestamp can.
-    const lastTime = args.lastSessionInfo?.time;
-    if (typeof lastTime === 'string' && lastTime.length > 0) {
-      const lastMs = Date.parse(lastTime);
-      if (Number.isFinite(lastMs)) {
-        const sinceMs = args.nowMs - lastMs;
-        if (sinceMs >= 0 && sinceMs < FAST_OPENER_GREET_ONCE_WINDOW_MS) {
-          return null;
-        }
-      }
-    }
+    // BOOTSTRAP-ORB-NO-HARDCODED-GREETING: the 15-min greet-once gate that used
+    // to return null here is REMOVED. Returning null on a deliberate re-open
+    // meant the safe-fast ladder fell through to the HARD-CODED short-gap
+    // greeting menu (orb-live.ts safe_fast_pending_context branch) — exactly
+    // the canned line the product rule forbids. A deliberate re-open must get
+    // the GROUNDED journey opener, never a canned fallback. The opener is fully
+    // grounded (name + real where-we-left-off + concrete next step), so
+    // re-speaking it on a quick re-open is correct, not spam. (True transparent
+    // reconnects never reach this path — they are gated upstream.)
     const facts = await gatherBriefingFactsForFastOpener(
       args.supabase,
       args.userId,

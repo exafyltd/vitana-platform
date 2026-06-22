@@ -23,6 +23,22 @@ import {
   type BriefingFacts,
 } from '../../../../src/services/assistant-continuation/providers/login-briefing';
 
+// Chainable null-Supabase stub: every query resolves to { data: null } so the
+// provider degrades to its grounded 'orient' opener instead of needing a full
+// journey fixture. Lets us assert the cadence-skip LEAD path end-to-end.
+function nullSupabase(): any {
+  const result = { data: null, error: null };
+  const proxy: any = new Proxy(function () {} as any, {
+    get(_t, prop) {
+      if (prop === 'then') return (resolve: (v: unknown) => void) => resolve(result);
+      if (prop === 'maybeSingle' || prop === 'single') return async () => result;
+      return () => proxy;
+    },
+    apply() { return proxy; },
+  });
+  return { from: () => proxy };
+}
+
 const BASE_FACTS: BriefingFacts = {
   sessionsCompleted: 3,
   nextSessionNumber: 4,
@@ -400,7 +416,7 @@ describe('makeLoginBriefingProvider — guardrails', () => {
     expect(res.reason).toBe('no_login_briefing_inputs');
   });
 
-  it('suppresses on greetingPolicy=skip (silent reconnect)', async () => {
+  it('suppresses ONLY on a transparent-reconnect-class skip (network blip — not a deliberate open)', async () => {
     const provider = makeLoginBriefingProvider();
     const res = await provider.produce({
       surface: 'orb_wake',
@@ -413,10 +429,36 @@ describe('makeLoginBriefingProvider — guardrails', () => {
           firstName: 'Maria',
           timezone: 'Europe/Berlin',
           greetingPolicy: 'skip',
+          skipReason: 'transparent_reconnect_forces_skip',
         },
       },
     } as any);
     expect(res.status).toBe('suppressed');
-    expect(res.reason).toBe('greeting_policy_skip');
+    expect(res.reason).toBe('forced_skip_transparent_reconnect_forces_skip');
+  });
+
+  it('LEADS on a cadence-class skip (deliberate re-open within 15 min) — grounded opener, never silent', async () => {
+    // greeted_recently_within_window is a DELIBERATE re-tap, not a transparent
+    // reconnect: login-briefing must produce the grounded opener (priority 92)
+    // so no hard-coded fallback provider can win the turn. All DB reads resolve
+    // to null here, so it degrades to the grounded 'orient' opener.
+    const provider = makeLoginBriefingProvider();
+    const res = await provider.produce({
+      surface: 'orb_wake',
+      extra: {
+        loginBriefing: {
+          supabase: nullSupabase(),
+          userId: 'u1',
+          tenantId: 't1',
+          lang: 'de',
+          firstName: 'Maria',
+          timezone: 'Europe/Berlin',
+          greetingPolicy: 'skip',
+          skipReason: 'greeted_recently_within_window',
+        },
+      },
+    } as any);
+    expect(res.status).toBe('returned');
+    expect((res as any).candidate?.userFacingLine?.length ?? 0).toBeGreaterThan(0);
   });
 });
