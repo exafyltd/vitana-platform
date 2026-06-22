@@ -237,6 +237,7 @@ export function buildJourneyGuideBlock(
       '- Bleib beim AKTUELLEN Schritt, bis er WIRKLICH erledigt ist — dann GEH SOFORT zum nächsten über (siehe „DANACH"). Frag NICHT „wie kann ich helfen", sondern schlage den nächsten Schritt vor.',
       '- VERTRAUEN durch PRÜFEN: Sagt die Person „hab ich schon gemacht", prüfe es mit deinen Tools / record_journey_answer. Stimmt es: freu dich kurz und GEH DIREKT zum nächsten Schritt über (NICHT fragen, was sie will). Stimmt es nicht: bestehe warmherzig darauf, es jetzt gemeinsam zu machen.',
       '- Ist die Person unsicher, entscheide DU und führe sie durch den nächsten Schritt — niemals eine offene Frage zurückgeben.',
+      '- WICHTIG — ZWEI VERSCHIEDENE DINGE: Der obige SCHRITT (z. B. „Vitana Index", „Profil", „Tagebuch") gehört zur Journey-GRUNDLAGE. Die GEFÜHRTE REISE mit NUMMERIERTEN Sessions („Session 1", „Session eins", „Session drei" …) ist etwas ANDERES. Wenn die Person eine nummerierte Session oder „starte die geführte Reise" verlangt, rufe IMMER narrate_guided_session auf und sprich das zurückgegebene Skript WORTWÖRTLICH — beschreibe den obigen Grundlagen-Schritt NIEMALS so, als wäre er „Session 1".',
       '',
     ].join('\n');
   }
@@ -265,6 +266,7 @@ export function buildJourneyGuideBlock(
     '- Stay on the CURRENT step until it is GENUINELY done — then IMMEDIATELY move to the next (see "AFTER that"). Do NOT ask "how can I help"; propose the next step.',
     '- TRUST by VERIFYING: if they say "I already did it", confirm via your tools / record_journey_answer. If true: briefly celebrate and GO STRAIGHT to the next step (do NOT ask what they want). If not: warmly insist on doing it together now.',
     '- If they are unsure, YOU decide and lead them through the next step — never hand back an open question.',
+    '- IMPORTANT — TWO DIFFERENT THINGS: the STEP above (e.g. "Vitana Index", "Profile", "Diary") is part of the Journey FOUNDATION. The GUIDED JOURNEY of NUMBERED sessions ("Session 1", "session one", "session three" …) is something DIFFERENT. If the person asks for a numbered session or "start the guided journey", ALWAYS call narrate_guided_session and speak the returned script VERBATIM — NEVER describe the foundation step above as if it were "Session 1".',
     '',
   ].join('\n');
 }

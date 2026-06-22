@@ -3126,6 +3126,7 @@ function deriveNavigatorSurfaceRole(currentRoute: string | undefined | null): st
 export async function tool_navigate(
   args: OrbToolArgs,
   id: OrbToolIdentity,
+  sb?: SupabaseClient,
 ): Promise<OrbToolResult> {
   const question = String(args.question ?? '').trim();
   if (!question) {
@@ -3258,6 +3259,37 @@ export async function tool_navigate(
   if (consultResult.primary && consultResult.confidence !== 'low' && !consultResult.blocked_reason) {
     const entry = lookupScreen(consultResult.primary.screen_id);
     if (entry) {
+      // NAV-GUIDED-JOURNEY: "Guided Journey" is NOT a separate screen — it's the
+      // durable GUIDED vs FULL mode of My Journey (GuidedModeProvider, VTID-03279;
+      // the Einführung/Vollversion toggle). The Navigator can only emit /autopilot,
+      // which renders in the user's current durable mode. So when the user asks for
+      // their GUIDED journey (or the FULL app), flip the durable mode to match
+      // BEFORE opening the screen, so they land in the right view. We also tell
+      // Vitana to explain the difference + how to switch. Flag-gated; reuses the
+      // existing journey-mode service.
+      let journeyModeSwitched: 'guided' | 'full' | null = null;
+      if (
+        process.env.NAV_GUIDED_JOURNEY === 'true' &&
+        sb && id.user_id &&
+        entry.screen_id === 'AUTOPILOT.MY_JOURNEY'
+      ) {
+        const intentText = `${question} ${transcriptExcerpt}`.toLowerCase();
+        const wantsGuided = /guided|gef[üu]hrt|einf[üu]hrung/.test(intentText);
+        const wantsFull = /full[\s-]?app|full[\s-]?version|full[\s-]?mode|vollversion|volle\s+version|komplette\s+app|kompletten?\s+app/.test(intentText);
+        const targetMode: 'guided' | 'full' | null = wantsGuided ? 'guided' : wantsFull ? 'full' : null;
+        if (targetMode) {
+          try {
+            const { setJourneyMode } = await import('./guided-journey/guided-journey-state');
+            await setJourneyMode(sb, id.user_id, targetMode);
+            journeyModeSwitched = targetMode;
+            console.log(`[NAV-GUIDED-JOURNEY] set journey mode = ${targetMode} for ${id.user_id} before opening My Journey`);
+          } catch (e) {
+            // Don't block navigation — the screen is still correct, just in the prior mode.
+            console.error('[NAV-GUIDED-JOURNEY] setJourneyMode failed:', e instanceof Error ? e.message : e);
+          }
+        }
+      }
+
       const content = getContent(entry, lang);
       // VTID-NAV-OVERLAY: resolve the route the SAME way navigate_to_screen
       // does — honor mobile_route, and for overlay entries append the
@@ -3329,6 +3361,22 @@ export async function tool_navigate(
       lines.push('explain the feature, tell them what they can do on that screen,');
       lines.push('and let them know you are taking them there. The redirect happens');
       lines.push('automatically when you finish speaking.');
+      if (journeyModeSwitched === 'guided') {
+        lines.push('');
+        lines.push('MODE_SWITCH: You switched the user into the GUIDED JOURNEY — the');
+        lines.push('step-by-step guided experience that walks them through one focused');
+        lines.push('move at a time. Briefly explain how this differs from the FULL app');
+        lines.push('(the complete version with everything available at once), and tell');
+        lines.push('them they can switch back anytime with the Einführung/Vollversion');
+        lines.push('toggle at the top of this screen — or just ask you to switch.');
+      } else if (journeyModeSwitched === 'full') {
+        lines.push('');
+        lines.push('MODE_SWITCH: You switched the user into the FULL app — the complete');
+        lines.push('version with everything available at once. Briefly explain how this');
+        lines.push('differs from the GUIDED Journey (the step-by-step guided experience),');
+        lines.push('and tell them they can switch back anytime with the');
+        lines.push('Einführung/Vollversion toggle at the top of this screen — or just ask you.');
+      }
 
       return {
         ok: true,
@@ -4418,10 +4466,12 @@ export async function tool_narrate_guided_session(
     ok: true,
     result: { has_script: false, degraded: true },
     text:
-      'Begin the Vitanaland Guided Journey: introduce the first onboarding step clearly and concretely ' +
-      'from your own knowledge of the app (several sentences, not one line) — e.g. what the Vitana Index is ' +
-      'and how it works — then offer to continue with the next step. Do NOT say it did not work, do NOT claim ' +
-      'the user has completed everything, and do NOT ask "what do you want".',
+      'Begin the Vitanaland Guided Journey: warmly welcome the user to the start of their longevity ' +
+      'journey and introduce this first onboarding step clearly and concretely from your own knowledge ' +
+      'of the app (several sentences, not one line) — what the journey is and what they will get out of ' +
+      'starting it — then offer to continue with the next step. Do NOT name a specific later topic as if ' +
+      'it were the first step. Do NOT say it did not work, do NOT claim the user has completed everything, ' +
+      'and do NOT ask "what do you want".',
   };
   try {
     const state = await sb
@@ -4462,6 +4512,13 @@ export async function tool_narrate_guided_session(
     const wantsSpecific = Number.isFinite(requested) && requested >= 1;
     const topicQueryRaw = (args as Record<string, unknown>)?.topic_query;
     const topicQuery = typeof topicQueryRaw === 'string' ? topicQueryRaw.trim() : '';
+    // INFO-ONLY: the user is ASKING about a session (its title / what it covers /
+    // which session is which) rather than asking to PLAY it. Return the real
+    // title + description from the catalog — do NOT speak the script, do NOT mark
+    // progress. This is what lets Vitana answer "what is the title of session 1"
+    // correctly instead of guessing from the Journey Foundation steps.
+    const infoRaw = (args as Record<string, unknown>)?.info_only;
+    const infoOnly = infoRaw === true || infoRaw === 'true' || infoRaw === 1;
 
     const textOf = (r: Row) => `${r.title ?? ''} ${r.display_label ?? ''} ${r.short_description ?? ''}`.toLowerCase();
     const maxSession = rows.reduce((m, r) => Math.max(m, r.session), 0);
@@ -4515,7 +4572,49 @@ export async function tool_narrate_guided_session(
       ).length;
     }
 
-    // PROGRESSION: mark this topic done (green) so the next call advances.
+    if (infoOnly) {
+      // The user ASKED about the session (title / contents), not to play it.
+      // Return the authored title + description and tell Vitana to answer with
+      // EXACTLY that — never invent it, never use a Foundation step as the title.
+      const sessionTopics = rows.filter((r) => r.session === target!.session);
+      // The session title must be STABLE regardless of the user's progress within
+      // the session — derive it from the session's FIRST topic (rows are ordered
+      // by position), NOT from `target` (which is the first UN-heard topic and so
+      // would drift to topic two's title once topic one is completed).
+      const firstTopic = sessionTopics[0] ?? target;
+      const sessionTitle = (firstTopic.title || firstTopic.display_label || '').trim();
+      const topicTitles = sessionTopics
+        .map((r) => (r.title || r.display_label || '').trim())
+        .filter(Boolean);
+      const about = (firstTopic.short_description || '').trim();
+      return {
+        ok: true,
+        result: {
+          info_only: true,
+          session: target.session,
+          topic_id: target.topic_id,
+          session_title: sessionTitle,
+          topic_titles: topicTitles,
+          topic_count: sessionTopics.length,
+          about,
+        },
+        text:
+          `Guided Journey — session ${target.session} is titled "${sessionTitle}"` +
+          (about ? ` (${about})` : '') +
+          (topicTitles.length > 1 ? `. It covers: ${topicTitles.join('; ')}.` : '.') +
+          ` Tell the user the title using EXACTLY this wording — do NOT invent a title and do NOT use a Journey ` +
+          `Foundation step (e.g. "Vitana Index", "Life Compass") as the session title. Then offer to play it. ` +
+          `Do NOT play the script now, do NOT mark progress, and do NOT ask "what do you want".`,
+      };
+    }
+
+    // PROGRESSION: mark THIS topic done (green) so the next call advances. This
+    // is what makes a multi-topic session play topic-by-topic — "play session 15"
+    // marks s15a, then the user's "next" call sees s15a done and serves s15b.
+    // It is safe for explicit plays too: only the topic actually played is marked
+    // (in session/position order), so the journey's "next recommended" cursor
+    // (awareness-extensions: first un-completed topic) never jumps past topics the
+    // user hasn't heard — playing session 15 does NOT mark sessions 1..14.
     try {
       const newCompleted = Array.from(new Set([...completed, target.topic_id]));
       await sb
@@ -4530,27 +4629,26 @@ export async function tool_narrate_guided_session(
 
     const title = (target.title || target.display_label || 'dieses Thema').trim();
     const script = (target.vitana_voice_script || target.short_description || '').trim();
-    // After this topic: offer the next topic in the same session, else next session.
-    const afterClause =
-      remainingInSession > 0
-        ? `After you finish, tell the user there ${remainingInSession === 1 ? 'is 1 more topic' : `are ${remainingInSession} more topics`} in session ${target.session}, and offer to continue with the next topic.`
-        : `After you finish, this was the last topic of session ${target.session} — offer to continue with session ${target.session + 1}.`;
 
+    // CRITICAL: the function-response `text` is the ONLY thing the live model
+    // receives (see dispatchOrbToolForVertex — it sends r.text). Do NOT put any
+    // "after you finish, offer the next session" instruction in here: the model
+    // PARROTS that meta-line ("now we finished session 3, want session 4?") and
+    // skips reading the script aloud entirely. The "offer the next topic AFTER
+    // speaking" behavior lives in the standing system instruction, not here.
     if (!script) {
       return {
         ok: true,
         result: { session: target.session, topic_id: target.topic_id, topic_title: title, has_script: false, remaining_in_session: remainingInSession },
         text:
-          `SESSION ${target.session} — topic "${title}". No authored script exists yet for this topic. ` +
-          `Introduce it clearly and concretely from your own knowledge (several sentences, not one line), then guide the user to the practice. ${afterClause} Do NOT ask "what do you want".`,
+          `There is no authored script yet for the topic "${title}". Introduce it concretely from your own knowledge as spoken audio — several real sentences, not one line — then guide the user into the practice. Speak it now; do NOT merely acknowledge, summarize, or skip ahead.`,
       };
     }
     return {
       ok: true,
       result: { session: target.session, topic_id: target.topic_id, topic_title: title, has_script: true, remaining_in_session: remainingInSession },
       text:
-        `SESSION ${target.session} — topic "${title}". SPEAK THE FOLLOWING SCRIPT TO THE USER IN FULL, WORD FOR WORD, AS AUDIO. ` +
-        `Do NOT summarize, shorten, translate, or paraphrase it — it IS the actual topic content and must be delivered complete. ${afterClause}\n\n${script}`,
+        `SPEAK THE TEXT BELOW NOW, as your spoken audio, in full, word for word, exactly as written — it IS the session's real narration, not a summary to describe. Say ONLY the text below: do NOT add an acknowledgement before it, do NOT summarize or shorten it, and do NOT say "we finished" or offer another session until you have spoken every single word of it.\n\n${script}`,
     };
   } catch (e: any) {
     console.warn(`[narrate_guided_session] non-fatal: ${e?.message || e}`);
@@ -4607,7 +4705,7 @@ export const ORB_TOOL_REGISTRY: Record<string, OrbToolHandler> = {
   navigate_to_screen: (args, id, sb) => tool_navigate_to_screen(args, id, sb),
   // VTID-NAV-UNIFIED — free-text navigate (PR 1.B-4). Runs consultNavigator's
   // 8-step resolution and constructs the redirect directive.
-  navigate: tool_navigate,
+  navigate: (args, id, sb) => tool_navigate(args, id, sb),
   // VTID-01975 — view_intent_matches (PR 1.B-6). Auto-redirects to
   // INTENTS.MATCH_DETAIL when the top score dominates the runner-up;
   // otherwise lists matches and lets the LLM disambiguate verbally.
