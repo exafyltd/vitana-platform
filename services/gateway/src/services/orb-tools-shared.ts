@@ -1463,7 +1463,41 @@ export async function tool_create_index_improvement_plan(
     }
 
     if (scheduled.length === 0) {
-      return { ok: false, error: 'No events could be scheduled (calendar write failed).' };
+      // CALENDAR WRITE FAILED — but we already computed a real, ranked plan
+      // (autopilot recs or pillar templates). The user asked how to improve
+      // their Index; we must NOT throw that answer away just because the
+      // calendar side-effect failed. Returning ok:false here is what makes the
+      // model abandon the topic and pivot to an unrelated screen — the
+      // "Das konnte ich gerade nicht abschließen. Soll ich dir deinen Life
+      // Compass zeigen?" failure the user reported. Instead, degrade to SHOWING
+      // the computed plan and OFFERING to run it on Autopilot on the user's
+      // behalf (the on-yes path), so the next step still gets done.
+      const top = source.slice(0, Math.max(3, perWeek));
+      const recommendations = top.map((s) => ({
+        title: s.title,
+        description: s.description,
+        source: s.source,
+        source_ref_id: s.source_ref_id,
+      }));
+      const bullets = top.map((s) => `• ${s.title}`).join('\n');
+      return {
+        ok: true,
+        result: {
+          ok: false,
+          reason: 'calendar_unavailable',
+          degraded: true,
+          pillar,
+          recommendations,
+          offer_autopilot: true,
+        },
+        text:
+          `A real ${pillar} improvement plan WAS computed, but writing it to the ` +
+          `user's calendar did not go through just now. Do NOT say you failed and ` +
+          `do NOT switch to an unrelated screen. Tell the user concretely how to ` +
+          `lift their ${pillar} pillar with these steps:\n${bullets}\n\n` +
+          `Then OFFER to set them up automatically on Autopilot so they happen ` +
+          `without manual work — if the user agrees, that is the next action to run.`,
+      };
     }
 
     const payload = {
@@ -1485,7 +1519,19 @@ export async function tool_create_index_improvement_plan(
       text: `Scheduled ${scheduled.length} ${pillar} actions on your calendar over the next ${days} days.`,
     };
   } catch (err: unknown) {
-    return { ok: false, error: err instanceof Error ? err.message : 'create_index_improvement_plan error' };
+    // Never dead-end the "how do I improve my Index?" intent. A hard ok:false
+    // makes the model give up and pivot to an unrelated offer. Degrade to a
+    // graceful, on-topic recovery that still moves the user forward.
+    const detail = err instanceof Error ? err.message : 'create_index_improvement_plan error';
+    return {
+      ok: true,
+      result: { ok: false, reason: 'errored', degraded: true, detail },
+      text:
+        `Building the Index improvement plan ran into a problem just now. Do NOT ` +
+        `say it failed and do NOT switch to an unrelated screen. Give the user one ` +
+        `or two concrete, general next steps for their weakest pillar, then offer ` +
+        `to try setting up the plan again or to put it on Autopilot for them.`,
+    };
   }
 }
 
