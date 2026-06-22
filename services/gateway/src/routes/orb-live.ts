@@ -4754,6 +4754,90 @@ async function executeLiveApiToolInner(
         );
       }
 
+      // Compose + publish a GENERAL community feed post on the user's behalf.
+      // Vitana proactively offers this ("you dictate, I post it for you"); the
+      // two-call confirm contract mirrors post_intent so we never auto-publish.
+      case 'create_community_post': {
+        const content = String(args.content || '').trim();
+        const isPublic = args.is_public === false ? false : true;
+        const confirmed = args.confirmed === true;
+        if (!content) {
+          return { success: false, result: '', error: 'content is required' };
+        }
+        // Light cleanup only — keep the user's voice. Collapse runaway
+        // whitespace and cap length to a sane feed-post size.
+        const cleaned = content.replace(/\s+/g, ' ').trim().slice(0, 2000);
+
+        // Step 1 (no confirmed): return the cleaned text for verbal read-back.
+        if (!confirmed) {
+          return {
+            success: true,
+            result: JSON.stringify({
+              ok: true,
+              stage: 'awaiting_confirmation',
+              post_preview: cleaned,
+              visibility: isPublic ? 'public' : 'private',
+              instructions:
+                'Read the post_preview back to the user verbatim, then call create_community_post again with confirmed=true after they say post/yes/confirm/ja.',
+            }),
+          };
+        }
+
+        // Step 2 (confirmed=true): publish to the community feed.
+        try {
+          const { createClient } = await import('@supabase/supabase-js');
+          const supabase = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE!);
+          const { data: inserted, error: insErr } = await supabase
+            .from('profile_posts')
+            .insert({
+              user_id: session.identity!.user_id,
+              content: cleaned,
+              is_public: isPublic,
+            })
+            .select('id')
+            .single();
+
+          if (insErr || !inserted) {
+            console.error('[create_community_post] insert failed', insErr);
+            return { success: false, result: '', error: insErr?.message ?? 'insert_failed' };
+          }
+
+          const postId = (inserted as { id: string }).id;
+
+          // Best-effort OASIS event — never block the success report on it.
+          try {
+            await emitOasisEvent({
+              vtid: 'BOOTSTRAP-ORB-COMMUNITY-POST',
+              type: 'voice.message.sent',
+              source: 'orb-live',
+              status: 'success',
+              message: `Community post created via ORB voice (public=${isPublic})`,
+              payload: { post_id: postId, is_public: isPublic, kind: 'community_post' },
+              actor_id: session.identity!.user_id,
+              actor_role: 'user',
+              surface: 'orb',
+            });
+          } catch {
+            // best effort
+          }
+
+          return {
+            success: true,
+            result: JSON.stringify({
+              ok: true,
+              stage: 'posted',
+              post_id: postId,
+              visibility: isPublic ? 'public' : 'private',
+              instructions:
+                'The post is LIVE on the community feed. Confirm success warmly in one short sentence (e.g. "Done — it is on your community feed."). Do NOT ask a follow-up question.',
+            }),
+          };
+        } catch (err: any) {
+          console.error('[create_community_post] error', err);
+          return { success: false, result: '', error: err?.message ?? 'create_community_post_failed' };
+        }
+      }
+
       // ─── VTID-01975 — Vitana Intent Engine voice tools ───
       case 'post_intent': {
         const utterance = String(args.utterance || '').trim();
