@@ -4656,6 +4656,62 @@ export async function tool_narrate_guided_session(
   }
 }
 
+/**
+ * NAV_CONTINUATION_BIND — offer_action (design invariant #10, PRODUCE side).
+ *
+ * Vitana calls this the moment she PROPOSES an action and will wait for a
+ * yes/no ("Soll ich dir zeigen, wo du in deinem Guided Journey stehst?"). It
+ * records the EXACT canonical action as the session's `pending_cta`, so when
+ * the user then says "Ja", the acceptance gate (acceptance-gate.ts) executes
+ * THIS action instead of re-interpreting the bare yes as a fresh navigation /
+ * search request (the invariant-#10 bug).
+ *
+ * Args: { tool: string (required, must be a real ORB tool), payload?: object,
+ *         ttl_minutes?: number (1..30, default 5) }
+ *
+ * Flag-gated: with NAV_CONTINUATION_BIND off it is an inert success (so a
+ * stray model call never surfaces an error to the user).
+ */
+export async function tool_offer_action(
+  args: OrbToolArgs,
+  id: OrbToolIdentity,
+  sb: SupabaseClient,
+): Promise<OrbToolResult> {
+  if (process.env.NAV_CONTINUATION_BIND !== 'true') {
+    return { ok: true, result: { stored: false, reason: 'flag_off' } };
+  }
+  const tool = String(args.tool ?? '').trim();
+  if (!tool) return { ok: false, error: 'offer_action requires a non-empty `tool`.' };
+  // The offered action must be dispatchable on acceptance — reject unknown tools
+  // (and offer_action itself, to avoid a self-referential pending_cta).
+  if (tool === 'offer_action' || !ORB_TOOL_REGISTRY[tool]) {
+    return { ok: false, error: `offer_action: '${tool}' is not a dispatchable ORB tool.` };
+  }
+  if (!id.user_id) return { ok: false, error: 'offer_action requires an authenticated user.' };
+  const payload =
+    args.payload && typeof args.payload === 'object' && !Array.isArray(args.payload)
+      ? (args.payload as Record<string, unknown>)
+      : {};
+  const ttlRaw = Number(args.ttl_minutes);
+  const ttl = Number.isFinite(ttlRaw) && ttlRaw > 0 && ttlRaw <= 30 ? ttlRaw : 5;
+  const { writeOrbSessionState } = await import('./orb/orb-session-state');
+  const res = await writeOrbSessionState(
+    sb,
+    id.user_id,
+    'pending_cta',
+    { tool, payload, offered_at: new Date().toISOString() },
+    ttl,
+  );
+  if (!res.ok) return { ok: false, error: res.reason ?? 'offer_action: failed to store pending action.' };
+  return {
+    ok: true,
+    result: { stored: true, tool },
+    // LLM-facing guidance (not user-visible): ask the yes/no and wait — the
+    // offered action fires automatically on acceptance, so don't re-resolve it.
+    text: 'OFFER_REGISTERED: Ask your yes/no question naturally and wait. If the user accepts, the offered action runs automatically — do not re-resolve or re-search it.',
+  };
+}
+
 type OrbToolHandler = (
   args: OrbToolArgs,
   identity: OrbToolIdentity,
@@ -4730,6 +4786,9 @@ export const ORB_TOOL_REGISTRY: Record<string, OrbToolHandler> = {
   // fact (life_compass goal / economy stance / focus / teacher ack), re-verifies,
   // and returns the next move. Reachable from Vertex, LiveKit, and /api/v1/orb/tool.
   record_journey_answer: tool_record_journey_answer,
+  // NAV_CONTINUATION_BIND — offer_action: Vitana records the exact action she is
+  // proposing so a later "Ja" executes it deterministically (invariant #10).
+  offer_action: tool_offer_action,
 };
 
 export const ORB_TOOL_NAMES = Object.keys(ORB_TOOL_REGISTRY);
