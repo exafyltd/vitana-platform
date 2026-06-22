@@ -319,6 +319,7 @@ import {
 import {
   SHORT_GAP_GREETING_PHRASES,
   pickShortGapGreetings,
+  buildFirstTimeWelcomeLine,
 } from '../orb/instruction/greeting-pools';
 
 const router = Router();
@@ -7653,6 +7654,50 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
               console.warn(
                 `[GREETING-SAFE-FAST-NEWDAY-OVERVIEW] non-fatal, falling through: ${_ndErr instanceof Error ? _ndErr.message : String(_ndErr)}`,
               );
+            }
+
+            // FIRST-TIME WELCOME (BUGFIX). A brand-new user must NEVER hear the
+            // returning-user "welcome back" menu at the bottom of this ladder.
+            // When the user is a first-timer (authoritative is_first_session, or —
+            // if that's unknown — no last-session on record), speak a proper
+            // onboarding welcome: introduce Vitana + the guided journey + what to
+            // expect, then offer to start session one. The fuller journey overview
+            // flows on the heavy first-time-welcome / journey-guide path next turn.
+            // This runs BEFORE the proactive line so a first-timer gets the WELCOME,
+            // not the generic "set your goal" lead.
+            {
+              const _ift = (session as any).greetingIsFirstTime;
+              const _needsOnboarding = (session as any).greetingNeedsOnboarding;
+              // Require a POSITIVE first-time signal (Codex P2). The pre-fetch
+              // copies these onto the session only when greetingFactsReady
+              // resolves; if the bounded wait times out (or a read failed) the
+              // signal is UNKNOWN — and we must NOT then treat a returning user as
+              // first-time. So welcome ONLY a known first-timer: never-onboarded
+              // (0 completed journey topics and not graduated/opted-out — survives
+              // the eager is_first_session clear) OR is_first_session still true.
+              // Unknown → fall through to the normal proactive/name/menu ladder.
+              const _isFirstTime = _needsOnboarding === true || _ift === true;
+              if (_isFirstTime) {
+                const _welcome = buildFirstTimeWelcomeLine(lang, (session as any).greetingFirstName ?? null);
+                const _safeWel = _welcome.replace(/"/g, '\\"');
+                const _welPrompt = `Say exactly: "${_safeWel}" — speak it verbatim as audio, as ONE warm greeting. Do NOT add, paraphrase, or split it.`;
+                ws.send(
+                  JSON.stringify({
+                    client_content: { turns: [{ role: 'user', parts: [{ text: _welPrompt }] }], turn_complete: true },
+                  }),
+                );
+                emitDiag(session, 'greeting_sent', {
+                  lang,
+                  prompt_len: _welPrompt.length,
+                  wake_opener: 'safe_fast_first_time_welcome',
+                  is_first_session: _ift === true,
+                });
+                startResponseWatchdog(session, getGreetingResponseTimeoutMs(), 'greeting_timeout');
+                console.log(
+                  `[GREETING-SAFE-FAST-FIRST-TIME] session ${session.sessionId} sent first-time welcome (is_first_session=${String(_ift)}, needs_onboarding=${String(_needsOnboarding)}, lang=${lang})`,
+                );
+                return;
+              }
             }
 
             // DEV-COMHU-0513 (proactive fast greeting): when the fast pre-fetch
