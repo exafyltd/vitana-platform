@@ -3240,6 +3240,32 @@ export async function tool_navigate(
     lines.push('Then call navigate_to_screen with the chosen screen_id directly —');
     lines.push('do not call navigate again unless the user rephrases their request.');
 
+    // NAV_CONTINUATION_BIND — invariant #10 (auto-capture nav offers): this is a
+    // navigation OFFER (Vitana asks an either/or instead of auto-navigating) and
+    // the navigator has already resolved the top candidate. Record the TOP one
+    // as the session's pending_cta so a bare "Ja" deterministically opens it
+    // (the acceptance gate consumes it) rather than re-resolving the ambiguous
+    // phrase from scratch. Naming a specific candidate still routes through the
+    // LLM → navigate_to_screen, and that fresh confident nav supersedes this.
+    if (process.env.NAV_CONTINUATION_BIND === 'true' && sb && id.user_id) {
+      try {
+        const { writeOrbSessionState } = await import('./orb/orb-session-state');
+        await writeOrbSessionState(
+          sb,
+          id.user_id,
+          'pending_cta',
+          {
+            tool: 'navigate_to_screen',
+            payload: { screen_id: top.screen_id, route: top.route, title: top.title },
+            offered_at: new Date().toISOString(),
+          },
+          5,
+        );
+      } catch (e) {
+        console.error('[NAV-CONTINUATION-BIND] pending_cta write failed:', e instanceof Error ? e.message : e);
+      }
+    }
+
     return {
       ok: true,
       result: {
