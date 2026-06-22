@@ -7479,6 +7479,78 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
             ]);
             if (ws.readyState !== WebSocket.OPEN) return;
 
+            // NEW-DAY OVERVIEW (rich summary owns turn 1). On a genuine new-day
+            // return we speak the FULL multi-clause morning overview (what passed
+            // since last session, today's next event, Index direction, Life
+            // Compass goal) — the same renderer the heavy new-day-return provider
+            // uses — INSTEAD of the short one-line proactive lead. Deliberate
+            // richness>latency choice: it adds the bounded aggregator fetch, but
+            // restores the summary the fast path had been preempting. Falls
+            // through to the existing ladder (proactive line → name → menu) when
+            // it is not a new day, the name/user is missing, or it can't build.
+            try {
+              const _temporalNd = describeTimeSince((session as any).lastSessionInfo);
+              const _firstNameNd = (session as any).greetingFirstName;
+              const _isNewDayNd =
+                _temporalNd.bucket === 'today' ||
+                _temporalNd.bucket === 'yesterday' ||
+                _temporalNd.bucket === 'week' ||
+                _temporalNd.bucket === 'long';
+              const _uidNd = session.identity?.user_id;
+              const _supaNd = getSupabase();
+              if (_isNewDayNd && typeof _firstNameNd === 'string' && _firstNameNd.trim().length > 0 && _uidNd && _supaNd) {
+                const _tzNd = session.clientContext?.timezone || 'UTC';
+                const _nowNd = new Date();
+                const { aggregateNewDayOverview } = await import('../services/assistant-continuation/providers/new-day-overview-aggregator');
+                const { renderNewDayReturnLineWithOverview, todayInTimezone, pickSalutationKind, localHourInTimezone } = await import('../services/assistant-continuation/providers/new-day-return');
+                const _overview = await Promise.race([
+                  aggregateNewDayOverview({
+                    supabase: _supaNd,
+                    userId: _uidNd,
+                    now: _nowNd,
+                    timezone: _tzNd,
+                    todayDateIso: todayInTimezone(_nowNd, _tzNd),
+                    lastSessionAtIso: (session as any).lastSessionInfo?.time ?? null,
+                  }),
+                  new Promise<null>((r) => setTimeout(() => r(null), Number(process.env.ORB_NEWDAY_OVERVIEW_WAIT_MS || 1500))),
+                ]).catch(() => null);
+                if (_overview) {
+                  const _line = renderNewDayReturnLineWithOverview({
+                    lang,
+                    salutation: pickSalutationKind(localHourInTimezone(_nowNd, _tzNd)),
+                    firstName: _firstNameNd.trim(),
+                    timezone: _tzNd,
+                    payload: _overview,
+                  });
+                  if (_line && _line.trim().length > 0) {
+                    const _safeOv = _line.trim().replace(/"/g, '\\"');
+                    const _ovPrompt =
+                      `Say exactly: "${_safeOv}" — speak it verbatim as audio, as ONE greeting. Do NOT add, paraphrase, or split it.`;
+                    ws.send(
+                      JSON.stringify({
+                        client_content: { turns: [{ role: 'user', parts: [{ text: _ovPrompt }] }], turn_complete: true },
+                      }),
+                    );
+                    emitDiag(session, 'greeting_sent', {
+                      lang,
+                      prompt_len: _ovPrompt.length,
+                      wake_opener: 'safe_fast_newday_overview',
+                      bucket: _temporalNd.bucket,
+                    });
+                    startResponseWatchdog(session, getGreetingResponseTimeoutMs(), 'greeting_timeout');
+                    console.log(
+                      `[GREETING-SAFE-FAST-NEWDAY-OVERVIEW] session ${session.sessionId} sent full new-day overview (bucket=${_temporalNd.bucket}, lang=${lang})`,
+                    );
+                    return;
+                  }
+                }
+              }
+            } catch (_ndErr) {
+              console.warn(
+                `[GREETING-SAFE-FAST-NEWDAY-OVERVIEW] non-fatal, falling through: ${_ndErr instanceof Error ? _ndErr.message : String(_ndErr)}`,
+              );
+            }
+
             // DEV-COMHU-0513 (proactive fast greeting): when the fast pre-fetch
             // produced a SHORT proactive opener (name + concrete next step /
             // weakness lead), speak THAT instead of the generic SHORT_GAP phrase
