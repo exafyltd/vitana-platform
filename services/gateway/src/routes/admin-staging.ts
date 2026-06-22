@@ -761,4 +761,119 @@ router.post(
   },
 );
 
+// ===========================================================================
+// BOOTSTRAP-ORB-GREETING-DEBUG: wake-brief decision inspector.
+//
+// Runs the REAL `decideWakeBriefForSession` against the REAL (staging-shared)
+// Supabase for a given user_id and returns the winning continuation provider,
+// the exact line it would speak, and EVERY provider's status + suppression
+// reason. This is the live diagnostic that explains why a user hears the
+// generic greeting-pool line instead of a grounded "where we left off" opener.
+//
+// Staging-only + service-token gated (same as the rest of this file). Read-
+// only: recordEmission is forced false so it never writes last_greeting_at.
+// Temporary — remove once the greeting path is fixed and verified.
+// ===========================================================================
+router.get(
+  '/wake-brief-debug',
+  serviceTokenAuth,
+  stagingOnlyGuard,
+  async (req: Request, res: Response) => {
+    const userId = String(req.query.user_id ?? '').trim();
+    if (!userId) {
+      res.status(400).json({ ok: false, error: 'user_id_required' });
+      return;
+    }
+    const lang = String(req.query.lang ?? 'de').trim() || 'de';
+    const bucket = String(req.query.bucket ?? 'days').trim() || 'days';
+    const timezone = String(req.query.tz ?? 'Europe/Berlin').trim() || 'Europe/Berlin';
+    const isReconnect = req.query.is_reconnect === 'true';
+
+    const supabase = getSupabase();
+    if (!supabase) {
+      res.status(503).json({ ok: false, error: 'db_unavailable' });
+      return;
+    }
+
+    // Lazy imports keep this debug endpoint off the hot startup path.
+    const { decideWakeBriefForSession } = await import('../services/wake-brief-wiring');
+    const { fetchWakeCadenceSignals } = await import('../services/wake-cadence-signals');
+    const { resolveSpokenFirstName } = await import('../services/awareness-unified-context');
+
+    // Resolve tenant + first name the same way the live controller does.
+    const { data: appUser } = await supabase
+      .from('app_users')
+      .select('tenant_id, display_name')
+      .eq('user_id', userId)
+      .maybeSingle();
+    const tenantId = (appUser as { tenant_id?: string } | null)?.tenant_id ?? null;
+    const displayName = (appUser as { display_name?: string | null } | null)?.display_name ?? null;
+
+    const { data: nameFact } = await supabase
+      .from('memory_facts')
+      .select('fact_value')
+      .eq('user_id', userId)
+      .eq('fact_key', 'user_name')
+      .maybeSingle();
+    const { firstName } = resolveSpokenFirstName({
+      memoryFactUserName: (nameFact as { fact_value?: string | null } | null)?.fact_value ?? null,
+      displayName,
+      email: null,
+    });
+
+    let cadenceSignals: Awaited<ReturnType<typeof fetchWakeCadenceSignals>> | undefined;
+    if (tenantId) {
+      cadenceSignals = await fetchWakeCadenceSignals({ supabase, tenantId, userId }).catch(
+        () => undefined,
+      );
+    }
+
+    const decision = await decideWakeBriefForSession({
+      sessionId: `wake-brief-debug-${Date.now()}`,
+      tenantId,
+      userId,
+      bucket,
+      wasFailure: false,
+      isReconnect,
+      lang,
+      supabase,
+      decisionContext: null,
+      pillarMomentum: null,
+      cadenceSignals,
+      firstName,
+      timezone,
+      recordEmission: false,
+    });
+
+    const sel = decision.selectedContinuation;
+    res.json({
+      ok: true,
+      env: 'staging',
+      generated_at: new Date().toISOString(),
+      input: { user_id: userId, tenant_id: tenantId, lang, bucket, timezone, is_reconnect: isReconnect, first_name: firstName ?? null },
+      note: 'decisionContext/pillarMomentum passed null — life_compass / vitana_index / continuity providers will skip for lack of the compiled spine; that does NOT affect login-briefing / journey-guide / new-day-return / voice-wake-brief, which are the relevant ones here.',
+      selected: sel
+        ? {
+            provider_key: (sel as { providerKey?: string }).providerKey ?? null,
+            kind: sel.kind,
+            priority: sel.priority,
+            user_facing_line: sel.userFacingLine,
+            dedupe_key: sel.dedupeKey,
+          }
+        : null,
+      suppression_reason: decision.suppressionReason ?? null,
+      providers: decision.sourceProviderResults
+        .map((r) => ({
+          provider_key: r.providerKey,
+          status: r.status,
+          reason: r.reason ?? null,
+          priority: r.candidate?.priority ?? null,
+          line: r.candidate?.userFacingLine ?? null,
+          latency_ms: r.latencyMs,
+        }))
+        .sort((a, b) => (b.priority ?? -1) - (a.priority ?? -1)),
+    });
+  },
+);
+
 export { router as adminStagingRouter };
