@@ -3,8 +3,9 @@
  *
  * The renderer must fold in distilled pillar_momentum signals when the
  * confidence is medium/high and the suggested focus pillar is slipping
- * or unknown. Other paths MUST fall through to the existing generic
- * greeting line (no behavior regression).
+ * or unknown. BOOTSTRAP-ORB-NO-HARDCODED-GREETING: every other path now
+ * returns the EMPTY STRING — there is no generic canned greeting line
+ * any more. The renderer is grounded-or-silent.
  *
  * Coverage:
  *   - shouldUsePillarProactiveLine boolean matrix
@@ -14,8 +15,9 @@
  *     × suggested_focus null vs set
  *   - Per-language pillar lines emit when conditions are met
  *   - Evidence carries the pillar focus + a confidence weight
- *   - DedupeKey differentiates proactive vs generic variants
- *   - Generic path unchanged when pillarMomentum is null/undefined
+ *   - DedupeKey reflects the grounded pillar variant
+ *   - Renderer returns '' (no canned fallback) when pillarMomentum is
+ *     null/undefined or the policy is brief_resume
  */
 
 import {
@@ -176,30 +178,31 @@ describe('VTID-03053 — defaultVoiceWakeBriefRenderer emits pillar-specific lin
     }
   });
 
-  test('falls through to generic greeting when pillarMomentum is null', () => {
+  test('returns empty string (grounded-or-silent) when pillarMomentum is null', () => {
     const line = defaultVoiceWakeBriefRenderer.render(
       { greetingPolicy: 'fresh_intro', lang: 'en', pillarMomentum: null },
       makeCtx({ greetingPolicy: 'fresh_intro', lang: 'en' }),
     );
-    expect(line).toBe("Hello! Let me show you where we'll begin.");
+    // No canned greeting any more — the renderer stays silent.
+    expect(line).toBe('');
   });
 
-  test('falls through to generic greeting when pillarMomentum is omitted', () => {
+  test('returns empty string (grounded-or-silent) when pillarMomentum is omitted', () => {
     const line = defaultVoiceWakeBriefRenderer.render(
       { greetingPolicy: 'warm_return', lang: 'de' },
       makeCtx({ greetingPolicy: 'warm_return', lang: 'de' }),
     );
-    expect(line).toContain('Schön, dass du wieder da bist');
+    expect(line).toBe('');
   });
 
-  test('falls through to generic greeting when policy is brief_resume', () => {
+  test('returns empty string when policy is brief_resume (proactive line withheld)', () => {
     const line = defaultVoiceWakeBriefRenderer.render(
       { greetingPolicy: 'brief_resume', lang: 'en', pillarMomentum: makePm() },
       makeCtx({ greetingPolicy: 'brief_resume', lang: 'en' }),
     );
-    // Proactive-lead copy that leads to the next step — NOT a bluffed "pick up
-    // where we left off" with no recalled content behind it.
-    expect(line).toBe('Welcome back. Let me show you your next step.');
+    // brief_resume never takes the proactive pillar line, and there is no
+    // canned fallback — so the renderer is silent.
+    expect(line).toBe('');
   });
 });
 
@@ -228,7 +231,7 @@ describe('VTID-03053 — provider candidate carries pillar evidence', () => {
     expect(c.userFacingLine.toLowerCase()).toContain('nutrition');
   });
 
-  test('generic candidate dedupeKey is unchanged when pillarMomentum is null', () => {
+  test('provider suppresses (grounded-or-silent) with no candidate when pillarMomentum is null', () => {
     const provider = makeVoiceWakeBriefProvider({
       newId: () => 'fixed-id',
       now: () => 1_700_000_000_000,
@@ -239,9 +242,10 @@ describe('VTID-03053 — provider candidate carries pillar evidence', () => {
       pillarMomentum: null,
     });
     const r = provider.produce(ctx);
-    expect(r.status).toBe('returned');
-    if (r.status !== 'returned') return;
-    expect(r.candidate!.dedupeKey).toBe('wake-brief-fresh_intro');
-    expect(r.candidate!.evidence.some((e) => e.kind === 'pillar_momentum_slipping')).toBe(false);
+    // No grounded line → suppressed, NO candidate (no more generic dedupe row).
+    expect(r.status).toBe('suppressed');
+    if (r.status !== 'suppressed') return;
+    expect(r.reason).toBe('no_grounded_line_grounded_or_silent');
+    expect(r.candidate).toBeUndefined();
   });
 });
