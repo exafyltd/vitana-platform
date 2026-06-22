@@ -1,0 +1,90 @@
+name: Stage Regenerate AI Intent Covers
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: 'Type replace-all-ai-covers to update every existing AI cover'
+        required: true
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  GCP_PROJECT: lovable-vitana-vers1
+  GCP_REGION: us-central1
+  CLOUD_RUN_SERVICE: gateway-staging
+  CLOUD_RUN_JOB: regenerate-ai-intent-covers-staging
+
+jobs:
+  regenerate:
+    if: ${{ inputs.confirmation == 'replace-all-ai-covers' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Auth to GCP (Workload Identity Federation)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_WIF_SA_EMAIL }}
+
+      - name: Setup gcloud
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Deploy and execute guarded replacement job
+        run: |
+          set -euo pipefail
+
+          IMAGE=$(gcloud run services describe "${CLOUD_RUN_SERVICE}" \
+            --region="${GCP_REGION}" \
+            --project="${GCP_PROJECT}" \
+            --format='value(spec.template.spec.containers[0].image)')
+          SERVICE_ACCOUNT=$(gcloud run services describe "${CLOUD_RUN_SERVICE}" \
+            --region="${GCP_REGION}" \
+            --project="${GCP_PROJECT}" \
+            --format='value(spec.template.spec.serviceAccountName)')
+
+          DEPLOY_ARGS=(
+            --image="${IMAGE}"
+            --region="${GCP_REGION}"
+            --project="${GCP_PROJECT}"
+            --tasks=1
+            --parallelism=1
+            --max-retries=0
+            --task-timeout=7200s
+            --memory=1Gi
+            --cpu=1
+            --command=node
+            --args=dist/scripts/regenerate-ai-intent-covers.js,--apply
+            --set-env-vars="VITANA_ENV=staging,ENVIRONMENT=staging,GOOGLE_CLOUD_PROJECT=${GCP_PROJECT},REGENERATE_AI_COVERS_CONFIRM=replace-all-ai-covers"
+            --set-secrets="SUPABASE_URL=SUPABASE_URL:latest,SUPABASE_SERVICE_ROLE=SUPABASE_SERVICE_ROLE:latest"
+            --wait
+            --quiet
+          )
+          if [[ -n "${SERVICE_ACCOUNT}" ]]; then
+            DEPLOY_ARGS+=(--service-account="${SERVICE_ACCOUNT}")
+          fi
+
+          echo "Executing ${CLOUD_RUN_JOB} with image ${IMAGE}"
+          gcloud run jobs deploy "${CLOUD_RUN_JOB}" "${DEPLOY_ARGS[@]}"
+
+      - name: Show replacement summary
+        if: always()
+        run: |
+          EXECUTION=$(gcloud run jobs executions list \
+            --job="${CLOUD_RUN_JOB}" \
+            --region="${GCP_REGION}" \
+            --project="${GCP_PROJECT}" \
+            --limit=1 \
+            --format='value(metadata.name)')
+          echo "Execution: ${EXECUTION}"
+          gcloud logging read \
+            "resource.type=\"cloud_run_job\" AND resource.labels.job_name=\"${CLOUD_RUN_JOB}\"" \
+            --project="${GCP_PROJECT}" \
+            --freshness=2h \
+            --order=asc \
+            --limit=2000 \
+            --format='value(textPayload)' || true

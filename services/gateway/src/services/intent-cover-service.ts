@@ -29,7 +29,7 @@ import { createClient } from '@supabase/supabase-js';
 import { GoogleAuth } from 'google-auth-library';
 import path from 'node:path';
 import { promises as fs } from 'node:fs';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 
 export type CoverTheme =
   | 'dance'
@@ -75,6 +75,14 @@ export interface GenerateCoverResult {
   cached: boolean;
 }
 
+export interface RegenerateExistingAiCoverArgs {
+  intentId: string;
+  userId: string;
+  category: string | null;
+  expectedCoverUrl: string;
+  gender?: Gender;
+}
+
 export class CoverGenError extends Error {
   constructor(
     public readonly code:
@@ -83,7 +91,8 @@ export class CoverGenError extends Error {
       | 'not_found'
       | 'storage_failed'
       | 'provider_failed'
-      | 'unsafe_prompt',
+      | 'unsafe_prompt'
+      | 'conflict',
     message: string,
   ) {
     super(message);
@@ -94,6 +103,7 @@ export class CoverGenError extends Error {
 const BUCKET = process.env.INTENT_COVERS_BUCKET ?? 'intent-covers';
 const RATE_LIMIT_PER_DAY = Number(process.env.INTENT_COVER_RATE_LIMIT_PER_DAY ?? '10');
 const DRY_RUN = (process.env.INTENT_COVER_DRY_RUN ?? '').toLowerCase() === 'true';
+export const AI_COVER_STORAGE_VERSION = 'v2-german-groups';
 
 // Vertex AI Imagen runs in the same GCP project as the gateway. Default
 // to the cheap fast variant; override via VERTEX_IMAGES_MODEL.
@@ -377,12 +387,12 @@ async function generateAiCover(theme: CoverTheme, gender: Gender): Promise<Buffe
 
 async function uploadAiCover(args: { intentId: string; bytes: Buffer }): Promise<string> {
   const supabase = getSupabase();
-  // Imagen returns PNG bytes by default; keep .png so the Content-Type
-  // header is correct on Supabase Storage.
-  const remotePath = `ai/${args.intentId}.png`;
+  // A unique object path prevents browser/CDN caches from serving the
+  // previous pixels after an explicit regeneration.
+  const remotePath = `ai/${AI_COVER_STORAGE_VERSION}/${args.intentId}/${randomUUID()}.png`;
   const { error } = await supabase.storage
     .from(BUCKET)
-    .upload(remotePath, args.bytes, { contentType: 'image/png', upsert: true });
+    .upload(remotePath, args.bytes, { contentType: 'image/png', upsert: false });
   if (error) throw new CoverGenError('storage_failed', error.message);
   const { data } = supabase.storage.from(BUCKET).getPublicUrl(remotePath);
   return data.publicUrl;
@@ -495,6 +505,50 @@ async function persistCover(args: {
     .eq('intent_id', args.intentId)
     .eq('requester_user_id', args.userId);
   if (error) throw new CoverGenError('storage_failed', error.message);
+}
+
+export function isCurrentAiCoverUrl(url: string): boolean {
+  return url.includes(`/ai/${AI_COVER_STORAGE_VERSION}/`);
+}
+
+/**
+ * Operational replacement path for existing AI covers. It intentionally
+ * bypasses user-library resolution and the end-user rate limit. The database
+ * update is optimistic so a concurrent user cover change is never overwritten.
+ */
+export async function regenerateExistingAiCover(
+  args: RegenerateExistingAiCoverArgs,
+): Promise<{ cover_url: string }> {
+  if (DRY_RUN) {
+    throw new CoverGenError('provider_failed', 'AI cover replacement is disabled in dry-run mode');
+  }
+
+  const theme = themeFromCategory(args.category);
+  const gender: Gender =
+    args.gender !== undefined ? args.gender : await getUserGenderFromProfile(args.userId);
+  const bytes = await generateAiCover(theme, gender);
+  const url = await uploadAiCover({ intentId: args.intentId, bytes });
+
+  const supabase = getSupabase();
+  const { data, error } = await supabase
+    .from('user_intents')
+    .update({
+      cover_url: url,
+      cover_generated_at: new Date().toISOString(),
+      cover_source: 'ai_generated',
+    })
+    .eq('intent_id', args.intentId)
+    .eq('requester_user_id', args.userId)
+    .eq('cover_source', 'ai_generated')
+    .eq('cover_url', args.expectedCoverUrl)
+    .select('intent_id');
+
+  if (error) throw new CoverGenError('storage_failed', error.message);
+  if (!Array.isArray(data) || data.length !== 1) {
+    throw new CoverGenError('conflict', 'cover changed while replacement was running');
+  }
+
+  return { cover_url: url };
 }
 
 /**

@@ -94,6 +94,17 @@ function storageStub({
   };
 }
 
+function conditionalUpdateStub(
+  returns: { data: unknown[] | null; error: unknown },
+): Stub {
+  const stub: Stub = {
+    update: jest.fn(() => stub),
+    eq: jest.fn(() => stub),
+    select: jest.fn(async () => returns),
+  };
+  return stub;
+}
+
 beforeEach(() => {
   jest.resetModules();
   supabaseMock.from.mockReset();
@@ -302,9 +313,8 @@ describe('generateCoverForIntent', () => {
       .mockReturnValueOnce(chain({ count: 0 })) // rate-limit
       .mockReturnValueOnce(chain({ data: { gender: 'male' } })) // gender
       .mockReturnValueOnce(chain({ data: null, error: null })); // persist
-    supabaseMock.storage.from.mockReturnValue(
-      storageStub({ publicUrl: 'https://files.example/ai.png' }),
-    );
+    const aiStorage = storageStub({ publicUrl: 'https://files.example/ai.png' });
+    supabaseMock.storage.from.mockReturnValue(aiStorage);
     vertexFetch.mockResolvedValueOnce({
       ok: true,
       status: 200,
@@ -335,6 +345,11 @@ describe('generateCoverForIntent', () => {
       /every visible person.*must match.*white German adults of Central or Northern European appearance with light skin/i,
     );
     expect(sentBody.instances[0].prompt).toMatch(/dance studio/i);
+    expect(aiStorage.upload).toHaveBeenCalledWith(
+      expect.stringMatching(/^ai\/v2-german-groups\/i1\/[0-9a-f-]+\.png$/),
+      expect.any(Buffer),
+      expect.objectContaining({ contentType: 'image/png', upsert: false }),
+    );
   });
 
   it('AI failure → curated fallback (still resolves with success)', async () => {
@@ -514,6 +529,56 @@ describe('buildCoverPrompt', () => {
     );
     expect(prompt).toMatch(
       /every visible person.*must match.*local residents matching the configured test community demographics/i,
+    );
+  });
+});
+
+describe('regenerateExistingAiCover', () => {
+  it('replaces only the unchanged AI row using a versioned URL', async () => {
+    const updateStub = conditionalUpdateStub({
+      data: [{ intent_id: 'i1' }],
+      error: null,
+    });
+    supabaseMock.from
+      .mockReturnValueOnce(chain({ data: { gender: 'male' } }))
+      .mockReturnValueOnce(updateStub);
+
+    const aiStorage = storageStub({
+      publicUrl:
+        'https://files.example/intent-covers/ai/v2-german-groups/i1/new.png',
+    });
+    supabaseMock.storage.from.mockReturnValue(aiStorage);
+    vertexFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      json: async () => ({
+        predictions: [{ bytesBase64Encoded: Buffer.from('replacement').toString('base64') }],
+      }),
+      text: async () => '',
+    } as unknown as Response);
+
+    const { regenerateExistingAiCover } = await import(
+      '../src/services/intent-cover-service'
+    );
+    const out = await regenerateExistingAiCover({
+      intentId: 'i1',
+      userId: 'u1',
+      category: 'dance.salsa',
+      expectedCoverUrl: 'https://files.example/intent-covers/ai/i1.png',
+    });
+
+    expect(out.cover_url).toContain('/ai/v2-german-groups/i1/');
+    expect(updateStub.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        cover_url: out.cover_url,
+        cover_source: 'ai_generated',
+      }),
+    );
+    expect(updateStub.eq).toHaveBeenCalledWith('cover_source', 'ai_generated');
+    expect(updateStub.eq).toHaveBeenCalledWith(
+      'cover_url',
+      'https://files.example/intent-covers/ai/i1.png',
     );
   });
 });
