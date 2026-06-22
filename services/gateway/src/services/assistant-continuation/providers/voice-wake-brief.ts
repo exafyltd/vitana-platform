@@ -232,29 +232,17 @@ export interface VoiceWakeBriefRenderer {
   render(inputs: VoiceWakeBriefInputs, ctx: ContinuationDecisionContext): string;
 }
 
-// VTID-03083: warmer, service-grade copy. "Back already?" / "Schon
-// zurück?" reads as dismissive — a service assistant greets a returning
-// user warmly, never with a confronting question. Same rule for every
-// policy.
-const DEFAULT_LINES: Record<GreetingPolicy, Record<string, string>> = {
-  // Suppressed at provider boundary; never reaches the renderer.
-  skip: { en: '', de: '' },
-  // Lead to the next step, NOT "pick up where we left off": this default line
-  // carries no recalled last-session content, so the resume promise is empty and
-  // the user calls it ("I don't remember where we ended").
-  brief_resume: {
-    en: 'Welcome back. Let me show you your next step.',
-    de: 'Schön, dich wieder zu hören. Lass mich dir deinen nächsten Schritt zeigen.',
-  },
-  warm_return: {
-    en: 'Welcome back. Let me show you where we are.',
-    de: 'Schön, dass du wieder da bist. Lass mich dir zeigen, wo wir gerade stehen.',
-  },
-  fresh_intro: {
-    en: "Hello! Let me show you where we'll begin.",
-    de: 'Hallo! Lass mich dir zeigen, wo wir anfangen.',
-  },
-};
+// BOOTSTRAP-ORB-NO-HARDCODED-GREETING: the generic policy-keyed greeting pool
+// (`DEFAULT_LINES`) was REMOVED. It hard-coded a non-grounded opener
+// ("Welcome back. Let me show you your next step." / "Schön, dich wieder zu
+// hören…") that the framework spoke verbatim whenever the grounded
+// `login_briefing` provider stepped aside (e.g. a same-day re-open computed
+// `greetingPolicy='brief_resume'`). That violated the hard project rule
+// "never hard-code a greeting" — the user heard a canned line that recalled
+// nothing about their journey. This provider is now GROUNDED-OR-SILENT: it
+// only speaks when it has a data-driven line (the pillar-momentum observation
+// below); for every other case it suppresses and lets the grounded
+// login-briefing lead, or the orb stays silent. See `produce()`.
 
 /**
  * VTID-03053 — Per-pillar proactive observation. ONLY used when:
@@ -315,6 +303,11 @@ export const defaultVoiceWakeBriefRenderer: VoiceWakeBriefRenderer = {
   render(inputs) {
     const lang = inputs.lang && inputs.lang.length > 0 ? inputs.lang : 'en';
 
+    // GROUNDED-ONLY: the sole line this provider may speak is the
+    // pillar-momentum observation — it is derived from the user's REAL
+    // pillar trend, not a canned phrase. Everything else returns '' so
+    // `produce()` suppresses (grounded-or-silent). There is no generic
+    // hard-coded greeting fallback any more.
     if (shouldUsePillarProactiveLine(inputs.pillarMomentum, inputs.greetingPolicy)) {
       const focus = inputs.pillarMomentum!.suggested_focus as PillarKey;
       const byLang = PILLAR_PROACTIVE_LINES[focus];
@@ -322,8 +315,7 @@ export const defaultVoiceWakeBriefRenderer: VoiceWakeBriefRenderer = {
       if (line && line.length > 0) return line;
     }
 
-    const byLang = DEFAULT_LINES[inputs.greetingPolicy];
-    return byLang[lang] ?? byLang.en ?? '';
+    return '';
   },
 };
 
@@ -380,6 +372,22 @@ export function makeVoiceWakeBriefProvider(
           status: 'suppressed',
           latencyMs: Math.max(0, now() - t0),
           reason: 'greeting_policy_skip',
+        };
+      }
+
+      // GROUNDED-OR-SILENT (BOOTSTRAP-ORB-NO-HARDCODED-GREETING): this
+      // fallback provider must NEVER speak a hard-coded generic greeting.
+      // It may speak ONLY when it has a grounded, data-driven line — the
+      // pillar-momentum observation built from the user's real pillar trend.
+      // When that doesn't apply, suppress: the grounded login-briefing
+      // (priority 92) leads instead, and if nothing grounded is available
+      // the orb stays silent rather than recite a canned "welcome back".
+      if (!shouldUsePillarProactiveLine(inputs.pillarMomentum, inputs.greetingPolicy)) {
+        return {
+          providerKey: VOICE_WAKE_BRIEF_PROVIDER_KEY,
+          status: 'suppressed',
+          latencyMs: Math.max(0, now() - t0),
+          reason: 'no_grounded_line_grounded_or_silent',
         };
       }
 
