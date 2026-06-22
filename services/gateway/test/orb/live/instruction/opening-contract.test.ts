@@ -149,6 +149,33 @@ describe('VTID-03273 Pillar D: assessOpenerQuality (content-quality guard)', () 
     }
   });
 
+  // BOOTSTRAP-ORB-NO-VAGUE-GREETING — the exact lines the user kept hearing on
+  // every reopen must be rejected by the central guard, regardless of which path
+  // selects them, so they can never be spoken again.
+  it('rejects the banned "next step" teaser in EN and DE', () => {
+    for (const banned of [
+      'Welcome back. Let me show you your next step.',
+      'Let me show you the next step.',
+      'Hi again. Let me take you to your next step.',
+      'Hallo nochmal. Lass mich dir deinen nächsten Schritt zeigen.',
+      'Willkommen zurück. Lass mich dir den nächsten Schritt zeigen.',
+      'Ich bin für dich da. Lass mich dich zum nächsten Schritt führen.',
+    ]) {
+      expect(assessOpenerQuality(banned)).toEqual({ ok: false, reason: 'contentless' });
+    }
+  });
+
+  // A grounded line that NAMES the concrete step must still pass — the guard is
+  // end-anchored so it only catches the bare teaser.
+  it('accepts a grounded next-step line that names the concrete step', () => {
+    for (const grounded of [
+      'Letztes Mal ging es um Vitana Index. Als Nächstes nehmen wir Index verbessern.',
+      'Your next step is to track your biomarkers — shall we?',
+    ]) {
+      expect(assessOpenerQuality(grounded).ok).toBe(true);
+    }
+  });
+
   it('rejects lines too short to carry a named next step', () => {
     const v = assessOpenerQuality('Hi.');
     expect(v.ok).toBe(false);
