@@ -7498,7 +7498,13 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
                 _temporalNd.bucket === 'long';
               const _uidNd = session.identity?.user_id;
               const _supaNd = getSupabase();
-              if (_isNewDayNd && typeof _firstNameNd === 'string' && _firstNameNd.trim().length > 0 && _uidNd && _supaNd) {
+              // The overview renderer only localizes DE/EN; for any other session
+              // language it would emit English clauses. Restrict the overview to
+              // de/en and let the existing localized name-greeting ladder handle
+              // es/fr/sr/etc. (Codex P2).
+              const _langKeyNd = (lang || 'en').slice(0, 2).toLowerCase();
+              const _langOkNd = _langKeyNd === 'de' || _langKeyNd === 'en';
+              if (_langOkNd && _isNewDayNd && typeof _firstNameNd === 'string' && _firstNameNd.trim().length > 0 && _uidNd && _supaNd) {
                 const _tzNd = session.clientContext?.timezone || 'UTC';
                 const _nowNd = new Date();
                 const { aggregateNewDayOverview } = await import('../services/assistant-continuation/providers/new-day-overview-aggregator');
@@ -7514,7 +7520,21 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
                   }),
                   new Promise<null>((r) => setTimeout(() => r(null), Number(process.env.ORB_NEWDAY_OVERVIEW_WAIT_MS || 1500))),
                 ]).catch(() => null);
-                if (_overview) {
+                // The aggregator returns a truthy payload even when EMPTY (no
+                // calendar, no goal, no index move) — rendering that yields just a
+                // bare "Good morning … let's get started", which would preempt a
+                // genuine concrete proactive opener. Only take the overview when
+                // it has REAL content (a calendar event or the Life Compass goal);
+                // an index-only move is handled by the proactive ladder below.
+                // Otherwise fall through (Codex P2).
+                const _overviewHasContent =
+                  !!_overview &&
+                  (_overview.calendar_passed_notable != null ||
+                    _overview.calendar_passed_count > 0 ||
+                    _overview.calendar_today_next != null ||
+                    _overview.calendar_today_count > 0 ||
+                    !!(_overview.life_compass_goal && String(_overview.life_compass_goal).trim().length > 0));
+                if (_overview && _overviewHasContent) {
                   const _line = renderNewDayReturnLineWithOverview({
                     lang,
                     salutation: pickSalutationKind(localHourInTimezone(_nowNd, _tzNd)),
