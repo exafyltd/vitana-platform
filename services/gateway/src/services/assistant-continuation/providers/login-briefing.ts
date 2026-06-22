@@ -76,13 +76,6 @@ const MATERIAL_INDEX_DELTA = 5;
  * it would feel like nagging rather than understanding (VTID-03307 / advice #1).
  */
 const MATERIAL_PILLAR_DROP = 3;
-/**
- * BOOTSTRAP-ORB-GREETING-RETURNING-USER (fix #2): if the user's previous ORB
- * session was within this window, the fast proactive opener stays silent and
- * lets the wake-brief path handle turn 1 (brief-resume/skip). Mirrors the
- * 15-minute greet-once cap in greeting-policy.ts (RECENT_GREETING_WINDOW_MS).
- */
-const FAST_OPENER_GREET_ONCE_WINDOW_MS = 15 * 60 * 1000;
 
 export interface LoginBriefingInputs {
   supabase: SupabaseClient;
@@ -961,20 +954,15 @@ export async function computeFastProactiveOpener(args: {
   lastSessionInfo?: { time: string } | null;
 }): Promise<string | null> {
   try {
-    // Cadence gate: suppress the fast proactive opener when we greeted/served
-    // this user very recently (default 15-min greet-once window, mirroring
-    // RECENT_GREETING_WINDOW_MS in greeting-policy.ts). Day-granularity
-    // daysSinceLastSession can't see this; the raw timestamp can.
-    const lastTime = args.lastSessionInfo?.time;
-    if (typeof lastTime === 'string' && lastTime.length > 0) {
-      const lastMs = Date.parse(lastTime);
-      if (Number.isFinite(lastMs)) {
-        const sinceMs = args.nowMs - lastMs;
-        if (sinceMs >= 0 && sinceMs < FAST_OPENER_GREET_ONCE_WINDOW_MS) {
-          return null;
-        }
-      }
-    }
+    // BOOTSTRAP-ORB-NO-HARDCODED-GREETING: the 15-min greet-once gate that used
+    // to return null here is REMOVED. Returning null on a deliberate re-open
+    // meant the safe-fast ladder fell through to the HARD-CODED short-gap
+    // greeting menu (orb-live.ts safe_fast_pending_context branch) — exactly
+    // the canned line the product rule forbids. A deliberate re-open must get
+    // the GROUNDED journey opener, never a canned fallback. The opener is fully
+    // grounded (name + real where-we-left-off + concrete next step), so
+    // re-speaking it on a quick re-open is correct, not spam. (True transparent
+    // reconnects never reach this path — they are gated upstream.)
     const facts = await gatherBriefingFactsForFastOpener(
       args.supabase,
       args.userId,
