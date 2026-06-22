@@ -731,6 +731,15 @@ export async function handleLiveSessionStart(
   // concrete next step / weakness lead) computed in the fast pre-fetch window so
   // the SAFE-FAST greeting can speak IT instead of a generic SHORT_GAP phrase.
   let greetingProactiveLine: string | null = null;
+  // BUGFIX (first-time onboarding): the fast greeting must NOT fall to the
+  // returning-user "welcome back" menu for a user who has never been onboarded.
+  // is_first_session is cleared the moment the user first OPENS the ORB, so a
+  // freshly-registered user is "returning" by their 2nd open — the wrong signal.
+  // The authoritative "still needs onboarding" signal is the guided-journey
+  // state: ZERO completed topics and not graduated. Resolve both in the fast
+  // pre-fetch. null = unknown (read failed).
+  let greetingIsFirstSession: boolean | null = null;
+  let greetingNeedsOnboarding: boolean | null = null;
 
   // VTID-03294: a Guided-Journey topic tap needs ZERO context — Vitana just
   // picks up the KB lesson and speaks it. Detect it here so we can skip the
@@ -912,7 +921,7 @@ export async function handleLiveSessionStart(
         try {
           const { getSupabase } = await import('../../../lib/supabase');
           const supa = getSupabase() ?? undefined;
-          const [lastInfo, factResult, profileResult] = await Promise.allSettled([
+          const [lastInfo, factResult, profileResult, firstSessionResult, journeyStateResult] = await Promise.allSettled([
             deps.fetchLastSessionInfo(_ndIdentity.user_id),
             supa
               ? supa
@@ -929,10 +938,54 @@ export async function handleLiveSessionStart(
                   .eq('user_id', _ndIdentity.user_id)
                   .maybeSingle()
               : Promise.resolve(null as any),
+            // Authoritative first-time signal — a single cheap column read, in
+            // the SAME parallel batch so it adds no latency. Drives the first-time
+            // welcome (never "welcome back" for a brand-new user).
+            supa
+              ? supa
+                  .from('user_journey')
+                  .select('is_first_session')
+                  .eq('user_id', _ndIdentity.user_id)
+                  .maybeSingle()
+              : Promise.resolve(null as any),
+            // "Has the user been onboarded?" — the real welcome-vs-welcome-back
+            // signal. ZERO completed journey topics + not graduated = still
+            // onboarding → first-time welcome, even if is_first_session was
+            // already cleared.
+            supa
+              ? supa
+                  .from('user_guided_journey_state')
+                  .select('completed_topic_ids, onboarding_status')
+                  .eq('user_id', _ndIdentity.user_id)
+                  .maybeSingle()
+              : Promise.resolve(null as any),
           ]);
 
           if (lastInfo.status === 'fulfilled') {
             greetingEarlyLastSessionInfo = lastInfo.value;
+          }
+          if (
+            firstSessionResult.status === 'fulfilled' &&
+            firstSessionResult.value &&
+            !firstSessionResult.value.error
+          ) {
+            const _fsRow = firstSessionResult.value.data as { is_first_session?: boolean | null } | null;
+            // No row at all → user has never had a journey row → treat as first-time.
+            greetingIsFirstSession = _fsRow ? _fsRow.is_first_session === true : true;
+          }
+          if (
+            journeyStateResult.status === 'fulfilled' &&
+            journeyStateResult.value &&
+            !journeyStateResult.value.error
+          ) {
+            const _jsRow = journeyStateResult.value.data as
+              | { completed_topic_ids?: string[] | null; onboarding_status?: string | null }
+              | null;
+            // No journey row, OR zero completed topics while not graduated, means
+            // the user has not been onboarded yet → first-time welcome.
+            const _completed = Array.isArray(_jsRow?.completed_topic_ids) ? _jsRow!.completed_topic_ids!.length : 0;
+            const _graduated = _jsRow?.onboarding_status === 'qualified' || _jsRow?.onboarding_status === 'completed';
+            greetingNeedsOnboarding = !_jsRow ? true : _completed === 0 && !_graduated;
           }
 
           const factValue =
@@ -1082,6 +1135,8 @@ export async function handleLiveSessionStart(
   if (greetingFactsReady) {
     (session as any).greetingFirstName = greetingFirstName;
     (session as any).greetingProactiveLine = greetingProactiveLine;
+    (session as any).greetingIsFirstTime = greetingIsFirstSession;
+    (session as any).greetingNeedsOnboarding = greetingNeedsOnboarding;
     if (greetingEarlyLastSessionInfo && !session.lastSessionInfo) {
       session.lastSessionInfo = greetingEarlyLastSessionInfo;
     }
@@ -1090,6 +1145,8 @@ export async function handleLiveSessionStart(
       // DEV-COMHU-0513: the proactive opener resolves with the rest of the fast
       // facts; copy it onto the session so the greeting builder can prefer it.
       (session as any).greetingProactiveLine = greetingProactiveLine;
+      (session as any).greetingIsFirstTime = greetingIsFirstSession;
+      (session as any).greetingNeedsOnboarding = greetingNeedsOnboarding;
       // Idempotent with the heavy bootstrap block, which also sets this later.
       if (greetingEarlyLastSessionInfo && !session.lastSessionInfo) {
         session.lastSessionInfo = greetingEarlyLastSessionInfo;
