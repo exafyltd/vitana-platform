@@ -980,6 +980,10 @@ both and the next un-learned topic is played.",
         "name": "narrate_guided_session",
         "parameters": {
           "properties": {
+            "info_only": {
+              "description": "Optional. Set true when the user ASKS ABOUT a session (its title, what it covers, "what is session 1", "which session is X") instead of asking to PLAY it. Returns the authored title + description WITHOUT speaking the script or advancing progress, so you can answer with the REAL title. Use the returned session_title verbatim — never guess a title from the Journey Foundation steps.",
+              "type": "boolean",
+            },
             "session_number": {
               "description": "Optional. The session number the user asked for (e.g. 15). Plays the first un-heard topic of that session.",
               "type": "integer",
@@ -3374,6 +3378,10 @@ both and the next un-learned topic is played.",
         "name": "narrate_guided_session",
         "parameters": {
           "properties": {
+            "info_only": {
+              "description": "Optional. Set true when the user ASKS ABOUT a session (its title, what it covers, "what is session 1", "which session is X") instead of asking to PLAY it. Returns the authored title + description WITHOUT speaking the script or advancing progress, so you can answer with the REAL title. Use the returned session_title verbatim — never guess a title from the Journey Foundation steps.",
+              "type": "boolean",
+            },
             "session_number": {
               "description": "Optional. The session number the user asked for (e.g. 15). Plays the first un-heard topic of that session.",
               "type": "integer",

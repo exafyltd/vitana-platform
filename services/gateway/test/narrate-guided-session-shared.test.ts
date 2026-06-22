@@ -67,7 +67,7 @@ describe('tool_narrate_guided_session', () => {
     expect(r.ok).toBe(true);
     expect((r as any).result.session).toBe(1);
     expect((r as any).result.has_script).toBe(true);
-    expect(r.text).toContain('IN FULL'); // strict verbatim contract
+    expect(r.text).toMatch(/word for word/i); // strict verbatim contract
     expect(r.text).toContain(TOPICS[0].vitana_voice_script); // the WHOLE authored script
   });
 
@@ -104,6 +104,26 @@ describe('tool_narrate_guided_session', () => {
     expect(upserts).toHaveLength(1);
     expect(upserts[0].completed_topic_ids).toEqual(['t1']); // session 1 now green
     expect(upserts[0].current_session).toBe(1);
+  });
+
+  it('PROGRESSION on explicit session_number play: marks ONLY the played topic so the session advances topic-by-topic', async () => {
+    const upserts: Array<Record<string, unknown>> = [];
+    const sb = makeSb({ stateData: { completed_topic_ids: [], current_session: 1 }, topics: TOPICS }, upserts);
+    await tool_narrate_guided_session({ session_number: 1 } as any, IDENT, sb);
+    // The played topic IS marked (so the next "more" call serves the next topic),
+    // but ONLY that topic — never sessions the user hasn't heard.
+    expect(upserts).toHaveLength(1);
+    expect(upserts[0].completed_topic_ids).toEqual(['t1']);
+  });
+
+  it('PROGRESSION cursor never jumps ahead: playing session 2 marks only session 2 (session 1 stays un-heard)', async () => {
+    const upserts: Array<Record<string, unknown>> = [];
+    const sb = makeSb({ stateData: { completed_topic_ids: [], current_session: 1 }, topics: TOPICS }, upserts);
+    await tool_narrate_guided_session({ session_number: 2 } as any, IDENT, sb);
+    // Only session 2's topic is marked — session 1 (t1) is NOT, so the journey's
+    // "next recommended" cursor still correctly points at the earliest un-heard topic.
+    expect(upserts[0].completed_topic_ids).toEqual(['t2']);
+    expect(upserts[0].completed_topic_ids).not.toContain('t1');
   });
 
   it('FAIL-OPEN: a checklist read error never dead-ends ("das hat nicht geklappt")', async () => {
@@ -152,13 +172,47 @@ describe('tool_narrate_guided_session', () => {
     { topic_id: 's15c', title: 'Index anwenden', display_label: null, short_description: '', vitana_voice_script: 'Session 15, Thema drei.', session: 15, position: 3 },
   ];
 
+  it('INFO-ONLY: "what is the title of session 1" returns the real title, does NOT play or mark progress', async () => {
+    const upserts: Array<Record<string, unknown>> = [];
+    const sb = makeSb({ stateData: { completed_topic_ids: [], current_session: 1 }, topics: TOPICS }, upserts);
+    const r = await tool_narrate_guided_session({ session_number: 1, info_only: true } as any, IDENT, sb);
+    expect((r as any).result.info_only).toBe(true);
+    expect((r as any).result.session_title).toBe('Dein Vitana Index'); // the REAL title
+    expect(r.text).toContain('Dein Vitana Index');
+    expect(r.text).not.toContain(TOPICS[0].vitana_voice_script); // does NOT speak the script
+    expect(r.text).toMatch(/do NOT use a Journey\s+Foundation step/i); // guards against the bug
+    expect(upserts).toHaveLength(0); // a question never advances progress
+  });
+
+  it('INFO-ONLY: lists the session\'s topics for a multi-topic session', async () => {
+    const sb = makeSb({ stateData: { completed_topic_ids: [], current_session: 1 }, topics: SESSION15 });
+    const r = await tool_narrate_guided_session({ session_number: 15, info_only: true } as any, IDENT, sb);
+    expect((r as any).result.topic_count).toBe(3);
+    expect((r as any).result.topic_titles).toEqual(['Index Grundlagen', 'Index vertiefen', 'Index anwenden']);
+    expect(r.text).not.toContain('Session 15, Thema eins.'); // no script playback
+  });
+
+  it('INFO-ONLY: session title is STABLE — same title regardless of progress in the session', async () => {
+    // User already heard topic one (s15a). The session TITLE must still be the
+    // session's first-topic title, not drift to topic two.
+    const sb = makeSb({ stateData: { completed_topic_ids: ['s15a'], current_session: 15 }, topics: SESSION15 });
+    const r = await tool_narrate_guided_session({ session_number: 15, info_only: true } as any, IDENT, sb);
+    expect((r as any).result.session_title).toBe('Index Grundlagen'); // first topic, NOT 'Index vertiefen'
+    expect(r.text).toContain('Index Grundlagen');
+  });
+
   it('SESSION with multiple topics: plays the FIRST topic + reports the remaining count', async () => {
     const sb = makeSb({ stateData: { completed_topic_ids: [], current_session: 1 }, topics: SESSION15 });
     const r = await tool_narrate_guided_session({ session_number: 15 } as any, IDENT, sb);
     expect((r as any).result.topic_id).toBe('s15a'); // first topic of session 15
-    expect((r as any).result.remaining_in_session).toBe(2); // 2 more topics in the session
-    expect(r.text).toContain('Session 15, Thema eins.');
-    expect(r.text).toMatch(/2 more topics in session 15/i);
+    expect((r as any).result.remaining_in_session).toBe(2); // 2 more topics in the session (metadata only)
+    expect(r.text).toContain('Session 15, Thema eins.'); // the script IS in the spoken text
+    // The OLD parrotable "after you finish, offer the next" guidance must be GONE
+    // from the spoken text — bundling it made the model recite it and skip the
+    // script. (The directive may still *forbid* offering early; that's fine.)
+    expect(r.text).not.toMatch(/After you finish/i);
+    expect(r.text).not.toMatch(/more topics in session/i);
+    expect(r.text).not.toMatch(/offer to continue with session/i);
   });
 
   it('SESSION topic-by-topic: after the first is heard, the next "session 15" plays topic two', async () => {

@@ -25,24 +25,32 @@
 // VTID-03256 — every phrase greets warmly, then LEADS to the next step.
 // Vitana proposes the move; she never asks the user's preference ("what would
 // you like?") — a returning user is here to continue, so we continue them.
+//
+// HARD RULE (broken-promise fix): this is the GENERIC fallback pool, used when
+// there is NO loaded last-session context. So a phrase here must NEVER claim to
+// resume a remembered conversation ("pick up where we left off", "dort
+// anknüpfen, wo wir waren", bare "lass uns weitermachen") — Vitana cannot
+// deliver that and the user calls the bluff ("I don't remember where we
+// ended"). Lead to the NEXT STEP or SHOW WHERE WE ARE (both grounded in the
+// journey/awareness she always has), never to an unrecalled past.
 export const SHORT_GAP_GREETING_PHRASES: Record<string, string[]> = {
   en: [
-    "Welcome back. Let's pick up where we left off.",
+    "Welcome back. Let me show you your next step.",
     "Good to have you back. Let me show you the next step.",
-    "Hi again. Let's keep going.",
+    "Hi again. Let me take you to your next step.",
     "Nice to hear you. Let me show you where we are.",
-    "Welcome back. Let's continue together.",
+    "Welcome back. Let me walk you to what's next.",
     "I'm here for you. Let me walk you to the next step.",
-    "Good to see you again. Let's pick up where we left off.",
+    "Good to see you again. Let me show you what's next.",
     "Welcome back. Let me show you what's next.",
   ],
   de: [
-    "Schön, dich wieder zu hören. Lass uns dort weitermachen, wo wir aufgehört haben.",
+    "Schön, dich wieder zu hören. Lass mich dir deinen nächsten Schritt zeigen.",
     "Willkommen zurück. Lass mich dir den nächsten Schritt zeigen.",
-    "Schön, dass du wieder da bist. Lass uns weitermachen.",
-    "Hallo nochmal. Lass uns weitermachen.",
+    "Schön, dass du wieder da bist. Lass mich dir zeigen, was als Nächstes kommt.",
+    "Hallo nochmal. Lass mich dir deinen nächsten Schritt zeigen.",
     "Gut, dich wieder zu hören. Lass mich dir zeigen, wo wir stehen.",
-    "Schön, dass du wieder hier bist. Lass uns dort anknüpfen, wo wir waren.",
+    "Schön, dass du wieder hier bist. Lass mich dir deinen nächsten Schritt zeigen.",
     "Willkommen zurück. Lass mich dir zeigen, was als Nächstes kommt.",
     "Ich bin für dich da. Lass mich dich zum nächsten Schritt führen.",
   ],

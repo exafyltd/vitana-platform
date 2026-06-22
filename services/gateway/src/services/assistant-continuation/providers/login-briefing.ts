@@ -116,6 +116,13 @@ export interface BriefingFacts {
   nextSessionNumber: number;
   /** Title of the next session, when the published checklist resolved it. */
   nextSessionTitle: string | null;
+  /**
+   * Title of the LAST session the user actually did — the concrete "where we
+   * left off" the greeting RECALLS ("last time we were on X"). Null for a user
+   * with no completed session yet (then we never claim a recall). Grounds the
+   * continuity promise so it is real, not a bluff the user calls.
+   */
+  lastSessionTitle?: string | null;
   /** Onboarding lifecycle from the guided-journey state. */
   graduated: boolean;
   /** True when the user has set a Life Compass primary goal. */
@@ -551,6 +558,10 @@ export function makeLoginBriefingProvider(
         sessionsCompleted,
         nextSessionNumber: currentSession,
         nextSessionTitle,
+        // Recall the session the user most recently heard = current_session
+        // (narrate persists it as the just-played session), only when they have
+        // actually completed a topic. See the fast-gather note.
+        lastSessionTitle: topicsLearned > 0 ? nextSessionTitle : null,
         graduated,
         hasGoal: !!primaryGoalLabel,
         indexDeltaUp,
@@ -730,24 +741,38 @@ export function buildFastProactiveOpener(args: RenderArgs, rng: () => number = M
         ];
     return [prefix, pickFromPool(pool, rng)].join(' ');
   }
-  // building / momentum / returning → continue at the next step (varied wording).
-  const where = f.nextSessionTitle
+  // building / momentum / returning → RECALL the actual last session (grounded
+  // "where we left off" the user can verify), THEN continue at the next step.
+  // When there is no real last session to name, we DON'T fake a recall — we just
+  // lead to the next step (no bluff the user can call).
+  const recall = f.lastSessionTitle
     ? de
-      ? `bei „${f.nextSessionTitle}"`
-      : `with "${f.nextSessionTitle}"`
-    : de
-      ? 'bei deinem nächsten Schritt'
-      : 'with your next step';
+      ? `Letztes Mal ging es um „${f.lastSessionTitle}". `
+      : `Last time we were on "${f.lastSessionTitle}". `
+    : '';
+  // When we just named the session in the recall, continue "there" rather than
+  // repeating the same title; otherwise name the next step.
+  const where = recall
+    ? de
+      ? 'da'
+      : 'there'
+    : f.nextSessionTitle
+      ? de
+        ? `bei „${f.nextSessionTitle}"`
+        : `with "${f.nextSessionTitle}"`
+      : de
+        ? 'bei deinem nächsten Schritt'
+        : 'with your next step';
   const pool = de
     ? [
-        `Lass uns ${where} weitermachen — ich führe dich.`,
-        `Knüpfen wir ${where} an — ich nehme dich mit.`,
-        `Lass uns gleich ${where} weitermachen, ich begleite dich Schritt für Schritt.`,
+        `${recall}Lass uns ${where} weitermachen — ich führe dich.`,
+        `${recall}Knüpfen wir ${where} an — ich nehme dich mit.`,
+        `${recall}Lass uns ${where} weitermachen, ich begleite dich.`,
       ]
     : [
-        `Let's continue ${where} — I'll guide you.`,
-        `Let's pick up ${where} — I'll walk with you.`,
-        `Let's get right back to it ${where} — I'll take you there.`,
+        `${recall}Let's continue ${where} — I'll guide you.`,
+        `${recall}Let's pick up ${where} — I'll walk with you.`,
+        `${recall}Let's get right back to it ${where} — I'll take you there.`,
       ];
   return [prefix, pickFromPool(pool, rng)].join(' ');
 }
@@ -795,6 +820,12 @@ export async function gatherBriefingFactsForFastOpener(
     sessionsCompleted,
     nextSessionNumber: currentSession,
     nextSessionTitle,
+    // narrate persists current_session = the session of the topic it just
+    // played, so the session the user MOST RECENTLY HEARD is current_session
+    // itself (title = nextSessionTitle), NOT current_session - 1. Recall it only
+    // when the user has actually completed a topic; otherwise there is nothing to
+    // recall and we must not bluff.
+    lastSessionTitle: topicsLearned > 0 ? nextSessionTitle : null,
     graduated,
     hasGoal: !!primaryGoalLabel,
     indexDeltaUp,

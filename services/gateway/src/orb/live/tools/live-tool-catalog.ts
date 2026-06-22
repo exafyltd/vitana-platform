@@ -984,6 +984,11 @@ export function buildLiveApiTools(
                 type: 'string',
                 description: 'Optional. A topic name/keyword the user named (e.g. "Vitana Index", "Schlaf"). Matches that specific topic across all 254.',
               },
+              info_only: {
+                type: 'boolean',
+                description:
+                  'Optional. Set true when the user ASKS ABOUT a session (its title, what it covers, "what is session 1", "which session is X") instead of asking to PLAY it. Returns the authored title + description WITHOUT speaking the script or advancing progress, so you can answer with the REAL title. Use the returned session_title verbatim — never guess a title from the Journey Foundation steps.',
+              },
             },
           },
         },

@@ -8,7 +8,12 @@
  * speaks aloud and a match_recipe the frontend renders as a "How we
  * searched" card.
  *
- * Pipeline (4 tiers + 2 modifiers, every call ends on exactly one user):
+ * Pipeline (name lookup + 4 tiers + 2 modifiers, every call ends on exactly one user):
+ *   Tier 0 — Name:      direct lookup by person name (fuzzy, diacritic- and
+ *                       transliteration-tolerant). Runs first, but ONLY for
+ *                       queries with no attribute/modifier intent, so
+ *                       "show me Mariia Maksina" resolves to that exact person
+ *                       instead of falling through to a hash-picked stranger.
  *   Tier 1 — Exact:     services / facts / activities / groups
  *   Tier 2 — Index:     overall Vitana Index or per-pillar leader
  *   Tier 3 — Affinity:  teaching, expertise, experience, motivation,
@@ -47,6 +52,7 @@ import {
 export type Tier = 1 | 2 | 3 | 4;
 
 export type Lane =
+  | 'exact_name'
   | 'exact_service'
   | 'exact_fact'
   | 'exact_activity'
@@ -244,6 +250,9 @@ interface Candidate {
   user_id: string;
   vitana_id: string | null;
   display_name: string;
+  /** All identifiers a user might be referred to by (full name, display name,
+   *  handle, vitana_id) — used by Tier 0 name matching. */
+  names: string[];
   city: string | null;
   country: string | null;
   registration_seq: number | null;
@@ -284,7 +293,7 @@ async function buildCandidatePool(
       .in('user_id', visibleIds),
     sb
       .from('profiles')
-      .select('user_id, city, country, registration_seq')
+      .select('user_id, full_name, display_name, handle, city, country, registration_seq')
       .in('user_id', visibleIds),
   ]);
   const profMap = new Map<string, any>((profs || []).map((p: any) => [String(p.user_id), p]));
@@ -300,10 +309,26 @@ async function buildCandidatePool(
     // haven't confirmed their canonical identifier yet (per VTID-01967).
     if (!vid) continue;
     if (excludedSet.has(String(vid).toLowerCase())) continue;
+    // Prefer the human-readable name (profiles.full_name / display_name) over the
+    // mangled app_users.display_name (e.g. "maksinamariia") for both display and
+    // voice — falling back through the chain so we never show a blank name.
+    const displayName =
+      prof.full_name ||
+      prof.display_name ||
+      (u as any).display_name ||
+      'A community member';
+    const names = [
+      (u as any).display_name,
+      prof.display_name,
+      prof.full_name,
+      prof.handle,
+      vid,
+    ].filter((s: any): s is string => typeof s === 'string' && s.trim().length > 0);
     pool.push({
       user_id: uid,
       vitana_id: vid,
-      display_name: (u as any).display_name ?? 'A community member',
+      display_name: displayName,
+      names,
       city: prof.city ?? null,
       country: prof.country ?? null,
       registration_seq: prof.registration_seq ?? null,
@@ -331,6 +356,115 @@ async function buildCandidatePool(
   }
 
   return { pool, viewerCity, viewerCountry };
+}
+
+// ---------------------------------------------------------------------------
+// Tier 0 — name lookup (fuzzy, diacritic + transliteration tolerant)
+// ---------------------------------------------------------------------------
+//
+// The find_community_member tool is invoked for BOTH attribute queries
+// ("who is the healthiest") and direct lookups ("show me Mariia Maksina").
+// Before this tier existed, a name query extracted a noun keyword, matched
+// nothing in the attribute tiers, and fell through to pickByQueryHash() —
+// returning a hash-picked stranger (the "asked for Maria, got Daniela" bug).
+//
+// We compare the query's name tokens to every candidate's name tokens using a
+// char-bigram Dice coefficient and require BOTH tokens of a "First Last" query
+// to match, which separates "maria maxina" → "Mariia Maksina" (~0.72) from
+// near-collisions like "Marion …" (~0.43). It runs only when the query carries
+// no attribute/modifier intent, so attribute searches are never hijacked.
+
+const NAME_MATCH_THRESHOLD = 0.55;
+
+const NAME_REQUEST_WORDS = new Set<string>([
+  ...STOP_WORDS,
+  'profile', 'profiles', 'open', 'view', 'see', 'show', 'named', 'name',
+  'called', 'user', 'account', 'page', 'her', 'his', 'their', 'him', 'them',
+  'go', 'goto', 'take', 'bring', 'pull', 'up',
+]);
+
+/** Lowercase, strip diacritics (ü→u, ć→c), drop punctuation. */
+function normalizeName(s: string): string {
+  return s
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function bigrams(token: string): string[] {
+  if (token.length < 2) return token ? [token] : [];
+  const out: string[] = [];
+  for (let i = 0; i < token.length - 1; i++) out.push(token.slice(i, i + 2));
+  return out;
+}
+
+/** Sørensen–Dice coefficient over character bigrams (0..1). */
+function diceCoefficient(a: string, b: string): number {
+  if (a === b) return 1;
+  const A = bigrams(a);
+  const B = bigrams(b);
+  if (A.length === 0 || B.length === 0) return 0;
+  const counts = new Map<string, number>();
+  for (const g of B) counts.set(g, (counts.get(g) ?? 0) + 1);
+  let inter = 0;
+  for (const g of A) {
+    const c = counts.get(g);
+    if (c && c > 0) {
+      inter++;
+      counts.set(g, c - 1);
+    }
+  }
+  return (2 * inter) / (A.length + B.length);
+}
+
+/** Pull the name tokens out of a raw query, dropping request/stop words. */
+function nameQueryTokens(raw: string): string[] {
+  return normalizeName(raw)
+    .split(' ')
+    .filter(t => t.length >= 2 && !NAME_REQUEST_WORDS.has(t));
+}
+
+interface NameMatch {
+  cand: Candidate;
+  score: number;
+  matchedName: string;
+}
+
+function tier0NameMatch(pool: Candidate[], rawQuery: string): NameMatch | null {
+  const qTokens = nameQueryTokens(rawQuery);
+  // Names are short. 0 tokens → nothing to match; >4 → almost certainly a
+  // descriptive phrase, not a name, so don't risk a false positive.
+  if (qTokens.length === 0 || qTokens.length > 4) return null;
+
+  let best: NameMatch | null = null;
+  for (const c of pool) {
+    const nameTokens = new Set<string>();
+    for (const nm of c.names) {
+      for (const tok of normalizeName(nm).split(' ')) {
+        if (tok.length >= 2) nameTokens.add(tok);
+      }
+    }
+    if (nameTokens.size === 0) continue;
+
+    let sum = 0;
+    for (const q of qTokens) {
+      let bestTok = 0;
+      for (const nt of nameTokens) {
+        const d = diceCoefficient(q, nt);
+        if (d > bestTok) bestTok = d;
+      }
+      sum += bestTok;
+    }
+    const score = sum / qTokens.length;
+    if (!best || score > best.score) {
+      best = { cand: c, score, matchedName: c.display_name };
+    }
+  }
+
+  return best && best.score >= NAME_MATCH_THRESHOLD ? best : null;
 }
 
 // ---------------------------------------------------------------------------
@@ -764,6 +898,9 @@ function buildVoiceSummary(args: {
   if (lane === 'location_only') {
     return `${displayName} is one of our community members near you. Opening their profile.`;
   }
+  if (lane === 'exact_name') {
+    return `Here's ${displayName}'s profile.`;
+  }
   if (tier === 2) {
     if (lane === 'index_overall') return `${displayName} has the highest Vitana Index in the community right now. Opening their profile.`;
     if (lane === 'index_pillar' && pillarLabel) {
@@ -799,6 +936,7 @@ function buildMatchRecipe(args: {
   const { parsed, tier, lane, ethicsReroute, signals } = args;
   let intent: string;
   if (ethicsReroute) intent = `Reframed: "${parsed.raw}" — Vitana does not rank on the requested attribute`;
+  else if (lane === 'exact_name')    intent = `Direct profile lookup by name: "${parsed.raw}"`;
   else if (lane === 'tenure_only')   intent = `Member by tenure: ${parsed.tenureFilter}`;
   else if (lane === 'location_only') intent = `Members near you`;
   else if (lane === 'index_overall') intent = 'Highest overall Vitana Index';
@@ -930,6 +1068,7 @@ export async function findCommunityMember(
       if (signal) {
         allSignals.push({
           label:
+            signal.matched_signal === 'name_match' ? 'Name match' :
             signal.matched_signal === 'service_offering' ? 'Service offering' :
             signal.matched_signal === 'memory_fact' ? 'User-stated fact' :
             signal.matched_signal === 'logged_activity' ? 'Logged activity' :
@@ -995,6 +1134,34 @@ export async function findCommunityMember(
       tier: 4 as Tier, lane: 'generic' as Lane, winnerUserId: winnerCand.user_id,
       result: makeSoftFloor(parsed, winnerCand, ethicsReroute, signals),
     };
+  }
+
+  // ---- Tier 0: direct name lookup.
+  // Only when the query carries no attribute/modifier intent, so that
+  // "who is the healthiest" / "best teacher" / "newest member" still flow to
+  // their proper tiers and only genuine name lookups ("show me Mariia Maksina")
+  // resolve here. This is what stops a name query from falling through to the
+  // hash-picked floor and returning the wrong person.
+  const hasAttributeIntent =
+    !!parsed.pillar ||
+    parsed.indexOverall ||
+    !!parsed.tier3Lane ||
+    !!parsed.tenureFilter ||
+    parsed.popular;
+  if (!hasAttributeIntent) {
+    const nameHit = tier0NameMatch(pool, args.query);
+    if (nameHit) {
+      const nameSignal: ScoredHit = {
+        user_id: nameHit.cand.user_id,
+        score: nameHit.score,
+        matched_signal: 'name_match',
+        matched_value: nameHit.matchedName,
+      };
+      return helpers.finalize(nameHit.cand, 1, 'exact_name', undefined, undefined, nameSignal) || {
+        tier: 1 as Tier, lane: 'exact_name' as Lane, winnerUserId: nameHit.cand.user_id,
+        result: makeSoftFloor(parsed, nameHit.cand, false, signals),
+      };
+    }
   }
 
   // ---- Pure-modifier queries (no core intent extracted)
