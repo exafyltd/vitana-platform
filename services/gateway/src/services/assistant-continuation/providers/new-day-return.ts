@@ -316,9 +316,13 @@ function buildInvitation(lang: string, rng: () => number): string {
   // Lead to the next step / "let's get started" — NOT "pick up where we left
   // off" (this generic invitation carries no actual recalled context, so that
   // promise reads as a bluff the user calls: "I don't remember where we ended").
+  // BOOTSTRAP-ORB-NO-VAGUE-GREETING — these invitations close a line that
+  // ALREADY named grounded content (index/events). They must propose a concrete
+  // move, never the banned content-free teaser ("let me show you your next
+  // step" / "lass mich dir deinen nächsten Schritt zeigen").
   const pool = lang === 'de'
-    ? ['Lass mich dir zeigen, was als Nächstes kommt.', 'Lass mich dir deinen nächsten Schritt zeigen.', 'Lass uns gleich loslegen.']
-    : ["Let me walk you to what's next.", 'Let me show you your next step.', "Let's get started."];
+    ? ['Lass uns gleich loslegen.', 'Lass uns direkt weitermachen.', 'Schauen wir es uns gemeinsam an.']
+    : ["Let's get started.", "Let's keep going.", "Let's look at it together."];
   return pickFromPool(pool, rng);
 }
 

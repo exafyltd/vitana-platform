@@ -779,12 +779,12 @@ export function buildFastProactiveOpener(args: RenderArgs, rng: () => number = M
   if (state === 'graduated') {
     const pool = de
       ? [
-          'Du hast schon viel erreicht — lass uns eine Stufe tiefer gehen, ich zeige dir den nächsten Schritt.',
+          'Du hast schon viel erreicht — lass uns eine Stufe tiefer gehen, ich begleite dich dabei.',
           'Stark, wie weit du gekommen bist — lass uns gemeinsam tiefer einsteigen, ich begleite dich.',
           'Die Grundlagen sitzen — jetzt gehen wir gemeinsam in die Tiefe, ich nehme dich mit.',
         ]
       : [
-          "You've come a long way — let's go one level deeper, I'll show you the next step.",
+          "You've come a long way — let's go one level deeper, I'll guide you through it.",
           "Great how far you've come — let's dig deeper together, I'll be right with you.",
           "The foundations are solid — now let's go deeper together, I'll take you there.",
         ];

@@ -110,6 +110,16 @@ const CONTENTLESS_OPENER_PATTERNS: ReadonlyArray<RegExp> = [
   /tell you something\s*[.!?…]*$/i,
   /(dir|euch) (mal )?(etwas|was) (zeigen|vorstellen|erzählen)\s*[.!?…]*$/i,
   /^(hello|hi|hey|hallo|salut|hola|здраво|ciao)[.!?\s]*$/i,
+  // BOOTSTRAP-ORB-NO-VAGUE-GREETING — the "next step" teaser. These name no
+  // concrete step ("let me show you your next step" / "lass mich dir deinen
+  // nächsten Schritt zeigen" / "zum nächsten Schritt führen") and were the
+  // proven source of the greeting the user kept hearing on every reopen. They
+  // are END-ANCHORED: a grounded line that NAMES the step ("…dein nächster
+  // Schritt: Index verbessern") has content after the verb and does not match.
+  /(show|walk) you (to )?(your |the )?next step\s*[.!?…]*$/i,
+  /(lead|take) you to (your |the )?next step\s*[.!?…]*$/i,
+  /(deinen|den) nächsten schritt (zeigen|führen)\s*[.!?…]*$/i,
+  /zum nächsten schritt führen\s*[.!?…]*$/i,
 ];
 
 /**

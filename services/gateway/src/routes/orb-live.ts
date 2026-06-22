@@ -316,10 +316,6 @@ import {
   // PolicyResolver render-block lookup with English fallback baked in.
   getConnectionIssueMessage,
 } from '../orb/upstream/constants';
-import {
-  SHORT_GAP_GREETING_PHRASES,
-  pickShortGapGreetings,
-} from '../orb/instruction/greeting-pools';
 
 const router = Router();
 
@@ -7758,13 +7754,17 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
               return;
             }
 
-            // ELSE — fall through to the EXISTING generic opener (unchanged
-            // behavior). Same-day reconnects and no-name sessions take this path.
-            const _menu = pickShortGapGreetings(lang, 6).map((p) => `"${p}"`).join(', ');
+            // ELSE — fall through to the generic opener. Same-day reconnects and
+            // no-name sessions take this path. BOOTSTRAP-ORB-NO-VAGUE-GREETING:
+            // grounded context is still loading here, so we cannot name the exact
+            // next journey step yet — but we must NEVER emit the banned
+            // content-free teaser ("let me show you your next step") or a "how can
+            // I help?" preference question. Lead to the one thing Vitana always
+            // has: the user's current standing / where they left off.
             const _safePrompt =
-              `Open with EXACTLY ONE short phrase, picked from this menu and used VERBATIM ` +
-              `(already in the user's language): ${_menu}. Do NOT say "Hello" or the user's name. ` +
-              `Do NOT introduce yourself. NEVER use two-part sentences. Speak it as audio.`;
+              `Open with EXACTLY ONE short, warm sentence that LEADS the user to look at where they currently stand (their overview / where they left off). ` +
+              `Do NOT say "Hello" or the user's name. Do NOT introduce yourself. Do NOT ask what they'd like or how you can help. ` +
+              `NEVER use a vague teaser like "let me show you your next step". NEVER use two-part sentences. Speak it as audio in the user's language.`;
             ws.send(
               JSON.stringify({
                 client_content: { turns: [{ role: 'user', parts: [{ text: _safePrompt }] }], turn_complete: true },
@@ -8006,20 +8006,20 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
   // These remain only as the legacy fallback for sessions with no awareness.
   // "What can I do for you?" removed — it's on the FORBIDDEN OPENINGS list now.
   const greetingPrompts: Record<string, string> = {
-    'en': 'Open with ONE single short phrase that LEADS — propose the next move, never ask the user\'s preference. NEVER use two-part sentences with dashes. Do NOT say "Hello", "Hi", or the user\'s name. Do NOT introduce yourself. If your system instruction\'s OPENING SHAPE MATRIX provides a Proactive Opener Candidate, USE IT. Otherwise pick ONE of: "Let me show you where we are." / "Let me show you your next step." / "I am listening." / "Let\'s keep going.". NEVER "How can I help?" / "What would you like?". Vary across sessions.',
-    'de': 'Beginne mit EINER einzelnen kurzen Aussage, die FÜHRT — schlage den nächsten Schritt vor, frage nie nach der Vorliebe des Benutzers. NIEMALS zweiteilige Sätze mit Gedankenstrichen. Sage KEIN "Hallo", kein "Hi" und nicht den Namen des Benutzers. Stelle dich NICHT vor. Wenn die OPENING SHAPE MATRIX in deinem System-Prompt einen Proactive Opener Candidate enthält, NUTZE IHN. Ansonsten wähle EINE: "Lass mich dir zeigen, wo wir stehen." / "Lass mich dir den nächsten Schritt zeigen." / "Ich höre dir zu." / "Lass uns weitermachen.". NIEMALS "Womit kann ich helfen?" / "Was möchtest du?". Variiere zwischen Sitzungen.',
+    'en': 'Open with ONE single short phrase that LEADS — propose the next move, never ask the user\'s preference. NEVER use two-part sentences with dashes. Do NOT say "Hello", "Hi", or the user\'s name. Do NOT introduce yourself. If your system instruction\'s OPENING SHAPE MATRIX provides a Proactive Opener Candidate, USE IT. Otherwise pick ONE of: "Let me show you where we are." / "Let\'s look at where you stand." / "I am listening." / "Let\'s keep going.". NEVER "How can I help?" / "What would you like?". Vary across sessions.',
+    'de': 'Beginne mit EINER einzelnen kurzen Aussage, die FÜHRT — schlage den nächsten Schritt vor, frage nie nach der Vorliebe des Benutzers. NIEMALS zweiteilige Sätze mit Gedankenstrichen. Sage KEIN "Hallo", kein "Hi" und nicht den Namen des Benutzers. Stelle dich NICHT vor. Wenn die OPENING SHAPE MATRIX in deinem System-Prompt einen Proactive Opener Candidate enthält, NUTZE IHN. Ansonsten wähle EINE: "Lass mich dir zeigen, wo wir stehen." / "Schauen wir, wo du gerade stehst." / "Ich höre dir zu." / "Lass uns weitermachen.". NIEMALS "Womit kann ich helfen?" / "Was möchtest du?". Variiere zwischen Sitzungen.',
     // VTID-03273 Pillar D (Codex review fix): FR/ES/AR/ZH/RU/SR were never
     // migrated to the VTID-03271 lead doctrine and still offered forbidden
     // preference questions ("En quoi puis-je aider ?", "¿En qué puedo
     // ayudar?", "Како могу да помогнем?"). The quality-guard downgrade routes
     // rejected openers HERE, so this fallback itself must obey the doctrine:
     // lead with the next move, never ask the user's preference.
-    'fr': 'Commence par UNE seule courte phrase qui MÈNE — propose la prochaine étape, ne demande jamais la préférence de l\'utilisateur. JAMAIS de phrases en deux parties avec des tirets. Ne dis PAS "Bonjour" ni le prénom. Ne te présente PAS. Si l\'OPENING SHAPE MATRIX de ton instruction système fournit un Proactive Opener Candidate, UTILISE-LE. Sinon choisis UNE : "Laisse-moi te montrer où nous en sommes." / "Laisse-moi te montrer ta prochaine étape." / "Je t\'écoute." / "On continue.". JAMAIS "En quoi puis-je aider ?" / "Que puis-je faire pour vous ?". Varie entre les sessions.',
-    'es': 'Comienza con UNA sola frase corta que LIDERA — propone el siguiente paso, nunca preguntes la preferencia del usuario. NUNCA frases de dos partes con guiones. NO digas "Hola" ni el nombre del usuario. NO te presentes. Si la OPENING SHAPE MATRIX de tu instrucción de sistema ofrece un Proactive Opener Candidate, ÚSALO. Si no, elige UNA: "Déjame mostrarte dónde estamos." / "Déjame mostrarte tu siguiente paso." / "Te escucho." / "Sigamos.". NUNCA "¿En qué puedo ayudar?" / "¿Qué necesitas?". Varía entre sesiones.',
-    'ar': 'ابدأ بعبارة واحدة قصيرة تقود — اقترح الخطوة التالية، ولا تسأل المستخدم أبداً عن تفضيله. لا تستخدم جملاً من جزأين. لا تقل "مرحبا" أو اسم المستخدم. لا تقدم نفسك. إذا وفرت OPENING SHAPE MATRIX مرشحاً استباقياً فاستخدمه. وإلا اختر واحدة: "دعني أريك أين وصلنا." / "دعني أريك خطوتك التالية." / "أنا أستمع." / "لنواصل.". أبداً "كيف يمكنني المساعدة؟"',
-    'zh': '用一句简短、引导性的话开场——提出下一步，绝不询问用户的偏好。不要使用两部分的句子。不要说"你好"或用户名字。不要自我介绍。如果系统指令的 OPENING SHAPE MATRIX 提供了主动开场候选，请使用它。否则选一个："让我带你看看我们的进展。" / "让我带你看看你的下一步。" / "我在听。" / "我们继续。"。绝不说"有什么我可以帮忙的？"',
-    'ru': 'Начни с ОДНОЙ короткой фразы, которая ВЕДЁТ — предложи следующий шаг, никогда не спрашивай предпочтение пользователя. НИКОГДА не используй двухчастные предложения с тире. НЕ говори "Здравствуйте" или имя пользователя. НЕ представляйся. Если OPENING SHAPE MATRIX в системной инструкции даёт Proactive Opener Candidate — ИСПОЛЬЗУЙ ЕГО. Иначе выбери одну: "Давай покажу, где мы остановились." / "Давай покажу твой следующий шаг." / "Я слушаю." / "Продолжаем.". НИКОГДА "Чем могу помочь?" / "Что вас интересует?"',
-    'sr': 'Почни са ЈЕДНОМ кратком реченицом која ВОДИ — предложи следећи корак, никад не питај корисника шта жели. НИКАД не користи дводелне реченице са цртама. НЕ говори "Здраво" или име корисника. НЕ представљај се. Ако OPENING SHAPE MATRIX у системској инструкцији нуди Proactive Opener Candidate — КОРИСТИ ГА. Иначе изабери једну: "Да ти покажем докле смо стигли." / "Да ти покажем твој следећи корак." / "Слушам те." / "Настављамо.". НИКАД "Како могу да помогнем?" / "Шта те занима?"',
+    'fr': 'Commence par UNE seule courte phrase qui MÈNE — propose la prochaine étape, ne demande jamais la préférence de l\'utilisateur. JAMAIS de phrases en deux parties avec des tirets. Ne dis PAS "Bonjour" ni le prénom. Ne te présente PAS. Si l\'OPENING SHAPE MATRIX de ton instruction système fournit un Proactive Opener Candidate, UTILISE-LE. Sinon choisis UNE : "Laisse-moi te montrer où nous en sommes." / "Voyons où tu en es." / "Je t\'écoute." / "On continue.". JAMAIS "En quoi puis-je aider ?" / "Que puis-je faire pour vous ?". Varie entre les sessions.',
+    'es': 'Comienza con UNA sola frase corta que LIDERA — propone el siguiente paso, nunca preguntes la preferencia del usuario. NUNCA frases de dos partes con guiones. NO digas "Hola" ni el nombre del usuario. NO te presentes. Si la OPENING SHAPE MATRIX de tu instrucción de sistema ofrece un Proactive Opener Candidate, ÚSALO. Si no, elige UNA: "Déjame mostrarte dónde estamos." / "Veamos dónde estás." / "Te escucho." / "Sigamos.". NUNCA "¿En qué puedo ayudar?" / "¿Qué necesitas?". Varía entre sesiones.',
+    'ar': 'ابدأ بعبارة واحدة قصيرة تقود — اقترح الخطوة التالية، ولا تسأل المستخدم أبداً عن تفضيله. لا تستخدم جملاً من جزأين. لا تقل "مرحبا" أو اسم المستخدم. لا تقدم نفسك. إذا وفرت OPENING SHAPE MATRIX مرشحاً استباقياً فاستخدمه. وإلا اختر واحدة: "دعني أريك أين وصلنا." / "لنرَ أين وصلت." / "أنا أستمع." / "لنواصل.". أبداً "كيف يمكنني المساعدة؟"',
+    'zh': '用一句简短、引导性的话开场——提出下一步，绝不询问用户的偏好。不要使用两部分的句子。不要说"你好"或用户名字。不要自我介绍。如果系统指令的 OPENING SHAPE MATRIX 提供了主动开场候选，请使用它。否则选一个："让我带你看看我们的进展。" / "我们来看看你目前的情况。" / "我在听。" / "我们继续。"。绝不说"有什么我可以帮忙的？"',
+    'ru': 'Начни с ОДНОЙ короткой фразы, которая ВЕДЁТ — предложи следующий шаг, никогда не спрашивай предпочтение пользователя. НИКОГДА не используй двухчастные предложения с тире. НЕ говори "Здравствуйте" или имя пользователя. НЕ представляйся. Если OPENING SHAPE MATRIX в системной инструкции даёт Proactive Opener Candidate — ИСПОЛЬЗУЙ ЕГО. Иначе выбери одну: "Давай покажу, где мы остановились." / "Давай посмотрим, где ты сейчас." / "Я слушаю." / "Продолжаем.". НИКОГДА "Чем могу помочь?" / "Что вас интересует?"',
+    'sr': 'Почни са ЈЕДНОМ кратком реченицом која ВОДИ — предложи следећи корак, никад не питај корисника шта жели. НИКАД не користи дводелне реченице са цртама. НЕ говори "Здраво" или име корисника. НЕ представљај се. Ако OPENING SHAPE MATRIX у системској инструкцији нуди Proactive Opener Candidate — КОРИСТИ ГА. Иначе изабери једну: "Да ти покажем докле смо стигли." / "Да видимо где си сада." / "Слушам те." / "Настављамо.". НИКАД "Како могу да помогнем?" / "Шта те занима?"',
   };
 
   let prompt = greetingPrompts[lang] || greetingPrompts['en'];
@@ -8063,21 +8063,28 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
     // LANGUAGE. Without this, Gemini consistently picks the first English
     // example and literal-translates it, producing the same German line
     // every single reopen ("Was kann ich für dich tun?").
-    const shortGapMenu = pickShortGapGreetings(lang, 6);
-    const menuList = shortGapMenu.map(p => `"${p}"`).join(', ');
+    // BOOTSTRAP-ORB-NO-VAGUE-GREETING: short-gap reopens previously injected a
+    // hard-coded "use VERBATIM" menu of content-free lines ("let me show you
+    // your next step" / "zum nächsten Schritt führen"). That pool was the proven
+    // source of the banned greeting the user kept hearing on quick reopens (and
+    // of the deflecting "how can I help?" preference question). Lead with the
+    // CONCRETE next step from the journey context the system instruction already
+    // carries (Proactive Opener Candidate / guided-journey next step), exactly as
+    // the new-day buckets below do — minus the formal greeting, since the user
+    // was just here.
 
     if (temporal.wasFailure && (temporal.bucket === 'reconnect' || temporal.bucket === 'recent')) {
-      prompt = `Say exactly: "Sorry about that. How can I help?" ONE short phrase only. Do NOT say "Hello" or the user's name.${screenHint}`;
+      prompt = `The previous attempt failed to reach the user. Open with ONE short sentence: briefly acknowledge ("Sorry about that.") and then LEAD with the concrete next step from your context. Do NOT say "Hello" or the user's name. Do NOT ask what they'd like or how you can help.${screenHint}`;
     } else {
       switch (temporal.bucket) {
         case 'reconnect':
-          prompt = `You were JUST talking to the user ${temporal.timeAgo}. Do NOT greet. Do NOT say "Hello" or the user's name. Open with EXACTLY ONE short phrase, picked from this menu and used VERBATIM (these are already in the user's language): ${menuList}. Pick a different one than last time. NEVER use two-part sentences.${screenHint}`;
+          prompt = `You were JUST talking to the user ${temporal.timeAgo}. Do NOT greet, do NOT say "Hello" or the user's name, do NOT ask what they'd like or how you can help. Open with EXACTLY ONE short sentence that LEADS with the concrete next step from your context — use the Proactive Opener Candidate / guided-journey next step in your system instruction and NAME it specifically. NEVER a vague teaser like "let me show you your next step". NEVER a two-part sentence.${screenHint}`;
           break;
         case 'recent':
-          prompt = `You were just talking to the user ${temporal.timeAgo}. Do NOT use a formal greeting. Do NOT say the user's name. Open with EXACTLY ONE short phrase, picked from this menu and used VERBATIM (already in the user's language): ${menuList}. Vary across sessions. NEVER use two-part sentences.${screenHint}`;
+          prompt = `You were just talking to the user ${temporal.timeAgo}. Do NOT use a formal greeting, do NOT say the user's name, do NOT ask what they'd like or how you can help. Open with EXACTLY ONE short sentence that LEADS with the concrete next step from your context — use the Proactive Opener Candidate / guided-journey next step and NAME it specifically. NEVER a vague teaser like "let me show you your next step". NEVER a two-part sentence.${screenHint}`;
           break;
         case 'same_day':
-          prompt = `The user was here ${temporal.timeAgo}. Do NOT say the user's name. Open with EXACTLY ONE short phrase, picked from this menu and used VERBATIM (already in the user's language): ${menuList}. Vary across sessions. NEVER use two-part sentences.${screenHint}`;
+          prompt = `The user was here ${temporal.timeAgo}. Do NOT say the user's name, do NOT ask what they'd like or how you can help. Open with EXACTLY ONE short sentence that LEADS with the concrete next step from your context — use the Proactive Opener Candidate / guided-journey next step and NAME it specifically. NEVER a vague teaser like "let me show you your next step". NEVER a two-part sentence.${screenHint}`;
           break;
         // VTID-01927/VTID-01929: For new-day buckets, defer to the OPENING
         // SHAPE MATRIX in the system instruction (which has the tenure-aware
@@ -8296,25 +8303,25 @@ function sendReconnectRecoveryPromptToLiveAPI(ws: WebSocket, session: GeminiLive
       thinking: "Sorry, we lost the connection for a moment. You were asking about <PARAPHRASE THE USER'S LAST TURN IN 3-6 WORDS>. Here's the answer:",
       listening_user_speaking: "Sorry, we lost the connection mid-sentence. You were saying <PARAPHRASE THEIR PARTIAL UTTERANCE IN 3-6 WORDS> — go on, I'm listening.",
       speaking: "Sorry, we lost the connection while I was answering. Let me continue:",
-      idle: "I'm back. Let me show you your next step."
+      idle: "I'm back — let's look at where you stand."
     },
     de: {
       thinking: "Entschuldige, die Verbindung war kurz weg. Du hast nach <PARAPHRASIERE DEN LETZTEN BEITRAG IN 3-6 WORTEN> gefragt. Hier ist die Antwort:",
       listening_user_speaking: "Entschuldige, die Verbindung war kurz weg, während du gesprochen hast. Du warst gerade bei <PARAPHRASIERE DAS UNTERBROCHENE THEMA IN 3-6 WORTEN> — sprich ruhig weiter, ich höre zu.",
       speaking: "Entschuldige, die Verbindung war kurz weg, während ich geantwortet habe. Ich mache weiter:",
-      idle: "Ich bin wieder da. Lass mich dir den nächsten Schritt zeigen."
+      idle: "Ich bin wieder da — schauen wir, wo du gerade stehst."
     },
     fr: {
       thinking: "Désolé, la connexion a sauté un instant. Vous me demandiez à propos de <PARAPHRASEZ EN 3-6 MOTS>. Voici la réponse :",
       listening_user_speaking: "Désolé, la connexion a sauté en plein milieu. Vous étiez en train de parler de <PARAPHRASEZ EN 3-6 MOTS> — continuez, je vous écoute.",
       speaking: "Désolé, la connexion a sauté pendant que je répondais. Je continue :",
-      idle: "Je suis de retour. De quoi voulez-vous parler ?"
+      idle: "Je suis de retour — voyons où tu en es."
     },
     es: {
       thinking: "Perdón, se cortó la conexión un momento. Estabas preguntando sobre <PARAFRASEA EN 3-6 PALABRAS>. Aquí va la respuesta:",
       listening_user_speaking: "Perdón, se cortó la conexión mientras hablabas. Estabas comentando sobre <PARAFRASEA EN 3-6 PALABRAS> — sigue, te escucho.",
       speaking: "Perdón, se cortó la conexión mientras yo respondía. Continúo:",
-      idle: "Estoy de vuelta. ¿De qué quieres hablar?"
+      idle: "Estoy de vuelta — veamos dónde estás."
     }
   };
 
