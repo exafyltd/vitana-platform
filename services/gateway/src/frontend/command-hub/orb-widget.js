@@ -142,16 +142,7 @@
     // binary-framed JSON both ways, no per-chunk HTTP overhead, no
     // cross-instance 404 class). Opt-in via init({transport:'ws'}) or
     // localStorage 'vtorb.transport'='ws' for staging verification.
-    transport: 'sse',
-    // ORB-FAST-START Phase 4: play a cached "I'm here."/"Ich bin da." in
-    // Vitana's voice the instant the orb is tapped, so the user hears Vitana
-    // immediately instead of 7-10s of silence while context + the Live model
-    // spin up. Default OFF. Enable via init({ wakeCue: true }) or, for staging
-    // verification, localStorage 'vtorb.wakecue'='on' (mirrors transport).
-    // It is a LOCAL UI cue only — never sent to the backend transcript, never
-    // writes memory, never advances Journey / Teacher / wake-brief; it stops
-    // the instant Vitana's real greeting audio begins.
-    wakeCue: false
+    transport: 'sse'
   };
 
   var _s = {
@@ -631,10 +622,6 @@
   // Catalog of MP3 clips rendered by services/gateway/scripts/render-orb-alert-clips.ts.
   // Re-render that script if you change the wording of any label above.
   var _ALERT_CLIPS = [
-    // ORB-FAST-START Phase 4: preloaded alongside the alert clips so the wake
-    // cue plays instantly on tap. Absent MP3 (not yet rendered) → fetch 404 →
-    // clip simply not loaded → _playWakeCue no-ops (graceful, no error tone).
-    'wake-cue-en', 'wake-cue-de',
     'disconnect-mic-en', 'disconnect-mic-de',
     'disconnect-network-en', 'disconnect-network-de',
     'disconnect-connection-en', 'disconnect-connection-de',
@@ -700,19 +687,6 @@
       if (o === 'sse') return false;
     } catch (e) { /* storage blocked — fall through to config */ }
     return _cfg.transport === 'ws';
-  }
-
-  // ORB-FAST-START Phase 4: should the cached wake cue play on tap?
-  // DEV-COMHU-0513: DISABLED per product decision. The instant cached "Ich bin
-  // da."/"I'm here." clip is a DIFFERENT voice from the real Live (voice-to-
-  // voice) greeting, so it lands as jarring/irritating rather than helpful — and
-  // with the fast-greeting work the real greeting now arrives in ~2s anyway, so
-  // the stop-gap cue is no longer needed. Hard-off here (ignores init({wakeCue})
-  // and any leftover localStorage 'vtorb.wakecue'='on') so it never plays on any
-  // surface. The chime (tone, not speech) is unaffected. To re-enable, restore
-  // the original flag check below.
-  function _useWakeCue() {
-    return false;
   }
 
   // BOOTSTRAP-ORB-LATENCY-PHASE3: tear down the WS transport (idempotent).
@@ -1167,6 +1141,33 @@
     // acks its new session_id, forcing the greeting gate to the 3s timeout.
     _s._audioReadySignaled = false;
 
+    // DEV-COMHU-ORB-AUDIO-FIRST-GREETING: unlock the playback AudioContext
+    // SYNCHRONOUSLY, before ANY await in this function. On mobile (iOS/Android)
+    // the user-gesture activation token is consumed by the first await — and the
+    // continuity fetch below awaited BEFORE this unlock, so the silent-buffer
+    // unlock + resume() landed OUTSIDE the gesture window, the context stayed
+    // suspended, and the FIRST greeting's PCM was dropped (the second press
+    // worked because the context was already running). Creating + unlocking here,
+    // ahead of the fetch, restores the in-gesture guarantee. Idempotent: reuses
+    // an existing, non-closed context on later presses.
+    if (!_s.playbackCtx || _s.playbackCtx.state === 'closed') {
+      _s.playbackCtx = new (window.AudioContext || window.webkitAudioContext)();
+    }
+    try {
+      var _silentUnlock = _s.playbackCtx.createBuffer(1, 1, 22050);
+      var _silentUnlockSrc = _s.playbackCtx.createBufferSource();
+      _silentUnlockSrc.buffer = _silentUnlock;
+      _silentUnlockSrc.connect(_s.playbackCtx.destination);
+      _silentUnlockSrc.start(0);
+    } catch (e) {
+      console.warn('[VTOrb] silent-buffer iOS unlock failed:', e && e.message);
+    }
+    if (_s.playbackCtx.state === 'suspended') {
+      _s.playbackCtx.resume().catch(function (e) {
+        console.warn('[VTOrb] playbackCtx resume rejected at session start:', e && e.message);
+      });
+    }
+
     // DEV-COMHU-0503 (review fix): hydrate persisted continuity on a fresh
     // reopen. _hide() persisted continuity then _sessionStop cleared the
     // in-memory fields, so without this the reconnect-context builder below
@@ -1218,49 +1219,12 @@
     _s.navigationPending = false;
     _s.signupClosing = false;
 
-    // BOOTSTRAP-ORB-IOS-UNLOCK: Create playback AudioContext inside the user
-    // gesture (critical for iOS — creating later or resuming later is
-    // unreliable across awaits). Also play a 1-sample silent buffer
-    // immediately: this is the canonical iOS unlock primitive. The chime
-    // below used to be the de-facto unlock but it fires *after* the fetch
-    // below on slower devices, losing the gesture window.
-    if (!_s.playbackCtx || _s.playbackCtx.state === 'closed') {
-      _s.playbackCtx = new (window.AudioContext || window.webkitAudioContext)();
-    }
-    try {
-      var _silent = _s.playbackCtx.createBuffer(1, 1, 22050);
-      var _silentSrc = _s.playbackCtx.createBufferSource();
-      _silentSrc.buffer = _silent;
-      _silentSrc.connect(_s.playbackCtx.destination);
-      _silentSrc.start(0);
-    } catch (e) {
-      console.warn('[VTOrb] silent-buffer iOS unlock failed:', e && e.message);
-    }
-    if (_s.playbackCtx.state === 'suspended') {
-      _s.playbackCtx.resume().catch(function (e) {
-        console.warn('[VTOrb] playbackCtx resume rejected at session start:', e && e.message);
-      });
-    }
-
-    // Play activation chime immediately
+    // BOOTSTRAP-ORB-IOS-UNLOCK: the playback AudioContext create + 1-sample
+    // silent-buffer unlock + resume() was MOVED UP to before the continuity
+    // fetch above (DEV-COMHU-ORB-AUDIO-FIRST-GREETING) — it MUST run before any
+    // await so the mobile gesture window is not lost. The ctx is already unlocked
+    // by here; just play the activation chime into it.
     _playChime(_s.playbackCtx);
-
-    // ORB-FAST-START Phase 4: instant cached wake cue. Right after the chime,
-    // inside the user gesture, play Vitana's pre-rendered "I'm here."/"Ich bin
-    // da." so the user hears Vitana within ~1s instead of waiting 7-10s for the
-    // Live model's first token. This is a LOCAL UI cue only — it is NOT a
-    // transcript turn, writes no memory, and does not touch Journey / Teacher /
-    // wake-brief state. It is interruptible: stopped the instant the real
-    // greeting audio arrives (see the audio_out handler). No-ops gracefully if
-    // the clip isn't loaded (flag off, or MP3 not yet rendered/committed).
-    _s._wakeCueSrc = null;
-    if (_useWakeCue()) {
-      try {
-        _s._wakeCueSrc = _playAlert('wake-cue-' + _pickLang());
-      } catch (e) {
-        _s._wakeCueSrc = null;
-      }
-    }
 
     // VTID-02710: keep the ctx warm until the first Gemini audio arrives.
     // The chime ends ~400 ms after this call; without an active source after
@@ -1603,13 +1567,6 @@
     // the session ended before any audio arrived) before closing the ctx.
     _stopCtxKeepAlive();
 
-    // ORB-FAST-START Phase 4: stop the cached wake cue if it's still playing
-    // (user closed before the greeting arrived) so it doesn't tail past close.
-    if (_s._wakeCueSrc) {
-      try { _s._wakeCueSrc.stop(0); } catch (e) { /* already ended */ }
-      _s._wakeCueSrc = null;
-    }
-
     // Stop playback
     if (_s.playbackCtx) { _s.playbackCtx.close().catch(function () {}); _s.playbackCtx = null; }
 
@@ -1760,12 +1717,6 @@
           if (!_s.greetingAudioReceived) {
             _s.greetingAudioReceived = true;
             clearTimeout(_s.stuckGuardTimer);
-            // ORB-FAST-START Phase 4: Vitana's real greeting is taking over —
-            // stop the cached wake cue so the two never overlap.
-            if (_s._wakeCueSrc) {
-              try { _s._wakeCueSrc.stop(0); } catch (e) { /* already ended */ }
-              _s._wakeCueSrc = null;
-            }
             // VTID-02710: real audio is taking over — release the keep-alive
             // pump so it doesn't quietly waste cycles for the rest of the
             // session.

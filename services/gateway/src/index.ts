@@ -199,6 +199,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const longevityRouter = require('./routes/longevity').default;
   // VTID-01900: Longevity News Feed — curated RSS sources
   const longevityNewsRouter = require('./routes/longevity-news').default;
+  // VTID-03319: News Feed — consent-gated community spotlight (most improved)
+  const newsFeedRouter = require('./routes/news-feed').default;
   // VTID-01120: D28 Emotional & Cognitive Signal Interpretation Engine
   const emotionalCognitiveRouter = require('./routes/emotional-cognitive').default;
   // VTID-01084: Community Personalization v1 - longevity-focused groups/meetups
@@ -1049,6 +1051,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
 
   // VTID-01900: Longevity News Feed — curated RSS sources
   mountRouterSync(app, '/api/v1/longevity-news', longevityNewsRouter, { owner: 'longevity-news' });
+
+  // VTID-03319: News Feed — consent-gated community spotlight
+  mountRouterSync(app, '/api/v1/news-feed', newsFeedRouter, { owner: 'news-feed' });
 
   // VTID-01120: D28 Emotional & Cognitive Signal Interpretation Engine
   mountRouterSync(app, '/api/v1/signals', emotionalCognitiveRouter, { owner: 'emotional-cognitive' });

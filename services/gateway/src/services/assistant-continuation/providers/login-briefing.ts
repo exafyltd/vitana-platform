@@ -76,6 +76,13 @@ const MATERIAL_INDEX_DELTA = 5;
  * it would feel like nagging rather than understanding (VTID-03307 / advice #1).
  */
 const MATERIAL_PILLAR_DROP = 3;
+/**
+ * BOOTSTRAP-ORB-GREETING-RETURNING-USER (fix #2): if the user's previous ORB
+ * session was within this window, the fast proactive opener stays silent and
+ * lets the wake-brief path handle turn 1 (brief-resume/skip). Mirrors the
+ * 15-minute greet-once cap in greeting-policy.ts (RECENT_GREETING_WINDOW_MS).
+ */
+const FAST_OPENER_GREET_ONCE_WINDOW_MS = 15 * 60 * 1000;
 
 export interface LoginBriefingInputs {
   supabase: SupabaseClient;
@@ -109,6 +116,13 @@ export interface BriefingFacts {
   nextSessionNumber: number;
   /** Title of the next session, when the published checklist resolved it. */
   nextSessionTitle: string | null;
+  /**
+   * Title of the LAST session the user actually did — the concrete "where we
+   * left off" the greeting RECALLS ("last time we were on X"). Null for a user
+   * with no completed session yet (then we never claim a recall). Grounds the
+   * continuity promise so it is real, not a bluff the user calls.
+   */
+  lastSessionTitle?: string | null;
   /** Onboarding lifecycle from the guided-journey state. */
   graduated: boolean;
   /** True when the user has set a Life Compass primary goal. */
@@ -137,12 +151,31 @@ export interface BriefingFacts {
    */
   topicsLearned?: number | null;
   topicsTotal?: number | null;
+  /**
+   * BOOTSTRAP-ORB-GREETING-RETURNING-USER — true when the user has ANY prior
+   * ORB conversation on record (`user_journey.is_first_session === false` OR a
+   * non-null `last_session_date`). This is the real "have we met before?"
+   * signal. Previously the briefing inferred first-timer status SOLELY from the
+   * guided-curriculum pointer (`current_session`), which only advances when the
+   * user walks the formal teaching topics — so a member who talks to Vitana
+   * conversationally was permanently classified as a first-timer and greeted
+   * with the one-time onboarding opener on EVERY session. Optional so existing
+   * fixtures/callers degrade cleanly to the old behavior. */
+  hasPriorSession?: boolean;
 }
 
 /** Pick the state purely from the gathered facts. Exported for tests. */
 export function pickBriefingState(f: BriefingFacts): BriefingState {
   if (f.graduated) return 'graduated';
-  if (f.sessionsCompleted <= 0) return 'orient';
+  // BOOTSTRAP-ORB-GREETING-RETURNING-USER: a genuine first-timer is someone we
+  // have NO record of — not merely someone whose guided-curriculum pointer is
+  // still 1. Any prior ORB conversation (hasPriorSession) proves an established
+  // user who must NEVER hear the one-time "let's take your first step together"
+  // onboarding opener. Only fall to 'orient' when the curriculum shows no
+  // progress AND we have no record of a prior session. (hasGoal/indexDeltaUp are
+  // intentionally NOT part of this gate — 'orient' historically keys on session
+  // progress, and a goal alone does not make someone a returning user.)
+  if (f.sessionsCompleted <= 0 && f.hasPriorSession !== true) return 'orient';
   if (f.daysSinceLastSession !== null && f.daysSinceLastSession >= RETURN_GAP_DAYS) {
     return 'returning';
   }
@@ -516,14 +549,24 @@ export function makeLoginBriefingProvider(
           ? primaryGoalRaw.trim()
           : null;
 
+      // BOOTSTRAP-ORB-GREETING-RETURNING-USER: established-user signal from the
+      // user_journey row (see gatherBriefingFactsForFastOpener for rationale).
+      const hasPriorSession =
+        !!userJourney && (userJourney.is_first_session === false || userJourney.last_session_date != null);
+
       const facts: BriefingFacts = {
         sessionsCompleted,
         nextSessionNumber: currentSession,
         nextSessionTitle,
+        // Recall the session the user most recently heard = current_session
+        // (narrate persists it as the just-played session), only when they have
+        // actually completed a topic. See the fast-gather note.
+        lastSessionTitle: topicsLearned > 0 ? nextSessionTitle : null,
         graduated,
         hasGoal: !!primaryGoalLabel,
         indexDeltaUp,
         daysSinceLastSession,
+        hasPriorSession,
         // Advice #1 — understood weakness: the pillar that slipped this week
         // (from the Index snapshot's per-pillar last_movement) + the goal it
         // ties to. Both degrade to null so the briefing is unaffected when the
@@ -618,4 +661,233 @@ function readWeakestPillarDrop(snap: unknown): { pillar: PillarKey; deltaDown: n
   if (delta === null || delta >= 0 || pillar === null) return null;
   if (!PILLAR_KEYS.includes(pillar as PillarKey)) return null;
   return { pillar: pillar as PillarKey, deltaDown: Math.abs(Math.round(delta)) };
+}
+
+// ---------------------------------------------------------------------------
+// FAST-PATH PROACTIVE OPENER (DEV-COMHU-0513 — proactive greeting on the fast
+// path). The SAFE-FAST greeting fires BEFORE the heavy wake-brief context (and
+// thus the full renderBriefingLine opener) is ready, so it used to speak a
+// generic SHORT_GAP phrase ("Lass uns weitermachen"). These helpers compute a
+// SHORT but genuinely PROACTIVE opener from a fast parallel pre-fetch, so the
+// fast path can speak it instead. Deliberately ~2 short sentences: long
+// greetings make Gemini Live stall → NO audio (see orb-live.ts:7400), so the
+// full weakness/progress richness flows in the NEXT turn, not the opener.
+// ---------------------------------------------------------------------------
+
+/**
+ * Build a short, proactive fast-path opener: salutation + name + exactly ONE
+ * concrete next-step / weakness lead. Always a PROPOSAL + lead (RULE 0), never a
+ * passive question. Pure; exported for tests.
+ */
+/**
+ * Build a short, proactive fast-path opener: salutation + name + exactly ONE
+ * concrete next-step / weakness lead. Always a PROPOSAL + lead (RULE 0), never a
+ * passive question. FLEXIBLE WORDING — each state draws from a small pool via
+ * `rng`, so the greeting is NEVER the identical sentence twice (no hard-coded
+ * line). Pure; exported for tests.
+ */
+export function buildFastProactiveOpener(args: RenderArgs, rng: () => number = Math.random): string {
+  const de = args.lang === 'de';
+  const prefix = salutationPrefix(args.lang, args.salutation, args.firstName);
+  const f = args.facts;
+  const state = pickBriefingState(f);
+
+  // Priority of the single proactive beat: weakness > graduated > orient > continue.
+  const drop = f.weakestPillarDrop;
+  if (drop && drop.deltaDown >= MATERIAL_PILLAR_DROP) {
+    const pillar = pillarLabelLocalized(args.lang, drop.pillar);
+    const pool = de
+      ? [
+          `Dein Bereich ${pillar} ist diese Woche gesunken — lass uns das gemeinsam umkehren, ich zeige dir den ersten Schritt.`,
+          `Mir ist aufgefallen, dass ${pillar} diese Woche nachgelassen hat — lass uns da gemeinsam ansetzen, ich begleite dich.`,
+          `Bei ${pillar} ist diese Woche etwas Luft nach oben — packen wir das zusammen an, ich gehe mit dir den ersten Schritt.`,
+        ]
+      : [
+          `Your ${pillar} slipped this week — let's turn it around together, I'll show you the first step.`,
+          `I noticed ${pillar} dipped this week — let's pick it back up together, I'll walk with you.`,
+          `There's room to lift your ${pillar} this week — let's tackle it together, I'll take the first step with you.`,
+        ];
+    return [prefix, pickFromPool(pool, rng)].join(' ');
+  }
+  if (state === 'graduated') {
+    const pool = de
+      ? [
+          'Du hast schon viel erreicht — lass uns eine Stufe tiefer gehen, ich zeige dir den nächsten Schritt.',
+          'Stark, wie weit du gekommen bist — lass uns gemeinsam tiefer einsteigen, ich begleite dich.',
+          'Die Grundlagen sitzen — jetzt gehen wir gemeinsam in die Tiefe, ich nehme dich mit.',
+        ]
+      : [
+          "You've come a long way — let's go one level deeper, I'll show you the next step.",
+          "Great how far you've come — let's dig deeper together, I'll be right with you.",
+          "The foundations are solid — now let's go deeper together, I'll take you there.",
+        ];
+    return [prefix, pickFromPool(pool, rng)].join(' ');
+  }
+  if (state === 'orient') {
+    // First-time / no progress. Propose a CONCRETE, deliverable next step (goal,
+    // Index, first move) — VARIED, warm, proactive. We do NOT pitch a fixed
+    // "guided journey session" here (it would repeat verbatim and, when the
+    // curriculum is empty, dead-end).
+    const pool = de
+      ? [
+          'Schön, dass du da bist! Lass uns gemeinsam dein persönliches Ziel setzen — das gibt deinem Weg eine klare Richtung.',
+          'Willkommen! Lass uns mit deinem Vitana Index beginnen — ich zeige dir, wo du gerade stehst.',
+          'Schön, dich zu hören! Lass uns deinen ersten Schritt gemeinsam machen — ich begleite dich dabei.',
+        ]
+      : [
+          "Good to have you here! Let's set your personal goal together — it gives your path a clear direction.",
+          "Welcome! Let's start with your Vitana Index — I'll show you where you stand right now.",
+          "Lovely to hear you! Let's take your first step together — I'll be right there with you.",
+        ];
+    return [prefix, pickFromPool(pool, rng)].join(' ');
+  }
+  // building / momentum / returning → RECALL the actual last session (grounded
+  // "where we left off" the user can verify), THEN continue at the next step.
+  // When there is no real last session to name, we DON'T fake a recall — we just
+  // lead to the next step (no bluff the user can call).
+  const recall = f.lastSessionTitle
+    ? de
+      ? `Letztes Mal ging es um „${f.lastSessionTitle}". `
+      : `Last time we were on "${f.lastSessionTitle}". `
+    : '';
+  // When we just named the session in the recall, continue "there" rather than
+  // repeating the same title; otherwise name the next step.
+  const where = recall
+    ? de
+      ? 'da'
+      : 'there'
+    : f.nextSessionTitle
+      ? de
+        ? `bei „${f.nextSessionTitle}"`
+        : `with "${f.nextSessionTitle}"`
+      : de
+        ? 'bei deinem nächsten Schritt'
+        : 'with your next step';
+  const pool = de
+    ? [
+        `${recall}Lass uns ${where} weitermachen — ich führe dich.`,
+        `${recall}Knüpfen wir ${where} an — ich nehme dich mit.`,
+        `${recall}Lass uns ${where} weitermachen, ich begleite dich.`,
+      ]
+    : [
+        `${recall}Let's continue ${where} — I'll guide you.`,
+        `${recall}Let's pick up ${where} — I'll walk with you.`,
+        `${recall}Let's get right back to it ${where} — I'll take you there.`,
+      ];
+  return [prefix, pickFromPool(pool, rng)].join(' ');
+}
+
+/**
+ * Fast, parallel gather of the BriefingFacts the fast proactive opener needs.
+ * Mirrors the provider's reads but standalone so the SAFE-FAST greeting path can
+ * compute a proactive line within its bounded window. Fail-open: any read
+ * failure degrades that fact to a safe default; the opener still renders.
+ */
+export async function gatherBriefingFactsForFastOpener(
+  supabase: SupabaseClient,
+  userId: string,
+  lang: string,
+  nowMs: number,
+  timezone: string | null,
+): Promise<BriefingFacts> {
+  const [journeyState, userJourney, lifeCompass, indexSnap] = await Promise.all([
+    getJourneyState(supabase, userId).catch(() => null),
+    fetchUserJourneyRow(supabase, userId).catch(() => null),
+    fetchLifeCompass(supabase, userId).catch(() => null),
+    fetchVitanaIndexForProfiler(supabase, userId).catch(() => null),
+  ]);
+  const currentSession =
+    journeyState && Number.isFinite(journeyState.currentSession) ? Math.max(1, journeyState.currentSession) : 1;
+  const sessionsCompleted = Math.max(0, currentSession - 1);
+  const graduated =
+    journeyState?.onboardingStatus === 'qualified' || journeyState?.onboardingStatus === 'completed';
+  const { title: nextSessionTitle, totalTopics } = await resolveCurriculumFacts(supabase, lang, currentSession);
+  const trend = readIndexTrend(indexSnap);
+  const indexDeltaUp = trend !== null && trend >= MATERIAL_INDEX_DELTA ? trend : null;
+  const todayIso = todayInTimezone(new Date(nowMs), timezone);
+  const daysSinceLastSession = dayDiff(todayIso, userJourney?.last_session_date ?? null);
+  const primaryGoalRaw = (lifeCompass as { primary_goal?: unknown } | null)?.primary_goal;
+  const primaryGoalLabel =
+    typeof primaryGoalRaw === 'string' && primaryGoalRaw.trim().length > 0 ? primaryGoalRaw.trim() : null;
+  const topicsLearned = Array.isArray(journeyState?.completedTopicIds) ? journeyState.completedTopicIds.length : 0;
+  // BOOTSTRAP-ORB-GREETING-RETURNING-USER: "have we met before?" comes from the
+  // user_journey row, NOT the curriculum pointer. is_first_session is cleared at
+  // session end, and last_session_date is stamped on every session — so either
+  // being set means the user has talked to Vitana before.
+  const hasPriorSession =
+    !!userJourney && (userJourney.is_first_session === false || userJourney.last_session_date != null);
+  return {
+    sessionsCompleted,
+    nextSessionNumber: currentSession,
+    nextSessionTitle,
+    // narrate persists current_session = the session of the topic it just
+    // played, so the session the user MOST RECENTLY HEARD is current_session
+    // itself (title = nextSessionTitle), NOT current_session - 1. Recall it only
+    // when the user has actually completed a topic; otherwise there is nothing to
+    // recall and we must not bluff.
+    lastSessionTitle: topicsLearned > 0 ? nextSessionTitle : null,
+    graduated,
+    hasGoal: !!primaryGoalLabel,
+    indexDeltaUp,
+    daysSinceLastSession,
+    weakestPillarDrop: readWeakestPillarDrop(indexSnap),
+    primaryGoalLabel,
+    topicsLearned,
+    topicsTotal: totalTopics,
+    hasPriorSession,
+  };
+}
+
+/**
+ * One-call entry point for the SAFE-FAST greeting path: gather facts fast +
+ * render the short proactive opener. Returns null on any failure so the caller
+ * cleanly falls back to the name / generic opener. Salutation is derived from
+ * the timezone (consistent with the provider).
+ */
+export async function computeFastProactiveOpener(args: {
+  supabase: SupabaseClient;
+  userId: string;
+  lang: string;
+  firstName: string | null;
+  timezone: string | null;
+  nowMs: number;
+  /**
+   * BOOTSTRAP-ORB-GREETING-RETURNING-USER (fix #2 — cadence gate): the previous
+   * session's timestamp, as resolved by `fetchLastSessionInfo`. When the last
+   * session was within the greet-once window we return null so the fast opener
+   * does NOT emit a fresh full greeting — the richer wake-brief path (which has
+   * its own brief-resume/skip cadence handling) owns turn 1 instead. This is
+   * what stops a second session a minute later from re-greeting from scratch.
+   * Optional → omitting it preserves the prior always-greet behavior.
+   */
+  lastSessionInfo?: { time: string } | null;
+}): Promise<string | null> {
+  try {
+    // Cadence gate: suppress the fast proactive opener when we greeted/served
+    // this user very recently (default 15-min greet-once window, mirroring
+    // RECENT_GREETING_WINDOW_MS in greeting-policy.ts). Day-granularity
+    // daysSinceLastSession can't see this; the raw timestamp can.
+    const lastTime = args.lastSessionInfo?.time;
+    if (typeof lastTime === 'string' && lastTime.length > 0) {
+      const lastMs = Date.parse(lastTime);
+      if (Number.isFinite(lastMs)) {
+        const sinceMs = args.nowMs - lastMs;
+        if (sinceMs >= 0 && sinceMs < FAST_OPENER_GREET_ONCE_WINDOW_MS) {
+          return null;
+        }
+      }
+    }
+    const facts = await gatherBriefingFactsForFastOpener(
+      args.supabase,
+      args.userId,
+      args.lang,
+      args.nowMs,
+      args.timezone,
+    );
+    const salutation = pickSalutationKind(localHourInTimezone(new Date(args.nowMs), args.timezone));
+    const line = buildFastProactiveOpener({ lang: args.lang, salutation, firstName: args.firstName, facts });
+    return line && line.trim().length > 0 ? line : null;
+  } catch {
+    return null;
+  }
 }

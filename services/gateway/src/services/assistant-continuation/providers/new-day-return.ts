@@ -313,9 +313,12 @@ function buildLifeCompassClause(payload: NewDayOverviewPayload, lang: string): s
 
 /** One proactive lead-in — propose the move, never ask preference (VTID-03270). */
 function buildInvitation(lang: string, rng: () => number): string {
+  // Lead to the next step / "let's get started" — NOT "pick up where we left
+  // off" (this generic invitation carries no actual recalled context, so that
+  // promise reads as a bluff the user calls: "I don't remember where we ended").
   const pool = lang === 'de'
-    ? ['Lass uns dort weitermachen, wo wir aufgehört haben.', 'Lass mich dir deinen nächsten Schritt zeigen.', 'Lass uns gleich loslegen.']
-    : ["Let's pick up right where we left off.", 'Let me show you your next step.', "Let's get started."];
+    ? ['Lass mich dir zeigen, was als Nächstes kommt.', 'Lass mich dir deinen nächsten Schritt zeigen.', 'Lass uns gleich loslegen.']
+    : ["Let me walk you to what's next.", 'Let me show you your next step.', "Let's get started."];
   return pickFromPool(pool, rng);
 }
 

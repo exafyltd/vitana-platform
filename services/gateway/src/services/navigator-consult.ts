@@ -63,6 +63,14 @@ export interface NavigatorConsultInput {
   current_route?: string;
   recent_routes?: string[];
   transcript_excerpt?: string;
+  // NAV-PHASE1: the application surface this session is bound to. Mobile and
+  // desktop are separate catalogs; when platform-aware resolution is enabled
+  // (NAV_PLATFORM_AWARE), this scopes candidate generation, override-trigger
+  // matching and scoring to the matching catalog instead of silently
+  // defaulting to mobile. `platform_source` is diagnostic only (e.g.
+  // 'session' once host-bound, 'derived_is_mobile' during migration).
+  platform?: 'mobile' | 'desktop';
+  platform_source?: string;
   // Threading metadata for context pack — used for telemetry and caching
   session_id?: string;
   turn_number?: number;
@@ -341,6 +349,22 @@ function staticKbAnchors(entry: NavCatalogEntry | null): string[] {
 // Catalog scoring with memory bias
 // =============================================================================
 
+// NAV-PHASE1: platform-aware resolution is feature-flagged so production
+// behaviour is unchanged until deliberately enabled and verified on staging.
+function navPlatformAware(): boolean {
+  return process.env.NAV_PLATFORM_AWARE === 'true';
+}
+
+// The catalog platform this consult resolves against. Flag OFF ⇒ always
+// 'mobile' (byte-for-byte today's behaviour — every existing caller resolved
+// against the mobile/static catalog). Flag ON ⇒ honour the session platform,
+// defaulting to 'mobile' only when the caller omitted it. Phase 1b makes
+// platform mandatory and fail-closed once all callers send it.
+function effectivePlatform(input: NavigatorConsultInput): 'mobile' | 'desktop' {
+  if (!navPlatformAware()) return 'mobile';
+  return input.platform === 'desktop' ? 'desktop' : 'mobile';
+}
+
 function scoreCatalogWithMemory(
   input: NavigatorConsultInput,
   hints: MemoryHints
@@ -356,7 +380,7 @@ function scoreCatalogWithMemory(
   const baseResults: Array<{ entry: NavCatalogEntry; score: number }> =
     isNavCatalogLoaded()
       ? searchCatalogEntries(
-          getCatalogForTenant(tenantId) as ReadonlyArray<NavCatalogEntry>,
+          getCatalogForTenant(tenantId, effectivePlatform(input)) as ReadonlyArray<NavCatalogEntry>,
           input.question,
           input.lang,
           {
@@ -421,7 +445,7 @@ export async function consultNavigator(
   // for "wrong screen" bugs the scorer can't fix through tuning.
   const tenantIdForOverride = input.identity?.tenant_id || null;
   const overrideMatch = isNavCatalogLoaded()
-    ? findOverrideTriggerMatch(input.question, input.lang, tenantIdForOverride)
+    ? findOverrideTriggerMatch(input.question, input.lang, tenantIdForOverride, effectivePlatform(input))
     : null;
   if (overrideMatch && !input.is_anonymous) {
     const pick = entryToPick(overrideMatch as NavCatalogEntry, input.lang);
@@ -460,11 +484,22 @@ export async function consultNavigator(
   // context actually helps.
   const excludeRoutes: string[] = [];
   if (input.current_route) excludeRoutes.push(input.current_route);
-  const fastScored = searchCatalog(input.question, input.lang, {
-    anonymous_only: input.is_anonymous,
-    exclude_routes: excludeRoutes,
-    role: input.identity?.role || undefined,
-  });
+
+  // NAV-PHASE1: the fast path (searchCatalog) and the semantic path
+  // (semanticSearchCatalog) read the STATIC, mobile-shaped catalog/embeddings.
+  // For a desktop session we must not let them short-circuit or contribute
+  // mobile routes — desktop resolves against the desktop DB catalog only (via
+  // scoreCatalogWithMemory → getCatalogForTenant(tenant, 'desktop')). When the
+  // flag is off, effectivePlatform() is always 'mobile' so this is a no-op.
+  const isDesktop = effectivePlatform(input) === 'desktop';
+
+  const fastScored = isDesktop
+    ? []
+    : searchCatalog(input.question, input.lang, {
+        anonymous_only: input.is_anonymous,
+        exclude_routes: excludeRoutes,
+        role: input.identity?.role || undefined,
+      });
   const fastTop = fastScored[0];
   const fastSecond = fastScored[1];
 
@@ -533,7 +568,7 @@ export async function consultNavigator(
   // confident. This handles synonyms, different languages, and phrasings
   // we never anticipated — "Messenger", "wo kann ich schreiben", etc.
   // Runs in parallel with memory/KB for zero extra latency.
-  const semanticPromise = areCatalogEmbeddingsReady()
+  const semanticPromise = (!isDesktop && areCatalogEmbeddingsReady())
     ? semanticSearchCatalog(input.question, {
         anonymous_only: input.is_anonymous,
         exclude_routes: excludeRoutes,
