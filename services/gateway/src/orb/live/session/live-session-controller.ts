@@ -731,6 +731,13 @@ export async function handleLiveSessionStart(
   // concrete next step / weakness lead) computed in the fast pre-fetch window so
   // the SAFE-FAST greeting can speak IT instead of a generic SHORT_GAP phrase.
   let greetingProactiveLine: string | null = null;
+  // BOOTSTRAP-ORB-FAST-GREETING-CADENCE: when true, the SAFE-FAST greeting
+  // ladder must stay SILENT — the user was greeted within the greet-once
+  // window (or had a turn within the recent-turn window), so decideGreetingPolicy
+  // resolved to 'skip'. Computed in the fast greeting-facts prefetch below and
+  // copied onto the session so sendGreetingPromptToLiveAPI can honor it on the
+  // fast path (which previously re-greeted on every reopen). Fail-open → false.
+  let greetingCadenceSkip = false;
 
   // VTID-03294: a Guided-Journey topic tap needs ZERO context — Vitana just
   // picks up the KB lesson and speaks it. Detect it here so we can skip the
@@ -970,8 +977,34 @@ export async function handleLiveSessionStart(
               lastSessionInfo: greetingEarlyLastSessionInfo,
             });
           }
+          // BOOTSTRAP-ORB-FAST-GREETING-CADENCE: compute the greet-once / recent-turn
+          // skip in the SAME fast window the greeting builder awaits, reusing the
+          // canonical decideGreetingPolicy (the authority the slower wake-brief path
+          // already uses). Previously the fast ladder never saw this, so a quick orb
+          // re-open re-greeted ("Guten Morgen, <Name>.") seconds apart. Fail-open:
+          // any error leaves greetingCadenceSkip=false → unchanged behavior.
+          if (supa && _ndIdentity.tenant_id && _ndIdentity.user_id) {
+            try {
+              const { fetchWakeCadenceSignals } = await import('../../../services/wake-cadence-signals');
+              const { decideGreetingPolicy } = await import('../instruction/greeting-policy');
+              const cadence = await fetchWakeCadenceSignals({
+                supabase: supa,
+                tenantId: _ndIdentity.tenant_id,
+                userId: _ndIdentity.user_id,
+                nowIso: new Date().toISOString(),
+              });
+              const policy = decideGreetingPolicy({
+                bucket: deps.describeTimeSince(greetingEarlyLastSessionInfo).bucket,
+                isReconnect: isReconnectStart,
+                ...cadence,
+              });
+              greetingCadenceSkip = policy === 'skip';
+            } catch {
+              greetingCadenceSkip = false;
+            }
+          }
           console.log(
-            `[GREETING-FACTS-PREFETCH] session ${sessionId} resolved firstName=${greetingFirstName ? '<set>' : 'null'} lastSession=${greetingEarlyLastSessionInfo ? 'yes' : 'no'} proactive=${greetingProactiveLine ? '<set>' : 'null'}`,
+            `[GREETING-FACTS-PREFETCH] session ${sessionId} resolved firstName=${greetingFirstName ? '<set>' : 'null'} lastSession=${greetingEarlyLastSessionInfo ? 'yes' : 'no'} proactive=${greetingProactiveLine ? '<set>' : 'null'} cadenceSkip=${greetingCadenceSkip}`,
           );
         } catch (err: any) {
           // Fail-open to nulls — never reject.
@@ -1082,6 +1115,7 @@ export async function handleLiveSessionStart(
   if (greetingFactsReady) {
     (session as any).greetingFirstName = greetingFirstName;
     (session as any).greetingProactiveLine = greetingProactiveLine;
+    (session as any).greetingCadenceSkip = greetingCadenceSkip;
     if (greetingEarlyLastSessionInfo && !session.lastSessionInfo) {
       session.lastSessionInfo = greetingEarlyLastSessionInfo;
     }
@@ -1090,6 +1124,10 @@ export async function handleLiveSessionStart(
       // DEV-COMHU-0513: the proactive opener resolves with the rest of the fast
       // facts; copy it onto the session so the greeting builder can prefer it.
       (session as any).greetingProactiveLine = greetingProactiveLine;
+      // BOOTSTRAP-ORB-FAST-GREETING-CADENCE: the greet-once skip resolves with
+      // the rest of the fast facts; copy it so the builder can stay silent on a
+      // recent reopen instead of re-greeting.
+      (session as any).greetingCadenceSkip = greetingCadenceSkip;
       // Idempotent with the heavy bootstrap block, which also sets this later.
       if (greetingEarlyLastSessionInfo && !session.lastSessionInfo) {
         session.lastSessionInfo = greetingEarlyLastSessionInfo;
