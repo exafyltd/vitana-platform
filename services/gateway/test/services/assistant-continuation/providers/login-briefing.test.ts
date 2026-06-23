@@ -23,6 +23,22 @@ import {
   type BriefingFacts,
 } from '../../../../src/services/assistant-continuation/providers/login-briefing';
 
+// Chainable null-Supabase stub: every query resolves to { data: null } so the
+// provider degrades to its grounded 'orient' opener instead of needing a full
+// journey fixture. Lets us assert the cadence-skip LEAD path end-to-end.
+function nullSupabase(): any {
+  const result = { data: null, error: null };
+  const proxy: any = new Proxy(function () {} as any, {
+    get(_t, prop) {
+      if (prop === 'then') return (resolve: (v: unknown) => void) => resolve(result);
+      if (prop === 'maybeSingle' || prop === 'single') return async () => result;
+      return () => proxy;
+    },
+    apply() { return proxy; },
+  });
+  return { from: () => proxy };
+}
+
 const BASE_FACTS: BriefingFacts = {
   sessionsCompleted: 3,
   nextSessionNumber: 4,
@@ -310,14 +326,48 @@ describe('buildFastProactiveOpener (proactive fast greeting)', () => {
     expect(line).toContain('ich führe dich');
   });
 
-  it('returning user → GROUNDED recall of the last session ("Letztes Mal ging es um X"), then continues there', () => {
+  it('returning user → GROUNDED recall of the last session ("Letztes Mal ging es um X"), then LEADS forward', () => {
+    // recall title == next title (same session) → no distinct step to name, so
+    // it recalls where we left off and leads to the next session (no bluff, no
+    // passive "what do you want").
     const line = mk({ daysSinceLastSession: 2, lastSessionTitle: 'Dein Plan', nextSessionTitle: 'Dein Plan' });
     expect(line).toContain('Letztes Mal ging es um „Dein Plan"'); // the REAL last session, recalled
-    expect(line).toMatch(/da (weitermachen|weiter|an)|da\b/); // continues "there", not repeating the title
+    expect(line).toMatch(/nächsten Session|sag Bescheid|übernehme/); // proactively leads forward
+    expect(line).not.toMatch(PASSIVE);
+  });
+
+  it('returning user with a DISTINCT next step → names BOTH where we left off AND the next step', () => {
+    // lastOpenedTitle (where we left off) ≠ nextStepTitle (the genuine next
+    // step) → the opener names both, then offers to lead. This is the core
+    // "always know where we left off + proactively the next step" behavior.
+    const line = mk({
+      daysSinceLastSession: 2,
+      lastOpenedTitle: 'Schlaf-Grundlagen',
+      nextStepTitle: 'Abendroutine',
+    });
+    expect(line).toContain('Letztes Mal ging es um „Schlaf-Grundlagen"'); // where we left off
+    expect(line).toContain('Abendroutine'); // the distinct next step, named
+    expect(line).toContain('ich führe dich'); // and Vitana leads / offers to do it
+    expect(line).not.toMatch(PASSIVE);
+  });
+
+  it('rotates across three proactive proposals (journey / community / match) — each offers to DO it for the user', () => {
+    const facts = { ...BASE_FACTS, daysSinceLastSession: 2, lastOpenedTitle: 'Schlaf-Grundlagen', nextStepTitle: 'Abendroutine' };
+    const journey = buildFastProactiveOpener({ lang: 'de', salutation: 'morning', firstName: 'Maria', facts }, () => 0);
+    const community = buildFastProactiveOpener({ lang: 'de', salutation: 'morning', firstName: 'Maria', facts }, () => 0.5);
+    const match = buildFastProactiveOpener({ lang: 'de', salutation: 'morning', firstName: 'Maria', facts }, () => 0.99);
+    expect(journey).toContain('Abendroutine'); // proposal 1: the next session/step
+    expect(community).toMatch(/Community/); // proposal 2: post to the community
+    expect(match).toMatch(/Aktivitätspartner/); // proposal 3: find a match
+    // Every rotation recalls where we left off and offers to do the work.
+    for (const l of [journey, community, match]) {
+      expect(l).toContain('Letztes Mal ging es um „Schlaf-Grundlagen"');
+      expect(l).toMatch(/ich (führe|poste|kümmere|übernehme)/i);
+    }
   });
 
   it('NO false recall when there is no last session — never bluffs "where we left off"', () => {
-    const line = mk({ lastSessionTitle: null, nextSessionTitle: 'Schlaf-Routine' });
+    const line = mk({ lastSessionTitle: null, lastOpenedTitle: null, nextSessionTitle: 'Schlaf-Routine', nextStepTitle: null });
     expect(line).not.toMatch(/Letztes Mal|wo wir aufgehört|anknüpfen/i); // no recall claim without data
     expect(line).toContain('Schlaf-Routine'); // still leads to the next step
   });
@@ -366,7 +416,7 @@ describe('makeLoginBriefingProvider — guardrails', () => {
     expect(res.reason).toBe('no_login_briefing_inputs');
   });
 
-  it('suppresses on greetingPolicy=skip (silent reconnect)', async () => {
+  it('suppresses ONLY on a transparent-reconnect-class skip (network blip — not a deliberate open)', async () => {
     const provider = makeLoginBriefingProvider();
     const res = await provider.produce({
       surface: 'orb_wake',
@@ -379,10 +429,36 @@ describe('makeLoginBriefingProvider — guardrails', () => {
           firstName: 'Maria',
           timezone: 'Europe/Berlin',
           greetingPolicy: 'skip',
+          skipReason: 'transparent_reconnect_forces_skip',
         },
       },
     } as any);
     expect(res.status).toBe('suppressed');
-    expect(res.reason).toBe('greeting_policy_skip');
+    expect(res.reason).toBe('forced_skip_transparent_reconnect_forces_skip');
+  });
+
+  it('LEADS on a cadence-class skip (deliberate re-open within 15 min) — grounded opener, never silent', async () => {
+    // greeted_recently_within_window is a DELIBERATE re-tap, not a transparent
+    // reconnect: login-briefing must produce the grounded opener (priority 92)
+    // so no hard-coded fallback provider can win the turn. All DB reads resolve
+    // to null here, so it degrades to the grounded 'orient' opener.
+    const provider = makeLoginBriefingProvider();
+    const res = await provider.produce({
+      surface: 'orb_wake',
+      extra: {
+        loginBriefing: {
+          supabase: nullSupabase(),
+          userId: 'u1',
+          tenantId: 't1',
+          lang: 'de',
+          firstName: 'Maria',
+          timezone: 'Europe/Berlin',
+          greetingPolicy: 'skip',
+          skipReason: 'greeted_recently_within_window',
+        },
+      },
+    } as any);
+    expect(res.status).toBe('returned');
+    expect((res as any).candidate?.userFacingLine?.length ?? 0).toBeGreaterThan(0);
   });
 });

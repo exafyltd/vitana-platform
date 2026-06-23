@@ -319,6 +319,7 @@ import {
 import {
   SHORT_GAP_GREETING_PHRASES,
   pickShortGapGreetings,
+  buildFirstTimeWelcomeLine,
 } from '../orb/instruction/greeting-pools';
 
 const router = Router();
@@ -4754,6 +4755,90 @@ async function executeLiveApiToolInner(
         );
       }
 
+      // Compose + publish a GENERAL community feed post on the user's behalf.
+      // Vitana proactively offers this ("you dictate, I post it for you"); the
+      // two-call confirm contract mirrors post_intent so we never auto-publish.
+      case 'create_community_post': {
+        const content = String(args.content || '').trim();
+        const isPublic = args.is_public === false ? false : true;
+        const confirmed = args.confirmed === true;
+        if (!content) {
+          return { success: false, result: '', error: 'content is required' };
+        }
+        // Light cleanup only — keep the user's voice. Collapse runaway
+        // whitespace and cap length to a sane feed-post size.
+        const cleaned = content.replace(/\s+/g, ' ').trim().slice(0, 2000);
+
+        // Step 1 (no confirmed): return the cleaned text for verbal read-back.
+        if (!confirmed) {
+          return {
+            success: true,
+            result: JSON.stringify({
+              ok: true,
+              stage: 'awaiting_confirmation',
+              post_preview: cleaned,
+              visibility: isPublic ? 'public' : 'private',
+              instructions:
+                'Read the post_preview back to the user verbatim, then call create_community_post again with confirmed=true after they say post/yes/confirm/ja.',
+            }),
+          };
+        }
+
+        // Step 2 (confirmed=true): publish to the community feed.
+        try {
+          const { createClient } = await import('@supabase/supabase-js');
+          const supabase = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE!);
+          const { data: inserted, error: insErr } = await supabase
+            .from('profile_posts')
+            .insert({
+              user_id: session.identity!.user_id,
+              content: cleaned,
+              is_public: isPublic,
+            })
+            .select('id')
+            .single();
+
+          if (insErr || !inserted) {
+            console.error('[create_community_post] insert failed', insErr);
+            return { success: false, result: '', error: insErr?.message ?? 'insert_failed' };
+          }
+
+          const postId = (inserted as { id: string }).id;
+
+          // Best-effort OASIS event — never block the success report on it.
+          try {
+            await emitOasisEvent({
+              vtid: 'BOOTSTRAP-ORB-COMMUNITY-POST',
+              type: 'voice.message.sent',
+              source: 'orb-live',
+              status: 'success',
+              message: `Community post created via ORB voice (public=${isPublic})`,
+              payload: { post_id: postId, is_public: isPublic, kind: 'community_post' },
+              actor_id: session.identity!.user_id,
+              actor_role: 'user',
+              surface: 'orb',
+            });
+          } catch {
+            // best effort
+          }
+
+          return {
+            success: true,
+            result: JSON.stringify({
+              ok: true,
+              stage: 'posted',
+              post_id: postId,
+              visibility: isPublic ? 'public' : 'private',
+              instructions:
+                'The post is LIVE on the community feed. Confirm success warmly in one short sentence (e.g. "Done — it is on your community feed."). Do NOT ask a follow-up question.',
+            }),
+          };
+        } catch (err: any) {
+          console.error('[create_community_post] error', err);
+          return { success: false, result: '', error: err?.message ?? 'create_community_post_failed' };
+        }
+      }
+
       // ─── VTID-01975 — Vitana Intent Engine voice tools ───
       case 'post_intent': {
         const utterance = String(args.utterance || '').trim();
@@ -7478,6 +7563,142 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
               new Promise<void>((r) => setTimeout(r, Number(process.env.ORB_GREETING_FACTS_WAIT_MS || 700))),
             ]);
             if (ws.readyState !== WebSocket.OPEN) return;
+
+            // NEW-DAY OVERVIEW (rich summary owns turn 1). On a genuine new-day
+            // return we speak the FULL multi-clause morning overview (what passed
+            // since last session, today's next event, Index direction, Life
+            // Compass goal) — the same renderer the heavy new-day-return provider
+            // uses — INSTEAD of the short one-line proactive lead. Deliberate
+            // richness>latency choice: it adds the bounded aggregator fetch, but
+            // restores the summary the fast path had been preempting. Falls
+            // through to the existing ladder (proactive line → name → menu) when
+            // it is not a new day, the name/user is missing, or it can't build.
+            try {
+              const _temporalNd = describeTimeSince((session as any).lastSessionInfo);
+              const _firstNameNd = (session as any).greetingFirstName;
+              const _isNewDayNd =
+                _temporalNd.bucket === 'today' ||
+                _temporalNd.bucket === 'yesterday' ||
+                _temporalNd.bucket === 'week' ||
+                _temporalNd.bucket === 'long';
+              const _uidNd = session.identity?.user_id;
+              const _supaNd = getSupabase();
+              // The overview renderer only localizes DE/EN; for any other session
+              // language it would emit English clauses. Restrict the overview to
+              // de/en and let the existing localized name-greeting ladder handle
+              // es/fr/sr/etc. (Codex P2).
+              const _langKeyNd = (lang || 'en').slice(0, 2).toLowerCase();
+              const _langOkNd = _langKeyNd === 'de' || _langKeyNd === 'en';
+              if (_langOkNd && _isNewDayNd && typeof _firstNameNd === 'string' && _firstNameNd.trim().length > 0 && _uidNd && _supaNd) {
+                const _tzNd = session.clientContext?.timezone || 'UTC';
+                const _nowNd = new Date();
+                const { aggregateNewDayOverview } = await import('../services/assistant-continuation/providers/new-day-overview-aggregator');
+                const { renderNewDayReturnLineWithOverview, todayInTimezone, pickSalutationKind, localHourInTimezone } = await import('../services/assistant-continuation/providers/new-day-return');
+                const _overview = await Promise.race([
+                  aggregateNewDayOverview({
+                    supabase: _supaNd,
+                    userId: _uidNd,
+                    now: _nowNd,
+                    timezone: _tzNd,
+                    todayDateIso: todayInTimezone(_nowNd, _tzNd),
+                    lastSessionAtIso: (session as any).lastSessionInfo?.time ?? null,
+                  }),
+                  new Promise<null>((r) => setTimeout(() => r(null), Number(process.env.ORB_NEWDAY_OVERVIEW_WAIT_MS || 1500))),
+                ]).catch(() => null);
+                // The aggregator returns a truthy payload even when EMPTY (no
+                // calendar, no goal, no index move) — rendering that yields just a
+                // bare "Good morning … let's get started", which would preempt a
+                // genuine concrete proactive opener. Only take the overview when
+                // it has REAL content (a calendar event or the Life Compass goal);
+                // an index-only move is handled by the proactive ladder below.
+                // Otherwise fall through (Codex P2).
+                const _overviewHasContent =
+                  !!_overview &&
+                  (_overview.calendar_passed_notable != null ||
+                    _overview.calendar_passed_count > 0 ||
+                    _overview.calendar_today_next != null ||
+                    _overview.calendar_today_count > 0 ||
+                    !!(_overview.life_compass_goal && String(_overview.life_compass_goal).trim().length > 0));
+                if (_overview && _overviewHasContent) {
+                  const _line = renderNewDayReturnLineWithOverview({
+                    lang,
+                    salutation: pickSalutationKind(localHourInTimezone(_nowNd, _tzNd)),
+                    firstName: _firstNameNd.trim(),
+                    timezone: _tzNd,
+                    payload: _overview,
+                  });
+                  if (_line && _line.trim().length > 0) {
+                    const _safeOv = _line.trim().replace(/"/g, '\\"');
+                    const _ovPrompt =
+                      `Say exactly: "${_safeOv}" — speak it verbatim as audio, as ONE greeting. Do NOT add, paraphrase, or split it.`;
+                    ws.send(
+                      JSON.stringify({
+                        client_content: { turns: [{ role: 'user', parts: [{ text: _ovPrompt }] }], turn_complete: true },
+                      }),
+                    );
+                    emitDiag(session, 'greeting_sent', {
+                      lang,
+                      prompt_len: _ovPrompt.length,
+                      wake_opener: 'safe_fast_newday_overview',
+                      bucket: _temporalNd.bucket,
+                    });
+                    startResponseWatchdog(session, getGreetingResponseTimeoutMs(), 'greeting_timeout');
+                    console.log(
+                      `[GREETING-SAFE-FAST-NEWDAY-OVERVIEW] session ${session.sessionId} sent full new-day overview (bucket=${_temporalNd.bucket}, lang=${lang})`,
+                    );
+                    return;
+                  }
+                }
+              }
+            } catch (_ndErr) {
+              console.warn(
+                `[GREETING-SAFE-FAST-NEWDAY-OVERVIEW] non-fatal, falling through: ${_ndErr instanceof Error ? _ndErr.message : String(_ndErr)}`,
+              );
+            }
+
+            // FIRST-TIME WELCOME (BUGFIX). A brand-new user must NEVER hear the
+            // returning-user "welcome back" menu at the bottom of this ladder.
+            // When the user is a first-timer (authoritative is_first_session, or —
+            // if that's unknown — no last-session on record), speak a proper
+            // onboarding welcome: introduce Vitana + the guided journey + what to
+            // expect, then offer to start session one. The fuller journey overview
+            // flows on the heavy first-time-welcome / journey-guide path next turn.
+            // This runs BEFORE the proactive line so a first-timer gets the WELCOME,
+            // not the generic "set your goal" lead.
+            {
+              const _ift = (session as any).greetingIsFirstTime;
+              const _needsOnboarding = (session as any).greetingNeedsOnboarding;
+              // Require a POSITIVE first-time signal (Codex P2). The pre-fetch
+              // copies these onto the session only when greetingFactsReady
+              // resolves; if the bounded wait times out (or a read failed) the
+              // signal is UNKNOWN — and we must NOT then treat a returning user as
+              // first-time. So welcome ONLY a known first-timer: never-onboarded
+              // (0 completed journey topics and not graduated/opted-out — survives
+              // the eager is_first_session clear) OR is_first_session still true.
+              // Unknown → fall through to the normal proactive/name/menu ladder.
+              const _isFirstTime = _needsOnboarding === true || _ift === true;
+              if (_isFirstTime) {
+                const _welcome = buildFirstTimeWelcomeLine(lang, (session as any).greetingFirstName ?? null);
+                const _safeWel = _welcome.replace(/"/g, '\\"');
+                const _welPrompt = `Say exactly: "${_safeWel}" — speak it verbatim as audio, as ONE warm greeting. Do NOT add, paraphrase, or split it.`;
+                ws.send(
+                  JSON.stringify({
+                    client_content: { turns: [{ role: 'user', parts: [{ text: _welPrompt }] }], turn_complete: true },
+                  }),
+                );
+                emitDiag(session, 'greeting_sent', {
+                  lang,
+                  prompt_len: _welPrompt.length,
+                  wake_opener: 'safe_fast_first_time_welcome',
+                  is_first_session: _ift === true,
+                });
+                startResponseWatchdog(session, getGreetingResponseTimeoutMs(), 'greeting_timeout');
+                console.log(
+                  `[GREETING-SAFE-FAST-FIRST-TIME] session ${session.sessionId} sent first-time welcome (is_first_session=${String(_ift)}, needs_onboarding=${String(_needsOnboarding)}, lang=${lang})`,
+                );
+                return;
+              }
+            }
 
             // DEV-COMHU-0513 (proactive fast greeting): when the fast pre-fetch
             // produced a SHORT proactive opener (name + concrete next step /

@@ -117,6 +117,25 @@ export const SHORT_GAP_GREETING_PHRASES: Record<string, string[]> = {
 };
 
 /**
+ * FIRST-TIME WELCOME — the opener a brand-new user hears on their very first
+ * ORB session. It must NEVER be a "welcome back" line; it introduces Vitana,
+ * frames the guided journey + what to expect, and offers to start session one.
+ * de/en/es/sr localized; other languages fall back to en (a first-time English
+ * welcome is still correct — far better than a returning-user greeting).
+ */
+export function buildFirstTimeWelcomeLine(lang: string, firstName: string | null): string {
+  const nm = firstName && firstName.trim().length > 0 ? ` ${firstName.trim()}` : '';
+  const lk = (lang || 'en').slice(0, 2).toLowerCase();
+  const byLang: Record<string, string> = {
+    de: `Hallo${nm}, ich bin Vitana, deine persönliche Longevity-Assistentin. Herzlich willkommen bei Maxina! Ich begleite dich Schritt für Schritt durch deine geführte Reise und zeige dir, wie alles funktioniert. Sollen wir gemeinsam mit deiner ersten Session starten?`,
+    en: `Hi${nm}, I'm Vitana, your personal longevity assistant. Welcome to Maxina! I'll guide you step by step through your journey and show you how everything works. Shall we start with your first session together?`,
+    es: `Hola${nm}, soy Vitana, tu asistente personal de longevidad. ¡Bienvenido a Maxina! Te guiaré paso a paso en tu viaje y te mostraré cómo funciona todo. ¿Empezamos juntos con tu primera sesión?`,
+    sr: `Здраво${nm}, ја сам Витана, твоја лична асистенткиња за дуговечност. Добро дошао у Максину! Водићу те корак по корак кроз твоје путовање и показаћу ти како све функционише. Хоћемо ли заједно да почнемо са првом сесијом?`,
+  };
+  return byLang[lk] || byLang.en;
+}
+
+/**
  * Pick N phrases from the lang pool without replacement. Randomized per call
  * so the system instruction and the turn-start prompt each see a fresh
  * ordering — Gemini strongly biases toward the first option in a list, so
