@@ -25,7 +25,7 @@ import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { createUserSupabaseClient } from '../lib/supabase-user';
 import { emitOasisEvent } from '../services/oasis-event-service';
-import { notifyUserAsync, notifyUsersAsync } from '../services/notification-service';
+import { notifyUser, notifyUserAsync, notifyUsersAsync } from '../services/notification-service';
 import { dispatchEvent } from '../services/automation-executor';
 import { tt } from '../i18n/catalog';
 import { getUserLocale } from '../i18n/server-locale';
@@ -1139,8 +1139,7 @@ router.post('/interactions/notify', requireAuth, requireTenant, async (req: Auth
     const { createClient } = await import('@supabase/supabase-js');
     const supa = createClient(supabaseUrl, serviceKey);
 
-    // 1. Resolve the post's author. NOTE: profile_posts / media_uploads have
-    // NO tenant_id column — the author's tenant is resolved separately below.
+    // Resolve the post author (profile_posts / media_uploads expose user_id).
     const { data: parent } = await supa
       .from(cfg.parent)
       .select('user_id')
@@ -1150,66 +1149,17 @@ router.post('/interactions/notify', requireAuth, requireTenant, async (req: Auth
     if (!authorId) {
       return res.json({ ok: true, skipped: 'target_not_found' });
     }
-
-    // 2. Skip self-interactions.
     if (authorId === actorId) {
       return res.json({ ok: true, skipped: 'self' });
     }
 
-    // 3. Resolve the author's tenant from the CANONICAL source: user_tenants
-    // (is_primary) — the exact source requireTenant uses. The author's bell
-    // (GET /notifications), their device tokens, and their notification prefs
-    // are ALL scoped by this tenant, so writing under any other value (e.g.
-    // app_users.tenant_id, which can differ) makes the notification invisible
-    // and undeliverable. Fall back to the caller's tenant (same community).
-    let tenantId: string | null = null;
-    const { data: authorTenantRow } = await supa
-      .from('user_tenants')
-      .select('tenant_id')
-      .eq('user_id', authorId)
-      .eq('is_primary', true)
-      .maybeSingle();
-    tenantId = (authorTenantRow as any)?.tenant_id ?? null;
-    if (!tenantId) {
-      // requireTenant guarantees the caller has a resolved tenant; in this
-      // single-community deployment author and caller share it.
-      tenantId = req.identity?.tenant_id ?? null;
-    }
-    if (!tenantId) {
-      return res.json({ ok: true, skipped: 'no_tenant' });
-    }
-
-    // 4. Anti-spoof: verify the interaction row exists for this caller.
-    const intTable = kind === 'like' ? cfg.likes : cfg.comments;
-    const { data: intRow } = await supa
-      .from(intTable)
-      .select('id')
-      .eq(cfg.fk, target_id)
-      .eq('user_id', actorId)
-      .limit(1)
-      .maybeSingle();
-    if (!intRow) {
-      return res.json({ ok: true, skipped: 'no_row' });
-    }
-
-    // 5. Dedup likes (prevents unlike→relike spam). Comments notify per-comment.
+    // Recipient tenant: the caller's resolved tenant — EXACTLY like chat
+    // (notifyUserAsync(receiver, identity.tenant_id, …)). requireTenant
+    // guarantees it; single shared community tenant so author == caller tenant.
+    const tenantId = req.identity!.tenant_id!;
     const type = kind === 'like' ? 'post_like' : 'post_comment';
-    if (kind === 'like') {
-      const { data: existing } = await supa
-        .from('user_notifications')
-        .select('id')
-        .eq('user_id', authorId)
-        .eq('type', 'post_like')
-        .eq('data->>entity_id', target_id)
-        .eq('data->>actor_id', actorId)
-        .limit(1)
-        .maybeSingle();
-      if (existing) {
-        return res.json({ ok: true, skipped: 'duplicate' });
-      }
-    }
 
-    // 6. Resolve actor display name + author locale.
+    // Actor display name + author locale.
     const { data: actorProfile } = await supa
       .from('profiles')
       .select('display_name')
@@ -1218,12 +1168,9 @@ router.post('/interactions/notify', requireAuth, requireTenant, async (req: Auth
     const actorName = (actorProfile as any)?.display_name || 'Jemand';
     const locale = await getUserLocale(supa, authorId);
 
-    // 7. Fire the notification (in-app + inline push, localized, pref/DND-gated).
-    console.log(
-      `[interactions/notify] ${type} author=${authorId.slice(0, 8)}… ` +
-      `tenant=${tenantId.slice(0, 8)}… actor=${actorId.slice(0, 8)}… source=${source}`,
-    );
-    notifyUserAsync(
+    // Notify — AWAITED (not fire-and-forget) so the result is observable and
+    // any throw surfaces in the catch below. Same call shape as chat.
+    const result = await notifyUser(
       authorId,
       tenantId,
       type,
@@ -1239,8 +1186,14 @@ router.post('/interactions/notify', requireAuth, requireTenant, async (req: Auth
       },
       supa,
     );
+    console.log(
+      `[interactions/notify] ${type} author=${authorId.slice(0, 8)}… ` +
+      `tenant=${tenantId.slice(0, 8)}… actor=${actorId.slice(0, 8)}… source=${source} ` +
+      `→ inapp=${result.inapp} pushed=${result.pushed}` +
+      (result.suppressed ? ` suppressed=${result.suppressed}` : ''),
+    );
 
-    return res.json({ ok: true, notified: true });
+    return res.json({ ok: true, result });
   } catch (err: any) {
     console.warn(`[${VTID}] interactions/notify error: ${err.message}`);
     // Never surface to the liker — the like/comment itself already succeeded.
