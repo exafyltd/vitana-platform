@@ -29,6 +29,7 @@ import { notifyUserAsync, notifyUsersAsync } from '../services/notification-serv
 import { dispatchEvent } from '../services/automation-executor';
 import { tt } from '../i18n/catalog';
 import { getUserLocale } from '../i18n/server-locale';
+import { requireAuth, type AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
 
 const router = Router();
 
@@ -1112,9 +1113,12 @@ const INTERACTION_TABLES = {
   media: { parent: 'media_uploads', likes: 'media_upload_likes', comments: 'media_upload_comments', fk: 'upload_id' },
 } as const;
 
-router.post('/interactions/notify', async (req: Request, res: Response) => {
-  const token = getBearerToken(req);
-  if (!token) {
+router.post('/interactions/notify', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  // impact-allow-no-oasis: this endpoint only fans out an author notification
+  // for a like/comment already written client-side; it makes no domain state
+  // transition of its own, so there is nothing OASIS-worthy to record here.
+  const actorId = req.identity?.user_id;
+  if (!actorId) {
     return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
   }
 
@@ -1123,12 +1127,6 @@ router.post('/interactions/notify', async (req: Request, res: Response) => {
     return res.status(400).json({ ok: false, error: 'INVALID_BODY', detail: parsed.error.flatten() });
   }
   const { source, target_id, kind } = parsed.data;
-
-  let actorId = '';
-  try { actorId = JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString()).sub; } catch {}
-  if (!actorId) {
-    return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
-  }
 
   const supabaseUrl = process.env.SUPABASE_URL;
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE;
