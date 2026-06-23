@@ -7564,6 +7564,34 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
             ]);
             if (ws.readyState !== WebSocket.OPEN) return;
 
+            // BOOTSTRAP-ORB-FAST-GREETING-CADENCE: honor the greet-once /
+            // recent-turn cap on the fast path. The greeting-facts prefetch
+            // computed decideGreetingPolicy → 'skip' (greeted < 15 min ago or a
+            // turn < 5 min ago) and stored it on the session. Every SAFE-FAST
+            // sub-branch below (new-day overview / proactive / new-day name /
+            // generic) otherwise emits a greeting UNCONDITIONALLY — that is why a
+            // quick orb reopen re-greeted ("Good morning, <Name>.") seconds apart.
+            // Stay SILENT here instead. greetingSent was claimed synchronously
+            // above (so no late path injects a greeting) and the opening state was
+            // already marked delivered; we do NOT arm the response watchdog —
+            // silence is intended and the user breaks it by speaking, mirroring the
+            // downstream VTID-03108 cadence-silence block. Kill-switch:
+            // ORB_FAST_GREETING_CADENCE_SKIP_ENABLED=false → legacy (always greet).
+            if (
+              process.env.ORB_FAST_GREETING_CADENCE_SKIP_ENABLED !== 'false' &&
+              (session as any).greetingCadenceSkip === true
+            ) {
+              emitDiag(session, 'greeting_sent', {
+                lang,
+                prompt_len: 0,
+                wake_opener: 'safe_fast_silenced_cadence',
+              });
+              console.log(
+                `[GREETING-SAFE-FAST-CADENCE-SKIP] session ${session.sessionId} suppressed re-greeting (recent greeting/turn within cadence window)`,
+              );
+              return;
+            }
+
             // NEW-DAY OVERVIEW (rich summary owns turn 1). On a genuine new-day
             // return we speak the FULL multi-clause morning overview (what passed
             // since last session, today's next event, Index direction, Life
