@@ -27,6 +27,9 @@ import { createUserSupabaseClient } from '../lib/supabase-user';
 import { emitOasisEvent } from '../services/oasis-event-service';
 import { notifyUserAsync, notifyUsersAsync } from '../services/notification-service';
 import { dispatchEvent } from '../services/automation-executor';
+import { tt } from '../i18n/catalog';
+import { getUserLocale } from '../i18n/server-locale';
+import { requireAuth, type AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
 
 const router = Router();
 
@@ -1081,6 +1084,141 @@ router.get('/health', (_req: Request, res: Response) => {
       'VTID-01078': 'health_brain'
     }
   });
+});
+
+/**
+ * POST /api/v1/community/interactions/notify
+ *
+ * Fire-and-forget notification fan-out for a like/comment that the frontend
+ * already wrote to the DB (client-side, RLS-guarded). The frontend calls this
+ * right after a successful like/comment insert so the post author gets an
+ * in-app + push notification (Instagram/Facebook style) via the canonical
+ * notifyUserAsync path (handles i18n, prefs, DND, inline push).
+ *
+ * Body: { source: 'post'|'media', target_id: uuid, kind: 'like'|'comment' }
+ *
+ * Security: the caller is derived from the JWT; we verify the interaction row
+ * actually exists for this caller (anti-spoof) before notifying, using a
+ * service-role client (needed to insert a notification for a DIFFERENT user —
+ * the recipient — which RLS would block on the user-scoped client).
+ */
+const InteractionNotifySchema = z.object({
+  source: z.enum(['post', 'media']),
+  target_id: z.string().uuid('Invalid target_id'),
+  kind: z.enum(['like', 'comment']),
+});
+
+const INTERACTION_TABLES = {
+  post: { parent: 'profile_posts', likes: 'profile_post_likes', comments: 'profile_post_comments', fk: 'post_id' },
+  media: { parent: 'media_uploads', likes: 'media_upload_likes', comments: 'media_upload_comments', fk: 'upload_id' },
+} as const;
+
+router.post('/interactions/notify', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  // impact-allow-no-oasis: this endpoint only fans out an author notification
+  // for a like/comment already written client-side; it makes no domain state
+  // transition of its own, so there is nothing OASIS-worthy to record here.
+  const actorId = req.identity?.user_id;
+  if (!actorId) {
+    return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
+  }
+
+  const parsed = InteractionNotifySchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ ok: false, error: 'INVALID_BODY', detail: parsed.error.flatten() });
+  }
+  const { source, target_id, kind } = parsed.data;
+
+  const supabaseUrl = process.env.SUPABASE_URL;
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE;
+  if (!supabaseUrl || !serviceKey) {
+    return res.status(503).json({ ok: false, error: 'Gateway misconfigured' });
+  }
+
+  try {
+    const cfg = INTERACTION_TABLES[source];
+    const { createClient } = await import('@supabase/supabase-js');
+    const supa = createClient(supabaseUrl, serviceKey);
+
+    // 1. Resolve the post's author + tenant.
+    const { data: parent } = await supa
+      .from(cfg.parent)
+      .select('user_id, tenant_id')
+      .eq('id', target_id)
+      .maybeSingle();
+    const authorId = (parent as any)?.user_id as string | undefined;
+    const tenantId = (parent as any)?.tenant_id as string | undefined;
+    if (!authorId || !tenantId) {
+      return res.json({ ok: true, skipped: 'target_not_found' });
+    }
+
+    // 2. Skip self-interactions.
+    if (authorId === actorId) {
+      return res.json({ ok: true, skipped: 'self' });
+    }
+
+    // 3. Anti-spoof: verify the interaction row exists for this caller.
+    const intTable = kind === 'like' ? cfg.likes : cfg.comments;
+    const { data: intRow } = await supa
+      .from(intTable)
+      .select('id')
+      .eq(cfg.fk, target_id)
+      .eq('user_id', actorId)
+      .limit(1)
+      .maybeSingle();
+    if (!intRow) {
+      return res.json({ ok: true, skipped: 'no_row' });
+    }
+
+    // 4. Dedup likes (prevents unlike→relike spam). Comments notify per-comment.
+    const type = kind === 'like' ? 'post_like' : 'post_comment';
+    if (kind === 'like') {
+      const { data: existing } = await supa
+        .from('user_notifications')
+        .select('id')
+        .eq('user_id', authorId)
+        .eq('type', 'post_like')
+        .eq('data->>entity_id', target_id)
+        .eq('data->>actor_id', actorId)
+        .limit(1)
+        .maybeSingle();
+      if (existing) {
+        return res.json({ ok: true, skipped: 'duplicate' });
+      }
+    }
+
+    // 5. Resolve actor display name + author locale.
+    const { data: actorProfile } = await supa
+      .from('profiles')
+      .select('display_name')
+      .eq('user_id', actorId)
+      .maybeSingle();
+    const actorName = (actorProfile as any)?.display_name || 'Jemand';
+    const locale = await getUserLocale(supa, authorId);
+
+    // 6. Fire the notification (in-app + inline push, localized, pref/DND-gated).
+    notifyUserAsync(
+      authorId,
+      tenantId,
+      type,
+      {
+        title: tt(`notif.${type}.title` as any, locale, { name: actorName }),
+        body: tt(`notif.${type}.body` as any, locale, { name: actorName }),
+        data: {
+          url: `/u/${authorId}`,
+          entity_id: target_id,
+          actor_id: actorId,
+          source,
+        },
+      },
+      supa,
+    );
+
+    return res.json({ ok: true, notified: true });
+  } catch (err: any) {
+    console.warn(`[${VTID}] interactions/notify error: ${err.message}`);
+    // Never surface to the liker — the like/comment itself already succeeded.
+    return res.json({ ok: true, skipped: 'error' });
+  }
 });
 
 export default router;

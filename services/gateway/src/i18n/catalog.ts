@@ -40,6 +40,11 @@ export type GatewayI18nKey =
   // Live room goes live → notify everyone who tapped "Notify me" on the scheduled session.
   | 'notif.live_going_live.title'
   | 'notif.live_going_live.body'
+  // Social: someone liked or commented on your post (community feed + profile)
+  | 'notif.post_like.title'
+  | 'notif.post_like.body'
+  | 'notif.post_comment.title'
+  | 'notif.post_comment.body'
   // Daily pace check (claude/daily-pace-notifications)
   | 'notif.daily_pace.on_track.title'
   | 'notif.daily_pace.on_track.body'
@@ -122,6 +127,10 @@ const DE: LocaleCatalog = {
   'notif.fallback_app_name': 'Vitana',
   'notif.live_going_live.title': '🔴 Jetzt live!',
   'notif.live_going_live.body': '„{title}" hat gerade begonnen. Schau jetzt rein.',
+  'notif.post_like.title': 'Neues Like',
+  'notif.post_like.body': '{name} gefällt dein Beitrag.',
+  'notif.post_comment.title': 'Neuer Kommentar',
+  'notif.post_comment.body': '{name} hat deinen Beitrag kommentiert.',
   // Daily pace check
   'notif.daily_pace.on_track.title': 'Auf Kurs ✨',
   'notif.daily_pace.on_track.body': 'Du bist auf einem guten Weg. Schließ heute noch deinen Tagesplan ab — dein Ziel kommt näher.',
@@ -200,6 +209,10 @@ const EN: LocaleCatalog = {
   'notif.fallback_app_name': 'Vitana',
   'notif.live_going_live.title': '🔴 Now live!',
   'notif.live_going_live.body': '"{title}" just started. Tune in now.',
+  'notif.post_like.title': 'New like',
+  'notif.post_like.body': '{name} liked your post.',
+  'notif.post_comment.title': 'New comment',
+  'notif.post_comment.body': '{name} commented on your post.',
   // Daily pace check
   'notif.daily_pace.on_track.title': 'On track ✨',
   'notif.daily_pace.on_track.body': "You're moving well. Wrap up today's plan — your goal is getting closer.",
