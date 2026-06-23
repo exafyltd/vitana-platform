@@ -29,7 +29,7 @@ import { notifyUserAsync, notifyUsersAsync } from '../services/notification-serv
 import { dispatchEvent } from '../services/automation-executor';
 import { tt } from '../i18n/catalog';
 import { getUserLocale } from '../i18n/server-locale';
-import { requireAuth, type AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
+import { requireAuth, requireTenant, type AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
 
 const router = Router();
 
@@ -1113,7 +1113,7 @@ const INTERACTION_TABLES = {
   media: { parent: 'media_uploads', likes: 'media_upload_likes', comments: 'media_upload_comments', fk: 'upload_id' },
 } as const;
 
-router.post('/interactions/notify', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+router.post('/interactions/notify', requireAuth, requireTenant, async (req: AuthenticatedRequest, res: Response) => {
   // impact-allow-no-oasis: this endpoint only fans out an author notification
   // for a like/comment already written client-side; it makes no domain state
   // transition of its own, so there is nothing OASIS-worthy to record here.
@@ -1156,27 +1156,23 @@ router.post('/interactions/notify', requireAuth, async (req: AuthenticatedReques
       return res.json({ ok: true, skipped: 'self' });
     }
 
-    // 3. Resolve the author's tenant (canonical: app_users keyed by user_id,
-    // falling back to profiles). user_notifications, device tokens, and prefs
-    // are all scoped by tenant, so it must be the recipient's own tenant.
+    // 3. Resolve the author's tenant from the CANONICAL source: user_tenants
+    // (is_primary) — the exact source requireTenant uses. The author's bell
+    // (GET /notifications), their device tokens, and their notification prefs
+    // are ALL scoped by this tenant, so writing under any other value (e.g.
+    // app_users.tenant_id, which can differ) makes the notification invisible
+    // and undeliverable. Fall back to the caller's tenant (same community).
     let tenantId: string | null = null;
-    const { data: authorUser } = await supa
-      .from('app_users')
+    const { data: authorTenantRow } = await supa
+      .from('user_tenants')
       .select('tenant_id')
       .eq('user_id', authorId)
+      .eq('is_primary', true)
       .maybeSingle();
-    tenantId = (authorUser as any)?.tenant_id ?? null;
+    tenantId = (authorTenantRow as any)?.tenant_id ?? null;
     if (!tenantId) {
-      const { data: authorProfile } = await supa
-        .from('profiles')
-        .select('tenant_id')
-        .eq('user_id', authorId)
-        .maybeSingle();
-      tenantId = (authorProfile as any)?.tenant_id ?? null;
-    }
-    // Last resort: the actor's active tenant (same as chat's behavior). In this
-    // single-community deployment author and actor share a tenant.
-    if (!tenantId) {
+      // requireTenant guarantees the caller has a resolved tenant; in this
+      // single-community deployment author and caller share it.
       tenantId = req.identity?.tenant_id ?? null;
     }
     if (!tenantId) {
@@ -1223,6 +1219,10 @@ router.post('/interactions/notify', requireAuth, async (req: AuthenticatedReques
     const locale = await getUserLocale(supa, authorId);
 
     // 7. Fire the notification (in-app + inline push, localized, pref/DND-gated).
+    console.log(
+      `[interactions/notify] ${type} author=${authorId.slice(0, 8)}… ` +
+      `tenant=${tenantId.slice(0, 8)}… actor=${actorId.slice(0, 8)}… source=${source}`,
+    );
     notifyUserAsync(
       authorId,
       tenantId,
