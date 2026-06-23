@@ -1139,15 +1139,15 @@ router.post('/interactions/notify', requireAuth, async (req: AuthenticatedReques
     const { createClient } = await import('@supabase/supabase-js');
     const supa = createClient(supabaseUrl, serviceKey);
 
-    // 1. Resolve the post's author + tenant.
+    // 1. Resolve the post's author. NOTE: profile_posts / media_uploads have
+    // NO tenant_id column — the author's tenant is resolved separately below.
     const { data: parent } = await supa
       .from(cfg.parent)
-      .select('user_id, tenant_id')
+      .select('user_id')
       .eq('id', target_id)
       .maybeSingle();
     const authorId = (parent as any)?.user_id as string | undefined;
-    const tenantId = (parent as any)?.tenant_id as string | undefined;
-    if (!authorId || !tenantId) {
+    if (!authorId) {
       return res.json({ ok: true, skipped: 'target_not_found' });
     }
 
@@ -1156,7 +1156,34 @@ router.post('/interactions/notify', requireAuth, async (req: AuthenticatedReques
       return res.json({ ok: true, skipped: 'self' });
     }
 
-    // 3. Anti-spoof: verify the interaction row exists for this caller.
+    // 3. Resolve the author's tenant (canonical: app_users keyed by user_id,
+    // falling back to profiles). user_notifications, device tokens, and prefs
+    // are all scoped by tenant, so it must be the recipient's own tenant.
+    let tenantId: string | null = null;
+    const { data: authorUser } = await supa
+      .from('app_users')
+      .select('tenant_id')
+      .eq('user_id', authorId)
+      .maybeSingle();
+    tenantId = (authorUser as any)?.tenant_id ?? null;
+    if (!tenantId) {
+      const { data: authorProfile } = await supa
+        .from('profiles')
+        .select('tenant_id')
+        .eq('user_id', authorId)
+        .maybeSingle();
+      tenantId = (authorProfile as any)?.tenant_id ?? null;
+    }
+    // Last resort: the actor's active tenant (same as chat's behavior). In this
+    // single-community deployment author and actor share a tenant.
+    if (!tenantId) {
+      tenantId = req.identity?.tenant_id ?? null;
+    }
+    if (!tenantId) {
+      return res.json({ ok: true, skipped: 'no_tenant' });
+    }
+
+    // 4. Anti-spoof: verify the interaction row exists for this caller.
     const intTable = kind === 'like' ? cfg.likes : cfg.comments;
     const { data: intRow } = await supa
       .from(intTable)
@@ -1169,7 +1196,7 @@ router.post('/interactions/notify', requireAuth, async (req: AuthenticatedReques
       return res.json({ ok: true, skipped: 'no_row' });
     }
 
-    // 4. Dedup likes (prevents unlike→relike spam). Comments notify per-comment.
+    // 5. Dedup likes (prevents unlike→relike spam). Comments notify per-comment.
     const type = kind === 'like' ? 'post_like' : 'post_comment';
     if (kind === 'like') {
       const { data: existing } = await supa
@@ -1186,7 +1213,7 @@ router.post('/interactions/notify', requireAuth, async (req: AuthenticatedReques
       }
     }
 
-    // 5. Resolve actor display name + author locale.
+    // 6. Resolve actor display name + author locale.
     const { data: actorProfile } = await supa
       .from('profiles')
       .select('display_name')
@@ -1195,7 +1222,7 @@ router.post('/interactions/notify', requireAuth, async (req: AuthenticatedReques
     const actorName = (actorProfile as any)?.display_name || 'Jemand';
     const locale = await getUserLocale(supa, authorId);
 
-    // 6. Fire the notification (in-app + inline push, localized, pref/DND-gated).
+    // 7. Fire the notification (in-app + inline push, localized, pref/DND-gated).
     notifyUserAsync(
       authorId,
       tenantId,
