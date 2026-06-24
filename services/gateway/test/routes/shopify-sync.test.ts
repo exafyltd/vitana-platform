@@ -7,6 +7,8 @@ import {
   deterministicUuid,
   mapShopifyProduct,
   resolveShopifyConfig,
+  mergeSetCookies,
+  cookieHeader,
   type ShopifySyncConfig,
   type ShopifyProduct,
 } from '../../src/services/shopify-sync';
@@ -78,6 +80,32 @@ describe('mapShopifyProduct', () => {
 
   test('returns null for an invalid product (no id/title)', () => {
     expect(mapShopifyProduct({ id: 0, title: '', handle: 'x' } as ShopifyProduct, cfg)).toBeNull();
+  });
+});
+
+describe('storefront-password cookie jar', () => {
+  test('accumulates cookies across the handshake (essential + digest)', () => {
+    const jar: Record<string, string> = {};
+    // GET /password sets the essential cookie...
+    mergeSetCookies(jar, ['_shopify_essential=:AABB:; path=/; HttpOnly; SameSite=Lax']);
+    // ...the POST then sets the storefront digest. Both must reach products.json.
+    mergeSetCookies(jar, ['storefront_digest=abc123; path=/; HttpOnly']);
+    const header = cookieHeader(jar);
+    expect(header).toContain('_shopify_essential=:AABB:');
+    expect(header).toContain('storefront_digest=abc123');
+  });
+
+  test('later Set-Cookie for the same name overrides the earlier value', () => {
+    const jar: Record<string, string> = {};
+    mergeSetCookies(jar, ['_shopify_essential=old; path=/']);
+    mergeSetCookies(jar, ['_shopify_essential=new; path=/']);
+    expect(cookieHeader(jar)).toBe('_shopify_essential=new');
+  });
+
+  test('ignores malformed Set-Cookie entries', () => {
+    const jar: Record<string, string> = {};
+    mergeSetCookies(jar, ['', 'no-equals-sign; path=/']);
+    expect(cookieHeader(jar)).toBe('');
   });
 });
 
