@@ -25,10 +25,8 @@ import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { createUserSupabaseClient } from '../lib/supabase-user';
 import { emitOasisEvent } from '../services/oasis-event-service';
-import { notifyUser, notifyUserAsync, notifyUsersAsync } from '../services/notification-service';
+import { notifyUserAsync, notifyUsersAsync } from '../services/notification-service';
 import { dispatchEvent } from '../services/automation-executor';
-import { tt } from '../i18n/catalog';
-import { getUserLocale } from '../i18n/server-locale';
 import { requireAuth, requireTenant, type AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
 
 const router = Router();
@@ -1087,118 +1085,19 @@ router.get('/health', (_req: Request, res: Response) => {
 });
 
 /**
- * POST /api/v1/community/interactions/notify
+ * POST /api/v1/community/interactions/notify — DEPRECATED no-op.
  *
- * Fire-and-forget notification fan-out for a like/comment that the frontend
- * already wrote to the DB (client-side, RLS-guarded). The frontend calls this
- * right after a successful like/comment insert so the post author gets an
- * in-app + push notification (Instagram/Facebook style) via the canonical
- * notifyUserAsync path (handles i18n, prefs, DND, inline push).
- *
- * Body: { source: 'post'|'media', target_id: uuid, kind: 'like'|'comment' }
- *
- * Security: the caller is derived from the JWT; we verify the interaction row
- * actually exists for this caller (anti-spoof) before notifying, using a
- * service-role client (needed to insert a notification for a DIFFERENT user —
- * the recipient — which RLS would block on the user-scoped client).
+ * Like/comment author notifications are now created by Postgres AFTER INSERT
+ * triggers on the like/comment tables (vitana-v1 migrations 20260623000000+),
+ * which fire regardless of client and localize + deep-link (/post/<source>/<id>)
+ * server-side. This route is kept only so older deployed frontends that still
+ * POST here get a harmless 200 instead of creating a DUPLICATE (and wrongly
+ * profile-linked) notification — or hitting a 404.
  */
-const InteractionNotifySchema = z.object({
-  source: z.enum(['post', 'media']),
-  target_id: z.string().uuid('Invalid target_id'),
-  kind: z.enum(['like', 'comment']),
-});
-
-const INTERACTION_TABLES = {
-  post: { parent: 'profile_posts', likes: 'profile_post_likes', comments: 'profile_post_comments', fk: 'post_id' },
-  media: { parent: 'media_uploads', likes: 'media_upload_likes', comments: 'media_upload_comments', fk: 'upload_id' },
-} as const;
-
-router.post('/interactions/notify', requireAuth, requireTenant, async (req: AuthenticatedRequest, res: Response) => {
-  // impact-allow-no-oasis: this endpoint only fans out an author notification
-  // for a like/comment already written client-side; it makes no domain state
-  // transition of its own, so there is nothing OASIS-worthy to record here.
-  const actorId = req.identity?.user_id;
-  if (!actorId) {
-    return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
-  }
-
-  const parsed = InteractionNotifySchema.safeParse(req.body);
-  if (!parsed.success) {
-    return res.status(400).json({ ok: false, error: 'INVALID_BODY', detail: parsed.error.flatten() });
-  }
-  const { source, target_id, kind } = parsed.data;
-
-  const supabaseUrl = process.env.SUPABASE_URL;
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE;
-  if (!supabaseUrl || !serviceKey) {
-    return res.status(503).json({ ok: false, error: 'Gateway misconfigured' });
-  }
-
-  try {
-    const cfg = INTERACTION_TABLES[source];
-    const { createClient } = await import('@supabase/supabase-js');
-    const supa = createClient(supabaseUrl, serviceKey);
-
-    // Resolve the post author (profile_posts / media_uploads expose user_id).
-    const { data: parent } = await supa
-      .from(cfg.parent)
-      .select('user_id')
-      .eq('id', target_id)
-      .maybeSingle();
-    const authorId = (parent as any)?.user_id as string | undefined;
-    if (!authorId) {
-      return res.json({ ok: true, skipped: 'target_not_found' });
-    }
-    if (authorId === actorId) {
-      return res.json({ ok: true, skipped: 'self' });
-    }
-
-    // Recipient tenant: the caller's resolved tenant — EXACTLY like chat
-    // (notifyUserAsync(receiver, identity.tenant_id, …)). requireTenant
-    // guarantees it; single shared community tenant so author == caller tenant.
-    const tenantId = req.identity!.tenant_id!;
-    const type = kind === 'like' ? 'post_like' : 'post_comment';
-
-    // Actor display name + author locale.
-    const { data: actorProfile } = await supa
-      .from('profiles')
-      .select('display_name')
-      .eq('user_id', actorId)
-      .maybeSingle();
-    const actorName = (actorProfile as any)?.display_name || 'Jemand';
-    const locale = await getUserLocale(supa, authorId);
-
-    // Notify — AWAITED (not fire-and-forget) so the result is observable and
-    // any throw surfaces in the catch below. Same call shape as chat.
-    const result = await notifyUser(
-      authorId,
-      tenantId,
-      type,
-      {
-        title: tt(`notif.${type}.title` as any, locale, { name: actorName }),
-        body: tt(`notif.${type}.body` as any, locale, { name: actorName }),
-        data: {
-          url: `/u/${authorId}`,
-          entity_id: target_id,
-          actor_id: actorId,
-          source,
-        },
-      },
-      supa,
-    );
-    console.log(
-      `[interactions/notify] ${type} author=${authorId.slice(0, 8)}… ` +
-      `tenant=${tenantId.slice(0, 8)}… actor=${actorId.slice(0, 8)}… source=${source} ` +
-      `→ inapp=${result.inapp} pushed=${result.pushed}` +
-      (result.suppressed ? ` suppressed=${result.suppressed}` : ''),
-    );
-
-    return res.json({ ok: true, result });
-  } catch (err: any) {
-    console.warn(`[${VTID}] interactions/notify error: ${err.message}`);
-    // Never surface to the liker — the like/comment itself already succeeded.
-    return res.json({ ok: true, skipped: 'error' });
-  }
+router.post('/interactions/notify', requireAuth, requireTenant, async (_req: AuthenticatedRequest, res: Response) => {
+  // impact-allow-no-oasis: deprecated no-op — makes no state transition; the
+  // notification is created by a DB trigger, not here.
+  return res.json({ ok: true, skipped: 'handled_by_db_trigger' });
 });
 
 export default router;
