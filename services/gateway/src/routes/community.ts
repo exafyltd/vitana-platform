@@ -1114,6 +1114,14 @@ const INTERACTION_TABLES = {
 } as const;
 
 router.post('/interactions/notify', requireAuth, requireTenant, async (req: AuthenticatedRequest, res: Response) => {
+  // DEPRECATED — no-op. Like/comment author notifications are now created by
+  // Postgres AFTER INSERT triggers on the like/comment tables (vitana-v1
+  // migrations 20260623000000+), which fire regardless of client, and localize
+  // + deep-link (/post/<source>/<id>) server-side. This handler is retained only
+  // so older deployed frontends that still POST here become a harmless no-op
+  // instead of creating a DUPLICATE (and wrongly profile-linked) notification.
+  return res.json({ ok: true, skipped: 'handled_by_db_trigger' });
+
   // impact-allow-no-oasis: this endpoint only fans out an author notification
   // for a like/comment already written client-side; it makes no domain state
   // transition of its own, so there is nothing OASIS-worthy to record here.
