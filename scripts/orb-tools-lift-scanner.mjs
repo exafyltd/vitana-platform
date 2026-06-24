@@ -47,8 +47,14 @@ function readSource(path) {
 // ---------------------------------------------------------------------------
 
 function extractRegistry(src) {
-  // Find the `ORB_TOOL_REGISTRY` block and pull each `tool_name:` key.
-  const idx = src.indexOf('ORB_TOOL_REGISTRY');
+  // Find the `ORB_TOOL_REGISTRY` object-literal block and pull each
+  // `tool_name:` key. Anchor on the `const ORB_TOOL_REGISTRY` DEFINITION, not
+  // the first textual mention: the identifier is now used (`!ORB_TOOL_REGISTRY[tool]`)
+  // before it is defined, and a bare indexOf('ORB_TOOL_REGISTRY') would grab
+  // that usage's enclosing `if (...) {` brace, match an empty block, and report
+  // "0 tools" — falsely flagging every delegated tool as broken.
+  let idx = src.indexOf('const ORB_TOOL_REGISTRY');
+  if (idx < 0) idx = src.indexOf('ORB_TOOL_REGISTRY'); // fallback: original behavior
   if (idx < 0) {
     console.error('[parity] could not find ORB_TOOL_REGISTRY in shared module');
     process.exit(3);
@@ -202,6 +208,10 @@ const SHARED_ONLY_INTENTIONAL = new Set([
   'navigate',             // Vertex: handleNavigate at orb-live.ts (PR 1.B-4)
   'navigate_to_screen',   // Vertex: handleNavigateToScreen (PR 1.B-5)
   'get_current_screen',   // Vertex: handleGetCurrentScreen (PR 1.B-3)
+  'offer_action',         // NAV_CONTINUATION_BIND producer (tool_offer_action):
+                          // stores the pending_cta for acceptance binding. Shared-
+                          // only by design — no Vertex case arm; both pipelines
+                          // reach it via the shared dispatcher.
 ]);
 const intentionalInline = [];
 
