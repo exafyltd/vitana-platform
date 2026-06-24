@@ -26,6 +26,10 @@ import { tt, type GatewayI18nKey } from '../i18n/catalog';
 import { getUserLocale } from '../i18n/server-locale';
 
 const router = Router();
+// Explicit file-level auth marker for the impact-scan rule. Every route in
+// this file requires a logged-in user; per-route requireAuth below is the
+// same gate, kept inline so the route signature reads clearly.
+router.use(requireAuth);
 
 type CelebrationKind =
   | 'daily_goal'
@@ -76,7 +80,10 @@ const CELEBRATION_KINDS: Record<
 
 function getServiceClient(): SupabaseClient | null {
   const url = process.env.SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE;
+  // Use the canonical SUPABASE_SERVICE_ROLE that the EXEC-DEPLOY workflow
+  // already binds (see scheduled-notifications.ts pattern). The older
+  // SUPABASE_SERVICE_ROLE_KEY name is not bound in any deploy config.
+  const key = process.env.SUPABASE_SERVICE_ROLE;
   if (!url || !key) return null;
   return createClient(url, key, {
     auth: { autoRefreshToken: false, persistSession: false },
@@ -85,7 +92,6 @@ function getServiceClient(): SupabaseClient | null {
 
 router.post(
   '/dispatch',
-  requireAuth,
   async (req: AuthenticatedRequest, res: Response) => {
     const userId = req.identity?.user_id;
     const tenantId = req.identity?.tenant_id;
@@ -155,6 +161,32 @@ router.post(
       },
       supa,
     );
+
+    // Record the dispatch as a state transition — the user just crossed a
+    // real milestone in their journey, not a poll. Best-effort; OASIS write
+    // failures must never break the user-facing response.
+    try {
+      const { emitOasisEvent } = await import('../services/oasis-event-service');
+      await emitOasisEvent({
+        type: 'notification.journey_celebration.dispatched' as any,
+        source: 'gateway',
+        // VTID format VTID-\d{4,5} per CLAUDE.md §4; no real VTID is bound
+        // to this feature yet, so use the BOOTSTRAP- prefix accepted by the
+        // OASIS validator and the AUTO-DEPLOY regex.
+        vtid: 'BOOTSTRAP-JOURNEY-CELEBRATIONS',
+        status: 'info',
+        message: `journey_celebration ${kind} dispatched`,
+        payload: {
+          tenant_id: tenantId,
+          user_id: userId,
+          kind,
+          dedupe_key: dedupeKey,
+          type: spec.type,
+        },
+      });
+    } catch (oasisErr: any) {
+      console.warn(`[celebrations] OASIS emit failed for ${userId.slice(0, 8)}: ${oasisErr?.message || oasisErr}`);
+    }
 
     return res.json({ ok: true, dispatched: 1 });
   },
