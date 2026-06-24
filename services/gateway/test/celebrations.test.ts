@@ -153,20 +153,15 @@ describe('POST /api/v1/celebrations/dispatch', () => {
 
   it('dedupes a second call with the same dedupe_key', async () => {
     const app = makeApp();
-    // 1st call lands the row (the dedupe lookup found nothing).
+    // 1st call lands the synchronous pre-insert row before notifyUserAsync.
+    // No manual store push needed — the route itself now writes the durable
+    // dedupe marker before responding, closing the race window that two
+    // near-simultaneous /dispatch calls used to slip through.
     await request(app)
       .post('/api/v1/celebrations/dispatch')
       .send({ kind: 'progress_50', dedupe_key: 'progress:50' });
-    // Simulate that notifyUserAsync wrote the canonical user_notifications
-    // row (in production that's done inside notifyUser). The dedupe path
-    // doesn't care who wrote the row, only that it exists.
-    store.user_notifications.push({
-      id: 'fake',
-      user_id: TEST_USER_ID,
-      tenant_id: TEST_TENANT_ID,
-      type: 'progress_milestone_celebration',
-      data: { dedupe_key: 'progress:50' },
-    });
+    expect(store.user_notifications.length).toBe(1);
+    expect(store.user_notifications[0].data.dedupe_key).toBe('progress:50');
     notifyUserAsyncMock.mockClear();
 
     const res = await request(app)
@@ -175,5 +170,30 @@ describe('POST /api/v1/celebrations/dispatch', () => {
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ ok: true, dispatched: 0, skipped: 'already_sent' });
     expect(notifyUserAsyncMock).not.toHaveBeenCalled();
+  });
+
+  it('pre-inserts the dedupe row synchronously before notifyUserAsync', async () => {
+    // Race-protection: the row must exist at response time so a parallel
+    // retry's dedupe lookup hits it. notifyUserAsync's own row write happens
+    // later inside a fire-and-forget — too late to gate a near-simultaneous
+    // second call.
+    let storeSizeAtNotify = -1;
+    notifyUserAsyncMock.mockImplementationOnce(() => {
+      storeSizeAtNotify = store.user_notifications.length;
+    });
+    const res = await request(makeApp())
+      .post('/api/v1/celebrations/dispatch')
+      .send({ kind: 'daily_goal', dedupe_key: '2026-06-05' });
+    expect(res.status).toBe(200);
+    expect(storeSizeAtNotify).toBe(1);
+    expect(store.user_notifications[0]).toMatchObject({
+      user_id: TEST_USER_ID,
+      tenant_id: TEST_TENANT_ID,
+      type: 'daily_goal_celebration',
+      channel: 'push_and_inapp',
+      priority: 'p1',
+      category: 'growth',
+    });
+    expect(store.user_notifications[0].push_sent_at).toBeTruthy();
   });
 });

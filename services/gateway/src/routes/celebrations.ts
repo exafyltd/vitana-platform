@@ -21,7 +21,7 @@
 import { Router, Response } from 'express';
 import { requireAuth, AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
-import { notifyUserAsync } from '../services/notification-service';
+import { notifyUserAsync, TYPE_META } from '../services/notification-service';
 import { tt, type GatewayI18nKey } from '../i18n/catalog';
 import { getUserLocale } from '../i18n/server-locale';
 
@@ -143,6 +143,45 @@ router.post(
     const title = tt(spec.titleKey, lc, extra as any);
     const body = tt(spec.bodyKey, lc, extra as any);
 
+    const dataPayload: Record<string, string> = {
+      type: spec.type,
+      kind,
+      dedupe_key: dedupeKey,
+      url: '/autopilot',
+      deeplink: '/autopilot',
+      ...Object.fromEntries(Object.entries(extra).map(([k, v]) => [k, String(v)])),
+    };
+
+    // Synchronous pre-insert closes the race window: two near-simultaneous
+    // /dispatch calls would both pass the dedupe lookup above because
+    // notifyUserAsync writes its canonical row asynchronously (a few awaits
+    // deep inside notifyUser). Landing a durable dedupe marker now means the
+    // second caller's lookup finds this row and short-circuits. push_sent_at
+    // is set so /push-dispatch (which scans push_sent_at IS NULL within the
+    // last 5 min) ignores this row — notifyUserAsync writes its own canonical
+    // row and the FCM/Appilix push goes out through that path exactly once.
+    const meta = TYPE_META?.[spec.type as keyof typeof TYPE_META];
+    try {
+      await supa.from('user_notifications').insert({
+        user_id: userId,
+        tenant_id: tenantId,
+        type: spec.type,
+        title,
+        body,
+        data: dataPayload,
+        channel: meta?.channel ?? 'push_and_inapp',
+        priority: meta?.priority ?? 'p1',
+        category: meta?.category ?? 'growth',
+        push_sent_at: new Date().toISOString(),
+      });
+    } catch (insErr: any) {
+      // notifyUserAsync below still writes its own canonical row; this is a
+      // best-effort dedup hint. Don't fail the user-facing dispatch on it.
+      console.warn(
+        `[celebrations] pre-insert failed for ${userId.slice(0, 8)} kind=${kind}: ${insErr?.message || insErr}`,
+      );
+    }
+
     notifyUserAsync(
       userId,
       tenantId,
@@ -150,14 +189,7 @@ router.post(
       {
         title,
         body,
-        data: {
-          type: spec.type,
-          kind,
-          dedupe_key: dedupeKey,
-          url: '/autopilot',
-          deeplink: '/autopilot',
-          ...Object.fromEntries(Object.entries(extra).map(([k, v]) => [k, String(v)])),
-        },
+        data: dataPayload,
       },
       supa,
     );
