@@ -52,6 +52,18 @@ export type GatewayI18nKey =
   | 'notif.daily_pace.slightly_behind.body'
   | 'notif.daily_pace.falling_behind.title'
   | 'notif.daily_pace.falling_behind.body'
+  | 'notif.celebration.daily_goal.title'
+  | 'notif.celebration.daily_goal.body'
+  | 'notif.celebration.phase_milestone.title'
+  | 'notif.celebration.phase_milestone.body'
+  | 'notif.celebration.progress_25.title'
+  | 'notif.celebration.progress_25.body'
+  | 'notif.celebration.progress_50.title'
+  | 'notif.celebration.progress_50.body'
+  | 'notif.celebration.progress_75.title'
+  | 'notif.celebration.progress_75.body'
+  | 'notif.celebration.progress_100.title'
+  | 'notif.celebration.progress_100.body'
   // Notification-category labels surfaced on Settings → Notifications page.
   // Mapped from notification_categories.slug (display_name + description).
   | 'notif.category.chat.direct_messages.label'
@@ -138,6 +150,18 @@ const DE: LocaleCatalog = {
   'notif.daily_pace.slightly_behind.body': 'Ein, zwei Schritte vom Tagesplan reichen, um wieder mit deinem Ziel im Gleichschritt zu sein.',
   'notif.daily_pace.falling_behind.title': 'Dein Ziel wartet',
   'notif.daily_pace.falling_behind.body': 'Wir kommen vom Kurs ab. Ein kleiner Schritt heute — und du bist wieder dabei.',
+  'notif.celebration.daily_goal.title': 'Heutiges Ziel geschafft 🎉',
+  'notif.celebration.daily_goal.body': 'Schön gemacht — du bist wieder einen Tag näher an deinem Ziel.',
+  'notif.celebration.phase_milestone.title': 'Neue Phase erreicht 🌟',
+  'notif.celebration.phase_milestone.body': 'Du bist jetzt in der Phase „{phase}". Weiter so.',
+  'notif.celebration.progress_25.title': 'Ein Viertel geschafft 🌱',
+  'notif.celebration.progress_25.body': 'Du bist 25% deiner Reise weit. Bleib dran.',
+  'notif.celebration.progress_50.title': 'Halbzeit erreicht 🌟',
+  'notif.celebration.progress_50.body': 'Mehr als die Hälfte liegt hinter dir. Du machst das großartig.',
+  'notif.celebration.progress_75.title': 'Drei Viertel — fast da 🚀',
+  'notif.celebration.progress_75.body': '75% deiner Reise hast du geschafft. Die Zielgerade wartet.',
+  'notif.celebration.progress_100.title': 'Ziel erreicht 🏆',
+  'notif.celebration.progress_100.body': 'Glückwunsch! Du hast es geschafft.',
   // Notification-category labels (Settings → Benachrichtigungen)
   'notif.category.chat.direct_messages.label': 'Direktnachrichten',
   'notif.category.chat.direct_messages.desc': 'Neue Nachrichten von Personen und Gruppen',
@@ -220,6 +244,18 @@ const EN: LocaleCatalog = {
   'notif.daily_pace.slightly_behind.body': "One or two steps from today's plan are enough to fall back in step with your goal.",
   'notif.daily_pace.falling_behind.title': 'Your goal is waiting',
   'notif.daily_pace.falling_behind.body': "We're drifting off course. One small step today — and you're back in.",
+  'notif.celebration.daily_goal.title': "Today's goal done 🎉",
+  'notif.celebration.daily_goal.body': "Nice work — you're another day closer to your goal.",
+  'notif.celebration.phase_milestone.title': 'New phase reached 🌟',
+  'notif.celebration.phase_milestone.body': 'You’re now in the "{phase}" phase. Keep going.',
+  'notif.celebration.progress_25.title': 'A quarter of the way 🌱',
+  'notif.celebration.progress_25.body': "You're 25% through your journey. Stay with it.",
+  'notif.celebration.progress_50.title': 'Halfway there 🌟',
+  'notif.celebration.progress_50.body': "More than half is behind you. You're doing great.",
+  'notif.celebration.progress_75.title': 'Three quarters — almost there 🚀',
+  'notif.celebration.progress_75.body': "You're 75% of the way there. The finish line is in sight.",
+  'notif.celebration.progress_100.title': 'Goal reached 🏆',
+  'notif.celebration.progress_100.body': 'Congratulations! You did it.',
   // Notification-category labels (Settings → Notifications)
   'notif.category.chat.direct_messages.label': 'Direct Messages',
   'notif.category.chat.direct_messages.desc': 'New messages from people and groups',
