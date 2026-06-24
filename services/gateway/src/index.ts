@@ -301,6 +301,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const vcaopPostbackRouter = require('./routes/vcaop-postback').default;
   // VCAOP: Shopify own-store catalog sync (admin trigger; background worker in services)
   const shopifySyncRouter = require('./routes/shopify-sync').default;
+  // VCAOP: Awin joined-programme sync (admin trigger; background worker in services)
+  const awinSyncRouter = require('./routes/awin-sync').default;
   // VTID-01169: Deploy → Ledger Terminalization (terminalize endpoint + repair job)
   const vtidTerminalizeRouter = require('./routes/vtid-terminalize').default;
   // VTID-01157: Supabase JWT Auth Middleware + /api/v1/auth/me endpoint
@@ -666,6 +668,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   mountRouterSync(app, '/api/v1/vcaop/postback', vcaopPostbackRouter, { owner: 'vcaop-postback' });
   // VCAOP: Shopify catalog sync — mount before the vcaop router so the sub-path resolves.
   mountRouterSync(app, '/api/v1/vcaop/shopify', shopifySyncRouter, { owner: 'vcaop-shopify' });
+  // VCAOP: Awin programme sync — mount before the vcaop router so the sub-path resolves.
+  mountRouterSync(app, '/api/v1/vcaop/awin', awinSyncRouter, { owner: 'vcaop-awin' });
   // VCAOP: Vitanaland Commerce API — providers/affiliate-programs/shop/wallet/onboarding
   mountRouterSync(app, '/api/v1/vcaop', vcaopRouter, { owner: 'vcaop' });
 
@@ -1592,6 +1596,15 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
         startShopifySyncWorker();
       } catch (error) {
         console.warn('⚠️ Shopify sync worker initialization failed (non-fatal):', error);
+      }
+
+      // VCAOP: Awin joined-programme sync. Opt-in (AWIN_SYNC_ENABLED=true +
+      // AWIN_PUBLISHER_ID + AWIN_API_TOKEN). Harvests joined programmes on an interval.
+      try {
+        const { startAwinSyncWorker } = require('./services/awin-sync');
+        startAwinSyncWorker();
+      } catch (error) {
+        console.warn('⚠️ Awin sync worker initialization failed (non-fatal):', error);
       }
 
       // Dev Autopilot background executor (cooling→running→ci loop).
