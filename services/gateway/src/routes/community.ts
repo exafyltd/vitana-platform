@@ -1095,6 +1095,8 @@ router.get('/health', (_req: Request, res: Response) => {
  * profile-linked) notification — or hitting a 404.
  */
 router.post('/interactions/notify', requireAuth, requireTenant, async (_req: AuthenticatedRequest, res: Response) => {
+  // impact-allow-no-oasis: deprecated no-op — makes no state transition; the
+  // notification is created by a DB trigger, not here.
   return res.json({ ok: true, skipped: 'handled_by_db_trigger' });
 });
 
