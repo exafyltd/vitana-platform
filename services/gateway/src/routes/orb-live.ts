@@ -11942,7 +11942,7 @@ router.get('/debug/context-bootstrap', async (req: Request, res: Response) => {
  * the same user (independent of start query) and checks turn_count /
  * audio_out_chunks metrics. If no stop event exists, wasFailure is false.
  */
-async function fetchLastSessionInfo(userId: string): Promise<{ time: string; wasFailure: boolean } | null> {
+async function fetchLastSessionInfo(userId: string, timezone?: string | null): Promise<{ time: string; wasFailure: boolean } | null> {
   try {
     const SUPABASE_URL = process.env.SUPABASE_URL;
     const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE;
@@ -12017,10 +12017,32 @@ async function fetchLastSessionInfo(userId: string): Promise<{ time: string; was
           const ujResp = await fetch(ujUrl, { method: 'GET', headers, signal: controller.signal }).catch(() => null);
           if (ujResp && ujResp.ok) {
             const ujData = await ujResp.json() as Array<{ last_session_date: string | null }>;
-            const lsd = ujData.length > 0 ? ujData[0].last_session_date : null;
-            if (lsd && /^\d{4}-\d{2}-\d{2}/.test(lsd)) {
-              const synthIso = `${lsd.slice(0, 10)}T12:00:00.000Z`;
-              console.log(`[VTID-01224-FIX] fetchLastSessionInfo: no session-start event — using user_journey.last_session_date=${lsd} for user=${userId.substring(0, 8)}...`);
+            const lsdRaw = ujData.length > 0 ? ujData[0].last_session_date : null;
+            if (lsdRaw && /^\d{4}-\d{2}-\d{2}/.test(lsdRaw)) {
+              const lsd = lsdRaw.slice(0, 10);
+              // last_session_date is the user's LOCAL calendar date (stamped via
+              // todayInTimezone). Compare against the user's LOCAL today on the
+              // SAME basis. Only a PRIOR local day is a genuine new-day return;
+              // when the stored date is the current local day (or later) this is
+              // a SAME-DAY reopen and must NOT be treated as new-day — otherwise
+              // a reopen >8h after a synthesized noon would bucket as `today`
+              // (new-day) and wrongly re-fire the morning overview, whereas the
+              // canonical new-day-return provider suppresses last_session_date >=
+              // today (Codex P2). Same-day → return now (short-gap bucket).
+              let todayLocal: string;
+              try {
+                todayLocal = new Intl.DateTimeFormat('en-CA', {
+                  timeZone: timezone || 'UTC', year: 'numeric', month: '2-digit', day: '2-digit',
+                }).format(new Date());
+              } catch {
+                todayLocal = new Date().toISOString().slice(0, 10);
+              }
+              if (lsd >= todayLocal) {
+                console.log(`[VTID-01224-FIX] fetchLastSessionInfo: last_session_date=${lsd} is same-day (today_local=${todayLocal}) — short-gap for user=${userId.substring(0, 8)}...`);
+                return { time: new Date().toISOString(), wasFailure: false };
+              }
+              const synthIso = `${lsd}T12:00:00.000Z`;
+              console.log(`[VTID-01224-FIX] fetchLastSessionInfo: no session-start event — using user_journey.last_session_date=${lsd} (new-day) for user=${userId.substring(0, 8)}...`);
               return { time: synthIso, wasFailure: false };
             }
           }
