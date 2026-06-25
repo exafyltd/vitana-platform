@@ -68,12 +68,27 @@ const VALID_CATEGORIES = [
 
 const VALID_ACCESS = ['public', 'authenticated'] as const;
 
+// BOOTSTRAP-NAV-ROLE: the role-surfaces a catalog entry can be scoped to. Mirror
+// of the app's getRoleNavigation cases (+ developer/infra, which fall through to
+// the community sidebar but are accepted for completeness). 'community' is the
+// default — every catalog entry today is the consumer surface.
+export const VALID_ROLES = ['community', 'patient', 'professional', 'staff', 'admin', 'developer', 'infra'] as const;
+const DEFAULT_ROLE = 'community';
+export function normalizeRole(r: unknown): string {
+  return typeof r === 'string' && (VALID_ROLES as readonly string[]).includes(r) ? r : DEFAULT_ROLE;
+}
+
 function validateCatalogPayload(body: any, { isPartial }: { isPartial: boolean }): string | null {
   if (!body || typeof body !== 'object') return 'PAYLOAD_REQUIRED';
 
   // BOOTSTRAP-NAV-PLATFORM: platform, when provided, must be a known surface.
   if (body.platform != null && body.platform !== 'mobile' && body.platform !== 'desktop') {
     return "platform must be 'mobile' or 'desktop'";
+  }
+
+  // BOOTSTRAP-NAV-ROLE: role, when provided, must be a known role-surface.
+  if (body.role != null && !VALID_ROLES.includes(body.role)) {
+    return `role must be one of: ${VALID_ROLES.join(', ')}`;
   }
 
   if (!isPartial) {
@@ -157,15 +172,18 @@ router.get('/catalog', async (req: AuthenticatedRequest, res: Response) => {
   const supabase = getSupabase();
   if (!supabase) return res.status(500).json({ ok: false, error: 'SUPABASE_UNAVAILABLE' });
 
-  const { tenant_id, category, q, lang: langQ, include_inactive, platform } = req.query;
+  const { tenant_id, category, q, lang: langQ, include_inactive, platform, role } = req.query;
 
   try {
     let query = supabase
       .from('nav_catalog')
-      .select('id, screen_id, tenant_id, route, category, access, anonymous_safe, priority, platform, related_kb_topics, context_rules, override_triggers, is_active, created_at, updated_at, updated_by');
+      .select('id, screen_id, tenant_id, route, category, access, anonymous_safe, priority, platform, role, related_kb_topics, context_rules, override_triggers, is_active, created_at, updated_at, updated_by');
 
     // BOOTSTRAP-NAV-PLATFORM: scope to one MAXINA catalog (Mobile by default).
     query = query.eq('platform', platform === 'desktop' ? 'desktop' : 'mobile');
+
+    // BOOTSTRAP-NAV-ROLE: scope to one role-surface (community by default).
+    query = query.eq('role', normalizeRole(role));
 
     if (include_inactive !== 'true') query = query.eq('is_active', true);
     if (category && typeof category === 'string') query = query.eq('category', category);
@@ -273,6 +291,8 @@ router.post('/catalog', async (req: AuthenticatedRequest, res: Response) => {
       priority: req.body.priority || 0,
       // BOOTSTRAP-NAV-PLATFORM: which catalog this screen belongs to (Mobile default).
       platform: req.body.platform === 'desktop' ? 'desktop' : 'mobile',
+      // BOOTSTRAP-NAV-ROLE: which role-surface this screen belongs to (community default).
+      role: normalizeRole(req.body.role),
       related_kb_topics: req.body.related_kb_topics || [],
       context_rules: req.body.context_rules || {},
       override_triggers: req.body.override_triggers || [],
