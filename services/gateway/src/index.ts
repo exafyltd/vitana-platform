@@ -1607,6 +1607,16 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
         console.warn('⚠️ Awin sync worker initialization failed (non-fatal):', error);
       }
 
+      // VCAOP: Awin conversion crediting (Phase 2). Opt-in (AWIN_CONVERSIONS_ENABLED=true
+      // + AWIN_PUBLISHER_ID + AWIN_API_TOKEN). Pulls transactions on an interval and
+      // credits attributed conversions into the rewards ledger (no postback).
+      try {
+        const { startAwinConversionWorker } = require('./services/awin-conversions');
+        startAwinConversionWorker();
+      } catch (error) {
+        console.warn('⚠️ Awin conversion worker initialization failed (non-fatal):', error);
+      }
+
       // Dev Autopilot background executor (cooling→running→ci loop).
       // Disabled when DEV_AUTOPILOT_EXECUTOR_ENABLED=false.
       try {
