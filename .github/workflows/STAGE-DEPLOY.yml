@@ -158,6 +158,17 @@ jobs:
             "FEATURE_ORB_FAST_START_ENV=staging-only"
             "FEATURE_ORB_SAFE_FAST_GREETING_ENV=staging-only"
             "ORB_CONTEXT_READY_GATE_TIMEOUT_MS=300"
+            # NAV continuation / journey-mode experiments — bake into the staging
+            # env so they PERSIST across every STAGE-DEPLOY (--set-env-vars
+            # REPLACES, so a hand-set gcloud flag is wiped on the next push — the
+            # same trap that bit fast-start above). staging-only; prod stays off
+            # until these graduate via the PUBLISH path.
+            #   NAV_GUIDED_JOURNEY    → "guided" vs "full app" durable-mode switch
+            #                           on My Journey (incl. widened phrasing)
+            #   NAV_CONTINUATION_BIND → bind "Ja"/"yes" to a pending nav offer
+            #                           (offer_action + auto-capture + turn_complete)
+            "NAV_GUIDED_JOURNEY=true"
+            "NAV_CONTINUATION_BIND=true"
           )
 
           # Comma-joined for --set-env-vars (replaces, not merges — we want the
