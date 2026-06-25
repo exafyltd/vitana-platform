@@ -7564,6 +7564,29 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
             ]);
             if (ws.readyState !== WebSocket.OPEN) return;
 
+            // FIRST-GREETING-OF-THE-DAY budget. The first session of a new day
+            // is allowed to take a beat longer so Vitana can open with the FULL
+            // morning overview instead of a bare next-step lead (product
+            // decision: richness > latency for turn 1 of the day). The fast
+            // facts pre-fetch (spoken name + last-session info + proactive line)
+            // may not have resolved within the short ORB_GREETING_FACTS_WAIT_MS
+            // cap above — and until last-session info lands we cannot even tell
+            // whether this IS a new-day return. So when facts are still pending,
+            // wait once more up to a larger new-day budget. Same-day reconnects
+            // whose facts already resolved skip this entirely and stay fast.
+            if (_greetingFactsReady && !(session as any).lastSessionInfo) {
+              const _firstWaitMs = Number(process.env.ORB_GREETING_FACTS_WAIT_MS || 700);
+              const _ndFactsWaitMs = Number(process.env.ORB_NEWDAY_FACTS_WAIT_MS || 2200);
+              const _extraWaitMs = Math.max(0, _ndFactsWaitMs - _firstWaitMs);
+              if (_extraWaitMs > 0) {
+                await Promise.race([
+                  _greetingFactsReady,
+                  new Promise<void>((r) => setTimeout(r, _extraWaitMs)),
+                ]);
+                if (ws.readyState !== WebSocket.OPEN) return;
+              }
+            }
+
             // NEW-DAY OVERVIEW (rich summary owns turn 1). On a genuine new-day
             // return we speak the FULL multi-clause morning overview (what passed
             // since last session, today's next event, Index direction, Life
@@ -7603,7 +7626,7 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
                     todayDateIso: todayInTimezone(_nowNd, _tzNd),
                     lastSessionAtIso: (session as any).lastSessionInfo?.time ?? null,
                   }),
-                  new Promise<null>((r) => setTimeout(() => r(null), Number(process.env.ORB_NEWDAY_OVERVIEW_WAIT_MS || 1500))),
+                  new Promise<null>((r) => setTimeout(() => r(null), Number(process.env.ORB_NEWDAY_OVERVIEW_WAIT_MS || 3000))),
                 ]).catch(() => null);
                 // The aggregator returns a truthy payload even when EMPTY (no
                 // calendar, no goal, no index move) — rendering that yields just a
@@ -7706,7 +7729,24 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
             // or the bare "Good <tod>, <Name>". It is kept to ~2 short sentences
             // so Gemini Live reliably emits audio. This is the top of the fast-
             // greeting ladder: proactive line → name greeting → generic opener.
-            const proactiveLine: unknown = (session as any).greetingProactiveLine;
+            // FIRST-GREETING-OF-THE-DAY: on a genuine new-day return the rich
+            // morning overview (the rung above) owns turn 1. If the overview
+            // could not build (e.g. no calendar/goal content yet, or the
+            // aggregator lost its budget), we want the grounded "Good <tod>,
+            // <Name>." new-day opener BELOW — never the bare proactive
+            // next-step lead ("Ich nehme dich mit zum nächsten Schritt"), which
+            // is what made the morning summary feel like it disappeared. So
+            // suppress the proactive opener on a genuine new-day return; it
+            // still fires for same-day reopenings (reconnect/recent/same_day).
+            const _ladderTemporal = describeTimeSince((session as any).lastSessionInfo);
+            const _ladderIsNewDay =
+              _ladderTemporal.bucket === 'today' ||
+              _ladderTemporal.bucket === 'yesterday' ||
+              _ladderTemporal.bucket === 'week' ||
+              _ladderTemporal.bucket === 'long';
+            const proactiveLine: unknown = _ladderIsNewDay
+              ? null
+              : (session as any).greetingProactiveLine;
             if (typeof proactiveLine === 'string' && proactiveLine.trim().length > 0) {
               const safeProactive = proactiveLine.trim().replace(/"/g, '\\"');
               const proactivePrompt =
