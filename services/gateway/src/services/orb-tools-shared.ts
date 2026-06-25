@@ -3303,7 +3303,6 @@ export async function tool_navigate(
         // Keyword detection for the GUIDED vs FULL durable mode. Deliberately
         // broad — people don't say "guided journey" verbatim; they say "the
         // simple one", "step by step", "der Anfänger-Modus", "show me everything".
-        // GUIDED is checked first, so it wins if a phrase somehow hits both.
         // EN: guided / step-by-step / beginner / intro(duction) / tutorial /
         //     onboarding / walk me through / simple(r) / basic / easy mode.
         // DE: geführt / Einführung / Schritt für Schritt / Anfänger / einfach(e/r) /
@@ -3320,7 +3319,25 @@ export async function tool_navigate(
           /full[\s-]?(?:app|version|mode|experience)|vollversion|volle\s+version|komplette?n?\s*app|\bkomplett(?:e[rsn]?)?\b|\bcomplete\b|advanced|fortgeschritten|erweitert|all[\s-]?features|alle\s+funktionen|\balles\b|everything|pro[\s-]?(?:mode|modus)|profi[\s-]?modus/.test(
             intentText,
           );
-        const targetMode: 'guided' | 'full' | null = wantsGuided ? 'guided' : wantsFull ? 'full' : null;
+        // NEGATION GUARD: "the FULL app, NOT the guided journey" must NOT switch
+        // to guided just because the word "guided" appears. Detect a negation
+        // token within ~3 words before a mode NAME and discount that side, so the
+        // explicitly-rejected mode never wins. Targets the named modes (the words
+        // people actually contrast); broad synonyms aren't negated in practice.
+        const negatedGuided =
+          /(?:not|n['’]?t|nicht|kein[a-z]*|rather than|instead of|statt|anstatt|ohne)\b(?:\W+\w+){0,3}?\W+(?:guided|gef[üu]hrt|einf[üu]hrung)/.test(
+            intentText,
+          );
+        const negatedFull =
+          /(?:not|n['’]?t|nicht|kein[a-z]*|rather than|instead of|statt|anstatt|ohne)\b(?:\W+\w+){0,3}?\W+(?:full|vollversion|volle|komplett|complete)/.test(
+            intentText,
+          );
+        const pickGuided = wantsGuided && !negatedGuided;
+        const pickFull = wantsFull && !negatedFull;
+        // Guided wins ties only among modes that were actually requested (i.e.
+        // not negated). "full not guided" → guided negated → full; "guided not
+        // full" → full negated → guided.
+        const targetMode: 'guided' | 'full' | null = pickGuided ? 'guided' : pickFull ? 'full' : null;
         if (targetMode) {
           try {
             const { setJourneyMode } = await import('./guided-journey/guided-journey-state');
