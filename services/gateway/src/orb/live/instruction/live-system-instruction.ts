@@ -45,6 +45,7 @@ import {
 // boundary. The function is pure (lang → string), so the round-trip is
 // safe.
 import { buildNavigatorPolicySection } from '../../../routes/orb-live';
+import { buildJourneyModesSection } from './journey-modes-prompt';
 import {
   BRAIN_OPENER_V2_START,
   BRAIN_OPENER_V2_END,
@@ -726,6 +727,15 @@ ${trimmedHistory}
   // when to consult the navigator, when to navigate directly, and when to
   // simply answer in voice without any tool call.
   instruction += buildNavigatorPolicySection(lang);
+
+  // NAV_GUIDED_JOURNEY — teach Vitana the DECLARATIVE distinction between the
+  // two views of "My Journey" (Guided/Einführung vs Full App/Vollversion) so it
+  // can EXPLAIN the difference in open conversation, not just switch modes on
+  // the navigate path. Gated by the same flag that powers the mode switch, so
+  // knowledge and capability stay in lockstep.
+  if (process.env.NAV_GUIDED_JOURNEY === 'true') {
+    instruction += buildJourneyModesSection(lang);
+  }
 
   // VTID-NAV-TIMEJOURNEY: Append the temporal + journey context block LAST so
   // its greeting policy overrides the generic GREETING RULES higher up. This
