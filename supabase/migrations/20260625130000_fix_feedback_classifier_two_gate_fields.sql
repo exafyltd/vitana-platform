@@ -34,6 +34,12 @@
 -- Idempotent CREATE OR REPLACE; body otherwise identical to
 -- 20260604123000_support_surface_human_only_queue.sql. Once applied, the next
 -- cron run (≤5 min) classifies the backlog of stuck tickets automatically.
+--
+-- impact-allow-solo-migration: solo migration is intentional. This only
+-- repairs an existing function that is already invoked by the existing
+-- `feedback-classifier` pg_cron job and whose classifier_meta output is
+-- already consumed by existing gateway code — no gateway/worker code change
+-- is needed (or possible) to make this usable.
 
 CREATE OR REPLACE FUNCTION public.classify_pending_feedback_tickets()
 RETURNS TABLE (classified_count INT, dedup_count INT)
