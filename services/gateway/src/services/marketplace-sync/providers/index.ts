@@ -13,6 +13,7 @@ import { cjProvider } from './cj';
 import { amazonProvider } from './amazon';
 import { rakutenProvider } from './rakuten';
 import { awinProvider } from './awin';
+import { admitadProvider } from './admitad';
 
 /** Order here == display order in the admin UI dropdown. */
 const PROVIDERS: readonly MarketplaceProvider[] = [
@@ -21,6 +22,7 @@ const PROVIDERS: readonly MarketplaceProvider[] = [
   amazonProvider,
   rakutenProvider,
   awinProvider,
+  admitadProvider,
 ];
 
 const BY_KEY = new Map<string, MarketplaceProvider>(PROVIDERS.map((p) => [p.key, p]));
