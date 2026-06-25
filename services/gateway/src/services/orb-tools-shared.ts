@@ -3300,8 +3300,26 @@ export async function tool_navigate(
         entry.screen_id === 'AUTOPILOT.MY_JOURNEY'
       ) {
         const intentText = `${question} ${transcriptExcerpt}`.toLowerCase();
-        const wantsGuided = /guided|gef[üu]hrt|einf[üu]hrung/.test(intentText);
-        const wantsFull = /full[\s-]?app|full[\s-]?version|full[\s-]?mode|vollversion|volle\s+version|komplette\s+app|kompletten?\s+app/.test(intentText);
+        // Keyword detection for the GUIDED vs FULL durable mode. Deliberately
+        // broad — people don't say "guided journey" verbatim; they say "the
+        // simple one", "step by step", "der Anfänger-Modus", "show me everything".
+        // GUIDED is checked first, so it wins if a phrase somehow hits both.
+        // EN: guided / step-by-step / beginner / intro(duction) / tutorial /
+        //     onboarding / walk me through / simple(r) / basic / easy mode.
+        // DE: geführt / Einführung / Schritt für Schritt / Anfänger / einfach(e/r) /
+        //     leicht (+ "-modus"/"-version").
+        const wantsGuided =
+          /guided|gef[üu]hrt|einf[üu]hrung|step[\s-]?by[\s-]?step|schritt[\s-]?f[üu]r[\s-]?schritt|beginner|anf[äa]nger|\bintro\b|introduction|tutorial|onboarding|walk me through|\bsimple(?:r)?\b|\bbasic\b|einfache?[rsn]?\b|\beasy\b|leichte?[rsn]?\b/.test(
+            intentText,
+          );
+        // EN: full app/version/mode/experience / complete / advanced /
+        //     everything / all features / pro mode.
+        // DE: Vollversion / volle Version / komplett(e/n) (App) / fortgeschritten /
+        //     erweitert / alle Funktionen / alles / Profi-Modus.
+        const wantsFull =
+          /full[\s-]?(?:app|version|mode|experience)|vollversion|volle\s+version|komplette?n?\s*app|\bkomplett(?:e[rsn]?)?\b|\bcomplete\b|advanced|fortgeschritten|erweitert|all[\s-]?features|alle\s+funktionen|\balles\b|everything|pro[\s-]?(?:mode|modus)|profi[\s-]?modus/.test(
+            intentText,
+          );
         const targetMode: 'guided' | 'full' | null = wantsGuided ? 'guided' : wantsFull ? 'full' : null;
         if (targetMode) {
           try {
