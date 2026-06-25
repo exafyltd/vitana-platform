@@ -12000,6 +12000,33 @@ async function fetchLastSessionInfo(userId: string): Promise<{ time: string; was
       }
 
       if (!time) {
+        // RELIABLE FALLBACK (new-day detection). The `vtid.live.session.start`
+        // telemetry above has proven fragile — events stop carrying a real
+        // user_id (or stop being written), so this query returns zero rows,
+        // lastSessionInfo becomes null, every session looks like a first
+        // meeting, and the new-day morning overview can NEVER fire. When the
+        // event lookup finds nothing, fall back to the canonical per-user
+        // `user_journey.last_session_date` (stamped on every session, and the
+        // same field the heavy new-day-return provider trusts). We synthesize a
+        // timestamp at noon of that local date; describeTimeSince then buckets a
+        // prior calendar day as yesterday/week/long (→ new-day) and the same
+        // day as same_day/recent (→ not new-day), which is exactly the
+        // first-greeting-of-the-day semantics we want.
+        try {
+          const ujUrl = `${SUPABASE_URL}/rest/v1/user_journey?select=last_session_date&user_id=eq.${userId}&limit=1`;
+          const ujResp = await fetch(ujUrl, { method: 'GET', headers, signal: controller.signal }).catch(() => null);
+          if (ujResp && ujResp.ok) {
+            const ujData = await ujResp.json() as Array<{ last_session_date: string | null }>;
+            const lsd = ujData.length > 0 ? ujData[0].last_session_date : null;
+            if (lsd && /^\d{4}-\d{2}-\d{2}/.test(lsd)) {
+              const synthIso = `${lsd.slice(0, 10)}T12:00:00.000Z`;
+              console.log(`[VTID-01224-FIX] fetchLastSessionInfo: no session-start event — using user_journey.last_session_date=${lsd} for user=${userId.substring(0, 8)}...`);
+              return { time: synthIso, wasFailure: false };
+            }
+          }
+        } catch (_ujErr) {
+          /* fall through to null below */
+        }
         console.log(`[VTID-01224-FIX] fetchLastSessionInfo: no prior session found for user=${userId.substring(0, 8)}...`);
         return null;
       }
