@@ -45,6 +45,7 @@ interface NavCatalogRow {
   anonymous_safe: boolean;
   priority: number;
   platform?: 'mobile' | 'desktop';
+  allowed_roles: unknown;
   related_kb_topics: unknown;
   context_rules: unknown;
   override_triggers: unknown;
@@ -226,7 +227,7 @@ export async function refreshNavCatalogCache(): Promise<void> {
       const { data: rows, error: rowsErr } = await supabase
         .from('nav_catalog')
         .select(
-          'id, screen_id, tenant_id, route, category, access, anonymous_safe, priority, platform, related_kb_topics, context_rules, override_triggers, is_active, created_at, updated_at, updated_by'
+          'id, screen_id, tenant_id, route, category, access, anonymous_safe, priority, platform, allowed_roles, related_kb_topics, context_rules, override_triggers, is_active, created_at, updated_at, updated_by'
         )
         .eq('is_active', true);
 
@@ -293,6 +294,10 @@ export async function refreshNavCatalogCache(): Promise<void> {
           anonymous_safe: !!raw.anonymous_safe,
           priority: raw.priority || 0,
           platform: raw.platform === 'desktop' ? 'desktop' : 'mobile',
+          allowed_roles:
+            Array.isArray(raw.allowed_roles) && raw.allowed_roles.length > 0
+              ? (raw.allowed_roles as string[])
+              : undefined,
           related_kb_topics: Array.isArray(raw.related_kb_topics) ? raw.related_kb_topics as string[] : [],
           i18n,
           tenant_id: raw.tenant_id,
