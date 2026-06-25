@@ -128,6 +128,24 @@ describe('NAV-GUIDED-JOURNEY', () => {
       expect(mockSetMode).not.toHaveBeenCalled();
     });
   });
+
+  // NEGATION: "the FULL app, NOT the guided journey" must resolve to FULL even
+  // though the word "guided" appears — the rejected mode must never win.
+  describe('negation handling (X not Y)', () => {
+    const CASES: Array<[string, 'guided' | 'full']> = [
+      ['navigate me to my longevity journey, the full app not the guided journey', 'full'],
+      ['the guided journey, not the full app', 'guided'],
+      ['bring mich zur Vollversion, nicht zur geführten Journey', 'full'],
+      ['zeig mir die geführte Journey, nicht die Vollversion', 'guided'],
+      ['I don’t want the guided journey, give me the full app', 'full'],
+    ];
+    test.each(CASES)('"%s" → %s', async (q, expected) => {
+      process.env.NAV_GUIDED_JOURNEY = 'true';
+      await tool_navigate({ question: q }, authedId, sbStub);
+      expect(mockSetMode).toHaveBeenCalledTimes(1);
+      expect(mockSetMode.mock.calls[0][2]).toBe(expected);
+    });
+  });
 });
 
 // NAV_CONTINUATION_BIND — auto-capture nav offers (invariant #10, produce side):
