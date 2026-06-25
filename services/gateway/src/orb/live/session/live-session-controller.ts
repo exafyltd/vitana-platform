@@ -134,6 +134,7 @@ export interface LiveSessionControllerDeps {
   persistLanguagePreference: (tenantId: string, userId: string, lang: string) => void;
   fetchLastSessionInfo: (
     userId: string,
+    timezone?: string | null,
   ) => Promise<{ time: string; wasFailure: boolean } | null>;
   fetchOnboardingCohortBlock: (
     userId: string | null | undefined,
@@ -812,7 +813,7 @@ export async function handleLiveSessionStart(
       usingDevFallback
         ? Promise.resolve(DEV_IDENTITY.ACTIVE_ROLE)
         : deps.resolveEffectiveRole(bootstrapIdentity.user_id, bootstrapIdentity.tenant_id || ''),
-      deps.fetchLastSessionInfo(bootstrapIdentity.user_id),
+      deps.fetchLastSessionInfo(bootstrapIdentity.user_id, clientContext?.timezone),
       storedLangPromise,
       bootstrapIdentity.tenant_id
         ? fetchAdminBriefingBlock(bootstrapIdentity.tenant_id, 3).catch((err) => {
@@ -922,7 +923,7 @@ export async function handleLiveSessionStart(
           const { getSupabase } = await import('../../../lib/supabase');
           const supa = getSupabase() ?? undefined;
           const [lastInfo, factResult, profileResult, firstSessionResult, journeyStateResult] = await Promise.allSettled([
-            deps.fetchLastSessionInfo(_ndIdentity.user_id),
+            deps.fetchLastSessionInfo(_ndIdentity.user_id, clientContext?.timezone),
             supa
               ? supa
                   .from('memory_facts')
