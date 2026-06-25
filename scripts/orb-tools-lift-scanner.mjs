@@ -47,8 +47,15 @@ function readSource(path) {
 // ---------------------------------------------------------------------------
 
 function extractRegistry(src) {
-  // Find the `ORB_TOOL_REGISTRY` block and pull each `tool_name:` key.
-  const idx = src.indexOf('ORB_TOOL_REGISTRY');
+  // Find the `ORB_TOOL_REGISTRY` object-literal DEFINITION and pull each
+  // `tool_name:` key. Anchor on the `const ... = {` definition, NOT the first
+  // textual occurrence — usages like `!ORB_TOOL_REGISTRY[tool]` now appear
+  // BEFORE the definition, and anchoring on those made the brace-matcher capture
+  // an unrelated block and parse 0 tools (→ every delegating Vertex case was
+  // falsely flagged as "registry has no entry").
+  let idx = src.search(/\bORB_TOOL_REGISTRY\s*:\s*Record/);
+  if (idx < 0) idx = src.search(/\bconst\s+ORB_TOOL_REGISTRY\b/);
+  if (idx < 0) idx = src.indexOf('ORB_TOOL_REGISTRY'); // last-resort fallback
   if (idx < 0) {
     console.error('[parity] could not find ORB_TOOL_REGISTRY in shared module');
     process.exit(3);
@@ -202,6 +209,8 @@ const SHARED_ONLY_INTENTIONAL = new Set([
   'navigate',             // Vertex: handleNavigate at orb-live.ts (PR 1.B-4)
   'navigate_to_screen',   // Vertex: handleNavigateToScreen (PR 1.B-5)
   'get_current_screen',   // Vertex: handleGetCurrentScreen (PR 1.B-3)
+  'offer_action',         // LiveKit-only (#2751): registry entry for tools.py;
+                          // Vertex never declares/routes it, so no `case` arm.
 ]);
 const intentionalInline = [];
 
