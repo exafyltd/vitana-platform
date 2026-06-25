@@ -82,6 +82,52 @@ describe('NAV-GUIDED-JOURNEY', () => {
     await tool_navigate({ question: 'open my journey' }, authedId, sbStub);
     expect(mockSetMode).not.toHaveBeenCalled();
   });
+
+  // Widened phrase matching: natural paraphrases must resolve to the right mode,
+  // not just the literal words "guided" / "full app".
+  describe('widened phrase matching', () => {
+    const GUIDED_PHRASES = [
+      'take me to the simple version of my journey',
+      'I want the step by step journey',
+      'open the beginner mode of my journey',
+      'walk me through my journey',
+      'zeig mir den Anfänger-Modus meiner Journey',
+      'bring mich zur einfachen Journey',
+      'die geführte Einführung bitte',
+      'show me the easy mode',
+      'open the tutorial journey',
+    ];
+    const FULL_PHRASES = [
+      'take me to the complete version of my journey',
+      'I want the advanced journey',
+      'show me everything on my journey',
+      'open the pro mode of my journey',
+      'zeig mir die Vollversion meiner Journey',
+      'ich will die komplette App-Journey',
+      'bring mich zur erweiterten Journey',
+      'show me all features of my journey',
+    ];
+
+    test.each(GUIDED_PHRASES)('guided variant: "%s" → guided', async (q) => {
+      process.env.NAV_GUIDED_JOURNEY = 'true';
+      await tool_navigate({ question: q }, authedId, sbStub);
+      expect(mockSetMode).toHaveBeenCalledTimes(1);
+      expect(mockSetMode.mock.calls[0][2]).toBe('guided');
+    });
+
+    test.each(FULL_PHRASES)('full variant: "%s" → full', async (q) => {
+      process.env.NAV_GUIDED_JOURNEY = 'true';
+      await tool_navigate({ question: q }, authedId, sbStub);
+      expect(mockSetMode).toHaveBeenCalledTimes(1);
+      expect(mockSetMode.mock.calls[0][2]).toBe('full');
+    });
+
+    test('neutral phrasing still does NOT switch (no false positive)', async () => {
+      process.env.NAV_GUIDED_JOURNEY = 'true';
+      await tool_navigate({ question: 'just take me to my journey please' }, authedId, sbStub);
+      expect(mockSetMode).not.toHaveBeenCalled();
+    });
+  });
 });
 
 // NAV_CONTINUATION_BIND — auto-capture nav offers (invariant #10, produce side):
