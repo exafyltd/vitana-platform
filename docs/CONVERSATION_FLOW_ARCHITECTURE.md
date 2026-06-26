@@ -351,6 +351,61 @@ journey-maturity model that already exists (`login_briefing`'s
   relates back to the journey and nudges the next session. The provider and the
   standing instruction read the SAME journey context, so they can never disagree.
 
+### Completeness: the briefing carries EVERY signal, not just journey + calendar
+
+> A morning briefing that names the journey day and today's calendar but omits
+> the Vitana Index move, new community matches, unread messages, due reminders,
+> and the autopilot/proactive next step is **half-baked**. The first turn of the
+> day is the one moment the user is most receptive to the full picture — it must
+> be the *complete* picture.
+
+The complete signal set is the **rich** `gatherOverviewPayload`
+(`new-day-overview-payload.ts`), which reads the SAME sources the My Journey
+screen renders **plus** the voice-only time-sensitive signals:
+
+- journey (day-in-journey, plan_phase, wave / goal arc)
+- Vitana Index **with pillar + 7-day-trend interpretation** (never a bare number)
+- Life Compass goal (verbatim, as the North Star)
+- calendar today + passed-since-last-session
+- **autopilot `today_checkpoint`** — the proactive next step, which OWNS the
+  named close (this is the proactive-assistant layer surfacing in voice)
+- **new community matches** (`matches_unread`)
+- **unread messages** (`messages_unread`, count only)
+- reminders due today
+- diary streak (7-day)
+
+The narrow `aggregateNewDayOverview` (calendar + Index + goal only) is **not**
+sufficient for the opener — wiring it into the spoken turn drops seven signals
+and is what produced the half-baked briefing (the PR #2790 regression).
+
+### One brain, MANY MOUTHS — the rendering differs by transport, the payload does not
+
+The single-rich-payload is the **brain**. The mistake was forcing ONE
+*rendering* (a single server-composed line) onto BOTH transports: a deterministic
+line cannot carry nine signals without reading like a dashboard (the exact tone
+the briefing prompt forbids). So the mouths differ by capability:
+
+- **Vertex (LLM mouth):** hand the model the full structured block
+  `buildNewDayOverviewBlock` (carries the wake-brief override marker + a
+  per-payload coverage checklist). The model composes the natural two-paragraph
+  briefing that covers every applicable signal. **Wording is 100% model-composed
+  from the payload — nothing is hardcoded, and the block is language-agnostic
+  (`Respond in {lang}`), so German is first-class.** This is what the Vertex
+  SAFE-FAST new-day rung now sends (`orb-live.ts`, `wake_opener:
+  safe_fast_newday_overview`) — the path real users are on today.
+- **LiveKit (deterministic `say()` mouth):** has no LLM to compose the opener, so
+  it speaks `userFacingLine` verbatim. It gets a **bounded** composed line. A
+  fully-rich deterministic line is a separate renderer; until LiveKit is actually
+  activated (Vertex-only today) it keeps the bounded line.
+
+**Therefore:** the `new_day_return` provider must carry the rich payload, and the
+render step is chosen per transport — LLM transports get the structured block,
+deterministic transports get the bounded line. The provider is transport-agnostic
+today (no transport flag in `ContinuationDecisionContext`), so threading that
+flag through `decideWakeBriefForSession` so the heavy Vertex path ALSO emits the
+rich block is the tracked Phase-2 follow-up. **The user-facing path (Vertex
+SAFE-FAST) is complete now; the brain-level completion rides Phase 2.**
+
 ---
 
 ## 11. Memory is a first-class input (read every turn, write every session)
