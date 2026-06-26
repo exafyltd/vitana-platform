@@ -7615,59 +7615,97 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
               if (_langOkNd && _isNewDayNd && typeof _firstNameNd === 'string' && _firstNameNd.trim().length > 0 && _uidNd && _supaNd) {
                 const _tzNd = session.clientContext?.timezone || 'UTC';
                 const _nowNd = new Date();
-                const { aggregateNewDayOverview } = await import('../services/assistant-continuation/providers/new-day-overview-aggregator');
-                const { renderNewDayReturnLineWithOverview, todayInTimezone, pickSalutationKind, localHourInTimezone } = await import('../services/assistant-continuation/providers/new-day-return');
+                // VTID-03172 / complete-briefing: use the RICH unified overview
+                // payload (the SAME data the My Journey screen renders, plus
+                // voice-only time-sensitive signals) instead of the narrow
+                // calendar+goal aggregator. This restores the Vitana Index
+                // (with pillar + trend interpretation), new community matches,
+                // unread messages, reminders due today, the autopilot
+                // today-checkpoint, and the diary streak to the FIRST spoken
+                // turn of the day — the half that the narrow aggregator dropped.
+                // We hand the model the composed structural block (it already
+                // carries the wake-brief override marker + the coverage
+                // checklist) as the first-turn directive, rather than a single
+                // pre-rendered verbatim line, so it speaks the full two-paragraph
+                // journey briefing. Wording stays 100% model-composed from the
+                // payload — nothing here is hardcoded.
+                const { gatherOverviewPayload } = await import('../services/assistant-continuation/providers/new-day-overview-payload');
+                const { buildNewDayOverviewBlock } = await import('../services/assistant-continuation/providers/new-day-overview-prompt');
+                const { todayInTimezone, localHourInTimezone } = await import('../services/assistant-continuation/providers/new-day-return');
+                // Last session's LOCAL date (YYYY-MM-DD) bounds the "since last
+                // session" calendar lookback. Derive it from the pre-fetched
+                // last-session timestamp; null falls back to a 24h window inside
+                // the aggregator.
+                const _lastSessIso = (session as any).lastSessionInfo?.time ?? null;
+                const _lastSessDateTz =
+                  typeof _lastSessIso === 'string' && _lastSessIso.length > 0
+                    ? todayInTimezone(new Date(_lastSessIso), _tzNd)
+                    : null;
                 const _overview = await Promise.race([
-                  aggregateNewDayOverview({
+                  gatherOverviewPayload({
                     supabase: _supaNd,
                     userId: _uidNd,
                     now: _nowNd,
                     timezone: _tzNd,
-                    todayDateIso: todayInTimezone(_nowNd, _tzNd),
-                    lastSessionAtIso: (session as any).lastSessionInfo?.time ?? null,
+                    lastSessionDateUserTz: _lastSessDateTz,
+                    // Precise cutoff for "events since we last spoke" — avoids
+                    // briefing the user about events that happened BEFORE their
+                    // prior same-day session (Codex P2).
+                    lastSessionAtIso: _lastSessIso,
                   }),
                   new Promise<null>((r) => setTimeout(() => r(null), Number(process.env.ORB_NEWDAY_OVERVIEW_WAIT_MS || 3000))),
                 ]).catch(() => null);
-                // The aggregator returns a truthy payload even when EMPTY (no
-                // calendar, no goal, no index move) — rendering that yields just a
-                // bare "Good morning … let's get started", which would preempt a
-                // genuine concrete proactive opener. Only take the overview when
-                // it has REAL content (a calendar event or the Life Compass goal);
-                // an index-only move is handled by the proactive ladder below.
-                // Otherwise fall through (Codex P2).
-                const _overviewHasContent =
+                // Take the rich overview when it has ANY substantive content. For
+                // a genuine onboarded new-day return `journey` is virtually always
+                // present (day_in_journey is monotonic), so this fires; the guard
+                // exists only so a fully-empty payload (no journey, every signal
+                // un-set, nothing scheduled, no inbox) falls through to the
+                // proactive ladder rather than speaking an empty briefing.
+                const _hasContent =
                   !!_overview &&
-                  (_overview.calendar_passed_notable != null ||
-                    _overview.calendar_passed_count > 0 ||
-                    _overview.calendar_today_next != null ||
-                    _overview.calendar_today_count > 0 ||
-                    !!(_overview.life_compass_goal && String(_overview.life_compass_goal).trim().length > 0));
-                if (_overview && _overviewHasContent) {
-                  const _line = renderNewDayReturnLineWithOverview({
-                    lang,
-                    salutation: pickSalutationKind(localHourInTimezone(_nowNd, _tzNd)),
-                    firstName: _firstNameNd.trim(),
-                    timezone: _tzNd,
+                  (!!_overview.journey ||
+                    _overview.vitana_index.state === 'ok' ||
+                    _overview.life_compass.state === 'set' ||
+                    _overview.calendar_today.count > 0 ||
+                    _overview.calendar_passed.count > 0 ||
+                    (_overview.autopilot.state === 'has_actions' && !!_overview.autopilot.today_checkpoint) ||
+                    _overview.matches_unread > 0 ||
+                    _overview.messages_unread > 0 ||
+                    _overview.reminders_today.count > 0);
+                if (_overview && _hasContent) {
+                  const _block = buildNewDayOverviewBlock({
                     payload: _overview,
+                    lang,
+                    firstName: _firstNameNd.trim(),
+                    localHour: localHourInTimezone(_nowNd, _tzNd),
+                    timezone: _tzNd,
                   });
-                  if (_line && _line.trim().length > 0) {
-                    const _safeOv = _line.trim().replace(/"/g, '\\"');
-                    const _ovPrompt =
-                      `Say exactly: "${_safeOv}" — speak it verbatim as audio, as ONE greeting. Do NOT add, paraphrase, or split it.`;
+                  if (_block && _block.trim().length > 0) {
                     ws.send(
                       JSON.stringify({
-                        client_content: { turns: [{ role: 'user', parts: [{ text: _ovPrompt }] }], turn_complete: true },
+                        client_content: { turns: [{ role: 'user', parts: [{ text: _block }] }], turn_complete: true },
                       }),
                     );
                     emitDiag(session, 'greeting_sent', {
                       lang,
-                      prompt_len: _ovPrompt.length,
+                      prompt_len: _block.length,
                       wake_opener: 'safe_fast_newday_overview',
                       bucket: _temporalNd.bucket,
+                      overview_signals: {
+                        journey: !!_overview.journey,
+                        index: _overview.vitana_index.state,
+                        life_compass: _overview.life_compass.state,
+                        calendar_today: _overview.calendar_today.count,
+                        autopilot: _overview.autopilot.state,
+                        matches_unread: _overview.matches_unread,
+                        messages_unread: _overview.messages_unread,
+                        reminders_today: _overview.reminders_today.count,
+                        diary_last_7d: _overview.diary_last_7d,
+                      },
                     });
                     startResponseWatchdog(session, getGreetingResponseTimeoutMs(), 'greeting_timeout');
                     console.log(
-                      `[GREETING-SAFE-FAST-NEWDAY-OVERVIEW] session ${session.sessionId} sent full new-day overview (bucket=${_temporalNd.bucket}, lang=${lang})`,
+                      `[GREETING-SAFE-FAST-NEWDAY-OVERVIEW] session ${session.sessionId} sent RICH new-day briefing (bucket=${_temporalNd.bucket}, lang=${lang}, matches=${_overview.matches_unread}, msgs=${_overview.messages_unread}, autopilot=${_overview.autopilot.state}, index=${_overview.vitana_index.state})`,
                     );
                     return;
                   }

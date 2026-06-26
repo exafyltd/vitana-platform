@@ -167,6 +167,13 @@ export interface AggregateArgs {
   timezone: string;
   now: Date;
   lastSessionDateUserTz: string | null;
+  /**
+   * Precise last-session timestamp (ISO). When provided it is the EXACT cutoff
+   * for "calendar events since we last spoke", so a user who spoke at 8pm is
+   * not briefed the next morning about that same day's earlier events. Falls
+   * back to local-midnight of `lastSessionDateUserTz`, then to 24h ago.
+   */
+  lastSessionAtIso?: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -236,9 +243,11 @@ export { dayWindowUtcIso };
 export async function gatherOverviewPayload(args: AggregateArgs): Promise<OverviewPayload> {
   const { startUtc, endUtc } = dayWindowUtcIso(args.now, args.timezone);
   const nowIso = args.now.toISOString();
-  const lookbackIso = args.lastSessionDateUserTz
-    ? new Date(`${args.lastSessionDateUserTz}T00:00:00Z`).toISOString()
-    : new Date(args.now.getTime() - 24 * 3600 * 1000).toISOString();
+  const lookbackIso = args.lastSessionAtIso
+    ? args.lastSessionAtIso
+    : args.lastSessionDateUserTz
+      ? new Date(`${args.lastSessionDateUserTz}T00:00:00Z`).toISOString()
+      : new Date(args.now.getTime() - 24 * 3600 * 1000).toISOString();
 
   const [
     journeyState,
@@ -559,12 +568,28 @@ async function fetchAutopilotForVoice(
 }
 
 async function fetchMatchesUnread(sb: SupabaseClient, userId: string): Promise<number> {
+  // Matches live in `intent_matches`, reached via the user's `user_intents`
+  // (requester_user_id) — the SAME source the match-activity-plan next-action
+  // provider uses. There is no `match_notifications` table, so the prior query
+  // always errored → silently returned 0 and the briefing omitted matches.
+  // "Unread/new" here means a match in one of the live stages (not closed).
   try {
+    const { data: intentRows, error: intentErr } = await sb
+      .from('user_intents')
+      .select('intent_id')
+      .eq('requester_user_id', userId)
+      .limit(200);
+    if (intentErr) return 0;
+    const intentIds = (intentRows ?? [])
+      .map((r) => (r as { intent_id: string }).intent_id)
+      .filter(Boolean);
+    if (intentIds.length === 0) return 0;
+    const idList = intentIds.map((s) => `"${s}"`).join(',');
     const { count, error } = await sb
-      .from('match_notifications')
-      .select('id', { head: true, count: 'exact' })
-      .eq('user_id', userId)
-      .eq('is_read', false);
+      .from('intent_matches')
+      .select('match_id', { head: true, count: 'exact' })
+      .or(`intent_a_id.in.(${idList}),intent_b_id.in.(${idList})`)
+      .in('state', ['new', 'responded_by_a', 'responded_by_b', 'mutual_interest']);
     if (error) return 0;
     return Number(count ?? 0);
   } catch {
@@ -573,11 +598,14 @@ async function fetchMatchesUnread(sb: SupabaseClient, userId: string): Promise<n
 }
 
 async function fetchMessagesUnread(sb: SupabaseClient, userId: string): Promise<number> {
+  // DMs live in `chat_messages` (receiver_id / read_at) — mirrors the canonical
+  // unread query in routes/chat.ts. There is no `messages` table, so the prior
+  // query always errored → silently returned 0 and the briefing omitted DMs.
   try {
     const { count, error } = await sb
-      .from('messages')
-      .select('id', { head: true, count: 'exact' })
-      .eq('recipient_id', userId)
+      .from('chat_messages')
+      .select('*', { head: true, count: 'exact' })
+      .eq('receiver_id', userId)
       .is('read_at', null);
     if (error) return 0;
     return Number(count ?? 0);
