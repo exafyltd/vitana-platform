@@ -289,9 +289,10 @@ greetings are forbidden.
 Use every payload key that has data OR has a setup gap. Weave them
 into the two paragraphs:
   a. journey                    → P1: day + wave name (Rule 2)
-  a2. guided_journey            → P1: "X of N sessions learned, last time we did
-                                  Z, your next session is Y" — learning momentum +
-                                  where-we-left-off continuity + named next session
+  a2. guided_journey            → P1: BOTH the session COUNT ("du hast schon X
+                                  Sessions geschafft") AND the NAMED next session
+                                  ("deine nächste Session ist Y") + where-we-left-off
+                                  continuity. Never collapse to a generic "next step".
   b. vitana_index (state=ok)    → P1: number + meaning + pillar (Rule 3)
   c. vitana_index (not_set_up)  → P2: invitation to set up (Rule 6)
   d. life_compass (state=set)   → P1: woven anchor (Rule 4)
@@ -374,19 +375,24 @@ function buildCoverageChecklist(p: OverviewPayload): string {
   if (
     p.guided_journey &&
     (p.guided_journey.sessions_completed > 0 ||
+      p.guided_journey.topics_learned > 0 ||
       p.guided_journey.next_session_title ||
       p.guided_journey.last_session_recall)
   ) {
     const g = p.guided_journey;
-    const total = g.sessions_total != null ? ` of ${g.sessions_total}` : '';
+    const topicsClause =
+      g.topics_total != null ? `${g.topics_learned} of ${g.topics_total} topics` : `${g.topics_learned} topics`;
     const recallHint = g.last_session_recall
-      ? ` Last time you worked on "${g.last_session_recall}" — pick that thread back up (continuity, not a status line).`
+      ? ` Last time the thread was "${g.last_session_recall}" — continue it (continuity, not a status line). If it equals the next session, frame as "let's carry on with it".`
       : '';
-    const nextHint = g.next_session_title
-      ? ` Recommend the next session by name: "${g.next_session_title}".`
-      : '';
+    const nextClause = g.next_session_title
+      ? `Their next session is "${g.next_session_title}".`
+      : 'Offer the next session.';
     items.push(
-      `- [ ] ADDRESS (guided journey): ${g.sessions_completed}${total} guided sessions completed so far.${nextHint}${recallHint} (Weave learning momentum + "where we left off" + the next session into the journey anchor — this is what makes the briefing feel personal and continuous.)`,
+      `- [ ] ADDRESS (guided journey — speak BOTH of these, do not drop them):\n` +
+        `    • MOMENTUM: the user has completed ${g.sessions_completed} guided sessions (${topicsClause}). Say this concretely as a NUMBER — e.g. "du hast schon ${g.sessions_completed} Sessions geschafft".\n` +
+        `    • NEXT SESSION (named, never generic "next step"): ${nextClause} Name it and offer to do it together.${recallHint}\n` +
+        `    (This learning beat is what makes the briefing feel like a continuing journey — it is NOT optional when the user is in the guided curriculum.)`,
     );
   }
 
@@ -508,6 +514,7 @@ function compactPayloadForPrompt(p: OverviewPayload): Record<string, unknown> {
   if (
     p.guided_journey &&
     (p.guided_journey.sessions_completed > 0 ||
+      p.guided_journey.topics_learned > 0 ||
       p.guided_journey.next_session_title ||
       p.guided_journey.last_session_recall)
   ) {
