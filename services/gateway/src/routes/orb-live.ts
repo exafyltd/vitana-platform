@@ -7668,6 +7668,7 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
                     userId: _uidNd,
                     now: _nowNd,
                     timezone: _tzNd,
+                    lang,
                     lastSessionDateUserTz: _lastSessDateTz,
                     // Precise cutoff for "events since we last spoke" — avoids
                     // briefing the user about events that happened BEFORE their

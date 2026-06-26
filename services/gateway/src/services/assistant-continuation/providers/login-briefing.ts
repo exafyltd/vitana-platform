@@ -477,7 +477,7 @@ function checklistLocale(lang: string): 'de' | 'en' {
  * the "N" in "X of N topics"). Best-effort: any failure degrades to nulls so the
  * briefing still renders ("your next session is ready", no progress beat).
  */
-async function resolveCurriculumFacts(
+export async function resolveCurriculumFacts(
   supabase: SupabaseClient,
   lang: string,
   nextSessionNumber: number,

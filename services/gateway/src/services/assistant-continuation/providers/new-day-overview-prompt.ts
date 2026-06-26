@@ -289,6 +289,9 @@ greetings are forbidden.
 Use every payload key that has data OR has a setup gap. Weave them
 into the two paragraphs:
   a. journey                    → P1: day + wave name (Rule 2)
+  a2. guided_journey            → P1: "X of N sessions learned, last time we did
+                                  Z, your next session is Y" — learning momentum +
+                                  where-we-left-off continuity + named next session
   b. vitana_index (state=ok)    → P1: number + meaning + pillar (Rule 3)
   c. vitana_index (not_set_up)  → P2: invitation to set up (Rule 6)
   d. life_compass (state=set)   → P1: woven anchor (Rule 4)
@@ -366,6 +369,25 @@ function buildCoverageChecklist(p: OverviewPayload): string {
         : '';
       items.push(`- [ ] ADDRESS (Rule 2, plan_phase='default_active'): Day ${j.day_in_journey} of ${j.default_plan_total_days} in the starter plan${waveHint}.`);
     }
+  }
+
+  if (
+    p.guided_journey &&
+    (p.guided_journey.sessions_completed > 0 ||
+      p.guided_journey.next_session_title ||
+      p.guided_journey.last_session_recall)
+  ) {
+    const g = p.guided_journey;
+    const total = g.sessions_total != null ? ` of ${g.sessions_total}` : '';
+    const recallHint = g.last_session_recall
+      ? ` Last time you worked on "${g.last_session_recall}" — pick that thread back up (continuity, not a status line).`
+      : '';
+    const nextHint = g.next_session_title
+      ? ` Recommend the next session by name: "${g.next_session_title}".`
+      : '';
+    items.push(
+      `- [ ] ADDRESS (guided journey): ${g.sessions_completed}${total} guided sessions completed so far.${nextHint}${recallHint} (Weave learning momentum + "where we left off" + the next session into the journey anchor — this is what makes the briefing feel personal and continuous.)`,
+    );
   }
 
   if (p.vitana_index.state === 'ok' && p.vitana_index.today !== null) {
@@ -483,6 +505,14 @@ function compactPayloadForPrompt(p: OverviewPayload): Record<string, unknown> {
   if (p.matches_unread > 0) out.matches_unread = p.matches_unread;
   if (p.messages_unread > 0) out.messages_unread = p.messages_unread;
   if (p.reminders_today.count > 0 || p.reminders_today.next) out.reminders_today = p.reminders_today;
+  if (
+    p.guided_journey &&
+    (p.guided_journey.sessions_completed > 0 ||
+      p.guided_journey.next_session_title ||
+      p.guided_journey.last_session_recall)
+  ) {
+    out.guided_journey = p.guided_journey;
+  }
   out.diary_last_7d = p.diary_last_7d;
   if (p.last_session_date_user_tz) out.last_session_date_user_tz = p.last_session_date_user_tz;
   return out;
