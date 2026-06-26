@@ -551,17 +551,17 @@ export const NAVIGATION_CATALOG: ReadonlyArray<NavCatalogEntry> = [
     category: 'autopilot',
     access: 'authenticated',
     anonymous_safe: false,
-    aliases: ['journey', 'my-journey', 'meine-journey', 'autopilot', 'autopilot-dashboard', 'autopilot-journey', '90-day-journey', '90-day-plan', 'meine-reise'],
+    aliases: ['journey', 'my-journey', 'meine-journey', 'autopilot', 'autopilot-dashboard', 'autopilot-journey', '90-day-journey', '90-day-plan', 'meine-reise', 'guided-journey', 'gefuehrte-reise', 'einfuehrung', 'vollversion', 'volle-app', 'full-app'],
     i18n: {
       en: {
         title: 'My Journey',
-        description: 'Your Autopilot Dashboard — the 90-day journey prepared for you: waves, milestones, and recommended actions aligned to your calendar.',
-        when_to_visit: 'When the user asks to open my journey, see my journey, show my journey, the autopilot journey, my 90-day journey, the 90-day plan, the autopilot dashboard, my plan, or what is on their journey today. This is NOT the user profile — "my journey" means the Autopilot Dashboard.',
+        description: 'Your Autopilot Dashboard — the 90-day journey prepared for you: waves, milestones, and recommended actions aligned to your calendar. It has two views the user can switch between: the GUIDED journey (the "Einführung", step-by-step) and the FULL app (the "Vollversion", everything at once).',
+        when_to_visit: 'When the user asks to open my journey, see my journey, show my journey, the autopilot journey, my 90-day journey, the 90-day plan, the autopilot dashboard, my plan, or what is on their journey today. ALSO when the user refers to either VIEW of their journey by name — the GUIDED journey / the guided version / the "Einführung", OR the FULL app / the full version / the "Vollversion" / the full view — or asks to switch between the guided and full views of their journey. All of these mean THIS Autopilot Dashboard screen (the view it opens in is the durable guided/full mode). This is NOT the user profile — "my journey" means the Autopilot Dashboard.',
       },
       de: {
         title: 'Meine Reise',
-        description: 'Dein Autopilot-Dashboard — die 90-Tage-Reise, die für dich vorbereitet wurde: Wellen, Meilensteine und empfohlene Aktionen, abgestimmt auf deinen Kalender.',
-        when_to_visit: 'Wenn der Nutzer meine Reise öffnen, meine Reise sehen, die Autopilot-Reise, meine 90-Tage-Reise, den 90-Tage-Plan, das Autopilot-Dashboard, meinen Plan, oder was heute auf seiner Reise ansteht, anfragt. Das ist NICHT das Nutzerprofil — "meine Reise" bedeutet das Autopilot-Dashboard.',
+        description: 'Dein Autopilot-Dashboard — die 90-Tage-Reise, die für dich vorbereitet wurde: Wellen, Meilensteine und empfohlene Aktionen, abgestimmt auf deinen Kalender. Es gibt zwei Ansichten, zwischen denen der Nutzer wechseln kann: die GEFÜHRTE Reise (die "Einführung", Schritt für Schritt) und die VOLLVERSION (die volle App, alles auf einmal).',
+        when_to_visit: 'Wenn der Nutzer meine Reise öffnen, meine Reise sehen, die Autopilot-Reise, meine 90-Tage-Reise, den 90-Tage-Plan, das Autopilot-Dashboard, meinen Plan, oder was heute auf seiner Reise ansteht, anfragt. AUCH wenn der Nutzer eine der beiden ANSICHTEN seiner Reise beim Namen nennt — die GEFÜHRTE Reise / die geführte Journey / die "Einführung", ODER die VOLLVERSION / die volle App / die volle Version — oder zwischen geführter und voller Ansicht seiner Reise wechseln möchte. All das meint DIESES Autopilot-Dashboard (die Ansicht, in der es öffnet, ist der dauerhafte geführt/voll-Modus). Das ist NICHT das Nutzerprofil — "meine Reise" bedeutet das Autopilot-Dashboard.',
       },
     },
   },
