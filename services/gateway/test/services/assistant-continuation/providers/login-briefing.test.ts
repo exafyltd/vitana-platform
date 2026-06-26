@@ -126,6 +126,37 @@ describe('renderBriefingLine (DE)', () => {
     expect(evening.startsWith('Guten Abend, Maria.')).toBe(true);
   });
 
+  it('§10 spine: speaks "Day N of your longevity journey" when dayInJourney is set, omits it otherwise', () => {
+    // BASE_FACTS (sessionsCompleted=3) lands in an active state (building/
+    // momentum) — those weave the journey-day continuity clause.
+    const withDayEn = renderBriefingLine(
+      { lang: 'en', salutation: 'morning', firstName: 'Maria', facts: { ...BASE_FACTS, dayInJourney: 9 } },
+      det,
+    );
+    expect(withDayEn).toContain('Day 9 of your longevity journey');
+
+    const withDayDe = renderBriefingLine(
+      { lang: 'de', salutation: 'morning', firstName: 'Maria', facts: { ...BASE_FACTS, dayInJourney: 9 } },
+      det,
+    );
+    expect(withDayDe).toContain('Tag 9 deiner Longevity-Reise');
+
+    // Back-compat: no dayInJourney → no journey-day clause (existing call
+    // sites / snapshots are unaffected).
+    const withoutDay = renderBriefingLine(
+      { lang: 'en', salutation: 'morning', firstName: 'Maria', facts: { ...BASE_FACTS } },
+      det,
+    );
+    expect(withoutDay).not.toMatch(/Day \d+ of your longevity journey/);
+
+    // Nonsensical values produce no clause.
+    const zeroDay = renderBriefingLine(
+      { lang: 'en', salutation: 'morning', firstName: 'Maria', facts: { ...BASE_FACTS, dayInJourney: 0 } },
+      det,
+    );
+    expect(zeroDay).not.toMatch(/Day \d+ of your longevity journey/);
+  });
+
   it('orient state carries NO earned-number praise', () => {
     const line = renderBriefingLine(
       { lang: 'de', salutation: 'afternoon', firstName: 'Maria', facts: { ...BASE_FACTS, sessionsCompleted: 0, hasGoal: false } },
