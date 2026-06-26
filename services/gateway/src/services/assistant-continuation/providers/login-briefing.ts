@@ -116,6 +116,15 @@ export type BriefingState = 'orient' | 'building' | 'momentum' | 'returning' | '
 export interface BriefingFacts {
   /** Sessions the user has finished (the ones before the current pointer). */
   sessionsCompleted: number;
+  /**
+   * Day index of the user's longevity journey (1 = the day it started),
+   * computed from user_journey.started_at in the user's timezone. Null when
+   * unknown (e.g. no started_at on the row). Powers the "Day N of your
+   * longevity journey" continuity framing — the §10 spine: every conversation
+   * should feel like an ongoing trip, not an isolated greeting. Optional so
+   * existing call sites/tests that omit it are unaffected.
+   */
+  dayInJourney?: number | null;
   /** The session the user is on / about to do. */
   nextSessionNumber: number;
   /** Title of the next session, when the published checklist resolved it. */
@@ -306,12 +315,25 @@ interface RenderArgs {
   facts: BriefingFacts;
 }
 
+/** §10 spine — the "Day N of your longevity journey" continuity clause. Empty
+ *  when the journey-start day is unknown, so call sites / tests that omit
+ *  dayInJourney are unaffected. Makes every conversation feel like an ongoing
+ *  trip ("Day 9 … 2 sessions … next session") rather than an isolated greeting. */
+function buildJourneyDayClause(lang: string, dayInJourney: number | null | undefined): string {
+  if (!dayInJourney || dayInJourney < 1) return '';
+  return lang === 'de'
+    ? `Tag ${dayInJourney} deiner Longevity-Reise.`
+    : `Day ${dayInJourney} of your longevity journey.`;
+}
+
 /** Compose the spoken briefing line for the picked state. Pure. Exported for tests. */
 export function renderBriefingLine(args: RenderArgs, rng: () => number = Math.random): string {
   const de = args.lang === 'de';
   const prefix = salutationPrefix(args.lang, args.salutation, args.firstName);
   const f = args.facts;
   const state = pickBriefingState(f);
+  // §10 spine: prepended after the salutation in the active-journey states.
+  const journeyDay = buildJourneyDayClause(args.lang, f.dayInJourney);
 
   // The next-session clause is only spoken when the title resolved.
   const nextClause = (() => {
@@ -355,12 +377,12 @@ export function renderBriefingLine(args: RenderArgs, rng: () => number = Math.ra
       // Advice #1: when a pillar slipped, the goal-anchored reversing step IS
       // the single next move — keep the briefing to ONE clear lead.
       const rider = buildWeaknessRider(args.lang, f);
-      if (rider) return [prefix, praise, rider].filter(Boolean).join(' ');
+      if (rider) return [prefix, journeyDay, praise, rider].filter(Boolean).join(' ');
       // Advice #2: visible momentum — show how far through the curriculum the
       // user is as an earned compliment, before the next-session lead.
       const beat = buildProgressBeat(args.lang, f);
       const nudge = buildNudge(args.lang, f);
-      return [prefix, praise, beat, nextClause, nudge, lead].filter(Boolean).join(' ');
+      return [prefix, journeyDay, praise, beat, nextClause, nudge, lead].filter(Boolean).join(' ');
     }
 
     case 'momentum': {
@@ -370,7 +392,7 @@ export function renderBriefingLine(args: RenderArgs, rng: () => number = Math.ra
         : `Good to hear you. You are on Session ${f.nextSessionNumber} — and your Vitana Index is up ${delta} points this week. That is real consistency.`;
       const beat = buildProgressBeat(args.lang, f); // Advice #2
       const nudge = buildNudge(args.lang, f);
-      return [prefix, praise, beat, nextClause, nudge, lead].filter(Boolean).join(' ');
+      return [prefix, journeyDay, praise, beat, nextClause, nudge, lead].filter(Boolean).join(' ');
     }
 
     case 'returning': {
@@ -380,9 +402,9 @@ export function renderBriefingLine(args: RenderArgs, rng: () => number = Math.ra
       // Advice #1: a returning user who also slipped a pillar hears the
       // goal-anchored reversing step as the lead instead of the generic resume.
       const rider = buildWeaknessRider(args.lang, f);
-      if (rider) return [prefix, body, rider].filter(Boolean).join(' ');
+      if (rider) return [prefix, journeyDay, body, rider].filter(Boolean).join(' ');
       const lead2 = de ? 'Lass uns genau dort wieder anknüpfen — ich führe dich.' : "Let's pick up right where you left off — I'll guide you.";
-      return [prefix, body, nextClause, lead2].filter(Boolean).join(' ');
+      return [prefix, journeyDay, body, nextClause, lead2].filter(Boolean).join(' ');
     }
 
     case 'graduated': {
@@ -398,7 +420,7 @@ export function renderBriefingLine(args: RenderArgs, rng: () => number = Math.ra
       const lead2 = de
         ? 'Lass uns gleich eine Stufe tiefer gehen — ich zeige dir den ersten Schritt.'
         : "Let's go one level deeper — I'll show you the first step.";
-      return [prefix, body, beat, lead2].filter(Boolean).join(' ');
+      return [prefix, journeyDay, body, beat, lead2].filter(Boolean).join(' ');
     }
   }
 }
@@ -431,6 +453,7 @@ function readInputs(ctx: ContinuationDecisionContext): LoginBriefingInputs | nul
 interface UserJourneyRow {
   last_session_date: string | null; // YYYY-MM-DD in user TZ
   is_first_session: boolean;
+  started_at: string | null; // timestamptz — when the longevity journey began
 }
 
 /** Whole-day difference between two YYYY-MM-DD strings, or null when unknown. */
@@ -608,6 +631,18 @@ export function makeLoginBriefingProvider(
       const todayIso = todayInTimezone(nowDate, inputs.timezone);
       const daysSinceLastSession = dayDiff(todayIso, userJourney?.last_session_date ?? null);
 
+      // §10 spine — day index of the longevity journey (1 = the start day),
+      // from user_journey.started_at in the user's timezone. Null when unknown.
+      let dayInJourney: number | null = null;
+      if (userJourney?.started_at) {
+        const startedMs = Date.parse(userJourney.started_at);
+        if (Number.isFinite(startedMs)) {
+          const startedDateIso = todayInTimezone(new Date(startedMs), inputs.timezone);
+          const daysSinceStart = dayDiff(todayIso, startedDateIso);
+          if (daysSinceStart != null) dayInJourney = daysSinceStart + 1;
+        }
+      }
+
       const primaryGoalRaw = (lifeCompass as { primary_goal?: unknown } | null)?.primary_goal;
       const primaryGoalLabel =
         typeof primaryGoalRaw === 'string' && primaryGoalRaw.trim().length > 0
@@ -621,6 +656,7 @@ export function makeLoginBriefingProvider(
 
       const facts: BriefingFacts = {
         sessionsCompleted,
+        dayInJourney,
         nextSessionNumber: currentSession,
         nextSessionTitle,
         // Recall the session the user most recently heard = current_session
@@ -699,7 +735,7 @@ async function fetchUserJourneyRow(
 ): Promise<UserJourneyRow | null> {
   const { data, error } = await supabase
     .from('user_journey')
-    .select('last_session_date, is_first_session')
+    .select('last_session_date, is_first_session, started_at')
     .eq('user_id', userId)
     .maybeSingle();
   if (error) throw new Error(error.message);
