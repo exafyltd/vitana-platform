@@ -37,44 +37,61 @@ LiveKit users; new-day detection and greeting telemetry forked the same way.
 
 The fix is architectural: one decision engine, transport-specific rendering only.
 
+**This is not a new invention — it finishes an extraction the codebase already
+started.** The shared brain's pieces already exist (`decideWakeBriefForSession`,
+`decideContinuation`, the `ContinuationProvider` registry, `decideOpening`,
+`ConversationStateMachine`, `temporal-bucket`), and LiveKit already routes
+through them. The remaining work is to pull Vertex's still-transport-local flow
+decisions into that shared layer — its SAFE-FAST branches and `wake_opener`
+labels, a private `fetchLastSessionInfo` (with the `user_journey` fallback), a
+duplicate `describeTimeSince`, and direct `aggregateNewDayOverview` calls — and
+then lock it so it cannot re-fork.
+
 ---
 
 ## 2. Layers
 
 ```
             ┌───────────────────────────────────────────────┐
-   inputs → │  LAYER 1 — Context assembly (already shared)   │
+   inputs → │  LAYER 1 — Context assembler (does ALL fetches)│
  identity,  │  /orb/context-bootstrap, buildClientContext,   │
- signals,   │  memory/identity facts, cadence signals        │
- timezone   └───────────────────────────────────────────────┘
-                              │  transport-neutral context
+ signals,   │  memory/identity facts, cadence signals, AND   │
+ timezone   │  the ONE fetchLastSessionInfo (+user_journey)  │
+            │  + describeTimeSince → lastInteraction/bucket. │
+            │  Owns Supabase/SDK access. Emits plain data.   │
+            └───────────────────────────────────────────────┘
+                              │  transport-neutral context (no SDK handles)
                               ▼
             ┌───────────────────────────────────────────────┐
             │  LAYER 2 — THE BRAIN  decideConversationFlow() │
-            │  (evolution of decideWakeBriefForSession)      │
-            │  owns, for ALL transports:                     │
-            │   • one fetchLastSessionInfo (+user_journey)   │
-            │   • one describeTimeSince / temporal bucketing │
-            │   • greeting policy (speak / silent, cadence)  │
-            │   • the FULL provider ladder, incl. the        │
-            │     new_day_overview provider                  │
-            │   • ConversationStateMachine transitions       │
-            │   • ONE unified decision-telemetry event       │
-            │  returns →  ConversationFlowDecision            │
+            │  THIN ORCHESTRATOR (not a god-brain). Sequences│
+            │  existing authorities — composes no text, does │
+            │  no fetching:                                  │
+            │   1. decideContinuation() — the provider ladder│
+            │      (incl. the new_day_return provider)       │
+            │   2. decideOpening() — speak / silent authority│
+            │   3. ConversationStateMachine.transition()     │
+            │   4. build (NOT emit) one telemetry payload    │
+            │  returns →  ConversationFlowDecision (wraps     │
+            │            AssistantContinuationDecision)       │
             └───────────────────────────────────────────────┘
                   │                │                │
                   ▼                ▼                ▼
           Vertex render     LiveKit render    Provider #3 render
           (client_content/  (return line →    (implement render()
            system instr.)    agent session.say) only)
+        one outer orchestrator emits the telemetry exactly once (§4)
 ```
 
-- **Layer 1 — Context assembly.** Already shared via `/orb/context-bootstrap`,
-  `buildClientContext`, `buildBootstrapContextPack`, identity/memory fetches.
-  Produces a transport-neutral context object. (Keep consolidating duplicated
-  fetches here over time, but it is not the source of the fork.)
-- **Layer 2 — The brain.** The single decision engine. Everything that is
-  *logic* lives here. See §3 for the contract.
+- **Layer 1 — Context assembler.** Does ALL the DB/SDK work: identity, memory,
+  cadence signals, AND the single `fetchLastSessionInfo` (+`user_journey`
+  fallback) → `describeTimeSince` → `lastInteraction`/`bucket`. Hands the brain
+  **plain transport-neutral data** — no `SupabaseClient`, no SDK handles. This
+  is what keeps the decision function pure.
+- **Layer 2 — The brain.** A **thin orchestrator** over the smaller authorities
+  that already exist (`decideContinuation`, `decideOpening`,
+  `ConversationStateMachine`). It owns no fetching and no text composition of
+  its own. See §3 for the contract.
 - **Layer 3 — Render adapters.** Per transport. They take the brain's
   `ConversationFlowDecision` and physically deliver it. This is the **only**
   place transport differences are allowed.
@@ -95,40 +112,64 @@ The brain does not know or care how the line is voiced. It only decides
 
 ---
 
-## 3. The contract: `ConversationFlowDecision`
+## 3. The contract: `ConversationFlowDecision` (WRAPS the existing decision)
 
-The brain returns one transport-neutral object. Adapters may read it and emit
-its telemetry; they may not re-decide any field.
+**Do not invent a parallel decision universe.** Reuse the existing
+`AssistantContinuationDecision` — it already carries `userFacingLine`, the
+selected provider key, `providerResults`, `suppressionReason`, timing, and
+evidence. The brain's output is a thin WRAPPER that adds the opening mode +
+render metadata around it:
 
 ```ts
 interface ConversationFlowDecision {
-  mode: 'speak' | 'silent';        // opening-contract authority (speak/silent)
-  kind: string;                    // which provider/rung won (e.g. new_day_overview)
-  line: string | null;            // the user-facing line, already localized
-  lines?: string[];               // optional multi-clause (e.g. morning overview)
-  pending_action?: PendingCta;     // bound CTA (navigate / run_tool / ask_permission…)
-  tts_hints?: Record<string, unknown>; // optional voice hints, adapter-honored
-  telemetry: ConversationFlowTelemetry; // unified event payload (§4)
+  // Opening-contract authority (decideOpening): speak vs stay silent.
+  mode: 'speak' | 'silent';
+  // The EXISTING decision, reused verbatim — NOT re-modelled. Carries
+  // userFacingLine, the winning provider key, providerResults,
+  // suppressionReason, timing, evidence.
+  continuation: AssistantContinuationDecision;
+  // Render metadata adapters need but the brain composes no text for
+  // (dedupe key, pending CTA, optional tts hints, "structured-block vs
+  // verbatim-line" hint).
+  render?: { dedupeKey?: string; pendingAction?: PendingCta; ttsHints?: Record<string, unknown> };
+  // ONE telemetry payload the brain BUILDS but does NOT emit (see §4).
+  telemetry: ConversationFlowTelemetry;
 }
 ```
 
-Inputs to `decideConversationFlow()` are transport-neutral: identity, client
-context (timezone, time-of-day), language, cadence signals, supabase client.
-No `ws`, no `session.say`, no provider SDK types cross the seam.
+`decideConversationFlow()` is a **thin orchestrator**, not a god-brain. It owns
+no fetching and composes no text — it sequences the smaller authorities that
+already exist:
+
+1. take the **transport-neutral context** assembled in Layer 1
+   (`lastInteraction`, `bucket`, cadence, timezone, lang, identity — already
+   resolved; no SDK handles),
+2. call `decideContinuation()` on the `orb_wake` surface (the provider ladder),
+3. call `decideOpening()` for the speak/silent authority,
+4. advance the `ConversationStateMachine`,
+5. **build** (not emit) the telemetry payload.
+
+Inputs are plain values only. **No `SupabaseClient`, no `ws`, no `session.say`,
+no provider SDK types cross the seam** — the Layer-1 context assembler does the
+DB/SDK work and hands the brain data. (This is the rule that keeps the decision
+function unit-testable without mocking Supabase.)
 
 ---
 
-## 4. Telemetry (unified)
+## 4. Telemetry (built once, emitted once)
 
-The brain emits **one** decision-telemetry schema for every transport, so
-"which opener fired and why" is answerable identically for Vertex, LiveKit, and
-#3. It supersedes the forked emissions (`orb.live.diag` greeting events on
-Vertex; only `wake_brief_selected` on LiveKit).
+**The brain BUILDS one telemetry payload; it does not emit. Exactly one outer
+orchestrator emits it exactly once.** Render adapters never emit greeting
+telemetry of their own — "brain emits AND adapters emit" is a double-event bug
+waiting to happen, so the responsibility is singular and explicit: the
+orchestrator that drives `decideConversationFlow()` → `render()` is the sole
+emitter. This supersedes the forked emissions (`orb.live.diag` greeting events
+on Vertex; only `wake_brief_selected` on LiveKit), so "which opener fired and
+why" is answerable identically for Vertex, LiveKit, and #3.
 
 `ConversationFlowTelemetry` carries at least: `decision_id`, `surface`,
 `bucket`, `mode`, `kind` (the winning provider), `suppression_reason`,
-`lang`, `provider_results` (per-provider latency + outcome). Adapters emit it;
-they do not invent their own greeting events.
+`lang`, `provider_results` (per-provider latency + outcome).
 
 ---
 
@@ -195,28 +236,50 @@ the architecture failed and the scanner will say so.**
 
 ---
 
-## 8. Migration roadmap (each phase is a complete vertical, never a half-state)
+### Canonical naming (pick one, use everywhere)
 
-- **Phase 1 — Overview becomes a provider + unify the last-session resolver.**
-  Convert `aggregateNewDayOverview` into a `new_day_overview`
-  `ContinuationProvider` at the correct priority; collapse the two
-  `fetchLastSessionInfo` into one (with the `user_journey` fallback) used by
-  both transports. Result: the morning summary flows through the shared
-  decision and reaches **LiveKit and Vertex both**. Closes leak A + half of C.
-  *(This is also the phase that puts the morning summary on the LiveKit
-  pipeline real users are on.)*
+- **Provider key: `new_day_return`** — the existing `ContinuationProvider` that
+  owns the morning greeting. There is NO separate `new_day_overview` provider;
+  do not introduce one.
+- **`aggregateNewDayOverview`** — the data **aggregator** the `new_day_return`
+  provider consumes (calendar / Index / Life Compass). It is a data source, not
+  a provider.
+
+### Migration roadmap (each phase is a complete vertical, never a half-state)
+
+**Sequencing is deliberate: tests first, scanner last.** Lock current behavior
+with contract tests BEFORE moving code; turn the parity scanner into a hard gate
+ONLY after Vertex's ladder is migrated — otherwise the gate is ceremonial (it
+would block on drift that hasn't been removed yet).
+
+- **Phase 0 — Contract tests first.** Extend the transport-agnostic contract
+  suite (§5.2) to pin today's spoken/silent decisions for representative
+  scenarios, on BOTH transports, before any code moves. This is the safety net
+  every later phase runs against.
+- **Phase 1 — `new_day_return` speaks on both transports + unify the resolver.**
+  The overview is ALREADY the `new_day_return` provider, reached by both
+  transports via `decideWakeBriefForSession`. The work is: make it emit a
+  **server-composed, speakable line** (so LiveKit's deterministic `session.say`
+  can render it, not just the Vertex LLM) and rank it to own a genuine new-day
+  turn 1; then collapse the two `fetchLastSessionInfo` into the one Layer-1
+  resolver (with the `user_journey` fallback). Closes leak A + half of C.
+  **Status: the composed-line + ranking change is done (PR #2790); the resolver
+  unification is the tracked follow-up.**
 - **Phase 2 — Retire Vertex's private SAFE-FAST ladder onto the brain.** Every
   `wake_opener` rung becomes / maps to a provider; `orb-live.ts` becomes a pure
   render adapter calling `decideConversationFlow`. Delete the duplicate ladder,
   the duplicate `fetchLastSessionInfo`, and the duplicate `describeTimeSince`.
   Closes leak B + rest of C.
-- **Phase 3 — Unify telemetry.** One greeting-decision event emitted by the
-  brain; both adapters emit it; remove the forked events. Closes leak D.
-- **Phase 4 — Lock it.** Land the conversation-flow parity scanner as a CI gate
-  and document the render-adapter interface. Re-forking becomes un-mergeable.
+- **Phase 3 — Unify telemetry.** One greeting-decision payload built by the
+  brain, emitted exactly once by the orchestrator (§4); remove the forked
+  events. Closes leak D.
+- **Phase 4 — Lock it.** Land the conversation-flow parity scanner as a hard CI
+  gate and document the render-adapter interface. Re-forking becomes
+  un-mergeable. (Hard gate goes on LAST — after Phase 2 removes the drift it
+  would otherwise flag.)
 
-Each phase ships green through staging behind a flag, with the contract suite
-extended **first**. No big-bang.
+Each phase ships green through staging behind a flag, against the Phase-0
+contract suite. No big-bang.
 
 ---
 
