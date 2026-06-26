@@ -997,7 +997,20 @@ router.post('/push-dispatch', async (req: Request, res: Response) => {
         }
       }
 
-      // Send FCM web push + Appilix native push
+      // Send push. Mirror notifyUser()'s dispatch policy
+      // (notification-service.ts): notifications WITH a deep-link URL must go
+      // Appilix-FIRST — an FCM-delivered notification tapped inside the Appilix
+      // WebView crashes it ("Something went wrong") because FCM doesn't pass the
+      // URL to Appilix's native tap handler. Only fall back to FCM if Appilix
+      // didn't deliver. Without a URL, FCM-first with Appilix fallback.
+      //
+      // Previously this cron fired BOTH channels unconditionally, so a user with
+      // both an FCM token and an Appilix identity received the SAME notification
+      // twice — once via Appilix (deep-links correctly) and once via FCM (opens
+      // the WebView crash screen). That is the like/comment "double notification,
+      // one opens Try Again" bug.
+      const hasDeepLink =
+        typeof notif.data === 'object' && notif.data !== null && !!(notif.data as any).url;
       const pushPayload = {
         title: notif.title || 'Vitana',
         body: notif.body || '',
@@ -1005,8 +1018,19 @@ router.post('/push-dispatch', async (req: Request, res: Response) => {
           ? Object.fromEntries(Object.entries(notif.data).map(([k, v]) => [k, String(v)]))
           : undefined,
       };
-      const sent = await sendPushToUser(notif.user_id, notif.tenant_id, pushPayload, supa);
-      const appilixSent = await sendAppilixPush(notif.user_id, pushPayload);
+      let sent = 0;
+      let appilixSent = false;
+      if (hasDeepLink) {
+        appilixSent = await sendAppilixPush(notif.user_id, pushPayload);
+        if (!appilixSent) {
+          sent = await sendPushToUser(notif.user_id, notif.tenant_id, pushPayload, supa);
+        }
+      } else {
+        sent = await sendPushToUser(notif.user_id, notif.tenant_id, pushPayload, supa);
+        if (sent === 0) {
+          appilixSent = await sendAppilixPush(notif.user_id, pushPayload);
+        }
+      }
 
       // Mark as dispatched
       await supa.from('user_notifications')

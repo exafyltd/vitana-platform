@@ -7564,6 +7564,29 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
             ]);
             if (ws.readyState !== WebSocket.OPEN) return;
 
+            // FIRST-GREETING-OF-THE-DAY budget. The first session of a new day
+            // is allowed to take a beat longer so Vitana can open with the FULL
+            // morning overview instead of a bare next-step lead (product
+            // decision: richness > latency for turn 1 of the day). The fast
+            // facts pre-fetch (spoken name + last-session info + proactive line)
+            // may not have resolved within the short ORB_GREETING_FACTS_WAIT_MS
+            // cap above — and until last-session info lands we cannot even tell
+            // whether this IS a new-day return. So when facts are still pending,
+            // wait once more up to a larger new-day budget. Same-day reconnects
+            // whose facts already resolved skip this entirely and stay fast.
+            if (_greetingFactsReady && !(session as any).lastSessionInfo) {
+              const _firstWaitMs = Number(process.env.ORB_GREETING_FACTS_WAIT_MS || 700);
+              const _ndFactsWaitMs = Number(process.env.ORB_NEWDAY_FACTS_WAIT_MS || 2200);
+              const _extraWaitMs = Math.max(0, _ndFactsWaitMs - _firstWaitMs);
+              if (_extraWaitMs > 0) {
+                await Promise.race([
+                  _greetingFactsReady,
+                  new Promise<void>((r) => setTimeout(r, _extraWaitMs)),
+                ]);
+                if (ws.readyState !== WebSocket.OPEN) return;
+              }
+            }
+
             // BOOTSTRAP-ORB-FAST-GREETING-CADENCE: honor the greet-once /
             // recent-turn cap on the fast path. The greeting-facts prefetch
             // computed decideGreetingPolicy → 'skip' (greeted < 15 min ago or a
@@ -7571,11 +7594,14 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
             // sub-branch below (new-day overview / proactive / new-day name /
             // generic) otherwise emits a greeting UNCONDITIONALLY — that is why a
             // quick orb reopen re-greeted ("Good morning, <Name>.") seconds apart.
-            // Stay SILENT here instead. greetingSent was claimed synchronously
-            // above (so no late path injects a greeting) and the opening state was
-            // already marked delivered; we do NOT arm the response watchdog —
-            // silence is intended and the user breaks it by speaking, mirroring the
-            // downstream VTID-03108 cadence-silence block. Kill-switch:
+            // Checked AFTER the new-day budget wait above so greetingCadenceSkip
+            // is resolved (a genuine new-day open never trips it — the greet-once
+            // signal is scoped to the same UTC day). Stay SILENT here instead.
+            // greetingSent was claimed synchronously above (so no late path injects
+            // a greeting) and the opening state was already marked delivered; we do
+            // NOT arm the response watchdog — silence is intended and the user
+            // breaks it by speaking, mirroring the downstream VTID-03108
+            // cadence-silence block. Kill-switch:
             // ORB_FAST_GREETING_CADENCE_SKIP_ENABLED=false → legacy (always greet).
             if (
               process.env.ORB_FAST_GREETING_CADENCE_SKIP_ENABLED !== 'false' &&
@@ -7631,7 +7657,7 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
                     todayDateIso: todayInTimezone(_nowNd, _tzNd),
                     lastSessionAtIso: (session as any).lastSessionInfo?.time ?? null,
                   }),
-                  new Promise<null>((r) => setTimeout(() => r(null), Number(process.env.ORB_NEWDAY_OVERVIEW_WAIT_MS || 1500))),
+                  new Promise<null>((r) => setTimeout(() => r(null), Number(process.env.ORB_NEWDAY_OVERVIEW_WAIT_MS || 3000))),
                 ]).catch(() => null);
                 // The aggregator returns a truthy payload even when EMPTY (no
                 // calendar, no goal, no index move) — rendering that yields just a
@@ -7734,7 +7760,24 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
             // or the bare "Good <tod>, <Name>". It is kept to ~2 short sentences
             // so Gemini Live reliably emits audio. This is the top of the fast-
             // greeting ladder: proactive line → name greeting → generic opener.
-            const proactiveLine: unknown = (session as any).greetingProactiveLine;
+            // FIRST-GREETING-OF-THE-DAY: on a genuine new-day return the rich
+            // morning overview (the rung above) owns turn 1. If the overview
+            // could not build (e.g. no calendar/goal content yet, or the
+            // aggregator lost its budget), we want the grounded "Good <tod>,
+            // <Name>." new-day opener BELOW — never the bare proactive
+            // next-step lead ("Ich nehme dich mit zum nächsten Schritt"), which
+            // is what made the morning summary feel like it disappeared. So
+            // suppress the proactive opener on a genuine new-day return; it
+            // still fires for same-day reopenings (reconnect/recent/same_day).
+            const _ladderTemporal = describeTimeSince((session as any).lastSessionInfo);
+            const _ladderIsNewDay =
+              _ladderTemporal.bucket === 'today' ||
+              _ladderTemporal.bucket === 'yesterday' ||
+              _ladderTemporal.bucket === 'week' ||
+              _ladderTemporal.bucket === 'long';
+            const proactiveLine: unknown = _ladderIsNewDay
+              ? null
+              : (session as any).greetingProactiveLine;
             if (typeof proactiveLine === 'string' && proactiveLine.trim().length > 0) {
               const safeProactive = proactiveLine.trim().replace(/"/g, '\\"');
               const proactivePrompt =
@@ -11930,7 +11973,7 @@ router.get('/debug/context-bootstrap', async (req: Request, res: Response) => {
  * the same user (independent of start query) and checks turn_count /
  * audio_out_chunks metrics. If no stop event exists, wasFailure is false.
  */
-async function fetchLastSessionInfo(userId: string): Promise<{ time: string; wasFailure: boolean } | null> {
+async function fetchLastSessionInfo(userId: string, timezone?: string | null): Promise<{ time: string; wasFailure: boolean } | null> {
   try {
     const SUPABASE_URL = process.env.SUPABASE_URL;
     const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE;
@@ -11988,6 +12031,55 @@ async function fetchLastSessionInfo(userId: string): Promise<{ time: string; was
       }
 
       if (!time) {
+        // RELIABLE FALLBACK (new-day detection). The `vtid.live.session.start`
+        // telemetry above has proven fragile — events stop carrying a real
+        // user_id (or stop being written), so this query returns zero rows,
+        // lastSessionInfo becomes null, every session looks like a first
+        // meeting, and the new-day morning overview can NEVER fire. When the
+        // event lookup finds nothing, fall back to the canonical per-user
+        // `user_journey.last_session_date` (stamped on every session, and the
+        // same field the heavy new-day-return provider trusts). We synthesize a
+        // timestamp at noon of that local date; describeTimeSince then buckets a
+        // prior calendar day as yesterday/week/long (→ new-day) and the same
+        // day as same_day/recent (→ not new-day), which is exactly the
+        // first-greeting-of-the-day semantics we want.
+        try {
+          const ujUrl = `${SUPABASE_URL}/rest/v1/user_journey?select=last_session_date&user_id=eq.${userId}&limit=1`;
+          const ujResp = await fetch(ujUrl, { method: 'GET', headers, signal: controller.signal }).catch(() => null);
+          if (ujResp && ujResp.ok) {
+            const ujData = await ujResp.json() as Array<{ last_session_date: string | null }>;
+            const lsdRaw = ujData.length > 0 ? ujData[0].last_session_date : null;
+            if (lsdRaw && /^\d{4}-\d{2}-\d{2}/.test(lsdRaw)) {
+              const lsd = lsdRaw.slice(0, 10);
+              // last_session_date is the user's LOCAL calendar date (stamped via
+              // todayInTimezone). Compare against the user's LOCAL today on the
+              // SAME basis. Only a PRIOR local day is a genuine new-day return;
+              // when the stored date is the current local day (or later) this is
+              // a SAME-DAY reopen and must NOT be treated as new-day — otherwise
+              // a reopen >8h after a synthesized noon would bucket as `today`
+              // (new-day) and wrongly re-fire the morning overview, whereas the
+              // canonical new-day-return provider suppresses last_session_date >=
+              // today (Codex P2). Same-day → return now (short-gap bucket).
+              let todayLocal: string;
+              try {
+                todayLocal = new Intl.DateTimeFormat('en-CA', {
+                  timeZone: timezone || 'UTC', year: 'numeric', month: '2-digit', day: '2-digit',
+                }).format(new Date());
+              } catch {
+                todayLocal = new Date().toISOString().slice(0, 10);
+              }
+              if (lsd >= todayLocal) {
+                console.log(`[VTID-01224-FIX] fetchLastSessionInfo: last_session_date=${lsd} is same-day (today_local=${todayLocal}) — short-gap for user=${userId.substring(0, 8)}...`);
+                return { time: new Date().toISOString(), wasFailure: false };
+              }
+              const synthIso = `${lsd}T12:00:00.000Z`;
+              console.log(`[VTID-01224-FIX] fetchLastSessionInfo: no session-start event — using user_journey.last_session_date=${lsd} (new-day) for user=${userId.substring(0, 8)}...`);
+              return { time: synthIso, wasFailure: false };
+            }
+          }
+        } catch (_ujErr) {
+          /* fall through to null below */
+        }
         console.log(`[VTID-01224-FIX] fetchLastSessionInfo: no prior session found for user=${userId.substring(0, 8)}...`);
         return null;
       }
