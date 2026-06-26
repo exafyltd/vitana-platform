@@ -7599,22 +7599,43 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
             try {
               const _temporalNd = describeTimeSince((session as any).lastSessionInfo);
               const _firstNameNd = (session as any).greetingFirstName;
-              const _isNewDayNd =
-                _temporalNd.bucket === 'today' ||
-                _temporalNd.bucket === 'yesterday' ||
-                _temporalNd.bucket === 'week' ||
-                _temporalNd.bucket === 'long';
               const _uidNd = session.identity?.user_id;
               const _supaNd = getSupabase();
+              const _tzNd = session.clientContext?.timezone || 'UTC';
+              const _nowNd = new Date();
+              // DURABLE once-per-real-day gate. The old trigger keyed off the
+              // most-recent session-start telemetry (describeTimeSince), which is
+              // fragile: an active user opens many sessions a day and the app
+              // auto-creates sessions, so any earlier same-day session flipped the
+              // bucket to "same-day" and the rich briefing was skipped — it almost
+              // never fired in practice. We now key off
+              // user_journey.last_full_briefing_date (user-tz YYYY-MM-DD): the
+              // briefing fires on the FIRST session of a day where that date is
+              // stale, then we stamp today so same-day reopens fall through to the
+              // short proactive opener. Reliable "full once/day, short after".
+              const _todayNd = (() => {
+                try {
+                  return new Intl.DateTimeFormat('en-CA', {
+                    timeZone: _tzNd, year: 'numeric', month: '2-digit', day: '2-digit',
+                  }).format(_nowNd);
+                } catch {
+                  return _nowNd.toISOString().slice(0, 10);
+                }
+              })();
+              const _lastBriefDateNd = (session as any).lastFullBriefingDate as string | null | undefined;
+              const _briefingDueNd = !(typeof _lastBriefDateNd === 'string' && _lastBriefDateNd >= _todayNd);
+              // Never brief a brand-new / not-yet-onboarded user — the first-time
+              // welcome rung below owns them (never "welcome back" to a newcomer).
+              const _isFirstTimeNd =
+                (session as any).greetingNeedsOnboarding === true ||
+                (session as any).greetingIsFirstTime === true;
               // The overview renderer only localizes DE/EN; for any other session
               // language it would emit English clauses. Restrict the overview to
               // de/en and let the existing localized name-greeting ladder handle
               // es/fr/sr/etc. (Codex P2).
               const _langKeyNd = (lang || 'en').slice(0, 2).toLowerCase();
               const _langOkNd = _langKeyNd === 'de' || _langKeyNd === 'en';
-              if (_langOkNd && _isNewDayNd && typeof _firstNameNd === 'string' && _firstNameNd.trim().length > 0 && _uidNd && _supaNd) {
-                const _tzNd = session.clientContext?.timezone || 'UTC';
-                const _nowNd = new Date();
+              if (_langOkNd && _briefingDueNd && !_isFirstTimeNd && typeof _firstNameNd === 'string' && _firstNameNd.trim().length > 0 && _uidNd && _supaNd) {
                 // VTID-03172 / complete-briefing: use the RICH unified overview
                 // payload (the SAME data the My Journey screen renders, plus
                 // voice-only time-sensitive signals) instead of the narrow
@@ -7686,11 +7707,23 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
                         client_content: { turns: [{ role: 'user', parts: [{ text: _block }] }], turn_complete: true },
                       }),
                     );
+                    // Stamp the durable once-per-day flag so same-day reopens get
+                    // the short proactive opener instead of re-briefing. Update by
+                    // user_id (returning users have a journey row); fire-and-forget,
+                    // and mirror onto the session so a second open within this same
+                    // process also sees it as delivered.
+                    (session as any).lastFullBriefingDate = _todayNd;
+                    void _supaNd
+                      .from('user_journey')
+                      .update({ last_full_briefing_date: _todayNd })
+                      .eq('user_id', _uidNd)
+                      .then(() => {}, () => {});
                     emitDiag(session, 'greeting_sent', {
                       lang,
                       prompt_len: _block.length,
                       wake_opener: 'safe_fast_newday_overview',
                       bucket: _temporalNd.bucket,
+                      briefing_date: _todayNd,
                       overview_signals: {
                         journey: !!_overview.journey,
                         index: _overview.vitana_index.state,
