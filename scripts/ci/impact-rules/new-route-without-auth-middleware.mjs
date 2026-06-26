@@ -24,6 +24,9 @@ const AUTH_NAMES = [
   'requireAuth', 'requireAdmin', 'requireDevRole', 'requirePlatformAdmin',
   'optionalAuth', 'requireTenant', 'requireTenantAdmin', 'requireAuthOptional',
   'requireServiceRole', 'requireApiKey', 'requireScanToken',
+  // requireAuthWithTenant: authenticated + tenant-scoped middleware used across
+  // orb-livekit.ts (voice-config, commit-memory). It IS auth — was missing here.
+  'requireAuthWithTenant',
 ];
 const ROUTE_PREFIX_RE = /^\s*router\.(get|post|put|patch|delete)\s*\(/;
 

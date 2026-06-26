@@ -604,6 +604,8 @@ export type CicdEventType =
   | 'livekit.stt.recovery'
   // VTID-DIAG: Pipeline diagnostics
   | 'orb.live.diag'
+  // Conversation-flow §11: session-end memory commit (LiveKit parity).
+  | 'orb.live.memory.committed'
   // VTID-FALLBACK: Chat-TTS fallback events
   | 'orb.live.fallback_used'
   | 'orb.live.fallback_error'
