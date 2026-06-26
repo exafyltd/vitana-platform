@@ -43,12 +43,12 @@ import {
   EMPTY_OVERVIEW,
   type NewDayOverviewPayload,
 } from './new-day-overview-aggregator';
-// VTID-03167 — broad aggregator + structural prompt block (replaces the
-// Slice 2 server-composed renderer). The provider now stuffs the full
-// structural block into userFacingLine with the STRUCTURED_BLOCK_PREFIX
-// sentinel so the controller bypasses the legacy Say-exactly wrapper.
-import { gatherOverviewPayload, localHourInTz } from './new-day-overview-payload';
-import { buildNewDayOverviewBlock } from './new-day-overview-prompt';
+// PHASE 1 (conversation-flow unification, option A): the provider emits a
+// server-composed, speakable overview line (renderNewDayReturnLineWithOverview)
+// so the Vertex LLM renderer and the LiveKit deterministic session.say() render
+// it identically. The legacy STRUCTURED_BLOCK_PREFIX path (gatherOverviewPayload
+// + buildNewDayOverviewBlock) is retired here. See
+// docs/CONVERSATION_FLOW_ARCHITECTURE.md.
 
 /** Sentinel prefix on userFacingLine. When present, the controller MUST
  *  treat the line as a fully-formed structural block and NOT wrap it in
@@ -520,62 +520,48 @@ export function makeNewDayReturnProvider(
         };
       }
 
-      // ---- VTID-03167: gather broad payload, emit structural block ----
-      // No server-side sentence composition. Aggregator pulls every
-      // signal with data; the prompt-block builder hands the structured
-      // payload to Gemini with a STRUCTURAL contract for HOW to compose
-      // the multi-paragraph overview.
-      const localHour = localHourInTz(nowDate, inputs.timezone);
-      let broadPayload;
+      // PHASE 1 — conversation-flow unification (option A). Emit a server-
+      // composed, deterministically-speakable overview line instead of an
+      // LLM-compose structured block. The block format only worked on the
+      // Vertex/LLM renderer; the LiveKit agent speaks userFacingLine verbatim
+      // via session.say(), so a structured block was unspeakable there. A
+      // composed line renders identically on BOTH transports — one brain,
+      // many mouths. See docs/CONVERSATION_FLOW_ARCHITECTURE.md.
+      const localHour = localHourInTimezone(nowDate, inputs.timezone);
+      let payload: NewDayOverviewPayload;
       try {
-        broadPayload = await gatherOverviewPayload({
+        payload = await aggregateNewDayOverview({
           supabase: inputs.supabase,
           userId: inputs.userId,
-          timezone: inputs.timezone,
           now: nowDate,
-          lastSessionDateUserTz: row?.last_session_date ?? null,
+          timezone: inputs.timezone,
+          todayDateIso: todayIso,
+          lastSessionAtIso: row?.last_session_date ?? null,
         });
       } catch (err) {
         console.warn(
-          `[VTID-03167] gatherOverviewPayload threw for ${inputs.userId.slice(0, 8)}:`,
+          `[new-day-return] aggregateNewDayOverview threw for ${inputs.userId.slice(0, 8)}:`,
           err instanceof Error ? err.message : String(err),
         );
-        // Even on full failure, ship a minimal block so the LLM gets the
-        // salutation directive — it composes a polite warm greeting from
-        // empty payload. Better than dropping the candidate entirely.
-        broadPayload = {
-          journey: null,
-          vitana_index: {
-            state: 'not_set_up' as const, today: null, tier: null, tier_framing: null,
-            trend_7d: null, weakest_pillar: null, strongest_pillar: null,
-            balance_label: null, pillars: null,
-            projected_day_90: null, projected_day_90_tier: null,
-          },
-          life_compass: {
-            state: 'not_set' as const, primary_goal: null, category: null,
-            target_date: null, target_value: null, target_unit: null,
-            starting_value: null, set_at: null,
-            days_to_deadline: null, goal_progress_pct: null,
-          },
-          calendar_today: { count: 0, next: null },
-          calendar_passed: { count: 0, most_recent: null },
-          autopilot: { state: 'none_yet' as const, today_checkpoint: null, this_week: [], pending_total: 0 },
-          matches_unread: 0, messages_unread: 0,
-          reminders_today: { count: 0, next: null },
-          diary_last_7d: 0,
-          last_session_date_user_tz: row?.last_session_date ?? null,
-        };
+        payload = { ...EMPTY_OVERVIEW };
       }
 
-      const block = buildNewDayOverviewBlock({
-        payload: broadPayload,
+      // NOTE (Phase 1 follow-up): a content gate that yields to login-briefing
+      // when the overview has no substance (no calendar event, no Life Compass
+      // goal) is desirable — it mirrors the Vertex SAFE-FAST _overviewHasContent
+      // gate. It is intentionally NOT applied here yet: the unit-test mock does
+      // not simulate the aggregator's calendar/goal queries, so gating would
+      // require a heavier mock. Tracked as a follow-up. Today the overview owns
+      // a genuine new-day turn 1 unconditionally; the composed line is rich when
+      // there is content and a clean "Good <tod>, <Name>" otherwise.
+      const line = renderNewDayReturnLineWithOverview({
         lang: inputs.lang,
+        salutation: pickSalutationKind(localHour),
         firstName: inputs.firstName,
-        localHour,
         timezone: inputs.timezone,
+        payload,
       });
-      const line = STRUCTURED_BLOCK_PREFIX + block;
-      if (line.length === 0) {
+      if (!line || line.trim().length === 0) {
         return {
           providerKey: NEW_DAY_RETURN_PROVIDER_KEY,
           status: 'errored',
