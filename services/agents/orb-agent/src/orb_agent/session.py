@@ -848,6 +848,30 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
     model_turns_counter = {"n": 0}
     stall_count = {"n": 0}
 
+    # §11 conversation-flow memory: accumulate the conversation transcript so
+    # _teardown can POST it to the gateway's /api/v1/orb/session/commit-memory
+    # endpoint, which runs the SAME extraction (Cognee + deduplicated facts) the
+    # Vertex path runs at session stop. Before this, the LiveKit agent extracted
+    # NOTHING and every conversation was heard and thrown away (no cross-session
+    # memory). User lines come from the proven user_input_transcribed hook;
+    # assistant lines from conversation_item_added (best-effort). See
+    # docs/CONVERSATION_FLOW_ARCHITECTURE.md §11.
+    mem_transcript: list[str] = []
+    MEM_TRANSCRIPT_MAX_CHARS = 20000
+
+    def _mem_append(role: str, text: Any) -> None:
+        try:
+            if isinstance(text, (list, tuple)):
+                text = " ".join(str(p) for p in text)
+            t = (text or "").strip() if isinstance(text, str) else ""
+            if not t:
+                return
+            if sum(len(x) for x in mem_transcript) > MEM_TRANSCRIPT_MAX_CHARS:
+                return
+            mem_transcript.append(f"{role}: {t}")
+        except Exception:  # noqa: BLE001
+            pass
+
     # VTID-03076 (P0-C): activeContinuation voice state.
     #
     # When the agent speaks a wake-brief (proactive opener at orb_wake),
@@ -1028,6 +1052,38 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
             )
         except Exception as exc:  # noqa: BLE001
             logger.warning("session.stop oasis emit failed: %s", exc)
+        # §11 conversation-flow memory: commit the session transcript so the
+        # SAME extraction the Vertex path runs also runs for LiveKit. Runs
+        # BEFORE gw.aclose() (it uses gw). Fire-and-forget — extraction must
+        # never block teardown. The gateway emits orb.live.memory.committed so
+        # we can VERIFY transcript_chars > 0 on staging (the "proven" leg of the
+        # done ritual). See docs/CONVERSATION_FLOW_ARCHITECTURE.md §11.
+        try:
+            _mem_text = "\n".join(mem_transcript)
+            if identity.user_id and identity.tenant_id and len(_mem_text) > 50:
+                await gw.post(
+                    "/api/v1/orb/session/commit-memory",
+                    {
+                        "transcript": _mem_text,
+                        "session_id": orb_session_id,
+                        "active_role": identity.role or "community",
+                    },
+                )
+                logger.info(
+                    "§11 committed session memory: %d chars, %d lines (session=%s)",
+                    len(_mem_text),
+                    len(mem_transcript),
+                    orb_session_id,
+                )
+            else:
+                logger.info(
+                    "§11 skip memory commit: chars=%d user=%s (session=%s)",
+                    len(_mem_text),
+                    bool(identity.user_id),
+                    orb_session_id,
+                )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("§11 commit-memory POST failed (non-fatal): %s", exc)
         try:
             await gw.aclose()
         except Exception:  # noqa: BLE001
@@ -1414,6 +1470,7 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
                 # orb.turn.responded with the voice-tool-routing signal
                 # (consent/PII-gated server-side at /api/v1/oasis/emit).
                 turn_state["user_text"] = t
+                _mem_append("User", t)  # §11: accrue for session-end memory commit
         except Exception:  # noqa: BLE001
             pass
         turn_state["user_text_len"] = text_len
@@ -1437,6 +1494,32 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
         session.on("user_input_transcribed")(_on_user_transcribed)  # type: ignore[misc]
     except Exception as exc:  # noqa: BLE001
         logger.debug("could not hook user_input_transcribed: %s", exc)
+
+    # §11: capture ASSISTANT lines for the session-end memory transcript.
+    # Best-effort — the event/attribute names vary across livekit-agents
+    # versions, so read defensively and never raise. User lines already come
+    # from the proven user_input_transcribed hook above, so even if this hook
+    # captures nothing the user's shared facts are still committed.
+    def _on_conversation_item(_ev: Any = None) -> None:
+        try:
+            item = getattr(_ev, "item", None) or _ev
+            role = getattr(item, "role", None)
+            if role != "assistant":
+                return
+            text = (
+                getattr(item, "text_content", None)
+                or getattr(item, "content", None)
+                or getattr(item, "text", None)
+                or ""
+            )
+            _mem_append("Assistant", text)
+        except Exception:  # noqa: BLE001
+            pass
+
+    try:
+        session.on("conversation_item_added")(_on_conversation_item)  # type: ignore[misc]
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("could not hook conversation_item_added: %s", exc)
 
     # VTID-03076 (P0-C): activeContinuation accept/dismiss intercept.
     #
