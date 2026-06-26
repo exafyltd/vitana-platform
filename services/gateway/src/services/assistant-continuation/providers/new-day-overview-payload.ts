@@ -32,6 +32,13 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { getJourneyState, type JourneyState } from '../../journey/user-journey-service';
 import { fetchLifeCompass, fetchVitanaIndexForProfiler } from '../../user-context-profiler';
+// Guided-journey learning progress ("X of N sessions") + the real "where we
+// left off" recall — sourced from the SAME helpers the login-briefing provider
+// uses, so voice and the briefing agree. getJourneyState here is the GUIDED
+// curriculum pointer (distinct from the longevity-journey getJourneyState
+// imported above), hence the alias.
+import { getJourneyState as getGuidedJourneyState } from '../../guided-journey/guided-journey-state';
+import { resolveCurriculumFacts } from './login-briefing';
 
 // ---------------------------------------------------------------------------
 // Type definitions
@@ -157,6 +164,20 @@ export interface OverviewPayload {
   // -- DIARY (voice-only, streak proxy) --
   diary_last_7d: number;
 
+  // -- GUIDED JOURNEY (learning progress + "where we left off") --
+  guided_journey: {
+    /** Curriculum sessions the user has completed (current_session - 1). */
+    sessions_completed: number;
+    /** Total topics in the published curriculum, or null when unknown. */
+    sessions_total: number | null;
+    /** Title of the session the user is about to do next. */
+    next_session_title: string | null;
+    /** The REAL last topic the user opened — the "where we left off" thread to
+     *  continue. Falls back to the just-completed session title; null when the
+     *  user has not started the curriculum yet. */
+    last_session_recall: string | null;
+  } | null;
+
   // -- META --
   last_session_date_user_tz: string | null;
 }
@@ -166,6 +187,9 @@ export interface AggregateArgs {
   userId: string;
   timezone: string;
   now: Date;
+  /** Session language — selects the curriculum-checklist locale for the
+   *  guided-journey session titles. Defaults to 'en'. */
+  lang?: string;
   lastSessionDateUserTz: string | null;
   /**
    * Precise last-session timestamp (ISO). When provided it is the EXACT cutoff
@@ -261,6 +285,7 @@ export async function gatherOverviewPayload(args: AggregateArgs): Promise<Overvi
     msgsUnread,
     remindersToday,
     diary7d,
+    guidedJourney,
   ] = await Promise.all([
     getJourneyState(args.supabase, args.userId).catch(() => null),
     fetchVitanaIndexForProfiler(args.supabase, args.userId).catch(() => null),
@@ -273,6 +298,7 @@ export async function gatherOverviewPayload(args: AggregateArgs): Promise<Overvi
     fetchMessagesUnread(args.supabase, args.userId),
     fetchRemindersToday(args.supabase, args.userId, startUtc, endUtc),
     fetchDiaryLast7Days(args.supabase, args.userId, args.now),
+    fetchGuidedJourney(args.supabase, args.userId, args.lang ?? 'en'),
   ]);
 
   const lifeCompass = projectLifeCompass(lcSnapshot);
@@ -287,6 +313,7 @@ export async function gatherOverviewPayload(args: AggregateArgs): Promise<Overvi
     messages_unread: msgsUnread,
     reminders_today: remindersToday,
     diary_last_7d: diary7d,
+    guided_journey: guidedJourney,
     last_session_date_user_tz: args.lastSessionDateUserTz,
   };
 }
@@ -635,6 +662,39 @@ async function fetchRemindersToday(
     };
   } catch {
     return { count: 0, next: null };
+  }
+}
+
+/**
+ * Guided-journey learning progress + the real "where we left off" recall.
+ * Reuses the login-briefing provider's exact sources (getJourneyState curriculum
+ * pointer + resolveCurriculumFacts checklist read) so the briefing and the
+ * proactive opener never disagree. Best-effort: any failure → null (the briefing
+ * simply omits the guided-journey beat).
+ */
+async function fetchGuidedJourney(
+  sb: SupabaseClient, userId: string, lang: string,
+): Promise<OverviewPayload['guided_journey']> {
+  try {
+    const js = await getGuidedJourneyState(sb, userId).catch(() => null);
+    if (!js) return null;
+    const currentSession = Number.isFinite(js.currentSession) ? Math.max(1, js.currentSession) : 1;
+    const sessionsCompleted = Math.max(0, currentSession - 1);
+    const cur = await resolveCurriculumFacts(sb, lang, currentSession, {
+      completedTopicIds: js.completedTopicIds ?? [],
+      lastOpenedTopicId: js.lastOpenedTopicId ?? null,
+    });
+    // "Where we left off" = the real last-opened topic; fall back to the
+    // just-completed session title once the user has done at least one session.
+    const recall = cur.lastOpenedTitle ?? (sessionsCompleted > 0 ? cur.title : null);
+    return {
+      sessions_completed: sessionsCompleted,
+      sessions_total: cur.totalTopics,
+      next_session_title: cur.title,
+      last_session_recall: recall,
+    };
+  } catch {
+    return null;
   }
 }
 
