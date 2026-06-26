@@ -168,13 +168,15 @@ export interface OverviewPayload {
   guided_journey: {
     /** Curriculum sessions the user has completed (current_session - 1). */
     sessions_completed: number;
+    /** Curriculum TOPICS the user has marked complete (completed_topic_ids). */
+    topics_learned: number;
     /** Total topics in the published curriculum, or null when unknown. */
-    sessions_total: number | null;
-    /** Title of the session the user is about to do next. */
+    topics_total: number | null;
+    /** Title of the session the user is about to do next (named, never generic). */
     next_session_title: string | null;
     /** The REAL last topic the user opened — the "where we left off" thread to
-     *  continue. Falls back to the just-completed session title; null when the
-     *  user has not started the curriculum yet. */
+     *  continue. Falls back to the next-session title when the last-opened topic
+     *  is unknown; null when the user has not started the curriculum yet. */
     last_session_recall: string | null;
   } | null;
 
@@ -680,16 +682,18 @@ async function fetchGuidedJourney(
     if (!js) return null;
     const currentSession = Number.isFinite(js.currentSession) ? Math.max(1, js.currentSession) : 1;
     const sessionsCompleted = Math.max(0, currentSession - 1);
+    const topicsLearned = Array.isArray(js.completedTopicIds) ? js.completedTopicIds.length : 0;
     const cur = await resolveCurriculumFacts(sb, lang, currentSession, {
       completedTopicIds: js.completedTopicIds ?? [],
       lastOpenedTopicId: js.lastOpenedTopicId ?? null,
     });
     // "Where we left off" = the real last-opened topic; fall back to the
-    // just-completed session title once the user has done at least one session.
+    // current session title once the user has done at least one session.
     const recall = cur.lastOpenedTitle ?? (sessionsCompleted > 0 ? cur.title : null);
     return {
       sessions_completed: sessionsCompleted,
-      sessions_total: cur.totalTopics,
+      topics_learned: topicsLearned,
+      topics_total: cur.totalTopics,
       next_session_title: cur.title,
       last_session_recall: recall,
     };
