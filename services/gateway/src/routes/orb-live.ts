@@ -7648,6 +7648,10 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
                     now: _nowNd,
                     timezone: _tzNd,
                     lastSessionDateUserTz: _lastSessDateTz,
+                    // Precise cutoff for "events since we last spoke" — avoids
+                    // briefing the user about events that happened BEFORE their
+                    // prior same-day session (Codex P2).
+                    lastSessionAtIso: _lastSessIso,
                   }),
                   new Promise<null>((r) => setTimeout(() => r(null), Number(process.env.ORB_NEWDAY_OVERVIEW_WAIT_MS || 3000))),
                 ]).catch(() => null);
