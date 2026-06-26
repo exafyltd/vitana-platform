@@ -293,3 +293,148 @@ Any PR that touches greeting / wake / turn-flow behavior must:
 
 If a reviewer sees flow logic in `orb-live.ts`, `orb-livekit.ts`, or the
 `orb-agent` Python that is not pure rendering, the PR is rejected.
+
+---
+
+## 10. The journey-continuity spine (every conversation IS the journey)
+
+### Product invariant
+
+> Every conversation — the opener AND every ongoing turn — is one continuous
+> narration of the user's longevity journey.
+
+The user has started a trip. Vitana is the guide. So the **default** shape of any
+opener is journey-framed, e.g.:
+
+> "Today is June 26th — day 9 of your longevity journey. You've completed 2 of
+> your guided sessions so far; let's do the next one together."
+
+This is **not** a greeting variant. It is the **spine**: the baseline opener and
+the standing frame for every turn. Other things (an urgent reminder, a tapped
+topic, a new community match) may briefly own turn 1, but they are interruptions
+*of* the journey thread, and the next turn returns to it.
+
+### It is a provider, not a special case
+
+Implement it as the `journey_continuity` provider in the brain — evolve the
+existing `login_briefing` provider, which already gathers sessions-completed,
+next-session title, Index delta, and Life Compass goal (it was ~80% there). It
+sits at the **high baseline** of the ladder: it wins turn 1 unless something
+genuinely more urgent pre-empts it, and everything generic yields to it.
+
+It must **scale across the two product surfaces automatically**, using the
+journey-maturity model that already exists (`login_briefing`'s
+`orient → building → momentum → returning → graduated`):
+
+- **Guided-journey user** (still learning the 94 sessions / 254 topics):
+  narrate learning progress + recommend the next session.
+- **Full-app / graduated user** (Life Compass set, fluent with Index / Autopilot):
+  narrate *longevity* progress (Index direction, Life Compass goal, autopilot)
+  framed as the *continuing* journey. Same spine, different clauses.
+
+### Data sources (all already stored)
+
+- `user_guided_journey_state.current_session` + `completed_topic_ids` → "2 of N sessions learned"
+- `user_journey.started_at` → "day 9" (days since journey start)
+- the guided-session catalog → "your next session is …"
+- `life_compass` + `vitana_index_scores` → the graduated-user clauses
+
+### Render + interruptions
+
+- Emits a **server-composed, speakable line** (the option-A pattern shipped for
+  `new_day_return`), so Vertex and LiveKit say the *same* journey narration.
+- Higher-priority providers (urgent reminder, explicit tap, new match) pre-empt
+  turn 1; the `ConversationStateMachine` carries the thread so turn 2 returns to
+  "…now, back to your journey — ready for session 3?"
+- **Ongoing turns, not just the opener:** the same journey context the provider
+  used is injected into the standing system instruction, so *every* answer
+  relates back to the journey and nudges the next session. The provider and the
+  standing instruction read the SAME journey context, so they can never disagree.
+
+---
+
+## 11. Memory is a first-class input (read every turn, write every session)
+
+### Product invariant
+
+> Vitana must consider what the user has told it BEFORE it answers — every turn,
+> every session. A journey that forgets is not continuous.
+
+Memory is **not** a side system bolted onto the flow. It is:
+
+- a **READ** input assembled in Layer 1 and available to the brain + the standing
+  instruction on every turn (`memory_facts` — name, goal, disclosed people,
+  preferences — plus the relevant `memory_items`), and
+- a **WRITE** step at session end that turns the conversation into durable facts
+  (extraction → `memory_facts` / `memory_items` / `relationship_nodes`).
+
+Both halves must be **transport-agnostic** — the same "one implementation, thin
+per-transport call" rule as tool dispatch.
+
+### The current break (investigated — this is why memory "doesn't work")
+
+- **READ works on both** transports: the bootstrap context pack loads memory and
+  injects it at session start (`context-pack-builder.ts` →
+  `buildBootstrapContextPack`, surfaced on Vertex via `session.contextInstruction`
+  and on LiveKit via `/orb/context-bootstrap`).
+- **WRITE is forked.** Vertex extracts + persists at session end
+  (`live-session-controller.ts:~1965-1983` fires Cognee + dedup extraction). The
+  **LiveKit agent's `_teardown()` (`orb-agent/session.py ~974-1043`) extracts
+  NOTHING** — no Cognee, no dedup, no `write_fact`. There is no extraction code
+  anywhere in `orb-agent`. So on the LiveKit pipeline **every conversation is
+  heard and thrown away** — cross-session memory never accumulates. This is the
+  amnesia.
+- **Two more, smaller:** memory is injected only ONCE at session start (no
+  per-turn refresh on either transport), and `search_memory` is an *optional*
+  tool the model rarely calls — so even mid-session, "I told you earlier" can
+  fail. And there is **no `memory_hits` telemetry**, so the gap was invisible.
+
+### The fix, in this architecture
+
+1. **READ (Layer 1):** the context assembler loads `memory_facts` + relevant
+   `memory_items` once at start AND keeps them available to the brain and the
+   standing instruction every turn — not just turn 1. The journey spine composes
+   *over* this memory ("day 9, 2 sessions — and last time you mentioned your
+   knee; how is it?").
+2. **WRITE (unify the fork):** there must be **one** transport-agnostic "commit
+   session memory" step (extraction → persistence) that BOTH transports invoke
+   at session end. Today Vertex calls it inline and LiveKit calls nothing.
+   Expose it as a single gateway path/endpoint that the LiveKit agent hits on
+   teardown (before it closes the gateway client), so extraction **cannot** be
+   forked again — mirroring the shared tool dispatcher.
+3. **PER-TURN consideration:** ensure memory is consulted each turn — re-surface
+   the relevant facts into the standing instruction (cheap) and/or make
+   `search_memory` a reliable step — so mid-session recall is not left to chance.
+
+### Enforcement (same guarantee as the flow)
+
+- **`memory_hits` in the unified telemetry (§4):** every session's decision event
+  records how many memory facts were loaded and whether the session committed
+  memory at the end. "Memory considered" becomes *queryable*, not assumed — the
+  same way the greeting `wake_opener` is now queryable.
+- **Parity guard extends to the memory loop:** a transport that ends a session
+  WITHOUT committing memory, or answers WITHOUT the Layer-1 memory input, is
+  drift the parity scanner / contract suite flags. The READ assembler and the
+  WRITE commit are shared code; a transport may only *call* them, never re-implement
+  or skip them.
+
+---
+
+## 12. "Done" ritual — so it is EXPERIENCED, not just built
+
+Every conversation-flow OR memory change is **not done** until all three hold.
+This is the rule that breaks the "built a continuation/memory solution several
+times, never experienced it" pattern — because the failure was always
+*decision/extraction computed but not wired to the live experience*, deferred
+behind a flag or a second path.
+
+1. **You heard it** — a real staging session on the **LiveKit** pipeline (the one
+   real users are on), not just a unit test or the Vertex path.
+2. **Telemetry proves it** — `oasis_events` shows the expected `wake_opener`
+   (e.g. `journey_continuity`), a non-zero `memory_hits`, and a session-end
+   memory-commit for that session.
+3. **A test locks it** — the spoken line is pinned in the transport-agnostic
+   contract suite; for memory, a test asserts that a session's facts are
+   persisted and retrievable on the next session.
+
+"Built" is not "done." **Done = heard + proven + locked.**
