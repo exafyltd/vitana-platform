@@ -1061,13 +1061,20 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
         try:
             _mem_text = "\n".join(mem_transcript)
             if identity.user_id and identity.tenant_id and len(_mem_text) > 50:
-                await gw.post(
-                    "/api/v1/orb/session/commit-memory",
-                    {
-                        "transcript": _mem_text,
-                        "session_id": orb_session_id,
-                        "active_role": identity.role or "community",
-                    },
+                # Bound the POST so a slow/unreachable gateway can never stall
+                # teardown (the GatewayClient default timeout is 30s; the
+                # endpoint queues extraction async, so the agent need not wait
+                # for the response) — Codex P2.
+                await asyncio.wait_for(
+                    gw.post(
+                        "/api/v1/orb/session/commit-memory",
+                        {
+                            "transcript": _mem_text,
+                            "session_id": orb_session_id,
+                            "active_role": identity.role or "community",
+                        },
+                    ),
+                    timeout=5.0,
                 )
                 logger.info(
                     "§11 committed session memory: %d chars, %d lines (session=%s)",
@@ -1082,6 +1089,8 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
                     bool(identity.user_id),
                     orb_session_id,
                 )
+        except asyncio.TimeoutError:
+            logger.warning("§11 commit-memory POST timed out (non-fatal); teardown continues")
         except Exception as exc:  # noqa: BLE001
             logger.warning("§11 commit-memory POST failed (non-fatal): %s", exc)
         try:
@@ -1470,7 +1479,12 @@ async def agent_entrypoint(ctx: "JobContext") -> None:
                 # orb.turn.responded with the voice-tool-routing signal
                 # (consent/PII-gated server-side at /api/v1/oasis/emit).
                 turn_state["user_text"] = t
-                _mem_append("User", t)  # §11: accrue for session-end memory commit
+                # §11: only persist FINAL transcripts — skip interim STT
+                # hypotheses so partial/misrecognized text can't corrupt durable
+                # memory facts (Codex P2). Defaults to persist when the flag is
+                # absent (older livekit-agents versions).
+                if getattr(_ev, "is_final", True):
+                    _mem_append("User", t)  # §11: accrue for session-end memory commit
         except Exception:  # noqa: BLE001
             pass
         turn_state["user_text_len"] = text_len
