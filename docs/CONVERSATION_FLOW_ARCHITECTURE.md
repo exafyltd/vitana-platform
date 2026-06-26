@@ -406,6 +406,29 @@ flag through `decideWakeBriefForSession` so the heavy Vertex path ALSO emits the
 rich block is the tracked Phase-2 follow-up. **The user-facing path (Vertex
 SAFE-FAST) is complete now; the brain-level completion rides Phase 2.**
 
+### Trigger: durable once-per-day flag, NOT the session-start heuristic
+
+> A rich briefing nobody hears is worse than no briefing. The *content* being
+> complete is meaningless if the rung never fires.
+
+The morning briefing originally gated on the most-recent `vtid.live.session.start`
+telemetry (`describeTimeSince` → "first session of a new day"). That heuristic is
+**fragile**: an active user opens many sessions a day and the app auto-creates
+sessions, so any earlier same-day session (or a silent auto-session) flips the
+temporal bucket to "same-day" and the briefing is skipped. In practice it almost
+never fired — which is exactly the "the morning summary disappeared" complaint.
+
+The trigger is now a **durable per-user flag**: `user_journey.last_full_briefing_date`
+(user-tz `YYYY-MM-DD`). The SAFE-FAST rung fires the rich briefing on the FIRST
+session of a day where that date is stale, then stamps today so same-day reopens
+fall through to the short proactive opener (`computeFastProactiveOpener`). This is
+the **"full once/day, short after"** contract. First-time / not-yet-onboarded
+users are excluded (the first-time-welcome rung owns them — never "welcome back").
+
+Rule: **never re-gate the briefing on transient session telemetry.** Whether the
+briefing is due is a function of durable per-user state, not of how many sessions
+or reconnects happened.
+
 ---
 
 ## 11. Memory is a first-class input (read every turn, write every session)

@@ -741,6 +741,12 @@ export async function handleLiveSessionStart(
   // pre-fetch. null = unknown (read failed).
   let greetingIsFirstSession: boolean | null = null;
   let greetingNeedsOnboarding: boolean | null = null;
+  // Durable "full briefing delivered" date (YYYY-MM-DD, user-tz) from
+  // user_journey.last_full_briefing_date. Drives the once-per-real-day rich
+  // morning briefing independently of the fragile session-start heuristic —
+  // the briefing fires on the first session of a day where this is stale, then
+  // same-day reopens get the short proactive opener.
+  let greetingLastFullBriefingDate: string | null = null;
 
   // VTID-03294: a Guided-Journey topic tap needs ZERO context — Vitana just
   // picks up the KB lesson and speaks it. Detect it here so we can skip the
@@ -945,7 +951,7 @@ export async function handleLiveSessionStart(
             supa
               ? supa
                   .from('user_journey')
-                  .select('is_first_session')
+                  .select('is_first_session, last_full_briefing_date')
                   .eq('user_id', _ndIdentity.user_id)
                   .maybeSingle()
               : Promise.resolve(null as any),
@@ -970,9 +976,12 @@ export async function handleLiveSessionStart(
             firstSessionResult.value &&
             !firstSessionResult.value.error
           ) {
-            const _fsRow = firstSessionResult.value.data as { is_first_session?: boolean | null } | null;
+            const _fsRow = firstSessionResult.value.data as { is_first_session?: boolean | null; last_full_briefing_date?: string | null } | null;
             // No row at all → user has never had a journey row → treat as first-time.
             greetingIsFirstSession = _fsRow ? _fsRow.is_first_session === true : true;
+            // Durable once-per-day briefing flag (null when never delivered or
+            // column absent → briefing is due).
+            greetingLastFullBriefingDate = _fsRow?.last_full_briefing_date ?? null;
           }
           if (
             journeyStateResult.status === 'fulfilled' &&
@@ -1146,6 +1155,7 @@ export async function handleLiveSessionStart(
     (session as any).greetingProactiveLine = greetingProactiveLine;
     (session as any).greetingIsFirstTime = greetingIsFirstSession;
     (session as any).greetingNeedsOnboarding = greetingNeedsOnboarding;
+    (session as any).lastFullBriefingDate = greetingLastFullBriefingDate;
     if (greetingEarlyLastSessionInfo && !session.lastSessionInfo) {
       session.lastSessionInfo = greetingEarlyLastSessionInfo;
     }
@@ -1156,6 +1166,7 @@ export async function handleLiveSessionStart(
       (session as any).greetingProactiveLine = greetingProactiveLine;
       (session as any).greetingIsFirstTime = greetingIsFirstSession;
       (session as any).greetingNeedsOnboarding = greetingNeedsOnboarding;
+      (session as any).lastFullBriefingDate = greetingLastFullBriefingDate;
       // Idempotent with the heavy bootstrap block, which also sets this later.
       if (greetingEarlyLastSessionInfo && !session.lastSessionInfo) {
         session.lastSessionInfo = greetingEarlyLastSessionInfo;
