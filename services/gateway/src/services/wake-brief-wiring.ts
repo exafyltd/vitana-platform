@@ -182,11 +182,16 @@ export function ensureWakeBriefProviderRegistered(): void {
   if (!defaultProviderRegistry.get(TEACHER_PROVIDER_KEY)) {
     defaultProviderRegistry.register(makeFeatureDiscoveryTeacherProvider());
   }
-  // VTID-03164: new-day-return at priority 90. Suppresses cleanly when
-  // same-day repeat OR is_first_session=true OR no timezone, so it
-  // never blocks the other providers when the trigger does not apply.
+  // new-day-return at priority 94 (above login-briefing's 93). APPROVED
+  // DECISION (not ad-hoc, per docs/CONVERSATION_FLOW_ARCHITECTURE.md Phase 1):
+  // on a genuine new-day return WHERE THE OVERVIEW HAS REAL CONTENT, the rich
+  // morning summary owns turn 1 over the lighter login-briefing recall line.
+  // The provider self-suppresses on same-day repeat, is_first_session, missing
+  // timezone, AND now when the overview has no substantive content — so raising
+  // its priority only changes the content-rich new-day case; every other case
+  // still yields to login-briefing / the rest of the ladder.
   if (!defaultProviderRegistry.get(NEW_DAY_RETURN_PROVIDER_KEY)) {
-    defaultProviderRegistry.register(makeNewDayReturnProvider());
+    defaultProviderRegistry.register(makeNewDayReturnProvider({ priority: 94 }));
   }
   // R6 (BOOTSTRAP-ORB-R6R7-PROVIDERS): first-time-welcome at priority 95.
   // Suppresses unless user_journey.is_first_session=true, so it only wins
