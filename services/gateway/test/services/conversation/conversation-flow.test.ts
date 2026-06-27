@@ -9,7 +9,7 @@
  */
 
 import { decideOpeningRegister, buildResumeDirective } from '../../../src/services/conversation/decide-opening';
-import { rankNextBestActions, selectNextBestAction } from '../../../src/services/conversation/next-best-action';
+import { rankNextBestActions, selectNextBestAction, capabilityForNba } from '../../../src/services/conversation/next-best-action';
 import { surfaceForRoute, screenCompletionFor } from '../../../src/services/conversation/screen-surface';
 import type { OverviewPayload } from '../../../src/services/assistant-continuation/providers/new-day-overview-payload';
 
@@ -99,6 +99,25 @@ describe('rankNextBestActions — value × timeliness, always grounded', () => {
     // The directive tells the model the user is already on the screen + to complete.
     expect(on.text).toContain('current_screen');
     expect(on.text).toContain('complete_on_current_screen');
+  });
+
+  it('CAPABILITY-GATING: actions carry the real executing tool; gap actions are guide-only (null)', () => {
+    // Executable actions route to a real, registered ORB tool.
+    expect(capabilityForNba('reply_messages')).toBe('send_chat_message');
+    expect(capabilityForNba('complete_diary')).toBe('save_diary_entry');
+    expect(capabilityForNba('complete_matches')).toBe('respond_to_match');
+    expect(capabilityForNba('complete_index')).toBe('create_index_improvement_plan');
+    // No one-shot tool → guide-only (never over-promise execution).
+    expect(capabilityForNba('complete_profile')).toBeNull();
+    expect(capabilityForNba('set_goal')).toBeNull();
+    // Ranked actions carry their capability + the resume directive ships execute_with_tool.
+    const p = emptyPayload({ messages_unread: 26 });
+    expect(rankNextBestActions(p).find((a) => a.key === 'reply_messages')!.capability).toBe('send_chat_message');
+    const dir = buildResumeDirective({
+      register: 'same_day', payload: p, firstName: 'Dragan', lang: 'de', timeAgo: 'earlier today', currentScreen: '/chat',
+    });
+    expect(dir.text).toContain('execute_with_tool');
+    expect(dir.nba!.capability).toBe('send_chat_message');
   });
 
   it('surfaceForRoute maps the key screens; screenCompletionFor deepens + suppresses the redirect', () => {

@@ -58,6 +58,42 @@ export interface NextBestAction {
   detail: string;
   /** Why-now, grounding the model so the suggestion reads as reasoned. */
   rationale: string;
+  /** The EXISTING ORB tool that actually EXECUTES this action when the user
+   *  accepts (capability-gating). Set from CAPABILITY_BY_KEY. When null, Vitana
+   *  has no one-shot tool — it must GUIDE the user through it on the screen
+   *  instead of promising to do it (which is what caused "I can't execute"). */
+  capability?: string | null;
+}
+
+/**
+ * Maps each next-best-action to the REAL, registered ORB tool that executes it
+ * (verified against ORB_TOOL_REGISTRY in services/orb-tools-shared.ts). The
+ * opener tells the model to CALL this tool when the user accepts, so guidance
+ * actually completes the action instead of stalling on "I couldn't do that".
+ * null = no one-shot tool → guide the user through it (don't over-promise).
+ */
+export const CAPABILITY_BY_KEY: Partial<Record<NbaKey, string>> = {
+  autopilot_step: 'activate_recommendation',
+  reply_messages: 'send_chat_message',
+  review_matches: 'view_intent_matches',
+  next_session: 'narrate_guided_session',
+  diary_entry: 'save_diary_entry',
+  focus_pillar: 'create_index_improvement_plan',
+  make_post: 'create_community_post',
+  create_activity: 'share_intent_post',
+  connect_community: 'send_chat_message',
+  // reminder_due, set_goal → no one-shot tool; guide.
+  complete_matches: 'respond_to_match',
+  complete_chat: 'send_chat_message',
+  complete_post: 'create_community_post',
+  complete_diary: 'save_diary_entry',
+  complete_index: 'create_index_improvement_plan',
+  // complete_profile → no verified profile-update tool yet; guide.
+};
+
+/** The executing tool for an action key, or null when only guidance is possible. */
+export function capabilityForNba(key: NbaKey): string | null {
+  return CAPABILITY_BY_KEY[key] ?? null;
 }
 
 export interface NbaContext {
@@ -176,7 +212,9 @@ export function rankNextBestActions(p: OverviewPayload, ctx: NbaContext = {}): N
     });
   }
 
-  // Stable sort by band desc; ties keep insertion order (already priority-ordered).
+  // Attach each action's executing tool (capability-gating), then stable-sort by
+  // band desc; ties keep insertion order (already priority-ordered).
+  for (const a of out) a.capability = capabilityForNba(a.key);
   return out.sort((a, b) => b.band - a.band);
 }
 

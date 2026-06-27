@@ -123,6 +123,33 @@ Completion mapping (the goal is to FINISH, not navigate):
 **Command-Hub:** the "Conversation" section should show the per-surface completion
 map and let an operator edit the completion offers (ideally policy-backed).
 
+## 3c. Capability-gating — guidance that actually EXECUTES
+
+The opener guides; the user accepts; it must **complete the action**, not stall on
+"Das konnte ich leider nicht umsetzen". Every next-step action is now mapped to
+the **real, registered ORB tool** that executes it (`CAPABILITY_BY_KEY` in
+`next-best-action.ts`, verified against `ORB_TOOL_REGISTRY`):
+
+| Action | Executes via |
+|---|---|
+| reply_messages / connect_community / complete_chat | `send_chat_message` |
+| review_matches | `view_intent_matches` |
+| complete_matches | `respond_to_match` |
+| create_activity | `share_intent_post` |
+| make_post / complete_post | `create_community_post` |
+| diary_entry / complete_diary | `save_diary_entry` |
+| focus_pillar / complete_index | `create_index_improvement_plan` |
+| autopilot_step | `activate_recommendation` |
+| next_session | `narrate_guided_session` |
+| reminder_due, set_goal, complete_profile | _no one-shot tool → GUIDE the user_ |
+
+The resume directive ships `suggested_next_step.execute_with_tool` and a HARD rule:
+on acceptance, **call that tool**; if null, **guide step-by-step** and never promise
+to do it. This stops over-promising and turns guidance into completion. (Most tools
+already existed — the gap was wiring, not capability.) **Follow-up:** build a real
+`update_profile_field` tool (verify `app_users`/`profiles` schema first) so
+`complete_profile` graduates from guide-only to executable.
+
 ## 4. Where everything lives (file map)
 
 | File | Role |
