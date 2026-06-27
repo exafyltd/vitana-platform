@@ -82,4 +82,22 @@ describe('rankNextBestActions — value × timeliness, always grounded', () => {
     const keys = rankNextBestActions(p).map((a) => a.key);
     expect(keys).toContain('diary_entry');
   });
+
+  it('ADVANCES, never repeats: recently-suggested actions are skipped for the next-best fresh one', () => {
+    const p = emptyPayload({
+      messages_unread: 26,
+      matches_unread: 15,
+      diary_last_7d: 0,
+      guided_journey: { sessions_completed: 8, topics_learned: 18, topics_total: 90, next_session_title: 'Vitana Index', last_session_recall: 'Vitana Index' },
+    });
+    // Open 1: top action (messages).
+    const a1 = selectNextBestAction(p, { recentKeys: [] })!;
+    expect(a1.key).toBe('reply_messages');
+    // Open 2: messages on cooldown → advances to the next-best (next_session).
+    const a2 = selectNextBestAction(p, { recentKeys: ['reply_messages'] })!;
+    expect(a2.key).not.toBe('reply_messages');
+    // Open 3: both prior on cooldown → advances again, still not repeating.
+    const a3 = selectNextBestAction(p, { recentKeys: ['reply_messages', a2.key as any] })!;
+    expect([a1.key, a2.key]).not.toContain(a3.key);
+  });
 });

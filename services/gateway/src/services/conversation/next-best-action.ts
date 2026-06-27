@@ -55,6 +55,13 @@ export interface NextBestAction {
 export interface NbaContext {
   /** Day-of-year (user tz) — varies tie-broken picks so the nudge rotates. */
   rotationSeed?: number;
+  /** Keys Vitana already suggested recently (most-recent last), from the
+   *  durable per-user history. The selector skips these so each open ADVANCES
+   *  to the next-best fresh action instead of repeating the same suggestion. */
+  recentKeys?: NbaKey[];
+  /** How many of the most-recent suggestions to treat as "on cooldown".
+   *  Default 3 — cycles through the top handful before any can repeat. */
+  cooldown?: number;
 }
 
 /**
@@ -165,10 +172,18 @@ export function rankNextBestActions(p: OverviewPayload, ctx: NbaContext = {}): N
   return out.sort((a, b) => b.band - a.band);
 }
 
-/** The single next-best-action to lead the always-guiding close. Null only when
- *  the user has literally nothing actionable (the growth pool guarantees at
- *  least one, so this is effectively never null for a real user). */
+/** The single next-best-action to lead the always-guiding close — ADVANCING,
+ *  not repeating. Picks the highest-value action whose key was NOT among the
+ *  last `cooldown` suggestions, so each open moves to a fresh next step and only
+ *  revisits an action after cycling through the others. Falls back to the
+ *  top-ranked action when everything is on cooldown (small action sets). Null
+ *  only when there is literally nothing actionable (effectively never, thanks to
+ *  the always-available community-growth pool). */
 export function selectNextBestAction(p: OverviewPayload, ctx: NbaContext = {}): NextBestAction | null {
   const ranked = rankNextBestActions(p, ctx);
-  return ranked.length > 0 ? ranked[0] : null;
+  if (ranked.length === 0) return null;
+  const cooldown = Number.isFinite(ctx.cooldown) ? (ctx.cooldown as number) : 3;
+  const recent = new Set((ctx.recentKeys ?? []).slice(-cooldown));
+  const fresh = ranked.find((a) => !recent.has(a.key));
+  return fresh ?? ranked[0];
 }

@@ -29,7 +29,7 @@
 import { VERTEX_WAKE_BRIEF_OVERRIDE_MARKER } from '../../orb/live/instruction/wake-brief-marker';
 import type { OverviewPayload } from '../assistant-continuation/providers/new-day-overview-payload';
 import type { TemporalBucket } from '../guide/temporal-bucket';
-import { selectNextBestAction, type NextBestAction } from './next-best-action';
+import { selectNextBestAction, type NextBestAction, type NbaKey } from './next-best-action';
 
 export type OpeningRegister =
   | 'first_time'
@@ -76,6 +76,10 @@ export interface ResumeDirectiveInput {
   timeAgo: string;
   /** Rotation seed (day-of-year) so the guided nudge varies. */
   rotationSeed?: number;
+  /** Durable per-user history of recently-suggested next steps (most-recent
+   *  last). The opener ADVANCES past these so it never repeats the same
+   *  suggestion two opens in a row. */
+  recentNbaKeys?: NbaKey[];
 }
 
 export interface ResumeDirective {
@@ -92,9 +96,22 @@ export interface ResumeDirective {
  */
 export function buildResumeDirective(input: ResumeDirectiveInput): ResumeDirective {
   const { register, payload, lang } = input;
-  const nba = payload ? selectNextBestAction(payload, { rotationSeed: input.rotationSeed }) : null;
+  const nba = payload
+    ? selectNextBestAction(payload, {
+        rotationSeed: input.rotationSeed,
+        recentKeys: input.recentNbaKeys,
+        cooldown: 3,
+      })
+    : null;
 
-  const recall = payload?.guided_journey?.last_session_recall ?? null;
+  // "Where we left off" is only REAL when it is an actual last-opened topic.
+  // The payload falls back to the next-session title when the last-opened topic
+  // is unknown — asserting that as "we were just on X" every open is the stale
+  // copy-paste the user called out, so we suppress it and let the (rotating)
+  // next step carry the re-entry instead.
+  const rawRecall = payload?.guided_journey?.last_session_recall ?? null;
+  const nextSessionTitle = payload?.guided_journey?.next_session_title ?? null;
+  const recall = rawRecall && rawRecall !== nextSessionTitle ? rawRecall : null;
   const newBits: string[] = [];
   if (payload) {
     if (payload.matches_unread > 0) newBits.push(`${payload.matches_unread} new match(es)`);
@@ -120,6 +137,9 @@ export function buildResumeDirective(input: ResumeDirectiveInput): ResumeDirecti
   if (recall) compact.where_we_left_off = recall;
   if (newBits.length) compact.new_since_last = newBits;
   if (nba) compact.suggested_next_step = { kind: nba.key, what: nba.detail, why: nba.rationale };
+  if (input.recentNbaKeys && input.recentNbaKeys.length) {
+    compact.already_offered_recently = input.recentNbaKeys.slice(-4);
+  }
 
   const nameLine = input.firstName
     ? `User first name: ${input.firstName}`
@@ -143,7 +163,13 @@ ${nameLine}
 
 ## RULES
 - ONE to TWO short sentences. This is a re-entry, not a report.
-- ${'`where_we_left_off`'} is the thread to continue — reference it naturally, never as a database row.
+- THIS IS A FRESH TURN — do NOT reuse the wording of a previous opener, and do
+  NOT re-offer anything in ${'`already_offered_recently`'}. Move the conversation
+  FORWARD to the new ${'`suggested_next_step`'}. Repeating the same suggestion is
+  forbidden — the user has heard it.
+- ${'`where_we_left_off`'}, when present, is a real thread to continue — reference
+  it naturally, never as a database row. When it is ABSENT, do NOT invent a "we
+  were just on X" line; lead with what's new and the next step instead.
 - Only mention ${'`new_since_last`'} items that are present; if empty, skip — do not say "nothing new".
 - ALWAYS finish with ${'`suggested_next_step`'} as a guided offer. Never end on a bare "How can I help?".
 - Nothing here is hardcoded wording — compose it; but never invent data not in the payload.

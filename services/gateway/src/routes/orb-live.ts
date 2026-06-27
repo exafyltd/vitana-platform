@@ -7848,6 +7848,9 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
                       new Promise<null>((r) => setTimeout(() => r(null), Number(process.env.ORB_RESUME_OVERVIEW_WAIT_MS || 1800))),
                     ]).catch(() => null);
                     const _seedR = Math.floor((_nowR.getTime() - Date.UTC(_nowR.getUTCFullYear(), 0, 0)) / 86_400_000);
+                    const _recentNbaKeysR = Array.isArray((session as any).recentNbaKeys)
+                      ? ((session as any).recentNbaKeys as string[])
+                      : [];
                     const { text: _dirR, nba: _nbaR } = buildResumeDirective({
                       register: _registerR,
                       payload: _payloadR,
@@ -7855,6 +7858,7 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
                       lang,
                       timeAgo: _lastIxR.timeAgo,
                       rotationSeed: _seedR,
+                      recentNbaKeys: _recentNbaKeysR as any,
                     });
                     // CONTINUE/quick_resume can speak with no payload (pure
                     // thread continuation); same_day needs at least the NBA or a
@@ -7867,6 +7871,19 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
                           client_content: { turns: [{ role: 'user', parts: [{ text: _dirR }] }], turn_complete: true },
                         }),
                       );
+                      // Record the suggested action in the durable per-user
+                      // history so the NEXT open advances past it instead of
+                      // repeating. Keep the last 8; fire-and-forget; mirror onto
+                      // the session for same-process re-opens.
+                      if (_nbaR?.key) {
+                        const _updatedNbas = [..._recentNbaKeysR, _nbaR.key].slice(-8);
+                        (session as any).recentNbaKeys = _updatedNbas;
+                        void _supaR
+                          .from('user_journey')
+                          .update({ recent_nbas: _updatedNbas })
+                          .eq('user_id', _uidR)
+                          .then(() => {}, () => {});
+                      }
                       emitDiag(session, 'greeting_sent', {
                         lang,
                         wake_opener: 'conv_resume',
