@@ -390,6 +390,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const intentsShareRouter = intentEngineEnabled ? require('./routes/intents-share').default : null;
   // Admin: Signup Funnel Tracking & Outreach
   const adminSignupsRouter = require('./routes/admin-signups').default;
+  // Admin: ORB tool self-check harness (verify execution tools without a voice session)
+  const orbToolsSelfcheckRouter = require('./routes/orb-tools-selfcheck').default;
   // Admin: Notification Compose & Tracking
   const adminNotificationsRouter = require('./routes/admin-notifications').default;
   // Admin: Notification Category Management (CRUD + Test)
@@ -1133,6 +1135,7 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   mountRouterSync(app, '/api/v1/admin/signups', adminSignupsRouter, { owner: 'admin-signups' });
 
   // Admin: Notification Compose & Tracking
+  mountRouterSync(app, '/api/v1/admin/orb-tools', orbToolsSelfcheckRouter, { owner: 'orb-tools-selfcheck' });
   mountRouterSync(app, '/api/v1/admin/notifications', adminNotificationsRouter, { owner: 'admin-notifications' });
 
   // Admin: Notification Category Management
