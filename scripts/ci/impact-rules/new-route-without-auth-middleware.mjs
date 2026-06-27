@@ -27,6 +27,9 @@ const AUTH_NAMES = [
   // requireAuthWithTenant: authenticated + tenant-scoped middleware used across
   // orb-livekit.ts (voice-config, commit-memory). It IS auth — was missing here.
   'requireAuthWithTenant',
+  // requireExafyAdmin: admin-role gate (middleware/auth-supabase-jwt) used by the
+  // admin routes (notifications, orb-tools selfcheck). It IS auth.
+  'requireExafyAdmin',
 ];
 const ROUTE_PREFIX_RE = /^\s*router\.(get|post|put|patch|delete)\s*\(/;
 

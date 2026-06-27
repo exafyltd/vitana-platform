@@ -22,7 +22,7 @@
 
 import { Router, Response } from 'express';
 import { getSupabase } from '../lib/supabase';
-import { requireExafyAdmin, AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
+import { requireAuth, requireExafyAdmin, AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
 
 const router = Router();
 
@@ -50,7 +50,14 @@ const DEFAULT_CHECKS: ToolCheck[] = [
 
 const NEEDS_ARGS = ['send_chat_message', 'share_intent_post', 'respond_to_match', 'save_diary_entry', 'create_community_post'];
 
-router.post('/selfcheck', requireExafyAdmin, async (req: AuthenticatedRequest, res: Response) => {
+// requireAuth populates req.identity from the JWT; requireExafyAdmin then gates
+// on the exafy_admin claim. requireExafyAdmin ALONE is not auth — it 401s when
+// identity is unset — so both are required, in this order.
+router.post('/selfcheck', requireAuth, requireExafyAdmin, async (req: AuthenticatedRequest, res: Response) => {
+  // impact-allow-no-oasis: this is a read-mostly diagnostic; it already records
+  // each tool result directly to oasis_events (topic 'orb.tools.selfcheck'). The
+  // only write is the idempotent cleanup of calendar events the check itself
+  // created — not a user state transition worth a separate emit.
   const body = (req.body ?? {}) as { user_id?: string; tools?: string[] };
   const userId = String(body.user_id ?? '').trim();
   if (!userId) return res.status(400).json({ ok: false, error: 'user_id is required' });
