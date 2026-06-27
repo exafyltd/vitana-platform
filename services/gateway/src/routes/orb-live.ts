@@ -7859,12 +7859,16 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
                       timeAgo: _lastIxR.timeAgo,
                       rotationSeed: _seedR,
                       recentNbaKeys: _recentNbaKeysR as any,
+                      // Screen awareness: deepen toward completing the action on
+                      // the screen the user is already on, never redirect there.
+                      currentScreen: (session as any).current_route ?? null,
                     });
                     // CONTINUE/quick_resume can speak with no payload (pure
                     // thread continuation); same_day needs at least the NBA or a
-                    // recall to be worth speaking, else fall through to proactive.
+                    // recall — but a screen-completion NBA (derived from the
+                    // current screen, no payload needed) also counts.
                     const _worthSpeaking =
-                      _registerR !== 'same_day' || !!_payloadR;
+                      _registerR !== 'same_day' || !!_payloadR || !!_nbaR;
                     if (_dirR && _dirR.trim().length > 0 && _worthSpeaking) {
                       ws.send(
                         JSON.stringify({
@@ -7891,6 +7895,7 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
                         bucket: _lastIxR.bucket,
                         nba: _nbaR?.key ?? null,
                         nba_domain: _nbaR?.domain ?? null,
+                        current_route: (session as any).current_route ?? null,
                       });
                       startResponseWatchdog(session, getGreetingResponseTimeoutMs(), 'greeting_timeout');
                       console.log(
