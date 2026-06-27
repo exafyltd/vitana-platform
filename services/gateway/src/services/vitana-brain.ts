@@ -36,6 +36,7 @@ import { computeRetrievalRouterDecision } from './retrieval-router';
 import { ContextLens, createContextLens } from '../types/context-lens';
 import { ConversationChannel, ContextPack } from '../types/conversation';
 import { getPersonalityConfigSync } from './ai-personality-service';
+import { buildJourneyModesSection } from '../orb/live/instruction/journey-modes-prompt';
 import { emitOasisEvent } from './oasis-event-service';
 import { getSupabase } from '../lib/supabase';
 // Proactive Guide Phase 0.5 + Companion Awareness Phase A (VTID-01927)
@@ -395,6 +396,13 @@ export async function buildBrainSystemInstruction(input: {
   const preferredLanguage = extractLanguageFromContextPack(contextPack);
   const languageDirective = buildLanguageDirective(preferredLanguage);
 
+  // NAV_GUIDED_JOURNEY — give the TEXT brain the same declarative knowledge the
+  // voice brain has (live-system-instruction.ts): what the two My Journey views
+  // (Guided/Einführung vs Full/Vollversion) are, so it can EXPLAIN the
+  // difference on demand instead of drawing a blank. Voice/text parity.
+  const journeyModesBlock =
+    process.env.NAV_GUIDED_JOURNEY === 'true' ? buildJourneyModesSection(preferredLanguage || 'de') : '';
+
   const ucConfig = getPersonalityConfigSync('unified_conversation') as Record<string, any>;
   const baseInstruction = input.channel === 'orb'
     ? (ucConfig.orb_instruction || 'You are Vitana, an intelligent voice assistant. Keep responses concise and conversational for voice interaction.')
@@ -414,6 +422,7 @@ ${languageDirective}
 ${identityGuardrailBlock}
 ${contextForLLM}
 ${lifeCompassBlock}
+${journeyModesBlock}
 
 Current conversation channel: ${input.channel}
 User's role: ${input.role}
