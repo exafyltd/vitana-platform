@@ -1420,6 +1420,10 @@ export async function tool_create_index_improvement_plan(
     const tags = PILLAR_TAGS[pillar as keyof typeof PILLAR_TAGS];
     const wellnessTags: string[] = tags ? [...tags] : [pillar!];
 
+    // Capture the FIRST calendar-write error so a total failure reports WHY
+    // (the PostgREST reason), instead of an opaque "calendar write failed".
+    let firstCalendarError: string | null = null;
+
     for (let i = 0; i < totalEvents; i++) {
       const item = source[i % source.length];
       const eventDate = new Date(startOfToday);
@@ -1453,17 +1457,22 @@ export async function tool_create_index_improvement_plan(
             plan_source: item.source,
           },
           is_recurring: false,
-        });
+        }, (msg) => { if (!firstCalendarError) firstCalendarError = msg; });
         if (evt) {
           scheduled.push({ title: evt.title, start_time: evt.start_time, source: item.source });
         }
-      } catch {
-        /* per-event failures swallowed; reported as count-mismatch in result */
+      } catch (perEvtErr) {
+        if (!firstCalendarError) {
+          firstCalendarError = perEvtErr instanceof Error ? perEvtErr.message : String(perEvtErr);
+        }
       }
     }
 
     if (scheduled.length === 0) {
-      return { ok: false, error: 'No events could be scheduled (calendar write failed).' };
+      return {
+        ok: false,
+        error: `No events could be scheduled (calendar write failed)${firstCalendarError ? `: ${firstCalendarError}` : ''}`,
+      };
     }
 
     const payload = {

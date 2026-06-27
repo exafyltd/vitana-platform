@@ -150,6 +150,29 @@ already existed — the gap was wiring, not capability.) **Follow-up:** build a 
 `update_profile_field` tool (verify `app_users`/`profiles` schema first) so
 `complete_profile` graduates from guide-only to executable.
 
+## 3d. Tool-execution observability — telemetry + self-check harness
+
+Guidance can route perfectly and still end in "I couldn't do that" if the
+underlying tool fails. Two pieces make that observable + fixable without a voice
+session:
+
+- **Tool-failure telemetry:** `executeLiveApiTool` (orb-live.ts) now emits an
+  `orb.live.diag` stage `tool_failed` to `oasis_events` for both HARD failures
+  (`success=false`) and SOFT ones (handler returned `ok:false`/a `reason`). Every
+  "I can't" is now queryable: `select metadata->>'tool', metadata->>'detail' from
+  oasis_events where topic='orb.live.diag' and metadata->>'stage'='tool_failed'`.
+- **Self-check harness:** `POST /api/v1/admin/orb-tools/selfcheck { user_id }`
+  (`routes/orb-tools-selfcheck.ts`, admin-gated) runs the capability tools via the
+  SAME dispatcher the voice path uses, against the user's real data, and returns +
+  emits (`orb.tools.selfcheck`) a per-tool pass/fail + exact error. Read tools run
+  live; `create_index_improvement_plan` writes calendar events and is cleaned up.
+- **Diagnosable writes:** `createCalendarEvent` now takes an `onError` sink, so the
+  index-plan tool reports the real PostgREST reason when a calendar write fails
+  (previously swallowed to Cloud Run logs).
+
+The Command-Hub "Conversation" section should surface the `tool_failed` feed and a
+button to run the self-check for a user.
+
 ## 4. Where everything lives (file map)
 
 | File | Role |

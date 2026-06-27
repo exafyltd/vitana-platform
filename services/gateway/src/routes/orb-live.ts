@@ -2387,6 +2387,24 @@ async function executeLiveApiTool(
   const elapsed = Date.now() - startTime;
   // Phase 1 W2: tool returned — close the tool_dispatch→tool_response interval.
   markVoiceLatency(session, 'tool_response', { tool: toolName, ms: elapsed, success: result.success });
+  // TOOL-EXEC TELEMETRY: surface tool failures to oasis_events (orb.live.diag) so
+  // every "I couldn't do that" is self-diagnosing — the exact tool + reason is
+  // queryable, instead of guessing. Captures BOTH hard failures (success=false)
+  // and SOFT failures (success=true but the result carries ok:false / a reason —
+  // e.g. create_index_improvement_plan returning no_index_data / no_actions),
+  // because the model speaks both as "I can't". Truncated; no args/PII.
+  try {
+    const _softFail =
+      result.success && /"ok"\s*:\s*false|"reason"\s*:|"stage"\s*:\s*"awaiting/.test(result.result || '');
+    if (!result.success || _softFail) {
+      emitDiag(session, 'tool_failed', {
+        tool: toolName,
+        soft: !!_softFail,
+        ms: elapsed,
+        detail: (!result.success ? (result.error || 'unknown') : (result.result || '')).slice(0, 400),
+      });
+    }
+  } catch { /* telemetry is best-effort */ }
   // BOOTSTRAP-PRODUCT-ANALYTICS: tool-call outcome for the /admin/insights
   // dashboards. Metadata only (tool name + latency + error code) — args and
   // results never leave this function. Fire-and-forget.

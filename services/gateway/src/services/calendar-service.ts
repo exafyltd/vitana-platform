@@ -264,9 +264,16 @@ export async function computeNextAvailableSlot(
 export async function createCalendarEvent(
   userId: string,
   input: CreateCalendarEventInput,
+  // Optional error sink — receives the raw PostgREST error body when the insert
+  // fails. Lets callers surface WHY a write failed (previously only console.error'd
+  // to Cloud Run logs) so failures are diagnosable in telemetry / the self-check.
+  onError?: (message: string) => void,
 ): Promise<CalendarEvent | null> {
   const config = getSupabaseConfig();
-  if (!config) return null;
+  if (!config) {
+    if (onError) onError('supabase_config_missing');
+    return null;
+  }
 
   const body = {
     user_id: userId,
@@ -282,6 +289,7 @@ export async function createCalendarEvent(
   if (!resp.ok) {
     const errText = await resp.text();
     console.error(`${LOG_PREFIX} createCalendarEvent failed:`, errText);
+    if (onError) onError(`${resp.status}: ${errText}`.slice(0, 300));
     return null;
   }
 
