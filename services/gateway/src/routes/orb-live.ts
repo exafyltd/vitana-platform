@@ -7795,30 +7795,124 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
               }
             }
 
+            // CONVERSATION-FLOW RESUME REGISTER. Reaching here means: not a
+            // first-timer, and the full morning briefing did NOT fire this turn
+            // (already delivered today, or it could not build) — i.e. a SAME-DAY
+            // reopen. The unified decision picks a recency-appropriate register
+            // (continue / quick_resume / same_day) so a return after a minute is
+            // NEVER greeted with "good morning", and ALWAYS closes on a concrete
+            // guided next step (the Next-Best-Action engine). This replaces the
+            // old "proactive line, suppressed on a temporal new-day check" rung;
+            // the proactive/name rungs below remain only as a fallback when the
+            // payload could not be gathered in budget. See
+            // docs/CONVERSATION_FLOW_HANDOFF.md.
+            {
+              const _isFirstTimeR =
+                (session as any).greetingNeedsOnboarding === true ||
+                (session as any).greetingIsFirstTime === true;
+              const _uidR = session.identity?.user_id;
+              const _supaR = getSupabase();
+              const _langKeyR = (lang || 'en').slice(0, 2).toLowerCase();
+              const _langOkR = _langKeyR === 'de' || _langKeyR === 'en';
+              if (_langOkR && !_isFirstTimeR && _uidR && _supaR) {
+                try {
+                  const _lastIxR = describeTimeSince((session as any).lastSessionInfo);
+                  const { decideOpeningRegister, buildResumeDirective } = await import('../services/conversation/decide-opening');
+                  const _registerR = decideOpeningRegister({
+                    bucket: _lastIxR.bucket,
+                    isFirstTime: false,
+                    briefingDue: false,
+                  });
+                  if (_registerR === 'continue' || _registerR === 'quick_resume' || _registerR === 'same_day') {
+                    const _tzR = session.clientContext?.timezone || 'UTC';
+                    const _nowR = new Date();
+                    const { gatherOverviewPayload } = await import('../services/assistant-continuation/providers/new-day-overview-payload');
+                    const { todayInTimezone } = await import('../services/assistant-continuation/providers/new-day-return');
+                    const _lastSessIsoR = (session as any).lastSessionInfo?.time ?? null;
+                    const _lastSessDateR =
+                      typeof _lastSessIsoR === 'string' && _lastSessIsoR.length > 0
+                        ? todayInTimezone(new Date(_lastSessIsoR), _tzR)
+                        : null;
+                    // Bounded — a reopen must stay fast; on timeout we still
+                    // compose a minimal continuity line, else fall through.
+                    const _payloadR = await Promise.race([
+                      gatherOverviewPayload({
+                        supabase: _supaR,
+                        userId: _uidR,
+                        now: _nowR,
+                        timezone: _tzR,
+                        lang,
+                        lastSessionDateUserTz: _lastSessDateR,
+                        lastSessionAtIso: _lastSessIsoR,
+                      }),
+                      new Promise<null>((r) => setTimeout(() => r(null), Number(process.env.ORB_RESUME_OVERVIEW_WAIT_MS || 1800))),
+                    ]).catch(() => null);
+                    const _seedR = Math.floor((_nowR.getTime() - Date.UTC(_nowR.getUTCFullYear(), 0, 0)) / 86_400_000);
+                    const { text: _dirR, nba: _nbaR } = buildResumeDirective({
+                      register: _registerR,
+                      payload: _payloadR,
+                      firstName: (session as any).greetingFirstName ?? null,
+                      lang,
+                      timeAgo: _lastIxR.timeAgo,
+                      rotationSeed: _seedR,
+                    });
+                    // CONTINUE/quick_resume can speak with no payload (pure
+                    // thread continuation); same_day needs at least the NBA or a
+                    // recall to be worth speaking, else fall through to proactive.
+                    const _worthSpeaking =
+                      _registerR !== 'same_day' || !!_payloadR;
+                    if (_dirR && _dirR.trim().length > 0 && _worthSpeaking) {
+                      ws.send(
+                        JSON.stringify({
+                          client_content: { turns: [{ role: 'user', parts: [{ text: _dirR }] }], turn_complete: true },
+                        }),
+                      );
+                      emitDiag(session, 'greeting_sent', {
+                        lang,
+                        wake_opener: 'conv_resume',
+                        register: _registerR,
+                        bucket: _lastIxR.bucket,
+                        nba: _nbaR?.key ?? null,
+                        nba_domain: _nbaR?.domain ?? null,
+                      });
+                      startResponseWatchdog(session, getGreetingResponseTimeoutMs(), 'greeting_timeout');
+                      console.log(
+                        `[GREETING-CONV-RESUME] session ${session.sessionId} register=${_registerR} bucket=${_lastIxR.bucket} nba=${_nbaR?.key ?? 'none'} lang=${lang}`,
+                      );
+                      return;
+                    }
+                  }
+                } catch (_resumeErr) {
+                  console.warn(
+                    `[GREETING-CONV-RESUME] non-fatal, falling through: ${_resumeErr instanceof Error ? _resumeErr.message : String(_resumeErr)}`,
+                  );
+                }
+              }
+            }
+
             // DEV-COMHU-0513 (proactive fast greeting): when the fast pre-fetch
             // produced a SHORT proactive opener (name + concrete next step /
             // weakness lead), speak THAT instead of the generic SHORT_GAP phrase
             // or the bare "Good <tod>, <Name>". It is kept to ~2 short sentences
             // so Gemini Live reliably emits audio. This is the top of the fast-
             // greeting ladder: proactive line → name greeting → generic opener.
-            // FIRST-GREETING-OF-THE-DAY: on a genuine new-day return the rich
-            // morning overview (the rung above) owns turn 1. If the overview
-            // could not build (e.g. no calendar/goal content yet, or the
-            // aggregator lost its budget), we want the grounded "Good <tod>,
-            // <Name>." new-day opener BELOW — never the bare proactive
-            // next-step lead ("Ich nehme dich mit zum nächsten Schritt"), which
-            // is what made the morning summary feel like it disappeared. So
-            // suppress the proactive opener on a genuine new-day return; it
-            // still fires for same-day reopenings (reconnect/recent/same_day).
-            const _ladderTemporal = describeTimeSince((session as any).lastSessionInfo);
-            const _ladderIsNewDay =
-              _ladderTemporal.bucket === 'today' ||
-              _ladderTemporal.bucket === 'yesterday' ||
-              _ladderTemporal.bucket === 'week' ||
-              _ladderTemporal.bucket === 'long';
-            const proactiveLine: unknown = _ladderIsNewDay
-              ? null
-              : (session as any).greetingProactiveLine;
+            // The rich morning briefing (overview rung above) owns turn 1 on the
+            // FIRST session of a real day and RETURNS when it fires. Reaching this
+            // rung therefore means the briefing did NOT fire this turn — either it
+            // was already delivered today (durable last_full_briefing_date flag),
+            // or it could not build. In BOTH cases the proactive continuity opener
+            // ("letztes Mal ging es um X — machen wir weiter") is exactly the
+            // "short after" we want.
+            //
+            // It used to be suppressed here on a temporal "is it a new day?" check
+            // (describeTimeSince bucket today/yesterday/week/long). That made sense
+            // when the briefing was ALSO gated on that temporal check, but the
+            // briefing is now flag-gated — so the temporal suppression left same-day
+            // reopens with only a bare "Good <tod>, <Name>" (the safe_fast_newday
+            // rung) instead of the continuity line. Use the proactive opener
+            // whenever the prefetch produced one; the overview rung already owns
+            // the genuine briefing-due turn and returned before reaching here.
+            const proactiveLine: unknown = (session as any).greetingProactiveLine;
             if (typeof proactiveLine === 'string' && proactiveLine.trim().length > 0) {
               const safeProactive = proactiveLine.trim().replace(/"/g, '\\"');
               const proactivePrompt =
