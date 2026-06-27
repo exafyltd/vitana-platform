@@ -153,7 +153,16 @@ export function buildResumeDirective(input: ResumeDirectiveInput): ResumeDirecti
   if (completion) compact.complete_on_current_screen = true;
   if (recall) compact.where_we_left_off = recall;
   if (newBits.length) compact.new_since_last = newBits;
-  if (nba) compact.suggested_next_step = { kind: nba.key, what: nba.detail, why: nba.rationale };
+  if (nba) {
+    compact.suggested_next_step = {
+      kind: nba.key,
+      what: nba.detail,
+      why: nba.rationale,
+      // The REAL ORB tool that executes this when the user accepts. null = no
+      // one-shot tool → guide the user through it, never promise to do it.
+      execute_with_tool: nba.capability ?? null,
+    };
+  }
   if (input.recentNbaKeys && input.recentNbaKeys.length) {
     compact.already_offered_recently = input.recentNbaKeys.slice(-4);
   }
@@ -189,6 +198,13 @@ ${nameLine}
   were just on X" line; lead with what's new and the next step instead.
 - Only mention ${'`new_since_last`'} items that are present; if empty, skip — do not say "nothing new".
 - ALWAYS finish with ${'`suggested_next_step`'} as a guided offer. Never end on a bare "How can I help?".
+- EXECUTION — do not just describe, DO IT: ${'`suggested_next_step.execute_with_tool`'}
+  names the real tool that performs this action. When the user accepts, CALL that
+  tool to actually complete it (e.g. send_chat_message, save_diary_entry,
+  respond_to_match, create_index_improvement_plan). Only promise what that tool
+  does. If ${'`execute_with_tool`'} is null, you have NO one-shot tool — then GUIDE
+  the user through it step by step on the screen; do NOT claim you'll do it
+  yourself. Never say "I couldn't do that" for an action that has a tool — call it.
 - SCREEN AWARENESS: when ${'`current_screen`'} is set, the user is ALREADY on that
   screen. NEVER tell them to open it or go there ("schau dir deine Matches an"
   while they are on the matches screen is forbidden). When

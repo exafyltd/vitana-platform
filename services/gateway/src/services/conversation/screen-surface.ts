@@ -20,6 +20,7 @@
  */
 
 import type { NextBestAction, NbaKey } from './next-best-action';
+import { capabilityForNba } from './next-best-action';
 
 export type ConversationSurface =
   | 'matches'
@@ -67,6 +68,14 @@ export interface ScreenCompletion {
 const COMPLETION_BAND = 115; // above every redirect/discovery action
 
 export function screenCompletionFor(surface: ConversationSurface): ScreenCompletion | null {
+  const comp = _rawScreenCompletion(surface);
+  // Attach the executing tool (capability-gating) so the opener tells the model
+  // to CALL it on acceptance — completing the action, not just describing it.
+  if (comp) comp.action.capability = capabilityForNba(comp.action.key);
+  return comp;
+}
+
+function _rawScreenCompletion(surface: ConversationSurface): ScreenCompletion | null {
   switch (surface) {
     case 'matches':
       return {
