@@ -79,6 +79,43 @@ describe('tool_narrate_guided_session', () => {
     expect(r.text).not.toContain(TOPICS[0].vitana_voice_script);
   });
 
+  // REGRESSION: the user is on session 10 (frontend advanced current_session) but
+  // completed_topic_ids is empty because only the voice narrator writes it. The
+  // default "what's next" must anchor on current_session and offer session 10 —
+  // NOT the first topic of the whole curriculum (session 1, "Starte deine Reise").
+  const JOURNEY_1_TO_10 = Array.from({ length: 10 }, (_, i) => ({
+    topic_id: `s${i + 1}`,
+    title: `Session ${i + 1} Titel`,
+    display_label: null,
+    short_description: '',
+    vitana_voice_script: `Das ist die Narration von Session ${i + 1}.`,
+    session: i + 1,
+    position: 1,
+  }));
+
+  it('REGRESSION: user on session 10 with empty completed set → offers session 10, not session 1', async () => {
+    const sb = makeSb({ stateData: { completed_topic_ids: [], current_session: 10 }, topics: JOURNEY_1_TO_10 });
+    const r = await tool_narrate_guided_session({} as any, IDENT, sb);
+    expect((r as any).result.session).toBe(10);
+    expect(r.text).toContain('Das ist die Narration von Session 10.');
+    expect(r.text).not.toContain('Session 1 Titel');
+  });
+
+  it('current session fully heard → rolls forward to the next session, never back to 1', async () => {
+    const sb = makeSb({ stateData: { completed_topic_ids: ['s9'], current_session: 9 }, topics: JOURNEY_1_TO_10 });
+    const r = await tool_narrate_guided_session({} as any, IDENT, sb);
+    expect((r as any).result.session).toBe(10); // s9 heard → next is session 10
+  });
+
+  it('over-advanced current_session (beyond curriculum) does NOT false-complete — falls back to remaining work', async () => {
+    // current_session=99 but only 10 sessions exist; nothing is completed. Must still
+    // offer real content (floor clamps to maxSession), not claim "journey complete".
+    const sb = makeSb({ stateData: { completed_topic_ids: [], current_session: 99 }, topics: JOURNEY_1_TO_10 });
+    const r = await tool_narrate_guided_session({} as any, IDENT, sb);
+    expect((r as any).result.done).toBeUndefined();
+    expect((r as any).result.session).toBe(10); // clamps to the last session with work
+  });
+
   it('journey complete → done:true, congratulate, no script', async () => {
     const sb = makeSb({ stateData: { completed_topic_ids: ['t1', 't2'], current_session: 1 }, topics: TOPICS });
     const r = await tool_narrate_guided_session({} as any, IDENT, sb);

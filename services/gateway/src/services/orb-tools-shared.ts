@@ -4552,10 +4552,18 @@ export async function tool_narrate_guided_session(
   try {
     const state = await sb
       .from('user_guided_journey_state')
-      .select('completed_topic_ids')
+      .select('completed_topic_ids, current_session')
       .eq('user_id', identity.user_id)
       .maybeSingle();
     const completed = new Set<string>((state.data?.completed_topic_ids as string[] | null | undefined) ?? []);
+    // The session the user is actually ON. The frontend Longevity-Reise advances
+    // current_session as the user clicks through, but completed_topic_ids is only
+    // written by the voice narrator — so a user on session 10 can have an empty
+    // completed set. Without this anchor the default "what's next" search below
+    // returned the first un-heard topic across the WHOLE curriculum (session 1,
+    // "Starte deine Longevity-Reise"), making Vitana look unaware of real progress.
+    const curRaw = (state.data as { current_session?: unknown } | null | undefined)?.current_session;
+    const currentSession = Number.isFinite(Number(curRaw)) && Number(curRaw) >= 1 ? Math.floor(Number(curRaw)) : 1;
 
     // ALL published topics, ordered — NO session floor (the floor caused a false
     // "you completed everything" once current_session advanced past the rows).
@@ -4633,7 +4641,17 @@ export async function tool_narrate_guided_session(
       target = inSession.find((r) => !completed.has(r.topic_id)) ?? inSession[0]; // all heard → replay from the top
       remainingInSession = inSession.filter((r) => !completed.has(r.topic_id) && r.topic_id !== target!.topic_id).length;
     } else {
-      target = rows.find((r) => !completed.has(r.topic_id));
+      // DEFAULT "what's next" — anchor on the user's CURRENT session, not the
+      // global first un-heard topic. Clamp the floor to the curriculum so an
+      // over-advanced current_session can't false-complete the journey, then pick
+      // the first un-heard topic AT OR AFTER it (rows are ordered session,position).
+      // Only if nothing remains from the current session onward do we fall back to
+      // any earlier skipped topic — so a user on session 10 is offered session 10,
+      // never session 1.
+      const floor = Math.min(Math.max(1, currentSession), maxSession);
+      target =
+        rows.find((r) => r.session >= floor && !completed.has(r.topic_id)) ??
+        rows.find((r) => !completed.has(r.topic_id));
       if (!target) {
         return {
           ok: true,
