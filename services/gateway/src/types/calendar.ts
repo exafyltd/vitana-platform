@@ -43,6 +43,31 @@ export function getVisibleContexts(role: string | null): CalendarRoleContext[] |
   return ROLE_TO_CONTEXTS[role] ?? ROLE_TO_CONTEXTS.community;
 }
 
+/**
+ * Coerce an arbitrary session role into a CalendarRoleContext that satisfies the
+ * `valid_role_context` CHECK on calendar_events ({community, admin, developer,
+ * personal}). The session role (e.g. super_admin, staff, dev, patient,
+ * professional) is NOT itself a valid role_context — writing it raw makes the
+ * INSERT fail with a 400. Use this for the role_context of any event we write on
+ * the user's behalf so the write never violates the constraint.
+ */
+export function toWritableRoleContext(role: string | null | undefined): CalendarRoleContext {
+  switch (role) {
+    case 'developer':
+    case 'infra':
+    case 'dev':
+    case 'DEV':
+      return 'developer';
+    case 'admin':
+    case 'super_admin':
+    case 'staff':
+      return 'admin';
+    default:
+      // community, patient, professional, null, unknown → community
+      return 'community';
+  }
+}
+
 // =============================================================================
 // Vitana Pillars (calendar → Index linkage)
 // =============================================================================

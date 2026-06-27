@@ -1339,6 +1339,7 @@ export async function tool_create_index_improvement_plan(
   try {
     const { PILLAR_TAGS, PILLAR_ACTION_TEMPLATES } = await import('../lib/vitana-pillars');
     const { createCalendarEvent } = await import('./calendar-service');
+    const { toWritableRoleContext } = await import('../types/calendar');
 
     let pillar: string | undefined = resolvePillarKey(args.pillar as string | undefined);
     if (!pillar) {
@@ -1442,8 +1443,13 @@ export async function tool_create_index_improvement_plan(
           event_type: 'health' as any,
           status: 'confirmed',
           priority: 'medium',
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          role_context: ((id.role || 'community') as any),
+          // role_context is constrained by the `valid_role_context` CHECK to
+          // exactly {community, admin, developer, personal}. The session role
+          // (id.role) can be super_admin / staff / dev / patient / professional,
+          // none of which pass — writing it raw made EVERY calendar insert fail
+          // with a 400 (the swallowed error behind "I cannot execute"). Coerce to
+          // a valid context.
+          role_context: toWritableRoleContext(id.role),
           source_type: 'assistant',
           source_ref_type:
             item.source === 'autopilot' ? 'autopilot_recommendation' : 'pillar_template',
