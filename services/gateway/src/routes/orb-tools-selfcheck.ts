@@ -70,14 +70,18 @@ router.post('/selfcheck', requireAuth, requireExafyAdmin, async (req: Authentica
   let role: string | null = null;
   let vitanaId: string | null = null;
   try {
+    // NOTE: app_users has no `role` column — selecting it 400s and nulls the
+    // whole row. Role is carried on the session/JWT, not this table; for the
+    // harness 'community' is a safe stand-in (the tools that gate on role_context
+    // now map any role to a valid value), and tenant_id/vitana_id come from here.
     const { data } = await sb
       .from('app_users')
-      .select('tenant_id, role, vitana_id')
+      .select('tenant_id, vitana_id')
       .eq('user_id', userId)
       .maybeSingle();
-    const row = data as { tenant_id?: string; role?: string; vitana_id?: string } | null;
+    const row = data as { tenant_id?: string; vitana_id?: string } | null;
     tenantId = row?.tenant_id ?? null;
-    role = row?.role ?? 'community';
+    role = 'community';
     vitanaId = row?.vitana_id ?? null;
   } catch { /* identity backfill is best-effort */ }
 
