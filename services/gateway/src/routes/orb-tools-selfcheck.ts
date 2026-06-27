@@ -150,6 +150,10 @@ router.post('/selfcheck', requireAuth, requireExafyAdmin, async (req: Authentica
     results,
     not_auto_run: NEEDS_ARGS.map((tool) => ({ tool, reason: 'needs user-dictated args' })),
   });
+  // impact-allow-no-oasis: diagnostic endpoint — already records each tool result
+  // to oasis_events (topic 'orb.tools.selfcheck') above; the only write is the
+  // idempotent cleanup of calendar events it itself created. (Placed here, after
+  // the inner arrow callbacks, so the scanner's handler-body extraction sees it.)
 });
 
 export default router;
