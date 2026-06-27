@@ -79,10 +79,14 @@ bluffs) by **band = value × timeliness**, then picks the top to lead the close.
 - **Community engagement:** reply_messages, review_matches, make_post, create_activity, connect_community
 - **Health improvement:** autopilot_step, diary_entry, focus_pillar, next_session, set_goal
 
-**Known follow-up:** rotation is currently a day-of-year seed (varies daily). True
-"don't repeat the same suggestion two opens in a row" needs per-user NBA history —
-add a `last_nba_key` + timestamp (e.g. on `user_journey` or a small `nba_log`
-table) and pass it into `rankNextBestActions` to demote the just-suggested action.
+**Non-repetition (DONE):** the opener ADVANCES — it never repeats the same
+suggestion two opens in a row. A durable per-user history `user_journey.recent_nbas`
+(jsonb array of action keys, last ~8) is read in the greeting prefetch and passed
+to `selectNextBestAction({ recentKeys, cooldown: 3 })`, which skips the last 3
+suggestions and picks the next-best fresh action; the chosen key is appended after
+speaking. The resume prompt is also told `already_offered_recently` so the model
+explicitly moves the conversation forward. The day-of-year `rotationSeed` still
+varies ties within the always-available community-growth pool.
 
 ---
 

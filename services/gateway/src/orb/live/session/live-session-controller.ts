@@ -747,6 +747,10 @@ export async function handleLiveSessionStart(
   // the briefing fires on the first session of a day where this is stale, then
   // same-day reopens get the short proactive opener.
   let greetingLastFullBriefingDate: string | null = null;
+  // Durable per-user history of recently-suggested next-best-actions (keys,
+  // most-recent last) from user_journey.recent_nbas. Lets the resume opener
+  // ADVANCE past what it already suggested instead of repeating it.
+  let greetingRecentNbaKeys: string[] = [];
 
   // VTID-03294: a Guided-Journey topic tap needs ZERO context — Vitana just
   // picks up the KB lesson and speaks it. Detect it here so we can skip the
@@ -951,7 +955,7 @@ export async function handleLiveSessionStart(
             supa
               ? supa
                   .from('user_journey')
-                  .select('is_first_session, last_full_briefing_date')
+                  .select('is_first_session, last_full_briefing_date, recent_nbas')
                   .eq('user_id', _ndIdentity.user_id)
                   .maybeSingle()
               : Promise.resolve(null as any),
@@ -976,12 +980,22 @@ export async function handleLiveSessionStart(
             firstSessionResult.value &&
             !firstSessionResult.value.error
           ) {
-            const _fsRow = firstSessionResult.value.data as { is_first_session?: boolean | null; last_full_briefing_date?: string | null } | null;
+            const _fsRow = firstSessionResult.value.data as {
+              is_first_session?: boolean | null;
+              last_full_briefing_date?: string | null;
+              recent_nbas?: unknown;
+            } | null;
             // No row at all → user has never had a journey row → treat as first-time.
             greetingIsFirstSession = _fsRow ? _fsRow.is_first_session === true : true;
             // Durable once-per-day briefing flag (null when never delivered or
             // column absent → briefing is due).
             greetingLastFullBriefingDate = _fsRow?.last_full_briefing_date ?? null;
+            // Recent NBA history → keys (defensive: accept string[] or {key}[]).
+            if (Array.isArray(_fsRow?.recent_nbas)) {
+              greetingRecentNbaKeys = (_fsRow!.recent_nbas as unknown[])
+                .map((e) => (typeof e === 'string' ? e : (e as { key?: unknown })?.key))
+                .filter((k): k is string => typeof k === 'string' && k.length > 0);
+            }
           }
           if (
             journeyStateResult.status === 'fulfilled' &&
@@ -1156,6 +1170,7 @@ export async function handleLiveSessionStart(
     (session as any).greetingIsFirstTime = greetingIsFirstSession;
     (session as any).greetingNeedsOnboarding = greetingNeedsOnboarding;
     (session as any).lastFullBriefingDate = greetingLastFullBriefingDate;
+    (session as any).recentNbaKeys = greetingRecentNbaKeys;
     if (greetingEarlyLastSessionInfo && !session.lastSessionInfo) {
       session.lastSessionInfo = greetingEarlyLastSessionInfo;
     }
@@ -1167,6 +1182,7 @@ export async function handleLiveSessionStart(
       (session as any).greetingIsFirstTime = greetingIsFirstSession;
       (session as any).greetingNeedsOnboarding = greetingNeedsOnboarding;
       (session as any).lastFullBriefingDate = greetingLastFullBriefingDate;
+      (session as any).recentNbaKeys = greetingRecentNbaKeys;
       // Idempotent with the heavy bootstrap block, which also sets this later.
       if (greetingEarlyLastSessionInfo && !session.lastSessionInfo) {
         session.lastSessionInfo = greetingEarlyLastSessionInfo;
