@@ -30,6 +30,7 @@ import { VERTEX_WAKE_BRIEF_OVERRIDE_MARKER } from '../../orb/live/instruction/wa
 import type { OverviewPayload } from '../assistant-continuation/providers/new-day-overview-payload';
 import type { TemporalBucket } from '../guide/temporal-bucket';
 import { selectNextBestAction, type NextBestAction, type NbaKey } from './next-best-action';
+import { surfaceForRoute, screenCompletionFor } from './screen-surface';
 
 export type OpeningRegister =
   | 'first_time'
@@ -80,6 +81,10 @@ export interface ResumeDirectiveInput {
    *  last). The opener ADVANCES past these so it never repeats the same
    *  suggestion two opens in a row. */
   recentNbaKeys?: NbaKey[];
+  /** The client route the user is currently on (session.current_route). When it
+   *  maps to an actionable surface, the next step DEEPENS toward completing the
+   *  action there instead of redirecting the user away. */
+  currentScreen?: string | null;
 }
 
 export interface ResumeDirective {
@@ -96,13 +101,23 @@ export interface ResumeDirective {
  */
 export function buildResumeDirective(input: ResumeDirectiveInput): ResumeDirective {
   const { register, payload, lang } = input;
-  const nba = payload
-    ? selectNextBestAction(payload, {
-        rotationSeed: input.rotationSeed,
-        recentKeys: input.recentNbaKeys,
-        cooldown: 3,
-      })
-    : null;
+
+  // SCREEN AWARENESS. If the user is already on an actionable screen, the next
+  // step must DEEPEN toward completing the action here — never redirect them to
+  // a screen they are already on. The screen completion overrides the
+  // value-ranked pick; its `detail` lists several on-screen moves and the model
+  // picks one, so it stays fresh across reopens on the same screen.
+  const surface = surfaceForRoute(input.currentScreen);
+  const completion = screenCompletionFor(surface);
+  const nba = completion
+    ? completion.action
+    : payload
+      ? selectNextBestAction(payload, {
+          rotationSeed: input.rotationSeed,
+          recentKeys: input.recentNbaKeys,
+          cooldown: 3,
+        })
+      : null;
 
   // "Where we left off" is only REAL when it is an actual last-opened topic.
   // The payload falls back to the next-session title when the last-opened topic
@@ -134,6 +149,8 @@ export function buildResumeDirective(input: ResumeDirectiveInput): ResumeDirecti
           `- Mention what is new since earlier, reconnect to the thread, then the suggested next step.`;
 
   const compact: Record<string, unknown> = {};
+  if (surface !== 'other' && surface !== 'home') compact.current_screen = surface;
+  if (completion) compact.complete_on_current_screen = true;
   if (recall) compact.where_we_left_off = recall;
   if (newBits.length) compact.new_since_last = newBits;
   if (nba) compact.suggested_next_step = { kind: nba.key, what: nba.detail, why: nba.rationale };
@@ -172,6 +189,14 @@ ${nameLine}
   were just on X" line; lead with what's new and the next step instead.
 - Only mention ${'`new_since_last`'} items that are present; if empty, skip — do not say "nothing new".
 - ALWAYS finish with ${'`suggested_next_step`'} as a guided offer. Never end on a bare "How can I help?".
+- SCREEN AWARENESS: when ${'`current_screen`'} is set, the user is ALREADY on that
+  screen. NEVER tell them to open it or go there ("schau dir deine Matches an"
+  while they are on the matches screen is forbidden). When
+  ${'`complete_on_current_screen`'} is true, the ${'`suggested_next_step`'} is a
+  DEEPER move to COMPLETE the action here — pick ONE concrete option from its
+  ${'`what`'} and propose doing it together right now (e.g. on matches: "lass uns
+  einen davon auswählen und eine gemeinsame Aktivität starten", or tell them who
+  one match is). The goal is to FINISH the action, not to navigate.
 - Nothing here is hardcoded wording — compose it; but never invent data not in the payload.
 
 ## STRUCTURED PAYLOAD

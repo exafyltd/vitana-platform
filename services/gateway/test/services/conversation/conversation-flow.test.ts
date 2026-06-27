@@ -8,8 +8,9 @@
  *     and always grounded in real data.
  */
 
-import { decideOpeningRegister } from '../../../src/services/conversation/decide-opening';
+import { decideOpeningRegister, buildResumeDirective } from '../../../src/services/conversation/decide-opening';
 import { rankNextBestActions, selectNextBestAction } from '../../../src/services/conversation/next-best-action';
+import { surfaceForRoute, screenCompletionFor } from '../../../src/services/conversation/screen-surface';
 import type { OverviewPayload } from '../../../src/services/assistant-continuation/providers/new-day-overview-payload';
 
 function emptyPayload(over: Partial<OverviewPayload> = {}): OverviewPayload {
@@ -81,6 +82,34 @@ describe('rankNextBestActions — value × timeliness, always grounded', () => {
     const p = emptyPayload({ diary_last_7d: 0 });
     const keys = rankNextBestActions(p).map((a) => a.key);
     expect(keys).toContain('diary_entry');
+  });
+
+  it('SCREEN AWARENESS: on the matches screen, the next step COMPLETES the action, never redirects there', () => {
+    const p = emptyPayload({ matches_unread: 15, messages_unread: 26 });
+    // Off-screen (home): the value-ranked redirect-style action is fine.
+    const off = buildResumeDirective({
+      register: 'same_day', payload: p, firstName: 'Dragan', lang: 'de', timeAgo: 'earlier today', currentScreen: '/home',
+    });
+    expect(off.nba!.key).not.toBe('complete_matches');
+    // On the matches screen: deepen to complete_matches, suppress review_matches.
+    const on = buildResumeDirective({
+      register: 'same_day', payload: p, firstName: 'Dragan', lang: 'de', timeAgo: 'earlier today', currentScreen: '/matches',
+    });
+    expect(on.nba!.key).toBe('complete_matches');
+    // The directive tells the model the user is already on the screen + to complete.
+    expect(on.text).toContain('current_screen');
+    expect(on.text).toContain('complete_on_current_screen');
+  });
+
+  it('surfaceForRoute maps the key screens; screenCompletionFor deepens + suppresses the redirect', () => {
+    expect(surfaceForRoute('/matches')).toBe('matches');
+    expect(surfaceForRoute('/chat/123')).toBe('chat');
+    expect(surfaceForRoute('/diary')).toBe('diary');
+    expect(surfaceForRoute('/vitana-index')).toBe('index');
+    expect(surfaceForRoute('/longevity-news')).toBe('news');
+    expect(screenCompletionFor('matches')!.action.key).toBe('complete_matches');
+    expect(screenCompletionFor('matches')!.redirect_key).toBe('review_matches');
+    expect(screenCompletionFor('news')).toBeNull();
   });
 
   it('ADVANCES, never repeats: recently-suggested actions are skipped for the next-best fresh one', () => {

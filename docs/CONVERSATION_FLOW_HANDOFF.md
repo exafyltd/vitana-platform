@@ -90,6 +90,39 @@ varies ties within the always-available community-growth pool.
 
 ---
 
+## 3b. Screen awareness & action COMPLETION
+
+Vitana knows the user's current screen (`session.current_route`, sent by the
+client at session start, kept fresh on navigation) and uses it to **deepen toward
+completing the action**, never to redirect the user to a screen they are already
+on.
+
+- `services/conversation/screen-surface.ts` — `surfaceForRoute(route)` maps a
+  route to a `ConversationSurface` (matches / chat / community / diary / index /
+  profile / journey / news / home / other); `screenCompletionFor(surface)` returns
+  the **completion action** (band 115, above every redirect/discovery action) and
+  the `redirect_key` to suppress while on that surface.
+- In `buildResumeDirective`, when the user is on an actionable surface the next
+  step becomes the completion action — e.g. on **/matches**: *pick one and start a
+  joint activity / tell them who a match is / suggest an Index-boosting activity /
+  refine criteria / enrich profile* — and the prompt is told `current_screen` +
+  `complete_on_current_screen` with a HARD rule never to say "open X" while on X.
+
+Completion mapping (the goal is to FINISH, not navigate):
+
+| Surface | Completion next step |
+|---|---|
+| matches | pick a match & start a joint activity / who is this person / Index-boosting activity / refine criteria / enrich profile |
+| chat | actually write & send the reply |
+| community | draft & publish the post / create the activity |
+| diary | make today's entry now (lifts the Index) |
+| index | one concrete weakest-pillar action to raise it |
+| profile | add one more profile detail → better matches |
+
+**Telemetry:** `current_route` is now on the `conv_resume` greeting event.
+**Command-Hub:** the "Conversation" section should show the per-surface completion
+map and let an operator edit the completion offers (ideally policy-backed).
+
 ## 4. Where everything lives (file map)
 
 | File | Role |

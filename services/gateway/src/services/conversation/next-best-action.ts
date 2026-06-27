@@ -38,7 +38,15 @@ export type NbaKey =
   | 'make_post'
   | 'create_activity'
   | 'connect_community'
-  | 'set_goal';
+  | 'set_goal'
+  // Screen-aware COMPLETION actions — chosen when the user is already on the
+  // relevant screen, to deepen toward finishing the action instead of redirecting.
+  | 'complete_matches'
+  | 'complete_chat'
+  | 'complete_post'
+  | 'complete_diary'
+  | 'complete_index'
+  | 'complete_profile';
 
 export interface NextBestAction {
   key: NbaKey;
