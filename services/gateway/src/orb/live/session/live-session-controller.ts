@@ -891,6 +891,25 @@ export async function handleLiveSessionStart(
           console.log(`[LANG-PREF] No client lang — using stored preference: ${finalLang} for user=${bootstrapIdentity.user_id.substring(0, 8)}...`);
         }
 
+        // GUIDED JOURNEY standing awareness: append the user's LIVE journey
+        // progress (sessions completed, current session + title, where they left
+        // off) to the STANDING bootstrap context — so Vitana knows the user is on
+        // e.g. session 10 on EVERY turn, not only at the greeting. Without this she
+        // defaults to "the first lesson" mid-conversation. Best-effort; the block
+        // is empty for brand-new users and any failure never blocks bootstrap.
+        try {
+          const { getSupabase } = await import('../../../lib/supabase');
+          const supaGj = getSupabase() ?? undefined;
+          if (supaGj && bootstrapIdentity.user_id) {
+            const { fetchGuidedJourney, buildGuidedJourneyStandingInstruction } = await import(
+              '../../../services/assistant-continuation/providers/new-day-overview-payload'
+            );
+            const gj = await fetchGuidedJourney(supaGj, bootstrapIdentity.user_id, finalLang);
+            const journeyBlock = buildGuidedJourneyStandingInstruction(gj);
+            if (journeyBlock) finalContext = finalContext ? `${finalContext}${journeyBlock}` : journeyBlock.trimStart();
+          }
+        } catch { /* non-blocking — journey awareness is additive */ }
+
         session.active_role = resolvedRole;
         session.lastSessionInfo = fetchedSessionInfo;
         session.contextInstruction = finalContext;

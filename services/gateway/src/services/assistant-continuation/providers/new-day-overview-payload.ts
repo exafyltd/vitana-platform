@@ -674,7 +674,7 @@ async function fetchRemindersToday(
  * proactive opener never disagree. Best-effort: any failure → null (the briefing
  * simply omits the guided-journey beat).
  */
-async function fetchGuidedJourney(
+export async function fetchGuidedJourney(
   sb: SupabaseClient, userId: string, lang: string,
 ): Promise<OverviewPayload['guided_journey']> {
   try {
@@ -700,6 +700,35 @@ async function fetchGuidedJourney(
   } catch {
     return null;
   }
+}
+
+/**
+ * Render the user's guided-journey progress as a STANDING system-instruction
+ * block (English; the model emits the user's language). Unlike the greeting
+ * briefing — which only reaches the model on the first turn — this is meant to
+ * be appended to the persistent bootstrap context so Vitana knows the user's
+ * current session on EVERY turn and never defaults to "the first lesson".
+ *
+ * Returns '' for users without meaningful progress (brand-new / session 1 with
+ * nothing completed) — those are handled by the NEW-USER bias and should not be
+ * told "you are on session 1".
+ */
+export function buildGuidedJourneyStandingInstruction(
+  gj: OverviewPayload['guided_journey'],
+): string {
+  if (!gj || !(gj.sessions_completed > 0)) return '';
+  const currentSession = gj.sessions_completed + 1;
+  const lines: string[] = [];
+  lines.push('## GUIDED JOURNEY — LIVE PROGRESS (authoritative; do not contradict)');
+  lines.push('The user is ACTIVELY progressing through the Vitanaland Guided Journey.');
+  lines.push(`- Sessions completed: ${gj.sessions_completed}`);
+  lines.push(`- Current session: ${currentSession}${gj.next_session_title ? ` — "${gj.next_session_title}"` : ''}`);
+  if (gj.last_session_recall) lines.push(`- Where you left off: "${gj.last_session_recall}"`);
+  lines.push('');
+  lines.push(
+    `When the user asks what to do next in the journey — or you proactively guide them there — refer to their CURRENT session (${currentSession}) and continue FORWARD. NEVER restart at session 1 or call it "the first lesson". If they agree to continue, calling narrate_guided_session with NO session number resumes at their current session automatically. Mention the session number/title naturally so the user feels you know exactly where they are.`,
+  );
+  return '\n\n' + lines.join('\n');
 }
 
 async function fetchDiaryLast7Days(sb: SupabaseClient, userId: string, now: Date): Promise<number> {
