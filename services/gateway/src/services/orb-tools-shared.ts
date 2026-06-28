@@ -1494,10 +1494,13 @@ export async function tool_create_index_improvement_plan(
       last_event: scheduled[scheduled.length - 1],
       all_titles: scheduled.map((s) => s.title),
     };
+    const { buildIndexPlanText } = await import('./orb-index-coach-text');
     return {
       ok: true,
       result: payload,
-      text: `Scheduled ${scheduled.length} ${pillar} actions on your calendar over the next ${days} days.`,
+      // Name EXACTLY what was scheduled so the user is never left wondering what
+      // landed in their calendar ("Ich habe ja keine Ahnung, was du da einträgst").
+      text: buildIndexPlanText(String(pillar), days, scheduled),
     };
   } catch (err: unknown) {
     return { ok: false, error: err instanceof Error ? err.message : 'create_index_improvement_plan error' };
