@@ -374,6 +374,9 @@ router.patch('/:id/messages/:messageId', requireAuth, requireTenant, async (req:
     return res.status(400).json({ ok: false, error: 'content is required' });
   }
 
+  // impact-allow-no-oasis: editing one's own chat message is routine user-content
+  // CRUD, not a governed state transition — consistent with the sibling POST
+  // /:id/send handler, which likewise emits no OASIS event.
   const supabase = getSupabase();
 
   const membership = await requireMembership(supabase, groupId, identity.user_id);
@@ -422,6 +425,10 @@ router.delete('/:id/messages/:messageId', requireAuth, requireTenant, async (req
   if (!identity) return res.status(401).json({ ok: false, error: 'unauthorized' });
 
   const { id: groupId, messageId } = req.params;
+
+  // impact-allow-no-oasis: deleting one's own chat message (or moderator removal)
+  // is routine user-content CRUD, not a governed state transition — consistent
+  // with the sibling POST /:id/send handler, which likewise emits no OASIS event.
   const supabase = getSupabase();
 
   const membership = await requireMembership(supabase, groupId, identity.user_id);
