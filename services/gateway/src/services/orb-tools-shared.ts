@@ -4075,15 +4075,21 @@ export async function tool_save_diary_entry(
     );
   }
 
-  // 5) Per-pillar delta.
-  const index_delta = pillars_after
+  // 5) Per-pillar delta — ONLY when we have a real same-day baseline to diff
+  // against. `before` is today's vitana_index_scores row read BEFORE the
+  // recompute; on the FIRST entry of the day it is null, and
+  // `pillars_after.total - 0` would equal the user's ENTIRE index, which we then
+  // falsely announced as "your Index moved up 230". Without a baseline we cannot
+  // know the change this entry made, so we report no delta (honest) rather than
+  // fabricate the whole score as an increase.
+  const index_delta = pillars_after && before
     ? {
-        total: pillars_after.total - Number(before?.score_total ?? 0),
-        nutrition: pillars_after.nutrition - Number(before?.score_nutrition ?? 0),
-        hydration: pillars_after.hydration - Number(before?.score_hydration ?? 0),
-        exercise: pillars_after.exercise - Number(before?.score_exercise ?? 0),
-        sleep: pillars_after.sleep - Number(before?.score_sleep ?? 0),
-        mental: pillars_after.mental - Number(before?.score_mental ?? 0),
+        total: pillars_after.total - Number(before.score_total ?? 0),
+        nutrition: pillars_after.nutrition - Number(before.score_nutrition ?? 0),
+        hydration: pillars_after.hydration - Number(before.score_hydration ?? 0),
+        exercise: pillars_after.exercise - Number(before.score_exercise ?? 0),
+        sleep: pillars_after.sleep - Number(before.score_sleep ?? 0),
+        mental: pillars_after.mental - Number(before.score_mental ?? 0),
       }
     : null;
 

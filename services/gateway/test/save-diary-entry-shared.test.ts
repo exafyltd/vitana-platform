@@ -226,6 +226,47 @@ describe('VTID-03042 — save_diary_entry lifted to shared dispatcher', () => {
     expect(r2.entry_date).not.toBe('not-a-date');
   });
 
+  // REGRESSION (offer/honesty): on the FIRST entry of the day there is no
+  // same-day baseline row, so we must NOT fabricate a delta. The old code did
+  // `after.total - (before ?? 0)` and announced the user's ENTIRE index as an
+  // increase (e.g. "your Vitana Index moved up 230"). No baseline → no delta,
+  // and the spoken text must not claim any increase.
+  test('8. no same-day baseline → index_delta is null and text claims NO increase', async () => {
+    const sb = makeStubSupabase({
+      preIndexRow: null, // first entry today — nothing to diff against
+      rpcReturn: { data: { ok: true, score_total: 230, score_nutrition: 46 } },
+    });
+    const result = await tool_save_diary_entry(
+      { raw_text: 'No breakfast, pasta for lunch, big dessert with greek yogurt and three coffees.' },
+      identity,
+      sb as never,
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok !== true) return;
+    const r = result.result as { index_delta: { total: number } | null };
+    expect(r.index_delta).toBeNull();                 // no fabricated delta
+    expect(result.text).toMatch(/Diary entry logged for \d{4}-\d{2}-\d{2}/);
+    expect(result.text).not.toMatch(/moved up/i);     // never "your Index moved up 230"
+    expect(result.text).not.toMatch(/230/);
+  });
+
+  test('9. WITH a same-day baseline → honest positive delta is still announced', async () => {
+    const sb = makeStubSupabase({
+      preIndexRow: { score_total: 200 },               // earlier-today snapshot
+      rpcReturn: { data: { ok: true, score_total: 212 } },
+    });
+    const result = await tool_save_diary_entry(
+      { raw_text: 'Added a 2km walk and a litre of water after lunch.' },
+      identity,
+      sb as never,
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok !== true) return;
+    const r = result.result as { index_delta: { total: number } | null };
+    expect(r.index_delta?.total).toBe(12);            // 212 - 200, real change
+    expect(result.text).toMatch(/moved up 12/);
+  });
+
   test('7. registered in ORB_TOOL_REGISTRY and routes via dispatchOrbTool', async () => {
     expect(ORB_TOOL_REGISTRY.save_diary_entry).toBe(tool_save_diary_entry);
     const sb = makeStubSupabase({

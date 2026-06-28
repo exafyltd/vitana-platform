@@ -44,7 +44,7 @@ const FLOW_SOURCE_RE = [
 // the flow suites live under many names (conversation-flow, narrate-guided-session,
 // guided-journey-*, journey-*, greeting-*, wake-*, continuity-*, system-instruction…).
 const FLOW_TEST_RE =
-  /^services\/gateway\/test\/.*(conversation|narrate|guided|journey|greeting|wake|continuity|screen|opening|next-best|decide|instruction|session|nba|recency|temporal).*\.(test|spec)\.(ts|tsx)$/i;
+  /^services\/gateway\/test\/.*(conversation|narrate|guided|journey|greeting|wake|continuity|screen|opening|next-best|decide|instruction|session|nba|recency|temporal|diary|match|intent|index|capability|tool).*\.(test|spec)\.(ts|tsx)$/i;
 
 const TEST_OR_DTS_RE = /\.(test|spec)\.(ts|tsx)$|\.d\.ts$/;
 const EXEMPT_RE = /flow-test-exempt/;
