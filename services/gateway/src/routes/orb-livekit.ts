@@ -1607,9 +1607,26 @@ router.get(
       // back to a "I'll note it for the team" no-op when faced with a
       // bug-report flow (2026-05-17 user-reported regression).
       const vitanaBehavioralRule = buildPersonaBehavioralRule('vitana');
-      const vitanaContextInstruction = bootstrapContext
+      // GUIDED JOURNEY standing awareness (parity with the Vertex/SSE path in
+      // live-session-controller): append the user's live journey progress so
+      // LiveKit Vitana also knows the user's current session every turn and never
+      // defaults to "the first lesson". Best-effort; empty for brand-new users.
+      let journeyStandingBlock = '';
+      try {
+        const gjSb = getSupabase();
+        const gjUser = req.identity?.user_id;
+        if (gjSb && gjUser) {
+          const { fetchGuidedJourney, buildGuidedJourneyStandingInstruction } = await import(
+            '../services/assistant-continuation/providers/new-day-overview-payload'
+          );
+          journeyStandingBlock = buildGuidedJourneyStandingInstruction(
+            await fetchGuidedJourney(gjSb, gjUser, lang),
+          );
+        }
+      } catch { /* non-blocking — journey awareness is additive */ }
+      const vitanaContextInstruction = (bootstrapContext
         ? `${bootstrapContext}\n\n${vitanaBehavioralRule}`
-        : vitanaBehavioralRule;
+        : vitanaBehavioralRule) + journeyStandingBlock;
       systemInstruction = buildLiveSystemInstruction(
         lang,
         voiceStyle,
