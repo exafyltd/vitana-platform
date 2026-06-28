@@ -3555,6 +3555,27 @@ const INTENT_MATCH_AUTONAV_GAP = 0.15;
 // single-intent path uses. That screen renders its own graceful empty/error
 // state, so even when there are zero matches (or zero open posts) the offer is
 // fulfilled — we navigate the user there instead of refusing.
+/**
+ * Render match rows as a short, SPEAKABLE summary. The Vertex live path forwards
+ * ONLY a tool result's `text` to the model — so if `text` is "Opening the matches
+ * screen" (a navigation announcement) the model has nothing to actually say on a
+ * conversational surface where no screen opens, and it improvises "I couldn't do
+ * that". Giving it real, presentable content is what prevents the offer-then-fail.
+ */
+function formatMatchesForSpeech(
+  slim: Array<{ score?: number | null; tier?: string | null; kind_pairing?: string | null }>,
+): string {
+  return slim
+    .slice(0, 3)
+    .map((m, i) => {
+      const kind = String(m.kind_pairing ?? 'match').replace(/_/g, ' ');
+      const fit = typeof m.score === 'number' ? `${Math.round(m.score * 100)}% fit` : 'a strong fit';
+      const tier = m.tier ? `, ${m.tier} tier` : '';
+      return `${i + 1}) a ${kind}${tier} — ${fit}`;
+    })
+    .join('; ');
+}
+
 async function viewAllMyMatches(
   args: OrbToolArgs,
   id: OrbToolIdentity,
@@ -3610,8 +3631,9 @@ async function viewAllMyMatches(
           reason: 'no_open_intents',
         },
         text:
-          "I'm opening your matches now — you don't have any open posts yet, " +
-          'so post a wish and I\'ll let you know the moment someone matches.',
+          'HANDLED — the user has no open posts yet, so there are no matches to show. ' +
+          'Warmly invite them to post a wish (what kind of partner or activity they want) and tell ' +
+          'them you will alert them the moment someone matches. Do NOT say you could not do it — guide them to post one now.',
       };
     }
 
@@ -3663,8 +3685,12 @@ async function viewAllMyMatches(
       },
       text:
         slim.length > 0
-          ? `Opening your matches — you have ${slim.length} to look through.`
-          : "I'm opening your matches now. None have come in yet, but your posts are live — I'll flag the moment someone matches.",
+          ? `SUCCESS — the user has ${slim.length} match${slim.length === 1 ? '' : 'es'}. ` +
+            `Present them now, warmly and conversationally, then offer to open the top one for details. ` +
+            `Do NOT say you could not do it. Matches: ${formatMatchesForSpeech(slim)}.`
+          : 'HANDLED — the user has live posts but no matches have arrived yet. Tell them warmly that ' +
+            'nothing has come in yet, their posts are active, and you will flag the moment someone matches; ' +
+            'then suggest a next step (refine a post or explore the community). Do NOT say you could not complete it — there is simply nothing to show yet.',
     };
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : 'unknown';
@@ -3768,7 +3794,14 @@ export async function tool_view_intent_matches(
     return {
       ok: true,
       result: { ok: true, matches: slim, decision: 'list_only' },
-      text: JSON.stringify({ ok: true, matches: slim }),
+      // SPEAKABLE text (never raw JSON — the live model parrots whatever this is).
+      text:
+        slim.length > 0
+          ? `SUCCESS — ${slim.length} match${slim.length === 1 ? '' : 'es'} for this post. ` +
+            `Present them now, then offer to open one for details. Do NOT say you could not do it. ` +
+            `Matches: ${formatMatchesForSpeech(slim)}.`
+          : 'HANDLED — no matches have arrived for this post yet. Tell the user warmly that none have ' +
+            'come in yet but the post is live, and offer to refine it or look at the wider community. Do NOT say you could not do it.',
     };
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : 'unknown';
