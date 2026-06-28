@@ -13,6 +13,8 @@
  *                                    Reactions are written client-side via Supabase RLS on
  *                                    message_reactions (polymorphic on chat_messages.id).
  *   POST   /:id/read               — Mark all group messages read up to "now"
+ *   PATCH  /:id/messages/:messageId — Edit own group message (content)
+ *   DELETE /:id/messages/:messageId — Delete a group message (sender, or owner/admin)
  */
 
 import { Router, Request, Response } from 'express';
@@ -353,6 +355,105 @@ router.post('/:id/read', requireAuth, requireTenant, async (req: Request, res: R
 
   if (error) {
     console.error('[ChatGroups] Mark read error:', error);
+    return res.status(500).json({ ok: false, error: error.message });
+  }
+
+  return res.json({ ok: true });
+});
+
+// ── PATCH /:id/messages/:messageId — Edit own group message ────
+
+router.patch('/:id/messages/:messageId', requireAuth, requireTenant, async (req: Request, res: Response) => {
+  const { identity } = req as AuthenticatedRequest;
+  if (!identity) return res.status(401).json({ ok: false, error: 'unauthorized' });
+
+  const { id: groupId, messageId } = req.params;
+  const { content } = req.body as { content?: unknown };
+  const trimmed = typeof content === 'string' ? content.trim() : '';
+  if (trimmed.length === 0) {
+    return res.status(400).json({ ok: false, error: 'content is required' });
+  }
+
+  const supabase = getSupabase();
+
+  const membership = await requireMembership(supabase, groupId, identity.user_id);
+  if (!membership) {
+    return res.status(403).json({ ok: false, error: 'not_a_member' });
+  }
+
+  // Only the original sender may edit their message.
+  const { data: existing, error: fetchErr } = await supabase
+    .from('chat_messages')
+    .select('id, sender_id, group_id')
+    .eq('id', messageId)
+    .maybeSingle();
+  if (fetchErr) {
+    console.error('[ChatGroups] Edit lookup error:', fetchErr);
+    return res.status(500).json({ ok: false, error: fetchErr.message });
+  }
+  if (!existing || (existing as any).group_id !== groupId) {
+    return res.status(404).json({ ok: false, error: 'message_not_found' });
+  }
+  if ((existing as any).sender_id !== identity.user_id) {
+    return res.status(403).json({ ok: false, error: 'not_message_owner' });
+  }
+
+  const { data, error } = await supabase
+    .from('chat_messages')
+    .update({ content: trimmed })
+    .eq('id', messageId)
+    .select()
+    .single();
+  if (error) {
+    console.error('[ChatGroups] Edit error:', error);
+    return res.status(500).json({ ok: false, error: error.message });
+  }
+
+  return res.json({ ok: true, data });
+});
+
+// ── DELETE /:id/messages/:messageId — Delete a group message ───
+// The original sender may delete their own message; group owners/admins
+// may delete any message (moderation). Mirrors the DM delete capability
+// so the group action sheet's Delete button works (parity with private chat).
+
+router.delete('/:id/messages/:messageId', requireAuth, requireTenant, async (req: Request, res: Response) => {
+  const { identity } = req as AuthenticatedRequest;
+  if (!identity) return res.status(401).json({ ok: false, error: 'unauthorized' });
+
+  const { id: groupId, messageId } = req.params;
+  const supabase = getSupabase();
+
+  const membership = await requireMembership(supabase, groupId, identity.user_id);
+  if (!membership) {
+    return res.status(403).json({ ok: false, error: 'not_a_member' });
+  }
+
+  const { data: existing, error: fetchErr } = await supabase
+    .from('chat_messages')
+    .select('id, sender_id, group_id')
+    .eq('id', messageId)
+    .maybeSingle();
+  if (fetchErr) {
+    console.error('[ChatGroups] Delete lookup error:', fetchErr);
+    return res.status(500).json({ ok: false, error: fetchErr.message });
+  }
+  if (!existing || (existing as any).group_id !== groupId) {
+    return res.status(404).json({ ok: false, error: 'message_not_found' });
+  }
+
+  const isOwner = (existing as any).sender_id === identity.user_id;
+  const isModerator = membership.role === 'owner' || membership.role === 'admin';
+  if (!isOwner && !isModerator) {
+    return res.status(403).json({ ok: false, error: 'not_message_owner' });
+  }
+
+  const { error } = await supabase
+    .from('chat_messages')
+    .delete()
+    .eq('id', messageId);
+  if (error) {
+    console.error('[ChatGroups] Delete error:', error);
     return res.status(500).json({ ok: false, error: error.message });
   }
 
