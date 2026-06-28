@@ -4192,29 +4192,28 @@ async function executeLiveApiToolInner(
             .sort((a: any, b: any) => b._lift - a._lift)
             .slice(0, limit);
 
+          const { buildIndexSuggestionsText } = await import('../services/orb-index-coach-text');
+
           if (ranked.length === 0) {
+            // No queued autopilot recommendations for this pillar — fall back to
+            // the built-in pillar action templates (same source create_index_
+            // improvement_plan uses) so "how do I improve my Index" ALWAYS yields
+            // concrete, speakable suggestions instead of "I couldn't do that".
+            const { PILLAR_ACTION_TEMPLATES } = await import('../lib/vitana-pillars');
+            const templates = (PILLAR_ACTION_TEMPLATES[pillar as keyof typeof PILLAR_ACTION_TEMPLATES] ?? []).slice(0, limit);
             return {
               success: true,
-              result: JSON.stringify({
-                pillar,
-                suggestions: [],
-                message: `No pending recommendations with a positive ${pillar} contribution right now. Completing ANY existing recommendation will trigger the Index engine to propose more.`,
-              }),
+              result: buildIndexSuggestionsText(pillar, templates as Array<{ title?: string | null; description?: string | null }>),
             };
           }
 
+          // SPEAKABLE text (never raw JSON — the live model parrots whatever this is).
           return {
             success: true,
-            result: JSON.stringify({
+            result: buildIndexSuggestionsText(
               pillar,
-              suggestions: ranked.map((r: any) => ({
-                id: r.id,
-                title: r.title,
-                action: r.action_description,
-                lift: r._lift,
-                contribution_vector: r.contribution_vector,
-              })),
-            }),
+              ranked.map((r: any) => ({ title: r.title, description: r.action_description })),
+            ),
           };
         } catch (err: any) {
           console.error('[get_index_improvement_suggestions] error:', err?.message);
