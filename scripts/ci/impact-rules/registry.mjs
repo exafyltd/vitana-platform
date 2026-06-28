@@ -80,6 +80,14 @@ export const IMPACT_RULES = [
     severity: 'warning',
     enabled: true,
   },
+  {
+    rule: 'conversation-flow-change-needs-test',
+    title: 'Conversation-flow change without a flow test',
+    description: 'The conversation flow is the product: any change to how Vitana decides what to say / which guided-journey session to surface / what context she carries (services/gateway/src/services/conversation, assistant-continuation, guide, guided-journey, orb-tools-shared.ts, orb/live/instruction, live-session-controller.ts) MUST ship with a conversation-flow test under services/gateway/test/ in the same PR. Mirrors new-route-needs-test but as a hard gate for the flow surface, so behaviour like "offer session 1 while the user is on session 10" can never silently regress. Escape hatch for behaviour-free edits: `flow-test-exempt: <reason>` in a changed flow file.',
+    category: 'companion',
+    severity: 'blocker',
+    enabled: true,
+  },
 
   // ── conflict rules ───────────────────────────────────────────────────────
   {
