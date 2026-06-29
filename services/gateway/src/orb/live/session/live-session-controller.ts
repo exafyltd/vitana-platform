@@ -1641,7 +1641,7 @@ export async function handleLiveSessionStart(
       const supa = getSupa();
       if (supa) {
         const [
-          { getJourneyState, updateSessionEndState },
+          { getJourneyState, updateSessionEndState, ensureUserJourneyRow },
           { buildJourneyGreetingBlock, todayInTimezone },
           { fetchLifeCompass },
         ] = await Promise.all([
@@ -1651,6 +1651,23 @@ export async function handleLiveSessionStart(
         ]);
         const journey = await getJourneyState(supa, orbIdentity.user_id);
         if (journey) {
+          // BOOTSTRAP-ORB-GREETING-FIRSTTIME: if getJourneyState fell back to the
+          // math path, the user has NO user_journey row — so the
+          // updateSessionEndState below would update zero rows and
+          // last_session_date would never persist, making the greeting re-fire
+          // every session. Seed a real row (idempotently) so this session's
+          // last_session_date actually lands and the welcome converges. We mark
+          // is_first_session=false: a user reaching a live session without a row
+          // is an existing user the backfill missed, not a first-ever signup.
+          if (journey.fallback_used) {
+            await ensureUserJourneyRow(supa, orbIdentity.user_id, {
+              tenant_id: orbIdentity.tenant_id ?? null,
+              started_at: journey.started_at,
+              is_first_session: false,
+            }).catch((err: any) =>
+              console.warn(`[VTID-03154] ensureUserJourneyRow (fallback seed) failed (non-fatal): ${err?.message}`),
+            );
+          }
           const lifeCompass = await fetchLifeCompass(supa, orbIdentity.user_id).catch(() => null);
           const tz = (session as any).clientContext?.timezone ?? null;
           const todayDateIso = todayInTimezone(new Date(), tz);
