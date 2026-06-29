@@ -59,6 +59,7 @@ import { recordPaywallEvent } from '../../../services/entitlement-service';
 // ORB-FAST-START Phase 2: defer wake-brief + journey off the session/start
 // response path (flag-gated; default off → legacy inline behavior).
 import { shouldDeferWakeWork, composeContextReady } from './orb-fast-start';
+import { deriveHasPriorSession } from '../instruction/greeting-gate';
 
 // VTID-03107: per-session voice-meter intervals. Keyed by session_id so cleanup
 // in handleLiveSessionStop can tear down without touching GeminiLiveSession's type.
@@ -1033,10 +1034,8 @@ export async function handleLiveSessionStart(
             // they have a recorded last_session_date OR their is_first_session flag
             // has already been cleared. Either proves they have talked to Vitana
             // before, so the one-time welcome must NOT fire again — even if they
-            // never completed guided onboarding. No row at all → no prior session.
-            greetingHasPriorSession = _fsRow
-              ? _fsRow.last_session_date != null || _fsRow.is_first_session === false
-              : false;
+            // never completed guided onboarding. (Pinned in greeting-gate.test.ts.)
+            greetingHasPriorSession = deriveHasPriorSession(_fsRow);
             // Durable once-per-day briefing flag (null when never delivered or
             // column absent → briefing is due).
             greetingLastFullBriefingDate = _fsRow?.last_full_briefing_date ?? null;

@@ -1372,6 +1372,7 @@ export { buildLiveApiTools } from '../orb/live/tools/live-tool-catalog';
 // tools rather than a TS-side state machine.
 import { buildTeacherModeBlock } from '../orb/teacher/teacher-mode-prompt';
 // VTID-03257 (Fix-1): GUIDE MODE block — Vitana leads the Foundation checklist.
+import { shouldFireFirstTimeWelcome, resolveGreetingLang } from '../orb/live/instruction/greeting-gate';
 import { buildJourneyGuideBlock } from '../orb/live/instruction/journey-guide-prompt';
 import { buildGuidedTopicNarrationBlock } from '../orb/live/instruction/guided-topic-narration-prompt';
 // A6.2 (orb-live-refactor): SessionContext + SessionMutator + first
@@ -7611,10 +7612,7 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
             // default ('en') and then flip to the stored 'de' on turn 2 (the system
             // instruction reads session.lang). Re-reading here keeps turn 1 and the
             // rest of the conversation in one language.
-            const greetLang =
-              typeof (session as any).lang === 'string' && (session as any).lang.length > 0
-                ? ((session as any).lang as string)
-                : lang;
+            const greetLang = resolveGreetingLang((session as any).lang, lang);
             // BOOTSTRAP-ORB-GREETING-FIRSTTIME: a user who has a prior session on
             // record must never get the one-time first-session welcome again, even
             // if they never finished guided onboarding.
@@ -7810,8 +7808,11 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
               // must NOT be re-introduced from scratch every session — they fall
               // through to the returning-user resume register below. This is what
               // made Vitana feel robotic: greeting every visit as a first-timer.
-              const _isFirstTime =
-                !_hasPriorSession && (_needsOnboarding === true || _ift === true);
+              const _isFirstTime = shouldFireFirstTimeWelcome({
+                hasPriorSession: _hasPriorSession,
+                needsOnboarding: _needsOnboarding === true,
+                isFirstSession: _ift === true,
+              });
               if (_isFirstTime) {
                 const _welcome = buildFirstTimeWelcomeLine(greetLang, (session as any).greetingFirstName ?? null);
                 const _safeWel = _welcome.replace(/"/g, '\\"');
@@ -7851,10 +7852,11 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
               // returning never-onboarded user reaches the resume register (soft
               // "welcome back / let's continue") instead of being treated as a
               // first-timer and skipping it.
-              const _isFirstTimeR =
-                !_hasPriorSession &&
-                ((session as any).greetingNeedsOnboarding === true ||
-                  (session as any).greetingIsFirstTime === true);
+              const _isFirstTimeR = shouldFireFirstTimeWelcome({
+                hasPriorSession: _hasPriorSession,
+                needsOnboarding: (session as any).greetingNeedsOnboarding === true,
+                isFirstSession: (session as any).greetingIsFirstTime === true,
+              });
               const _uidR = session.identity?.user_id;
               const _supaR = getSupabase();
               const _langKeyR = (greetLang || 'en').slice(0, 2).toLowerCase();
