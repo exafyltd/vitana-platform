@@ -194,7 +194,7 @@ export async function getJourneyState(
 export async function ensureUserJourneyRow(
   client: SupabaseClient,
   userId: string,
-  opts: { tenant_id?: string | null; started_at?: string | Date } = {},
+  opts: { tenant_id?: string | null; started_at?: string | Date; is_first_session?: boolean } = {},
 ): Promise<boolean> {
   try {
     const startedAtIso =
@@ -207,7 +207,12 @@ export async function ensureUserJourneyRow(
         user_id: userId,
         tenant_id: opts.tenant_id ?? null,
         started_at: startedAtIso,
-        is_first_session: true,
+        // Defaults to true so the /me seeding path (brand-new users) is
+        // unchanged. The session-start backfill passes false: a user reaching
+        // a live session WITHOUT a row is an existing user the backfill missed,
+        // not a first-ever signup — seeding them as first_session would (re)play
+        // the one-time welcome on the legacy continuation path.
+        is_first_session: opts.is_first_session ?? true,
       })
       .select('user_id')
       .maybeSingle();

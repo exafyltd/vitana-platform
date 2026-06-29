@@ -1372,6 +1372,7 @@ export { buildLiveApiTools } from '../orb/live/tools/live-tool-catalog';
 // tools rather than a TS-side state machine.
 import { buildTeacherModeBlock } from '../orb/teacher/teacher-mode-prompt';
 // VTID-03257 (Fix-1): GUIDE MODE block — Vitana leads the Foundation checklist.
+import { shouldFireFirstTimeWelcome, resolveGreetingLang } from '../orb/live/instruction/greeting-gate';
 import { buildJourneyGuideBlock } from '../orb/live/instruction/journey-guide-prompt';
 import { buildGuidedTopicNarrationBlock } from '../orb/live/instruction/guided-topic-narration-prompt';
 // A6.2 (orb-live-refactor): SessionContext + SessionMutator + first
@@ -7604,6 +7605,19 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
               }
             }
 
+            // BOOTSTRAP-ORB-GREETING-LANG: re-read the language AFTER the bounded
+            // facts wait. `lang` was captured at function entry (above), before the
+            // greeting-facts pre-fetch resolved the user's stored preference onto
+            // session.lang. Using the stale capture would speak the greeting in the
+            // default ('en') and then flip to the stored 'de' on turn 2 (the system
+            // instruction reads session.lang). Re-reading here keeps turn 1 and the
+            // rest of the conversation in one language.
+            const greetLang = resolveGreetingLang((session as any).lang, lang);
+            // BOOTSTRAP-ORB-GREETING-FIRSTTIME: a user who has a prior session on
+            // record must never get the one-time first-session welcome again, even
+            // if they never finished guided onboarding.
+            const _hasPriorSession = (session as any).greetingHasPriorSession === true;
+
             // NEW-DAY OVERVIEW (rich summary owns turn 1). On a genuine new-day
             // return we speak the FULL multi-clause morning overview (what passed
             // since last session, today's next event, Index direction, Life
@@ -7685,7 +7699,7 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
                     userId: _uidNd,
                     now: _nowNd,
                     timezone: _tzNd,
-                    lang,
+                    lang: greetLang,
                     lastSessionDateUserTz: _lastSessDateTz,
                     // Precise cutoff for "events since we last spoke" — avoids
                     // briefing the user about events that happened BEFORE their
@@ -7714,7 +7728,7 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
                 if (_overview && _hasContent) {
                   const _block = buildNewDayOverviewBlock({
                     payload: _overview,
-                    lang,
+                    lang: greetLang,
                     firstName: _firstNameNd.trim(),
                     localHour: localHourInTimezone(_nowNd, _tzNd),
                     timezone: _tzNd,
@@ -7788,9 +7802,19 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
               // (0 completed journey topics and not graduated/opted-out — survives
               // the eager is_first_session clear) OR is_first_session still true.
               // Unknown → fall through to the normal proactive/name/menu ladder.
-              const _isFirstTime = _needsOnboarding === true || _ift === true;
+              // BOOTSTRAP-ORB-GREETING-FIRSTTIME: the full one-time welcome fires
+              // ONLY when there is no prior session on record. A returning user who
+              // simply never completed guided onboarding (_needsOnboarding===true)
+              // must NOT be re-introduced from scratch every session — they fall
+              // through to the returning-user resume register below. This is what
+              // made Vitana feel robotic: greeting every visit as a first-timer.
+              const _isFirstTime = shouldFireFirstTimeWelcome({
+                hasPriorSession: _hasPriorSession,
+                needsOnboarding: _needsOnboarding === true,
+                isFirstSession: _ift === true,
+              });
               if (_isFirstTime) {
-                const _welcome = buildFirstTimeWelcomeLine(lang, (session as any).greetingFirstName ?? null);
+                const _welcome = buildFirstTimeWelcomeLine(greetLang, (session as any).greetingFirstName ?? null);
                 const _safeWel = _welcome.replace(/"/g, '\\"');
                 const _welPrompt = `Say exactly: "${_safeWel}" — speak it verbatim as audio, as ONE warm greeting. Do NOT add, paraphrase, or split it.`;
                 ws.send(
@@ -7799,14 +7823,14 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
                   }),
                 );
                 emitDiag(session, 'greeting_sent', {
-                  lang,
+                  lang: greetLang,
                   prompt_len: _welPrompt.length,
                   wake_opener: 'safe_fast_first_time_welcome',
                   is_first_session: _ift === true,
                 });
                 startResponseWatchdog(session, getGreetingResponseTimeoutMs(), 'greeting_timeout');
                 console.log(
-                  `[GREETING-SAFE-FAST-FIRST-TIME] session ${session.sessionId} sent first-time welcome (is_first_session=${String(_ift)}, needs_onboarding=${String(_needsOnboarding)}, lang=${lang})`,
+                  `[GREETING-SAFE-FAST-FIRST-TIME] session ${session.sessionId} sent first-time welcome (is_first_session=${String(_ift)}, needs_onboarding=${String(_needsOnboarding)}, has_prior=${String(_hasPriorSession)}, lang=${greetLang})`,
                 );
                 return;
               }
@@ -7824,12 +7848,18 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
             // payload could not be gathered in budget. See
             // docs/CONVERSATION_FLOW_HANDOFF.md.
             {
-              const _isFirstTimeR =
-                (session as any).greetingNeedsOnboarding === true ||
-                (session as any).greetingIsFirstTime === true;
+              // BOOTSTRAP-ORB-GREETING-FIRSTTIME: mirror the prior-session guard so a
+              // returning never-onboarded user reaches the resume register (soft
+              // "welcome back / let's continue") instead of being treated as a
+              // first-timer and skipping it.
+              const _isFirstTimeR = shouldFireFirstTimeWelcome({
+                hasPriorSession: _hasPriorSession,
+                needsOnboarding: (session as any).greetingNeedsOnboarding === true,
+                isFirstSession: (session as any).greetingIsFirstTime === true,
+              });
               const _uidR = session.identity?.user_id;
               const _supaR = getSupabase();
-              const _langKeyR = (lang || 'en').slice(0, 2).toLowerCase();
+              const _langKeyR = (greetLang || 'en').slice(0, 2).toLowerCase();
               const _langOkR = _langKeyR === 'de' || _langKeyR === 'en';
               if (_langOkR && !_isFirstTimeR && _uidR && _supaR) {
                 try {
@@ -7858,7 +7888,7 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
                         userId: _uidR,
                         now: _nowR,
                         timezone: _tzR,
-                        lang,
+                        lang: greetLang,
                         lastSessionDateUserTz: _lastSessDateR,
                         lastSessionAtIso: _lastSessIsoR,
                       }),
@@ -7872,7 +7902,7 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
                       register: _registerR,
                       payload: _payloadR,
                       firstName: (session as any).greetingFirstName ?? null,
-                      lang,
+                      lang: greetLang,
                       timeAgo: _lastIxR.timeAgo,
                       rotationSeed: _seedR,
                       recentNbaKeys: _recentNbaKeysR as any,
@@ -8023,7 +8053,7 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
                       ? `Добро вече, ${name}.`
                       : `Добар дан, ${name}.`,
               };
-              const langKey = (lang || 'en').slice(0, 2).toLowerCase();
+              const langKey = (greetLang || 'en').slice(0, 2).toLowerCase();
               const spoken = greetingByLang[langKey] || greetingByLang.en;
               const safe = spoken.replace(/"/g, '\\"');
               // Mirror the existing `Say exactly: "..."` shape used elsewhere in
@@ -8050,7 +8080,7 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
 
             // ELSE — fall through to the EXISTING generic opener (unchanged
             // behavior). Same-day reconnects and no-name sessions take this path.
-            const _menu = pickShortGapGreetings(lang, 6).map((p) => `"${p}"`).join(', ');
+            const _menu = pickShortGapGreetings(greetLang, 6).map((p) => `"${p}"`).join(', ');
             const _safePrompt =
               `Open with EXACTLY ONE short phrase, picked from this menu and used VERBATIM ` +
               `(already in the user's language): ${_menu}. Do NOT say "Hello" or the user's name. ` +
