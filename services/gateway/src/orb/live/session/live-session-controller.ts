@@ -751,6 +751,18 @@ export async function handleLiveSessionStart(
   // most-recent last) from user_journey.recent_nbas. Lets the resume opener
   // ADVANCE past what it already suggested instead of repeating it.
   let greetingRecentNbaKeys: string[] = [];
+  // BOOTSTRAP-ORB-GREETING-LANG: the user's STORED language preference, resolved
+  // in the fast greeting-facts pre-fetch so the spoken greeting can use the SAME
+  // language the rest of the conversation will use (buildLiveSystemInstruction
+  // reads session.lang). Without this the greeting speaks the default ('en') and
+  // the conversation flips to the stored preference ('de') on turn 2. null = not
+  // resolved / no client-independent preference on record.
+  let greetingResolvedLang: string | null = null;
+  // BOOTSTRAP-ORB-GREETING-FIRSTTIME: does the user have a prior session on
+  // record (user_journey.last_session_date set, OR is_first_session already
+  // cleared)? A returning user must NOT get the one-time first-session welcome
+  // again just because they never completed guided onboarding. null = unknown.
+  let greetingHasPriorSession: boolean | null = null;
 
   // VTID-03294: a Guided-Journey topic tap needs ZERO context — Vitana just
   // picks up the KB lesson and speaks it. Detect it here so we can skip the
@@ -951,7 +963,7 @@ export async function handleLiveSessionStart(
         try {
           const { getSupabase } = await import('../../../lib/supabase');
           const supa = getSupabase() ?? undefined;
-          const [lastInfo, factResult, profileResult, firstSessionResult, journeyStateResult] = await Promise.allSettled([
+          const [lastInfo, factResult, profileResult, firstSessionResult, journeyStateResult, langPrefResult] = await Promise.allSettled([
             deps.fetchLastSessionInfo(_ndIdentity.user_id, clientContext?.timezone),
             supa
               ? supa
@@ -974,7 +986,7 @@ export async function handleLiveSessionStart(
             supa
               ? supa
                   .from('user_journey')
-                  .select('is_first_session, last_full_briefing_date, recent_nbas')
+                  .select('is_first_session, last_session_date, last_full_briefing_date, recent_nbas')
                   .eq('user_id', _ndIdentity.user_id)
                   .maybeSingle()
               : Promise.resolve(null as any),
@@ -989,6 +1001,16 @@ export async function handleLiveSessionStart(
                   .eq('user_id', _ndIdentity.user_id)
                   .maybeSingle()
               : Promise.resolve(null as any),
+            // BOOTSTRAP-ORB-GREETING-LANG: the STORED language preference, in the
+            // SAME parallel batch (no added latency). Drives the spoken greeting's
+            // language so it matches the system-instruction language and does not
+            // flip from 'en' to the stored 'de' on turn 2. Skipped (→ null) when
+            // the client already requested a language explicitly — that wins.
+            !clientRequestedLang && _ndIdentity.tenant_id
+              ? deps
+                  .getStoredLanguagePreference(_ndIdentity.tenant_id, _ndIdentity.user_id)
+                  .catch(() => null)
+              : Promise.resolve(null),
           ]);
 
           if (lastInfo.status === 'fulfilled') {
@@ -1001,11 +1023,20 @@ export async function handleLiveSessionStart(
           ) {
             const _fsRow = firstSessionResult.value.data as {
               is_first_session?: boolean | null;
+              last_session_date?: string | null;
               last_full_briefing_date?: string | null;
               recent_nbas?: unknown;
             } | null;
             // No row at all → user has never had a journey row → treat as first-time.
             greetingIsFirstSession = _fsRow ? _fsRow.is_first_session === true : true;
+            // BOOTSTRAP-ORB-GREETING-FIRSTTIME: a user "has a prior session" once
+            // they have a recorded last_session_date OR their is_first_session flag
+            // has already been cleared. Either proves they have talked to Vitana
+            // before, so the one-time welcome must NOT fire again — even if they
+            // never completed guided onboarding. No row at all → no prior session.
+            greetingHasPriorSession = _fsRow
+              ? _fsRow.last_session_date != null || _fsRow.is_first_session === false
+              : false;
             // Durable once-per-day briefing flag (null when never delivered or
             // column absent → briefing is due).
             greetingLastFullBriefingDate = _fsRow?.last_full_briefing_date ?? null;
@@ -1038,6 +1069,17 @@ export async function handleLiveSessionStart(
               _jsRow?.mode === 'full';
             greetingNeedsOnboarding = !_jsRow ? true : _completed === 0 && !_optedOut;
           }
+          // BOOTSTRAP-ORB-GREETING-LANG: resolve the stored language preference so
+          // the greeting builder speaks it (matching the system instruction). Only
+          // when the client did not request a language explicitly.
+          if (
+            !clientRequestedLang &&
+            langPrefResult.status === 'fulfilled' &&
+            typeof langPrefResult.value === 'string' &&
+            langPrefResult.value.length > 0
+          ) {
+            greetingResolvedLang = deps.normalizeLang(langPrefResult.value);
+          }
 
           const factValue =
             factResult.status === 'fulfilled' && factResult.value && !factResult.value.error
@@ -1064,7 +1106,10 @@ export async function handleLiveSessionStart(
             greetingProactiveLine = await computeFastProactiveOpener({
               supabase: supa,
               userId: _ndIdentity.user_id,
-              lang,
+              // BOOTSTRAP-ORB-GREETING-LANG: render the proactive opener in the
+              // resolved stored language, not the default 'en', so this verbatim
+              // line matches the rest of the conversation.
+              lang: greetingResolvedLang || lang,
               firstName: greetingFirstName,
               timezone: clientContext?.timezone ?? null,
               nowMs: Date.now(),
@@ -1188,6 +1233,7 @@ export async function handleLiveSessionStart(
     (session as any).greetingProactiveLine = greetingProactiveLine;
     (session as any).greetingIsFirstTime = greetingIsFirstSession;
     (session as any).greetingNeedsOnboarding = greetingNeedsOnboarding;
+    (session as any).greetingHasPriorSession = greetingHasPriorSession;
     (session as any).lastFullBriefingDate = greetingLastFullBriefingDate;
     (session as any).recentNbaKeys = greetingRecentNbaKeys;
     if (greetingEarlyLastSessionInfo && !session.lastSessionInfo) {
@@ -1200,8 +1246,16 @@ export async function handleLiveSessionStart(
       (session as any).greetingProactiveLine = greetingProactiveLine;
       (session as any).greetingIsFirstTime = greetingIsFirstSession;
       (session as any).greetingNeedsOnboarding = greetingNeedsOnboarding;
+      (session as any).greetingHasPriorSession = greetingHasPriorSession;
       (session as any).lastFullBriefingDate = greetingLastFullBriefingDate;
       (session as any).recentNbaKeys = greetingRecentNbaKeys;
+      // BOOTSTRAP-ORB-GREETING-LANG: apply the resolved stored language onto the
+      // session BEFORE the greeting builder's bounded wait resolves, so the
+      // spoken greeting uses the same language as buildLiveSystemInstruction.
+      // Only when the client did not request a language explicitly (that wins).
+      if (greetingResolvedLang && !clientRequestedLang) {
+        session.lang = greetingResolvedLang;
+      }
       // Idempotent with the heavy bootstrap block, which also sets this later.
       if (greetingEarlyLastSessionInfo && !session.lastSessionInfo) {
         session.lastSessionInfo = greetingEarlyLastSessionInfo;
@@ -1631,7 +1685,10 @@ export async function handleLiveSessionStart(
             journey,
             lifeCompassGoalText: lifeCompass?.primary_goal ?? null,
             firstName: nameForGreeting,
-            lang,
+            // BOOTSTRAP-ORB-GREETING-LANG: prefer the resolved session language so
+            // this prompt block's "Speak in <LANG>" matches the conversation
+            // language instead of pinning the default 'en'.
+            lang: (typeof session.lang === 'string' && session.lang.length > 0 ? session.lang : lang),
             todayDateIso,
             nextMove: journeyNextMove,
           });
