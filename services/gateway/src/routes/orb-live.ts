@@ -4275,6 +4275,12 @@ async function executeLiveApiToolInner(
             tenant_id: lens.tenant_id ?? null,
             role: session.identity?.role ?? null,
             vitana_id: session.identity?.vitana_id ?? null,
+            // BOOTSTRAP-ORB-GUIDE-MODE-LANG: pass the session language so
+            // language-sensitive tools (e.g. narrate_guided_session, whose script
+            // is authored in German) instruct the model to TRANSLATE for non-German
+            // users instead of speaking verbatim — which flipped English sessions
+            // into German mid-journey.
+            lang: session.lang ?? null,
           },
           supabase,
         );
@@ -4301,6 +4307,12 @@ async function executeLiveApiToolInner(
             tenant_id: lens.tenant_id ?? null,
             role: session.identity?.role ?? null,
             vitana_id: session.identity?.vitana_id ?? null,
+            // BOOTSTRAP-ORB-GUIDE-MODE-LANG: pass the session language so
+            // language-sensitive tools (e.g. narrate_guided_session, whose script
+            // is authored in German) instruct the model to TRANSLATE for non-German
+            // users instead of speaking verbatim — which flipped English sessions
+            // into German mid-journey.
+            lang: session.lang ?? null,
           },
           supabase,
         );
@@ -4330,6 +4342,12 @@ async function executeLiveApiToolInner(
             tenant_id: lens.tenant_id ?? null,
             role: session.identity?.role ?? null,
             vitana_id: session.identity?.vitana_id ?? null,
+            // BOOTSTRAP-ORB-GUIDE-MODE-LANG: pass the session language so
+            // language-sensitive tools (e.g. narrate_guided_session, whose script
+            // is authored in German) instruct the model to TRANSLATE for non-German
+            // users instead of speaking verbatim — which flipped English sessions
+            // into German mid-journey.
+            lang: session.lang ?? null,
           },
           supabase,
         );
@@ -4508,6 +4526,12 @@ async function executeLiveApiToolInner(
             tenant_id: lens.tenant_id ?? null,
             role: session.identity?.role ?? null,
             vitana_id: session.identity?.vitana_id ?? null,
+            // BOOTSTRAP-ORB-GUIDE-MODE-LANG: pass the session language so
+            // language-sensitive tools (e.g. narrate_guided_session, whose script
+            // is authored in German) instruct the model to TRANSLATE for non-German
+            // users instead of speaking verbatim — which flipped English sessions
+            // into German mid-journey.
+            lang: session.lang ?? null,
           },
           supabase,
         );
@@ -4556,6 +4580,12 @@ async function executeLiveApiToolInner(
             tenant_id: lens.tenant_id ?? null,
             role: session.identity?.role ?? null,
             vitana_id: session.identity?.vitana_id ?? null,
+            // BOOTSTRAP-ORB-GUIDE-MODE-LANG: pass the session language so
+            // language-sensitive tools (e.g. narrate_guided_session, whose script
+            // is authored in German) instruct the model to TRANSLATE for non-German
+            // users instead of speaking verbatim — which flipped English sessions
+            // into German mid-journey.
+            lang: session.lang ?? null,
           },
           supabase,
         );
@@ -4738,6 +4768,12 @@ async function executeLiveApiToolInner(
             tenant_id: lens.tenant_id ?? null,
             role: session.identity?.role ?? null,
             vitana_id: session.identity?.vitana_id ?? null,
+            // BOOTSTRAP-ORB-GUIDE-MODE-LANG: pass the session language so
+            // language-sensitive tools (e.g. narrate_guided_session, whose script
+            // is authored in German) instruct the model to TRANSLATE for non-German
+            // users instead of speaking verbatim — which flipped English sessions
+            // into German mid-journey.
+            lang: session.lang ?? null,
           },
           supabase,
         );
@@ -5476,6 +5512,12 @@ async function executeLiveApiToolInner(
             tenant_id: lens.tenant_id ?? null,
             role: session.identity?.role ?? null,
             vitana_id: session.identity?.vitana_id ?? null,
+            // BOOTSTRAP-ORB-GUIDE-MODE-LANG: pass the session language so
+            // language-sensitive tools (e.g. narrate_guided_session, whose script
+            // is authored in German) instruct the model to TRANSLATE for non-German
+            // users instead of speaking verbatim — which flipped English sessions
+            // into German mid-journey.
+            lang: session.lang ?? null,
           },
           supabase,
         );
@@ -5501,6 +5543,12 @@ async function executeLiveApiToolInner(
             tenant_id: lens.tenant_id ?? null,
             role: session.identity?.role ?? null,
             vitana_id: session.identity?.vitana_id ?? null,
+            // BOOTSTRAP-ORB-GUIDE-MODE-LANG: pass the session language so
+            // language-sensitive tools (e.g. narrate_guided_session, whose script
+            // is authored in German) instruct the model to TRANSLATE for non-German
+            // users instead of speaking verbatim — which flipped English sessions
+            // into German mid-journey.
+            lang: session.lang ?? null,
           },
           supabase,
         );
@@ -5526,6 +5574,12 @@ async function executeLiveApiToolInner(
             tenant_id: lens.tenant_id ?? null,
             role: session.identity?.role ?? null,
             vitana_id: session.identity?.vitana_id ?? null,
+            // BOOTSTRAP-ORB-GUIDE-MODE-LANG: pass the session language so
+            // language-sensitive tools (e.g. narrate_guided_session, whose script
+            // is authored in German) instruct the model to TRANSLATE for non-German
+            // users instead of speaking verbatim — which flipped English sessions
+            // into German mid-journey.
+            lang: session.lang ?? null,
           },
           supabase,
         );

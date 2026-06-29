@@ -141,6 +141,11 @@ export function buildJourneyGuideBlock(
   opts?: { wakeBriefOwnsTurn1?: boolean },
 ): string {
   const isDe = (lang || 'en').toLowerCase().startsWith('de');
+  // BOOTSTRAP-ORB-GUIDE-MODE-LANG: the concrete user language, for the non-German
+  // GUIDE-MODE blocks. Journey/step material is authored in German, so a vague
+  // "speak in the user's language" let the model flip to German for English users
+  // mid-session. Naming the language pins it.
+  const langName = lang === 'es' ? 'Spanish' : lang === 'sr' ? 'Serbian' : lang === 'fr' ? 'French' : 'English';
   const done = guide.focus_done === true;
 
   // VTID-03266/03267: lead with the already-localized opener line (beat-B aware
@@ -193,7 +198,7 @@ export function buildJourneyGuideBlock(
       '',
       '## GUIDE MODE (ENRICH) — this person already completed the step and wants to BUILD ON it',
       '',
-      'LANGUAGE: speak ONLY in the user\'s language — even if earlier instructions contain English. This GUIDE MODE applies to the WHOLE session and OVERRIDES every generic greeting/opening rule.',
+      `LANGUAGE: Speak ONLY in ${langName}. Any journey/step material below may be written in German — deliver everything in ${langName}, and do NOT switch to German (or any other language) at any point in this session. This GUIDE MODE applies to the WHOLE session and OVERRIDES every generic greeting/opening rule.`,
       '',
       `The person has ALREADY completed "${guide.step_title}" and deliberately tapped it to improve it further. Do NOT treat them as a new user and do NOT restart the step from scratch.`,
       '',
@@ -246,7 +251,7 @@ export function buildJourneyGuideBlock(
     '',
     '## GUIDE MODE — you LEAD this person through their journey and DECIDE FOR them',
     '',
-    'LANGUAGE: speak ONLY in the user\'s language — even if earlier instructions contain English. This GUIDE MODE applies to the WHOLE session and OVERRIDES every generic greeting/opening rule (including any that apply "for the first turn only" or tell you to say "How can I help?").',
+    `LANGUAGE: Speak ONLY in ${langName}. Any journey/step material below may be written in German — deliver everything in ${langName}, and do NOT switch to German (or any other language) at any point in this session. This GUIDE MODE applies to the WHOLE session and OVERRIDES every generic greeting/opening rule (including any that apply "for the first turn only" or tell you to say "How can I help?").`,
     '',
     'This person is new and does NOT yet know what to do. You decide FOR them. You say "I suggest we do X now" and DO it together.',
     '',
