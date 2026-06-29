@@ -33,6 +33,13 @@
 -- reverting migration or run manually). Tested logic: re-activates the 3 demo
 -- merchants' products, restores feed-config caps, removes the 2 seeded merchants
 -- and their 12 products.
+--
+-- impact-allow-solo-migration: intentional data-only migration. It seeds catalog
+-- rows + tunes default_feed_config and is fully consumed by EXISTING code with no
+-- change required — the /r/:product_id click-redirect already 302s any
+-- non-'demo_seed' product to its stamped affiliate_url, and discover-feed.ts +
+-- feed-ranker already read products/default_feed_config. No gateway/worker code
+-- touch needed.
 
 BEGIN;
 
