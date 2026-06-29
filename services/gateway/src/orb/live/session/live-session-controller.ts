@@ -787,16 +787,38 @@ export async function handleLiveSessionStart(
     const minimalGuidedContext = isDe
       ? 'Du bist Vitana — die warme, ruhige Stimme der Vitanaland-Langlebigkeits-Community. Du stellst gerade ein Thema aus der geführten Reise vor und erklärst es. Halte dich an die dir vorgegebene Lektion.'
       : 'You are Vitana — the warm, calm voice of the Vitanaland longevity community. You are introducing and teaching one Guided Journey topic. Stay on the lesson you are given.';
-    contextReadyPromise = Promise.resolve().then(() => {
+    const guidedTopicUserId = bootstrapIdentity.user_id;
+    contextReadyPromise = Promise.resolve().then(async () => {
+      // BOOTSTRAP-ORB-GUIDED-JOURNEY-AWARE: this fast path skips the heavy
+      // bootstrap, so WITHOUT this fetch the model has ZERO awareness of where
+      // the user is in the Guided Journey and defaults to "let's start the first
+      // session" — even for a user on session 10. Inject the SAME authoritative
+      // standing block the heavy path uses (current session + "never restart at
+      // 1"). Correctness-first: we await one indexed read (~20-50ms) so the model
+      // is journey-aware from turn 1. Best-effort: any failure keeps the minimal
+      // persona rather than blocking first audio.
+      let ctx = minimalGuidedContext;
+      try {
+        const { getSupabase } = await import('../../../lib/supabase');
+        const supaGj = getSupabase() ?? undefined;
+        if (supaGj) {
+          const { fetchGuidedJourney, buildGuidedJourneyStandingInstruction } = await import(
+            '../../../services/assistant-continuation/providers/new-day-overview-payload'
+          );
+          const gj = await fetchGuidedJourney(supaGj, guidedTopicUserId, lang);
+          const journeyBlock = buildGuidedJourneyStandingInstruction(gj);
+          if (journeyBlock) ctx = `${ctx}${journeyBlock}`;
+        }
+      } catch { /* keep minimal persona — journey awareness is additive */ }
       session.active_role = 'community';
       session.lastSessionInfo = null;
-      session.contextInstruction = minimalGuidedContext;
+      session.contextInstruction = ctx;
       session.contextPack = undefined;
       session.contextBootstrapLatencyMs = 0;
       session.contextBootstrapSkippedReason = 'guided_topic_minimal';
       session.contextBootstrapBuiltAt = Date.now();
     });
-    console.log(`[VTID-03294] Guided-topic session ${sessionId}: minimal context (skipped heavy bootstrap) for fast first audio`);
+    console.log(`[VTID-03294] Guided-topic session ${sessionId}: minimal context (+journey awareness) for fast first audio`);
   } else if (bootstrapIdentity) {
     const usingDevFallback = bootstrapIdentity.user_id === DEV_IDENTITY.USER_ID;
     console.log(`[VTID-01224] Building bootstrap context for SSE session ${sessionId} user=${bootstrapIdentity.user_id.substring(0, 8)}...${usingDevFallback ? ' (DEV_IDENTITY fallback)' : ''}`);
