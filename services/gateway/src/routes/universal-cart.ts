@@ -154,6 +154,33 @@ export async function getActiveRole(
 }
 
 /**
+ * Resolve the caller's primary workspace from user_tenants.
+ *
+ * me_context() → current_tenant_id() resolves the tenant ONLY from the token's
+ * tenant claim (or a dev request-context override); it does NOT fall back to the
+ * user's membership. So a user with a valid primary user_tenants row but no baked
+ * tenant claim in their JWT gets tenant_id=null and hits TENANT_REQUIRED at
+ * checkout. This restores parity with the requireAuthWithTenant middleware
+ * (auth-supabase-jwt.ts), which already falls back to the primary membership.
+ * Uses the service-role client so the lookup is consistent regardless of RLS.
+ */
+export async function resolvePrimaryTenantId(user_id: string): Promise<string | null> {
+  const supabase = getSupabase();
+  if (!supabase) return null;
+  const { data, error } = await supabase
+    .from('user_tenants')
+    .select('tenant_id')
+    .eq('user_id', user_id)
+    .eq('is_primary', true)
+    .maybeSingle();
+  if (error) {
+    console.error(`[${VTID}] primary-tenant fallback lookup error:`, error.message);
+    return null;
+  }
+  return (data?.tenant_id as string | undefined) ?? null;
+}
+
+/**
  * Auth gate. Returns the resolved identity for any authenticated caller, or
  * sends a 401 and returns null so callers can early-exit. Intentionally does
  * NOT gate on role — see the "Access control" note in the file header.
@@ -171,6 +198,16 @@ export async function authorizeCommunityCaller(
   if (!ctx.ok) {
     res.status(401).json({ ok: false, error: 'UNAUTHENTICATED', detail: ctx.error });
     return null;
+  }
+  // The token may not carry a tenant claim (me_context/current_tenant_id read it
+  // from the JWT only). Fall back to the user's primary workspace membership so
+  // checkout and other tenant-scoped commerce ops don't fail with TENANT_REQUIRED
+  // for users who legitimately belong to a workspace.
+  if (!ctx.tenant_id) {
+    const fallbackTenant = await resolvePrimaryTenantId(ctx.user_id);
+    if (fallbackTenant) {
+      return { token, user_id: ctx.user_id, tenant_id: fallbackTenant };
+    }
   }
   // The mobile app has a single audience — every user IS a community user —
   // so commerce must be available to any authenticated caller. The previous
