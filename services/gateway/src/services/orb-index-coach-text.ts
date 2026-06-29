@@ -41,6 +41,34 @@ export function buildIndexSuggestionsText(
   );
 }
 
+/**
+ * PROPOSE phase: present the plan the tool WOULD write, and explicitly ask for
+ * the user's go-ahead before anything is put on the calendar. Fixes "du musst
+ * doch erst mit mir besprechen" — the tool used to write 6 events silently.
+ */
+export function buildIndexPlanPreviewText(
+  pillar: string,
+  days: number,
+  planned: Array<{ title?: string | null; start_time?: string | null }>,
+): string {
+  const list = planned
+    .slice(0, 8)
+    .map((p, i) => {
+      const t = String(p.title ?? '').trim() || 'an activity';
+      const day = p.start_time ? String(p.start_time).slice(0, 10) : '';
+      return `${i + 1}) ${t}${day ? ` (${day})` : ''}`;
+    })
+    .join('; ');
+  const n = planned.length;
+  return (
+    `PROPOSAL — NOT yet on the calendar. Here is the ${pillar} plan I would add over the next ${days} days ` +
+    `(${n} action${n === 1 ? '' : 's'}): ${list}. ` +
+    `Read these back to the user concretely and ASK whether to add them to the calendar. ` +
+    `Do NOT say you already added them. Only when the user says yes, call create_index_improvement_plan ` +
+    `again with the same pillar/days/actions_per_week PLUS confirm=true to write them.`
+  );
+}
+
 /** Confirmation of a written plan that NAMES each scheduled activity (transparency). */
 export function buildIndexPlanText(
   pillar: string,
