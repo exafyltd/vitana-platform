@@ -59,4 +59,24 @@ describe('buildGuidedJourneyStandingInstruction', () => {
     // No title/recall available → those lines are omitted, but the session line stays.
     expect(block).not.toContain('Where you left off');
   });
+
+  // BOOTSTRAP-ORB-GUIDED-JOURNEY-AWARE: reported regression — a real account on
+  // session 10 with 19 completed topics was greeted as if it should "start with
+  // the first session" because the fast guided-topic path skipped this block.
+  // The block itself must (a) name the current session and (b) forbid restarting
+  // at 1; the controller now injects it on the guided-topic path too.
+  it('reported account (session 10, 19 topics done) → names session 10 and forbids restarting at the first lesson', () => {
+    const block = buildGuidedJourneyStandingInstruction({
+      sessions_completed: 9, // currentSession 10 = sessions_completed + 1
+      topics_learned: 19,
+      topics_total: 254,
+      next_session_title: 'Schlaf & Regeneration',
+      last_session_recall: 'Schlaf & Regeneration',
+    });
+    expect(block).not.toBe('');
+    expect(block).toContain('Current session: 10');
+    expect(block).toContain('Sessions completed: 9');
+    expect(block).toMatch(/NEVER restart at session 1/i);
+    expect(block).toMatch(/first lesson/i); // explicitly tells the model not to call it that
+  });
 });
