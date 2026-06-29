@@ -4572,6 +4572,37 @@ export async function tool_find_community_member(
  * means the journey content isn't seeded in this environment, so we degrade to
  * "introduce from knowledge" rather than falsely congratulating the user.
  */
+/**
+ * BOOTSTRAP-ORB-GUIDE-MODE-LANG: build the narration directive for the live model.
+ *
+ * The authored `vitana_voice_script` is in German (the curriculum is German).
+ * For a German-speaking user the model speaks it verbatim. For ANY other user
+ * language the directive instructs the model to TRANSLATE the script and speak
+ * it in that language — otherwise the prior "speak it word for word" command
+ * flipped the whole session into German for English (and other) users the moment
+ * narration started (reported: English session → German on "let's continue").
+ *
+ * `lang` defaults to 'de' (the platform default) when absent, preserving the
+ * exact prior verbatim behavior for German users and any caller that doesn't
+ * yet thread the session language.
+ *
+ * Pure — exported for unit tests.
+ */
+export function buildGuidedNarrationDirective(script: string, lang: string | null | undefined): string {
+  const lc = (lang || 'de').toLowerCase();
+  if (lc.startsWith('de')) {
+    return `SPEAK THE TEXT BELOW NOW, as your spoken audio, in full, word for word, exactly as written — it IS the session's real narration, not a summary to describe. Say ONLY the text below: do NOT add an acknowledgement before it, do NOT summarize or shorten it, and do NOT say "we finished" or offer another session until you have spoken every single word of it.\n\n${script}`;
+  }
+  const langName = lc.startsWith('es')
+    ? 'Spanish'
+    : lc.startsWith('sr')
+      ? 'Serbian'
+      : lc.startsWith('fr')
+        ? 'French'
+        : 'English';
+  return `The text below is this session's real narration, authored in German. Deliver it NOW as your spoken audio, but SPOKEN IN ${langName}: translate every sentence faithfully into ${langName} and speak the WHOLE thing — do NOT shorten, summarize, or skip any part, and do NOT speak any German. Say ONLY this narration (no acknowledgement before it, no "we finished" or offer of another session until you have delivered all of it in ${langName}):\n\n${script}`;
+}
+
 export async function tool_narrate_guided_session(
   args: OrbToolArgs,
   identity: OrbToolIdentity,
@@ -4782,9 +4813,8 @@ export async function tool_narrate_guided_session(
     }
     return {
       ok: true,
-      result: { session: target.session, topic_id: target.topic_id, topic_title: title, has_script: true, remaining_in_session: remainingInSession },
-      text:
-        `SPEAK THE TEXT BELOW NOW, as your spoken audio, in full, word for word, exactly as written — it IS the session's real narration, not a summary to describe. Say ONLY the text below: do NOT add an acknowledgement before it, do NOT summarize or shorten it, and do NOT say "we finished" or offer another session until you have spoken every single word of it.\n\n${script}`,
+      result: { session: target.session, topic_id: target.topic_id, topic_title: title, has_script: true, remaining_in_session: remainingInSession, narration_lang: (identity.lang || 'de').toLowerCase() },
+      text: buildGuidedNarrationDirective(script, identity.lang),
     };
   } catch (e: any) {
     console.warn(`[narrate_guided_session] non-fatal: ${e?.message || e}`);

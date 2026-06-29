@@ -134,11 +134,16 @@ export function buildGuidedTopicNarrationBlock(
     ].join('\n');
   }
 
+  // BOOTSTRAP-ORB-GUIDE-MODE-LANG: name the user's language CONCRETELY. The
+  // teaching material below is authored in German (the KB), and the previous
+  // vague "speak in the user's language" let the German source pull the model
+  // into German for English (and other non-German) users mid-session.
+  const langName = lang === 'es' ? 'Spanish' : lang === 'sr' ? 'Serbian' : lang === 'fr' ? 'French' : 'English';
   return [
     '',
     '## GUIDE MODE (TEACH) — you INTRODUCE this topic and TEACH it',
     '',
-    'LANGUAGE: speak ONLY in the user\'s language — even if earlier instructions contain English. This GUIDE MODE applies to the WHOLE session and OVERRIDES every generic greeting/opening rule.',
+    `LANGUAGE: Speak ONLY in ${langName}. The teaching material below may be written in German — translate and deliver everything in ${langName}, and do NOT switch to German (or any other language) at any point in this session. This GUIDE MODE applies to the WHOLE session and OVERRIDES every generic greeting/opening rule.`,
     '',
     `The person tapped the topic "${content.topic_title}" in "My Journey" to have you explain it. Introduce it and TEACH it — proactively, in your OWN words.`,
     '',
