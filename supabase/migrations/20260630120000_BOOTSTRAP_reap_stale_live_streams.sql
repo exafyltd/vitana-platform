@@ -24,6 +24,11 @@
 -- pg_cron schema: cron.schedule(job_name, schedule, command).
 -- Idempotency: cron.unschedule is called first to allow re-runs; the function
 -- itself is safe to run repeatedly (only touches still-stuck rows).
+--
+-- impact-allow-solo-migration: self-contained pg_cron cleanup job — it runs
+-- autonomously in the DB and needs no gateway/worker code to be usable. The
+-- only code counterpart is the frontend staleness guard, which lives in the
+-- separate exafyltd/vitana-v1 repo (PR on the same branch).
 -- =============================================================================
 
 CREATE EXTENSION IF NOT EXISTS pg_cron WITH SCHEMA extensions;
