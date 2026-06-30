@@ -31,13 +31,19 @@ export const meta = {
 // Source files that define conversation-flow BEHAVIOUR (what Vitana says / picks
 // / remembers). Test + .d.ts files are excluded below.
 const FLOW_SOURCE_RE = [
-  /^services\/gateway\/src\/services\/conversation\/.+\.(ts|tsx)$/,        // next-best-action, decide-opening, screen-surface
+  /^services\/gateway\/src\/services\/conversation\/.+\.(ts|tsx)$/,        // next-best-action, decide-opening, screen-surface, compute-greeting-decision
   /^services\/gateway\/src\/services\/assistant-continuation\/.+\.(ts|tsx)$/, // briefing / continuation providers
   /^services\/gateway\/src\/services\/guide\/.+\.(ts|tsx)$/,               // temporal bucket / recency
   /^services\/gateway\/src\/services\/guided-journey\/.+\.(ts|tsx)$/,      // journey state
   /^services\/gateway\/src\/orb\/live\/instruction\/.+\.(ts|tsx)$/,        // system-instruction builder
   /^services\/gateway\/src\/orb\/live\/session\/live-session-controller\.ts$/, // bootstrap-context assembly
   /^services\/gateway\/src\/services\/orb-tools-shared\.ts$/,              // the ORB action/flow tools (narrate, NBA, …)
+  // Transport integration files. `routes/orb-live.ts` owns the Vertex greeting
+  // ladder (the 9 `wake_opener` branches + its own recency/register logic) and
+  // is the single most-churned conversation-flow file, yet the guard was blind
+  // to it. `routes/orb-livekit.ts` is the LiveKit transport. (VTID roadmap §1a.)
+  /^services\/gateway\/src\/routes\/orb-live\.ts$/,                        // Vertex transport: greeting ladder integration
+  /^services\/gateway\/src\/routes\/orb-livekit\.ts$/,                     // LiveKit transport: opening integration
 ];
 
 // A changed test file that counts as covering the flow change. Broad on purpose:
