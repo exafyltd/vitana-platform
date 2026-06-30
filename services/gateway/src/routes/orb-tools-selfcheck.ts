@@ -45,7 +45,9 @@ const DEFAULT_CHECKS: ToolCheck[] = [
   { tool: 'view_intent_matches', args: {} },
   { tool: 'scan_existing_matches', args: {} },
   { tool: 'get_schedule', args: {} },
-  { tool: 'create_index_improvement_plan', args: { days: 7, actions_per_week: 1 }, cleanup: 'index_plan' },
+  // confirm:true so the harness exercises the actual calendar WRITE path (the
+  // tool now previews by default and only writes on confirm); cleaned up below.
+  { tool: 'create_index_improvement_plan', args: { days: 7, actions_per_week: 1, confirm: true }, cleanup: 'index_plan' },
 ];
 
 const NEEDS_ARGS = ['send_chat_message', 'share_intent_post', 'respond_to_match', 'save_diary_entry', 'create_community_post'];

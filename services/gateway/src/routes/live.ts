@@ -1714,6 +1714,12 @@ router.post('/rooms/:id/sessions', sessionCreateLimiter, async (req: Request, re
           tags: validation.data.topic_keys || [],
           enable_chat: true,
           viewer_count: 0,
+          // Planned session length → deterministic finish (start + duration).
+          // The staleness guard / reaper use this to auto-move a finished room
+          // to "Past" if the host never taps End Room.
+          duration_minutes: Number.isFinite(Number(validation.data.metadata?.duration_minutes))
+            ? Math.trunc(Number(validation.data.metadata?.duration_minutes))
+            : null,
         })
       });
       if (!syncResp.ok) {
