@@ -34,6 +34,19 @@
 CREATE EXTENSION IF NOT EXISTS pg_cron WITH SCHEMA extensions;
 
 -- -----------------------------------------------------------------------------
+-- 0. Ensure the planned-duration column exists.
+-- -----------------------------------------------------------------------------
+-- `community_live_streams.duration_minutes` is owned by vitana-v1's migration
+-- set, but both repos deploy to the SAME database via independent pipelines with
+-- no guaranteed ordering. The reaper below references the column and the step-3
+-- initial run executes immediately, so if this migration applies before v1's,
+-- the run would raise undefined_column and abort. Add it idempotently here too
+-- (and the gateway PostgREST insert depends on it existing). Safe no-op when
+-- v1's migration already added it.
+ALTER TABLE public.community_live_streams
+  ADD COLUMN IF NOT EXISTS duration_minutes integer;
+
+-- -----------------------------------------------------------------------------
 -- 1. Reaper function: end live rooms/streams orphaned past the max session window
 -- -----------------------------------------------------------------------------
 
@@ -88,20 +101,24 @@ BEGIN
        SELECT id FROM public.live_room_sessions WHERE status = 'ended'
      );
 
-  -- D. Reset stuck rooms back to idle (live/lobby/scheduled rooms with no active
-  --    session, untouched for longer than the window).
+  -- D. Reset stuck rooms back to idle so the host can start a new room. A room
+  --    whose current_session_id points to an ended/cancelled session is reset
+  --    immediately, regardless of updated_at — step B may have just ended that
+  --    session, and live_room_create_session rejects any non-idle room, so a
+  --    recent updated_at (host presence, another room write) must NOT keep the
+  --    room stuck. The updated_at < cutoff guard is kept ONLY for the ambiguous
+  --    "no current session" case, to avoid clobbering a room mid-creation.
   UPDATE public.live_rooms
      SET status             = 'idle',
          current_session_id = NULL,
          host_present       = false,
          updated_at         = now()
    WHERE status IN ('live', 'lobby', 'scheduled')
-     AND updated_at < v_cutoff
      AND (
-       current_session_id IS NULL
-       OR current_session_id IN (
+       current_session_id IN (
          SELECT id FROM public.live_room_sessions WHERE status IN ('ended', 'cancelled')
        )
+       OR (current_session_id IS NULL AND updated_at < v_cutoff)
      );
   GET DIAGNOSTICS v_reset_rooms = ROW_COUNT;
 
