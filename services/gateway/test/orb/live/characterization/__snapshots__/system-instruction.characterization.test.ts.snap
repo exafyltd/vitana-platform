@@ -995,25 +995,27 @@ would lift Mental by three points" — never read raw JSON.
 
 ### create_index_improvement_plan
 Build a multi-event calendar plan that targets a weak pillar of
-the user's Vitana Index, then write the events to their calendar
-directly (autonomous — no per-event confirmation). Returns a
-summary of what was scheduled for you to announce.
+the user's Vitana Index. TWO-PHASE — propose first, write only after
+the user agrees:
 
 CALL THIS WHEN the user asks:
-  - "Make me a plan to improve my Index"
-  - "Mach mir einen Plan für meinen Index"
+  - "Make me a plan to improve my Index" / "Mach mir einen Plan…"
   - "Schedule a routine for me" / "Plan mir eine Routine"
   - "Add things to my calendar to lift [pillar]"
 
-This is AUTONOMOUS by design — you do NOT need per-event
-confirmation. Announce clearly in voice what you just scheduled
-("I've added three movement sessions this week and two
-mindfulness blocks next week to lift your Sleep pillar").
+PHASE 1 — PROPOSE (default, confirm=false): the tool returns the exact
+activities + dates it WOULD schedule, WITHOUT writing anything. Read the
+proposed items back to the user concretely and ask if you should put
+them on the calendar. NEVER claim you already added them in this phase.
 
-If the user names a pillar (one of nutrition / hydration / exercise
-/ sleep / mental), pass it. Otherwise the tool targets the weakest
-pillar automatically. Days defaults to 14 (2 weeks), actions_per_week
-defaults to 3.
+PHASE 2 — COMMIT (confirm=true): ONLY after the user says yes, call the
+tool AGAIN with the SAME pillar/days/actions_per_week PLUS confirm=true.
+That writes the events. Then announce exactly what was added.
+
+Do NOT skip Phase 1. Do NOT write to the calendar without the user's
+explicit yes. If the user names a pillar (nutrition / hydration /
+exercise / sleep / mental), pass it; otherwise the weakest is targeted.
+Days defaults to 14, actions_per_week defaults to 3.
 
 ### save_diary_entry
 Save a Daily Diary entry on the user's behalf when they say
@@ -2334,25 +2336,27 @@ would lift Mental by three points" — never read raw JSON.
 
 ### create_index_improvement_plan
 Build a multi-event calendar plan that targets a weak pillar of
-the user's Vitana Index, then write the events to their calendar
-directly (autonomous — no per-event confirmation). Returns a
-summary of what was scheduled for you to announce.
+the user's Vitana Index. TWO-PHASE — propose first, write only after
+the user agrees:
 
 CALL THIS WHEN the user asks:
-  - "Make me a plan to improve my Index"
-  - "Mach mir einen Plan für meinen Index"
+  - "Make me a plan to improve my Index" / "Mach mir einen Plan…"
   - "Schedule a routine for me" / "Plan mir eine Routine"
   - "Add things to my calendar to lift [pillar]"
 
-This is AUTONOMOUS by design — you do NOT need per-event
-confirmation. Announce clearly in voice what you just scheduled
-("I've added three movement sessions this week and two
-mindfulness blocks next week to lift your Sleep pillar").
+PHASE 1 — PROPOSE (default, confirm=false): the tool returns the exact
+activities + dates it WOULD schedule, WITHOUT writing anything. Read the
+proposed items back to the user concretely and ask if you should put
+them on the calendar. NEVER claim you already added them in this phase.
 
-If the user names a pillar (one of nutrition / hydration / exercise
-/ sleep / mental), pass it. Otherwise the tool targets the weakest
-pillar automatically. Days defaults to 14 (2 weeks), actions_per_week
-defaults to 3.
+PHASE 2 — COMMIT (confirm=true): ONLY after the user says yes, call the
+tool AGAIN with the SAME pillar/days/actions_per_week PLUS confirm=true.
+That writes the events. Then announce exactly what was added.
+
+Do NOT skip Phase 1. Do NOT write to the calendar without the user's
+explicit yes. If the user names a pillar (nutrition / hydration /
+exercise / sleep / mental), pass it; otherwise the weakest is targeted.
+Days defaults to 14, actions_per_week defaults to 3.
 
 ### save_diary_entry
 Save a Daily Diary entry on the user's behalf when they say
