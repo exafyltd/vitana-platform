@@ -959,6 +959,14 @@ router.post('/push-dispatch', async (req: Request, res: Response) => {
     return res.status(200).json({ ok: true, dispatched: 0, message: 'no pending pushes' });
   }
 
+  // Per-recipient locale for trigger-created rows that carry i18n keys in data
+  // (e.g. community_post_published). DB triggers can't call tt(), so they store
+  // the catalog keys + params; we localize the push here, per recipient.
+  const locales = await bulkGetUserLocales(
+    supa,
+    pending.map((p: { user_id: string }) => p.user_id),
+  );
+
   let dispatched = 0;
   let skipped = 0;
 
@@ -1009,11 +1017,23 @@ router.post('/push-dispatch', async (req: Request, res: Response) => {
       // twice — once via Appilix (deep-links correctly) and once via FCM (opens
       // the WebView crash screen). That is the like/comment "double notification,
       // one opens Try Again" bug.
-      const hasDeepLink =
-        typeof notif.data === 'object' && notif.data !== null && !!(notif.data as any).url;
+      const d =
+        typeof notif.data === 'object' && notif.data !== null ? (notif.data as any) : {};
+      const hasDeepLink = !!d.url;
+      // Localize from catalog keys when present (trigger-created rows), else use
+      // the stored title/body (DE default / already-localized rows).
+      const lc = locales.get(notif.user_id);
+      const params =
+        d.i18n_params && typeof d.i18n_params === 'object' ? d.i18n_params : undefined;
+      const locTitle = d.i18n_title_key
+        ? tt(d.i18n_title_key as GatewayI18nKey, lc, params)
+        : notif.title || 'Vitana';
+      const locBody = d.i18n_body_key
+        ? tt(d.i18n_body_key as GatewayI18nKey, lc, params)
+        : notif.body || '';
       const pushPayload = {
-        title: notif.title || 'Vitana',
-        body: notif.body || '',
+        title: locTitle,
+        body: locBody,
         data: typeof notif.data === 'object' && notif.data !== null
           ? Object.fromEntries(Object.entries(notif.data).map(([k, v]) => [k, String(v)]))
           : undefined,

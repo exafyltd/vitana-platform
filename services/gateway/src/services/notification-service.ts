@@ -64,6 +64,8 @@ export const TYPE_META: Record<string, TypeMeta> = {
   group_invitation_received:  { channel: 'push_and_inapp', priority: 'p1', category: 'community' },
   post_like:                  { channel: 'push_and_inapp', priority: 'p1', category: 'community' },
   post_comment:               { channel: 'push_and_inapp', priority: 'p1', category: 'community' },
+  community_post_published:   { channel: 'push_and_inapp', priority: 'p2', category: 'community' },
+  community_video_published:  { channel: 'push_and_inapp', priority: 'p2', category: 'community' },
   // Meetups
   meetup_recommended:        { channel: 'push_and_inapp', priority: 'p2', category: 'meetup' },
   meetup_starting_soon:      { channel: 'push_and_inapp', priority: 'p0', category: 'meetup' },
