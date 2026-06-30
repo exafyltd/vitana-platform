@@ -45,19 +45,28 @@ SET search_path = public
 AS $$
 DECLARE
   v_cutoff           timestamptz := now() - make_interval(hours => p_max_hours);
+  v_grace            interval := interval '15 minutes';  -- matches frontend guard
   v_ended_streams    bigint := 0;
   v_ended_sessions   bigint := 0;
   v_reset_rooms      bigint := 0;
 BEGIN
-  -- A. End community_live_streams stuck in 'live' past the window. Use
-  --    started_at when present, else created_at (a 'live' row with neither is
-  --    itself orphaned and should be reaped — COALESCE keeps it in range when
-  --    created_at is old).
+  -- A. End community_live_streams that are finished. A room is finished when it
+  --    is past its planned end (start + duration_minutes + grace). Rooms with no
+  --    duration (legacy / unknown) fall back to the fixed max-session cap
+  --    (p_max_hours). Start = started_at, else scheduled_for, else created_at; a
+  --    'live' row with none of those is orphaned and reaped via the cap branch.
   UPDATE public.community_live_streams
      SET status   = 'ended',
          ended_at = COALESCE(ended_at, now())
    WHERE status = 'live'
-     AND COALESCE(started_at, created_at) < v_cutoff;
+     AND (
+       (duration_minutes IS NOT NULL AND duration_minutes > 0
+         AND COALESCE(started_at, scheduled_for, created_at)
+             + make_interval(mins => duration_minutes) + v_grace < now())
+       OR
+       ((duration_minutes IS NULL OR duration_minutes <= 0)
+         AND COALESCE(started_at, scheduled_for, created_at) < v_cutoff)
+     );
   GET DIAGNOSTICS v_ended_streams = ROW_COUNT;
 
   -- B. End the matching live_room_sessions (non-terminal sessions whose start is
