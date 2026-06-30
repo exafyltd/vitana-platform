@@ -190,7 +190,9 @@ export interface GreetingDecisionContext {
   guidedTopicNarrationContent: string | null;
   /** wakeBriefDecision.decisionId, or null. */
   wakeBriefDecisionId: string | null;
-  /** process.env.ORB_GREETING_SILENCE_ON_SKIP_ENABLED !== 'false'. */
+  /** Whether silence-on-cadence-skip is enabled. The caller resolves this from
+   *  the ORB_GREETING_SILENCE_ON_SKIP_ENABLED env flag (default enabled) — that
+   *  flag is read + defaulted in orb-live.ts, not here, so this module stays pure. */
   silenceOnSkipEnabled: boolean;
   /** wakeBriefDecision.selectedContinuation != null (the cadence-skip check). */
   wakeBriefHasSelectedContinuation: boolean;
