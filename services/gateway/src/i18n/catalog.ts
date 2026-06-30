@@ -45,11 +45,6 @@ export type GatewayI18nKey =
   | 'notif.post_like.body'
   | 'notif.post_comment.title'
   | 'notif.post_comment.body'
-  // Community: someone published a new post / video (fan-out to the community)
-  | 'notif.community_post_published.title'
-  | 'notif.community_post_published.body'
-  | 'notif.community_video_published.title'
-  | 'notif.community_video_published.body'
   // Daily pace check (claude/daily-pace-notifications)
   | 'notif.daily_pace.on_track.title'
   | 'notif.daily_pace.on_track.body'
@@ -148,10 +143,6 @@ const DE: LocaleCatalog = {
   'notif.post_like.body': '{name} gefällt dein Beitrag.',
   'notif.post_comment.title': 'Neuer Kommentar',
   'notif.post_comment.body': '{name} hat deinen Beitrag kommentiert.',
-  'notif.community_post_published.title': 'Neuer Beitrag',
-  'notif.community_post_published.body': '{name} hat einen neuen Beitrag geteilt.',
-  'notif.community_video_published.title': 'Neues Video',
-  'notif.community_video_published.body': '{name} hat ein neues Video geteilt.',
   // Daily pace check
   'notif.daily_pace.on_track.title': 'Auf Kurs ✨',
   'notif.daily_pace.on_track.body': 'Du bist auf einem guten Weg. Schließ heute noch deinen Tagesplan ab — dein Ziel kommt näher.',
@@ -246,10 +237,6 @@ const EN: LocaleCatalog = {
   'notif.post_like.body': '{name} liked your post.',
   'notif.post_comment.title': 'New comment',
   'notif.post_comment.body': '{name} commented on your post.',
-  'notif.community_post_published.title': 'New post',
-  'notif.community_post_published.body': '{name} shared a new post.',
-  'notif.community_video_published.title': 'New video',
-  'notif.community_video_published.body': '{name} shared a new video.',
   // Daily pace check
   'notif.daily_pace.on_track.title': 'On track ✨',
   'notif.daily_pace.on_track.body': "You're moving well. Wrap up today's plan — your goal is getting closer.",
