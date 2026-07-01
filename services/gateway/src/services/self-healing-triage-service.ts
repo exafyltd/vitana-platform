@@ -397,55 +397,76 @@ export async function createFreshVtidFromTriageReport(
     return null;
   }
 
-  // Generate a new VTID by incrementing the latest
+  // Allocate a new VTID via the canonical allocator RPC.
+  //
+  // Previously this minted `latest vtid + 1` and direct-inserted. That writer
+  // never advanced global_vtid_seq, so it was a primary cause of sequence
+  // drift: the allocator (and the Command Hub PUBLISH button) would later draw
+  // a nextval() that collided with these rows, producing 23505 duplicate-key
+  // failures on vtid_ledger_vtid_unique. Routing through allocate_global_vtid
+  // keeps the sequence as the single source of truth (and that RPC now skips
+  // forward past any pre-existing VTID, so it can't collide either).
   try {
-    const latestRes = await fetch(
-      `${supabaseUrl}/rest/v1/vtid_ledger?select=vtid&order=created_at.desc&limit=1`,
-      {
-        headers: {
-          apikey: supabaseKey,
-          Authorization: `Bearer ${supabaseKey}`,
-        },
-      }
-    );
-
-    if (!latestRes.ok) return null;
-    const latest = (await latestRes.json()) as Array<{ vtid: string }>;
-    const lastNum = latest.length > 0
-      ? parseInt(latest[0].vtid.replace('VTID-', ''), 10)
-      : 1900;
-    const newVtid = `VTID-${String(lastNum + 1).padStart(5, '0')}`;
-
-    // Insert the new VTID into the ledger
-    const insertRes = await fetch(`${supabaseUrl}/rest/v1/vtid_ledger`, {
+    const allocRes = await fetch(`${supabaseUrl}/rest/v1/rpc/allocate_global_vtid`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         apikey: supabaseKey,
         Authorization: `Bearer ${supabaseKey}`,
-        Prefer: 'return=representation',
       },
       body: JSON.stringify({
-        vtid: newVtid,
-        title: `SELF-HEAL (retry): ${report.root_cause_hypothesis.substring(0, 80)}`,
-        summary: report.recommended_fix,
-        status: 'in_progress',
-        layer: 'OPS',
-        module: 'SELF-HEAL',
-        metadata: {
-          source: 'self-healing-triage-loop',
-          parent_vtid: parentVtid,
-          triage_session_id: report.session_id,
-          triage_confidence: report.confidence,
-          triage_mode: report.mode,
-          endpoint,
-        },
+        p_source: 'self-healing-triage-loop',
+        p_layer: 'OPS',
+        p_module: 'SELF-HEAL',
       }),
     });
 
-    if (!insertRes.ok) {
-      console.error(`${LOG_PREFIX} Failed to create VTID: ${insertRes.status}`);
+    if (!allocRes.ok) {
+      console.error(`${LOG_PREFIX} Failed to allocate VTID: ${allocRes.status}`);
       return null;
+    }
+
+    const allocated = (await allocRes.json()) as Array<{ vtid: string; num: number; id: string }>;
+    if (!allocated || allocated.length === 0) {
+      console.error(`${LOG_PREFIX} Allocator returned no VTID`);
+      return null;
+    }
+    const newVtid = allocated[0].vtid;
+
+    // Promote the freshly-allocated shell row to an in-progress self-heal task.
+    // The allocator inserts status='allocated' with a placeholder title; patch
+    // it to carry the triage context so the Tasks board renders it correctly.
+    const patchRes = await fetch(
+      `${supabaseUrl}/rest/v1/vtid_ledger?vtid=eq.${encodeURIComponent(newVtid)}`,
+      {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          apikey: supabaseKey,
+          Authorization: `Bearer ${supabaseKey}`,
+          Prefer: 'return=minimal',
+        },
+        body: JSON.stringify({
+          title: `SELF-HEAL (retry): ${report.root_cause_hypothesis.substring(0, 80)}`,
+          summary: report.recommended_fix,
+          status: 'in_progress',
+          metadata: {
+            source: 'self-healing-triage-loop',
+            parent_vtid: parentVtid,
+            triage_session_id: report.session_id,
+            triage_confidence: report.confidence,
+            triage_mode: report.mode,
+            endpoint,
+          },
+          updated_at: new Date().toISOString(),
+        }),
+      }
+    );
+
+    if (!patchRes.ok) {
+      // The VTID row exists and is valid; failing to enrich it shouldn't drop
+      // the retry. Log loudly and continue with the allocated VTID.
+      console.warn(`${LOG_PREFIX} VTID ${newVtid} allocated but enrichment PATCH failed: ${patchRes.status}`);
     }
 
     console.log(`${LOG_PREFIX} Created fresh VTID ${newVtid} (parent: ${parentVtid})`);
