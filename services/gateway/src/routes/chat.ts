@@ -111,6 +111,7 @@ router.post('/send', requireAuth, requireTenant, async (req: Request, res: Respo
       identity.tenant_id!,
       trimmedContent,
       supabase,
+      data.id,
     ).catch(err => console.warn('[Chat] Vitana text reply failed:', err.message));
   } else if (!isVitanaBot(receiver_id)) {
     // BOOTSTRAP-NOTIF-CATEGORIES: Resolve the sender's display name so that the
@@ -360,6 +361,54 @@ router.get('/unread-count', requireAuth, requireTenant, async (req: Request, res
   return res.json({ ok: true, count: count || 0 });
 });
 
+// ── Vitana DM history loader ──────────────────────────────────
+// Pull the most recent text turns of the user↔Vitana DM thread (both
+// directions), oldest-first, so the conversation layer has the context the
+// follow-up reply depends on. The just-inserted user message is excluded
+// (it's passed separately as the current turn) to avoid duplicating it.
+const VITANA_DM_HISTORY_LIMIT = 10;
+
+async function fetchVitanaDmHistory(
+  supabase: ReturnType<typeof getSupabase>,
+  tenantId: string,
+  userId: string,
+  excludeMessageId?: string,
+): Promise<Array<{ role: 'user' | 'assistant'; content: string }>> {
+  try {
+    const { data, error } = await supabase
+      .from('chat_messages')
+      .select('id, sender_id, content, created_at')
+      .eq('tenant_id', tenantId)
+      .or(
+        `and(sender_id.eq.${userId},receiver_id.eq.${VITANA_BOT_USER_ID}),` +
+          `and(sender_id.eq.${VITANA_BOT_USER_ID},receiver_id.eq.${userId})`,
+      )
+      .order('created_at', { ascending: false })
+      // Fetch one extra so excluding the current message still yields the limit.
+      .limit(VITANA_DM_HISTORY_LIMIT + 1);
+
+    if (error || !data) {
+      if (error) console.warn('[Chat] Vitana DM history load failed:', error.message);
+      return [];
+    }
+
+    const rows = data as Array<{ id: string; sender_id: string; content: string | null }>;
+    return rows
+      .filter((row) => row.id !== excludeMessageId)
+      .filter((row): row is typeof row & { content: string } =>
+        typeof row.content === 'string' && row.content.trim().length > 0)
+      .slice(0, VITANA_DM_HISTORY_LIMIT)
+      .reverse() // oldest-first for the LLM
+      .map((row) => ({
+        role: row.sender_id === VITANA_BOT_USER_ID ? ('assistant' as const) : ('user' as const),
+        content: row.content,
+      }));
+  } catch (err: any) {
+    console.warn('[Chat] Vitana DM history load error:', err?.message);
+    return [];
+  }
+}
+
 // ── Vitana text reply handler ─────────────────────────────────
 // When a user sends a text message to Vitana through the DM interface,
 // route it through the unified conversation intelligence layer and
@@ -370,10 +419,29 @@ async function handleVitanaTextReply(
   tenantId: string,
   userContent: string,
   supabase: ReturnType<typeof getSupabase>,
+  currentMessageId?: string,
 ): Promise<void> {
   const startTime = Date.now();
 
   try {
+    // VITANA-REMINDER-NEWS-REDIRECT: Load the recent DM history between the user
+    // and the Vitana bot so this turn is NOT processed in isolation. Without it,
+    // a follow-up like "Zeig mir die Details" carries no trace of the turn it
+    // answers — e.g. a Live Room reminder Vitana just surfaced — so the navigator
+    // re-derives a destination from a context-free phrase and falls back to a
+    // shallow default screen (/home, the News feed). Feeding the prior turns in
+    // lets Vitana resolve the reference (the named Live Room) and navigate there.
+    const conversationHistory = await fetchVitanaDmHistory(
+      supabase,
+      tenantId,
+      userId,
+      currentMessageId,
+    );
+
+    // Stable per-user DM thread id so each follow-up continues the same thread
+    // instead of spawning a fresh, contextless one.
+    const threadId = `orb-dm:${userId}`;
+
     // VITANA-BRAIN: Route through brain when flag is enabled, else legacy path
     const { isVitanaBrainEnabled } = await import('../services/system-controls-service');
     const useBrain = await isVitanaBrainEnabled();
@@ -390,6 +458,8 @@ async function handleVitanaTextReply(
         role: 'user',
         message: userContent,
         message_type: 'text',
+        thread_id: threadId,
+        conversation_history: conversationHistory,
         vtid: 'VTID-CHAT-BRIDGE',
       });
     } else {
@@ -400,6 +470,8 @@ async function handleVitanaTextReply(
         role: 'user',
         message: userContent,
         message_type: 'text',
+        thread_id: threadId,
+        conversation_history: conversationHistory,
         vtid: 'VTID-CHAT-BRIDGE',
       });
     }
