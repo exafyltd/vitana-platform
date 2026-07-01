@@ -48,20 +48,28 @@ const FEEDS: FeedSource[] = [
   { name: 'Rapamycin News', url: 'https://rapamycin.news/feed/', language: 'en' },
   { name: 'Longevity Advice', url: 'https://longevityadvice.com/feed/', language: 'en' },
   { name: 'Mitosynergy', url: 'https://mitosynergy.com/feed/', language: 'en' },
-  // ── German consumer wellness (13) — no medical/pharmacy trade press ──
-  { name: 'Zentrum der Gesundheit', url: 'https://www.zentrum-der-gesundheit.de/rss', language: 'de' },
+  // ── German consumer wellness (11) — no medical/pharmacy trade press ──
+  // Kept: the five sources that have ever produced rows in news_items.
+  { name: 'Brigitte Gesundheit', url: 'https://www.brigitte.de/feed.rss', language: 'de' },
+  { name: 'stern Gesundheit', url: 'https://www.stern.de/feed/standard/gesundheit/', language: 'de' },
   { name: 'Heilpraxis', url: 'https://www.heilpraxisnet.de/feed/', language: 'de' },
   { name: 'Spiegel Gesundheit', url: 'https://www.spiegel.de/gesundheit/index.rss', language: 'de' },
-  { name: "Women's Health DE", url: 'https://www.womenshealth.de/feed/', language: 'de' },
-  { name: "Men's Health DE", url: 'https://www.menshealth.de/feed/', language: 'de' },
-  { name: 'Verbraucherzentrale Gesundheit', url: 'https://www.verbraucherzentrale.de/wissen/gesundheit-pflege/feed', language: 'de' },
-  { name: 'Verbraucherzentrale Lebensmittel', url: 'https://www.verbraucherzentrale.de/wissen/lebensmittel/feed', language: 'de' },
-  { name: 'stern Gesundheit', url: 'https://www.stern.de/feed/standard/gesundheit/', language: 'de' },
-  { name: 'FIT FOR FUN', url: 'https://www.fitforfun.de/fff/XML/rss_fffnews_sport.xml', language: 'de' },
-  { name: 'EAT SMARTER', url: 'https://eatsmarter.de/index.php?type=100', language: 'de' },
-  { name: 'DGE Ernährungsgesellschaft', url: 'https://www.dge.de/rss-feed/', language: 'de' },
   { name: 'Lifeline Gesundheit', url: 'https://www.lifeline.de/rss', language: 'de' },
-  { name: 'Brigitte Gesundheit', url: 'https://www.brigitte.de/feed.rss', language: 'de' },
+  // Added 2026-06-25 — high-frequency, image-rich consumer wellness to break the
+  // single-source (Brigitte) monotony in the German feed. FOCUS/Vital/GEO share
+  // proven image-rich CMSes (Brigitte already runs on the same /feed.rss stack).
+  // Any that yield no images after the first fetch cycle are pruned in a follow-up.
+  { name: 'FOCUS Gesundheit', url: 'https://rss.focus.de/fol/XML/rss_folgesundheit.xml', language: 'de' },
+  { name: 'Vital', url: 'https://www.vital.de/feed.rss', language: 'de' },
+  { name: 'GEO', url: 'https://www.geo.de/feed.rss', language: 'de' },
+  { name: 'Utopia', url: 'https://utopia.de/feed/', language: 'de' },
+  { name: 'Quarks', url: 'https://www.quarks.de/feed/', language: 'de' },
+  { name: 'NetDoktor', url: 'https://www.netdoktor.de/rss/news.xml', language: 'de' },
+  // Removed 2026-06-25 (never produced a single news_items row across months —
+  // dead/blocked RSS that only added failed-fetch noise each cycle):
+  //   Zentrum der Gesundheit, Women's Health DE, Men's Health DE,
+  //   Verbraucherzentrale (Gesundheit + Lebensmittel), FIT FOR FUN,
+  //   EAT SMARTER, DGE Ernährungsgesellschaft.
 ];
 
 const TAG_KEYWORDS: Record<string, string[]> = {
