@@ -36,6 +36,14 @@ const router = Router();
 // this route file, matching the @vitana mention handler below.
 const VTID = 'VTID-03089';
 
+// Named (non-arrow) catch handler for fire-and-forget emitOasisEvent calls.
+// Keeping this out of the route handler bodies avoids a second `=>` inside
+// those bodies, which the impact-scan `new-mutation-without-oasis-emit`
+// static parser's lastIndexOf('=>') handler-body extraction mis-locates.
+function warnOasisEmitFailed(err: any): void {
+  console.warn(`[${VTID}] OASIS emit failed:`, err?.message);
+}
+
 function getSupabase(): SupabaseClient {
   return createClient(
     process.env.SUPABASE_URL!,
@@ -417,7 +425,7 @@ router.patch('/:id/messages/:messageId', requireAuth, requireTenant, async (req:
     actor_id: identity.user_id,
     actor_role: 'user',
     surface: 'api',
-  }).catch(err => console.warn(`[${VTID}] OASIS emit failed:`, err?.message));
+  }).catch(warnOasisEmitFailed);
 
   return res.json({ ok: true, data });
 });
@@ -465,7 +473,7 @@ router.delete('/:id/messages/:messageId', requireAuth, requireTenant, async (req
     actor_id: identity.user_id,
     actor_role: 'user',
     surface: 'api',
-  }).catch(err => console.warn(`[${VTID}] OASIS emit failed:`, err?.message));
+  }).catch(warnOasisEmitFailed);
 
   return res.json({ ok: true });
 });
