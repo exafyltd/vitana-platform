@@ -28,8 +28,13 @@ import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { notifyUserAsync } from '../services/notification-service';
 import { VITANA_BOT_USER_ID, isVitanaBot } from '../lib/vitana-bot';
 import { processConversationTurn } from '../services/conversation-client';
+import { emitOasisEvent } from '../services/oasis-event-service';
 
 const router = Router();
+
+// Chat groups feature VTID (VTID-03089) — reused for OASIS events emitted by
+// this route file, matching the @vitana mention handler below.
+const VTID = 'VTID-03089';
 
 function getSupabase(): SupabaseClient {
   return createClient(
@@ -401,6 +406,19 @@ router.patch('/:id/messages/:messageId', requireAuth, requireTenant, async (req:
     return res.status(500).json({ ok: false, error: error.message });
   }
 
+  // Fire-and-forget OASIS event; failure here must not block the response.
+  emitOasisEvent({
+    vtid: VTID,
+    type: 'chat_group.message.edited' as any,
+    source: 'chat-groups-gateway',
+    status: 'info',
+    message: `Group message ${messageId} edited`,
+    payload: { group_id: groupId, message_id: messageId },
+    actor_id: identity.user_id,
+    actor_role: 'user',
+    surface: 'api',
+  }).catch(err => console.warn(`[${VTID}] OASIS emit failed:`, err?.message));
+
   return res.json({ ok: true, data });
 });
 
@@ -435,6 +453,19 @@ router.delete('/:id/messages/:messageId', requireAuth, requireTenant, async (req
     console.error('[ChatGroups] Delete message error:', error);
     return res.status(500).json({ ok: false, error: error.message });
   }
+
+  // Fire-and-forget OASIS event; failure here must not block the response.
+  emitOasisEvent({
+    vtid: VTID,
+    type: 'chat_group.message.deleted' as any,
+    source: 'chat-groups-gateway',
+    status: 'info',
+    message: `Group message ${messageId} deleted`,
+    payload: { group_id: groupId, message_id: messageId },
+    actor_id: identity.user_id,
+    actor_role: 'user',
+    surface: 'api',
+  }).catch(err => console.warn(`[${VTID}] OASIS emit failed:`, err?.message));
 
   return res.json({ ok: true });
 });
