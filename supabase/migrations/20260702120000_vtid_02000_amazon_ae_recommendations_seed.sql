@@ -28,13 +28,14 @@ BEGIN;
 -- 1) Amazon.ae merchant (fixed UUID for idempotency + clean rollback)
 INSERT INTO merchants (id, name, source_network, currencies, is_active, requires_admin_review)
 VALUES
-  ('a4a20000-0000-4000-8000-000000000001', 'Amazon.ae', 'amazon', ARRAY['AED']::text[], true, false)
+  ('a4a20000-0000-4000-8000-000000000001', 'Amazon.ae', 'amazon', ARRAY['EUR']::text[], true, false)
 ON CONFLICT (id) DO UPDATE
   SET name = EXCLUDED.name, source_network = EXCLUDED.source_network,
       currencies = EXCLUDED.currencies, is_active = true, updated_at = now();
 
 -- 2) Curated amazon.ae longevity/wellness set (recommendations-only, reward_preview NULL).
---    Prices are indicative AED (display only; real price shown on Amazon).
+--    Prices are indicative EUR (display only; real price shown on Amazon.ae,
+--    which charges in AED — the card price is a EUR guide for our EU audience).
 INSERT INTO products (
   id, merchant_id, source_network, source_product_id, title, description, description_long,
   brand, category, subcategory, price_cents, compare_at_price_cents, currency, images,
@@ -47,7 +48,7 @@ INSERT INTO products (
    'Ashwagandha KSM-66 — Stress & Adrenal Support',
    'Clinically-studied KSM-66 ashwagandha, for everyday stress resilience and balanced cortisol. Sold on Amazon.ae.',
    'KSM-66 is a full-spectrum ashwagandha root extract standardised to >5% withanolides, associated with lower perceived stress and better sleep onset. Browse current KSM-66 listings on Amazon.ae.',
-   'Amazon.ae', 'supplements', 'adaptogens', 5500, NULL, 'AED',
+   'Amazon.ae', 'supplements', 'adaptogens', 1490, NULL, 'EUR',
    ARRAY['https://images.unsplash.com/photo-1615485500834-bc10199bc727?w=800&h=800&fit=crop']::text[],
    'https://www.amazon.ae/dp/B094N78F17?tag=vitanaland-21',
    'in_stock', 4.60, 210, 'AE', 'MENA',
@@ -62,7 +63,7 @@ INSERT INTO products (
    'Omega-3 Fish Oil (EPA/DHA) — Heart, Brain & Joints',
    'High-strength omega-3 softgels with EPA and DHA. Sold on Amazon.ae.',
    'EPA and DHA contribute to normal heart and brain function. Browse molecularly-distilled omega-3 listings on Amazon.ae.',
-   'Amazon.ae', 'supplements', 'essential-fatty-acids', 6000, NULL, 'AED',
+   'Amazon.ae', 'supplements', 'essential-fatty-acids', 1690, NULL, 'EUR',
    ARRAY['https://images.unsplash.com/photo-1499125562588-29fb8a56b5d5?w=800&h=800&fit=crop']::text[],
    'https://www.amazon.ae/dp/B00KGCM13G?tag=vitanaland-21',
    'in_stock', 4.70, 540, 'AE', 'MENA',
@@ -77,7 +78,7 @@ INSERT INTO products (
    'Magnesium Glycinate — Muscle & Sleep',
    'Gentle, well-absorbed magnesium glycinate for muscle function, recovery and restful sleep. Sold on Amazon.ae.',
    'Magnesium contributes to normal muscle function and a reduction in tiredness. Glycinate is a gentle, highly-absorbable form. Browse listings on Amazon.ae.',
-   'Amazon.ae', 'supplements', 'minerals', 5000, NULL, 'AED',
+   'Amazon.ae', 'supplements', 'minerals', 1290, NULL, 'EUR',
    ARRAY['https://images.unsplash.com/photo-1584308666744-24d5c474f2ae?w=800&h=800&fit=crop']::text[],
    'https://www.amazon.ae/dp/B0DVZQKPVN?tag=vitanaland-21',
    'in_stock', 4.70, 430, 'AE', 'MENA',
@@ -92,7 +93,7 @@ INSERT INTO products (
    'Vitamin D3 + K2 — Bone & Immunity',
    'Vitamin D3 for immunity and bones, paired with K2 (MK-7). Sold on Amazon.ae.',
    'Vitamin D3 supports normal immune function and bone health; K2 (MK-7) supports normal calcium utilisation. Browse D3+K2 listings on Amazon.ae.',
-   'Amazon.ae', 'supplements', 'vitamins', 4800, NULL, 'AED',
+   'Amazon.ae', 'supplements', 'vitamins', 1190, NULL, 'EUR',
    ARRAY['https://images.unsplash.com/photo-1587854692152-cbe660dbde88?w=800&h=800&fit=crop']::text[],
    'https://www.amazon.ae/dp/B0038NF8MG?tag=vitanaland-21',
    'in_stock', 4.80, 690, 'AE', 'MENA',
@@ -107,7 +108,7 @@ INSERT INTO products (
    'Creatine Monohydrate — Strength & Cellular Energy',
    'Micronised creatine monohydrate for strength, power and cellular energy. Sold on Amazon.ae.',
    'Creatine monohydrate is one of the most-studied supplements for strength and lean-mass support, and is increasingly noted for cognitive and healthy-ageing benefits. Browse listings on Amazon.ae.',
-   'Amazon.ae', 'supplements', 'performance', 7500, NULL, 'AED',
+   'Amazon.ae', 'supplements', 'performance', 1890, NULL, 'EUR',
    ARRAY['https://images.unsplash.com/photo-1550572017-edd951b55104?w=800&h=800&fit=crop']::text[],
    'https://www.amazon.ae/dp/B07978VPPH?tag=vitanaland-21',
    'in_stock', 4.80, 880, 'AE', 'MENA',
@@ -122,7 +123,7 @@ INSERT INTO products (
    'Marine Collagen Peptides — Skin, Hair & Joints',
    'Hydrolysed marine collagen peptides for skin elasticity, hair and joint comfort. Sold on Amazon.ae.',
    'Marine collagen is rich in type-I peptides with high bioavailability. Consistent daily intake over 8–12 weeks is typical for visible benefits. Browse listings on Amazon.ae.',
-   'Amazon.ae', 'supplements', 'beauty', 7000, NULL, 'AED',
+   'Amazon.ae', 'supplements', 'beauty', 2190, NULL, 'EUR',
    ARRAY['https://images.unsplash.com/photo-1512621776951-a57141f2eefd?w=800&h=800&fit=crop']::text[],
    'https://www.amazon.ae/dp/B09BT31TW2?tag=vitanaland-21',
    'in_stock', 4.60, 360, 'AE', 'MENA',
@@ -137,7 +138,7 @@ INSERT INTO products (
    'Coenzyme Q10 (Ubiquinol) — Cellular Energy',
    'Active ubiquinol form of CoQ10 for mitochondrial energy and heart health. Sold on Amazon.ae.',
    'Ubiquinol is the reduced, readily-usable form of CoQ10 and is better absorbed than ubiquinone in older adults. Browse listings on Amazon.ae.',
-   'Amazon.ae', 'supplements', 'longevity', 9500, NULL, 'AED',
+   'Amazon.ae', 'supplements', 'longevity', 2390, NULL, 'EUR',
    ARRAY['https://images.unsplash.com/photo-1596363505729-4190a9506133?w=800&h=800&fit=crop']::text[],
    'https://www.amazon.ae/dp/B0017QPMWM?tag=vitanaland-21',
    'in_stock', 4.70, 240, 'AE', 'MENA',
@@ -152,7 +153,7 @@ INSERT INTO products (
    'Vitamin C 1000mg — Daily Immune Support',
    'High-strength vitamin C for everyday immune resilience and antioxidant support. Sold on Amazon.ae.',
    'Vitamin C contributes to normal immune function and the protection of cells from oxidative stress. Browse 1000mg listings on Amazon.ae.',
-   'Amazon.ae', 'supplements', 'immunity', 3500, NULL, 'AED',
+   'Amazon.ae', 'supplements', 'immunity', 890, NULL, 'EUR',
    ARRAY['https://images.unsplash.com/photo-1587854692152-cbe660dbde88?w=800&h=800&fit=crop']::text[],
    'https://www.amazon.ae/dp/B00JFF48I6?tag=vitanaland-21',
    'in_stock', 4.60, 510, 'AE', 'MENA',
