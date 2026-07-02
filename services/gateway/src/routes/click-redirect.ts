@@ -93,9 +93,19 @@ function stampAffiliateUrl(baseUrl: string, clickId: string, userIdHash: string 
     url.searchParams.set('sub1', userIdHash ?? 'anon');
     url.searchParams.set('sub2', clickId.slice(0, 16));
     url.searchParams.set('sub3', clickId);
-    // Amazon-specific sub-id format
-    if (url.hostname.endsWith('amazon.com') || url.hostname.endsWith('amazon.de') || url.hostname.includes('amazon.')) {
+    // Amazon-specific sub-id + Associate tag.
+    // Recommendations-only: the Amazon Operating Agreement forbids passing
+    // affiliate commission back to the user as cashback/incentive, so no
+    // rewards path keys off this — the tag exists purely for attribution.
+    // `ascsubtag` carries our click id; `tag` is the Associate store id,
+    // required for the link to be credited. It's only injected when the
+    // stamped URL doesn't already carry one (a synced PA-API url will).
+    if (url.hostname.includes('amazon.')) {
       url.searchParams.set('ascsubtag', clickId);
+      if (!url.searchParams.has('tag')) {
+        const amazonTag = process.env.VCAOP_AMAZON_AE_ASSOC_TAG || process.env.AMAZON_ASSOC_TAG;
+        if (amazonTag) url.searchParams.set('tag', amazonTag);
+      }
     }
     // CJ-specific sub-id format
     if (url.hostname.includes('cj.com') || url.hostname.includes('cj.dotomi.com')) {

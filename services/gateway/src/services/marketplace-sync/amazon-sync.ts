@@ -65,6 +65,9 @@ const MARKETPLACE_MAP: Record<string, { host: string; region: string; country: s
   'www.amazon.ca':     { host: 'webservices.amazon.ca',        region: 'us-east-1', country: 'CA' },
   'www.amazon.com.au': { host: 'webservices.amazon.com.au',    region: 'us-west-2', country: 'AU' },
   'www.amazon.in':     { host: 'webservices.amazon.in',        region: 'eu-west-1', country: 'IN' },
+  // Amazon.ae (UAE) — the VCAOP-pivot marketplace (EXAFY LTD is UAE-registered,
+  // BLK-005). PA-API v5 UAE endpoint is webservices.amazon.ae in eu-west-1.
+  'www.amazon.ae':     { host: 'webservices.amazon.ae',        region: 'eu-west-1', country: 'AE' },
 };
 
 async function loadSourceConfigs(): Promise<AmazonSourceConfig[]> {
