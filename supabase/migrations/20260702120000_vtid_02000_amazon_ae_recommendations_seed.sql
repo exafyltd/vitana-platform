@@ -15,9 +15,10 @@
 --     stamped affiliate_url; the amazon branch also injects `tag` from
 --     VCAOP_AMAZON_AE_ASSOC_TAG if the URL lacks one — belt & braces).
 --   * reward_preview = NULL       → NO cashback/points badge (forbidden by Amazon).
---   * affiliate_url = a REAL amazon.ae search URL for that exact supplement,
---     tag-stamped for attribution. No fabricated ASINs (mirrors the AliExpress
---     search-URL pattern already shipped).
+--   * affiliate_url = a REAL, tag-stamped amazon.ae URL. Curated items point to
+--     a specific product page (/dp/<ASIN>, ASINs picked by the operator); any
+--     not-yet-curated item falls back to an amazon.ae search URL for that
+--     supplement. No fabricated ASINs.
 --
 -- Origin AE / region MENA; ships within UAE + wider MENA. Guest-onboarding
 -- visible (feed cap already raised to 12 by the Admitad seed migration).
@@ -48,7 +49,7 @@ INSERT INTO products (
    'KSM-66 is a full-spectrum ashwagandha root extract standardised to >5% withanolides, associated with lower perceived stress and better sleep onset. Browse current KSM-66 listings on Amazon.ae.',
    'Amazon.ae', 'supplements', 'adaptogens', 5500, NULL, 'AED',
    ARRAY['https://images.unsplash.com/photo-1615485500834-bc10199bc727?w=800&h=800&fit=crop']::text[],
-   'https://www.amazon.ae/s?k=ashwagandha+ksm66+600mg&tag=vitanaland-21',
+   'https://www.amazon.ae/dp/B094N78F17?tag=vitanaland-21',
    'in_stock', 4.60, 210, 'AE', 'MENA',
    ARRAY['AE','SA','KW','QA','BH','OM','DE','AT','CH','FR','IT','ES','NL','BE','PL','SE','DK','FI','GB','IE']::text[], ARRAY['MENA','EU','UK']::text[],
    ARRAY['stress-reduction','adrenal-support','mood-balance']::text[],
@@ -63,7 +64,7 @@ INSERT INTO products (
    'EPA and DHA contribute to normal heart and brain function. Browse molecularly-distilled omega-3 listings on Amazon.ae.',
    'Amazon.ae', 'supplements', 'essential-fatty-acids', 6000, NULL, 'AED',
    ARRAY['https://images.unsplash.com/photo-1499125562588-29fb8a56b5d5?w=800&h=800&fit=crop']::text[],
-   'https://www.amazon.ae/s?k=omega+3+fish+oil+epa+dha&tag=vitanaland-21',
+   'https://www.amazon.ae/dp/B00KGCM13G?tag=vitanaland-21',
    'in_stock', 4.70, 540, 'AE', 'MENA',
    ARRAY['AE','SA','KW','QA','BH','OM','DE','AT','CH','FR','IT','ES','NL','BE','PL','SE','DK','FI','GB','IE']::text[], ARRAY['MENA','EU','UK']::text[],
    ARRAY['cardio-health','focus','joint-mobility']::text[],
@@ -78,7 +79,7 @@ INSERT INTO products (
    'Magnesium contributes to normal muscle function and a reduction in tiredness. Glycinate is a gentle, highly-absorbable form. Browse listings on Amazon.ae.',
    'Amazon.ae', 'supplements', 'minerals', 5000, NULL, 'AED',
    ARRAY['https://images.unsplash.com/photo-1584308666744-24d5c474f2ae?w=800&h=800&fit=crop']::text[],
-   'https://www.amazon.ae/s?k=magnesium+glycinate&tag=vitanaland-21',
+   'https://www.amazon.ae/dp/B0DVZQKPVN?tag=vitanaland-21',
    'in_stock', 4.70, 430, 'AE', 'MENA',
    ARRAY['AE','SA','KW','QA','BH','OM','DE','AT','CH','FR','IT','ES','NL','BE','PL','SE','DK','FI','GB','IE']::text[], ARRAY['MENA','EU','UK']::text[],
    ARRAY['better-sleep','muscle-recovery']::text[],
@@ -93,7 +94,7 @@ INSERT INTO products (
    'Vitamin D3 supports normal immune function and bone health; K2 (MK-7) supports normal calcium utilisation. Browse D3+K2 listings on Amazon.ae.',
    'Amazon.ae', 'supplements', 'vitamins', 4800, NULL, 'AED',
    ARRAY['https://images.unsplash.com/photo-1587854692152-cbe660dbde88?w=800&h=800&fit=crop']::text[],
-   'https://www.amazon.ae/s?k=vitamin+d3+k2+mk7&tag=vitanaland-21',
+   'https://www.amazon.ae/dp/B0038NF8MG?tag=vitanaland-21',
    'in_stock', 4.80, 690, 'AE', 'MENA',
    ARRAY['AE','SA','KW','QA','BH','OM','DE','AT','CH','FR','IT','ES','NL','BE','PL','SE','DK','FI','GB','IE']::text[], ARRAY['MENA','EU','UK']::text[],
    ARRAY['immunity','bone-health','energy']::text[],
@@ -108,7 +109,7 @@ INSERT INTO products (
    'Creatine monohydrate is one of the most-studied supplements for strength and lean-mass support, and is increasingly noted for cognitive and healthy-ageing benefits. Browse listings on Amazon.ae.',
    'Amazon.ae', 'supplements', 'performance', 7500, NULL, 'AED',
    ARRAY['https://images.unsplash.com/photo-1550572017-edd951b55104?w=800&h=800&fit=crop']::text[],
-   'https://www.amazon.ae/s?k=creatine+monohydrate+micronised&tag=vitanaland-21',
+   'https://www.amazon.ae/dp/B07978VPPH?tag=vitanaland-21',
    'in_stock', 4.80, 880, 'AE', 'MENA',
    ARRAY['AE','SA','KW','QA','BH','OM','DE','AT','CH','FR','IT','ES','NL','BE','PL','SE','DK','FI','GB','IE']::text[], ARRAY['MENA','EU','UK']::text[],
    ARRAY['muscle-recovery','energy','focus']::text[],
