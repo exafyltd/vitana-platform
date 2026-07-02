@@ -1,7 +1,14 @@
 -- VTID-02000 (Discover marketplace) — Amazon.ae recommendations-only seed.
 --
--- DRAFT: replace vitanaland-21 with the real amazon.ae Associate tag
--- (e.g. vitana-21) before moving into supabase/migrations/ and applying.
+-- impact-allow-solo-migration: intentional data-only migration. It seeds
+-- catalog rows (merchants + products) fully consumed by EXISTING code — the
+-- /r/:product_id click-redirect already 302s any non-'demo_seed' product to
+-- its stamped affiliate_url (each row's URL already carries tag=vitanaland-21),
+-- and discover-feed.ts + feed-ranker already read products. No gateway/worker
+-- code touch needed.
+--
+-- Associate tag: vitanaland-21 (amazon.ae Store ID). Not a secret — appears in
+-- every affiliate URL.
 --
 -- Recommendations-only per the Amazon Operating Agreement:
 --   * source_network = 'amazon'  (NOT 'demo_seed' → click-redirect 302s to the
