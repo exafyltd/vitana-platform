@@ -180,6 +180,10 @@ router.get('/activity/:personId', async (req: AuthenticatedRequest, res: Respons
  * always comes from the JWT.
  */
 router.post('/assistant-context', async (req: AuthenticatedRequest, res: Response) => {
+  // impact-allow-no-oasis — this is a READ aggregate (POST only for the
+  // request body); the retrieval event memory.social.context_built is
+  // emitted inside buildAssistantSocialContext (social-memory-service.ts),
+  // so emitting here would double-count every call.
   try {
     const id = identityOf(req);
     const bodyUserId = req.body?.userId;
