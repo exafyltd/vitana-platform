@@ -30,6 +30,13 @@ export interface AssistantSocialContextInput {
   conversation_id?: string;
   surface?: 'vitana_assistant' | 'maxina_community' | 'group_chat' | 'profile' | 'feed';
   compact?: boolean;
+  /**
+   * Build the pack even when the question carries no social intent.
+   * Used by the ORB voice session bootstrap, whose system instruction is
+   * built once with a generic query — without force the voice surface
+   * would never receive any social context.
+   */
+  force?: boolean;
 }
 
 export interface AssistantSocialContextResult {
@@ -44,6 +51,10 @@ export async function buildAssistantSocialContext(
   input: AssistantSocialContextInput,
 ): Promise<AssistantSocialContextResult> {
   const intent = detectSocialIntent(input.question || '');
+  if (input.force && !intent.is_social) {
+    intent.is_social = true;
+    intent.kinds = ['general_social'];
+  }
 
   const pack = await buildSocialContextPack({
     tenant_id: input.tenant_id,

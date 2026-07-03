@@ -160,6 +160,14 @@ export interface BuildAssistantMemoryContextInput {
    * goal directives in one prompt.
    */
   skip_goal_section?: boolean;
+  /**
+   * BOOTSTRAP-SOCIAL-MEMORY: force the social context even when the
+   * message carries no social intent. ORB voice sessions build their
+   * instruction ONCE at session start with a generic bootstrap query —
+   * without force the voice surface would never carry social context
+   * (mid-session depth comes from the get_social_context voice tool).
+   */
+  force_social?: boolean;
   /** Optional VTID for OASIS event correlation. */
   vtid?: string;
 }
@@ -543,20 +551,21 @@ export async function buildAssistantMemoryContext(
   let socialIntent: import('./social-memory/social-memory-types').SocialIntentDecision | null = null;
   let fetchSocial: Promise<{ prompt_block: string; intent_kinds: string[] } | null> =
     Promise.resolve(null);
-  if (communityRole && input.message) {
+  if (communityRole && (input.message || input.force_social)) {
     fetchSocial = (async () => {
       const { detectSocialIntent, buildAssistantSocialContext } = await import(
         './social-memory/social-memory-service'
       );
-      socialIntent = detectSocialIntent(input.message);
-      if (!socialIntent.is_social) return null;
+      socialIntent = detectSocialIntent(input.message || '');
+      if (!socialIntent.is_social && !input.force_social) return null;
       const result = await buildAssistantSocialContext({
         tenant_id: input.tenant_id,
         user_id: input.user_id,
-        question: input.message,
+        question: input.message || '',
         conversation_id: input.thread_id,
         surface: 'vitana_assistant',
         compact: true,
+        force: input.force_social,
       });
       return { prompt_block: result.prompt_block, intent_kinds: result.intent.kinds };
     })();

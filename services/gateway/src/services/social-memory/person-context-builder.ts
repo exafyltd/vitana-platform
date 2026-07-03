@@ -53,7 +53,16 @@ export async function buildPersonContext(
   }
   if (!person || person.user_id === input.user_id) return null;
 
-  const excl = await fetchExclusions(input.user_id);
+  // FAIL CLOSED: if the exclusion reads error we cannot verify the person
+  // is not blocked — return not-found rather than risking a blocked
+  // person's context.
+  let excl: Awaited<ReturnType<typeof fetchExclusions>>;
+  try {
+    excl = await fetchExclusions(input.user_id);
+  } catch (err: any) {
+    console.error(`[SOCIAL-MEMORY] person-context exclusions failed — failing closed: ${err?.message}`);
+    return null;
+  }
   // Blocked people are treated as not found — the assistant must not
   // resurrect someone the user blocked.
   if (excl.blocked.has(person.user_id)) return null;

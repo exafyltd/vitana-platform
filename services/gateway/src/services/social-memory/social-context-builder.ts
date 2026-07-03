@@ -62,13 +62,21 @@ export async function buildSocialContextPack(
   const compact = input.compact === true;
   const intent = input.intent ?? detectSocialIntent(input.question || '');
 
-  // Exclusions first — every other section depends on them.
-  const excl = await settle(
-    'exclusions',
-    fetchExclusions(input.user_id),
-    { blocked: new Set<string>(), muted: new Set<string>(), hidden_posts: new Set<string>() },
-    degraded,
-  );
+  // Exclusions first — every other section depends on them for privacy
+  // filtering. FAIL CLOSED: if the exclusion reads error we cannot
+  // guarantee blocked/muted/hidden content stays out, so the whole social
+  // pack ships EMPTY (marked degraded) rather than unfiltered.
+  let excl: { blocked: Set<string>; muted: Set<string>; hidden_posts: Set<string> };
+  try {
+    excl = await fetchExclusions(input.user_id);
+  } catch (err: any) {
+    console.error(
+      `[SOCIAL-MEMORY] exclusions failed — failing CLOSED, no social context this turn: ${err?.message}`,
+    );
+    return emptyPack(startTime, ['exclusions_fail_closed'], [
+      'Social context is unavailable this turn (privacy filters could not be loaded). Say so honestly if asked a social question — do not guess.',
+    ]);
+  }
 
   const [user, follows, matches, messages, groupChats] = await Promise.all([
     settle('user', fetchPersonById(input.user_id), null, degraded),
@@ -260,6 +268,41 @@ export async function buildSocialContextPack(
   };
   pack.assistant_system_hints = buildAssistantSystemHints(pack);
   return pack;
+}
+
+/** Fail-closed empty pack — used when privacy filters cannot be loaded. */
+function emptyPack(
+  startTime: number,
+  degraded: string[],
+  hints: string[],
+): SocialContextPack {
+  return {
+    user: null,
+    relationships: {
+      following: [],
+      followers: [],
+      following_count: 0,
+      followers_count: 0,
+      mutual_ids: [],
+    },
+    matches: [],
+    messages: [],
+    group_chats: [],
+    interesting_posts: [],
+    interesting_events: [],
+    person_context: null,
+    activity_context: null,
+    memory_highlights: [],
+    recommended_actions: [],
+    assistant_system_hints: hints,
+    meta: {
+      built_at: new Date().toISOString(),
+      latency_ms: Date.now() - startTime,
+      sections_loaded: [],
+      degraded_sections: degraded,
+      privacy_filters_applied: [],
+    },
+  };
 }
 
 /** Life Compass goal words for topical boosts (reuses the canonical read). */

@@ -82,6 +82,11 @@ export async function fetchPeople(userIds: string[]): Promise<Map<string, Social
 /**
  * Exclusion sets for the viewer: blocked + muted authors, hidden posts.
  * Blocked applies everywhere; muted applies to content surfaces.
+ *
+ * FAIL CLOSED: every downstream read depends on these sets for privacy
+ * filtering, so a failed exclusion query must THROW — never silently
+ * return empty sets (that would let blocked/muted content through).
+ * Callers abort the social pack when this throws.
  */
 export async function fetchExclusions(userId: string): Promise<{
   blocked: Set<string>;
@@ -92,13 +97,17 @@ export async function fetchExclusions(userId: string): Promise<{
   const blocked = new Set<string>();
   const muted = new Set<string>();
   const hiddenPosts = new Set<string>();
-  if (!supabase) return { blocked, muted, hidden_posts: hiddenPosts };
+  if (!supabase) throw new Error('exclusions_unavailable: supabase not configured');
 
   const [b, m, h] = await Promise.all([
     supabase.from('user_blocked_authors').select('author_id').eq('user_id', userId).limit(500),
     supabase.from('user_muted_authors').select('author_id').eq('user_id', userId).limit(500),
     supabase.from('user_hidden_posts').select('post_id').eq('user_id', userId).limit(1000),
   ]);
+  const firstError = b.error || m.error || h.error;
+  if (firstError) {
+    throw new Error(`exclusions_read_failed: ${firstError.message}`);
+  }
   for (const r of b.data || []) blocked.add(r.author_id);
   for (const r of m.data || []) muted.add(r.author_id);
   for (const r of h.data || []) hiddenPosts.add(r.post_id);

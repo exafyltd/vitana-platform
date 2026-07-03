@@ -347,6 +347,100 @@ describe('orchestrator × social — privacy', () => {
   });
 });
 
+describe('orchestrator × social — fail-closed privacy', () => {
+  it('when exclusion reads error, NO social content ships (fail closed, not unfiltered)', async () => {
+    mockedGetSupabase.mockReturnValue(
+      makeFakeSupabase({
+        // Simulate a failing privacy-filter read: PostgREST resolves {error}.
+      }),
+    );
+    // Patch the fake to return an error for user_blocked_authors.
+    const base = makeFakeSupabase();
+    mockedGetSupabase.mockReturnValue({
+      from: (table: string) => {
+        if (table === 'user_blocked_authors') {
+          const chain: any = {};
+          chain.select = () => chain;
+          for (const m of ['eq', 'in', 'or', 'gte', 'lt', 'is', 'neq', 'order', 'limit']) chain[m] = () => chain;
+          chain.then = (res: any) => Promise.resolve({ data: null, error: { message: 'permission denied' } }).then(res);
+          return chain;
+        }
+        return (base as any).from(table);
+      },
+    });
+
+    const result = await buildAssistantMemoryContext({
+      ...BASE,
+      message: 'Erzähl mir mehr über Mariia Maksina und zeig mir interessante Posts.',
+    });
+    const block = result.memory_prompt_block;
+    // No people, posts, matches, or person context may ship unfiltered.
+    expect(block).not.toContain('Person in focus');
+    expect(block).not.toContain('New dance session');
+    expect(block).not.toContain('Anna Schmidt (score 87)');
+    expect(block).not.toContain('Follows (1)');
+    // The assistant is told the social context is unavailable — honestly.
+    expect(block).toContain('Social context is unavailable this turn');
+  });
+});
+
+describe('orchestrator × social — ORB voice session bootstrap (force_social)', () => {
+  it('force_social injects the social summary even for the generic bootstrap query', async () => {
+    const result = await buildAssistantMemoryContext({
+      ...BASE,
+      channel: 'orb',
+      message: 'general conversation context', // no social intent on its own
+      force_social: true,
+    });
+    expect(result.telemetry.social_loaded).toBe(true);
+    expect(result.memory_prompt_block).toContain('<social_context>');
+    expect(result.memory_prompt_block).toMatch(/Follows \(1\): Mariia Maksina/);
+    expect(result.memory_prompt_block).toContain('Anna Schmidt (score 87)');
+  });
+
+  it('without force_social the generic bootstrap query carries no social context (old voice bug shape)', async () => {
+    const result = await buildAssistantMemoryContext({
+      ...BASE,
+      channel: 'orb',
+      message: 'general conversation context',
+    });
+    expect(result.telemetry.social_loaded).toBe(false);
+    expect(result.memory_prompt_block).not.toContain('<social_context>');
+  });
+});
+
+describe('voice tool get_social_context — the mid-session bridge', () => {
+  it('returns the prompt-ready social pack for a person question', async () => {
+    const { tool_get_social_context } = await import(
+      '../../src/services/orb-tools-shared'
+    );
+    const r = await tool_get_social_context(
+      { question: 'Erzähl mir von Mariia Maksina' },
+      { user_id: ME, tenant_id: TENANT, role: 'community' },
+      mockedGetSupabase() as any,
+    );
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.text).toContain('<social_context>');
+      expect(r.text).toContain('Person in focus — Mariia Maksina');
+      expect((r.result as any).person_resolved).toBe(true);
+      expect((r.result as any).matches_count).toBe(1);
+    }
+  });
+
+  it('fails cleanly without an authenticated identity', async () => {
+    const { tool_get_social_context } = await import(
+      '../../src/services/orb-tools-shared'
+    );
+    const r = await tool_get_social_context(
+      { question: 'Wem folge ich?' },
+      { user_id: '', tenant_id: null, role: null },
+      mockedGetSupabase() as any,
+    );
+    expect(r.ok).toBe(false);
+  });
+});
+
 describe('orchestrator × social — meaningful memory persistence', () => {
   it('person-focus question writes ONE network_relationships memory via the existing path', async () => {
     await buildAssistantMemoryContext({ ...BASE, message: 'Erzähl mir mehr über Mariia Maksina.' });

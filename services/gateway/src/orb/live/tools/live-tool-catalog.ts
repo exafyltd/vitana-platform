@@ -958,6 +958,53 @@ export function buildLiveApiTools(
             properties: {},
           },
         },
+        // BOOTSTRAP-SOCIAL-MEMORY — live Social Context Pack. The voice
+        // system instruction is built ONCE at session start, so social
+        // questions MUST fetch fresh context through this tool (the text
+        // brain gets the same data injected per turn by the memory
+        // orchestrator; voice sessions cannot).
+        {
+          name: 'get_social_context',
+          description: [
+            "Fetch the user's LIVE Maxina Community context: who they follow,",
+            'who follows them, their matches (with scores and reasons), recent',
+            'chat contacts, group chats, ranked interesting posts and events',
+            '(each with WHY it is recommended), and — when the question names a',
+            'person — a full privacy-checked profile of that person (relationship,',
+            'match score, shared interests/groups/events, latest posts and',
+            'recent activity, best next action).',
+            '',
+            'ALWAYS CALL THIS BEFORE ANSWERING any question about:',
+            '  - "Who do I follow?" / "Wem folge ich?" · "Who follows me?" / "Wer folgt mir?"',
+            '  - "What matches do I have?" / "Welche Matches habe ich?" · "Why is X a good match for me?"',
+            '  - "Who did I message recently?" / "Mit wem habe ich zuletzt geschrieben?"',
+            '  - "Which group chats am I in?" / "In welchen Gruppenchats bin ich?"',
+            '  - "Tell me about <person>" / "Erzähl mir von <Person>" · "What did <person> do recently?"',
+            '  - "What posts/events are interesting for me?" / "Welche Events sollte ich besuchen?"',
+            '  - "Who should I contact or invite today?" / "Wen sollte ich heute kontaktieren?"',
+            '  - "What changed in my community since yesterday?" / "Was hat sich in meiner Community getan?"',
+            '',
+            "Pass the user's question VERBATIM in `question` (keep the person's",
+            'name in it if they named one). NEVER answer these questions from',
+            'memory and NEVER invent people, matches, posts, or events — the',
+            'tool result is the ONLY source of truth. When you relay a',
+            'recommendation, include its reason from the result ("because you',
+            'follow her", "because 3 people you follow are attending"). If the',
+            'result marks a person as privacy-limited, say details are limited —',
+            'do not speculate.',
+          ].join('\n'),
+          parameters: {
+            type: 'object',
+            properties: {
+              question: {
+                type: 'string',
+                description:
+                  "The user's social question, verbatim, including any person name (e.g. 'Erzähl mir von Mariia Maksina').",
+              },
+            },
+            required: ['question'],
+          },
+        },
         {
           name: 'narrate_guided_session',
           description: [

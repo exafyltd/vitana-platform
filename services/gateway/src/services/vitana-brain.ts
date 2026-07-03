@@ -375,6 +375,11 @@ export async function buildBrainSystemInstruction(input: {
       user_timezone: input.user_timezone,
       router_decision: routerDecision,
       skip_goal_section: isCommunitySurface,
+      // BOOTSTRAP-SOCIAL-MEMORY: the voice instruction is built ONCE per
+      // session, so social context must be included unconditionally here —
+      // the per-turn social intent detection can never fire on this path.
+      // Mid-session depth comes from the get_social_context voice tool.
+      force_social: isCommunitySurface,
     }),
     isCommunitySurface
       ? buildLifeCompassGoalBlock({ user_id: input.user_id })
