@@ -7752,6 +7752,21 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
                 const { gatherOverviewPayload } = await import('../services/assistant-continuation/providers/new-day-overview-payload');
                 const { buildNewDayOverviewBlock } = await import('../services/assistant-continuation/providers/new-day-overview-prompt');
                 const { todayInTimezone, localHourInTimezone } = await import('../services/assistant-continuation/providers/new-day-return');
+                // Spoken-facts continuity (greeting-facts ledger): what did we
+                // ALREADY tell this user? Read in parallel with the payload
+                // gather; bounded + fail-open so it can never delay or silence
+                // the greeting.
+                const {
+                  readGreetingLedger,
+                  computeFactDeltas,
+                  extractSpokenFactsFromPayload,
+                  recordGreetingFacts,
+                  EMPTY_GREETING_LEDGER,
+                } = await import('../services/conversation/greeting-facts-ledger');
+                const _tenantNd = session.identity?.tenant_id ?? null;
+                const _ledgerPromiseNd = _tenantNd
+                  ? readGreetingLedger({ supabase: _supaNd, tenantId: _tenantNd, userId: _uidNd })
+                  : Promise.resolve({ ...EMPTY_GREETING_LEDGER });
                 // Last session's LOCAL date (YYYY-MM-DD) bounds the "since last
                 // session" calendar lookback. Derive it from the pre-fetched
                 // last-session timestamp; null falls back to a 24h window inside
@@ -7794,12 +7809,23 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
                     _overview.messages_unread > 0 ||
                     _overview.reminders_today.count > 0);
                 if (_overview && _hasContent) {
+                  const _ledgerNd = await Promise.race([
+                    _ledgerPromiseNd,
+                    new Promise<typeof EMPTY_GREETING_LEDGER>((r) =>
+                      setTimeout(() => r({ ...EMPTY_GREETING_LEDGER }), 800),
+                    ),
+                  ]).catch(() => ({ ...EMPTY_GREETING_LEDGER }));
+                  const _spokenFactsNd = extractSpokenFactsFromPayload(_overview);
+                  const _deltasNd = computeFactDeltas(_spokenFactsNd, _ledgerNd);
                   const _block = buildNewDayOverviewBlock({
                     payload: _overview,
                     lang: greetLang,
                     firstName: _firstNameNd.trim(),
                     localHour: localHourInTimezone(_nowNd, _tzNd),
                     timezone: _tzNd,
+                    factDeltas: _deltasNd,
+                    previousUtterance: _ledgerNd.last_utterance,
+                    sessionsToday: _ledgerNd.sessions_today,
                   });
                   if (_block && _block.trim().length > 0) {
                     ws.send(
@@ -7818,6 +7844,16 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
                       .update({ last_full_briefing_date: _todayNd })
                       .eq('user_id', _uidNd)
                       .then(() => {}, () => {});
+                    // Ledger write: these facts are now "told" — the next
+                    // opener speaks deltas, not the same levels again.
+                    if (_tenantNd && Object.keys(_spokenFactsNd).length > 0) {
+                      void recordGreetingFacts({
+                        supabase: _supaNd,
+                        tenantId: _tenantNd,
+                        userId: _uidNd,
+                        facts: _spokenFactsNd,
+                      });
+                    }
                     emitDiag(session, 'greeting_sent', {
                       lang,
                       prompt_len: _block.length,
@@ -7943,6 +7979,20 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
                     const _nowR = new Date();
                     const { gatherOverviewPayload } = await import('../services/assistant-continuation/providers/new-day-overview-payload');
                     const { todayInTimezone } = await import('../services/assistant-continuation/providers/new-day-return');
+                    // Spoken-facts continuity — same ledger the daily briefing
+                    // uses, so a reopen never re-announces the counts the
+                    // briefing already spoke this morning.
+                    const {
+                      readGreetingLedger,
+                      computeFactDeltas,
+                      extractSpokenFactsFromPayload,
+                      recordGreetingFacts,
+                      EMPTY_GREETING_LEDGER,
+                    } = await import('../services/conversation/greeting-facts-ledger');
+                    const _tenantR = session.identity?.tenant_id ?? null;
+                    const _ledgerPromiseR = _tenantR
+                      ? readGreetingLedger({ supabase: _supaR, tenantId: _tenantR, userId: _uidR })
+                      : Promise.resolve({ ...EMPTY_GREETING_LEDGER });
                     const _lastSessIsoR = (session as any).lastSessionInfo?.time ?? null;
                     const _lastSessDateR =
                       typeof _lastSessIsoR === 'string' && _lastSessIsoR.length > 0
@@ -7966,6 +8016,14 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
                     const _recentNbaKeysR = Array.isArray((session as any).recentNbaKeys)
                       ? ((session as any).recentNbaKeys as string[])
                       : [];
+                    const _ledgerR = await Promise.race([
+                      _ledgerPromiseR,
+                      new Promise<typeof EMPTY_GREETING_LEDGER>((r) =>
+                        setTimeout(() => r({ ...EMPTY_GREETING_LEDGER }), 800),
+                      ),
+                    ]).catch(() => ({ ...EMPTY_GREETING_LEDGER }));
+                    const _spokenFactsR = extractSpokenFactsFromPayload(_payloadR);
+                    const _deltasR = computeFactDeltas(_spokenFactsR, _ledgerR);
                     const { text: _dirR, nba: _nbaR } = buildResumeDirective({
                       register: _registerR,
                       payload: _payloadR,
@@ -7977,6 +8035,9 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
                       // Screen awareness: deepen toward completing the action on
                       // the screen the user is already on, never redirect there.
                       currentScreen: (session as any).current_route ?? null,
+                      factDeltas: _deltasR,
+                      previousUtterance: _ledgerR.last_utterance,
+                      sessionsToday: _ledgerR.sessions_today,
                     });
                     // CONTINUE/quick_resume can speak with no payload (pure
                     // thread continuation); same_day needs at least the NBA or a
@@ -8002,6 +8063,17 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
                           .update({ recent_nbas: _updatedNbas })
                           .eq('user_id', _uidR)
                           .then(() => {}, () => {});
+                      }
+                      // Ledger write — the reopen surfaced these facts (as
+                      // deltas or soft references); refresh their spoken_at so
+                      // the next open still treats stable levels as known.
+                      if (_tenantR && Object.keys(_spokenFactsR).length > 0) {
+                        void recordGreetingFacts({
+                          supabase: _supaR,
+                          tenantId: _tenantR,
+                          userId: _uidR,
+                          facts: _spokenFactsR,
+                        });
                       }
                       emitDiag(session, 'greeting_sent', {
                         lang,
