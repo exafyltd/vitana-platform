@@ -26,14 +26,14 @@ import {
   ProcessConversationTurnResult,
 } from './conversation-client';
 import {
-  buildContextPack,
-  formatContextPackForLLM,
-  BuildContextPackInput,
   extractLanguageFromContextPack,
   buildLanguageDirective,
 } from './context-pack-builder';
 import { computeRetrievalRouterDecision } from './retrieval-router';
-import { ContextLens, createContextLens } from '../types/context-lens';
+// BOOTSTRAP-MEMORY-ORCHESTRATOR-MANDATORY: mandatory pre-answer memory step —
+// owns buildContextPack + goals + preferences + do-not-repeat and returns
+// the sentinel-wrapped USER MEMORY CONTEXT block for the system instruction.
+import { buildAssistantMemoryContext } from './memory-orchestrator';
 import { ConversationChannel, ContextPack } from '../types/conversation';
 import { getPersonalityConfigSync } from './ai-personality-service';
 import { buildJourneyModesSection } from '../orb/live/instruction/journey-modes-prompt';
@@ -318,12 +318,6 @@ export async function buildBrainSystemInstruction(input: {
 }): Promise<{ instruction: string; contextPack: ContextPack }> {
   const startTime = Date.now();
 
-  // Create context lens
-  const lens: ContextLens = createContextLens(input.tenant_id, input.user_id, {
-    workspace_scope: 'product',
-    active_role: input.role,
-  });
-
   // Compute retrieval router — for session bootstrap, force memory-only
   // to minimize latency. Skip knowledge_hub and web_search (not needed
   // for greeting). Calendar + OASIS are fetched separately by buildContextPack.
@@ -336,19 +330,6 @@ export async function buildBrainSystemInstruction(input: {
       web_search: 0,
     },
   });
-
-  // Build context pack — memory + calendar + OASIS (no knowledge/web for speed)
-  const contextPackInput: BuildContextPackInput = {
-    lens,
-    query: 'general conversation context',
-    channel: input.channel,
-    thread_id: input.thread_id || randomUUID(),
-    turn_number: input.turn_number || 0,
-    conversation_start: input.conversation_start || new Date().toISOString(),
-    role: input.role,
-    display_name: input.display_name,
-    router_decision: routerDecision,
-  };
 
   // BOOTSTRAP-ORB-GREETING-LATENCY: fire the three blocking context queries
   // in parallel. Previously serialized (contextPack -> lifeCompass ->
@@ -374,8 +355,27 @@ export async function buildBrainSystemInstruction(input: {
   // recommendations even though the identity says "engineering co-pilot".
   // Skipping both blocks for non-community roles is the structural fix.
   const isCommunitySurface = mapRoleForGuide(input.role) === 'community';
-  const [contextPack, lifeCompassBlock, proactiveGuideBlock, identityGuardrailBlock] = await Promise.all([
-    buildContextPack(contextPackInput),
+  const [memoryContext, lifeCompassBlock, proactiveGuideBlock, identityGuardrailBlock] = await Promise.all([
+    // BOOTSTRAP-MEMORY-ORCHESTRATOR-MANDATORY: the orchestrator wraps the
+    // old buildContextPack call and adds goals + preferences + do-not-repeat
+    // + the mandatory memory self-check block. skip_goal_section is set for
+    // community surfaces because the directive-heavy Life Compass block below
+    // already owns the goal narrative — two competing goal directives in one
+    // prompt is exactly the conflict the orchestrator must not introduce.
+    buildAssistantMemoryContext({
+      tenant_id: input.tenant_id,
+      user_id: input.user_id,
+      role: input.role,
+      channel: input.channel,
+      message: 'general conversation context',
+      thread_id: input.thread_id || randomUUID(),
+      turn_number: input.turn_number || 0,
+      conversation_start: input.conversation_start || new Date().toISOString(),
+      display_name: input.display_name,
+      user_timezone: input.user_timezone,
+      router_decision: routerDecision,
+      skip_goal_section: isCommunitySurface,
+    }),
     isCommunitySurface
       ? buildLifeCompassGoalBlock({ user_id: input.user_id })
       : Promise.resolve(''),
@@ -390,7 +390,8 @@ export async function buildBrainSystemInstruction(input: {
       : Promise.resolve(''),
     buildIdentityGuardrailBlock({ user_id: input.user_id, tenant_id: input.tenant_id }),
   ]);
-  const contextForLLM = formatContextPackForLLM(contextPack, { userTimezone: input.user_timezone });
+  const contextPack = memoryContext.context_pack;
+  const contextForLLM = memoryContext.memory_prompt_block;
 
   // Build personality-driven instruction
   const preferredLanguage = extractLanguageFromContextPack(contextPack);

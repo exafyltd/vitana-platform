@@ -22,9 +22,17 @@ import {
   ContextPack,
   ToolCall,
 } from '../types/conversation';
-import { ContextLens, createContextLens } from '../types/context-lens';
 import { computeRetrievalRouterDecision, logRetrievalRouterDecision } from './retrieval-router';
-import { buildContextPack, formatContextPackForLLM, BuildContextPackInput, extractLanguageFromContextPack, buildLanguageDirective } from './context-pack-builder';
+import { extractLanguageFromContextPack, buildLanguageDirective } from './context-pack-builder';
+// BOOTSTRAP-MEMORY-ORCHESTRATOR-MANDATORY: mandatory pre-answer memory step.
+// Owns buildContextPack + goals + preferences + do-not-repeat and returns the
+// sentinel-wrapped USER MEMORY CONTEXT block. No LLM call without it.
+import {
+  buildAssistantMemoryContext,
+  assertMemoryContextInjected,
+  emitMemoryTurnTelemetry,
+  AssistantMemoryContext,
+} from './memory-orchestrator';
 import { processWithGemini, setThreadIdentity } from './gemini-operator';
 import { getGeminiToolDefinitions, logToolExecution } from './tool-registry';
 import { classifyCategory } from '../routes/memory';
@@ -260,12 +268,6 @@ export async function processConversationTurn(
     }
     // ---------------------------------------------------------------
 
-    // Create context lens
-    const lens: ContextLens = createContextLens(input.tenant_id, input.user_id, {
-      workspace_scope: 'product',
-      active_role: input.role,
-    });
-
     // Step 1: Compute retrieval router decision
     const routerDecision = computeRetrievalRouterDecision(input.message, { channel: input.channel });
 
@@ -278,25 +280,27 @@ export async function processConversationTurn(
       query: input.message,
     });
 
-    // Step 2: Build context pack
-    const contextPackInput: BuildContextPackInput = {
-      lens,
-      query: input.message,
+    // Step 2+3: MANDATORY memory orchestrator — builds the context pack
+    // (memory garden forced on) + goals + preferences + do-not-repeat and
+    // returns the sentinel-wrapped USER MEMORY CONTEXT block.
+    const memoryContext: AssistantMemoryContext = await buildAssistantMemoryContext({
+      tenant_id: input.tenant_id,
+      user_id: input.user_id,
+      role: input.role,
       channel: input.channel,
+      message: input.message,
+      ui_context: input.ui_context,
       thread_id: thread.thread_id,
       turn_number: thread.turn_count,
       conversation_start: thread.started_at,
-      role: input.role,
       display_name: input.display_name,
-      ui_context: input.ui_context,
+      user_timezone: input.ui_context?.metadata?.timezone as string | undefined,
+      session_id: thread.thread_id,
       router_decision: routerDecision,
       vtid: input.vtid,
-    };
-
-    const contextPack = await buildContextPack(contextPackInput);
-
-    // Step 3: Format context for LLM
-    const contextForLLM = formatContextPackForLLM(contextPack);
+    });
+    const contextPack = memoryContext.context_pack;
+    const contextForLLM = memoryContext.memory_prompt_block;
 
     // VTID-01950 (Phase H.5) — Text-chat awareness inheritance.
     // Same awareness block the ORB voice brain receives, flag-gated so
@@ -339,7 +343,15 @@ export async function processConversationTurn(
       role: input.role,
     });
 
-    // Step 6: Call LLM
+    // Step 6: Call LLM — hard gate: no answer without the memory block.
+    assertMemoryContextInjected(systemInstruction, {
+      channel: input.channel,
+      user_id: input.user_id,
+      tenant_id: input.tenant_id,
+      thread_id: thread.thread_id,
+      caller: 'conversation-client.processConversationTurn',
+    });
+
     const llmStartTime = Date.now();
     let reply = '';
     let toolCalls: ToolCall[] = [];
@@ -421,6 +433,18 @@ export async function processConversationTurn(
 
       reply = 'I apologize, but I encountered an error processing your request. Please try again.';
     }
+
+    // Per-turn memory proof event (feeds the Memory Alive/Dead admin card).
+    // Fire-and-forget — includes assistant_used_memory heuristic on the reply.
+    emitMemoryTurnTelemetry(memoryContext, {
+      tenant_id: input.tenant_id,
+      user_id: input.user_id,
+      channel: input.channel,
+      thread_id: thread.thread_id,
+      reply,
+      model_used: modelUsed,
+      vtid: input.vtid,
+    });
 
     // Step 7: Auto-write USER message only to memory (not assistant reply)
     // VTID-01225-CLEANUP: Previously stored combined user+assistant — caused pollution.

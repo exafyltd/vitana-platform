@@ -46,6 +46,7 @@ import { randomUUID } from 'crypto';
 import { TextToSpeechClient, protos } from '@google-cloud/text-to-speech';
 import { processWithGemini, setThreadIdentity } from '../services/gemini-operator';
 import { emitOasisEvent } from '../services/oasis-event-service';
+import { wrapLegacyMemoryPreamble } from '../services/memory-orchestrator';
 import { isFeatureLive } from '../services/feature-flags';
 // BOOTSTRAP-PRODUCT-ANALYTICS: server-side product analytics (metadata only)
 import { trackServerEvent, detectTopic } from '../services/product-analytics/track-server';
@@ -2245,8 +2246,12 @@ export async function buildBootstrapContextPack(
       // Still return the formatted context even if no items (contains user info).
       // Prepend recent turns so the model still has grounding.
       const base = memoryContext.formatted_context || '';
-      const combined = [recentTurnsBlock, base, profileBlock].filter(Boolean).join('\n');
-      if (combined) {
+      const combinedRaw = [recentTurnsBlock, base, profileBlock].filter(Boolean).join('\n');
+      if (combinedRaw) {
+        // BOOTSTRAP-MEMORY-ORCHESTRATOR-MANDATORY: wrap the legacy preamble in
+        // the memory sentinels + mandatory self-check so the brain-OFF voice
+        // path honors the memory contract.
+        const combined = wrapLegacyMemoryPreamble(combinedRaw);
         storeVertexBootstrapCache(bootstrapCacheKey, { contextInstruction: combined, latencyMs });
         return {
           contextInstruction: combined,
@@ -2264,9 +2269,14 @@ export async function buildBootstrapContextPack(
     const full = [recentTurnsBlock, memoryContext.formatted_context, profileBlock]
       .filter(Boolean)
       .join('\n');
-    const contextInstruction = full.length > LIVE_CONTEXT_CONFIG.MAX_CONTEXT_CHARS
-      ? full.substring(0, LIVE_CONTEXT_CONFIG.MAX_CONTEXT_CHARS) + '\n[...truncated]'
-      : full;
+    // BOOTSTRAP-MEMORY-ORCHESTRATOR-MANDATORY: truncate FIRST, then wrap in
+    // the memory sentinels + mandatory self-check (so the self-check block
+    // itself can never be truncated away).
+    const contextInstruction = wrapLegacyMemoryPreamble(
+      full.length > LIVE_CONTEXT_CONFIG.MAX_CONTEXT_CHARS
+        ? full.substring(0, LIVE_CONTEXT_CONFIG.MAX_CONTEXT_CHARS) + '\n[...truncated]'
+        : full,
+    );
 
     console.log(`[VTID-01225] Context bootstrap complete: ${latencyMs}ms, memory=${memoryContext.items.length}, recentTurns=${recentTurns.length}, profile=${profileResult.summary.length}ch (cached=${profileResult.cached})`);
 
