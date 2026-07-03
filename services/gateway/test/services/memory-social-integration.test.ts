@@ -347,6 +347,43 @@ describe('orchestrator × social — privacy', () => {
   });
 });
 
+describe('orchestrator × social — fail-closed privacy', () => {
+  it('when exclusion reads error, NO social content ships (fail closed, not unfiltered)', async () => {
+    mockedGetSupabase.mockReturnValue(
+      makeFakeSupabase({
+        // Simulate a failing privacy-filter read: PostgREST resolves {error}.
+      }),
+    );
+    // Patch the fake to return an error for user_blocked_authors.
+    const base = makeFakeSupabase();
+    mockedGetSupabase.mockReturnValue({
+      from: (table: string) => {
+        if (table === 'user_blocked_authors') {
+          const chain: any = {};
+          chain.select = () => chain;
+          for (const m of ['eq', 'in', 'or', 'gte', 'lt', 'is', 'neq', 'order', 'limit']) chain[m] = () => chain;
+          chain.then = (res: any) => Promise.resolve({ data: null, error: { message: 'permission denied' } }).then(res);
+          return chain;
+        }
+        return (base as any).from(table);
+      },
+    });
+
+    const result = await buildAssistantMemoryContext({
+      ...BASE,
+      message: 'Erzähl mir mehr über Mariia Maksina und zeig mir interessante Posts.',
+    });
+    const block = result.memory_prompt_block;
+    // No people, posts, matches, or person context may ship unfiltered.
+    expect(block).not.toContain('Person in focus');
+    expect(block).not.toContain('New dance session');
+    expect(block).not.toContain('Anna Schmidt (score 87)');
+    expect(block).not.toContain('Follows (1)');
+    // The assistant is told the social context is unavailable — honestly.
+    expect(block).toContain('Social context is unavailable this turn');
+  });
+});
+
 describe('orchestrator × social — ORB voice session bootstrap (force_social)', () => {
   it('force_social injects the social summary even for the generic bootstrap query', async () => {
     const result = await buildAssistantMemoryContext({

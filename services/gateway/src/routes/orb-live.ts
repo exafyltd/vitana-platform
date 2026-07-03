@@ -11831,12 +11831,18 @@ router.get('/debug/awareness', optionalAuth, async (req: AuthenticatedRequest, r
  * nothing while proving that a voice session for this user would carry the
  * memory block + social context and advertise the get_social_context tool.
  */
-router.get('/debug/brain-instruction', async (req: Request, res: Response) => {
-  const userId = (req.query.user_id as string) || '';
-  const tenantId = (req.query.tenant_id as string) || '';
+router.get('/debug/brain-instruction', requireAuthWithTenant, async (req: AuthenticatedRequest, res: Response) => {
+  const identity = req.identity as { user_id?: string; tenant_id?: string; exafy_admin?: boolean } | undefined;
+  const userId = (req.query.user_id as string) || identity?.user_id || '';
+  const tenantId = (req.query.tenant_id as string) || identity?.tenant_id || '';
   const role = (req.query.role as string) || 'community';
   if (!userId || !tenantId) {
     return res.status(400).json({ ok: false, error: 'user_id and tenant_id are required' });
+  }
+  // Self-or-admin only: building another user's instruction (even as
+  // structural booleans) is an admin-grade probe.
+  if (userId !== identity?.user_id && !identity?.exafy_admin) {
+    return res.status(403).json({ ok: false, error: 'FORBIDDEN_USER_SCOPE' });
   }
   try {
     const { buildBrainSystemInstruction } = await import('../services/vitana-brain');
