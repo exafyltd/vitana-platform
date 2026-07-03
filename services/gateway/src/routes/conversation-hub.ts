@@ -42,8 +42,14 @@ import {
 import type { TemporalBucket } from '../services/guide/temporal-bucket';
 
 const router = Router();
-router.use('/admin/conversation', requireAuth);
-router.use('/admin/conversation', requireExafyAdmin);
+
+// Auth is applied PER-HANDLER (requireAuth, requireExafyAdmin on each route)
+// rather than a bare file-level `router.use(requireExafyAdmin)`: this router is
+// mounted at `/api/v1`, so a path-less `router.use` would run admin auth on
+// EVERY /api/v1 request before falling through to sibling routers (the VTID-02032
+// bug the neighbouring admin routers avoid with path-scoped guards). Per-handler
+// middleware gates exactly these read-only endpoints and nothing else.
+const adminOnly = [requireAuth, requireExafyAdmin];
 
 // The 5 opening registers + their triggers (mirrors decide-opening.ts). Static
 // description of the recency-first ladder for the Registers tab.
@@ -102,7 +108,7 @@ function jsonError(res: Response, code: number, error: string) {
  * the register ladder, the full NBA band table (with executing tool), and the
  * per-surface screen-completion map. No tenant overrides (Step 6).
  */
-router.get('/admin/conversation/config', (_req: AuthenticatedRequest, res: Response) => {
+router.get('/admin/conversation/config', ...adminOnly, (_req: AuthenticatedRequest, res: Response) => {
   const ranked = rankNextBestActions(fullPayloadForConfig(), { rotationSeed: 0 }).map((a) => ({
     key: a.key,
     domain: a.domain,
@@ -139,7 +145,7 @@ router.get('/admin/conversation/config', (_req: AuthenticatedRequest, res: Respo
  * directive — WITHOUT speaking or emitting. `bucket` / `first_time` /
  * `briefing_due` let the operator simulate any recency state.
  */
-router.get('/admin/conversation/preview', async (req: AuthenticatedRequest, res: Response) => {
+router.get('/admin/conversation/preview', ...adminOnly, async (req: AuthenticatedRequest, res: Response) => {
   const userId = String(req.query.user_id || '').trim();
   if (!userId) return jsonError(res, 400, 'user_id is required');
 
@@ -228,7 +234,7 @@ router.get('/admin/conversation/preview', async (req: AuthenticatedRequest, res:
  * Monitor feed: recent greeting decisions from oasis_events
  * (topic='orb.live.diag', metadata.stage='greeting_sent').
  */
-router.get('/admin/conversation/decisions', async (req: AuthenticatedRequest, res: Response) => {
+router.get('/admin/conversation/decisions', ...adminOnly, async (req: AuthenticatedRequest, res: Response) => {
   const limit = Math.min(Math.max(Number(req.query.limit) || 50, 1), 200);
   const windowHours = Math.min(Math.max(Number(req.query.window_hours) || 24, 1), 720);
   const supabase = getSupabase();
@@ -268,7 +274,7 @@ router.get('/admin/conversation/decisions', async (req: AuthenticatedRequest, re
  * Tool Health feed: recent tool failures from oasis_events
  * (topic='orb.live.diag', metadata.stage='tool_failed').
  */
-router.get('/admin/conversation/tool-failures', async (req: AuthenticatedRequest, res: Response) => {
+router.get('/admin/conversation/tool-failures', ...adminOnly, async (req: AuthenticatedRequest, res: Response) => {
   const limit = Math.min(Math.max(Number(req.query.limit) || 50, 1), 200);
   const windowHours = Math.min(Math.max(Number(req.query.window_hours) || 24, 1), 720);
   const supabase = getSupabase();
