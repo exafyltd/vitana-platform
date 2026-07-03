@@ -53201,6 +53201,81 @@ function memoryOpsTimeAgo(iso) {
     return Math.floor(s / 86400) + 'd ago';
 }
 
+// ---- Memory Alive / Memory Dead card (memory orchestrator) -------------------
+// BOOTSTRAP-MEMORY-ORCHESTRATOR-MANDATORY: verdict computed server-side at
+// GET /api/v1/admin/memory-orchestrator/status from per-turn proof events
+// (memory.orchestrator.turn / context_built / bypass_detected).
+function memoryOpsRenderOrchestratorCard(container) {
+    var card = document.createElement('div');
+    card.style.borderRadius = '10px';
+    card.style.padding = '16px 18px';
+    card.style.marginBottom = '16px';
+    card.style.border = '1px solid rgba(255,255,255,0.1)';
+    card.style.background = 'rgba(255,255,255,0.03)';
+    var title = document.createElement('div');
+    title.style.fontSize = '13px';
+    title.style.opacity = '0.7';
+    title.textContent = 'Memory Orchestrator — assistant memory contract (last 24h)';
+    var verdict = document.createElement('div');
+    verdict.style.fontSize = '26px';
+    verdict.style.fontWeight = '700';
+    verdict.style.margin = '6px 0 4px';
+    verdict.textContent = 'Checking…';
+    var detail = document.createElement('div');
+    detail.style.fontSize = '12px';
+    detail.style.opacity = '0.75';
+    card.appendChild(title);
+    card.appendChild(verdict);
+    card.appendChild(detail);
+    container.appendChild(card);
+
+    fetch('/api/v1/admin/memory-orchestrator/status', { headers: buildContextHeaders() })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+            if (!d || !d.ok) {
+                verdict.textContent = 'Memory status unavailable';
+                verdict.style.color = '#aaa';
+                detail.textContent = (d && d.error) || 'unknown error';
+                return;
+            }
+            var t = d.totals || {};
+            var rates = d.rates || {};
+            var avg = d.averages_per_turn || {};
+            if (d.status === 'alive') {
+                verdict.textContent = '🟢 Memory Alive';
+                verdict.style.color = '#3ddc84';
+                card.style.border = '1px solid rgba(61,220,132,0.4)';
+            } else if (d.status === 'degraded') {
+                verdict.textContent = '🟡 Memory Degraded';
+                verdict.style.color = '#f0b400';
+                card.style.border = '1px solid rgba(240,180,0,0.4)';
+            } else if (d.status === 'dead') {
+                verdict.textContent = '🔴 Memory Dead';
+                verdict.style.color = '#ff8080';
+                card.style.border = '1px solid rgba(255,80,80,0.5)';
+            } else {
+                verdict.textContent = '⚪ No memory turns yet';
+                verdict.style.color = '#aaa';
+            }
+            var parts = [
+                (t.turns || 0) + ' turns',
+                'injected ' + Math.round((rates.injected_rate || 0) * 100) + '%',
+                'retrieved ' + Math.round((rates.retrieval_rate || 0) * 100) + '%',
+                'used-by-assistant ' + Math.round((rates.used_rate || 0) * 100) + '%',
+                'avg ' + (avg.memory_hits || 0) + ' hits / ' + (avg.facts_loaded || 0) + ' facts / ' + (avg.goals_loaded || 0) + ' goals / ' + (avg.preferences_loaded || 0) + ' prefs',
+            ];
+            if ((t.bypasses_soft || 0) + (t.bypasses_enforced || 0) > 0) {
+                parts.push('⚠ ' + ((t.bypasses_soft || 0) + (t.bypasses_enforced || 0)) + ' bypass path(s) detected');
+            }
+            detail.textContent = parts.join(' · ');
+        })
+        .catch(function (e) {
+            verdict.textContent = 'Memory status unavailable';
+            verdict.style.color = '#aaa';
+            detail.textContent = String(e && e.message || e);
+        });
+}
+
 // ---- Memory Vault tab --------------------------------------------------------
 function memoryOpsRenderMemoryVault(container) {
     memoryOpsHeader(container, 'Memory Vault — Operations',
@@ -53244,6 +53319,11 @@ function memoryOpsRenderMemoryVault(container) {
             };
             act.appendChild(runBtn);
         });
+
+    // BOOTSTRAP-MEMORY-ORCHESTRATOR-MANDATORY: Memory Alive/Dead verdict card.
+    // Green ONLY when per-turn proof events show memory was retrieved AND
+    // injected into the assistant prompt in the last 24h.
+    memoryOpsRenderOrchestratorCard(container);
 
     var contentWrap = document.createElement('div');
     container.appendChild(contentWrap);
