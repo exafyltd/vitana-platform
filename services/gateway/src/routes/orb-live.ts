@@ -5536,6 +5536,10 @@ async function executeLiveApiToolInner(
       // L2.2b.6 (VTID-03010) — Life Compass read tool, shared dispatcher.
       // Pure DB read; no WebSocket session-state coupling. Same shape as
       // find_perfect_product above.
+      // BOOTSTRAP-SOCIAL-MEMORY — live Social Context Pack for voice.
+      // Delegates to the shared registry handler (same data the text brain
+      // injects per turn via the memory orchestrator).
+      case 'get_social_context':
       case 'get_life_compass': {
         const SUPABASE_URL = process.env.SUPABASE_URL;
         const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
@@ -11817,6 +11821,50 @@ router.get('/debug/awareness', optionalAuth, async (req: AuthenticatedRequest, r
       warnings,
       elapsed_ms: Date.now() - startedAt,
     });
+  }
+});
+
+/**
+ * BOOTSTRAP-SOCIAL-MEMORY: GET /debug/brain-instruction — deploy-verification
+ * probe for the ORB voice system instruction. Returns ONLY structural facts
+ * (section presence + lengths), never the instruction content, so it leaks
+ * nothing while proving that a voice session for this user would carry the
+ * memory block + social context and advertise the get_social_context tool.
+ */
+router.get('/debug/brain-instruction', async (req: Request, res: Response) => {
+  const userId = (req.query.user_id as string) || '';
+  const tenantId = (req.query.tenant_id as string) || '';
+  const role = (req.query.role as string) || 'community';
+  if (!userId || !tenantId) {
+    return res.status(400).json({ ok: false, error: 'user_id and tenant_id are required' });
+  }
+  try {
+    const { buildBrainSystemInstruction } = await import('../services/vitana-brain');
+    const { instruction } = await buildBrainSystemInstruction({
+      user_id: userId,
+      tenant_id: tenantId,
+      role,
+      channel: 'orb',
+    });
+    const { buildLiveApiTools } = await import('../orb/live/tools/live-tool-catalog');
+    const toolNames: string[] = [];
+    try {
+      const tools = buildLiveApiTools() as any[];
+      for (const t of tools) {
+        if (t?.name) toolNames.push(t.name);
+        for (const fd of t?.functionDeclarations || []) toolNames.push(fd.name);
+      }
+    } catch { /* tool catalog probe is best-effort */ }
+    return res.json({
+      ok: true,
+      instruction_chars: instruction.length,
+      has_memory_block: instruction.includes('=== USER MEMORY CONTEXT ==='),
+      has_social_context: instruction.includes('<social_context>'),
+      has_self_check: instruction.includes('MANDATORY SELF-CHECK'),
+      social_tool_declared: toolNames.includes('get_social_context'),
+    });
+  } catch (err: any) {
+    return res.status(500).json({ ok: false, error: err.message });
   }
 });
 
