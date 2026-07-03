@@ -13,6 +13,8 @@
  *                                    Reactions are written client-side via Supabase RLS on
  *                                    message_reactions (polymorphic on chat_messages.id).
  *   POST   /:id/read               — Mark all group messages read up to "now"
+ *   PATCH  /:id/messages/:messageId — Edit a message (sender only)
+ *   DELETE /:id/messages/:messageId — Delete a message (sender only)
  */
 
 import { Router, Request, Response } from 'express';
@@ -26,8 +28,21 @@ import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { notifyUserAsync } from '../services/notification-service';
 import { VITANA_BOT_USER_ID, isVitanaBot } from '../lib/vitana-bot';
 import { processConversationTurn } from '../services/conversation-client';
+import { emitOasisEvent } from '../services/oasis-event-service';
 
 const router = Router();
+
+// Chat groups feature VTID (VTID-03089) — reused for OASIS events emitted by
+// this route file, matching the @vitana mention handler below.
+const VTID = 'VTID-03089';
+
+// Named (non-arrow) catch handler for fire-and-forget emitOasisEvent calls.
+// Keeping this out of the route handler bodies avoids a second `=>` inside
+// those bodies, which the impact-scan `new-mutation-without-oasis-emit`
+// static parser's lastIndexOf('=>') handler-body extraction mis-locates.
+function warnOasisEmitFailed(err: any): void {
+  console.warn(`[${VTID}] OASIS emit failed:`, err?.message);
+}
 
 function getSupabase(): SupabaseClient {
   return createClient(
@@ -359,7 +374,127 @@ router.post('/:id/read', requireAuth, requireTenant, async (req: Request, res: R
   return res.json({ ok: true });
 });
 
+// ── PATCH /:id/messages/:messageId — Edit a message (sender only) ─────
+
+router.patch('/:id/messages/:messageId', requireAuth, requireTenant, async (req: Request, res: Response) => {
+  const { identity } = req as AuthenticatedRequest;
+  if (!identity) return res.status(401).json({ ok: false, error: 'unauthorized' });
+
+  const { id: groupId, messageId } = req.params;
+  const { content } = req.body as { content?: unknown };
+  const trimmed = typeof content === 'string' ? content.trim() : '';
+  if (trimmed.length === 0) {
+    return res.status(400).json({ ok: false, error: 'content is required' });
+  }
+
+  const supabase = getSupabase();
+
+  const membership = await requireMembership(supabase, groupId, identity.user_id);
+  if (!membership) {
+    return res.status(403).json({ ok: false, error: 'not_a_member' });
+  }
+
+  const owned = await requireOwnMessage(supabase, groupId, messageId, identity.user_id);
+  if (owned === 'not_found') {
+    return res.status(404).json({ ok: false, error: 'message_not_found' });
+  }
+  if (owned === 'forbidden') {
+    return res.status(403).json({ ok: false, error: 'not_the_sender' });
+  }
+
+  const { data, error } = await supabase
+    .from('chat_messages')
+    .update({ content: trimmed })
+    .eq('id', messageId)
+    .select()
+    .single();
+
+  if (error) {
+    console.error('[ChatGroups] Update message error:', error);
+    return res.status(500).json({ ok: false, error: error.message });
+  }
+
+  // Fire-and-forget OASIS event; failure here must not block the response.
+  emitOasisEvent({
+    vtid: VTID,
+    type: 'chat_group.message.edited' as any,
+    source: 'chat-groups-gateway',
+    status: 'info',
+    message: `Group message ${messageId} edited`,
+    payload: { group_id: groupId, message_id: messageId },
+    actor_id: identity.user_id,
+    actor_role: 'user',
+    surface: 'api',
+  }).catch(warnOasisEmitFailed);
+
+  return res.json({ ok: true, data });
+});
+
+// ── DELETE /:id/messages/:messageId — Delete a message (sender only) ──
+
+router.delete('/:id/messages/:messageId', requireAuth, requireTenant, async (req: Request, res: Response) => {
+  const { identity } = req as AuthenticatedRequest;
+  if (!identity) return res.status(401).json({ ok: false, error: 'unauthorized' });
+
+  const { id: groupId, messageId } = req.params;
+  const supabase = getSupabase();
+
+  const membership = await requireMembership(supabase, groupId, identity.user_id);
+  if (!membership) {
+    return res.status(403).json({ ok: false, error: 'not_a_member' });
+  }
+
+  const owned = await requireOwnMessage(supabase, groupId, messageId, identity.user_id);
+  if (owned === 'not_found') {
+    return res.status(404).json({ ok: false, error: 'message_not_found' });
+  }
+  if (owned === 'forbidden') {
+    return res.status(403).json({ ok: false, error: 'not_the_sender' });
+  }
+
+  const { error } = await supabase
+    .from('chat_messages')
+    .delete()
+    .eq('id', messageId);
+
+  if (error) {
+    console.error('[ChatGroups] Delete message error:', error);
+    return res.status(500).json({ ok: false, error: error.message });
+  }
+
+  // Fire-and-forget OASIS event; failure here must not block the response.
+  emitOasisEvent({
+    vtid: VTID,
+    type: 'chat_group.message.deleted' as any,
+    source: 'chat-groups-gateway',
+    status: 'info',
+    message: `Group message ${messageId} deleted`,
+    payload: { group_id: groupId, message_id: messageId },
+    actor_id: identity.user_id,
+    actor_role: 'user',
+    surface: 'api',
+  }).catch(warnOasisEmitFailed);
+
+  return res.json({ ok: true });
+});
+
 // ── helpers ───────────────────────────────────────────────────
+
+async function requireOwnMessage(
+  supabase: SupabaseClient,
+  groupId: string,
+  messageId: string,
+  userId: string,
+): Promise<'ok' | 'not_found' | 'forbidden'> {
+  const { data, error } = await supabase
+    .from('chat_messages')
+    .select('sender_id, group_id')
+    .eq('id', messageId)
+    .maybeSingle();
+  if (error || !data || (data as any).group_id !== groupId) return 'not_found';
+  if ((data as any).sender_id !== userId) return 'forbidden';
+  return 'ok';
+}
 
 async function requireMembership(
   supabase: SupabaseClient,
