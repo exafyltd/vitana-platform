@@ -49,8 +49,9 @@ function makeFakeSupabase(result: { data: any[] | null; error: { message: string
   };
 }
 
-function turnEvent(payload: Record<string, unknown>, createdAt = new Date().toISOString()) {
-  return { type: 'memory.orchestrator.turn', status: 'success', payload, created_at: createdAt };
+// oasis_events stores the event type in `topic` and the payload in `metadata`
+function turnEvent(metadata: Record<string, unknown>, createdAt = new Date().toISOString()) {
+  return { topic: 'memory.orchestrator.turn', status: 'success', metadata, created_at: createdAt };
 }
 
 const HEALTHY_TURN = {
@@ -128,9 +129,9 @@ describe('GET /api/v1/admin/memory-orchestrator/status — verdict', () => {
       data: [
         turnEvent(HEALTHY_TURN),
         {
-          type: 'memory.orchestrator.bypass_detected',
+          topic: 'memory.orchestrator.bypass_detected',
           status: 'warning',
-          payload: { caller: 'processWithGemini', enforced: false },
+          metadata: { caller: 'processWithGemini', enforced: false },
           created_at: new Date().toISOString(),
         },
       ],
@@ -164,9 +165,9 @@ describe('GET /api/v1/admin/memory-orchestrator/status — verdict', () => {
       data: [
         turnEvent(HEALTHY_TURN),
         {
-          type: 'memory.orchestrator.bypass_detected',
+          topic: 'memory.orchestrator.bypass_detected',
           status: 'error',
-          payload: { caller: 'routes/conversation.turn', enforced: true },
+          metadata: { caller: 'routes/conversation.turn', enforced: true },
           created_at: new Date().toISOString(),
         },
       ],

@@ -56,10 +56,13 @@ router.get('/admin/memory-orchestrator/status', async (req: AuthenticatedRequest
 
   try {
     const since = new Date(Date.now() - windowHours * 3600 * 1000).toISOString();
+    // oasis_events stores the event type in `topic` and the payload in
+    // `metadata` (see oasis-event-service emit mapping) — verified against
+    // production data 2026-07-03; `type`/`payload` columns do not exist.
     const { data, error } = await supabase
       .from('oasis_events')
-      .select('type, status, payload, created_at')
-      .in('type', [
+      .select('topic, status, metadata, created_at')
+      .in('topic', [
         MEMORY_ORCHESTRATOR_EVENT_TYPES.TURN,
         MEMORY_ORCHESTRATOR_EVENT_TYPES.CONTEXT_BUILT,
         MEMORY_ORCHESTRATOR_EVENT_TYPES.BYPASS_DETECTED,
@@ -73,9 +76,9 @@ router.get('/admin/memory-orchestrator/status', async (req: AuthenticatedRequest
     }
 
     const events = data || [];
-    const turns = events.filter((e) => e.type === MEMORY_ORCHESTRATOR_EVENT_TYPES.TURN);
-    const built = events.filter((e) => e.type === MEMORY_ORCHESTRATOR_EVENT_TYPES.CONTEXT_BUILT);
-    const bypasses = events.filter((e) => e.type === MEMORY_ORCHESTRATOR_EVENT_TYPES.BYPASS_DETECTED);
+    const turns = events.filter((e) => e.topic === MEMORY_ORCHESTRATOR_EVENT_TYPES.TURN);
+    const built = events.filter((e) => e.topic === MEMORY_ORCHESTRATOR_EVENT_TYPES.CONTEXT_BUILT);
+    const bypasses = events.filter((e) => e.topic === MEMORY_ORCHESTRATOR_EVENT_TYPES.BYPASS_DETECTED);
 
     let injected = 0;
     let retrieved = 0;
@@ -86,7 +89,7 @@ router.get('/admin/memory-orchestrator/status', async (req: AuthenticatedRequest
     let prefsSum = 0;
     const perChannel: Record<string, { turns: number; injected: number }> = {};
     for (const e of turns) {
-      const p = (e.payload || {}) as TurnPayload;
+      const p = (e.metadata || {}) as TurnPayload;
       if (p.memory_injected_to_prompt) injected++;
       if ((p.memory_hits ?? 0) > 0) retrieved++;
       if (p.assistant_used_memory) used++;
@@ -101,12 +104,12 @@ router.get('/admin/memory-orchestrator/status', async (req: AuthenticatedRequest
     }
 
     const degradedBuilds = built.filter(
-      (e) => Array.isArray((e.payload as any)?.degraded_sources) && (e.payload as any).degraded_sources.length > 0,
+      (e) => Array.isArray((e.metadata as any)?.degraded_sources) && (e.metadata as any).degraded_sources.length > 0,
     ).length;
-    const enforcedBypasses = bypasses.filter((e) => (e.payload as any)?.enforced === true).length;
+    const enforcedBypasses = bypasses.filter((e) => (e.metadata as any)?.enforced === true).length;
     const softBypasses = bypasses.length - enforcedBypasses;
     const bypassCallers = Array.from(
-      new Set(bypasses.map((e) => String((e.payload as any)?.caller || 'unknown'))),
+      new Set(bypasses.map((e) => String((e.metadata as any)?.caller || 'unknown'))),
     ).slice(0, 10);
 
     const injectedRate = turns.length > 0 ? injected / turns.length : 0;

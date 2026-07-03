@@ -204,17 +204,21 @@ async function fetchActiveGoals(userId: string): Promise<ActiveGoal[]> {
   const supabase = getSupabase();
   if (!supabase) return [];
   try {
-    const { data } = await supabase
+    // Column set mirrors buildLifeCompassGoalBlock exactly — the live
+    // life_compass table has NO is_system_seeded column, and selecting a
+    // missing column makes PostgREST return an error (silently mapped to
+    // zero goals). Verified against production data 2026-07-03.
+    const { data, error } = await supabase
       .from('life_compass')
-      .select('primary_goal, category, is_system_seeded')
+      .select('primary_goal, category')
       .eq('user_id', userId)
       .eq('is_active', true)
       .order('created_at', { ascending: false })
       .limit(3);
+    if (error) throw new Error(error.message);
     return (data || []).map((r: any) => ({
       primary_goal: r.primary_goal,
       category: r.category,
-      is_system_seeded: r.is_system_seeded === true,
     }));
   } catch (err: any) {
     console.warn(`${LOG_PREFIX} fetchActiveGoals failed: ${err.message}`);
