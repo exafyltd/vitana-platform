@@ -11858,7 +11858,10 @@ router.get('/debug/brain-instruction', requireAuthWithTenant, async (req: Authen
       const tools = buildLiveApiTools() as any[];
       for (const t of tools) {
         if (t?.name) toolNames.push(t.name);
-        for (const fd of t?.functionDeclarations || []) toolNames.push(fd.name);
+        // Vertex BidiGenerate uses snake_case function_declarations.
+        for (const fd of t?.function_declarations || t?.functionDeclarations || []) {
+          toolNames.push(fd.name);
+        }
       }
     } catch { /* tool catalog probe is best-effort */ }
     return res.json({
