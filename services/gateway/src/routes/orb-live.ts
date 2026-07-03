@@ -5539,6 +5539,13 @@ async function executeLiveApiToolInner(
       // BOOTSTRAP-SOCIAL-MEMORY — live Social Context Pack for voice.
       // Delegates to the shared registry handler (same data the text brain
       // injects per turn via the memory orchestrator).
+      // BOOTSTRAP-SOCIAL-READ-TOOLS — own-inbox / own-graph READ tools
+      // (defects 1/4/5): pure DB reads, no WS session-state coupling, so
+      // they route through the shared dispatcher like the two above.
+      case 'view_messages':
+      case 'list_followers':
+      case 'list_following':
+      case 'recent_conversations':
       case 'get_social_context':
       case 'get_life_compass': {
         const SUPABASE_URL = process.env.SUPABASE_URL;

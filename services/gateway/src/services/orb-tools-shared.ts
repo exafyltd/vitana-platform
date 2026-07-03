@@ -4958,6 +4958,49 @@ export async function tool_get_social_context(
   }
 }
 
+/**
+ * BOOTSTRAP-SOCIAL-READ-TOOLS — the missing READ capabilities (defects
+ * 1/4/5 in docs/CONVERSATION_DEFECTS_FIX_PLAN.md). Thin wrappers over
+ * services/social-memory/social-read-tools.ts (which reuses the
+ * privacy-filtered social-memory repository). Speakable, internal-only
+ * (never Google), and "archived" does not exist.
+ */
+export async function tool_view_messages(
+  args: OrbToolArgs,
+  identity: OrbToolIdentity,
+  _sb: SupabaseClient,
+): Promise<OrbToolResult> {
+  const { runViewMessages } = await import('./social-memory/social-read-tools');
+  return runViewMessages(args as { scope?: unknown; limit?: unknown }, identity);
+}
+
+export async function tool_list_followers(
+  _args: OrbToolArgs,
+  identity: OrbToolIdentity,
+  _sb: SupabaseClient,
+): Promise<OrbToolResult> {
+  const { runListFollows } = await import('./social-memory/social-read-tools');
+  return runListFollows('followers', identity);
+}
+
+export async function tool_list_following(
+  _args: OrbToolArgs,
+  identity: OrbToolIdentity,
+  _sb: SupabaseClient,
+): Promise<OrbToolResult> {
+  const { runListFollows } = await import('./social-memory/social-read-tools');
+  return runListFollows('following', identity);
+}
+
+export async function tool_recent_conversations(
+  args: OrbToolArgs,
+  identity: OrbToolIdentity,
+  _sb: SupabaseClient,
+): Promise<OrbToolResult> {
+  const { runRecentConversations } = await import('./social-memory/social-read-tools');
+  return runRecentConversations(args as { limit?: unknown }, identity);
+}
+
 type OrbToolHandler = (
   args: OrbToolArgs,
   identity: OrbToolIdentity,
@@ -5033,6 +5076,13 @@ export const ORB_TOOL_REGISTRY: Record<string, OrbToolHandler> = {
   // posts/events). Voice-side bridge for the per-turn social injection the
   // text brain does in the memory orchestrator.
   get_social_context: tool_get_social_context,
+  // BOOTSTRAP-SOCIAL-READ-TOOLS — own-inbox / own-graph READ capabilities
+  // (defects 1/4/5): speakable unread inbox, followers/following, and
+  // recent conversations. Internal Maxina data only — never Google.
+  view_messages: tool_view_messages,
+  list_followers: tool_list_followers,
+  list_following: tool_list_following,
+  recent_conversations: tool_recent_conversations,
   // VTID-03255 — Journey Foundation: records every voice answer, writes the real
   // fact (life_compass goal / economy stance / focus / teacher ack), re-verifies,
   // and returns the next move. Reachable from Vertex, LiveKit, and /api/v1/orb/tool.

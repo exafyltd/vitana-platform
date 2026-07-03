@@ -992,6 +992,11 @@ export function buildLiveApiTools(
             'follow her", "because 3 people you follow are attending"). If the',
             'result marks a person as privacy-limited, say details are limited —',
             'do not speculate.',
+            '',
+            'For a DIRECT read of the inbox, followers/following, or the last',
+            'conversations, prefer the dedicated tools view_messages /',
+            'list_followers / list_following / recent_conversations — they give',
+            'exact speakable answers.',
           ].join('\n'),
           parameters: {
             type: 'object',
@@ -1004,6 +1009,78 @@ export function buildLiveApiTools(
             },
             required: ['question'],
           },
+        },
+        // BOOTSTRAP-SOCIAL-READ-TOOLS — direct READ tools for the user's own
+        // inbox and social graph (CONVERSATION_DEFECTS_FIX_PLAN defects
+        // 1/4/5). Exact speakable answers; internal Maxina data only.
+        {
+          name: 'view_messages',
+          description: [
+            "READ the user's own INTERNAL Maxina community message inbox:",
+            'unread (default) or all recent messages, grouped by sender with',
+            'counts and short snippets. The result is speakable.',
+            '',
+            'ALWAYS CALL THIS when the user asks to see/hear their messages:',
+            '  - "Zeig mir meine Nachrichten" / "Show me my messages"',
+            '  - "Lies mir meine Nachrichten vor" / "Read my messages"',
+            '  - "Von wem sind die Nachrichten?" / "Who wrote me?"',
+            '  - Any follow-up after you mentioned unread messages.',
+            '',
+            'HARD RULES:',
+            '  - These are INTERNAL community messages. They NEVER require a',
+            '    Google/Gmail/connected-apps account — NEVER mention Google or',
+            '    connected apps for community messages (Google is ONLY for',
+            '    explicit email/calendar requests via read_email/get_schedule).',
+            '  - Only "unread" and "all" exist. NEVER offer or mention',
+            '    "archived" messages — there is no such thing.',
+            '  - Never offer to show messages and then fail — this tool IS the',
+            '    way to show them. To reply, use send_chat_message.',
+          ].join('\n'),
+          parameters: {
+            type: 'object',
+            properties: {
+              scope: {
+                type: 'string',
+                description: "Which messages: 'unread' (default) or 'all' (recent 30 days).",
+              },
+            },
+          },
+        },
+        {
+          name: 'list_followers',
+          description: [
+            'READ who follows the user (their own followers): count, names,',
+            'mutual-follow count. Speakable.',
+            '',
+            'ALWAYS CALL THIS for: "Wer folgt mir?" / "Who follows me?" /',
+            '"Folgt mir jemand?" / "Habe ich Follower?".',
+            'Answer with the count and a few names. NEVER say you cannot tell,',
+            'and NEVER deflect the user to search the member list manually.',
+          ].join('\n'),
+          parameters: { type: 'object', properties: {} },
+        },
+        {
+          name: 'list_following',
+          description: [
+            'READ who the user follows: count and names. Speakable.',
+            '',
+            'ALWAYS CALL THIS for: "Wem folge ich?" / "Who do I follow?".',
+            'Answer with the count and a few names — never deflect.',
+          ].join('\n'),
+          parameters: { type: 'object', properties: {} },
+        },
+        {
+          name: 'recent_conversations',
+          description: [
+            "READ the user's most recent direct-message conversations, newest",
+            'first, with who wrote last and a snippet. Speakable.',
+            '',
+            'ALWAYS CALL THIS for: "Mit wem habe ich zuletzt geschrieben?" /',
+            '"Who did I last chat with?" / "Was waren meine letzten Chats?".',
+            'The first entry answers "who did I last chat with". Internal',
+            'Maxina messages — no Google account involved, ever.',
+          ].join('\n'),
+          parameters: { type: 'object', properties: {} },
         },
         {
           name: 'narrate_guided_session',
