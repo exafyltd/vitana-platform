@@ -31,6 +31,7 @@ import type { OverviewPayload } from '../assistant-continuation/providers/new-da
 import type { TemporalBucket } from '../guide/temporal-bucket';
 import { selectNextBestAction, type NextBestAction, type NbaKey } from './next-best-action';
 import { surfaceForRoute, screenCompletionFor } from './screen-surface';
+import { buildPreviousGreetingSection, type FactDelta } from './greeting-facts-ledger';
 
 export type OpeningRegister =
   | 'first_time'
@@ -85,6 +86,15 @@ export interface ResumeDirectiveInput {
    *  maps to an actionable surface, the next step DEEPENS toward completing the
    *  action there instead of redirecting the user away. */
   currentScreen?: string | null;
+  /** Spoken-facts continuity from the greeting-facts ledger. When present,
+   *  `new_since_last` carries ONLY genuinely-new deltas (never a level the
+   *  user already heard) and unchanged facts move to `already_mentioned`. */
+  factDeltas?: Record<string, FactDelta>;
+  /** Vitana's previous first utterance — handed to the model as a
+   *  wording-variety negative example (rule 2: never repeat the greeting). */
+  previousUtterance?: string | null;
+  /** How many sessions the user already opened today (context, rule 4). */
+  sessionsToday?: number | null;
 }
 
 export interface ResumeDirective {
@@ -127,12 +137,35 @@ export function buildResumeDirective(input: ResumeDirectiveInput): ResumeDirecti
   const rawRecall = payload?.guided_journey?.last_session_recall ?? null;
   const nextSessionTitle = payload?.guided_journey?.next_session_title ?? null;
   const recall = rawRecall && rawRecall !== nextSessionTitle ? rawRecall : null;
+
+  // "What's new" must be NEWS. Without the ledger, a level (10 unread all
+  // day) was re-announced on every reopen as "new since earlier" — the
+  // exact robotic repeat the user reported. With deltas: unchanged counts
+  // move to `already_mentioned` (present but forbidden to restate); changed
+  // counts are phrased as their CHANGE; only never-mentioned facts may
+  // appear as plain counts.
+  const deltas = input.factDeltas ?? null;
   const newBits: string[] = [];
-  if (payload) {
-    if (payload.matches_unread > 0) newBits.push(`${payload.matches_unread} new match(es)`);
-    if (payload.messages_unread > 0) newBits.push(`${payload.messages_unread} unread message(s)`);
-    if (payload.reminders_today && payload.reminders_today.count > 0) newBits.push(`${payload.reminders_today.count} reminder(s) due today`);
-  }
+  const alreadyMentioned: string[] = [];
+  const pushBit = (key: string, plainLabel: (n: number) => string, deltaLabel: (d: number) => string) => {
+    if (!payload) return;
+    const d = deltas?.[key];
+    const current =
+      key === 'reminders_today' ? payload.reminders_today?.count ?? 0 :
+      key === 'matches_unread' ? payload.matches_unread :
+      payload.messages_unread;
+    if (!current || current <= 0) return;
+    if (!d || d.status === 'new') {
+      newBits.push(plainLabel(current));
+    } else if (d.status === 'changed' && (d.delta ?? 0) > 0) {
+      newBits.push(deltaLabel(d.delta as number));
+    } else {
+      alreadyMentioned.push(plainLabel(current));
+    }
+  };
+  pushBit('matches_unread', (n) => `${n} new match(es)`, (d) => `${d} match(es) new since you last mentioned matches`);
+  pushBit('messages_unread', (n) => `${n} unread message(s)`, (d) => `${d} message(s) arrived since you last mentioned the inbox`);
+  pushBit('reminders_today', (n) => `${n} reminder(s) due today`, (d) => `${d} more reminder(s) came due since you last mentioned them`);
 
   // Register-specific framing rules the model must obey.
   const framing =
@@ -153,10 +186,24 @@ export function buildResumeDirective(input: ResumeDirectiveInput): ResumeDirecti
   if (completion) compact.complete_on_current_screen = true;
   if (recall) compact.where_we_left_off = recall;
   if (newBits.length) compact.new_since_last = newBits;
+  if (alreadyMentioned.length) compact.already_mentioned = alreadyMentioned;
+  if (typeof input.sessionsToday === 'number' && input.sessionsToday > 0) {
+    compact.sessions_today = input.sessionsToday;
+  }
   if (nba) {
+    // Ledger-aware suggestion detail: the model must never receive a stale
+    // level to recite. Unchanged count → number-free reference; changed
+    // count → lead with the delta (the news), total only as context.
+    const msgDelta = deltas?.messages_unread;
+    const nbaDetail =
+      nba.key === 'reply_messages' && msgDelta?.status === 'unchanged'
+        ? 'the unread messages the user already knows about'
+        : nba.key === 'reply_messages' && msgDelta?.status === 'changed' && (msgDelta.delta ?? 0) > 0
+          ? `${msgDelta.delta} new message(s) since last mentioned (${msgDelta.current} waiting in total)`
+          : nba.detail;
     compact.suggested_next_step = {
       kind: nba.key,
-      what: nba.detail,
+      what: nbaDetail,
       why: nba.rationale,
       // The REAL ORB tool that executes this when the user accepts. null = no
       // one-shot tool → guide the user through it, never promise to do it.
@@ -182,7 +229,7 @@ MUST end with the suggested next step as a concrete offer ("ich würde
 vorschlagen, wir …" / "I'd suggest we …"), phrased as doing it WITH the user.
 
 ${framing}
-
+${buildPreviousGreetingSection(input.previousUtterance ?? null)}
 ## LANGUAGE
 ${(lang || 'en').toLowerCase()}. Speak only in the user's language.
 ${nameLine}
@@ -197,6 +244,9 @@ ${nameLine}
   it naturally, never as a database row. When it is ABSENT, do NOT invent a "we
   were just on X" line; lead with what's new and the next step instead.
 - Only mention ${'`new_since_last`'} items that are present; if empty, skip — do not say "nothing new".
+- ${'`already_mentioned`'} items are things the user ALREADY heard from you and
+  that have NOT changed. NEVER restate their counts or announce them as news.
+  At most a soft, number-free reference when it genuinely serves the thread.
 - ALWAYS finish with ${'`suggested_next_step`'} as a guided offer. Never end on a bare "How can I help?".
 - EXECUTION — do not just describe, DO IT: ${'`suggested_next_step.execute_with_tool`'}
   names the real tool that performs this action. When the user accepts, CALL that

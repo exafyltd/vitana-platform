@@ -624,6 +624,36 @@ export function createUpstreamLiveMessageHandler(
               const fullTranscript = session.outputTranscriptBuffer.trim();
               chatBridgeAssistantText = fullTranscript;
 
+              // Greeting-facts ledger: capture Vitana's FIRST spoken turn of
+              // the session so the NEXT session's opener gets it as a
+              // wording-variety negative example (rule 2: never greet with
+              // the same wording twice in a row). Fire-and-forget; must
+              // never block the voice path.
+              const isFirstAssistantTurn = !session.transcriptTurns.some(
+                (t) => t.role === 'assistant',
+              );
+              if (
+                isFirstAssistantTurn &&
+                session.identity?.tenant_id &&
+                session.identity?.user_id
+              ) {
+                const _gflTenant = session.identity.tenant_id;
+                const _gflUser = session.identity.user_id;
+                const _gflSb = getSupabase();
+                if (_gflSb) {
+                  import('../../../services/conversation/greeting-facts-ledger')
+                    .then(({ recordGreetingUtterance }) =>
+                      recordGreetingUtterance({
+                        supabase: _gflSb,
+                        tenantId: _gflTenant,
+                        userId: _gflUser,
+                        utterance: fullTranscript,
+                      }),
+                    )
+                    .catch(() => { /* continuity is best-effort */ });
+                }
+              }
+
               // Forwarding v2d: the FORCED FIRST UTTERANCE flag MUST flip even
               // for the greeting turn — that IS the forced utterance. Setting
               // it inside the `else` branch (greeting-turn = false) was the
