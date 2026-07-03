@@ -107,6 +107,10 @@ export interface DoNotRepeatEntry {
 export interface MemoryTurnTelemetry {
   memory_orchestrator_called: true;
   orchestrator_version: string;
+  /** BOOTSTRAP-SOCIAL-MEMORY: social context injected for this turn. */
+  social_loaded: boolean;
+  /** Social intent kinds detected for this turn (empty = not a social turn). */
+  social_intent_kinds: string[];
   /** Total memory-garden hits in the context pack (facts + episodic + diary). */
   memory_hits: number;
   /** Structured facts (memory_facts / identity core) loaded. */
@@ -417,6 +421,8 @@ export function formatMemoryContextForPrompt(input: {
   goals: ActiveGoal[];
   preferences: PreferenceEntry[];
   do_not_repeat: DoNotRepeatEntry[];
+  /** BOOTSTRAP-SOCIAL-MEMORY: pre-formatted <social_context> section. */
+  social_block?: string;
   skip_goal_section?: boolean;
   user_timezone?: string;
 }): string {
@@ -425,7 +431,7 @@ export function formatMemoryContextForPrompt(input: {
   });
 
   return `${MEMORY_CONTEXT_SENTINEL}
-${packBlock}${buildGoalsSection(input.goals, input.skip_goal_section === true)}${buildPreferencesSection(input.preferences)}${buildDoNotRepeatSection(input.do_not_repeat)}${buildSelfCheckSection()}
+${packBlock}${buildGoalsSection(input.goals, input.skip_goal_section === true)}${buildPreferencesSection(input.preferences)}${input.social_block || ''}${buildDoNotRepeatSection(input.do_not_repeat)}${buildSelfCheckSection()}
 ${MEMORY_CONTEXT_END_SENTINEL}
 `;
 }
@@ -529,11 +535,39 @@ export async function buildAssistantMemoryContext(
   // VTID-03183: Life Compass goals are community prose — never load them
   // for developer/admin surfaces.
   const communityRole = isCommunityRole(input.role);
-  const [packRes, goalsRes, prefsRes, dnrRes] = await Promise.allSettled([
+
+  // BOOTSTRAP-SOCIAL-MEMORY: when the message is about people/community/
+  // matches/posts/events, fetch the live Social Context Pack in parallel
+  // with everything else. Community surfaces only — dev/admin never get
+  // community social context (VTID-03183 spirit).
+  let socialIntent: import('./social-memory/social-memory-types').SocialIntentDecision | null = null;
+  let fetchSocial: Promise<{ prompt_block: string; intent_kinds: string[] } | null> =
+    Promise.resolve(null);
+  if (communityRole && input.message) {
+    fetchSocial = (async () => {
+      const { detectSocialIntent, buildAssistantSocialContext } = await import(
+        './social-memory/social-memory-service'
+      );
+      socialIntent = detectSocialIntent(input.message);
+      if (!socialIntent.is_social) return null;
+      const result = await buildAssistantSocialContext({
+        tenant_id: input.tenant_id,
+        user_id: input.user_id,
+        question: input.message,
+        conversation_id: input.thread_id,
+        surface: 'vitana_assistant',
+        compact: true,
+      });
+      return { prompt_block: result.prompt_block, intent_kinds: result.intent.kinds };
+    })();
+  }
+
+  const [packRes, goalsRes, prefsRes, dnrRes, socialRes] = await Promise.allSettled([
     buildContextPack(contextPackInput),
     communityRole ? fetchActiveGoals(input.user_id) : Promise.resolve([]),
     fetchPreferences(input.user_id),
     fetchDoNotRepeat(input.tenant_id, input.user_id),
+    fetchSocial,
   ]);
 
   if (packRes.status === 'fulfilled') {
@@ -559,6 +593,17 @@ export async function buildAssistantMemoryContext(
     degraded.push('governance');
   }
 
+  // BOOTSTRAP-SOCIAL-MEMORY: social section (null when not a social turn).
+  let socialBlock = '';
+  let socialIntentKinds: string[] = [];
+  if (socialRes.status === 'fulfilled' && socialRes.value) {
+    socialBlock = socialRes.value.prompt_block;
+    socialIntentKinds = socialRes.value.intent_kinds;
+  } else if (socialRes.status === 'rejected') {
+    degraded.push('social');
+    console.warn(`${LOG_PREFIX} social context degraded: ${socialRes.reason?.message}`);
+  }
+
   // Empty-but-valid pack when the builder itself failed, so callers always
   // get a well-formed result and the reply can still be produced (marked
   // degraded, never silently).
@@ -572,6 +617,7 @@ export async function buildAssistantMemoryContext(
     context_pack: pack,
     goals,
     preferences,
+    social_block: socialBlock,
     do_not_repeat: doNotRepeat,
     skip_goal_section: input.skip_goal_section || !communityRole,
     user_timezone: input.user_timezone,
@@ -580,6 +626,8 @@ export async function buildAssistantMemoryContext(
   const telemetry: MemoryTurnTelemetry = {
     memory_orchestrator_called: true,
     orchestrator_version: ORCHESTRATOR_VERSION,
+    social_loaded: socialBlock.length > 0,
+    social_intent_kinds: socialIntentKinds,
     memory_hits: pack.memory_hits.length,
     facts_loaded: factsLoaded,
     episodic_loaded: episodicLoaded,
@@ -838,6 +886,8 @@ export function emitMemoryTurnTelemetry(
       channel: turn.channel,
       model_used: turn.model_used,
       memory_orchestrator_called: t.memory_orchestrator_called,
+      social_loaded: t.social_loaded,
+      social_intent_kinds: t.social_intent_kinds,
       memory_hits: t.memory_hits,
       facts_loaded: t.facts_loaded,
       episodic_loaded: t.episodic_loaded,
