@@ -86,7 +86,13 @@
     { "name": "get_pillar_subscores",         "implementations": ["vertex", "livekit"], "safety_critical": false, "owner_vtid": "VTID-01983", "notes": "Returns per-pillar Vitana Index subscores. Shared dispatcher tool, both sides. Declared in BOOTSTRAP-VOICE-TOOL-PARITY audit." },
 
     { "name": "teacher_event",                "implementations": ["vertex"], "safety_critical": false, "owner_vtid": null, "notes": "INTENTIONALLY ONE-SIDED (Vertex-only): teaching-session telemetry event. No LiveKit @function_tool equivalent has shipped. Declared in BOOTSTRAP-VOICE-TOOL-PARITY audit." },
-    { "name": "end_teaching_session",         "implementations": ["vertex"], "safety_critical": false, "owner_vtid": null, "notes": "INTENTIONALLY ONE-SIDED (Vertex-only): closes an active teaching session. No LiveKit @function_tool equivalent has shipped. Declared in BOOTSTRAP-VOICE-TOOL-PARITY audit." }
+    { "name": "end_teaching_session",         "implementations": ["vertex"], "safety_critical": false, "owner_vtid": null, "notes": "INTENTIONALLY ONE-SIDED (Vertex-only): closes an active teaching session. No LiveKit @function_tool equivalent has shipped. Declared in BOOTSTRAP-VOICE-TOOL-PARITY audit." },
+
+    { "name": "get_social_context",           "implementations": ["vertex", "livekit"], "safety_critical": false, "owner_vtid": null, "notes": "BOOTSTRAP-SOCIAL-MEMORY: live privacy-filtered Social Context Pack (follows, matches, messages, groups, person intelligence, ranked posts/events). Shared dispatcher tool, both sides." },
+    { "name": "view_messages",                "implementations": ["vertex", "livekit"], "safety_critical": false, "owner_vtid": null, "notes": "BOOTSTRAP-SOCIAL-READ-TOOLS: speakable read of the user's own INTERNAL community inbox (unread/all, grouped by sender). Never Google-bound; 'archived' does not exist. Shared dispatcher tool, both sides." },
+    { "name": "list_followers",               "implementations": ["vertex", "livekit"], "safety_critical": false, "owner_vtid": null, "notes": "BOOTSTRAP-SOCIAL-READ-TOOLS: who follows the user (count, names, mutuals) — direct answer, never deflects. Shared dispatcher tool, both sides." },
+    { "name": "list_following",               "implementations": ["vertex", "livekit"], "safety_critical": false, "owner_vtid": null, "notes": "BOOTSTRAP-SOCIAL-READ-TOOLS: who the user follows (count and names). Shared dispatcher tool, both sides." },
+    { "name": "recent_conversations",         "implementations": ["vertex", "livekit"], "safety_critical": false, "owner_vtid": null, "notes": "BOOTSTRAP-SOCIAL-READ-TOOLS: newest-first DM contacts; first entry answers 'who did I last chat with'. Shared dispatcher tool, both sides." }
   ],
 
   "oasis_topics": [
