@@ -392,6 +392,11 @@ router.post('/groups/:id/view', requireAuth, async (req: AuthenticatedRequest, r
     }).catch(err => console.warn(`[${VTID}] dispatch user.group.viewed failed:`, err.message));
   }
 
+  // impact-allow-no-oasis: a page view is telemetry, not a state transition
+  // (CLAUDE.md OASIS rule: "Never mark polling or heartbeats as OASIS
+  // events"). The automation dispatch above IS the meaningful side effect;
+  // automation-executor already emits autopilot.automation.completed/failed
+  // per run, so a second OASIS event here would be a duplicate signal.
   return res.status(200).json({ ok: true });
 });
 
