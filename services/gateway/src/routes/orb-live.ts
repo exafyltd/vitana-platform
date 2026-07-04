@@ -13898,6 +13898,21 @@ async function handleWebSocketConnection(ws: WebSocket, req: IncomingMessage): P
       const result = await verifyAndExtractIdentity(token);
       if (result) {
         identity = result.identity;
+        // BOOTSTRAP-WS-TENANT-FALLBACK: mirrors the SSE /live/stream fix
+        // (VTID-MEMORY-BRIDGE, ~L12921) that this WebSocket path never got.
+        // provision_platform_user() creates user_tenants rows but does NOT
+        // set active_tenant_id in JWT app_metadata, so many authenticated
+        // users reach this handler with tenant_id: null — silently
+        // disabling every tenant-scoped write for the WHOLE voice session
+        // (greeting-facts ledger, social context, memory writes), while
+        // user_id-only paths (e.g. the daily-briefing stamp) kept working,
+        // masking the gap. Look it up the same way the SSE path does.
+        if (!identity.tenant_id && identity.user_id) {
+          const resolvedTenant = await lookupPrimaryTenant(identity.user_id);
+          if (resolvedTenant) {
+            identity = { ...identity, tenant_id: resolvedTenant };
+          }
+        }
         console.log(`[VTID-01224] WebSocket authenticated: user=${identity.user_id}, tenant=${identity.tenant_id}`);
       } else {
         console.warn(`[VTID-01224] WebSocket auth failed for ${sessionId}: invalid token`);
