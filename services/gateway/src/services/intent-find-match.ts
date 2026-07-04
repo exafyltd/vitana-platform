@@ -256,13 +256,55 @@ export async function runFindMatch(
 
   // 5a. Matches found → recommend + also post (when complete enough).
   if (candidates.length > 0) {
+    // DEFECT 2 (docs/CONVERSATION_DEFECTS_FIX_PLAN.md) — exact-name
+    // short-circuit. When the user NAMED a person and a candidate IS that
+    // person (resolved via the privacy-gated profile lookup, or a
+    // case/space-insensitive vitana_id match), select them directly —
+    // asking "did you mean one of these other two?" about a 100% hit is
+    // the disambiguation bug the operator reported. A dominant top score
+    // on a named query short-circuits the same way.
+    let selected: CatalogCandidate[] = candidates;
+    let exactPersonMatch = false;
+    if (!isPartner) {
+      try {
+        const { extractPersonHint } = await import('./social-memory/social-memory-prompts');
+        const hint = extractPersonHint(utterance);
+        if (hint) {
+          const norm = (s: string | null | undefined) =>
+            (s || '').toLowerCase().replace(/[\s@._-]/g, '');
+          const hintNorm = norm(hint);
+          const { resolvePersonByName } = await import('./social-memory/social-memory-repository');
+          const person = await resolvePersonByName(hint).catch(() => null);
+          const hit = candidates.find(
+            (c) =>
+              (person && c.cand_user_id === person.user_id) ||
+              (hintNorm.length >= 3 && norm(c.cand_vitana_id) === hintNorm),
+          );
+          if (hit) {
+            selected = [hit];
+            exactPersonMatch = true;
+          } else if (
+            candidates.length > 1 &&
+            Number(candidates[0].score) - Number(candidates[1].score) >= 0.15
+          ) {
+            // Named query + clearly dominant top hit → no verbal ballot.
+            selected = [candidates[0]];
+          }
+        }
+      } catch (err) {
+        console.warn(
+          `[BOOTSTRAP-FIND-MATCH] exact-name short-circuit non-fatal: ${err instanceof Error ? err.message : 'unknown'}`,
+        );
+      }
+    }
+
     let postedIntentId: string | null = null;
     if (complete) {
       const persisted = await persistIntent(supabase, id, kind, extract);
       if (persisted) postedIntentId = persisted.intent_id;
     }
 
-    const recommendations = candidates.map((c) => {
+    const recommendations = selected.map((c) => {
       const r = (c.reasons || {}) as Record<string, unknown>;
       return {
         intent_id: c.cand_intent_id,
@@ -296,10 +338,12 @@ export async function runFindMatch(
       ok: true,
       stage: 'matched',
       text:
-        `Found ${recommendations.length} ${recommendations.length === 1 ? 'match' : 'matches'} near the user, ranked by location and time first (activity is flexible). ` +
-        (offActivity
-          ? 'None are the exact activity asked for — be honest and warm: say there is no exact match for that activity yet, but these people are nearby and free around the same time for something else (name the activity), because location and timing come first. Then offer to open or connect. '
-          : 'Read the top ones back warmly (lead with how close and when, then the activity) and offer to open or connect. ') +
+        (exactPersonMatch
+          ? `This candidate IS the person the user asked about by name — an exact match. Present them directly and offer to open or connect. Do NOT mention, list, or ask about any other candidates; there is nothing to disambiguate. `
+          : `Found ${recommendations.length} ${recommendations.length === 1 ? 'match' : 'matches'} near the user, ranked by location and time first (activity is flexible). ` +
+            (offActivity
+              ? 'None are the exact activity asked for — be honest and warm: say there is no exact match for that activity yet, but these people are nearby and free around the same time for something else (name the activity), because location and timing come first. Then offer to open or connect. '
+              : 'Read the top ones back warmly (lead with how close and when, then the activity) and offer to open or connect. ')) +
         tail +
         (isPartner ? ' For partner matches, explain identities are revealed only after both people say yes.' : ''),
       data: {
@@ -309,6 +353,7 @@ export async function runFindMatch(
         intent_id: postedIntentId,
         matches: recommendations,
         match_count: recommendations.length,
+        exact_person_match: exactPersonMatch,
         off_activity: offActivity,
         partner_seek_redacted: isPartner,
       },
