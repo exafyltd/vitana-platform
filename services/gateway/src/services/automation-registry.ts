@@ -88,9 +88,10 @@ const CONNECT_PEOPLE: AutomationDefinition[] = [
   },
   {
     id: 'AP-0106', name: '"People You Know Are Here" Social Proof', domain: 'connect-people',
-    status: 'PLANNED', priority: 'P1', triggerType: 'event',
+    status: 'IMPLEMENTED', priority: 'P1', triggerType: 'event',
     triggerConfig: { eventTopic: 'user.group.viewed' },
     targetRoles: [...MEMBER_ROLES],
+    handler: 'runPeopleYouKnowSocialProof',
   },
   {
     id: 'AP-0107', name: 'Proactive Social Alignment Suggestions', domain: 'connect-people',
@@ -115,9 +116,10 @@ const CONNECT_PEOPLE: AutomationDefinition[] = [
   },
   {
     id: 'AP-0110', name: 'Opportunity Surfacing with Social Layer', domain: 'connect-people',
-    status: 'PLANNED', priority: 'P2', triggerType: 'event',
+    status: 'IMPLEMENTED', priority: 'P2', triggerType: 'event',
     triggerConfig: { eventTopic: 'opportunity.detected' },
     targetRoles: [...MEMBER_ROLES],
+    handler: 'runOpportunitySocialLayer',
   },
 ];
 

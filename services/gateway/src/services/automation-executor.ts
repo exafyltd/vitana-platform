@@ -193,6 +193,15 @@ export function registerHandler(
   console.log(`[AutomationExecutor] Registered handler: ${handlerName}`);
 }
 
+/**
+ * Look up a registered handler by name (used by tests and introspection).
+ */
+export function getHandler(
+  handlerName: string
+): ((ctx: AutomationContext) => Promise<{ usersAffected: number; actionsTaken: number }>) | undefined {
+  return handlers[handlerName];
+}
+
 // =============================================================================
 // Role-aware user query
 // =============================================================================

@@ -9,6 +9,7 @@
  * Endpoints:
  * - POST /api/v1/community/groups              - Create a community group
  * - POST /api/v1/community/groups/:id/join     - Join a community group
+ * - POST /api/v1/community/groups/:id/view     - Track group view (AP-0106 social proof)
  * - POST /api/v1/community/meetups             - Create a meetup
  * - POST /api/v1/community/recommendations/recompute - Recompute recommendations
  * - GET  /api/v1/community/recommendations     - Get recommendations
@@ -359,6 +360,41 @@ router.post('/groups/:id/join', async (req: Request, res: Response) => {
       error: err.message
     });
   }
+});
+
+/**
+ * POST /groups/:id/view -> POST /api/v1/community/groups/:id/view
+ *
+ * Fire-and-forget view tracking for AP-0106 ("People You Know Are Here"
+ * Social Proof). Called by the frontend when a user opens a group detail
+ * page; dispatches user.group.viewed so the automation can check whether
+ * any of the viewer's connections are already members.
+ */
+router.post('/groups/:id/view', async (req: Request, res: Response) => {
+  const groupId = req.params.id;
+
+  const token = getBearerToken(req);
+  if (!token) {
+    return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
+  }
+
+  const uuidValidation = z.string().uuid('Invalid group ID').safeParse(groupId);
+  if (!uuidValidation.success) {
+    return res.status(400).json({ ok: false, error: 'Invalid group ID format' });
+  }
+
+  let userId = '';
+  try { userId = JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString()).sub; } catch {}
+
+  const tenantId = process.env.DEFAULT_TENANT_ID;
+  if (tenantId && userId) {
+    dispatchEvent(tenantId, 'user.group.viewed', {
+      user_id: userId,
+      group_id: groupId,
+    }).catch(err => console.warn(`[${VTID}] dispatch user.group.viewed failed:`, err.message));
+  }
+
+  return res.status(200).json({ ok: true });
 });
 
 /**

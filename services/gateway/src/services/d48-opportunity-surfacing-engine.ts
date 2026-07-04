@@ -37,6 +37,7 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { randomUUID } from 'crypto';
 import { emitOasisEvent } from './oasis-event-service';
+import { dispatchEvent } from './automation-executor';
 import {
   OpportunitySurfacingInput,
   OpportunitySurfacingResponse,
@@ -1101,6 +1102,17 @@ export async function surfaceOpportunities(
     // Store opportunities
     await storeOpportunities(limitedOpportunities, input, supabase);
     rulesApplied.push('store_opportunities');
+
+    // Dispatch AP-0110 (Opportunity Surfacing with Social Layer) for the
+    // top-ranked opportunity only — avoids a notification per opportunity.
+    const topOpportunity = limitedOpportunities[0];
+    if (topOpportunity && input.tenant_id) {
+      dispatchEvent(input.tenant_id, 'opportunity.detected', {
+        user_id: input.user_id,
+        opportunity_id: topOpportunity.opportunity_id,
+        opportunity_type: topOpportunity.opportunity_type,
+      }).catch(err => console.warn(`${LOG_PREFIX} dispatch opportunity.detected failed:`, err.message));
+    }
 
     const duration = Date.now() - startTime;
 
