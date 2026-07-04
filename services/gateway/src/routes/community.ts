@@ -9,6 +9,7 @@
  * Endpoints:
  * - POST /api/v1/community/groups              - Create a community group
  * - POST /api/v1/community/groups/:id/join     - Join a community group
+ * - POST /api/v1/community/global-groups/:id/view - Track group view (AP-0106 social proof)
  * - POST /api/v1/community/meetups             - Create a meetup
  * - POST /api/v1/community/recommendations/recompute - Recompute recommendations
  * - GET  /api/v1/community/recommendations     - Get recommendations
@@ -359,6 +360,47 @@ router.post('/groups/:id/join', async (req: Request, res: Response) => {
       error: err.message
     });
   }
+});
+
+/**
+ * POST /global-groups/:id/view -> POST /api/v1/community/global-groups/:id/view
+ *
+ * Fire-and-forget view tracking for AP-0106 ("People You Know Are Here"
+ * Social Proof). Called by the frontend when a user opens a group detail
+ * page; dispatches user.group.viewed so the automation can check whether
+ * any of the viewer's connections are already members. Lives under
+ * global-groups (not groups) because global_community_groups is the real,
+ * live groups schema — see the /global-groups/:id/join comment below for
+ * why community_groups (VTID-01084) is never-deployed.
+ */
+router.post('/global-groups/:id/view', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  // impact-allow-no-oasis: a page view is telemetry, not a state transition
+  // (CLAUDE.md OASIS rule: "Never mark polling or heartbeats as OASIS
+  // events"). The automation dispatch below IS the meaningful side effect;
+  // automation-executor already emits autopilot.automation.completed/failed
+  // per run, so a second OASIS event here would be a duplicate signal.
+  const groupId = req.params.id;
+
+  const uuidValidation = z.string().uuid('Invalid group ID').safeParse(groupId);
+  if (!uuidValidation.success) {
+    return res.status(400).json({ ok: false, error: 'Invalid group ID format' });
+  }
+
+  const userId = req.identity?.user_id;
+  const tenantId = process.env.DEFAULT_TENANT_ID;
+  if (tenantId && userId) {
+    dispatchEvent(tenantId, 'user.group.viewed', {
+      user_id: userId,
+      group_id: groupId,
+    }).catch(err => console.warn(`[${VTID}] dispatch user.group.viewed failed:`, err.message));
+  }
+
+  // impact-allow-no-oasis: a page view is telemetry, not a state transition
+  // (CLAUDE.md OASIS rule: "Never mark polling or heartbeats as OASIS
+  // events"). The automation dispatch above IS the meaningful side effect;
+  // automation-executor already emits autopilot.automation.completed/failed
+  // per run, so a second OASIS event here would be a duplicate signal.
+  return res.status(200).json({ ok: true });
 });
 
 /**
