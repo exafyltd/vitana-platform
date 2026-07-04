@@ -338,19 +338,28 @@ async function runPeopleYouKnowSocialProof(ctx: AutomationContext) {
 
   const { supabase, tenantId } = ctx;
 
+  // relationship_edges' live schema is source_type/source_id/target_type/
+  // target_id/edge_type (NOT user_id/relationship_type — several other
+  // already-shipped handlers in this file/domain still use that stale
+  // column set and silently no-op; see PR discussion for the wider finding).
   const { data: connections } = await supabase
     .from('relationship_edges')
     .select('target_id')
     .eq('tenant_id', tenantId)
-    .eq('user_id', userId)
+    .eq('source_type', 'person')
+    .eq('source_id', userId)
     .eq('target_type', 'person')
-    .eq('relationship_type', 'connected');
+    .eq('edge_type', 'connected');
 
   const connectionIds = (connections || []).map((c: any) => c.target_id);
   if (connectionIds.length === 0) return { usersAffected: 0, actionsTaken: 0 };
 
+  // community_groups/community_group_members (VTID-01084) were never
+  // deployed — global_community_groups/global_community_group_members is
+  // the real, live groups schema (no tenant_id; the global community is
+  // shared across tenants).
   const { data: members } = await supabase
-    .from('community_group_members')
+    .from('global_community_group_members')
     .select('user_id')
     .eq('group_id', groupId)
     .in('user_id', connectionIds);
@@ -397,21 +406,25 @@ async function runOpportunitySocialLayer(ctx: AutomationContext) {
     .from('relationship_edges')
     .select('target_id')
     .eq('tenant_id', tenantId)
-    .eq('user_id', userId)
+    .eq('source_type', 'person')
+    .eq('source_id', userId)
     .eq('target_type', 'person')
-    .eq('relationship_type', 'connected');
+    .eq('edge_type', 'connected');
 
   const connectionIds = (connections || []).map((c: any) => c.target_id);
   if (connectionIds.length === 0) return { usersAffected: 0, actionsTaken: 0 };
 
-  // Find connections who engaged with a similar opportunity type recently
+  // Find connections who engaged with a similar opportunity type recently.
+  // status is 'active' | 'dismissed' | 'engaged' | 'expired' — 'engaged' is
+  // the ContextualOpportunityRecord value for acted-on (see
+  // types/opportunity-surfacing.ts).
   const { data: peerOpportunities, count } = await supabase
     .from('contextual_opportunities')
     .select('id, user_id', { count: 'exact' })
     .eq('tenant_id', tenantId)
     .eq('opportunity_type', opportunityType)
     .in('user_id', connectionIds)
-    .in('status', ['active', 'acted_on'])
+    .in('status', ['active', 'engaged'])
     .limit(10);
 
   if (!count || count === 0) return { usersAffected: 0, actionsTaken: 0 };

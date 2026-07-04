@@ -99,7 +99,7 @@ describe('runPeopleYouKnowSocialProof (AP-0106)', () => {
   it('notifies the viewer when connections are members of the viewed group', async () => {
     const supabase = makeFakeSupabase({
       relationship_edges: { data: [{ target_id: 'friend-1' }], error: null },
-      community_group_members: { data: [{ user_id: 'friend-1' }], error: null },
+      global_community_group_members: { data: [{ user_id: 'friend-1' }], error: null },
       app_users: { data: [{ display_name: 'Alex' }], error: null },
     });
     const { ctx, notify } = makeCtx(supabase, { user_id: 'viewer-1', group_id: 'group-1' });
