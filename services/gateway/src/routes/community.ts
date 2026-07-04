@@ -370,22 +370,20 @@ router.post('/groups/:id/join', async (req: Request, res: Response) => {
  * page; dispatches user.group.viewed so the automation can check whether
  * any of the viewer's connections are already members.
  */
-router.post('/groups/:id/view', async (req: Request, res: Response) => {
+router.post('/groups/:id/view', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  // impact-allow-no-oasis: a page view is telemetry, not a state transition
+  // (CLAUDE.md OASIS rule: "Never mark polling or heartbeats as OASIS
+  // events"). The automation dispatch below IS the meaningful side effect;
+  // automation-executor already emits autopilot.automation.completed/failed
+  // per run, so a second OASIS event here would be a duplicate signal.
   const groupId = req.params.id;
-
-  const token = getBearerToken(req);
-  if (!token) {
-    return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
-  }
 
   const uuidValidation = z.string().uuid('Invalid group ID').safeParse(groupId);
   if (!uuidValidation.success) {
     return res.status(400).json({ ok: false, error: 'Invalid group ID format' });
   }
 
-  let userId = '';
-  try { userId = JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString()).sub; } catch {}
-
+  const userId = req.identity?.user_id;
   const tenantId = process.env.DEFAULT_TENANT_ID;
   if (tenantId && userId) {
     dispatchEvent(tenantId, 'user.group.viewed', {
