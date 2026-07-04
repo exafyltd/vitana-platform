@@ -41,6 +41,9 @@ User first name: Dragan
   it naturally, never as a database row. When it is ABSENT, do NOT invent a "we
   were just on X" line; lead with what's new and the next step instead.
 - Only mention \`new_since_last\` items that are present; if empty, skip — do not say "nothing new".
+- \`already_mentioned\` items are things the user ALREADY heard from you and
+  that have NOT changed. NEVER restate their counts or announce them as news.
+  At most a soft, number-free reference when it genuinely serves the thread.
 - ALWAYS finish with \`suggested_next_step\` as a guided offer. Never end on a bare "How can I help?".
 - EXECUTION — do not just describe, DO IT: \`suggested_next_step.execute_with_tool\`
   names the real tool that performs this action. When the user accepts, CALL that
@@ -134,6 +137,9 @@ User first name: Dragan
   it naturally, never as a database row. When it is ABSENT, do NOT invent a "we
   were just on X" line; lead with what's new and the next step instead.
 - Only mention \`new_since_last\` items that are present; if empty, skip — do not say "nothing new".
+- \`already_mentioned\` items are things the user ALREADY heard from you and
+  that have NOT changed. NEVER restate their counts or announce them as news.
+  At most a soft, number-free reference when it genuinely serves the thread.
 - ALWAYS finish with \`suggested_next_step\` as a guided offer. Never end on a bare "How can I help?".
 - EXECUTION — do not just describe, DO IT: \`suggested_next_step.execute_with_tool\`
   names the real tool that performs this action. When the user accepts, CALL that
@@ -227,6 +233,9 @@ User first name: Dragan
   it naturally, never as a database row. When it is ABSENT, do NOT invent a "we
   were just on X" line; lead with what's new and the next step instead.
 - Only mention \`new_since_last\` items that are present; if empty, skip — do not say "nothing new".
+- \`already_mentioned\` items are things the user ALREADY heard from you and
+  that have NOT changed. NEVER restate their counts or announce them as news.
+  At most a soft, number-free reference when it genuinely serves the thread.
 - ALWAYS finish with \`suggested_next_step\` as a guided offer. Never end on a bare "How can I help?".
 - EXECUTION — do not just describe, DO IT: \`suggested_next_step.execute_with_tool\`
   names the real tool that performs this action. When the user accepts, CALL that
@@ -320,6 +329,9 @@ User first name: Dragan
   it naturally, never as a database row. When it is ABSENT, do NOT invent a "we
   were just on X" line; lead with what's new and the next step instead.
 - Only mention \`new_since_last\` items that are present; if empty, skip — do not say "nothing new".
+- \`already_mentioned\` items are things the user ALREADY heard from you and
+  that have NOT changed. NEVER restate their counts or announce them as news.
+  At most a soft, number-free reference when it genuinely serves the thread.
 - ALWAYS finish with \`suggested_next_step\` as a guided offer. Never end on a bare "How can I help?".
 - EXECUTION — do not just describe, DO IT: \`suggested_next_step.execute_with_tool\`
   names the real tool that performs this action. When the user accepts, CALL that
@@ -633,7 +645,7 @@ exports[`computeGreetingDecision — rung golden snapshots rung 1: safe_fast_new
       "messages_unread": 0,
       "reminders_today": 0,
     },
-    "prompt_len": 13947,
+    "prompt_len": 14484,
     "wake_opener": "safe_fast_newday_overview",
   },
   "directive": "
@@ -673,8 +685,15 @@ de. Speak in the user's language. Do not switch mid-message.
 If the payload contains the user's own goal text, use their exact
 wording verbatim — the goal is their words, not yours.
 
+## SITUATION — LET THIS SHAPE THE OPENING, NOT A SCRIPT
+
+The situation decides how the greeting sounds. A quiet late evening is
+not a bright morning; a first session after days away is not a routine
+morning check-in. Read the situation, then compose for it.
+
 User first name: Dragan
 Local time-of-day bucket: morning
+Local hour: 9
 Local timezone: Europe/Berlin
 
 ## SHAPE EXAMPLE — IMITATE THE TEXTURE AND BREADTH, NEVER THE CONTENT
@@ -709,6 +728,11 @@ the checklist, you have failed the contract — expand. Two-sentence
 greetings are forbidden.
 
 ## THE TEN COMPOSITION MOVES (NON-NEGOTIABLE)
+
+Quoted phrases inside these rules illustrate the INTENT of a move — they
+are NOT fixed wording. Compose every sentence freshly, in your own words,
+differently from any previous greeting. Copying an example phrase verbatim
+two days in a row is a contract failure.
 
 1. WARMTH BEFORE FACTS. Open with the time-of-day salutation in
    de + the user's first name (if known) + ONE warmth
@@ -986,6 +1010,9 @@ User first name: Dragan
   it naturally, never as a database row. When it is ABSENT, do NOT invent a "we
   were just on X" line; lead with what's new and the next step instead.
 - Only mention \`new_since_last\` items that are present; if empty, skip — do not say "nothing new".
+- \`already_mentioned\` items are things the user ALREADY heard from you and
+  that have NOT changed. NEVER restate their counts or announce them as news.
+  At most a soft, number-free reference when it genuinely serves the thread.
 - ALWAYS finish with \`suggested_next_step\` as a guided offer. Never end on a bare "How can I help?".
 - EXECUTION — do not just describe, DO IT: \`suggested_next_step.execute_with_tool\`
   names the real tool that performs this action. When the user accepts, CALL that
