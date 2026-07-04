@@ -1,3 +1,9 @@
+-- impact-allow-solo-migration: recovers schema that ALREADY-MERGED code
+-- (services/gateway/src/services/automation-executor.ts createRun/
+-- completeRun/getActiveRuns, live on main for months) already calls
+-- against these exact table/column names. No app code change is needed
+-- or expected — this is the missing half of a migration whose code
+-- landed long ago; see file header for the full timestamp-collision story.
 /**
  * Autopilot Automations — recovered schema (safe half)
  *
