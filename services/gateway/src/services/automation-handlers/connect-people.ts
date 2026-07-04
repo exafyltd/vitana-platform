@@ -367,10 +367,12 @@ async function runPeopleYouKnowSocialProof(ctx: AutomationContext) {
   const knownMemberIds = (members || []).map((m: any) => m.user_id);
   if (knownMemberIds.length === 0) return { usersAffected: 0, actionsTaken: 0 };
 
+  // app_users' primary key is user_id, not id (a mistake repeated across
+  // several already-shipped automation handlers — see PR discussion).
   const { data: knownUsers } = await supabase
     .from('app_users')
     .select('display_name')
-    .in('id', knownMemberIds.slice(0, 3));
+    .in('user_id', knownMemberIds.slice(0, 3));
 
   const names = (knownUsers || []).map((u: any) => u.display_name).filter(Boolean);
   const body = names.length > 0
