@@ -33,6 +33,11 @@
 
 import { VERTEX_WAKE_BRIEF_OVERRIDE_MARKER } from '../../../orb/live/instruction/wake-brief-marker';
 import type { OverviewPayload } from './new-day-overview-payload';
+import {
+  buildFactContinuityLines,
+  buildPreviousGreetingSection,
+  type FactDelta,
+} from '../../conversation/greeting-facts-ledger';
 
 export interface BuildOverviewBlockArgs {
   payload: OverviewPayload;
@@ -40,6 +45,12 @@ export interface BuildOverviewBlockArgs {
   firstName: string | null;
   localHour: number;
   timezone: string;
+  /** Spoken-facts continuity (greeting-facts ledger). Absent → legacy behavior. */
+  factDeltas?: Record<string, FactDelta>;
+  /** Vitana's previous first utterance — wording-variety negative example. */
+  previousUtterance?: string | null;
+  /** How many sessions the user already opened today (0/unknown → omit). */
+  sessionsToday?: number | null;
 }
 
 function timeOfDay(localHour: number): 'morning' | 'afternoon' | 'evening' {
@@ -94,7 +105,21 @@ export function buildNewDayOverviewBlock(args: BuildOverviewBlockArgs): string {
   const compact = compactPayloadForPrompt(args.payload);
   const payloadJson = JSON.stringify(compact, null, 2);
   const shapeExample = buildShapeExample(langCode);
-  const coverageChecklist = buildCoverageChecklist(args.payload);
+  const deltas = args.factDeltas ?? {};
+  const coverageChecklist = buildCoverageChecklist(args.payload, deltas);
+  const continuityLines = buildFactContinuityLines(deltas);
+  const continuitySection = continuityLines.length
+    ? `\n## ALREADY-SPOKEN FACTS — CONTINUITY RULES (rule 1: never repeat updates)\n\n` +
+      `You have greeted this user before. The ledger below says which numbers ` +
+      `they have ALREADY heard from you. An unchanged number is NOT news — ` +
+      `restating it makes you sound like a machine reading the same dashboard ` +
+      `every day. Speak deltas; let stable facts rest.\n\n${continuityLines.join('\n')}\n`
+    : '';
+  const previousGreetingSection = buildPreviousGreetingSection(args.previousUtterance ?? null);
+  const sessionsTodayLine =
+    typeof args.sessionsToday === 'number' && args.sessionsToday > 0
+      ? `Sessions the user already opened today: ${args.sessionsToday}`
+      : null;
 
   return `\n\n${VERTEX_WAKE_BRIEF_OVERRIDE_MARKER}
 
@@ -131,10 +156,17 @@ ${langCode}. Speak in the user's language. Do not switch mid-message.
 If the payload contains the user's own goal text, use their exact
 wording verbatim — the goal is their words, not yours.
 
+## SITUATION — LET THIS SHAPE THE OPENING, NOT A SCRIPT
+
+The situation decides how the greeting sounds. A quiet late evening is
+not a bright morning; a first session after days away is not a routine
+morning check-in. Read the situation, then compose for it.
+
 ${nameLine}
 Local time-of-day bucket: ${tod}
-Local timezone: ${args.timezone}
-
+Local hour: ${args.localHour}
+Local timezone: ${args.timezone}${sessionsTodayLine ? `\n${sessionsTodayLine}` : ''}
+${continuitySection}${previousGreetingSection}
 ## SHAPE EXAMPLE — IMITATE THE TEXTURE AND BREADTH, NEVER THE CONTENT
 
 The example below is in a TOTALLY DIFFERENT domain (Anna, meditation
@@ -159,6 +191,11 @@ the checklist, you have failed the contract — expand. Two-sentence
 greetings are forbidden.
 
 ## THE TEN COMPOSITION MOVES (NON-NEGOTIABLE)
+
+Quoted phrases inside these rules illustrate the INTENT of a move — they
+are NOT fixed wording. Compose every sentence freshly, in your own words,
+differently from any previous greeting. Copying an example phrase verbatim
+two days in a row is a contract failure.
 
 1. WARMTH BEFORE FACTS. Open with the time-of-day salutation in
    ${langCode} + the user's first name (if known) + ONE warmth
@@ -289,6 +326,10 @@ greetings are forbidden.
 Use every payload key that has data OR has a setup gap. Weave them
 into the two paragraphs:
   a. journey                    → P1: day + wave name (Rule 2)
+  a2. guided_journey            → P1: BOTH the session COUNT ("du hast schon X
+                                  Sessions geschafft") AND the NAMED next session
+                                  ("deine nächste Session ist Y") + where-we-left-off
+                                  continuity. Never collapse to a generic "next step".
   b. vitana_index (state=ok)    → P1: number + meaning + pillar (Rule 3)
   c. vitana_index (not_set_up)  → P2: invitation to set up (Rule 6)
   d. life_compass (state=set)   → P1: woven anchor (Rule 4)
@@ -340,8 +381,15 @@ Subsequent turns follow the normal conversation flow.`;
 // inventory of things it must address before stopping.
 // ---------------------------------------------------------------------------
 
-function buildCoverageChecklist(p: OverviewPayload): string {
+function buildCoverageChecklist(
+  p: OverviewPayload,
+  deltas: Record<string, FactDelta> = {},
+): string {
   const items: string[] = [];
+  // Spoken-facts continuity: a number the user already heard (unchanged)
+  // must not be restated; a changed number is spoken as its change.
+  const status = (key: string) => deltas[key]?.status ?? 'new';
+  const changeOf = (key: string) => deltas[key]?.delta ?? null;
 
   if (p.journey) {
     const j = p.journey;
@@ -368,6 +416,40 @@ function buildCoverageChecklist(p: OverviewPayload): string {
     }
   }
 
+  if (
+    p.guided_journey &&
+    (p.guided_journey.sessions_completed > 0 ||
+      p.guided_journey.topics_learned > 0 ||
+      p.guided_journey.next_session_title ||
+      p.guided_journey.last_session_recall)
+  ) {
+    const g = p.guided_journey;
+    const topicsClause =
+      g.topics_total != null ? `${g.topics_learned} of ${g.topics_total} topics` : `${g.topics_learned} topics`;
+    const recallHint = g.last_session_recall
+      ? ` Last time the thread was "${g.last_session_recall}" — continue it (continuity, not a status line). If it equals the next session, frame as "let's carry on with it".`
+      : '';
+    const nextClause = g.next_session_title
+      ? `Their next session is "${g.next_session_title}".`
+      : 'Offer the next session.';
+    // Momentum beat is LEDGER-CONDITIONAL: the running total is only news
+    // the first time (or when it moved). An unchanged count restated every
+    // morning is the robotic repeat the user reported.
+    const sessStatus = status('sessions_completed');
+    const momentumLine =
+      sessStatus === 'unchanged'
+        ? `    • MOMENTUM: the user ALREADY KNOWS they have completed ${g.sessions_completed} sessions (${topicsClause}) — you told them and nothing changed. Do NOT restate the count. Carry the momentum without numbers (the thread, not the tally).\n`
+        : sessStatus === 'changed' && (changeOf('sessions_completed') ?? 0) > 0
+          ? `    • MOMENTUM: the user completed ${changeOf('sessions_completed')} more session(s) since you last mentioned it (now ${g.sessions_completed} total, ${topicsClause}). Speak the ADVANCE — the progress since last time is the news, not the running total.\n`
+          : `    • MOMENTUM: the user has completed ${g.sessions_completed} guided sessions (${topicsClause}). You may state this once, concretely — compose the sentence yourself.\n`;
+    items.push(
+      `- [ ] ADDRESS (guided journey):\n` +
+        momentumLine +
+        `    • NEXT SESSION (named, never generic "next step"): ${nextClause} Name it and offer to do it together.${recallHint}\n` +
+        `    (This learning beat is what makes the briefing feel like a continuing journey — it is NOT optional when the user is in the guided curriculum.)`,
+    );
+  }
+
   if (p.vitana_index.state === 'ok' && p.vitana_index.today !== null) {
     const pillarHint = p.vitana_index.weakest_pillar
       ? ` Weakest pillar: ${p.vitana_index.weakest_pillar.name} (${p.vitana_index.weakest_pillar.score}). Strongest: ${p.vitana_index.strongest_pillar?.name ?? 'n/a'}.`
@@ -375,7 +457,11 @@ function buildCoverageChecklist(p: OverviewPayload): string {
     const trendHint = p.vitana_index.trend_7d !== null
       ? ` 7-day trend: ${p.vitana_index.trend_7d >= 0 ? '+' : ''}${p.vitana_index.trend_7d}.`
       : '';
-    items.push(`- [ ] ADDRESS: Vitana Index ${p.vitana_index.today} (${p.vitana_index.tier ?? 'tier unknown'}, ${p.vitana_index.balance_label ?? 'balance unknown'}).${pillarHint}${trendHint} (Rule 3 — pair number with meaning + pillar attribution.)`);
+    const idxHint =
+      status('vitana_index') === 'unchanged'
+        ? ' NOTE: the Index value is UNCHANGED since you last told the user — do not announce the number as news; interpret the stability ("dein Index hält sich stabil") or what drives it instead.'
+        : '';
+    items.push(`- [ ] ADDRESS: Vitana Index ${p.vitana_index.today} (${p.vitana_index.tier ?? 'tier unknown'}, ${p.vitana_index.balance_label ?? 'balance unknown'}).${pillarHint}${trendHint} (Rule 3 — pair number with meaning + pillar attribution.)${idxHint}`);
   } else {
     items.push(`- [ ] ADDRESS: Vitana Index is NOT SET UP — invite the user to set it up together (Rule 6, P2).`);
   }
@@ -407,11 +493,33 @@ function buildCoverageChecklist(p: OverviewPayload): string {
   }
 
   if (p.matches_unread > 0) {
-    items.push(`- [ ] ADDRESS: ${p.matches_unread} unread match notification(s) — offer to look together. (P2.)`);
+    const s = status('matches_unread');
+    if (s === 'unchanged') {
+      items.push(
+        `- [ ] OPTIONAL: the user already knows about their ${p.matches_unread} open match(es) (unchanged since last mentioned). Do NOT restate the count; mention matches only number-free if you connect them to something new.`,
+      );
+    } else if (s === 'changed' && (changeOf('matches_unread') ?? 0) > 0) {
+      items.push(
+        `- [ ] ADDRESS: ${changeOf('matches_unread')} NEW match(es) since you last mentioned it — speak the new ones, not the total. Offer to look together. (P2.)`,
+      );
+    } else {
+      items.push(`- [ ] ADDRESS: ${p.matches_unread} unread match notification(s) — offer to look together. (P2.)`);
+    }
   }
 
   if (p.messages_unread > 0) {
-    items.push(`- [ ] ADDRESS: ${p.messages_unread} unread message(s) — count only, NEVER quote content. (P2.)`);
+    const s = status('messages_unread');
+    if (s === 'unchanged') {
+      items.push(
+        `- [ ] OPTIONAL: the user already knows about their ${p.messages_unread} unread message(s) (unchanged since last mentioned). Do NOT restate the count. At most a soft, number-free nod ("deine Nachrichten warten noch") — or skip it entirely.`,
+      );
+    } else if (s === 'changed' && (changeOf('messages_unread') ?? 0) > 0) {
+      items.push(
+        `- [ ] ADDRESS: ${changeOf('messages_unread')} NEW message(s) arrived since you last mentioned the inbox — speak the new ones ("${changeOf('messages_unread')} neue seit …"), never the running total. Count only, NEVER quote content. (P2.)`,
+      );
+    } else {
+      items.push(`- [ ] ADDRESS: ${p.messages_unread} unread message(s) — count only, NEVER quote content. (P2.)`);
+    }
   }
 
   if (p.reminders_today.count > 0 && p.reminders_today.next) {
@@ -483,6 +591,15 @@ function compactPayloadForPrompt(p: OverviewPayload): Record<string, unknown> {
   if (p.matches_unread > 0) out.matches_unread = p.matches_unread;
   if (p.messages_unread > 0) out.messages_unread = p.messages_unread;
   if (p.reminders_today.count > 0 || p.reminders_today.next) out.reminders_today = p.reminders_today;
+  if (
+    p.guided_journey &&
+    (p.guided_journey.sessions_completed > 0 ||
+      p.guided_journey.topics_learned > 0 ||
+      p.guided_journey.next_session_title ||
+      p.guided_journey.last_session_recall)
+  ) {
+    out.guided_journey = p.guided_journey;
+  }
   out.diary_last_7d = p.diary_last_7d;
   if (p.last_session_date_user_tz) out.last_session_date_user_tz = p.last_session_date_user_tz;
   return out;

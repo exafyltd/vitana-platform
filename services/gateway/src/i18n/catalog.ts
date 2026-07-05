@@ -40,6 +40,11 @@ export type GatewayI18nKey =
   // Live room goes live → notify everyone who tapped "Notify me" on the scheduled session.
   | 'notif.live_going_live.title'
   | 'notif.live_going_live.body'
+  // Social: someone liked or commented on your post (community feed + profile)
+  | 'notif.post_like.title'
+  | 'notif.post_like.body'
+  | 'notif.post_comment.title'
+  | 'notif.post_comment.body'
   // Daily pace check (claude/daily-pace-notifications)
   | 'notif.daily_pace.on_track.title'
   | 'notif.daily_pace.on_track.body'
@@ -47,6 +52,18 @@ export type GatewayI18nKey =
   | 'notif.daily_pace.slightly_behind.body'
   | 'notif.daily_pace.falling_behind.title'
   | 'notif.daily_pace.falling_behind.body'
+  | 'notif.celebration.daily_goal.title'
+  | 'notif.celebration.daily_goal.body'
+  | 'notif.celebration.phase_milestone.title'
+  | 'notif.celebration.phase_milestone.body'
+  | 'notif.celebration.progress_25.title'
+  | 'notif.celebration.progress_25.body'
+  | 'notif.celebration.progress_50.title'
+  | 'notif.celebration.progress_50.body'
+  | 'notif.celebration.progress_75.title'
+  | 'notif.celebration.progress_75.body'
+  | 'notif.celebration.progress_100.title'
+  | 'notif.celebration.progress_100.body'
   // Notification-category labels surfaced on Settings → Notifications page.
   // Mapped from notification_categories.slug (display_name + description).
   | 'notif.category.chat.direct_messages.label'
@@ -93,7 +110,11 @@ export type GatewayI18nKey =
   | 'priority.greeting.afternoon.named'
   | 'priority.greeting.afternoon'
   | 'priority.greeting.evening.named'
-  | 'priority.greeting.evening';
+  | 'priority.greeting.evening'
+  // Autopilot recommendation identity (recommendation-identity work) — the
+  // "Vitana empfiehlt" header shown on every AI-generated recommendation card
+  // so the source is never rendered as a bare "AI" label.
+  | 'recommendation.vitana_label';
 
 type LocaleCatalog = Record<GatewayI18nKey, string>;
 
@@ -122,6 +143,10 @@ const DE: LocaleCatalog = {
   'notif.fallback_app_name': 'Vitana',
   'notif.live_going_live.title': '🔴 Jetzt live!',
   'notif.live_going_live.body': '„{title}" hat gerade begonnen. Schau jetzt rein.',
+  'notif.post_like.title': 'Neues Like',
+  'notif.post_like.body': '{name} gefällt dein Beitrag.',
+  'notif.post_comment.title': 'Neuer Kommentar',
+  'notif.post_comment.body': '{name} hat deinen Beitrag kommentiert.',
   // Daily pace check
   'notif.daily_pace.on_track.title': 'Auf Kurs ✨',
   'notif.daily_pace.on_track.body': 'Du bist auf einem guten Weg. Schließ heute noch deinen Tagesplan ab — dein Ziel kommt näher.',
@@ -129,6 +154,18 @@ const DE: LocaleCatalog = {
   'notif.daily_pace.slightly_behind.body': 'Ein, zwei Schritte vom Tagesplan reichen, um wieder mit deinem Ziel im Gleichschritt zu sein.',
   'notif.daily_pace.falling_behind.title': 'Dein Ziel wartet',
   'notif.daily_pace.falling_behind.body': 'Wir kommen vom Kurs ab. Ein kleiner Schritt heute — und du bist wieder dabei.',
+  'notif.celebration.daily_goal.title': 'Heutiges Ziel geschafft 🎉',
+  'notif.celebration.daily_goal.body': 'Schön gemacht — du bist wieder einen Tag näher an deinem Ziel.',
+  'notif.celebration.phase_milestone.title': 'Neue Phase erreicht 🌟',
+  'notif.celebration.phase_milestone.body': 'Du bist jetzt in der Phase „{phase}". Weiter so.',
+  'notif.celebration.progress_25.title': 'Ein Viertel geschafft 🌱',
+  'notif.celebration.progress_25.body': 'Du bist 25% deiner Reise weit. Bleib dran.',
+  'notif.celebration.progress_50.title': 'Halbzeit erreicht 🌟',
+  'notif.celebration.progress_50.body': 'Mehr als die Hälfte liegt hinter dir. Du machst das großartig.',
+  'notif.celebration.progress_75.title': 'Drei Viertel — fast da 🚀',
+  'notif.celebration.progress_75.body': '75% deiner Reise hast du geschafft. Die Zielgerade wartet.',
+  'notif.celebration.progress_100.title': 'Ziel erreicht 🏆',
+  'notif.celebration.progress_100.body': 'Glückwunsch! Du hast es geschafft.',
   // Notification-category labels (Settings → Benachrichtigungen)
   'notif.category.chat.direct_messages.label': 'Direktnachrichten',
   'notif.category.chat.direct_messages.desc': 'Neue Nachrichten von Personen und Gruppen',
@@ -173,6 +210,7 @@ const DE: LocaleCatalog = {
   'priority.greeting.afternoon': 'Guten Tag. Bereit, wenn du es bist.',
   'priority.greeting.evening.named': 'Guten Abend, {name}. Bereit, wenn du es bist.',
   'priority.greeting.evening': 'Guten Abend. Bereit, wenn du es bist.',
+  'recommendation.vitana_label': 'Vitana empfiehlt',
 };
 
 const EN: LocaleCatalog = {
@@ -200,6 +238,10 @@ const EN: LocaleCatalog = {
   'notif.fallback_app_name': 'Vitana',
   'notif.live_going_live.title': '🔴 Now live!',
   'notif.live_going_live.body': '"{title}" just started. Tune in now.',
+  'notif.post_like.title': 'New like',
+  'notif.post_like.body': '{name} liked your post.',
+  'notif.post_comment.title': 'New comment',
+  'notif.post_comment.body': '{name} commented on your post.',
   // Daily pace check
   'notif.daily_pace.on_track.title': 'On track ✨',
   'notif.daily_pace.on_track.body': "You're moving well. Wrap up today's plan — your goal is getting closer.",
@@ -207,6 +249,18 @@ const EN: LocaleCatalog = {
   'notif.daily_pace.slightly_behind.body': "One or two steps from today's plan are enough to fall back in step with your goal.",
   'notif.daily_pace.falling_behind.title': 'Your goal is waiting',
   'notif.daily_pace.falling_behind.body': "We're drifting off course. One small step today — and you're back in.",
+  'notif.celebration.daily_goal.title': "Today's goal done 🎉",
+  'notif.celebration.daily_goal.body': "Nice work — you're another day closer to your goal.",
+  'notif.celebration.phase_milestone.title': 'New phase reached 🌟',
+  'notif.celebration.phase_milestone.body': 'You’re now in the "{phase}" phase. Keep going.',
+  'notif.celebration.progress_25.title': 'A quarter of the way 🌱',
+  'notif.celebration.progress_25.body': "You're 25% through your journey. Stay with it.",
+  'notif.celebration.progress_50.title': 'Halfway there 🌟',
+  'notif.celebration.progress_50.body': "More than half is behind you. You're doing great.",
+  'notif.celebration.progress_75.title': 'Three quarters — almost there 🚀',
+  'notif.celebration.progress_75.body': "You're 75% of the way there. The finish line is in sight.",
+  'notif.celebration.progress_100.title': 'Goal reached 🏆',
+  'notif.celebration.progress_100.body': 'Congratulations! You did it.',
   // Notification-category labels (Settings → Notifications)
   'notif.category.chat.direct_messages.label': 'Direct Messages',
   'notif.category.chat.direct_messages.desc': 'New messages from people and groups',
@@ -251,6 +305,7 @@ const EN: LocaleCatalog = {
   'priority.greeting.afternoon': 'Good afternoon. Ready when you are.',
   'priority.greeting.evening.named': 'Good evening, {name}. Ready when you are.',
   'priority.greeting.evening': 'Good evening. Ready when you are.',
+  'recommendation.vitana_label': 'Vitana recommends',
 };
 
 // Draft locales — start as a copy of EN; replace with native strings as they

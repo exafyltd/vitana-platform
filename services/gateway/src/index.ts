@@ -150,6 +150,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const schedulerRouter = require('./routes/scheduler').default;
   // Scheduled notification webhook endpoints (Cloud Scheduler triggers)
   const scheduledNotificationsRouter = require('./routes/scheduled-notifications').default;
+  // Real-time My Journey celebrations — daily-goal, phase milestone, progress thresholds
+  const celebrationsRouter = require('./routes/celebrations').default;
   // VTID-02601: Reminders feature — voice-creatable + audio-interrupt delivery
   const remindersRouter = require('./routes/reminders').default;
   // VTID-01093: Unified Interest Topics Layer - topic registry + user profile
@@ -299,6 +301,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const vcaopPostbackRouter = require('./routes/vcaop-postback').default;
   // VCAOP: Shopify own-store catalog sync (admin trigger; background worker in services)
   const shopifySyncRouter = require('./routes/shopify-sync').default;
+  // VCAOP: Awin joined-programme sync (admin trigger; background worker in services)
+  const awinSyncRouter = require('./routes/awin-sync').default;
   // VTID-01169: Deploy → Ledger Terminalization (terminalize endpoint + repair job)
   const vtidTerminalizeRouter = require('./routes/vtid-terminalize').default;
   // VTID-01157: Supabase JWT Auth Middleware + /api/v1/auth/me endpoint
@@ -386,6 +390,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const intentsShareRouter = intentEngineEnabled ? require('./routes/intents-share').default : null;
   // Admin: Signup Funnel Tracking & Outreach
   const adminSignupsRouter = require('./routes/admin-signups').default;
+  // Admin: ORB tool self-check harness (verify execution tools without a voice session)
+  const orbToolsSelfcheckRouter = require('./routes/orb-tools-selfcheck').default;
   // Admin: Notification Compose & Tracking
   const adminNotificationsRouter = require('./routes/admin-notifications').default;
   // Admin: Notification Category Management (CRUD + Test)
@@ -414,6 +420,10 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const adminEmbeddingsBackfillRouter = require('./routes/admin-embeddings-backfill').default;
   // VTID-02026 Phase 6a — Memory Broker smoke endpoint (exafy_admin only)
   const adminMemoryBrokerRouter = require('./routes/admin-memory-broker').default;
+  // BOOTSTRAP-MEMORY-ORCHESTRATOR-MANDATORY — Memory Alive/Dead status (exafy_admin only)
+  const adminMemoryOrchestratorRouter = require('./routes/admin-memory-orchestrator').default;
+  // BOOTSTRAP-SOCIAL-MEMORY — Social Memory Intelligence endpoints
+  const memorySocialRouter = require('./routes/memory-social').default;
   // Phase F v1: 5 pillar agents (Nutrition/Hydration/Exercise/Sleep/Mental).
   const pillarAgentsRouter = require('./routes/pillar-agents').default;
   // Phase F v2 step 9: per-user integrations + Manual Data Entry.
@@ -664,6 +674,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   mountRouterSync(app, '/api/v1/vcaop/postback', vcaopPostbackRouter, { owner: 'vcaop-postback' });
   // VCAOP: Shopify catalog sync — mount before the vcaop router so the sub-path resolves.
   mountRouterSync(app, '/api/v1/vcaop/shopify', shopifySyncRouter, { owner: 'vcaop-shopify' });
+  // VCAOP: Awin programme sync — mount before the vcaop router so the sub-path resolves.
+  mountRouterSync(app, '/api/v1/vcaop/awin', awinSyncRouter, { owner: 'vcaop-awin' });
   // VCAOP: Vitanaland Commerce API — providers/affiliate-programs/shop/wallet/onboarding
   mountRouterSync(app, '/api/v1/vcaop', vcaopRouter, { owner: 'vcaop' });
 
@@ -981,6 +993,7 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   mountRouterSync(app, '/api/v1/scheduler', schedulerRouter, { owner: 'scheduler' });
   // Scheduled notification webhooks (Cloud Scheduler triggers)
   mountRouterSync(app, '/api/v1/scheduled-notifications', scheduledNotificationsRouter, { owner: 'scheduled-notifications' });
+  mountRouterSync(app, '/api/v1/celebrations', celebrationsRouter, { owner: 'celebrations' });
   mountRouterSync(app, '/api/v1/reminders', remindersRouter, { owner: 'reminders' });
 
   // VTID-01093: Unified Interest Topics Layer - topic registry + user profile
@@ -1126,6 +1139,7 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   mountRouterSync(app, '/api/v1/admin/signups', adminSignupsRouter, { owner: 'admin-signups' });
 
   // Admin: Notification Compose & Tracking
+  mountRouterSync(app, '/api/v1/admin/orb-tools', orbToolsSelfcheckRouter, { owner: 'orb-tools-selfcheck' });
   mountRouterSync(app, '/api/v1/admin/notifications', adminNotificationsRouter, { owner: 'admin-notifications' });
 
   // Admin: Notification Category Management
@@ -1160,6 +1174,10 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   mountRouterSync(app, '/api/v1', adminEmbeddingsBackfillRouter, { owner: 'admin-embeddings-backfill' });
   // VTID-02026 Phase 6a Memory Broker smoke endpoint
   mountRouterSync(app, '/api/v1', adminMemoryBrokerRouter, { owner: 'admin-memory-broker' });
+  // BOOTSTRAP-MEMORY-ORCHESTRATOR-MANDATORY Memory Alive/Dead status endpoint
+  mountRouterSync(app, '/api/v1', adminMemoryOrchestratorRouter, { owner: 'admin-memory-orchestrator' });
+  // BOOTSTRAP-SOCIAL-MEMORY Social Memory Intelligence layer
+  mountRouterSync(app, '/api/v1/memory/social', memorySocialRouter, { owner: 'memory-social' });
   // Phase F v1: pillar agents framework
   mountRouterSync(app, '/api/v1/pillar-agents', pillarAgentsRouter, { owner: 'pillar-agents' });
   // Phase F v2 step 9: per-user integrations (Manual Data Entry + catalog)
@@ -1589,6 +1607,25 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
         startShopifySyncWorker();
       } catch (error) {
         console.warn('⚠️ Shopify sync worker initialization failed (non-fatal):', error);
+      }
+
+      // VCAOP: Awin joined-programme sync. Opt-in (AWIN_SYNC_ENABLED=true +
+      // AWIN_PUBLISHER_ID + AWIN_API_TOKEN). Harvests joined programmes on an interval.
+      try {
+        const { startAwinSyncWorker } = require('./services/awin-sync');
+        startAwinSyncWorker();
+      } catch (error) {
+        console.warn('⚠️ Awin sync worker initialization failed (non-fatal):', error);
+      }
+
+      // VCAOP: Awin conversion crediting (Phase 2). Opt-in (AWIN_CONVERSIONS_ENABLED=true
+      // + AWIN_PUBLISHER_ID + AWIN_API_TOKEN). Pulls transactions on an interval and
+      // credits attributed conversions into the rewards ledger (no postback).
+      try {
+        const { startAwinConversionWorker } = require('./services/awin-conversions');
+        startAwinConversionWorker();
+      } catch (error) {
+        console.warn('⚠️ Awin conversion worker initialization failed (non-fatal):', error);
       }
 
       // Dev Autopilot background executor (cooling→running→ci loop).

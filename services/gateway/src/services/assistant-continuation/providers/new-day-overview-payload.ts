@@ -32,6 +32,13 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { getJourneyState, type JourneyState } from '../../journey/user-journey-service';
 import { fetchLifeCompass, fetchVitanaIndexForProfiler } from '../../user-context-profiler';
+// Guided-journey learning progress ("X of N sessions") + the real "where we
+// left off" recall — sourced from the SAME helpers the login-briefing provider
+// uses, so voice and the briefing agree. getJourneyState here is the GUIDED
+// curriculum pointer (distinct from the longevity-journey getJourneyState
+// imported above), hence the alias.
+import { getJourneyState as getGuidedJourneyState } from '../../guided-journey/guided-journey-state';
+import { resolveCurriculumFacts } from './login-briefing';
 
 // ---------------------------------------------------------------------------
 // Type definitions
@@ -157,6 +164,22 @@ export interface OverviewPayload {
   // -- DIARY (voice-only, streak proxy) --
   diary_last_7d: number;
 
+  // -- GUIDED JOURNEY (learning progress + "where we left off") --
+  guided_journey: {
+    /** Curriculum sessions the user has completed (current_session - 1). */
+    sessions_completed: number;
+    /** Curriculum TOPICS the user has marked complete (completed_topic_ids). */
+    topics_learned: number;
+    /** Total topics in the published curriculum, or null when unknown. */
+    topics_total: number | null;
+    /** Title of the session the user is about to do next (named, never generic). */
+    next_session_title: string | null;
+    /** The REAL last topic the user opened — the "where we left off" thread to
+     *  continue. Falls back to the next-session title when the last-opened topic
+     *  is unknown; null when the user has not started the curriculum yet. */
+    last_session_recall: string | null;
+  } | null;
+
   // -- META --
   last_session_date_user_tz: string | null;
 }
@@ -166,7 +189,17 @@ export interface AggregateArgs {
   userId: string;
   timezone: string;
   now: Date;
+  /** Session language — selects the curriculum-checklist locale for the
+   *  guided-journey session titles. Defaults to 'en'. */
+  lang?: string;
   lastSessionDateUserTz: string | null;
+  /**
+   * Precise last-session timestamp (ISO). When provided it is the EXACT cutoff
+   * for "calendar events since we last spoke", so a user who spoke at 8pm is
+   * not briefed the next morning about that same day's earlier events. Falls
+   * back to local-midnight of `lastSessionDateUserTz`, then to 24h ago.
+   */
+  lastSessionAtIso?: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -236,9 +269,11 @@ export { dayWindowUtcIso };
 export async function gatherOverviewPayload(args: AggregateArgs): Promise<OverviewPayload> {
   const { startUtc, endUtc } = dayWindowUtcIso(args.now, args.timezone);
   const nowIso = args.now.toISOString();
-  const lookbackIso = args.lastSessionDateUserTz
-    ? new Date(`${args.lastSessionDateUserTz}T00:00:00Z`).toISOString()
-    : new Date(args.now.getTime() - 24 * 3600 * 1000).toISOString();
+  const lookbackIso = args.lastSessionAtIso
+    ? args.lastSessionAtIso
+    : args.lastSessionDateUserTz
+      ? new Date(`${args.lastSessionDateUserTz}T00:00:00Z`).toISOString()
+      : new Date(args.now.getTime() - 24 * 3600 * 1000).toISOString();
 
   const [
     journeyState,
@@ -252,6 +287,7 @@ export async function gatherOverviewPayload(args: AggregateArgs): Promise<Overvi
     msgsUnread,
     remindersToday,
     diary7d,
+    guidedJourney,
   ] = await Promise.all([
     getJourneyState(args.supabase, args.userId).catch(() => null),
     fetchVitanaIndexForProfiler(args.supabase, args.userId).catch(() => null),
@@ -264,6 +300,7 @@ export async function gatherOverviewPayload(args: AggregateArgs): Promise<Overvi
     fetchMessagesUnread(args.supabase, args.userId),
     fetchRemindersToday(args.supabase, args.userId, startUtc, endUtc),
     fetchDiaryLast7Days(args.supabase, args.userId, args.now),
+    fetchGuidedJourney(args.supabase, args.userId, args.lang ?? 'en'),
   ]);
 
   const lifeCompass = projectLifeCompass(lcSnapshot);
@@ -278,6 +315,7 @@ export async function gatherOverviewPayload(args: AggregateArgs): Promise<Overvi
     messages_unread: msgsUnread,
     reminders_today: remindersToday,
     diary_last_7d: diary7d,
+    guided_journey: guidedJourney,
     last_session_date_user_tz: args.lastSessionDateUserTz,
   };
 }
@@ -559,12 +597,28 @@ async function fetchAutopilotForVoice(
 }
 
 async function fetchMatchesUnread(sb: SupabaseClient, userId: string): Promise<number> {
+  // Matches live in `intent_matches`, reached via the user's `user_intents`
+  // (requester_user_id) — the SAME source the match-activity-plan next-action
+  // provider uses. There is no `match_notifications` table, so the prior query
+  // always errored → silently returned 0 and the briefing omitted matches.
+  // "Unread/new" here means a match in one of the live stages (not closed).
   try {
+    const { data: intentRows, error: intentErr } = await sb
+      .from('user_intents')
+      .select('intent_id')
+      .eq('requester_user_id', userId)
+      .limit(200);
+    if (intentErr) return 0;
+    const intentIds = (intentRows ?? [])
+      .map((r) => (r as { intent_id: string }).intent_id)
+      .filter(Boolean);
+    if (intentIds.length === 0) return 0;
+    const idList = intentIds.map((s) => `"${s}"`).join(',');
     const { count, error } = await sb
-      .from('match_notifications')
-      .select('id', { head: true, count: 'exact' })
-      .eq('user_id', userId)
-      .eq('is_read', false);
+      .from('intent_matches')
+      .select('match_id', { head: true, count: 'exact' })
+      .or(`intent_a_id.in.(${idList}),intent_b_id.in.(${idList})`)
+      .in('state', ['new', 'responded_by_a', 'responded_by_b', 'mutual_interest']);
     if (error) return 0;
     return Number(count ?? 0);
   } catch {
@@ -573,11 +627,14 @@ async function fetchMatchesUnread(sb: SupabaseClient, userId: string): Promise<n
 }
 
 async function fetchMessagesUnread(sb: SupabaseClient, userId: string): Promise<number> {
+  // DMs live in `chat_messages` (receiver_id / read_at) — mirrors the canonical
+  // unread query in routes/chat.ts. There is no `messages` table, so the prior
+  // query always errored → silently returned 0 and the briefing omitted DMs.
   try {
     const { count, error } = await sb
-      .from('messages')
-      .select('id', { head: true, count: 'exact' })
-      .eq('recipient_id', userId)
+      .from('chat_messages')
+      .select('*', { head: true, count: 'exact' })
+      .eq('receiver_id', userId)
       .is('read_at', null);
     if (error) return 0;
     return Number(count ?? 0);
@@ -608,6 +665,70 @@ async function fetchRemindersToday(
   } catch {
     return { count: 0, next: null };
   }
+}
+
+/**
+ * Guided-journey learning progress + the real "where we left off" recall.
+ * Reuses the login-briefing provider's exact sources (getJourneyState curriculum
+ * pointer + resolveCurriculumFacts checklist read) so the briefing and the
+ * proactive opener never disagree. Best-effort: any failure → null (the briefing
+ * simply omits the guided-journey beat).
+ */
+export async function fetchGuidedJourney(
+  sb: SupabaseClient, userId: string, lang: string,
+): Promise<OverviewPayload['guided_journey']> {
+  try {
+    const js = await getGuidedJourneyState(sb, userId).catch(() => null);
+    if (!js) return null;
+    const currentSession = Number.isFinite(js.currentSession) ? Math.max(1, js.currentSession) : 1;
+    const sessionsCompleted = Math.max(0, currentSession - 1);
+    const topicsLearned = Array.isArray(js.completedTopicIds) ? js.completedTopicIds.length : 0;
+    const cur = await resolveCurriculumFacts(sb, lang, currentSession, {
+      completedTopicIds: js.completedTopicIds ?? [],
+      lastOpenedTopicId: js.lastOpenedTopicId ?? null,
+    });
+    // "Where we left off" = the real last-opened topic; fall back to the
+    // current session title once the user has done at least one session.
+    const recall = cur.lastOpenedTitle ?? (sessionsCompleted > 0 ? cur.title : null);
+    return {
+      sessions_completed: sessionsCompleted,
+      topics_learned: topicsLearned,
+      topics_total: cur.totalTopics,
+      next_session_title: cur.title,
+      last_session_recall: recall,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Render the user's guided-journey progress as a STANDING system-instruction
+ * block (English; the model emits the user's language). Unlike the greeting
+ * briefing — which only reaches the model on the first turn — this is meant to
+ * be appended to the persistent bootstrap context so Vitana knows the user's
+ * current session on EVERY turn and never defaults to "the first lesson".
+ *
+ * Returns '' for users without meaningful progress (brand-new / session 1 with
+ * nothing completed) — those are handled by the NEW-USER bias and should not be
+ * told "you are on session 1".
+ */
+export function buildGuidedJourneyStandingInstruction(
+  gj: OverviewPayload['guided_journey'],
+): string {
+  if (!gj || !(gj.sessions_completed > 0)) return '';
+  const currentSession = gj.sessions_completed + 1;
+  const lines: string[] = [];
+  lines.push('## GUIDED JOURNEY — LIVE PROGRESS (authoritative; do not contradict)');
+  lines.push('The user is ACTIVELY progressing through the Vitanaland Guided Journey.');
+  lines.push(`- Sessions completed: ${gj.sessions_completed}`);
+  lines.push(`- Current session: ${currentSession}${gj.next_session_title ? ` — "${gj.next_session_title}"` : ''}`);
+  if (gj.last_session_recall) lines.push(`- Where you left off: "${gj.last_session_recall}"`);
+  lines.push('');
+  lines.push(
+    `When the user asks what to do next in the journey — or you proactively guide them there — refer to their CURRENT session (${currentSession}) and continue FORWARD. NEVER restart at session 1 or call it "the first lesson". If they agree to continue, calling narrate_guided_session with NO session number resumes at their current session automatically. Mention the session number/title naturally so the user feels you know exactly where they are.`,
+  );
+  return '\n\n' + lines.join('\n');
 }
 
 async function fetchDiaryLast7Days(sb: SupabaseClient, userId: string, now: Date): Promise<number> {

@@ -76,13 +76,6 @@ const MATERIAL_INDEX_DELTA = 5;
  * it would feel like nagging rather than understanding (VTID-03307 / advice #1).
  */
 const MATERIAL_PILLAR_DROP = 3;
-/**
- * BOOTSTRAP-ORB-GREETING-RETURNING-USER (fix #2): if the user's previous ORB
- * session was within this window, the fast proactive opener stays silent and
- * lets the wake-brief path handle turn 1 (brief-resume/skip). Mirrors the
- * 15-minute greet-once cap in greeting-policy.ts (RECENT_GREETING_WINDOW_MS).
- */
-const FAST_OPENER_GREET_ONCE_WINDOW_MS = 15 * 60 * 1000;
 
 export interface LoginBriefingInputs {
   supabase: SupabaseClient;
@@ -94,6 +87,17 @@ export interface LoginBriefingInputs {
   timezone: string | null;
   /** From the greeting-policy decision. `skip` → suppress (silent reconnect). */
   greetingPolicy: string;
+  /**
+   * The greeting-policy DECISION reason behind a `skip`. We only stay silent
+   * on TRANSPARENT-RECONNECT-class skips (network blip / bucket=reconnect) —
+   * those are not a deliberate open, so re-greeting would feel like a bug.
+   * A cadence-class skip (greeted_recently_within_window, heavy-day) is still
+   * a DELIBERATE re-open: the user tapped the orb on purpose, so we LEAD with
+   * the grounded journey opener rather than fall silent (which used to let a
+   * hard-coded fallback provider win the turn). Mirrors feature-discovery-
+   * teacher's skipReason gate. Undefined/absent when policy is non-skip.
+   */
+  skipReason?: string | null;
 }
 
 export interface LoginBriefingProviderOptions {
@@ -112,6 +116,15 @@ export type BriefingState = 'orient' | 'building' | 'momentum' | 'returning' | '
 export interface BriefingFacts {
   /** Sessions the user has finished (the ones before the current pointer). */
   sessionsCompleted: number;
+  /**
+   * Day index of the user's longevity journey (1 = the day it started),
+   * computed from user_journey.started_at in the user's timezone. Null when
+   * unknown (e.g. no started_at on the row). Powers the "Day N of your
+   * longevity journey" continuity framing — the §10 spine: every conversation
+   * should feel like an ongoing trip, not an isolated greeting. Optional so
+   * existing call sites/tests that omit it are unaffected.
+   */
+  dayInJourney?: number | null;
   /** The session the user is on / about to do. */
   nextSessionNumber: number;
   /** Title of the next session, when the published checklist resolved it. */
@@ -123,6 +136,16 @@ export interface BriefingFacts {
    * continuity promise so it is real, not a bluff the user calls.
    */
   lastSessionTitle?: string | null;
+  /**
+   * Journey-continuation grounding (proactive "where we left off"). The REAL
+   * label of the last topic the user opened (`last_opened_topic_id`), and the
+   * genuinely-distinct NEXT step — the first curriculum topic they have NOT
+   * completed. These let the opener say BOTH "last time we worked on X" AND
+   * "the next step is Y" truthfully (X ≠ Y), instead of a vague "continue
+   * there". Optional → degrade cleanly to the session-title recall when unknown.
+   */
+  lastOpenedTitle?: string | null;
+  nextStepTitle?: string | null;
   /** Onboarding lifecycle from the guided-journey state. */
   graduated: boolean;
   /** True when the user has set a Life Compass primary goal. */
@@ -292,12 +315,25 @@ interface RenderArgs {
   facts: BriefingFacts;
 }
 
+/** §10 spine — the "Day N of your longevity journey" continuity clause. Empty
+ *  when the journey-start day is unknown, so call sites / tests that omit
+ *  dayInJourney are unaffected. Makes every conversation feel like an ongoing
+ *  trip ("Day 9 … 2 sessions … next session") rather than an isolated greeting. */
+function buildJourneyDayClause(lang: string, dayInJourney: number | null | undefined): string {
+  if (!dayInJourney || dayInJourney < 1) return '';
+  return lang === 'de'
+    ? `Tag ${dayInJourney} deiner Longevity-Reise.`
+    : `Day ${dayInJourney} of your longevity journey.`;
+}
+
 /** Compose the spoken briefing line for the picked state. Pure. Exported for tests. */
 export function renderBriefingLine(args: RenderArgs, rng: () => number = Math.random): string {
   const de = args.lang === 'de';
   const prefix = salutationPrefix(args.lang, args.salutation, args.firstName);
   const f = args.facts;
   const state = pickBriefingState(f);
+  // §10 spine: prepended after the salutation in the active-journey states.
+  const journeyDay = buildJourneyDayClause(args.lang, f.dayInJourney);
 
   // The next-session clause is only spoken when the title resolved.
   const nextClause = (() => {
@@ -341,12 +377,12 @@ export function renderBriefingLine(args: RenderArgs, rng: () => number = Math.ra
       // Advice #1: when a pillar slipped, the goal-anchored reversing step IS
       // the single next move — keep the briefing to ONE clear lead.
       const rider = buildWeaknessRider(args.lang, f);
-      if (rider) return [prefix, praise, rider].filter(Boolean).join(' ');
+      if (rider) return [prefix, journeyDay, praise, rider].filter(Boolean).join(' ');
       // Advice #2: visible momentum — show how far through the curriculum the
       // user is as an earned compliment, before the next-session lead.
       const beat = buildProgressBeat(args.lang, f);
       const nudge = buildNudge(args.lang, f);
-      return [prefix, praise, beat, nextClause, nudge, lead].filter(Boolean).join(' ');
+      return [prefix, journeyDay, praise, beat, nextClause, nudge, lead].filter(Boolean).join(' ');
     }
 
     case 'momentum': {
@@ -356,7 +392,7 @@ export function renderBriefingLine(args: RenderArgs, rng: () => number = Math.ra
         : `Good to hear you. You are on Session ${f.nextSessionNumber} — and your Vitana Index is up ${delta} points this week. That is real consistency.`;
       const beat = buildProgressBeat(args.lang, f); // Advice #2
       const nudge = buildNudge(args.lang, f);
-      return [prefix, praise, beat, nextClause, nudge, lead].filter(Boolean).join(' ');
+      return [prefix, journeyDay, praise, beat, nextClause, nudge, lead].filter(Boolean).join(' ');
     }
 
     case 'returning': {
@@ -366,9 +402,9 @@ export function renderBriefingLine(args: RenderArgs, rng: () => number = Math.ra
       // Advice #1: a returning user who also slipped a pillar hears the
       // goal-anchored reversing step as the lead instead of the generic resume.
       const rider = buildWeaknessRider(args.lang, f);
-      if (rider) return [prefix, body, rider].filter(Boolean).join(' ');
+      if (rider) return [prefix, journeyDay, body, rider].filter(Boolean).join(' ');
       const lead2 = de ? 'Lass uns genau dort wieder anknüpfen — ich führe dich.' : "Let's pick up right where you left off — I'll guide you.";
-      return [prefix, body, nextClause, lead2].filter(Boolean).join(' ');
+      return [prefix, journeyDay, body, nextClause, lead2].filter(Boolean).join(' ');
     }
 
     case 'graduated': {
@@ -384,7 +420,7 @@ export function renderBriefingLine(args: RenderArgs, rng: () => number = Math.ra
       const lead2 = de
         ? 'Lass uns gleich eine Stufe tiefer gehen — ich zeige dir den ersten Schritt.'
         : "Let's go one level deeper — I'll show you the first step.";
-      return [prefix, body, beat, lead2].filter(Boolean).join(' ');
+      return [prefix, journeyDay, body, beat, lead2].filter(Boolean).join(' ');
     }
   }
 }
@@ -410,12 +446,14 @@ function readInputs(ctx: ContinuationDecisionContext): LoginBriefingInputs | nul
     firstName: typeof o.firstName === 'string' && o.firstName.length > 0 ? o.firstName : null,
     timezone: typeof o.timezone === 'string' && o.timezone.length > 0 ? o.timezone : null,
     greetingPolicy: typeof o.greetingPolicy === 'string' ? o.greetingPolicy : 'fresh_intro',
+    skipReason: typeof o.skipReason === 'string' ? o.skipReason : null,
   };
 }
 
 interface UserJourneyRow {
   last_session_date: string | null; // YYYY-MM-DD in user TZ
   is_first_session: boolean;
+  started_at: string | null; // timestamptz — when the longevity journey began
 }
 
 /** Whole-day difference between two YYYY-MM-DD strings, or null when unknown. */
@@ -439,11 +477,21 @@ function checklistLocale(lang: string): 'de' | 'en' {
  * the "N" in "X of N topics"). Best-effort: any failure degrades to nulls so the
  * briefing still renders ("your next session is ready", no progress beat).
  */
-async function resolveCurriculumFacts(
+export async function resolveCurriculumFacts(
   supabase: SupabaseClient,
   lang: string,
   nextSessionNumber: number,
-): Promise<{ title: string | null; totalTopics: number | null }> {
+  // Journey-continuation grounding: when the user's completed-topic set and
+  // last-opened topic are passed, we also resolve the REAL "where we left off"
+  // (last-opened topic label) and the genuinely-distinct "next step" (the first
+  // topic in curriculum order the user has NOT completed). Both best-effort.
+  steps?: { completedTopicIds: string[]; lastOpenedTopicId: string | null } | null,
+): Promise<{
+  title: string | null;
+  totalTopics: number | null;
+  lastOpenedTitle: string | null;
+  nextStepTitle: string | null;
+}> {
   try {
     const checklist = await getPublishedChecklist(supabase, 'v2', checklistLocale(lang));
     const inSession = checklist.topics
@@ -452,9 +500,27 @@ async function resolveCurriculumFacts(
     const rawTitle = inSession[0]?.displayLabel;
     const title = typeof rawTitle === 'string' && rawTitle.trim().length > 0 ? rawTitle.trim() : null;
     const totalTopics = Array.isArray(checklist.topics) && checklist.topics.length > 0 ? checklist.topics.length : null;
-    return { title, totalTopics };
+
+    let lastOpenedTitle: string | null = null;
+    let nextStepTitle: string | null = null;
+    if (steps) {
+      // Curriculum order = session asc, then position asc.
+      const ordered = checklist.topics
+        .slice()
+        .sort((a, b) => a.session - b.session || a.position - b.position);
+      const cleanLabel = (l: unknown): string | null =>
+        typeof l === 'string' && l.trim().length > 0 ? l.trim() : null;
+      if (steps.lastOpenedTopicId) {
+        const lo = ordered.find((t) => t.topicId === steps.lastOpenedTopicId);
+        lastOpenedTitle = cleanLabel(lo?.displayLabel);
+      }
+      const done = new Set(steps.completedTopicIds ?? []);
+      const next = ordered.find((t) => !done.has(t.topicId));
+      nextStepTitle = cleanLabel(next?.displayLabel);
+    }
+    return { title, totalTopics, lastOpenedTitle, nextStepTitle };
   } catch {
-    return { title: null, totalTopics: null };
+    return { title: null, totalTopics: null, lastOpenedTitle: null, nextStepTitle: null };
   }
 }
 
@@ -485,14 +551,29 @@ export function makeLoginBriefingProvider(
         };
       }
 
-      // Silent reconnect / greeted-too-recently: stay quiet and let the
-      // upstream skip policy hold. (State F — same-day quick reconnect.)
-      if (inputs.greetingPolicy === 'skip') {
+      // Stay silent ONLY on a transparent-reconnect-class skip — a network
+      // blip / server-side resume the user never perceived. Those are not a
+      // deliberate open, so speaking would read as an apology/bug.
+      //
+      // A CADENCE-class skip (greeted_recently_within_window, heavy-day) is a
+      // DELIBERATE re-open — the user tapped the orb on purpose. We LEAD with
+      // the grounded journey briefing instead of falling silent. Falling
+      // silent here is exactly what let a lower-priority HARD-CODED fallback
+      // provider (voice-wake-brief / feature-discovery-teacher) win the turn
+      // and speak a canned greeting. The grounded opener (priority 92) now
+      // owns every deliberate open; nothing canned can override it.
+      // Mirrors feature-discovery-teacher's skipReason gate.
+      if (
+        inputs.greetingPolicy === 'skip' &&
+        (inputs.skipReason === 'isReconnect_forces_skip' ||
+          inputs.skipReason === 'transparent_reconnect_forces_skip' ||
+          inputs.skipReason === 'bucket_reconnect_forces_skip')
+      ) {
         return {
           providerKey: LOGIN_BRIEFING_PROVIDER_KEY,
           status: 'suppressed',
           latencyMs: Math.max(0, now() - t0),
-          reason: 'greeting_policy_skip',
+          reason: `forced_skip_${inputs.skipReason}`,
         };
       }
 
@@ -526,11 +607,18 @@ export function makeLoginBriefingProvider(
         journeyState?.onboardingStatus === 'qualified' ||
         journeyState?.onboardingStatus === 'completed';
 
-      const { title: nextSessionTitle, totalTopics } = await resolveCurriculumFacts(
-        inputs.supabase,
-        inputs.lang,
-        currentSession,
-      );
+      const { title: nextSessionTitle, totalTopics, lastOpenedTitle, nextStepTitle } =
+        await resolveCurriculumFacts(
+          inputs.supabase,
+          inputs.lang,
+          currentSession,
+          journeyState
+            ? {
+                completedTopicIds: journeyState.completedTopicIds ?? [],
+                lastOpenedTopicId: journeyState.lastOpenedTopicId ?? null,
+              }
+            : null,
+        );
 
       // Advice #2 — visible momentum: count of green-checked curriculum topics.
       const topicsLearned = Array.isArray(journeyState?.completedTopicIds)
@@ -542,6 +630,18 @@ export function makeLoginBriefingProvider(
 
       const todayIso = todayInTimezone(nowDate, inputs.timezone);
       const daysSinceLastSession = dayDiff(todayIso, userJourney?.last_session_date ?? null);
+
+      // §10 spine — day index of the longevity journey (1 = the start day),
+      // from user_journey.started_at in the user's timezone. Null when unknown.
+      let dayInJourney: number | null = null;
+      if (userJourney?.started_at) {
+        const startedMs = Date.parse(userJourney.started_at);
+        if (Number.isFinite(startedMs)) {
+          const startedDateIso = todayInTimezone(new Date(startedMs), inputs.timezone);
+          const daysSinceStart = dayDiff(todayIso, startedDateIso);
+          if (daysSinceStart != null) dayInJourney = daysSinceStart + 1;
+        }
+      }
 
       const primaryGoalRaw = (lifeCompass as { primary_goal?: unknown } | null)?.primary_goal;
       const primaryGoalLabel =
@@ -556,12 +656,15 @@ export function makeLoginBriefingProvider(
 
       const facts: BriefingFacts = {
         sessionsCompleted,
+        dayInJourney,
         nextSessionNumber: currentSession,
         nextSessionTitle,
         // Recall the session the user most recently heard = current_session
         // (narrate persists it as the just-played session), only when they have
         // actually completed a topic. See the fast-gather note.
         lastSessionTitle: topicsLearned > 0 ? nextSessionTitle : null,
+        lastOpenedTitle,
+        nextStepTitle,
         graduated,
         hasGoal: !!primaryGoalLabel,
         indexDeltaUp,
@@ -632,7 +735,7 @@ async function fetchUserJourneyRow(
 ): Promise<UserJourneyRow | null> {
   const { data, error } = await supabase
     .from('user_journey')
-    .select('last_session_date, is_first_session')
+    .select('last_session_date, is_first_session, started_at')
     .eq('user_id', userId)
     .maybeSingle();
   if (error) throw new Error(error.message);
@@ -741,40 +844,52 @@ export function buildFastProactiveOpener(args: RenderArgs, rng: () => number = M
         ];
     return [prefix, pickFromPool(pool, rng)].join(' ');
   }
-  // building / momentum / returning → RECALL the actual last session (grounded
-  // "where we left off" the user can verify), THEN continue at the next step.
-  // When there is no real last session to name, we DON'T fake a recall — we just
-  // lead to the next step (no bluff the user can call).
-  const recall = f.lastSessionTitle
+  // building / momentum / returning → JOURNEY-CONTINUATION LEAD. The journey is
+  // ONE ongoing thing: Vitana always grounds the opener in WHERE WE LEFT OFF
+  // (the real last-opened topic the user can verify — never a bluff) and then
+  // PROACTIVELY proposes ONE concrete next action AND offers to do it FOR the
+  // user ("just say the word, I'll do it"). She never asks "what do you want?".
+  //
+  // The proposal ROTATES across three action types so each login inspires a
+  // fresh next action (one per session, never a menu):
+  //   1) continue the guided journey — the next un-learned session/topic;
+  //   2) post a community update — the user dictates, Vitana posts it;
+  //   3) find an activity match — and if none yet, post the request for them.
+  // Type 1 names the genuinely-distinct next step (nextStepTitle ≠ recall).
+  const recallTitle = f.lastOpenedTitle ?? f.lastSessionTitle ?? null;
+  const nextTitle = f.nextStepTitle ?? f.nextSessionTitle ?? null;
+  const nextDistinct = nextTitle && nextTitle !== recallTitle ? nextTitle : null;
+
+  const recall = recallTitle
     ? de
-      ? `Letztes Mal ging es um „${f.lastSessionTitle}". `
-      : `Last time we were on "${f.lastSessionTitle}". `
+      ? `Letztes Mal ging es um „${recallTitle}". `
+      : `Last time we worked on "${recallTitle}". `
     : '';
-  // When we just named the session in the recall, continue "there" rather than
-  // repeating the same title; otherwise name the next step.
-  const where = recall
+
+  // 1) Continue the guided journey — name the concrete next step when we have a
+  //    distinct one; otherwise lead to "the next session" without bluffing a title.
+  const journeyProposal = nextDistinct
     ? de
-      ? 'da'
-      : 'there'
-    : f.nextSessionTitle
-      ? de
-        ? `bei „${f.nextSessionTitle}"`
-        : `with "${f.nextSessionTitle}"`
-      : de
-        ? 'bei deinem nächsten Schritt'
-        : 'with your next step';
-  const pool = de
-    ? [
-        `${recall}Lass uns ${where} weitermachen — ich führe dich.`,
-        `${recall}Knüpfen wir ${where} an — ich nehme dich mit.`,
-        `${recall}Lass uns ${where} weitermachen, ich begleite dich.`,
-      ]
-    : [
-        `${recall}Let's continue ${where} — I'll guide you.`,
-        `${recall}Let's pick up ${where} — I'll walk with you.`,
-        `${recall}Let's get right back to it ${where} — I'll take you there.`,
-      ];
-  return [prefix, pickFromPool(pool, rng)].join(' ');
+      ? `${recall}Als Nächstes nehmen wir „${nextDistinct}" — sag Bescheid, ich führe dich.`
+      : `${recall}Next up is "${nextDistinct}" — say the word and I'll guide you.`
+    : de
+      ? `${recall}Machen wir mit deiner nächsten Session weiter — sag Bescheid, ich übernehme das.`
+      : `${recall}Let's continue with your next session — say the word and I'll take it from here.`;
+
+  // 2) Community post — Vitana does the posting; the user only dictates. (The
+  //    actual publish runs via the create_community_post tool when they agree.)
+  const communityProposal = de
+    ? `${recall}Sollen wir der Community ein kurzes Update posten? Du diktierst, ich poste es.`
+    : `${recall}Shall we post a quick update to the community? You dictate it, I'll post it.`;
+
+  // 3) Find an activity match — post_intent's always-post contract handles the
+  //    "no match yet → keep the request live" case once they accept.
+  const matchProposal = de
+    ? `${recall}Soll ich dir einen Aktivitätspartner suchen? Ich kümmere mich darum.`
+    : `${recall}Want me to find you an activity partner? I'll take care of it.`;
+
+  const proposals = [journeyProposal, communityProposal, matchProposal];
+  return [prefix, pickFromPool(proposals, rng)].join(' ');
 }
 
 /**
@@ -801,7 +916,17 @@ export async function gatherBriefingFactsForFastOpener(
   const sessionsCompleted = Math.max(0, currentSession - 1);
   const graduated =
     journeyState?.onboardingStatus === 'qualified' || journeyState?.onboardingStatus === 'completed';
-  const { title: nextSessionTitle, totalTopics } = await resolveCurriculumFacts(supabase, lang, currentSession);
+  const { title: nextSessionTitle, totalTopics, lastOpenedTitle, nextStepTitle } = await resolveCurriculumFacts(
+    supabase,
+    lang,
+    currentSession,
+    journeyState
+      ? {
+          completedTopicIds: journeyState.completedTopicIds ?? [],
+          lastOpenedTopicId: journeyState.lastOpenedTopicId ?? null,
+        }
+      : null,
+  );
   const trend = readIndexTrend(indexSnap);
   const indexDeltaUp = trend !== null && trend >= MATERIAL_INDEX_DELTA ? trend : null;
   const todayIso = todayInTimezone(new Date(nowMs), timezone);
@@ -826,6 +951,8 @@ export async function gatherBriefingFactsForFastOpener(
     // when the user has actually completed a topic; otherwise there is nothing to
     // recall and we must not bluff.
     lastSessionTitle: topicsLearned > 0 ? nextSessionTitle : null,
+    lastOpenedTitle,
+    nextStepTitle,
     graduated,
     hasGoal: !!primaryGoalLabel,
     indexDeltaUp,
@@ -863,20 +990,15 @@ export async function computeFastProactiveOpener(args: {
   lastSessionInfo?: { time: string } | null;
 }): Promise<string | null> {
   try {
-    // Cadence gate: suppress the fast proactive opener when we greeted/served
-    // this user very recently (default 15-min greet-once window, mirroring
-    // RECENT_GREETING_WINDOW_MS in greeting-policy.ts). Day-granularity
-    // daysSinceLastSession can't see this; the raw timestamp can.
-    const lastTime = args.lastSessionInfo?.time;
-    if (typeof lastTime === 'string' && lastTime.length > 0) {
-      const lastMs = Date.parse(lastTime);
-      if (Number.isFinite(lastMs)) {
-        const sinceMs = args.nowMs - lastMs;
-        if (sinceMs >= 0 && sinceMs < FAST_OPENER_GREET_ONCE_WINDOW_MS) {
-          return null;
-        }
-      }
-    }
+    // BOOTSTRAP-ORB-NO-HARDCODED-GREETING: the 15-min greet-once gate that used
+    // to return null here is REMOVED. Returning null on a deliberate re-open
+    // meant the safe-fast ladder fell through to the HARD-CODED short-gap
+    // greeting menu (orb-live.ts safe_fast_pending_context branch) — exactly
+    // the canned line the product rule forbids. A deliberate re-open must get
+    // the GROUNDED journey opener, never a canned fallback. The opener is fully
+    // grounded (name + real where-we-left-off + concrete next step), so
+    // re-speaking it on a quick re-open is correct, not spam. (True transparent
+    // reconnects never reach this path — they are gated upstream.)
     const facts = await gatherBriefingFactsForFastOpener(
       args.supabase,
       args.userId,

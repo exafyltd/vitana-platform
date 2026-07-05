@@ -1,15 +1,30 @@
 /**
- * Community Group Enrollment — VTID-03089
+ * Community Group Enrollment — VTID-03089 / Alle Beisammen
  *
- * Auto-adds new users to system chat groups in their tenant. Currently the
- * only system group is "🎆 FIRST 100", capped at 100 members. Idempotent:
- * silently skips if the user is already a member or the cap is reached.
- * Fire-and-forget — never blocks login.
+ * Auto-adds users to system chat groups in their tenant. The per-group member
+ * cap is metadata-driven (chat_groups.metadata.cap): a number caps the group
+ * ("🎆 FIRST 100" = 100), while NULL/absent means uncapped ("Alle Beisammen 🤗"
+ * — everyone belongs). Idempotent: silently skips if the user is already a
+ * member or the cap is reached. Fire-and-forget — never blocks login.
+ *
+ * This is the login-time defense-in-depth path; the primary enrollment happens
+ * in the fire_welcome_chat_on_membership() DB trigger on registration.
  */
 
 import { SupabaseClient } from '@supabase/supabase-js';
 
-const FIRST_100_CAP = 100;
+/**
+ * Reads a numeric member cap from a group's metadata. Returns null (uncapped)
+ * when metadata.cap is absent, null, or not a finite number.
+ */
+function groupMemberCap(metadata: unknown): number | null {
+  if (metadata && typeof metadata === 'object') {
+    const raw = (metadata as Record<string, unknown>).cap;
+    const n = typeof raw === 'number' ? raw : typeof raw === 'string' ? Number(raw) : NaN;
+    if (Number.isFinite(n)) return n;
+  }
+  return null;
+}
 
 export async function addUserToSystemGroups(
   userId: string,
@@ -23,7 +38,7 @@ export async function addUserToSystemGroups(
   try {
     const { data: groups, error: groupsErr } = await supabase
       .from('chat_groups')
-      .select('id, name')
+      .select('id, name, metadata')
       .eq('tenant_id', tenantId)
       .eq('is_system', true);
 
@@ -35,7 +50,7 @@ export async function addUserToSystemGroups(
       return { added, skipped };
     }
 
-    for (const group of groups as Array<{ id: string; name: string }>) {
+    for (const group of groups as Array<{ id: string; name: string; metadata: unknown }>) {
       const { data: existing } = await supabase
         .from('chat_group_members')
         .select('user_id')
@@ -48,20 +63,25 @@ export async function addUserToSystemGroups(
         continue;
       }
 
-      const { count, error: countErr } = await supabase
-        .from('chat_group_members')
-        .select('user_id', { count: 'exact', head: true })
-        .eq('group_id', group.id);
+      const cap = groupMemberCap(group.metadata);
 
-      if (countErr) {
-        console.warn(`${tag} Count members for ${group.id} failed: ${countErr.message}`);
-        skipped.push({ group_id: group.id, reason: 'count_failed' });
-        continue;
-      }
+      // Only count members when a cap applies — uncapped groups skip the query.
+      if (cap !== null) {
+        const { count, error: countErr } = await supabase
+          .from('chat_group_members')
+          .select('user_id', { count: 'exact', head: true })
+          .eq('group_id', group.id);
 
-      if ((count || 0) >= FIRST_100_CAP) {
-        skipped.push({ group_id: group.id, reason: 'cap_reached' });
-        continue;
+        if (countErr) {
+          console.warn(`${tag} Count members for ${group.id} failed: ${countErr.message}`);
+          skipped.push({ group_id: group.id, reason: 'count_failed' });
+          continue;
+        }
+
+        if ((count || 0) >= cap) {
+          skipped.push({ group_id: group.id, reason: 'cap_reached' });
+          continue;
+        }
       }
 
       const { error: insertErr } = await supabase

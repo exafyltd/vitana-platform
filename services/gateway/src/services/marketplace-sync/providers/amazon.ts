@@ -26,6 +26,7 @@ const SUPPORTED_MARKETPLACES = [
   'www.amazon.ca',
   'www.amazon.com.au',
   'www.amazon.in',
+  'www.amazon.ae',
 ];
 
 export const amazonProvider: MarketplaceProvider = {

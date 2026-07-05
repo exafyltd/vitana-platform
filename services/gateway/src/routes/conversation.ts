@@ -47,9 +47,14 @@ import {
   ConversationChannel,
   ToolCall,
 } from '../types/conversation';
-import { ContextLens, createContextLens } from '../types/context-lens';
 import { computeRetrievalRouterDecision, logRetrievalRouterDecision } from '../services/retrieval-router';
-import { buildContextPack, formatContextPackForLLM, BuildContextPackInput, extractLanguageFromContextPack, buildLanguageDirective } from '../services/context-pack-builder';
+import { extractLanguageFromContextPack, buildLanguageDirective } from '../services/context-pack-builder';
+// BOOTSTRAP-MEMORY-ORCHESTRATOR-MANDATORY: mandatory pre-answer memory step
+import {
+  buildAssistantMemoryContext,
+  assertMemoryContextInjected,
+  emitMemoryTurnTelemetry,
+} from '../services/memory-orchestrator';
 import {
   buildToolRegistryResponse,
   buildToolHealthResponse,
@@ -391,12 +396,6 @@ router.post('/turn', async (req: Request, res: Response) => {
       user_timezone: reqUserTz,
     });
 
-    // Create context lens for memory access
-    const lens: ContextLens = createContextLens(tenant_id, user_id, {
-      workspace_scope: 'product',
-      active_role: role,
-    });
-
     // Step 1: Compute retrieval router decision
     const routerDecision = computeRetrievalRouterDecision(message.text, {
       channel,
@@ -413,31 +412,31 @@ router.post('/turn', async (req: Request, res: Response) => {
       query: message.text,
     });
 
-    // Step 2: Build context pack
-    const contextPackInput: BuildContextPackInput = {
-      lens,
-      query: message.text,
-      channel,
-      thread_id: thread.thread_id,
-      turn_number: thread.turn_count,
-      conversation_start: thread.started_at,
+    // Step 2+3: MANDATORY memory orchestrator — context pack (memory garden
+    // forced on) + goals + preferences + do-not-repeat, formatted as the
+    // sentinel-wrapped USER MEMORY CONTEXT block.
+    const memoryContext = await buildAssistantMemoryContext({
+      tenant_id,
+      user_id,
       role,
+      channel,
+      message: message.text,
       ui_context: ui_context ? {
         surface: ui_context.surface,
         screen: ui_context.screen,
         selection: ui_context.selection,
         metadata: ui_context.metadata,
       } : undefined,
+      thread_id: thread.thread_id,
+      turn_number: thread.turn_count,
+      conversation_start: thread.started_at,
+      user_timezone: reqUserTz,
+      session_id: thread.thread_id,
       router_decision: routerDecision,
       vtid,
-      // VTID-01230: Session buffer lookup key
-      session_id: thread.thread_id,
-    };
-
-    const contextPack = await buildContextPack(contextPackInput);
-
-    // Step 3: Format context for LLM
-    const contextForLLM = formatContextPackForLLM(contextPack);
+    });
+    const contextPack = memoryContext.context_pack;
+    const contextForLLM = memoryContext.memory_prompt_block;
 
     // Step 4: Call LLM with context
     const llmStartTime = Date.now();
@@ -501,6 +500,15 @@ ${channelInstructions}`;
 
       // Get tool definitions for the user's role
       const toolDefs = getGeminiToolDefinitions(role);
+
+      // Hard gate: no assistant answer without the memory block.
+      assertMemoryContextInjected(systemInstruction, {
+        channel,
+        user_id,
+        tenant_id,
+        thread_id: thread.thread_id,
+        caller: 'routes/conversation.turn',
+      });
 
       // Process with Gemini
       // VTID-DEV-ASSIST: Pass role so tool definitions are filtered by authorization
@@ -669,6 +677,17 @@ ${channelInstructions}`;
 
       reply = `I apologize, but I encountered an error processing your request. Please try again.`;
     }
+
+    // Per-turn memory proof event (feeds the Memory Alive/Dead admin card)
+    emitMemoryTurnTelemetry(memoryContext, {
+      tenant_id,
+      user_id,
+      channel,
+      thread_id: thread.thread_id,
+      reply,
+      model_used: modelUsed,
+      vtid,
+    });
 
     // Step 5: Auto-write USER message only to memory (not assistant reply)
     // VTID-01225-CLEANUP: Previously stored "User: X\nAssistant: Y" combined — this caused
@@ -862,34 +881,28 @@ router.post('/stream', async (req: Request, res: Response) => {
     const thread = getOrCreateThread(input.thread_id, input.tenant_id, input.user_id, input.channel);
     thread.turn_count++;
 
-    // Create context lens
-    const lens: ContextLens = createContextLens(input.tenant_id, input.user_id, {
-      workspace_scope: 'product',
-      active_role: input.role,
-    });
-
     // Compute router decision
     const routerDecision = computeRetrievalRouterDecision(input.message.text, { channel: input.channel });
+
+    // MANDATORY memory orchestrator (memory garden forced on)
+    const memoryContext = await buildAssistantMemoryContext({
+      tenant_id: input.tenant_id,
+      user_id: input.user_id,
+      role: input.role,
+      channel: input.channel,
+      message: input.message.text,
+      thread_id: thread.thread_id,
+      turn_number: thread.turn_count,
+      conversation_start: thread.started_at,
+      session_id: thread.thread_id,
+      router_decision: routerDecision,
+    });
 
     // Send context pack ready event
     res.write(`data: ${JSON.stringify({ type: 'context_pack_ready', timestamp: new Date().toISOString(), sequence: 1 })}\n\n`);
 
-    // Build context pack
-    const contextPackInput: BuildContextPackInput = {
-      lens,
-      query: input.message.text,
-      channel: input.channel,
-      thread_id: thread.thread_id,
-      turn_number: thread.turn_count,
-      conversation_start: thread.started_at,
-      role: input.role,
-      router_decision: routerDecision,
-      // VTID-01230: Session buffer lookup key
-      session_id: thread.thread_id,
-    };
-
-    const contextPack = await buildContextPack(contextPackInput);
-    const contextForLLM = formatContextPackForLLM(contextPack);
+    const contextPack = memoryContext.context_pack;
+    const contextForLLM = memoryContext.memory_prompt_block;
 
     // Extract user's preferred language from context pack facts
     const streamPreferredLanguage = extractLanguageFromContextPack(contextPack);
@@ -904,6 +917,15 @@ Instructions:
 - Be brief and natural for voice interaction
 - Avoid long lists or complex formatting
 - Be warm and helpful`;
+
+    // Hard gate: no assistant answer without the memory block.
+    assertMemoryContextInjected(systemInstruction, {
+      channel: input.channel,
+      user_id: input.user_id,
+      tenant_id: input.tenant_id,
+      thread_id: thread.thread_id,
+      caller: 'routes/conversation.stream',
+    });
 
     // Process with Gemini
     try {
@@ -935,6 +957,16 @@ Instructions:
         timestamp: new Date().toISOString(),
         sequence: sequence
       })}\n\n`);
+
+      // Per-turn memory proof event (feeds the Memory Alive/Dead admin card)
+      emitMemoryTurnTelemetry(memoryContext, {
+        tenant_id: input.tenant_id,
+        user_id: input.user_id,
+        channel: input.channel,
+        thread_id: thread.thread_id,
+        reply: geminiResult.reply,
+        model_used: 'gemini-2.5-pro',
+      });
 
       // Persist both messages to Supabase (fire-and-forget, non-blocking)
       persistMessage({

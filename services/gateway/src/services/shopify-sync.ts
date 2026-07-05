@@ -81,15 +81,43 @@ export function mapShopifyProduct(p: ShopifyProduct, cfg: ShopifySyncConfig): Re
   };
 }
 
+/** Read all Set-Cookie headers off a response (array form when available). */
+function getSetCookies(res: Response): string[] {
+  const h = res.headers as unknown as { getSetCookie?: () => string[] };
+  if (typeof h.getSetCookie === 'function') return h.getSetCookie();
+  const raw = res.headers.get('set-cookie');
+  return raw ? [raw] : [];
+}
+
+/** Fold Set-Cookie strings into a name->value jar (first `name=value` pair only). */
+export function mergeSetCookies(jar: Record<string, string>, setCookies: string[]): Record<string, string> {
+  for (const sc of setCookies) {
+    const first = (sc.split(';')[0] || '').trim();
+    const eq = first.indexOf('=');
+    if (eq > 0) jar[first.slice(0, eq).trim()] = first.slice(eq + 1).trim();
+  }
+  return jar;
+}
+
+/** Serialize a cookie jar into a Cookie request header. */
+export function cookieHeader(jar: Record<string, string>): string {
+  return Object.entries(jar).map(([k, v]) => `${k}=${v}`).join('; ');
+}
+
 async function fetchProductsJson(cfg: ShopifySyncConfig): Promise<ShopifyProduct[]> {
   const base = `https://${cfg.domain}`;
   let res = await fetch(`${base}/products.json?limit=250`);
   // Password-protected storefronts return 401 — do the storefront-password handshake.
+  // Shopify needs BOTH the `_shopify_essential` cookie set by GET /password AND the
+  // `storefront_digest` cookie set by the POST, so we accumulate a single cookie jar
+  // across the whole exchange (mirrors a browser / curl cookie jar). The
+  // authenticity_token is optional here — the cookie jar is what authorizes access.
   if (res.status === 401 && cfg.storefrontPassword) {
+    const jar: Record<string, string> = {};
     const page = await fetch(`${base}/password`);
+    mergeSetCookies(jar, getSetCookies(page));
     const html = await page.text();
     const m = /name="authenticity_token"[^>]*value="([^"]+)"/.exec(html);
-    const cookie = page.headers.get('set-cookie') || '';
     const body = new URLSearchParams({
       form_type: 'storefront_password',
       utf8: '✓',
@@ -98,10 +126,10 @@ async function fetchProductsJson(cfg: ShopifySyncConfig): Promise<ShopifyProduct
     });
     const login = await fetch(`${base}/password`, {
       method: 'POST', redirect: 'manual',
-      headers: { 'content-type': 'application/x-www-form-urlencoded', cookie }, body,
+      headers: { 'content-type': 'application/x-www-form-urlencoded', cookie: cookieHeader(jar) }, body,
     });
-    const authCookie = login.headers.get('set-cookie') || cookie;
-    res = await fetch(`${base}/products.json?limit=250`, { headers: { cookie: authCookie } });
+    mergeSetCookies(jar, getSetCookies(login));
+    res = await fetch(`${base}/products.json?limit=250`, { headers: { cookie: cookieHeader(jar) } });
   }
   if (!res.ok) throw new Error(`products.json HTTP ${res.status}`);
   const data = (await res.json()) as { products?: ShopifyProduct[] };

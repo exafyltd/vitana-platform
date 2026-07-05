@@ -62,6 +62,8 @@ export const TYPE_META: Record<string, TypeMeta> = {
   new_member_in_group:        { channel: 'inapp',          priority: 'p3', category: 'community' },
   group_milestone_reached:    { channel: 'inapp',          priority: 'p2', category: 'community' },
   group_invitation_received:  { channel: 'push_and_inapp', priority: 'p1', category: 'community' },
+  post_like:                  { channel: 'push_and_inapp', priority: 'p1', category: 'community' },
+  post_comment:               { channel: 'push_and_inapp', priority: 'p1', category: 'community' },
   // Meetups
   meetup_recommended:        { channel: 'push_and_inapp', priority: 'p2', category: 'meetup' },
   meetup_starting_soon:      { channel: 'push_and_inapp', priority: 'p0', category: 'meetup' },
@@ -86,6 +88,13 @@ export const TYPE_META: Record<string, TypeMeta> = {
   daily_recompute_complete:  { channel: 'silent',          priority: 'p3', category: 'calendar' },
   morning_briefing_ready:    { channel: 'push_and_inapp', priority: 'p1', category: 'calendar' },
   daily_pace_check:          { channel: 'push_and_inapp', priority: 'p2', category: 'calendar' },
+  // My Journey celebrations — fired by /api/v1/celebrations/dispatch from
+  // the frontend when a milestone is detected client-side. Channel is
+  // push_and_inapp because the user explicitly opted into "always push,
+  // even if app is open" so the celebration also lands on lock screen.
+  daily_goal_celebration:        { channel: 'push_and_inapp', priority: 'p1', category: 'growth' },
+  phase_milestone_celebration:   { channel: 'push_and_inapp', priority: 'p1', category: 'growth' },
+  progress_milestone_celebration:{ channel: 'push_and_inapp', priority: 'p1', category: 'growth' },
   upcoming_event_today:      { channel: 'push',           priority: 'p1', category: 'calendar' },
   weekly_community_digest:   { channel: 'push_and_inapp', priority: 'p2', category: 'calendar' },
   // Recommendations

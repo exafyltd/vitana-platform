@@ -1339,6 +1339,7 @@ export async function tool_create_index_improvement_plan(
   try {
     const { PILLAR_TAGS, PILLAR_ACTION_TEMPLATES } = await import('../lib/vitana-pillars');
     const { createCalendarEvent } = await import('./calendar-service');
+    const { toWritableRoleContext } = await import('../types/calendar');
 
     let pillar: string | undefined = resolvePillarKey(args.pillar as string | undefined);
     if (!pillar) {
@@ -1412,58 +1413,99 @@ export async function tool_create_index_improvement_plan(
 
     const weeks = Math.ceil(days / 7);
     const totalEvents = weeks * perWeek;
-    const scheduled: { title: string; start_time: string; source: string }[] = [];
     const startOfToday = new Date();
     startOfToday.setHours(10, 0, 0, 0);
     startOfToday.setDate(startOfToday.getDate() + 1); // start tomorrow
 
-    const tags = PILLAR_TAGS[pillar as keyof typeof PILLAR_TAGS];
-    const wellnessTags: string[] = tags ? [...tags] : [pillar!];
-
+    // Compute the concrete plan (each item + its date) WITHOUT writing anything.
+    type PlannedEvent = PlanItem & { start_time: string; end_time: string };
+    const planned: PlannedEvent[] = [];
     for (let i = 0; i < totalEvents; i++) {
       const item = source[i % source.length];
       const eventDate = new Date(startOfToday);
       eventDate.setDate(eventDate.getDate() + Math.floor((i * 7) / perWeek));
       if (eventDate.getTime() > Date.now() + days * 24 * 60 * 60 * 1000) break;
-      const startIso = eventDate.toISOString();
-      const endIso = new Date(eventDate.getTime() + 30 * 60 * 1000).toISOString();
+      planned.push({
+        ...item,
+        start_time: eventDate.toISOString(),
+        end_time: new Date(eventDate.getTime() + 30 * 60 * 1000).toISOString(),
+      });
+    }
 
+    const coach = await import('./orb-index-coach-text');
+
+    // CONFIRM-BEFORE-WRITE: by default PROPOSE the plan and write nothing. The
+    // calendar is touched only when the model re-calls with confirm=true after
+    // the user agrees. Fixes "du musst doch erst mit mir besprechen" — the tool
+    // used to silently write 6 events the moment the user agreed to "a plan".
+    const a = args as Record<string, unknown>;
+    const confirm = a.confirm === true || a.confirm === 'true' || a.confirm === 1;
+    if (!confirm) {
+      return {
+        ok: true,
+        result: {
+          ok: true,
+          preview: true,
+          pillar,
+          days,
+          actions_per_week: perWeek,
+          proposed_count: planned.length,
+          proposed: planned.map((p) => ({ title: p.title, start_time: p.start_time })),
+        },
+        text: coach.buildIndexPlanPreviewText(String(pillar), days, planned),
+      };
+    }
+
+    const tags = PILLAR_TAGS[pillar as keyof typeof PILLAR_TAGS];
+    const wellnessTags: string[] = tags ? [...tags] : [pillar!];
+    const scheduled: { title: string; start_time: string; source: string }[] = [];
+    // Capture the FIRST calendar-write error so a total failure reports WHY.
+    let firstCalendarError: string | null = null;
+
+    for (const p of planned) {
       try {
         const evt = await createCalendarEvent(id.user_id, {
-          title: item.title,
-          start_time: startIso,
-          end_time: endIso,
-          description: `${item.description}\n\nPart of your Vitana Index improvement plan (target: ${pillar}).`.trim(),
+          title: p.title,
+          start_time: p.start_time,
+          end_time: p.end_time,
+          description: `${p.description}\n\nPart of your Vitana Index improvement plan (target: ${pillar}).`.trim(),
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           event_type: 'health' as any,
+          // role_context is constrained by the `valid_role_context` CHECK to
+          // {community, admin, developer, personal}; the raw session role can be
+          // super_admin/staff/dev/etc, so coerce it (see toWritableRoleContext).
           status: 'confirmed',
           priority: 'medium',
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          role_context: ((id.role || 'community') as any),
+          role_context: toWritableRoleContext(id.role),
           source_type: 'assistant',
           source_ref_type:
-            item.source === 'autopilot' ? 'autopilot_recommendation' : 'pillar_template',
-          source_ref_id: item.source_ref_id ?? undefined,
+            p.source === 'autopilot' ? 'autopilot_recommendation' : 'pillar_template',
+          source_ref_id: p.source_ref_id ?? undefined,
           priority_score: 60,
           wellness_tags: wellnessTags,
           metadata: {
             created_via: 'orb_voice',
             plan: 'index_improvement',
             target_pillar: pillar,
-            plan_source: item.source,
+            plan_source: p.source,
           },
           is_recurring: false,
-        });
+        }, (msg) => { if (!firstCalendarError) firstCalendarError = msg; });
         if (evt) {
-          scheduled.push({ title: evt.title, start_time: evt.start_time, source: item.source });
+          scheduled.push({ title: evt.title, start_time: evt.start_time, source: p.source });
         }
-      } catch {
-        /* per-event failures swallowed; reported as count-mismatch in result */
+      } catch (perEvtErr) {
+        if (!firstCalendarError) {
+          firstCalendarError = perEvtErr instanceof Error ? perEvtErr.message : String(perEvtErr);
+        }
       }
     }
 
     if (scheduled.length === 0) {
-      return { ok: false, error: 'No events could be scheduled (calendar write failed).' };
+      return {
+        ok: false,
+        error: `No events could be scheduled (calendar write failed)${firstCalendarError ? `: ${firstCalendarError}` : ''}`,
+      };
     }
 
     const payload = {
@@ -1482,7 +1524,9 @@ export async function tool_create_index_improvement_plan(
     return {
       ok: true,
       result: payload,
-      text: `Scheduled ${scheduled.length} ${pillar} actions on your calendar over the next ${days} days.`,
+      // Name EXACTLY what was scheduled so the user is never left wondering what
+      // landed in their calendar ("Ich habe ja keine Ahnung, was du da einträgst").
+      text: coach.buildIndexPlanText(String(pillar), days, scheduled),
     };
   } catch (err: unknown) {
     return { ok: false, error: err instanceof Error ? err.message : 'create_index_improvement_plan error' };
@@ -3240,6 +3284,32 @@ export async function tool_navigate(
     lines.push('Then call navigate_to_screen with the chosen screen_id directly —');
     lines.push('do not call navigate again unless the user rephrases their request.');
 
+    // NAV_CONTINUATION_BIND — invariant #10 (auto-capture nav offers): this is a
+    // navigation OFFER (Vitana asks an either/or instead of auto-navigating) and
+    // the navigator has already resolved the top candidate. Record the TOP one
+    // as the session's pending_cta so a bare "Ja" deterministically opens it
+    // (the acceptance gate consumes it) rather than re-resolving the ambiguous
+    // phrase from scratch. Naming a specific candidate still routes through the
+    // LLM → navigate_to_screen, and that fresh confident nav supersedes this.
+    if (process.env.NAV_CONTINUATION_BIND === 'true' && sb && id.user_id) {
+      try {
+        const { writeOrbSessionState } = await import('./orb/orb-session-state');
+        await writeOrbSessionState(
+          sb,
+          id.user_id,
+          'pending_cta',
+          {
+            tool: 'navigate_to_screen',
+            payload: { screen_id: top.screen_id, route: top.route, title: top.title },
+            offered_at: new Date().toISOString(),
+          },
+          5,
+        );
+      } catch (e) {
+        console.error('[NAV-CONTINUATION-BIND] pending_cta write failed:', e instanceof Error ? e.message : e);
+      }
+    }
+
     return {
       ok: true,
       result: {
@@ -3274,9 +3344,44 @@ export async function tool_navigate(
         entry.screen_id === 'AUTOPILOT.MY_JOURNEY'
       ) {
         const intentText = `${question} ${transcriptExcerpt}`.toLowerCase();
-        const wantsGuided = /guided|gef[üu]hrt|einf[üu]hrung/.test(intentText);
-        const wantsFull = /full[\s-]?app|full[\s-]?version|full[\s-]?mode|vollversion|volle\s+version|komplette\s+app|kompletten?\s+app/.test(intentText);
-        const targetMode: 'guided' | 'full' | null = wantsGuided ? 'guided' : wantsFull ? 'full' : null;
+        // Keyword detection for the GUIDED vs FULL durable mode. Deliberately
+        // broad — people don't say "guided journey" verbatim; they say "the
+        // simple one", "step by step", "der Anfänger-Modus", "show me everything".
+        // EN: guided / step-by-step / beginner / intro(duction) / tutorial /
+        //     onboarding / walk me through / simple(r) / basic / easy mode.
+        // DE: geführt / Einführung / Schritt für Schritt / Anfänger / einfach(e/r) /
+        //     leicht (+ "-modus"/"-version").
+        const wantsGuided =
+          /guided|gef[üu]hrt|einf[üu]hrung|step[\s-]?by[\s-]?step|schritt[\s-]?f[üu]r[\s-]?schritt|beginner|anf[äa]nger|\bintro\b|introduction|tutorial|onboarding|walk me through|\bsimple(?:r)?\b|\bbasic\b|einfache?[rsn]?\b|\beasy\b|leichte?[rsn]?\b/.test(
+            intentText,
+          );
+        // EN: full app/version/mode/experience / complete / advanced /
+        //     everything / all features / pro mode.
+        // DE: Vollversion / volle Version / komplett(e/n) (App) / fortgeschritten /
+        //     erweitert / alle Funktionen / alles / Profi-Modus.
+        const wantsFull =
+          /full[\s-]?(?:app|version|mode|experience)|vollversion|volle\s+version|komplette?n?\s*app|\bkomplett(?:e[rsn]?)?\b|\bcomplete\b|advanced|fortgeschritten|erweitert|all[\s-]?features|alle\s+funktionen|\balles\b|everything|pro[\s-]?(?:mode|modus)|profi[\s-]?modus/.test(
+            intentText,
+          );
+        // NEGATION GUARD: "the FULL app, NOT the guided journey" must NOT switch
+        // to guided just because the word "guided" appears. Detect a negation
+        // token within ~3 words before a mode NAME and discount that side, so the
+        // explicitly-rejected mode never wins. Targets the named modes (the words
+        // people actually contrast); broad synonyms aren't negated in practice.
+        const negatedGuided =
+          /(?:not|n['’]?t|nicht|kein[a-z]*|rather than|instead of|statt|anstatt|ohne)\b(?:\W+\w+){0,3}?\W+(?:guided|gef[üu]hrt|einf[üu]hrung)/.test(
+            intentText,
+          );
+        const negatedFull =
+          /(?:not|n['’]?t|nicht|kein[a-z]*|rather than|instead of|statt|anstatt|ohne)\b(?:\W+\w+){0,3}?\W+(?:full|vollversion|volle|komplett|complete)/.test(
+            intentText,
+          );
+        const pickGuided = wantsGuided && !negatedGuided;
+        const pickFull = wantsFull && !negatedFull;
+        // Guided wins ties only among modes that were actually requested (i.e.
+        // not negated). "full not guided" → guided negated → full; "guided not
+        // full" → full negated → guided.
+        const targetMode: 'guided' | 'full' | null = pickGuided ? 'guided' : pickFull ? 'full' : null;
         if (targetMode) {
           try {
             const { setJourneyMode } = await import('./guided-journey/guided-journey-state');
@@ -3479,6 +3584,27 @@ const INTENT_MATCH_AUTONAV_GAP = 0.15;
 // single-intent path uses. That screen renders its own graceful empty/error
 // state, so even when there are zero matches (or zero open posts) the offer is
 // fulfilled — we navigate the user there instead of refusing.
+/**
+ * Render match rows as a short, SPEAKABLE summary. The Vertex live path forwards
+ * ONLY a tool result's `text` to the model — so if `text` is "Opening the matches
+ * screen" (a navigation announcement) the model has nothing to actually say on a
+ * conversational surface where no screen opens, and it improvises "I couldn't do
+ * that". Giving it real, presentable content is what prevents the offer-then-fail.
+ */
+function formatMatchesForSpeech(
+  slim: Array<{ score?: number | null; tier?: string | null; kind_pairing?: string | null }>,
+): string {
+  return slim
+    .slice(0, 3)
+    .map((m, i) => {
+      const kind = String(m.kind_pairing ?? 'match').replace(/_/g, ' ');
+      const fit = typeof m.score === 'number' ? `${Math.round(m.score * 100)}% fit` : 'a strong fit';
+      const tier = m.tier ? `, ${m.tier} tier` : '';
+      return `${i + 1}) a ${kind}${tier} — ${fit}`;
+    })
+    .join('; ');
+}
+
 async function viewAllMyMatches(
   args: OrbToolArgs,
   id: OrbToolIdentity,
@@ -3534,8 +3660,9 @@ async function viewAllMyMatches(
           reason: 'no_open_intents',
         },
         text:
-          "I'm opening your matches now — you don't have any open posts yet, " +
-          'so post a wish and I\'ll let you know the moment someone matches.',
+          'HANDLED — the user has no open posts yet, so there are no matches to show. ' +
+          'Warmly invite them to post a wish (what kind of partner or activity they want) and tell ' +
+          'them you will alert them the moment someone matches. Do NOT say you could not do it — guide them to post one now.',
       };
     }
 
@@ -3587,8 +3714,12 @@ async function viewAllMyMatches(
       },
       text:
         slim.length > 0
-          ? `Opening your matches — you have ${slim.length} to look through.`
-          : "I'm opening your matches now. None have come in yet, but your posts are live — I'll flag the moment someone matches.",
+          ? `SUCCESS — the user has ${slim.length} match${slim.length === 1 ? '' : 'es'}. ` +
+            `Present them now, warmly and conversationally, then offer to open the top one for details. ` +
+            `Do NOT say you could not do it. Matches: ${formatMatchesForSpeech(slim)}.`
+          : 'HANDLED — the user has live posts but no matches have arrived yet. Tell them warmly that ' +
+            'nothing has come in yet, their posts are active, and you will flag the moment someone matches; ' +
+            'then suggest a next step (refine a post or explore the community). Do NOT say you could not complete it — there is simply nothing to show yet.',
     };
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : 'unknown';
@@ -3692,7 +3823,14 @@ export async function tool_view_intent_matches(
     return {
       ok: true,
       result: { ok: true, matches: slim, decision: 'list_only' },
-      text: JSON.stringify({ ok: true, matches: slim }),
+      // SPEAKABLE text (never raw JSON — the live model parrots whatever this is).
+      text:
+        slim.length > 0
+          ? `SUCCESS — ${slim.length} match${slim.length === 1 ? '' : 'es'} for this post. ` +
+            `Present them now, then offer to open one for details. Do NOT say you could not do it. ` +
+            `Matches: ${formatMatchesForSpeech(slim)}.`
+          : 'HANDLED — no matches have arrived for this post yet. Tell the user warmly that none have ' +
+            'come in yet but the post is live, and offer to refine it or look at the wider community. Do NOT say you could not do it.',
     };
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : 'unknown';
@@ -3999,15 +4137,21 @@ export async function tool_save_diary_entry(
     );
   }
 
-  // 5) Per-pillar delta.
-  const index_delta = pillars_after
+  // 5) Per-pillar delta — ONLY when we have a real same-day baseline to diff
+  // against. `before` is today's vitana_index_scores row read BEFORE the
+  // recompute; on the FIRST entry of the day it is null, and
+  // `pillars_after.total - 0` would equal the user's ENTIRE index, which we then
+  // falsely announced as "your Index moved up 230". Without a baseline we cannot
+  // know the change this entry made, so we report no delta (honest) rather than
+  // fabricate the whole score as an increase.
+  const index_delta = pillars_after && before
     ? {
-        total: pillars_after.total - Number(before?.score_total ?? 0),
-        nutrition: pillars_after.nutrition - Number(before?.score_nutrition ?? 0),
-        hydration: pillars_after.hydration - Number(before?.score_hydration ?? 0),
-        exercise: pillars_after.exercise - Number(before?.score_exercise ?? 0),
-        sleep: pillars_after.sleep - Number(before?.score_sleep ?? 0),
-        mental: pillars_after.mental - Number(before?.score_mental ?? 0),
+        total: pillars_after.total - Number(before.score_total ?? 0),
+        nutrition: pillars_after.nutrition - Number(before.score_nutrition ?? 0),
+        hydration: pillars_after.hydration - Number(before.score_hydration ?? 0),
+        exercise: pillars_after.exercise - Number(before.score_exercise ?? 0),
+        sleep: pillars_after.sleep - Number(before.score_sleep ?? 0),
+        mental: pillars_after.mental - Number(before.score_mental ?? 0),
       }
     : null;
 
@@ -4454,6 +4598,37 @@ export async function tool_find_community_member(
  * means the journey content isn't seeded in this environment, so we degrade to
  * "introduce from knowledge" rather than falsely congratulating the user.
  */
+/**
+ * BOOTSTRAP-ORB-GUIDE-MODE-LANG: build the narration directive for the live model.
+ *
+ * The authored `vitana_voice_script` is in German (the curriculum is German).
+ * For a German-speaking user the model speaks it verbatim. For ANY other user
+ * language the directive instructs the model to TRANSLATE the script and speak
+ * it in that language — otherwise the prior "speak it word for word" command
+ * flipped the whole session into German for English (and other) users the moment
+ * narration started (reported: English session → German on "let's continue").
+ *
+ * `lang` defaults to 'de' (the platform default) when absent, preserving the
+ * exact prior verbatim behavior for German users and any caller that doesn't
+ * yet thread the session language.
+ *
+ * Pure — exported for unit tests.
+ */
+export function buildGuidedNarrationDirective(script: string, lang: string | null | undefined): string {
+  const lc = (lang || 'de').toLowerCase();
+  if (lc.startsWith('de')) {
+    return `SPEAK THE TEXT BELOW NOW, as your spoken audio, in full, word for word, exactly as written — it IS the session's real narration, not a summary to describe. Say ONLY the text below: do NOT add an acknowledgement before it, do NOT summarize or shorten it, and do NOT say "we finished" or offer another session until you have spoken every single word of it.\n\n${script}`;
+  }
+  const langName = lc.startsWith('es')
+    ? 'Spanish'
+    : lc.startsWith('sr')
+      ? 'Serbian'
+      : lc.startsWith('fr')
+        ? 'French'
+        : 'English';
+  return `The text below is this session's real narration, authored in German. Deliver it NOW as your spoken audio, but SPOKEN IN ${langName}: translate every sentence faithfully into ${langName} and speak the WHOLE thing — do NOT shorten, summarize, or skip any part, and do NOT speak any German. Say ONLY this narration (no acknowledgement before it, no "we finished" or offer of another session until you have delivered all of it in ${langName}):\n\n${script}`;
+}
+
 export async function tool_narrate_guided_session(
   args: OrbToolArgs,
   identity: OrbToolIdentity,
@@ -4476,10 +4651,18 @@ export async function tool_narrate_guided_session(
   try {
     const state = await sb
       .from('user_guided_journey_state')
-      .select('completed_topic_ids')
+      .select('completed_topic_ids, current_session')
       .eq('user_id', identity.user_id)
       .maybeSingle();
     const completed = new Set<string>((state.data?.completed_topic_ids as string[] | null | undefined) ?? []);
+    // The session the user is actually ON. The frontend Longevity-Reise advances
+    // current_session as the user clicks through, but completed_topic_ids is only
+    // written by the voice narrator — so a user on session 10 can have an empty
+    // completed set. Without this anchor the default "what's next" search below
+    // returned the first un-heard topic across the WHOLE curriculum (session 1,
+    // "Starte deine Longevity-Reise"), making Vitana look unaware of real progress.
+    const curRaw = (state.data as { current_session?: unknown } | null | undefined)?.current_session;
+    const currentSession = Number.isFinite(Number(curRaw)) && Number(curRaw) >= 1 ? Math.floor(Number(curRaw)) : 1;
 
     // ALL published topics, ordered — NO session floor (the floor caused a false
     // "you completed everything" once current_session advanced past the rows).
@@ -4557,7 +4740,17 @@ export async function tool_narrate_guided_session(
       target = inSession.find((r) => !completed.has(r.topic_id)) ?? inSession[0]; // all heard → replay from the top
       remainingInSession = inSession.filter((r) => !completed.has(r.topic_id) && r.topic_id !== target!.topic_id).length;
     } else {
-      target = rows.find((r) => !completed.has(r.topic_id));
+      // DEFAULT "what's next" — anchor on the user's CURRENT session, not the
+      // global first un-heard topic. Clamp the floor to the curriculum so an
+      // over-advanced current_session can't false-complete the journey, then pick
+      // the first un-heard topic AT OR AFTER it (rows are ordered session,position).
+      // Only if nothing remains from the current session onward do we fall back to
+      // any earlier skipped topic — so a user on session 10 is offered session 10,
+      // never session 1.
+      const floor = Math.min(Math.max(1, currentSession), maxSession);
+      target =
+        rows.find((r) => r.session >= floor && !completed.has(r.topic_id)) ??
+        rows.find((r) => !completed.has(r.topic_id));
       if (!target) {
         return {
           ok: true,
@@ -4646,14 +4839,166 @@ export async function tool_narrate_guided_session(
     }
     return {
       ok: true,
-      result: { session: target.session, topic_id: target.topic_id, topic_title: title, has_script: true, remaining_in_session: remainingInSession },
-      text:
-        `SPEAK THE TEXT BELOW NOW, as your spoken audio, in full, word for word, exactly as written — it IS the session's real narration, not a summary to describe. Say ONLY the text below: do NOT add an acknowledgement before it, do NOT summarize or shorten it, and do NOT say "we finished" or offer another session until you have spoken every single word of it.\n\n${script}`,
+      result: { session: target.session, topic_id: target.topic_id, topic_title: title, has_script: true, remaining_in_session: remainingInSession, narration_lang: (identity.lang || 'de').toLowerCase() },
+      text: buildGuidedNarrationDirective(script, identity.lang),
     };
   } catch (e: any) {
     console.warn(`[narrate_guided_session] non-fatal: ${e?.message || e}`);
     return degraded;
   }
+}
+
+/**
+ * NAV_CONTINUATION_BIND — offer_action (design invariant #10, PRODUCE side).
+ *
+ * Vitana calls this the moment she PROPOSES an action and will wait for a
+ * yes/no ("Soll ich dir zeigen, wo du in deinem Guided Journey stehst?"). It
+ * records the EXACT canonical action as the session's `pending_cta`, so when
+ * the user then says "Ja", the acceptance gate (acceptance-gate.ts) executes
+ * THIS action instead of re-interpreting the bare yes as a fresh navigation /
+ * search request (the invariant-#10 bug).
+ *
+ * Args: { tool: string (required, must be a real ORB tool), payload?: object,
+ *         ttl_minutes?: number (1..30, default 5) }
+ *
+ * Flag-gated: with NAV_CONTINUATION_BIND off it is an inert success (so a
+ * stray model call never surfaces an error to the user).
+ */
+export async function tool_offer_action(
+  args: OrbToolArgs,
+  id: OrbToolIdentity,
+  sb: SupabaseClient,
+): Promise<OrbToolResult> {
+  if (process.env.NAV_CONTINUATION_BIND !== 'true') {
+    return { ok: true, result: { stored: false, reason: 'flag_off' } };
+  }
+  const tool = String(args.tool ?? '').trim();
+  if (!tool) return { ok: false, error: 'offer_action requires a non-empty `tool`.' };
+  // The offered action must be dispatchable on acceptance — reject unknown tools
+  // (and offer_action itself, to avoid a self-referential pending_cta).
+  if (tool === 'offer_action' || !ORB_TOOL_REGISTRY[tool]) {
+    return { ok: false, error: `offer_action: '${tool}' is not a dispatchable ORB tool.` };
+  }
+  if (!id.user_id) return { ok: false, error: 'offer_action requires an authenticated user.' };
+  const payload =
+    args.payload && typeof args.payload === 'object' && !Array.isArray(args.payload)
+      ? (args.payload as Record<string, unknown>)
+      : {};
+  const ttlRaw = Number(args.ttl_minutes);
+  const ttl = Number.isFinite(ttlRaw) && ttlRaw > 0 && ttlRaw <= 30 ? ttlRaw : 5;
+  const { writeOrbSessionState } = await import('./orb/orb-session-state');
+  const res = await writeOrbSessionState(
+    sb,
+    id.user_id,
+    'pending_cta',
+    { tool, payload, offered_at: new Date().toISOString() },
+    ttl,
+  );
+  if (!res.ok) return { ok: false, error: res.reason ?? 'offer_action: failed to store pending action.' };
+  return {
+    ok: true,
+    result: { stored: true, tool },
+    // LLM-facing guidance (not user-visible): ask the yes/no and wait — the
+    // offered action fires automatically on acceptance, so don't re-resolve it.
+    text: 'OFFER_REGISTERED: Ask your yes/no question naturally and wait. If the user accepts, the offered action runs automatically — do not re-resolve or re-search it.',
+  };
+}
+
+/**
+ * BOOTSTRAP-SOCIAL-MEMORY — live social context for VOICE sessions.
+ *
+ * The ORB live system instruction is built ONCE at session start, so the
+ * per-turn social-intent injection that text chat gets never fires on the
+ * voice path. This tool is the voice-side bridge: the model calls it when
+ * the user asks about follows/followers, matches, messages, group chats,
+ * a specific person, interesting posts/events, or "what changed" — and
+ * receives the same privacy-filtered Social Context Pack (as prompt-ready
+ * text) that the text brain injects.
+ */
+export async function tool_get_social_context(
+  args: OrbToolArgs,
+  identity: OrbToolIdentity,
+  _sb: SupabaseClient,
+): Promise<OrbToolResult> {
+  if (!identity.user_id || !identity.tenant_id) {
+    return { ok: false, error: 'get_social_context requires an authenticated user.' };
+  }
+  try {
+    const { buildAssistantSocialContext } = await import(
+      './social-memory/social-memory-service'
+    );
+    const question =
+      String(args.question ?? args.query ?? '').trim() ||
+      'my community overview: follows, matches, group chats, interesting posts and events';
+    const result = await buildAssistantSocialContext({
+      tenant_id: identity.tenant_id,
+      user_id: identity.user_id,
+      question,
+      surface: 'vitana_assistant',
+      compact: true,
+    });
+    const p = result.pack;
+    return {
+      ok: true,
+      text: result.prompt_block,
+      result: {
+        following_count: p.relationships.following_count,
+        followers_count: p.relationships.followers_count,
+        matches_count: p.matches.length,
+        group_chats_count: p.group_chats.length,
+        interesting_posts_count: p.interesting_posts.length,
+        interesting_events_count: p.interesting_events.length,
+        person_resolved: !!p.person_context,
+        recommended_actions: p.recommended_actions,
+      },
+    };
+  } catch (err: any) {
+    console.error('[ORB-TOOLS] get_social_context failed:', err?.message);
+    return { ok: false, error: `Social context unavailable: ${err?.message}` };
+  }
+}
+
+/**
+ * BOOTSTRAP-SOCIAL-READ-TOOLS — the missing READ capabilities (defects
+ * 1/4/5 in docs/CONVERSATION_DEFECTS_FIX_PLAN.md). Thin wrappers over
+ * services/social-memory/social-read-tools.ts (which reuses the
+ * privacy-filtered social-memory repository). Speakable, internal-only
+ * (never Google), and "archived" does not exist.
+ */
+export async function tool_view_messages(
+  args: OrbToolArgs,
+  identity: OrbToolIdentity,
+  _sb: SupabaseClient,
+): Promise<OrbToolResult> {
+  const { runViewMessages } = await import('./social-memory/social-read-tools');
+  return runViewMessages(args as { scope?: unknown; limit?: unknown }, identity);
+}
+
+export async function tool_list_followers(
+  _args: OrbToolArgs,
+  identity: OrbToolIdentity,
+  _sb: SupabaseClient,
+): Promise<OrbToolResult> {
+  const { runListFollows } = await import('./social-memory/social-read-tools');
+  return runListFollows('followers', identity);
+}
+
+export async function tool_list_following(
+  _args: OrbToolArgs,
+  identity: OrbToolIdentity,
+  _sb: SupabaseClient,
+): Promise<OrbToolResult> {
+  const { runListFollows } = await import('./social-memory/social-read-tools');
+  return runListFollows('following', identity);
+}
+
+export async function tool_recent_conversations(
+  args: OrbToolArgs,
+  identity: OrbToolIdentity,
+  _sb: SupabaseClient,
+): Promise<OrbToolResult> {
+  const { runRecentConversations } = await import('./social-memory/social-read-tools');
+  return runRecentConversations(args as { limit?: unknown }, identity);
 }
 
 type OrbToolHandler = (
@@ -4726,10 +5071,25 @@ export const ORB_TOOL_REGISTRY: Record<string, OrbToolHandler> = {
   // the LLM can answer "what is my Life Compass goal?" / "remind me what I'm
   // working toward" with the canonical value instead of inventing one.
   get_life_compass: tool_get_life_compass,
+  // BOOTSTRAP-SOCIAL-MEMORY — live Social Context Pack for voice sessions
+  // (follows, matches, messages, groups, person intelligence, ranked
+  // posts/events). Voice-side bridge for the per-turn social injection the
+  // text brain does in the memory orchestrator.
+  get_social_context: tool_get_social_context,
+  // BOOTSTRAP-SOCIAL-READ-TOOLS — own-inbox / own-graph READ capabilities
+  // (defects 1/4/5): speakable unread inbox, followers/following, and
+  // recent conversations. Internal Maxina data only — never Google.
+  view_messages: tool_view_messages,
+  list_followers: tool_list_followers,
+  list_following: tool_list_following,
+  recent_conversations: tool_recent_conversations,
   // VTID-03255 — Journey Foundation: records every voice answer, writes the real
   // fact (life_compass goal / economy stance / focus / teacher ack), re-verifies,
   // and returns the next move. Reachable from Vertex, LiveKit, and /api/v1/orb/tool.
   record_journey_answer: tool_record_journey_answer,
+  // NAV_CONTINUATION_BIND — offer_action: Vitana records the exact action she is
+  // proposing so a later "Ja" executes it deterministically (invariant #10).
+  offer_action: tool_offer_action,
 };
 
 export const ORB_TOOL_NAMES = Object.keys(ORB_TOOL_REGISTRY);

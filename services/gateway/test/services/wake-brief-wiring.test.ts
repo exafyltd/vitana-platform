@@ -19,6 +19,29 @@ import { decideWakeBriefForSession, ensureWakeBriefProviderRegistered } from '..
 import { createWakeTimelineRecorder } from '../../src/services/wake-timeline/wake-timeline-recorder';
 import { defaultProviderRegistry } from '../../src/services/assistant-continuation/provider-registry';
 import { VOICE_WAKE_BRIEF_PROVIDER_KEY } from '../../src/services/assistant-continuation/providers/voice-wake-brief';
+import type { DecisionPillarMomentum, PillarKey } from '../../src/orb/context/types';
+
+/**
+ * A pillar-momentum view that QUALIFIES the voice-wake-brief provider for
+ * its grounded proactive line: confidence high, suggested_focus set, and
+ * that pillar slipping. Used by the tests that need a spoken candidate.
+ */
+function qualifyingPm(focus: PillarKey = 'sleep'): DecisionPillarMomentum {
+  return {
+    per_pillar: [
+      { pillar: 'sleep', momentum: focus === 'sleep' ? 'slipping' : 'steady' },
+      { pillar: 'nutrition', momentum: focus === 'nutrition' ? 'slipping' : 'steady' },
+      { pillar: 'exercise', momentum: focus === 'exercise' ? 'slipping' : 'steady' },
+      { pillar: 'hydration', momentum: focus === 'hydration' ? 'slipping' : 'steady' },
+      { pillar: 'mental', momentum: focus === 'mental' ? 'slipping' : 'steady' },
+    ],
+    weakest_pillar: focus,
+    strongest_pillar: focus === 'sleep' ? 'nutrition' : 'sleep',
+    suggested_focus: focus,
+    confidence: 'high',
+    warnings: [],
+  };
+}
 
 describe('B0d.4 — wake-brief-wiring', () => {
   describe('provider registration', () => {
@@ -50,7 +73,7 @@ describe('B0d.4 — wake-brief-wiring', () => {
       });
     }
 
-    it('returns a wake_brief continuation for a non-skip greeting', async () => {
+    it('suppresses (grounded-or-silent) on a non-skip greeting with no grounded line', async () => {
       const recorder = freshRecorder();
       const decision = await decideWakeBriefForSession(
         {
@@ -63,10 +86,34 @@ describe('B0d.4 — wake-brief-wiring', () => {
         },
         { recorder },
       );
+      // No pillar momentum passed → voice-wake-brief has no grounded line,
+      // so it suppresses; no other provider returns a candidate → null.
+      expect(decision.selectedContinuation).toBeNull();
+      const wakeBriefRow = decision.sourceProviderResults.find(
+        (r) => r.providerKey === VOICE_WAKE_BRIEF_PROVIDER_KEY,
+      );
+      expect(wakeBriefRow?.status).toBe('suppressed');
+      expect(wakeBriefRow?.reason).toBe('no_grounded_line_grounded_or_silent');
+    });
+
+    it('returns a grounded wake_brief continuation when pillar momentum qualifies', async () => {
+      const recorder = freshRecorder();
+      const decision = await decideWakeBriefForSession(
+        {
+          sessionId: 'live-test-1b',
+          tenantId: 't1',
+          userId: 'u1',
+          bucket: 'first',
+          isReconnect: false,
+          lang: 'en',
+          pillarMomentum: qualifyingPm('sleep'),
+        },
+        { recorder },
+      );
       expect(decision.selectedContinuation).not.toBeNull();
       expect(decision.selectedContinuation?.kind).toBe('wake_brief');
       expect(decision.selectedContinuation?.surface).toBe('orb_wake');
-      expect(decision.selectedContinuation?.userFacingLine.length).toBeGreaterThan(0);
+      expect(decision.selectedContinuation?.userFacingLine).toMatch(/sleep pillar/);
     });
 
     it('suppresses on transparent reconnect (greeting policy = skip)', async () => {
@@ -100,9 +147,9 @@ describe('B0d.4 — wake-brief-wiring', () => {
       expect(wakeBriefRow?.reason).toBe('greeting_policy_skip');
     });
 
-    it('maps bucket=long to fresh_intro (warm new-day greeting)', async () => {
+    it('maps bucket=long to fresh_intro (warm new-day greeting policy)', async () => {
       const recorder = freshRecorder();
-      const decision = await decideWakeBriefForSession(
+      await decideWakeBriefForSession(
         {
           sessionId: 'live-long-gap',
           tenantId: 't1',
@@ -113,10 +160,14 @@ describe('B0d.4 — wake-brief-wiring', () => {
         },
         { recorder },
       );
-      expect(decision.selectedContinuation?.userFacingLine).toMatch(/Hello/);
+      // The spoken output is now grounded-or-silent (no canned line), so the
+      // policy resolution is what we assert here — bucket=long → fresh_intro.
+      const timeline = await recorder.getTimeline('live-long-gap');
+      const started = timeline?.events.find((e) => e.name === 'continuation_decision_started');
+      expect(started?.metadata?.greetingPolicy).toBe('fresh_intro');
     });
 
-    it('honors lang for the wake-brief line (de = German)', async () => {
+    it('honors lang for the grounded wake-brief line (de = German pillar line)', async () => {
       const recorder = freshRecorder();
       const decision = await decideWakeBriefForSession(
         {
@@ -126,10 +177,13 @@ describe('B0d.4 — wake-brief-wiring', () => {
           bucket: 'first',
           isReconnect: false,
           lang: 'de',
+          pillarMomentum: qualifyingPm('sleep'),
         },
         { recorder },
       );
-      expect(decision.selectedContinuation?.userFacingLine).toBe('Hallo! Lass mich dir zeigen, wo wir anfangen.');
+      expect(decision.selectedContinuation?.userFacingLine).toBe(
+        'Deine Schlaf-Säule sackt in letzter Zeit etwas ab. Lass mich dir zeigen, was da hineinspielt.',
+      );
     });
   });
 
@@ -188,6 +242,8 @@ describe('B0d.4 — wake-brief-wiring', () => {
           bucket: 'first',
           isReconnect: false,
           lang: 'en',
+          // Grounded pillar momentum so the wake-brief returns a candidate.
+          pillarMomentum: qualifyingPm('sleep'),
         },
         { recorder },
       );
@@ -320,7 +376,7 @@ describe('B0d.4 — wake-brief-wiring', () => {
 
     it('cadence: 3+ sessions today dampens fresh_intro → brief_resume', async () => {
       const recorder = freshRecorder();
-      const decision = await decideWakeBriefForSession(
+      await decideWakeBriefForSession(
         {
           sessionId: 'live-cad-3',
           tenantId: 't1',
@@ -332,13 +388,18 @@ describe('B0d.4 — wake-brief-wiring', () => {
         },
         { recorder },
       );
-      // bucket=long → default fresh_intro, but 4 sessions today drops to brief_resume.
-      expect(decision.selectedContinuation?.userFacingLine).toMatch(/Welcome back/i);
+      // bucket=long → default fresh_intro, but 4 sessions today drops to
+      // brief_resume. The spoken output is grounded-or-silent now, so we
+      // assert the resolved POLICY on the timeline (the cadence intent),
+      // not a canned spoken line.
+      const timeline = await recorder.getTimeline('live-cad-3');
+      const started = timeline?.events.find((e) => e.name === 'continuation_decision_started');
+      expect(started?.metadata?.greetingPolicy).toBe('brief_resume');
     });
 
     it('cadence: same greeting style twice in a row downgrades one tier', async () => {
       const recorder = freshRecorder();
-      const decision = await decideWakeBriefForSession(
+      await decideWakeBriefForSession(
         {
           sessionId: 'live-cad-4',
           tenantId: 't1',
@@ -351,7 +412,10 @@ describe('B0d.4 — wake-brief-wiring', () => {
         { recorder },
       );
       // bucket=long → fresh_intro by default; previous fresh_intro → warm_return.
-      expect(decision.selectedContinuation?.userFacingLine).toMatch(/welcome back|Schön, dass du wieder da bist/i);
+      // Assert the resolved POLICY (cadence downgrade), not a spoken line.
+      const timeline = await recorder.getTimeline('live-cad-4');
+      const started = timeline?.events.find((e) => e.name === 'continuation_decision_started');
+      expect(started?.metadata?.greetingPolicy).toBe('warm_return');
     });
 
     it('timeline carries greeting policy evidence + signals present', async () => {
@@ -401,6 +465,9 @@ describe('B0d.4 — wake-brief-wiring', () => {
           bucket: 'first',
           isReconnect: false,
           lang: 'en',
+          // Grounded so a wake_brief candidate is returned even though the
+          // recorder throws on every call (best-effort telemetry).
+          pillarMomentum: qualifyingPm('sleep'),
         },
         { recorder: exploding as any },
       );

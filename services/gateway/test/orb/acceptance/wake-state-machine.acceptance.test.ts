@@ -34,9 +34,32 @@ function decide(args: Record<string, unknown>) {
   );
 }
 
+// Chainable null-Supabase stub: every query resolves to { data: null }. This
+// lets the DB-backed login_briefing provider run and degrade to its GROUNDED
+// "orient" opener (kind 'wake_brief') so the decision FLOORS at a grounded
+// line — the replacement for the old hard-coded voice_wake_brief floor.
+// (BOOTSTRAP-ORB-NO-HARDCODED-GREETING: voice_wake_brief is now
+// grounded-or-silent; the floor that VTID-03226 requires is now a GROUNDED
+// login_briefing line, never a canned one.) Every other DB provider
+// suppresses on null data, so login_briefing (pri 92) wins. Real users always
+// have guided-journey data (everyone starts at session 1), so in production
+// this floor is always grounded — never silent, never hard-coded.
+function nullSupabase(): never {
+  const result = { data: null, error: null };
+  const proxy: unknown = new Proxy(function () {} as object, {
+    get(_t, prop) {
+      if (prop === 'then') return (resolve: (v: unknown) => void) => resolve(result);
+      if (prop === 'maybeSingle' || prop === 'single') return async () => result;
+      return () => proxy;
+    },
+    apply() { return proxy; },
+  });
+  return { from: () => proxy } as never;
+}
+
 describe('R9 — wake state machine (cadence half, Vertex+LiveKit shared decider)', () => {
-  it('CASE: fresh authenticated open (bucket=first, no cadence) → speaks a greeting', async () => {
-    const d = await decide({ bucket: 'first' });
+  it('CASE: fresh authenticated open (bucket=first, no cadence) → speaks a grounded greeting (login_briefing floor)', async () => {
+    const d = await decide({ bucket: 'first', supabase: nullSupabase() });
     expect(d.selectedContinuation?.kind).toBe('wake_brief');
     expect((d.selectedContinuation?.userFacingLine.length ?? 0)).toBeGreaterThan(0);
   });
@@ -57,6 +80,7 @@ describe('R9 — wake state machine (cadence half, Vertex+LiveKit shared decider
   it('CASE (locks VTID-03226 dragan1 fix): heavy day + repeated brief_resume style, >15min → speaks a light line, NOT silence', async () => {
     const d = await decide({
       bucket: 'first',
+      supabase: nullSupabase(),
       cadenceSignals: {
         sessions_today_count: 12,
         greeting_style_last_used: 'brief_resume',
@@ -64,14 +88,15 @@ describe('R9 — wake state machine (cadence half, Vertex+LiveKit shared decider
       },
     });
     // The decay layer must FLOOR at a spoken line, never collapse to skip.
+    // Floor is now the GROUNDED login_briefing opener (not a canned line).
     expect(d.selectedContinuation).not.toBeNull();
     expect(d.selectedContinuation?.kind).toBe('wake_brief');
     expect((d.selectedContinuation?.userFacingLine.length ?? 0)).toBeGreaterThan(0);
   });
 
   it('CASE: locale honored (de → German line)', async () => {
-    const d = await decide({ bucket: 'first', lang: 'de' });
-    expect(d.selectedContinuation?.userFacingLine).toMatch(/[Hh]allo|helfen|dir/);
+    const d = await decide({ bucket: 'first', lang: 'de', supabase: nullSupabase() });
+    expect(d.selectedContinuation?.userFacingLine).toMatch(/[Hh]allo|helfen|dir|Guten|Journey|Ziel/);
   });
 
   it('CASE: every provider invoked produces an observable result row (no silent provider)', async () => {

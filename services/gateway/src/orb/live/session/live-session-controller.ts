@@ -59,6 +59,7 @@ import { recordPaywallEvent } from '../../../services/entitlement-service';
 // ORB-FAST-START Phase 2: defer wake-brief + journey off the session/start
 // response path (flag-gated; default off → legacy inline behavior).
 import { shouldDeferWakeWork, composeContextReady } from './orb-fast-start';
+import { deriveHasPriorSession } from '../instruction/greeting-gate';
 
 // VTID-03107: per-session voice-meter intervals. Keyed by session_id so cleanup
 // in handleLiveSessionStop can tear down without touching GeminiLiveSession's type.
@@ -134,6 +135,7 @@ export interface LiveSessionControllerDeps {
   persistLanguagePreference: (tenantId: string, userId: string, lang: string) => void;
   fetchLastSessionInfo: (
     userId: string,
+    timezone?: string | null,
   ) => Promise<{ time: string; wasFailure: boolean } | null>;
   fetchOnboardingCohortBlock: (
     userId: string | null | undefined,
@@ -731,6 +733,37 @@ export async function handleLiveSessionStart(
   // concrete next step / weakness lead) computed in the fast pre-fetch window so
   // the SAFE-FAST greeting can speak IT instead of a generic SHORT_GAP phrase.
   let greetingProactiveLine: string | null = null;
+  // BUGFIX (first-time onboarding): the fast greeting must NOT fall to the
+  // returning-user "welcome back" menu for a user who has never been onboarded.
+  // is_first_session is cleared the moment the user first OPENS the ORB, so a
+  // freshly-registered user is "returning" by their 2nd open — the wrong signal.
+  // The authoritative "still needs onboarding" signal is the guided-journey
+  // state: ZERO completed topics and not graduated. Resolve both in the fast
+  // pre-fetch. null = unknown (read failed).
+  let greetingIsFirstSession: boolean | null = null;
+  let greetingNeedsOnboarding: boolean | null = null;
+  // Durable "full briefing delivered" date (YYYY-MM-DD, user-tz) from
+  // user_journey.last_full_briefing_date. Drives the once-per-real-day rich
+  // morning briefing independently of the fragile session-start heuristic —
+  // the briefing fires on the first session of a day where this is stale, then
+  // same-day reopens get the short proactive opener.
+  let greetingLastFullBriefingDate: string | null = null;
+  // Durable per-user history of recently-suggested next-best-actions (keys,
+  // most-recent last) from user_journey.recent_nbas. Lets the resume opener
+  // ADVANCE past what it already suggested instead of repeating it.
+  let greetingRecentNbaKeys: string[] = [];
+  // BOOTSTRAP-ORB-GREETING-LANG: the user's STORED language preference, resolved
+  // in the fast greeting-facts pre-fetch so the spoken greeting can use the SAME
+  // language the rest of the conversation will use (buildLiveSystemInstruction
+  // reads session.lang). Without this the greeting speaks the default ('en') and
+  // the conversation flips to the stored preference ('de') on turn 2. null = not
+  // resolved / no client-independent preference on record.
+  let greetingResolvedLang: string | null = null;
+  // BOOTSTRAP-ORB-GREETING-FIRSTTIME: does the user have a prior session on
+  // record (user_journey.last_session_date set, OR is_first_session already
+  // cleared)? A returning user must NOT get the one-time first-session welcome
+  // again just because they never completed guided onboarding. null = unknown.
+  let greetingHasPriorSession: boolean | null = null;
 
   // VTID-03294: a Guided-Journey topic tap needs ZERO context — Vitana just
   // picks up the KB lesson and speaks it. Detect it here so we can skip the
@@ -754,16 +787,38 @@ export async function handleLiveSessionStart(
     const minimalGuidedContext = isDe
       ? 'Du bist Vitana — die warme, ruhige Stimme der Vitanaland-Langlebigkeits-Community. Du stellst gerade ein Thema aus der geführten Reise vor und erklärst es. Halte dich an die dir vorgegebene Lektion.'
       : 'You are Vitana — the warm, calm voice of the Vitanaland longevity community. You are introducing and teaching one Guided Journey topic. Stay on the lesson you are given.';
-    contextReadyPromise = Promise.resolve().then(() => {
+    const guidedTopicUserId = bootstrapIdentity.user_id;
+    contextReadyPromise = Promise.resolve().then(async () => {
+      // BOOTSTRAP-ORB-GUIDED-JOURNEY-AWARE: this fast path skips the heavy
+      // bootstrap, so WITHOUT this fetch the model has ZERO awareness of where
+      // the user is in the Guided Journey and defaults to "let's start the first
+      // session" — even for a user on session 10. Inject the SAME authoritative
+      // standing block the heavy path uses (current session + "never restart at
+      // 1"). Correctness-first: we await one indexed read (~20-50ms) so the model
+      // is journey-aware from turn 1. Best-effort: any failure keeps the minimal
+      // persona rather than blocking first audio.
+      let ctx = minimalGuidedContext;
+      try {
+        const { getSupabase } = await import('../../../lib/supabase');
+        const supaGj = getSupabase() ?? undefined;
+        if (supaGj) {
+          const { fetchGuidedJourney, buildGuidedJourneyStandingInstruction } = await import(
+            '../../../services/assistant-continuation/providers/new-day-overview-payload'
+          );
+          const gj = await fetchGuidedJourney(supaGj, guidedTopicUserId, lang);
+          const journeyBlock = buildGuidedJourneyStandingInstruction(gj);
+          if (journeyBlock) ctx = `${ctx}${journeyBlock}`;
+        }
+      } catch { /* keep minimal persona — journey awareness is additive */ }
       session.active_role = 'community';
       session.lastSessionInfo = null;
-      session.contextInstruction = minimalGuidedContext;
+      session.contextInstruction = ctx;
       session.contextPack = undefined;
       session.contextBootstrapLatencyMs = 0;
       session.contextBootstrapSkippedReason = 'guided_topic_minimal';
       session.contextBootstrapBuiltAt = Date.now();
     });
-    console.log(`[VTID-03294] Guided-topic session ${sessionId}: minimal context (skipped heavy bootstrap) for fast first audio`);
+    console.log(`[VTID-03294] Guided-topic session ${sessionId}: minimal context (+journey awareness) for fast first audio`);
   } else if (bootstrapIdentity) {
     const usingDevFallback = bootstrapIdentity.user_id === DEV_IDENTITY.USER_ID;
     console.log(`[VTID-01224] Building bootstrap context for SSE session ${sessionId} user=${bootstrapIdentity.user_id.substring(0, 8)}...${usingDevFallback ? ' (DEV_IDENTITY fallback)' : ''}`);
@@ -803,7 +858,7 @@ export async function handleLiveSessionStart(
       usingDevFallback
         ? Promise.resolve(DEV_IDENTITY.ACTIVE_ROLE)
         : deps.resolveEffectiveRole(bootstrapIdentity.user_id, bootstrapIdentity.tenant_id || ''),
-      deps.fetchLastSessionInfo(bootstrapIdentity.user_id),
+      deps.fetchLastSessionInfo(bootstrapIdentity.user_id, clientContext?.timezone),
       storedLangPromise,
       bootstrapIdentity.tenant_id
         ? fetchAdminBriefingBlock(bootstrapIdentity.tenant_id, 3).catch((err) => {
@@ -871,6 +926,25 @@ export async function handleLiveSessionStart(
           console.log(`[LANG-PREF] No client lang — using stored preference: ${finalLang} for user=${bootstrapIdentity.user_id.substring(0, 8)}...`);
         }
 
+        // GUIDED JOURNEY standing awareness: append the user's LIVE journey
+        // progress (sessions completed, current session + title, where they left
+        // off) to the STANDING bootstrap context — so Vitana knows the user is on
+        // e.g. session 10 on EVERY turn, not only at the greeting. Without this she
+        // defaults to "the first lesson" mid-conversation. Best-effort; the block
+        // is empty for brand-new users and any failure never blocks bootstrap.
+        try {
+          const { getSupabase } = await import('../../../lib/supabase');
+          const supaGj = getSupabase() ?? undefined;
+          if (supaGj && bootstrapIdentity.user_id) {
+            const { fetchGuidedJourney, buildGuidedJourneyStandingInstruction } = await import(
+              '../../../services/assistant-continuation/providers/new-day-overview-payload'
+            );
+            const gj = await fetchGuidedJourney(supaGj, bootstrapIdentity.user_id, finalLang);
+            const journeyBlock = buildGuidedJourneyStandingInstruction(gj);
+            if (journeyBlock) finalContext = finalContext ? `${finalContext}${journeyBlock}` : journeyBlock.trimStart();
+          }
+        } catch { /* non-blocking — journey awareness is additive */ }
+
         session.active_role = resolvedRole;
         session.lastSessionInfo = fetchedSessionInfo;
         session.contextInstruction = finalContext;
@@ -912,8 +986,8 @@ export async function handleLiveSessionStart(
         try {
           const { getSupabase } = await import('../../../lib/supabase');
           const supa = getSupabase() ?? undefined;
-          const [lastInfo, factResult, profileResult] = await Promise.allSettled([
-            deps.fetchLastSessionInfo(_ndIdentity.user_id),
+          const [lastInfo, factResult, profileResult, firstSessionResult, journeyStateResult, langPrefResult] = await Promise.allSettled([
+            deps.fetchLastSessionInfo(_ndIdentity.user_id, clientContext?.timezone),
             supa
               ? supa
                   .from('memory_facts')
@@ -929,10 +1003,103 @@ export async function handleLiveSessionStart(
                   .eq('user_id', _ndIdentity.user_id)
                   .maybeSingle()
               : Promise.resolve(null as any),
+            // Authoritative first-time signal — a single cheap column read, in
+            // the SAME parallel batch so it adds no latency. Drives the first-time
+            // welcome (never "welcome back" for a brand-new user).
+            supa
+              ? supa
+                  .from('user_journey')
+                  .select('is_first_session, last_session_date, last_full_briefing_date, recent_nbas')
+                  .eq('user_id', _ndIdentity.user_id)
+                  .maybeSingle()
+              : Promise.resolve(null as any),
+            // "Has the user been onboarded?" — the real welcome-vs-welcome-back
+            // signal. ZERO completed journey topics + not graduated = still
+            // onboarding → first-time welcome, even if is_first_session was
+            // already cleared.
+            supa
+              ? supa
+                  .from('user_guided_journey_state')
+                  .select('completed_topic_ids, onboarding_status, mode')
+                  .eq('user_id', _ndIdentity.user_id)
+                  .maybeSingle()
+              : Promise.resolve(null as any),
+            // BOOTSTRAP-ORB-GREETING-LANG: the STORED language preference, in the
+            // SAME parallel batch (no added latency). Drives the spoken greeting's
+            // language so it matches the system-instruction language and does not
+            // flip from 'en' to the stored 'de' on turn 2. Skipped (→ null) when
+            // the client already requested a language explicitly — that wins.
+            !clientRequestedLang && _ndIdentity.tenant_id
+              ? deps
+                  .getStoredLanguagePreference(_ndIdentity.tenant_id, _ndIdentity.user_id)
+                  .catch(() => null)
+              : Promise.resolve(null),
           ]);
 
           if (lastInfo.status === 'fulfilled') {
             greetingEarlyLastSessionInfo = lastInfo.value;
+          }
+          if (
+            firstSessionResult.status === 'fulfilled' &&
+            firstSessionResult.value &&
+            !firstSessionResult.value.error
+          ) {
+            const _fsRow = firstSessionResult.value.data as {
+              is_first_session?: boolean | null;
+              last_session_date?: string | null;
+              last_full_briefing_date?: string | null;
+              recent_nbas?: unknown;
+            } | null;
+            // No row at all → user has never had a journey row → treat as first-time.
+            greetingIsFirstSession = _fsRow ? _fsRow.is_first_session === true : true;
+            // BOOTSTRAP-ORB-GREETING-FIRSTTIME: a user "has a prior session" once
+            // they have a recorded last_session_date OR their is_first_session flag
+            // has already been cleared. Either proves they have talked to Vitana
+            // before, so the one-time welcome must NOT fire again — even if they
+            // never completed guided onboarding. (Pinned in greeting-gate.test.ts.)
+            greetingHasPriorSession = deriveHasPriorSession(_fsRow);
+            // Durable once-per-day briefing flag (null when never delivered or
+            // column absent → briefing is due).
+            greetingLastFullBriefingDate = _fsRow?.last_full_briefing_date ?? null;
+            // Recent NBA history → keys (defensive: accept string[] or {key}[]).
+            if (Array.isArray(_fsRow?.recent_nbas)) {
+              greetingRecentNbaKeys = (_fsRow!.recent_nbas as unknown[])
+                .map((e) => (typeof e === 'string' ? e : (e as { key?: unknown })?.key))
+                .filter((k): k is string => typeof k === 'string' && k.length > 0);
+            }
+          }
+          if (
+            journeyStateResult.status === 'fulfilled' &&
+            journeyStateResult.value &&
+            !journeyStateResult.value.error
+          ) {
+            const _jsRow = journeyStateResult.value.data as
+              | { completed_topic_ids?: string[] | null; onboarding_status?: string | null; mode?: string | null }
+              | null;
+            // "Needs onboarding" = no journey row, OR zero completed topics while
+            // NOT having opted out of guided onboarding. Opted-out covers the
+            // terminal states (qualified/completed) AND a user who deliberately
+            // switched to full mode or skipped onboarding (onboarding_status
+            // 'skipped' or mode 'full') — they must NOT get the first-session
+            // welcome despite 0 completed topics (Codex P2).
+            const _completed = Array.isArray(_jsRow?.completed_topic_ids) ? _jsRow!.completed_topic_ids!.length : 0;
+            const _optedOut =
+              _jsRow?.onboarding_status === 'qualified' ||
+              _jsRow?.onboarding_status === 'completed' ||
+              _jsRow?.onboarding_status === 'skipped' ||
+              _jsRow?.mode === 'full';
+            greetingNeedsOnboarding = !_jsRow ? true : _completed === 0 && !_optedOut;
+          }
+          // BOOTSTRAP-ORB-GREETING-LANG: resolve the stored language preference so
+          // the greeting builder speaks it (matching the system instruction). Only
+          // when the client did not request a language explicitly.
+          if (
+            !clientRequestedLang &&
+            langPrefResult.status === 'fulfilled' &&
+            typeof langPrefResult.value === 'string' &&
+            langPrefResult.value.length > 0
+          ) {
+            greetingResolvedLang = deps.normalizeLang(langPrefResult.value);
           }
 
           const factValue =
@@ -960,7 +1127,10 @@ export async function handleLiveSessionStart(
             greetingProactiveLine = await computeFastProactiveOpener({
               supabase: supa,
               userId: _ndIdentity.user_id,
-              lang,
+              // BOOTSTRAP-ORB-GREETING-LANG: render the proactive opener in the
+              // resolved stored language, not the default 'en', so this verbatim
+              // line matches the rest of the conversation.
+              lang: greetingResolvedLang || lang,
               firstName: greetingFirstName,
               timezone: clientContext?.timezone ?? null,
               nowMs: Date.now(),
@@ -1082,6 +1252,11 @@ export async function handleLiveSessionStart(
   if (greetingFactsReady) {
     (session as any).greetingFirstName = greetingFirstName;
     (session as any).greetingProactiveLine = greetingProactiveLine;
+    (session as any).greetingIsFirstTime = greetingIsFirstSession;
+    (session as any).greetingNeedsOnboarding = greetingNeedsOnboarding;
+    (session as any).greetingHasPriorSession = greetingHasPriorSession;
+    (session as any).lastFullBriefingDate = greetingLastFullBriefingDate;
+    (session as any).recentNbaKeys = greetingRecentNbaKeys;
     if (greetingEarlyLastSessionInfo && !session.lastSessionInfo) {
       session.lastSessionInfo = greetingEarlyLastSessionInfo;
     }
@@ -1090,6 +1265,18 @@ export async function handleLiveSessionStart(
       // DEV-COMHU-0513: the proactive opener resolves with the rest of the fast
       // facts; copy it onto the session so the greeting builder can prefer it.
       (session as any).greetingProactiveLine = greetingProactiveLine;
+      (session as any).greetingIsFirstTime = greetingIsFirstSession;
+      (session as any).greetingNeedsOnboarding = greetingNeedsOnboarding;
+      (session as any).greetingHasPriorSession = greetingHasPriorSession;
+      (session as any).lastFullBriefingDate = greetingLastFullBriefingDate;
+      (session as any).recentNbaKeys = greetingRecentNbaKeys;
+      // BOOTSTRAP-ORB-GREETING-LANG: apply the resolved stored language onto the
+      // session BEFORE the greeting builder's bounded wait resolves, so the
+      // spoken greeting uses the same language as buildLiveSystemInstruction.
+      // Only when the client did not request a language explicitly (that wins).
+      if (greetingResolvedLang && !clientRequestedLang) {
+        session.lang = greetingResolvedLang;
+      }
       // Idempotent with the heavy bootstrap block, which also sets this later.
       if (greetingEarlyLastSessionInfo && !session.lastSessionInfo) {
         session.lastSessionInfo = greetingEarlyLastSessionInfo;
@@ -1476,7 +1663,7 @@ export async function handleLiveSessionStart(
       const supa = getSupa();
       if (supa) {
         const [
-          { getJourneyState, updateSessionEndState },
+          { getJourneyState, updateSessionEndState, ensureUserJourneyRow },
           { buildJourneyGreetingBlock, todayInTimezone },
           { fetchLifeCompass },
         ] = await Promise.all([
@@ -1486,6 +1673,23 @@ export async function handleLiveSessionStart(
         ]);
         const journey = await getJourneyState(supa, orbIdentity.user_id);
         if (journey) {
+          // BOOTSTRAP-ORB-GREETING-FIRSTTIME: if getJourneyState fell back to the
+          // math path, the user has NO user_journey row — so the
+          // updateSessionEndState below would update zero rows and
+          // last_session_date would never persist, making the greeting re-fire
+          // every session. Seed a real row (idempotently) so this session's
+          // last_session_date actually lands and the welcome converges. We mark
+          // is_first_session=false: a user reaching a live session without a row
+          // is an existing user the backfill missed, not a first-ever signup.
+          if (journey.fallback_used) {
+            await ensureUserJourneyRow(supa, orbIdentity.user_id, {
+              tenant_id: orbIdentity.tenant_id ?? null,
+              started_at: journey.started_at,
+              is_first_session: false,
+            }).catch((err: any) =>
+              console.warn(`[VTID-03154] ensureUserJourneyRow (fallback seed) failed (non-fatal): ${err?.message}`),
+            );
+          }
           const lifeCompass = await fetchLifeCompass(supa, orbIdentity.user_id).catch(() => null);
           const tz = (session as any).clientContext?.timezone ?? null;
           const todayDateIso = todayInTimezone(new Date(), tz);
@@ -1519,7 +1723,10 @@ export async function handleLiveSessionStart(
             journey,
             lifeCompassGoalText: lifeCompass?.primary_goal ?? null,
             firstName: nameForGreeting,
-            lang,
+            // BOOTSTRAP-ORB-GREETING-LANG: prefer the resolved session language so
+            // this prompt block's "Speak in <LANG>" matches the conversation
+            // language instead of pinning the default 'en'.
+            lang: (typeof session.lang === 'string' && session.lang.length > 0 ? session.lang : lang),
             todayDateIso,
             nextMove: journeyNextMove,
           });

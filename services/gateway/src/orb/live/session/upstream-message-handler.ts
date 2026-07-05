@@ -459,6 +459,70 @@ export function createUpstreamLiveMessageHandler(
                 });
               }
 
+              // NAV_CONTINUATION_BIND — invariant #10 (consume side). Fire-and-
+              // forget, exactly like the identity-intent intercept above: if the
+              // user just ACCEPTED ("Ja"/"yes"/"mach das") and a navigation offer
+              // is pending in orb_session_state, dispatch that exact target. The
+              // acceptance gate consumes the offer one-shot, ignores negations/
+              // redirects/long sentences, and fails open (any error → no-op).
+              //
+              // Guarded by !pendingNavigation && !navigationDispatched so the
+              // LLM's OWN fresh navigation this turn always wins — we never
+              // override it; we only step in when Gemini answered "Ja" with words
+              // but failed to actually navigate (the bug this closes). The
+              // dispatch may land a beat after Vitana's spoken reply; that late
+              // directive still corrects course, and the one-shot consume stops
+              // any re-fire on a second "ja".
+              if (
+                process.env.NAV_CONTINUATION_BIND === 'true' &&
+                !session.pendingNavigation &&
+                !session.navigationDispatched &&
+                session.identity?.user_id
+              ) {
+                const _accSb = getSupabase();
+                const _accUser = session.identity.user_id;
+                if (_accSb) {
+                  import('../../../services/assistant-continuation/acceptance-gate')
+                    .then(({ maybeBindAcceptance, makeSupabaseAcceptanceDeps }) =>
+                      maybeBindAcceptance(
+                        { userText, userId: _accUser },
+                        makeSupabaseAcceptanceDeps(_accSb),
+                      ),
+                    )
+                    .then((bound) => {
+                      if (!bound || bound.tool !== 'navigate_to_screen') return;
+                      const p = bound.payload as { screen_id?: string; route?: string; title?: string };
+                      if (!p.screen_id || !p.route) return;
+                      // Re-check at dispatch time: if the LLM navigated while the
+                      // async read was in flight, defer to it (no double-nav).
+                      if (session.pendingNavigation || session.navigationDispatched) return;
+                      const directive = {
+                        type: 'orb_directive',
+                        directive: 'navigate',
+                        screen_id: p.screen_id,
+                        route: p.route,
+                        title: p.title || p.screen_id,
+                        reason: 'continuation_accept',
+                        vtid: 'VTID-NAV-01',
+                      };
+                      if (session.sseResponse) writeSseEvent(session.sseResponse, directive);
+                      if ((session as any).clientWs && (session as any).clientWs.readyState === WebSocket.OPEN) {
+                        try { ctx.deps.sendWsMessage((session as any).clientWs, directive); } catch (_e) { /* WS closed */ }
+                      }
+                      session.navigationDispatched = true;
+                      console.log(
+                        `[NAV-CONTINUATION-BIND] accepted pending offer → ${p.screen_id} (${p.route}) — session=${session.sessionId}`,
+                      );
+                    })
+                    .catch((err) =>
+                      console.warn(
+                        '[NAV-CONTINUATION-BIND] acceptance gate failed (non-fatal):',
+                        err instanceof Error ? err.message : err,
+                      ),
+                    );
+                }
+              }
+
               session.transcriptTurns.push({
                 role: 'user',
                 text: userText,
@@ -559,6 +623,36 @@ export function createUpstreamLiveMessageHandler(
             if (session.outputTranscriptBuffer.length > 0) {
               const fullTranscript = session.outputTranscriptBuffer.trim();
               chatBridgeAssistantText = fullTranscript;
+
+              // Greeting-facts ledger: capture Vitana's FIRST spoken turn of
+              // the session so the NEXT session's opener gets it as a
+              // wording-variety negative example (rule 2: never greet with
+              // the same wording twice in a row). Fire-and-forget; must
+              // never block the voice path.
+              const isFirstAssistantTurn = !session.transcriptTurns.some(
+                (t) => t.role === 'assistant',
+              );
+              if (
+                isFirstAssistantTurn &&
+                session.identity?.tenant_id &&
+                session.identity?.user_id
+              ) {
+                const _gflTenant = session.identity.tenant_id;
+                const _gflUser = session.identity.user_id;
+                const _gflSb = getSupabase();
+                if (_gflSb) {
+                  import('../../../services/conversation/greeting-facts-ledger')
+                    .then(({ recordGreetingUtterance }) =>
+                      recordGreetingUtterance({
+                        supabase: _gflSb,
+                        tenantId: _gflTenant,
+                        userId: _gflUser,
+                        utterance: fullTranscript,
+                      }),
+                    )
+                    .catch(() => { /* continuity is best-effort */ });
+                }
+              }
 
               // Forwarding v2d: the FORCED FIRST UTTERANCE flag MUST flip even
               // for the greeting turn — that IS the forced utterance. Setting

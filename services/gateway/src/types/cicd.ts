@@ -233,6 +233,12 @@ export type CicdEventType =
   | 'memory.read'
   | 'memory.write.user_message'
   | 'memory.write.assistant_message'
+  // BOOTSTRAP-MEMORY-ORCHESTRATOR-MANDATORY: mandatory pre-answer memory step
+  | 'memory.orchestrator.context_built'
+  | 'memory.orchestrator.turn'
+  | 'memory.orchestrator.bypass_detected'
+  // BOOTSTRAP-SOCIAL-MEMORY: social memory intelligence layer
+  | 'memory.social.context_built'
   // VTID-01106: ORB Memory Bridge Events
   | 'orb.memory.context_fetched'
   | 'orb.memory.context_injected'
@@ -604,6 +610,8 @@ export type CicdEventType =
   | 'livekit.stt.recovery'
   // VTID-DIAG: Pipeline diagnostics
   | 'orb.live.diag'
+  // Conversation-flow §11: session-end memory commit (LiveKit parity).
+  | 'orb.live.memory.committed'
   // VTID-FALLBACK: Chat-TTS fallback events
   | 'orb.live.fallback_used'
   | 'orb.live.fallback_error'

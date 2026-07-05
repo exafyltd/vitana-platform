@@ -37,6 +37,10 @@ import { randomUUID } from 'crypto';
 import { AccessToken } from 'livekit-server-sdk';
 import * as jose from 'jose';
 import { emitOasisEvent } from '../services/oasis-event-service';
+// §11 conversation-flow architecture: the single session-end memory-commit step.
+// The LiveKit agent POSTs its transcript here on teardown so the SAME extraction
+// the Vertex path runs also runs for LiveKit (it ran NOTHING before).
+import { commitSessionMemory } from '../services/session-memory-commit';
 import { getSupabase } from '../lib/supabase';
 // VTID-03210: single structured turn-1 wake-decision snapshot — emitted
 // identically on Vertex (live-session-controller) and here on LiveKit so
@@ -1603,9 +1607,26 @@ router.get(
       // back to a "I'll note it for the team" no-op when faced with a
       // bug-report flow (2026-05-17 user-reported regression).
       const vitanaBehavioralRule = buildPersonaBehavioralRule('vitana');
-      const vitanaContextInstruction = bootstrapContext
+      // GUIDED JOURNEY standing awareness (parity with the Vertex/SSE path in
+      // live-session-controller): append the user's live journey progress so
+      // LiveKit Vitana also knows the user's current session every turn and never
+      // defaults to "the first lesson". Best-effort; empty for brand-new users.
+      let journeyStandingBlock = '';
+      try {
+        const gjSb = getSupabase();
+        const gjUser = req.identity?.user_id;
+        if (gjSb && gjUser) {
+          const { fetchGuidedJourney, buildGuidedJourneyStandingInstruction } = await import(
+            '../services/assistant-continuation/providers/new-day-overview-payload'
+          );
+          journeyStandingBlock = buildGuidedJourneyStandingInstruction(
+            await fetchGuidedJourney(gjSb, gjUser, lang),
+          );
+        }
+      } catch { /* non-blocking — journey awareness is additive */ }
+      const vitanaContextInstruction = (bootstrapContext
         ? `${bootstrapContext}\n\n${vitanaBehavioralRule}`
-        : vitanaBehavioralRule;
+        : vitanaBehavioralRule) + journeyStandingBlock;
       systemInstruction = buildLiveSystemInstruction(
         lang,
         voiceStyle,
@@ -2140,6 +2161,74 @@ router.get(
       });
     }
     res.json({ ok: true, agent_id: id, config: data ?? null, vtid: VTID });
+  },
+);
+
+// §11 — session-end memory commit (LiveKit parity with Vertex). The agent owns
+// the transcript (the conversation runs in the agent process), so it POSTs it
+// here on teardown. This runs the SAME extraction (Cognee + deduplicated inline
+// facts) the Vertex path runs at session stop. Without it, LiveKit conversations
+// were heard and thrown away → no cross-session memory. Fire-and-forget;
+// extraction never blocks the agent's teardown. See
+// docs/CONVERSATION_FLOW_ARCHITECTURE.md §11.
+router.post(
+  '/orb/session/commit-memory',
+  requireAuthWithTenant,
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const tenantId = req.identity?.tenant_id ?? null;
+      const userId = req.identity?.user_id ?? null;
+      if (!tenantId || !userId) {
+        return res.status(401).json({ ok: false, error: 'auth_required', vtid: VTID });
+      }
+      const body = (req.body ?? {}) as {
+        transcript?: unknown;
+        session_id?: unknown;
+        active_role?: unknown;
+      };
+      const transcript = typeof body.transcript === 'string' ? body.transcript : '';
+      const sessionId =
+        typeof body.session_id === 'string' && body.session_id.length > 0
+          ? body.session_id
+          : `livekit-${userId.slice(0, 8)}`;
+      const activeRole = typeof body.active_role === 'string' ? body.active_role : null;
+
+      const result = commitSessionMemory({
+        transcript,
+        tenantId,
+        userId,
+        sessionId,
+        activeRole,
+      });
+
+      // Telemetry so "did this session persist memory?" is QUERYABLE (§4/§11),
+      // not assumed. Mirrors the memory_hits goal on the read side.
+      emitOasisEvent({
+        vtid: VTID,
+        type: 'orb.live.memory.committed',
+        source: 'gateway',
+        status: result.committed ? 'info' : 'warning',
+        message: `LiveKit session memory commit: ${result.committed ? 'queued' : result.reason}`,
+        payload: {
+          service: 'gateway',
+          component: 'orb-livekit',
+          transport: 'livekit',
+          session_id: sessionId,
+          user_id: userId,
+          committed: result.committed,
+          cognee_queued: result.cognee_queued,
+          reason: result.reason ?? null,
+          transcript_chars: transcript.length,
+        },
+      }).catch(() => {});
+
+      return res.json({ ok: true, ...result, vtid: VTID });
+    } catch (err) {
+      console.error(
+        `[orb/session/commit-memory] failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      return res.status(500).json({ ok: false, error: 'commit_failed', vtid: VTID });
+    }
   },
 );
 

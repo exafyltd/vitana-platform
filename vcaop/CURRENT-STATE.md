@@ -11,6 +11,21 @@
 
 ## Current position
 
+- **DISCOVER real purchasable catalog LIVE via Admitad (2026-06-29):** seeded 12
+  curated, on-brand longevity/wellness products (8 AliExpress + 4 Bodylab24) into the
+  `products` table, each `affiliate_url` = the LIVE cashback-allowed program gotolink
+  decorated with `subid=discover&ulp=<real merchant URL>` (`admitad_aliexpress` /
+  `admitad_bodylab24_de`). No gateway code change: `/r/:id` already 302s any non-`demo_seed`
+  product to the stamped link. Retired the demo_seed supplements (dead demo.vitanaland.com
+  links) + Mock.shop demo clothing + imageless Shopify demo row so Discover reads as a
+  longevity marketplace. Root-caused why <10 showed before: feed-ranker caps at
+  `max_products_per_merchant` (default 3) and all stock came from 3 merchants → guest saw ≤7;
+  bumped onboarding/early `default_feed_config` caps to 12. Verified at the data layer
+  (guest candidate+cap simulation returns 12; egress to the live app is org-policy-blocked
+  so no curl/screenshot). Migration: `supabase/migrations/20260629120000_vtid_02000_discover_admitad_real_catalog.sql`
+  (reversible; DOWN block inline). Follow-up: per-user member subid stamping in `/r/` (today
+  uses a site-level `subid=discover`; authenticated per-member rewards still flow via the
+  separate `/api/v1/vcaop/affiliate-link`).
 - **ADMITAD wired LIVE — first rewards-bearing network (2026-06-15):**
   - Publisher account created; ad space **"Vitanaland Discover" verified** (Cloudflare DNS TXT `admitad-verification: 2fafe74eab`); joined first program **Alibaba WW** (CPA). API `client_id`/`client_secret`/`base64_header` stored in Secret Manager (`VCAOP_ADMITAD_*`) and **token-verified (HTTP 200)** against `https://api.admitad.com/token/`. (Note: the id/secret were double-pasted on first store → re-derived from the authoritative `base64_header`; eBay inventory is NOT on Admitad → use other merchants.)
   - **Supabase:** `provider_account` `pa_admitad_platform` = **active**; `affiliate_program` `admitad_alibaba_ww` with **`affiliate_cashback_allowed = true`** (rewards ON — vs Amazon false); `provider.connector_config` holds the gotolink `https://rzekl.com/g/pm1aev55cl2fafe74eab219aa26f6f/` + `subid`/`ulp` params. New table **`subid_map`** (sub_id → member, reverse attribution).

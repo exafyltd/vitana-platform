@@ -88,9 +88,10 @@ const CONNECT_PEOPLE: AutomationDefinition[] = [
   },
   {
     id: 'AP-0106', name: '"People You Know Are Here" Social Proof', domain: 'connect-people',
-    status: 'PLANNED', priority: 'P1', triggerType: 'event',
+    status: 'IMPLEMENTED', priority: 'P1', triggerType: 'event',
     triggerConfig: { eventTopic: 'user.group.viewed' },
     targetRoles: [...MEMBER_ROLES],
+    handler: 'runPeopleYouKnowSocialProof',
   },
   {
     id: 'AP-0107', name: 'Proactive Social Alignment Suggestions', domain: 'connect-people',
@@ -115,9 +116,10 @@ const CONNECT_PEOPLE: AutomationDefinition[] = [
   },
   {
     id: 'AP-0110', name: 'Opportunity Surfacing with Social Layer', domain: 'connect-people',
-    status: 'PLANNED', priority: 'P2', triggerType: 'event',
+    status: 'IMPLEMENTED', priority: 'P2', triggerType: 'event',
     triggerConfig: { eventTopic: 'opportunity.detected' },
     targetRoles: [...MEMBER_ROLES],
+    handler: 'runOpportunitySocialLayer',
   },
 ];
 
@@ -127,9 +129,10 @@ const CONNECT_PEOPLE: AutomationDefinition[] = [
 const COMMUNITY_GROUPS: AutomationDefinition[] = [
   {
     id: 'AP-0201', name: 'Auto-Create Group from Interest Cluster', domain: 'community-groups',
-    status: 'PLANNED', priority: 'P1', triggerType: 'heartbeat',
+    status: 'IMPLEMENTED', priority: 'P1', triggerType: 'heartbeat',
     triggerConfig: { intervalMinutes: 1440 },
     targetRoles: [...MEMBER_ROLES],
+    handler: 'runAutoCreateGroupFromInterestCluster',
   },
   {
     id: 'AP-0202', name: 'Group Invite Follow-Up', domain: 'community-groups',
@@ -147,21 +150,27 @@ const COMMUNITY_GROUPS: AutomationDefinition[] = [
   },
   {
     id: 'AP-0204', name: 'Auto-Suggest Meetup from Group Activity', domain: 'community-groups',
-    status: 'PLANNED', priority: 'P1', triggerType: 'event',
-    triggerConfig: { eventTopic: 'community.chat.activity_spike' },
+    // No gateway-side hook exists for the originally-specified
+    // community.chat.activity_spike event (group chat writes go straight
+    // from frontend to Supabase) — implemented as a heartbeat scan instead.
+    status: 'IMPLEMENTED', priority: 'P1', triggerType: 'heartbeat',
+    triggerConfig: { intervalMinutes: 180 },
     targetRoles: [...MEMBER_ROLES],
+    handler: 'runAutoSuggestMeetupFromGroupActivity',
   },
   {
     id: 'AP-0205', name: 'Group Health Monitor', domain: 'community-groups',
-    status: 'PLANNED', priority: 'P2', triggerType: 'cron',
+    status: 'IMPLEMENTED', priority: 'P2', triggerType: 'cron',
     triggerConfig: { cronExpression: '0 10 * * 1' },
     targetRoles: [...OPS_ROLES],
+    handler: 'runGroupHealthMonitor',
   },
   {
     id: 'AP-0206', name: 'Cross-Group Introduction', domain: 'community-groups',
-    status: 'PLANNED', priority: 'P2', triggerType: 'heartbeat',
+    status: 'IMPLEMENTED', priority: 'P2', triggerType: 'heartbeat',
     triggerConfig: { intervalMinutes: 10080 }, // weekly
     targetRoles: [...MEMBER_ROLES],
+    handler: 'runCrossGroupIntroduction',
   },
   {
     id: 'AP-0207', name: 'Meetup RSVP Encouragement', domain: 'community-groups',
@@ -179,9 +188,10 @@ const COMMUNITY_GROUPS: AutomationDefinition[] = [
   },
   {
     id: 'AP-0209', name: 'Group Creation from Match Cluster', domain: 'community-groups',
-    status: 'PLANNED', priority: 'P2', triggerType: 'heartbeat',
+    status: 'IMPLEMENTED', priority: 'P2', triggerType: 'heartbeat',
     triggerConfig: { intervalMinutes: 1440 },
     targetRoles: [...MEMBER_ROLES],
+    handler: 'runGroupCreationFromMatchCluster',
   },
   {
     id: 'AP-0210', name: 'Community Digest for Group Creators', domain: 'community-groups',
