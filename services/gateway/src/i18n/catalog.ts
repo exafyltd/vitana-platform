@@ -110,7 +110,11 @@ export type GatewayI18nKey =
   | 'priority.greeting.afternoon.named'
   | 'priority.greeting.afternoon'
   | 'priority.greeting.evening.named'
-  | 'priority.greeting.evening';
+  | 'priority.greeting.evening'
+  // Autopilot recommendation identity (recommendation-identity work) — the
+  // "Vitana empfiehlt" header shown on every AI-generated recommendation card
+  // so the source is never rendered as a bare "AI" label.
+  | 'recommendation.vitana_label';
 
 type LocaleCatalog = Record<GatewayI18nKey, string>;
 
@@ -206,6 +210,7 @@ const DE: LocaleCatalog = {
   'priority.greeting.afternoon': 'Guten Tag. Bereit, wenn du es bist.',
   'priority.greeting.evening.named': 'Guten Abend, {name}. Bereit, wenn du es bist.',
   'priority.greeting.evening': 'Guten Abend. Bereit, wenn du es bist.',
+  'recommendation.vitana_label': 'Vitana empfiehlt',
 };
 
 const EN: LocaleCatalog = {
@@ -300,6 +305,7 @@ const EN: LocaleCatalog = {
   'priority.greeting.afternoon': 'Good afternoon. Ready when you are.',
   'priority.greeting.evening.named': 'Good evening, {name}. Ready when you are.',
   'priority.greeting.evening': 'Good evening. Ready when you are.',
+  'recommendation.vitana_label': 'Vitana recommends',
 };
 
 // Draft locales — start as a copy of EN; replace with native strings as they

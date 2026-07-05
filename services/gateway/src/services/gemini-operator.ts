@@ -3283,6 +3283,16 @@ export async function processWithGemini(input: {
 }): Promise<GeminiOperatorResponse> {
   const { text, threadId, attachments = [], context = {}, conversationHistory = [], conversationId, systemInstruction, userRole } = input;
 
+  // BOOTSTRAP-MEMORY-ORCHESTRATOR-MANDATORY: soft bypass detection at the
+  // shared executor. Emits memory.orchestrator.bypass_detected (never throws
+  // here — internal utility callers legitimately carry no user memory) so
+  // any assistant path that skipped the orchestrator shows up on the
+  // Memory Alive/Dead admin card.
+  try {
+    const { detectMemoryBypass } = require('./memory-orchestrator');
+    detectMemoryBypass(systemInstruction, { threadId, caller: 'processWithGemini' });
+  } catch { /* detection must never break the LLM call */ }
+
   // BOOTSTRAP-VOICE-DEMO: emit a real heartbeat so the agents dashboard
   // reflects live usage. Fire-and-forget; never block the LLM call.
   recordAgentHeartbeat('gemini-operator').catch(() => {});

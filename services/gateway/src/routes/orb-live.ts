@@ -46,6 +46,7 @@ import { randomUUID } from 'crypto';
 import { TextToSpeechClient, protos } from '@google-cloud/text-to-speech';
 import { processWithGemini, setThreadIdentity } from '../services/gemini-operator';
 import { emitOasisEvent } from '../services/oasis-event-service';
+import { wrapLegacyMemoryPreamble } from '../services/memory-orchestrator';
 import { isFeatureLive } from '../services/feature-flags';
 // BOOTSTRAP-PRODUCT-ANALYTICS: server-side product analytics (metadata only)
 import { trackServerEvent, detectTopic } from '../services/product-analytics/track-server';
@@ -2245,8 +2246,12 @@ export async function buildBootstrapContextPack(
       // Still return the formatted context even if no items (contains user info).
       // Prepend recent turns so the model still has grounding.
       const base = memoryContext.formatted_context || '';
-      const combined = [recentTurnsBlock, base, profileBlock].filter(Boolean).join('\n');
-      if (combined) {
+      const combinedRaw = [recentTurnsBlock, base, profileBlock].filter(Boolean).join('\n');
+      if (combinedRaw) {
+        // BOOTSTRAP-MEMORY-ORCHESTRATOR-MANDATORY: wrap the legacy preamble in
+        // the memory sentinels + mandatory self-check so the brain-OFF voice
+        // path honors the memory contract.
+        const combined = wrapLegacyMemoryPreamble(combinedRaw);
         storeVertexBootstrapCache(bootstrapCacheKey, { contextInstruction: combined, latencyMs });
         return {
           contextInstruction: combined,
@@ -2264,9 +2269,14 @@ export async function buildBootstrapContextPack(
     const full = [recentTurnsBlock, memoryContext.formatted_context, profileBlock]
       .filter(Boolean)
       .join('\n');
-    const contextInstruction = full.length > LIVE_CONTEXT_CONFIG.MAX_CONTEXT_CHARS
-      ? full.substring(0, LIVE_CONTEXT_CONFIG.MAX_CONTEXT_CHARS) + '\n[...truncated]'
-      : full;
+    // BOOTSTRAP-MEMORY-ORCHESTRATOR-MANDATORY: truncate FIRST, then wrap in
+    // the memory sentinels + mandatory self-check (so the self-check block
+    // itself can never be truncated away).
+    const contextInstruction = wrapLegacyMemoryPreamble(
+      full.length > LIVE_CONTEXT_CONFIG.MAX_CONTEXT_CHARS
+        ? full.substring(0, LIVE_CONTEXT_CONFIG.MAX_CONTEXT_CHARS) + '\n[...truncated]'
+        : full,
+    );
 
     console.log(`[VTID-01225] Context bootstrap complete: ${latencyMs}ms, memory=${memoryContext.items.length}, recentTurns=${recentTurns.length}, profile=${profileResult.summary.length}ch (cached=${profileResult.cached})`);
 
@@ -5526,6 +5536,17 @@ async function executeLiveApiToolInner(
       // L2.2b.6 (VTID-03010) — Life Compass read tool, shared dispatcher.
       // Pure DB read; no WebSocket session-state coupling. Same shape as
       // find_perfect_product above.
+      // BOOTSTRAP-SOCIAL-MEMORY — live Social Context Pack for voice.
+      // Delegates to the shared registry handler (same data the text brain
+      // injects per turn via the memory orchestrator).
+      // BOOTSTRAP-SOCIAL-READ-TOOLS — own-inbox / own-graph READ tools
+      // (defects 1/4/5): pure DB reads, no WS session-state coupling, so
+      // they route through the shared dispatcher like the two above.
+      case 'view_messages':
+      case 'list_followers':
+      case 'list_following':
+      case 'recent_conversations':
+      case 'get_social_context':
       case 'get_life_compass': {
         const SUPABASE_URL = process.env.SUPABASE_URL;
         const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
@@ -7738,6 +7759,21 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
                 const { gatherOverviewPayload } = await import('../services/assistant-continuation/providers/new-day-overview-payload');
                 const { buildNewDayOverviewBlock } = await import('../services/assistant-continuation/providers/new-day-overview-prompt');
                 const { todayInTimezone, localHourInTimezone } = await import('../services/assistant-continuation/providers/new-day-return');
+                // Spoken-facts continuity (greeting-facts ledger): what did we
+                // ALREADY tell this user? Read in parallel with the payload
+                // gather; bounded + fail-open so it can never delay or silence
+                // the greeting.
+                const {
+                  readGreetingLedger,
+                  computeFactDeltas,
+                  extractSpokenFactsFromPayload,
+                  recordGreetingFacts,
+                  EMPTY_GREETING_LEDGER,
+                } = await import('../services/conversation/greeting-facts-ledger');
+                const _tenantNd = session.identity?.tenant_id ?? null;
+                const _ledgerPromiseNd = _tenantNd
+                  ? readGreetingLedger({ supabase: _supaNd, tenantId: _tenantNd, userId: _uidNd })
+                  : Promise.resolve({ ...EMPTY_GREETING_LEDGER });
                 // Last session's LOCAL date (YYYY-MM-DD) bounds the "since last
                 // session" calendar lookback. Derive it from the pre-fetched
                 // last-session timestamp; null falls back to a 24h window inside
@@ -7780,12 +7816,23 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
                     _overview.messages_unread > 0 ||
                     _overview.reminders_today.count > 0);
                 if (_overview && _hasContent) {
+                  const _ledgerNd = await Promise.race([
+                    _ledgerPromiseNd,
+                    new Promise<typeof EMPTY_GREETING_LEDGER>((r) =>
+                      setTimeout(() => r({ ...EMPTY_GREETING_LEDGER }), 800),
+                    ),
+                  ]).catch(() => ({ ...EMPTY_GREETING_LEDGER }));
+                  const _spokenFactsNd = extractSpokenFactsFromPayload(_overview);
+                  const _deltasNd = computeFactDeltas(_spokenFactsNd, _ledgerNd);
                   const _block = buildNewDayOverviewBlock({
                     payload: _overview,
                     lang: greetLang,
                     firstName: _firstNameNd.trim(),
                     localHour: localHourInTimezone(_nowNd, _tzNd),
                     timezone: _tzNd,
+                    factDeltas: _deltasNd,
+                    previousUtterance: _ledgerNd.last_utterance,
+                    sessionsToday: _ledgerNd.sessions_today,
                   });
                   if (_block && _block.trim().length > 0) {
                     ws.send(
@@ -7804,6 +7851,16 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
                       .update({ last_full_briefing_date: _todayNd })
                       .eq('user_id', _uidNd)
                       .then(() => {}, () => {});
+                    // Ledger write: these facts are now "told" — the next
+                    // opener speaks deltas, not the same levels again.
+                    if (_tenantNd && Object.keys(_spokenFactsNd).length > 0) {
+                      void recordGreetingFacts({
+                        supabase: _supaNd,
+                        tenantId: _tenantNd,
+                        userId: _uidNd,
+                        facts: _spokenFactsNd,
+                      });
+                    }
                     emitDiag(session, 'greeting_sent', {
                       lang,
                       prompt_len: _block.length,
@@ -7929,6 +7986,20 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
                     const _nowR = new Date();
                     const { gatherOverviewPayload } = await import('../services/assistant-continuation/providers/new-day-overview-payload');
                     const { todayInTimezone } = await import('../services/assistant-continuation/providers/new-day-return');
+                    // Spoken-facts continuity — same ledger the daily briefing
+                    // uses, so a reopen never re-announces the counts the
+                    // briefing already spoke this morning.
+                    const {
+                      readGreetingLedger,
+                      computeFactDeltas,
+                      extractSpokenFactsFromPayload,
+                      recordGreetingFacts,
+                      EMPTY_GREETING_LEDGER,
+                    } = await import('../services/conversation/greeting-facts-ledger');
+                    const _tenantR = session.identity?.tenant_id ?? null;
+                    const _ledgerPromiseR = _tenantR
+                      ? readGreetingLedger({ supabase: _supaR, tenantId: _tenantR, userId: _uidR })
+                      : Promise.resolve({ ...EMPTY_GREETING_LEDGER });
                     const _lastSessIsoR = (session as any).lastSessionInfo?.time ?? null;
                     const _lastSessDateR =
                       typeof _lastSessIsoR === 'string' && _lastSessIsoR.length > 0
@@ -7952,6 +8023,14 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
                     const _recentNbaKeysR = Array.isArray((session as any).recentNbaKeys)
                       ? ((session as any).recentNbaKeys as string[])
                       : [];
+                    const _ledgerR = await Promise.race([
+                      _ledgerPromiseR,
+                      new Promise<typeof EMPTY_GREETING_LEDGER>((r) =>
+                        setTimeout(() => r({ ...EMPTY_GREETING_LEDGER }), 800),
+                      ),
+                    ]).catch(() => ({ ...EMPTY_GREETING_LEDGER }));
+                    const _spokenFactsR = extractSpokenFactsFromPayload(_payloadR);
+                    const _deltasR = computeFactDeltas(_spokenFactsR, _ledgerR);
                     const { text: _dirR, nba: _nbaR } = buildResumeDirective({
                       register: _registerR,
                       payload: _payloadR,
@@ -7963,6 +8042,9 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
                       // Screen awareness: deepen toward completing the action on
                       // the screen the user is already on, never redirect there.
                       currentScreen: (session as any).current_route ?? null,
+                      factDeltas: _deltasR,
+                      previousUtterance: _ledgerR.last_utterance,
+                      sessionsToday: _ledgerR.sessions_today,
                     });
                     // CONTINUE/quick_resume can speak with no payload (pure
                     // thread continuation); same_day needs at least the NBA or a
@@ -7988,6 +8070,17 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
                           .update({ recent_nbas: _updatedNbas })
                           .eq('user_id', _uidR)
                           .then(() => {}, () => {});
+                      }
+                      // Ledger write — the reopen surfaced these facts (as
+                      // deltas or soft references); refresh their spoken_at so
+                      // the next open still treats stable levels as known.
+                      if (_tenantR && Object.keys(_spokenFactsR).length > 0) {
+                        void recordGreetingFacts({
+                          supabase: _supaR,
+                          tenantId: _tenantR,
+                          userId: _uidR,
+                          facts: _spokenFactsR,
+                        });
                       }
                       emitDiag(session, 'greeting_sent', {
                         lang,
@@ -11810,6 +11903,59 @@ router.get('/debug/awareness', optionalAuth, async (req: AuthenticatedRequest, r
   }
 });
 
+/**
+ * BOOTSTRAP-SOCIAL-MEMORY: GET /debug/brain-instruction — deploy-verification
+ * probe for the ORB voice system instruction. Returns ONLY structural facts
+ * (section presence + lengths), never the instruction content, so it leaks
+ * nothing while proving that a voice session for this user would carry the
+ * memory block + social context and advertise the get_social_context tool.
+ */
+router.get('/debug/brain-instruction', requireAuthWithTenant, async (req: AuthenticatedRequest, res: Response) => {
+  const identity = req.identity as { user_id?: string; tenant_id?: string; exafy_admin?: boolean } | undefined;
+  const userId = (req.query.user_id as string) || identity?.user_id || '';
+  const tenantId = (req.query.tenant_id as string) || identity?.tenant_id || '';
+  const role = (req.query.role as string) || 'community';
+  if (!userId || !tenantId) {
+    return res.status(400).json({ ok: false, error: 'user_id and tenant_id are required' });
+  }
+  // Self-or-admin only: building another user's instruction (even as
+  // structural booleans) is an admin-grade probe.
+  if (userId !== identity?.user_id && !identity?.exafy_admin) {
+    return res.status(403).json({ ok: false, error: 'FORBIDDEN_USER_SCOPE' });
+  }
+  try {
+    const { buildBrainSystemInstruction } = await import('../services/vitana-brain');
+    const { instruction } = await buildBrainSystemInstruction({
+      user_id: userId,
+      tenant_id: tenantId,
+      role,
+      channel: 'orb',
+    });
+    const { buildLiveApiTools } = await import('../orb/live/tools/live-tool-catalog');
+    const toolNames: string[] = [];
+    try {
+      const tools = buildLiveApiTools() as any[];
+      for (const t of tools) {
+        if (t?.name) toolNames.push(t.name);
+        // Vertex BidiGenerate uses snake_case function_declarations.
+        for (const fd of t?.function_declarations || t?.functionDeclarations || []) {
+          toolNames.push(fd.name);
+        }
+      }
+    } catch { /* tool catalog probe is best-effort */ }
+    return res.json({
+      ok: true,
+      instruction_chars: instruction.length,
+      has_memory_block: instruction.includes('=== USER MEMORY CONTEXT ==='),
+      has_social_context: instruction.includes('<social_context>'),
+      has_self_check: instruction.includes('MANDATORY SELF-CHECK'),
+      social_tool_declared: toolNames.includes('get_social_context'),
+    });
+  } catch (err: any) {
+    return res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
 router.get('/debug/memory', async (_req: Request, res: Response) => {
   // Dev-sandbox gate: return 404 in non-dev environments
   if (!isDevSandbox()) {
@@ -13752,6 +13898,21 @@ async function handleWebSocketConnection(ws: WebSocket, req: IncomingMessage): P
       const result = await verifyAndExtractIdentity(token);
       if (result) {
         identity = result.identity;
+        // BOOTSTRAP-WS-TENANT-FALLBACK: mirrors the SSE /live/stream fix
+        // (VTID-MEMORY-BRIDGE, ~L12921) that this WebSocket path never got.
+        // provision_platform_user() creates user_tenants rows but does NOT
+        // set active_tenant_id in JWT app_metadata, so many authenticated
+        // users reach this handler with tenant_id: null — silently
+        // disabling every tenant-scoped write for the WHOLE voice session
+        // (greeting-facts ledger, social context, memory writes), while
+        // user_id-only paths (e.g. the daily-briefing stamp) kept working,
+        // masking the gap. Look it up the same way the SSE path does.
+        if (!identity.tenant_id && identity.user_id) {
+          const resolvedTenant = await lookupPrimaryTenant(identity.user_id);
+          if (resolvedTenant) {
+            identity = { ...identity, tenant_id: resolvedTenant };
+          }
+        }
         console.log(`[VTID-01224] WebSocket authenticated: user=${identity.user_id}, tenant=${identity.tenant_id}`);
       } else {
         console.warn(`[VTID-01224] WebSocket auth failed for ${sessionId}: invalid token`);

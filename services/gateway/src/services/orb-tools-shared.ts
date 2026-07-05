@@ -1413,59 +1413,86 @@ export async function tool_create_index_improvement_plan(
 
     const weeks = Math.ceil(days / 7);
     const totalEvents = weeks * perWeek;
-    const scheduled: { title: string; start_time: string; source: string }[] = [];
     const startOfToday = new Date();
     startOfToday.setHours(10, 0, 0, 0);
     startOfToday.setDate(startOfToday.getDate() + 1); // start tomorrow
 
-    const tags = PILLAR_TAGS[pillar as keyof typeof PILLAR_TAGS];
-    const wellnessTags: string[] = tags ? [...tags] : [pillar!];
-
-    // Capture the FIRST calendar-write error so a total failure reports WHY
-    // (the PostgREST reason), instead of an opaque "calendar write failed".
-    let firstCalendarError: string | null = null;
-
+    // Compute the concrete plan (each item + its date) WITHOUT writing anything.
+    type PlannedEvent = PlanItem & { start_time: string; end_time: string };
+    const planned: PlannedEvent[] = [];
     for (let i = 0; i < totalEvents; i++) {
       const item = source[i % source.length];
       const eventDate = new Date(startOfToday);
       eventDate.setDate(eventDate.getDate() + Math.floor((i * 7) / perWeek));
       if (eventDate.getTime() > Date.now() + days * 24 * 60 * 60 * 1000) break;
-      const startIso = eventDate.toISOString();
-      const endIso = new Date(eventDate.getTime() + 30 * 60 * 1000).toISOString();
+      planned.push({
+        ...item,
+        start_time: eventDate.toISOString(),
+        end_time: new Date(eventDate.getTime() + 30 * 60 * 1000).toISOString(),
+      });
+    }
 
+    const coach = await import('./orb-index-coach-text');
+
+    // CONFIRM-BEFORE-WRITE: by default PROPOSE the plan and write nothing. The
+    // calendar is touched only when the model re-calls with confirm=true after
+    // the user agrees. Fixes "du musst doch erst mit mir besprechen" — the tool
+    // used to silently write 6 events the moment the user agreed to "a plan".
+    const a = args as Record<string, unknown>;
+    const confirm = a.confirm === true || a.confirm === 'true' || a.confirm === 1;
+    if (!confirm) {
+      return {
+        ok: true,
+        result: {
+          ok: true,
+          preview: true,
+          pillar,
+          days,
+          actions_per_week: perWeek,
+          proposed_count: planned.length,
+          proposed: planned.map((p) => ({ title: p.title, start_time: p.start_time })),
+        },
+        text: coach.buildIndexPlanPreviewText(String(pillar), days, planned),
+      };
+    }
+
+    const tags = PILLAR_TAGS[pillar as keyof typeof PILLAR_TAGS];
+    const wellnessTags: string[] = tags ? [...tags] : [pillar!];
+    const scheduled: { title: string; start_time: string; source: string }[] = [];
+    // Capture the FIRST calendar-write error so a total failure reports WHY.
+    let firstCalendarError: string | null = null;
+
+    for (const p of planned) {
       try {
         const evt = await createCalendarEvent(id.user_id, {
-          title: item.title,
-          start_time: startIso,
-          end_time: endIso,
-          description: `${item.description}\n\nPart of your Vitana Index improvement plan (target: ${pillar}).`.trim(),
+          title: p.title,
+          start_time: p.start_time,
+          end_time: p.end_time,
+          description: `${p.description}\n\nPart of your Vitana Index improvement plan (target: ${pillar}).`.trim(),
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           event_type: 'health' as any,
+          // role_context is constrained by the `valid_role_context` CHECK to
+          // {community, admin, developer, personal}; the raw session role can be
+          // super_admin/staff/dev/etc, so coerce it (see toWritableRoleContext).
           status: 'confirmed',
           priority: 'medium',
-          // role_context is constrained by the `valid_role_context` CHECK to
-          // exactly {community, admin, developer, personal}. The session role
-          // (id.role) can be super_admin / staff / dev / patient / professional,
-          // none of which pass — writing it raw made EVERY calendar insert fail
-          // with a 400 (the swallowed error behind "I cannot execute"). Coerce to
-          // a valid context.
           role_context: toWritableRoleContext(id.role),
           source_type: 'assistant',
           source_ref_type:
-            item.source === 'autopilot' ? 'autopilot_recommendation' : 'pillar_template',
-          source_ref_id: item.source_ref_id ?? undefined,
+            p.source === 'autopilot' ? 'autopilot_recommendation' : 'pillar_template',
+          source_ref_id: p.source_ref_id ?? undefined,
           priority_score: 60,
           wellness_tags: wellnessTags,
           metadata: {
             created_via: 'orb_voice',
             plan: 'index_improvement',
             target_pillar: pillar,
-            plan_source: item.source,
+            plan_source: p.source,
           },
           is_recurring: false,
         }, (msg) => { if (!firstCalendarError) firstCalendarError = msg; });
         if (evt) {
-          scheduled.push({ title: evt.title, start_time: evt.start_time, source: item.source });
+          scheduled.push({ title: evt.title, start_time: evt.start_time, source: p.source });
         }
       } catch (perEvtErr) {
         if (!firstCalendarError) {
@@ -1494,13 +1521,12 @@ export async function tool_create_index_improvement_plan(
       last_event: scheduled[scheduled.length - 1],
       all_titles: scheduled.map((s) => s.title),
     };
-    const { buildIndexPlanText } = await import('./orb-index-coach-text');
     return {
       ok: true,
       result: payload,
       // Name EXACTLY what was scheduled so the user is never left wondering what
       // landed in their calendar ("Ich habe ja keine Ahnung, was du da einträgst").
-      text: buildIndexPlanText(String(pillar), days, scheduled),
+      text: coach.buildIndexPlanText(String(pillar), days, scheduled),
     };
   } catch (err: unknown) {
     return { ok: false, error: err instanceof Error ? err.message : 'create_index_improvement_plan error' };
@@ -4878,6 +4904,103 @@ export async function tool_offer_action(
   };
 }
 
+/**
+ * BOOTSTRAP-SOCIAL-MEMORY — live social context for VOICE sessions.
+ *
+ * The ORB live system instruction is built ONCE at session start, so the
+ * per-turn social-intent injection that text chat gets never fires on the
+ * voice path. This tool is the voice-side bridge: the model calls it when
+ * the user asks about follows/followers, matches, messages, group chats,
+ * a specific person, interesting posts/events, or "what changed" — and
+ * receives the same privacy-filtered Social Context Pack (as prompt-ready
+ * text) that the text brain injects.
+ */
+export async function tool_get_social_context(
+  args: OrbToolArgs,
+  identity: OrbToolIdentity,
+  _sb: SupabaseClient,
+): Promise<OrbToolResult> {
+  if (!identity.user_id || !identity.tenant_id) {
+    return { ok: false, error: 'get_social_context requires an authenticated user.' };
+  }
+  try {
+    const { buildAssistantSocialContext } = await import(
+      './social-memory/social-memory-service'
+    );
+    const question =
+      String(args.question ?? args.query ?? '').trim() ||
+      'my community overview: follows, matches, group chats, interesting posts and events';
+    const result = await buildAssistantSocialContext({
+      tenant_id: identity.tenant_id,
+      user_id: identity.user_id,
+      question,
+      surface: 'vitana_assistant',
+      compact: true,
+    });
+    const p = result.pack;
+    return {
+      ok: true,
+      text: result.prompt_block,
+      result: {
+        following_count: p.relationships.following_count,
+        followers_count: p.relationships.followers_count,
+        matches_count: p.matches.length,
+        group_chats_count: p.group_chats.length,
+        interesting_posts_count: p.interesting_posts.length,
+        interesting_events_count: p.interesting_events.length,
+        person_resolved: !!p.person_context,
+        recommended_actions: p.recommended_actions,
+      },
+    };
+  } catch (err: any) {
+    console.error('[ORB-TOOLS] get_social_context failed:', err?.message);
+    return { ok: false, error: `Social context unavailable: ${err?.message}` };
+  }
+}
+
+/**
+ * BOOTSTRAP-SOCIAL-READ-TOOLS — the missing READ capabilities (defects
+ * 1/4/5 in docs/CONVERSATION_DEFECTS_FIX_PLAN.md). Thin wrappers over
+ * services/social-memory/social-read-tools.ts (which reuses the
+ * privacy-filtered social-memory repository). Speakable, internal-only
+ * (never Google), and "archived" does not exist.
+ */
+export async function tool_view_messages(
+  args: OrbToolArgs,
+  identity: OrbToolIdentity,
+  _sb: SupabaseClient,
+): Promise<OrbToolResult> {
+  const { runViewMessages } = await import('./social-memory/social-read-tools');
+  return runViewMessages(args as { scope?: unknown; limit?: unknown }, identity);
+}
+
+export async function tool_list_followers(
+  _args: OrbToolArgs,
+  identity: OrbToolIdentity,
+  _sb: SupabaseClient,
+): Promise<OrbToolResult> {
+  const { runListFollows } = await import('./social-memory/social-read-tools');
+  return runListFollows('followers', identity);
+}
+
+export async function tool_list_following(
+  _args: OrbToolArgs,
+  identity: OrbToolIdentity,
+  _sb: SupabaseClient,
+): Promise<OrbToolResult> {
+  const { runListFollows } = await import('./social-memory/social-read-tools');
+  return runListFollows('following', identity);
+}
+
+export async function tool_recent_conversations(
+  args: OrbToolArgs,
+  identity: OrbToolIdentity,
+  _sb: SupabaseClient,
+): Promise<OrbToolResult> {
+  const { runRecentConversations } = await import('./social-memory/social-read-tools');
+  return runRecentConversations(args as { limit?: unknown }, identity);
+}
+
 type OrbToolHandler = (
   args: OrbToolArgs,
   identity: OrbToolIdentity,
@@ -4948,6 +5071,18 @@ export const ORB_TOOL_REGISTRY: Record<string, OrbToolHandler> = {
   // the LLM can answer "what is my Life Compass goal?" / "remind me what I'm
   // working toward" with the canonical value instead of inventing one.
   get_life_compass: tool_get_life_compass,
+  // BOOTSTRAP-SOCIAL-MEMORY — live Social Context Pack for voice sessions
+  // (follows, matches, messages, groups, person intelligence, ranked
+  // posts/events). Voice-side bridge for the per-turn social injection the
+  // text brain does in the memory orchestrator.
+  get_social_context: tool_get_social_context,
+  // BOOTSTRAP-SOCIAL-READ-TOOLS — own-inbox / own-graph READ capabilities
+  // (defects 1/4/5): speakable unread inbox, followers/following, and
+  // recent conversations. Internal Maxina data only — never Google.
+  view_messages: tool_view_messages,
+  list_followers: tool_list_followers,
+  list_following: tool_list_following,
+  recent_conversations: tool_recent_conversations,
   // VTID-03255 — Journey Foundation: records every voice answer, writes the real
   // fact (life_compass goal / economy stance / focus / teacher ack), re-verifies,
   // and returns the next move. Reachable from Vertex, LiveKit, and /api/v1/orb/tool.

@@ -420,6 +420,10 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const adminEmbeddingsBackfillRouter = require('./routes/admin-embeddings-backfill').default;
   // VTID-02026 Phase 6a — Memory Broker smoke endpoint (exafy_admin only)
   const adminMemoryBrokerRouter = require('./routes/admin-memory-broker').default;
+  // BOOTSTRAP-MEMORY-ORCHESTRATOR-MANDATORY — Memory Alive/Dead status (exafy_admin only)
+  const adminMemoryOrchestratorRouter = require('./routes/admin-memory-orchestrator').default;
+  // BOOTSTRAP-SOCIAL-MEMORY — Social Memory Intelligence endpoints
+  const memorySocialRouter = require('./routes/memory-social').default;
   // Phase F v1: 5 pillar agents (Nutrition/Hydration/Exercise/Sleep/Mental).
   const pillarAgentsRouter = require('./routes/pillar-agents').default;
   // Phase F v2 step 9: per-user integrations + Manual Data Entry.
@@ -1170,6 +1174,10 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   mountRouterSync(app, '/api/v1', adminEmbeddingsBackfillRouter, { owner: 'admin-embeddings-backfill' });
   // VTID-02026 Phase 6a Memory Broker smoke endpoint
   mountRouterSync(app, '/api/v1', adminMemoryBrokerRouter, { owner: 'admin-memory-broker' });
+  // BOOTSTRAP-MEMORY-ORCHESTRATOR-MANDATORY Memory Alive/Dead status endpoint
+  mountRouterSync(app, '/api/v1', adminMemoryOrchestratorRouter, { owner: 'admin-memory-orchestrator' });
+  // BOOTSTRAP-SOCIAL-MEMORY Social Memory Intelligence layer
+  mountRouterSync(app, '/api/v1/memory/social', memorySocialRouter, { owner: 'memory-social' });
   // Phase F v1: pillar agents framework
   mountRouterSync(app, '/api/v1/pillar-agents', pillarAgentsRouter, { owner: 'pillar-agents' });
   // Phase F v2 step 9: per-user integrations (Manual Data Entry + catalog)

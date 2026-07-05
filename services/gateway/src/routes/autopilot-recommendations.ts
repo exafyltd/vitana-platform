@@ -28,6 +28,28 @@ import { notifyUserAsync } from '../services/notification-service';
 import { DEFAULT_WAVE_CONFIG, buildTemplateToWaveMap } from '../services/wave-defaults';
 import { derivePillarImpact } from '../services/recommendation-engine/pillar-impact';
 import { evaluateRecAlignment } from '../services/recommendation-engine/alignment-evaluator';
+import { tt, GATEWAY_DEFAULT_LOCALE, type GatewayLocale } from '../i18n/catalog';
+import { getUserLocale } from '../i18n/server-locale';
+
+/**
+ * Recommendation-identity work: resolve the requesting user's locale for the
+ * "Vitana empfiehlt" header (see annotateWithPillarImpact below). Best-effort —
+ * anonymous/Command-Hub callers (no userId) fall back to GATEWAY_DEFAULT_LOCALE,
+ * and any Supabase error also falls back rather than failing the request.
+ */
+async function resolveRecommendationLocale(userId: string | null | undefined): Promise<GatewayLocale> {
+  if (!userId) return GATEWAY_DEFAULT_LOCALE;
+  const supabaseUrl = process.env.SUPABASE_URL;
+  const svcKey = process.env.SUPABASE_SERVICE_ROLE;
+  if (!supabaseUrl || !svcKey) return GATEWAY_DEFAULT_LOCALE;
+  try {
+    const { createClient } = await import('@supabase/supabase-js');
+    const supa = createClient(supabaseUrl, svcKey);
+    return await getUserLocale(supa, userId);
+  } catch {
+    return GATEWAY_DEFAULT_LOCALE;
+  }
+}
 
 /**
  * Phase 5 of the Ultimate Goal hardening (VTID-02935): when a recommendation
@@ -88,11 +110,29 @@ async function emitAlignmentEventForActivation(params: {
  * with derived pillar_impact ({primary_pillar, magnitude}). Read-time derivation
  * from contribution_vector JSONB — see services/.../pillar-impact.ts.
  * Mutates each row in place (cheap and unambiguous for response payload use).
+ *
+ * Also stamps the Vitana recommendation-identity UI metadata (see CLAUDE.md
+ * "recommendation-identity" work) so the frontend never renders a bare "AI"
+ * label: `recommended_by`/`visual_identity` are locale-independent identifiers
+ * the UI uses to pick the ORB avatar; `recommendation_label` is the localized
+ * "Vitana empfiehlt" copy, resolved via the gateway i18n catalog.
  */
-function annotateWithPillarImpact<T extends { contribution_vector?: unknown }>(rows: T[]): Array<T & { pillar_impact: ReturnType<typeof derivePillarImpact> }> {
+function annotateWithPillarImpact<T extends { contribution_vector?: unknown }>(
+  rows: T[],
+  locale: GatewayLocale = GATEWAY_DEFAULT_LOCALE,
+): Array<T & {
+  pillar_impact: ReturnType<typeof derivePillarImpact>;
+  recommended_by: 'vitana';
+  recommendation_label: string;
+  visual_identity: 'orb';
+}> {
+  const recommendation_label = tt('recommendation.vitana_label', locale);
   return rows.map((row) => ({
     ...row,
     pillar_impact: derivePillarImpact(row.contribution_vector as Record<string, unknown> | null | undefined),
+    recommended_by: 'vitana' as const,
+    recommendation_label,
+    visual_identity: 'orb' as const,
   }));
 }
 
@@ -160,7 +200,8 @@ async function buildCommunityRecsResponse(
       startDay <= 30 ? 'month'    : 'future';
   }
 
-  return annotateWithPillarImpact(recommendations).slice(0, limit);
+  const locale = await resolveRecommendationLocale(userId);
+  return annotateWithPillarImpact(recommendations, locale).slice(0, limit);
 }
 
 // =============================================================================
@@ -645,9 +686,10 @@ router.get('/', async (req: Request, res: Response) => {
           }));
       }
 
+      const roleLocale = await resolveRecommendationLocale(userId);
       return res.status(200).json({
         ok: true,
-        recommendations: annotateWithPillarImpact(recommendations),
+        recommendations: annotateWithPillarImpact(recommendations, roleLocale),
         count: recommendations.length,
         has_more: hasMore,
         ...(waves ? { waves } : {}),
@@ -682,9 +724,10 @@ router.get('/', async (req: Request, res: Response) => {
       recommendations.pop();
     }
 
+    const rpcLocale = await resolveRecommendationLocale(userId);
     return res.status(200).json({
       ok: true,
-      recommendations: annotateWithPillarImpact(recommendations),
+      recommendations: annotateWithPillarImpact(recommendations, rpcLocale),
       count: recommendations.length,
       has_more: hasMore,
       vtid: 'VTID-01180',
