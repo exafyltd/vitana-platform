@@ -14,11 +14,15 @@
  * that fragmentation VISIBLE on every PR that touches a transport file, and
  * counts the inline branches so progress is measurable as they are strangled.
  *
- * SEVERITY: `warning` for now (Step 1a–1c) — report fragmentation, do NOT block
- * in-flight work while the strangler-fig extraction is mid-flight. Flip to
- * `blocker` at the END of Step 1c, once every surface delegates to the brain
- * (`computeGreetingDecision` / `decideConversationFlow`) and the inline branch
- * count reaches zero.
+ * SEVERITY: `blocker` (flipped from `warning` at the END of Step 1c, VTID-03366).
+ * Every Vertex opening rung — the sync ladder (silent_reconnect / override_v2 /
+ * silenced_on_cadence / legacy default) and the async safe-fast ladder (rungs
+ * 1–6) — now delegates to the brain (`computeGreetingDecision`), and
+ * routes/orb-live.ts carries ZERO inline wake_opener branches. The rule now
+ * ENFORCES "one brain, every surface": any PR that reintroduces inline register /
+ * recency / wake_opener decision logic into a transport fails CI. (It was
+ * `warning` throughout Steps 1a–1c so it reported fragmentation without blocking
+ * the strangler-fig extraction mid-flight.)
  *
  * Scope: fires only when a PR actually adds/modifies a transport file (so it
  * surfaces local decision logic right where it is being edited — the #2814
@@ -31,7 +35,12 @@ import { readFileAtRepo } from './_shared.mjs';
 export const meta = {
   rule: 'transport-flow-parity',
   category: 'semantic',
-  severity: 'warning',
+  // Flipped warning → blocker at the END of Step 1c (VTID-03366): every Vertex
+  // opening rung (sync + safe-fast) now delegates to the shared brain and
+  // routes/orb-live.ts carries ZERO inline wake_opener branches. From here the
+  // rule ENFORCES "one brain, every surface" — any PR that reintroduces inline
+  // register / recency / wake_opener decision logic into a transport fails CI.
+  severity: 'blocker',
 };
 
 // The transport integration files that MUST delegate the opening decision to the

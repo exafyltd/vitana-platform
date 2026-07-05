@@ -127,9 +127,9 @@ export const IMPACT_RULES = [
   {
     rule: 'transport-flow-parity',
     title: 'Transport owns conversation-flow decision logic instead of delegating',
-    description: 'The conversation flow must be ONE transport-independent brain (services/gateway/src/services/conversation). Transports (routes/orb-live.ts = Vertex, routes/orb-livekit.ts = LiveKit) must be thin adapters: gather context → call the brain → render. This rule fires when a PR touching a transport file leaves its own register / recency / wake_opener decision logic inline (counts the inline wake_opener branches + per-language directive maps). Warning during the Step 1a–1c strangler-fig extraction; flips to blocker at the end of Step 1c when every surface delegates and the inline branch count reaches zero.',
+    description: 'The conversation flow must be ONE transport-independent brain (services/gateway/src/services/conversation). Transports (routes/orb-live.ts = Vertex, routes/orb-livekit.ts = LiveKit) must be thin adapters: gather context → call the brain → render. This rule fires when a PR touching a transport file leaves its own register / recency / wake_opener decision logic inline (counts the inline wake_opener branches + per-language directive maps). Blocker as of the end of Step 1c (VTID-03366): every Vertex opening rung (sync + safe-fast) now delegates and orb-live.ts carries zero inline branches, so the rule enforces "one brain, every surface" — reintroducing inline decision logic into a transport fails CI. (Was warning throughout the 1a–1c strangler-fig extraction.)',
     category: 'semantic',
-    severity: 'warning',
+    severity: 'blocker',
     enabled: true,
   },
 ];
