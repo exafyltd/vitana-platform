@@ -694,22 +694,90 @@ const PAYMENTS_WALLET: AutomationDefinition[] = [
 // AP-0800: Personalization Engines
 // =============================================================================
 const PERSONALIZATION: AutomationDefinition[] = [
-  { id: 'AP-0801', name: 'Social Comfort-Aware Suggestions', domain: 'personalization-engines', status: 'PLANNED', priority: 'P1', triggerType: 'event', targetRoles: [...MEMBER_ROLES] },
-  { id: 'AP-0802', name: 'Taste-Aligned Event Recommendations', domain: 'personalization-engines', status: 'PLANNED', priority: 'P1', triggerType: 'event', targetRoles: [...MEMBER_ROLES] },
-  { id: 'AP-0803', name: 'Opportunity Surfacing Automation', domain: 'personalization-engines', status: 'PLANNED', priority: 'P1', triggerType: 'heartbeat', targetRoles: [...MEMBER_ROLES] },
-  { id: 'AP-0804', name: 'Life-Stage Aware Communication', domain: 'personalization-engines', status: 'PLANNED', priority: 'P2', triggerType: 'event', targetRoles: [...MEMBER_ROLES] },
-  { id: 'AP-0805', name: 'Overload Detection & Throttle', domain: 'personalization-engines', status: 'PLANNED', priority: 'P1', triggerType: 'event', targetRoles: ALL_ROLES },
+  {
+    // Converted event -> heartbeat: nothing dispatches a social-suggestion
+    // event to react to (see handler file comment).
+    id: 'AP-0801', name: 'Social Comfort-Aware Suggestions', domain: 'personalization-engines',
+    status: 'IMPLEMENTED', priority: 'P1', triggerType: 'heartbeat',
+    triggerConfig: { intervalMinutes: 10080 },
+    targetRoles: [...MEMBER_ROLES],
+    handler: 'runSocialComfortAwareSuggestions',
+  },
+  {
+    // Converted event -> heartbeat: same missing-trigger situation.
+    id: 'AP-0802', name: 'Taste-Aligned Event Recommendations', domain: 'personalization-engines',
+    status: 'IMPLEMENTED', priority: 'P1', triggerType: 'heartbeat',
+    triggerConfig: { intervalMinutes: 1440 },
+    targetRoles: [...MEMBER_ROLES],
+    handler: 'runTasteAlignedEventRecommendations',
+  },
+  {
+    id: 'AP-0803', name: 'Opportunity Surfacing Automation', domain: 'personalization-engines',
+    status: 'IMPLEMENTED', priority: 'P1', triggerType: 'heartbeat',
+    triggerConfig: { intervalMinutes: 360 },
+    targetRoles: [...MEMBER_ROLES],
+    handler: 'runOpportunitySurfacingAutomation',
+  },
+  {
+    // Converted event -> heartbeat: no lifecycle_stage-transition event
+    // exists to react to.
+    id: 'AP-0804', name: 'Life-Stage Aware Communication', domain: 'personalization-engines',
+    status: 'IMPLEMENTED', priority: 'P2', triggerType: 'heartbeat',
+    triggerConfig: { intervalMinutes: 10080 },
+    targetRoles: [...MEMBER_ROLES],
+    handler: 'runLifeStageAwareCommunication',
+  },
+  {
+    id: 'AP-0805', name: 'Overload Detection & Throttle', domain: 'personalization-engines',
+    status: 'IMPLEMENTED', priority: 'P1', triggerType: 'event',
+    triggerConfig: { eventTopic: 'automation.pre_execute' },
+    targetRoles: ALL_ROLES,
+    handler: 'runOverloadDetectionThrottle',
+  },
 ];
 
 // =============================================================================
 // AP-0900: Memory & Intelligence
 // =============================================================================
 const MEMORY_INTEL: AutomationDefinition[] = [
-  { id: 'AP-0901', name: 'Memory-Informed Matching', domain: 'memory-intelligence', status: 'PLANNED', priority: 'P1', triggerType: 'event', targetRoles: [...MEMBER_ROLES] },
-  { id: 'AP-0902', name: 'Fact Extraction from Conversations', domain: 'memory-intelligence', status: 'PLANNED', priority: 'P1', triggerType: 'event', targetRoles: ALL_ROLES },
-  { id: 'AP-0903', name: 'Relationship Graph Maintenance', domain: 'memory-intelligence', status: 'PLANNED', priority: 'P2', triggerType: 'cron', targetRoles: [...MEMBER_ROLES] },
-  { id: 'AP-0904', name: 'Semantic Memory Search for Autopilot Context', domain: 'memory-intelligence', status: 'PLANNED', priority: 'P1', triggerType: 'event', targetRoles: ALL_ROLES },
-  { id: 'AP-0905', name: 'Knowledge Base Context for Suggestions', domain: 'memory-intelligence', status: 'PLANNED', priority: 'P2', triggerType: 'event', targetRoles: ALL_ROLES },
+  {
+    id: 'AP-0901', name: 'Memory-Informed Matching', domain: 'memory-intelligence',
+    status: 'IMPLEMENTED', priority: 'P1', triggerType: 'event',
+    triggerConfig: { eventTopic: 'match.feedback.like' },
+    targetRoles: [...MEMBER_ROLES],
+    handler: 'runMemoryInformedMatching',
+  },
+  {
+    // Audit-only: the real extraction pipeline (cognee-extractor-client.ts)
+    // already runs outside the registry per session end; no
+    // 'orb.session.ended' event is dispatched to trigger this today.
+    id: 'AP-0902', name: 'Fact Extraction from Conversations', domain: 'memory-intelligence',
+    status: 'IMPLEMENTED', priority: 'P1', triggerType: 'event',
+    triggerConfig: { eventTopic: 'orb.session.ended' },
+    targetRoles: ALL_ROLES,
+    handler: 'runFactExtractionAudit',
+  },
+  {
+    id: 'AP-0903', name: 'Relationship Graph Maintenance', domain: 'memory-intelligence',
+    status: 'IMPLEMENTED', priority: 'P2', triggerType: 'cron',
+    triggerConfig: { cronExpression: '0 4 * * 0' }, // Sunday 4am
+    targetRoles: [...MEMBER_ROLES],
+    handler: 'runRelationshipGraphMaintenance',
+  },
+  {
+    id: 'AP-0904', name: 'Semantic Memory Search for Autopilot Context', domain: 'memory-intelligence',
+    status: 'IMPLEMENTED', priority: 'P1', triggerType: 'event',
+    triggerConfig: { eventTopic: 'automation.pre_execute' },
+    targetRoles: ALL_ROLES,
+    handler: 'runSemanticMemoryContextForAutopilot',
+  },
+  {
+    id: 'AP-0905', name: 'Knowledge Base Context for Suggestions', domain: 'memory-intelligence',
+    status: 'IMPLEMENTED', priority: 'P2', triggerType: 'event',
+    triggerConfig: { eventTopic: 'automation.pre_execute' },
+    targetRoles: ALL_ROLES,
+    handler: 'runKnowledgeBaseContextForSuggestions',
+  },
 ];
 
 // =============================================================================
@@ -974,33 +1042,41 @@ const ONBOARDING_GROWTH: AutomationDefinition[] = [
 const EVENT_MEETUP_INITIATIVE: AutomationDefinition[] = [
   {
     id: 'AP-1401', name: 'Smart Event Creation', domain: 'event-meetup-initiative',
-    status: 'PLANNED', priority: 'P1', triggerType: 'heartbeat',
+    status: 'IMPLEMENTED', priority: 'P1', triggerType: 'heartbeat',
     triggerConfig: { intervalMinutes: 1440 },
     targetRoles: [...MEMBER_ROLES],
+    handler: 'runSmartEventCreation',
   },
   {
     id: 'AP-1402', name: 'Calendar Availability Check', domain: 'event-meetup-initiative',
-    status: 'PLANNED', priority: 'P1', triggerType: 'event',
+    status: 'IMPLEMENTED', priority: 'P1', triggerType: 'event',
     triggerConfig: { eventTopic: 'event.suggestion.created' },
     targetRoles: [...MEMBER_ROLES],
+    handler: 'runCalendarAvailabilityCheck',
   },
   {
+    // Converted event -> heartbeat: nothing dispatches 'event.created' (the
+    // frontend writes global_community_events directly — same gap as
+    // AP-0204/AP-1401's heartbeat conversions).
     id: 'AP-1403', name: 'Auto-Invitation Sender', domain: 'event-meetup-initiative',
-    status: 'PLANNED', priority: 'P1', triggerType: 'event',
-    triggerConfig: { eventTopic: 'event.created' },
+    status: 'IMPLEMENTED', priority: 'P1', triggerType: 'heartbeat',
+    triggerConfig: { intervalMinutes: 30 },
     targetRoles: [...MEMBER_ROLES],
+    handler: 'runAutoInvitationSender',
   },
   {
     id: 'AP-1404', name: 'Event Discovery Recommendation', domain: 'event-meetup-initiative',
-    status: 'PLANNED', priority: 'P1', triggerType: 'cron',
+    status: 'IMPLEMENTED', priority: 'P1', triggerType: 'cron',
     triggerConfig: { cronExpression: '0 9 * * *' },
     targetRoles: [...MEMBER_ROLES],
+    handler: 'runEventDiscoveryRecommendation',
   },
   {
     id: 'AP-1405', name: 'Social Meetup Organizer', domain: 'event-meetup-initiative',
-    status: 'PLANNED', priority: 'P2', triggerType: 'heartbeat',
+    status: 'IMPLEMENTED', priority: 'P2', triggerType: 'heartbeat',
     triggerConfig: { intervalMinutes: 1440 },
     targetRoles: [...MEMBER_ROLES],
+    handler: 'runSocialMeetupOrganizer',
   },
 ];
 
@@ -1010,33 +1086,40 @@ const EVENT_MEETUP_INITIATIVE: AutomationDefinition[] = [
 const BUSINESS_OPPORTUNITY: AutomationDefinition[] = [
   {
     id: 'AP-1501', name: 'Marketplace Gap Detection', domain: 'business-opportunity',
-    status: 'PLANNED', priority: 'P1', triggerType: 'cron',
+    status: 'IMPLEMENTED', priority: 'P1', triggerType: 'cron',
     triggerConfig: { cronExpression: '0 10 * * 1' },
     targetRoles: [...CREATOR_ROLES],
+    handler: 'runMarketplaceGapDetection',
   },
   {
     id: 'AP-1502', name: 'Revenue Opportunity Alert', domain: 'business-opportunity',
-    status: 'PLANNED', priority: 'P1', triggerType: 'heartbeat',
+    status: 'IMPLEMENTED', priority: 'P1', triggerType: 'heartbeat',
     triggerConfig: { intervalMinutes: 1440 },
     targetRoles: [...CREATOR_ROLES],
+    handler: 'runRevenueOpportunityAlert',
   },
   {
     id: 'AP-1503', name: 'Service Demand Matching', domain: 'business-opportunity',
-    status: 'PLANNED', priority: 'P1', triggerType: 'cron',
+    status: 'IMPLEMENTED', priority: 'P1', triggerType: 'cron',
     triggerConfig: { cronExpression: '0 11 * * 3' },
     targetRoles: [...CREATOR_ROLES],
+    handler: 'runServiceDemandMatching',
   },
   {
+    // Shares 'user.business.started' with AP-1106 — neither is dispatched
+    // yet (see handler file comment); real logic ready once wired.
     id: 'AP-1504', name: 'Business Setup Coach', domain: 'business-opportunity',
-    status: 'PLANNED', priority: 'P2', triggerType: 'event',
+    status: 'IMPLEMENTED', priority: 'P2', triggerType: 'event',
     triggerConfig: { eventTopic: 'user.business.started' },
     targetRoles: [...CREATOR_ROLES],
+    handler: 'runBusinessSetupCoach',
   },
   {
     id: 'AP-1505', name: 'Income Growth Tips', domain: 'business-opportunity',
-    status: 'PLANNED', priority: 'P2', triggerType: 'cron',
+    status: 'IMPLEMENTED', priority: 'P2', triggerType: 'cron',
     triggerConfig: { cronExpression: '0 10 * * 1' },
     targetRoles: [...CREATOR_ROLES],
+    handler: 'runIncomeGrowthTips',
   },
 ];
 
@@ -1046,33 +1129,38 @@ const BUSINESS_OPPORTUNITY: AutomationDefinition[] = [
 const HEALTH_ACTION_INITIATIVE: AutomationDefinition[] = [
   {
     id: 'AP-1601', name: 'Lab Test Kit Ordering', domain: 'health-action-initiative',
-    status: 'PLANNED', priority: 'P1', triggerType: 'heartbeat',
+    status: 'IMPLEMENTED', priority: 'P1', triggerType: 'heartbeat',
     triggerConfig: { intervalMinutes: 1440 },
     targetRoles: [...CONSUMER_ROLES],
+    handler: 'runLabTestKitOrdering',
   },
   {
     id: 'AP-1602', name: 'Health Screening Scheduler', domain: 'health-action-initiative',
-    status: 'PLANNED', priority: 'P1', triggerType: 'cron',
+    status: 'IMPLEMENTED', priority: 'P1', triggerType: 'cron',
     triggerConfig: { cronExpression: '0 8 1 * *' },
     targetRoles: [...CONSUMER_ROLES],
+    handler: 'runHealthScreeningScheduler',
   },
   {
     id: 'AP-1603', name: 'Motivational Health Nudge', domain: 'health-action-initiative',
-    status: 'PLANNED', priority: 'P1', triggerType: 'cron',
+    status: 'IMPLEMENTED', priority: 'P1', triggerType: 'cron',
     triggerConfig: { cronExpression: '0 8 * * *' },
     targetRoles: [...CONSUMER_ROLES],
+    handler: 'runMotivationalHealthNudge',
   },
   {
     id: 'AP-1604', name: 'Exercise Initiation', domain: 'health-action-initiative',
-    status: 'PLANNED', priority: 'P2', triggerType: 'heartbeat',
+    status: 'IMPLEMENTED', priority: 'P2', triggerType: 'heartbeat',
     triggerConfig: { intervalMinutes: 1440 },
     targetRoles: [...CONSUMER_ROLES],
+    handler: 'runExerciseInitiation',
   },
   {
     id: 'AP-1605', name: 'Supplement Reorder Reminder', domain: 'health-action-initiative',
-    status: 'PLANNED', priority: 'P2', triggerType: 'heartbeat',
+    status: 'IMPLEMENTED', priority: 'P2', triggerType: 'heartbeat',
     triggerConfig: { intervalMinutes: 1440 },
     targetRoles: [...CONSUMER_ROLES],
+    handler: 'runSupplementReorderReminder',
   },
 ];
 
