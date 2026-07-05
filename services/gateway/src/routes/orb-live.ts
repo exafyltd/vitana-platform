@@ -322,6 +322,18 @@ import {
   pickShortGapGreetings,
   buildFirstTimeWelcomeLine,
 } from '../orb/instruction/greeting-pools';
+// Conversation-flow Step 1c: the single brain. Both the sync opening rungs and
+// the async safe-fast ladder delegate here — the transport only gathers context
+// (payloads/ledger, gated by the brain's own shouldAttempt* / newdayHasContent
+// guards so the I/O short-circuit can't diverge from the pure rung), then renders.
+import {
+  computeGreetingDecision,
+  shouldAttemptNewdayOverview,
+  shouldAttemptResumeOverview,
+  newdayHasContent,
+  type GreetingDecisionContext,
+} from '../services/conversation/compute-greeting-decision';
+import { EMPTY_GREETING_LEDGER } from '../services/conversation/greeting-facts-ledger';
 
 const router = Router();
 
@@ -7693,559 +7705,226 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
             // if they never finished guided onboarding.
             const _hasPriorSession = (session as any).greetingHasPriorSession === true;
 
-            // NEW-DAY OVERVIEW (rich summary owns turn 1). On a genuine new-day
-            // return we speak the FULL multi-clause morning overview (what passed
-            // since last session, today's next event, Index direction, Life
-            // Compass goal) — the same renderer the heavy new-day-return provider
-            // uses — INSTEAD of the short one-line proactive lead. Deliberate
-            // richness>latency choice: it adds the bounded aggregator fetch, but
-            // restores the summary the fast path had been preempting. Falls
-            // through to the existing ladder (proactive line → name → menu) when
-            // it is not a new day, the name/user is missing, or it can't build.
-            try {
-              const _temporalNd = describeTimeSince((session as any).lastSessionInfo);
-              const _firstNameNd = (session as any).greetingFirstName;
-              const _uidNd = session.identity?.user_id;
-              const _supaNd = getSupabase();
-              const _tzNd = session.clientContext?.timezone || 'UTC';
-              const _nowNd = new Date();
-              // DURABLE once-per-real-day gate. The old trigger keyed off the
-              // most-recent session-start telemetry (describeTimeSince), which is
-              // fragile: an active user opens many sessions a day and the app
-              // auto-creates sessions, so any earlier same-day session flipped the
-              // bucket to "same-day" and the rich briefing was skipped — it almost
-              // never fired in practice. We now key off
-              // user_journey.last_full_briefing_date (user-tz YYYY-MM-DD): the
-              // briefing fires on the FIRST session of a day where that date is
-              // stale, then we stamp today so same-day reopens fall through to the
-              // short proactive opener. Reliable "full once/day, short after".
-              const _todayNd = (() => {
-                try {
-                  return new Intl.DateTimeFormat('en-CA', {
-                    timeZone: _tzNd, year: 'numeric', month: '2-digit', day: '2-digit',
-                  }).format(_nowNd);
-                } catch {
-                  return _nowNd.toISOString().slice(0, 10);
-                }
-              })();
-              const _lastBriefDateNd = (session as any).lastFullBriefingDate as string | null | undefined;
-              const _briefingDueNd = !(typeof _lastBriefDateNd === 'string' && _lastBriefDateNd >= _todayNd);
-              // Never brief a brand-new / not-yet-onboarded user — the first-time
-              // welcome rung below owns them (never "welcome back" to a newcomer).
-              const _isFirstTimeNd =
-                (session as any).greetingNeedsOnboarding === true ||
-                (session as any).greetingIsFirstTime === true;
-              // The overview renderer only localizes DE/EN; for any other session
-              // language it would emit English clauses. Restrict the overview to
-              // de/en and let the existing localized name-greeting ladder handle
-              // es/fr/sr/etc. (Codex P2).
-              const _langKeyNd = (lang || 'en').slice(0, 2).toLowerCase();
-              const _langOkNd = _langKeyNd === 'de' || _langKeyNd === 'en';
-              if (_langOkNd && _briefingDueNd && !_isFirstTimeNd && typeof _firstNameNd === 'string' && _firstNameNd.trim().length > 0 && _uidNd && _supaNd) {
-                // VTID-03172 / complete-briefing: use the RICH unified overview
-                // payload (the SAME data the My Journey screen renders, plus
-                // voice-only time-sensitive signals) instead of the narrow
-                // calendar+goal aggregator. This restores the Vitana Index
-                // (with pillar + trend interpretation), new community matches,
-                // unread messages, reminders due today, the autopilot
-                // today-checkpoint, and the diary streak to the FIRST spoken
-                // turn of the day — the half that the narrow aggregator dropped.
-                // We hand the model the composed structural block (it already
-                // carries the wake-brief override marker + the coverage
-                // checklist) as the first-turn directive, rather than a single
-                // pre-rendered verbatim line, so it speaks the full two-paragraph
-                // journey briefing. Wording stays 100% model-composed from the
-                // payload — nothing here is hardcoded.
-                const { gatherOverviewPayload } = await import('../services/assistant-continuation/providers/new-day-overview-payload');
-                const { buildNewDayOverviewBlock } = await import('../services/assistant-continuation/providers/new-day-overview-prompt');
-                const { todayInTimezone, localHourInTimezone } = await import('../services/assistant-continuation/providers/new-day-return');
-                // Spoken-facts continuity (greeting-facts ledger): what did we
-                // ALREADY tell this user? Read in parallel with the payload
-                // gather; bounded + fail-open so it can never delay or silence
-                // the greeting.
-                const {
-                  readGreetingLedger,
-                  computeFactDeltas,
-                  extractSpokenFactsFromPayload,
-                  recordGreetingFacts,
-                  EMPTY_GREETING_LEDGER,
-                } = await import('../services/conversation/greeting-facts-ledger');
-                const _tenantNd = session.identity?.tenant_id ?? null;
-                const _ledgerPromiseNd = _tenantNd
-                  ? readGreetingLedger({ supabase: _supaNd, tenantId: _tenantNd, userId: _uidNd })
-                  : Promise.resolve({ ...EMPTY_GREETING_LEDGER });
-                // Last session's LOCAL date (YYYY-MM-DD) bounds the "since last
-                // session" calendar lookback. Derive it from the pre-fetched
-                // last-session timestamp; null falls back to a 24h window inside
-                // the aggregator.
-                const _lastSessIso = (session as any).lastSessionInfo?.time ?? null;
-                const _lastSessDateTz =
-                  typeof _lastSessIso === 'string' && _lastSessIso.length > 0
-                    ? todayInTimezone(new Date(_lastSessIso), _tzNd)
-                    : null;
-                const _overview = await Promise.race([
-                  gatherOverviewPayload({
-                    supabase: _supaNd,
-                    userId: _uidNd,
-                    now: _nowNd,
-                    timezone: _tzNd,
-                    lang: greetLang,
-                    lastSessionDateUserTz: _lastSessDateTz,
-                    // Precise cutoff for "events since we last spoke" — avoids
-                    // briefing the user about events that happened BEFORE their
-                    // prior same-day session (Codex P2).
-                    lastSessionAtIso: _lastSessIso,
-                  }),
-                  new Promise<null>((r) => setTimeout(() => r(null), Number(process.env.ORB_NEWDAY_OVERVIEW_WAIT_MS || 3000))),
-                ]).catch(() => null);
-                // Take the rich overview when it has ANY substantive content. For
-                // a genuine onboarded new-day return `journey` is virtually always
-                // present (day_in_journey is monotonic), so this fires; the guard
-                // exists only so a fully-empty payload (no journey, every signal
-                // un-set, nothing scheduled, no inbox) falls through to the
-                // proactive ladder rather than speaking an empty briefing.
-                const _hasContent =
-                  !!_overview &&
-                  (!!_overview.journey ||
-                    _overview.vitana_index.state === 'ok' ||
-                    _overview.life_compass.state === 'set' ||
-                    _overview.calendar_today.count > 0 ||
-                    _overview.calendar_passed.count > 0 ||
-                    (_overview.autopilot.state === 'has_actions' && !!_overview.autopilot.today_checkpoint) ||
-                    _overview.matches_unread > 0 ||
-                    _overview.messages_unread > 0 ||
-                    _overview.reminders_today.count > 0);
-                if (_overview && _hasContent) {
-                  const _ledgerNd = await Promise.race([
-                    _ledgerPromiseNd,
-                    new Promise<typeof EMPTY_GREETING_LEDGER>((r) =>
-                      setTimeout(() => r({ ...EMPTY_GREETING_LEDGER }), 800),
-                    ),
-                  ]).catch(() => ({ ...EMPTY_GREETING_LEDGER }));
-                  const _spokenFactsNd = extractSpokenFactsFromPayload(_overview);
-                  const _deltasNd = computeFactDeltas(_spokenFactsNd, _ledgerNd);
-                  const _block = buildNewDayOverviewBlock({
-                    payload: _overview,
-                    lang: greetLang,
-                    firstName: _firstNameNd.trim(),
-                    localHour: localHourInTimezone(_nowNd, _tzNd),
-                    timezone: _tzNd,
-                    factDeltas: _deltasNd,
-                    previousUtterance: _ledgerNd.last_utterance,
-                    sessionsToday: _ledgerNd.sessions_today,
-                  });
-                  if (_block && _block.trim().length > 0) {
-                    ws.send(
-                      JSON.stringify({
-                        client_content: { turns: [{ role: 'user', parts: [{ text: _block }] }], turn_complete: true },
-                      }),
-                    );
-                    // Stamp the durable once-per-day flag so same-day reopens get
-                    // the short proactive opener instead of re-briefing. Update by
-                    // user_id (returning users have a journey row); fire-and-forget,
-                    // and mirror onto the session so a second open within this same
-                    // process also sees it as delivered.
-                    (session as any).lastFullBriefingDate = _todayNd;
-                    void _supaNd
-                      .from('user_journey')
-                      .update({ last_full_briefing_date: _todayNd })
-                      .eq('user_id', _uidNd)
-                      .then(() => {}, () => {});
-                    // Ledger write: these facts are now "told" — the next
-                    // opener speaks deltas, not the same levels again.
-                    if (_tenantNd && Object.keys(_spokenFactsNd).length > 0) {
-                      void recordGreetingFacts({
-                        supabase: _supaNd,
-                        tenantId: _tenantNd,
-                        userId: _uidNd,
-                        facts: _spokenFactsNd,
-                      });
-                    }
-                    emitDiag(session, 'greeting_sent', {
-                      lang,
-                      prompt_len: _block.length,
-                      wake_opener: 'safe_fast_newday_overview',
-                      bucket: _temporalNd.bucket,
-                      briefing_date: _todayNd,
-                      overview_signals: {
-                        journey: !!_overview.journey,
-                        index: _overview.vitana_index.state,
-                        life_compass: _overview.life_compass.state,
-                        calendar_today: _overview.calendar_today.count,
-                        autopilot: _overview.autopilot.state,
-                        matches_unread: _overview.matches_unread,
-                        messages_unread: _overview.messages_unread,
-                        reminders_today: _overview.reminders_today.count,
-                        diary_last_7d: _overview.diary_last_7d,
-                      },
-                    });
-                    startResponseWatchdog(session, getGreetingResponseTimeoutMs(), 'greeting_timeout');
-                    console.log(
-                      `[GREETING-SAFE-FAST-NEWDAY-OVERVIEW] session ${session.sessionId} sent RICH new-day briefing (bucket=${_temporalNd.bucket}, lang=${lang}, matches=${_overview.matches_unread}, msgs=${_overview.messages_unread}, autopilot=${_overview.autopilot.state}, index=${_overview.vitana_index.state})`,
-                    );
-                    return;
-                  }
-                }
+            // ── Conversation-flow Step 1c (VTID-03366): the async safe-fast
+            // ladder (rungs 1–6: safe_fast_newday_overview / first_time_welcome /
+            // conv_resume / proactive / newday / pending_context) now DELEGATES to
+            // the single brain (services/conversation/compute-greeting-decision.ts).
+            // This adapter GATHERS the bounded async context (overview payloads +
+            // the spoken-facts ledger) LAZILY — gated by the brain's own
+            // shouldAttemptNewdayOverview / shouldAttemptResumeOverview /
+            // newdayHasContent guards so a payload a rung won't use is never fetched
+            // (the rich-briefing hot path never pays for the resume fetch, and the
+            // no-overview fast paths never pay for the ledger read) — then
+            // computeGreetingDecision DECIDES and this adapter RENDERS (ws.send +
+            // emitDiag + durable briefing/NBA/ledger writes + watchdog). greetingSent
+            // + markOpeningDelivered were already claimed synchronously above, so the
+            // decision's markGreetingSent is intentionally a no-op here. The inline
+            // 6-branch ladder that used to live here is gone — one brain, one mouth.
+            const _tzSF = session.clientContext?.timezone || 'UTC';
+            const _nowSF = new Date();
+            const _temporalSF = describeTimeSince((session as any).lastSessionInfo);
+            const _uidSF = session.identity?.user_id ?? null;
+            const _tenantSF = session.identity?.tenant_id ?? null;
+            const _supaSF = getSupabase();
+            const _todaySF = (() => {
+              try {
+                return new Intl.DateTimeFormat('en-CA', {
+                  timeZone: _tzSF, year: 'numeric', month: '2-digit', day: '2-digit',
+                }).format(_nowSF);
+              } catch {
+                return _nowSF.toISOString().slice(0, 10);
               }
-            } catch (_ndErr) {
-              console.warn(
-                `[GREETING-SAFE-FAST-NEWDAY-OVERVIEW] non-fatal, falling through: ${_ndErr instanceof Error ? _ndErr.message : String(_ndErr)}`,
-              );
-            }
-
-            // FIRST-TIME WELCOME (BUGFIX). A brand-new user must NEVER hear the
-            // returning-user "welcome back" menu at the bottom of this ladder.
-            // When the user is a first-timer (authoritative is_first_session, or —
-            // if that's unknown — no last-session on record), speak a proper
-            // onboarding welcome: introduce Vitana + the guided journey + what to
-            // expect, then offer to start session one. The fuller journey overview
-            // flows on the heavy first-time-welcome / journey-guide path next turn.
-            // This runs BEFORE the proactive line so a first-timer gets the WELCOME,
-            // not the generic "set your goal" lead.
-            {
-              const _ift = (session as any).greetingIsFirstTime;
-              const _needsOnboarding = (session as any).greetingNeedsOnboarding;
-              // Require a POSITIVE first-time signal (Codex P2). The pre-fetch
-              // copies these onto the session only when greetingFactsReady
-              // resolves; if the bounded wait times out (or a read failed) the
-              // signal is UNKNOWN — and we must NOT then treat a returning user as
-              // first-time. So welcome ONLY a known first-timer: never-onboarded
-              // (0 completed journey topics and not graduated/opted-out — survives
-              // the eager is_first_session clear) OR is_first_session still true.
-              // Unknown → fall through to the normal proactive/name/menu ladder.
-              // BOOTSTRAP-ORB-GREETING-FIRSTTIME: the full one-time welcome fires
-              // ONLY when there is no prior session on record. A returning user who
-              // simply never completed guided onboarding (_needsOnboarding===true)
-              // must NOT be re-introduced from scratch every session — they fall
-              // through to the returning-user resume register below. This is what
-              // made Vitana feel robotic: greeting every visit as a first-timer.
-              const _isFirstTime = shouldFireFirstTimeWelcome({
-                hasPriorSession: _hasPriorSession,
-                needsOnboarding: _needsOnboarding === true,
-                isFirstSession: _ift === true,
-              });
-              if (_isFirstTime) {
-                const _welcome = buildFirstTimeWelcomeLine(greetLang, (session as any).greetingFirstName ?? null);
-                const _safeWel = _welcome.replace(/"/g, '\\"');
-                const _welPrompt = `Say exactly: "${_safeWel}" — speak it verbatim as audio, as ONE warm greeting. Do NOT add, paraphrase, or split it.`;
-                ws.send(
-                  JSON.stringify({
-                    client_content: { turns: [{ role: 'user', parts: [{ text: _welPrompt }] }], turn_complete: true },
-                  }),
-                );
-                emitDiag(session, 'greeting_sent', {
-                  lang: greetLang,
-                  prompt_len: _welPrompt.length,
-                  wake_opener: 'safe_fast_first_time_welcome',
-                  is_first_session: _ift === true,
-                });
-                startResponseWatchdog(session, getGreetingResponseTimeoutMs(), 'greeting_timeout');
-                console.log(
-                  `[GREETING-SAFE-FAST-FIRST-TIME] session ${session.sessionId} sent first-time welcome (is_first_session=${String(_ift)}, needs_onboarding=${String(_needsOnboarding)}, has_prior=${String(_hasPriorSession)}, lang=${greetLang})`,
-                );
-                return;
-              }
-            }
-
-            // CONVERSATION-FLOW RESUME REGISTER. Reaching here means: not a
-            // first-timer, and the full morning briefing did NOT fire this turn
-            // (already delivered today, or it could not build) — i.e. a SAME-DAY
-            // reopen. The unified decision picks a recency-appropriate register
-            // (continue / quick_resume / same_day) so a return after a minute is
-            // NEVER greeted with "good morning", and ALWAYS closes on a concrete
-            // guided next step (the Next-Best-Action engine). This replaces the
-            // old "proactive line, suppressed on a temporal new-day check" rung;
-            // the proactive/name rungs below remain only as a fallback when the
-            // payload could not be gathered in budget. See
-            // docs/CONVERSATION_FLOW_HANDOFF.md.
-            {
-              // BOOTSTRAP-ORB-GREETING-FIRSTTIME: mirror the prior-session guard so a
-              // returning never-onboarded user reaches the resume register (soft
-              // "welcome back / let's continue") instead of being treated as a
-              // first-timer and skipping it.
-              const _isFirstTimeR = shouldFireFirstTimeWelcome({
-                hasPriorSession: _hasPriorSession,
-                needsOnboarding: (session as any).greetingNeedsOnboarding === true,
-                isFirstSession: (session as any).greetingIsFirstTime === true,
-              });
-              const _uidR = session.identity?.user_id;
-              const _supaR = getSupabase();
-              const _langKeyR = (greetLang || 'en').slice(0, 2).toLowerCase();
-              const _langOkR = _langKeyR === 'de' || _langKeyR === 'en';
-              if (_langOkR && !_isFirstTimeR && _uidR && _supaR) {
-                try {
-                  const _lastIxR = describeTimeSince((session as any).lastSessionInfo);
-                  const { decideOpeningRegister, buildResumeDirective } = await import('../services/conversation/decide-opening');
-                  const _registerR = decideOpeningRegister({
-                    bucket: _lastIxR.bucket,
-                    isFirstTime: false,
-                    briefingDue: false,
-                  });
-                  if (_registerR === 'continue' || _registerR === 'quick_resume' || _registerR === 'same_day') {
-                    const _tzR = session.clientContext?.timezone || 'UTC';
-                    const _nowR = new Date();
-                    const { gatherOverviewPayload } = await import('../services/assistant-continuation/providers/new-day-overview-payload');
-                    const { todayInTimezone } = await import('../services/assistant-continuation/providers/new-day-return');
-                    // Spoken-facts continuity — same ledger the daily briefing
-                    // uses, so a reopen never re-announces the counts the
-                    // briefing already spoke this morning.
-                    const {
-                      readGreetingLedger,
-                      computeFactDeltas,
-                      extractSpokenFactsFromPayload,
-                      recordGreetingFacts,
-                      EMPTY_GREETING_LEDGER,
-                    } = await import('../services/conversation/greeting-facts-ledger');
-                    const _tenantR = session.identity?.tenant_id ?? null;
-                    const _ledgerPromiseR = _tenantR
-                      ? readGreetingLedger({ supabase: _supaR, tenantId: _tenantR, userId: _uidR })
-                      : Promise.resolve({ ...EMPTY_GREETING_LEDGER });
-                    const _lastSessIsoR = (session as any).lastSessionInfo?.time ?? null;
-                    const _lastSessDateR =
-                      typeof _lastSessIsoR === 'string' && _lastSessIsoR.length > 0
-                        ? todayInTimezone(new Date(_lastSessIsoR), _tzR)
-                        : null;
-                    // Bounded — a reopen must stay fast; on timeout we still
-                    // compose a minimal continuity line, else fall through.
-                    const _payloadR = await Promise.race([
-                      gatherOverviewPayload({
-                        supabase: _supaR,
-                        userId: _uidR,
-                        now: _nowR,
-                        timezone: _tzR,
-                        lang: greetLang,
-                        lastSessionDateUserTz: _lastSessDateR,
-                        lastSessionAtIso: _lastSessIsoR,
-                      }),
-                      new Promise<null>((r) => setTimeout(() => r(null), Number(process.env.ORB_RESUME_OVERVIEW_WAIT_MS || 1800))),
-                    ]).catch(() => null);
-                    const _seedR = Math.floor((_nowR.getTime() - Date.UTC(_nowR.getUTCFullYear(), 0, 0)) / 86_400_000);
-                    const _recentNbaKeysR = Array.isArray((session as any).recentNbaKeys)
-                      ? ((session as any).recentNbaKeys as string[])
-                      : [];
-                    const _ledgerR = await Promise.race([
-                      _ledgerPromiseR,
-                      new Promise<typeof EMPTY_GREETING_LEDGER>((r) =>
-                        setTimeout(() => r({ ...EMPTY_GREETING_LEDGER }), 800),
-                      ),
-                    ]).catch(() => ({ ...EMPTY_GREETING_LEDGER }));
-                    const _spokenFactsR = extractSpokenFactsFromPayload(_payloadR);
-                    const _deltasR = computeFactDeltas(_spokenFactsR, _ledgerR);
-                    const { text: _dirR, nba: _nbaR } = buildResumeDirective({
-                      register: _registerR,
-                      payload: _payloadR,
-                      firstName: (session as any).greetingFirstName ?? null,
-                      lang: greetLang,
-                      timeAgo: _lastIxR.timeAgo,
-                      rotationSeed: _seedR,
-                      recentNbaKeys: _recentNbaKeysR as any,
-                      // Screen awareness: deepen toward completing the action on
-                      // the screen the user is already on, never redirect there.
-                      currentScreen: (session as any).current_route ?? null,
-                      factDeltas: _deltasR,
-                      previousUtterance: _ledgerR.last_utterance,
-                      sessionsToday: _ledgerR.sessions_today,
-                    });
-                    // CONTINUE/quick_resume can speak with no payload (pure
-                    // thread continuation); same_day needs at least the NBA or a
-                    // recall — but a screen-completion NBA (derived from the
-                    // current screen, no payload needed) also counts.
-                    const _worthSpeaking =
-                      _registerR !== 'same_day' || !!_payloadR || !!_nbaR;
-                    if (_dirR && _dirR.trim().length > 0 && _worthSpeaking) {
-                      ws.send(
-                        JSON.stringify({
-                          client_content: { turns: [{ role: 'user', parts: [{ text: _dirR }] }], turn_complete: true },
-                        }),
-                      );
-                      // Record the suggested action in the durable per-user
-                      // history so the NEXT open advances past it instead of
-                      // repeating. Keep the last 8; fire-and-forget; mirror onto
-                      // the session for same-process re-opens.
-                      if (_nbaR?.key) {
-                        const _updatedNbas = [..._recentNbaKeysR, _nbaR.key].slice(-8);
-                        (session as any).recentNbaKeys = _updatedNbas;
-                        void _supaR
-                          .from('user_journey')
-                          .update({ recent_nbas: _updatedNbas })
-                          .eq('user_id', _uidR)
-                          .then(() => {}, () => {});
-                      }
-                      // Ledger write — the reopen surfaced these facts (as
-                      // deltas or soft references); refresh their spoken_at so
-                      // the next open still treats stable levels as known.
-                      if (_tenantR && Object.keys(_spokenFactsR).length > 0) {
-                        void recordGreetingFacts({
-                          supabase: _supaR,
-                          tenantId: _tenantR,
-                          userId: _uidR,
-                          facts: _spokenFactsR,
-                        });
-                      }
-                      emitDiag(session, 'greeting_sent', {
-                        lang,
-                        wake_opener: 'conv_resume',
-                        register: _registerR,
-                        bucket: _lastIxR.bucket,
-                        nba: _nbaR?.key ?? null,
-                        nba_domain: _nbaR?.domain ?? null,
-                        current_route: (session as any).current_route ?? null,
-                      });
-                      startResponseWatchdog(session, getGreetingResponseTimeoutMs(), 'greeting_timeout');
-                      console.log(
-                        `[GREETING-CONV-RESUME] session ${session.sessionId} register=${_registerR} bucket=${_lastIxR.bucket} nba=${_nbaR?.key ?? 'none'} lang=${lang}`,
-                      );
-                      return;
-                    }
-                  }
-                } catch (_resumeErr) {
-                  console.warn(
-                    `[GREETING-CONV-RESUME] non-fatal, falling through: ${_resumeErr instanceof Error ? _resumeErr.message : String(_resumeErr)}`,
-                  );
-                }
-              }
-            }
-
-            // DEV-COMHU-0513 (proactive fast greeting): when the fast pre-fetch
-            // produced a SHORT proactive opener (name + concrete next step /
-            // weakness lead), speak THAT instead of the generic SHORT_GAP phrase
-            // or the bare "Good <tod>, <Name>". It is kept to ~2 short sentences
-            // so Gemini Live reliably emits audio. This is the top of the fast-
-            // greeting ladder: proactive line → name greeting → generic opener.
-            // The rich morning briefing (overview rung above) owns turn 1 on the
-            // FIRST session of a real day and RETURNS when it fires. Reaching this
-            // rung therefore means the briefing did NOT fire this turn — either it
-            // was already delivered today (durable last_full_briefing_date flag),
-            // or it could not build. In BOTH cases the proactive continuity opener
-            // ("letztes Mal ging es um X — machen wir weiter") is exactly the
-            // "short after" we want.
-            //
-            // It used to be suppressed here on a temporal "is it a new day?" check
-            // (describeTimeSince bucket today/yesterday/week/long). That made sense
-            // when the briefing was ALSO gated on that temporal check, but the
-            // briefing is now flag-gated — so the temporal suppression left same-day
-            // reopens with only a bare "Good <tod>, <Name>" (the safe_fast_newday
-            // rung) instead of the continuity line. Use the proactive opener
-            // whenever the prefetch produced one; the overview rung already owns
-            // the genuine briefing-due turn and returned before reaching here.
-            const proactiveLine: unknown = (session as any).greetingProactiveLine;
-            if (typeof proactiveLine === 'string' && proactiveLine.trim().length > 0) {
-              const safeProactive = proactiveLine.trim().replace(/"/g, '\\"');
-              const proactivePrompt =
-                `Say exactly: "${safeProactive}" — speak it verbatim as audio, as ONE greeting. Do NOT add, paraphrase, or split it.`;
-              ws.send(
-                JSON.stringify({
-                  client_content: { turns: [{ role: 'user', parts: [{ text: proactivePrompt }] }], turn_complete: true },
-                }),
-              );
-              emitDiag(session, 'greeting_sent', {
-                lang,
-                prompt_len: proactivePrompt.length,
-                wake_opener: 'safe_fast_proactive',
-              });
-              startResponseWatchdog(session, getGreetingResponseTimeoutMs(), 'greeting_timeout');
-              console.log(
-                `[GREETING-SAFE-FAST-PROACTIVE] session ${session.sessionId} sent proactive fast opener (lang=${lang})`,
-              );
-              return;
-            }
-
-            const temporal = describeTimeSince((session as any).lastSessionInfo);
-            const firstName = (session as any).greetingFirstName;
-            const isNewDay =
-              temporal.bucket === 'today' ||
-              temporal.bucket === 'yesterday' ||
-              temporal.bucket === 'week' ||
-              temporal.bucket === 'long';
-
-            if (isNewDay && typeof firstName === 'string' && firstName.trim().length > 0) {
-              const name = firstName.trim();
-              // Map time-of-day → greeting; 'night' → evening (avoid "good night"
-              // farewell), default 'day'.
-              const tod =
-                session.clientContext?.timeOfDay === 'night'
-                  ? 'evening'
-                  : session.clientContext?.timeOfDay || 'day';
-              // Localized "Good <tod>, <Name>." — en + de are real; other langs
-              // get an easy localized good-<tod> where known, else the en line.
-              const greetingByLang: Record<string, string> = {
-                en:
-                  tod === 'morning'
-                    ? `Good morning, ${name}.`
-                    : tod === 'afternoon'
-                      ? `Good afternoon, ${name}.`
-                      : tod === 'evening'
-                        ? `Good evening, ${name}.`
-                        : `Hello, ${name}.`,
-                de:
-                  tod === 'morning'
-                    ? `Guten Morgen, ${name}.`
-                    : tod === 'evening'
-                      ? `Guten Abend, ${name}.`
-                      : `Guten Tag, ${name}.`,
-                es:
-                  tod === 'morning'
-                    ? `Buenos días, ${name}.`
-                    : tod === 'evening'
-                      ? `Buenas noches, ${name}.`
-                      : `Buenas tardes, ${name}.`,
-                fr:
-                  tod === 'evening'
-                    ? `Bonsoir, ${name}.`
-                    : `Bonjour, ${name}.`,
-                sr:
-                  tod === 'morning'
-                    ? `Добро јутро, ${name}.`
-                    : tod === 'evening'
-                      ? `Добро вече, ${name}.`
-                      : `Добар дан, ${name}.`,
-              };
-              const langKey = (greetLang || 'en').slice(0, 2).toLowerCase();
-              const spoken = greetingByLang[langKey] || greetingByLang.en;
-              const safe = spoken.replace(/"/g, '\\"');
-              // Mirror the existing `Say exactly: "..."` shape used elsewhere in
-              // this function — keep it SHORT so Gemini reliably emits audio.
-              const newDayPrompt =
-                `Say exactly: "${safe}" — ONE short utterance only. Do NOT add anything before or after. Do NOT paraphrase. Speak it as audio.`;
-              ws.send(
-                JSON.stringify({
-                  client_content: { turns: [{ role: 'user', parts: [{ text: newDayPrompt }] }], turn_complete: true },
-                }),
-              );
-              emitDiag(session, 'greeting_sent', {
-                lang,
-                prompt_len: newDayPrompt.length,
-                wake_opener: 'safe_fast_newday',
-                bucket: temporal.bucket,
-              });
-              startResponseWatchdog(session, getGreetingResponseTimeoutMs(), 'greeting_timeout');
-              console.log(
-                `[GREETING-SAFE-FAST-NEWDAY] session ${session.sessionId} sent personalized new-day opener (bucket=${temporal.bucket}, lang=${lang})`,
-              );
-              return;
-            }
-
-            // ELSE — fall through to the EXISTING generic opener (unchanged
-            // behavior). Same-day reconnects and no-name sessions take this path.
-            const _menu = pickShortGapGreetings(greetLang, 6).map((p) => `"${p}"`).join(', ');
-            const _safePrompt =
-              `Open with EXACTLY ONE short phrase, picked from this menu and used VERBATIM ` +
-              `(already in the user's language): ${_menu}. Do NOT say "Hello" or the user's name. ` +
-              `Do NOT introduce yourself. NEVER use two-part sentences. Speak it as audio.`;
-            ws.send(
-              JSON.stringify({
-                client_content: { turns: [{ role: 'user', parts: [{ text: _safePrompt }] }], turn_complete: true },
-              }),
+            })();
+            const _recentNbaKeysSF = Array.isArray((session as any).recentNbaKeys)
+              ? ((session as any).recentNbaKeys as string[])
+              : [];
+            const _seedSF = Math.floor(
+              (_nowSF.getTime() - Date.UTC(_nowSF.getUTCFullYear(), 0, 0)) / 86_400_000,
             );
-            emitDiag(session, 'greeting_sent', {
+
+            // Ledger + overview providers (dynamic imports mirror the pre-strangle
+            // rungs so the module graph / bundle split is unchanged).
+            const {
+              readGreetingLedger,
+              extractSpokenFactsFromPayload,
+              recordGreetingFacts,
+              EMPTY_GREETING_LEDGER: _EMPTY_LEDGER_SF,
+            } = await import('../services/conversation/greeting-facts-ledger');
+            const { gatherOverviewPayload } = await import(
+              '../services/assistant-continuation/providers/new-day-overview-payload'
+            );
+            const { todayInTimezone, localHourInTimezone } = await import(
+              '../services/assistant-continuation/providers/new-day-return'
+            );
+
+            // Base context (no payloads yet) — enough for the brain's gather guards.
+            const _baseCtxSF: GreetingDecisionContext = {
+              contextReadyResolved: false,
+              isAnonymous: !!session.isAnonymous,
+              safeFastGreetingLive: true,
+              reconnectCount: (session as any)._reconnectCount || 0,
               lang,
-              prompt_len: _safePrompt.length,
-              wake_opener: 'safe_fast_pending_context',
+              greetLang,
+              bucket: _temporalSF.bucket,
+              timeAgo: _temporalSF.timeAgo,
+              wasFailure: _temporalSF.wasFailure,
+              firstName: (session as any).greetingFirstName ?? null,
+              hasUserId: !!_uidSF,
+              hasSupabase: !!_supaSF,
+              hasPriorSession: _hasPriorSession,
+              greetingNeedsOnboarding: (session as any).greetingNeedsOnboarding === true,
+              greetingIsFirstTime: (session as any).greetingIsFirstTime === true,
+              lastFullBriefingDate: (session as any).lastFullBriefingDate ?? null,
+              todayTz: _todaySF,
+              localHour: localHourInTimezone(_nowSF, _tzSF),
+              timezone: _tzSF,
+              timeOfDay: session.clientContext?.timeOfDay ?? null,
+              proactiveLine: (session as any).greetingProactiveLine ?? null,
+              newdayOverview: null,
+              resumeOverview: null,
+              greetingLedger: _EMPTY_LEDGER_SF,
+              rotationSeed: _seedSF,
+              recentNbaKeys: _recentNbaKeysSF,
+              currentRoute: (session as any).current_route ?? null,
+              currentScreenTitle: null,
+              menuPhrases: pickShortGapGreetings(greetLang, 6),
+              openDecision: { mode: 'speak', source: 'safe_fast', line: null },
+              guidedTopicNarrationContent: (session as any).guidedTopicNarrationContent ?? null,
+              wakeBriefDecisionId: null,
+              silenceOnSkipEnabled: false,
+              wakeBriefHasSelectedContinuation: false,
+              voiceWakeBriefReason: null,
+            };
+
+            // Rung-1 gather: the rich new-day overview, only when its guard passes.
+            let _newdayOverviewSF: Awaited<ReturnType<typeof gatherOverviewPayload>> | null = null;
+            if (shouldAttemptNewdayOverview(_baseCtxSF) && _supaSF && _uidSF) {
+              const _lastSessIsoSF = (session as any).lastSessionInfo?.time ?? null;
+              const _lastSessDateSF =
+                typeof _lastSessIsoSF === 'string' && _lastSessIsoSF.length > 0
+                  ? todayInTimezone(new Date(_lastSessIsoSF), _tzSF)
+                  : null;
+              _newdayOverviewSF = await Promise.race([
+                gatherOverviewPayload({
+                  supabase: _supaSF,
+                  userId: _uidSF,
+                  now: _nowSF,
+                  timezone: _tzSF,
+                  lang: greetLang,
+                  lastSessionDateUserTz: _lastSessDateSF,
+                  lastSessionAtIso: _lastSessIsoSF,
+                }),
+                new Promise<null>((r) => setTimeout(() => r(null), Number(process.env.ORB_NEWDAY_OVERVIEW_WAIT_MS || 3000))),
+              ]).catch(() => null);
+            }
+            // Will rung 1 fire? If so, skip the resume gather (hot-path latency) —
+            // single-sourced with the brain via newdayHasContent.
+            const _newdayWillFireSF = !!_newdayOverviewSF && newdayHasContent(_newdayOverviewSF);
+
+            // Rung-3 gather: the resume overview, only when rung 1 won't fire and the
+            // resume guard/register says so (the guard already excludes first-timers).
+            const _resumeCheckSF = _newdayWillFireSF
+              ? { attempt: false as boolean }
+              : shouldAttemptResumeOverview(_baseCtxSF);
+            let _resumeOverviewSF: Awaited<ReturnType<typeof gatherOverviewPayload>> | null = null;
+            if (_resumeCheckSF.attempt && _supaSF && _uidSF) {
+              const _lastSessIsoR = (session as any).lastSessionInfo?.time ?? null;
+              const _lastSessDateR =
+                typeof _lastSessIsoR === 'string' && _lastSessIsoR.length > 0
+                  ? todayInTimezone(new Date(_lastSessIsoR), _tzSF)
+                  : null;
+              _resumeOverviewSF = await Promise.race([
+                gatherOverviewPayload({
+                  supabase: _supaSF,
+                  userId: _uidSF,
+                  now: _nowSF,
+                  timezone: _tzSF,
+                  lang: greetLang,
+                  lastSessionDateUserTz: _lastSessDateR,
+                  lastSessionAtIso: _lastSessIsoR,
+                }),
+                new Promise<null>((r) => setTimeout(() => r(null), Number(process.env.ORB_RESUME_OVERVIEW_WAIT_MS || 1800))),
+              ]).catch(() => null);
+            }
+
+            // Read the spoken-facts ledger ONCE, only on a payload-bearing path
+            // (rung 1 will fire, or rung 3 was attempted) — the same paths on which
+            // the pre-strangle rungs read it. Bounded + fail-open to EMPTY.
+            const _ledgerSF =
+              _tenantSF && _uidSF && _supaSF && (_newdayWillFireSF || _resumeCheckSF.attempt)
+                ? await Promise.race([
+                    readGreetingLedger({ supabase: _supaSF, tenantId: _tenantSF, userId: _uidSF }),
+                    new Promise<typeof _EMPTY_LEDGER_SF>((r) => setTimeout(() => r({ ..._EMPTY_LEDGER_SF }), 800)),
+                  ]).catch(() => ({ ..._EMPTY_LEDGER_SF }))
+                : { ..._EMPTY_LEDGER_SF };
+
+            if (ws.readyState !== WebSocket.OPEN) return;
+
+            // DECIDE — one brain, with the gathered payloads + ledger.
+            const _sfDecision = computeGreetingDecision({
+              ..._baseCtxSF,
+              newdayOverview: _newdayOverviewSF,
+              resumeOverview: _resumeOverviewSF,
+              greetingLedger: _ledgerSF,
             });
-            startResponseWatchdog(session, getGreetingResponseTimeoutMs(), 'greeting_timeout');
+
+            // RENDER + perform effects (greetingSent / markOpeningDelivered were
+            // already claimed synchronously above; do NOT re-apply here).
+            if (_sfDecision.directive !== null) {
+              ws.send(
+                JSON.stringify({
+                  client_content: { turns: [{ role: 'user', parts: [{ text: _sfDecision.directive }] }], turn_complete: true },
+                }),
+              );
+            }
+            // Durable once-per-day briefing stamp (safe_fast_newday_overview) —
+            // mirror onto the session so a same-process reopen also sees it delivered.
+            if (_sfDecision.effects.stampBriefingDate && _uidSF && _supaSF) {
+              (session as any).lastFullBriefingDate = _sfDecision.effects.stampBriefingDate;
+              void _supaSF
+                .from('user_journey')
+                .update({ last_full_briefing_date: _sfDecision.effects.stampBriefingDate })
+                .eq('user_id', _uidSF)
+                .then(() => {}, () => {});
+            }
+            // Durable recent-NBA history (conv_resume) — keep the last 8.
+            if (_sfDecision.effects.recordNbaKey && _uidSF && _supaSF) {
+              const _updatedNbas = [..._recentNbaKeysSF, _sfDecision.effects.recordNbaKey].slice(-8);
+              (session as any).recentNbaKeys = _updatedNbas;
+              void _supaSF
+                .from('user_journey')
+                .update({ recent_nbas: _updatedNbas })
+                .eq('user_id', _uidSF)
+                .then(() => {}, () => {});
+            }
+            // Spoken-facts ledger write — the fired payload rung surfaced these
+            // facts; refresh spoken_at so the next open speaks deltas, not repeats.
+            if (
+              _tenantSF &&
+              _uidSF &&
+              _supaSF &&
+              (_sfDecision.wakeOpener === 'safe_fast_newday_overview' || _sfDecision.wakeOpener === 'conv_resume')
+            ) {
+              const _firedPayloadSF =
+                _sfDecision.wakeOpener === 'safe_fast_newday_overview' ? _newdayOverviewSF : _resumeOverviewSF;
+              const _spokenSF = extractSpokenFactsFromPayload(_firedPayloadSF);
+              if (Object.keys(_spokenSF).length > 0) {
+                void recordGreetingFacts({
+                  supabase: _supaSF,
+                  tenantId: _tenantSF,
+                  userId: _uidSF,
+                  facts: _spokenSF,
+                });
+              }
+            }
+            emitDiag(session, 'greeting_sent', _sfDecision.diag);
+            if (_sfDecision.effects.armWatchdog) {
+              startResponseWatchdog(session, getGreetingResponseTimeoutMs(), 'greeting_timeout');
+            }
             console.log(
-              `[GREETING-SAFE-FAST] session ${session.sessionId} sent short audio-safe opener (context still pending)`,
+              `[GREETING-SAFE-FAST] session ${session.sessionId} delegated opener wake_opener=${_sfDecision.wakeOpener} (bucket=${_temporalSF.bucket}, lang=${greetLang})`,
             );
+
           } catch (err: any) {
             console.warn(
               `[GREETING-SAFE-FAST-NEWDAY] session ${session.sessionId} bounded greeting send failed (non-fatal): ${err?.message || err}`,
@@ -8269,332 +7948,82 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
   console.log(formatOpeningDecisionLog(session.sessionId, _openDecision));
   (session as any)._openingDecision = _openDecision;
 
-  // Honor a reconnect-silence decision: this fresh-start path was reached on a
-  // reconnect (e.g. greeting stall re-send with _reconnectCount > 0). The model
-  // resumes the thread (native) or the recovery path owns continuity — either
-  // way we must NOT emit a fresh greeting. Cadence-class silence is handled by
-  // its own kill-switchable block below, so we only short-circuit the
-  // reconnect sources here.
-  if (
-    _openDecision.mode === 'silent' &&
-    !session.isAnonymous &&
-    (_openDecision.source === 'native_resume' || _openDecision.source === 'reconnect_no_handle')
-  ) {
-    session.greetingSent = true;
-    session.greetingTurnIndex = session.turn_count;
-    _sm.markOpeningDelivered(); // VTID-03273 Pillar C — opening delivered (state)
-    emitDiag(session, 'greeting_sent', {
-      lang,
-      prompt_len: 0,
-      wake_opener: 'silent_reconnect',
-      opening_source: _openDecision.source,
-    });
-    return true;
-  }
-
-  // VTID-03104 (Teacher opener v2): when the wake-brief decider produced
-  // a user_facing_line on /live/session/start, replace the legacy menu
-  // prompt with the SAME `Say exactly: "..."` shape the wasFailure bucket
-  // (~line 6413) already uses successfully in production. The line itself
-  // is embedded in the user-turn — Gemini does not need to scan the
-  // system_instruction to find the SPOKEN FIRST UTTERANCE block, and the
-  // prompt stays compact (~150-300 chars) so it does not delay the first
-  // audio chunk past the AudioContext suspend window.
-  //
-  // History:
-  //   VTID-03101 (PR #2258) — added wake-brief override block to system_instruction.
-  //                            Legacy menu user-turn still won (recency primacy).
-  //   VTID-03102 (PR #2262) — replaced legacy menu with a long meta-instruction
-  //                            trigger that pointed Gemini at the system prompt's
-  //                            override block. Reverted in PR #2265 because
-  //                            Gemini Live either shifted response modality to
-  //                            text-only or delayed first audio past iOS
-  //                            AudioContext auto-suspend — UI flipped to
-  //                            "speaking" but no audio reached the user.
-  //   VTID-03104 (this fix)  — minimal, field-tested prompt shape; line is
-  //                            quoted directly so the model has nothing to
-  //                            look up.
-  //
-  // The suppressed-by-cadence branch deliberately falls through to the
-  // legacy bucket dispatch below — that path has shipped for months and
-  // is known to keep audio flowing. B1 cadence is a separate slice.
-  const wakeBriefDecision: { selectedContinuation?: { userFacingLine?: string } | null; decisionId?: string } | null =
-    (session as any).wakeBriefDecision || null;
-  // VTID-03273 Pillar A (Codex review fix) — speak the line the CONTRACT chose,
-  // not the raw wake-brief line. When the no-verbatim-repeat guard downgraded
-  // the opener it returns `line: null`, so this branch is skipped and we fall
-  // through to the lead menu below (a varied opener) instead of replaying the
-  // identical line word-for-word.
-  const wakeOverrideLine = _openDecision.mode === 'speak' ? (_openDecision.line ?? '').trim() : '';
-  if (wakeOverrideLine && wakeOverrideLine.length > 0 && !session.isAnonymous) {
-    // Escape double-quotes so the line cannot terminate the wrapper early.
-    const safe = wakeOverrideLine.replace(/"/g, '\\"');
-    const wakeTriggerByLang: Record<string, string> = {
-      en: `Say exactly: "${safe}" — ONE short utterance only. Do NOT add a greeting before. Do NOT add a question after. Do NOT paraphrase.`,
-      de: `Sage genau Folgendes: "${safe}" — NUR EINE kurze Aussage. KEINE Begrüßung davor. KEINE Frage danach. NICHT umformulieren.`,
-      fr: `Dis exactement : "${safe}" — UNE seule courte phrase. PAS de salutation avant. PAS de question après. NE PAS reformuler.`,
-      es: `Di exactamente: "${safe}" — UNA sola frase corta. NO añadas saludo antes. NO añadas pregunta después. NO parafrasees.`,
-      ar: `قل بالضبط: "${safe}" — جملة قصيرة واحدة فقط. لا تحية قبلها. لا سؤال بعدها. لا تعيد صياغتها.`,
-      zh: `请准确地说："${safe}" —— 只说一句话。前面不要加问候。后面不要加问题。不要改述。`,
-      ru: `Скажи ровно: "${safe}" — ОДНА короткая фраза. БЕЗ приветствия перед. БЕЗ вопроса после. НЕ перефразируй.`,
-      sr: `Реци тачно: "${safe}" — ЈЕДНА кратка реченица. БЕЗ поздрава пре. БЕЗ питања после. НЕ преформулиши.`,
-    };
-    // VTID-03293 (#1 fix-2): guided-topic narration speaks the LESSON itself (the
-    // authored voice script, set as `safe` by the provider). Use a DIRECT-QUOTE
-    // trigger ("say this verbatim, in full"), NOT a long instruction. Native
-    // audio reliably produces audio for a direct quote but goes text-only /
-    // stalls on a long instructional prompt (the VTID-03102 regression → the
-    // stuck-connecting, no-speech bug). We drop the "ONE short utterance" clamp so
-    // the whole lesson is spoken, but keep it a quote so audio stays reliable.
-    const isGuidedTeach = !!(session as any).guidedTopicNarrationContent;
-    // VTID-03295: the KB content is German (v1). For a GERMAN session, speak it
-    // verbatim (proven-reliable audio). For ANY OTHER language, instruct the model
-    // to TRANSLATE the lesson into the session language and speak only that — a
-    // bounded transformation that keeps audio reliable (unlike a long "teach"
-    // instruction, which goes text-only). A per-language KB later removes the
-    // translation step. Fixes "English user gets a German lesson".
-    const _guidedIsDe = (lang || 'en').toLowerCase().startsWith('de');
-    const _GUIDED_LANG_NAMES: Record<string, string> = {
-      en: 'English', de: 'German', es: 'Spanish', fr: 'French',
-      sr: 'Serbian', ar: 'Arabic', zh: 'Chinese', ru: 'Russian', it: 'Italian', pt: 'Portuguese',
-    };
-    const _guidedLangName = _GUIDED_LANG_NAMES[(lang || 'en').slice(0, 2).toLowerCase()] || 'English';
-    const guidedTeachTrigger = _guidedIsDe
-      ? `Sage Folgendes WÖRTLICH und VOLLSTÄNDIG — Wort für Wort, dann höre auf und höre zu. NICHT zusammenfassen, kürzen, umformulieren oder eine Begrüßung/Frage hinzufügen: "${safe}"`
-      : `Say the following lesson to the user in fluent ${_guidedLangName}. The text may be in another language — translate it faithfully and completely into ${_guidedLangName} and speak ONLY that translation, then stop and listen. Do NOT summarize, shorten, add a greeting, or ask a question: "${safe}"`;
-    const wakePrompt = isGuidedTeach
-      ? guidedTeachTrigger
-      : (wakeTriggerByLang[lang] || wakeTriggerByLang.en);
-    const linePreview = safe.length > 160 ? safe.slice(0, 160) + '...' : safe;
-    const promptPreview = wakePrompt.length > 200 ? wakePrompt.slice(0, 200) + '...' : wakePrompt;
-    console.log(
-      `[VTID-WAKE-OPENER] path=vertex override_active=true lang=${lang} decision_id=${wakeBriefDecision?.decisionId || '<none>'} prompt_len=${wakePrompt.length}`,
-    );
-    console.log(`[VTID-WAKE-OPENER] selected_line="${linePreview}"`);
-    console.log(`[VTID-WAKE-OPENER] prompt_sent="${promptPreview}"`);
-    const wakeMessage = {
-      client_content: {
-        turns: [{ role: 'user', parts: [{ text: wakePrompt }] }],
-        turn_complete: true,
-      },
-    };
-    ws.send(JSON.stringify(wakeMessage));
-    session.greetingSent = true;
-    session.greetingTurnIndex = session.turn_count;
-    _sm.markOpeningDelivered(); // VTID-03273 Pillar C — opening delivered (state)
-    emitDiag(session, 'greeting_sent', {
-      lang,
-      prompt_len: wakePrompt.length,
-      wake_opener: 'override_v2',
-      decision_id: wakeBriefDecision?.decisionId || null,
-    });
-    startResponseWatchdog(session, getGreetingResponseTimeoutMs(), 'greeting_timeout');
-    return true;
-  }
-
-  // VTID-03108 (Item 5): cadence-suppressed silence. When wake-brief
-  // explicitly returned `none_with_reason` AND the rolled-up cause is
-  // one of the cadence-class skips emitted by greeting-policy.ts, we
-  // honor the policy by sending NO trigger prompt — the orb stays
-  // silent, the next turn is gated on user audio. The previous
-  // behavior fell through to the legacy menu, which made Gemini
-  // produce a generic line that contradicted the policy.
-  //
-  // Whitelist mirrors greeting-policy's emitted `reason` values
-  // (`isReconnect_forces_skip`, `transparent_reconnect_forces_skip`,
-  // `bucket_reconnect_forces_skip`, `recent_turn_continues_thread`,
-  // `greeted_recently_within_window`). Detection looks at the source
-  // provider results so we ONLY silence when the cause is a real skip
-  // from voice-wake-brief — never on generic "all_providers_suppressed"
-  // rollups that might mask an error path. The kill-switch
-  // `ORB_GREETING_SILENCE_ON_SKIP_ENABLED=false` falls back to legacy
-  // menu in case this silencing reintroduces a regression — set via
-  // system_controls or env. Default is enabled.
-  //
-  // Audio safety: anonymous sessions never use this path (their own
-  // anonPrompts block fires further down). For authenticated users we
-  // still mark `greetingSent=true` so stall-recovery doesn't later
-  // inject the legacy menu, and we do NOT arm the response watchdog
-  // (silence is intended; the watchdog would emit a false-positive
-  // timeout). The user breaks the silence by speaking.
-  const silenceOnSkipEnabled = process.env.ORB_GREETING_SILENCE_ON_SKIP_ENABLED !== 'false';
-  if (silenceOnSkipEnabled && !session.isAnonymous) {
-    const cadenceSkipReasons = new Set([
-      'isReconnect_forces_skip',
-      'transparent_reconnect_forces_skip',
-      'bucket_reconnect_forces_skip',
-      'recent_turn_continues_thread',
-      'greeted_recently_within_window',
-    ]);
-    const providerResults = (wakeBriefDecision as any)?.sourceProviderResults as
-      | Array<{ providerKey?: string; status?: string; reason?: string | null }>
-      | undefined;
-    const voiceWakeBriefReason = Array.isArray(providerResults)
-      ? providerResults.find((r) => r?.providerKey === 'voice_wake_brief')?.reason ?? null
+  // ── Conversation-flow Step 1c (VTID-03366): the sync opening rungs
+  // (silent_reconnect / override_v2 / silenced_on_cadence / legacy default) now
+  // DELEGATE to the single brain. computeGreetingDecision makes the decision;
+  // this adapter renders it (ws.send + emitDiag + effects) byte-for-byte. The
+  // inline 9-branch ladder that used to live here is gone — one brain, one mouth.
+  {
+    const _tzSync = session.clientContext?.timezone || 'UTC';
+    const _temporalSync = describeTimeSince(session.lastSessionInfo);
+    const _screenSync = describeRoute(session.current_route || null, lang);
+    const _providerResultsSync = (_wb as any)?.sourceProviderResults;
+    const _voiceReasonSync = Array.isArray(_providerResultsSync)
+      ? (_providerResultsSync.find((r: any) => r?.providerKey === 'voice_wake_brief')?.reason ?? null)
       : null;
-    const isCadenceSkip =
-      wakeBriefDecision?.selectedContinuation == null
-      && typeof voiceWakeBriefReason === 'string'
-      // voice-wake-brief returns `reason: 'greeting_policy_skip'` when policy=skip; the
-      // upstream skip-class reason from greeting-policy itself shows up on the
-      // wake_brief_selected timeline event. Match both shapes so this works
-      // regardless of which layer surfaces the reason.
-      && (cadenceSkipReasons.has(voiceWakeBriefReason)
-        || voiceWakeBriefReason === 'greeting_policy_skip');
-    if (isCadenceSkip) {
-      console.log(
-        `[VTID-WAKE-OPENER] path=vertex override_active=false suppressed=true reason=cadence_skip voice_wake_brief_reason=${voiceWakeBriefReason} lang=${lang}`,
+    const _syncDecision = computeGreetingDecision({
+      contextReadyResolved: true, // past the safe-fast block -> force the normal ladder
+      isAnonymous: !!session.isAnonymous,
+      safeFastGreetingLive: false,
+      reconnectCount: (session as any)._reconnectCount || 0,
+      lang,
+      greetLang: lang,
+      bucket: _temporalSync.bucket,
+      timeAgo: _temporalSync.timeAgo,
+      wasFailure: _temporalSync.wasFailure,
+      firstName: (session as any).greetingFirstName ?? null,
+      hasUserId: !!session.identity?.user_id,
+      hasSupabase: !!getSupabase(),
+      hasPriorSession: (session as any).greetingHasPriorSession === true,
+      greetingNeedsOnboarding: (session as any).greetingNeedsOnboarding === true,
+      greetingIsFirstTime: (session as any).greetingIsFirstTime === true,
+      lastFullBriefingDate: (session as any).lastFullBriefingDate ?? null,
+      todayTz: '',
+      localHour: 0,
+      timezone: _tzSync,
+      timeOfDay: session.clientContext?.timeOfDay ?? null,
+      proactiveLine: (session as any).greetingProactiveLine ?? null,
+      newdayOverview: null,
+      resumeOverview: null,
+      greetingLedger: EMPTY_GREETING_LEDGER,
+      rotationSeed: 0,
+      recentNbaKeys: [],
+      currentRoute: session.current_route || null,
+      currentScreenTitle: _screenSync?.title ?? null,
+      menuPhrases: pickShortGapGreetings(lang, 6),
+      openDecision: { mode: _openDecision.mode, source: _openDecision.source, line: _openDecision.line },
+      guidedTopicNarrationContent: (session as any).guidedTopicNarrationContent ?? null,
+      wakeBriefDecisionId: (_wb as any)?.decisionId ?? null,
+      silenceOnSkipEnabled: process.env.ORB_GREETING_SILENCE_ON_SKIP_ENABLED !== 'false',
+      wakeBriefHasSelectedContinuation: (_wb as any)?.selectedContinuation != null,
+      voiceWakeBriefReason: _voiceReasonSync,
+    });
+    if (_syncDecision.directive !== null) {
+      ws.send(
+        JSON.stringify({
+          client_content: {
+            turns: [{ role: 'user', parts: [{ text: _syncDecision.directive }] }],
+            turn_complete: true,
+          },
+        }),
       );
-      console.log(`[VTID-WAKE-OPENER] prompt_sent=<skipped>`);
-      session.greetingSent = true;
-      session.greetingTurnIndex = session.turn_count;
-      _sm.markOpeningDelivered(); // VTID-03273 Pillar C — opening delivered (silent, state)
-      emitDiag(session, 'greeting_sent', {
-        lang,
-        prompt_len: 0,
-        wake_opener: 'silenced_on_cadence',
-        decision_id: wakeBriefDecision?.decisionId || null,
-        suppression_reason: voiceWakeBriefReason,
-      });
-      return true;
     }
-  }
-
-  // VTID-NAV-TIMEJOURNEY (warmth fix): The default greeting prompt for
-  // AUTHENTICATED sessions must be WARM, POLITE, and KIND — never cold,
-  // never curt. The previous iteration fixed "Hello Dragan!" but made
-  // Vitana sound rude ("Yes?", "What do you need?"). This rewrite gives
-  // Gemini a menu of warm example phrasings and explicitly tells it not
-  // to sound clipped. Each language is independently written so nothing
-  // depends on Gemini translating cold English cues into warmer German.
-  // VTID-01927/VTID-01929: Default greeting prompts. The system instruction
-  // contains the OPENING SHAPE MATRIX with the proactive opener candidate when
-  // available — Gemini should use THAT instead of these generic phrasings.
-  // These remain only as the legacy fallback for sessions with no awareness.
-  // "What can I do for you?" removed — it's on the FORBIDDEN OPENINGS list now.
-  const greetingPrompts: Record<string, string> = {
-    'en': 'Open with ONE single short phrase that LEADS — propose the next move, never ask the user\'s preference. NEVER use two-part sentences with dashes. Do NOT say "Hello", "Hi", or the user\'s name. Do NOT introduce yourself. If your system instruction\'s OPENING SHAPE MATRIX provides a Proactive Opener Candidate, USE IT. Otherwise pick ONE of: "Let me show you where we are." / "Let me show you your next step." / "I am listening." / "Let\'s keep going.". NEVER "How can I help?" / "What would you like?". Vary across sessions.',
-    'de': 'Beginne mit EINER einzelnen kurzen Aussage, die FÜHRT — schlage den nächsten Schritt vor, frage nie nach der Vorliebe des Benutzers. NIEMALS zweiteilige Sätze mit Gedankenstrichen. Sage KEIN "Hallo", kein "Hi" und nicht den Namen des Benutzers. Stelle dich NICHT vor. Wenn die OPENING SHAPE MATRIX in deinem System-Prompt einen Proactive Opener Candidate enthält, NUTZE IHN. Ansonsten wähle EINE: "Lass mich dir zeigen, wo wir stehen." / "Lass mich dir den nächsten Schritt zeigen." / "Ich höre dir zu." / "Lass uns weitermachen.". NIEMALS "Womit kann ich helfen?" / "Was möchtest du?". Variiere zwischen Sitzungen.',
-    // VTID-03273 Pillar D (Codex review fix): FR/ES/AR/ZH/RU/SR were never
-    // migrated to the VTID-03271 lead doctrine and still offered forbidden
-    // preference questions ("En quoi puis-je aider ?", "¿En qué puedo
-    // ayudar?", "Како могу да помогнем?"). The quality-guard downgrade routes
-    // rejected openers HERE, so this fallback itself must obey the doctrine:
-    // lead with the next move, never ask the user's preference.
-    'fr': 'Commence par UNE seule courte phrase qui MÈNE — propose la prochaine étape, ne demande jamais la préférence de l\'utilisateur. JAMAIS de phrases en deux parties avec des tirets. Ne dis PAS "Bonjour" ni le prénom. Ne te présente PAS. Si l\'OPENING SHAPE MATRIX de ton instruction système fournit un Proactive Opener Candidate, UTILISE-LE. Sinon choisis UNE : "Laisse-moi te montrer où nous en sommes." / "Laisse-moi te montrer ta prochaine étape." / "Je t\'écoute." / "On continue.". JAMAIS "En quoi puis-je aider ?" / "Que puis-je faire pour vous ?". Varie entre les sessions.',
-    'es': 'Comienza con UNA sola frase corta que LIDERA — propone el siguiente paso, nunca preguntes la preferencia del usuario. NUNCA frases de dos partes con guiones. NO digas "Hola" ni el nombre del usuario. NO te presentes. Si la OPENING SHAPE MATRIX de tu instrucción de sistema ofrece un Proactive Opener Candidate, ÚSALO. Si no, elige UNA: "Déjame mostrarte dónde estamos." / "Déjame mostrarte tu siguiente paso." / "Te escucho." / "Sigamos.". NUNCA "¿En qué puedo ayudar?" / "¿Qué necesitas?". Varía entre sesiones.',
-    'ar': 'ابدأ بعبارة واحدة قصيرة تقود — اقترح الخطوة التالية، ولا تسأل المستخدم أبداً عن تفضيله. لا تستخدم جملاً من جزأين. لا تقل "مرحبا" أو اسم المستخدم. لا تقدم نفسك. إذا وفرت OPENING SHAPE MATRIX مرشحاً استباقياً فاستخدمه. وإلا اختر واحدة: "دعني أريك أين وصلنا." / "دعني أريك خطوتك التالية." / "أنا أستمع." / "لنواصل.". أبداً "كيف يمكنني المساعدة؟"',
-    'zh': '用一句简短、引导性的话开场——提出下一步，绝不询问用户的偏好。不要使用两部分的句子。不要说"你好"或用户名字。不要自我介绍。如果系统指令的 OPENING SHAPE MATRIX 提供了主动开场候选，请使用它。否则选一个："让我带你看看我们的进展。" / "让我带你看看你的下一步。" / "我在听。" / "我们继续。"。绝不说"有什么我可以帮忙的？"',
-    'ru': 'Начни с ОДНОЙ короткой фразы, которая ВЕДЁТ — предложи следующий шаг, никогда не спрашивай предпочтение пользователя. НИКОГДА не используй двухчастные предложения с тире. НЕ говори "Здравствуйте" или имя пользователя. НЕ представляйся. Если OPENING SHAPE MATRIX в системной инструкции даёт Proactive Opener Candidate — ИСПОЛЬЗУЙ ЕГО. Иначе выбери одну: "Давай покажу, где мы остановились." / "Давай покажу твой следующий шаг." / "Я слушаю." / "Продолжаем.". НИКОГДА "Чем могу помочь?" / "Что вас интересует?"',
-    'sr': 'Почни са ЈЕДНОМ кратком реченицом која ВОДИ — предложи следећи корак, никад не питај корисника шта жели. НИКАД не користи дводелне реченице са цртама. НЕ говори "Здраво" или име корисника. НЕ представљај се. Ако OPENING SHAPE MATRIX у системској инструкцији нуди Proactive Opener Candidate — КОРИСТИ ГА. Иначе изабери једну: "Да ти покажем докле смо стигли." / "Да ти покажем твој следећи корак." / "Слушам те." / "Настављамо.". НИКАД "Како могу да помогнем?" / "Шта те занима?"',
-  };
-
-  let prompt = greetingPrompts[lang] || greetingPrompts['en'];
-
-  // VTID-ANON-GREETING: For anonymous sessions (landing page), the system instruction
-  // contains the full introductory speech. Send a prompt that triggers it
-  // instead of the short greeting that contradicts it.
-  if (session.isAnonymous && !((session as any)._reconnectCount > 0)) {
-    const anonPrompts: Record<string, string> = {
-      'en': 'Please deliver the complete introductory speech as described in your instructions.',
-      'de': 'Bitte halte die vollständige Begrüßungsrede wie in deinen Anweisungen beschrieben.',
-      'fr': "Veuillez prononcer le discours d'introduction complet tel que décrit dans vos instructions.",
-      'es': 'Por favor, pronuncia el discurso introductorio completo tal como se describe en tus instrucciones.',
-      'ar': 'يرجى إلقاء خطاب التعريف الكامل كما هو موضح في تعليماتك.',
-      'zh': '请按照您的指示发表完整的介绍性演讲。',
-      'ru': 'Пожалуйста, произнесите полную вступительную речь, как описано в ваших инструкциях.',
-      'sr': 'Молимо вас, одржите комплетан уводни говор како је описано у вашим упутствима.',
-    };
-    prompt = anonPrompts[lang] || anonPrompts['en'];
-  }
-
-  // VTID-NAV-TIMEJOURNEY: Build a time-and-journey aware greeting prompt.
-  // The prompt now (a) references the bucket the system instruction already
-  // knows about, (b) explicitly forbids "Hello <name>!" when the user was
-  // just here, and (c) mentions the current screen so the model can ground
-  // the greeting in the user's actual journey instead of restarting.
-  if (!session.isAnonymous) {
-    const temporal = describeTimeSince(session.lastSessionInfo);
-    const currentScreen = describeRoute(session.current_route || null, lang);
-    const screenHint = currentScreen
-      ? ` The user is currently on the "${currentScreen.title}" screen.`
-      : '';
-
-    // Map 'night' to 'evening' for greetings ("Good night" is a farewell)
-    const tod = session.clientContext?.timeOfDay === 'night' ? 'evening' : (session.clientContext?.timeOfDay || 'day');
-
-    // VTID-WATCHDOG: If the previous session failed (no audio delivered) and
-    // the user comes back within 10 minutes, acknowledge it explicitly.
-    // VTID-GREETING-VARIETY: For short-gap buckets (reconnect, recent,
-    // same_day) inject a freshly-shuffled menu of openers IN THE USER'S
-    // LANGUAGE. Without this, Gemini consistently picks the first English
-    // example and literal-translates it, producing the same German line
-    // every single reopen ("Was kann ich für dich tun?").
-    const shortGapMenu = pickShortGapGreetings(lang, 6);
-    const menuList = shortGapMenu.map(p => `"${p}"`).join(', ');
-
-    if (temporal.wasFailure && (temporal.bucket === 'reconnect' || temporal.bucket === 'recent')) {
-      prompt = `Say exactly: "Sorry about that. How can I help?" ONE short phrase only. Do NOT say "Hello" or the user's name.${screenHint}`;
-    } else {
-      switch (temporal.bucket) {
-        case 'reconnect':
-          prompt = `You were JUST talking to the user ${temporal.timeAgo}. Do NOT greet. Do NOT say "Hello" or the user's name. Open with EXACTLY ONE short phrase, picked from this menu and used VERBATIM (these are already in the user's language): ${menuList}. Pick a different one than last time. NEVER use two-part sentences.${screenHint}`;
-          break;
-        case 'recent':
-          prompt = `You were just talking to the user ${temporal.timeAgo}. Do NOT use a formal greeting. Do NOT say the user's name. Open with EXACTLY ONE short phrase, picked from this menu and used VERBATIM (already in the user's language): ${menuList}. Vary across sessions. NEVER use two-part sentences.${screenHint}`;
-          break;
-        case 'same_day':
-          prompt = `The user was here ${temporal.timeAgo}. Do NOT say the user's name. Open with EXACTLY ONE short phrase, picked from this menu and used VERBATIM (already in the user's language): ${menuList}. Vary across sessions. NEVER use two-part sentences.${screenHint}`;
-          break;
-        // VTID-01927/VTID-01929: For new-day buckets, defer to the OPENING
-        // SHAPE MATRIX in the system instruction (which has the tenure-aware
-        // proactive opener candidate). Removed literal "What can I do for you?"
-        // — it's on the FORBIDDEN OPENINGS list when an opener candidate exists.
-        case 'today':
-          prompt = `The user was here ${temporal.timeAgo} — this is a NEW-DAY greeting. Open with "Good ${tod}, [Name]." using the user's name from your memory context. Then follow per the OPENING SHAPE MATRIX in your system instruction (use the Proactive Opener Candidate if one is provided). Max TWO short sentences if no candidate; longer if the matrix says so.${screenHint}`;
-          break;
-        case 'yesterday':
-          prompt = `The user was last here yesterday — this is a NEW-DAY greeting. Open with "Good ${tod}, [Name]." using the user's name from your memory context. Then follow per the OPENING SHAPE MATRIX in your system instruction (use the Proactive Opener Candidate if one is provided).${screenHint}`;
-          break;
-        case 'week':
-          prompt = `The user was last here ${temporal.timeAgo} — this is a NEW-DAY greeting. Open with "Good ${tod}, [Name]." using the user's name from your memory context. Then follow per the OPENING SHAPE MATRIX in your system instruction (use the Proactive Opener Candidate if one is provided — for early-tenure users a 2-3 day absence warrants warmth like "glad you came back").${screenHint}`;
-          break;
-        case 'long':
-          prompt = `The user hasn't been here in ${temporal.timeAgo} — this is a NEW-DAY greeting. Use the OPENING SHAPE MATRIX in your system instruction. For motivation_signal=cooling (8-14 days) or absent (>14 days), explicitly acknowledge the absence — e.g. "Hi {Name}, it's been ${temporal.timeAgo} since we last talked. Welcome back." Pause for the user to respond before any productivity nudge.${screenHint}`;
-          break;
-        case 'first':
-        default:
-          // VTID-01927: When system instruction shows tenure.stage='day0', use
-          // the FULL INTRODUCTION shape (5-8 sentences). Otherwise treat as
-          // returning user with unknown recency.
-          prompt = `Open per the OPENING SHAPE MATRIX in your system instruction. If tenure.stage='day0' (genuinely new user), deliver the FULL INTRODUCTION (mission, capabilities, agency offer). Otherwise treat as a returning user: "Good ${tod}, [Name]." + the Proactive Opener Candidate from your system instruction.${screenHint}`;
-          break;
-      }
+    session.greetingSent = true;
+    session.greetingTurnIndex = session.turn_count;
+    // legacy_default historically did NOT advance the opening state machine; the
+    // other rungs did. Preserve that exactly.
+    if (_syncDecision.wakeOpener !== 'legacy_default') {
+      _sm.markOpeningDelivered();
     }
-  }
-
-  const message = {
-    client_content: {
-      turns: [{
-        role: 'user',
-        parts: [{ text: prompt }]
-      }],
-      turn_complete: true
+    console.log(
+      `[VTID-VOICE-INIT] greeting via brain wake_opener=${_syncDecision.wakeOpener} lang=${lang} turnIndex=${session.turn_count}`,
+    );
+    emitDiag(session, 'greeting_sent', _syncDecision.diag);
+    if (_syncDecision.effects.armWatchdog) {
+      startResponseWatchdog(session, getGreetingResponseTimeoutMs(), 'greeting_timeout');
     }
-  };
-
-  ws.send(JSON.stringify(message));
-
-  // Mark greeting as sent and record turn index for filtering
-  session.greetingSent = true;
-  session.greetingTurnIndex = session.turn_count;
-  console.log(`[VTID-VOICE-INIT] Greeting prompt sent for lang=${lang}, turnIndex=${session.turn_count}`);
-  emitDiag(session, 'greeting_sent', { lang, prompt_len: message.client_content?.turns?.[0]?.parts?.[0]?.text?.length || 0 });
-
-  // VTID-WATCHDOG: Start watchdog — if greeting response doesn't arrive, notify user
-  startResponseWatchdog(session, getGreetingResponseTimeoutMs(), 'greeting_timeout');
-
-  return true;
+    return true;
+  }
 }
 
 /**
