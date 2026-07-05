@@ -322,6 +322,9 @@ import {
   pickShortGapGreetings,
   buildFirstTimeWelcomeLine,
 } from '../orb/instruction/greeting-pools';
+// Conversation-flow Step 1c: the single brain. The sync opening rungs delegate here.
+import { computeGreetingDecision } from '../services/conversation/compute-greeting-decision';
+import { EMPTY_GREETING_LEDGER } from '../services/conversation/greeting-facts-ledger';
 
 const router = Router();
 
@@ -8269,332 +8272,82 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
   console.log(formatOpeningDecisionLog(session.sessionId, _openDecision));
   (session as any)._openingDecision = _openDecision;
 
-  // Honor a reconnect-silence decision: this fresh-start path was reached on a
-  // reconnect (e.g. greeting stall re-send with _reconnectCount > 0). The model
-  // resumes the thread (native) or the recovery path owns continuity — either
-  // way we must NOT emit a fresh greeting. Cadence-class silence is handled by
-  // its own kill-switchable block below, so we only short-circuit the
-  // reconnect sources here.
-  if (
-    _openDecision.mode === 'silent' &&
-    !session.isAnonymous &&
-    (_openDecision.source === 'native_resume' || _openDecision.source === 'reconnect_no_handle')
-  ) {
-    session.greetingSent = true;
-    session.greetingTurnIndex = session.turn_count;
-    _sm.markOpeningDelivered(); // VTID-03273 Pillar C — opening delivered (state)
-    emitDiag(session, 'greeting_sent', {
-      lang,
-      prompt_len: 0,
-      wake_opener: 'silent_reconnect',
-      opening_source: _openDecision.source,
-    });
-    return true;
-  }
-
-  // VTID-03104 (Teacher opener v2): when the wake-brief decider produced
-  // a user_facing_line on /live/session/start, replace the legacy menu
-  // prompt with the SAME `Say exactly: "..."` shape the wasFailure bucket
-  // (~line 6413) already uses successfully in production. The line itself
-  // is embedded in the user-turn — Gemini does not need to scan the
-  // system_instruction to find the SPOKEN FIRST UTTERANCE block, and the
-  // prompt stays compact (~150-300 chars) so it does not delay the first
-  // audio chunk past the AudioContext suspend window.
-  //
-  // History:
-  //   VTID-03101 (PR #2258) — added wake-brief override block to system_instruction.
-  //                            Legacy menu user-turn still won (recency primacy).
-  //   VTID-03102 (PR #2262) — replaced legacy menu with a long meta-instruction
-  //                            trigger that pointed Gemini at the system prompt's
-  //                            override block. Reverted in PR #2265 because
-  //                            Gemini Live either shifted response modality to
-  //                            text-only or delayed first audio past iOS
-  //                            AudioContext auto-suspend — UI flipped to
-  //                            "speaking" but no audio reached the user.
-  //   VTID-03104 (this fix)  — minimal, field-tested prompt shape; line is
-  //                            quoted directly so the model has nothing to
-  //                            look up.
-  //
-  // The suppressed-by-cadence branch deliberately falls through to the
-  // legacy bucket dispatch below — that path has shipped for months and
-  // is known to keep audio flowing. B1 cadence is a separate slice.
-  const wakeBriefDecision: { selectedContinuation?: { userFacingLine?: string } | null; decisionId?: string } | null =
-    (session as any).wakeBriefDecision || null;
-  // VTID-03273 Pillar A (Codex review fix) — speak the line the CONTRACT chose,
-  // not the raw wake-brief line. When the no-verbatim-repeat guard downgraded
-  // the opener it returns `line: null`, so this branch is skipped and we fall
-  // through to the lead menu below (a varied opener) instead of replaying the
-  // identical line word-for-word.
-  const wakeOverrideLine = _openDecision.mode === 'speak' ? (_openDecision.line ?? '').trim() : '';
-  if (wakeOverrideLine && wakeOverrideLine.length > 0 && !session.isAnonymous) {
-    // Escape double-quotes so the line cannot terminate the wrapper early.
-    const safe = wakeOverrideLine.replace(/"/g, '\\"');
-    const wakeTriggerByLang: Record<string, string> = {
-      en: `Say exactly: "${safe}" — ONE short utterance only. Do NOT add a greeting before. Do NOT add a question after. Do NOT paraphrase.`,
-      de: `Sage genau Folgendes: "${safe}" — NUR EINE kurze Aussage. KEINE Begrüßung davor. KEINE Frage danach. NICHT umformulieren.`,
-      fr: `Dis exactement : "${safe}" — UNE seule courte phrase. PAS de salutation avant. PAS de question après. NE PAS reformuler.`,
-      es: `Di exactamente: "${safe}" — UNA sola frase corta. NO añadas saludo antes. NO añadas pregunta después. NO parafrasees.`,
-      ar: `قل بالضبط: "${safe}" — جملة قصيرة واحدة فقط. لا تحية قبلها. لا سؤال بعدها. لا تعيد صياغتها.`,
-      zh: `请准确地说："${safe}" —— 只说一句话。前面不要加问候。后面不要加问题。不要改述。`,
-      ru: `Скажи ровно: "${safe}" — ОДНА короткая фраза. БЕЗ приветствия перед. БЕЗ вопроса после. НЕ перефразируй.`,
-      sr: `Реци тачно: "${safe}" — ЈЕДНА кратка реченица. БЕЗ поздрава пре. БЕЗ питања после. НЕ преформулиши.`,
-    };
-    // VTID-03293 (#1 fix-2): guided-topic narration speaks the LESSON itself (the
-    // authored voice script, set as `safe` by the provider). Use a DIRECT-QUOTE
-    // trigger ("say this verbatim, in full"), NOT a long instruction. Native
-    // audio reliably produces audio for a direct quote but goes text-only /
-    // stalls on a long instructional prompt (the VTID-03102 regression → the
-    // stuck-connecting, no-speech bug). We drop the "ONE short utterance" clamp so
-    // the whole lesson is spoken, but keep it a quote so audio stays reliable.
-    const isGuidedTeach = !!(session as any).guidedTopicNarrationContent;
-    // VTID-03295: the KB content is German (v1). For a GERMAN session, speak it
-    // verbatim (proven-reliable audio). For ANY OTHER language, instruct the model
-    // to TRANSLATE the lesson into the session language and speak only that — a
-    // bounded transformation that keeps audio reliable (unlike a long "teach"
-    // instruction, which goes text-only). A per-language KB later removes the
-    // translation step. Fixes "English user gets a German lesson".
-    const _guidedIsDe = (lang || 'en').toLowerCase().startsWith('de');
-    const _GUIDED_LANG_NAMES: Record<string, string> = {
-      en: 'English', de: 'German', es: 'Spanish', fr: 'French',
-      sr: 'Serbian', ar: 'Arabic', zh: 'Chinese', ru: 'Russian', it: 'Italian', pt: 'Portuguese',
-    };
-    const _guidedLangName = _GUIDED_LANG_NAMES[(lang || 'en').slice(0, 2).toLowerCase()] || 'English';
-    const guidedTeachTrigger = _guidedIsDe
-      ? `Sage Folgendes WÖRTLICH und VOLLSTÄNDIG — Wort für Wort, dann höre auf und höre zu. NICHT zusammenfassen, kürzen, umformulieren oder eine Begrüßung/Frage hinzufügen: "${safe}"`
-      : `Say the following lesson to the user in fluent ${_guidedLangName}. The text may be in another language — translate it faithfully and completely into ${_guidedLangName} and speak ONLY that translation, then stop and listen. Do NOT summarize, shorten, add a greeting, or ask a question: "${safe}"`;
-    const wakePrompt = isGuidedTeach
-      ? guidedTeachTrigger
-      : (wakeTriggerByLang[lang] || wakeTriggerByLang.en);
-    const linePreview = safe.length > 160 ? safe.slice(0, 160) + '...' : safe;
-    const promptPreview = wakePrompt.length > 200 ? wakePrompt.slice(0, 200) + '...' : wakePrompt;
-    console.log(
-      `[VTID-WAKE-OPENER] path=vertex override_active=true lang=${lang} decision_id=${wakeBriefDecision?.decisionId || '<none>'} prompt_len=${wakePrompt.length}`,
-    );
-    console.log(`[VTID-WAKE-OPENER] selected_line="${linePreview}"`);
-    console.log(`[VTID-WAKE-OPENER] prompt_sent="${promptPreview}"`);
-    const wakeMessage = {
-      client_content: {
-        turns: [{ role: 'user', parts: [{ text: wakePrompt }] }],
-        turn_complete: true,
-      },
-    };
-    ws.send(JSON.stringify(wakeMessage));
-    session.greetingSent = true;
-    session.greetingTurnIndex = session.turn_count;
-    _sm.markOpeningDelivered(); // VTID-03273 Pillar C — opening delivered (state)
-    emitDiag(session, 'greeting_sent', {
-      lang,
-      prompt_len: wakePrompt.length,
-      wake_opener: 'override_v2',
-      decision_id: wakeBriefDecision?.decisionId || null,
-    });
-    startResponseWatchdog(session, getGreetingResponseTimeoutMs(), 'greeting_timeout');
-    return true;
-  }
-
-  // VTID-03108 (Item 5): cadence-suppressed silence. When wake-brief
-  // explicitly returned `none_with_reason` AND the rolled-up cause is
-  // one of the cadence-class skips emitted by greeting-policy.ts, we
-  // honor the policy by sending NO trigger prompt — the orb stays
-  // silent, the next turn is gated on user audio. The previous
-  // behavior fell through to the legacy menu, which made Gemini
-  // produce a generic line that contradicted the policy.
-  //
-  // Whitelist mirrors greeting-policy's emitted `reason` values
-  // (`isReconnect_forces_skip`, `transparent_reconnect_forces_skip`,
-  // `bucket_reconnect_forces_skip`, `recent_turn_continues_thread`,
-  // `greeted_recently_within_window`). Detection looks at the source
-  // provider results so we ONLY silence when the cause is a real skip
-  // from voice-wake-brief — never on generic "all_providers_suppressed"
-  // rollups that might mask an error path. The kill-switch
-  // `ORB_GREETING_SILENCE_ON_SKIP_ENABLED=false` falls back to legacy
-  // menu in case this silencing reintroduces a regression — set via
-  // system_controls or env. Default is enabled.
-  //
-  // Audio safety: anonymous sessions never use this path (their own
-  // anonPrompts block fires further down). For authenticated users we
-  // still mark `greetingSent=true` so stall-recovery doesn't later
-  // inject the legacy menu, and we do NOT arm the response watchdog
-  // (silence is intended; the watchdog would emit a false-positive
-  // timeout). The user breaks the silence by speaking.
-  const silenceOnSkipEnabled = process.env.ORB_GREETING_SILENCE_ON_SKIP_ENABLED !== 'false';
-  if (silenceOnSkipEnabled && !session.isAnonymous) {
-    const cadenceSkipReasons = new Set([
-      'isReconnect_forces_skip',
-      'transparent_reconnect_forces_skip',
-      'bucket_reconnect_forces_skip',
-      'recent_turn_continues_thread',
-      'greeted_recently_within_window',
-    ]);
-    const providerResults = (wakeBriefDecision as any)?.sourceProviderResults as
-      | Array<{ providerKey?: string; status?: string; reason?: string | null }>
-      | undefined;
-    const voiceWakeBriefReason = Array.isArray(providerResults)
-      ? providerResults.find((r) => r?.providerKey === 'voice_wake_brief')?.reason ?? null
+  // ── Conversation-flow Step 1c (VTID-03366): the sync opening rungs
+  // (silent_reconnect / override_v2 / silenced_on_cadence / legacy default) now
+  // DELEGATE to the single brain. computeGreetingDecision makes the decision;
+  // this adapter renders it (ws.send + emitDiag + effects) byte-for-byte. The
+  // inline 9-branch ladder that used to live here is gone — one brain, one mouth.
+  {
+    const _tzSync = session.clientContext?.timezone || 'UTC';
+    const _temporalSync = describeTimeSince(session.lastSessionInfo);
+    const _screenSync = describeRoute(session.current_route || null, lang);
+    const _providerResultsSync = (_wb as any)?.sourceProviderResults;
+    const _voiceReasonSync = Array.isArray(_providerResultsSync)
+      ? (_providerResultsSync.find((r: any) => r?.providerKey === 'voice_wake_brief')?.reason ?? null)
       : null;
-    const isCadenceSkip =
-      wakeBriefDecision?.selectedContinuation == null
-      && typeof voiceWakeBriefReason === 'string'
-      // voice-wake-brief returns `reason: 'greeting_policy_skip'` when policy=skip; the
-      // upstream skip-class reason from greeting-policy itself shows up on the
-      // wake_brief_selected timeline event. Match both shapes so this works
-      // regardless of which layer surfaces the reason.
-      && (cadenceSkipReasons.has(voiceWakeBriefReason)
-        || voiceWakeBriefReason === 'greeting_policy_skip');
-    if (isCadenceSkip) {
-      console.log(
-        `[VTID-WAKE-OPENER] path=vertex override_active=false suppressed=true reason=cadence_skip voice_wake_brief_reason=${voiceWakeBriefReason} lang=${lang}`,
+    const _syncDecision = computeGreetingDecision({
+      contextReadyResolved: true, // past the safe-fast block -> force the normal ladder
+      isAnonymous: !!session.isAnonymous,
+      safeFastGreetingLive: false,
+      reconnectCount: (session as any)._reconnectCount || 0,
+      lang,
+      greetLang: lang,
+      bucket: _temporalSync.bucket,
+      timeAgo: _temporalSync.timeAgo,
+      wasFailure: _temporalSync.wasFailure,
+      firstName: (session as any).greetingFirstName ?? null,
+      hasUserId: !!session.identity?.user_id,
+      hasSupabase: !!getSupabase(),
+      hasPriorSession: (session as any).greetingHasPriorSession === true,
+      greetingNeedsOnboarding: (session as any).greetingNeedsOnboarding === true,
+      greetingIsFirstTime: (session as any).greetingIsFirstTime === true,
+      lastFullBriefingDate: (session as any).lastFullBriefingDate ?? null,
+      todayTz: '',
+      localHour: 0,
+      timezone: _tzSync,
+      timeOfDay: session.clientContext?.timeOfDay ?? null,
+      proactiveLine: (session as any).greetingProactiveLine ?? null,
+      newdayOverview: null,
+      resumeOverview: null,
+      greetingLedger: EMPTY_GREETING_LEDGER,
+      rotationSeed: 0,
+      recentNbaKeys: [],
+      currentRoute: session.current_route || null,
+      currentScreenTitle: _screenSync?.title ?? null,
+      menuPhrases: pickShortGapGreetings(lang, 6),
+      openDecision: { mode: _openDecision.mode, source: _openDecision.source, line: _openDecision.line },
+      guidedTopicNarrationContent: (session as any).guidedTopicNarrationContent ?? null,
+      wakeBriefDecisionId: (_wb as any)?.decisionId ?? null,
+      silenceOnSkipEnabled: process.env.ORB_GREETING_SILENCE_ON_SKIP_ENABLED !== 'false',
+      wakeBriefHasSelectedContinuation: (_wb as any)?.selectedContinuation != null,
+      voiceWakeBriefReason: _voiceReasonSync,
+    });
+    if (_syncDecision.directive !== null) {
+      ws.send(
+        JSON.stringify({
+          client_content: {
+            turns: [{ role: 'user', parts: [{ text: _syncDecision.directive }] }],
+            turn_complete: true,
+          },
+        }),
       );
-      console.log(`[VTID-WAKE-OPENER] prompt_sent=<skipped>`);
-      session.greetingSent = true;
-      session.greetingTurnIndex = session.turn_count;
-      _sm.markOpeningDelivered(); // VTID-03273 Pillar C — opening delivered (silent, state)
-      emitDiag(session, 'greeting_sent', {
-        lang,
-        prompt_len: 0,
-        wake_opener: 'silenced_on_cadence',
-        decision_id: wakeBriefDecision?.decisionId || null,
-        suppression_reason: voiceWakeBriefReason,
-      });
-      return true;
     }
-  }
-
-  // VTID-NAV-TIMEJOURNEY (warmth fix): The default greeting prompt for
-  // AUTHENTICATED sessions must be WARM, POLITE, and KIND — never cold,
-  // never curt. The previous iteration fixed "Hello Dragan!" but made
-  // Vitana sound rude ("Yes?", "What do you need?"). This rewrite gives
-  // Gemini a menu of warm example phrasings and explicitly tells it not
-  // to sound clipped. Each language is independently written so nothing
-  // depends on Gemini translating cold English cues into warmer German.
-  // VTID-01927/VTID-01929: Default greeting prompts. The system instruction
-  // contains the OPENING SHAPE MATRIX with the proactive opener candidate when
-  // available — Gemini should use THAT instead of these generic phrasings.
-  // These remain only as the legacy fallback for sessions with no awareness.
-  // "What can I do for you?" removed — it's on the FORBIDDEN OPENINGS list now.
-  const greetingPrompts: Record<string, string> = {
-    'en': 'Open with ONE single short phrase that LEADS — propose the next move, never ask the user\'s preference. NEVER use two-part sentences with dashes. Do NOT say "Hello", "Hi", or the user\'s name. Do NOT introduce yourself. If your system instruction\'s OPENING SHAPE MATRIX provides a Proactive Opener Candidate, USE IT. Otherwise pick ONE of: "Let me show you where we are." / "Let me show you your next step." / "I am listening." / "Let\'s keep going.". NEVER "How can I help?" / "What would you like?". Vary across sessions.',
-    'de': 'Beginne mit EINER einzelnen kurzen Aussage, die FÜHRT — schlage den nächsten Schritt vor, frage nie nach der Vorliebe des Benutzers. NIEMALS zweiteilige Sätze mit Gedankenstrichen. Sage KEIN "Hallo", kein "Hi" und nicht den Namen des Benutzers. Stelle dich NICHT vor. Wenn die OPENING SHAPE MATRIX in deinem System-Prompt einen Proactive Opener Candidate enthält, NUTZE IHN. Ansonsten wähle EINE: "Lass mich dir zeigen, wo wir stehen." / "Lass mich dir den nächsten Schritt zeigen." / "Ich höre dir zu." / "Lass uns weitermachen.". NIEMALS "Womit kann ich helfen?" / "Was möchtest du?". Variiere zwischen Sitzungen.',
-    // VTID-03273 Pillar D (Codex review fix): FR/ES/AR/ZH/RU/SR were never
-    // migrated to the VTID-03271 lead doctrine and still offered forbidden
-    // preference questions ("En quoi puis-je aider ?", "¿En qué puedo
-    // ayudar?", "Како могу да помогнем?"). The quality-guard downgrade routes
-    // rejected openers HERE, so this fallback itself must obey the doctrine:
-    // lead with the next move, never ask the user's preference.
-    'fr': 'Commence par UNE seule courte phrase qui MÈNE — propose la prochaine étape, ne demande jamais la préférence de l\'utilisateur. JAMAIS de phrases en deux parties avec des tirets. Ne dis PAS "Bonjour" ni le prénom. Ne te présente PAS. Si l\'OPENING SHAPE MATRIX de ton instruction système fournit un Proactive Opener Candidate, UTILISE-LE. Sinon choisis UNE : "Laisse-moi te montrer où nous en sommes." / "Laisse-moi te montrer ta prochaine étape." / "Je t\'écoute." / "On continue.". JAMAIS "En quoi puis-je aider ?" / "Que puis-je faire pour vous ?". Varie entre les sessions.',
-    'es': 'Comienza con UNA sola frase corta que LIDERA — propone el siguiente paso, nunca preguntes la preferencia del usuario. NUNCA frases de dos partes con guiones. NO digas "Hola" ni el nombre del usuario. NO te presentes. Si la OPENING SHAPE MATRIX de tu instrucción de sistema ofrece un Proactive Opener Candidate, ÚSALO. Si no, elige UNA: "Déjame mostrarte dónde estamos." / "Déjame mostrarte tu siguiente paso." / "Te escucho." / "Sigamos.". NUNCA "¿En qué puedo ayudar?" / "¿Qué necesitas?". Varía entre sesiones.',
-    'ar': 'ابدأ بعبارة واحدة قصيرة تقود — اقترح الخطوة التالية، ولا تسأل المستخدم أبداً عن تفضيله. لا تستخدم جملاً من جزأين. لا تقل "مرحبا" أو اسم المستخدم. لا تقدم نفسك. إذا وفرت OPENING SHAPE MATRIX مرشحاً استباقياً فاستخدمه. وإلا اختر واحدة: "دعني أريك أين وصلنا." / "دعني أريك خطوتك التالية." / "أنا أستمع." / "لنواصل.". أبداً "كيف يمكنني المساعدة؟"',
-    'zh': '用一句简短、引导性的话开场——提出下一步，绝不询问用户的偏好。不要使用两部分的句子。不要说"你好"或用户名字。不要自我介绍。如果系统指令的 OPENING SHAPE MATRIX 提供了主动开场候选，请使用它。否则选一个："让我带你看看我们的进展。" / "让我带你看看你的下一步。" / "我在听。" / "我们继续。"。绝不说"有什么我可以帮忙的？"',
-    'ru': 'Начни с ОДНОЙ короткой фразы, которая ВЕДЁТ — предложи следующий шаг, никогда не спрашивай предпочтение пользователя. НИКОГДА не используй двухчастные предложения с тире. НЕ говори "Здравствуйте" или имя пользователя. НЕ представляйся. Если OPENING SHAPE MATRIX в системной инструкции даёт Proactive Opener Candidate — ИСПОЛЬЗУЙ ЕГО. Иначе выбери одну: "Давай покажу, где мы остановились." / "Давай покажу твой следующий шаг." / "Я слушаю." / "Продолжаем.". НИКОГДА "Чем могу помочь?" / "Что вас интересует?"',
-    'sr': 'Почни са ЈЕДНОМ кратком реченицом која ВОДИ — предложи следећи корак, никад не питај корисника шта жели. НИКАД не користи дводелне реченице са цртама. НЕ говори "Здраво" или име корисника. НЕ представљај се. Ако OPENING SHAPE MATRIX у системској инструкцији нуди Proactive Opener Candidate — КОРИСТИ ГА. Иначе изабери једну: "Да ти покажем докле смо стигли." / "Да ти покажем твој следећи корак." / "Слушам те." / "Настављамо.". НИКАД "Како могу да помогнем?" / "Шта те занима?"',
-  };
-
-  let prompt = greetingPrompts[lang] || greetingPrompts['en'];
-
-  // VTID-ANON-GREETING: For anonymous sessions (landing page), the system instruction
-  // contains the full introductory speech. Send a prompt that triggers it
-  // instead of the short greeting that contradicts it.
-  if (session.isAnonymous && !((session as any)._reconnectCount > 0)) {
-    const anonPrompts: Record<string, string> = {
-      'en': 'Please deliver the complete introductory speech as described in your instructions.',
-      'de': 'Bitte halte die vollständige Begrüßungsrede wie in deinen Anweisungen beschrieben.',
-      'fr': "Veuillez prononcer le discours d'introduction complet tel que décrit dans vos instructions.",
-      'es': 'Por favor, pronuncia el discurso introductorio completo tal como se describe en tus instrucciones.',
-      'ar': 'يرجى إلقاء خطاب التعريف الكامل كما هو موضح في تعليماتك.',
-      'zh': '请按照您的指示发表完整的介绍性演讲。',
-      'ru': 'Пожалуйста, произнесите полную вступительную речь, как описано в ваших инструкциях.',
-      'sr': 'Молимо вас, одржите комплетан уводни говор како је описано у вашим упутствима.',
-    };
-    prompt = anonPrompts[lang] || anonPrompts['en'];
-  }
-
-  // VTID-NAV-TIMEJOURNEY: Build a time-and-journey aware greeting prompt.
-  // The prompt now (a) references the bucket the system instruction already
-  // knows about, (b) explicitly forbids "Hello <name>!" when the user was
-  // just here, and (c) mentions the current screen so the model can ground
-  // the greeting in the user's actual journey instead of restarting.
-  if (!session.isAnonymous) {
-    const temporal = describeTimeSince(session.lastSessionInfo);
-    const currentScreen = describeRoute(session.current_route || null, lang);
-    const screenHint = currentScreen
-      ? ` The user is currently on the "${currentScreen.title}" screen.`
-      : '';
-
-    // Map 'night' to 'evening' for greetings ("Good night" is a farewell)
-    const tod = session.clientContext?.timeOfDay === 'night' ? 'evening' : (session.clientContext?.timeOfDay || 'day');
-
-    // VTID-WATCHDOG: If the previous session failed (no audio delivered) and
-    // the user comes back within 10 minutes, acknowledge it explicitly.
-    // VTID-GREETING-VARIETY: For short-gap buckets (reconnect, recent,
-    // same_day) inject a freshly-shuffled menu of openers IN THE USER'S
-    // LANGUAGE. Without this, Gemini consistently picks the first English
-    // example and literal-translates it, producing the same German line
-    // every single reopen ("Was kann ich für dich tun?").
-    const shortGapMenu = pickShortGapGreetings(lang, 6);
-    const menuList = shortGapMenu.map(p => `"${p}"`).join(', ');
-
-    if (temporal.wasFailure && (temporal.bucket === 'reconnect' || temporal.bucket === 'recent')) {
-      prompt = `Say exactly: "Sorry about that. How can I help?" ONE short phrase only. Do NOT say "Hello" or the user's name.${screenHint}`;
-    } else {
-      switch (temporal.bucket) {
-        case 'reconnect':
-          prompt = `You were JUST talking to the user ${temporal.timeAgo}. Do NOT greet. Do NOT say "Hello" or the user's name. Open with EXACTLY ONE short phrase, picked from this menu and used VERBATIM (these are already in the user's language): ${menuList}. Pick a different one than last time. NEVER use two-part sentences.${screenHint}`;
-          break;
-        case 'recent':
-          prompt = `You were just talking to the user ${temporal.timeAgo}. Do NOT use a formal greeting. Do NOT say the user's name. Open with EXACTLY ONE short phrase, picked from this menu and used VERBATIM (already in the user's language): ${menuList}. Vary across sessions. NEVER use two-part sentences.${screenHint}`;
-          break;
-        case 'same_day':
-          prompt = `The user was here ${temporal.timeAgo}. Do NOT say the user's name. Open with EXACTLY ONE short phrase, picked from this menu and used VERBATIM (already in the user's language): ${menuList}. Vary across sessions. NEVER use two-part sentences.${screenHint}`;
-          break;
-        // VTID-01927/VTID-01929: For new-day buckets, defer to the OPENING
-        // SHAPE MATRIX in the system instruction (which has the tenure-aware
-        // proactive opener candidate). Removed literal "What can I do for you?"
-        // — it's on the FORBIDDEN OPENINGS list when an opener candidate exists.
-        case 'today':
-          prompt = `The user was here ${temporal.timeAgo} — this is a NEW-DAY greeting. Open with "Good ${tod}, [Name]." using the user's name from your memory context. Then follow per the OPENING SHAPE MATRIX in your system instruction (use the Proactive Opener Candidate if one is provided). Max TWO short sentences if no candidate; longer if the matrix says so.${screenHint}`;
-          break;
-        case 'yesterday':
-          prompt = `The user was last here yesterday — this is a NEW-DAY greeting. Open with "Good ${tod}, [Name]." using the user's name from your memory context. Then follow per the OPENING SHAPE MATRIX in your system instruction (use the Proactive Opener Candidate if one is provided).${screenHint}`;
-          break;
-        case 'week':
-          prompt = `The user was last here ${temporal.timeAgo} — this is a NEW-DAY greeting. Open with "Good ${tod}, [Name]." using the user's name from your memory context. Then follow per the OPENING SHAPE MATRIX in your system instruction (use the Proactive Opener Candidate if one is provided — for early-tenure users a 2-3 day absence warrants warmth like "glad you came back").${screenHint}`;
-          break;
-        case 'long':
-          prompt = `The user hasn't been here in ${temporal.timeAgo} — this is a NEW-DAY greeting. Use the OPENING SHAPE MATRIX in your system instruction. For motivation_signal=cooling (8-14 days) or absent (>14 days), explicitly acknowledge the absence — e.g. "Hi {Name}, it's been ${temporal.timeAgo} since we last talked. Welcome back." Pause for the user to respond before any productivity nudge.${screenHint}`;
-          break;
-        case 'first':
-        default:
-          // VTID-01927: When system instruction shows tenure.stage='day0', use
-          // the FULL INTRODUCTION shape (5-8 sentences). Otherwise treat as
-          // returning user with unknown recency.
-          prompt = `Open per the OPENING SHAPE MATRIX in your system instruction. If tenure.stage='day0' (genuinely new user), deliver the FULL INTRODUCTION (mission, capabilities, agency offer). Otherwise treat as a returning user: "Good ${tod}, [Name]." + the Proactive Opener Candidate from your system instruction.${screenHint}`;
-          break;
-      }
+    session.greetingSent = true;
+    session.greetingTurnIndex = session.turn_count;
+    // legacy_default historically did NOT advance the opening state machine; the
+    // other rungs did. Preserve that exactly.
+    if (_syncDecision.wakeOpener !== 'legacy_default') {
+      _sm.markOpeningDelivered();
     }
-  }
-
-  const message = {
-    client_content: {
-      turns: [{
-        role: 'user',
-        parts: [{ text: prompt }]
-      }],
-      turn_complete: true
+    console.log(
+      `[VTID-VOICE-INIT] greeting via brain wake_opener=${_syncDecision.wakeOpener} lang=${lang} turnIndex=${session.turn_count}`,
+    );
+    emitDiag(session, 'greeting_sent', _syncDecision.diag);
+    if (_syncDecision.effects.armWatchdog) {
+      startResponseWatchdog(session, getGreetingResponseTimeoutMs(), 'greeting_timeout');
     }
-  };
-
-  ws.send(JSON.stringify(message));
-
-  // Mark greeting as sent and record turn index for filtering
-  session.greetingSent = true;
-  session.greetingTurnIndex = session.turn_count;
-  console.log(`[VTID-VOICE-INIT] Greeting prompt sent for lang=${lang}, turnIndex=${session.turn_count}`);
-  emitDiag(session, 'greeting_sent', { lang, prompt_len: message.client_content?.turns?.[0]?.parts?.[0]?.text?.length || 0 });
-
-  // VTID-WATCHDOG: Start watchdog — if greeting response doesn't arrive, notify user
-  startResponseWatchdog(session, getGreetingResponseTimeoutMs(), 'greeting_timeout');
-
-  return true;
+    return true;
+  }
 }
 
 /**
