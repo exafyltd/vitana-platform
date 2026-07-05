@@ -5,7 +5,7 @@
  * Automations for Stripe lifecycle, wallet credits, creator payouts.
  */
 
-import { AutomationContext, REWARD_TABLE, CreditWalletResult } from '../../types/automations';
+import { AutomationContext, REWARD_TABLE } from '../../types/automations';
 import { registerHandler } from '../automation-executor';
 
 // ── AP-0701: Payment Failure Detection & Retry ──────────────
@@ -95,6 +95,15 @@ async function runCreatorPayoutMonitor(ctx: AutomationContext) {
 }
 
 // ── AP-0708: Wallet Credit Rewards for Engagement ───────────
+// credit_wallet() RPC (and any backing ledger with its own dedup-by-
+// source_event_id) doesn't exist live. increment_wallet_balance() is the
+// real RPC (writes to user_wallets — the same table already used by
+// AP-0101/AP-0405/AP-1301's welcome-bonus flow this session), but it has no
+// idempotency of its own. Rather than write to wallet_credits (explicitly
+// called out as a "ghost commerce table" in universal-cart.ts, VTID-03213 —
+// not a table to build new reliance on), dedup is self-guarded the same way
+// AP-0411/AP-0605 do: check user_notifications for a prior reward record
+// carrying this exact source_event_id before crediting again.
 async function runWalletCreditReward(ctx: AutomationContext) {
   const payload = ctx.run.metadata as any;
   const { user_id, reward_type, event_id } = payload || {};
@@ -106,39 +115,47 @@ async function runWalletCreditReward(ctx: AutomationContext) {
     return { usersAffected: 0, actionsTaken: 0 };
   }
 
-  const { supabase, tenantId } = ctx;
+  const { supabase } = ctx;
   const sourceEventId = event_id || `${reward_type}_${user_id}_${Date.now()}`;
 
-  const { data } = await supabase.rpc('credit_wallet', {
-    p_tenant_id: tenantId,
-    p_user_id: user_id,
-    p_amount: rewardConfig.amount,
-    p_type: 'reward',
-    p_source: 'AP-0708',
-    p_source_event_id: sourceEventId,
-    p_description: rewardConfig.description,
-  });
-
-  const result = data as CreditWalletResult;
-
-  if (result?.duplicate) {
-    ctx.log(`Duplicate reward blocked: ${reward_type} for ${user_id}`);
-    return { usersAffected: 0, actionsTaken: 0 };
+  if (event_id) {
+    const { data: existingReward } = await supabase
+      .from('user_notifications')
+      .select('id')
+      .eq('user_id', user_id)
+      .contains('data', { automation_id: 'AP-0708', source_event_id: sourceEventId })
+      .limit(1);
+    if (existingReward && existingReward.length > 0) {
+      ctx.log(`Duplicate reward blocked: ${reward_type} for ${user_id}`);
+      return { usersAffected: 0, actionsTaken: 0 };
+    }
   }
 
-  if (result?.ok) {
+  const { data: newBalance, error } = await supabase.rpc('increment_wallet_balance', {
+    p_user_id: user_id,
+    p_currency_type: 'CREDITS',
+    p_amount: rewardConfig.amount,
+  });
+
+  if (!error) {
     ctx.notify(user_id, 'orb_proactive_message', {
       title: `+${rewardConfig.amount} Credits!`,
-      body: `${rewardConfig.description}. Your balance: ${result.balance} credits.`,
-      data: { url: '/wallet', amount: String(rewardConfig.amount), balance: String(result.balance) },
+      body: `${rewardConfig.description}. Your balance: ${newBalance} credits.`,
+      data: {
+        url: '/wallet', amount: String(rewardConfig.amount), balance: String(newBalance),
+        automation_id: 'AP-0708', source_event_id: sourceEventId,
+      },
     });
 
     await ctx.emitEvent('autopilot.wallet.credits_awarded', {
-      user_id, reward_type, amount: rewardConfig.amount, balance: result.balance,
+      user_id, reward_type, amount: rewardConfig.amount, balance: newBalance,
     });
+
+    return { usersAffected: 1, actionsTaken: 1 };
   }
 
-  return { usersAffected: 1, actionsTaken: 1 };
+  ctx.log(`Wallet credit failed for ${user_id}: ${error.message}`);
+  return { usersAffected: 0, actionsTaken: 0 };
 }
 
 // ── AP-0710: Monetization Readiness Scoring ─────────────────
@@ -198,35 +215,37 @@ async function runMonetizationReadinessCheck(ctx: AutomationContext) {
 
 // ── AP-0711: Weekly Earnings Report for Creators ────────────
 // app_users' primary key is user_id, not id. user_offers_memory (VTID-01092)
-// was never deployed — no substitute exists, so the transaction count always
-// reads 0; the notification itself (which never depended on real activity
-// gating) still goes out to real creators via the real app_users column.
+// was never deployed — service_payments (payee_vitana_id TEXT, joins
+// app_users.vitana_id; same pattern already used in live-rooms-commerce.ts
+// and business-opportunity.ts) is the real transaction-count source.
 async function runCreatorWeeklyEarnings(ctx: AutomationContext) {
-  const { supabase, tenantId } = ctx;
+  const { supabase } = ctx;
   let usersAffected = 0;
   let actionsTaken = 0;
 
   // Find all creators (users with stripe_charges_enabled)
   const { data: creators } = await supabase
     .from('app_users')
-    .select('user_id, display_name')
+    .select('user_id, display_name, vitana_id')
     .eq('stripe_charges_enabled', true);
 
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
 
   for (const creator of creators || []) {
-    // KNOWN GAP: user_offers_memory doesn't exist live; txCount is always 0.
-    const { count: txCount } = await supabase
-      .from('user_offers_memory')
-      .select('id', { count: 'exact', head: true })
-      .eq('tenant_id', tenantId)
-      .eq('target_id', creator.user_id)
-      .eq('state', 'used')
-      .gte('updated_at', sevenDaysAgo);
+    let txCount = 0;
+    if (creator.vitana_id) {
+      const { count } = await supabase
+        .from('service_payments')
+        .select('id', { count: 'exact', head: true })
+        .eq('payee_vitana_id', creator.vitana_id)
+        .in('state', ['captured', 'released'])
+        .gte('created_at', sevenDaysAgo);
+      txCount = count || 0;
+    }
 
     ctx.notify(creator.user_id, 'orb_proactive_message', {
       title: 'Your Weekly Earnings',
-      body: `${txCount || 0} transactions this week. Check your Business Hub for details.`,
+      body: `${txCount} transactions this week. Check your Business Hub for details.`,
       data: { url: '/business/earnings' },
     });
 

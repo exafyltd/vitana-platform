@@ -9,6 +9,15 @@ import { AutomationContext } from '../../types/automations';
 import { registerHandler } from '../automation-executor';
 
 // ── AP-1101: Service Listing Publication & Distribution ──────
+// Real schema: services_catalog (VTID-01092) was never deployed. live_rooms
+// (category text + topic_keys array) is the only live "creator-listed,
+// bookable session" table — the same substitute already used for AP-1108/
+// AP-1109/business-opportunity.ts. user_topic_profile was never deployed;
+// user_interests (interest, confidence_score 0-1 scale) is real. The
+// relationship_edges upsert is dropped — its edge_type CHECK constraint
+// only allows attendee/member/host/coattendance/organizer/connected/
+// suggested, none of which fit "saved a listing", and inventing a new
+// enum value needs its own migration decision, not a schema-drift fix.
 async function runServiceListingDistribution(ctx: AutomationContext) {
   const payload = ctx.run.metadata as any;
   const { service_id, user_id } = payload || {};
@@ -16,56 +25,57 @@ async function runServiceListingDistribution(ctx: AutomationContext) {
 
   const { supabase, tenantId } = ctx;
 
-  const { data: service } = await supabase
-    .from('services_catalog')
-    .select('name, service_type, topic_keys')
+  const { data: room } = await supabase
+    .from('live_rooms')
+    .select('title, category, topic_keys, host_user_id')
     .eq('id', service_id)
+    .eq('tenant_id', tenantId)
     .maybeSingle();
 
-  if (!service) return { usersAffected: 0, actionsTaken: 0 };
+  if (!room) return { usersAffected: 0, actionsTaken: 0 };
 
-  // Find users with matching topics
-  const topicKeys = service.topic_keys || [];
+  const topicKeys = [room.category, ...(room.topic_keys || [])].filter(Boolean).map((t: string) => t.toLowerCase());
   if (!topicKeys.length) return { usersAffected: 0, actionsTaken: 1 };
 
   const { data: matchingUsers } = await supabase
-    .from('user_topic_profile')
-    .select('user_id, score')
-    .eq('tenant_id', tenantId)
-    .in('topic_key', topicKeys)
-    .gte('score', 60)
-    .order('score', { ascending: false })
+    .from('user_interests')
+    .select('user_id, interest')
+    .in('interest', topicKeys)
+    .gte('confidence_score', 0.6)
+    .order('confidence_score', { ascending: false })
     .limit(50);
 
   let usersAffected = 0;
   const uniqueUsers = new Set<string>();
   for (const match of matchingUsers || []) {
-    if (match.user_id === user_id) continue; // don't notify creator
+    if (match.user_id === (user_id || room.host_user_id)) continue; // don't notify creator
     if (uniqueUsers.has(match.user_id)) continue;
     uniqueUsers.add(match.user_id);
 
-    // Create relationship edge for discovery
-    await supabase.from('relationship_edges').upsert({
-      tenant_id: tenantId,
-      user_id: match.user_id,
-      target_type: 'service',
-      target_id: service_id,
-      relationship_type: 'saved',
-      strength: Math.round(match.score * 0.5),
-      context: JSON.stringify({ origin: 'autopilot_marketplace' }),
-    }, { onConflict: 'tenant_id,user_id,target_type,target_id' });
+    ctx.notify(match.user_id, 'orb_suggestion', {
+      title: 'New Listing Matches Your Interests',
+      body: `"${room.title}" was just listed — matches your interest in ${match.interest}.`,
+      data: { url: `/live/rooms/${service_id}`, service_id },
+    });
 
     usersAffected++;
   }
 
   await ctx.emitEvent('autopilot.marketplace.service_listed', {
-    service_id, service_type: service.service_type, matched_users: usersAffected,
+    service_id, matched_users: usersAffected,
   });
 
   return { usersAffected, actionsTaken: usersAffected + 1 };
 }
 
 // ── AP-1102: Product Listing & AI-Picks Matching ────────────
+// Real schema: products_catalog (VTID-01092) was never deployed —
+// products (title, category, topic_keys array, is_active) is the live
+// global catalog. recommendations has category/title/body, not a `pillar`
+// column, and category is a single text value, not an array to overlap
+// against.
+const PRODUCT_MATCH_MAX_USERS = 50;
+
 async function runProductAiPicksMatching(ctx: AutomationContext) {
   const payload = ctx.run.metadata as any;
   const { product_id, user_id } = payload || {};
@@ -74,33 +84,46 @@ async function runProductAiPicksMatching(ctx: AutomationContext) {
   const { supabase, tenantId } = ctx;
 
   const { data: product } = await supabase
-    .from('products_catalog')
-    .select('name, product_type, topic_keys')
+    .from('products')
+    .select('title, category, topic_keys')
     .eq('id', product_id)
+    .eq('is_active', true)
     .maybeSingle();
 
   if (!product) return { usersAffected: 0, actionsTaken: 0 };
 
-  // Find users with matching recommendations
-  const topicKeys = product.topic_keys || [];
+  const topicKeys = [product.category, ...(product.topic_keys || [])].filter(Boolean);
+  if (!topicKeys.length) return { usersAffected: 0, actionsTaken: 1 };
+
+  // Find users whose recent recommendations align with this product's topics
   const { data: matchingRecs } = await supabase
     .from('recommendations')
     .select('user_id')
     .eq('tenant_id', tenantId)
-    .overlaps('pillar', topicKeys)
-    .limit(50);
+    .in('category', topicKeys)
+    .limit(PRODUCT_MATCH_MAX_USERS);
 
   let usersAffected = 0;
+  const uniqueUsers = new Set<string>();
   for (const rec of matchingRecs || []) {
     if (rec.user_id === user_id) continue;
+    if (uniqueUsers.has(rec.user_id)) continue;
+    uniqueUsers.add(rec.user_id);
+
+    ctx.notify(rec.user_id, 'orb_suggestion', {
+      title: 'New Pick For You',
+      body: `"${product.title}" matches recommendations your ORB already made for you.`,
+      data: { url: '/discover', product_id },
+    });
+
     usersAffected++;
   }
 
   await ctx.emitEvent('autopilot.marketplace.product_listed', {
-    product_id, product_type: product.product_type, matched_users: usersAffected,
+    product_id, matched_users: usersAffected,
   });
 
-  return { usersAffected, actionsTaken: 1 };
+  return { usersAffected, actionsTaken: usersAffected + 1 };
 }
 
 // ── AP-1103: Discover Section Personalization ───────────────
@@ -111,71 +134,75 @@ async function runDiscoverPersonalization(ctx: AutomationContext) {
 }
 
 // ── AP-1104: Client-Service Matching ────────────────────────
+// Real schema: services_catalog (VTID-01092) was never deployed —
+// live_rooms.category is the closest live analog to a "service type".
+// user_offers_memory (interest-tracking) was never deployed either; no
+// substitute exists for that specific "viewed" tracking, so it's dropped
+// rather than invented — the notification itself is the real behavior.
 async function runClientServiceMatching(ctx: AutomationContext) {
   const payload = ctx.run.metadata as any;
-  const { user_id, query, service_type } = payload || {};
+  const { user_id, service_type } = payload || {};
   if (!user_id) return { usersAffected: 0, actionsTaken: 0 };
 
   const { supabase, tenantId } = ctx;
 
-  const { data: services } = await supabase
-    .from('services_catalog')
-    .select('id, name, service_type, provider_name, topic_keys')
+  const { data: rooms } = await supabase
+    .from('live_rooms')
+    .select('id, title, category, host_user_id')
     .eq('tenant_id', tenantId)
-    .eq('service_type', service_type || 'coach')
+    .eq('category', service_type || 'coach')
+    .eq('status', 'scheduled')
     .limit(3);
 
-  if (!services?.length) return { usersAffected: 0, actionsTaken: 0 };
+  if (!rooms?.length) return { usersAffected: 0, actionsTaken: 0 };
 
-  // Track user interest
-  for (const service of services) {
-    await supabase.from('user_offers_memory').upsert({
-      tenant_id: tenantId,
-      user_id,
-      target_type: 'service',
-      target_id: service.id,
-      state: 'viewed',
-    }, { onConflict: 'tenant_id,user_id,target_type,target_id' });
-  }
+  ctx.notify(user_id, 'orb_suggestion', {
+    title: 'Matches Found',
+    body: `Found ${rooms.length} ${service_type || 'coach'} session${rooms.length === 1 ? '' : 's'} that might fit what you're looking for.`,
+    data: { url: '/discover', filter: service_type || 'coach' },
+  });
 
-  await ctx.emitEvent('autopilot.marketplace.client_matched', { user_id, matches: services.length });
-  return { usersAffected: 1, actionsTaken: services.length };
+  await ctx.emitEvent('autopilot.marketplace.client_matched', { user_id, matches: rooms.length });
+  return { usersAffected: 1, actionsTaken: 1 };
 }
 
 // ── AP-1105: Post-Service Outcome Tracking ──────────────────
+// Real schema: user_offers_memory/usage_outcomes (VTID-01092) were never
+// deployed. live_room_attendance (a row's existence IS the attendance
+// signal, per AP-1203/1204/1205's fix earlier this session) is the real
+// "did this user use a service" table. Cooldown for "already asked" uses
+// the same user_notifications contains-data pattern used throughout this
+// session rather than a nonexistent usage_outcomes table.
+const OUTCOME_TRACKING_MAX_PER_RUN = 50;
+
 async function runPostServiceOutcomeTracking(ctx: AutomationContext) {
-  const { supabase, tenantId } = ctx;
+  const { supabase } = ctx;
   let usersAffected = 0;
   let actionsTaken = 0;
 
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
   const eightDaysAgo = new Date(Date.now() - 8 * 24 * 60 * 60 * 1000).toISOString();
 
-  const { data: recentUses } = await supabase
-    .from('user_offers_memory')
-    .select('user_id, target_id, target_type')
-    .eq('tenant_id', tenantId)
-    .eq('state', 'used')
-    .eq('target_type', 'service')
-    .gte('updated_at', eightDaysAgo)
-    .lte('updated_at', sevenDaysAgo)
-    .limit(50);
+  const { data: recentAttendance } = await supabase
+    .from('live_room_attendance')
+    .select('user_id, live_room_id')
+    .gte('joined_at', eightDaysAgo)
+    .lte('joined_at', sevenDaysAgo)
+    .limit(OUTCOME_TRACKING_MAX_PER_RUN);
 
-  for (const usage of recentUses || []) {
-    // Check if outcome already recorded
-    const { count } = await supabase
-      .from('usage_outcomes')
-      .select('id', { count: 'exact', head: true })
-      .eq('tenant_id', tenantId)
-      .eq('user_id', usage.user_id)
-      .eq('target_id', usage.target_id);
+  for (const attendance of recentAttendance || []) {
+    const { data: alreadyAsked } = await supabase
+      .from('user_notifications')
+      .select('id')
+      .eq('user_id', attendance.user_id)
+      .contains('data', { automation_id: 'AP-1105', live_room_id: attendance.live_room_id })
+      .limit(1);
+    if (alreadyAsked && alreadyAsked.length > 0) continue;
 
-    if ((count || 0) > 0) continue;
-
-    ctx.notify(usage.user_id, 'orb_proactive_message', {
+    ctx.notify(attendance.user_id, 'orb_proactive_message', {
       title: 'How Was Your Experience?',
-      body: 'Tell us about your recent service — your feedback helps others.',
-      data: { url: '/discover', target_id: usage.target_id },
+      body: 'Tell us about your recent session — your feedback helps others.',
+      data: { url: '/discover', live_room_id: attendance.live_room_id, automation_id: 'AP-1105' },
     });
 
     usersAffected++;
@@ -202,6 +229,11 @@ async function runShopSetupWizard(ctx: AutomationContext) {
 }
 
 // ── AP-1107: Product Review Follow-Up ───────────────────────
+// Real schema: user_offers_memory/products_catalog (VTID-01092) were never
+// deployed. product_orders (purchased_at, real user_id/tenant_id) + products
+// (title) are the live tables for "did this user buy a product".
+const REVIEW_FOLLOWUP_MAX_PER_RUN = 50;
+
 async function runProductReviewFollowUp(ctx: AutomationContext) {
   const { supabase, tenantId } = ctx;
   let usersAffected = 0;
@@ -210,27 +242,26 @@ async function runProductReviewFollowUp(ctx: AutomationContext) {
   const fourteenDaysAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString();
   const fifteenDaysAgo = new Date(Date.now() - 15 * 24 * 60 * 60 * 1000).toISOString();
 
-  const { data: productUses } = await supabase
-    .from('user_offers_memory')
-    .select('user_id, target_id')
+  const { data: orders } = await supabase
+    .from('product_orders')
+    .select('user_id, product_id')
     .eq('tenant_id', tenantId)
-    .eq('state', 'used')
-    .eq('target_type', 'product')
-    .gte('updated_at', fifteenDaysAgo)
-    .lte('updated_at', fourteenDaysAgo)
-    .limit(50);
+    .eq('state', 'completed')
+    .gte('purchased_at', fifteenDaysAgo)
+    .lte('purchased_at', fourteenDaysAgo)
+    .limit(REVIEW_FOLLOWUP_MAX_PER_RUN);
 
-  for (const usage of productUses || []) {
+  for (const order of orders || []) {
     const { data: product } = await supabase
-      .from('products_catalog')
-      .select('name')
-      .eq('id', usage.target_id)
+      .from('products')
+      .select('title')
+      .eq('id', order.product_id)
       .maybeSingle();
 
-    ctx.notify(usage.user_id, 'orb_proactive_message', {
+    ctx.notify(order.user_id, 'orb_proactive_message', {
       title: 'How Is It Working?',
-      body: `How is ${product?.name || 'your product'} working for you? A review helps other members.`,
-      data: { url: '/discover', target_id: usage.target_id },
+      body: `How is ${product?.title || 'your product'} working for you? A review helps other members.`,
+      data: { url: '/discover', product_id: order.product_id },
     });
 
     usersAffected++;
@@ -241,6 +272,9 @@ async function runProductReviewFollowUp(ctx: AutomationContext) {
 }
 
 // ── AP-1110: Cross-Sell Service to Product Buyers ───────────
+// Real schema: products_catalog/services_catalog (VTID-01092) were never
+// deployed. products (topic_keys array) and live_rooms (topic_keys array)
+// are the live substitutes.
 async function runCrossSellServiceToProductBuyers(ctx: AutomationContext) {
   const payload = ctx.run.metadata as any;
   const { user_id, product_id } = payload || {};
@@ -249,28 +283,28 @@ async function runCrossSellServiceToProductBuyers(ctx: AutomationContext) {
   const { supabase, tenantId } = ctx;
 
   const { data: product } = await supabase
-    .from('products_catalog')
+    .from('products')
     .select('topic_keys')
     .eq('id', product_id)
     .maybeSingle();
 
   if (!product?.topic_keys?.length) return { usersAffected: 0, actionsTaken: 0 };
 
-  const { data: services } = await supabase
-    .from('services_catalog')
-    .select('id, name, service_type')
+  const { data: room } = await supabase
+    .from('live_rooms')
+    .select('id, category')
     .eq('tenant_id', tenantId)
     .overlaps('topic_keys', product.topic_keys)
     .limit(1)
     .maybeSingle();
 
-  if (!services) return { usersAffected: 0, actionsTaken: 0 };
+  if (!room) return { usersAffected: 0, actionsTaken: 0 };
 
   // Don't suggest immediately — wait 3 days (tracked by heartbeat)
   ctx.notify(user_id, 'orb_suggestion', {
     title: 'Get More From Your Purchase',
-    body: `A ${services.service_type} can help you optimize your results. Check Discover.`,
-    data: { url: '/discover', filter: services.service_type },
+    body: `A ${room.category || 'session'} can help you optimize your results. Check Discover.`,
+    data: { url: '/discover', filter: room.category },
   });
 
   return { usersAffected: 1, actionsTaken: 1 };
@@ -278,13 +312,13 @@ async function runCrossSellServiceToProductBuyers(ctx: AutomationContext) {
 
 // ── AP-1108: Creator Analytics & Growth Tips ────────────────
 // Real schema: services_catalog/products_catalog (VTID-01092) were never
-// deployed — there is no live "creator listing" table (this also means
-// AP-1101/1102/1104/1105/1107/1110 above are broken against the live DB;
-// flagged separately, not fixed here). The only live signal for creator
-// performance is live_rooms (host_user_id, price_cents, capacity) +
-// live_room_attendance (live_room_id — a row's existence IS attendance,
-// no separate boolean) + service_payments (payee_vitana_id is TEXT,
-// joins app_users.vitana_id, NOT a uuid user_id).
+// deployed — there is no live "creator listing" table (AP-1101/1102/1104/
+// 1105/1107/1110 above were fixed against the live_rooms/products/
+// product_orders/live_room_attendance substitutes instead). The only live
+// signal for creator performance here is live_rooms (host_user_id,
+// price_cents, capacity) + live_room_attendance (live_room_id — a row's
+// existence IS attendance, no separate boolean) + service_payments
+// (payee_vitana_id is TEXT, joins app_users.vitana_id, NOT a uuid user_id).
 const CREATOR_ANALYTICS_WINDOW_DAYS = 7;
 
 async function runCreatorAnalyticsGrowthTips(ctx: AutomationContext) {
