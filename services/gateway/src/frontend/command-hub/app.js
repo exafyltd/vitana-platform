@@ -2749,6 +2749,19 @@ const NAVIGATION_CONFIG = [
             { "key": "metrics",             "path": "/command-hub/assistant/metrics/" }
         ]
     },
+    // Conversation-flow roadmap Step 4 — READ-ONLY operator cockpit for the
+    // conversation flow (one brain: services/conversation/*). Sits between
+    // Assistant and Voice. Reads /api/v1/admin/conversation/*.
+    {
+        "section": "conversation",
+        "basePath": "/command-hub/conversation/",
+        "tabs": [
+            { "key": "config",     "label": "Config",           "path": "/command-hub/conversation/config/" },
+            { "key": "monitor",    "label": "Monitor",          "path": "/command-hub/conversation/monitor/" },
+            { "key": "tools",      "label": "Tool Health",      "path": "/command-hub/conversation/tools/" },
+            { "key": "simulator",  "label": "Simulator",        "path": "/command-hub/conversation/simulator/" }
+        ]
+    },
     // VTID-02856: Unified Voice section — owns every voice-management surface.
     // VTID-02865: Improve cockpit is tab #1 — operators land on the
     // diagnose-and-repair surface; Orb LIVE moves to #2.
@@ -2971,6 +2984,7 @@ const SECTION_LABELS = {
     'commerce': 'Commerce',
     'knowledge-base': 'Knowledge Base',
     'assistant': 'Assistant',
+    'conversation': 'Conversation',
     'voice': 'Voice',
     'autonomy': 'Autonomy',
     'operator': 'Operator',
@@ -6965,6 +6979,193 @@ function renderKbChecklistView() {
     return root;
 }
 
+// ─────────────────────────────────────────────────────────────────────────
+// Conversation-flow roadmap Step 4 — READ-ONLY Command Hub cockpit.
+// All views fetch /api/v1/admin/conversation/* (admin-gated) and render the
+// single brain's config + telemetry. No editing controls (Step 5) and no
+// tenant overrides (Step 6). CSP-safe: no inline JS; inline style attrs only.
+// ─────────────────────────────────────────────────────────────────────────
+
+function _convEl(tag, opts) {
+    var el = document.createElement(tag);
+    opts = opts || {};
+    if (opts.text != null) el.textContent = String(opts.text);
+    if (opts.css) el.style.cssText = opts.css;
+    if (opts.cls) el.className = opts.cls;
+    return el;
+}
+
+async function _convFetch(path) {
+    var headers = (typeof buildContextHeaders === 'function')
+        ? buildContextHeaders({ 'Accept': 'application/json' })
+        : { 'Accept': 'application/json' };
+    var res = await fetch('/api/v1' + path, { headers: headers });
+    var body = await res.json().catch(function () { return null; });
+    if (!res.ok || !body || body.ok === false) {
+        throw new Error((body && body.error) || ('HTTP ' + res.status));
+    }
+    return body.data;
+}
+
+function _convPanel(title, subtitle) {
+    var panel = _convEl('div', { css: 'padding:20px;max-width:1100px;' });
+    panel.appendChild(_convEl('h2', { text: title, css: 'margin:0 0 4px;font-size:20px;' }));
+    if (subtitle) panel.appendChild(_convEl('p', { text: subtitle, css: 'margin:0 0 16px;color:#8a94a6;font-size:13px;' }));
+    var body = _convEl('div');
+    body.appendChild(_convEl('div', { text: 'Loading…', css: 'color:#8a94a6;padding:12px 0;' }));
+    panel.appendChild(body);
+    return { panel: panel, body: body };
+}
+
+function _convError(body, err) {
+    body.innerHTML = '';
+    body.appendChild(_convEl('div', {
+        text: 'Could not load: ' + (err && err.message ? err.message : err),
+        css: 'color:#e06c75;padding:12px;border:1px solid #e06c75;border-radius:6px;'
+    }));
+}
+
+function _convTable(columns, rows) {
+    var wrap = _convEl('div', { css: 'overflow-x:auto;' });
+    var table = _convEl('table', { css: 'width:100%;border-collapse:collapse;font-size:13px;' });
+    var thead = _convEl('thead');
+    var htr = _convEl('tr');
+    columns.forEach(function (c) {
+        htr.appendChild(_convEl('th', { text: c.label, css: 'text-align:left;padding:8px 10px;border-bottom:2px solid #2c3444;color:#8a94a6;font-weight:600;white-space:nowrap;' }));
+    });
+    thead.appendChild(htr);
+    table.appendChild(thead);
+    var tbody = _convEl('tbody');
+    if (!rows.length) {
+        var er = _convEl('tr');
+        var ec = _convEl('td', { text: 'No rows.', css: 'padding:10px;color:#8a94a6;' });
+        ec.colSpan = columns.length;
+        er.appendChild(ec);
+        tbody.appendChild(er);
+    }
+    rows.forEach(function (row) {
+        var tr = _convEl('tr');
+        columns.forEach(function (c) {
+            var v = row[c.key];
+            tr.appendChild(_convEl('td', { text: (v == null ? '—' : (typeof v === 'object' ? JSON.stringify(v) : v)), css: 'padding:8px 10px;border-bottom:1px solid #222a36;vertical-align:top;' }));
+        });
+        tbody.appendChild(tr);
+    });
+    table.appendChild(tbody);
+    wrap.appendChild(table);
+    return wrap;
+}
+
+function renderConversationConfigView() {
+    var ui = _convPanel('Conversation · Config', 'The single brain’s global defaults — registers, next-best-actions, and the screen-completion map. Read-only (editing = Step 5, tenant overrides = Step 6).');
+    _convFetch('/admin/conversation/config').then(function (data) {
+        ui.body.innerHTML = '';
+        ui.body.appendChild(_convEl('h3', { text: 'Opening registers (recency-first)', css: 'margin:8px 0;font-size:15px;' }));
+        ui.body.appendChild(_convTable(
+            [{ key: 'register', label: 'Register' }, { key: 'trigger', label: 'Trigger' }, { key: 'greeting', label: 'Greeting' }],
+            data.registers || []
+        ));
+        ui.body.appendChild(_convEl('h3', { text: 'Next-Best-Action band table', css: 'margin:20px 0 8px;font-size:15px;' }));
+        ui.body.appendChild(_convTable(
+            [{ key: 'band', label: 'Band' }, { key: 'key', label: 'Action' }, { key: 'domain', label: 'Domain' }, { key: 'detail', label: 'Detail' }, { key: 'executes_with_tool', label: 'Executes with tool' }],
+            data.next_best_actions || []
+        ));
+        ui.body.appendChild(_convEl('h3', { text: 'Screen-completion map', css: 'margin:20px 0 8px;font-size:15px;' }));
+        ui.body.appendChild(_convTable(
+            [{ key: 'surface', label: 'Surface' }, { key: 'completion_key', label: 'Completion action' }, { key: 'band', label: 'Band' }, { key: 'suppresses_redirect', label: 'Suppresses redirect' }, { key: 'executes_with_tool', label: 'Executes with tool' }],
+            data.screen_completion || []
+        ));
+    }).catch(function (err) { _convError(ui.body, err); });
+    return ui.panel;
+}
+
+function renderConversationMonitorView() {
+    var ui = _convPanel('Conversation · Monitor', 'Recent greeting decisions (oasis_events greeting_sent) — which opener fired, register, recency bucket, chosen NBA, and the screen the user was on.');
+    _convFetch('/admin/conversation/decisions?limit=100').then(function (data) {
+        ui.body.innerHTML = '';
+        ui.body.appendChild(_convEl('div', { text: (data.count || 0) + ' decision(s) in the last ' + (data.window_hours || 24) + 'h', css: 'color:#8a94a6;margin-bottom:10px;font-size:12px;' }));
+        ui.body.appendChild(_convTable(
+            [{ key: 'created_at', label: 'When' }, { key: 'wake_opener', label: 'Opener' }, { key: 'register', label: 'Register' }, { key: 'bucket', label: 'Bucket' }, { key: 'nba', label: 'NBA' }, { key: 'nba_domain', label: 'Domain' }, { key: 'current_route', label: 'Route' }, { key: 'lang', label: 'Lang' }],
+            data.decisions || []
+        ));
+    }).catch(function (err) { _convError(ui.body, err); });
+    return ui.panel;
+}
+
+function renderConversationToolHealthView() {
+    var ui = _convPanel('Conversation · Tool Health', 'Recent tool failures (oasis_events tool_failed) — the proactive catch for the speakable-tool failure class.');
+    _convFetch('/admin/conversation/tool-failures?limit=100').then(function (data) {
+        ui.body.innerHTML = '';
+        ui.body.appendChild(_convEl('div', { text: (data.count || 0) + ' failure(s) in the last ' + (data.window_hours || 24) + 'h', css: 'color:#8a94a6;margin-bottom:10px;font-size:12px;' }));
+        ui.body.appendChild(_convTable(
+            [{ key: 'created_at', label: 'When' }, { key: 'tool', label: 'Tool' }, { key: 'soft', label: 'Soft?' }, { key: 'ms', label: 'ms' }, { key: 'detail', label: 'Detail' }],
+            data.failures || []
+        ));
+    }).catch(function (err) { _convError(ui.body, err); });
+    return ui.panel;
+}
+
+function renderConversationSimulatorView() {
+    var ui = _convPanel('Conversation · Simulator', 'Dry-run the decision for a user — assembled bundle, register, ranked NBAs, and the composed directive. Read-only: the assistant never speaks or emits.');
+    ui.body.innerHTML = '';
+
+    var form = _convEl('div', { css: 'display:flex;flex-wrap:wrap;gap:8px;align-items:flex-end;margin-bottom:16px;' });
+    function field(label, id, placeholder, value) {
+        var box = _convEl('div', { css: 'display:flex;flex-direction:column;gap:2px;' });
+        box.appendChild(_convEl('label', { text: label, css: 'font-size:11px;color:#8a94a6;' }));
+        var input = _convEl('input', { css: 'padding:6px 8px;background:#161b22;border:1px solid #2c3444;border-radius:5px;color:#e6e6e6;font-size:13px;min-width:150px;' });
+        input.id = id;
+        if (placeholder) input.placeholder = placeholder;
+        if (value != null) input.value = value;
+        box.appendChild(input);
+        form.appendChild(box);
+        return input;
+    }
+    var userInput = field('User ID', 'conv-sim-user', 'a27552a3-…', '');
+    var bucketInput = field('Bucket', 'conv-sim-bucket', 'same_day', 'same_day');
+    var langInput = field('Lang', 'conv-sim-lang', 'de', 'de');
+    var routeInput = field('Current route', 'conv-sim-route', '/matches', '');
+    var runBtn = _convEl('button', { text: 'Run dry-run', css: 'padding:7px 14px;background:#2f6feb;border:none;border-radius:5px;color:#fff;font-size:13px;cursor:pointer;' });
+    form.appendChild(runBtn);
+    ui.body.appendChild(form);
+
+    var out = _convEl('div');
+    ui.body.appendChild(out);
+
+    function run() {
+        var uid = (userInput.value || '').trim();
+        if (!uid) { out.innerHTML = ''; out.appendChild(_convEl('div', { text: 'Enter a user ID.', css: 'color:#e5c07b;' })); return; }
+        out.innerHTML = '';
+        out.appendChild(_convEl('div', { text: 'Running…', css: 'color:#8a94a6;' }));
+        var qs = '?user_id=' + encodeURIComponent(uid)
+            + '&bucket=' + encodeURIComponent((bucketInput.value || 'same_day').trim())
+            + '&lang=' + encodeURIComponent((langInput.value || 'de').trim())
+            + (routeInput.value ? '&current_route=' + encodeURIComponent(routeInput.value.trim()) : '');
+        _convFetch('/admin/conversation/preview' + qs).then(function (data) {
+            out.innerHTML = '';
+            var summary = _convEl('div', { css: 'display:flex;flex-wrap:wrap;gap:16px;margin-bottom:14px;' });
+            [['Register', data.register], ['Surface', data.surface], ['Chosen NBA', data.chosen_nba ? data.chosen_nba.key : '—'], ['Payload', data.payload_available ? 'assembled' : 'unavailable']].forEach(function (pair) {
+                var chip = _convEl('div', { css: 'background:#161b22;border:1px solid #2c3444;border-radius:6px;padding:8px 12px;' });
+                chip.appendChild(_convEl('div', { text: pair[0], css: 'font-size:10px;color:#8a94a6;text-transform:uppercase;' }));
+                chip.appendChild(_convEl('div', { text: (pair[1] == null ? '—' : pair[1]), css: 'font-size:15px;color:#e6e6e6;' }));
+                summary.appendChild(chip);
+            });
+            out.appendChild(summary);
+            out.appendChild(_convEl('h3', { text: 'Ranked next-best-actions', css: 'margin:10px 0 8px;font-size:14px;' }));
+            out.appendChild(_convTable(
+                [{ key: 'band', label: 'Band' }, { key: 'key', label: 'Action' }, { key: 'domain', label: 'Domain' }, { key: 'detail', label: 'Detail' }, { key: 'executes_with_tool', label: 'Tool' }],
+                data.ranked_nbas || []
+            ));
+            out.appendChild(_convEl('h3', { text: 'Composed first-turn directive', css: 'margin:18px 0 8px;font-size:14px;' }));
+            var pre = _convEl('pre', { text: data.directive || '(no directive for this register)', css: 'white-space:pre-wrap;background:#0d1117;border:1px solid #2c3444;border-radius:6px;padding:12px;font-size:12px;color:#c8ccd4;max-height:340px;overflow:auto;' });
+            out.appendChild(pre);
+            out.appendChild(_convEl('div', { text: data.note || '', css: 'margin-top:8px;color:#8a94a6;font-size:11px;' }));
+        }).catch(function (err) { _convError(out, err); });
+    }
+    runBtn.addEventListener('click', run);
+    return ui.panel;
+}
+
 function renderModuleContent(moduleKey, tab) {
     const container = document.createElement('div');
     container.className = 'content-container';
@@ -7014,6 +7215,16 @@ function renderModuleContent(moduleKey, tab) {
     } else if (moduleKey === 'assistant' && tab === 'metrics') {
         state.voiceLab.activeSubTab = 'metrics';
         container.appendChild(renderVoiceLabPlaceholderPanel('Metrics', 'VTID-01218D'));
+
+    // ──── Conversation-flow roadmap Step 4: read-only cockpit ────
+    } else if (moduleKey === 'conversation' && tab === 'config') {
+        container.appendChild(renderConversationConfigView());
+    } else if (moduleKey === 'conversation' && tab === 'monitor') {
+        container.appendChild(renderConversationMonitorView());
+    } else if (moduleKey === 'conversation' && tab === 'tools') {
+        container.appendChild(renderConversationToolHealthView());
+    } else if (moduleKey === 'conversation' && tab === 'simulator') {
+        container.appendChild(renderConversationSimulatorView());
 
     // ──── VTID-02856: Voice section · VTID-02865: Improve cockpit ────
     } else if (moduleKey === 'voice' && tab === 'improve') {
