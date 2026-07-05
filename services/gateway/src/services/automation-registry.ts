@@ -616,6 +616,9 @@ const PAYMENTS_WALLET: AutomationDefinition[] = [
     handler: 'runSubscriptionAudit',
   },
   {
+    // Stays PLANNED: nothing dispatches 'user.plan_limit.approaching' and no
+    // plan-limit-tracking concept exists live to build a heartbeat
+    // substitute against — same missing-trigger situation as AP-0508/1206.
     id: 'AP-0703', name: 'Plan Upgrade Suggestion', domain: 'payments-wallet-vtn',
     status: 'PLANNED', priority: 'P2', triggerType: 'event',
     triggerConfig: { eventTopic: 'user.plan_limit.approaching' },
@@ -623,9 +626,10 @@ const PAYMENTS_WALLET: AutomationDefinition[] = [
   },
   {
     id: 'AP-0704', name: 'Subscription Expiry Warning', domain: 'payments-wallet-vtn',
-    status: 'PLANNED', priority: 'P1', triggerType: 'heartbeat',
+    status: 'IMPLEMENTED', priority: 'P1', triggerType: 'heartbeat',
     triggerConfig: { intervalMinutes: 1440 },
     targetRoles: ALL_ROLES,
+    handler: 'runSubscriptionExpiryWarning',
   },
   {
     id: 'AP-0705', name: 'Payment Method Update Reminder', domain: 'payments-wallet-vtn',
@@ -656,6 +660,9 @@ const PAYMENTS_WALLET: AutomationDefinition[] = [
     handler: 'runWalletCreditReward',
   },
   {
+    // Stays PLANNED: a token-launch automation is a one-time tokenomics/
+    // treasury operation outside this session's scope — not a schema-drift
+    // gap closable by fixing table/column names.
     id: 'AP-0709', name: 'Vitana Token (VTN) Launch Automation', domain: 'payments-wallet-vtn',
     status: 'PLANNED', priority: 'P0', triggerType: 'manual',
     targetRoles: ALL_ROLES,
@@ -676,9 +683,10 @@ const PAYMENTS_WALLET: AutomationDefinition[] = [
   },
   {
     id: 'AP-0712', name: 'Spending Insights for Users', domain: 'payments-wallet-vtn',
-    status: 'PLANNED', priority: 'P2', triggerType: 'cron',
+    status: 'IMPLEMENTED', priority: 'P2', triggerType: 'cron',
     triggerConfig: { cronExpression: '0 10 1 * *' },
     targetRoles: [...CONSUMER_ROLES],
+    handler: 'runSpendingInsights',
   },
 ];
 
