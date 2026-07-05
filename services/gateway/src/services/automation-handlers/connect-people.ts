@@ -329,6 +329,123 @@ async function runProactiveMatchBatch(ctx: AutomationContext) {
   return { usersAffected: 0, actionsTaken: 0 };
 }
 
+// ── AP-0106: "People You Know Are Here" Social Proof ────────
+async function runPeopleYouKnowSocialProof(ctx: AutomationContext) {
+  const payload = ctx.run.metadata as any;
+  const userId = payload?.user_id;
+  const groupId = payload?.group_id;
+  if (!userId || !groupId) return { usersAffected: 0, actionsTaken: 0 };
+
+  const { supabase, tenantId } = ctx;
+
+  // relationship_edges' live schema is source_type/source_id/target_type/
+  // target_id/edge_type (NOT user_id/relationship_type — several other
+  // already-shipped handlers in this file/domain still use that stale
+  // column set and silently no-op; see PR discussion for the wider finding).
+  const { data: connections } = await supabase
+    .from('relationship_edges')
+    .select('target_id')
+    .eq('tenant_id', tenantId)
+    .eq('source_type', 'person')
+    .eq('source_id', userId)
+    .eq('target_type', 'person')
+    .eq('edge_type', 'connected');
+
+  const connectionIds = (connections || []).map((c: any) => c.target_id);
+  if (connectionIds.length === 0) return { usersAffected: 0, actionsTaken: 0 };
+
+  // community_groups/community_group_members (VTID-01084) were never
+  // deployed — global_community_groups/global_community_group_members is
+  // the real, live groups schema (no tenant_id; the global community is
+  // shared across tenants).
+  const { data: members } = await supabase
+    .from('global_community_group_members')
+    .select('user_id')
+    .eq('group_id', groupId)
+    .in('user_id', connectionIds);
+
+  const knownMemberIds = (members || []).map((m: any) => m.user_id);
+  if (knownMemberIds.length === 0) return { usersAffected: 0, actionsTaken: 0 };
+
+  // app_users' primary key is user_id, not id (a mistake repeated across
+  // several already-shipped automation handlers — see PR discussion).
+  const { data: knownUsers } = await supabase
+    .from('app_users')
+    .select('display_name')
+    .in('user_id', knownMemberIds.slice(0, 3));
+
+  const names = (knownUsers || []).map((u: any) => u.display_name).filter(Boolean);
+  const body = names.length > 0
+    ? `${names.join(', ')}${knownMemberIds.length > names.length ? ' and others' : ''} you know ${knownMemberIds.length === 1 ? 'is' : 'are'} in this group.`
+    : `${knownMemberIds.length} ${knownMemberIds.length === 1 ? 'person' : 'people'} you know ${knownMemberIds.length === 1 ? 'is' : 'are'} in this group.`;
+
+  ctx.notify(userId, 'group_social_proof', {
+    title: 'People You Know Are Here',
+    body,
+    data: { url: `/community/groups/${groupId}`, group_id: groupId },
+  });
+
+  await ctx.emitEvent('autopilot.connect.social_proof_shown', {
+    user_id: userId,
+    group_id: groupId,
+    known_member_count: knownMemberIds.length,
+  });
+
+  return { usersAffected: 1, actionsTaken: 1 };
+}
+
+// ── AP-0110: Opportunity Surfacing with Social Layer ────────
+async function runOpportunitySocialLayer(ctx: AutomationContext) {
+  const payload = ctx.run.metadata as any;
+  const userId = payload?.user_id;
+  const opportunityId = payload?.opportunity_id;
+  const opportunityType = payload?.opportunity_type;
+  if (!userId || !opportunityId || !opportunityType) return { usersAffected: 0, actionsTaken: 0 };
+
+  const { supabase, tenantId } = ctx;
+
+  const { data: connections } = await supabase
+    .from('relationship_edges')
+    .select('target_id')
+    .eq('tenant_id', tenantId)
+    .eq('source_type', 'person')
+    .eq('source_id', userId)
+    .eq('target_type', 'person')
+    .eq('edge_type', 'connected');
+
+  const connectionIds = (connections || []).map((c: any) => c.target_id);
+  if (connectionIds.length === 0) return { usersAffected: 0, actionsTaken: 0 };
+
+  // Find connections who engaged with a similar opportunity type recently.
+  // status is 'active' | 'dismissed' | 'engaged' | 'expired' — 'engaged' is
+  // the ContextualOpportunityRecord value for acted-on (see
+  // types/opportunity-surfacing.ts).
+  const { data: peerOpportunities, count } = await supabase
+    .from('contextual_opportunities')
+    .select('id, user_id', { count: 'exact' })
+    .eq('tenant_id', tenantId)
+    .eq('opportunity_type', opportunityType)
+    .in('user_id', connectionIds)
+    .in('status', ['active', 'engaged'])
+    .limit(10);
+
+  if (!count || count === 0) return { usersAffected: 0, actionsTaken: 0 };
+
+  ctx.notify(userId, 'opportunity_social_layer', {
+    title: 'Others Explored This Too',
+    body: `${count} ${count === 1 ? 'person' : 'people'} you know engaged with something similar recently.`,
+    data: { opportunity_id: opportunityId, peer_count: String(count) },
+  });
+
+  await ctx.emitEvent('autopilot.opportunity.social_layer_added', {
+    user_id: userId,
+    opportunity_id: opportunityId,
+    peer_count: count,
+  });
+
+  return { usersAffected: 1, actionsTaken: 1 };
+}
+
 // ── Register all handlers ───────────────────────────────────
 export function registerConnectPeopleHandlers(): void {
   registerHandler('runDailyMatchDelivery', runDailyMatchDelivery);
@@ -336,7 +453,9 @@ export function registerConnectPeopleHandlers(): void {
   registerHandler('runMutualAcceptIntroduction', runMutualAcceptIntroduction);
   registerHandler('runFirstConversationStarter', runFirstConversationStarter);
   registerHandler('runGroupRecommendationPush', runGroupRecommendationPush);
+  registerHandler('runPeopleYouKnowSocialProof', runPeopleYouKnowSocialProof);
   registerHandler('runSocialAlignmentSuggestions', runSocialAlignmentSuggestions);
   registerHandler('runMatchQualityLoop', runMatchQualityLoop);
   registerHandler('runProactiveMatchBatch', runProactiveMatchBatch);
+  registerHandler('runOpportunitySocialLayer', runOpportunitySocialLayer);
 }
