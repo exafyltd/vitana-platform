@@ -14,6 +14,7 @@ import { registerBusinessMarketplaceHandlers } from './business-marketplace';
 import { registerLiveRoomsCommerceHandlers } from './live-rooms-commerce';
 import { registerEngagementEventsHandlers } from './engagement-events';
 import { registerOnboardingGrowthHandlers } from './onboarding-growth';
+import { registerPlatformOperationsHandlers } from './platform-operations';
 import { registerHandler } from '../automation-executor';
 
 /**

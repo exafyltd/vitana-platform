@@ -46,6 +46,13 @@ async function runGraduatedReminders(ctx: AutomationContext) {
   }
 }
 
+// Real schema: community_meetups/community_meetup_attendance (VTID-01084)
+// were never deployed; global_community_events/global_event_participants is
+// the real, live events schema (status only has 'attending' — no separate
+// RSVP-vs-attended distinction). relationship_edges is source_type/source_id/
+// target_type/target_id/edge_type. app_users' primary key is user_id.
+// NOTE: this automation's trigger (event 'match.daily.event') is not
+// currently dispatched anywhere in the codebase — flagged, not fixed here.
 async function runGoTogetherMatch(ctx: AutomationContext) {
   const payload = ctx.run.metadata as any;
   const { user_id, event_id } = payload || {};
@@ -58,9 +65,10 @@ async function runGoTogetherMatch(ctx: AutomationContext) {
     .from('relationship_edges')
     .select('target_id')
     .eq('tenant_id', tenantId)
-    .eq('user_id', user_id)
+    .eq('source_type', 'person')
+    .eq('source_id', user_id)
     .eq('target_type', 'person')
-    .eq('relationship_type', 'connected')
+    .eq('edge_type', 'connected')
     .limit(10);
 
   const connectionIds = (connections || []).map((c: any) => c.target_id);
@@ -68,119 +76,167 @@ async function runGoTogetherMatch(ctx: AutomationContext) {
     ctx.notify(user_id, 'event_match_suggested', {
       title: 'Event Match',
       body: 'An event matches your interests — check it out!',
-      data: { url: `/community/meetups/${event_id}`, meetup_id: event_id },
+      data: { url: `/community/events/${event_id}`, event_id },
     });
     return { usersAffected: 1, actionsTaken: 1 };
   }
 
   const { data: attendingConnections } = await supabase
-    .from('community_meetup_attendance')
+    .from('global_event_participants')
     .select('user_id')
-    .eq('meetup_id', event_id)
+    .eq('event_id', event_id)
     .in('user_id', connectionIds)
-    .eq('status', 'rsvp');
+    .eq('status', 'attending');
 
   if (attendingConnections?.length) {
     const { data: friend } = await supabase
-      .from('app_users').select('display_name').eq('id', attendingConnections[0].user_id).maybeSingle();
+      .from('app_users').select('display_name').eq('user_id', attendingConnections[0].user_id).maybeSingle();
 
     ctx.notify(user_id, 'event_match_suggested', {
       title: 'Go Together!',
       body: `${friend?.display_name || 'A friend'} is going — join them!`,
-      data: { url: `/community/meetups/${event_id}`, meetup_id: event_id },
+      data: { url: `/community/events/${event_id}`, event_id },
     });
   } else {
     ctx.notify(user_id, 'event_match_suggested', {
       title: 'Event Match',
       body: 'An event matches your interests — check it out!',
-      data: { url: `/community/meetups/${event_id}`, meetup_id: event_id },
+      data: { url: `/community/events/${event_id}`, event_id },
     });
   }
 
   return { usersAffected: 1, actionsTaken: 1 };
 }
 
-async function runPostEventFeedback(ctx: AutomationContext) {
-  const payload = ctx.run.metadata as any;
-  const meetupId = payload?.meetup_id;
-  if (!meetupId) return { usersAffected: 0, actionsTaken: 0 };
+// AP-0304/AP-0308 both originally triggered on event 'meetup.ended', which
+// is never dispatched anywhere in the codebase (mirrors AP-0204's situation
+// in community-groups.ts). Converted both to heartbeat scans of recently-
+// ended global_community_events instead. Since global_event_participants
+// has no attended-vs-no-show distinction (only 'attending'), AP-0304 and
+// AP-0308 are deliberately differentiated by timing/tone rather than by a
+// real attendance signal: AP-0304 fires shortly after the event ends
+// (feedback + connect), AP-0308 fires later (a softer re-engagement nudge)
+// — neither claims to know whether the user actually showed up.
+const POST_EVENT_WINDOW_START_HOURS = 1;   // AP-0304: event ended 1-6h ago
+const POST_EVENT_WINDOW_END_HOURS = 6;
+const NO_SHOW_WINDOW_START_HOURS = 24;     // AP-0308: event ended 24-48h ago
+const NO_SHOW_WINDOW_END_HOURS = 48;
+const POST_EVENT_MAX_EVENTS = 100;
 
+async function runPostEventFeedback(ctx: AutomationContext) {
   const { supabase } = ctx;
   let usersAffected = 0;
+  let actionsTaken = 0;
 
-  const { data: attendees } = await supabase
-    .from('community_meetup_attendance')
-    .select('user_id')
-    .eq('meetup_id', meetupId)
-    .eq('status', 'attended');
+  const windowStart = new Date(Date.now() - POST_EVENT_WINDOW_END_HOURS * 3_600_000).toISOString();
+  const windowEnd = new Date(Date.now() - POST_EVENT_WINDOW_START_HOURS * 3_600_000).toISOString();
 
-  for (const att of attendees || []) {
-    ctx.notify(att.user_id, 'orb_proactive_message', {
-      title: 'How Was the Event?',
-      body: 'Rate your experience — it helps improve future events.',
-      data: { url: `/community/meetups/${meetupId}`, meetup_id: meetupId },
-    });
-    usersAffected++;
+  const { data: endedEvents } = await supabase
+    .from('global_community_events')
+    .select('id, title')
+    .gte('end_time', windowStart)
+    .lte('end_time', windowEnd)
+    .limit(POST_EVENT_MAX_EVENTS);
+
+  for (const event of endedEvents || []) {
+    const { data: attendees } = await supabase
+      .from('global_event_participants')
+      .select('user_id')
+      .eq('event_id', event.id)
+      .eq('status', 'attending');
+
+    for (const att of attendees || []) {
+      ctx.notify(att.user_id, 'orb_proactive_message', {
+        title: 'How Was the Event?',
+        body: 'Rate your experience — it helps improve future events.',
+        data: { url: `/community/events/${event.id}`, event_id: event.id },
+      });
+      usersAffected++;
+      actionsTaken++;
+    }
   }
 
-  return { usersAffected, actionsTaken: usersAffected };
+  return { usersAffected, actionsTaken };
 }
 
+async function runNoShowFollowUp(ctx: AutomationContext) {
+  const { supabase } = ctx;
+  let usersAffected = 0;
+  let actionsTaken = 0;
+
+  const windowStart = new Date(Date.now() - NO_SHOW_WINDOW_END_HOURS * 3_600_000).toISOString();
+  const windowEnd = new Date(Date.now() - NO_SHOW_WINDOW_START_HOURS * 3_600_000).toISOString();
+
+  const { data: endedEvents } = await supabase
+    .from('global_community_events')
+    .select('id, title')
+    .gte('end_time', windowStart)
+    .lte('end_time', windowEnd)
+    .limit(POST_EVENT_MAX_EVENTS);
+
+  for (const event of endedEvents || []) {
+    const { data: registered } = await supabase
+      .from('global_event_participants')
+      .select('user_id')
+      .eq('event_id', event.id)
+      .eq('status', 'attending');
+
+    for (const reg of registered || []) {
+      ctx.notify(reg.user_id, 'orb_proactive_message', {
+        title: `How was "${event.title}"?`,
+        body: `Hope you had a great time. Check out what's coming up next.`,
+        data: { url: '/events', event_id: event.id },
+      });
+      usersAffected++;
+      actionsTaken++;
+    }
+  }
+
+  return { usersAffected, actionsTaken };
+}
+
+// Real schema: global_community_events/global_event_participants, not
+// community_meetups/community_meetup_attendance.
 async function runTrendingEventsDigest(ctx: AutomationContext) {
   ctx.log('Trending events weekly digest — finding popular upcoming events');
-  const { supabase, tenantId } = ctx;
+  const { supabase } = ctx;
   let usersAffected = 0;
   let actionsTaken = 0;
 
   const now = new Date();
   const nextWeek = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
 
-  // Find upcoming events with highest RSVP count
-  const { data: meetups } = await supabase
-    .from('community_meetups')
-    .select('id, title, starts_at')
-    .eq('tenant_id', tenantId)
-    .gte('starts_at', now.toISOString())
-    .lte('starts_at', nextWeek.toISOString())
-    .order('starts_at', { ascending: true })
+  // Find upcoming events with highest registration count
+  const { data: events } = await supabase
+    .from('global_community_events')
+    .select('id, title, start_time, participant_count')
+    .gte('start_time', now.toISOString())
+    .lte('start_time', nextWeek.toISOString())
+    .order('participant_count', { ascending: false })
     .limit(10);
 
-  if (!meetups?.length) return { usersAffected: 0, actionsTaken: 0 };
-
-  // Score meetups by RSVP count
-  const scored: Array<{ id: string; title: string; rsvps: number }> = [];
-  for (const meetup of meetups) {
-    const { count } = await supabase
-      .from('community_meetup_attendance')
-      .select('id', { count: 'exact', head: true })
-      .eq('meetup_id', meetup.id)
-      .eq('status', 'rsvp');
-
-    scored.push({ id: meetup.id, title: meetup.title, rsvps: count || 0 });
+  if (!events?.length || (events[0].participant_count || 0) === 0) {
+    return { usersAffected: 0, actionsTaken: 0 };
   }
 
-  // Get top 3 by RSVPs
-  const trending = scored.sort((a, b) => b.rsvps - a.rsvps).slice(0, 3);
-  if (!trending.length || trending[0].rsvps === 0) return { usersAffected: 0, actionsTaken: 0 };
-
-  // Send to active users who haven't RSVP'd
-  const users = await ctx.queryTargetUsers('user_id, active_role');
+  const trending = events.slice(0, 3);
   const topEvent = trending[0];
 
-  for (const { user_id } of users.slice(0, 100)) {
-    // Skip users already RSVP'd to the top event
-    const { count: alreadyRsvpd } = await supabase
-      .from('community_meetup_attendance')
-      .select('id', { count: 'exact', head: true })
-      .eq('meetup_id', topEvent.id)
-      .eq('user_id', user_id)
-      .eq('status', 'rsvp');
+  // Send to active users who haven't registered
+  const users = await ctx.queryTargetUsers('user_id, active_role');
 
-    if ((alreadyRsvpd || 0) > 0) continue;
+  for (const { user_id } of users.slice(0, 100)) {
+    const { count: alreadyRegistered } = await supabase
+      .from('global_event_participants')
+      .select('id', { count: 'exact', head: true })
+      .eq('event_id', topEvent.id)
+      .eq('user_id', user_id);
+
+    if ((alreadyRegistered || 0) > 0) continue;
 
     ctx.notify(user_id, 'orb_suggestion', {
       title: 'Trending This Week',
-      body: `"${topEvent.title}" has ${topEvent.rsvps} people going. ${trending.length > 1 ? `Plus ${trending.length - 1} more events!` : ''}`,
+      body: `"${topEvent.title}" has ${topEvent.participant_count} people going. ${trending.length > 1 ? `Plus ${trending.length - 1} more events!` : ''}`,
       data: { url: '/events' },
     });
 
@@ -189,38 +245,6 @@ async function runTrendingEventsDigest(ctx: AutomationContext) {
   }
 
   return { usersAffected, actionsTaken };
-}
-
-async function runNoShowFollowUp(ctx: AutomationContext) {
-  const payload = ctx.run.metadata as any;
-  const meetupId = payload?.meetup_id;
-  if (!meetupId) return { usersAffected: 0, actionsTaken: 0 };
-
-  const { supabase, tenantId } = ctx;
-  let usersAffected = 0;
-
-  const { data: noShows } = await supabase
-    .from('community_meetup_attendance')
-    .select('user_id')
-    .eq('meetup_id', meetupId)
-    .eq('status', 'rsvp'); // RSVP but not attended
-
-  const { data: meetup } = await supabase
-    .from('community_meetups')
-    .select('title')
-    .eq('id', meetupId)
-    .maybeSingle();
-
-  for (const ns of noShows || []) {
-    ctx.notify(ns.user_id, 'orb_proactive_message', {
-      title: `We Missed You!`,
-      body: `We missed you at "${meetup?.title || 'the meetup'}". Hope to see you next time!`,
-      data: { url: '/community/meetups' },
-    });
-    usersAffected++;
-  }
-
-  return { usersAffected, actionsTaken: usersAffected };
 }
 
 // ── AP-0309: "Host Night" Concierge ─────────────────────────
@@ -323,6 +347,185 @@ async function runHostNightConcierge(ctx: AutomationContext) {
   });
 
   return { usersAffected, actionsTaken };
+}
+
+// ── AP-0306: Event Series Auto-Suggestion ───────────────────
+// Daily heartbeat: find creators whose most recent past event drew a solid
+// crowd and who haven't scheduled a follow-up since, and suggest they turn
+// it into a series. A per-host cooldown avoids repeat nudges.
+const SERIES_MIN_PAST_PARTICIPANTS = 5;
+const SERIES_COOLDOWN_DAYS = 14;
+const SERIES_MAX_SUGGESTIONS = 50;
+
+async function runEventSeriesAutoSuggestion(ctx: AutomationContext) {
+  const { supabase } = ctx;
+  let usersAffected = 0;
+  let actionsTaken = 0;
+
+  const now = new Date();
+  const cooldownCutoff = new Date(now.getTime() - SERIES_COOLDOWN_DAYS * 86_400_000).toISOString();
+
+  const { data: pastEvents } = await supabase
+    .from('global_community_events')
+    .select('id, title, created_by, participant_count, end_time')
+    .lt('end_time', now.toISOString())
+    .gte('participant_count', SERIES_MIN_PAST_PARTICIPANTS)
+    .not('created_by', 'is', null)
+    .order('end_time', { ascending: false })
+    .limit(200);
+
+  const handledHosts = new Set<string>();
+  let suggestionsSent = 0;
+
+  for (const event of pastEvents || []) {
+    if (suggestionsSent >= SERIES_MAX_SUGGESTIONS) break;
+    if (handledHosts.has(event.created_by)) continue;
+    handledHosts.add(event.created_by);
+
+    // Skip if this host already has an upcoming event scheduled.
+    const { count: upcomingCount } = await supabase
+      .from('global_community_events')
+      .select('id', { count: 'exact', head: true })
+      .eq('created_by', event.created_by)
+      .gt('start_time', now.toISOString());
+    if ((upcomingCount || 0) > 0) continue;
+
+    const { data: recentSuggestion } = await supabase
+      .from('user_notifications')
+      .select('id')
+      .eq('user_id', event.created_by)
+      .contains('data', { automation_id: 'AP-0306' })
+      .gte('created_at', cooldownCutoff)
+      .limit(1);
+    if (recentSuggestion && recentSuggestion.length > 0) continue;
+
+    ctx.notify(event.created_by, 'orb_proactive_message', {
+      title: `"${event.title}" was a hit 🎉`,
+      body: `${event.participant_count} people joined last time. Want to schedule the next one and turn it into a series?`,
+      data: {
+        url: '/community/events/new',
+        event_id: event.id,
+        via: 'autopilot',
+        automation_id: 'AP-0306',
+      },
+    });
+
+    usersAffected++;
+    actionsTaken++;
+    suggestionsSent++;
+  }
+
+  return { usersAffected, actionsTaken };
+}
+
+// ── AP-0307: Live Room from Trending Chat Topic ─────────────
+// Heartbeat every 4h: scan group chat threads for a recent message spike and
+// suggest the group creator start a live room (real-time, richer than text)
+// while engagement is high. Notify-only — does not auto-create the room,
+// since live_rooms requires host/category/pricing setup.
+const LIVE_ROOM_SPIKE_WINDOW_HOURS = 4;
+const LIVE_ROOM_SPIKE_MIN_MESSAGES = 20;
+const LIVE_ROOM_SUGGESTION_COOLDOWN_DAYS = 7;
+const LIVE_ROOM_SUGGESTION_MAX = 20;
+
+async function runLiveRoomFromTrendingChatTopic(ctx: AutomationContext) {
+  const { supabase } = ctx;
+  let usersAffected = 0;
+  let actionsTaken = 0;
+
+  const windowStart = new Date(Date.now() - LIVE_ROOM_SPIKE_WINDOW_HOURS * 3_600_000).toISOString();
+  const cooldownCutoff = new Date(Date.now() - LIVE_ROOM_SUGGESTION_COOLDOWN_DAYS * 86_400_000).toISOString();
+
+  const { data: groups } = await supabase
+    .from('global_community_groups')
+    .select('id, name, created_by, chat_thread_id')
+    .not('chat_thread_id', 'is', null)
+    .not('created_by', 'is', null)
+    .limit(500);
+
+  let suggestionsSent = 0;
+  for (const group of groups || []) {
+    if (suggestionsSent >= LIVE_ROOM_SUGGESTION_MAX) break;
+
+    const { count: messageCount } = await supabase
+      .from('global_messages')
+      .select('id', { count: 'exact', head: true })
+      .eq('thread_id', group.chat_thread_id)
+      .gte('created_at', windowStart);
+
+    if ((messageCount || 0) < LIVE_ROOM_SPIKE_MIN_MESSAGES) continue;
+
+    const { data: recentSuggestion } = await supabase
+      .from('user_notifications')
+      .select('id')
+      .eq('user_id', group.created_by)
+      .contains('data', { automation_id: 'AP-0307', group_id: group.id })
+      .gte('created_at', cooldownCutoff)
+      .limit(1);
+    if (recentSuggestion && recentSuggestion.length > 0) continue;
+
+    ctx.notify(group.created_by, 'orb_proactive_message', {
+      title: `${group.name} is talking a lot right now 💬`,
+      body: `${messageCount} messages in the last ${LIVE_ROOM_SPIKE_WINDOW_HOURS}h. Go live to bring the conversation into a real-time room.`,
+      data: {
+        url: '/live/new',
+        group_id: group.id,
+        via: 'autopilot',
+        automation_id: 'AP-0307',
+      },
+    });
+
+    usersAffected++;
+    actionsTaken++;
+    suggestionsSent++;
+  }
+
+  return { usersAffected, actionsTaken };
+}
+
+// ── AP-0310: "Go Together +1" Group Outing Builder ──────────
+// Extends AP-0303's 1:1 "go together" suggestion into a group outing when
+// 2+ mutual connections are already registered for the same event.
+// NOTE: same undispatched-trigger caveat as AP-0303 (event 'match.daily.event').
+const GROUP_OUTING_MIN_FRIENDS = 2;
+
+async function runGroupOutingBuilder(ctx: AutomationContext) {
+  const payload = ctx.run.metadata as any;
+  const { user_id, event_id } = payload || {};
+  if (!user_id || !event_id) return { usersAffected: 0, actionsTaken: 0 };
+
+  const { supabase, tenantId } = ctx;
+
+  const { data: connections } = await supabase
+    .from('relationship_edges')
+    .select('target_id')
+    .eq('tenant_id', tenantId)
+    .eq('source_type', 'person')
+    .eq('source_id', user_id)
+    .eq('target_type', 'person')
+    .eq('edge_type', 'connected')
+    .limit(50);
+
+  const connectionIds = (connections || []).map((c: any) => c.target_id);
+  if (connectionIds.length < GROUP_OUTING_MIN_FRIENDS) return { usersAffected: 0, actionsTaken: 0 };
+
+  const { data: attendingConnections } = await supabase
+    .from('global_event_participants')
+    .select('user_id')
+    .eq('event_id', event_id)
+    .in('user_id', connectionIds)
+    .eq('status', 'attending');
+
+  const attendingCount = attendingConnections?.length || 0;
+  if (attendingCount < GROUP_OUTING_MIN_FRIENDS) return { usersAffected: 0, actionsTaken: 0 };
+
+  ctx.notify(user_id, 'event_match_suggested', {
+    title: 'Make it a group outing! 👯',
+    body: `${attendingCount} of your connections are going to this event — bring your circle along.`,
+    data: { url: `/community/events/${event_id}`, event_id, friend_count: String(attendingCount) },
+  });
+
+  return { usersAffected: 1, actionsTaken: 1 };
 }
 
 // =============================================================================
@@ -672,6 +875,9 @@ export function registerEngagementEventsHandlers(): void {
   registerHandler('runTrendingEventsDigest', runTrendingEventsDigest);
   registerHandler('runNoShowFollowUp', runNoShowFollowUp);
   registerHandler('runHostNightConcierge', runHostNightConcierge);
+  registerHandler('runEventSeriesAutoSuggestion', runEventSeriesAutoSuggestion);
+  registerHandler('runLiveRoomFromTrendingChatTopic', runLiveRoomFromTrendingChatTopic);
+  registerHandler('runGroupOutingBuilder', runGroupOutingBuilder);
 
   // Engagement Loops (AP-0500)
   registerHandler('runMorningBriefing', runMorningBriefing);

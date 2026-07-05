@@ -244,9 +244,11 @@ const EVENTS_LIVE_ROOMS: AutomationDefinition[] = [
     handler: 'runGoTogetherMatch',
   },
   {
+    // No gateway code dispatches 'meetup.ended' — converted to a heartbeat
+    // scan of recently-ended global_community_events (see code comment).
     id: 'AP-0304', name: 'Post-Event Feedback & Connect', domain: 'events-live-rooms',
-    status: 'IMPLEMENTED', priority: 'P1', triggerType: 'event',
-    triggerConfig: { eventTopic: 'meetup.ended' },
+    status: 'IMPLEMENTED', priority: 'P1', triggerType: 'heartbeat',
+    triggerConfig: { intervalMinutes: 60 },
     targetRoles: [...MEMBER_ROLES],
     handler: 'runPostEventFeedback',
   },
@@ -259,20 +261,26 @@ const EVENTS_LIVE_ROOMS: AutomationDefinition[] = [
   },
   {
     id: 'AP-0306', name: 'Event Series Auto-Suggestion', domain: 'events-live-rooms',
-    status: 'PLANNED', priority: 'P2', triggerType: 'heartbeat',
+    status: 'IMPLEMENTED', priority: 'P2', triggerType: 'heartbeat',
     triggerConfig: { intervalMinutes: 1440 },
     targetRoles: [...CREATOR_ROLES],
+    handler: 'runEventSeriesAutoSuggestion',
   },
   {
     id: 'AP-0307', name: 'Live Room from Trending Chat Topic', domain: 'events-live-rooms',
-    status: 'PLANNED', priority: 'P2', triggerType: 'heartbeat',
+    status: 'IMPLEMENTED', priority: 'P2', triggerType: 'heartbeat',
     triggerConfig: { intervalMinutes: 240 },
     targetRoles: [...MEMBER_ROLES],
+    handler: 'runLiveRoomFromTrendingChatTopic',
   },
   {
+    // No gateway code dispatches 'meetup.ended' — converted to a heartbeat
+    // scan of recently-ended global_community_events, deliberately offset
+    // from AP-0304's window (see code comment: no attended-vs-no-show
+    // signal exists live, so the two are differentiated by timing/tone).
     id: 'AP-0308', name: 'No-Show Follow-Up', domain: 'events-live-rooms',
-    status: 'IMPLEMENTED', priority: 'P2', triggerType: 'event',
-    triggerConfig: { eventTopic: 'meetup.ended' },
+    status: 'IMPLEMENTED', priority: 'P2', triggerType: 'heartbeat',
+    triggerConfig: { intervalMinutes: 120 },
     targetRoles: [...MEMBER_ROLES],
     handler: 'runNoShowFollowUp',
   },
@@ -286,9 +294,10 @@ const EVENTS_LIVE_ROOMS: AutomationDefinition[] = [
   },
   {
     id: 'AP-0310', name: '"Go Together +1" Group Outing Builder', domain: 'events-live-rooms',
-    status: 'PLANNED', priority: 'P1', triggerType: 'event',
+    status: 'IMPLEMENTED', priority: 'P1', triggerType: 'event',
     triggerConfig: { eventTopic: 'match.daily.event' },
     targetRoles: [...MEMBER_ROLES],
+    handler: 'runGroupOutingBuilder',
     requires: ['AP-0303'],
   },
 ];
@@ -697,9 +706,33 @@ const PLATFORM_OPS: AutomationDefinition[] = [
     targetRoles: [...OPS_ROLES],
     handler: 'runGovernanceFlagCheck',
   },
-  { id: 'AP-1003', name: 'Post-Deploy Health Check', domain: 'platform-operations', status: 'PLANNED', priority: 'P1', triggerType: 'event', targetRoles: [...OPS_ROLES, 'developer'] },
-  { id: 'AP-1004', name: 'Service Error Rate Alert', domain: 'platform-operations', status: 'PLANNED', priority: 'P1', triggerType: 'heartbeat', targetRoles: [...OPS_ROLES, 'developer'] },
-  { id: 'AP-1005', name: 'Database Migration Verification', domain: 'platform-operations', status: 'PLANNED', priority: 'P2', triggerType: 'event', targetRoles: [...OPS_ROLES, 'developer'] },
+  {
+    // CI writes deploy.<service>.success/failed directly into oasis_events
+    // (service='ci_cd'), bypassing dispatchEvent — nothing calls dispatchEvent
+    // for this topic yet (see handler file comment for the wiring needed).
+    id: 'AP-1003', name: 'Post-Deploy Health Check', domain: 'platform-operations',
+    status: 'IMPLEMENTED', priority: 'P1', triggerType: 'event',
+    triggerConfig: { eventTopic: 'deploy.gateway.failed' },
+    targetRoles: [...OPS_ROLES, 'developer'],
+    handler: 'runPostDeployHealthCheck',
+  },
+  {
+    id: 'AP-1004', name: 'Service Error Rate Alert', domain: 'platform-operations',
+    status: 'IMPLEMENTED', priority: 'P1', triggerType: 'heartbeat',
+    triggerConfig: { intervalMinutes: 30 },
+    targetRoles: [...OPS_ROLES, 'developer'],
+    handler: 'runServiceErrorRateAlert',
+  },
+  {
+    // migration.applied is a brand-new topic nothing dispatches yet — a
+    // migration-running workflow needs to POST it with
+    // { expected_name, expected_tables } (see handler file comment).
+    id: 'AP-1005', name: 'Database Migration Verification', domain: 'platform-operations',
+    status: 'IMPLEMENTED', priority: 'P2', triggerType: 'event',
+    triggerConfig: { eventTopic: 'migration.applied' },
+    targetRoles: [...OPS_ROLES, 'developer'],
+    handler: 'runDatabaseMigrationVerification',
+  },
 ];
 
 // =============================================================================
@@ -757,15 +790,17 @@ const BUSINESS_MARKETPLACE: AutomationDefinition[] = [
   },
   {
     id: 'AP-1108', name: 'Creator Analytics & Growth Tips', domain: 'business-hub-marketplace',
-    status: 'PLANNED', priority: 'P2', triggerType: 'cron',
+    status: 'IMPLEMENTED', priority: 'P2', triggerType: 'cron',
     triggerConfig: { cronExpression: '0 10 * * 1' },
     targetRoles: [...CREATOR_ROLES],
+    handler: 'runCreatorAnalyticsGrowthTips',
   },
   {
     id: 'AP-1109', name: 'Seasonal & Trending Recommendations for Creators', domain: 'business-hub-marketplace',
-    status: 'PLANNED', priority: 'P2', triggerType: 'cron',
+    status: 'IMPLEMENTED', priority: 'P2', triggerType: 'cron',
     triggerConfig: { cronExpression: '0 10 1 * *' },
     targetRoles: [...CREATOR_ROLES],
+    handler: 'runSeasonalTrendingRecommendations',
   },
   {
     id: 'AP-1110', name: 'Cross-Sell Service to Product Buyers', domain: 'business-hub-marketplace',
@@ -816,6 +851,10 @@ const LIVE_ROOMS_COMMERCE: AutomationDefinition[] = [
     handler: 'runPostSessionRevenueReport',
   },
   {
+    // Handler is written (runSessionHighlightClipsForMarketing) but status
+    // stays PLANNED: nothing dispatches 'live_room.highlights.ready' and no
+    // video-clip pipeline exists — wiring the handler to a never-fired event
+    // wouldn't make this actually run. See handler file comment.
     id: 'AP-1206', name: 'Session Highlight Clips for Marketing', domain: 'live-rooms-commerce',
     status: 'PLANNED', priority: 'P2', triggerType: 'event',
     triggerConfig: { eventTopic: 'live_room.highlights.ready' },
@@ -844,9 +883,10 @@ const LIVE_ROOMS_COMMERCE: AutomationDefinition[] = [
   },
   {
     id: 'AP-1210', name: 'Live Room Revenue Optimization Tips', domain: 'live-rooms-commerce',
-    status: 'PLANNED', priority: 'P2', triggerType: 'cron',
+    status: 'IMPLEMENTED', priority: 'P2', triggerType: 'cron',
     triggerConfig: { cronExpression: '0 10 1 * *' },
     targetRoles: [...CREATOR_ROLES],
+    handler: 'runLiveRoomRevenueOptimizationTips',
   },
 ];
 
