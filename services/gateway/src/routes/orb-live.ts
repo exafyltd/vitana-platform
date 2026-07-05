@@ -322,8 +322,17 @@ import {
   pickShortGapGreetings,
   buildFirstTimeWelcomeLine,
 } from '../orb/instruction/greeting-pools';
-// Conversation-flow Step 1c: the single brain. The sync opening rungs delegate here.
-import { computeGreetingDecision } from '../services/conversation/compute-greeting-decision';
+// Conversation-flow Step 1c: the single brain. Both the sync opening rungs and
+// the async safe-fast ladder delegate here — the transport only gathers context
+// (payloads/ledger, gated by the brain's own shouldAttempt* / newdayHasContent
+// guards so the I/O short-circuit can't diverge from the pure rung), then renders.
+import {
+  computeGreetingDecision,
+  shouldAttemptNewdayOverview,
+  shouldAttemptResumeOverview,
+  newdayHasContent,
+  type GreetingDecisionContext,
+} from '../services/conversation/compute-greeting-decision';
 import { EMPTY_GREETING_LEDGER } from '../services/conversation/greeting-facts-ledger';
 
 const router = Router();
@@ -7696,559 +7705,226 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
             // if they never finished guided onboarding.
             const _hasPriorSession = (session as any).greetingHasPriorSession === true;
 
-            // NEW-DAY OVERVIEW (rich summary owns turn 1). On a genuine new-day
-            // return we speak the FULL multi-clause morning overview (what passed
-            // since last session, today's next event, Index direction, Life
-            // Compass goal) — the same renderer the heavy new-day-return provider
-            // uses — INSTEAD of the short one-line proactive lead. Deliberate
-            // richness>latency choice: it adds the bounded aggregator fetch, but
-            // restores the summary the fast path had been preempting. Falls
-            // through to the existing ladder (proactive line → name → menu) when
-            // it is not a new day, the name/user is missing, or it can't build.
-            try {
-              const _temporalNd = describeTimeSince((session as any).lastSessionInfo);
-              const _firstNameNd = (session as any).greetingFirstName;
-              const _uidNd = session.identity?.user_id;
-              const _supaNd = getSupabase();
-              const _tzNd = session.clientContext?.timezone || 'UTC';
-              const _nowNd = new Date();
-              // DURABLE once-per-real-day gate. The old trigger keyed off the
-              // most-recent session-start telemetry (describeTimeSince), which is
-              // fragile: an active user opens many sessions a day and the app
-              // auto-creates sessions, so any earlier same-day session flipped the
-              // bucket to "same-day" and the rich briefing was skipped — it almost
-              // never fired in practice. We now key off
-              // user_journey.last_full_briefing_date (user-tz YYYY-MM-DD): the
-              // briefing fires on the FIRST session of a day where that date is
-              // stale, then we stamp today so same-day reopens fall through to the
-              // short proactive opener. Reliable "full once/day, short after".
-              const _todayNd = (() => {
-                try {
-                  return new Intl.DateTimeFormat('en-CA', {
-                    timeZone: _tzNd, year: 'numeric', month: '2-digit', day: '2-digit',
-                  }).format(_nowNd);
-                } catch {
-                  return _nowNd.toISOString().slice(0, 10);
-                }
-              })();
-              const _lastBriefDateNd = (session as any).lastFullBriefingDate as string | null | undefined;
-              const _briefingDueNd = !(typeof _lastBriefDateNd === 'string' && _lastBriefDateNd >= _todayNd);
-              // Never brief a brand-new / not-yet-onboarded user — the first-time
-              // welcome rung below owns them (never "welcome back" to a newcomer).
-              const _isFirstTimeNd =
-                (session as any).greetingNeedsOnboarding === true ||
-                (session as any).greetingIsFirstTime === true;
-              // The overview renderer only localizes DE/EN; for any other session
-              // language it would emit English clauses. Restrict the overview to
-              // de/en and let the existing localized name-greeting ladder handle
-              // es/fr/sr/etc. (Codex P2).
-              const _langKeyNd = (lang || 'en').slice(0, 2).toLowerCase();
-              const _langOkNd = _langKeyNd === 'de' || _langKeyNd === 'en';
-              if (_langOkNd && _briefingDueNd && !_isFirstTimeNd && typeof _firstNameNd === 'string' && _firstNameNd.trim().length > 0 && _uidNd && _supaNd) {
-                // VTID-03172 / complete-briefing: use the RICH unified overview
-                // payload (the SAME data the My Journey screen renders, plus
-                // voice-only time-sensitive signals) instead of the narrow
-                // calendar+goal aggregator. This restores the Vitana Index
-                // (with pillar + trend interpretation), new community matches,
-                // unread messages, reminders due today, the autopilot
-                // today-checkpoint, and the diary streak to the FIRST spoken
-                // turn of the day — the half that the narrow aggregator dropped.
-                // We hand the model the composed structural block (it already
-                // carries the wake-brief override marker + the coverage
-                // checklist) as the first-turn directive, rather than a single
-                // pre-rendered verbatim line, so it speaks the full two-paragraph
-                // journey briefing. Wording stays 100% model-composed from the
-                // payload — nothing here is hardcoded.
-                const { gatherOverviewPayload } = await import('../services/assistant-continuation/providers/new-day-overview-payload');
-                const { buildNewDayOverviewBlock } = await import('../services/assistant-continuation/providers/new-day-overview-prompt');
-                const { todayInTimezone, localHourInTimezone } = await import('../services/assistant-continuation/providers/new-day-return');
-                // Spoken-facts continuity (greeting-facts ledger): what did we
-                // ALREADY tell this user? Read in parallel with the payload
-                // gather; bounded + fail-open so it can never delay or silence
-                // the greeting.
-                const {
-                  readGreetingLedger,
-                  computeFactDeltas,
-                  extractSpokenFactsFromPayload,
-                  recordGreetingFacts,
-                  EMPTY_GREETING_LEDGER,
-                } = await import('../services/conversation/greeting-facts-ledger');
-                const _tenantNd = session.identity?.tenant_id ?? null;
-                const _ledgerPromiseNd = _tenantNd
-                  ? readGreetingLedger({ supabase: _supaNd, tenantId: _tenantNd, userId: _uidNd })
-                  : Promise.resolve({ ...EMPTY_GREETING_LEDGER });
-                // Last session's LOCAL date (YYYY-MM-DD) bounds the "since last
-                // session" calendar lookback. Derive it from the pre-fetched
-                // last-session timestamp; null falls back to a 24h window inside
-                // the aggregator.
-                const _lastSessIso = (session as any).lastSessionInfo?.time ?? null;
-                const _lastSessDateTz =
-                  typeof _lastSessIso === 'string' && _lastSessIso.length > 0
-                    ? todayInTimezone(new Date(_lastSessIso), _tzNd)
-                    : null;
-                const _overview = await Promise.race([
-                  gatherOverviewPayload({
-                    supabase: _supaNd,
-                    userId: _uidNd,
-                    now: _nowNd,
-                    timezone: _tzNd,
-                    lang: greetLang,
-                    lastSessionDateUserTz: _lastSessDateTz,
-                    // Precise cutoff for "events since we last spoke" — avoids
-                    // briefing the user about events that happened BEFORE their
-                    // prior same-day session (Codex P2).
-                    lastSessionAtIso: _lastSessIso,
-                  }),
-                  new Promise<null>((r) => setTimeout(() => r(null), Number(process.env.ORB_NEWDAY_OVERVIEW_WAIT_MS || 3000))),
-                ]).catch(() => null);
-                // Take the rich overview when it has ANY substantive content. For
-                // a genuine onboarded new-day return `journey` is virtually always
-                // present (day_in_journey is monotonic), so this fires; the guard
-                // exists only so a fully-empty payload (no journey, every signal
-                // un-set, nothing scheduled, no inbox) falls through to the
-                // proactive ladder rather than speaking an empty briefing.
-                const _hasContent =
-                  !!_overview &&
-                  (!!_overview.journey ||
-                    _overview.vitana_index.state === 'ok' ||
-                    _overview.life_compass.state === 'set' ||
-                    _overview.calendar_today.count > 0 ||
-                    _overview.calendar_passed.count > 0 ||
-                    (_overview.autopilot.state === 'has_actions' && !!_overview.autopilot.today_checkpoint) ||
-                    _overview.matches_unread > 0 ||
-                    _overview.messages_unread > 0 ||
-                    _overview.reminders_today.count > 0);
-                if (_overview && _hasContent) {
-                  const _ledgerNd = await Promise.race([
-                    _ledgerPromiseNd,
-                    new Promise<typeof EMPTY_GREETING_LEDGER>((r) =>
-                      setTimeout(() => r({ ...EMPTY_GREETING_LEDGER }), 800),
-                    ),
-                  ]).catch(() => ({ ...EMPTY_GREETING_LEDGER }));
-                  const _spokenFactsNd = extractSpokenFactsFromPayload(_overview);
-                  const _deltasNd = computeFactDeltas(_spokenFactsNd, _ledgerNd);
-                  const _block = buildNewDayOverviewBlock({
-                    payload: _overview,
-                    lang: greetLang,
-                    firstName: _firstNameNd.trim(),
-                    localHour: localHourInTimezone(_nowNd, _tzNd),
-                    timezone: _tzNd,
-                    factDeltas: _deltasNd,
-                    previousUtterance: _ledgerNd.last_utterance,
-                    sessionsToday: _ledgerNd.sessions_today,
-                  });
-                  if (_block && _block.trim().length > 0) {
-                    ws.send(
-                      JSON.stringify({
-                        client_content: { turns: [{ role: 'user', parts: [{ text: _block }] }], turn_complete: true },
-                      }),
-                    );
-                    // Stamp the durable once-per-day flag so same-day reopens get
-                    // the short proactive opener instead of re-briefing. Update by
-                    // user_id (returning users have a journey row); fire-and-forget,
-                    // and mirror onto the session so a second open within this same
-                    // process also sees it as delivered.
-                    (session as any).lastFullBriefingDate = _todayNd;
-                    void _supaNd
-                      .from('user_journey')
-                      .update({ last_full_briefing_date: _todayNd })
-                      .eq('user_id', _uidNd)
-                      .then(() => {}, () => {});
-                    // Ledger write: these facts are now "told" — the next
-                    // opener speaks deltas, not the same levels again.
-                    if (_tenantNd && Object.keys(_spokenFactsNd).length > 0) {
-                      void recordGreetingFacts({
-                        supabase: _supaNd,
-                        tenantId: _tenantNd,
-                        userId: _uidNd,
-                        facts: _spokenFactsNd,
-                      });
-                    }
-                    emitDiag(session, 'greeting_sent', {
-                      lang,
-                      prompt_len: _block.length,
-                      wake_opener: 'safe_fast_newday_overview',
-                      bucket: _temporalNd.bucket,
-                      briefing_date: _todayNd,
-                      overview_signals: {
-                        journey: !!_overview.journey,
-                        index: _overview.vitana_index.state,
-                        life_compass: _overview.life_compass.state,
-                        calendar_today: _overview.calendar_today.count,
-                        autopilot: _overview.autopilot.state,
-                        matches_unread: _overview.matches_unread,
-                        messages_unread: _overview.messages_unread,
-                        reminders_today: _overview.reminders_today.count,
-                        diary_last_7d: _overview.diary_last_7d,
-                      },
-                    });
-                    startResponseWatchdog(session, getGreetingResponseTimeoutMs(), 'greeting_timeout');
-                    console.log(
-                      `[GREETING-SAFE-FAST-NEWDAY-OVERVIEW] session ${session.sessionId} sent RICH new-day briefing (bucket=${_temporalNd.bucket}, lang=${lang}, matches=${_overview.matches_unread}, msgs=${_overview.messages_unread}, autopilot=${_overview.autopilot.state}, index=${_overview.vitana_index.state})`,
-                    );
-                    return;
-                  }
-                }
+            // ── Conversation-flow Step 1c (VTID-03366): the async safe-fast
+            // ladder (rungs 1–6: safe_fast_newday_overview / first_time_welcome /
+            // conv_resume / proactive / newday / pending_context) now DELEGATES to
+            // the single brain (services/conversation/compute-greeting-decision.ts).
+            // This adapter GATHERS the bounded async context (overview payloads +
+            // the spoken-facts ledger) LAZILY — gated by the brain's own
+            // shouldAttemptNewdayOverview / shouldAttemptResumeOverview /
+            // newdayHasContent guards so a payload a rung won't use is never fetched
+            // (the rich-briefing hot path never pays for the resume fetch, and the
+            // no-overview fast paths never pay for the ledger read) — then
+            // computeGreetingDecision DECIDES and this adapter RENDERS (ws.send +
+            // emitDiag + durable briefing/NBA/ledger writes + watchdog). greetingSent
+            // + markOpeningDelivered were already claimed synchronously above, so the
+            // decision's markGreetingSent is intentionally a no-op here. The inline
+            // 6-branch ladder that used to live here is gone — one brain, one mouth.
+            const _tzSF = session.clientContext?.timezone || 'UTC';
+            const _nowSF = new Date();
+            const _temporalSF = describeTimeSince((session as any).lastSessionInfo);
+            const _uidSF = session.identity?.user_id ?? null;
+            const _tenantSF = session.identity?.tenant_id ?? null;
+            const _supaSF = getSupabase();
+            const _todaySF = (() => {
+              try {
+                return new Intl.DateTimeFormat('en-CA', {
+                  timeZone: _tzSF, year: 'numeric', month: '2-digit', day: '2-digit',
+                }).format(_nowSF);
+              } catch {
+                return _nowSF.toISOString().slice(0, 10);
               }
-            } catch (_ndErr) {
-              console.warn(
-                `[GREETING-SAFE-FAST-NEWDAY-OVERVIEW] non-fatal, falling through: ${_ndErr instanceof Error ? _ndErr.message : String(_ndErr)}`,
-              );
-            }
-
-            // FIRST-TIME WELCOME (BUGFIX). A brand-new user must NEVER hear the
-            // returning-user "welcome back" menu at the bottom of this ladder.
-            // When the user is a first-timer (authoritative is_first_session, or —
-            // if that's unknown — no last-session on record), speak a proper
-            // onboarding welcome: introduce Vitana + the guided journey + what to
-            // expect, then offer to start session one. The fuller journey overview
-            // flows on the heavy first-time-welcome / journey-guide path next turn.
-            // This runs BEFORE the proactive line so a first-timer gets the WELCOME,
-            // not the generic "set your goal" lead.
-            {
-              const _ift = (session as any).greetingIsFirstTime;
-              const _needsOnboarding = (session as any).greetingNeedsOnboarding;
-              // Require a POSITIVE first-time signal (Codex P2). The pre-fetch
-              // copies these onto the session only when greetingFactsReady
-              // resolves; if the bounded wait times out (or a read failed) the
-              // signal is UNKNOWN — and we must NOT then treat a returning user as
-              // first-time. So welcome ONLY a known first-timer: never-onboarded
-              // (0 completed journey topics and not graduated/opted-out — survives
-              // the eager is_first_session clear) OR is_first_session still true.
-              // Unknown → fall through to the normal proactive/name/menu ladder.
-              // BOOTSTRAP-ORB-GREETING-FIRSTTIME: the full one-time welcome fires
-              // ONLY when there is no prior session on record. A returning user who
-              // simply never completed guided onboarding (_needsOnboarding===true)
-              // must NOT be re-introduced from scratch every session — they fall
-              // through to the returning-user resume register below. This is what
-              // made Vitana feel robotic: greeting every visit as a first-timer.
-              const _isFirstTime = shouldFireFirstTimeWelcome({
-                hasPriorSession: _hasPriorSession,
-                needsOnboarding: _needsOnboarding === true,
-                isFirstSession: _ift === true,
-              });
-              if (_isFirstTime) {
-                const _welcome = buildFirstTimeWelcomeLine(greetLang, (session as any).greetingFirstName ?? null);
-                const _safeWel = _welcome.replace(/"/g, '\\"');
-                const _welPrompt = `Say exactly: "${_safeWel}" — speak it verbatim as audio, as ONE warm greeting. Do NOT add, paraphrase, or split it.`;
-                ws.send(
-                  JSON.stringify({
-                    client_content: { turns: [{ role: 'user', parts: [{ text: _welPrompt }] }], turn_complete: true },
-                  }),
-                );
-                emitDiag(session, 'greeting_sent', {
-                  lang: greetLang,
-                  prompt_len: _welPrompt.length,
-                  wake_opener: 'safe_fast_first_time_welcome',
-                  is_first_session: _ift === true,
-                });
-                startResponseWatchdog(session, getGreetingResponseTimeoutMs(), 'greeting_timeout');
-                console.log(
-                  `[GREETING-SAFE-FAST-FIRST-TIME] session ${session.sessionId} sent first-time welcome (is_first_session=${String(_ift)}, needs_onboarding=${String(_needsOnboarding)}, has_prior=${String(_hasPriorSession)}, lang=${greetLang})`,
-                );
-                return;
-              }
-            }
-
-            // CONVERSATION-FLOW RESUME REGISTER. Reaching here means: not a
-            // first-timer, and the full morning briefing did NOT fire this turn
-            // (already delivered today, or it could not build) — i.e. a SAME-DAY
-            // reopen. The unified decision picks a recency-appropriate register
-            // (continue / quick_resume / same_day) so a return after a minute is
-            // NEVER greeted with "good morning", and ALWAYS closes on a concrete
-            // guided next step (the Next-Best-Action engine). This replaces the
-            // old "proactive line, suppressed on a temporal new-day check" rung;
-            // the proactive/name rungs below remain only as a fallback when the
-            // payload could not be gathered in budget. See
-            // docs/CONVERSATION_FLOW_HANDOFF.md.
-            {
-              // BOOTSTRAP-ORB-GREETING-FIRSTTIME: mirror the prior-session guard so a
-              // returning never-onboarded user reaches the resume register (soft
-              // "welcome back / let's continue") instead of being treated as a
-              // first-timer and skipping it.
-              const _isFirstTimeR = shouldFireFirstTimeWelcome({
-                hasPriorSession: _hasPriorSession,
-                needsOnboarding: (session as any).greetingNeedsOnboarding === true,
-                isFirstSession: (session as any).greetingIsFirstTime === true,
-              });
-              const _uidR = session.identity?.user_id;
-              const _supaR = getSupabase();
-              const _langKeyR = (greetLang || 'en').slice(0, 2).toLowerCase();
-              const _langOkR = _langKeyR === 'de' || _langKeyR === 'en';
-              if (_langOkR && !_isFirstTimeR && _uidR && _supaR) {
-                try {
-                  const _lastIxR = describeTimeSince((session as any).lastSessionInfo);
-                  const { decideOpeningRegister, buildResumeDirective } = await import('../services/conversation/decide-opening');
-                  const _registerR = decideOpeningRegister({
-                    bucket: _lastIxR.bucket,
-                    isFirstTime: false,
-                    briefingDue: false,
-                  });
-                  if (_registerR === 'continue' || _registerR === 'quick_resume' || _registerR === 'same_day') {
-                    const _tzR = session.clientContext?.timezone || 'UTC';
-                    const _nowR = new Date();
-                    const { gatherOverviewPayload } = await import('../services/assistant-continuation/providers/new-day-overview-payload');
-                    const { todayInTimezone } = await import('../services/assistant-continuation/providers/new-day-return');
-                    // Spoken-facts continuity — same ledger the daily briefing
-                    // uses, so a reopen never re-announces the counts the
-                    // briefing already spoke this morning.
-                    const {
-                      readGreetingLedger,
-                      computeFactDeltas,
-                      extractSpokenFactsFromPayload,
-                      recordGreetingFacts,
-                      EMPTY_GREETING_LEDGER,
-                    } = await import('../services/conversation/greeting-facts-ledger');
-                    const _tenantR = session.identity?.tenant_id ?? null;
-                    const _ledgerPromiseR = _tenantR
-                      ? readGreetingLedger({ supabase: _supaR, tenantId: _tenantR, userId: _uidR })
-                      : Promise.resolve({ ...EMPTY_GREETING_LEDGER });
-                    const _lastSessIsoR = (session as any).lastSessionInfo?.time ?? null;
-                    const _lastSessDateR =
-                      typeof _lastSessIsoR === 'string' && _lastSessIsoR.length > 0
-                        ? todayInTimezone(new Date(_lastSessIsoR), _tzR)
-                        : null;
-                    // Bounded — a reopen must stay fast; on timeout we still
-                    // compose a minimal continuity line, else fall through.
-                    const _payloadR = await Promise.race([
-                      gatherOverviewPayload({
-                        supabase: _supaR,
-                        userId: _uidR,
-                        now: _nowR,
-                        timezone: _tzR,
-                        lang: greetLang,
-                        lastSessionDateUserTz: _lastSessDateR,
-                        lastSessionAtIso: _lastSessIsoR,
-                      }),
-                      new Promise<null>((r) => setTimeout(() => r(null), Number(process.env.ORB_RESUME_OVERVIEW_WAIT_MS || 1800))),
-                    ]).catch(() => null);
-                    const _seedR = Math.floor((_nowR.getTime() - Date.UTC(_nowR.getUTCFullYear(), 0, 0)) / 86_400_000);
-                    const _recentNbaKeysR = Array.isArray((session as any).recentNbaKeys)
-                      ? ((session as any).recentNbaKeys as string[])
-                      : [];
-                    const _ledgerR = await Promise.race([
-                      _ledgerPromiseR,
-                      new Promise<typeof EMPTY_GREETING_LEDGER>((r) =>
-                        setTimeout(() => r({ ...EMPTY_GREETING_LEDGER }), 800),
-                      ),
-                    ]).catch(() => ({ ...EMPTY_GREETING_LEDGER }));
-                    const _spokenFactsR = extractSpokenFactsFromPayload(_payloadR);
-                    const _deltasR = computeFactDeltas(_spokenFactsR, _ledgerR);
-                    const { text: _dirR, nba: _nbaR } = buildResumeDirective({
-                      register: _registerR,
-                      payload: _payloadR,
-                      firstName: (session as any).greetingFirstName ?? null,
-                      lang: greetLang,
-                      timeAgo: _lastIxR.timeAgo,
-                      rotationSeed: _seedR,
-                      recentNbaKeys: _recentNbaKeysR as any,
-                      // Screen awareness: deepen toward completing the action on
-                      // the screen the user is already on, never redirect there.
-                      currentScreen: (session as any).current_route ?? null,
-                      factDeltas: _deltasR,
-                      previousUtterance: _ledgerR.last_utterance,
-                      sessionsToday: _ledgerR.sessions_today,
-                    });
-                    // CONTINUE/quick_resume can speak with no payload (pure
-                    // thread continuation); same_day needs at least the NBA or a
-                    // recall — but a screen-completion NBA (derived from the
-                    // current screen, no payload needed) also counts.
-                    const _worthSpeaking =
-                      _registerR !== 'same_day' || !!_payloadR || !!_nbaR;
-                    if (_dirR && _dirR.trim().length > 0 && _worthSpeaking) {
-                      ws.send(
-                        JSON.stringify({
-                          client_content: { turns: [{ role: 'user', parts: [{ text: _dirR }] }], turn_complete: true },
-                        }),
-                      );
-                      // Record the suggested action in the durable per-user
-                      // history so the NEXT open advances past it instead of
-                      // repeating. Keep the last 8; fire-and-forget; mirror onto
-                      // the session for same-process re-opens.
-                      if (_nbaR?.key) {
-                        const _updatedNbas = [..._recentNbaKeysR, _nbaR.key].slice(-8);
-                        (session as any).recentNbaKeys = _updatedNbas;
-                        void _supaR
-                          .from('user_journey')
-                          .update({ recent_nbas: _updatedNbas })
-                          .eq('user_id', _uidR)
-                          .then(() => {}, () => {});
-                      }
-                      // Ledger write — the reopen surfaced these facts (as
-                      // deltas or soft references); refresh their spoken_at so
-                      // the next open still treats stable levels as known.
-                      if (_tenantR && Object.keys(_spokenFactsR).length > 0) {
-                        void recordGreetingFacts({
-                          supabase: _supaR,
-                          tenantId: _tenantR,
-                          userId: _uidR,
-                          facts: _spokenFactsR,
-                        });
-                      }
-                      emitDiag(session, 'greeting_sent', {
-                        lang,
-                        wake_opener: 'conv_resume',
-                        register: _registerR,
-                        bucket: _lastIxR.bucket,
-                        nba: _nbaR?.key ?? null,
-                        nba_domain: _nbaR?.domain ?? null,
-                        current_route: (session as any).current_route ?? null,
-                      });
-                      startResponseWatchdog(session, getGreetingResponseTimeoutMs(), 'greeting_timeout');
-                      console.log(
-                        `[GREETING-CONV-RESUME] session ${session.sessionId} register=${_registerR} bucket=${_lastIxR.bucket} nba=${_nbaR?.key ?? 'none'} lang=${lang}`,
-                      );
-                      return;
-                    }
-                  }
-                } catch (_resumeErr) {
-                  console.warn(
-                    `[GREETING-CONV-RESUME] non-fatal, falling through: ${_resumeErr instanceof Error ? _resumeErr.message : String(_resumeErr)}`,
-                  );
-                }
-              }
-            }
-
-            // DEV-COMHU-0513 (proactive fast greeting): when the fast pre-fetch
-            // produced a SHORT proactive opener (name + concrete next step /
-            // weakness lead), speak THAT instead of the generic SHORT_GAP phrase
-            // or the bare "Good <tod>, <Name>". It is kept to ~2 short sentences
-            // so Gemini Live reliably emits audio. This is the top of the fast-
-            // greeting ladder: proactive line → name greeting → generic opener.
-            // The rich morning briefing (overview rung above) owns turn 1 on the
-            // FIRST session of a real day and RETURNS when it fires. Reaching this
-            // rung therefore means the briefing did NOT fire this turn — either it
-            // was already delivered today (durable last_full_briefing_date flag),
-            // or it could not build. In BOTH cases the proactive continuity opener
-            // ("letztes Mal ging es um X — machen wir weiter") is exactly the
-            // "short after" we want.
-            //
-            // It used to be suppressed here on a temporal "is it a new day?" check
-            // (describeTimeSince bucket today/yesterday/week/long). That made sense
-            // when the briefing was ALSO gated on that temporal check, but the
-            // briefing is now flag-gated — so the temporal suppression left same-day
-            // reopens with only a bare "Good <tod>, <Name>" (the safe_fast_newday
-            // rung) instead of the continuity line. Use the proactive opener
-            // whenever the prefetch produced one; the overview rung already owns
-            // the genuine briefing-due turn and returned before reaching here.
-            const proactiveLine: unknown = (session as any).greetingProactiveLine;
-            if (typeof proactiveLine === 'string' && proactiveLine.trim().length > 0) {
-              const safeProactive = proactiveLine.trim().replace(/"/g, '\\"');
-              const proactivePrompt =
-                `Say exactly: "${safeProactive}" — speak it verbatim as audio, as ONE greeting. Do NOT add, paraphrase, or split it.`;
-              ws.send(
-                JSON.stringify({
-                  client_content: { turns: [{ role: 'user', parts: [{ text: proactivePrompt }] }], turn_complete: true },
-                }),
-              );
-              emitDiag(session, 'greeting_sent', {
-                lang,
-                prompt_len: proactivePrompt.length,
-                wake_opener: 'safe_fast_proactive',
-              });
-              startResponseWatchdog(session, getGreetingResponseTimeoutMs(), 'greeting_timeout');
-              console.log(
-                `[GREETING-SAFE-FAST-PROACTIVE] session ${session.sessionId} sent proactive fast opener (lang=${lang})`,
-              );
-              return;
-            }
-
-            const temporal = describeTimeSince((session as any).lastSessionInfo);
-            const firstName = (session as any).greetingFirstName;
-            const isNewDay =
-              temporal.bucket === 'today' ||
-              temporal.bucket === 'yesterday' ||
-              temporal.bucket === 'week' ||
-              temporal.bucket === 'long';
-
-            if (isNewDay && typeof firstName === 'string' && firstName.trim().length > 0) {
-              const name = firstName.trim();
-              // Map time-of-day → greeting; 'night' → evening (avoid "good night"
-              // farewell), default 'day'.
-              const tod =
-                session.clientContext?.timeOfDay === 'night'
-                  ? 'evening'
-                  : session.clientContext?.timeOfDay || 'day';
-              // Localized "Good <tod>, <Name>." — en + de are real; other langs
-              // get an easy localized good-<tod> where known, else the en line.
-              const greetingByLang: Record<string, string> = {
-                en:
-                  tod === 'morning'
-                    ? `Good morning, ${name}.`
-                    : tod === 'afternoon'
-                      ? `Good afternoon, ${name}.`
-                      : tod === 'evening'
-                        ? `Good evening, ${name}.`
-                        : `Hello, ${name}.`,
-                de:
-                  tod === 'morning'
-                    ? `Guten Morgen, ${name}.`
-                    : tod === 'evening'
-                      ? `Guten Abend, ${name}.`
-                      : `Guten Tag, ${name}.`,
-                es:
-                  tod === 'morning'
-                    ? `Buenos días, ${name}.`
-                    : tod === 'evening'
-                      ? `Buenas noches, ${name}.`
-                      : `Buenas tardes, ${name}.`,
-                fr:
-                  tod === 'evening'
-                    ? `Bonsoir, ${name}.`
-                    : `Bonjour, ${name}.`,
-                sr:
-                  tod === 'morning'
-                    ? `Добро јутро, ${name}.`
-                    : tod === 'evening'
-                      ? `Добро вече, ${name}.`
-                      : `Добар дан, ${name}.`,
-              };
-              const langKey = (greetLang || 'en').slice(0, 2).toLowerCase();
-              const spoken = greetingByLang[langKey] || greetingByLang.en;
-              const safe = spoken.replace(/"/g, '\\"');
-              // Mirror the existing `Say exactly: "..."` shape used elsewhere in
-              // this function — keep it SHORT so Gemini reliably emits audio.
-              const newDayPrompt =
-                `Say exactly: "${safe}" — ONE short utterance only. Do NOT add anything before or after. Do NOT paraphrase. Speak it as audio.`;
-              ws.send(
-                JSON.stringify({
-                  client_content: { turns: [{ role: 'user', parts: [{ text: newDayPrompt }] }], turn_complete: true },
-                }),
-              );
-              emitDiag(session, 'greeting_sent', {
-                lang,
-                prompt_len: newDayPrompt.length,
-                wake_opener: 'safe_fast_newday',
-                bucket: temporal.bucket,
-              });
-              startResponseWatchdog(session, getGreetingResponseTimeoutMs(), 'greeting_timeout');
-              console.log(
-                `[GREETING-SAFE-FAST-NEWDAY] session ${session.sessionId} sent personalized new-day opener (bucket=${temporal.bucket}, lang=${lang})`,
-              );
-              return;
-            }
-
-            // ELSE — fall through to the EXISTING generic opener (unchanged
-            // behavior). Same-day reconnects and no-name sessions take this path.
-            const _menu = pickShortGapGreetings(greetLang, 6).map((p) => `"${p}"`).join(', ');
-            const _safePrompt =
-              `Open with EXACTLY ONE short phrase, picked from this menu and used VERBATIM ` +
-              `(already in the user's language): ${_menu}. Do NOT say "Hello" or the user's name. ` +
-              `Do NOT introduce yourself. NEVER use two-part sentences. Speak it as audio.`;
-            ws.send(
-              JSON.stringify({
-                client_content: { turns: [{ role: 'user', parts: [{ text: _safePrompt }] }], turn_complete: true },
-              }),
+            })();
+            const _recentNbaKeysSF = Array.isArray((session as any).recentNbaKeys)
+              ? ((session as any).recentNbaKeys as string[])
+              : [];
+            const _seedSF = Math.floor(
+              (_nowSF.getTime() - Date.UTC(_nowSF.getUTCFullYear(), 0, 0)) / 86_400_000,
             );
-            emitDiag(session, 'greeting_sent', {
+
+            // Ledger + overview providers (dynamic imports mirror the pre-strangle
+            // rungs so the module graph / bundle split is unchanged).
+            const {
+              readGreetingLedger,
+              extractSpokenFactsFromPayload,
+              recordGreetingFacts,
+              EMPTY_GREETING_LEDGER: _EMPTY_LEDGER_SF,
+            } = await import('../services/conversation/greeting-facts-ledger');
+            const { gatherOverviewPayload } = await import(
+              '../services/assistant-continuation/providers/new-day-overview-payload'
+            );
+            const { todayInTimezone, localHourInTimezone } = await import(
+              '../services/assistant-continuation/providers/new-day-return'
+            );
+
+            // Base context (no payloads yet) — enough for the brain's gather guards.
+            const _baseCtxSF: GreetingDecisionContext = {
+              contextReadyResolved: false,
+              isAnonymous: !!session.isAnonymous,
+              safeFastGreetingLive: true,
+              reconnectCount: (session as any)._reconnectCount || 0,
               lang,
-              prompt_len: _safePrompt.length,
-              wake_opener: 'safe_fast_pending_context',
+              greetLang,
+              bucket: _temporalSF.bucket,
+              timeAgo: _temporalSF.timeAgo,
+              wasFailure: _temporalSF.wasFailure,
+              firstName: (session as any).greetingFirstName ?? null,
+              hasUserId: !!_uidSF,
+              hasSupabase: !!_supaSF,
+              hasPriorSession: _hasPriorSession,
+              greetingNeedsOnboarding: (session as any).greetingNeedsOnboarding === true,
+              greetingIsFirstTime: (session as any).greetingIsFirstTime === true,
+              lastFullBriefingDate: (session as any).lastFullBriefingDate ?? null,
+              todayTz: _todaySF,
+              localHour: localHourInTimezone(_nowSF, _tzSF),
+              timezone: _tzSF,
+              timeOfDay: session.clientContext?.timeOfDay ?? null,
+              proactiveLine: (session as any).greetingProactiveLine ?? null,
+              newdayOverview: null,
+              resumeOverview: null,
+              greetingLedger: _EMPTY_LEDGER_SF,
+              rotationSeed: _seedSF,
+              recentNbaKeys: _recentNbaKeysSF,
+              currentRoute: (session as any).current_route ?? null,
+              currentScreenTitle: null,
+              menuPhrases: pickShortGapGreetings(greetLang, 6),
+              openDecision: { mode: 'speak', source: 'safe_fast', line: null },
+              guidedTopicNarrationContent: (session as any).guidedTopicNarrationContent ?? null,
+              wakeBriefDecisionId: null,
+              silenceOnSkipEnabled: false,
+              wakeBriefHasSelectedContinuation: false,
+              voiceWakeBriefReason: null,
+            };
+
+            // Rung-1 gather: the rich new-day overview, only when its guard passes.
+            let _newdayOverviewSF: Awaited<ReturnType<typeof gatherOverviewPayload>> | null = null;
+            if (shouldAttemptNewdayOverview(_baseCtxSF) && _supaSF && _uidSF) {
+              const _lastSessIsoSF = (session as any).lastSessionInfo?.time ?? null;
+              const _lastSessDateSF =
+                typeof _lastSessIsoSF === 'string' && _lastSessIsoSF.length > 0
+                  ? todayInTimezone(new Date(_lastSessIsoSF), _tzSF)
+                  : null;
+              _newdayOverviewSF = await Promise.race([
+                gatherOverviewPayload({
+                  supabase: _supaSF,
+                  userId: _uidSF,
+                  now: _nowSF,
+                  timezone: _tzSF,
+                  lang: greetLang,
+                  lastSessionDateUserTz: _lastSessDateSF,
+                  lastSessionAtIso: _lastSessIsoSF,
+                }),
+                new Promise<null>((r) => setTimeout(() => r(null), Number(process.env.ORB_NEWDAY_OVERVIEW_WAIT_MS || 3000))),
+              ]).catch(() => null);
+            }
+            // Will rung 1 fire? If so, skip the resume gather (hot-path latency) —
+            // single-sourced with the brain via newdayHasContent.
+            const _newdayWillFireSF = !!_newdayOverviewSF && newdayHasContent(_newdayOverviewSF);
+
+            // Rung-3 gather: the resume overview, only when rung 1 won't fire and the
+            // resume guard/register says so (the guard already excludes first-timers).
+            const _resumeCheckSF = _newdayWillFireSF
+              ? { attempt: false as boolean }
+              : shouldAttemptResumeOverview(_baseCtxSF);
+            let _resumeOverviewSF: Awaited<ReturnType<typeof gatherOverviewPayload>> | null = null;
+            if (_resumeCheckSF.attempt && _supaSF && _uidSF) {
+              const _lastSessIsoR = (session as any).lastSessionInfo?.time ?? null;
+              const _lastSessDateR =
+                typeof _lastSessIsoR === 'string' && _lastSessIsoR.length > 0
+                  ? todayInTimezone(new Date(_lastSessIsoR), _tzSF)
+                  : null;
+              _resumeOverviewSF = await Promise.race([
+                gatherOverviewPayload({
+                  supabase: _supaSF,
+                  userId: _uidSF,
+                  now: _nowSF,
+                  timezone: _tzSF,
+                  lang: greetLang,
+                  lastSessionDateUserTz: _lastSessDateR,
+                  lastSessionAtIso: _lastSessIsoR,
+                }),
+                new Promise<null>((r) => setTimeout(() => r(null), Number(process.env.ORB_RESUME_OVERVIEW_WAIT_MS || 1800))),
+              ]).catch(() => null);
+            }
+
+            // Read the spoken-facts ledger ONCE, only on a payload-bearing path
+            // (rung 1 will fire, or rung 3 was attempted) — the same paths on which
+            // the pre-strangle rungs read it. Bounded + fail-open to EMPTY.
+            const _ledgerSF =
+              _tenantSF && _uidSF && _supaSF && (_newdayWillFireSF || _resumeCheckSF.attempt)
+                ? await Promise.race([
+                    readGreetingLedger({ supabase: _supaSF, tenantId: _tenantSF, userId: _uidSF }),
+                    new Promise<typeof _EMPTY_LEDGER_SF>((r) => setTimeout(() => r({ ..._EMPTY_LEDGER_SF }), 800)),
+                  ]).catch(() => ({ ..._EMPTY_LEDGER_SF }))
+                : { ..._EMPTY_LEDGER_SF };
+
+            if (ws.readyState !== WebSocket.OPEN) return;
+
+            // DECIDE — one brain, with the gathered payloads + ledger.
+            const _sfDecision = computeGreetingDecision({
+              ..._baseCtxSF,
+              newdayOverview: _newdayOverviewSF,
+              resumeOverview: _resumeOverviewSF,
+              greetingLedger: _ledgerSF,
             });
-            startResponseWatchdog(session, getGreetingResponseTimeoutMs(), 'greeting_timeout');
+
+            // RENDER + perform effects (greetingSent / markOpeningDelivered were
+            // already claimed synchronously above; do NOT re-apply here).
+            if (_sfDecision.directive !== null) {
+              ws.send(
+                JSON.stringify({
+                  client_content: { turns: [{ role: 'user', parts: [{ text: _sfDecision.directive }] }], turn_complete: true },
+                }),
+              );
+            }
+            // Durable once-per-day briefing stamp (safe_fast_newday_overview) —
+            // mirror onto the session so a same-process reopen also sees it delivered.
+            if (_sfDecision.effects.stampBriefingDate && _uidSF && _supaSF) {
+              (session as any).lastFullBriefingDate = _sfDecision.effects.stampBriefingDate;
+              void _supaSF
+                .from('user_journey')
+                .update({ last_full_briefing_date: _sfDecision.effects.stampBriefingDate })
+                .eq('user_id', _uidSF)
+                .then(() => {}, () => {});
+            }
+            // Durable recent-NBA history (conv_resume) — keep the last 8.
+            if (_sfDecision.effects.recordNbaKey && _uidSF && _supaSF) {
+              const _updatedNbas = [..._recentNbaKeysSF, _sfDecision.effects.recordNbaKey].slice(-8);
+              (session as any).recentNbaKeys = _updatedNbas;
+              void _supaSF
+                .from('user_journey')
+                .update({ recent_nbas: _updatedNbas })
+                .eq('user_id', _uidSF)
+                .then(() => {}, () => {});
+            }
+            // Spoken-facts ledger write — the fired payload rung surfaced these
+            // facts; refresh spoken_at so the next open speaks deltas, not repeats.
+            if (
+              _tenantSF &&
+              _uidSF &&
+              _supaSF &&
+              (_sfDecision.wakeOpener === 'safe_fast_newday_overview' || _sfDecision.wakeOpener === 'conv_resume')
+            ) {
+              const _firedPayloadSF =
+                _sfDecision.wakeOpener === 'safe_fast_newday_overview' ? _newdayOverviewSF : _resumeOverviewSF;
+              const _spokenSF = extractSpokenFactsFromPayload(_firedPayloadSF);
+              if (Object.keys(_spokenSF).length > 0) {
+                void recordGreetingFacts({
+                  supabase: _supaSF,
+                  tenantId: _tenantSF,
+                  userId: _uidSF,
+                  facts: _spokenSF,
+                });
+              }
+            }
+            emitDiag(session, 'greeting_sent', _sfDecision.diag);
+            if (_sfDecision.effects.armWatchdog) {
+              startResponseWatchdog(session, getGreetingResponseTimeoutMs(), 'greeting_timeout');
+            }
             console.log(
-              `[GREETING-SAFE-FAST] session ${session.sessionId} sent short audio-safe opener (context still pending)`,
+              `[GREETING-SAFE-FAST] session ${session.sessionId} delegated opener wake_opener=${_sfDecision.wakeOpener} (bucket=${_temporalSF.bucket}, lang=${greetLang})`,
             );
+
           } catch (err: any) {
             console.warn(
               `[GREETING-SAFE-FAST-NEWDAY] session ${session.sessionId} bounded greeting send failed (non-fatal): ${err?.message || err}`,

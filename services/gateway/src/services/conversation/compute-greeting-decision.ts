@@ -248,8 +248,12 @@ function briefingDue(ctx: GreetingDecisionContext): boolean {
   return !(typeof d === 'string' && d >= ctx.todayTz);
 }
 
-/** The substantive-content gate for the rich new-day overview (orb-live L7771). */
-function newdayHasContent(o: OverviewPayload): boolean {
+/** The substantive-content gate for the rich new-day overview (orb-live L7771).
+ *  Exported so the live adapter's lazy-gather short-circuit ("will rung 1 fire?
+ *  then don't also gather the resume payload") is single-sourced with the pure
+ *  rung-1 fire condition and the two cannot diverge — the same single-sourcing
+ *  contract as shouldAttemptNewdayOverview / shouldAttemptResumeOverview. */
+export function newdayHasContent(o: OverviewPayload): boolean {
   return (
     !!o.journey ||
     o.vitana_index.state === 'ok' ||
