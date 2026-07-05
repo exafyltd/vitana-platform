@@ -31,15 +31,17 @@ async function runDailyMatchDelivery(ctx: AutomationContext) {
     .eq('is_primary', true);
 
   for (const { user_id } of users || []) {
-    // Check prompt preferences
+    // autopilot_prompt_prefs was never deployed; user_notification_preferences
+    // is the live opt-out table (push_enabled + match_notifications gate
+    // match-related pushes; row absence means defaults, i.e. enabled).
     const { data: prefs } = await supabase
-      .from('autopilot_prompt_prefs')
-      .select('enabled, max_prompts_per_day')
+      .from('user_notification_preferences')
+      .select('push_enabled, match_notifications')
       .eq('tenant_id', tenantId)
       .eq('user_id', user_id)
       .maybeSingle();
 
-    if (prefs?.enabled === false) continue;
+    if (prefs?.push_enabled === false || prefs?.match_notifications === false) continue;
 
     // Check if daily matches exist
     const { count } = await supabase

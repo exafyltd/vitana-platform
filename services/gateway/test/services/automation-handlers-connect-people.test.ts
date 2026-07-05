@@ -47,6 +47,11 @@ describe('connect-people — source-level wall against never-deployed / wrong ta
     expect(src).not.toMatch(/from\(['"]app_users['"]\)[\s\S]{0,150}\.eq\(['"]id['"],/);
     expect(src).not.toMatch(/recipient_id\.eq/);
   });
+
+  it('AP-0101 no longer references the never-deployed autopilot_prompt_prefs table', () => {
+    expect(src).not.toContain("from('autopilot_prompt_prefs')");
+    expect(src).toContain("from('user_notification_preferences')");
+  });
 });
 
 /**
