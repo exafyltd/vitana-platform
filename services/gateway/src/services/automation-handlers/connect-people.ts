@@ -11,10 +11,17 @@ import { registerHandler } from '../automation-executor';
 const VITANA_BOT_USER_ID = process.env.VITANA_BOT_USER_ID || '00000000-0000-0000-0000-000000000000';
 
 // ── AP-0101: Daily Match Delivery ──────────────────────────
+// Real schema: matches_daily was never deployed; daily_matches (user_id,
+// matched_user_id, match_score, created_at, expires_at, viewed_at, action)
+// is the real, live, populated table. "Today's matches" = created today
+// and not yet viewed.
 async function runDailyMatchDelivery(ctx: AutomationContext) {
   const { supabase, tenantId } = ctx;
   let usersAffected = 0;
   let actionsTaken = 0;
+
+  const startOfToday = new Date();
+  startOfToday.setHours(0, 0, 0, 0);
 
   // Get all active users
   const { data: users } = await supabase
@@ -35,13 +42,12 @@ async function runDailyMatchDelivery(ctx: AutomationContext) {
     if (prefs?.enabled === false) continue;
 
     // Check if daily matches exist
-    const { data: matches, count } = await supabase
-      .from('matches_daily')
-      .select('id', { count: 'exact' })
-      .eq('tenant_id', tenantId)
+    const { count } = await supabase
+      .from('daily_matches')
+      .select('id', { count: 'exact', head: true })
       .eq('user_id', user_id)
-      .eq('match_date', new Date().toISOString().split('T')[0])
-      .limit(1);
+      .gte('created_at', startOfToday.toISOString())
+      .is('viewed_at', null);
 
     if (!count || count === 0) continue;
 
@@ -60,6 +66,10 @@ async function runDailyMatchDelivery(ctx: AutomationContext) {
 }
 
 // ── AP-0102: "Someone Shares Your Interest" Nudge ──────────
+// Real schema: relationship_edges is source_type/source_id/target_type/
+// target_id/edge_type (not user_id/relationship_type); daily_matches (not
+// matches_daily) is the live match table; user_interests (not
+// user_topic_profile) is the live interest-signal table.
 async function runSharedInterestNudge(ctx: AutomationContext) {
   const { supabase, tenantId } = ctx;
   let usersAffected = 0;
@@ -78,34 +88,32 @@ async function runSharedInterestNudge(ctx: AutomationContext) {
       .from('relationship_edges')
       .select('id', { count: 'exact', head: true })
       .eq('tenant_id', tenantId)
-      .eq('user_id', user_id)
-      .eq('relationship_type', 'connected');
+      .eq('source_type', 'person')
+      .eq('source_id', user_id)
+      .eq('edge_type', 'connected');
 
     if ((connectionCount || 0) >= 3) continue;
 
     // Find top match
     const { data: topMatch } = await supabase
-      .from('matches_daily')
-      .select('matched_entity_id, match_type, explanation')
-      .eq('tenant_id', tenantId)
+      .from('daily_matches')
+      .select('matched_user_id, match_score')
       .eq('user_id', user_id)
-      .eq('match_type', 'person')
-      .order('score', { ascending: false })
+      .order('match_score', { ascending: false })
       .limit(1)
       .maybeSingle();
 
     if (!topMatch) continue;
 
     // Get shared topic
-    const { data: userTopics } = await supabase
-      .from('user_topic_profile')
-      .select('topic_key, score')
-      .eq('tenant_id', tenantId)
+    const { data: userInterests } = await supabase
+      .from('user_interests')
+      .select('interest, confidence_score')
       .eq('user_id', user_id)
-      .order('score', { ascending: false })
+      .order('confidence_score', { ascending: false })
       .limit(3);
 
-    const sharedTopic = userTopics?.[0]?.topic_key || 'wellness';
+    const sharedTopic = userInterests?.[0]?.interest || 'wellness';
 
     ctx.notify(user_id, 'person_match_suggested', {
       title: 'Someone Shares Your Interest',
@@ -122,6 +130,9 @@ async function runSharedInterestNudge(ctx: AutomationContext) {
 }
 
 // ── AP-0103: Mutual Accept Auto-Introduction ────────────────
+// Real schema: daily_matches (not matches_daily); relationship_edges'
+// unique constraint is (tenant_id, source_type, source_id, target_type,
+// target_id, edge_type) — used for the upsert onConflict target below.
 async function runMutualAcceptIntroduction(ctx: AutomationContext) {
   const payload = ctx.run.metadata as any;
   const matchId = payload?.match_id;
@@ -132,54 +143,51 @@ async function runMutualAcceptIntroduction(ctx: AutomationContext) {
 
   // Check if both sides accepted
   const { data: match } = await supabase
-    .from('matches_daily')
-    .select('user_id, matched_entity_id, match_type')
+    .from('daily_matches')
+    .select('user_id, matched_user_id')
     .eq('id', matchId)
     .maybeSingle();
 
-  if (!match || match.match_type !== 'person') return { usersAffected: 0, actionsTaken: 0 };
+  if (!match) return { usersAffected: 0, actionsTaken: 0 };
 
-  const otherUserId = match.user_id === userId ? match.matched_entity_id : match.user_id;
+  const otherUserId = match.user_id === userId ? match.matched_user_id : match.user_id;
 
   // Check if other user also accepted (look for reciprocal match)
   const { data: reciprocal } = await supabase
-    .from('matches_daily')
+    .from('daily_matches')
     .select('id')
-    .eq('tenant_id', tenantId)
     .eq('user_id', otherUserId)
-    .eq('matched_entity_id', userId)
-    .eq('state', 'accepted')
+    .eq('matched_user_id', userId)
+    .eq('action', 'accepted')
     .maybeSingle();
 
   if (!reciprocal) return { usersAffected: 0, actionsTaken: 0 };
 
   // Get shared topics
-  const { data: userTopics } = await supabase
-    .from('user_topic_profile')
-    .select('topic_key')
-    .eq('tenant_id', tenantId)
+  const { data: userInterests } = await supabase
+    .from('user_interests')
+    .select('interest')
     .eq('user_id', userId)
-    .order('score', { ascending: false })
+    .order('confidence_score', { ascending: false })
     .limit(5);
 
-  const { data: otherTopics } = await supabase
-    .from('user_topic_profile')
-    .select('topic_key')
-    .eq('tenant_id', tenantId)
+  const { data: otherInterests } = await supabase
+    .from('user_interests')
+    .select('interest')
     .eq('user_id', otherUserId)
-    .order('score', { ascending: false })
+    .order('confidence_score', { ascending: false })
     .limit(5);
 
-  const userTopicSet = new Set((userTopics || []).map((t: any) => t.topic_key));
-  const shared = (otherTopics || []).filter((t: any) => userTopicSet.has(t.topic_key));
-  const sharedTopic = shared[0]?.topic_key || 'wellness';
+  const userInterestSet = new Set((userInterests || []).map((t: any) => t.interest));
+  const shared = (otherInterests || []).filter((t: any) => userInterestSet.has(t.interest));
+  const sharedTopic = shared[0]?.interest || 'wellness';
   const topicName = sharedTopic.replace(/-/g, ' ');
 
-  // Get other user's display name
+  // Get other user's display name (app_users' primary key is user_id, not id)
   const { data: otherUser } = await supabase
     .from('app_users')
     .select('display_name')
-    .eq('id', otherUserId)
+    .eq('user_id', otherUserId)
     .maybeSingle();
 
   const otherName = otherUser?.display_name || 'your match';
@@ -200,13 +208,14 @@ async function runMutualAcceptIntroduction(ctx: AutomationContext) {
   // Create relationship edge
   await supabase.from('relationship_edges').upsert({
     tenant_id: tenantId,
-    user_id: userId,
+    source_type: 'person',
+    source_id: userId,
     target_type: 'person',
     target_id: otherUserId,
-    relationship_type: 'connected',
+    edge_type: 'connected',
     strength: 50,
-    context: JSON.stringify({ origin: 'autopilot_match', topic: sharedTopic }),
-  }, { onConflict: 'tenant_id,user_id,target_type,target_id' });
+    metadata: { origin: 'autopilot_match', topic: sharedTopic },
+  }, { onConflict: 'tenant_id,source_type,source_id,target_type,target_id,edge_type' });
 
   await ctx.emitEvent('autopilot.connect.introduction_sent', {
     user_id: userId,
@@ -218,6 +227,9 @@ async function runMutualAcceptIntroduction(ctx: AutomationContext) {
 }
 
 // ── AP-0104: First Conversation Starter ─────────────────────
+// Real schema: relationship_edges is source_id/target_id/edge_type/
+// metadata (not user_id/relationship_type/context); chat_messages' column
+// is receiver_id, not recipient_id; app_users' primary key is user_id.
 async function runFirstConversationStarter(ctx: AutomationContext) {
   const { supabase, tenantId } = ctx;
   let usersAffected = 0;
@@ -229,34 +241,35 @@ async function runFirstConversationStarter(ctx: AutomationContext) {
 
   const { data: recentEdges } = await supabase
     .from('relationship_edges')
-    .select('user_id, target_id, context')
+    .select('source_id, target_id, metadata')
     .eq('tenant_id', tenantId)
+    .eq('source_type', 'person')
     .eq('target_type', 'person')
-    .eq('relationship_type', 'connected')
+    .eq('edge_type', 'connected')
     .gte('created_at', sixHoursAgo)
     .lte('created_at', twoHoursAgo)
     .limit(50);
 
   for (const edge of recentEdges || []) {
-    const context = typeof edge.context === 'string' ? JSON.parse(edge.context) : edge.context;
-    if (context?.origin !== 'autopilot_match') continue;
+    const metadata = typeof edge.metadata === 'string' ? JSON.parse(edge.metadata) : edge.metadata;
+    if (metadata?.origin !== 'autopilot_match') continue;
 
     // Check if any messages exchanged
     const { count } = await supabase
       .from('chat_messages')
       .select('id', { count: 'exact', head: true })
       .eq('tenant_id', tenantId)
-      .or(`sender_id.eq.${edge.user_id},sender_id.eq.${edge.target_id}`)
-      .or(`recipient_id.eq.${edge.user_id},recipient_id.eq.${edge.target_id}`)
+      .or(`sender_id.eq.${edge.source_id},sender_id.eq.${edge.target_id}`)
+      .or(`receiver_id.eq.${edge.source_id},receiver_id.eq.${edge.target_id}`)
       .limit(1);
 
     if ((count || 0) > 0) continue;
 
-    const topic = context?.topic || 'wellness';
+    const topic = metadata?.topic || 'wellness';
     const { data: targetUser } = await supabase
-      .from('app_users').select('display_name').eq('id', edge.target_id).maybeSingle();
+      .from('app_users').select('display_name').eq('user_id', edge.target_id).maybeSingle();
 
-    ctx.notify(edge.user_id, 'conversation_followup_reminder', {
+    ctx.notify(edge.source_id, 'conversation_followup_reminder', {
       title: 'Start a Conversation',
       body: `Still thinking about what to say to ${targetUser?.display_name || 'your match'}? Try asking about ${topic.replace(/-/g, ' ')}.`,
       data: { url: `/chat/${edge.target_id}`, peer_id: edge.target_id },
@@ -270,6 +283,9 @@ async function runFirstConversationStarter(ctx: AutomationContext) {
 }
 
 // ── AP-0105: Group Recommendation Push ──────────────────────
+// Real schema: community_recommendations does not exist; group_recommendations
+// (user_id, group_id, match_score, match_reasons, is_dismissed, expires_at)
+// is the real, live table.
 async function runGroupRecommendationPush(ctx: AutomationContext) {
   const { supabase, tenantId } = ctx;
   let usersAffected = 0;
@@ -284,12 +300,11 @@ async function runGroupRecommendationPush(ctx: AutomationContext) {
   for (const { user_id } of users || []) {
     // Get group recommendations
     const { data: recs } = await supabase
-      .from('community_recommendations')
-      .select('id, group_id, score, rationale')
-      .eq('tenant_id', tenantId)
+      .from('group_recommendations')
+      .select('id, group_id, match_score')
       .eq('user_id', user_id)
-      .eq('type', 'group')
-      .order('score', { ascending: false })
+      .eq('is_dismissed', false)
+      .order('match_score', { ascending: false })
       .limit(3);
 
     if (!recs?.length) continue;
