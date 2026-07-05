@@ -585,6 +585,8 @@ async function runWeeklyCommunityDigest(ctx: AutomationContext) {
   }
 }
 
+// Real schema: matches_daily was never deployed; daily_matches (user_id,
+// created_at — no tenant_id column) is the live match table.
 async function runDormantUserReEngagement(ctx: AutomationContext) {
   const { supabase, tenantId } = ctx;
   let usersAffected = 0;
@@ -612,11 +614,10 @@ async function runDormantUserReEngagement(ctx: AutomationContext) {
 
     // Get what they missed
     const { count: pendingMatches } = await supabase
-      .from('matches_daily')
+      .from('daily_matches')
       .select('id', { count: 'exact', head: true })
-      .eq('tenant_id', tenantId)
       .eq('user_id', user_id)
-      .gte('match_date', sevenDaysAgo);
+      .gte('created_at', sevenDaysAgo);
 
     if ((pendingMatches || 0) === 0) continue;
 
@@ -717,6 +718,8 @@ async function runWeeklyReflection(ctx: AutomationContext) {
   }
 }
 
+// Real schema: chat_messages' recipient column is receiver_id, not
+// recipient_id; app_users' primary key is user_id, not id.
 async function runConversationContinuityNudge(ctx: AutomationContext) {
   const { supabase, tenantId } = ctx;
   let usersAffected = 0;
@@ -729,7 +732,7 @@ async function runConversationContinuityNudge(ctx: AutomationContext) {
   // Get recent active conversations that went quiet
   const { data: recentConvos } = await supabase
     .from('chat_messages')
-    .select('sender_id, recipient_id')
+    .select('sender_id, receiver_id')
     .eq('tenant_id', tenantId)
     .gte('created_at', sevenDaysAgo)
     .lte('created_at', threeDaysAgo)
@@ -738,7 +741,7 @@ async function runConversationContinuityNudge(ctx: AutomationContext) {
   const nudgedPairs = new Set<string>();
 
   for (const msg of recentConvos || []) {
-    const pairKey = [msg.sender_id, msg.recipient_id].sort().join('-');
+    const pairKey = [msg.sender_id, msg.receiver_id].sort().join('-');
     if (nudgedPairs.has(pairKey)) continue;
 
     // Check if conversation went quiet
@@ -746,8 +749,8 @@ async function runConversationContinuityNudge(ctx: AutomationContext) {
       .from('chat_messages')
       .select('id', { count: 'exact', head: true })
       .eq('tenant_id', tenantId)
-      .or(`sender_id.eq.${msg.sender_id},sender_id.eq.${msg.recipient_id}`)
-      .or(`recipient_id.eq.${msg.sender_id},recipient_id.eq.${msg.recipient_id}`)
+      .or(`sender_id.eq.${msg.sender_id},sender_id.eq.${msg.receiver_id}`)
+      .or(`receiver_id.eq.${msg.sender_id},receiver_id.eq.${msg.receiver_id}`)
       .gte('created_at', threeDaysAgo);
 
     if ((recentMsgs || 0) > 0) continue;
@@ -755,12 +758,12 @@ async function runConversationContinuityNudge(ctx: AutomationContext) {
     nudgedPairs.add(pairKey);
 
     const { data: peer } = await supabase
-      .from('app_users').select('display_name').eq('id', msg.recipient_id).maybeSingle();
+      .from('app_users').select('display_name').eq('user_id', msg.receiver_id).maybeSingle();
 
     ctx.notify(msg.sender_id, 'conversation_followup_reminder', {
       title: 'Continue the Conversation',
       body: `It's been a few days since you chatted with ${peer?.display_name || 'your connection'}.`,
-      data: { url: `/chat/${msg.recipient_id}`, peer_id: msg.recipient_id },
+      data: { url: `/chat/${msg.receiver_id}`, peer_id: msg.receiver_id },
     });
 
     usersAffected++;
@@ -849,6 +852,100 @@ async function runUpcomingEventsToday(ctx: AutomationContext) {
 }
 
 // =============================================================================
+// AP-0511: "Friends Challenge" Social Streak (heartbeat)
+// user_diary_streak (user_id, current_streak_days, last_day) is the live
+// streak table. Nudges connected pairs (relationship_edges edge_type=
+// 'connected') who are both mid-streak to keep each other motivated.
+// =============================================================================
+const STREAK_MIN_DAYS = 3;
+const STREAK_COOLDOWN_DAYS = 7;
+const STREAK_MAX_PAIRS_PER_RUN = 200;
+
+function isStreakActive(lastDay: string | null | undefined): boolean {
+  if (!lastDay) return false;
+  const today = new Date().toISOString().slice(0, 10);
+  const yesterday = new Date(Date.now() - 86_400_000).toISOString().slice(0, 10);
+  return lastDay === today || lastDay === yesterday;
+}
+
+async function runFriendsChallengeSocialStreak(ctx: AutomationContext) {
+  const { supabase, tenantId } = ctx;
+  let usersAffected = 0;
+  let actionsTaken = 0;
+  const notifiedPairs = new Set<string>();
+
+  const users = await ctx.queryTargetUsers();
+
+  for (const { user_id } of users) {
+    if (notifiedPairs.size >= STREAK_MAX_PAIRS_PER_RUN) break;
+
+    const { data: myStreak } = await supabase
+      .from('user_diary_streak')
+      .select('current_streak_days, last_day')
+      .eq('user_id', user_id)
+      .maybeSingle();
+
+    if (!myStreak || (myStreak.current_streak_days || 0) < STREAK_MIN_DAYS) continue;
+    if (!isStreakActive(myStreak.last_day)) continue;
+
+    const { data: edges } = await supabase
+      .from('relationship_edges')
+      .select('target_id')
+      .eq('tenant_id', tenantId)
+      .eq('source_type', 'person')
+      .eq('source_id', user_id)
+      .eq('target_type', 'person')
+      .eq('edge_type', 'connected')
+      .limit(50);
+
+    for (const edge of edges || []) {
+      if (notifiedPairs.size >= STREAK_MAX_PAIRS_PER_RUN) break;
+      const friendId = edge.target_id;
+      const pairKey = [user_id, friendId].sort().join('-');
+      if (notifiedPairs.has(pairKey)) continue;
+
+      const { data: friendStreak } = await supabase
+        .from('user_diary_streak')
+        .select('current_streak_days, last_day')
+        .eq('user_id', friendId)
+        .maybeSingle();
+
+      if (!friendStreak || (friendStreak.current_streak_days || 0) < STREAK_MIN_DAYS) continue;
+      if (!isStreakActive(friendStreak.last_day)) continue;
+
+      const cooldownCutoff = new Date(Date.now() - STREAK_COOLDOWN_DAYS * 86_400_000).toISOString();
+      const { data: recentNudge } = await supabase
+        .from('user_notifications')
+        .select('id')
+        .eq('user_id', user_id)
+        .contains('data', { automation_id: 'AP-0511', pair_key: pairKey })
+        .gte('created_at', cooldownCutoff)
+        .limit(1);
+      if (recentNudge && recentNudge.length > 0) continue;
+
+      notifiedPairs.add(pairKey);
+
+      ctx.notify(user_id, 'orb_suggestion', {
+        title: 'Friendly Streak Challenge \u{1F525}',
+        body: `You're on a ${myStreak.current_streak_days}-day streak and so is a friend — keep it going together!`,
+        data: { url: '/diary', automation_id: 'AP-0511', pair_key: pairKey },
+      });
+      ctx.notify(friendId, 'orb_suggestion', {
+        title: 'Friendly Streak Challenge \u{1F525}',
+        body: `You and a friend are both on a streak — keep each other motivated!`,
+        data: { url: '/diary', automation_id: 'AP-0511', pair_key: pairKey },
+      });
+
+      usersAffected += 2;
+      actionsTaken += 2;
+    }
+  }
+
+  await ctx.emitEvent('autopilot.engagement.friends_streak_challenge_sent', { pairs: notifiedPairs.size });
+  return { usersAffected, actionsTaken };
+}
+
+// =============================================================================
 // AP-1000: Platform Operations
 // =============================================================================
 
@@ -888,6 +985,7 @@ export function registerEngagementEventsHandlers(): void {
   registerHandler('runWeeklyReflection', runWeeklyReflection);
   registerHandler('runConversationContinuityNudge', runConversationContinuityNudge);
   registerHandler('runMilestoneScanner', runMilestoneScanner);
+  registerHandler('runFriendsChallengeSocialStreak', runFriendsChallengeSocialStreak);
   registerHandler('runUpcomingEventsToday', runUpcomingEventsToday);
 
   // Platform Operations (AP-1000)

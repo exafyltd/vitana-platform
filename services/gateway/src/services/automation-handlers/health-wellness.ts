@@ -38,14 +38,16 @@ async function runConsentCheck(ctx: AutomationContext) {
 }
 
 // ── AP-0604: Wellness Check-In Prompt ───────────────────────
+// Real schema: vitana_index_scores has score_total (not overall_score) and
+// date (a DATE column, not computed_at timestamptz).
 async function runWellnessCheckIn(ctx: AutomationContext) {
   const { supabase, tenantId } = ctx;
   let usersAffected = 0;
   let actionsTaken = 0;
 
   // Find users with declining Vitana Index
-  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
-  const fourteenDaysAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString();
+  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const fourteenDaysAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
 
   const { data: users } = await supabase
     .from('user_tenants')
@@ -57,28 +59,28 @@ async function runWellnessCheckIn(ctx: AutomationContext) {
     // Get recent vs previous score
     const { data: recent } = await supabase
       .from('vitana_index_scores')
-      .select('overall_score')
+      .select('score_total')
       .eq('tenant_id', tenantId)
       .eq('user_id', user_id)
-      .gte('computed_at', sevenDaysAgo)
-      .order('computed_at', { ascending: false })
+      .gte('date', sevenDaysAgo)
+      .order('date', { ascending: false })
       .limit(1)
       .maybeSingle();
 
     const { data: previous } = await supabase
       .from('vitana_index_scores')
-      .select('overall_score')
+      .select('score_total')
       .eq('tenant_id', tenantId)
       .eq('user_id', user_id)
-      .gte('computed_at', fourteenDaysAgo)
-      .lte('computed_at', sevenDaysAgo)
-      .order('computed_at', { ascending: false })
+      .gte('date', fourteenDaysAgo)
+      .lte('date', sevenDaysAgo)
+      .order('date', { ascending: false })
       .limit(1)
       .maybeSingle();
 
-    if (!recent?.overall_score || !previous?.overall_score) continue;
+    if (!recent?.score_total || !previous?.score_total) continue;
 
-    const decline = previous.overall_score - recent.overall_score;
+    const decline = previous.score_total - recent.score_total;
     if (decline < 10) continue; // only nudge on significant decline
 
     ctx.notify(user_id, 'orb_proactive_message', {
@@ -159,6 +161,10 @@ async function runBiomarkerTrendAnalysis(ctx: AutomationContext) {
 }
 
 // ── AP-0609: Quality-of-Life Recommendation Engine ──────────
+// Real schema: vitana_index_scores has no pillar_scores jsonb column — the 5
+// pillars are discrete score_sleep/score_nutrition/score_exercise/
+// score_hydration/score_mental columns, plus score_total (not overall_score)
+// and date (not computed_at).
 async function runQualityOfLifeRecommendations(ctx: AutomationContext) {
   const payload = ctx.run.metadata as any;
   const userId = payload?.user_id;
@@ -169,17 +175,21 @@ async function runQualityOfLifeRecommendations(ctx: AutomationContext) {
   // Get current Vitana Index scores
   const { data: scores } = await supabase
     .from('vitana_index_scores')
-    .select('overall_score, pillar_scores')
+    .select('score_sleep, score_nutrition, score_exercise, score_hydration, score_mental')
     .eq('tenant_id', tenantId)
     .eq('user_id', userId)
-    .order('computed_at', { ascending: false })
+    .order('date', { ascending: false })
     .limit(1)
     .maybeSingle();
 
-  if (!scores?.pillar_scores) return { usersAffected: 0, actionsTaken: 0 };
+  if (!scores) return { usersAffected: 0, actionsTaken: 0 };
 
-  const pillars = scores.pillar_scores as Record<string, number>;
+  const pillars: Record<string, number> = {
+    sleep: scores.score_sleep, nutrition: scores.score_nutrition, exercise: scores.score_exercise,
+    hydration: scores.score_hydration, mental: scores.score_mental,
+  };
   const weakestPillar = Object.entries(pillars)
+    .filter(([, score]) => score != null)
     .sort(([, a], [, b]) => a - b)
     .find(([, score]) => score < 50);
 
@@ -225,18 +235,18 @@ async function runVitanaIndexWeeklyReport(ctx: AutomationContext) {
   for (const { user_id } of users || []) {
     const { data: score } = await supabase
       .from('vitana_index_scores')
-      .select('overall_score')
+      .select('score_total')
       .eq('tenant_id', tenantId)
       .eq('user_id', user_id)
-      .order('computed_at', { ascending: false })
+      .order('date', { ascending: false })
       .limit(1)
       .maybeSingle();
 
-    if (!score?.overall_score) continue;
+    if (!score?.score_total) continue;
 
     ctx.notify(user_id, 'orb_proactive_message', {
       title: 'Your Weekly Vitana Index',
-      body: `Your Vitana Index this week: ${Math.round(score.overall_score)}. Check your ORB for insights.`,
+      body: `Your Vitana Index this week: ${Math.round(score.score_total)}. Check your ORB for insights.`,
       data: { url: '/health/dashboard' },
     });
 
@@ -248,6 +258,10 @@ async function runVitanaIndexWeeklyReport(ctx: AutomationContext) {
 }
 
 // ── AP-0612: Professional Referral Suggestion ───────────────
+// KNOWN GAP: services_catalog (VTID-01092) was never deployed and no live
+// substitute with service_type/provider_name exists — this always no-ops
+// (query errors, data stays null, the length guard below catches it safely).
+// Left as-is rather than guessing a replacement schema; flagging only.
 async function runProfessionalReferral(ctx: AutomationContext) {
   const payload = ctx.run.metadata as any;
   const { user_id, biomarkers } = payload || {};
@@ -289,6 +303,9 @@ async function runHealthCapacityGate(ctx: AutomationContext) {
 }
 
 // ── AP-0615: Health-Aware Product Recommendations ───────────
+// Real schema: recommendations has category/title/body (not pillar/
+// recommendation_text); products (not products_catalog) is the live global
+// catalog — no tenant_id column, topic_keys is a real array column.
 async function runHealthAwareProductRecs(ctx: AutomationContext) {
   const payload = ctx.run.metadata as any;
   const userId = payload?.user_id;
@@ -299,7 +316,7 @@ async function runHealthAwareProductRecs(ctx: AutomationContext) {
   // Get user's recommendations
   const { data: recs } = await supabase
     .from('recommendations')
-    .select('pillar, recommendation_text')
+    .select('category, title')
     .eq('tenant_id', tenantId)
     .eq('user_id', userId)
     .order('created_at', { ascending: false })
@@ -308,12 +325,12 @@ async function runHealthAwareProductRecs(ctx: AutomationContext) {
   if (!recs?.length) return { usersAffected: 0, actionsTaken: 0 };
 
   // Find matching products
-  const pillars = recs.map((r: any) => r.pillar);
+  const categories = recs.map((r: any) => r.category).filter(Boolean);
   const { data: products } = await supabase
-    .from('products_catalog')
-    .select('id, name, product_type')
-    .eq('tenant_id', tenantId)
-    .overlaps('topic_keys', pillars)
+    .from('products')
+    .select('id, title, category')
+    .eq('is_active', true)
+    .overlaps('topic_keys', categories)
     .limit(3);
 
   if (!products?.length) return { usersAffected: 0, actionsTaken: 0 };
@@ -328,11 +345,115 @@ async function runHealthAwareProductRecs(ctx: AutomationContext) {
   return { usersAffected: 1, actionsTaken: 1 };
 }
 
+// ── AP-0605: Community Wellness Event Suggestion ────────────
+// Heartbeat scan of upcoming global_community_events for wellness-themed
+// titles (no dedicated category/topic column on that table), suggesting the
+// nearest one to users not already attending.
+const WELLNESS_KEYWORDS = ['wellness', 'yoga', 'meditation', 'mindfulness', 'fitness', 'nutrition', 'health'];
+const WELLNESS_EVENT_LOOKAHEAD_DAYS = 14;
+const WELLNESS_SUGGESTION_COOLDOWN_DAYS = 7;
+const WELLNESS_SUGGESTION_MAX_USERS_PER_RUN = 500;
+
+async function runCommunityWellnessEventSuggestion(ctx: AutomationContext) {
+  const { supabase } = ctx;
+  let usersAffected = 0;
+  let actionsTaken = 0;
+
+  const now = new Date();
+  const lookahead = new Date(now.getTime() + WELLNESS_EVENT_LOOKAHEAD_DAYS * 86_400_000);
+
+  const { data: events } = await supabase
+    .from('global_community_events')
+    .select('id, title, start_time')
+    .gte('start_time', now.toISOString())
+    .lte('start_time', lookahead.toISOString())
+    .order('start_time', { ascending: true })
+    .limit(50);
+
+  const wellnessEvent = (events || []).find((e: any) =>
+    WELLNESS_KEYWORDS.some((kw) => (e.title || '').toLowerCase().includes(kw))
+  );
+  if (!wellnessEvent) return { usersAffected: 0, actionsTaken: 0 };
+
+  const users = (await ctx.queryTargetUsers()).slice(0, WELLNESS_SUGGESTION_MAX_USERS_PER_RUN);
+  const cooldownCutoff = new Date(now.getTime() - WELLNESS_SUGGESTION_COOLDOWN_DAYS * 86_400_000).toISOString();
+
+  for (const { user_id } of users) {
+    const { data: attending } = await supabase
+      .from('global_event_participants')
+      .select('id')
+      .eq('event_id', wellnessEvent.id)
+      .eq('user_id', user_id)
+      .eq('status', 'attending')
+      .limit(1);
+    if (attending && attending.length > 0) continue;
+
+    const { data: recentSuggestion } = await supabase
+      .from('user_notifications')
+      .select('id')
+      .eq('user_id', user_id)
+      .contains('data', { automation_id: 'AP-0605' })
+      .gte('created_at', cooldownCutoff)
+      .limit(1);
+    if (recentSuggestion && recentSuggestion.length > 0) continue;
+
+    ctx.notify(user_id, 'orb_suggestion', {
+      title: 'A Wellness Event Is Coming Up',
+      body: `"${wellnessEvent.title}" is happening soon — a great chance to focus on your wellbeing.`,
+      data: { url: `/community/events/${wellnessEvent.id}`, event_id: wellnessEvent.id, automation_id: 'AP-0605' },
+    });
+
+    usersAffected++;
+    actionsTaken++;
+  }
+
+  await ctx.emitEvent('autopilot.health.wellness_event_suggested', { event_id: wellnessEvent.id, users: usersAffected });
+  return { usersAffected, actionsTaken };
+}
+
+// ── AP-0606: Health Data Export Reminder ────────────────────
+// No dedicated export screen exists in the frontend inventory; links to the
+// real /settings/privacy screen (App.tsx) where data-management actions
+// live, rather than inventing a new route.
+const EXPORT_REMINDER_MAX_USERS_PER_RUN = 500;
+
+async function runHealthDataExportReminder(ctx: AutomationContext) {
+  const { supabase, tenantId } = ctx;
+  let usersAffected = 0;
+  let actionsTaken = 0;
+
+  const users = (await ctx.queryTargetUsers()).slice(0, EXPORT_REMINDER_MAX_USERS_PER_RUN);
+
+  for (const { user_id } of users) {
+    const { count: reportCount } = await supabase
+      .from('lab_reports')
+      .select('id', { count: 'exact', head: true })
+      .eq('tenant_id', tenantId)
+      .eq('user_id', user_id);
+
+    if (!reportCount || reportCount === 0) continue;
+
+    ctx.notify(user_id, 'orb_suggestion', {
+      title: 'Review Your Health Data',
+      body: 'It\'s been a while — take a moment to review or export the health data Vitana has on file for you.',
+      data: { url: '/settings/privacy', automation_id: 'AP-0606' },
+    });
+
+    usersAffected++;
+    actionsTaken++;
+  }
+
+  await ctx.emitEvent('autopilot.health.data_export_reminder_sent', { users: usersAffected });
+  return { usersAffected, actionsTaken };
+}
+
 export function registerHealthWellnessHandlers(): void {
   registerHandler('runPhiRedactionGate', runPhiRedactionGate);
   registerHandler('runHealthReportSummarization', runHealthReportSummarization);
   registerHandler('runConsentCheck', runConsentCheck);
   registerHandler('runWellnessCheckIn', runWellnessCheckIn);
+  registerHandler('runCommunityWellnessEventSuggestion', runCommunityWellnessEventSuggestion);
+  registerHandler('runHealthDataExportReminder', runHealthDataExportReminder);
   registerHandler('runLabReportIngestion', runLabReportIngestion);
   registerHandler('runBiomarkerTrendAnalysis', runBiomarkerTrendAnalysis);
   registerHandler('runQualityOfLifeRecommendations', runQualityOfLifeRecommendations);

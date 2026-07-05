@@ -445,6 +445,9 @@ const ENGAGEMENT_LOOPS: AutomationDefinition[] = [
     handler: 'runConversationContinuityNudge',
   },
   {
+    // Stays PLANNED: no profile_views table exists live and nothing
+    // dispatches a 'profile.viewed' event (same situation as AP-1206) — a
+    // handler here would be dead code with no trigger path.
     id: 'AP-0508', name: '"Someone Viewed Your Profile" Notification', domain: 'engagement-loops',
     status: 'PLANNED', priority: 'P2', triggerType: 'event',
     triggerConfig: { eventTopic: 'profile.viewed' },
@@ -469,9 +472,10 @@ const ENGAGEMENT_LOOPS: AutomationDefinition[] = [
   },
   {
     id: 'AP-0511', name: '"Friends Challenge" Social Streak', domain: 'engagement-loops',
-    status: 'PLANNED', priority: 'P1', triggerType: 'heartbeat',
+    status: 'IMPLEMENTED', priority: 'P1', triggerType: 'heartbeat',
     triggerConfig: { intervalMinutes: 1440 }, // daily shared-goal scan
     targetRoles: [...MEMBER_ROLES],
+    handler: 'runFriendsChallengeSocialStreak',
     requires: ['AP-0405', 'AP-0708'],
   },
 ];
@@ -510,15 +514,17 @@ const HEALTH_WELLNESS: AutomationDefinition[] = [
   },
   {
     id: 'AP-0605', name: 'Community Wellness Event Suggestion', domain: 'health-wellness',
-    status: 'PLANNED', priority: 'P2', triggerType: 'heartbeat',
+    status: 'IMPLEMENTED', priority: 'P2', triggerType: 'heartbeat',
     triggerConfig: { intervalMinutes: 10080 },
     targetRoles: [...CONSUMER_ROLES],
+    handler: 'runCommunityWellnessEventSuggestion',
   },
   {
     id: 'AP-0606', name: 'Health Data Export Reminder', domain: 'health-wellness',
-    status: 'PLANNED', priority: 'P2', triggerType: 'cron',
+    status: 'IMPLEMENTED', priority: 'P2', triggerType: 'cron',
     triggerConfig: { cronExpression: '0 10 1 */3 *' }, // quarterly
     targetRoles: [...PATIENT_ROLES],
+    handler: 'runHealthDataExportReminder',
   },
   {
     id: 'AP-0607', name: 'Lab Report Ingestion & Biomarker Extraction', domain: 'health-wellness',
@@ -572,6 +578,10 @@ const HEALTH_WELLNESS: AutomationDefinition[] = [
     handler: 'runHealthCapacityGate',
   },
   {
+    // Stays PLANNED: 'health.lab_report.first' is never dispatched (same gap
+    // as AP-0607's 'health.lab_report.uploaded' — the lab-upload flow never
+    // calls dispatchEvent) and "first report" detection needs state this
+    // domain doesn't track yet.
     id: 'AP-0614', name: 'Health Goal Setting Assistant', domain: 'health-wellness',
     status: 'PLANNED', priority: 'P1', triggerType: 'event',
     triggerConfig: { eventTopic: 'health.lab_report.first' },
