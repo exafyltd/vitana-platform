@@ -14,6 +14,12 @@ import { registerBusinessMarketplaceHandlers } from './business-marketplace';
 import { registerLiveRoomsCommerceHandlers } from './live-rooms-commerce';
 import { registerEngagementEventsHandlers } from './engagement-events';
 import { registerOnboardingGrowthHandlers } from './onboarding-growth';
+import { registerPlatformOperationsHandlers } from './platform-operations';
+import { registerMemoryIntelligenceHandlers } from './memory-intelligence';
+import { registerPersonalizationEnginesHandlers } from './personalization-engines';
+import { registerEventMeetupInitiativeHandlers } from './event-meetup-initiative';
+import { registerBusinessOpportunityHandlers } from './business-opportunity';
+import { registerHealthActionInitiativeHandlers } from './health-action-initiative';
 import { registerHandler } from '../automation-executor';
 
 /**
@@ -32,6 +38,12 @@ export function registerAllAutomationHandlers(): void {
   registerLiveRoomsCommerceHandlers();
   registerEngagementEventsHandlers();
   registerOnboardingGrowthHandlers();
+  registerPlatformOperationsHandlers();
+  registerMemoryIntelligenceHandlers();
+  registerPersonalizationEnginesHandlers();
+  registerEventMeetupInitiativeHandlers();
+  registerBusinessOpportunityHandlers();
+  registerHealthActionInitiativeHandlers();
 
   console.log('[Automations] All handlers registered.');
 }
