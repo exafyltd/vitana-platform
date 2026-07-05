@@ -3,13 +3,19 @@ import express from 'express';
 
 jest.mock('../../src/lib/supabase-user');
 jest.mock('../../src/services/oasis-event-service');
+jest.mock('../../src/lib/supabase');
+jest.mock('../../src/services/automation-executor');
 
 import healthRouter from '../../src/routes/health';
 import { createUserSupabaseClient } from '../../src/lib/supabase-user';
 import { emitOasisEvent } from '../../src/services/oasis-event-service';
+import { getSupabase } from '../../src/lib/supabase';
+import { dispatchEvent } from '../../src/services/automation-executor';
 
 const mockCreateUserSupabaseClient = createUserSupabaseClient as jest.MockedFunction<typeof createUserSupabaseClient>;
 const mockEmitOasisEvent = emitOasisEvent as jest.MockedFunction<typeof emitOasisEvent>;
+const mockGetSupabase = getSupabase as jest.MockedFunction<typeof getSupabase>;
+const mockDispatchEvent = dispatchEvent as jest.MockedFunction<typeof dispatchEvent>;
 
 const TOKEN = 'test-jwt-token';
 const AUTH_HEADER = `Bearer ${TOKEN}`;
@@ -49,6 +55,9 @@ describe('Health Router', () => {
     supabaseMock = makeSupabaseMock();
     mockCreateUserSupabaseClient.mockReturnValue(supabaseMock as any);
     mockEmitOasisEvent.mockResolvedValue(undefined as any);
+    mockDispatchEvent.mockResolvedValue({ executed: [], skipped: [], failed: [] } as any);
+    const serviceChain: any = { select: jest.fn().mockReturnThis(), eq: jest.fn().mockResolvedValue({ count: 0, error: null }) };
+    mockGetSupabase.mockReturnValue({ from: jest.fn().mockReturnValue(serviceChain) } as any);
     global.fetch = jest.fn().mockResolvedValue({ ok: true, status: 200 } as any);
     process.env.SUPABASE_URL = 'http://localhost:54321';
     process.env.SUPABASE_SERVICE_ROLE = 'test-service-role';
@@ -147,6 +156,35 @@ describe('Health Router', () => {
       expect(res.body.ok).toBe(true);
       expect(res.body.lab_report_id).toBe('lr-123');
       expect(res.body.biomarker_count).toBe(3);
+    });
+
+    it('dispatches health.lab_report.uploaded and health.lab_report.first on the first report (VTID-01250)', async () => {
+      supabaseMock.rpc
+        .mockResolvedValueOnce({ data: GOOD_CTX, error: null })
+        .mockResolvedValueOnce({ data: { lab_report_id: 'lr-123', biomarker_count: 3 }, error: null });
+      const res = await request(testApp)
+        .post('/lab-reports/ingest')
+        .set('Authorization', AUTH_HEADER)
+        .send({ provider: 'lab', report_date: '2026-01-01', biomarkers: [{ name: 'glucose', value: 95 }] });
+      expect(res.status).toBe(200);
+      expect(mockDispatchEvent).toHaveBeenCalledWith('t1', 'health.lab_report.uploaded', { user_id: 'u1', report_id: 'lr-123' });
+      expect(mockDispatchEvent).toHaveBeenCalledWith('t1', 'health.lab_report.first', { user_id: 'u1', report_id: 'lr-123' });
+    });
+
+    it('does not dispatch health.lab_report.first when the user has prior reports', async () => {
+      mockGetSupabase.mockReturnValue({
+        from: jest.fn().mockReturnValue({ select: jest.fn().mockReturnThis(), eq: jest.fn().mockResolvedValue({ count: 3, error: null }) }),
+      } as any);
+      supabaseMock.rpc
+        .mockResolvedValueOnce({ data: GOOD_CTX, error: null })
+        .mockResolvedValueOnce({ data: { lab_report_id: 'lr-123', biomarker_count: 3 }, error: null });
+      const res = await request(testApp)
+        .post('/lab-reports/ingest')
+        .set('Authorization', AUTH_HEADER)
+        .send({ provider: 'lab', report_date: '2026-01-01', biomarkers: [{ name: 'glucose', value: 95 }] });
+      expect(res.status).toBe(200);
+      expect(mockDispatchEvent).toHaveBeenCalledWith('t1', 'health.lab_report.uploaded', { user_id: 'u1', report_id: 'lr-123' });
+      expect(mockDispatchEvent).not.toHaveBeenCalledWith('t1', 'health.lab_report.first', expect.anything());
     });
   });
 

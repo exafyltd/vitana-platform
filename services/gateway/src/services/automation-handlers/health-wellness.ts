@@ -447,6 +447,26 @@ async function runHealthDataExportReminder(ctx: AutomationContext) {
   return { usersAffected, actionsTaken };
 }
 
+// ── AP-0614: Health Goal Setting Assistant ──────────────────
+// 'health.lab_report.first' is now dispatched (routes/health.ts wires it on
+// a user's first successful /lab-reports/ingest). No dedicated health-goal
+// table exists (goal_plans is tied to a life_compass_id from an unrelated
+// feature) — this prompts the user into an ORB conversation about goals
+// rather than writing to a table that doesn't fit.
+async function runHealthGoalSettingAssistant(ctx: AutomationContext) {
+  const payload = ctx.run.metadata as any;
+  const userId = payload?.user_id;
+  if (!userId) return { usersAffected: 0, actionsTaken: 0 };
+
+  ctx.notify(userId, 'orb_proactive_message', {
+    title: 'Your First Lab Report Is In',
+    body: 'Now that we have some real data, want to set a health goal together? Ask your ORB.',
+    data: { url: '/orb', action: 'health_goal_setting' },
+  });
+
+  return { usersAffected: 1, actionsTaken: 1 };
+}
+
 export function registerHealthWellnessHandlers(): void {
   registerHandler('runPhiRedactionGate', runPhiRedactionGate);
   registerHandler('runHealthReportSummarization', runHealthReportSummarization);
@@ -454,6 +474,7 @@ export function registerHealthWellnessHandlers(): void {
   registerHandler('runWellnessCheckIn', runWellnessCheckIn);
   registerHandler('runCommunityWellnessEventSuggestion', runCommunityWellnessEventSuggestion);
   registerHandler('runHealthDataExportReminder', runHealthDataExportReminder);
+  registerHandler('runHealthGoalSettingAssistant', runHealthGoalSettingAssistant);
   registerHandler('runLabReportIngestion', runLabReportIngestion);
   registerHandler('runBiomarkerTrendAnalysis', runBiomarkerTrendAnalysis);
   registerHandler('runQualityOfLifeRecommendations', runQualityOfLifeRecommendations);

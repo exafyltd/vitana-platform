@@ -10,6 +10,7 @@
 
 import { Router, Request, Response } from 'express';
 import Stripe from 'stripe';
+import { dispatchEvent } from '../services/automation-executor';
 
 const router = Router();
 
@@ -89,6 +90,31 @@ async function callRpc(
 }
 
 /**
+ * Helper: Look up the app_users row owning a Stripe Connect account, so we
+ * can detect the false->true charges_enabled transition (i.e. "started a
+ * business") before update_user_stripe_status() overwrites it.
+ */
+async function findUserByStripeAccountId(
+  stripeAccountId: string
+): Promise<{ user_id: string; tenant_id: string; stripe_charges_enabled: boolean } | null> {
+  const creds = getSupabaseCredentials();
+  if (!creds) return null;
+
+  try {
+    const response = await fetch(
+      `${creds.url}/rest/v1/app_users?stripe_account_id=eq.${encodeURIComponent(stripeAccountId)}&select=user_id,tenant_id,stripe_charges_enabled&limit=1`,
+      { headers: { apikey: creds.key, Authorization: `Bearer ${creds.key}` } }
+    );
+    if (!response.ok) return null;
+    const rows = await response.json() as any[];
+    return rows[0] || null;
+  } catch (err: any) {
+    console.error('[Connect Webhook] Failed to look up user by stripe_account_id:', err.message);
+    return null;
+  }
+}
+
+/**
  * POST /api/v1/stripe/webhook/connect
  * Handle Stripe Connect webhooks
  */
@@ -133,6 +159,10 @@ router.post('/webhook/connect', async (req: Request, res: Response) => {
           payouts_enabled: account.payouts_enabled,
         });
 
+        // Look up the owning user BEFORE overwriting, so we can detect a
+        // real false->true transition (not just a re-fired webhook).
+        const userBefore = await findUserByStripeAccountId(account.id);
+
         // Update database with account status
         const updateResult = await callRpc(serviceToken, 'update_user_stripe_status', {
           p_stripe_account_id: account.id,
@@ -144,6 +174,18 @@ router.post('/webhook/connect', async (req: Request, res: Response) => {
           console.error('[Connect Webhook] Failed to update DB:', updateResult.error);
         } else {
           console.log('[Connect Webhook] Account status updated in DB');
+
+          // VTID-01250: dispatch to autopilot automations (AP-1106,
+          // AP-1504) on the real "business started" transition. This
+          // webhook is the only real write-site for stripe_charges_enabled
+          // — neither automation had ever fired before this.
+          if (userBefore && !userBefore.stripe_charges_enabled && account.charges_enabled) {
+            try {
+              await dispatchEvent(userBefore.tenant_id, 'user.business.started', { user_id: userBefore.user_id });
+            } catch (dispatchErr: any) {
+              console.error('[Connect Webhook] Failed to dispatch user.business.started:', dispatchErr.message);
+            }
+          }
         }
         break;
       }

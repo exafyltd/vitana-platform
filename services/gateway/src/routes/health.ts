@@ -17,6 +17,7 @@ import { createUserSupabaseClient } from '../lib/supabase-user';
 import { getSupabase } from '../lib/supabase';
 import { emitOasisEvent } from '../services/oasis-event-service';
 import { CicdEventType } from '../types/cicd';
+import { dispatchEvent } from '../services/automation-executor';
 
 const router = Router();
 
@@ -228,6 +229,30 @@ router.post('/lab-reports/ingest', async (req: Request, res: Response) => {
     );
 
     console.log(`[VTID-01081] POST /lab-reports/ingest - Success: ${biomarkerCount} biomarkers`);
+
+    // VTID-01250: dispatch to autopilot automations (AP-0607, AP-0614).
+    // emitHealthIngestEvent above only writes an OASIS audit row directly —
+    // it never called dispatchEvent, so those automations were dead despite
+    // being marked IMPLEMENTED. Best-effort: never fail the request over it.
+    if (ctx.tenant_id && ctx.user_id) {
+      try {
+        const serviceSupabase = getSupabase();
+        const { count: priorReportCount } = serviceSupabase
+          ? await serviceSupabase
+              .from('lab_reports')
+              .select('id', { count: 'exact', head: true })
+              .eq('user_id', ctx.user_id)
+          : { count: 0 };
+
+        await dispatchEvent(ctx.tenant_id, 'health.lab_report.uploaded', { user_id: ctx.user_id, report_id: labReportId });
+        if ((priorReportCount || 0) <= 1) {
+          await dispatchEvent(ctx.tenant_id, 'health.lab_report.first', { user_id: ctx.user_id, report_id: labReportId });
+        }
+      } catch (dispatchErr: any) {
+        console.error('[VTID-01081] Failed to dispatch autopilot events:', dispatchErr.message);
+      }
+    }
+
     return res.status(200).json({ ok: true, lab_report_id: labReportId, biomarker_count: biomarkerCount });
   } catch (err: any) {
     console.error('[VTID-01081] POST /lab-reports/ingest - Unexpected error:', err.message);

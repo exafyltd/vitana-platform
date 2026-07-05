@@ -578,14 +578,11 @@ const HEALTH_WELLNESS: AutomationDefinition[] = [
     handler: 'runHealthCapacityGate',
   },
   {
-    // Stays PLANNED: 'health.lab_report.first' is never dispatched (same gap
-    // as AP-0607's 'health.lab_report.uploaded' — the lab-upload flow never
-    // calls dispatchEvent) and "first report" detection needs state this
-    // domain doesn't track yet.
     id: 'AP-0614', name: 'Health Goal Setting Assistant', domain: 'health-wellness',
-    status: 'PLANNED', priority: 'P1', triggerType: 'event',
+    status: 'IMPLEMENTED', priority: 'P1', triggerType: 'event',
     triggerConfig: { eventTopic: 'health.lab_report.first' },
     targetRoles: [...PATIENT_ROLES],
+    handler: 'runHealthGoalSettingAssistant',
   },
   {
     id: 'AP-0615', name: 'Health-Aware Product Recommendations', domain: 'health-wellness',
@@ -748,9 +745,13 @@ const MEMORY_INTEL: AutomationDefinition[] = [
     handler: 'runMemoryInformedMatching',
   },
   {
-    // Audit-only: the real extraction pipeline (cognee-extractor-client.ts)
-    // already runs outside the registry per session end; no
-    // 'orb.session.ended' event is dispatched to trigger this today.
+    // Audit-only: the real extraction pipeline (cognee-extractor-client.ts's
+    // extractAsync) already runs outside the registry, called from 6
+    // different sites (orb-live.ts, conversation.ts, session-memory-commit.ts,
+    // diary.ts, live-session-controller.ts) with no single clean "session
+    // ended" hook — wiring a dispatchEvent there safely needs its own
+    // instrumentation pass across all 6 call sites, not a one-line add like
+    // AP-0607/AP-1106 got. No 'orb.session.ended' event is dispatched yet.
     id: 'AP-0902', name: 'Fact Extraction from Conversations', domain: 'memory-intelligence',
     status: 'IMPLEMENTED', priority: 'P1', triggerType: 'event',
     triggerConfig: { eventTopic: 'orb.session.ended' },
@@ -1106,8 +1107,9 @@ const BUSINESS_OPPORTUNITY: AutomationDefinition[] = [
     handler: 'runServiceDemandMatching',
   },
   {
-    // Shares 'user.business.started' with AP-1106 — neither is dispatched
-    // yet (see handler file comment); real logic ready once wired.
+    // Shares 'user.business.started' with AP-1106 — dispatched from the
+    // Stripe Connect webhook (routes/stripe-connect-webhook.ts) on the real
+    // charges_enabled false->true transition.
     id: 'AP-1504', name: 'Business Setup Coach', domain: 'business-opportunity',
     status: 'IMPLEMENTED', priority: 'P2', triggerType: 'event',
     triggerConfig: { eventTopic: 'user.business.started' },

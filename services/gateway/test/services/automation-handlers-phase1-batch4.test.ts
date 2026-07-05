@@ -91,9 +91,13 @@ describe('registry wiring — batch 4', () => {
     });
   }
 
-  it('AP-0508 and AP-0614 stay PLANNED (no live trigger dispatch site)', () => {
+  it('AP-0508 stays PLANNED (no live trigger dispatch site)', () => {
     expect(getAutomation('AP-0508')?.status).toBe('PLANNED');
-    expect(getAutomation('AP-0614')?.status).toBe('PLANNED');
+  });
+
+  it('AP-0614 is now IMPLEMENTED (health.lab_report.first is dispatched from routes/health.ts)', () => {
+    expect(getAutomation('AP-0614')?.status).toBe('IMPLEMENTED');
+    expect(getAutomation('AP-0614')?.handler).toBe('runHealthGoalSettingAssistant');
   });
 
   it('no engagement-loops/health-wellness automation marked IMPLEMENTED is missing a handler', () => {
@@ -211,6 +215,26 @@ describe('runHealthDataExportReminder (AP-0606)', () => {
     });
     const { ctx, notify } = makeCtx(supabase, {}, [{ user_id: 'u1', active_role: 'patient' }]);
     const handler = getHandler('runHealthDataExportReminder')!;
+    const result = await handler(ctx);
+    expect(notify).not.toHaveBeenCalled();
+    expect(result).toEqual({ usersAffected: 0, actionsTaken: 0 });
+  });
+});
+
+describe('runHealthGoalSettingAssistant (AP-0614)', () => {
+  it('prompts the user to set a health goal after their first lab report', async () => {
+    const supabase = makeFakeSupabase({});
+    const { ctx, notify } = makeCtx(supabase, { user_id: 'u1', report_id: 'lr-1' });
+    const handler = getHandler('runHealthGoalSettingAssistant')!;
+    const result = await handler(ctx);
+    expect(notify).toHaveBeenCalledTimes(1);
+    expect(result).toEqual({ usersAffected: 1, actionsTaken: 1 });
+  });
+
+  it('is a no-op when the payload has no user_id', async () => {
+    const supabase = makeFakeSupabase({});
+    const { ctx, notify } = makeCtx(supabase, {});
+    const handler = getHandler('runHealthGoalSettingAssistant')!;
     const result = await handler(ctx);
     expect(notify).not.toHaveBeenCalled();
     expect(result).toEqual({ usersAffected: 0, actionsTaken: 0 });
