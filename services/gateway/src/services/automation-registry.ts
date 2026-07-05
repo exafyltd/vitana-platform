@@ -320,9 +320,10 @@ const SHARING_GROWTH: AutomationDefinition[] = [
   },
   {
     id: 'AP-0403', name: 'Social Media Event Card Generator', domain: 'sharing-growth',
-    status: 'PLANNED', priority: 'P0', triggerType: 'event',
-    triggerConfig: { eventTopic: 'meetup.created' },
+    status: 'IMPLEMENTED', priority: 'P0', triggerType: 'heartbeat',
+    triggerConfig: { intervalMinutes: 360 },
     targetRoles: [...MEMBER_ROLES],
+    handler: 'runSocialMediaEventCardGenerator',
   },
   {
     id: 'AP-0404', name: '"Invite a Friend" After Positive Experience', domain: 'sharing-growth',
@@ -340,14 +341,16 @@ const SHARING_GROWTH: AutomationDefinition[] = [
   },
   {
     id: 'AP-0406', name: 'Auto-Post Community Highlights', domain: 'sharing-growth',
-    status: 'PLANNED', priority: 'P1', triggerType: 'cron',
+    status: 'IMPLEMENTED', priority: 'P1', triggerType: 'cron',
     triggerConfig: { cronExpression: '0 14 * * 5' },
     targetRoles: [...MEMBER_ROLES],
+    handler: 'runAutoPostCommunityHighlights',
   },
   {
     id: 'AP-0407', name: 'User Profile Share Card', domain: 'sharing-growth',
-    status: 'PLANNED', priority: 'P2', triggerType: 'manual',
+    status: 'IMPLEMENTED', priority: 'P2', triggerType: 'manual',
     targetRoles: [...MEMBER_ROLES, 'professional'],
+    handler: 'runUserProfileShareCard',
   },
   {
     id: 'AP-0408', name: 'Event Countdown Share Prompt', domain: 'sharing-growth',
@@ -358,9 +361,10 @@ const SHARING_GROWTH: AutomationDefinition[] = [
   },
   {
     id: 'AP-0409', name: '"Your Week on Vitana" Shareable Recap', domain: 'sharing-growth',
-    status: 'PLANNED', priority: 'P2', triggerType: 'cron',
+    status: 'IMPLEMENTED', priority: 'P2', triggerType: 'cron',
     triggerConfig: { cronExpression: '0 9 * * 0' },
     targetRoles: [...MEMBER_ROLES],
+    handler: 'runWeeklyRecapShare',
   },
   {
     id: 'AP-0410', name: 'Viral Loop: Shared Event → New User Onboarding', domain: 'sharing-growth',
@@ -371,16 +375,18 @@ const SHARING_GROWTH: AutomationDefinition[] = [
   },
   {
     id: 'AP-0411', name: '"Bring Your Circle" Smart Invite Wave', domain: 'sharing-growth',
-    status: 'PLANNED', priority: 'P0', triggerType: 'event',
+    status: 'IMPLEMENTED', priority: 'P0', triggerType: 'event',
     triggerConfig: { eventTopic: 'match.feedback.like' },
     targetRoles: [...MEMBER_ROLES],
+    handler: 'runBringYourCircleInviteWave',
     requires: ['AP-0404', 'AP-0405', 'AP-0708'],
   },
   {
     id: 'AP-0412', name: '"Progress to Story" Shareable Win', domain: 'sharing-growth',
-    status: 'PLANNED', priority: 'P1', triggerType: 'event',
+    status: 'IMPLEMENTED', priority: 'P1', triggerType: 'event',
     triggerConfig: { eventTopic: 'user.milestone.reached' },
     targetRoles: [...MEMBER_ROLES],
+    handler: 'runProgressToStoryShare',
     requires: ['AP-0407', 'AP-0509', 'AP-0410'],
   },
 ];
