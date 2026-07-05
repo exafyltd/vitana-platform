@@ -34,24 +34,24 @@ async function runOrbGuidedOnboarding(ctx: AutomationContext) {
   const { data: user } = await supabase
     .from('app_users')
     .select('display_name, language, created_at')
-    .eq('id', userId)
+    .eq('user_id', userId)
     .maybeSingle();
 
   const displayName = user?.display_name || '';
   const firstName = displayName.split(' ')[0] || 'there';
 
-  // Check if user has any interests set
+  // Check if user has any interests set. Real schema: user_topic_profile was
+  // never deployed; user_interests (no tenant_id column) is the live table.
   const { count: interestCount } = await supabase
-    .from('user_topic_profile')
+    .from('user_interests')
     .select('id', { count: 'exact', head: true })
-    .eq('tenant_id', tenantId)
     .eq('user_id', userId);
 
   // Check if user has an avatar
   const { data: profile } = await supabase
     .from('app_users')
     .select('avatar_url')
-    .eq('id', userId)
+    .eq('user_id', userId)
     .maybeSingle();
 
   const hasAvatar = !!profile?.avatar_url;
@@ -98,21 +98,18 @@ async function runOrbGuidedOnboarding(ctx: AutomationContext) {
     ctx.log(`Warning: Failed to generate initial recommendations: ${err.message}`);
   }
 
-  // Credit onboarding welcome bonus (small amount to introduce wallet)
+  // Credit onboarding welcome bonus (small amount to introduce wallet).
+  // credit_wallet() RPC does not exist live; increment_wallet_balance()
+  // does (writes to user_wallets, no idempotency key of its own).
   try {
-    await supabase.rpc('credit_wallet', {
-      p_tenant_id: tenantId,
+    await supabase.rpc('increment_wallet_balance', {
       p_user_id: userId,
+      p_currency_type: 'CREDITS',
       p_amount: REWARD_TABLE['complete_onboarding'].amount,
-      p_type: 'reward',
-      p_source: 'AP-1301',
-      p_source_event_id: `onboarding_welcome_${userId}`,
-      p_description: 'Welcome bonus for joining Vitana!',
     });
     actionsTaken++;
     ctx.log(`Credited welcome bonus to user ${userId.slice(0, 8)}…`);
   } catch (err: any) {
-    // Wallet credit is best-effort; may fail if duplicate (idempotent source_event_id)
     ctx.log(`Wallet credit skipped (${err.message})`);
   }
 
@@ -138,54 +135,35 @@ async function runStarterPackDelivery(ctx: AutomationContext) {
     return { usersAffected: 0, actionsTaken: 0 };
   }
 
-  const { supabase, tenantId } = ctx;
+  const { supabase } = ctx;
   let actionsTaken = 0;
 
-  // 1. Find user's interests for group matching
-  const { data: userTopics } = await supabase
-    .from('user_topic_profile')
-    .select('topic_key, score')
-    .eq('tenant_id', tenantId)
+  // 1. Find user's interests for group matching. Real schema:
+  // user_topic_profile was never deployed; user_interests(interest,
+  // confidence_score) is the live table.
+  const { data: userInterests } = await supabase
+    .from('user_interests')
+    .select('interest')
     .eq('user_id', userId)
-    .order('score', { ascending: false })
+    .order('confidence_score', { ascending: false })
     .limit(5);
 
-  const topicKeys = (userTopics || []).map((t: any) => t.topic_key);
+  const interestKeys = (userInterests || []).map((t: any) => (t.interest || '').toLowerCase()).filter(Boolean);
 
-  // 2. Auto-join the "Welcome" / general community group if it exists
-  const { data: welcomeGroup } = await supabase
-    .from('community_groups')
-    .select('id, name')
-    .eq('tenant_id', tenantId)
-    .eq('is_default', true)
-    .maybeSingle();
+  // 2. No "default/welcome group" concept exists on the live
+  // global_community_groups schema (no is_default column) — that step is
+  // dropped rather than inventing one.
 
-  if (welcomeGroup) {
-    const { error: joinErr } = await supabase
-      .from('community_memberships')
-      .upsert({
-        tenant_id: tenantId,
-        group_id: welcomeGroup.id,
-        user_id: userId,
-        role: 'member',
-        joined_at: new Date().toISOString(),
-      }, { onConflict: 'group_id,user_id' });
-
-    if (!joinErr) {
-      actionsTaken++;
-      ctx.log(`Auto-joined user to default group: ${welcomeGroup.name}`);
-    }
-  }
-
-  // 3. Suggest topic-matched groups (up to 3)
-  if (topicKeys.length > 0) {
+  // 3. Suggest interest-matched groups (up to 3). Real schema:
+  // community_groups was never deployed; global_community_groups has a
+  // single `category` text column (not a topic_keys array), no tenant_id.
+  let matchedGroupsCount = 0;
+  if (interestKeys.length > 0) {
     const { data: matchedGroups } = await supabase
-      .from('community_groups')
-      .select('id, name, topic_keys')
-      .eq('tenant_id', tenantId)
-      .eq('is_active', true)
-      .overlaps('topic_keys', topicKeys)
-      .neq('is_default', true)
+      .from('global_community_groups')
+      .select('id, name, category')
+      .eq('status', 'active')
+      .in('category', interestKeys)
       .limit(3);
 
     for (const group of matchedGroups || []) {
@@ -196,19 +174,21 @@ async function runStarterPackDelivery(ctx: AutomationContext) {
       });
       actionsTaken++;
     }
+    matchedGroupsCount = matchedGroups?.length || 0;
   }
 
-  // 4. Find upcoming events in the next 7 days and notify
+  // 4. Find upcoming events in the next 7 days and notify. Real schema:
+  // community_meetups was never deployed; global_community_events
+  // (start_time, no tenant_id) is the live table.
   const now = new Date();
   const weekFromNow = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
 
   const { data: upcomingEvents } = await supabase
-    .from('community_meetups')
-    .select('id, title, starts_at')
-    .eq('tenant_id', tenantId)
-    .gte('starts_at', now.toISOString())
-    .lte('starts_at', weekFromNow.toISOString())
-    .order('starts_at', { ascending: true })
+    .from('global_community_events')
+    .select('id, title, start_time')
+    .gte('start_time', now.toISOString())
+    .lte('start_time', weekFromNow.toISOString())
+    .order('start_time', { ascending: true })
     .limit(3);
 
   if (upcomingEvents?.length) {
@@ -223,9 +203,8 @@ async function runStarterPackDelivery(ctx: AutomationContext) {
 
   await ctx.emitEvent('autopilot.onboarding.starter_pack_delivered', {
     user_id: userId,
-    groups_suggested: topicKeys.length > 0 ? 'yes' : 'no',
+    groups_suggested: matchedGroupsCount > 0 ? 'yes' : 'no',
     events_found: upcomingEvents?.length || 0,
-    default_group_joined: !!welcomeGroup,
   });
 
   return { usersAffected: 1, actionsTaken };
@@ -253,15 +232,15 @@ async function runContactBookSyncAndInvite(ctx: AutomationContext) {
   const emails = contacts.filter(c => c.email).map(c => c.email!.toLowerCase());
   const phones = contacts.filter(c => c.phone).map(c => c.phone!);
 
-  // 1. Find existing users by email
+  // 1. Find existing users by email. app_users' primary key is user_id, not id.
   let existingUserIds: string[] = [];
   if (emails.length > 0) {
     const { data: existingByEmail } = await supabase
       .from('app_users')
-      .select('id, email')
+      .select('user_id, email')
       .in('email', emails);
 
-    existingUserIds = (existingByEmail || []).map((u: any) => u.id);
+    existingUserIds = (existingByEmail || []).map((u: any) => u.user_id);
 
     // Notify user about found contacts
     if (existingUserIds.length > 0) {
@@ -273,17 +252,22 @@ async function runContactBookSyncAndInvite(ctx: AutomationContext) {
       usersAffected++;
       actionsTaken++;
 
-      // Create pending connection suggestions for found contacts
+      // Create pending connection suggestions for found contacts.
+      // Real schema: relationship_edges is source_type/source_id/target_type/
+      // target_id/edge_type/metadata (jsonb object, not user_id/
+      // relationship_type/context), unique on (tenant_id, source_type,
+      // source_id, target_type, target_id, edge_type).
       for (const contactUserId of existingUserIds.slice(0, 10)) {
         await supabase.from('relationship_edges').upsert({
           tenant_id: tenantId,
-          user_id: userId,
+          source_type: 'person',
+          source_id: userId,
           target_type: 'person',
           target_id: contactUserId,
-          relationship_type: 'suggested',
+          edge_type: 'suggested',
           strength: 40,
-          context: JSON.stringify({ origin: 'contact_sync' }),
-        }, { onConflict: 'tenant_id,user_id,target_type,target_id' });
+          metadata: { origin: 'contact_sync' },
+        }, { onConflict: 'tenant_id,source_type,source_id,target_type,target_id,edge_type' });
         actionsTaken++;
       }
     }
@@ -345,11 +329,11 @@ async function runSocialProofNotification(ctx: AutomationContext) {
   let usersAffected = 0;
   let actionsTaken = 0;
 
-  // Get new user's display name
+  // Get new user's display name. app_users' primary key is user_id, not id.
   const { data: newUser } = await supabase
     .from('app_users')
     .select('display_name, email')
-    .eq('id', newUserId)
+    .eq('user_id', newUserId)
     .maybeSingle();
 
   const newUserName = newUser?.display_name || 'Someone new';
@@ -379,13 +363,13 @@ async function runSocialProofNotification(ctx: AutomationContext) {
     if (domain && !publicDomains.includes(domain)) {
       const { data: colleagues } = await supabase
         .from('app_users')
-        .select('id')
+        .select('user_id')
         .like('email', `%@${domain}`)
-        .neq('id', newUserId)
+        .neq('user_id', newUserId)
         .limit(10);
 
       for (const colleague of colleagues || []) {
-        ctx.notify(colleague.id, 'orb_suggestion', {
+        ctx.notify(colleague.user_id, 'orb_suggestion', {
           title: `${newUserName} from your organization joined!`,
           body: 'Someone from your organization is now on Vitana. Connect with them!',
           data: { url: `/matches`, peer_id: newUserId },
@@ -396,17 +380,22 @@ async function runSocialProofNotification(ctx: AutomationContext) {
     }
   }
 
-  // 3. Find existing users who were suggested as contacts (from prior contact syncs)
+  // 3. Find existing users who were suggested as contacts (from prior contact
+  // syncs, AP-1303). Real schema: relationship_edges is source_type/
+  // source_id/target_type/target_id/edge_type — the syncing user is
+  // source_id, the found contact is target_id.
   const { data: priorSuggestions } = await supabase
     .from('relationship_edges')
-    .select('user_id')
+    .select('source_id')
     .eq('tenant_id', tenantId)
+    .eq('source_type', 'person')
+    .eq('target_type', 'person')
     .eq('target_id', newUserId)
-    .eq('relationship_type', 'suggested')
+    .eq('edge_type', 'suggested')
     .limit(20);
 
   for (const suggestion of priorSuggestions || []) {
-    ctx.notify(suggestion.user_id, 'orb_proactive_message', {
+    ctx.notify(suggestion.source_id, 'orb_proactive_message', {
       title: `${newUserName} is now on Vitana!`,
       body: 'Someone from your contacts just joined. Want to connect?',
       data: { url: `/connections`, peer_id: newUserId },
@@ -440,13 +429,17 @@ async function runContactActivityDigest(ctx: AutomationContext) {
   const users = await ctx.queryTargetUsers('user_id, active_role');
 
   for (const { user_id } of users) {
-    // Check that user has connections
+    // Check that user has connections. Real schema: relationship_edges is
+    // source_type/source_id/target_type/target_id/edge_type (not
+    // user_id/relationship_type).
     const { count: connectionCount } = await supabase
       .from('relationship_edges')
       .select('id', { count: 'exact', head: true })
       .eq('tenant_id', tenantId)
-      .eq('user_id', user_id)
-      .eq('relationship_type', 'connected');
+      .eq('source_type', 'person')
+      .eq('source_id', user_id)
+      .eq('target_type', 'person')
+      .eq('edge_type', 'connected');
 
     if ((connectionCount || 0) < 1) continue;
 
@@ -455,26 +448,32 @@ async function runContactActivityDigest(ctx: AutomationContext) {
       .from('relationship_edges')
       .select('target_id')
       .eq('tenant_id', tenantId)
-      .eq('user_id', user_id)
-      .eq('relationship_type', 'connected')
+      .eq('source_type', 'person')
+      .eq('source_id', user_id)
+      .eq('target_type', 'person')
+      .eq('edge_type', 'connected')
       .limit(50);
 
     const connectedIds = (connections || []).map((c: any) => c.target_id);
     if (connectedIds.length === 0) continue;
 
-    // Count recent activities by connections (new groups joined, events RSVPed, etc.)
+    // Count recent activities by connections (new groups joined, events
+    // attended, etc). Real schema: community_memberships was never deployed
+    // (global_community_group_members, no tenant_id); community_meetup_attendance
+    // was never deployed (global_event_participants, no tenant_id, filter by
+    // registered_at not created_at).
     const { count: groupJoins } = await supabase
-      .from('community_memberships')
+      .from('global_community_group_members')
       .select('id', { count: 'exact', head: true })
-      .eq('tenant_id', tenantId)
       .in('user_id', connectedIds)
       .gte('joined_at', sevenDaysAgo);
 
     const { count: eventRsvps } = await supabase
-      .from('community_meetup_attendance')
+      .from('global_event_participants')
       .select('id', { count: 'exact', head: true })
       .in('user_id', connectedIds)
-      .gte('created_at', sevenDaysAgo);
+      .eq('status', 'attending')
+      .gte('registered_at', sevenDaysAgo);
 
     const totalActivity = (groupJoins || 0) + (eventRsvps || 0);
     if (totalActivity === 0) continue;
