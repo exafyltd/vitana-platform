@@ -12,8 +12,8 @@
  *   - memory-broker         → GOVERNANCE block (dismissed recommendations
  *                             + proactive pauses = the do-not-repeat list)
  *   - life_compass          → active goals
- *   - user_preferences /    → explicit + inferred preferences
- *     user_inferred_preferences
+ *   - memory_facts          → explicit + inferred preferences
+ *     (user_preference_* keys, via preference-facts.ts)
  *
  * and returns ONE prompt block wrapped in an unmistakable sentinel:
  *
@@ -51,6 +51,7 @@ import {
 import {
   computeRetrievalRouterDecision,
 } from './retrieval-router';
+import { fetchPreferenceFacts } from './preference-facts';
 import { ContextLens, createContextLens } from '../types/context-lens';
 import {
   ContextPack,
@@ -239,62 +240,22 @@ async function fetchActiveGoals(userId: string): Promise<ActiveGoal[]> {
 }
 
 /**
- * Explicit + high-confidence inferred preferences. Same tables and
- * thresholds as user-context-profiler.fetchPreferences (explicit wins,
- * inferred only above 0.55 confidence).
+ * Explicit + high-confidence inferred preferences, read from memory_facts
+ * under the user_preference_* fact-key prefix (see preference-facts.ts).
+ * The previous sources — user_preferences key/value columns and the
+ * user_inferred_preferences table — never matched the live schema and
+ * silently returned nothing. Verified against production 2026-07-05.
  */
-async function fetchPreferences(userId: string): Promise<PreferenceEntry[]> {
+async function fetchPreferences(tenantId: string, userId: string): Promise<PreferenceEntry[]> {
   const supabase = getSupabase();
   if (!supabase) return [];
-  const out: PreferenceEntry[] = [];
-  const [explicit, inferred] = await Promise.all([
-    supabase
-      .from('user_preferences')
-      .select('category, preference_key, preference_value')
-      .eq('user_id', userId)
-      .limit(15),
-    supabase
-      .from('user_inferred_preferences')
-      .select('category, preference_key, preference_value, confidence')
-      .eq('user_id', userId)
-      .order('confidence', { ascending: false })
-      .limit(10),
-  ]);
-  if (!explicit.error && explicit.data) {
-    for (const row of explicit.data as any[]) {
-      out.push({
-        category: row.category ?? 'preference',
-        key: row.preference_key ?? '',
-        value: stringifyPreferenceValue(row.preference_value),
-        source: 'explicit',
-      });
-    }
-  }
-  const seen = new Set(out.map((p) => `${p.category}:${p.key}`));
-  if (!inferred.error && inferred.data) {
-    for (const row of inferred.data as any[]) {
-      if ((row.confidence ?? 0) < 0.55) continue;
-      const dedupeKey = `${row.category ?? 'preference'}:${row.preference_key ?? ''}`;
-      if (seen.has(dedupeKey)) continue; // explicit always wins
-      out.push({
-        category: row.category ?? 'preference',
-        key: row.preference_key ?? '',
-        value: stringifyPreferenceValue(row.preference_value),
-        source: 'inferred',
-      });
-    }
-  }
-  return out;
-}
-
-function stringifyPreferenceValue(v: unknown): string {
-  if (v == null) return '';
-  if (typeof v === 'string') return v;
-  try {
-    return JSON.stringify(v);
-  } catch {
-    return String(v);
-  }
+  const facts = await fetchPreferenceFacts(supabase, userId, { tenantId, limit: 15 });
+  return facts.map((f) => ({
+    category: 'preference',
+    key: f.key,
+    value: f.value,
+    source: f.source,
+  }));
 }
 
 /**
@@ -579,7 +540,7 @@ export async function buildAssistantMemoryContext(
   const [packRes, goalsRes, prefsRes, dnrRes, socialRes] = await Promise.allSettled([
     buildContextPack(contextPackInput),
     communityRole ? fetchActiveGoals(input.user_id) : Promise.resolve([]),
-    fetchPreferences(input.user_id),
+    fetchPreferences(input.tenant_id, input.user_id),
     fetchDoNotRepeat(input.tenant_id, input.user_id),
     fetchSocial,
   ]);

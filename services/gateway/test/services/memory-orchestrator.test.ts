@@ -131,7 +131,7 @@ function makeSupabaseStub(rowsByTable: Record<string, any[]>) {
       const result = { data: rowsByTable[table] ?? [], error: null };
       const chain: any = {};
       const passthrough = () => chain;
-      for (const m of ['select', 'eq', 'order', 'limit', 'gte', 'in']) chain[m] = passthrough;
+      for (const m of ['select', 'eq', 'order', 'limit', 'gte', 'in', 'like', 'is']) chain[m] = passthrough;
       chain.then = (resolve: any, reject: any) => Promise.resolve(result).then(resolve, reject);
       return chain;
     },
@@ -158,12 +158,13 @@ beforeEach(() => {
   mockedGetSupabase.mockReturnValue(
     makeSupabaseStub({
       life_compass: [{ primary_goal: 'Improve sleep quality', category: 'sleep', is_system_seeded: false }],
-      user_preferences: [
-        { category: 'lifestyle', preference_key: 'wake_time', preference_value: '06:30' },
-      ],
-      user_inferred_preferences: [
-        { category: 'nutrition', preference_key: 'diet', preference_value: 'vegetarian', confidence: 0.8 },
-        { category: 'nutrition', preference_key: 'low_conf', preference_value: 'ignored', confidence: 0.3 },
+      // Preferences live in memory_facts under user_preference_* keys
+      // (the legacy user_preferences/user_inferred_preferences sources
+      // never matched the live schema — see preference-facts.ts).
+      memory_facts: [
+        { fact_key: 'user_preference_wake_time', fact_value: '06:30', provenance_source: 'user_stated', provenance_confidence: 0.8 },
+        { fact_key: 'user_preference_diet', fact_value: 'vegetarian', provenance_source: 'assistant_inferred', provenance_confidence: 0.8 },
+        { fact_key: 'user_preference_low_conf', fact_value: 'ignored', provenance_source: 'behavior_inferred', provenance_confidence: 0.3 },
       ],
     }),
   );

@@ -19,6 +19,14 @@ import { registerBusinessOpportunityHandlers } from '../../src/services/automati
 import { registerHealthActionInitiativeHandlers } from '../../src/services/automation-handlers/health-action-initiative';
 import { AutomationContext } from '../../src/types/automations';
 
+// AP-0906 fans out to the guide pattern-extractor — mock it so the handler
+// test controls per-user results without a live supabase in the extractor.
+jest.mock('../../src/services/guide/pattern-extractor', () => ({
+  extractPatternsForUser: jest.fn(),
+}));
+import { extractPatternsForUser } from '../../src/services/guide/pattern-extractor';
+const mockedExtract = extractPatternsForUser as jest.MockedFunction<typeof extractPatternsForUser>;
+
 registerPersonalizationEnginesHandlers();
 registerMemoryIntelligenceHandlers();
 registerEventMeetupInitiativeHandlers();
@@ -98,6 +106,7 @@ describe('registry wiring — Phase 2 (5 new domains)', () => {
     'AP-0903': 'runRelationshipGraphMaintenance',
     'AP-0904': 'runSemanticMemoryContextForAutopilot',
     'AP-0905': 'runKnowledgeBaseContextForSuggestions',
+    'AP-0906': 'runRoutinePatternExtraction',
     'AP-1401': 'runSmartEventCreation',
     'AP-1402': 'runCalendarAvailabilityCheck',
     'AP-1403': 'runAutoInvitationSender',
@@ -210,6 +219,56 @@ describe('runRelationshipGraphMaintenance (AP-0903)', () => {
     const handler = getHandler('runRelationshipGraphMaintenance')!;
     const result = await handler(ctx);
     expect(result).toEqual({ usersAffected: 0, actionsTaken: 2 });
+  });
+});
+
+describe('runRoutinePatternExtraction (AP-0906)', () => {
+  beforeEach(() => mockedExtract.mockReset());
+
+  it('extracts routines once per distinct user with recent calendar activity', async () => {
+    const supabase = makeFakeSupabase({
+      calendar_events: [{ data: [{ user_id: 'u1' }, { user_id: 'u1' }, { user_id: 'u2' }], error: null }],
+    });
+    mockedExtract.mockImplementation(async (userId: string) => ({
+      user_id: userId,
+      routines_written: userId === 'u1' ? 2 : 0,
+      routines: [],
+      events_examined: 5,
+    }));
+    const { ctx } = makeCtx(supabase);
+    const handler = getHandler('runRoutinePatternExtraction')!;
+    const result = await handler(ctx);
+    expect(mockedExtract).toHaveBeenCalledTimes(2);
+    expect(mockedExtract).toHaveBeenCalledWith('u1');
+    expect(mockedExtract).toHaveBeenCalledWith('u2');
+    expect(result).toEqual({ usersAffected: 1, actionsTaken: 2 });
+    expect(ctx.emitEvent).toHaveBeenCalledWith('autopilot.memory.routines_extracted', {
+      users_scanned: 2,
+      users_with_routines: 1,
+      routines_written: 2,
+    });
+  });
+
+  it('is a no-op when nobody has recent calendar activity', async () => {
+    const supabase = makeFakeSupabase({ calendar_events: [{ data: [], error: null }] });
+    const { ctx } = makeCtx(supabase);
+    const handler = getHandler('runRoutinePatternExtraction')!;
+    const result = await handler(ctx);
+    expect(mockedExtract).not.toHaveBeenCalled();
+    expect(result).toEqual({ usersAffected: 0, actionsTaken: 0 });
+  });
+
+  it('keeps going when extraction fails for one user', async () => {
+    const supabase = makeFakeSupabase({
+      calendar_events: [{ data: [{ user_id: 'u1' }, { user_id: 'u2' }], error: null }],
+    });
+    mockedExtract
+      .mockRejectedValueOnce(new Error('supabase down'))
+      .mockResolvedValueOnce({ user_id: 'u2', routines_written: 1, routines: [], events_examined: 4 });
+    const { ctx } = makeCtx(supabase);
+    const handler = getHandler('runRoutinePatternExtraction')!;
+    const result = await handler(ctx);
+    expect(result).toEqual({ usersAffected: 1, actionsTaken: 1 });
   });
 });
 

@@ -167,10 +167,68 @@ async function runKnowledgeBaseContextForSuggestions(ctx: AutomationContext) {
   return { usersAffected: 0, actionsTaken: 1 };
 }
 
+// ── AP-0906: Routine Pattern Extraction ─────────────────────
+// Wires the previously caller-less guide/pattern-extractor (VTID-01936):
+// for every user with calendar activity in the extractor's 30-day window,
+// derive time-of-day / day-of-week / category-affinity routines into
+// user_routines. The UserContextProfiler and guide awareness-context
+// already read that table, so extracted routines flow straight into the
+// ORB voice profile and the brain's routine-weaving.
+const ROUTINE_EXTRACT_LOOKBACK_DAYS = 30;
+const ROUTINE_EXTRACT_MAX_USERS_PER_RUN = 200;
+const ROUTINE_EXTRACT_EVENT_SCAN_LIMIT = 5000;
+
+async function runRoutinePatternExtraction(ctx: AutomationContext) {
+  const { supabase } = ctx;
+  const sinceIso = new Date(Date.now() - ROUTINE_EXTRACT_LOOKBACK_DAYS * 86_400_000).toISOString();
+
+  const { data: rows, error } = await supabase
+    .from('calendar_events')
+    .select('user_id')
+    .gte('start_time', sinceIso)
+    .not('user_id', 'is', null)
+    .limit(ROUTINE_EXTRACT_EVENT_SCAN_LIMIT);
+
+  if (error) {
+    ctx.log(`calendar_events scan failed: ${error.message}`);
+    return { usersAffected: 0, actionsTaken: 0 };
+  }
+
+  const userIds = [...new Set((rows || []).map((r: any) => r.user_id).filter(Boolean))].slice(
+    0,
+    ROUTINE_EXTRACT_MAX_USERS_PER_RUN,
+  );
+
+  const { extractPatternsForUser } = await import('../guide/pattern-extractor');
+
+  let usersAffected = 0;
+  let actionsTaken = 0;
+  for (const userId of userIds) {
+    try {
+      const result = await extractPatternsForUser(userId as string);
+      if (result.routines_written > 0) {
+        usersAffected++;
+        actionsTaken += result.routines_written;
+      }
+    } catch (err: any) {
+      ctx.log(`pattern extraction failed for ${String(userId).slice(0, 8)}…: ${err?.message}`);
+    }
+  }
+
+  await ctx.emitEvent('autopilot.memory.routines_extracted', {
+    users_scanned: userIds.length,
+    users_with_routines: usersAffected,
+    routines_written: actionsTaken,
+  });
+
+  return { usersAffected, actionsTaken };
+}
+
 export function registerMemoryIntelligenceHandlers(): void {
   registerHandler('runMemoryInformedMatching', runMemoryInformedMatching);
   registerHandler('runFactExtractionAudit', runFactExtractionAudit);
   registerHandler('runRelationshipGraphMaintenance', runRelationshipGraphMaintenance);
   registerHandler('runSemanticMemoryContextForAutopilot', runSemanticMemoryContextForAutopilot);
   registerHandler('runKnowledgeBaseContextForSuggestions', runKnowledgeBaseContextForSuggestions);
+  registerHandler('runRoutinePatternExtraction', runRoutinePatternExtraction);
 }

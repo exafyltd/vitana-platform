@@ -778,6 +778,15 @@ const MEMORY_INTEL: AutomationDefinition[] = [
     targetRoles: ALL_ROLES,
     handler: 'runKnowledgeBaseContextForSuggestions',
   },
+  {
+    // Wires guide/pattern-extractor (VTID-01936) — previously fully built
+    // but caller-less. Nightly, before the profiler's morning reads.
+    id: 'AP-0906', name: 'Routine Pattern Extraction', domain: 'memory-intelligence',
+    status: 'IMPLEMENTED', priority: 'P2', triggerType: 'cron',
+    triggerConfig: { cronExpression: '30 3 * * *' }, // daily 3:30am
+    targetRoles: [...MEMBER_ROLES],
+    handler: 'runRoutinePatternExtraction',
+  },
 ];
 
 // =============================================================================
