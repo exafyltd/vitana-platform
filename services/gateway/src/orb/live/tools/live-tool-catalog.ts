@@ -373,8 +373,14 @@ export function buildLiveApiTools(
             'navigation; you only need to read aloud the one-line voice_summary',
             'that the tool returns. Then stop speaking.',
             '',
-            'CALL THIS TOOL when the user asks any "who is..." question about the',
-            'community, including:',
+            'CALL THIS TOOL when the user wants to open / look at a specific',
+            'community member\'s profile BY NAME, AND for any "who is..." question',
+            'about the community, including:',
+            '  - By name (profile): "show me Mariia Maksina\'s profile"',
+            '                        "open the profile of Daniela"',
+            '                        "zeig mir das Profil von Maria Maxina"',
+            '                        "ich möchte mir das Profil von X anschauen"',
+            '                        "take me to Patrick\'s profile"',
             '  - Skill / activity:   "who is good at half marathon?"',
             '                        "who plays golf?"',
             '                        "who teaches salsa?"',
@@ -399,6 +405,11 @@ export function buildLiveApiTools(
             '  - DO NOT mention "I searched", "I looked at", "I found" — the',
             '    voice_summary already says it.',
             '',
+            'When the user names a specific person to VIEW/OPEN their profile,',
+            'use THIS tool — not resolve_recipient. resolve_recipient is only for',
+            'picking a chat recipient to SEND a message to; it cannot open a',
+            'profile and will ask "which one?" instead of navigating.',
+            '',
             'NEVER use this tool for community groups or events — those have',
             'their own tools (search_community for groups, search_events for',
             'meetups/live rooms).',
@@ -408,7 +419,7 @@ export function buildLiveApiTools(
             properties: {
               query: {
                 type: 'string',
-                description: 'The user\'s "who is..." question, in natural language. Pass the question verbatim — the backend handles all interpretation, ranking, and edge cases.',
+                description: 'The user\'s request, verbatim — either a person\'s name ("Mariia Maksina", "Maria Maxina", "Daniela") to open that profile, or a "who is..." question. The backend handles all interpretation, fuzzy name matching, ranking, and edge cases.',
               },
               excluded_vitana_ids: {
                 type: 'array',
@@ -947,6 +958,130 @@ export function buildLiveApiTools(
             properties: {},
           },
         },
+        // BOOTSTRAP-SOCIAL-MEMORY — live Social Context Pack. The voice
+        // system instruction is built ONCE at session start, so social
+        // questions MUST fetch fresh context through this tool (the text
+        // brain gets the same data injected per turn by the memory
+        // orchestrator; voice sessions cannot).
+        {
+          name: 'get_social_context',
+          description: [
+            "Fetch the user's LIVE Maxina Community context: who they follow,",
+            'who follows them, their matches (with scores and reasons), recent',
+            'chat contacts, group chats, ranked interesting posts and events',
+            '(each with WHY it is recommended), and — when the question names a',
+            'person — a full privacy-checked profile of that person (relationship,',
+            'match score, shared interests/groups/events, latest posts and',
+            'recent activity, best next action).',
+            '',
+            'ALWAYS CALL THIS BEFORE ANSWERING any question about:',
+            '  - "Who do I follow?" / "Wem folge ich?" · "Who follows me?" / "Wer folgt mir?"',
+            '  - "What matches do I have?" / "Welche Matches habe ich?" · "Why is X a good match for me?"',
+            '  - "Who did I message recently?" / "Mit wem habe ich zuletzt geschrieben?"',
+            '  - "Which group chats am I in?" / "In welchen Gruppenchats bin ich?"',
+            '  - "Tell me about <person>" / "Erzähl mir von <Person>" · "What did <person> do recently?"',
+            '  - "What posts/events are interesting for me?" / "Welche Events sollte ich besuchen?"',
+            '  - "Who should I contact or invite today?" / "Wen sollte ich heute kontaktieren?"',
+            '  - "What changed in my community since yesterday?" / "Was hat sich in meiner Community getan?"',
+            '',
+            "Pass the user's question VERBATIM in `question` (keep the person's",
+            'name in it if they named one). NEVER answer these questions from',
+            'memory and NEVER invent people, matches, posts, or events — the',
+            'tool result is the ONLY source of truth. When you relay a',
+            'recommendation, include its reason from the result ("because you',
+            'follow her", "because 3 people you follow are attending"). If the',
+            'result marks a person as privacy-limited, say details are limited —',
+            'do not speculate.',
+            '',
+            'For a DIRECT read of the inbox, followers/following, or the last',
+            'conversations, prefer the dedicated tools view_messages /',
+            'list_followers / list_following / recent_conversations — they give',
+            'exact speakable answers.',
+          ].join('\n'),
+          parameters: {
+            type: 'object',
+            properties: {
+              question: {
+                type: 'string',
+                description:
+                  "The user's social question, verbatim, including any person name (e.g. 'Erzähl mir von Mariia Maksina').",
+              },
+            },
+            required: ['question'],
+          },
+        },
+        // BOOTSTRAP-SOCIAL-READ-TOOLS — direct READ tools for the user's own
+        // inbox and social graph (CONVERSATION_DEFECTS_FIX_PLAN defects
+        // 1/4/5). Exact speakable answers; internal Maxina data only.
+        {
+          name: 'view_messages',
+          description: [
+            "READ the user's own INTERNAL Maxina community message inbox:",
+            'unread (default) or all recent messages, grouped by sender with',
+            'counts and short snippets. The result is speakable.',
+            '',
+            'ALWAYS CALL THIS when the user asks to see/hear their messages:',
+            '  - "Zeig mir meine Nachrichten" / "Show me my messages"',
+            '  - "Lies mir meine Nachrichten vor" / "Read my messages"',
+            '  - "Von wem sind die Nachrichten?" / "Who wrote me?"',
+            '  - Any follow-up after you mentioned unread messages.',
+            '',
+            'HARD RULES:',
+            '  - These are INTERNAL community messages. They NEVER require a',
+            '    Google/Gmail/connected-apps account — NEVER mention Google or',
+            '    connected apps for community messages (Google is ONLY for',
+            '    explicit email/calendar requests via read_email/get_schedule).',
+            '  - Only "unread" and "all" exist. NEVER offer or mention',
+            '    "archived" messages — there is no such thing.',
+            '  - Never offer to show messages and then fail — this tool IS the',
+            '    way to show them. To reply, use send_chat_message.',
+          ].join('\n'),
+          parameters: {
+            type: 'object',
+            properties: {
+              scope: {
+                type: 'string',
+                description: "Which messages: 'unread' (default) or 'all' (recent 30 days).",
+              },
+            },
+          },
+        },
+        {
+          name: 'list_followers',
+          description: [
+            'READ who follows the user (their own followers): count, names,',
+            'mutual-follow count. Speakable.',
+            '',
+            'ALWAYS CALL THIS for: "Wer folgt mir?" / "Who follows me?" /',
+            '"Folgt mir jemand?" / "Habe ich Follower?".',
+            'Answer with the count and a few names. NEVER say you cannot tell,',
+            'and NEVER deflect the user to search the member list manually.',
+          ].join('\n'),
+          parameters: { type: 'object', properties: {} },
+        },
+        {
+          name: 'list_following',
+          description: [
+            'READ who the user follows: count and names. Speakable.',
+            '',
+            'ALWAYS CALL THIS for: "Wem folge ich?" / "Who do I follow?".',
+            'Answer with the count and a few names — never deflect.',
+          ].join('\n'),
+          parameters: { type: 'object', properties: {} },
+        },
+        {
+          name: 'recent_conversations',
+          description: [
+            "READ the user's most recent direct-message conversations, newest",
+            'first, with who wrote last and a snippet. Speakable.',
+            '',
+            'ALWAYS CALL THIS for: "Mit wem habe ich zuletzt geschrieben?" /',
+            '"Who did I last chat with?" / "Was waren meine letzten Chats?".',
+            'The first entry answers "who did I last chat with". Internal',
+            'Maxina messages — no Google account involved, ever.',
+          ].join('\n'),
+          parameters: { type: 'object', properties: {} },
+        },
         {
           name: 'narrate_guided_session',
           description: [
@@ -1437,7 +1572,11 @@ export function buildLiveApiTools(
         {
           name: 'resolve_recipient',
           description: [
-            'Resolve a spoken recipient name or Vitana ID to a real user.',
+            'Resolve a spoken recipient name or Vitana ID to a real user — for',
+            'MESSAGING / sharing only (picking who to send to). If the user just',
+            'wants to VIEW or OPEN someone\'s profile by name ("show me X\'s',
+            'profile", "zeig mir das Profil von X"), use find_community_member',
+            'instead — it resolves the name AND opens the profile in one step.',
             '',
             'YOU MUST CALL THIS before any reply about whether a person',
             'exists — including saying you can\'t find them. The ONLY way',

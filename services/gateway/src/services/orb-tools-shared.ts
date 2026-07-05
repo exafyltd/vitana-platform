@@ -4904,6 +4904,103 @@ export async function tool_offer_action(
   };
 }
 
+/**
+ * BOOTSTRAP-SOCIAL-MEMORY — live social context for VOICE sessions.
+ *
+ * The ORB live system instruction is built ONCE at session start, so the
+ * per-turn social-intent injection that text chat gets never fires on the
+ * voice path. This tool is the voice-side bridge: the model calls it when
+ * the user asks about follows/followers, matches, messages, group chats,
+ * a specific person, interesting posts/events, or "what changed" — and
+ * receives the same privacy-filtered Social Context Pack (as prompt-ready
+ * text) that the text brain injects.
+ */
+export async function tool_get_social_context(
+  args: OrbToolArgs,
+  identity: OrbToolIdentity,
+  _sb: SupabaseClient,
+): Promise<OrbToolResult> {
+  if (!identity.user_id || !identity.tenant_id) {
+    return { ok: false, error: 'get_social_context requires an authenticated user.' };
+  }
+  try {
+    const { buildAssistantSocialContext } = await import(
+      './social-memory/social-memory-service'
+    );
+    const question =
+      String(args.question ?? args.query ?? '').trim() ||
+      'my community overview: follows, matches, group chats, interesting posts and events';
+    const result = await buildAssistantSocialContext({
+      tenant_id: identity.tenant_id,
+      user_id: identity.user_id,
+      question,
+      surface: 'vitana_assistant',
+      compact: true,
+    });
+    const p = result.pack;
+    return {
+      ok: true,
+      text: result.prompt_block,
+      result: {
+        following_count: p.relationships.following_count,
+        followers_count: p.relationships.followers_count,
+        matches_count: p.matches.length,
+        group_chats_count: p.group_chats.length,
+        interesting_posts_count: p.interesting_posts.length,
+        interesting_events_count: p.interesting_events.length,
+        person_resolved: !!p.person_context,
+        recommended_actions: p.recommended_actions,
+      },
+    };
+  } catch (err: any) {
+    console.error('[ORB-TOOLS] get_social_context failed:', err?.message);
+    return { ok: false, error: `Social context unavailable: ${err?.message}` };
+  }
+}
+
+/**
+ * BOOTSTRAP-SOCIAL-READ-TOOLS — the missing READ capabilities (defects
+ * 1/4/5 in docs/CONVERSATION_DEFECTS_FIX_PLAN.md). Thin wrappers over
+ * services/social-memory/social-read-tools.ts (which reuses the
+ * privacy-filtered social-memory repository). Speakable, internal-only
+ * (never Google), and "archived" does not exist.
+ */
+export async function tool_view_messages(
+  args: OrbToolArgs,
+  identity: OrbToolIdentity,
+  _sb: SupabaseClient,
+): Promise<OrbToolResult> {
+  const { runViewMessages } = await import('./social-memory/social-read-tools');
+  return runViewMessages(args as { scope?: unknown; limit?: unknown }, identity);
+}
+
+export async function tool_list_followers(
+  _args: OrbToolArgs,
+  identity: OrbToolIdentity,
+  _sb: SupabaseClient,
+): Promise<OrbToolResult> {
+  const { runListFollows } = await import('./social-memory/social-read-tools');
+  return runListFollows('followers', identity);
+}
+
+export async function tool_list_following(
+  _args: OrbToolArgs,
+  identity: OrbToolIdentity,
+  _sb: SupabaseClient,
+): Promise<OrbToolResult> {
+  const { runListFollows } = await import('./social-memory/social-read-tools');
+  return runListFollows('following', identity);
+}
+
+export async function tool_recent_conversations(
+  args: OrbToolArgs,
+  identity: OrbToolIdentity,
+  _sb: SupabaseClient,
+): Promise<OrbToolResult> {
+  const { runRecentConversations } = await import('./social-memory/social-read-tools');
+  return runRecentConversations(args as { limit?: unknown }, identity);
+}
+
 type OrbToolHandler = (
   args: OrbToolArgs,
   identity: OrbToolIdentity,
@@ -4974,6 +5071,18 @@ export const ORB_TOOL_REGISTRY: Record<string, OrbToolHandler> = {
   // the LLM can answer "what is my Life Compass goal?" / "remind me what I'm
   // working toward" with the canonical value instead of inventing one.
   get_life_compass: tool_get_life_compass,
+  // BOOTSTRAP-SOCIAL-MEMORY — live Social Context Pack for voice sessions
+  // (follows, matches, messages, groups, person intelligence, ranked
+  // posts/events). Voice-side bridge for the per-turn social injection the
+  // text brain does in the memory orchestrator.
+  get_social_context: tool_get_social_context,
+  // BOOTSTRAP-SOCIAL-READ-TOOLS — own-inbox / own-graph READ capabilities
+  // (defects 1/4/5): speakable unread inbox, followers/following, and
+  // recent conversations. Internal Maxina data only — never Google.
+  view_messages: tool_view_messages,
+  list_followers: tool_list_followers,
+  list_following: tool_list_following,
+  recent_conversations: tool_recent_conversations,
   // VTID-03255 — Journey Foundation: records every voice answer, writes the real
   // fact (life_compass goal / economy stance / focus / teacher ack), re-verifies,
   // and returns the next move. Reachable from Vertex, LiveKit, and /api/v1/orb/tool.

@@ -233,6 +233,12 @@ export type CicdEventType =
   | 'memory.read'
   | 'memory.write.user_message'
   | 'memory.write.assistant_message'
+  // BOOTSTRAP-MEMORY-ORCHESTRATOR-MANDATORY: mandatory pre-answer memory step
+  | 'memory.orchestrator.context_built'
+  | 'memory.orchestrator.turn'
+  | 'memory.orchestrator.bypass_detected'
+  // BOOTSTRAP-SOCIAL-MEMORY: social memory intelligence layer
+  | 'memory.social.context_built'
   // VTID-01106: ORB Memory Bridge Events
   | 'orb.memory.context_fetched'
   | 'orb.memory.context_injected'
