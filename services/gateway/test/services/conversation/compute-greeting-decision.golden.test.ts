@@ -31,6 +31,10 @@ import {
   type GreetingDecisionContext,
 } from '../../../src/services/conversation/compute-greeting-decision';
 import type { OverviewPayload } from '../../../src/services/assistant-continuation/providers/new-day-overview-payload';
+import {
+  EMPTY_GREETING_LEDGER,
+  type GreetingLedger,
+} from '../../../src/services/conversation/greeting-facts-ledger';
 
 // --- fixtures --------------------------------------------------------------
 
@@ -377,6 +381,79 @@ describe('computeGreetingDecision — matrix axis collapse', () => {
 describe('computeGreetingDecision — determinism', () => {
   test('same context → identical decision (no hidden clock/random/IO)', () => {
     const c = safeFastCtx({ bucket: 'recent', lastFullBriefingDate: '2026-06-30', resumeOverview: richPayload() });
+    expect(computeGreetingDecision(c)).toEqual(computeGreetingDecision(c));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 7. Spoken-facts ledger continuity (#2835) — the brain re-synced with the
+//    greeting-facts ledger. Deltas are computed purely from the rung payload +
+//    the injected ledger; `nowIso` is injected so the 48h freshness check is
+//    deterministic (computeFactDeltas otherwise reads the wall clock).
+// ---------------------------------------------------------------------------
+
+const LEDGER_NOW_ISO = '2026-06-30T09:00:00.000Z';
+const LEDGER_SPOKEN_AT = '2026-06-30T08:00:00.000Z'; // 1h ago → fresh (<48h)
+
+function ledger(facts: Record<string, number>, over: Partial<GreetingLedger> = {}): GreetingLedger {
+  const f: GreetingLedger['facts'] = {};
+  for (const [k, v] of Object.entries(facts)) f[k] = { value: v, spoken_at: LEDGER_SPOKEN_AT };
+  return { facts: f, last_utterance: null, last_utterance_at: LEDGER_SPOKEN_AT, sessions_today: null, ...over };
+}
+
+describe('computeGreetingDecision — spoken-facts ledger continuity (#2835)', () => {
+  test('conv_resume with a populated ledger → unchanged/changed deltas + previous-utterance', () => {
+    const payload = richPayload({ messages_unread: 2, matches_unread: 1 });
+    const d = computeGreetingDecision(
+      safeFastCtx({
+        bucket: 'recent',
+        lastFullBriefingDate: '2026-06-30',
+        resumeOverview: payload,
+        nowIso: LEDGER_NOW_ISO,
+        greetingLedger: ledger(
+          // vitana_index unchanged (200→200), messages changed (1→2), matches new
+          { vitana_index: 200, messages_unread: 1 },
+          { last_utterance: 'Guten Morgen, Dragan — dein Index steht bei 200.', sessions_today: 2 },
+        ),
+      }),
+    );
+    expect(d.wakeOpener).toBe('conv_resume');
+    expect(d).toMatchSnapshot();
+  });
+
+  test('newday_overview with a populated ledger → continuity-aware briefing', () => {
+    const d = computeGreetingDecision(
+      safeFastCtx({
+        lastFullBriefingDate: '2026-06-29', // stale → briefing due
+        newdayOverview: richPayload({ messages_unread: 3 }),
+        nowIso: LEDGER_NOW_ISO,
+        greetingLedger: ledger(
+          // index + diary unchanged (already mentioned); messages changed 2→3
+          { vitana_index: 200, diary_last_7d: 3, messages_unread: 2 },
+          { last_utterance: 'Guten Morgen — dein Index steht bei 200.', sessions_today: 1 },
+        ),
+      }),
+    );
+    expect(d.wakeOpener).toBe('safe_fast_newday_overview');
+    expect(d).toMatchSnapshot();
+  });
+
+  test('empty ledger ≡ no ledger (all facts read as new; byte-identical directive)', () => {
+    const payload = richPayload({ messages_unread: 2 });
+    const base = { bucket: 'recent' as const, lastFullBriefingDate: '2026-06-30', resumeOverview: payload, nowIso: LEDGER_NOW_ISO };
+    const withEmpty = computeGreetingDecision(safeFastCtx({ ...base, greetingLedger: EMPTY_GREETING_LEDGER }));
+    const without = computeGreetingDecision(safeFastCtx({ ...base }));
+    expect(withEmpty.directive).toBe(without.directive);
+  });
+
+  test('deterministic under injected nowIso (no wall-clock leak)', () => {
+    const c = safeFastCtx({
+      bucket: 'recent',
+      lastFullBriefingDate: '2026-06-30',
+      resumeOverview: richPayload({ messages_unread: 2 }),
+      nowIso: LEDGER_NOW_ISO,
+      greetingLedger: ledger({ messages_unread: 1 }, { last_utterance: 'x' }),
+    });
     expect(computeGreetingDecision(c)).toEqual(computeGreetingDecision(c));
   });
 });

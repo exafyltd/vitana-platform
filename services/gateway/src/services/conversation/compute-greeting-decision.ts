@@ -46,6 +46,12 @@ import { buildFirstTimeWelcomeLine } from '../../orb/instruction/greeting-pools'
 import type { TemporalBucket } from '../guide/temporal-bucket';
 import { decideOpeningRegister, buildResumeDirective, type OpeningRegister } from './decide-opening';
 import type { NextBestAction } from './next-best-action';
+import {
+  computeFactDeltas,
+  extractSpokenFactsFromPayload,
+  EMPTY_GREETING_LEDGER,
+  type GreetingLedger,
+} from './greeting-facts-ledger';
 
 // ---------------------------------------------------------------------------
 // Decision shape
@@ -165,6 +171,21 @@ export interface GreetingDecisionContext {
   //     shouldAttemptNewdayOverview / shouldAttemptResumeOverview) -----------
   newdayOverview: OverviewPayload | null;
   resumeOverview: OverviewPayload | null;
+
+  // --- spoken-facts ledger (#2835 greeting continuity) ---------------------
+  /** The resolved greeting-facts ledger (durable per-user; read via
+   *  readGreetingLedger, an I/O the caller performs — EMPTY on timeout). The
+   *  brain computes the per-rung fact deltas PURELY from the rung's payload +
+   *  this ledger (extractSpokenFactsFromPayload + computeFactDeltas), matching
+   *  the live path so the rich-briefing / resume rungs speak only genuinely-new
+   *  deltas and never re-announce a level the user already heard. Absent →
+   *  EMPTY_GREETING_LEDGER (all facts read as new; no previous utterance). */
+  greetingLedger?: GreetingLedger;
+  /** Resolved "now" (ISO) for the ledger 48h-freshness check. Injected so fact
+   *  deltas stay deterministic (computeFactDeltas otherwise reads the wall clock).
+   *  Absent → computeFactDeltas uses its own `new Date()` (matches today's live
+   *  path, which passes no nowIso). */
+  nowIso?: string;
 
   // --- rotation / screen ---------------------------------------------------
   /** Day-of-year rotation seed (resolved by caller). */
@@ -293,12 +314,23 @@ export function computeGreetingDecision(ctx: GreetingDecisionContext): GreetingD
 function computeSafeFastLadder(ctx: GreetingDecisionContext): GreetingDecision {
   // Rung 1 — safe_fast_newday_overview (rich morning briefing owns turn 1).
   if (shouldAttemptNewdayOverview(ctx) && ctx.newdayOverview && newdayHasContent(ctx.newdayOverview)) {
+    // Spoken-facts continuity (#2835): compute this rung's deltas purely from
+    // its payload + the injected ledger — same as the live path.
+    const ledger = ctx.greetingLedger ?? EMPTY_GREETING_LEDGER;
+    const factDeltas = computeFactDeltas(
+      extractSpokenFactsFromPayload(ctx.newdayOverview),
+      ledger,
+      ctx.nowIso ? { nowIso: ctx.nowIso } : undefined,
+    );
     const block = buildNewDayOverviewBlock({
       payload: ctx.newdayOverview,
       lang: ctx.greetLang,
       firstName: (ctx.firstName as string).trim(),
       localHour: ctx.localHour,
       timezone: ctx.timezone,
+      factDeltas,
+      previousUtterance: ledger.last_utterance,
+      sessionsToday: ledger.sessions_today,
     });
     if (block && block.trim().length > 0) {
       const o = ctx.newdayOverview;
@@ -351,6 +383,13 @@ function computeSafeFastLadder(ctx: GreetingDecisionContext): GreetingDecision {
   // Rung 3 — conv_resume (same-day reopen → recency-appropriate register + NBA).
   const resume = shouldAttemptResumeOverview(ctx);
   if (resume.attempt && resume.register) {
+    // Spoken-facts continuity (#2835): deltas from this rung's payload + ledger.
+    const ledgerR = ctx.greetingLedger ?? EMPTY_GREETING_LEDGER;
+    const factDeltasR = computeFactDeltas(
+      extractSpokenFactsFromPayload(ctx.resumeOverview),
+      ledgerR,
+      ctx.nowIso ? { nowIso: ctx.nowIso } : undefined,
+    );
     const { text: dirR, nba: nbaR } = buildResumeDirective({
       register: resume.register as Exclude<OpeningRegister, 'first_time' | 'daily_briefing'>,
       payload: ctx.resumeOverview,
@@ -360,6 +399,9 @@ function computeSafeFastLadder(ctx: GreetingDecisionContext): GreetingDecision {
       rotationSeed: ctx.rotationSeed,
       recentNbaKeys: ctx.recentNbaKeys as NextBestAction['key'][],
       currentScreen: ctx.currentRoute ?? null,
+      factDeltas: factDeltasR,
+      previousUtterance: ledgerR.last_utterance,
+      sessionsToday: ledgerR.sessions_today,
     });
     const worthSpeaking = resume.register !== 'same_day' || !!ctx.resumeOverview || !!nbaR;
     if (dirR && dirR.trim().length > 0 && worthSpeaking) {
