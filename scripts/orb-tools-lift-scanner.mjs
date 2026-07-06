@@ -88,6 +88,56 @@ function extractRegistry(src) {
   for (const m of body.matchAll(/^\s*([a-z_][a-z0-9_]*)\s*:/gm)) {
     keys.add(m[1]);
   }
+  // BOOTSTRAP-VOICE-CATALOG-COMPLETE: ES6 shorthand properties
+  // (`dev_list_vtids,` instead of `dev_list_vtids: dev_list_vtids,`, used by
+  // developer-tools.ts) have no colon and were invisible to the pattern above.
+  for (const m of body.matchAll(/^\s*([a-z_][a-z0-9_]*)\s*,/gm)) {
+    keys.add(m[1]);
+  }
+  // BOOTSTRAP-VOICE-CATALOG-COMPLETE: per-domain modules are merged in via
+  // `...FOO_TOOL_HANDLERS,` spreads (services/orb-tools/*.ts), not literal
+  // keys — resolve each spread identifier back to its import and pull its
+  // own handler-object keys the same way (same logic as the sibling fix in
+  // scripts/voice-tools-manifest-reconcile.mjs and
+  // voice-pipeline-spec/tools/extract-ts.ts — kept in sync deliberately).
+  for (const sm of body.matchAll(/^\s*\.\.\.([A-Z][A-Z0-9_]*)\s*,/gm)) {
+    const spreadName = sm[1];
+    const importMatch = src.match(
+      new RegExp(`import\\s*\\{[^}]*\\b${spreadName}\\b[^}]*\\}\\s*from\\s*'([^']+)'`),
+    );
+    if (!importMatch) continue;
+    const modPath = resolve(
+      ROOT,
+      'services/gateway/src/services',
+      importMatch[1].replace(/^\.\//, '') + '.ts',
+    );
+    let modSrc;
+    try {
+      modSrc = readFileSync(modPath, 'utf8');
+    } catch {
+      continue;
+    }
+    const declIdx = modSrc.indexOf(`export const ${spreadName}`);
+    if (declIdx < 0) continue;
+    const modOpen = modSrc.indexOf('{', declIdx);
+    if (modOpen < 0) continue;
+    let modDepth = 0;
+    let modClose = -1;
+    for (let i = modOpen; i < modSrc.length; i++) {
+      if (modSrc[i] === '{') modDepth++;
+      else if (modSrc[i] === '}') {
+        modDepth--;
+        if (modDepth === 0) {
+          modClose = i;
+          break;
+        }
+      }
+    }
+    if (modClose < 0) continue;
+    const modBody = modSrc.slice(modOpen + 1, modClose);
+    for (const mm of modBody.matchAll(/^\s*([a-z_][a-z0-9_]*)\s*:/gm)) keys.add(mm[1]);
+    for (const mm of modBody.matchAll(/^\s*([a-z_][a-z0-9_]*)\s*,/gm)) keys.add(mm[1]);
+  }
   return keys;
 }
 
