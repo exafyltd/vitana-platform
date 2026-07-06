@@ -482,7 +482,12 @@ async function runRelationshipGraphProjection(ctx: AutomationContext) {
         nodesCreated++;
       }
 
-      // Edge: user →(relation)→ node. last_interaction_at tracks the fact's
+      // Edge: user →(connected)→ person node. Live CHECK constraints limit
+      // edge_type to community values ('connected', 'member', …) and
+      // target_type to entity kinds ('person', 'event', …) — verified on
+      // staging 2026-07-06, where relation-typed edges were rejected. The
+      // REAL relation (spouse/friend/…) travels in metadata.relation; the
+      // node itself also carries it. last_interaction_at tracks the fact's
       // recency so Loop 13's decay stays honest.
       const { data: existingEdge } = await supabase
         .from('relationship_edges')
@@ -490,9 +495,9 @@ async function runRelationshipGraphProjection(ctx: AutomationContext) {
         .eq('tenant_id', tenantId)
         .eq('source_type', 'person')
         .eq('source_id', fact.user_id)
-        .eq('target_type', 'node')
+        .eq('target_type', 'person')
         .eq('target_id', nodeId)
-        .eq('edge_type', relation)
+        .eq('edge_type', 'connected')
         .maybeSingle();
       if (existingEdge) {
         await supabase
@@ -504,12 +509,12 @@ async function runRelationshipGraphProjection(ctx: AutomationContext) {
           tenant_id: tenantId,
           source_type: 'person',
           source_id: fact.user_id,
-          target_type: 'node',
+          target_type: 'person',
           target_id: nodeId,
-          edge_type: relation,
+          edge_type: 'connected',
           strength: 10,
           last_interaction_at: fact.extracted_at || nowIso,
-          metadata: { origin: 'memory_facts_projection', fact_key: fact.fact_key },
+          metadata: { origin: 'memory_facts_projection', relation, fact_key: fact.fact_key },
         });
         if (edgeErr) {
           ctx.log(`edge insert failed for ${fact.fact_key}: ${edgeErr.message}`);
