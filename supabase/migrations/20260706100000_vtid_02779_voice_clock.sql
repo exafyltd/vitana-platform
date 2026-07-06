@@ -47,9 +47,15 @@ CREATE POLICY "Users manage own voice clock items"
   WITH CHECK (auth.uid() = user_id);
 
 -- Gateway service-role access (voice tools run with the service-role client;
--- their WHERE user_id clauses are the tenant isolation).
+-- their WHERE user_id clauses are the tenant isolation). Restricted TO
+-- service_role — without this clause the policy applies to EVERY role
+-- (including `authenticated`), letting any logged-in user read/write any
+-- other user's alarms/timers since USING(true)/WITH CHECK(true) has no
+-- owner constraint. The service-role client already bypasses RLS entirely,
+-- so this policy is defense-in-depth, not the enforcement mechanism.
 CREATE POLICY "Service role full access on voice_clock_items"
   ON voice_clock_items FOR ALL
+  TO service_role
   USING (true) WITH CHECK (true);
 
 GRANT SELECT, INSERT, UPDATE, DELETE ON voice_clock_items TO authenticated;

@@ -466,6 +466,25 @@ export async function tool_invite_to_group(
     }
     const group = resolved.group;
 
+    // Security: the caller must actually belong to the group before they can
+    // invite others into it. Without this check a non-member who can name or
+    // guess a private group's name could insert an invitation as themselves,
+    // and accept_invitation would then join the invitee — letting outsiders
+    // grow membership of groups they were never part of.
+    const { data: callerMembership, error: callerMembershipErr } = await sb
+      .from('global_community_group_members')
+      .select('id')
+      .eq('group_id', group.id)
+      .eq('user_id', id.user_id)
+      .maybeSingle();
+    if (callerMembershipErr) return { ok: false, error: callerMembershipErr.message };
+    if (!callerMembership) {
+      return {
+        ok: false,
+        error: `You must be a member of "${group.name}" to invite others.`,
+      };
+    }
+
     // Resolve the member (canonical resolver RPC, same as messaging tools).
     let inviteeId = memberUserIdArg;
     let inviteeName = memberName || 'that member';

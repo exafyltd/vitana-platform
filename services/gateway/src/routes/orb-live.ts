@@ -637,8 +637,14 @@ async function fetchUserRolePreference(
  * (gateway's historical source). role_preference wins when set — it reflects
  * the user's current UI selection. Fall back to active_role when unset or
  * when the preference RPC is unavailable (older deployments).
+ *
+ * Exported (BOOTSTRAP-VOICE-CATALOG-COMPLETE) so routes/orb-tool.ts — the
+ * LiveKit HTTP tool dispatcher — can resolve the same app-level role Vertex
+ * does. Without this, role-gated tools (e.g. developer-tools.ts's dev_*
+ * suite) would see only the raw JWT `role` claim ("authenticated"), never
+ * "developer"/"admin"/"exafy_admin", and deny every legitimate LiveKit call.
  */
-async function resolveEffectiveRole(
+export async function resolveEffectiveRole(
   userId: string,
   tenantId: string
 ): Promise<string | null> {

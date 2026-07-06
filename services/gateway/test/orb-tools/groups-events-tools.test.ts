@@ -324,11 +324,15 @@ describe('join_group', () => {
 // ---------------------------------------------------------------------------
 
 describe('invite_to_group', () => {
+  // global_community_group_members is queried TWICE: first to verify the
+  // CALLER is a member (security gate — see the dedicated test below), then
+  // to check whether the INVITEE is already a member. The first entry in
+  // the queue below is always the caller-membership check.
   it('resolves member by name via the canonical resolver RPC and sends the invitation', async () => {
     const { sb, rpc } = makeSb(
       {
         global_community_groups: [{ data: [walkersGroup] }],
-        global_community_group_members: [{ data: null }],
+        global_community_group_members: [{ data: { id: 'm-caller' } }, { data: null }],
         community_group_invitations: [{ data: null }],
       },
       { data: [{ user_id: U2, vitana_id: '@anna', display_name: 'Anna Schmidt', score: 0.95 }] },
@@ -348,9 +352,25 @@ describe('invite_to_group', () => {
     });
   });
 
+  it('caller is NOT a member of the group — refuses to invite (security)', async () => {
+    const { sb } = makeSb(
+      {
+        global_community_groups: [{ data: [walkersGroup] }],
+        global_community_group_members: [{ data: null }],
+      },
+      { data: [{ user_id: U2, vitana_id: '@anna', display_name: 'Anna Schmidt', score: 0.95 }] },
+    );
+    const res = await tool_invite_to_group({ group: 'walkers', member_name: 'Anna' }, IDENT, sb);
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.error).toMatch(/must be a member/i);
+  });
+
   it('ambiguous member resolution asks which one', async () => {
     const { sb } = makeSb(
-      { global_community_groups: [{ data: [walkersGroup] }] },
+      {
+        global_community_groups: [{ data: [walkersGroup] }],
+        global_community_group_members: [{ data: { id: 'm-caller' } }],
+      },
       {
         data: [
           { user_id: U2, vitana_id: '@anna1', display_name: 'Anna Schmidt', score: 0.9 },
@@ -371,7 +391,7 @@ describe('invite_to_group', () => {
     const { sb } = makeSb(
       {
         global_community_groups: [{ data: [walkersGroup] }],
-        global_community_group_members: [{ data: { id: 'm-2' } }],
+        global_community_group_members: [{ data: { id: 'm-caller' } }, { data: { id: 'm-2' } }],
       },
       { data: [{ user_id: U2, vitana_id: '@anna', display_name: 'Anna Schmidt', score: 0.95 }] },
     );
@@ -384,7 +404,7 @@ describe('invite_to_group', () => {
     const { sb } = makeSb(
       {
         global_community_groups: [{ data: [walkersGroup] }],
-        global_community_group_members: [{ data: null }],
+        global_community_group_members: [{ data: { id: 'm-caller' } }, { data: null }],
         community_group_invitations: [{ data: null, error: { message: 'dup', code: '23505' } }],
       },
       { data: [{ user_id: U2, vitana_id: '@anna', display_name: 'Anna Schmidt', score: 0.95 }] },
