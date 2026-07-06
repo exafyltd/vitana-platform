@@ -149,7 +149,8 @@ export async function computeAndStoreForTenant(tenantId: string): Promise<void> 
     const [eventsThisWeek, eventsNextWeek, groupsTotal, liveRoomsActive, newMemberships7d] = await Promise.all([
       supabase.from('global_community_events').select('id', { count: 'exact', head: true }).eq('tenant_id', tenantId).gte('start_time', nowIso).lt('start_time', in7d),
       supabase.from('global_community_events').select('id', { count: 'exact', head: true }).eq('tenant_id', tenantId).gte('start_time', in7d).lt('start_time', in14d),
-      supabase.from('global_community_groups').select('id', { count: 'exact', head: true }).eq('tenant_id', tenantId),
+      // global_community_groups has no tenant_id — it's shared across tenants (see community-groups.ts), so this is a global count, not per-tenant.
+      supabase.from('global_community_groups').select('id', { count: 'exact', head: true }),
       supabase.from('live_rooms').select('id', { count: 'exact', head: true }).eq('tenant_id', tenantId).gte('ends_at', nowIso),
       supabase.from('community_memberships').select('id', { count: 'exact', head: true }).eq('tenant_id', tenantId).gte('created_at', d7),
     ]);

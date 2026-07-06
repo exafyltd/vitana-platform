@@ -132,7 +132,7 @@ router.get('/at-risk', requireTenantAdmin, async (req: AuthenticatedRequest, res
     const userIds = members.map((m: any) => m.user_id);
     const { data: users } = await supabase
       .from('app_users')
-      .select('user_id, email, display_name, avatar_url, updated_at')
+      .select('user_id, email, display_name, updated_at, avatar_url:profile->>avatar_url')
       .in('user_id', userIds);
 
     // "At-risk" heuristic: user hasn't updated their profile in 14+ days

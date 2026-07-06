@@ -68,7 +68,7 @@ async function hydrateProfiles(
   const [{ data: users }, { data: profs }] = await Promise.all([
     sb
       .from('app_users')
-      .select('user_id, display_name, avatar_url, vitana_id, created_at')
+      .select('user_id, display_name, vitana_id, created_at, avatar_url:profile->>avatar_url')
       .in('user_id', userIds),
     sb
       .from('profiles')

@@ -173,7 +173,7 @@ router.post('/login', async (req: Request, res: Response) => {
         // First try app_users table
         const { data: profileData, error: profileError } = await supabase
           .from('app_users')
-          .select('display_name, avatar_url, bio')
+          .select('display_name, bio, avatar_url:profile->>avatar_url')
           .eq('user_id', authData.user.id)
           .single();
 
@@ -474,7 +474,7 @@ router.get('/me', requireAuth, async (req: AuthenticatedRequest, res: Response) 
       // Release A trigger profiles_vitana_id_mirror_trigger.
       const { data: profileData, error: profileError } = await supabase
         .from('app_users')
-        .select('display_name, avatar_url, bio, vitana_id')
+        .select('display_name, bio, vitana_id, avatar_url:profile->>avatar_url')
         .eq('user_id', identity.user_id)
         .single();
 
@@ -582,12 +582,12 @@ router.get('/me', requireAuth, async (req: AuthenticatedRequest, res: Response) 
         // Resolve default tenant (oldest)
         const { data: tenantRow } = await supabase
           .from('tenants')
-          .select('id')
+          .select('tenant_id')
           .order('created_at', { ascending: true })
           .limit(1)
           .single();
 
-        const defaultTenantId = tenantRow?.id as string | undefined;
+        const defaultTenantId = tenantRow?.tenant_id as string | undefined;
 
         if (missingProfile) {
           const displayName = identity.email
@@ -782,7 +782,7 @@ router.put('/profile', requireAuth, async (req: AuthenticatedRequest, res: Respo
       .from('app_users')
       .update(updates)
       .eq('user_id', identity.user_id)
-      .select('display_name, avatar_url, bio');
+      .select('display_name, bio, avatar_url:profile->>avatar_url');
 
     if (error) {
       console.error(`[VTID-01867] Profile update failed: ${error.message} (code=${error.code})`);
@@ -800,7 +800,7 @@ router.put('/profile', requireAuth, async (req: AuthenticatedRequest, res: Respo
       const { data: insertedData, error: insertError } = await supabase
         .from('app_users')
         .insert(insertPayload)
-        .select('display_name, avatar_url, bio')
+        .select('display_name, bio, avatar_url:profile->>avatar_url')
         .single();
 
       if (insertError) {
