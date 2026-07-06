@@ -617,11 +617,19 @@ async function runMemoryEmbeddingBackfill(ctx: AutomationContext) {
   }
   if (!rows?.length) return { usersAffected: 0, actionsTaken: 0 };
 
-  const { generateBatchEmbeddings } = await import('../embedding-service');
+  // BOOTSTRAP-MEMORY-DAILY-LEARNING: memory_facts.embedding is a fixed
+  // vector(768) column (confirmed via pg_attribute on staging) — a
+  // DIFFERENT dimension from memory_items' vector(1536). Must use the
+  // dedicated 768-dim generator, never embedding-service.ts's
+  // generateBatchEmbeddings (hardcoded 1536 for memory_items — every
+  // write from that path was silently rejected by Postgres's dimension
+  // check; confirmed on staging: 100 valid 1536d vectors generated,
+  // 0 stored).
+  const { generateFactEmbeddings } = await import('../memory-facts-service');
   const texts = (rows as Array<{ fact_key: string; fact_value: string }>).map(
     (r) => `${r.fact_key}: ${r.fact_value}`,
   );
-  const batch = await generateBatchEmbeddings(texts);
+  const batch = await generateFactEmbeddings(texts);
   if (!batch.ok || !batch.embeddings) {
     ctx.log(`batch embedding failed: ${batch.error}`);
     return { usersAffected: 0, actionsTaken: 0 };

@@ -27,17 +27,21 @@ jest.mock('../../src/services/guide/pattern-extractor', () => ({
 import { extractPatternsForUser } from '../../src/services/guide/pattern-extractor';
 const mockedExtract = extractPatternsForUser as jest.MockedFunction<typeof extractPatternsForUser>;
 
-// AP-0910 batches embeddings; AP-0911 delegates to the synthesis service —
-// mock both so handler tests stay hermetic (no Vertex/OpenAI calls).
-jest.mock('../../src/services/embedding-service', () => ({
-  generateBatchEmbeddings: jest.fn(),
+// AP-0910 batches embeddings via memory-facts-service's DEDICATED 768-dim
+// generator (memory_facts.embedding is a fixed vector(768) column — a
+// different dimension from memory_items' vector(1536), which the shared
+// embedding-service.ts correctly serves instead); AP-0911 delegates to the
+// synthesis service. Mock both so handler tests stay hermetic (no
+// Vertex/OpenAI/DeepSeek calls).
+jest.mock('../../src/services/memory-facts-service', () => ({
+  generateFactEmbeddings: jest.fn(),
 }));
 jest.mock('../../src/services/user-model-synthesis', () => ({
   synthesizeUserModel: jest.fn(),
 }));
-import { generateBatchEmbeddings } from '../../src/services/embedding-service';
+import { generateFactEmbeddings } from '../../src/services/memory-facts-service';
 import { synthesizeUserModel } from '../../src/services/user-model-synthesis';
-const mockedBatchEmbed = generateBatchEmbeddings as jest.MockedFunction<typeof generateBatchEmbeddings>;
+const mockedBatchEmbed = generateFactEmbeddings as jest.MockedFunction<typeof generateFactEmbeddings>;
 const mockedSynthesize = synthesizeUserModel as jest.MockedFunction<typeof synthesizeUserModel>;
 
 registerPersonalizationEnginesHandlers();
