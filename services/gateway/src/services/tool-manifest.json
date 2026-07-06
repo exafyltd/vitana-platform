@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-07-06T14:35:55.748Z",
+  "generated_at": "2026-07-06T14:48:07.618Z",
   "source": "reconciled",
   "total": 169,
   "tools": [
@@ -1958,7 +1958,8 @@
       "added_in_pr": 1926,
       "description": "Recent VTIDs from the ledger; filter by status.",
       "wired_in": [
-        "livekit"
+        "livekit",
+        "vertex"
       ]
     },
     {
@@ -1975,7 +1976,8 @@
       "added_in_pr": 1926,
       "description": "Lookup a single VTID by id.",
       "wired_in": [
-        "livekit"
+        "livekit",
+        "vertex"
       ]
     },
     {
@@ -1992,7 +1994,8 @@
       "added_in_pr": 1926,
       "description": "PRs / actions waiting on approval.",
       "wired_in": [
-        "livekit"
+        "livekit",
+        "vertex"
       ]
     },
     {
@@ -2009,7 +2012,8 @@
       "added_in_pr": 1926,
       "description": "Pending approval count — for 'how many PRs are waiting?'.",
       "wired_in": [
-        "livekit"
+        "livekit",
+        "vertex"
       ]
     },
     {
@@ -2026,7 +2030,8 @@
       "added_in_pr": 1926,
       "description": "Approve a queued PR / action by id (EXEC-DEPLOY hard gate applies).",
       "wired_in": [
-        "livekit"
+        "livekit",
+        "vertex"
       ]
     },
     {
@@ -2043,7 +2048,8 @@
       "added_in_pr": 1926,
       "description": "Reject a queued PR / action with reason.",
       "wired_in": [
-        "livekit"
+        "livekit",
+        "vertex"
       ]
     },
     {
@@ -2060,7 +2066,8 @@
       "added_in_pr": 1926,
       "description": "Recent ORB voice sessions for Voice Lab.",
       "wired_in": [
-        "livekit"
+        "livekit",
+        "vertex"
       ]
     },
     {
@@ -2077,7 +2084,8 @@
       "added_in_pr": 1926,
       "description": "Daily routines + last run status.",
       "wired_in": [
-        "livekit"
+        "livekit",
+        "vertex"
       ]
     },
     {
@@ -2094,7 +2102,8 @@
       "added_in_pr": 1926,
       "description": "Routine detail + last N runs.",
       "wired_in": [
-        "livekit"
+        "livekit",
+        "vertex"
       ]
     },
     {
@@ -2111,7 +2120,8 @@
       "added_in_pr": 1926,
       "description": "Self-healing runs in flight.",
       "wired_in": [
-        "livekit"
+        "livekit",
+        "vertex"
       ]
     },
     {
@@ -2128,7 +2138,8 @@
       "added_in_pr": 1926,
       "description": "Autonomy loop metrics (in-flight VTIDs, terminalized, healing runs).",
       "wired_in": [
-        "livekit"
+        "livekit",
+        "vertex"
       ]
     },
     {
@@ -2145,7 +2156,8 @@
       "added_in_pr": 1926,
       "description": "21-agent registry with heartbeat status.",
       "wired_in": [
-        "livekit"
+        "livekit",
+        "vertex"
       ]
     },
     {

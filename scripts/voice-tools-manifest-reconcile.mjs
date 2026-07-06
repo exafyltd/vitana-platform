@@ -101,7 +101,7 @@ function extractSharedRegistry(src) {
   const body = src.slice(open + 1, close);
   const keys = new Set();
   // `  search_events: tool_search_events,` or `  navigate_to_screen: (args, id) => …`
-  const pat = /^[ \t]*([a-zA-Z_][a-zA-Z0-9_]*)\s*:\s*[(a-zA-Z_]/gm;
+  const pat = /^[ \t]*([a-zA-Z_][a-zA-Z0-9_]*)\s*(?::\s*[(a-zA-Z_]|,)/gm;
   let m;
   while ((m = pat.exec(body)) !== null) {
     keys.add(m[1]);
@@ -148,7 +148,7 @@ function extractSharedRegistry(src) {
     if (modClose < 0) continue;
     const modBody = modSrc.slice(modOpen + 1, modClose);
     let mm;
-    const modPat = /^[ \t]*([a-zA-Z_][a-zA-Z0-9_]*)\s*:\s*[(a-zA-Z_]/gm;
+    const modPat = /^[ \t]*([a-zA-Z_][a-zA-Z0-9_]*)\s*(?::\s*[(a-zA-Z_]|,)/gm;
     while ((mm = modPat.exec(modBody)) !== null) {
       keys.add(mm[1]);
     }
