@@ -482,12 +482,15 @@ async function runRelationshipGraphProjection(ctx: AutomationContext) {
         nodesCreated++;
       }
 
-      // Edge: user →(connected)→ person node. Live CHECK constraints limit
-      // edge_type to community values ('connected', 'member', …) and
-      // target_type to entity kinds ('person', 'event', …) — verified on
-      // staging 2026-07-06, where relation-typed edges were rejected. The
-      // REAL relation (spouse/friend/…) travels in metadata.relation; the
-      // node itself also carries it. last_interaction_at tracks the fact's
+      // Edge: user →(suggested)→ person node. Live CHECK constraints limit
+      // edge_type to community values and target_type to entity kinds —
+      // verified on staging 2026-07-06, where relation-typed edges were
+      // rejected. 'suggested' (NOT 'connected') is deliberate: consumers of
+      // person/connected edges treat target_id as an APP USER id (AP-1403
+      // notifies it; AP-0801 counts it as social comfort) — a disclosed
+      // person's target_id is a relationship_nodes UUID, so it must never
+      // enter the connected set. The REAL relation (spouse/friend/…)
+      // travels in metadata.relation; last_interaction_at tracks the fact's
       // recency so Loop 13's decay stays honest.
       const { data: existingEdge } = await supabase
         .from('relationship_edges')
@@ -497,7 +500,7 @@ async function runRelationshipGraphProjection(ctx: AutomationContext) {
         .eq('source_id', fact.user_id)
         .eq('target_type', 'person')
         .eq('target_id', nodeId)
-        .eq('edge_type', 'connected')
+        .eq('edge_type', 'suggested')
         .maybeSingle();
       if (existingEdge) {
         await supabase
@@ -511,7 +514,7 @@ async function runRelationshipGraphProjection(ctx: AutomationContext) {
           source_id: fact.user_id,
           target_type: 'person',
           target_id: nodeId,
-          edge_type: 'connected',
+          edge_type: 'suggested',
           strength: 10,
           last_interaction_at: fact.extracted_at || nowIso,
           metadata: { origin: 'memory_facts_projection', relation, fact_key: fact.fact_key },

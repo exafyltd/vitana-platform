@@ -139,7 +139,6 @@ export async function gatherSynthesisInputs(
 }
 
 async function callSynthesisModel(inputs: SynthesisInputs): Promise<string | null> {
-  if (!vertexAI) return null;
   const lines: string[] = [];
   lines.push('FACTS (verified memory records):');
   for (const f of inputs.facts) {
@@ -156,22 +155,58 @@ async function callSynthesisModel(inputs: SynthesisInputs): Promise<string | nul
     );
   }
 
-  try {
-    const model = vertexAI.getGenerativeModel({
-      model: NARRATIVE_MODEL,
-      generationConfig: { temperature: 0.3, maxOutputTokens: 400, topP: 0.9 },
-      systemInstruction: { role: 'system', parts: [{ text: SYNTHESIS_SYSTEM_PROMPT }] },
-    });
-    const response = await model.generateContent({
-      contents: [{ role: 'user', parts: [{ text: lines.join('\n') }] }],
-    });
-    const text = response.response?.candidates?.[0]?.content?.parts?.[0]?.text;
-    const narrative = typeof text === 'string' ? text.trim() : '';
-    return narrative.length >= 40 ? narrative : null;
-  } catch (err: any) {
-    console.warn(`[user-model-synthesis] model call failed: ${err?.message}`);
-    return null;
+  const prompt = lines.join('\n');
+
+  // Vertex first (Cloud Run ADC), Gemini API key as fallback — the same
+  // two-provider ladder inline-fact-extractor uses. Staging verification
+  // (run a6811834, 2026-07-06) showed the Vertex path failing there for
+  // all 26 users, so the fallback is required for staging parity.
+  if (vertexAI) {
+    try {
+      const model = vertexAI.getGenerativeModel({
+        model: NARRATIVE_MODEL,
+        generationConfig: { temperature: 0.3, maxOutputTokens: 400, topP: 0.9 },
+        systemInstruction: { role: 'system', parts: [{ text: SYNTHESIS_SYSTEM_PROMPT }] },
+      });
+      const response = await model.generateContent({
+        contents: [{ role: 'user', parts: [{ text: prompt }] }],
+      });
+      const text = response.response?.candidates?.[0]?.content?.parts?.[0]?.text;
+      const narrative = typeof text === 'string' ? text.trim() : '';
+      if (narrative.length >= 40) return narrative;
+    } catch (err: any) {
+      console.warn(`[user-model-synthesis] Vertex call failed: ${err?.message}`);
+    }
   }
+
+  const apiKey = process.env.GOOGLE_GEMINI_API_KEY;
+  if (apiKey) {
+    try {
+      const response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${NARRATIVE_MODEL}:generateContent?key=${apiKey}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: prompt }] }],
+            systemInstruction: { parts: [{ text: SYNTHESIS_SYSTEM_PROMPT }] },
+            generationConfig: { temperature: 0.3, maxOutputTokens: 400 },
+          }),
+        },
+      );
+      if (!response.ok) {
+        throw new Error(`Gemini API returned ${response.status}`);
+      }
+      const data = (await response.json()) as any;
+      const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+      const narrative = typeof text === 'string' ? text.trim() : '';
+      if (narrative.length >= 40) return narrative;
+    } catch (err: any) {
+      console.warn(`[user-model-synthesis] Gemini API fallback failed: ${err?.message}`);
+    }
+  }
+
+  return null;
 }
 
 /**
