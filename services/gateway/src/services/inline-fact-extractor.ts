@@ -30,10 +30,19 @@ import { recordAgentHeartbeat } from '../routes/agents-registry';
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
 const GOOGLE_GEMINI_API_KEY = process.env.GOOGLE_GEMINI_API_KEY;
+const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY;
 const VERTEX_PROJECT = process.env.GOOGLE_CLOUD_PROJECT || process.env.GCP_PROJECT || 'lovable-vitana-vers1';
 const VERTEX_LOCATION = process.env.VERTEX_LOCATION || 'us-central1';
 // Use flash model for extraction - faster and cheaper than pro
 const EXTRACTION_MODEL = 'gemini-2.0-flash';
+// BOOTSTRAP-MEMORY-DAILY-LEARNING: DeepSeek is now the PRIMARY extraction
+// provider — Vertex calls were failing at runtime on gateway-staging
+// (env reports GOOGLE_CLOUD_PROJECT set, but actual invocation returned
+// empty/errored for every tested conversation) while providers/health
+// cannot distinguish "configured" from "actually reachable". DeepSeek
+// (deepseek-chat, cheap + fast, matches llm-router.ts's adapter shape)
+// tries first; Vertex and the Gemini API key remain as fallbacks.
+const DEEPSEEK_MODEL = 'deepseek-chat';
 
 let vertexAI: VertexAI | null = null;
 try {
@@ -115,10 +124,55 @@ const CONFIDENCE_CAP = 0.98;
 // Core: Extract facts using Gemini
 // =============================================================================
 
-async function callGeminiForExtraction(conversationText: string): Promise<ExtractedFact[]> {
-  console.log(`[VTID-01225-inline] Extracting from ${conversationText.length} chars, vertexAI=${!!vertexAI}, apiKey=${!!GOOGLE_GEMINI_API_KEY}`);
+async function callDeepSeekForExtraction(conversationText: string): Promise<ExtractedFact[]> {
+  if (!DEEPSEEK_API_KEY) return [];
+  try {
+    const response = await fetch('https://api.deepseek.com/chat/completions', {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${DEEPSEEK_API_KEY}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: DEEPSEEK_MODEL,
+        messages: [
+          { role: 'system', content: EXTRACTION_SYSTEM_PROMPT },
+          { role: 'user', content: conversationText },
+        ],
+        temperature: 0.1,
+        max_tokens: 512,
+      }),
+    });
+    if (!response.ok) {
+      const errBody = await response.text();
+      throw new Error(`DeepSeek returned ${response.status}: ${errBody.substring(0, 200)}`);
+    }
+    const data = (await response.json()) as {
+      choices?: Array<{ message?: { content?: string } }>;
+    };
+    const rawText = data.choices?.[0]?.message?.content || '[]';
+    console.log(`[VTID-01225-inline] DeepSeek response: ${rawText.substring(0, 200)}`);
+    return parseFactsResponse(rawText);
+  } catch (err: any) {
+    console.warn(`[VTID-01225-inline] DeepSeek extraction failed: ${err.message}`);
+    return [];
+  }
+}
 
-  // Try Vertex AI first (primary on Cloud Run)
+async function callGeminiForExtraction(conversationText: string): Promise<ExtractedFact[]> {
+  console.log(
+    `[VTID-01225-inline] Extracting from ${conversationText.length} chars, ` +
+      `deepseek=${!!DEEPSEEK_API_KEY}, vertexAI=${!!vertexAI}, apiKey=${!!GOOGLE_GEMINI_API_KEY}`,
+  );
+
+  // DeepSeek first (primary — see DEEPSEEK_MODEL comment above).
+  if (DEEPSEEK_API_KEY) {
+    const facts = await callDeepSeekForExtraction(conversationText);
+    if (facts.length > 0) return facts;
+    console.warn(`[VTID-01225-inline] DeepSeek returned 0 parseable facts, trying Vertex`);
+  }
+
+  // Try Vertex AI next
   if (vertexAI) {
     try {
       const model = vertexAI.getGenerativeModel({
@@ -443,7 +497,7 @@ export async function extractAndPersistFacts(input: {
  * Check if inline extraction is available (has LLM + Supabase config)
  */
 export function isInlineExtractionAvailable(): boolean {
-  const hasLLM = !!vertexAI || !!GOOGLE_GEMINI_API_KEY;
+  const hasLLM = !!DEEPSEEK_API_KEY || !!vertexAI || !!GOOGLE_GEMINI_API_KEY;
   const hasSupabase = !!SUPABASE_URL && !!SUPABASE_SERVICE_ROLE;
   return hasLLM && hasSupabase;
 }

@@ -157,10 +157,43 @@ async function callSynthesisModel(inputs: SynthesisInputs): Promise<string | nul
 
   const prompt = lines.join('\n');
 
-  // Vertex first (Cloud Run ADC), Gemini API key as fallback — the same
-  // two-provider ladder inline-fact-extractor uses. Staging verification
-  // (run a6811834, 2026-07-06) showed the Vertex path failing there for
-  // all 26 users, so the fallback is required for staging parity.
+  // BOOTSTRAP-MEMORY-DAILY-LEARNING: DeepSeek is now PRIMARY — staging
+  // verification (runs a6811834 and 2f1f51e3, 2026-07-06) showed Vertex
+  // returning nothing for all 26 eligible users even with the Gemini
+  // API-key fallback in place. Vertex/Gemini remain as fallbacks below.
+  const deepseekKey = process.env.DEEPSEEK_API_KEY;
+  if (deepseekKey) {
+    try {
+      const response = await fetch('https://api.deepseek.com/chat/completions', {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${deepseekKey}`,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'deepseek-chat',
+          messages: [
+            { role: 'system', content: SYNTHESIS_SYSTEM_PROMPT },
+            { role: 'user', content: prompt },
+          ],
+          temperature: 0.3,
+          max_tokens: 400,
+        }),
+      });
+      if (!response.ok) {
+        throw new Error(`DeepSeek returned ${response.status}`);
+      }
+      const data = (await response.json()) as {
+        choices?: Array<{ message?: { content?: string } }>;
+      };
+      const text = data.choices?.[0]?.message?.content;
+      const narrative = typeof text === 'string' ? text.trim() : '';
+      if (narrative.length >= 40) return narrative;
+    } catch (err: any) {
+      console.warn(`[user-model-synthesis] DeepSeek call failed: ${err?.message}`);
+    }
+  }
+
   if (vertexAI) {
     try {
       const model = vertexAI.getGenerativeModel({
