@@ -2756,10 +2756,13 @@ const NAVIGATION_CONFIG = [
         "section": "conversation",
         "basePath": "/command-hub/conversation/",
         "tabs": [
-            { "key": "config",     "label": "Config",           "path": "/command-hub/conversation/config/" },
-            { "key": "monitor",    "label": "Monitor",          "path": "/command-hub/conversation/monitor/" },
-            { "key": "tools",      "label": "Tool Health",      "path": "/command-hub/conversation/tools/" },
-            { "key": "simulator",  "label": "Simulator",        "path": "/command-hub/conversation/simulator/" }
+            { "key": "config",       "label": "Config",         "path": "/command-hub/conversation/config/" },
+            { "key": "monitor",      "label": "Monitor",        "path": "/command-hub/conversation/monitor/" },
+            { "key": "tools",        "label": "Tool Health",    "path": "/command-hub/conversation/tools/" },
+            { "key": "simulator",    "label": "Simulator",      "path": "/command-hub/conversation/simulator/" },
+            { "key": "awareness",      "label": "Awareness",       "path": "/command-hub/conversation/awareness/" },
+            { "key": "journey-context","label": "Journey Context", "path": "/command-hub/conversation/journey-context/" },
+            { "key": "tool-catalog",   "label": "Tool Catalog",    "path": "/command-hub/conversation/tool-catalog/" }
         ]
     },
     // VTID-02856: Unified Voice section — owns every voice-management surface.
@@ -2772,9 +2775,6 @@ const NAVIGATION_CONFIG = [
             { "key": "improve",         "label": "Improve",            "path": "/command-hub/voice/improve/" },
             { "key": "orb-live",        "label": "Orb LIVE",           "path": "/command-hub/voice/orb-live/" },
             { "key": "providers",       "label": "Providers & Voice",  "path": "/command-hub/voice/providers/" },
-            { "key": "awareness",       "label": "Awareness",          "path": "/command-hub/voice/awareness/" },
-            { "key": "journey-context", "label": "Journey Context",    "path": "/command-hub/voice/journey-context/" },
-            { "key": "tools",           "label": "Tool Catalog",       "path": "/command-hub/voice/tools/" },
             { "key": "self-healing",    "label": "Self-Healing",       "path": "/command-hub/voice/self-healing/" },
             { "key": "test-contracts",  "label": "Test Contracts",     "path": "/command-hub/voice/test-contracts/" },
             { "key": "livekit-test",    "label": "LiveKit Test Bench", "path": "/command-hub/voice/livekit-test/" },
@@ -7225,6 +7225,17 @@ function renderModuleContent(moduleKey, tab) {
         container.appendChild(renderConversationToolHealthView());
     } else if (moduleKey === 'conversation' && tab === 'simulator') {
         container.appendChild(renderConversationSimulatorView());
+    } else if (moduleKey === 'conversation' && tab === 'awareness') {
+        // Moved from Voice (DEV-COMHU): Awareness registry/test/watchdogs belongs
+        // to Conversation design + monitoring. Sub-tab strip Registry/Test/Watchdogs.
+        container.appendChild(renderVoiceAwarenessView());
+    } else if (moduleKey === 'conversation' && tab === 'journey-context') {
+        // Moved from Voice (DEV-COMHU): durable assistant state + match-journey panel.
+        container.appendChild(renderJourneyContextView());
+    } else if (moduleKey === 'conversation' && tab === 'tool-catalog') {
+        // Moved from Voice (DEV-COMHU): the ORB tool catalog. Keyed 'tool-catalog'
+        // so it does not collide with Conversation's existing 'tools' (Tool Health).
+        container.appendChild(renderVoiceToolsCatalogView());
 
     // ──── VTID-02856: Voice section · VTID-02865: Improve cockpit ────
     } else if (moduleKey === 'voice' && tab === 'improve') {
@@ -7240,14 +7251,6 @@ function renderModuleContent(moduleKey, tab) {
         // VTID-02857: Providers & Voice — V2V (Vertex/LiveKit) + STT + TTS
         // provider switches + TTS voice/language/speed.
         container.appendChild(renderVoiceProvidersView());
-    } else if (moduleKey === 'voice' && tab === 'awareness') {
-        // Sub-tab strip for Registry / Test / Watchdogs
-        container.appendChild(renderVoiceAwarenessView());
-    } else if (moduleKey === 'voice' && tab === 'journey-context') {
-        // VTID-02909 (B0c): durable assistant state + match-journey panel
-        container.appendChild(renderJourneyContextView());
-    } else if (moduleKey === 'voice' && tab === 'tools') {
-        container.appendChild(renderVoiceToolsCatalogView());
     } else if (moduleKey === 'voice' && tab === 'self-healing') {
         // Voice slice extracted from autonomy/self-healing
         container.appendChild(renderVoiceSelfHealingPanel());
@@ -10798,11 +10801,19 @@ const AUTONOMY_REDIRECTS = {
     '/command-hub/autonomy-pulse/':               { section: 'autonomy', tab: 'autonomy-pulse' },
     '/command-hub/autonomy-trace/':               { section: 'autonomy', tab: 'autonomy-trace' },
     '/command-hub/dev-autopilot/':                { section: 'autonomy', tab: 'autopilot-developer' },
-    // Assistant section moves (Round 2) — kept for legacy bookmarks; awareness-* now redirect onward to Voice (below).
-    '/command-hub/admin/awareness/':              { section: 'voice',     tab: 'awareness', subtab: 'registry' },
-    '/command-hub/testing-qa/vitana-awareness/':  { section: 'voice',     tab: 'awareness', subtab: 'test' },
-    '/command-hub/autonomy/awareness-registry/':  { section: 'voice',     tab: 'awareness', subtab: 'registry' },
-    '/command-hub/autonomy/awareness-test/':      { section: 'voice',     tab: 'awareness', subtab: 'test' },
+    // Assistant section moves (Round 2) — kept for legacy bookmarks. DEV-COMHU:
+    // Awareness moved from Voice into Conversation (design + monitoring), so these
+    // now resolve onward to the Conversation / Awareness tab.
+    '/command-hub/admin/awareness/':              { section: 'conversation', tab: 'awareness', subtab: 'registry' },
+    '/command-hub/testing-qa/vitana-awareness/':  { section: 'conversation', tab: 'awareness', subtab: 'test' },
+    '/command-hub/autonomy/awareness-registry/':  { section: 'conversation', tab: 'awareness', subtab: 'registry' },
+    '/command-hub/autonomy/awareness-test/':      { section: 'conversation', tab: 'awareness', subtab: 'test' },
+    // DEV-COMHU: Awareness / Journey Context / Tool Catalog moved from Voice into
+    // Conversation. Keep the old /voice/ deep-links working (silent redirect).
+    // Tool Catalog is keyed 'tool-catalog' in Conversation (Voice used 'tools').
+    '/command-hub/voice/awareness/':                  { section: 'conversation', tab: 'awareness', subtab: 'registry' },
+    '/command-hub/voice/journey-context/':            { section: 'conversation', tab: 'journey-context' },
+    '/command-hub/voice/tools/':                      { section: 'conversation', tab: 'tool-catalog' },
     // VTID-02856: Voice section consolidation. Old paths now resolve to the unified Voice tabs.
     '/command-hub/diagnostics/voice-lab/':            { section: 'voice', tab: 'orb-live' },
     '/command-hub/diagnostics/voice-lab/experiments/':{ section: 'assistant', tab: 'experiments' },
@@ -10810,18 +10821,20 @@ const AUTONOMY_REDIRECTS = {
     '/command-hub/diagnostics/voice-lab/sessions/':   { section: 'assistant', tab: 'sessions' },
     '/command-hub/diagnostics/voice-lab/metrics/':    { section: 'assistant', tab: 'metrics' },
     '/command-hub/assistant/orb-live/':                { section: 'voice', tab: 'orb-live' },
-    '/command-hub/assistant/voice-tools/':             { section: 'voice', tab: 'tools' },
-    '/command-hub/assistant/awareness-registry/':      { section: 'voice', tab: 'awareness', subtab: 'registry' },
-    '/command-hub/assistant/awareness-test/':          { section: 'voice', tab: 'awareness', subtab: 'test' },
+    '/command-hub/assistant/voice-tools/':             { section: 'conversation', tab: 'tool-catalog' },
+    '/command-hub/assistant/awareness-registry/':      { section: 'conversation', tab: 'awareness', subtab: 'registry' },
+    '/command-hub/assistant/awareness-test/':          { section: 'conversation', tab: 'awareness', subtab: 'test' },
     '/command-hub/testing-qa/livekit-test/':           { section: 'voice', tab: 'livekit-test' },
     '/command-hub/testing-qa/e2e/orb-monitor/':        { section: 'voice', tab: 'orb-ui-monitor' },
 };
 
 // VTID-02856: Apply optional `subtab` field from a redirect entry to the
-// matching tab state. Only the Voice / Awareness tab uses this today.
+// matching tab state. DEV-COMHU: Awareness moved Voice → Conversation, so the
+// Awareness sub-tab (Registry/Test/Watchdogs) now lives under the Conversation
+// section. renderVoiceAwarenessView still reads state.voiceAwareness.
 function applyRouteSubtab(route) {
     if (!route || !route.subtab) return;
-    if (route.section === 'voice' && route.tab === 'awareness') {
+    if (route.section === 'conversation' && route.tab === 'awareness') {
         if (!state.voiceAwareness) state.voiceAwareness = { activeSubTab: 'registry' };
         state.voiceAwareness.activeSubTab = route.subtab;
     }
@@ -44646,7 +44659,7 @@ function handleVoiceImproveAction(item, verb) {
     var vi = state.voiceImprove;
     if (verb === 'investigate' || verb === 'open_in_self_healing') {
         var target = '/command-hub/voice/orb-live/';
-        if (item.source === 'awareness_not_wired' || item.source.startsWith('watchdog_')) target = '/command-hub/voice/awareness/';
+        if (item.source === 'awareness_not_wired' || item.source.startsWith('watchdog_')) target = '/command-hub/conversation/awareness/';
         else if (item.source === 'healing_quarantine' || item.source === 'self_healing_escalation' || item.source === 'architecture_report' || item.source === 'failure_class_no_rule') target = '/command-hub/voice/self-healing/';
         else if (item.source === 'provider_drift') target = '/command-hub/voice/providers/';
         history.pushState(null, '', target);
