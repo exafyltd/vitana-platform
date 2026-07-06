@@ -61,9 +61,12 @@ Return ONLY a JSON array of facts. Each fact must have:
 Common fact keys:
 - user_name, user_residence, user_hometown, user_birthday, user_occupation, user_company
 - user_favorite_color, user_favorite_food, user_favorite_drink, user_favorite_*
-- user_allergy, user_medication, user_health_condition
-- user_preference_*, user_goal_*
+- user_allergy, user_medication, user_health_condition, user_dietary_restriction, user_doctor_name
+- user_preference_*, user_goal_*, user_hobby_*, user_language, user_pet_name
 - spouse_name, fiancee_name, partner_name, mother_name, father_name, child_name, friend_name_*
+- sibling_name, colleague_name, grandchild_name (people the user mentions by role)
+- <person>_birthday, <person>_health_condition (dates/conditions of people the user discloses, e.g. spouse_birthday)
+- upcoming_event_* (a concrete planned event with its date, e.g. upcoming_event_wedding)
 
 Rules:
 - Only extract facts the USER explicitly states (not assistant assumptions)

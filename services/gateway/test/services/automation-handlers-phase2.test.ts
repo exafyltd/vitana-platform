@@ -107,6 +107,8 @@ describe('registry wiring — Phase 2 (5 new domains)', () => {
     'AP-0904': 'runSemanticMemoryContextForAutopilot',
     'AP-0905': 'runKnowledgeBaseContextForSuggestions',
     'AP-0906': 'runRoutinePatternExtraction',
+    'AP-0907': 'runDailyLearningDigest',
+    'AP-0908': 'runBehaviorPreferenceInference',
     'AP-1401': 'runSmartEventCreation',
     'AP-1402': 'runCalendarAvailabilityCheck',
     'AP-1403': 'runAutoInvitationSender',
@@ -269,6 +271,110 @@ describe('runRoutinePatternExtraction (AP-0906)', () => {
     const handler = getHandler('runRoutinePatternExtraction')!;
     const result = await handler(ctx);
     expect(result).toEqual({ usersAffected: 1, actionsTaken: 1 });
+  });
+});
+
+describe('runDailyLearningDigest (AP-0907)', () => {
+  it('notifies a user who gained facts and was not surfaced today', async () => {
+    const supabase = makeFakeSupabase({
+      // 1st: tenant-wide scan → u1; 2nd: detectNewFacts for u1
+      memory_facts: [
+        { data: [{ user_id: 'u1' }], error: null },
+        { data: [{ fact_key: 'user_favorite_tea', fact_value: 'Earl Grey' }], error: null },
+      ],
+      // 1st: greeting-ledger row (none); 2nd: learning_surfaced (none); 3rd: upsert stamp
+      user_assistant_state: [
+        { data: null, error: null },
+        { data: null, error: null },
+        { data: null, error: null },
+      ],
+      app_users: [{ data: [], error: null }],
+    });
+    const { ctx, notify } = makeCtx(supabase);
+    const handler = getHandler('runDailyLearningDigest')!;
+    const result = await handler(ctx);
+    expect(notify).toHaveBeenCalledTimes(1);
+    const payload = notify.mock.calls[0][2];
+    expect(payload.data.url).toBe('/memory');
+    expect(payload.title.length).toBeGreaterThan(0);
+    expect(result).toEqual({ usersAffected: 1, actionsTaken: 1 });
+  });
+
+  it('stays silent when the greeting already surfaced learning today', async () => {
+    const today = new Date().toISOString();
+    const supabase = makeFakeSupabase({
+      memory_facts: [{ data: [{ user_id: 'u1' }], error: null }],
+      user_assistant_state: [
+        // greeting ledger says facts_learned was spoken today (3e won)
+        { data: { value: { facts: { facts_learned: { value: 2, spoken_at: today } } } }, error: null },
+      ],
+      app_users: [{ data: [], error: null }],
+    });
+    const { ctx, notify } = makeCtx(supabase);
+    const handler = getHandler('runDailyLearningDigest')!;
+    const result = await handler(ctx);
+    expect(notify).not.toHaveBeenCalled();
+    expect(result).toEqual({ usersAffected: 0, actionsTaken: 0 });
+  });
+
+  it('is a no-op when nobody learned anything', async () => {
+    const supabase = makeFakeSupabase({ memory_facts: [{ data: [], error: null }] });
+    const { ctx, notify } = makeCtx(supabase);
+    const handler = getHandler('runDailyLearningDigest')!;
+    const result = await handler(ctx);
+    expect(notify).not.toHaveBeenCalled();
+    expect(result).toEqual({ usersAffected: 0, actionsTaken: 0 });
+  });
+});
+
+describe('runBehaviorPreferenceInference (AP-0908)', () => {
+  it('writes user_preference_* facts from high-confidence routines via write_fact', async () => {
+    const supabase: any = makeFakeSupabase({
+      user_routines: [
+        {
+          data: [
+            { user_id: 'u1', routine_kind: 'time_of_day_preference', confidence: 0.8, metadata: { time_of_day: 'evening' } },
+            { user_id: 'u1', routine_kind: 'category_affinity', confidence: 0.7, metadata: { tag: 'yoga' } },
+          ],
+          error: null,
+        },
+      ],
+      memory_facts: [{ data: [], error: null }],
+    });
+    supabase.rpc = jest.fn(async () => ({ data: 'fact-uuid', error: null }));
+    const { ctx } = makeCtx(supabase);
+    const handler = getHandler('runBehaviorPreferenceInference')!;
+    const result = await handler(ctx);
+    expect(supabase.rpc).toHaveBeenCalledTimes(2);
+    expect(supabase.rpc).toHaveBeenCalledWith('write_fact', expect.objectContaining({
+      p_fact_key: 'user_preference_active_time',
+      p_fact_value: 'evening',
+      p_provenance_source: 'behavior_inferred',
+      p_provenance_confidence: 0.55,
+    }));
+    expect(result).toEqual({ usersAffected: 1, actionsTaken: 2 });
+  });
+
+  it('skips identical existing facts (no supersession churn)', async () => {
+    const supabase: any = makeFakeSupabase({
+      user_routines: [
+        {
+          data: [
+            { user_id: 'u1', routine_kind: 'time_of_day_preference', confidence: 0.8, metadata: { time_of_day: 'evening' } },
+          ],
+          error: null,
+        },
+      ],
+      memory_facts: [
+        { data: [{ user_id: 'u1', fact_key: 'user_preference_active_time', fact_value: 'evening' }], error: null },
+      ],
+    });
+    supabase.rpc = jest.fn(async () => ({ data: 'fact-uuid', error: null }));
+    const { ctx } = makeCtx(supabase);
+    const handler = getHandler('runBehaviorPreferenceInference')!;
+    const result = await handler(ctx);
+    expect(supabase.rpc).not.toHaveBeenCalled();
+    expect(result).toEqual({ usersAffected: 0, actionsTaken: 0 });
   });
 });
 

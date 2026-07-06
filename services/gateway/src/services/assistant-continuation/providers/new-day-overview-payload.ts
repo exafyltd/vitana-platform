@@ -39,6 +39,7 @@ import { fetchLifeCompass, fetchVitanaIndexForProfiler } from '../../user-contex
 // imported above), hence the alias.
 import { getJourneyState as getGuidedJourneyState } from '../../guided-journey/guided-journey-state';
 import { resolveCurriculumFacts } from './login-briefing';
+import { detectNewFacts } from '../../conversation/new-facts-detector';
 
 // ---------------------------------------------------------------------------
 // Type definitions
@@ -164,6 +165,13 @@ export interface OverviewPayload {
   // -- DIARY (voice-only, streak proxy) --
   diary_last_7d: number;
 
+  // -- MEMORY LEARNING (facts extracted since we last spoke — the felt-
+  //    learning beat; BOOTSTRAP-MEMORY-DAILY-LEARNING) --
+  facts_learned_since_last: {
+    count: number;
+    sample: Array<{ key: string; value: string }>;
+  } | null;
+
   // -- GUIDED JOURNEY (learning progress + "where we left off") --
   guided_journey: {
     /** Curriculum sessions the user has completed (current_session - 1). */
@@ -288,6 +296,7 @@ export async function gatherOverviewPayload(args: AggregateArgs): Promise<Overvi
     remindersToday,
     diary7d,
     guidedJourney,
+    factsLearned,
   ] = await Promise.all([
     getJourneyState(args.supabase, args.userId).catch(() => null),
     fetchVitanaIndexForProfiler(args.supabase, args.userId).catch(() => null),
@@ -301,6 +310,12 @@ export async function gatherOverviewPayload(args: AggregateArgs): Promise<Overvi
     fetchRemindersToday(args.supabase, args.userId, startUtc, endUtc),
     fetchDiaryLast7Days(args.supabase, args.userId, args.now),
     fetchGuidedJourney(args.supabase, args.userId, args.lang ?? 'en'),
+    detectNewFacts({
+      supabase: args.supabase,
+      userId: args.userId,
+      sinceIso: lookbackIso,
+      nowMs: args.now.getTime(),
+    }).catch(() => null),
   ]);
 
   const lifeCompass = projectLifeCompass(lcSnapshot);
@@ -315,6 +330,7 @@ export async function gatherOverviewPayload(args: AggregateArgs): Promise<Overvi
     messages_unread: msgsUnread,
     reminders_today: remindersToday,
     diary_last_7d: diary7d,
+    facts_learned_since_last: factsLearned && factsLearned.count > 0 ? factsLearned : null,
     guided_journey: guidedJourney,
     last_session_date_user_tz: args.lastSessionDateUserTz,
   };

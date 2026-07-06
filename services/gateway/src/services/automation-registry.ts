@@ -787,6 +787,27 @@ const MEMORY_INTEL: AutomationDefinition[] = [
     targetRoles: [...MEMBER_ROLES],
     handler: 'runRoutinePatternExtraction',
   },
+  {
+    // "I learned something new about you today" — the standalone half of the
+    // shared felt-learning detector; the greeting ledger (6th signal) wins
+    // for users who opened a session, this catches the rest. Evening slot so
+    // the day's conversations have been extracted.
+    id: 'AP-0907', name: 'Daily Learning Digest', domain: 'memory-intelligence',
+    status: 'IMPLEMENTED', priority: 'P2', triggerType: 'cron',
+    triggerConfig: { cronExpression: '10 18 * * *' }, // daily 18:10
+    targetRoles: [...MEMBER_ROLES],
+    handler: 'runDailyLearningDigest',
+  },
+  {
+    // Turns AP-0906's user_routines into user_preference_* memory_facts
+    // (provenance behavior_inferred) so preferences grow from behavior, not
+    // just conversation. Runs after AP-0906's 3:30am extraction.
+    id: 'AP-0908', name: 'Behavior-Derived Preference Inference', domain: 'memory-intelligence',
+    status: 'IMPLEMENTED', priority: 'P2', triggerType: 'cron',
+    triggerConfig: { cronExpression: '40 4 * * *' }, // daily 4:40am
+    targetRoles: [...MEMBER_ROLES],
+    handler: 'runBehaviorPreferenceInference',
+  },
 ];
 
 // =============================================================================

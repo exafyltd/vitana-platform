@@ -8,6 +8,14 @@
 
 import { AutomationContext } from '../../types/automations';
 import { registerHandler } from '../automation-executor';
+import { tt } from '../../i18n/catalog';
+import { getUserLocale, bulkGetUserLocales } from '../../i18n/server-locale';
+import {
+  detectNewFacts,
+  markLearningSurfaced,
+  readLearningSurfacedAt,
+} from '../conversation/new-facts-detector';
+import { SIGNAL_GREETING_FACTS, parseFacts } from '../conversation/greeting-facts-ledger';
 
 // ── AP-0901: Memory-Informed Matching ───────────────────────
 // On a positive match reaction, look up the user's most recent self-facts
@@ -38,10 +46,15 @@ async function runMemoryInformedMatching(ctx: AutomationContext) {
 
   if (!facts?.length) return { usersAffected: 0, actionsTaken: 0 };
 
+  // BOOTSTRAP-MEMORY-DAILY-LEARNING (3d): the copy leads with "I remembered
+  // you mentioned X" — the stored fact is announced as learning, not used as
+  // silent background justification. Localized via the gateway catalog
+  // (CLAUDE.md 13b) instead of the previous hardcoded English.
   const trait = facts[0].fact_value;
+  const lc = await getUserLocale(supabase, userId);
   ctx.notify(userId, 'orb_suggestion', {
-    title: 'A Match Worth a Second Look',
-    body: `Based on what you've shared with your ORB about ${trait}, this match might be a great fit.`,
+    title: tt('notif.memory_match.title', lc),
+    body: tt('notif.memory_match.body', lc, { trait }),
     data: { url: '/matches', match_id: matchId },
   });
 
@@ -224,6 +237,178 @@ async function runRoutinePatternExtraction(ctx: AutomationContext) {
   return { usersAffected, actionsTaken };
 }
 
+// ── AP-0907: Daily Learning Digest ──────────────────────────
+// The standalone half of the shared felt-learning detector (3a): for users
+// who gained memory_facts in the last 24h but did NOT get the moment in a
+// session today (greeting-ledger `facts_learned` spoken today, or already
+// notified today), send one "I learned something new about you" push with
+// a deep link into the Memory Garden. Silent when nothing new — no filler.
+const LEARNING_DIGEST_WINDOW_MS = 24 * 3600 * 1000;
+const LEARNING_DIGEST_MAX_USERS_PER_RUN = 500;
+
+async function runDailyLearningDigest(ctx: AutomationContext) {
+  const { supabase, tenantId } = ctx;
+  const nowMs = Date.now();
+  const nowIso = new Date(nowMs).toISOString();
+  const today = nowIso.slice(0, 10);
+  const sinceIso = new Date(nowMs - LEARNING_DIGEST_WINDOW_MS).toISOString();
+
+  // One query shrinks the fan-out to users who actually learned something.
+  const { data: factRows, error } = await supabase
+    .from('memory_facts')
+    .select('user_id')
+    .eq('tenant_id', tenantId)
+    .is('superseded_at', null)
+    .gt('extracted_at', sinceIso)
+    .limit(5000);
+  if (error) {
+    ctx.log(`memory_facts scan failed: ${error.message}`);
+    return { usersAffected: 0, actionsTaken: 0 };
+  }
+  const userIds = [...new Set((factRows || []).map((r: any) => r.user_id).filter(Boolean))].slice(
+    0,
+    LEARNING_DIGEST_MAX_USERS_PER_RUN,
+  ) as string[];
+  if (userIds.length === 0) return { usersAffected: 0, actionsTaken: 0 };
+
+  const locales = await bulkGetUserLocales(supabase, userIds);
+
+  let usersAffected = 0;
+  for (const userId of userIds) {
+    try {
+      // Guard 1: greeting already surfaced learning in a session today (3e wins).
+      const { data: ledgerRow } = await supabase
+        .from('user_assistant_state')
+        .select('value')
+        .eq('tenant_id', tenantId)
+        .eq('user_id', userId)
+        .eq('signal_name', SIGNAL_GREETING_FACTS)
+        .maybeSingle();
+      const spokenAt = ledgerRow
+        ? parseFacts((ledgerRow as { value: unknown }).value).facts_learned?.spoken_at
+        : undefined;
+      if (spokenAt && spokenAt.slice(0, 10) === today) continue;
+
+      // Guard 2: this digest already fired today.
+      const surfacedAt = await readLearningSurfacedAt(supabase, tenantId, userId);
+      if (surfacedAt && surfacedAt.slice(0, 10) === today) continue;
+
+      const result = await detectNewFacts({ supabase, userId, tenantId, sinceIso, nowMs });
+      if (result.count === 0) continue;
+
+      const lc = locales.get(userId);
+      ctx.notify(userId, 'orb_suggestion', {
+        title: tt('notif.daily_learning.title', lc),
+        body: tt('notif.daily_learning.body', lc, { count: result.count }),
+        data: { url: '/memory' },
+      });
+      await markLearningSurfaced(supabase, tenantId, userId, result.count, nowIso);
+      usersAffected++;
+    } catch (err: any) {
+      ctx.log(`learning digest failed for ${userId.slice(0, 8)}…: ${err?.message}`);
+    }
+  }
+
+  await ctx.emitEvent('autopilot.memory.learning_digest_sent', {
+    users_scanned: userIds.length,
+    users_notified: usersAffected,
+  });
+  return { usersAffected, actionsTaken: usersAffected };
+}
+
+// ── AP-0908: Behavior-Derived Preference Inference ──────────
+// Phase 2 of the felt-learning plan: turn observed behavior (the routines
+// AP-0906 extracts into user_routines) into user_preference_* memory_facts
+// via the write_fact RPC — provenance 'behavior_inferred', confidence 0.55
+// (below the 0.80 of explicit statements, above the 0.55 retrieval floor so
+// the fixed fetchPreferences() picks them up). The Memory Garden visibly
+// grows from behavior, not just conversation. Idempotent: identical values
+// are skipped so re-runs cause no supersession churn.
+const BEHAVIOR_PREF_MIN_ROUTINE_CONFIDENCE = 0.6;
+const BEHAVIOR_PREF_CONFIDENCE = 0.55;
+const BEHAVIOR_PREF_MAX_USERS_PER_RUN = 500;
+
+const ROUTINE_KIND_TO_PREF: Record<string, { factKey: string; metaField: string }> = {
+  time_of_day_preference: { factKey: 'user_preference_active_time', metaField: 'time_of_day' },
+  day_of_week_rhythm: { factKey: 'user_preference_active_day', metaField: 'day_of_week' },
+  category_affinity: { factKey: 'user_preference_activity_focus', metaField: 'tag' },
+};
+
+async function runBehaviorPreferenceInference(ctx: AutomationContext) {
+  const { supabase, tenantId } = ctx;
+
+  const { data: routines, error } = await supabase
+    .from('user_routines')
+    .select('user_id, routine_kind, confidence, metadata')
+    .gte('confidence', BEHAVIOR_PREF_MIN_ROUTINE_CONFIDENCE)
+    .order('confidence', { ascending: false })
+    .limit(3000);
+  if (error) {
+    ctx.log(`user_routines scan failed: ${error.message}`);
+    return { usersAffected: 0, actionsTaken: 0 };
+  }
+
+  // Highest-confidence routine per (user, kind) wins — rows are ordered desc.
+  const derived = new Map<string, Map<string, string>>(); // userId → factKey → value
+  for (const r of (routines || []) as Array<{ user_id: string; routine_kind: string; metadata: any }>) {
+    const mapping = ROUTINE_KIND_TO_PREF[r.routine_kind];
+    if (!mapping || !r.user_id) continue;
+    const value = String(r.metadata?.[mapping.metaField] ?? '').trim();
+    if (!value) continue;
+    if (!derived.has(r.user_id)) derived.set(r.user_id, new Map());
+    const userFacts = derived.get(r.user_id)!;
+    if (!userFacts.has(mapping.factKey)) userFacts.set(mapping.factKey, value);
+  }
+  const userIds = [...derived.keys()].slice(0, BEHAVIOR_PREF_MAX_USERS_PER_RUN);
+  if (userIds.length === 0) return { usersAffected: 0, actionsTaken: 0 };
+
+  // Skip identical current facts — no daily supersession churn.
+  const { data: existingRows } = await supabase
+    .from('memory_facts')
+    .select('user_id, fact_key, fact_value')
+    .eq('tenant_id', tenantId)
+    .in('user_id', userIds)
+    .like('fact_key', 'user_preference_%')
+    .is('superseded_at', null);
+  const existing = new Map<string, string>();
+  for (const row of (existingRows || []) as Array<{ user_id: string; fact_key: string; fact_value: string }>) {
+    existing.set(`${row.user_id}:${row.fact_key}`, row.fact_value);
+  }
+
+  let usersAffected = 0;
+  let actionsTaken = 0;
+  for (const userId of userIds) {
+    let wroteAny = false;
+    for (const [factKey, value] of derived.get(userId)!) {
+      if (existing.get(`${userId}:${factKey}`) === value) continue;
+      const { error: rpcErr } = await supabase.rpc('write_fact', {
+        p_tenant_id: tenantId,
+        p_user_id: userId,
+        p_fact_key: factKey,
+        p_fact_value: value,
+        p_entity: 'self',
+        p_fact_value_type: 'text',
+        p_provenance_source: 'behavior_inferred',
+        p_provenance_confidence: BEHAVIOR_PREF_CONFIDENCE,
+      });
+      if (rpcErr) {
+        ctx.log(`write_fact ${factKey} failed for ${userId.slice(0, 8)}…: ${rpcErr.message}`);
+        continue;
+      }
+      wroteAny = true;
+      actionsTaken++;
+    }
+    if (wroteAny) usersAffected++;
+  }
+
+  await ctx.emitEvent('autopilot.memory.behavior_preferences_written', {
+    users_scanned: userIds.length,
+    users_with_new_preferences: usersAffected,
+    facts_written: actionsTaken,
+  });
+  return { usersAffected, actionsTaken };
+}
+
 export function registerMemoryIntelligenceHandlers(): void {
   registerHandler('runMemoryInformedMatching', runMemoryInformedMatching);
   registerHandler('runFactExtractionAudit', runFactExtractionAudit);
@@ -231,4 +416,6 @@ export function registerMemoryIntelligenceHandlers(): void {
   registerHandler('runSemanticMemoryContextForAutopilot', runSemanticMemoryContextForAutopilot);
   registerHandler('runKnowledgeBaseContextForSuggestions', runKnowledgeBaseContextForSuggestions);
   registerHandler('runRoutinePatternExtraction', runRoutinePatternExtraction);
+  registerHandler('runDailyLearningDigest', runDailyLearningDigest);
+  registerHandler('runBehaviorPreferenceInference', runBehaviorPreferenceInference);
 }
