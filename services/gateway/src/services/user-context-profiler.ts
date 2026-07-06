@@ -1001,19 +1001,30 @@ export async function getUserContextSummary(
     ? Promise.resolve({ ok: true, facts: [] as any[] })
     : getCurrentFacts({ tenant_id: opts.tenantId, user_id: userId });
 
+  // BOOTSTRAP-MEMORY-DAILY-LEARNING: the nightly synthesized "who is this
+  // person" narrative (AP-0911). Reads a single user_assistant_state row —
+  // cheap, and the section self-skips when no narrative exists yet.
+  const fetchNarrativeIfWanted =
+    (cfg && !cfg.isEnabled('profile.narrative.enabled')) || !opts.tenantId
+      ? Promise.resolve(null)
+      : import('./user-model-synthesis')
+          .then((m) => m.readUserProfileNarrative(client, opts.tenantId!, userId))
+          .catch(() => null);
+
   // VTID-03037: account/tenure fetch. Always in the batch — no awareness-
   // registry gate yet; the section itself self-skips when created_at is
   // missing. The query is cheap (single-row lookup on a PK) and adds no
   // measurable latency because it parallelizes with the existing five.
   const fetchAccountPromise = fetchAppUsersAccount(client, userId);
 
-  const [activities, routines, prefs, vitana, factsResult, account] = await Promise.all([
+  const [activities, routines, prefs, vitana, factsResult, account, narrative] = await Promise.all([
     fetchActivitiesIfWanted,
     fetchRoutinesIfWanted,
     fetchPrefsIfWanted,
     fetchVitanaIfWanted,
     fetchFactsIfWanted,
     fetchAccountPromise,
+    fetchNarrativeIfWanted,
   ]);
 
   const sections = [
@@ -1022,6 +1033,11 @@ export async function getUserContextSummary(
     // path's USER AWARENESS positioning (tenure line at top of awareness
     // block) so both pipelines agree on the high-signal placement.
     buildAccountSection(account, now),
+    // Synthesized narrative FIRST after account — it's the connected picture;
+    // the sections below are its raw evidence.
+    narrative
+      ? `[PROFILE SYNTHESIS — nightly, connect-the-dots summary]\n${narrative.narrative}`
+      : '',
     (!cfg || cfg.isEnabled('activity.summary.enabled')) ? buildActivitySummarySection(activities) : '',
     (!cfg || cfg.isEnabled('routines.enabled'))         ? buildRoutinesSection(routines, activities) : '',
     (!cfg || cfg.isEnabled('preferences.explicit.enabled') || cfg.isEnabled('preferences.inferred.enabled'))

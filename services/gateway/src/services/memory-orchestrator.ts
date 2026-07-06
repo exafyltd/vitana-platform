@@ -366,7 +366,15 @@ Before you answer, silently decide:
      or precision — never as proof that you remember.
   4. Is any memory conflicting or outdated? The user's CURRENT message
      always wins over stored memory; treat the stored version as stale
-     and do not argue from it.
+     and do not argue from it. When the user contradicts something you
+     remembered, briefly ACKNOWLEDGE the update in passing ("noted —
+     mornings now instead of evenings") so they feel the memory adapting,
+     then move on. Never defend the old version.
+  5. CONFIRMATION LOOP: if an [inferred] memory item is directly relevant
+     to this turn, you may weave ONE light confirmation into your answer
+     ("you mentioned once you prefer evening runs — is that still right?").
+     At most one confirmation per conversation, only when it fits
+     naturally, and never for [explicit] items the user already stated.
 
 Style rules for memory (non-negotiable):
 - Weave memory into your voice so the conversation feels deeply personal
@@ -390,6 +398,27 @@ Style rules for memory (non-negotiable):
 /**
  * Compose the full sentinel-wrapped memory block.
  */
+/**
+ * Cold-start curiosity (BOOTSTRAP-MEMORY-DAILY-LEARNING): with almost no
+ * stored facts there is nothing to be intelligent about — the median live
+ * user has ONE fact. Until the corpus exists, the assistant earns it: one
+ * natural get-to-know-you question per conversation, never an interview.
+ */
+export const COLD_START_FACTS_THRESHOLD = 5;
+
+function buildColdStartSection(): string {
+  return `<get_to_know_the_user>
+You still know very little about this user. Once per conversation, where it
+fits naturally, weave in ONE curious, caring question about their life —
+sleep and daily rhythm, the people who matter to them, what they are working
+toward, or what a good day looks like for them. Pick whichever is closest to
+the current topic. Never ask more than one, never make it feel like a form,
+and skip it entirely if the user is in the middle of something urgent.
+</get_to_know_the_user>
+
+`;
+}
+
 export function formatMemoryContextForPrompt(input: {
   context_pack: ContextPack;
   goals: ActiveGoal[];
@@ -399,13 +428,15 @@ export function formatMemoryContextForPrompt(input: {
   social_block?: string;
   skip_goal_section?: boolean;
   user_timezone?: string;
+  /** Cold start: almost no stored facts — inject the get-to-know directive. */
+  cold_start?: boolean;
 }): string {
   const packBlock = formatContextPackForLLM(input.context_pack, {
     userTimezone: input.user_timezone,
   });
 
   return `${MEMORY_CONTEXT_SENTINEL}
-${packBlock}${buildGoalsSection(input.goals, input.skip_goal_section === true)}${buildPreferencesSection(input.preferences)}${input.social_block || ''}${buildDoNotRepeatSection(input.do_not_repeat)}${buildSelfCheckSection()}
+${packBlock}${buildGoalsSection(input.goals, input.skip_goal_section === true)}${buildPreferencesSection(input.preferences)}${input.social_block || ''}${buildDoNotRepeatSection(input.do_not_repeat)}${input.cold_start ? buildColdStartSection() : ''}${buildSelfCheckSection()}
 ${MEMORY_CONTEXT_END_SENTINEL}
 `;
 }
@@ -596,6 +627,9 @@ export async function buildAssistantMemoryContext(
     do_not_repeat: doNotRepeat,
     skip_goal_section: input.skip_goal_section || !communityRole,
     user_timezone: input.user_timezone,
+    // Cold start only on community surfaces — dev/admin consoles must never
+    // get get-to-know-you prompts.
+    cold_start: communityRole && factsLoaded < COLD_START_FACTS_THRESHOLD,
   });
 
   const telemetry: MemoryTurnTelemetry = {

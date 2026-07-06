@@ -27,6 +27,19 @@ jest.mock('../../src/services/guide/pattern-extractor', () => ({
 import { extractPatternsForUser } from '../../src/services/guide/pattern-extractor';
 const mockedExtract = extractPatternsForUser as jest.MockedFunction<typeof extractPatternsForUser>;
 
+// AP-0910 batches embeddings; AP-0911 delegates to the synthesis service —
+// mock both so handler tests stay hermetic (no Vertex/OpenAI calls).
+jest.mock('../../src/services/embedding-service', () => ({
+  generateBatchEmbeddings: jest.fn(),
+}));
+jest.mock('../../src/services/user-model-synthesis', () => ({
+  synthesizeUserModel: jest.fn(),
+}));
+import { generateBatchEmbeddings } from '../../src/services/embedding-service';
+import { synthesizeUserModel } from '../../src/services/user-model-synthesis';
+const mockedBatchEmbed = generateBatchEmbeddings as jest.MockedFunction<typeof generateBatchEmbeddings>;
+const mockedSynthesize = synthesizeUserModel as jest.MockedFunction<typeof synthesizeUserModel>;
+
 registerPersonalizationEnginesHandlers();
 registerMemoryIntelligenceHandlers();
 registerEventMeetupInitiativeHandlers();
@@ -103,12 +116,15 @@ describe('registry wiring — Phase 2 (5 new domains)', () => {
     'AP-0805': 'runOverloadDetectionThrottle',
     'AP-0901': 'runMemoryInformedMatching',
     'AP-0902': 'runFactExtractionAudit',
-    'AP-0903': 'runRelationshipGraphMaintenance',
     'AP-0904': 'runSemanticMemoryContextForAutopilot',
     'AP-0905': 'runKnowledgeBaseContextForSuggestions',
     'AP-0906': 'runRoutinePatternExtraction',
     'AP-0907': 'runDailyLearningDigest',
     'AP-0908': 'runBehaviorPreferenceInference',
+    'AP-0909': 'runRelationshipGraphProjection',
+    'AP-0910': 'runMemoryEmbeddingBackfill',
+    'AP-0911': 'runUserModelSynthesis',
+    'AP-0912': 'runHealthCorrelationInsights',
     'AP-1401': 'runSmartEventCreation',
     'AP-1402': 'runCalendarAvailabilityCheck',
     'AP-1403': 'runAutoInvitationSender',
@@ -212,15 +228,84 @@ describe('runMemoryInformedMatching (AP-0901)', () => {
   });
 });
 
-describe('runRelationshipGraphMaintenance (AP-0903)', () => {
-  it('decays strength on stale edges', async () => {
+describe('AP-0903 retirement', () => {
+  it('is DEPRECATED in the registry and its decay handler is gone (Loop 13 owns decay)', () => {
+    const def = getAutomation('AP-0903');
+    expect(def?.status).toBe('DEPRECATED');
+    expect(def?.handler).toBeUndefined();
+    expect(getHandler('runRelationshipGraphMaintenance')).toBeUndefined();
+  });
+});
+
+describe('runRelationshipGraphProjection (AP-0909)', () => {
+  it('projects a person-fact into a node + relation edge', async () => {
     const supabase = makeFakeSupabase({
-      relationship_edges: [{ data: [{ id: 'e1', strength: 50 }, { id: 'e2', strength: 5 }], error: null }],
+      memory_facts: [
+        { data: [{ user_id: 'u1', fact_key: 'spouse_name', fact_value: 'Maria', extracted_at: '2026-07-01T00:00:00Z' }], error: null },
+      ],
+      relationship_nodes: [
+        { data: null, error: null }, // node lookup miss
+        { data: { id: 'node-1' }, error: null }, // insert returns id
+      ],
+      relationship_edges: [
+        { data: null, error: null }, // edge lookup miss
+        { data: null, error: null }, // insert ok
+      ],
+      user_follows: [{ data: [], error: null }],
     });
     const { ctx } = makeCtx(supabase);
-    const handler = getHandler('runRelationshipGraphMaintenance')!;
+    const handler = getHandler('runRelationshipGraphProjection')!;
     const result = await handler(ctx);
-    expect(result).toEqual({ usersAffected: 0, actionsTaken: 2 });
+    expect(result).toEqual({ usersAffected: 1, actionsTaken: 2 }); // 1 node + 1 edge
+    expect(ctx.emitEvent).toHaveBeenCalledWith('autopilot.memory.graph_projected', {
+      nodes_created: 1,
+      edges_created: 1,
+      users_touched: 1,
+    });
+  });
+
+  it('projects mutual follows into connected edges (both directions), one-way follows ignored', async () => {
+    const supabase = makeFakeSupabase({
+      memory_facts: [{ data: [], error: null }],
+      user_follows: [
+        {
+          data: [
+            { follower_id: 'a', following_id: 'b' },
+            { follower_id: 'b', following_id: 'a' }, // mutual
+            { follower_id: 'a', following_id: 'c' }, // one-way
+          ],
+          error: null,
+        },
+      ],
+      relationship_edges: [
+        { data: null, error: null }, // a→b lookup miss
+        { data: null, error: null }, // a→b insert
+        { data: null, error: null }, // b→a lookup miss
+        { data: null, error: null }, // b→a insert
+      ],
+    });
+    const { ctx } = makeCtx(supabase);
+    const handler = getHandler('runRelationshipGraphProjection')!;
+    const result = await handler(ctx);
+    expect(result.actionsTaken).toBe(2); // exactly the two directions of one mutual pair
+  });
+
+  it('is idempotent — existing nodes and edges are not recreated', async () => {
+    const supabase = makeFakeSupabase({
+      memory_facts: [
+        { data: [{ user_id: 'u1', fact_key: 'friend_name', fact_value: 'Jovana', extracted_at: '2026-07-01T00:00:00Z' }], error: null },
+      ],
+      relationship_nodes: [{ data: { id: 'node-1' }, error: null }], // node exists
+      relationship_edges: [
+        { data: { id: 'edge-1' }, error: null }, // edge exists
+        { data: null, error: null }, // last_interaction_at update
+      ],
+      user_follows: [{ data: [], error: null }],
+    });
+    const { ctx } = makeCtx(supabase);
+    const handler = getHandler('runRelationshipGraphProjection')!;
+    const result = await handler(ctx);
+    expect(result.actionsTaken).toBe(0);
   });
 });
 
@@ -375,6 +460,110 @@ describe('runBehaviorPreferenceInference (AP-0908)', () => {
     const result = await handler(ctx);
     expect(supabase.rpc).not.toHaveBeenCalled();
     expect(result).toEqual({ usersAffected: 0, actionsTaken: 0 });
+  });
+});
+
+describe('runMemoryEmbeddingBackfill (AP-0910)', () => {
+  it('embeds the unembedded backlog in one batch', async () => {
+    const supabase = makeFakeSupabase({
+      memory_facts: [
+        { data: [{ id: 'f1', fact_key: 'user_favorite_tea', fact_value: 'Earl Grey' }], error: null },
+        { data: null, error: null }, // update
+      ],
+    });
+    mockedBatchEmbed.mockResolvedValue({ ok: true, embeddings: [[0.1, 0.2]], model: 'test-model' });
+    const { ctx } = makeCtx(supabase);
+    const handler = getHandler('runMemoryEmbeddingBackfill')!;
+    const result = await handler(ctx);
+    expect(mockedBatchEmbed).toHaveBeenCalledWith(['user_favorite_tea: Earl Grey']);
+    expect(result).toEqual({ usersAffected: 0, actionsTaken: 1 });
+  });
+
+  it('is a no-op when the backlog is empty', async () => {
+    const supabase = makeFakeSupabase({ memory_facts: [{ data: [], error: null }] });
+    mockedBatchEmbed.mockClear();
+    const { ctx } = makeCtx(supabase);
+    const handler = getHandler('runMemoryEmbeddingBackfill')!;
+    const result = await handler(ctx);
+    expect(mockedBatchEmbed).not.toHaveBeenCalled();
+    expect(result).toEqual({ usersAffected: 0, actionsTaken: 0 });
+  });
+});
+
+describe('runUserModelSynthesis (AP-0911)', () => {
+  it('synthesizes only users with at least 3 live facts', async () => {
+    const supabase = makeFakeSupabase({
+      memory_facts: [
+        {
+          data: [
+            { user_id: 'u1' }, { user_id: 'u1' }, { user_id: 'u1' }, // 3 facts → eligible
+            { user_id: 'u2' }, // 1 fact → skipped
+          ],
+          error: null,
+        },
+      ],
+    });
+    mockedSynthesize.mockReset();
+    mockedSynthesize.mockResolvedValue({ ok: true, written: true });
+    const { ctx } = makeCtx(supabase);
+    const handler = getHandler('runUserModelSynthesis')!;
+    const result = await handler(ctx);
+    expect(mockedSynthesize).toHaveBeenCalledTimes(1);
+    expect(mockedSynthesize).toHaveBeenCalledWith(supabase, 't-1', 'u1');
+    expect(result).toEqual({ usersAffected: 1, actionsTaken: 1 });
+  });
+});
+
+describe('runHealthCorrelationInsights (AP-0912)', () => {
+  it('writes a pillar-trend insight when a pillar moves >= 10 points', async () => {
+    const supabase: any = makeFakeSupabase({
+      vitana_index_scores: [
+        {
+          data: [
+            { user_id: 'u1', date: '2026-06-24', score_sleep: 120, score_nutrition: 100, score_exercise: 100, score_hydration: 100, score_mental: 100 },
+            { user_id: 'u1', date: '2026-06-28', score_sleep: 115, score_nutrition: 100, score_exercise: 100, score_hydration: 100, score_mental: 100 },
+            { user_id: 'u1', date: '2026-07-02', score_sleep: 110, score_nutrition: 100, score_exercise: 100, score_hydration: 100, score_mental: 100 },
+            { user_id: 'u1', date: '2026-07-06', score_sleep: 100, score_nutrition: 100, score_exercise: 100, score_hydration: 100, score_mental: 100 },
+          ],
+          error: null,
+        },
+      ],
+      diary_entries: [{ data: [], error: null }],
+    });
+    supabase.rpc = jest.fn(async () => ({ data: 'fact-id', error: null }));
+    const { ctx } = makeCtx(supabase);
+    const handler = getHandler('runHealthCorrelationInsights')!;
+    const result = await handler(ctx);
+    expect(supabase.rpc).toHaveBeenCalledWith('write_fact', expect.objectContaining({
+      p_fact_key: 'health_insight_sleep_trend',
+      p_provenance_source: 'system_observed',
+    }));
+    expect(result.usersAffected).toBe(1);
+  });
+
+  it('writes a diary-lapse insight when a streak stops', async () => {
+    const eightDaysAgo = new Date(Date.now() - 8 * 86_400_000).toISOString();
+    const supabase: any = makeFakeSupabase({
+      vitana_index_scores: [{ data: [], error: null }],
+      diary_entries: [
+        {
+          data: [
+            { user_id: 'u1', created_at: eightDaysAgo },
+            { user_id: 'u1', created_at: eightDaysAgo },
+            { user_id: 'u1', created_at: eightDaysAgo },
+          ],
+          error: null,
+        },
+      ],
+    });
+    supabase.rpc = jest.fn(async () => ({ data: 'fact-id', error: null }));
+    const { ctx } = makeCtx(supabase);
+    const handler = getHandler('runHealthCorrelationInsights')!;
+    const result = await handler(ctx);
+    expect(supabase.rpc).toHaveBeenCalledWith('write_fact', expect.objectContaining({
+      p_fact_key: 'health_insight_diary_lapse',
+    }));
+    expect(result.actionsTaken).toBe(1);
   });
 });
 

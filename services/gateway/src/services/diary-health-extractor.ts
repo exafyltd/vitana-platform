@@ -327,5 +327,34 @@ export async function persistDiaryHealthFeatures(
       failed += 1;
     }
   }
+
+  // BOOTSTRAP-MEMORY-DAILY-LEARNING (diary de-silo): the diary previously
+  // fed ONLY the Vitana Index recompute — the assistant's memory never knew
+  // what the diary revealed. Mirror the day's notable signals into ONE
+  // rolling memory fact (auto-superseded daily by write_fact), so diary
+  // health data reaches retrieval, the Memory Garden, and the felt-learning
+  // detector. Fire-and-forget: never blocks the feature write path.
+  const notable = writes.filter((w) => w.feature_key !== 'journal_entry');
+  if (written > 0 && notable.length > 0) {
+    const summary = notable
+      .slice(0, 4)
+      .map((w) => `${w.feature_key.replace(/_/g, ' ')}: ${w.feature_value}${w.feature_unit ? ` ${w.feature_unit}` : ''}`)
+      .join(', ');
+    admin
+      .rpc('write_fact', {
+        p_tenant_id: tenantId,
+        p_user_id: userId,
+        p_fact_key: 'diary_recent_health_signals',
+        p_fact_value: `${summary} (diary ${date})`,
+        p_entity: 'self',
+        p_fact_value_type: 'text',
+        p_provenance_source: 'system_observed',
+        p_provenance_confidence: 0.6,
+      })
+      .then(({ error }: { error: { message: string } | null }) => {
+        if (error) console.warn(`[VTID-01977] diary→memory fact write failed: ${error.message}`);
+      });
+  }
+
   return { written, failed };
 }
