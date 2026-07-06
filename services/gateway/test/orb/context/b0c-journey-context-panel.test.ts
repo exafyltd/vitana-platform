@@ -88,11 +88,14 @@ describe('B0c — Journey Context Match Journey panel', () => {
       }
     });
 
-    it('is wired into the voice section tab handler', () => {
-      // The Voice → Journey Context tab must be wired so navigating to
-      // /command-hub/voice/journey-context/ actually renders this panel.
+    it('is wired into the conversation section tab handler', () => {
+      // DEV-COMHU-03400: Journey Context moved Voice → Conversation (design +
+      // monitoring). The Conversation → Journey Context tab must be wired so
+      // navigating to /command-hub/conversation/journey-context/ renders this
+      // panel; the old /voice/ deep-link is kept as a silent redirect.
       expect(src).toContain("'journey-context'");
-      expect(src).toContain('/command-hub/voice/journey-context/');
+      expect(src).toContain('/command-hub/conversation/journey-context/');
+      expect(src).toContain('/command-hub/voice/journey-context/'); // legacy redirect preserved
       expect(src).toContain('renderJourneyContextView');
     });
   });
