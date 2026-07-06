@@ -31,6 +31,22 @@ import { shouldBlockTool } from './intelligence/role-policy-enforcer';
 import { tool_record_journey_answer } from './journey-foundation/record-journey-answer-tool';
 import { fetchVitanaIndexForProfiler } from './user-context-profiler';
 import { resolvePillarKey } from '../lib/vitana-pillars';
+// BOOTSTRAP-VOICE-CATALOG-COMPLETE — domain modules for every tool that was
+// `status: planned` in the Voice Tools Catalog (tool-manifest.json), plus the
+// P0 coverage gaps found in the community-feature audit. Each module owns its
+// own handlers + Vertex declarations; this file only spreads them into the
+// single dispatchable registry / declaration list both pipelines read.
+import { SUPERLATIVES_TOOL_HANDLERS, SUPERLATIVES_TOOL_DECLARATIONS } from './orb-tools/superlatives-tools';
+import { DIARY_MEMORY_TOOL_HANDLERS, DIARY_MEMORY_TOOL_DECLARATIONS } from './orb-tools/diary-memory-tools';
+import { CALENDAR_MGMT_TOOL_HANDLERS, CALENDAR_MGMT_TOOL_DECLARATIONS } from './orb-tools/calendar-management-tools';
+import { REMINDERS_CLOCK_TOOL_HANDLERS, REMINDERS_CLOCK_TOOL_DECLARATIONS } from './orb-tools/reminders-clock-tools';
+import { GROUPS_EVENTS_TOOL_HANDLERS, GROUPS_EVENTS_TOOL_DECLARATIONS } from './orb-tools/groups-events-tools';
+import { CHAT_PRIVACY_TOOL_HANDLERS, CHAT_PRIVACY_TOOL_DECLARATIONS } from './orb-tools/chat-privacy-tools';
+import { FEEDBACK_SETTINGS_TOOL_HANDLERS, FEEDBACK_SETTINGS_TOOL_DECLARATIONS } from './orb-tools/feedback-settings-tools';
+import { DISCOVERY_TOOL_HANDLERS, DISCOVERY_TOOL_DECLARATIONS } from './orb-tools/discovery-tools';
+import { AWARENESS_TOOL_HANDLERS, AWARENESS_TOOL_DECLARATIONS } from './orb-tools/awareness-tools';
+import { DEVELOPER_TOOL_HANDLERS, DEVELOPER_TOOL_DECLARATIONS } from './orb-tools/developer-tools';
+import { P0_GAP_TOOL_HANDLERS, P0_GAP_TOOL_DECLARATIONS } from './orb-tools/p0-gap-tools';
 import {
   lookupScreen,
   lookupByAlias,
@@ -5090,7 +5106,44 @@ export const ORB_TOOL_REGISTRY: Record<string, OrbToolHandler> = {
   // NAV_CONTINUATION_BIND — offer_action: Vitana records the exact action she is
   // proposing so a later "Ja" executes it deterministically (invariant #10).
   offer_action: tool_offer_action,
+  // BOOTSTRAP-VOICE-CATALOG-COMPLETE — every tool that was `status: planned`
+  // in the Voice Tools Catalog, now built out per-domain (see imports above).
+  ...SUPERLATIVES_TOOL_HANDLERS,
+  ...DIARY_MEMORY_TOOL_HANDLERS,
+  ...CALENDAR_MGMT_TOOL_HANDLERS,
+  ...REMINDERS_CLOCK_TOOL_HANDLERS,
+  ...GROUPS_EVENTS_TOOL_HANDLERS,
+  ...CHAT_PRIVACY_TOOL_HANDLERS,
+  ...FEEDBACK_SETTINGS_TOOL_HANDLERS,
+  ...DISCOVERY_TOOL_HANDLERS,
+  ...AWARENESS_TOOL_HANDLERS,
+  ...DEVELOPER_TOOL_HANDLERS,
+  ...P0_GAP_TOOL_HANDLERS,
 };
+
+// BOOTSTRAP-VOICE-CATALOG-COMPLETE — combined Vertex/Gemini function
+// declarations for every newly-built domain module. live-tool-catalog.ts
+// spreads this into buildLiveApiTools() so Vertex sessions see the tools;
+// LiveKit's tools.py declares its own @function_tool wrappers per name but
+// dispatches through the same ORB_TOOL_REGISTRY above.
+export const NEW_DOMAIN_TOOL_DECLARATIONS: Array<Record<string, unknown>> = [
+  ...SUPERLATIVES_TOOL_DECLARATIONS,
+  ...DIARY_MEMORY_TOOL_DECLARATIONS,
+  ...CALENDAR_MGMT_TOOL_DECLARATIONS,
+  ...REMINDERS_CLOCK_TOOL_DECLARATIONS,
+  ...GROUPS_EVENTS_TOOL_DECLARATIONS,
+  ...CHAT_PRIVACY_TOOL_DECLARATIONS,
+  ...FEEDBACK_SETTINGS_TOOL_DECLARATIONS,
+  ...DISCOVERY_TOOL_DECLARATIONS,
+  ...AWARENESS_TOOL_DECLARATIONS,
+  ...P0_GAP_TOOL_DECLARATIONS,
+];
+
+// Developer tools are role-gated the same way ADMIN_TOOL_SCHEMAS is —
+// declared only for developer/admin/exafy_admin sessions. Kept separate so
+// live-tool-catalog.ts can apply the same activeRole check it already uses
+// for ADMIN_TOOL_SCHEMAS.
+export const DEVELOPER_DOMAIN_TOOL_DECLARATIONS: Array<Record<string, unknown>> = DEVELOPER_TOOL_DECLARATIONS;
 
 export const ORB_TOOL_NAMES = Object.keys(ORB_TOOL_REGISTRY);
 

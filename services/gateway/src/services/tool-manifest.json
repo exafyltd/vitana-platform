@@ -1,7 +1,7 @@
 {
-  "generated_at": "2026-05-07T23:43:18.327Z",
+  "generated_at": "2026-07-06T14:48:07.618Z",
   "source": "reconciled",
-  "total": 147,
+  "total": 169,
   "tools": [
     {
       "name": "search_knowledge",
@@ -720,11 +720,14 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "vtid": "VTID-02754",
       "added_in_pr": 1857,
       "description": "Top scorer in the community.",
-      "wired_in": []
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "get_top_in_pillar",
@@ -733,11 +736,14 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "vtid": "VTID-02754",
       "added_in_pr": 1857,
       "description": "Top scorer in a single pillar.",
-      "wired_in": []
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "get_first_member",
@@ -746,11 +752,14 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "vtid": "VTID-02754",
       "added_in_pr": 1857,
       "description": "First/OG community member.",
-      "wired_in": []
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "get_newest_member",
@@ -759,11 +768,14 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "vtid": "VTID-02754",
       "added_in_pr": 1857,
       "description": "Most recent community signup.",
-      "wired_in": []
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "get_most_followed",
@@ -772,11 +784,14 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "vtid": "VTID-02754",
       "added_in_pr": 1857,
       "description": "Member with the most followers.",
-      "wired_in": []
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "ask_who_is",
@@ -785,11 +800,14 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "vtid": "VTID-02754",
       "added_in_pr": 1857,
       "description": "NL router for free-form 'who is...?' questions.",
-      "wired_in": []
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "list_diary_entries",
@@ -798,11 +816,14 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "vtid": "VTID-02757",
       "added_in_pr": 1858,
       "description": "List the user's diary entries in a date window.",
-      "wired_in": []
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "get_diary_streak",
@@ -811,11 +832,14 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "vtid": "VTID-02757",
       "added_in_pr": 1858,
       "description": "Current + longest diary streak.",
-      "wired_in": []
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "get_memory_timeline",
@@ -824,11 +848,14 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "vtid": "VTID-02757",
       "added_in_pr": 1858,
       "description": "Chronological timeline of facts/diary/events.",
-      "wired_in": []
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "recall_memory_about",
@@ -837,11 +864,14 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "vtid": "VTID-02757",
       "added_in_pr": 1858,
       "description": "Topic search across memory items with category filter.",
-      "wired_in": []
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "get_memory_garden_summary",
@@ -850,11 +880,14 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "vtid": "VTID-02757",
       "added_in_pr": 1858,
       "description": "Counts per memory category — for 'what do you remember about me?'.",
-      "wired_in": []
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "forget_memory",
@@ -863,11 +896,14 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "vtid": "VTID-02757",
       "added_in_pr": 1858,
       "description": "Soft-delete a single memory item by id (after confirm).",
-      "wired_in": []
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "reschedule_event",
@@ -876,11 +912,14 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "vtid": "VTID-02761",
       "added_in_pr": 1860,
       "description": "Move a calendar event to a new time.",
-      "wired_in": []
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "cancel_event",
@@ -889,11 +928,14 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "vtid": "VTID-02761",
       "added_in_pr": 1860,
       "description": "Soft-cancel a calendar event.",
-      "wired_in": []
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "complete_event",
@@ -902,11 +944,14 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "vtid": "VTID-02761",
       "added_in_pr": 1860,
       "description": "Mark an event completed/skipped/partial.",
-      "wired_in": []
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "find_free_slot",
@@ -915,11 +960,14 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "vtid": "VTID-02761",
       "added_in_pr": 1860,
       "description": "Find next available slot for a duration.",
-      "wired_in": []
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "get_event_details",
@@ -928,11 +976,14 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "vtid": "VTID-02761",
       "added_in_pr": 1860,
       "description": "Read full details of a single event.",
-      "wired_in": []
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "check_calendar_conflicts",
@@ -941,11 +992,14 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "vtid": "VTID-02761",
       "added_in_pr": 1860,
       "description": "Find events overlapping a proposed window.",
-      "wired_in": []
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "snooze_reminder",
@@ -954,11 +1008,14 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "vtid": "VTID-02763",
       "added_in_pr": 1861,
       "description": "Push a reminder out by N minutes.",
-      "wired_in": []
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "update_reminder",
@@ -967,11 +1024,14 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "vtid": "VTID-02763",
       "added_in_pr": 1861,
       "description": "Edit a reminder's text/time.",
-      "wired_in": []
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "acknowledge_reminder",
@@ -980,11 +1040,14 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "vtid": "VTID-02763",
       "added_in_pr": 1861,
       "description": "Mark a reminder as delivered.",
-      "wired_in": []
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "complete_reminder",
@@ -993,11 +1056,14 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "vtid": "VTID-02763",
       "added_in_pr": 1861,
       "description": "Mark a reminder as DONE.",
-      "wired_in": []
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "list_missed_reminders",
@@ -1006,11 +1072,14 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "vtid": "VTID-02763",
       "added_in_pr": 1861,
       "description": "List reminders that fired but weren't acked.",
-      "wired_in": []
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "list_my_groups",
@@ -1019,11 +1088,14 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "vtid": "VTID-02764",
       "added_in_pr": 1862,
       "description": "List the user's group memberships.",
-      "wired_in": []
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "create_group",
@@ -1032,11 +1104,14 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "vtid": "VTID-02764",
       "added_in_pr": 1862,
       "description": "Create a new community group.",
-      "wired_in": []
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "join_group",
@@ -1045,11 +1120,14 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "vtid": "VTID-02764",
       "added_in_pr": 1862,
       "description": "Join an existing group by id.",
-      "wired_in": []
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "invite_to_group",
@@ -1058,11 +1136,14 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "vtid": "VTID-02764",
       "added_in_pr": 1862,
       "description": "Invite a member to a group.",
-      "wired_in": []
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "accept_invitation",
@@ -1071,11 +1152,14 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "vtid": "VTID-02764",
       "added_in_pr": 1862,
       "description": "Accept a pending group invitation.",
-      "wired_in": []
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "decline_invitation",
@@ -1084,11 +1168,14 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "vtid": "VTID-02764",
       "added_in_pr": 1862,
       "description": "Decline a pending group invitation.",
-      "wired_in": []
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "submit_bug_report",
@@ -1097,11 +1184,14 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "vtid": "VTID-02768",
       "added_in_pr": 1865,
       "description": "Hand off to Devon (bug-report specialist).",
-      "wired_in": []
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "submit_support_ticket",
@@ -1110,11 +1200,14 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "vtid": "VTID-02768",
       "added_in_pr": 1865,
       "description": "Hand off to Sage (support specialist).",
-      "wired_in": []
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "submit_marketplace_dispute",
@@ -1123,11 +1216,14 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "vtid": "VTID-02768",
       "added_in_pr": 1865,
       "description": "Hand off to Atlas (marketplace dispute).",
-      "wired_in": []
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "submit_account_issue",
@@ -1136,11 +1232,14 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "vtid": "VTID-02768",
       "added_in_pr": 1865,
       "description": "Hand off to Mira (account specialist).",
-      "wired_in": []
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "list_my_tickets",
@@ -1149,11 +1248,14 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "vtid": "VTID-02768",
       "added_in_pr": 1865,
       "description": "List the user's open tickets.",
-      "wired_in": []
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "start_conversation",
@@ -1162,11 +1264,14 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "vtid": "VTID-02771",
       "added_in_pr": 1866,
       "description": "Start a new DM conversation.",
-      "wired_in": []
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "list_conversations",
@@ -1175,11 +1280,14 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "vtid": "VTID-02771",
       "added_in_pr": 1866,
       "description": "List recent conversations.",
-      "wired_in": []
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "mark_conversation_read",
@@ -1188,11 +1296,14 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "vtid": "VTID-02771",
       "added_in_pr": 1866,
       "description": "Mark a conversation read.",
-      "wired_in": []
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "mute_conversation",
@@ -1201,11 +1312,14 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "vtid": "VTID-02771",
       "added_in_pr": 1866,
       "description": "Mute a conversation.",
-      "wired_in": []
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "archive_conversation",
@@ -1214,11 +1328,14 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "vtid": "VTID-02771",
       "added_in_pr": 1866,
       "description": "Archive a conversation.",
-      "wired_in": []
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "set_language",
@@ -1227,11 +1344,14 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "vtid": "VTID-02772",
       "added_in_pr": 1869,
       "description": "Set the UI / voice language.",
-      "wired_in": []
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "set_theme",
@@ -1240,11 +1360,14 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "vtid": "VTID-02772",
       "added_in_pr": 1869,
       "description": "Set the visual theme.",
-      "wired_in": []
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "set_voice_preferences",
@@ -1253,11 +1376,14 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "vtid": "VTID-02772",
       "added_in_pr": 1869,
       "description": "Tune voice tone / pace / persona.",
-      "wired_in": []
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "list_connected_apps",
@@ -1266,11 +1392,14 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "vtid": "VTID-02772",
       "added_in_pr": 1869,
       "description": "List connected integrations.",
-      "wired_in": []
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "disconnect_app",
@@ -1279,11 +1408,14 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "vtid": "VTID-02772",
       "added_in_pr": 1869,
       "description": "Disconnect an integration.",
-      "wired_in": []
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "global_search",
@@ -1292,11 +1424,14 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "vtid": "VTID-02773",
       "added_in_pr": 1871,
       "description": "Unified search across people / posts / products / events.",
-      "wired_in": []
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "browse_news_feed",
@@ -1305,11 +1440,14 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "vtid": "VTID-02773",
       "added_in_pr": 1871,
       "description": "Browse the community news feed.",
-      "wired_in": []
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "rsvp_event",
@@ -1318,11 +1456,14 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "vtid": "VTID-02774",
       "added_in_pr": 1873,
       "description": "RSVP to an event.",
-      "wired_in": []
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "cancel_rsvp",
@@ -1331,11 +1472,14 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "vtid": "VTID-02774",
       "added_in_pr": 1873,
       "description": "Cancel an RSVP.",
-      "wired_in": []
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "list_upcoming_meetups",
@@ -1344,11 +1488,14 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "vtid": "VTID-02774",
       "added_in_pr": 1873,
       "description": "List upcoming meetups near the user.",
-      "wired_in": []
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "join_live_room",
@@ -1357,11 +1504,14 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "vtid": "VTID-02774",
       "added_in_pr": 1873,
       "description": "Join a live room.",
-      "wired_in": []
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "snooze_recommendation",
@@ -1370,11 +1520,14 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "vtid": "VTID-02775",
       "added_in_pr": 1874,
       "description": "Push an Autopilot recommendation later.",
-      "wired_in": []
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "dismiss_recommendation",
@@ -1383,11 +1536,14 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "vtid": "VTID-02775",
       "added_in_pr": 1874,
       "description": "Dismiss an Autopilot recommendation.",
-      "wired_in": []
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "explain_recommendation",
@@ -1396,11 +1552,14 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "vtid": "VTID-02775",
       "added_in_pr": 1874,
       "description": "Get a natural-language reason for a recommendation.",
-      "wired_in": []
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "update_account_visibility",
@@ -1409,11 +1568,14 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "vtid": "VTID-02776",
       "added_in_pr": 1875,
       "description": "Toggle account visibility (public / followers-only / private).",
-      "wired_in": []
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "update_privacy_field",
@@ -1422,11 +1584,14 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "vtid": "VTID-02776",
       "added_in_pr": 1875,
       "description": "Set per-field visibility (e.g. age, location).",
-      "wired_in": []
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "block_user",
@@ -1435,11 +1600,14 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "vtid": "VTID-02776",
       "added_in_pr": 1875,
       "description": "Block another community member.",
-      "wired_in": []
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "unblock_user",
@@ -1448,11 +1616,14 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "vtid": "VTID-02776",
       "added_in_pr": 1875,
       "description": "Unblock a previously-blocked member.",
-      "wired_in": []
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "update_intent",
@@ -1461,11 +1632,14 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "vtid": "VTID-02777",
       "added_in_pr": 1877,
       "description": "Edit an existing intent post.",
-      "wired_in": []
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "delete_intent",
@@ -1474,11 +1648,14 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "vtid": "VTID-02777",
       "added_in_pr": 1877,
       "description": "Delete an intent post.",
-      "wired_in": []
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "browse_intent_board",
@@ -1487,11 +1664,14 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "vtid": "VTID-02777",
       "added_in_pr": 1877,
       "description": "Browse the cross-tenant intent board.",
-      "wired_in": []
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "dispute_match",
@@ -1500,11 +1680,14 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "vtid": "VTID-02777",
       "added_in_pr": 1877,
       "description": "Open a dispute on a match.",
-      "wired_in": []
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "get_emotional_state",
@@ -1513,11 +1696,14 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "vtid": "VTID-02778",
       "added_in_pr": 1879,
       "description": "D28 emotional / cognitive signals.",
-      "wired_in": []
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "get_situational_awareness",
@@ -1526,11 +1712,14 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "vtid": "VTID-02778",
       "added_in_pr": 1879,
       "description": "D32 situational awareness signals.",
-      "wired_in": []
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "get_availability",
@@ -1539,11 +1728,14 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "vtid": "VTID-02778",
       "added_in_pr": 1879,
       "description": "D33 availability / readiness signals.",
-      "wired_in": []
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "get_environmental_context",
@@ -1552,11 +1744,14 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "vtid": "VTID-02778",
       "added_in_pr": 1879,
       "description": "D34 environmental / mobility signals.",
-      "wired_in": []
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "get_social_context",
@@ -1565,11 +1760,13 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "vtid": "VTID-02778",
       "added_in_pr": 1879,
       "description": "D35 social context signals.",
-      "wired_in": []
+      "wired_in": [
+        "vertex"
+      ]
     },
     {
       "name": "get_life_stage_context",
@@ -1578,11 +1775,14 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "vtid": "VTID-02778",
       "added_in_pr": 1879,
       "description": "D40 life stage signals.",
-      "wired_in": []
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "set_alarm",
@@ -1591,11 +1791,14 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "vtid": "VTID-02779",
       "added_in_pr": 1881,
       "description": "Set a wake-up alarm at HH:MM.",
-      "wired_in": []
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "list_alarms",
@@ -1604,11 +1807,14 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "vtid": "VTID-02779",
       "added_in_pr": 1881,
       "description": "List active alarms.",
-      "wired_in": []
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "delete_alarm",
@@ -1617,11 +1823,14 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "vtid": "VTID-02779",
       "added_in_pr": 1881,
       "description": "Cancel an alarm.",
-      "wired_in": []
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "start_timer",
@@ -1630,11 +1839,14 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "vtid": "VTID-02779",
       "added_in_pr": 1881,
       "description": "Start a countdown timer (60s-24h).",
-      "wired_in": []
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "start_pomodoro",
@@ -1643,11 +1855,14 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "vtid": "VTID-02779",
       "added_in_pr": 1881,
       "description": "Start a pomodoro work block (5-90min).",
-      "wired_in": []
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "list_active_timers",
@@ -1656,11 +1871,14 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "vtid": "VTID-02779",
       "added_in_pr": 1881,
       "description": "List active timers and pomodoros.",
-      "wired_in": []
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "get_world_time",
@@ -1669,11 +1887,14 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "vtid": "VTID-02779",
       "added_in_pr": 1881,
       "description": "Current local time in a city or IANA timezone.",
-      "wired_in": []
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "find_perfect_product",
@@ -1687,6 +1908,7 @@
       "added_in_pr": 1883,
       "description": "Flagship deep search — fuses pillar deficits, Life Compass goal, and multi-criteria filters into top-3 product picks with rationale.",
       "wired_in": [
+        "livekit",
         "vertex"
       ]
     },
@@ -1702,6 +1924,7 @@
       "added_in_pr": 1883,
       "description": "Flagship practitioner / coach / doctor search with multi-criteria filtering.",
       "wired_in": [
+        "livekit",
         "vertex"
       ]
     },
@@ -1712,24 +1935,14 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "vtid": "VTID-02780",
       "added_in_pr": 1883,
       "description": "Flagship people-match search (workout partner, accountability buddy, mentor).",
-      "wired_in": []
-    },
-    {
-      "name": "ask_who_is",
-      "surface": "Superlatives",
-      "category": "superlatives",
-      "role": [
-        "community"
-      ],
-      "status": "planned",
-      "vtid": "VTID-02780",
-      "added_in_pr": 1883,
-      "description": "Free-form 'who is...' superlative questions about the community.",
-      "wired_in": []
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "dev_list_vtids",
@@ -1740,11 +1953,14 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "vtid": "VTID-02782",
       "added_in_pr": 1926,
       "description": "Recent VTIDs from the ledger; filter by status.",
-      "wired_in": []
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "dev_get_vtid_status",
@@ -1755,11 +1971,14 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "vtid": "VTID-02782",
       "added_in_pr": 1926,
       "description": "Lookup a single VTID by id.",
-      "wired_in": []
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "dev_list_pending_approvals",
@@ -1770,11 +1989,14 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "vtid": "VTID-02782",
       "added_in_pr": 1926,
       "description": "PRs / actions waiting on approval.",
-      "wired_in": []
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "dev_count_approvals",
@@ -1785,11 +2007,14 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "vtid": "VTID-02782",
       "added_in_pr": 1926,
       "description": "Pending approval count — for 'how many PRs are waiting?'.",
-      "wired_in": []
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "dev_approve_pr",
@@ -1800,11 +2025,14 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "vtid": "VTID-02782",
       "added_in_pr": 1926,
       "description": "Approve a queued PR / action by id (EXEC-DEPLOY hard gate applies).",
-      "wired_in": []
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "dev_reject_pr",
@@ -1815,11 +2043,14 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "vtid": "VTID-02782",
       "added_in_pr": 1926,
       "description": "Reject a queued PR / action with reason.",
-      "wired_in": []
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "dev_list_voice_sessions",
@@ -1830,11 +2061,14 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "vtid": "VTID-02782",
       "added_in_pr": 1926,
       "description": "Recent ORB voice sessions for Voice Lab.",
-      "wired_in": []
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "dev_list_routines",
@@ -1845,11 +2079,14 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "vtid": "VTID-02782",
       "added_in_pr": 1926,
       "description": "Daily routines + last run status.",
-      "wired_in": []
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "dev_get_routine_detail",
@@ -1860,11 +2097,14 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "vtid": "VTID-02782",
       "added_in_pr": 1926,
       "description": "Routine detail + last N runs.",
-      "wired_in": []
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "dev_list_active_healing",
@@ -1875,11 +2115,14 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "vtid": "VTID-02782",
       "added_in_pr": 1926,
       "description": "Self-healing runs in flight.",
-      "wired_in": []
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "dev_get_autonomy_pulse",
@@ -1890,11 +2133,14 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "vtid": "VTID-02782",
       "added_in_pr": 1926,
       "description": "Autonomy loop metrics (in-flight VTIDs, terminalized, healing runs).",
-      "wired_in": []
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "dev_list_agents",
@@ -1905,11 +2151,14 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "vtid": "VTID-02782",
       "added_in_pr": 1926,
       "description": "21-agent registry with heartbeat status.",
-      "wired_in": []
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ]
     },
     {
       "name": "admin_briefing",
@@ -1920,9 +2169,11 @@
         "exafy_admin",
         "developer"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Top open admin_insights for the tenant.",
-      "wired_in": []
+      "wired_in": [
+        "vertex"
+      ]
     },
     {
       "name": "admin_kpi_snapshot",
@@ -1933,9 +2184,11 @@
         "exafy_admin",
         "developer"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Current KPI family snapshot for the tenant.",
-      "wired_in": []
+      "wired_in": [
+        "vertex"
+      ]
     },
     {
       "name": "admin_insight_detail",
@@ -1946,9 +2199,11 @@
         "exafy_admin",
         "developer"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Full body of one admin insight.",
-      "wired_in": []
+      "wired_in": [
+        "vertex"
+      ]
     },
     {
       "name": "admin_approve",
@@ -1959,9 +2214,11 @@
         "exafy_admin",
         "developer"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Mark an insight approved.",
-      "wired_in": []
+      "wired_in": [
+        "vertex"
+      ]
     },
     {
       "name": "admin_reject",
@@ -1972,9 +2229,11 @@
         "exafy_admin",
         "developer"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Mark an insight rejected.",
-      "wired_in": []
+      "wired_in": [
+        "vertex"
+      ]
     },
     {
       "name": "admin_snooze",
@@ -1985,9 +2244,11 @@
         "exafy_admin",
         "developer"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Snooze an insight for N hours/days.",
-      "wired_in": []
+      "wired_in": [
+        "vertex"
+      ]
     },
     {
       "name": "admin_history",
@@ -1998,9 +2259,11 @@
         "exafy_admin",
         "developer"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "KPI family time-series for the last N days.",
-      "wired_in": []
+      "wired_in": [
+        "vertex"
+      ]
     },
     {
       "name": "admin_health_check",
@@ -2011,9 +2274,11 @@
         "exafy_admin",
         "developer"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Tenant-health-index probe.",
-      "wired_in": []
+      "wired_in": [
+        "vertex"
+      ]
     },
     {
       "name": "admin_pause_autopilot",
@@ -2024,9 +2289,11 @@
         "exafy_admin",
         "developer"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Emergency pause request for tenant autopilot.",
-      "wired_in": []
+      "wired_in": [
+        "vertex"
+      ]
     },
     {
       "name": "find_community_member",
@@ -2070,6 +2337,312 @@
       "description": "Navigate to a target screen (alias for navigate_to_screen).",
       "wired_in": [
         "livekit",
+        "vertex"
+      ]
+    },
+    {
+      "name": "follow_member",
+      "surface": "Community",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "live",
+      "description": "FOLLOW a community member by their spoken name.",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
+      "vtid": "BOOTSTRAP-VOICE-P0-GAPS"
+    },
+    {
+      "name": "unfollow_member",
+      "surface": "Community",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "live",
+      "description": "UNFOLLOW a community member by name. Two-step confirm:",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
+      "vtid": "BOOTSTRAP-VOICE-P0-GAPS"
+    },
+    {
+      "name": "get_notifications",
+      "surface": "Notifications",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "live",
+      "description": "READ the user's recent notifications, unread first. Speakable.",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
+      "vtid": "BOOTSTRAP-VOICE-P0-GAPS"
+    },
+    {
+      "name": "mark_notifications_read",
+      "surface": "Notifications",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "live",
+      "description": "MARK notifications as read — all unread ones, or only those whose title",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
+      "vtid": "BOOTSTRAP-VOICE-P0-GAPS"
+    },
+    {
+      "name": "get_wallet_balance",
+      "surface": "Wallet",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "live",
+      "description": "READ-ONLY wallet snapshot: balance per currency, active subscription,",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
+      "vtid": "BOOTSTRAP-VOICE-P0-GAPS"
+    },
+    {
+      "name": "update_profile",
+      "surface": "Profile",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "live",
+      "description": "UPDATE simple own-profile fields: display_name, bio, city, country, location.",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
+      "vtid": "BOOTSTRAP-VOICE-P0-GAPS"
+    },
+    {
+      "name": "play_podcast",
+      "surface": "Media",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "live",
+      "description": "PLAY an internal Vitana Media Hub podcast by title or topic. Returns an",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
+      "vtid": "BOOTSTRAP-VOICE-P0-GAPS"
+    },
+    {
+      "name": "like_post",
+      "surface": "Community",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "live",
+      "description": "LIKE a community feed post — resolves 'the last post from <name>' to that",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
+      "vtid": "BOOTSTRAP-VOICE-P0-GAPS"
+    },
+    {
+      "name": "comment_on_post",
+      "surface": "Community",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "live",
+      "description": "COMMENT on a community feed post (public text). Two-step confirm:",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
+      "vtid": "BOOTSTRAP-VOICE-P0-GAPS"
+    },
+    {
+      "name": "create_community_post",
+      "surface": "Community",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "live",
+      "description": "Compose and publish a post to the user's community feed on their behalf.",
+      "wired_in": [
+        "vertex"
+      ]
+    },
+    {
+      "name": "get_life_compass",
+      "surface": "Health",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "live",
+      "description": "Return the user's active Life Compass — the one-sentence long-term direction they set in Settings.",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
+      "vtid": "VTID-03010"
+    },
+    {
+      "name": "list_followers",
+      "surface": "Community",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "live",
+      "description": "Read who follows the user: count, names, mutual-follow count.",
+      "wired_in": [
+        "vertex"
+      ]
+    },
+    {
+      "name": "list_following",
+      "surface": "Community",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "live",
+      "description": "Read who the user follows: count and names.",
+      "wired_in": [
+        "vertex"
+      ]
+    },
+    {
+      "name": "narrate_guided_session",
+      "surface": "Onboarding",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "live",
+      "description": "Speak the authored script of the user's next Guided Journey onboarding session.",
+      "wired_in": [
+        "vertex"
+      ]
+    },
+    {
+      "name": "recent_conversations",
+      "surface": "Chat",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "live",
+      "description": "Read the user's most recent direct-message conversations, newest first.",
+      "wired_in": [
+        "vertex"
+      ]
+    },
+    {
+      "name": "teacher_event",
+      "surface": "Onboarding",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "live",
+      "description": "Teacher Mode lifecycle: record a capability-awareness event (introduced/tried/completed/dismissed).",
+      "wired_in": [
+        "vertex"
+      ]
+    },
+    {
+      "name": "end_teaching_session",
+      "surface": "Onboarding",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "live",
+      "description": "Teacher Mode termination: close the orb overlay gracefully when the user wants to end.",
+      "wired_in": [
+        "vertex"
+      ]
+    },
+    {
+      "name": "view_messages",
+      "surface": "Chat",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "live",
+      "description": "Read the user's own internal community message inbox (unread or all recent).",
+      "wired_in": [
+        "vertex"
+      ]
+    },
+    {
+      "name": "find_match",
+      "surface": "Intents",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "live",
+      "description": "Find a match by searching the community catalog, then recommend existing matches or post the request.",
+      "wired_in": [
+        "vertex"
+      ]
+    },
+    {
+      "name": "get_autopilot_recommendations",
+      "surface": "Autopilot",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "live",
+      "description": "Read out what is prepared in the user's Autopilot — the same list shown in the Autopilot popup.",
+      "wired_in": [
+        "vertex"
+      ]
+    },
+    {
+      "name": "activate_autopilot_recommendations",
+      "surface": "Autopilot",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "live",
+      "description": "Activate one or more Autopilot recommendations on the user's behalf.",
+      "wired_in": [
+        "vertex"
+      ]
+    },
+    {
+      "name": "offer_action",
+      "surface": "Internal",
+      "category": "internal",
+      "role": [
+        "community"
+      ],
+      "status": "live",
+      "description": "Internal continuation-binding: records the exact action Vitana just proposed so a later \"yes\" executes it deterministically instead of re-interpreting the bare acceptance.",
+      "wired_in": [
         "vertex"
       ]
     }

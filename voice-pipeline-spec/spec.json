@@ -11,161 +11,1852 @@
     "livekit_source": "services/agents/orb-agent/",
     "livekit_status": "not_yet_implemented"
   },
-
   "tools": [
-    { "name": "recall_conversation_at_time", "implementations": ["vertex"], "safety_critical": false, "owner_vtid": "VTID-02052", "notes": "Time-anchored conversation recall." },
-    { "name": "search_memory",                "implementations": ["vertex"], "safety_critical": true,  "owner_vtid": "VTID-01152", "notes": "Mem0/Qdrant semantic memory search via memory-indexer service." },
-    { "name": "search_knowledge",             "implementations": ["vertex"], "safety_critical": true,  "owner_vtid": "VTID-0135",  "notes": "Knowledge Hub retrieval via gateway retrieval-router." },
-    { "name": "search_web",                   "implementations": ["vertex"], "safety_critical": false, "owner_vtid": null },
-    { "name": "switch_persona",               "implementations": ["vertex"], "safety_critical": true,  "owner_vtid": null,         "notes": "Within-Vitana style/persona switch (NOT specialist handoff). Specialist handoff is `report_to_specialist`." },
-    { "name": "report_to_specialist",         "implementations": ["vertex"], "safety_critical": true,  "owner_vtid": null,         "notes": "Unified Feedback Pipeline persona handoff (Sage / Devon / Atlas / Mira / Vitana)." },
-
-    { "name": "search_calendar",              "implementations": ["vertex"], "safety_critical": false, "owner_vtid": null },
-    { "name": "create_calendar_event",        "implementations": ["vertex"], "safety_critical": false, "owner_vtid": null },
-    { "name": "add_to_calendar",              "implementations": ["vertex"], "safety_critical": false, "owner_vtid": "VTID-01943" },
-    { "name": "get_schedule",                 "implementations": ["vertex"], "safety_critical": false, "owner_vtid": "VTID-01943" },
-
-    { "name": "search_events",                "implementations": ["vertex"], "safety_critical": false, "owner_vtid": "VTID-01270A" },
-    { "name": "search_community",             "implementations": ["vertex"], "safety_critical": false, "owner_vtid": "VTID-01270A" },
-    { "name": "get_recommendations",          "implementations": ["vertex"], "safety_critical": false, "owner_vtid": "VTID-01180" },
-
-    { "name": "play_music",                   "implementations": ["vertex"], "safety_critical": false, "owner_vtid": "VTID-01941" },
-    { "name": "set_capability_preference",    "implementations": ["vertex"], "safety_critical": false, "owner_vtid": "VTID-01942" },
-
-    { "name": "read_email",                   "implementations": ["vertex"], "safety_critical": false, "owner_vtid": "VTID-01943" },
-    { "name": "find_contact",                 "implementations": ["vertex"], "safety_critical": false, "owner_vtid": "VTID-01943" },
-
-    { "name": "consult_external_ai",          "implementations": ["vertex"], "safety_critical": false, "owner_vtid": null,         "notes": "Forward to user's connected ChatGPT/Claude/Gemini account." },
-
-    { "name": "get_life_compass",                 "implementations": ["vertex", "livekit"], "safety_critical": false, "owner_vtid": "VTID-03010", "notes": "Returns the user's active Life Compass row (goal + why + target_date). Read-only. Shared dispatcher route." },
-    { "name": "get_vitana_index",                 "implementations": ["vertex"], "safety_critical": false, "owner_vtid": "VTID-01983" },
-    { "name": "get_index_improvement_suggestions","implementations": ["vertex"], "safety_critical": false, "owner_vtid": "VTID-01983" },
-    { "name": "create_index_improvement_plan",    "implementations": ["vertex"], "safety_critical": false, "owner_vtid": "VTID-01983" },
-
-    { "name": "save_diary_entry",             "implementations": ["vertex"], "safety_critical": true,  "owner_vtid": "VTID-01983", "notes": "Persists diary entry AND triggers Vitana Index recompute via /memory/diary/sync-index." },
-
-    { "name": "set_reminder",                 "implementations": ["vertex"], "safety_critical": false, "owner_vtid": "VTID-02601" },
-    { "name": "find_reminders",               "implementations": ["vertex"], "safety_critical": false, "owner_vtid": "VTID-02601" },
-    { "name": "delete_reminder",              "implementations": ["vertex"], "safety_critical": false, "owner_vtid": "VTID-02601" },
-
-    { "name": "ask_pillar_agent",             "implementations": ["vertex"], "safety_critical": false, "owner_vtid": null },
-    { "name": "explain_feature",              "implementations": ["vertex"], "safety_critical": false, "owner_vtid": null },
-
-    { "name": "resolve_recipient",            "implementations": ["vertex"], "safety_critical": true,  "owner_vtid": null,         "notes": "Step 1 of 3-step send_message flow." },
-    { "name": "send_chat_message",            "implementations": ["vertex"], "safety_critical": true,  "owner_vtid": null,         "notes": "Step 3 of send_message flow." },
-
-    { "name": "activate_recommendation",      "implementations": ["vertex"], "safety_critical": false, "owner_vtid": "VTID-01180" },
-    { "name": "get_autopilot_recommendations", "implementations": ["vertex"], "safety_critical": false, "owner_vtid": "VTID-03201", "notes": "Read the user's Autopilot queue aloud — same list as the popup. Session-state-coupled (remembers listed ids)." },
-    { "name": "activate_autopilot_recommendations", "implementations": ["vertex"], "safety_critical": false, "owner_vtid": "VTID-03201", "notes": "Activate Autopilot recommendations on the user's behalf via the shared popup flow. Resolves 'activate those' to the last listed ids." },
-    { "name": "share_link",                   "implementations": ["vertex"], "safety_critical": false, "owner_vtid": null },
-
-    { "name": "post_intent",                  "implementations": ["vertex"], "safety_critical": true,  "owner_vtid": "VTID-01975" },
-    { "name": "view_intent_matches",          "implementations": ["vertex"], "safety_critical": false, "owner_vtid": "VTID-01976" },
-    { "name": "find_match",                   "implementations": ["vertex"], "safety_critical": false, "owner_vtid": null, "notes": "BOOTSTRAP-FIND-MATCH-VOICE: search-first 'find me a match' — searches the catalog and recommends matches (also posting so the user is discoverable) or posts on confirmation. In the shared ORB registry; LiveKit can dispatch it but does not declare it yet (mirrors view_intent_matches)." },
-    { "name": "list_my_intents",              "implementations": ["vertex"], "safety_critical": false, "owner_vtid": null },
-    { "name": "respond_to_match",             "implementations": ["vertex"], "safety_critical": true,  "owner_vtid": "VTID-01976" },
-    { "name": "mark_intent_fulfilled",        "implementations": ["vertex"], "safety_critical": false, "owner_vtid": null },
-    { "name": "share_intent_post",            "implementations": ["vertex"], "safety_critical": false, "owner_vtid": null },
-
-    { "name": "scan_existing_matches",        "implementations": ["vertex"], "safety_critical": false, "owner_vtid": null },
-    { "name": "get_matchmaker_result",        "implementations": ["vertex"], "safety_critical": false, "owner_vtid": null },
-
-    { "name": "find_perfect_product",         "implementations": ["vertex", "livekit"], "safety_critical": false, "owner_vtid": "VTID-03048", "notes": "Recommends a product (supplement/gear/food) fusing weakest pillar + Life Compass goal. Shared dispatcher tool_find_perfect_product. Surfaced to LiveKit in VTID-03048 (previously Vertex-only catalog despite shared impl)." },
-    { "name": "find_perfect_practitioner",    "implementations": ["vertex", "livekit"], "safety_critical": false, "owner_vtid": "VTID-03048", "notes": "Recommends a practitioner/coach/doctor (specialty + language + telehealth + price). Shared dispatcher tool_find_perfect_practitioner. Surfaced to LiveKit in VTID-03048 (previously Vertex-only catalog despite shared impl)." },
-
-    { "name": "navigate",                     "implementations": ["vertex", "livekit"], "safety_critical": true,  "owner_vtid": null,        "notes": "Unified surface-aware navigation tool exposed to the model (VTID-NAV-UNIFIED — replaces the old navigator_consult + navigate_to_screen dance). Cross-surface routes (vitanaland→/admin or /command-hub) MUST be rejected per feedback_navigator_surface_scoping memory rule. Vertex dispatches via toolName if-chain (not a switch), so the ts-morph extractor cannot see it; LiveKit declares it as @function_tool navigate." },
-    { "name": "get_current_screen",           "implementations": ["vertex", "livekit"], "safety_critical": false, "owner_vtid": "VTID-NAV-TIMEJOURNEY", "notes": "Identity-free read of session.current_route — safe for anonymous sessions. Vertex dispatches via toolName if-chain (not extracted by ts-morph); LiveKit declares it as @function_tool get_current_screen." },
-    { "name": "navigate_to_screen",           "implementations": ["vertex"], "safety_critical": true,  "owner_vtid": "VTID-02770",  "notes": "INTENTIONALLY ONE-SIDED (Vertex-only): catalog-aware navigation taking a screen_id/alias, preserving parameterized routes (intent_id, match_id) and overlay support that the free-text `navigate` tool does not. LiveKit exposes only `navigate`. Cross-surface routes MUST be rejected per feedback_navigator_surface_scoping memory rule." },
-    { "name": "navigator_consult",            "implementations": ["vertex"], "safety_critical": false, "owner_vtid": null,         "notes": "INTENTIONALLY ONE-SIDED (Vertex-only): legacy consult-then-narrate path that predates the unified `navigate` tool. Still routed to handleNavigate for in-flight sessions that cached the old tool declarations. No LiveKit equivalent. Declared in BOOTSTRAP-VOICE-TOOL-PARITY audit." },
-
-    { "name": "find_community_member",        "implementations": ["vertex", "livekit"], "safety_critical": false, "owner_vtid": null, "notes": "Shared dispatcher tool — implemented on both sides. Declared in BOOTSTRAP-VOICE-TOOL-PARITY parity-scan audit (was undeclared)." },
-    { "name": "log_water",                    "implementations": ["vertex", "livekit"], "safety_critical": false, "owner_vtid": null, "notes": "Diary quick-log: water. Shared dispatcher tool, both sides. Declared in BOOTSTRAP-VOICE-TOOL-PARITY audit." },
-    { "name": "log_sleep",                    "implementations": ["vertex", "livekit"], "safety_critical": false, "owner_vtid": null, "notes": "Diary quick-log: sleep. Shared dispatcher tool, both sides. Declared in BOOTSTRAP-VOICE-TOOL-PARITY audit." },
-    { "name": "log_exercise",                 "implementations": ["vertex", "livekit"], "safety_critical": false, "owner_vtid": null, "notes": "Diary quick-log: exercise. Shared dispatcher tool, both sides. Declared in BOOTSTRAP-VOICE-TOOL-PARITY audit." },
-    { "name": "log_meditation",               "implementations": ["vertex", "livekit"], "safety_critical": false, "owner_vtid": null, "notes": "Diary quick-log: meditation. Shared dispatcher tool, both sides. Declared in BOOTSTRAP-VOICE-TOOL-PARITY audit." },
-    { "name": "get_pillar_subscores",         "implementations": ["vertex", "livekit"], "safety_critical": false, "owner_vtid": "VTID-01983", "notes": "Returns per-pillar Vitana Index subscores. Shared dispatcher tool, both sides. Declared in BOOTSTRAP-VOICE-TOOL-PARITY audit." },
-
-    { "name": "teacher_event",                "implementations": ["vertex"], "safety_critical": false, "owner_vtid": null, "notes": "INTENTIONALLY ONE-SIDED (Vertex-only): teaching-session telemetry event. No LiveKit @function_tool equivalent has shipped. Declared in BOOTSTRAP-VOICE-TOOL-PARITY audit." },
-    { "name": "end_teaching_session",         "implementations": ["vertex"], "safety_critical": false, "owner_vtid": null, "notes": "INTENTIONALLY ONE-SIDED (Vertex-only): closes an active teaching session. No LiveKit @function_tool equivalent has shipped. Declared in BOOTSTRAP-VOICE-TOOL-PARITY audit." },
-
-    { "name": "get_social_context",           "implementations": ["vertex"], "safety_critical": false, "owner_vtid": null, "notes": "BOOTSTRAP-SOCIAL-MEMORY: live privacy-filtered Social Context Pack (follows, matches, messages, groups, person intelligence, ranked posts/events). In the shared registry (reachable via /api/v1/orb/tool); LiveKit @function_tool wrapper not yet shipped — Vertex-only until it is." },
-    { "name": "view_messages",                "implementations": ["vertex"], "safety_critical": false, "owner_vtid": null, "notes": "BOOTSTRAP-SOCIAL-READ-TOOLS: speakable read of the user's own INTERNAL community inbox (unread/all, grouped by sender). Never Google-bound; 'archived' does not exist. In the shared registry; LiveKit @function_tool wrapper not yet shipped — Vertex-only until it is." },
-    { "name": "list_followers",               "implementations": ["vertex"], "safety_critical": false, "owner_vtid": null, "notes": "BOOTSTRAP-SOCIAL-READ-TOOLS: who follows the user (count, names, mutuals) — direct answer, never deflects. In the shared registry; LiveKit @function_tool wrapper not yet shipped — Vertex-only until it is." },
-    { "name": "list_following",               "implementations": ["vertex"], "safety_critical": false, "owner_vtid": null, "notes": "BOOTSTRAP-SOCIAL-READ-TOOLS: who the user follows (count and names). In the shared registry; LiveKit @function_tool wrapper not yet shipped — Vertex-only until it is." },
-    { "name": "recent_conversations",         "implementations": ["vertex"], "safety_critical": false, "owner_vtid": null, "notes": "BOOTSTRAP-SOCIAL-READ-TOOLS: newest-first DM contacts; first entry answers 'who did I last chat with'. In the shared registry; LiveKit @function_tool wrapper not yet shipped — Vertex-only until it is." }
+    {
+      "name": "recall_conversation_at_time",
+      "implementations": [
+        "vertex"
+      ],
+      "safety_critical": false,
+      "owner_vtid": "VTID-02052",
+      "notes": "Time-anchored conversation recall."
+    },
+    {
+      "name": "search_memory",
+      "implementations": [
+        "vertex"
+      ],
+      "safety_critical": true,
+      "owner_vtid": "VTID-01152",
+      "notes": "Mem0/Qdrant semantic memory search via memory-indexer service."
+    },
+    {
+      "name": "search_knowledge",
+      "implementations": [
+        "vertex"
+      ],
+      "safety_critical": true,
+      "owner_vtid": "VTID-0135",
+      "notes": "Knowledge Hub retrieval via gateway retrieval-router."
+    },
+    {
+      "name": "search_web",
+      "implementations": [
+        "vertex"
+      ],
+      "safety_critical": false,
+      "owner_vtid": null
+    },
+    {
+      "name": "switch_persona",
+      "implementations": [
+        "vertex"
+      ],
+      "safety_critical": true,
+      "owner_vtid": null,
+      "notes": "Within-Vitana style/persona switch (NOT specialist handoff). Specialist handoff is `report_to_specialist`."
+    },
+    {
+      "name": "report_to_specialist",
+      "implementations": [
+        "vertex"
+      ],
+      "safety_critical": true,
+      "owner_vtid": null,
+      "notes": "Unified Feedback Pipeline persona handoff (Sage / Devon / Atlas / Mira / Vitana)."
+    },
+    {
+      "name": "search_calendar",
+      "implementations": [
+        "vertex"
+      ],
+      "safety_critical": false,
+      "owner_vtid": null
+    },
+    {
+      "name": "create_calendar_event",
+      "implementations": [
+        "vertex"
+      ],
+      "safety_critical": false,
+      "owner_vtid": null
+    },
+    {
+      "name": "add_to_calendar",
+      "implementations": [
+        "vertex"
+      ],
+      "safety_critical": false,
+      "owner_vtid": "VTID-01943"
+    },
+    {
+      "name": "get_schedule",
+      "implementations": [
+        "vertex"
+      ],
+      "safety_critical": false,
+      "owner_vtid": "VTID-01943"
+    },
+    {
+      "name": "search_events",
+      "implementations": [
+        "vertex"
+      ],
+      "safety_critical": false,
+      "owner_vtid": "VTID-01270A"
+    },
+    {
+      "name": "search_community",
+      "implementations": [
+        "vertex"
+      ],
+      "safety_critical": false,
+      "owner_vtid": "VTID-01270A"
+    },
+    {
+      "name": "get_recommendations",
+      "implementations": [
+        "vertex"
+      ],
+      "safety_critical": false,
+      "owner_vtid": "VTID-01180"
+    },
+    {
+      "name": "play_music",
+      "implementations": [
+        "vertex"
+      ],
+      "safety_critical": false,
+      "owner_vtid": "VTID-01941"
+    },
+    {
+      "name": "set_capability_preference",
+      "implementations": [
+        "vertex"
+      ],
+      "safety_critical": false,
+      "owner_vtid": "VTID-01942"
+    },
+    {
+      "name": "read_email",
+      "implementations": [
+        "vertex"
+      ],
+      "safety_critical": false,
+      "owner_vtid": "VTID-01943"
+    },
+    {
+      "name": "find_contact",
+      "implementations": [
+        "vertex"
+      ],
+      "safety_critical": false,
+      "owner_vtid": "VTID-01943"
+    },
+    {
+      "name": "consult_external_ai",
+      "implementations": [
+        "vertex"
+      ],
+      "safety_critical": false,
+      "owner_vtid": null,
+      "notes": "Forward to user's connected ChatGPT/Claude/Gemini account."
+    },
+    {
+      "name": "get_life_compass",
+      "implementations": [
+        "vertex",
+        "livekit"
+      ],
+      "safety_critical": false,
+      "owner_vtid": "VTID-03010",
+      "notes": "Returns the user's active Life Compass row (goal + why + target_date). Read-only. Shared dispatcher route."
+    },
+    {
+      "name": "get_vitana_index",
+      "implementations": [
+        "vertex"
+      ],
+      "safety_critical": false,
+      "owner_vtid": "VTID-01983"
+    },
+    {
+      "name": "get_index_improvement_suggestions",
+      "implementations": [
+        "vertex"
+      ],
+      "safety_critical": false,
+      "owner_vtid": "VTID-01983"
+    },
+    {
+      "name": "create_index_improvement_plan",
+      "implementations": [
+        "vertex"
+      ],
+      "safety_critical": false,
+      "owner_vtid": "VTID-01983"
+    },
+    {
+      "name": "save_diary_entry",
+      "implementations": [
+        "vertex"
+      ],
+      "safety_critical": true,
+      "owner_vtid": "VTID-01983",
+      "notes": "Persists diary entry AND triggers Vitana Index recompute via /memory/diary/sync-index."
+    },
+    {
+      "name": "set_reminder",
+      "implementations": [
+        "vertex"
+      ],
+      "safety_critical": false,
+      "owner_vtid": "VTID-02601"
+    },
+    {
+      "name": "find_reminders",
+      "implementations": [
+        "vertex"
+      ],
+      "safety_critical": false,
+      "owner_vtid": "VTID-02601"
+    },
+    {
+      "name": "delete_reminder",
+      "implementations": [
+        "vertex"
+      ],
+      "safety_critical": false,
+      "owner_vtid": "VTID-02601"
+    },
+    {
+      "name": "ask_pillar_agent",
+      "implementations": [
+        "vertex"
+      ],
+      "safety_critical": false,
+      "owner_vtid": null
+    },
+    {
+      "name": "explain_feature",
+      "implementations": [
+        "vertex"
+      ],
+      "safety_critical": false,
+      "owner_vtid": null
+    },
+    {
+      "name": "resolve_recipient",
+      "implementations": [
+        "vertex"
+      ],
+      "safety_critical": true,
+      "owner_vtid": null,
+      "notes": "Step 1 of 3-step send_message flow."
+    },
+    {
+      "name": "send_chat_message",
+      "implementations": [
+        "vertex"
+      ],
+      "safety_critical": true,
+      "owner_vtid": null,
+      "notes": "Step 3 of send_message flow."
+    },
+    {
+      "name": "activate_recommendation",
+      "implementations": [
+        "vertex"
+      ],
+      "safety_critical": false,
+      "owner_vtid": "VTID-01180"
+    },
+    {
+      "name": "get_autopilot_recommendations",
+      "implementations": [
+        "vertex"
+      ],
+      "safety_critical": false,
+      "owner_vtid": "VTID-03201",
+      "notes": "Read the user's Autopilot queue aloud \u2014 same list as the popup. Session-state-coupled (remembers listed ids)."
+    },
+    {
+      "name": "activate_autopilot_recommendations",
+      "implementations": [
+        "vertex"
+      ],
+      "safety_critical": false,
+      "owner_vtid": "VTID-03201",
+      "notes": "Activate Autopilot recommendations on the user's behalf via the shared popup flow. Resolves 'activate those' to the last listed ids."
+    },
+    {
+      "name": "share_link",
+      "implementations": [
+        "vertex"
+      ],
+      "safety_critical": false,
+      "owner_vtid": null
+    },
+    {
+      "name": "post_intent",
+      "implementations": [
+        "vertex"
+      ],
+      "safety_critical": true,
+      "owner_vtid": "VTID-01975"
+    },
+    {
+      "name": "view_intent_matches",
+      "implementations": [
+        "vertex"
+      ],
+      "safety_critical": false,
+      "owner_vtid": "VTID-01976"
+    },
+    {
+      "name": "find_match",
+      "implementations": [
+        "vertex"
+      ],
+      "safety_critical": false,
+      "owner_vtid": null,
+      "notes": "BOOTSTRAP-FIND-MATCH-VOICE: search-first 'find me a match' \u2014 searches the catalog and recommends matches (also posting so the user is discoverable) or posts on confirmation. In the shared ORB registry; LiveKit can dispatch it but does not declare it yet (mirrors view_intent_matches)."
+    },
+    {
+      "name": "list_my_intents",
+      "implementations": [
+        "vertex"
+      ],
+      "safety_critical": false,
+      "owner_vtid": null
+    },
+    {
+      "name": "respond_to_match",
+      "implementations": [
+        "vertex"
+      ],
+      "safety_critical": true,
+      "owner_vtid": "VTID-01976"
+    },
+    {
+      "name": "mark_intent_fulfilled",
+      "implementations": [
+        "vertex"
+      ],
+      "safety_critical": false,
+      "owner_vtid": null
+    },
+    {
+      "name": "share_intent_post",
+      "implementations": [
+        "vertex"
+      ],
+      "safety_critical": false,
+      "owner_vtid": null
+    },
+    {
+      "name": "scan_existing_matches",
+      "implementations": [
+        "vertex"
+      ],
+      "safety_critical": false,
+      "owner_vtid": null
+    },
+    {
+      "name": "get_matchmaker_result",
+      "implementations": [
+        "vertex"
+      ],
+      "safety_critical": false,
+      "owner_vtid": null
+    },
+    {
+      "name": "find_perfect_product",
+      "implementations": [
+        "vertex",
+        "livekit"
+      ],
+      "safety_critical": false,
+      "owner_vtid": "VTID-03048",
+      "notes": "Recommends a product (supplement/gear/food) fusing weakest pillar + Life Compass goal. Shared dispatcher tool_find_perfect_product. Surfaced to LiveKit in VTID-03048 (previously Vertex-only catalog despite shared impl)."
+    },
+    {
+      "name": "find_perfect_practitioner",
+      "implementations": [
+        "vertex",
+        "livekit"
+      ],
+      "safety_critical": false,
+      "owner_vtid": "VTID-03048",
+      "notes": "Recommends a practitioner/coach/doctor (specialty + language + telehealth + price). Shared dispatcher tool_find_perfect_practitioner. Surfaced to LiveKit in VTID-03048 (previously Vertex-only catalog despite shared impl)."
+    },
+    {
+      "name": "navigate",
+      "implementations": [
+        "vertex",
+        "livekit"
+      ],
+      "safety_critical": true,
+      "owner_vtid": null,
+      "notes": "Unified surface-aware navigation tool exposed to the model (VTID-NAV-UNIFIED \u2014 replaces the old navigator_consult + navigate_to_screen dance). Cross-surface routes (vitanaland\u2192/admin or /command-hub) MUST be rejected per feedback_navigator_surface_scoping memory rule. Vertex dispatches via toolName if-chain (not a switch), so the ts-morph extractor cannot see it; LiveKit declares it as @function_tool navigate."
+    },
+    {
+      "name": "get_current_screen",
+      "implementations": [
+        "vertex",
+        "livekit"
+      ],
+      "safety_critical": false,
+      "owner_vtid": "VTID-NAV-TIMEJOURNEY",
+      "notes": "Identity-free read of session.current_route \u2014 safe for anonymous sessions. Vertex dispatches via toolName if-chain (not extracted by ts-morph); LiveKit declares it as @function_tool get_current_screen."
+    },
+    {
+      "name": "navigate_to_screen",
+      "implementations": [
+        "vertex"
+      ],
+      "safety_critical": true,
+      "owner_vtid": "VTID-02770",
+      "notes": "INTENTIONALLY ONE-SIDED (Vertex-only): catalog-aware navigation taking a screen_id/alias, preserving parameterized routes (intent_id, match_id) and overlay support that the free-text `navigate` tool does not. LiveKit exposes only `navigate`. Cross-surface routes MUST be rejected per feedback_navigator_surface_scoping memory rule."
+    },
+    {
+      "name": "navigator_consult",
+      "implementations": [
+        "vertex"
+      ],
+      "safety_critical": false,
+      "owner_vtid": null,
+      "notes": "INTENTIONALLY ONE-SIDED (Vertex-only): legacy consult-then-narrate path that predates the unified `navigate` tool. Still routed to handleNavigate for in-flight sessions that cached the old tool declarations. No LiveKit equivalent. Declared in BOOTSTRAP-VOICE-TOOL-PARITY audit."
+    },
+    {
+      "name": "find_community_member",
+      "implementations": [
+        "vertex",
+        "livekit"
+      ],
+      "safety_critical": false,
+      "owner_vtid": null,
+      "notes": "Shared dispatcher tool \u2014 implemented on both sides. Declared in BOOTSTRAP-VOICE-TOOL-PARITY parity-scan audit (was undeclared)."
+    },
+    {
+      "name": "log_water",
+      "implementations": [
+        "vertex",
+        "livekit"
+      ],
+      "safety_critical": false,
+      "owner_vtid": null,
+      "notes": "Diary quick-log: water. Shared dispatcher tool, both sides. Declared in BOOTSTRAP-VOICE-TOOL-PARITY audit."
+    },
+    {
+      "name": "log_sleep",
+      "implementations": [
+        "vertex",
+        "livekit"
+      ],
+      "safety_critical": false,
+      "owner_vtid": null,
+      "notes": "Diary quick-log: sleep. Shared dispatcher tool, both sides. Declared in BOOTSTRAP-VOICE-TOOL-PARITY audit."
+    },
+    {
+      "name": "log_exercise",
+      "implementations": [
+        "vertex",
+        "livekit"
+      ],
+      "safety_critical": false,
+      "owner_vtid": null,
+      "notes": "Diary quick-log: exercise. Shared dispatcher tool, both sides. Declared in BOOTSTRAP-VOICE-TOOL-PARITY audit."
+    },
+    {
+      "name": "log_meditation",
+      "implementations": [
+        "vertex",
+        "livekit"
+      ],
+      "safety_critical": false,
+      "owner_vtid": null,
+      "notes": "Diary quick-log: meditation. Shared dispatcher tool, both sides. Declared in BOOTSTRAP-VOICE-TOOL-PARITY audit."
+    },
+    {
+      "name": "get_pillar_subscores",
+      "implementations": [
+        "vertex",
+        "livekit"
+      ],
+      "safety_critical": false,
+      "owner_vtid": "VTID-01983",
+      "notes": "Returns per-pillar Vitana Index subscores. Shared dispatcher tool, both sides. Declared in BOOTSTRAP-VOICE-TOOL-PARITY audit."
+    },
+    {
+      "name": "teacher_event",
+      "implementations": [
+        "vertex"
+      ],
+      "safety_critical": false,
+      "owner_vtid": null,
+      "notes": "INTENTIONALLY ONE-SIDED (Vertex-only): teaching-session telemetry event. No LiveKit @function_tool equivalent has shipped. Declared in BOOTSTRAP-VOICE-TOOL-PARITY audit."
+    },
+    {
+      "name": "end_teaching_session",
+      "implementations": [
+        "vertex"
+      ],
+      "safety_critical": false,
+      "owner_vtid": null,
+      "notes": "INTENTIONALLY ONE-SIDED (Vertex-only): closes an active teaching session. No LiveKit @function_tool equivalent has shipped. Declared in BOOTSTRAP-VOICE-TOOL-PARITY audit."
+    },
+    {
+      "name": "get_social_context",
+      "implementations": [
+        "vertex"
+      ],
+      "safety_critical": false,
+      "owner_vtid": null,
+      "notes": "BOOTSTRAP-SOCIAL-MEMORY: live privacy-filtered Social Context Pack (follows, matches, messages, groups, person intelligence, ranked posts/events). In the shared registry (reachable via /api/v1/orb/tool); LiveKit @function_tool wrapper not yet shipped \u2014 Vertex-only until it is."
+    },
+    {
+      "name": "view_messages",
+      "implementations": [
+        "vertex"
+      ],
+      "safety_critical": false,
+      "owner_vtid": null,
+      "notes": "BOOTSTRAP-SOCIAL-READ-TOOLS: speakable read of the user's own INTERNAL community inbox (unread/all, grouped by sender). Never Google-bound; 'archived' does not exist. In the shared registry; LiveKit @function_tool wrapper not yet shipped \u2014 Vertex-only until it is."
+    },
+    {
+      "name": "list_followers",
+      "implementations": [
+        "vertex"
+      ],
+      "safety_critical": false,
+      "owner_vtid": null,
+      "notes": "BOOTSTRAP-SOCIAL-READ-TOOLS: who follows the user (count, names, mutuals) \u2014 direct answer, never deflects. In the shared registry; LiveKit @function_tool wrapper not yet shipped \u2014 Vertex-only until it is."
+    },
+    {
+      "name": "list_following",
+      "implementations": [
+        "vertex"
+      ],
+      "safety_critical": false,
+      "owner_vtid": null,
+      "notes": "BOOTSTRAP-SOCIAL-READ-TOOLS: who the user follows (count and names). In the shared registry; LiveKit @function_tool wrapper not yet shipped \u2014 Vertex-only until it is."
+    },
+    {
+      "name": "recent_conversations",
+      "implementations": [
+        "vertex"
+      ],
+      "safety_critical": false,
+      "owner_vtid": null,
+      "notes": "BOOTSTRAP-SOCIAL-READ-TOOLS: newest-first DM contacts; first entry answers 'who did I last chat with'. In the shared registry; LiveKit @function_tool wrapper not yet shipped \u2014 Vertex-only until it is."
+    },
+    {
+      "name": "get_highest_vitana_index",
+      "implementations": [
+        "vertex",
+        "livekit"
+      ],
+      "safety_critical": false,
+      "owner_vtid": "VTID-02754",
+      "notes": "Get the community member with the highest Vitana Index right now."
+    },
+    {
+      "name": "get_top_in_pillar",
+      "implementations": [
+        "vertex",
+        "livekit"
+      ],
+      "safety_critical": false,
+      "owner_vtid": "VTID-02754",
+      "notes": "Get the community member with the top score in ONE Vitana Index pillar."
+    },
+    {
+      "name": "get_first_member",
+      "implementations": [
+        "vertex",
+        "livekit"
+      ],
+      "safety_critical": false,
+      "owner_vtid": "VTID-02754",
+      "notes": "Get the very first (earliest-registered / OG) community member."
+    },
+    {
+      "name": "get_newest_member",
+      "implementations": [
+        "vertex",
+        "livekit"
+      ],
+      "safety_critical": false,
+      "owner_vtid": "VTID-02754",
+      "notes": "Get the most recently joined community member."
+    },
+    {
+      "name": "get_most_followed",
+      "implementations": [
+        "vertex",
+        "livekit"
+      ],
+      "safety_critical": false,
+      "owner_vtid": "VTID-02754",
+      "notes": "Get the community member with the most followers."
+    },
+    {
+      "name": "ask_who_is",
+      "implementations": [
+        "vertex",
+        "livekit"
+      ],
+      "safety_critical": false,
+      "owner_vtid": "VTID-02754",
+      "notes": "Answer ANY free-form 'who is...?' superlative question about the"
+    },
+    {
+      "name": "list_diary_entries",
+      "implementations": [
+        "vertex",
+        "livekit"
+      ],
+      "safety_critical": false,
+      "owner_vtid": "VTID-02757",
+      "notes": "List the user's Daily Diary entries, newest first, optionally within a date window."
+    },
+    {
+      "name": "get_diary_streak",
+      "implementations": [
+        "vertex",
+        "livekit"
+      ],
+      "safety_critical": false,
+      "owner_vtid": "VTID-02757",
+      "notes": "Get the user's diary streak: current consecutive days with an entry plus their longest streak ever."
+    },
+    {
+      "name": "get_memory_timeline",
+      "implementations": [
+        "vertex",
+        "livekit"
+      ],
+      "safety_critical": false,
+      "owner_vtid": "VTID-02757",
+      "notes": "Chronological timeline of what Vitana remembers: memory items, extracted facts, and diary entries, newest first."
+    },
+    {
+      "name": "recall_memory_about",
+      "implementations": [
+        "vertex",
+        "livekit"
+      ],
+      "safety_critical": false,
+      "owner_vtid": "VTID-02757",
+      "notes": "Search stored memories and facts about ONE specific topic, person, or thing."
+    },
+    {
+      "name": "get_memory_garden_summary",
+      "implementations": [
+        "vertex",
+        "livekit"
+      ],
+      "safety_critical": false,
+      "owner_vtid": "VTID-02757",
+      "notes": "Overview of the user's Memory Garden: how many memories are stored per category."
+    },
+    {
+      "name": "forget_memory",
+      "implementations": [
+        "vertex",
+        "livekit"
+      ],
+      "safety_critical": true,
+      "owner_vtid": "VTID-02757",
+      "notes": "Permanently delete ONE stored memory, only after the user explicitly confirms."
+    },
+    {
+      "name": "reschedule_event",
+      "implementations": [
+        "vertex",
+        "livekit"
+      ],
+      "safety_critical": false,
+      "owner_vtid": "VTID-02761",
+      "notes": "Move an existing calendar event to a new start time (duration is kept unless new_end is given)."
+    },
+    {
+      "name": "cancel_event",
+      "implementations": [
+        "vertex",
+        "livekit"
+      ],
+      "safety_critical": true,
+      "owner_vtid": "VTID-02761",
+      "notes": "Cancel (soft-delete) a calendar event \u2014 the event stays in history with status 'cancelled'."
+    },
+    {
+      "name": "complete_event",
+      "implementations": [
+        "vertex",
+        "livekit"
+      ],
+      "safety_critical": false,
+      "owner_vtid": "VTID-02761",
+      "notes": "Mark a calendar event as completed, skipped, or partially done."
+    },
+    {
+      "name": "find_free_slot",
+      "implementations": [
+        "vertex",
+        "livekit"
+      ],
+      "safety_critical": false,
+      "owner_vtid": "VTID-02761",
+      "notes": "Find the next free slot of a given length in the user's calendar, within waking hours (8 AM-10 PM user-local)."
+    },
+    {
+      "name": "get_event_details",
+      "implementations": [
+        "vertex",
+        "livekit"
+      ],
+      "safety_critical": false,
+      "owner_vtid": "VTID-02761",
+      "notes": "Read the full details of ONE calendar event: exact time, end, location, type, status, notes."
+    },
+    {
+      "name": "check_calendar_conflicts",
+      "implementations": [
+        "vertex",
+        "livekit"
+      ],
+      "safety_critical": false,
+      "owner_vtid": "VTID-02761",
+      "notes": "Check whether a proposed time window overlaps existing confirmed calendar events."
+    },
+    {
+      "name": "snooze_reminder",
+      "implementations": [
+        "vertex",
+        "livekit"
+      ],
+      "safety_critical": false,
+      "owner_vtid": "VTID-02763",
+      "notes": "Push an existing reminder out by N minutes (default 10, max 1440)."
+    },
+    {
+      "name": "update_reminder",
+      "implementations": [
+        "vertex",
+        "livekit"
+      ],
+      "safety_critical": false,
+      "owner_vtid": "VTID-02763",
+      "notes": "Edit an existing reminder's text and/or time."
+    },
+    {
+      "name": "acknowledge_reminder",
+      "implementations": [
+        "vertex",
+        "livekit"
+      ],
+      "safety_critical": false,
+      "owner_vtid": "VTID-02763",
+      "notes": "Mark a fired reminder as heard/acknowledged so it stops being re-delivered."
+    },
+    {
+      "name": "complete_reminder",
+      "implementations": [
+        "vertex",
+        "livekit"
+      ],
+      "safety_critical": false,
+      "owner_vtid": "VTID-02763",
+      "notes": "Mark a reminder as DONE (the user did the thing). Sets status=completed."
+    },
+    {
+      "name": "list_missed_reminders",
+      "implementations": [
+        "vertex",
+        "livekit"
+      ],
+      "safety_critical": false,
+      "owner_vtid": "VTID-02763",
+      "notes": "List reminders that fired but were never acknowledged (the user missed them)."
+    },
+    {
+      "name": "set_alarm",
+      "implementations": [
+        "vertex",
+        "livekit"
+      ],
+      "safety_critical": false,
+      "owner_vtid": "VTID-02779",
+      "notes": "Set a wake-up/clock alarm at a specific time of day (optionally recurring)."
+    },
+    {
+      "name": "list_alarms",
+      "implementations": [
+        "vertex",
+        "livekit"
+      ],
+      "safety_critical": false,
+      "owner_vtid": "VTID-02779",
+      "notes": "List the user's active alarms with times and labels."
+    },
+    {
+      "name": "delete_alarm",
+      "implementations": [
+        "vertex",
+        "livekit"
+      ],
+      "safety_critical": true,
+      "owner_vtid": "VTID-02779",
+      "notes": "Cancel an alarm. Two-step confirm flow: first call WITHOUT confirm to find"
+    },
+    {
+      "name": "start_timer",
+      "implementations": [
+        "vertex",
+        "livekit"
+      ],
+      "safety_critical": false,
+      "owner_vtid": "VTID-02779",
+      "notes": "Start a countdown timer (1-1440 minutes)."
+    },
+    {
+      "name": "start_pomodoro",
+      "implementations": [
+        "vertex",
+        "livekit"
+      ],
+      "safety_critical": false,
+      "owner_vtid": "VTID-02779",
+      "notes": "Start a pomodoro focus block (5-90 minutes; 25 if omitted)."
+    },
+    {
+      "name": "list_active_timers",
+      "implementations": [
+        "vertex",
+        "livekit"
+      ],
+      "safety_critical": false,
+      "owner_vtid": "VTID-02779",
+      "notes": "List running timers and pomodoros with the remaining time on each."
+    },
+    {
+      "name": "get_world_time",
+      "implementations": [
+        "vertex",
+        "livekit"
+      ],
+      "safety_critical": false,
+      "owner_vtid": "VTID-02779",
+      "notes": "Get the current local time in a city or IANA timezone (no internet needed)."
+    },
+    {
+      "name": "list_my_groups",
+      "implementations": [
+        "vertex",
+        "livekit"
+      ],
+      "safety_critical": false,
+      "owner_vtid": "VTID-02764",
+      "notes": "List the community groups the user belongs to, with member counts."
+    },
+    {
+      "name": "create_group",
+      "implementations": [
+        "vertex",
+        "livekit"
+      ],
+      "safety_critical": false,
+      "owner_vtid": "VTID-02764",
+      "notes": "Create a new community group. Requires a name; privacy is public or"
+    },
+    {
+      "name": "join_group",
+      "implementations": [
+        "vertex",
+        "livekit"
+      ],
+      "safety_critical": false,
+      "owner_vtid": "VTID-02764",
+      "notes": "Join a community group by name or group_id. Resolves fuzzy names and"
+    },
+    {
+      "name": "invite_to_group",
+      "implementations": [
+        "vertex",
+        "livekit"
+      ],
+      "safety_critical": false,
+      "owner_vtid": "VTID-02764",
+      "notes": "Invite another community member to a group. Resolves the member by"
+    },
+    {
+      "name": "accept_invitation",
+      "implementations": [
+        "vertex",
+        "livekit"
+      ],
+      "safety_critical": false,
+      "owner_vtid": "VTID-02764",
+      "notes": "Accept a pending group invitation (joins the group). With no"
+    },
+    {
+      "name": "decline_invitation",
+      "implementations": [
+        "vertex",
+        "livekit"
+      ],
+      "safety_critical": true,
+      "owner_vtid": "VTID-02764",
+      "notes": "Decline a pending group invitation. ALWAYS call once WITHOUT confirm"
+    },
+    {
+      "name": "rsvp_event",
+      "implementations": [
+        "vertex",
+        "livekit"
+      ],
+      "safety_critical": false,
+      "owner_vtid": "VTID-02774",
+      "notes": "RSVP / sign the user up for a community event or meetup, by event_id"
+    },
+    {
+      "name": "cancel_rsvp",
+      "implementations": [
+        "vertex",
+        "livekit"
+      ],
+      "safety_critical": true,
+      "owner_vtid": "VTID-02774",
+      "notes": "Cancel the user's RSVP for an upcoming event. ALWAYS call once"
+    },
+    {
+      "name": "list_upcoming_meetups",
+      "implementations": [
+        "vertex",
+        "livekit"
+      ],
+      "safety_critical": false,
+      "owner_vtid": "VTID-02774",
+      "notes": "List upcoming community meetups/events the user could attend, soonest"
+    },
+    {
+      "name": "join_live_room",
+      "implementations": [
+        "vertex",
+        "livekit"
+      ],
+      "safety_critical": false,
+      "owner_vtid": "VTID-02774",
+      "notes": "Join/open a community live room by name or room_id. Returns a"
+    },
+    {
+      "name": "start_conversation",
+      "implementations": [
+        "vertex",
+        "livekit"
+      ],
+      "safety_critical": false,
+      "owner_vtid": "VTID-02771",
+      "notes": "Start (or reuse) a direct-message conversation with a named community member,"
+    },
+    {
+      "name": "list_conversations",
+      "implementations": [
+        "vertex",
+        "livekit"
+      ],
+      "safety_critical": false,
+      "owner_vtid": "VTID-02771",
+      "notes": "List the user's recent direct-message conversations, newest first, with"
+    },
+    {
+      "name": "mark_conversation_read",
+      "implementations": [
+        "vertex",
+        "livekit"
+      ],
+      "safety_critical": false,
+      "owner_vtid": "VTID-02771",
+      "notes": "Mark direct messages as read. With member set, marks that conversation;"
+    },
+    {
+      "name": "mute_conversation",
+      "implementations": [
+        "vertex",
+        "livekit"
+      ],
+      "safety_critical": false,
+      "owner_vtid": "VTID-02771",
+      "notes": "Mute a chat conversation. NOTE: chat muting is not supported in Vitana yet \u2014"
+    },
+    {
+      "name": "archive_conversation",
+      "implementations": [
+        "vertex",
+        "livekit"
+      ],
+      "safety_critical": true,
+      "owner_vtid": "VTID-02771",
+      "notes": "Archive a chat conversation. NOTE: chat archiving does not exist in Vitana \u2014"
+    },
+    {
+      "name": "update_account_visibility",
+      "implementations": [
+        "vertex",
+        "livekit"
+      ],
+      "safety_critical": true,
+      "owner_vtid": "VTID-02776",
+      "notes": "Set the visibility of the user's WHOLE profile: public, followers_only, or private."
+    },
+    {
+      "name": "update_privacy_field",
+      "implementations": [
+        "vertex",
+        "livekit"
+      ],
+      "safety_critical": true,
+      "owner_vtid": "VTID-02776",
+      "notes": "Set the visibility of ONE profile field: public, followers_only, or private."
+    },
+    {
+      "name": "block_user",
+      "implementations": [
+        "vertex",
+        "livekit"
+      ],
+      "safety_critical": true,
+      "owner_vtid": "VTID-02776",
+      "notes": "Block a community member so their posts and messages are hidden from the user."
+    },
+    {
+      "name": "unblock_user",
+      "implementations": [
+        "vertex",
+        "livekit"
+      ],
+      "safety_critical": true,
+      "owner_vtid": "VTID-02776",
+      "notes": "Unblock a previously blocked member so their posts and messages show again."
+    },
+    {
+      "name": "submit_bug_report",
+      "implementations": [
+        "vertex",
+        "livekit"
+      ],
+      "safety_critical": true,
+      "owner_vtid": "VTID-02768",
+      "notes": "File a bug ticket (kind=bug) in the feedback pipeline. No persona swap \u2014"
+    },
+    {
+      "name": "submit_support_ticket",
+      "implementations": [
+        "vertex",
+        "livekit"
+      ],
+      "safety_critical": true,
+      "owner_vtid": "VTID-02768",
+      "notes": "File a support ticket (kind=support_question) for a question the team"
+    },
+    {
+      "name": "submit_marketplace_dispute",
+      "implementations": [
+        "vertex",
+        "livekit"
+      ],
+      "safety_critical": true,
+      "owner_vtid": "VTID-02768",
+      "notes": "File a marketplace dispute ticket (kind=marketplace_claim): refunds, wrong"
+    },
+    {
+      "name": "submit_account_issue",
+      "implementations": [
+        "vertex",
+        "livekit"
+      ],
+      "safety_critical": true,
+      "owner_vtid": "VTID-02768",
+      "notes": "File an account ticket (kind=account_issue): login problems, password or"
+    },
+    {
+      "name": "list_my_tickets",
+      "implementations": [
+        "vertex",
+        "livekit"
+      ],
+      "safety_critical": false,
+      "owner_vtid": "VTID-02768",
+      "notes": "List the user's OPEN feedback tickets (bugs, support, disputes, account)"
+    },
+    {
+      "name": "set_language",
+      "implementations": [
+        "vertex",
+        "livekit"
+      ],
+      "safety_critical": false,
+      "owner_vtid": "VTID-02772",
+      "notes": "Set the user's app + voice language. Persists the same setting the app's"
+    },
+    {
+      "name": "set_theme",
+      "implementations": [
+        "vertex",
+        "livekit"
+      ],
+      "safety_critical": false,
+      "owner_vtid": "VTID-02772",
+      "notes": "Handle a request to change the visual theme (light / dark / system)."
+    },
+    {
+      "name": "set_voice_preferences",
+      "implementations": [
+        "vertex",
+        "livekit"
+      ],
+      "safety_critical": false,
+      "owner_vtid": "VTID-02772",
+      "notes": "Tune the app's spoken-voice settings: pace (slow / normal / fast), voice"
+    },
+    {
+      "name": "list_connected_apps",
+      "implementations": [
+        "vertex",
+        "livekit"
+      ],
+      "safety_critical": false,
+      "owner_vtid": "VTID-02772",
+      "notes": "List the user's connected integrations: Google, YouTube, social accounts,"
+    },
+    {
+      "name": "disconnect_app",
+      "implementations": [
+        "vertex",
+        "livekit"
+      ],
+      "safety_critical": true,
+      "owner_vtid": "VTID-02772",
+      "notes": "Disconnect one connected integration (Google, YouTube, Instagram, an AI"
+    },
+    {
+      "name": "global_search",
+      "implementations": [
+        "vertex",
+        "livekit"
+      ],
+      "safety_critical": false,
+      "owner_vtid": "VTID-02773",
+      "notes": "Unified community search across people, posts, events, groups, products,"
+    },
+    {
+      "name": "browse_news_feed",
+      "implementations": [
+        "vertex",
+        "livekit"
+      ],
+      "safety_critical": false,
+      "owner_vtid": "VTID-02773",
+      "notes": "Read the community news feed aloud: recent posts with author and a"
+    },
+    {
+      "name": "snooze_recommendation",
+      "implementations": [
+        "vertex",
+        "livekit"
+      ],
+      "safety_critical": false,
+      "owner_vtid": "VTID-02775",
+      "notes": "Snooze an Autopilot recommendation so it resurfaces later (default 24h,"
+    },
+    {
+      "name": "dismiss_recommendation",
+      "implementations": [
+        "vertex",
+        "livekit"
+      ],
+      "safety_critical": true,
+      "owner_vtid": "VTID-02775",
+      "notes": "Dismiss an Autopilot recommendation for good (it will not come back)."
+    },
+    {
+      "name": "explain_recommendation",
+      "implementations": [
+        "vertex",
+        "livekit"
+      ],
+      "safety_critical": false,
+      "owner_vtid": "VTID-02775",
+      "notes": "Explain WHY a specific Autopilot recommendation was suggested: its"
+    },
+    {
+      "name": "update_intent",
+      "implementations": [
+        "vertex",
+        "livekit"
+      ],
+      "safety_critical": true,
+      "owner_vtid": "VTID-02777",
+      "notes": "Edit one of the user's OWN intent posts (title, description text, or"
+    },
+    {
+      "name": "delete_intent",
+      "implementations": [
+        "vertex",
+        "livekit"
+      ],
+      "safety_critical": true,
+      "owner_vtid": "VTID-02777",
+      "notes": "Take down one of the user's OWN intent posts from the board (closes it;"
+    },
+    {
+      "name": "browse_intent_board",
+      "implementations": [
+        "vertex",
+        "livekit"
+      ],
+      "safety_critical": false,
+      "owner_vtid": "VTID-02777",
+      "notes": "Browse the open community intent board (Open Asks): what other members"
+    },
+    {
+      "name": "dispute_match",
+      "implementations": [
+        "vertex",
+        "livekit"
+      ],
+      "safety_critical": true,
+      "owner_vtid": "VTID-02777",
+      "notes": "Open a dispute on a match the user is part of (no-show, misrepresented,"
+    },
+    {
+      "name": "find_perfect_match",
+      "implementations": [
+        "vertex",
+        "livekit"
+      ],
+      "safety_critical": false,
+      "owner_vtid": "VTID-02780",
+      "notes": "Flagship people-match: find the PERFECT person for the user \u2014 workout"
+    },
+    {
+      "name": "get_emotional_state",
+      "implementations": [
+        "vertex",
+        "livekit"
+      ],
+      "safety_critical": false,
+      "owner_vtid": "VTID-02778",
+      "notes": "Read the user's current emotional and cognitive signals (D28): mood,"
+    },
+    {
+      "name": "get_situational_awareness",
+      "implementations": [
+        "vertex",
+        "livekit"
+      ],
+      "safety_critical": false,
+      "owner_vtid": "VTID-02778",
+      "notes": "Summarize the user's current situation (D32): time-of-day window,"
+    },
+    {
+      "name": "get_availability",
+      "implementations": [
+        "vertex",
+        "livekit"
+      ],
+      "safety_critical": false,
+      "owner_vtid": "VTID-02778",
+      "notes": "Check how available and ready the user is right now (D33): availability"
+    },
+    {
+      "name": "get_environmental_context",
+      "implementations": [
+        "vertex",
+        "livekit"
+      ],
+      "safety_critical": false,
+      "owner_vtid": "VTID-02778",
+      "notes": "Read the user's environment and mobility context (D34): where they"
+    },
+    {
+      "name": "get_life_stage_context",
+      "implementations": [
+        "vertex",
+        "livekit"
+      ],
+      "safety_critical": false,
+      "owner_vtid": "VTID-02778",
+      "notes": "Read the user's life-stage context (D40): life phase and stability,"
+    },
+    {
+      "name": "follow_member",
+      "implementations": [
+        "vertex",
+        "livekit"
+      ],
+      "safety_critical": false,
+      "owner_vtid": "BOOTSTRAP-VOICE-P0-GAPS",
+      "notes": "FOLLOW a community member by their spoken name."
+    },
+    {
+      "name": "unfollow_member",
+      "implementations": [
+        "vertex",
+        "livekit"
+      ],
+      "safety_critical": true,
+      "owner_vtid": "BOOTSTRAP-VOICE-P0-GAPS",
+      "notes": "UNFOLLOW a community member by name. Two-step confirm:"
+    },
+    {
+      "name": "get_notifications",
+      "implementations": [
+        "vertex",
+        "livekit"
+      ],
+      "safety_critical": false,
+      "owner_vtid": "BOOTSTRAP-VOICE-P0-GAPS",
+      "notes": "READ the user's recent notifications, unread first. Speakable."
+    },
+    {
+      "name": "mark_notifications_read",
+      "implementations": [
+        "vertex",
+        "livekit"
+      ],
+      "safety_critical": false,
+      "owner_vtid": "BOOTSTRAP-VOICE-P0-GAPS",
+      "notes": "MARK notifications as read \u2014 all unread ones, or only those whose title"
+    },
+    {
+      "name": "get_wallet_balance",
+      "implementations": [
+        "vertex",
+        "livekit"
+      ],
+      "safety_critical": false,
+      "owner_vtid": "BOOTSTRAP-VOICE-P0-GAPS",
+      "notes": "READ-ONLY wallet snapshot: balance per currency, active subscription,"
+    },
+    {
+      "name": "update_profile",
+      "implementations": [
+        "vertex",
+        "livekit"
+      ],
+      "safety_critical": true,
+      "owner_vtid": "BOOTSTRAP-VOICE-P0-GAPS",
+      "notes": "UPDATE simple own-profile fields: display_name, bio, city, country, location."
+    },
+    {
+      "name": "play_podcast",
+      "implementations": [
+        "vertex",
+        "livekit"
+      ],
+      "safety_critical": false,
+      "owner_vtid": "BOOTSTRAP-VOICE-P0-GAPS",
+      "notes": "PLAY an internal Vitana Media Hub podcast by title or topic. Returns an"
+    },
+    {
+      "name": "like_post",
+      "implementations": [
+        "vertex",
+        "livekit"
+      ],
+      "safety_critical": false,
+      "owner_vtid": "BOOTSTRAP-VOICE-P0-GAPS",
+      "notes": "LIKE a community feed post \u2014 resolves 'the last post from <name>' to that"
+    },
+    {
+      "name": "comment_on_post",
+      "implementations": [
+        "vertex",
+        "livekit"
+      ],
+      "safety_critical": false,
+      "owner_vtid": "BOOTSTRAP-VOICE-P0-GAPS",
+      "notes": "COMMENT on a community feed post (public text). Two-step confirm:"
+    },
+    {
+      "name": "dev_list_vtids",
+      "implementations": [
+        "vertex",
+        "livekit"
+      ],
+      "safety_critical": false,
+      "owner_vtid": "VTID-02782",
+      "notes": "DEVELOPER ONLY. List recent VTID tasks from the ledger (id, title, status)."
+    },
+    {
+      "name": "dev_get_vtid_status",
+      "implementations": [
+        "vertex",
+        "livekit"
+      ],
+      "safety_critical": false,
+      "owner_vtid": "VTID-02782",
+      "notes": "DEVELOPER ONLY. Get one VTID task by id \u2014 status, spec status, terminal state, claim."
+    },
+    {
+      "name": "dev_list_pending_approvals",
+      "implementations": [
+        "vertex",
+        "livekit"
+      ],
+      "safety_critical": false,
+      "owner_vtid": "VTID-02782",
+      "notes": "DEVELOPER ONLY. List PRs/actions waiting in the approvals queue (same queue as the Command Hub approvals view)."
+    },
+    {
+      "name": "dev_count_approvals",
+      "implementations": [
+        "vertex",
+        "livekit"
+      ],
+      "safety_critical": false,
+      "owner_vtid": "VTID-02782",
+      "notes": "DEVELOPER ONLY. Count how many items are pending approval."
+    },
+    {
+      "name": "dev_approve_pr",
+      "implementations": [
+        "vertex",
+        "livekit"
+      ],
+      "safety_critical": true,
+      "owner_vtid": "VTID-02782",
+      "notes": "DEVELOPER ONLY. Approve a queued approval \u2014 merges its PR via the governed pipeline."
+    },
+    {
+      "name": "dev_reject_pr",
+      "implementations": [
+        "vertex",
+        "livekit"
+      ],
+      "safety_critical": true,
+      "owner_vtid": "VTID-02782",
+      "notes": "DEVELOPER ONLY. Reject a queued approval and record why."
+    },
+    {
+      "name": "dev_list_voice_sessions",
+      "implementations": [
+        "vertex",
+        "livekit"
+      ],
+      "safety_critical": false,
+      "owner_vtid": "VTID-02782",
+      "notes": "DEVELOPER ONLY. List recent ORB voice sessions from the Voice Lab (who, when, duration, turns)."
+    },
+    {
+      "name": "dev_list_routines",
+      "implementations": [
+        "vertex",
+        "livekit"
+      ],
+      "safety_critical": false,
+      "owner_vtid": "VTID-02782",
+      "notes": "DEVELOPER ONLY. List the daily Claude routines with last-run status."
+    },
+    {
+      "name": "dev_get_routine_detail",
+      "implementations": [
+        "vertex",
+        "livekit"
+      ],
+      "safety_critical": false,
+      "owner_vtid": "VTID-02782",
+      "notes": "DEVELOPER ONLY. Detail one routine plus its last runs."
+    },
+    {
+      "name": "dev_list_active_healing",
+      "implementations": [
+        "vertex",
+        "livekit"
+      ],
+      "safety_critical": false,
+      "owner_vtid": "VTID-02782",
+      "notes": "DEVELOPER ONLY. Show self-healing work currently in flight: active healing VTIDs and pending diagnoses."
+    },
+    {
+      "name": "dev_get_autonomy_pulse",
+      "implementations": [
+        "vertex",
+        "livekit"
+      ],
+      "safety_critical": false,
+      "owner_vtid": "VTID-02782",
+      "notes": "DEVELOPER ONLY. One-shot autonomy status: pending findings, pending heals, executions"
+    },
+    {
+      "name": "dev_list_agents",
+      "implementations": [
+        "vertex",
+        "livekit"
+      ],
+      "safety_critical": false,
+      "owner_vtid": "VTID-02782",
+      "notes": "DEVELOPER ONLY. List registered agents with heartbeat-derived health (healthy/degraded/down)."
+    }
   ],
-
   "oasis_topics": [
-    { "topic": "orb.session.started",                "implementations": ["vertex"] },
-    { "topic": "orb.session.ended",                  "implementations": ["vertex"] },
-    { "topic": "orb.session.summary",                "implementations": ["vertex"] },
-    { "topic": "orb.turn.received",                  "implementations": ["vertex"] },
-    { "topic": "orb.turn.responded",                 "implementations": ["vertex"] },
-
-    { "topic": "orb.live.context.bootstrap",         "implementations": ["vertex"] },
-    { "topic": "orb.live.context.bootstrap.skipped", "implementations": ["vertex"] },
-    { "topic": "orb.live.startup.config_missing",    "implementations": ["vertex"] },
-    { "topic": "orb.live.tool.executed",             "implementations": ["vertex"] },
-
-    { "topic": "orb.memory.context_injected",        "implementations": ["vertex"] },
-    { "topic": "orb.memory.debug_requested",         "implementations": ["vertex"] },
-    { "topic": "orb.memory.debug_snapshot",          "implementations": ["vertex"] },
-
-    { "topic": "orb.navigator.consulted",            "implementations": ["vertex"] },
-    { "topic": "orb.navigator.requested",            "implementations": ["vertex"] },
-    { "topic": "orb.navigator.dispatched",           "implementations": ["vertex"] },
-    { "topic": "orb.navigator.blocked",              "implementations": ["vertex"] },
-
-    { "topic": "orb.intent.debug_requested",         "implementations": ["vertex"] },
-    { "topic": "orb.intent.debug_result",            "implementations": ["vertex"] },
-    { "topic": "orb.task_state_query.completed",     "implementations": ["vertex"] },
-
-    { "topic": "orb.session.continuity.cleared",     "implementations": ["vertex"] },
-    { "topic": "orb.session.continuity.persisted",   "implementations": ["vertex"] },
-    { "topic": "orb.session.audio_ready.acked",      "implementations": ["vertex"] },
-
-    { "topic": "admin.briefing.injected",            "implementations": ["vertex"] },
-    { "topic": "calendar.event.created",             "implementations": ["vertex"] },
-    { "topic": "feedback.ticket.created",            "implementations": ["vertex"] },
-    { "topic": "voice.message.sent",                 "implementations": ["vertex"] },
-
-    { "topic": "orb.livekit.tool.switch_persona.called",       "implementations": ["livekit"], "notes": "INTENTIONALLY ONE-SIDED (LiveKit-only): per-tool call/result telemetry namespace. Vertex emits the unified orb.live.tool.executed instead. Declared in BOOTSTRAP-VOICE-TOOL-PARITY audit." },
-    { "topic": "orb.livekit.tool.switch_persona.result",       "implementations": ["livekit"] },
-    { "topic": "orb.livekit.tool.report_to_specialist.called", "implementations": ["livekit"] },
-    { "topic": "orb.livekit.tool.report_to_specialist.result", "implementations": ["livekit"] },
-    { "topic": "orb.livekit.tool.resolve_recipient.called",    "implementations": ["livekit"] },
-    { "topic": "orb.livekit.tool.resolve_recipient.result",    "implementations": ["livekit"] },
-    { "topic": "orb.livekit.tool.send_chat_message.called",    "implementations": ["livekit"] },
-    { "topic": "orb.livekit.tool.send_chat_message.result",    "implementations": ["livekit"] }
+    {
+      "topic": "orb.session.started",
+      "implementations": [
+        "vertex"
+      ]
+    },
+    {
+      "topic": "orb.session.ended",
+      "implementations": [
+        "vertex"
+      ]
+    },
+    {
+      "topic": "orb.session.summary",
+      "implementations": [
+        "vertex"
+      ]
+    },
+    {
+      "topic": "orb.turn.received",
+      "implementations": [
+        "vertex"
+      ]
+    },
+    {
+      "topic": "orb.turn.responded",
+      "implementations": [
+        "vertex"
+      ]
+    },
+    {
+      "topic": "orb.live.context.bootstrap",
+      "implementations": [
+        "vertex"
+      ]
+    },
+    {
+      "topic": "orb.live.context.bootstrap.skipped",
+      "implementations": [
+        "vertex"
+      ]
+    },
+    {
+      "topic": "orb.live.startup.config_missing",
+      "implementations": [
+        "vertex"
+      ]
+    },
+    {
+      "topic": "orb.live.tool.executed",
+      "implementations": [
+        "vertex"
+      ]
+    },
+    {
+      "topic": "orb.memory.context_injected",
+      "implementations": [
+        "vertex"
+      ]
+    },
+    {
+      "topic": "orb.memory.debug_requested",
+      "implementations": [
+        "vertex"
+      ]
+    },
+    {
+      "topic": "orb.memory.debug_snapshot",
+      "implementations": [
+        "vertex"
+      ]
+    },
+    {
+      "topic": "orb.navigator.consulted",
+      "implementations": [
+        "vertex"
+      ]
+    },
+    {
+      "topic": "orb.navigator.requested",
+      "implementations": [
+        "vertex"
+      ]
+    },
+    {
+      "topic": "orb.navigator.dispatched",
+      "implementations": [
+        "vertex"
+      ]
+    },
+    {
+      "topic": "orb.navigator.blocked",
+      "implementations": [
+        "vertex"
+      ]
+    },
+    {
+      "topic": "orb.intent.debug_requested",
+      "implementations": [
+        "vertex"
+      ]
+    },
+    {
+      "topic": "orb.intent.debug_result",
+      "implementations": [
+        "vertex"
+      ]
+    },
+    {
+      "topic": "orb.task_state_query.completed",
+      "implementations": [
+        "vertex"
+      ]
+    },
+    {
+      "topic": "orb.session.continuity.cleared",
+      "implementations": [
+        "vertex"
+      ]
+    },
+    {
+      "topic": "orb.session.continuity.persisted",
+      "implementations": [
+        "vertex"
+      ]
+    },
+    {
+      "topic": "orb.session.audio_ready.acked",
+      "implementations": [
+        "vertex"
+      ]
+    },
+    {
+      "topic": "admin.briefing.injected",
+      "implementations": [
+        "vertex"
+      ]
+    },
+    {
+      "topic": "calendar.event.created",
+      "implementations": [
+        "vertex"
+      ]
+    },
+    {
+      "topic": "feedback.ticket.created",
+      "implementations": [
+        "vertex"
+      ]
+    },
+    {
+      "topic": "voice.message.sent",
+      "implementations": [
+        "vertex"
+      ]
+    },
+    {
+      "topic": "orb.livekit.tool.switch_persona.called",
+      "implementations": [
+        "livekit"
+      ],
+      "notes": "INTENTIONALLY ONE-SIDED (LiveKit-only): per-tool call/result telemetry namespace. Vertex emits the unified orb.live.tool.executed instead. Declared in BOOTSTRAP-VOICE-TOOL-PARITY audit."
+    },
+    {
+      "topic": "orb.livekit.tool.switch_persona.result",
+      "implementations": [
+        "livekit"
+      ]
+    },
+    {
+      "topic": "orb.livekit.tool.report_to_specialist.called",
+      "implementations": [
+        "livekit"
+      ]
+    },
+    {
+      "topic": "orb.livekit.tool.report_to_specialist.result",
+      "implementations": [
+        "livekit"
+      ]
+    },
+    {
+      "topic": "orb.livekit.tool.resolve_recipient.called",
+      "implementations": [
+        "livekit"
+      ]
+    },
+    {
+      "topic": "orb.livekit.tool.resolve_recipient.result",
+      "implementations": [
+        "livekit"
+      ]
+    },
+    {
+      "topic": "orb.livekit.tool.send_chat_message.called",
+      "implementations": [
+        "livekit"
+      ]
+    },
+    {
+      "topic": "orb.livekit.tool.send_chat_message.result",
+      "implementations": [
+        "livekit"
+      ]
+    }
   ],
-
   "watchdogs": [
-    { "name": "session_timeout_ms",         "value": 1800000,  "description": "30 min", "implementations": ["vertex"] },
-    { "name": "max_session_age_ms",         "value": 1800000,  "description": "30 min, equal to session_timeout_ms", "implementations": ["vertex"] },
-    { "name": "conversation_timeout_ms",    "value": 86400000, "description": "24 h",   "implementations": ["vertex"] },
-    { "name": "transcript_retention_ms",    "value": 3600000,  "description": "1 h",    "implementations": ["vertex"] },
-    { "name": "ip_geo_cache_ttl_ms",        "value": 21600000, "description": "6 h — IP_GEO_CACHE_TTL_MS in orb-live.ts (`// 6 hours`) is canonical; spec previously claimed 1 h (BOOTSTRAP-VOICE-TOOL-PARITY value_mismatch fix). LiveKit's watchdogs.py uses 1 h but does not gate this constant via the spec (implementations: vertex only).", "implementations": ["vertex"] },
-    { "name": "max_connections_per_ip",     "value": 5,        "description": "DoS guard", "implementations": ["vertex"] },
-    { "name": "max_reconnects",             "value": 10,       "description": "Max reconnects per session (~50 min total). VTID-STREAM-RECONNECT.", "implementations": ["vertex"] },
-    { "name": "max_tool_response_chars",    "value": 4000,     "description": "Default cap; some sites use 2000/3000", "implementations": ["vertex"] },
-    { "name": "max_history_chars",          "value": 4000,     "description": "System-instruction last-turns budget", "implementations": ["vertex"] },
-    { "name": "extraction_throttle_ms",     "value": 60000,    "description": "Cognee fact-extraction debounce", "implementations": ["vertex"] },
-    { "name": "greeting_prebuffer_fallback_ms","value": 1500,   "description": "DEV-COMHU-0513 — GREETING_PREBUFFER_FALLBACK_MS in orb-live.ts. When FEATURE_ORB_GREETING_PREBUFFER_ENV is live, the WS greeting prompt is dispatched on connect and its audio held until the client's audio_ready; if that ack never arrives, the held greeting is flushed after this timeout so the user is never left in silence.", "implementations": ["vertex"] },
-    { "name": "bootstrap_rebuild_min_age_ms","value": 60000,   "description": "Re-bootstrap floor on reconnect", "implementations": ["vertex"] },
-    { "name": "token_refresh_skew_ms",      "value": 300000,   "description": "5 min — refresh the cached ADC access token this far ahead of expiry so getAccessToken() never blocks the live-connect path", "implementations": ["vertex"] },
-    { "name": "token_default_ttl_ms",       "value": 3300000,  "description": "55 min — fallback ADC token TTL when the auth client doesn't expose expiry_date", "implementations": ["vertex"] },
-    { "name": "tool_cache_ttl_ms",          "value": 120000,   "description": "2 min — per-session cache TTL for read-only retrieval tools (search_memory/search_knowledge); repeat lookups skip the blocking function_response round-trip (BOOTSTRAP-ORB-LATENCY-PHASE2)", "implementations": ["vertex"] },
-    { "name": "vertex_bootstrap_cache_ttl_ms", "value": 300000, "description": "5 min — per-identity cache TTL for buildBootstrapContextPack on the Vertex session-start path; filled by /live/session/prewarm so the first tap skips the 400-800ms context build (BOOTSTRAP-ORB-LATENCY-PHASE2)", "implementations": ["vertex"] }
+    {
+      "name": "session_timeout_ms",
+      "value": 1800000,
+      "description": "30 min",
+      "implementations": [
+        "vertex"
+      ]
+    },
+    {
+      "name": "max_session_age_ms",
+      "value": 1800000,
+      "description": "30 min, equal to session_timeout_ms",
+      "implementations": [
+        "vertex"
+      ]
+    },
+    {
+      "name": "conversation_timeout_ms",
+      "value": 86400000,
+      "description": "24 h",
+      "implementations": [
+        "vertex"
+      ]
+    },
+    {
+      "name": "transcript_retention_ms",
+      "value": 3600000,
+      "description": "1 h",
+      "implementations": [
+        "vertex"
+      ]
+    },
+    {
+      "name": "ip_geo_cache_ttl_ms",
+      "value": 21600000,
+      "description": "6 h \u2014 IP_GEO_CACHE_TTL_MS in orb-live.ts (`// 6 hours`) is canonical; spec previously claimed 1 h (BOOTSTRAP-VOICE-TOOL-PARITY value_mismatch fix). LiveKit's watchdogs.py uses 1 h but does not gate this constant via the spec (implementations: vertex only).",
+      "implementations": [
+        "vertex"
+      ]
+    },
+    {
+      "name": "max_connections_per_ip",
+      "value": 5,
+      "description": "DoS guard",
+      "implementations": [
+        "vertex"
+      ]
+    },
+    {
+      "name": "max_reconnects",
+      "value": 10,
+      "description": "Max reconnects per session (~50 min total). VTID-STREAM-RECONNECT.",
+      "implementations": [
+        "vertex"
+      ]
+    },
+    {
+      "name": "max_tool_response_chars",
+      "value": 4000,
+      "description": "Default cap; some sites use 2000/3000",
+      "implementations": [
+        "vertex"
+      ]
+    },
+    {
+      "name": "max_history_chars",
+      "value": 4000,
+      "description": "System-instruction last-turns budget",
+      "implementations": [
+        "vertex"
+      ]
+    },
+    {
+      "name": "extraction_throttle_ms",
+      "value": 60000,
+      "description": "Cognee fact-extraction debounce",
+      "implementations": [
+        "vertex"
+      ]
+    },
+    {
+      "name": "greeting_prebuffer_fallback_ms",
+      "value": 1500,
+      "description": "DEV-COMHU-0513 \u2014 GREETING_PREBUFFER_FALLBACK_MS in orb-live.ts. When FEATURE_ORB_GREETING_PREBUFFER_ENV is live, the WS greeting prompt is dispatched on connect and its audio held until the client's audio_ready; if that ack never arrives, the held greeting is flushed after this timeout so the user is never left in silence.",
+      "implementations": [
+        "vertex"
+      ]
+    },
+    {
+      "name": "bootstrap_rebuild_min_age_ms",
+      "value": 60000,
+      "description": "Re-bootstrap floor on reconnect",
+      "implementations": [
+        "vertex"
+      ]
+    },
+    {
+      "name": "token_refresh_skew_ms",
+      "value": 300000,
+      "description": "5 min \u2014 refresh the cached ADC access token this far ahead of expiry so getAccessToken() never blocks the live-connect path",
+      "implementations": [
+        "vertex"
+      ]
+    },
+    {
+      "name": "token_default_ttl_ms",
+      "value": 3300000,
+      "description": "55 min \u2014 fallback ADC token TTL when the auth client doesn't expose expiry_date",
+      "implementations": [
+        "vertex"
+      ]
+    },
+    {
+      "name": "tool_cache_ttl_ms",
+      "value": 120000,
+      "description": "2 min \u2014 per-session cache TTL for read-only retrieval tools (search_memory/search_knowledge); repeat lookups skip the blocking function_response round-trip (BOOTSTRAP-ORB-LATENCY-PHASE2)",
+      "implementations": [
+        "vertex"
+      ]
+    },
+    {
+      "name": "vertex_bootstrap_cache_ttl_ms",
+      "value": 300000,
+      "description": "5 min \u2014 per-identity cache TTL for buildBootstrapContextPack on the Vertex session-start path; filled by /live/session/prewarm so the first tap skips the 400-800ms context build (BOOTSTRAP-ORB-LATENCY-PHASE2)",
+      "implementations": [
+        "vertex"
+      ]
+    }
   ],
-
   "documented_invariants": {
-    "description": "Behaviours required by both implementations but enforced by inline checks rather than named constants. The parity scanner does not statically verify these (yet) — they live in spec.json so reviewers know the invariant exists, and to anchor future PRs that promote them to named constants.",
+    "description": "Behaviours required by both implementations but enforced by inline checks rather than named constants. The parity scanner does not statically verify these (yet) \u2014 they live in spec.json so reviewers know the invariant exists, and to anchor future PRs that promote them to named constants.",
     "items": [
-      { "name": "vad_silence_ms_range",            "value": "500..3000", "description": "VAD silence-duration tunable bounds (VTID-RESPONSE-DELAY). Inline range check in /live/session/start payload validation.", "implementations": ["vertex"] },
-      { "name": "tool_loop_guard_max_consecutive", "value": 5, "description": "Force-flush after 5 consecutive tool calls without user-visible audio output (VTID-TOOLGUARD). On LiveKit, equivalent is AgentSession(max_tool_steps=5)." }
+      {
+        "name": "vad_silence_ms_range",
+        "value": "500..3000",
+        "description": "VAD silence-duration tunable bounds (VTID-RESPONSE-DELAY). Inline range check in /live/session/start payload validation.",
+        "implementations": [
+          "vertex"
+        ]
+      },
+      {
+        "name": "tool_loop_guard_max_consecutive",
+        "value": 5,
+        "description": "Force-flush after 5 consecutive tool calls without user-visible audio output (VTID-TOOLGUARD). On LiveKit, equivalent is AgentSession(max_tool_steps=5)."
+      }
     ]
   },
-
   "system_instruction_params": {
     "authenticated_signature": [
       "lang",
@@ -191,8 +1882,14 @@
     "impl_specific_optional": {
       "description": "Trailing OPTIONAL parameters that exist on only one implementation and are intentionally NOT part of the shared contract. The scanner strips these (after case-normalisation) before comparing signatures, so they do not register as drift. Adding a new name here is an explicit declaration that a parameter is one-sided on purpose.",
       "authenticated": {
-        "vertex": ["omitGreetingPolicy", "surface"],
-        "livekit": ["firstName", "displayName"]
+        "vertex": [
+          "omitGreetingPolicy",
+          "surface"
+        ],
+        "livekit": [
+          "firstName",
+          "displayName"
+        ]
       },
       "anonymous": {
         "vertex": [],
@@ -202,25 +1899,37 @@
     "case_convention": "snake_case",
     "notes": "These are the parameter NAMES, not the prompt template. Each implementation owns its own template; only the shared parameter list must match across implementations. Cross-language case convention is NOT drift: the scanner normalises every name to `case_convention` (snake_case) before comparing, so TS `voiceStyle` and Python `voice_style` are considered equal. Names listed in `impl_specific_optional` are stripped before comparison (intentional one-sided params). Drift in any remaining shared name is a parity violation; drift in the template is not (the system_instruction golden-file test catches template drift separately, on the same fixed input)."
   },
-
-  "supported_languages": ["en", "de", "fr", "es", "ar", "zh", "ru", "sr"],
-
+  "supported_languages": [
+    "en",
+    "de",
+    "fr",
+    "es",
+    "ar",
+    "zh",
+    "ru",
+    "sr"
+  ],
   "audio": {
     "input_sample_rate_hz": 16000,
     "input_format": "PCM",
     "output_sample_rate_hz": 24000,
     "output_format": "PCM",
     "video_input_format": "JPEG 768x768 @ 1 FPS",
-    "implementations": ["vertex"]
+    "implementations": [
+      "vertex"
+    ]
   },
-
   "active_provider_switch": {
     "global_flag_key": "voice.active_provider",
-    "values": ["vertex", "livekit"],
+    "values": [
+      "vertex",
+      "livekit"
+    ],
     "anti_flap_cooldown_seconds": 3600,
-    "implementations": ["vertex"]
+    "implementations": [
+      "vertex"
+    ]
   },
-
   "_meta": {
     "spec_status": "draft",
     "next_steps": [
@@ -228,7 +1937,7 @@
       "extract real arg JSON Schemas for each tool from orb-live.ts (this v0.1 has names + flags but not arg schemas)",
       "wire the LiveKit-side codegen target once services/agents/orb-agent/ ships",
       "promote the CI from report-only to merge gate once 30 days of green runs are recorded",
-      "EXTRACTOR GAP (BOOTSTRAP-VOICE-TOOL-PARITY): extract-ts.ts only walks orb-live.ts. The 11 remaining `missing_in_vertex` items are false negatives — they ARE implemented on the Vertex side, just outside that single file: (a) OASIS topics orb.live.tool.executed (orb/live/session/upstream-message-handler.ts), orb.navigator.requested/dispatched/blocked (services/orb-tools-shared.ts, upstream-message-handler.ts), feedback.ticket.created (services/report-to-specialist-core.ts); (b) watchdogs session_timeout_ms, conversation_timeout_ms, max_connections_per_ip, max_reconnects, max_history_chars, extraction_throttle_ms — all imported from ../orb/live/config. Fix is to widen the extractor's file set to the orb/live module tree (separate PR — out of scope for the spec-reconciliation pass). These stay declared as vertex because they are genuinely implemented."
+      "EXTRACTOR GAP (BOOTSTRAP-VOICE-TOOL-PARITY): extract-ts.ts only walks orb-live.ts. The 11 remaining `missing_in_vertex` items are false negatives \u2014 they ARE implemented on the Vertex side, just outside that single file: (a) OASIS topics orb.live.tool.executed (orb/live/session/upstream-message-handler.ts), orb.navigator.requested/dispatched/blocked (services/orb-tools-shared.ts, upstream-message-handler.ts), feedback.ticket.created (services/report-to-specialist-core.ts); (b) watchdogs session_timeout_ms, conversation_timeout_ms, max_connections_per_ip, max_reconnects, max_history_chars, extraction_throttle_ms \u2014 all imported from ../orb/live/config. Fix is to widen the extractor's file set to the orb/live module tree (separate PR \u2014 out of scope for the spec-reconciliation pass). These stay declared as vertex because they are genuinely implemented."
     ],
     "owners": "ORB Voice team",
     "related_memory": [

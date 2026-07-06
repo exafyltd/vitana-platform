@@ -1695,7 +1695,659 @@ overlay UI listens for this directive and fades out the chime.
 Call this when the user says any kind of "I'm done" / "nein
 danke" / "enough" — interpret IN CONTEXT, not by keyword match.
 If the user is ambiguous, ask a clarifying question first; only
-call this when you are confident the session should end."
+call this when you are confident the session should end.
+
+### get_highest_vitana_index
+Get the community member with the highest Vitana Index right now.
+Returns their name and score; private profiles are never revealed.
+CALL WHEN the user asks: "who has the highest Vitana Index?",
+"who is the healthiest member?", "wer hat den höchsten Vitana Index?",
+"wer ist am gesündesten?".
+After the tool runs, read the returned text aloud (one sentence).
+
+### get_top_in_pillar
+Get the community member with the top score in ONE Vitana Index pillar.
+pillar must be one of: nutrition, hydration, exercise, sleep, mental.
+CALL WHEN the user asks: "who has the best sleep?", "who is the
+fittest?", "wer schläft am besten?", "wer ist am fittesten?",
+"wer trinkt am meisten Wasser?".
+After the tool runs, read the returned text aloud (one sentence).
+
+### get_first_member
+Get the very first (earliest-registered / OG) community member.
+CALL WHEN the user asks: "who was the first member?", "who is the
+longest-standing / OG member?", "wer war das erste Mitglied?",
+"wer ist am längsten dabei?".
+After the tool runs, read the returned text aloud (one sentence).
+
+### get_newest_member
+Get the most recently joined community member.
+CALL WHEN the user asks: "who is the newest member?", "who just
+joined?", "wer ist das neueste Mitglied?", "wer ist gerade beigetreten?".
+After the tool runs, read the returned text aloud (one sentence).
+
+### get_most_followed
+Get the community member with the most followers.
+CALL WHEN the user asks: "who has the most followers?", "who is the
+most popular member?", "wer hat die meisten Follower?", "wer ist am
+beliebtesten?".
+After the tool runs, read the returned text aloud (one sentence).
+
+### ask_who_is
+Answer ANY free-form "who is...?" superlative question about the
+community that the specific superlative tools above do not cover.
+Routes to the matching leaderboard (index, pillar, tenure, followers)
+or falls back to the general community-member ranking.
+CALL WHEN the user asks e.g.: "who is the most inspiring?", "who is
+the best runner?", "wer ist der/die inspirierendste?", "wer ist am
+aktivsten?". Pass the user's question verbatim as query.
+After the tool runs, read the returned text aloud, then stop.
+
+### list_diary_entries
+List the user's Daily Diary entries, newest first, optionally within a date window.
+CALL THIS WHEN the user says:
+  - "What did I write in my diary?" / "Was steht in meinem Tagebuch?"
+  - "Show my diary entries from last week" / "Zeig meine Tagebucheinträge"
+  - "What did I log yesterday?" / "Was habe ich gestern eingetragen?"
+Then summarize the entries naturally — do not read them verbatim or mention IDs.
+
+### get_diary_streak
+Get the user's diary streak: current consecutive days with an entry plus their longest streak ever.
+CALL THIS WHEN the user asks:
+  - "What's my diary streak?" / "Wie lang ist meine Tagebuch-Serie?"
+  - "How many days in a row have I journaled?" / "Wie viele Tage am Stück?"
+Then celebrate an active streak, or encourage a restart if it broke.
+
+### get_memory_timeline
+Chronological timeline of what Vitana remembers: memory items, extracted facts, and diary entries, newest first.
+CALL THIS WHEN the user asks:
+  - "What happened last month?" / "Was ist letzten Monat passiert?"
+  - "Show my memory timeline" / "Zeig meine Erinnerungs-Zeitleiste"
+  - "What did we talk about in June?" / "Worüber haben wir im Juni gesprochen?"
+Then retell the timeline as a short narrative in the user's language.
+
+### recall_memory_about
+Search stored memories and facts about ONE specific topic, person, or thing.
+CALL THIS WHEN the user asks:
+  - "What do you know about my sister?" / "Was weißt du über meine Schwester?"
+  - "Do you remember my trip to Rome?" / "Erinnerst du dich an meine Rom-Reise?"
+  - "What did I tell you about my project?" / "Was habe ich dir über mein Projekt erzählt?"
+Answer ONLY from the returned content — never invent memories. If empty, say so and offer to remember it now.
+Optional category filter: personal_identity, health_wellness, lifestyle_routines, network_relationships,
+learning_knowledge, business_projects, finance_assets, location_environment, digital_footprint,
+values_aspirations, autopilot_context, future_plans, uncategorized.
+
+### get_memory_garden_summary
+Overview of the user's Memory Garden: how many memories are stored per category.
+CALL THIS WHEN the user asks:
+  - "What do you remember about me?" / "Was weißt du alles über mich?"
+  - "How full is my Memory Garden?" / "Wie sieht mein Memory Garden aus?"
+  - "What kind of things have you saved?" / "Was hast du über mich gespeichert?"
+Then summarize warmly: total memories and the biggest categories first.
+For details on a specific topic, use recall_memory_about instead.
+
+### forget_memory
+Permanently delete ONE stored memory, only after the user explicitly confirms.
+CALL THIS WHEN the user says:
+  - "Forget that" / "Vergiss das" / "Lösch diese Erinnerung"
+  - "Delete what you saved about X" / "Lösch, was du über X gespeichert hast"
+Flow: find the memory_id via recall_memory_about, call WITHOUT confirm first —
+the tool returns the memory text; read it back and ask the user to confirm.
+Only when they clearly say yes, call again with confirm=true. Deletion is permanent.
+
+### reschedule_event
+Move an existing calendar event to a new start time (duration is kept unless new_end is given).
+WHEN TO CALL: "move my yoga to 6 pm", "reschedule my doctor appointment to Friday",
+"Verschieb mein Meeting auf morgen 10 Uhr", "Kannst du das Training auf Freitag legen?".
+Identify the event by event_id (preferred) or title_query (fuzzy title match).
+If multiple events match, the result lists candidates — ask the user which one, then call again with event_id.
+After success, confirm the new day and time back to the user.
+
+### cancel_event
+Cancel (soft-delete) a calendar event — the event stays in history with status "cancelled".
+WHEN TO CALL: "cancel my yoga class", "delete the dentist appointment",
+"Sag das Meeting morgen ab", "Lösch den Termin am Freitag".
+Destructive: first call WITHOUT confirm to fetch the event, ask the user to confirm,
+then call again with confirm=true and the event_id. Speak the cancelled title back.
+
+### complete_event
+Mark a calendar event as completed, skipped, or partially done.
+WHEN TO CALL: "I finished my workout", "mark the meditation as done", "I skipped my run today",
+"Ich habe das Training gemacht", "Hab die Meditation ausgelassen".
+outcome must be one of: completed, skipped, partial (default completed).
+After success, acknowledge briefly — completed health events feed the Vitana Index.
+
+### find_free_slot
+Find the next free slot of a given length in the user's calendar, within waking hours (8 AM-10 PM user-local).
+WHEN TO CALL: "when am I free for an hour?", "find me 30 minutes tomorrow",
+"Wann habe ich morgen Zeit?", "Finde mir eine freie Stunde diese Woche".
+duration_minutes is required (5-720). search_from/search_to are ISO 8601; default is the next 7 days.
+Pass the user's IANA timezone so waking hours and spoken times are local.
+Speak the found day + time back, or say nothing was free and offer to look further out.
+
+### get_event_details
+Read the full details of ONE calendar event: exact time, end, location, type, status, notes.
+WHEN TO CALL: "when exactly is my dentist appointment?", "where is the meetup?",
+"Wann genau ist mein Zahnarzttermin?", "Wo findet das Treffen statt?".
+Identify by event_id or title_query (fuzzy). If several match, the result lists candidates — ask which one.
+Speak the concrete details (day, time, place); never a raw data dump.
+
+### check_calendar_conflicts
+Check whether a proposed time window overlaps existing confirmed calendar events.
+WHEN TO CALL: before creating or rescheduling an event, or when the user asks
+"does 3 pm work on Friday?", "Passt Dienstag 10 Uhr?", "Habe ich da schon etwas?".
+start_time is required (ISO 8601); end_time defaults to one hour after start_time.
+If there are conflicts, name the overlapping events and suggest checking another time.
+
+### snooze_reminder
+Push an existing reminder out by N minutes (default 10, max 1440).
+CALL WHEN the user says 'snooze it', 'remind me again in 15 minutes',
+'verschieb die Erinnerung', 'erinnere mich später nochmal'.
+Pass reminder_id when known (e.g. a reminder just fired), otherwise
+text_query with words from the reminder. If the tool reports multiple
+matches, ask the user which one and call again with that reminder_id.
+After success, speak the confirmation with the new time from \`text\`.
+
+### update_reminder
+Edit an existing reminder's text and/or time.
+CALL WHEN the user says 'change my reminder to 9pm', 'make it say X',
+'ändere meine Erinnerung', 'verschiebe die Erinnerung auf 21 Uhr'.
+Identify via reminder_id or text_query. new_time is an absolute UTC ISO
+timestamp YOU compute from their words + timezone (min 60s in future).
+If multiple reminders match, ask which one, then call again with the id.
+After success, confirm the change using \`text\`.
+
+### acknowledge_reminder
+Mark a fired reminder as heard/acknowledged so it stops being re-delivered.
+CALL WHEN the user says 'got it', 'okay, I heard the reminder', 'dismiss it',
+'alles klar, habs gehört' after a reminder fired — but the task is NOT done yet.
+Use complete_reminder instead when the user actually DID the thing.
+Identify via reminder_id (preferred, e.g. from the fire event) or text_query.
+
+### complete_reminder
+Mark a reminder as DONE (the user did the thing). Sets status=completed.
+CALL WHEN the user says 'done', 'I took my magnesium, check it off',
+'erledigt', 'hab ich gemacht' about a reminder.
+Identify via reminder_id or text_query. If multiple match, ask which one.
+After success, give a short positive confirmation from \`text\`.
+
+### list_missed_reminders
+List reminders that fired but were never acknowledged (the user missed them).
+CALL WHEN the user asks 'did I miss anything?', 'what reminders did I miss?',
+'habe ich Erinnerungen verpasst?', or at the start of a session catch-up.
+Speak each missed reminder with its text and when it fired, then offer to
+snooze, complete, or acknowledge them.
+
+### set_alarm
+Set a wake-up/clock alarm at a specific time of day (optionally recurring).
+CALL WHEN the user says 'wake me at 7', 'set an alarm for 6:30 on weekdays',
+'stell einen Wecker auf 7 Uhr', 'weck mich um halb sieben'.
+time is 'HH:MM' (24h, interpreted in the given timezone — next occurrence)
+or an absolute ISO timestamp. ALWAYS pass the user timezone from context;
+UTC is assumed when omitted. recurrence: daily, weekdays, or omit for once.
+Prefer alarms for time-of-day wake-ups; use set_reminder for task reminders.
+After success, confirm with the day + time from \`text\`.
+
+### list_alarms
+List the user's active alarms with times and labels.
+CALL WHEN the user asks 'what alarms do I have?', 'when is my alarm?',
+'welche Wecker habe ich?', or before deleting/changing an alarm.
+Pass timezone so times are spoken in local wall-clock time.
+
+### delete_alarm
+Cancel an alarm. Two-step confirm flow: first call WITHOUT confirm to find
+the alarm (by alarm_id, label, or HH:MM time) — the tool answers with the
+match and asks you to confirm with the user. After the user explicitly says
+yes, call again with that alarm_id and confirm=true.
+CALL WHEN the user says 'delete my alarm', 'cancel the 7am alarm',
+'lösch den Wecker', 'Wecker ausschalten'.
+
+### start_timer
+Start a countdown timer (1-1440 minutes).
+CALL WHEN the user says 'set a timer for 10 minutes', 'timer for the pasta',
+'stell einen Timer auf 10 Minuten', 'Countdown 20 Minuten'.
+For focused work blocks prefer start_pomodoro. After success, confirm the
+duration and label from \`text\`.
+
+### start_pomodoro
+Start a pomodoro focus block (5-90 minutes; 25 if omitted).
+CALL WHEN the user says 'start a pomodoro', 'let's do a focus session',
+'starte eine Pomodoro-Einheit', '45 Minuten Fokuszeit'.
+After success, confirm the length and encourage focused work.
+
+### list_active_timers
+List running timers and pomodoros with the remaining time on each.
+CALL WHEN the user asks 'how much time is left?', 'is my timer still running?',
+'wie lange läuft mein Timer noch?', 'wie viel Zeit habe ich noch?'.
+Speak each entry with its label and remaining time from \`text\`.
+
+### get_world_time
+Get the current local time in a city or IANA timezone (no internet needed).
+CALL WHEN the user asks 'what time is it in Tokyo?', 'wie spät ist es in
+Belgrad?', 'what's the time in New York right now?'.
+location accepts a major city name (Berlin, Belgrade, London, New York,
+Tokyo, ...) or any IANA zone like 'Europe/Berlin'. Speak the \`text\` answer.
+
+### list_my_groups
+List the community groups the user belongs to, with member counts.
+CALL WHEN the user asks: "what groups am I in?", "show my groups",
+"in welchen Gruppen bin ich?", "zeig mir meine Gruppen".
+After the tool runs, read the group names and member counts aloud.
+
+### create_group
+Create a new community group. Requires a name; privacy is public or
+private (default public). ALWAYS call once WITHOUT confirm first —
+the tool returns a confirmation question; after the user says yes,
+call again with confirm:true.
+CALL WHEN the user says: "create a group called ...", "start a new
+group", "erstelle eine Gruppe ...", "gründe eine neue Gruppe".
+
+### join_group
+Join a community group by name or group_id. Resolves fuzzy names and
+lists candidates when several match. Private groups cannot be self-joined.
+CALL WHEN the user says: "join the sleep group", "I want to join ...",
+"tritt der Gruppe ... bei", "ich möchte der Gruppe beitreten".
+After joining, tell the user they are in and the app is opening the group.
+
+### invite_to_group
+Invite another community member to a group. Resolves the member by
+spoken name and the group by name; the member gets a notification.
+CALL WHEN the user says: "invite Anna to my walking group",
+"lade Anna in die Gruppe ... ein".
+If the tool lists several member or group candidates, ask which one.
+
+### accept_invitation
+Accept a pending group invitation (joins the group). With no
+invitation_id it lists the pending invitations, or acts when only one.
+CALL WHEN the user says: "accept the invitation", "yes, join that group",
+"nimm die Einladung an", "Einladung annehmen".
+
+### decline_invitation
+Decline a pending group invitation. ALWAYS call once WITHOUT confirm
+first — the tool returns a confirmation question; after the user says
+yes, call again with the invitation_id and confirm:true.
+CALL WHEN the user says: "decline the invitation", "no thanks, decline
+it", "lehne die Einladung ab", "Einladung ablehnen".
+
+### rsvp_event
+RSVP / sign the user up for a community event or meetup, by event_id
+or fuzzy title. Checks capacity and existing signup first.
+CALL WHEN the user says: "sign me up for ...", "RSVP to the yoga
+meetup", "melde mich für ... an", "ich will beim Event ... dabei sein".
+If several events match, read the candidates and ask which one.
+
+### cancel_rsvp
+Cancel the user's RSVP for an upcoming event. ALWAYS call once
+WITHOUT confirm first — the tool returns a confirmation question;
+after the user says yes, call again with the event_id and confirm:true.
+CALL WHEN the user says: "cancel my RSVP", "I can't make it to ...",
+"melde mich vom Event ... ab", "storniere meine Anmeldung".
+
+### list_upcoming_meetups
+List upcoming community meetups/events the user could attend, soonest
+first; events in the user's home city are flagged "near you" and
+events they already RSVP'd are marked.
+CALL WHEN the user asks: "what meetups are coming up?", "any events
+this week?", "welche Meetups stehen an?", "gibt es bald Events?".
+Read the titles with dates aloud, then offer to sign them up.
+
+### join_live_room
+Join/open a community live room by name or room_id. Returns a
+navigation directive that opens the room screen — the app navigates
+automatically; do not describe the navigation mechanics.
+CALL WHEN the user says: "join the live room", "take me into the ...
+room", "bring mich in den Live-Raum", "öffne den Live-Raum ...".
+If several rooms match, read the candidates and ask which one.
+
+### start_conversation
+Start (or reuse) a direct-message conversation with a named community member,
+optionally sending the first message in the same call.
+WHEN: "start a chat with Maria", "message Alex for the first time",
+"schreib Maria an", "starte eine Unterhaltung mit Alex".
+Pass member (spoken name or Vitana ID) or member_user_id (UUID from resolve_recipient).
+With message set, it sends immediately via the canonical send path.
+Without message, it resolves the member, says whether a conversation already
+exists, and returns recipient_user_id — read back the name, ask what to say,
+then send with send_chat_message or call this again with message set.
+
+### list_conversations
+List the user's recent direct-message conversations, newest first, with
+who wrote last and a short snippet.
+WHEN: "show my conversations", "who have I been chatting with?",
+"zeig meine Chats", "mit wem habe ich geschrieben?".
+These are internal Maxina messages — no Google account involved.
+Speak the names and snippets naturally; to continue one, use send_chat_message.
+
+### mark_conversation_read
+Mark direct messages as read. With member set, marks that conversation;
+without it (or with all=true), marks ALL unread messages.
+WHEN: "mark my chat with Maria as read", "mark everything read",
+"markiere den Chat mit Maria als gelesen", "alles als gelesen markieren".
+Afterwards, confirm how many messages were marked.
+
+### mute_conversation
+Mute a chat conversation. NOTE: chat muting is not supported in Vitana yet —
+this tool answers honestly and suggests block_user as the stronger alternative.
+WHEN: "mute this chat", "mute Maria", "schalte den Chat stumm".
+Relay the returned text plainly; never claim the chat was muted.
+
+### archive_conversation
+Archive a chat conversation. NOTE: chat archiving does not exist in Vitana —
+this tool answers honestly. Never invent or offer "archived messages".
+WHEN: "archive this chat", "archiviere den Chat mit Maria".
+Relay the returned text plainly; suggest mark_conversation_read or block_user instead.
+
+### update_account_visibility
+Set the visibility of the user's WHOLE profile: public, followers_only, or private.
+Writes every per-field visibility setting at once (partner-search posts stay private).
+WHEN: "make my profile private", "set my account to public",
+"mach mein Profil privat", "stell mein Konto auf öffentlich".
+Two-step: first call returns a confirmation request — read it back, get an
+explicit yes, then call again with confirm=true. Then confirm the change out loud.
+
+### update_privacy_field
+Set the visibility of ONE profile field: public, followers_only, or private.
+Fields: age, birthday, location (city), country, address, email, phone, gender,
+first/last name, marital status, dance/partner preferences, service offerings, posts.
+WHEN: "hide my age", "make my location visible to followers only",
+"verstecke mein Alter", "zeig meine Stadt nur meinen Kontakten".
+Health data is always private and has no setting. Confirm the change out loud after.
+
+### block_user
+Block a community member so their posts and messages are hidden from the user.
+WHEN: "block Maria", "I don't want to see Alex anymore",
+"blockiere Maria", "ich will nichts mehr von Alex sehen".
+Two-step: the first call resolves the member and returns a confirmation request —
+read the name back, get an explicit yes, then call again with confirm=true and
+the returned member_user_id. Afterwards, confirm the block and mention it can be undone.
+
+### unblock_user
+Unblock a previously blocked member so their posts and messages show again.
+Matches the name against the user's own blocked list only.
+WHEN: "unblock Maria", "entblockiere Maria", "hebe die Blockierung von Alex auf".
+If the name is not on the blocked list, the tool says who currently is —
+relay that plainly. Afterwards, confirm the unblock out loud.
+
+### submit_bug_report
+File a bug ticket (kind=bug) in the feedback pipeline. No persona swap —
+just files and confirms. Call when the user describes something BROKEN and
+wants it reported: "melde diesen Fehler", "die App stürzt ab, bitte melden",
+"report this bug", "the button does nothing, file it".
+The summary must be a concrete description of at least 15 words in the
+user's own words — which screen, what happened, what was expected.
+AFTER: speak the ticket number once and say the team will follow up.
+For live handoff to a specialist use report_to_specialist instead.
+
+### submit_support_ticket
+File a support ticket (kind=support_question) for a question the team
+should answer offline. Call when the user explicitly wants their question
+logged for support: "erstell ein Support-Ticket", "leite meine Frage an den
+Support weiter", "open a support ticket", "log this question for support".
+Do NOT call for how-to questions you can answer yourself — answer inline.
+Summary: at least 12 words describing the question and context.
+AFTER: speak the ticket number once and say support will follow up.
+
+### submit_marketplace_dispute
+File a marketplace dispute ticket (kind=marketplace_claim): refunds, wrong
+or damaged items, orders that never arrived, seller issues, overcharges.
+Triggers: "ich will mein Geld zurück", "die Bestellung ist nie angekommen",
+"I want a refund", "the seller sent the wrong item, file a claim".
+Summary: at least 12 words — what was ordered, what went wrong, what the
+user wants (refund / replacement). Include the order number if they have it.
+AFTER: speak the ticket number once and say the team will review the claim.
+
+### submit_account_issue
+File an account ticket (kind=account_issue): login problems, password or
+email trouble, role/permission issues, profile data corrections, lockouts.
+Triggers: "ich komme nicht in mein Konto", "meine E-Mail stimmt nicht,
+bitte melden", "I'm locked out", "report my login problem".
+NEVER ask for or record passwords. Summary: at least 12 words describing
+the account problem and what the user already tried.
+AFTER: speak the ticket number once and say the team will follow up.
+
+### list_my_tickets
+List the user's OPEN feedback tickets (bugs, support, disputes, account)
+with number and status. Call when the user asks about their reports:
+"was ist mit meinen Tickets?", "wie steht es um meine Fehlermeldung?",
+"what happened to my bug report?", "show my open tickets".
+AFTER: read back ticket number, what it is, and its status in the user's
+language. Never mention internal specialist names.
+
+### set_language
+Set the user's app + voice language. Persists the same setting the app's
+Language picker writes, so screens and notifications follow. Call when the
+user asks to switch language: "stell auf Deutsch um", "sprich Englisch mit
+mir", "switch the app to English", "cambia a español".
+AFTER: respond ONLY in the new language from that moment on and confirm
+the change; the app screens follow on the next reload.
+
+### set_theme
+Handle a request to change the visual theme (light / dark / system).
+Triggers: "mach den Dunkelmodus an", "stell auf hell", "switch to dark
+mode", "use the system theme".
+NOTE: the theme is stored on the device, not on the server — this tool
+explains where to flip it (Settings → Preferences → Theme). Relay that
+guidance in the user's language; do not promise the theme changed.
+
+### set_voice_preferences
+Tune the app's spoken-voice settings: pace (slow / normal / fast), voice
+name, and tone/character. Persists to the same voice settings the app's
+Voice & AI screen uses. Triggers: "sprich langsamer", "sprich schneller",
+"klinge ruhiger", "speak slower please", "use a calmer tone".
+Provide only the fields the user asked to change.
+AFTER: confirm briefly what changed, in the user's language.
+
+### list_connected_apps
+List the user's connected integrations: Google, YouTube, social accounts,
+and AI assistants (OpenAI, Anthropic, Gemini). Call when the user asks:
+"welche Apps sind verbunden?", "ist mein Google-Konto verknüpft?",
+"what apps are connected?", "is Spotify linked?".
+AFTER: name each connected app naturally in the user's language; if none,
+say so and mention Settings → Connected Apps.
+
+### disconnect_app
+Disconnect one connected integration (Google, YouTube, Instagram, an AI
+assistant, ...). Triggers: "trenne mein Google-Konto", "entferne YouTube",
+"disconnect my Google account", "unlink ChatGPT".
+TWO-STEP: first call WITHOUT confirm — the tool returns a confirmation
+question to relay. Only after the user explicitly says yes, call again
+with confirm=true. Never disconnect without that explicit yes.
+AFTER (confirmed): confirm it is disconnected and reconnectable in
+Settings → Connected Apps.
+
+### global_search
+Unified community search across people, posts, events, groups, products,
+and services in one call. Returns the top hits per category.
+CALL WHEN the user asks a broad "find/search" question: "search for yoga",
+"find anything about fasting", "such nach Tennis", "gibt es was zu Schlaf?".
+For a specific person prefer find_community_member; for events only,
+search_events. After the tool runs, present the most relevant category
+first — top two or three hits, never the raw list.
+
+### browse_news_feed
+Read the community news feed aloud: recent posts with author and a
+one-line summary. scope "following" limits to people the user follows;
+"all" is the whole community (default).
+CALL WHEN the user asks: "what's new in the community?", "read me the
+feed", "was gibt es Neues?", "zeig mir die Neuigkeiten von Leuten denen
+ich folge". After the tool runs, speak each post as author plus a short
+summary — never read long posts word for word.
+
+### snooze_recommendation
+Snooze an Autopilot recommendation so it resurfaces later (default 24h,
+max one week). Accepts the recommendation id or a spoken title fragment.
+CALL WHEN the user says: "remind me about that later", "snooze the sleep
+recommendation", "später erinnern", "leg das auf Wiedervorlage".
+After the tool runs, confirm the title and when it will come back.
+
+### dismiss_recommendation
+Dismiss an Autopilot recommendation for good (it will not come back).
+TWO-STEP: first call returns a confirmation question — read it back;
+only after a clear yes call again with confirm=true.
+CALL WHEN the user says: "not interested", "dismiss that suggestion",
+"das interessiert mich nicht", "weg damit".
+If the user just wants it later, use snooze_recommendation instead.
+
+### explain_recommendation
+Explain WHY a specific Autopilot recommendation was suggested: its
+rationale, which Vitana pillars it strengthens, impact vs effort, and
+where it came from. Accepts an id or a spoken title fragment.
+CALL WHEN the user asks: "why are you suggesting this?", "what's that
+recommendation about?", "warum schlägst du mir das vor?", "was bringt
+mir das?". After the tool runs, narrate the reason in 2-3 sentences and
+offer to activate, snooze, or dismiss it.
+
+### update_intent
+Edit one of the user's OWN intent posts (title, description text, or
+category). Accepts the intent id or a spoken title fragment.
+CALL WHEN the user says: "change my tennis post to say weekends only",
+"update the title of my ask", "ändere meinen Beitrag", "mach aus meinem
+Post ...". Pass ONLY the fields that change. After the tool runs,
+confirm what was updated in one sentence.
+
+### delete_intent
+Take down one of the user's OWN intent posts from the board (closes it;
+matching stops). TWO-STEP: first call returns a confirmation question —
+read it back; only after a clear yes call again with confirm=true.
+CALL WHEN the user says: "delete my post", "remove my tennis ask",
+"lösch meinen Beitrag", "nimm das vom Brett".
+If the ask was fulfilled, prefer mark_intent_fulfilled instead.
+
+### browse_intent_board
+Browse the open community intent board (Open Asks): what other members
+are looking for, buying, selling, or offering right now. Optional query
+filters by topic. Never shows the user's own posts.
+CALL WHEN the user asks: "what are people looking for?", "browse the
+asks board", "was suchen andere gerade?", "zeig mir das Schwarze Brett".
+After the tool runs, present the top asks (title + kind) and offer to
+respond to one or post the user's own ask.
+
+### dispute_match
+Open a dispute on a match the user is part of (no-show, misrepresented,
+safety, payment, other). MULTI-STEP: the tool first collects the reason,
+then returns a confirmation question — only after a clear yes call again
+with confirm=true. CALL WHEN the user says: "the seller never showed up",
+"I want to report this match", "der Kontakt war fake", "ich möchte das
+Match melden". Stay neutral and factual — never promise an outcome.
+
+### find_perfect_match
+Flagship people-match: find the PERFECT person for the user — workout
+partner, accountability buddy, mentor, learning partner — personalized
+with their Life Compass goal and weakest Vitana pillar. Searches the
+live community asks and, per the confirm flow, also posts the request
+so the user becomes discoverable.
+CALL WHEN the user says: "find me a workout partner", "who would be my
+perfect accountability buddy?", "find den perfekten Trainingspartner
+für mich", "such mir einen Mentor".
+Follow the returned text exactly — it tells you whether matches were
+found or a read-back confirmation is needed (then call again with
+confirmed=true).
+
+### get_emotional_state
+Read the user's current emotional and cognitive signals (D28): mood,
+focus, engagement, urgency, hesitation — from analyzed conversation
+signals, or recent diary moods/energy when no live signals exist.
+CALL WHEN the user asks: "how am I doing?", "how do I seem to you?",
+"wie wirke ich gerade?", "wie geht es mir laut meinen Daten?".
+Speak the returned text as-is — it already names the data source.
+Never diagnose; these are light behavioral observations only.
+
+### get_situational_awareness
+Summarize the user's current situation (D32): time-of-day window,
+availability, energy, suggested conversation depth and any active
+constraints, enriched with their next calendar commitment.
+CALL WHEN the user asks: "what's my situation right now?", "is this
+a good moment?", "wie sieht meine Lage gerade aus?", "passt es gerade?".
+Optionally pass timezone (IANA name like Europe/Berlin) if known.
+Speak the returned text; it states what the summary is based on.
+
+### get_availability
+Check how available and ready the user is right now (D33): availability
+level, time window, readiness score, calendar density for the next
+hours, whether they are in an event, and reminders due soon.
+CALL WHEN the user asks: "do I have time right now?", "is now a good
+time?", "habe ich gerade Zeit?", "ist jetzt ein guter Zeitpunkt?",
+or BEFORE proposing a long activity or deep session.
+Optionally pass timezone (IANA name) if known. Speak the returned text.
+
+### get_environmental_context
+Read the user's environment and mobility context (D34): where they
+are based or traveling, how they get around, late-night/early-morning
+flags and indoor/outdoor suitability — from stored location facts,
+preferences and visit history. Never invents a location.
+CALL WHEN the user asks: "what do you know about where I am?",
+"was weißt du über meine Umgebung?", or before suggesting nearby or
+outdoor activities. Speak the returned text; it names its sources.
+
+### get_life_stage_context
+Read the user's life-stage context (D40): life phase and stability,
+any transition, Life Compass goal and category, age band (from their
+stated birthday) and community tenure.
+CALL WHEN the user asks: "where am I in life?", "what stage am I in?",
+"wo stehe ich gerade im Leben?", "in welcher Lebensphase bin ich?",
+or when tailoring long-term advice to their life situation.
+Speak the returned text; it is non-prescriptive — the user knows
+their life best. If nothing is on record, offer to set up Life Compass.
+
+### follow_member
+FOLLOW a community member by their spoken name.
+CALL THIS for: "Follow Anna" / "Folge Anna" / "Ich möchte Peter folgen" /
+"Follow that member".
+Resolves the name to a member; if no match, ask the user to repeat the name.
+After success, confirm in one short sentence.
+
+### unfollow_member
+UNFOLLOW a community member by name. Two-step confirm:
+first call returns a confirmation question — ask it, then call again with
+confirmed=true after the user says yes.
+CALL THIS for: "Unfollow Anna" / "Entfolge Anna" / "Ich will Peter nicht mehr folgen".
+
+### get_notifications
+READ the user's recent notifications, unread first. Speakable.
+CALL THIS for: "Any notifications?" / "Habe ich Benachrichtigungen?" /
+"Was gibt es Neues für mich?" / "Read my notifications".
+Speak the unread count and the top titles — never deflect to the bell icon.
+
+### mark_notifications_read
+MARK notifications as read — all unread ones, or only those whose title
+matches a spoken reference.
+CALL THIS for: "Mark all as read" / "Alle als gelesen markieren" /
+"Clear my notifications" / "Mark the match notification as read".
+
+### get_wallet_balance
+READ-ONLY wallet snapshot: balance per currency, active subscription,
+last 3 transactions. NEVER moves money — payments happen in the Wallet screen.
+CALL THIS for: "What is my wallet balance?" / "Wie viel Guthaben habe ich?" /
+"Was ist auf meinem Wallet?" / "My last transactions".
+
+### update_profile
+UPDATE simple own-profile fields: display_name, bio, city, country, location.
+Two-step confirm: first call returns a verbatim read-back — speak it, then
+call again with confirmed=true after the user agrees.
+CALL THIS for: "Change my bio to …" / "Ändere meinen Namen zu …" /
+"Setze meine Stadt auf Berlin".
+NEVER use this for role or profile visibility — privacy settings own those.
+
+### play_podcast
+PLAY an internal Vitana Media Hub podcast by title or topic. Returns an
+open_url directive the app uses to start playback.
+CALL THIS for: "Play the longevity podcast" / "Spiel den Vitana Podcast" /
+"Play a podcast about sleep".
+For music use play_music instead. After success, say what is now playing.
+
+### like_post
+LIKE a community feed post — resolves "the last post from <name>" to that
+member's most recent public post.
+CALL THIS for: "Like Anna's post" / "Like den letzten Beitrag von Anna" /
+"Gefällt mir für Peters Post".
+After success, confirm which post was liked in one sentence.
+
+### comment_on_post
+COMMENT on a community feed post (public text). Two-step confirm:
+first call returns the comment for verbatim read-back — speak it, then call
+again with confirmed=true after the user says post/yes.
+CALL THIS for: "Comment on Anna's post: great work" /
+"Kommentiere Peters Beitrag mit …"."
 `;
 
 exports[`A0.1 characterization: buildLiveSystemInstruction renders a stable system instruction for persona "day-180-veteran-reconnect": persona:day-180-veteran-reconnect 1`] = `
@@ -3135,5 +3787,657 @@ overlay UI listens for this directive and fades out the chime.
 Call this when the user says any kind of "I'm done" / "nein
 danke" / "enough" — interpret IN CONTEXT, not by keyword match.
 If the user is ambiguous, ask a clarifying question first; only
-call this when you are confident the session should end."
+call this when you are confident the session should end.
+
+### get_highest_vitana_index
+Get the community member with the highest Vitana Index right now.
+Returns their name and score; private profiles are never revealed.
+CALL WHEN the user asks: "who has the highest Vitana Index?",
+"who is the healthiest member?", "wer hat den höchsten Vitana Index?",
+"wer ist am gesündesten?".
+After the tool runs, read the returned text aloud (one sentence).
+
+### get_top_in_pillar
+Get the community member with the top score in ONE Vitana Index pillar.
+pillar must be one of: nutrition, hydration, exercise, sleep, mental.
+CALL WHEN the user asks: "who has the best sleep?", "who is the
+fittest?", "wer schläft am besten?", "wer ist am fittesten?",
+"wer trinkt am meisten Wasser?".
+After the tool runs, read the returned text aloud (one sentence).
+
+### get_first_member
+Get the very first (earliest-registered / OG) community member.
+CALL WHEN the user asks: "who was the first member?", "who is the
+longest-standing / OG member?", "wer war das erste Mitglied?",
+"wer ist am längsten dabei?".
+After the tool runs, read the returned text aloud (one sentence).
+
+### get_newest_member
+Get the most recently joined community member.
+CALL WHEN the user asks: "who is the newest member?", "who just
+joined?", "wer ist das neueste Mitglied?", "wer ist gerade beigetreten?".
+After the tool runs, read the returned text aloud (one sentence).
+
+### get_most_followed
+Get the community member with the most followers.
+CALL WHEN the user asks: "who has the most followers?", "who is the
+most popular member?", "wer hat die meisten Follower?", "wer ist am
+beliebtesten?".
+After the tool runs, read the returned text aloud (one sentence).
+
+### ask_who_is
+Answer ANY free-form "who is...?" superlative question about the
+community that the specific superlative tools above do not cover.
+Routes to the matching leaderboard (index, pillar, tenure, followers)
+or falls back to the general community-member ranking.
+CALL WHEN the user asks e.g.: "who is the most inspiring?", "who is
+the best runner?", "wer ist der/die inspirierendste?", "wer ist am
+aktivsten?". Pass the user's question verbatim as query.
+After the tool runs, read the returned text aloud, then stop.
+
+### list_diary_entries
+List the user's Daily Diary entries, newest first, optionally within a date window.
+CALL THIS WHEN the user says:
+  - "What did I write in my diary?" / "Was steht in meinem Tagebuch?"
+  - "Show my diary entries from last week" / "Zeig meine Tagebucheinträge"
+  - "What did I log yesterday?" / "Was habe ich gestern eingetragen?"
+Then summarize the entries naturally — do not read them verbatim or mention IDs.
+
+### get_diary_streak
+Get the user's diary streak: current consecutive days with an entry plus their longest streak ever.
+CALL THIS WHEN the user asks:
+  - "What's my diary streak?" / "Wie lang ist meine Tagebuch-Serie?"
+  - "How many days in a row have I journaled?" / "Wie viele Tage am Stück?"
+Then celebrate an active streak, or encourage a restart if it broke.
+
+### get_memory_timeline
+Chronological timeline of what Vitana remembers: memory items, extracted facts, and diary entries, newest first.
+CALL THIS WHEN the user asks:
+  - "What happened last month?" / "Was ist letzten Monat passiert?"
+  - "Show my memory timeline" / "Zeig meine Erinnerungs-Zeitleiste"
+  - "What did we talk about in June?" / "Worüber haben wir im Juni gesprochen?"
+Then retell the timeline as a short narrative in the user's language.
+
+### recall_memory_about
+Search stored memories and facts about ONE specific topic, person, or thing.
+CALL THIS WHEN the user asks:
+  - "What do you know about my sister?" / "Was weißt du über meine Schwester?"
+  - "Do you remember my trip to Rome?" / "Erinnerst du dich an meine Rom-Reise?"
+  - "What did I tell you about my project?" / "Was habe ich dir über mein Projekt erzählt?"
+Answer ONLY from the returned content — never invent memories. If empty, say so and offer to remember it now.
+Optional category filter: personal_identity, health_wellness, lifestyle_routines, network_relationships,
+learning_knowledge, business_projects, finance_assets, location_environment, digital_footprint,
+values_aspirations, autopilot_context, future_plans, uncategorized.
+
+### get_memory_garden_summary
+Overview of the user's Memory Garden: how many memories are stored per category.
+CALL THIS WHEN the user asks:
+  - "What do you remember about me?" / "Was weißt du alles über mich?"
+  - "How full is my Memory Garden?" / "Wie sieht mein Memory Garden aus?"
+  - "What kind of things have you saved?" / "Was hast du über mich gespeichert?"
+Then summarize warmly: total memories and the biggest categories first.
+For details on a specific topic, use recall_memory_about instead.
+
+### forget_memory
+Permanently delete ONE stored memory, only after the user explicitly confirms.
+CALL THIS WHEN the user says:
+  - "Forget that" / "Vergiss das" / "Lösch diese Erinnerung"
+  - "Delete what you saved about X" / "Lösch, was du über X gespeichert hast"
+Flow: find the memory_id via recall_memory_about, call WITHOUT confirm first —
+the tool returns the memory text; read it back and ask the user to confirm.
+Only when they clearly say yes, call again with confirm=true. Deletion is permanent.
+
+### reschedule_event
+Move an existing calendar event to a new start time (duration is kept unless new_end is given).
+WHEN TO CALL: "move my yoga to 6 pm", "reschedule my doctor appointment to Friday",
+"Verschieb mein Meeting auf morgen 10 Uhr", "Kannst du das Training auf Freitag legen?".
+Identify the event by event_id (preferred) or title_query (fuzzy title match).
+If multiple events match, the result lists candidates — ask the user which one, then call again with event_id.
+After success, confirm the new day and time back to the user.
+
+### cancel_event
+Cancel (soft-delete) a calendar event — the event stays in history with status "cancelled".
+WHEN TO CALL: "cancel my yoga class", "delete the dentist appointment",
+"Sag das Meeting morgen ab", "Lösch den Termin am Freitag".
+Destructive: first call WITHOUT confirm to fetch the event, ask the user to confirm,
+then call again with confirm=true and the event_id. Speak the cancelled title back.
+
+### complete_event
+Mark a calendar event as completed, skipped, or partially done.
+WHEN TO CALL: "I finished my workout", "mark the meditation as done", "I skipped my run today",
+"Ich habe das Training gemacht", "Hab die Meditation ausgelassen".
+outcome must be one of: completed, skipped, partial (default completed).
+After success, acknowledge briefly — completed health events feed the Vitana Index.
+
+### find_free_slot
+Find the next free slot of a given length in the user's calendar, within waking hours (8 AM-10 PM user-local).
+WHEN TO CALL: "when am I free for an hour?", "find me 30 minutes tomorrow",
+"Wann habe ich morgen Zeit?", "Finde mir eine freie Stunde diese Woche".
+duration_minutes is required (5-720). search_from/search_to are ISO 8601; default is the next 7 days.
+Pass the user's IANA timezone so waking hours and spoken times are local.
+Speak the found day + time back, or say nothing was free and offer to look further out.
+
+### get_event_details
+Read the full details of ONE calendar event: exact time, end, location, type, status, notes.
+WHEN TO CALL: "when exactly is my dentist appointment?", "where is the meetup?",
+"Wann genau ist mein Zahnarzttermin?", "Wo findet das Treffen statt?".
+Identify by event_id or title_query (fuzzy). If several match, the result lists candidates — ask which one.
+Speak the concrete details (day, time, place); never a raw data dump.
+
+### check_calendar_conflicts
+Check whether a proposed time window overlaps existing confirmed calendar events.
+WHEN TO CALL: before creating or rescheduling an event, or when the user asks
+"does 3 pm work on Friday?", "Passt Dienstag 10 Uhr?", "Habe ich da schon etwas?".
+start_time is required (ISO 8601); end_time defaults to one hour after start_time.
+If there are conflicts, name the overlapping events and suggest checking another time.
+
+### snooze_reminder
+Push an existing reminder out by N minutes (default 10, max 1440).
+CALL WHEN the user says 'snooze it', 'remind me again in 15 minutes',
+'verschieb die Erinnerung', 'erinnere mich später nochmal'.
+Pass reminder_id when known (e.g. a reminder just fired), otherwise
+text_query with words from the reminder. If the tool reports multiple
+matches, ask the user which one and call again with that reminder_id.
+After success, speak the confirmation with the new time from \`text\`.
+
+### update_reminder
+Edit an existing reminder's text and/or time.
+CALL WHEN the user says 'change my reminder to 9pm', 'make it say X',
+'ändere meine Erinnerung', 'verschiebe die Erinnerung auf 21 Uhr'.
+Identify via reminder_id or text_query. new_time is an absolute UTC ISO
+timestamp YOU compute from their words + timezone (min 60s in future).
+If multiple reminders match, ask which one, then call again with the id.
+After success, confirm the change using \`text\`.
+
+### acknowledge_reminder
+Mark a fired reminder as heard/acknowledged so it stops being re-delivered.
+CALL WHEN the user says 'got it', 'okay, I heard the reminder', 'dismiss it',
+'alles klar, habs gehört' after a reminder fired — but the task is NOT done yet.
+Use complete_reminder instead when the user actually DID the thing.
+Identify via reminder_id (preferred, e.g. from the fire event) or text_query.
+
+### complete_reminder
+Mark a reminder as DONE (the user did the thing). Sets status=completed.
+CALL WHEN the user says 'done', 'I took my magnesium, check it off',
+'erledigt', 'hab ich gemacht' about a reminder.
+Identify via reminder_id or text_query. If multiple match, ask which one.
+After success, give a short positive confirmation from \`text\`.
+
+### list_missed_reminders
+List reminders that fired but were never acknowledged (the user missed them).
+CALL WHEN the user asks 'did I miss anything?', 'what reminders did I miss?',
+'habe ich Erinnerungen verpasst?', or at the start of a session catch-up.
+Speak each missed reminder with its text and when it fired, then offer to
+snooze, complete, or acknowledge them.
+
+### set_alarm
+Set a wake-up/clock alarm at a specific time of day (optionally recurring).
+CALL WHEN the user says 'wake me at 7', 'set an alarm for 6:30 on weekdays',
+'stell einen Wecker auf 7 Uhr', 'weck mich um halb sieben'.
+time is 'HH:MM' (24h, interpreted in the given timezone — next occurrence)
+or an absolute ISO timestamp. ALWAYS pass the user timezone from context;
+UTC is assumed when omitted. recurrence: daily, weekdays, or omit for once.
+Prefer alarms for time-of-day wake-ups; use set_reminder for task reminders.
+After success, confirm with the day + time from \`text\`.
+
+### list_alarms
+List the user's active alarms with times and labels.
+CALL WHEN the user asks 'what alarms do I have?', 'when is my alarm?',
+'welche Wecker habe ich?', or before deleting/changing an alarm.
+Pass timezone so times are spoken in local wall-clock time.
+
+### delete_alarm
+Cancel an alarm. Two-step confirm flow: first call WITHOUT confirm to find
+the alarm (by alarm_id, label, or HH:MM time) — the tool answers with the
+match and asks you to confirm with the user. After the user explicitly says
+yes, call again with that alarm_id and confirm=true.
+CALL WHEN the user says 'delete my alarm', 'cancel the 7am alarm',
+'lösch den Wecker', 'Wecker ausschalten'.
+
+### start_timer
+Start a countdown timer (1-1440 minutes).
+CALL WHEN the user says 'set a timer for 10 minutes', 'timer for the pasta',
+'stell einen Timer auf 10 Minuten', 'Countdown 20 Minuten'.
+For focused work blocks prefer start_pomodoro. After success, confirm the
+duration and label from \`text\`.
+
+### start_pomodoro
+Start a pomodoro focus block (5-90 minutes; 25 if omitted).
+CALL WHEN the user says 'start a pomodoro', 'let's do a focus session',
+'starte eine Pomodoro-Einheit', '45 Minuten Fokuszeit'.
+After success, confirm the length and encourage focused work.
+
+### list_active_timers
+List running timers and pomodoros with the remaining time on each.
+CALL WHEN the user asks 'how much time is left?', 'is my timer still running?',
+'wie lange läuft mein Timer noch?', 'wie viel Zeit habe ich noch?'.
+Speak each entry with its label and remaining time from \`text\`.
+
+### get_world_time
+Get the current local time in a city or IANA timezone (no internet needed).
+CALL WHEN the user asks 'what time is it in Tokyo?', 'wie spät ist es in
+Belgrad?', 'what's the time in New York right now?'.
+location accepts a major city name (Berlin, Belgrade, London, New York,
+Tokyo, ...) or any IANA zone like 'Europe/Berlin'. Speak the \`text\` answer.
+
+### list_my_groups
+List the community groups the user belongs to, with member counts.
+CALL WHEN the user asks: "what groups am I in?", "show my groups",
+"in welchen Gruppen bin ich?", "zeig mir meine Gruppen".
+After the tool runs, read the group names and member counts aloud.
+
+### create_group
+Create a new community group. Requires a name; privacy is public or
+private (default public). ALWAYS call once WITHOUT confirm first —
+the tool returns a confirmation question; after the user says yes,
+call again with confirm:true.
+CALL WHEN the user says: "create a group called ...", "start a new
+group", "erstelle eine Gruppe ...", "gründe eine neue Gruppe".
+
+### join_group
+Join a community group by name or group_id. Resolves fuzzy names and
+lists candidates when several match. Private groups cannot be self-joined.
+CALL WHEN the user says: "join the sleep group", "I want to join ...",
+"tritt der Gruppe ... bei", "ich möchte der Gruppe beitreten".
+After joining, tell the user they are in and the app is opening the group.
+
+### invite_to_group
+Invite another community member to a group. Resolves the member by
+spoken name and the group by name; the member gets a notification.
+CALL WHEN the user says: "invite Anna to my walking group",
+"lade Anna in die Gruppe ... ein".
+If the tool lists several member or group candidates, ask which one.
+
+### accept_invitation
+Accept a pending group invitation (joins the group). With no
+invitation_id it lists the pending invitations, or acts when only one.
+CALL WHEN the user says: "accept the invitation", "yes, join that group",
+"nimm die Einladung an", "Einladung annehmen".
+
+### decline_invitation
+Decline a pending group invitation. ALWAYS call once WITHOUT confirm
+first — the tool returns a confirmation question; after the user says
+yes, call again with the invitation_id and confirm:true.
+CALL WHEN the user says: "decline the invitation", "no thanks, decline
+it", "lehne die Einladung ab", "Einladung ablehnen".
+
+### rsvp_event
+RSVP / sign the user up for a community event or meetup, by event_id
+or fuzzy title. Checks capacity and existing signup first.
+CALL WHEN the user says: "sign me up for ...", "RSVP to the yoga
+meetup", "melde mich für ... an", "ich will beim Event ... dabei sein".
+If several events match, read the candidates and ask which one.
+
+### cancel_rsvp
+Cancel the user's RSVP for an upcoming event. ALWAYS call once
+WITHOUT confirm first — the tool returns a confirmation question;
+after the user says yes, call again with the event_id and confirm:true.
+CALL WHEN the user says: "cancel my RSVP", "I can't make it to ...",
+"melde mich vom Event ... ab", "storniere meine Anmeldung".
+
+### list_upcoming_meetups
+List upcoming community meetups/events the user could attend, soonest
+first; events in the user's home city are flagged "near you" and
+events they already RSVP'd are marked.
+CALL WHEN the user asks: "what meetups are coming up?", "any events
+this week?", "welche Meetups stehen an?", "gibt es bald Events?".
+Read the titles with dates aloud, then offer to sign them up.
+
+### join_live_room
+Join/open a community live room by name or room_id. Returns a
+navigation directive that opens the room screen — the app navigates
+automatically; do not describe the navigation mechanics.
+CALL WHEN the user says: "join the live room", "take me into the ...
+room", "bring mich in den Live-Raum", "öffne den Live-Raum ...".
+If several rooms match, read the candidates and ask which one.
+
+### start_conversation
+Start (or reuse) a direct-message conversation with a named community member,
+optionally sending the first message in the same call.
+WHEN: "start a chat with Maria", "message Alex for the first time",
+"schreib Maria an", "starte eine Unterhaltung mit Alex".
+Pass member (spoken name or Vitana ID) or member_user_id (UUID from resolve_recipient).
+With message set, it sends immediately via the canonical send path.
+Without message, it resolves the member, says whether a conversation already
+exists, and returns recipient_user_id — read back the name, ask what to say,
+then send with send_chat_message or call this again with message set.
+
+### list_conversations
+List the user's recent direct-message conversations, newest first, with
+who wrote last and a short snippet.
+WHEN: "show my conversations", "who have I been chatting with?",
+"zeig meine Chats", "mit wem habe ich geschrieben?".
+These are internal Maxina messages — no Google account involved.
+Speak the names and snippets naturally; to continue one, use send_chat_message.
+
+### mark_conversation_read
+Mark direct messages as read. With member set, marks that conversation;
+without it (or with all=true), marks ALL unread messages.
+WHEN: "mark my chat with Maria as read", "mark everything read",
+"markiere den Chat mit Maria als gelesen", "alles als gelesen markieren".
+Afterwards, confirm how many messages were marked.
+
+### mute_conversation
+Mute a chat conversation. NOTE: chat muting is not supported in Vitana yet —
+this tool answers honestly and suggests block_user as the stronger alternative.
+WHEN: "mute this chat", "mute Maria", "schalte den Chat stumm".
+Relay the returned text plainly; never claim the chat was muted.
+
+### archive_conversation
+Archive a chat conversation. NOTE: chat archiving does not exist in Vitana —
+this tool answers honestly. Never invent or offer "archived messages".
+WHEN: "archive this chat", "archiviere den Chat mit Maria".
+Relay the returned text plainly; suggest mark_conversation_read or block_user instead.
+
+### update_account_visibility
+Set the visibility of the user's WHOLE profile: public, followers_only, or private.
+Writes every per-field visibility setting at once (partner-search posts stay private).
+WHEN: "make my profile private", "set my account to public",
+"mach mein Profil privat", "stell mein Konto auf öffentlich".
+Two-step: first call returns a confirmation request — read it back, get an
+explicit yes, then call again with confirm=true. Then confirm the change out loud.
+
+### update_privacy_field
+Set the visibility of ONE profile field: public, followers_only, or private.
+Fields: age, birthday, location (city), country, address, email, phone, gender,
+first/last name, marital status, dance/partner preferences, service offerings, posts.
+WHEN: "hide my age", "make my location visible to followers only",
+"verstecke mein Alter", "zeig meine Stadt nur meinen Kontakten".
+Health data is always private and has no setting. Confirm the change out loud after.
+
+### block_user
+Block a community member so their posts and messages are hidden from the user.
+WHEN: "block Maria", "I don't want to see Alex anymore",
+"blockiere Maria", "ich will nichts mehr von Alex sehen".
+Two-step: the first call resolves the member and returns a confirmation request —
+read the name back, get an explicit yes, then call again with confirm=true and
+the returned member_user_id. Afterwards, confirm the block and mention it can be undone.
+
+### unblock_user
+Unblock a previously blocked member so their posts and messages show again.
+Matches the name against the user's own blocked list only.
+WHEN: "unblock Maria", "entblockiere Maria", "hebe die Blockierung von Alex auf".
+If the name is not on the blocked list, the tool says who currently is —
+relay that plainly. Afterwards, confirm the unblock out loud.
+
+### submit_bug_report
+File a bug ticket (kind=bug) in the feedback pipeline. No persona swap —
+just files and confirms. Call when the user describes something BROKEN and
+wants it reported: "melde diesen Fehler", "die App stürzt ab, bitte melden",
+"report this bug", "the button does nothing, file it".
+The summary must be a concrete description of at least 15 words in the
+user's own words — which screen, what happened, what was expected.
+AFTER: speak the ticket number once and say the team will follow up.
+For live handoff to a specialist use report_to_specialist instead.
+
+### submit_support_ticket
+File a support ticket (kind=support_question) for a question the team
+should answer offline. Call when the user explicitly wants their question
+logged for support: "erstell ein Support-Ticket", "leite meine Frage an den
+Support weiter", "open a support ticket", "log this question for support".
+Do NOT call for how-to questions you can answer yourself — answer inline.
+Summary: at least 12 words describing the question and context.
+AFTER: speak the ticket number once and say support will follow up.
+
+### submit_marketplace_dispute
+File a marketplace dispute ticket (kind=marketplace_claim): refunds, wrong
+or damaged items, orders that never arrived, seller issues, overcharges.
+Triggers: "ich will mein Geld zurück", "die Bestellung ist nie angekommen",
+"I want a refund", "the seller sent the wrong item, file a claim".
+Summary: at least 12 words — what was ordered, what went wrong, what the
+user wants (refund / replacement). Include the order number if they have it.
+AFTER: speak the ticket number once and say the team will review the claim.
+
+### submit_account_issue
+File an account ticket (kind=account_issue): login problems, password or
+email trouble, role/permission issues, profile data corrections, lockouts.
+Triggers: "ich komme nicht in mein Konto", "meine E-Mail stimmt nicht,
+bitte melden", "I'm locked out", "report my login problem".
+NEVER ask for or record passwords. Summary: at least 12 words describing
+the account problem and what the user already tried.
+AFTER: speak the ticket number once and say the team will follow up.
+
+### list_my_tickets
+List the user's OPEN feedback tickets (bugs, support, disputes, account)
+with number and status. Call when the user asks about their reports:
+"was ist mit meinen Tickets?", "wie steht es um meine Fehlermeldung?",
+"what happened to my bug report?", "show my open tickets".
+AFTER: read back ticket number, what it is, and its status in the user's
+language. Never mention internal specialist names.
+
+### set_language
+Set the user's app + voice language. Persists the same setting the app's
+Language picker writes, so screens and notifications follow. Call when the
+user asks to switch language: "stell auf Deutsch um", "sprich Englisch mit
+mir", "switch the app to English", "cambia a español".
+AFTER: respond ONLY in the new language from that moment on and confirm
+the change; the app screens follow on the next reload.
+
+### set_theme
+Handle a request to change the visual theme (light / dark / system).
+Triggers: "mach den Dunkelmodus an", "stell auf hell", "switch to dark
+mode", "use the system theme".
+NOTE: the theme is stored on the device, not on the server — this tool
+explains where to flip it (Settings → Preferences → Theme). Relay that
+guidance in the user's language; do not promise the theme changed.
+
+### set_voice_preferences
+Tune the app's spoken-voice settings: pace (slow / normal / fast), voice
+name, and tone/character. Persists to the same voice settings the app's
+Voice & AI screen uses. Triggers: "sprich langsamer", "sprich schneller",
+"klinge ruhiger", "speak slower please", "use a calmer tone".
+Provide only the fields the user asked to change.
+AFTER: confirm briefly what changed, in the user's language.
+
+### list_connected_apps
+List the user's connected integrations: Google, YouTube, social accounts,
+and AI assistants (OpenAI, Anthropic, Gemini). Call when the user asks:
+"welche Apps sind verbunden?", "ist mein Google-Konto verknüpft?",
+"what apps are connected?", "is Spotify linked?".
+AFTER: name each connected app naturally in the user's language; if none,
+say so and mention Settings → Connected Apps.
+
+### disconnect_app
+Disconnect one connected integration (Google, YouTube, Instagram, an AI
+assistant, ...). Triggers: "trenne mein Google-Konto", "entferne YouTube",
+"disconnect my Google account", "unlink ChatGPT".
+TWO-STEP: first call WITHOUT confirm — the tool returns a confirmation
+question to relay. Only after the user explicitly says yes, call again
+with confirm=true. Never disconnect without that explicit yes.
+AFTER (confirmed): confirm it is disconnected and reconnectable in
+Settings → Connected Apps.
+
+### global_search
+Unified community search across people, posts, events, groups, products,
+and services in one call. Returns the top hits per category.
+CALL WHEN the user asks a broad "find/search" question: "search for yoga",
+"find anything about fasting", "such nach Tennis", "gibt es was zu Schlaf?".
+For a specific person prefer find_community_member; for events only,
+search_events. After the tool runs, present the most relevant category
+first — top two or three hits, never the raw list.
+
+### browse_news_feed
+Read the community news feed aloud: recent posts with author and a
+one-line summary. scope "following" limits to people the user follows;
+"all" is the whole community (default).
+CALL WHEN the user asks: "what's new in the community?", "read me the
+feed", "was gibt es Neues?", "zeig mir die Neuigkeiten von Leuten denen
+ich folge". After the tool runs, speak each post as author plus a short
+summary — never read long posts word for word.
+
+### snooze_recommendation
+Snooze an Autopilot recommendation so it resurfaces later (default 24h,
+max one week). Accepts the recommendation id or a spoken title fragment.
+CALL WHEN the user says: "remind me about that later", "snooze the sleep
+recommendation", "später erinnern", "leg das auf Wiedervorlage".
+After the tool runs, confirm the title and when it will come back.
+
+### dismiss_recommendation
+Dismiss an Autopilot recommendation for good (it will not come back).
+TWO-STEP: first call returns a confirmation question — read it back;
+only after a clear yes call again with confirm=true.
+CALL WHEN the user says: "not interested", "dismiss that suggestion",
+"das interessiert mich nicht", "weg damit".
+If the user just wants it later, use snooze_recommendation instead.
+
+### explain_recommendation
+Explain WHY a specific Autopilot recommendation was suggested: its
+rationale, which Vitana pillars it strengthens, impact vs effort, and
+where it came from. Accepts an id or a spoken title fragment.
+CALL WHEN the user asks: "why are you suggesting this?", "what's that
+recommendation about?", "warum schlägst du mir das vor?", "was bringt
+mir das?". After the tool runs, narrate the reason in 2-3 sentences and
+offer to activate, snooze, or dismiss it.
+
+### update_intent
+Edit one of the user's OWN intent posts (title, description text, or
+category). Accepts the intent id or a spoken title fragment.
+CALL WHEN the user says: "change my tennis post to say weekends only",
+"update the title of my ask", "ändere meinen Beitrag", "mach aus meinem
+Post ...". Pass ONLY the fields that change. After the tool runs,
+confirm what was updated in one sentence.
+
+### delete_intent
+Take down one of the user's OWN intent posts from the board (closes it;
+matching stops). TWO-STEP: first call returns a confirmation question —
+read it back; only after a clear yes call again with confirm=true.
+CALL WHEN the user says: "delete my post", "remove my tennis ask",
+"lösch meinen Beitrag", "nimm das vom Brett".
+If the ask was fulfilled, prefer mark_intent_fulfilled instead.
+
+### browse_intent_board
+Browse the open community intent board (Open Asks): what other members
+are looking for, buying, selling, or offering right now. Optional query
+filters by topic. Never shows the user's own posts.
+CALL WHEN the user asks: "what are people looking for?", "browse the
+asks board", "was suchen andere gerade?", "zeig mir das Schwarze Brett".
+After the tool runs, present the top asks (title + kind) and offer to
+respond to one or post the user's own ask.
+
+### dispute_match
+Open a dispute on a match the user is part of (no-show, misrepresented,
+safety, payment, other). MULTI-STEP: the tool first collects the reason,
+then returns a confirmation question — only after a clear yes call again
+with confirm=true. CALL WHEN the user says: "the seller never showed up",
+"I want to report this match", "der Kontakt war fake", "ich möchte das
+Match melden". Stay neutral and factual — never promise an outcome.
+
+### find_perfect_match
+Flagship people-match: find the PERFECT person for the user — workout
+partner, accountability buddy, mentor, learning partner — personalized
+with their Life Compass goal and weakest Vitana pillar. Searches the
+live community asks and, per the confirm flow, also posts the request
+so the user becomes discoverable.
+CALL WHEN the user says: "find me a workout partner", "who would be my
+perfect accountability buddy?", "find den perfekten Trainingspartner
+für mich", "such mir einen Mentor".
+Follow the returned text exactly — it tells you whether matches were
+found or a read-back confirmation is needed (then call again with
+confirmed=true).
+
+### get_emotional_state
+Read the user's current emotional and cognitive signals (D28): mood,
+focus, engagement, urgency, hesitation — from analyzed conversation
+signals, or recent diary moods/energy when no live signals exist.
+CALL WHEN the user asks: "how am I doing?", "how do I seem to you?",
+"wie wirke ich gerade?", "wie geht es mir laut meinen Daten?".
+Speak the returned text as-is — it already names the data source.
+Never diagnose; these are light behavioral observations only.
+
+### get_situational_awareness
+Summarize the user's current situation (D32): time-of-day window,
+availability, energy, suggested conversation depth and any active
+constraints, enriched with their next calendar commitment.
+CALL WHEN the user asks: "what's my situation right now?", "is this
+a good moment?", "wie sieht meine Lage gerade aus?", "passt es gerade?".
+Optionally pass timezone (IANA name like Europe/Berlin) if known.
+Speak the returned text; it states what the summary is based on.
+
+### get_availability
+Check how available and ready the user is right now (D33): availability
+level, time window, readiness score, calendar density for the next
+hours, whether they are in an event, and reminders due soon.
+CALL WHEN the user asks: "do I have time right now?", "is now a good
+time?", "habe ich gerade Zeit?", "ist jetzt ein guter Zeitpunkt?",
+or BEFORE proposing a long activity or deep session.
+Optionally pass timezone (IANA name) if known. Speak the returned text.
+
+### get_environmental_context
+Read the user's environment and mobility context (D34): where they
+are based or traveling, how they get around, late-night/early-morning
+flags and indoor/outdoor suitability — from stored location facts,
+preferences and visit history. Never invents a location.
+CALL WHEN the user asks: "what do you know about where I am?",
+"was weißt du über meine Umgebung?", or before suggesting nearby or
+outdoor activities. Speak the returned text; it names its sources.
+
+### get_life_stage_context
+Read the user's life-stage context (D40): life phase and stability,
+any transition, Life Compass goal and category, age band (from their
+stated birthday) and community tenure.
+CALL WHEN the user asks: "where am I in life?", "what stage am I in?",
+"wo stehe ich gerade im Leben?", "in welcher Lebensphase bin ich?",
+or when tailoring long-term advice to their life situation.
+Speak the returned text; it is non-prescriptive — the user knows
+their life best. If nothing is on record, offer to set up Life Compass.
+
+### follow_member
+FOLLOW a community member by their spoken name.
+CALL THIS for: "Follow Anna" / "Folge Anna" / "Ich möchte Peter folgen" /
+"Follow that member".
+Resolves the name to a member; if no match, ask the user to repeat the name.
+After success, confirm in one short sentence.
+
+### unfollow_member
+UNFOLLOW a community member by name. Two-step confirm:
+first call returns a confirmation question — ask it, then call again with
+confirmed=true after the user says yes.
+CALL THIS for: "Unfollow Anna" / "Entfolge Anna" / "Ich will Peter nicht mehr folgen".
+
+### get_notifications
+READ the user's recent notifications, unread first. Speakable.
+CALL THIS for: "Any notifications?" / "Habe ich Benachrichtigungen?" /
+"Was gibt es Neues für mich?" / "Read my notifications".
+Speak the unread count and the top titles — never deflect to the bell icon.
+
+### mark_notifications_read
+MARK notifications as read — all unread ones, or only those whose title
+matches a spoken reference.
+CALL THIS for: "Mark all as read" / "Alle als gelesen markieren" /
+"Clear my notifications" / "Mark the match notification as read".
+
+### get_wallet_balance
+READ-ONLY wallet snapshot: balance per currency, active subscription,
+last 3 transactions. NEVER moves money — payments happen in the Wallet screen.
+CALL THIS for: "What is my wallet balance?" / "Wie viel Guthaben habe ich?" /
+"Was ist auf meinem Wallet?" / "My last transactions".
+
+### update_profile
+UPDATE simple own-profile fields: display_name, bio, city, country, location.
+Two-step confirm: first call returns a verbatim read-back — speak it, then
+call again with confirmed=true after the user agrees.
+CALL THIS for: "Change my bio to …" / "Ändere meinen Namen zu …" /
+"Setze meine Stadt auf Berlin".
+NEVER use this for role or profile visibility — privacy settings own those.
+
+### play_podcast
+PLAY an internal Vitana Media Hub podcast by title or topic. Returns an
+open_url directive the app uses to start playback.
+CALL THIS for: "Play the longevity podcast" / "Spiel den Vitana Podcast" /
+"Play a podcast about sleep".
+For music use play_music instead. After success, say what is now playing.
+
+### like_post
+LIKE a community feed post — resolves "the last post from <name>" to that
+member's most recent public post.
+CALL THIS for: "Like Anna's post" / "Like den letzten Beitrag von Anna" /
+"Gefällt mir für Peters Post".
+After success, confirm which post was liked in one sentence.
+
+### comment_on_post
+COMMENT on a community feed post (public text). Two-step confirm:
+first call returns the comment for verbatim read-back — speak it, then call
+again with confirmed=true after the user says post/yes.
+CALL THIS for: "Comment on Anna's post: great work" /
+"Kommentiere Peters Beitrag mit …"."
 `;

@@ -637,8 +637,14 @@ async function fetchUserRolePreference(
  * (gateway's historical source). role_preference wins when set — it reflects
  * the user's current UI selection. Fall back to active_role when unset or
  * when the preference RPC is unavailable (older deployments).
+ *
+ * Exported (BOOTSTRAP-VOICE-CATALOG-COMPLETE) so routes/orb-tool.ts — the
+ * LiveKit HTTP tool dispatcher — can resolve the same app-level role Vertex
+ * does. Without this, role-gated tools (e.g. developer-tools.ts's dev_*
+ * suite) would see only the raw JWT `role` claim ("authenticated"), never
+ * "developer"/"admin"/"exafy_admin", and deny every legitimate LiveKit call.
  */
-async function resolveEffectiveRole(
+export async function resolveEffectiveRole(
   userId: string,
   tenantId: string
 ): Promise<string | null> {
@@ -5755,6 +5761,38 @@ async function executeLiveApiToolInner(
             },
             args,
           );
+        }
+        // BOOTSTRAP-VOICE-CATALOG-COMPLETE — generic fallback for every tool
+        // built out from the Voice Tools Catalog's `status: planned` backlog.
+        // These have no bespoke Vertex case arm (unlike the older tools
+        // above) — they're declarative handlers registered only in the
+        // shared ORB_TOOL_REGISTRY, so route through the same dispatcher
+        // the explicit case arms above use. Handlers re-check role
+        // server-side (e.g. developer-tools.ts's developerGate()).
+        const SUPABASE_URL = process.env.SUPABASE_URL;
+        const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
+        if (SUPABASE_URL && SUPABASE_SERVICE_ROLE) {
+          const { createClient } = await import('@supabase/supabase-js');
+          const { ORB_TOOL_NAMES, dispatchOrbToolForVertex } = await import('../services/orb-tools-shared');
+          if (ORB_TOOL_NAMES.includes(toolName)) {
+            const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE);
+            return await dispatchOrbToolForVertex(
+              toolName,
+              args ?? {},
+              {
+                user_id: lens.user_id,
+                tenant_id: lens.tenant_id ?? null,
+                role: session.active_role || session.identity?.role || null,
+                vitana_id: session.identity?.vitana_id ?? null,
+                session_id: session.sessionId,
+                thread_id: session.thread_id || session.sessionId,
+                turn_number: session.turn_count,
+                session_started_iso: session.createdAt.toISOString(),
+                lang: session.lang ?? null,
+              },
+              supabase,
+            );
+          }
         }
         return {
           success: false,
