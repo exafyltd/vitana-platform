@@ -169,6 +169,16 @@ jobs:
             #                           (offer_action + auto-capture + turn_complete)
             "NAV_GUIDED_JOURNEY=true"
             "NAV_CONTINUATION_BIND=true"
+            # BOOTSTRAP-MEMORY-DAILY-LEARNING: OpenAI (fact-embedding backfill,
+            # AP-0910) and DeepSeek (primary provider for inline fact
+            # extraction + AP-0911 user-model synthesis — Vertex was failing
+            # at runtime on gateway-staging) keys. Bound as plain GitHub
+            # Actions secrets, same pattern EXEC-DEPLOY.yml already uses for
+            # prod (no GCP Secret Manager entry needed) — added here because
+            # staging previously bound neither, so both features silently
+            # no-op'd on preview-gateway.vitanaland.com.
+            "OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}"
+            "DEEPSEEK_API_KEY=${{ secrets.DEEPSEEK_API_KEY }}"
           )
 
           # Comma-joined for --set-env-vars (replaces, not merges — we want the
