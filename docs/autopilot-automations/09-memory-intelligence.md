@@ -105,3 +105,101 @@ When Autopilot suggests features or explains Vitana concepts, pulls context from
 **APIs used:**
 - `POST /api/v1/assistant/knowledge/search`
 - Knowledge Hub service (VTID-0538)
+
+---
+
+## AP-0906 — Routine Pattern Extraction
+
+| Field | Value |
+|-------|-------|
+| **Status** | `IMPLEMENTED` |
+| **Priority** | `P2` |
+| **Trigger** | Cron, daily 3:30am |
+| **Handler** | `runRoutinePatternExtraction` |
+
+**What it does:**
+Fans `extractPatternsForUser` (guide/pattern-extractor, VTID-01936 — previously caller-less) over users with calendar activity in the last 30 days, writing time-of-day / day-of-week / category-affinity routines to `user_routines`. The UserContextProfiler and guide awareness-context read that table, so routines flow into the ORB voice profile.
+
+---
+
+## AP-0907 — Daily Learning Digest
+
+| Field | Value |
+|-------|-------|
+| **Status** | `IMPLEMENTED` |
+| **Priority** | `P2` |
+| **Trigger** | Cron, daily 18:10 |
+| **Handler** | `runDailyLearningDigest` |
+
+**What it does:**
+The standalone half of the shared felt-learning detector (`conversation/new-facts-detector.ts`): notifies users who gained `memory_facts` in the last 24h but did not get the moment in a session (greeting-ledger `facts_learned` not spoken today, `learning_surfaced_v1` not stamped today). Localized via the gateway i18n catalog; silent when nothing new.
+
+---
+
+## AP-0908 — Behavior-Derived Preference Inference
+
+| Field | Value |
+|-------|-------|
+| **Status** | `IMPLEMENTED` |
+| **Priority** | `P2` |
+| **Trigger** | Cron, daily 4:40am |
+| **Handler** | `runBehaviorPreferenceInference` |
+
+**What it does:**
+Turns AP-0906's `user_routines` (confidence ≥ 0.6) into `user_preference_*` memory facts via `write_fact` — provenance `behavior_inferred`, confidence 0.55. Idempotent: identical values are skipped, so re-runs cause no supersession churn.
+
+---
+
+## AP-0909 — Relationship Graph Projection
+
+| Field | Value |
+|-------|-------|
+| **Status** | `IMPLEMENTED` |
+| **Priority** | `P2` |
+| **Trigger** | Cron, daily 3:50am |
+| **Handler** | `runRelationshipGraphProjection` |
+
+**What it does:**
+The graph as a DERIVED INDEX (the only creation path since Cognee's Phase 8 retirement): projects person-facts (`spouse_name`, `friend_name_*`, …) into `relationship_nodes` + person→node relation edges, and mutual follows into person↔person `connected` edges (the shape AP-0801 counts). Rebuildable from source data at any time; Loop 13 (nightly consolidator) is the single decay mechanism. **AP-0903 is retired** — its conflicting decay formula double-decayed the same rows.
+
+---
+
+## AP-0910 — Memory Embedding Backfill
+
+| Field | Value |
+|-------|-------|
+| **Status** | `IMPLEMENTED` |
+| **Priority** | `P2` |
+| **Trigger** | Cron, hourly at :25 |
+| **Handler** | `runMemoryEmbeddingBackfill` |
+
+**What it does:**
+Drains the fact-embedding backlog (96% of live facts were unembedded, blinding tier-2 semantic retrieval) in batches of 100 via `generateBatchEmbeddings`. New writes embed inline in the inline-fact-extractor; this catches history and misses. Cheap no-op once the backlog is empty.
+
+---
+
+## AP-0911 — User Model Synthesis
+
+| Field | Value |
+|-------|-------|
+| **Status** | `IMPLEMENTED` |
+| **Priority** | `P1` |
+| **Trigger** | Cron, daily 5:05am |
+| **Handler** | `runUserModelSynthesis` |
+
+**What it does:**
+One LLM pass per active user (≥3 facts) connecting facts + routines + active goal + Vitana Index into a compact grounded narrative ("who is this person"), stored in `user_assistant_state` (`user_profile_narrative_v1`) and injected by the UserContextProfiler into the TTL-cached ORB bootstrap — synthesized understanding at zero added latency. Skips users whose inputs hash is unchanged.
+
+---
+
+## AP-0912 — Health Correlation Insights
+
+| Field | Value |
+|-------|-------|
+| **Status** | `IMPLEMENTED` |
+| **Priority** | `P1` |
+| **Trigger** | Cron, daily 4:55am |
+| **Handler** | `runHealthCorrelationInsights` |
+
+**What it does:**
+Deterministic (no-LLM, no hallucinated health claims) correlation rules over `vitana_index_scores` and `diary_entries`: pillar trends (≥10-point move over ~2 weeks) and diary lapses (silent week after a ≥3-entry week) become `health_insight_*` memory facts (provenance `system_observed`, confidence 0.9). Auto-superseded as the picture changes; surfaced through the felt-learning detector and woven into AP-0911 narratives.

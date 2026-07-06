@@ -530,6 +530,20 @@ function buildCoverageChecklist(
     items.push(`- [ ] ADDRESS: 0 diary entries in the last 7 days — invite a brief entry, gently (Rule 6, P2).`);
   }
 
+  // Felt learning (BOOTSTRAP-MEMORY-DAILY-LEARNING): the user should FEEL
+  // that Vitana learned something about them since last time. Guarded by the
+  // ledger like every other number — never restated once spoken.
+  if (p.facts_learned_since_last && p.facts_learned_since_last.count > 0) {
+    if (status('facts_learned') !== 'unchanged') {
+      const sample = p.facts_learned_since_last.sample
+        .map((f) => `${f.key.replace(/_/g, ' ')} = "${f.value}"`)
+        .join('; ');
+      items.push(
+        `- [ ] ADDRESS: since you last spoke you LEARNED ${p.facts_learned_since_last.count} new thing(s) about the user (${sample}). Weave exactly ONE naturally into the greeting ("ich habe mir gemerkt, dass …") — warm, specific, never a recited list and never the raw key names. This is the moment the user feels you grow with them. (P2.)`,
+      );
+    }
+  }
+
   if (items.length === 0) {
     return '- [ ] (No applicable items — speak a warm short greeting and ask the user what they want to focus on.)';
   }
@@ -601,6 +615,9 @@ function compactPayloadForPrompt(p: OverviewPayload): Record<string, unknown> {
     out.guided_journey = p.guided_journey;
   }
   out.diary_last_7d = p.diary_last_7d;
+  if (p.facts_learned_since_last && p.facts_learned_since_last.count > 0) {
+    out.facts_learned_since_last = p.facts_learned_since_last;
+  }
   if (p.last_session_date_user_tz) out.last_session_date_user_tz = p.last_session_date_user_tz;
   return out;
 }

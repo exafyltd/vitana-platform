@@ -25,6 +25,7 @@
  */
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { getCurrentFacts } from './memory-facts-service';
+import { fetchPreferenceFacts } from './preference-facts';
 import { getAwarenessConfig } from './awareness-registry';
 import { getJourneyEngagementBonus } from './guided-journey/journey-index-award';
 
@@ -219,41 +220,22 @@ async function fetchAppUsersAccount(
   }
 }
 
-async function fetchPreferences(client: SupabaseClient, userId: string): Promise<PreferenceRow[]> {
-  const out: PreferenceRow[] = [];
-  const explicit = await client
-    .from('user_preferences')
-    .select('category, preference_key, preference_value')
-    .eq('user_id', userId)
-    .limit(20);
-  if (!explicit.error && explicit.data) {
-    for (const row of explicit.data as any[]) {
-      out.push({
-        category: row.category ?? 'preference',
-        preference_key: row.preference_key ?? row.key ?? '',
-        preference_value: row.preference_value ?? row.value ?? null,
-        source: 'explicit',
-      });
-    }
-  }
-  const inferred = await client
-    .from('user_inferred_preferences')
-    .select('category, preference_key, preference_value, confidence')
-    .eq('user_id', userId)
-    .order('confidence', { ascending: false })
-    .limit(15);
-  if (!inferred.error && inferred.data) {
-    for (const row of inferred.data as any[]) {
-      if ((row.confidence ?? 0) < 0.55) continue;
-      out.push({
-        category: row.category ?? 'preference',
-        preference_key: row.preference_key ?? row.key ?? '',
-        preference_value: row.preference_value ?? row.value ?? null,
-        source: 'inferred',
-      });
-    }
-  }
-  return out;
+// Preferences come from memory_facts (user_preference_* keys, see
+// preference-facts.ts). The old user_preferences key/value columns and the
+// user_inferred_preferences table never existed in the live schema — both
+// queries errored and this section was silently empty. Fixed 2026-07-05.
+async function fetchPreferences(
+  client: SupabaseClient,
+  userId: string,
+  tenantId?: string,
+): Promise<PreferenceRow[]> {
+  const facts = await fetchPreferenceFacts(client, userId, { tenantId, limit: 20 });
+  return facts.map((f) => ({
+    category: 'preference',
+    preference_key: f.key,
+    preference_value: f.value,
+    source: f.source,
+  }));
 }
 
 // =============================================================================
@@ -1009,7 +991,7 @@ export async function getUserContextSummary(
 
   const fetchPrefsIfWanted = (cfg && !cfg.isEnabled('preferences.explicit.enabled') && !cfg.isEnabled('preferences.inferred.enabled'))
     ? Promise.resolve([] as PreferenceRow[])
-    : fetchPreferences(client, userId);
+    : fetchPreferences(client, userId, opts.tenantId);
 
   const fetchVitanaIfWanted = (cfg && !cfg.isEnabled('health.enabled'))
     ? Promise.resolve(null)
@@ -1019,19 +1001,30 @@ export async function getUserContextSummary(
     ? Promise.resolve({ ok: true, facts: [] as any[] })
     : getCurrentFacts({ tenant_id: opts.tenantId, user_id: userId });
 
+  // BOOTSTRAP-MEMORY-DAILY-LEARNING: the nightly synthesized "who is this
+  // person" narrative (AP-0911). Reads a single user_assistant_state row —
+  // cheap, and the section self-skips when no narrative exists yet.
+  const fetchNarrativeIfWanted =
+    (cfg && !cfg.isEnabled('profile.narrative.enabled')) || !opts.tenantId
+      ? Promise.resolve(null)
+      : import('./user-model-synthesis')
+          .then((m) => m.readUserProfileNarrative(client, opts.tenantId!, userId))
+          .catch(() => null);
+
   // VTID-03037: account/tenure fetch. Always in the batch — no awareness-
   // registry gate yet; the section itself self-skips when created_at is
   // missing. The query is cheap (single-row lookup on a PK) and adds no
   // measurable latency because it parallelizes with the existing five.
   const fetchAccountPromise = fetchAppUsersAccount(client, userId);
 
-  const [activities, routines, prefs, vitana, factsResult, account] = await Promise.all([
+  const [activities, routines, prefs, vitana, factsResult, account, narrative] = await Promise.all([
     fetchActivitiesIfWanted,
     fetchRoutinesIfWanted,
     fetchPrefsIfWanted,
     fetchVitanaIfWanted,
     fetchFactsIfWanted,
     fetchAccountPromise,
+    fetchNarrativeIfWanted,
   ]);
 
   const sections = [
@@ -1040,6 +1033,11 @@ export async function getUserContextSummary(
     // path's USER AWARENESS positioning (tenure line at top of awareness
     // block) so both pipelines agree on the high-signal placement.
     buildAccountSection(account, now),
+    // Synthesized narrative FIRST after account — it's the connected picture;
+    // the sections below are its raw evidence.
+    narrative
+      ? `[PROFILE SYNTHESIS — nightly, connect-the-dots summary]\n${narrative.narrative}`
+      : '',
     (!cfg || cfg.isEnabled('activity.summary.enabled')) ? buildActivitySummarySection(activities) : '',
     (!cfg || cfg.isEnabled('routines.enabled'))         ? buildRoutinesSection(routines, activities) : '',
     (!cfg || cfg.isEnabled('preferences.explicit.enabled') || cfg.isEnabled('preferences.inferred.enabled'))
