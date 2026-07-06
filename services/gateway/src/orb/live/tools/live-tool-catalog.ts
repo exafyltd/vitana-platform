@@ -20,6 +20,15 @@
  */
 
 import { ADMIN_TOOL_SCHEMAS } from '../../../services/admin-voice-tools';
+// BOOTSTRAP-VOICE-CATALOG-COMPLETE — Vertex declarations for every tool built
+// out from the Voice Tools Catalog's `status: planned` backlog + the P0
+// community-feature gaps. Handlers live in services/orb-tools/*, spread into
+// the shared ORB_TOOL_REGISTRY in orb-tools-shared.ts; these are just the
+// function_declarations Vertex needs to see the tools exist.
+import {
+  NEW_DOMAIN_TOOL_DECLARATIONS,
+  DEVELOPER_DOMAIN_TOOL_DECLARATIONS,
+} from '../../../services/orb-tools-shared';
 
 
 /**
@@ -2424,11 +2433,26 @@ export function buildLiveApiTools(
             required: [],
           },
         },
+        // BOOTSTRAP-VOICE-CATALOG-COMPLETE — every tool built out from the
+        // Voice Tools Catalog's `status: planned` backlog + P0 community-
+        // feature gaps (Superlatives, Diary, Memory, Calendar management,
+        // Reminders lifecycle, Clock, Groups, Events/RSVP, Chat management,
+        // Privacy, Feedback, Settings, Search/News, Autopilot management,
+        // Intent management, Awareness, follow/notifications/wallet-read/
+        // profile/media/likes). Community-role tools — always declared for
+        // authenticated sessions, same as everything else in this array.
+        ...NEW_DOMAIN_TOOL_DECLARATIONS,
         // BOOTSTRAP-ADMIN-DD: admin voice tools — only injected when active_role
         // is admin / exafy_admin / developer. Community sessions never see them
         // and the orb dispatcher rejects them server-side regardless.
         ...(activeRole && ['admin', 'exafy_admin', 'developer'].includes(activeRole)
           ? ADMIN_TOOL_SCHEMAS
+          : []),
+        // BOOTSTRAP-VOICE-CATALOG-COMPLETE — Developer voice tools (VTID-02782).
+        // Same role gate as ADMIN_TOOL_SCHEMAS; handlers re-check role
+        // server-side regardless (developer-tools.ts developerGate()).
+        ...(activeRole && ['admin', 'exafy_admin', 'developer'].includes(activeRole)
+          ? DEVELOPER_DOMAIN_TOOL_DECLARATIONS
           : []),
       ],
     },

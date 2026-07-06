@@ -252,7 +252,7 @@ export async function tool_list_my_groups(
     }
     const spoken = myGroups
       .slice(0, 8)
-      .map((g) => `${g.name} (${memberCountPhrase(g.member_count)}${g.role === 'admin' ? ', you're an admin' : ''})`)
+      .map((g) => `${g.name} (${memberCountPhrase(g.member_count)}${g.role === 'admin' ? ", you're an admin" : ''})`)
       .join('; ');
     return {
       ok: true,

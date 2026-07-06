@@ -1131,5 +1131,34 @@ Retention: 2 years. Upsert on the unique key keeps the rollup job idempotent.
 
 ---
 
+## VTID-02779 — Voice Clock (alarms / timers / pomodoro)
+
+### voice_clock_items
+
+```
+voice_clock_items (
+  id UUID PK, tenant_id UUID, user_id UUID NOT NULL,
+  kind TEXT NOT NULL CHECK (alarm|timer|pomodoro),
+  label TEXT,
+  fires_at TIMESTAMPTZ,               -- absolute UTC instant the item rings
+  recurrence TEXT,                    -- daily|weekdays|NULL (alarms only)
+  duration_seconds INT,               -- timers/pomodoros only
+  status TEXT NOT NULL DEFAULT 'active' CHECK (active|fired|cancelled|completed),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+```
+
+Written by the ORB voice tools `set_alarm` / `start_timer` / `start_pomodoro`
+(services/gateway/src/services/orb-tools/reminders-clock-tools.ts).
+RLS-on with an owner policy (`auth.uid() = user_id`) + service-role bypass.
+Indexes: `(user_id, status)` for list/delete; partial index on `fires_at`
+WHERE `status='active'` for the future tick job.
+
+**Follow-up needed:** FIRING (push/chime delivery when `fires_at` passes) is
+not yet implemented — a cron/tick job analogous to `/reminders-tick` must be
+added to claim due rows and transition `active → fired`.
+
+---
+
 **Remember:** This file is the SINGLE SOURCE OF TRUTH for table names.
 When in doubt, CHECK HERE FIRST!

@@ -72,7 +72,16 @@ function readSource(path) {
 function extractSharedRegistry(src) {
   // Matches the `ORB_TOOL_REGISTRY: Record<string, OrbToolHandler> = { … };` block
   // and pulls every key. Same logic as orb-tools-lift-scanner.
-  const idx = src.indexOf('ORB_TOOL_REGISTRY');
+  //
+  // BOOTSTRAP-VOICE-CATALOG-COMPLETE fix: must anchor on the DECLARATION
+  // (`export const ORB_TOOL_REGISTRY`), not the bare identifier — the
+  // `offer_action` handler references `ORB_TOOL_REGISTRY[tool]` earlier in
+  // the file (validating the offered tool exists), and a naive
+  // `indexOf('ORB_TOOL_REGISTRY')` would latch onto that reference instead
+  // of the real object literal, making every registry-only tool (reachable
+  // on Vertex only through the generic dispatcher fallback in orb-live.ts,
+  // with no dedicated `case` arm) look LiveKit-only.
+  const idx = src.indexOf('export const ORB_TOOL_REGISTRY');
   if (idx < 0) return new Set();
   const open = src.indexOf('{', idx);
   if (open < 0) return new Set();
@@ -96,6 +105,53 @@ function extractSharedRegistry(src) {
   let m;
   while ((m = pat.exec(body)) !== null) {
     keys.add(m[1]);
+  }
+  // BOOTSTRAP-VOICE-CATALOG-COMPLETE: per-domain modules are merged in via
+  // `...FOO_TOOL_HANDLERS,` spreads (services/orb-tools/*.ts), not literal
+  // `key: value` pairs — the regex above can't see through a spread. Resolve
+  // each spread identifier back to its import statement, read that module,
+  // and pull its own `FOO_TOOL_HANDLERS: Record<...> = { … }` keys the same
+  // way. Keeps working for any future domain module with zero script changes.
+  const spreadPat = /^[ \t]*\.\.\.([A-Z][A-Z0-9_]*)\s*,/gm;
+  let sm;
+  const spreadNames = new Set();
+  while ((sm = spreadPat.exec(body)) !== null) {
+    spreadNames.add(sm[1]);
+  }
+  for (const spreadName of spreadNames) {
+    const importRe = new RegExp(`import\\s*\\{[^}]*\\b${spreadName}\\b[^}]*\\}\\s*from\\s*'([^']+)'`);
+    const importMatch = src.match(importRe);
+    if (!importMatch) continue;
+    const modPath = resolve(ROOT, 'services/gateway/src/services', importMatch[1].replace(/^\.\//, '') + '.ts');
+    let modSrc;
+    try {
+      modSrc = readFileSync(modPath, 'utf8');
+    } catch {
+      continue;
+    }
+    const declIdx = modSrc.indexOf(`export const ${spreadName}`);
+    if (declIdx < 0) continue;
+    const modOpen = modSrc.indexOf('{', declIdx);
+    if (modOpen < 0) continue;
+    let modDepth = 0;
+    let modClose = -1;
+    for (let i = modOpen; i < modSrc.length; i++) {
+      if (modSrc[i] === '{') modDepth++;
+      else if (modSrc[i] === '}') {
+        modDepth--;
+        if (modDepth === 0) {
+          modClose = i;
+          break;
+        }
+      }
+    }
+    if (modClose < 0) continue;
+    const modBody = modSrc.slice(modOpen + 1, modClose);
+    let mm;
+    const modPat = /^[ \t]*([a-zA-Z_][a-zA-Z0-9_]*)\s*:\s*[(a-zA-Z_]/gm;
+    while ((mm = modPat.exec(modBody)) !== null) {
+      keys.add(mm[1]);
+    }
   }
   return keys;
 }
@@ -167,6 +223,41 @@ function extractLivekitTools(src) {
   return tools;
 }
 
+// BOOTSTRAP-VOICE-CATALOG-COMPLETE: admin_* tools are a THIRD Vertex-wiring
+// path — dispatched via `ADMIN_TOOL_NAMES.includes(toolName)` in orb-live.ts's
+// default case, backed by `ADMIN_TOOL_HANDLERS` in admin-voice-tools.ts (not
+// the shared ORB_TOOL_REGISTRY, not a `case` arm). Without this they read as
+// "planned" even though they're fully implemented and reachable.
+const ADMIN_TOOLS = resolve(ROOT, 'services/gateway/src/services/admin-voice-tools.ts');
+
+function extractAdminTools(src) {
+  const idx = src.indexOf('export const ADMIN_TOOL_HANDLERS');
+  if (idx < 0) return new Set();
+  const open = src.indexOf('{', idx);
+  if (open < 0) return new Set();
+  let depth = 0;
+  let close = -1;
+  for (let i = open; i < src.length; i++) {
+    if (src[i] === '{') depth++;
+    else if (src[i] === '}') {
+      depth--;
+      if (depth === 0) {
+        close = i;
+        break;
+      }
+    }
+  }
+  if (close < 0) return new Set();
+  const body = src.slice(open + 1, close);
+  const keys = new Set();
+  const pat = /^[ \t]*([a-zA-Z_][a-zA-Z0-9_]*)\s*:\s*[a-zA-Z_]/gm;
+  let m;
+  while ((m = pat.exec(body)) !== null) {
+    keys.add(m[1]);
+  }
+  return keys;
+}
+
 // ---------------------------------------------------------------------------
 // Reconciliation
 // ---------------------------------------------------------------------------
@@ -175,17 +266,19 @@ function main() {
   const sharedSrc = readSource(SHARED);
   const vertexSrc = readSource(VERTEX);
   const livekitSrc = readSource(LIVEKIT);
+  const adminSrc = readSource(ADMIN_TOOLS);
 
   const shared = extractSharedRegistry(sharedSrc);
   const vertexCases = extractVertexTools(vertexSrc);
   const livekit = extractLivekitTools(livekitSrc);
+  const admin = extractAdminTools(adminSrc);
 
   // A tool is "wired on Vertex" if either:
   //   - It's a case arm in orb-live.ts (Vertex pipeline serves it inline
   //     OR delegates it to the shared dispatcher).
   //   - It's in ORB_TOOL_REGISTRY (the shared dispatcher serves it; both
   //     pipelines route through it via dispatchOrbToolForVertex).
-  const vertex = new Set([...vertexCases, ...shared]);
+  const vertex = new Set([...vertexCases, ...shared, ...admin]);
 
   // A tool is "wired on LiveKit" if it's in all_tool_names() (the agent
   // registers it with the LLM). LiveKit's HTTP tool path also goes through
