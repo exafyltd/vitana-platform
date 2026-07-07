@@ -138,8 +138,44 @@ step-by-step**, never over-promise.
 | Integration (Vertex) | `services/gateway/src/routes/orb-live.ts` | `sendGreetingPromptToLiveAPI`; `executeLiveApiTool`; `emitDiag` (L12304) |
 | Shared ORB tools | `services/gateway/src/services/orb-tools-shared.ts` | `ORB_TOOL_REGISTRY`, `dispatchOrbTool`, all the action tools |
 | Self-check harness | `services/gateway/src/routes/orb-tools-selfcheck.ts` | `POST /api/v1/admin/orb-tools/selfcheck {user_id,tools?}` (admin-gated) |
-| CI guard | `scripts/ci/impact-rules/conversation-flow-change-needs-test.mjs` | blocker rule (see §1) |
+| CI guard | `scripts/ci/impact-rules/conversation-flow-change-needs-test.mjs` | blocker rule (see §1); `FLOW_SOURCE_RE` now also covers `routes/orb-live.ts` + `routes/orb-livekit.ts` (Step 1a) |
+| **Greeting-decision seam (Step 1a)** | `services/gateway/src/services/conversation/compute-greeting-decision.ts` | `computeGreetingDecision(ctx)` — PURE transcription of the Vertex greeting ladder (9 `wake_opener` rungs + legacy default); `GreetingDecisionContext`, `GreetingDecision`, `safeFastApplies`, `shouldAttemptNewdayOverview`, `shouldAttemptResumeOverview` |
+| **Transport-parity scanner (Step 1a)** | `scripts/ci/impact-rules/transport-flow-parity.mjs` | `warning` today; flags a transport file that still owns inline register/recency/`wake_opener` logic; flips to `blocker` at end of 1c |
+| **Memory orchestrator (#2830/#2831)** | `services/gateway/src/services/memory-orchestrator.ts` | `buildAssistantMemoryContext(input)` (L479) → `AssistantMemoryContext`; `formatMemoryContextForPrompt` (L427); `assertMemoryContextInjected` (L747, the mandatory-injection guard); `detectMemoryBypass` (L795); `emitMemoryTurnTelemetry` (L871); sentinels `=== USER MEMORY CONTEXT ===`. Admin route `routes/admin-memory-orchestrator.ts`. |
+| **Social context pack (#2832/#2833)** | `services/gateway/src/services/social-memory/*` | `buildSocialContextPack` (social-context-builder L56) → `SocialContextPack`; `buildAssistantSocialContext` (social-memory-service L50) → `AssistantSocialContextResult`; `formatSocialContextForPrompt(pack)` (social-memory-prompts L104) → the `<social_context>` instruction block; `detectSocialIntent` (L75); rankers `rankInterestingPosts`/`rankInterestingEvents`. Route `routes/memory-social.ts`; ORB tool `get_social_context` (dispatched in `orb-live.ts` `executeLiveApiToolInner`). |
 | Architecture | `docs/CONVERSATION_FLOW_ARCHITECTURE.md` | "one brain, many mouths" |
+
+### 3.1 New context layers — memory orchestrator + social context pack (added after v2)
+
+Two subsystems landed **after** this doc's v2 and after the roadmap-v3 Step-1a seam.
+They enrich the **per-turn context and the tool surface**, and are wired into
+`buildBootstrapContextPack` + `executeLiveApiToolInner` + the standing system
+instruction — **not** into the greeting-decision ladder. `computeGreetingDecision`
+therefore remains faithful; but the SINGLE BRAIN (roadmap Step 1b) and this
+Command-Hub section (Step 4) must treat them as first-class:
+
+- **Memory orchestrator** — a MANDATORY memory step before every assistant answer.
+  It assembles `AssistantMemoryContext` (active goals, preferences, do-not-repeat)
+  and injects it between the `=== USER MEMORY CONTEXT ===` sentinels;
+  `assertMemoryContextInjected` fails loudly if a turn would answer without it.
+  → **Step 1b:** `ConversationContext` must carry the resolved memory context (or a
+    handle to it) so the brain's decisions are memory-aware and the injection guard
+    is expressible as an invariant. → **Step 4 (Hub):** the **Monitor** shows the
+    memory-injected/bypass telemetry (`MEMORY_ORCHESTRATOR_EVENT_TYPES`), and the
+    **Simulator** must render the memory block it assembled for the dry-run user.
+- **Social context pack** — `buildSocialContextPack` / `buildAssistantSocialContext`
+  produce a ranked view of the user's people/matches/posts/events; it reaches the
+  model two ways: (a) the `<social_context>` block in the standing instruction
+  (`formatSocialContextForPrompt`), and (b) the on-demand `get_social_context` tool.
+  `detectSocialIntent` decides when a turn is socially-flavoured.
+  → **Step 1b:** the offer/next-turn contract and NBA ranking should be able to read
+    social signals (matches/messages already are in `OverviewPayload`; the richer
+    social pack is the superset). → **Step 4 (Hub):** **Tool Health** lists
+    `get_social_context` and its failure feed; the **Simulator** shows the assembled
+    social pack; a future **Social** sub-view can surface the ranker inputs.
+
+**Net:** Step 1a (greeting seam) is unaffected and correct. The reconcile above is a
+scope update so 1b + the Hub design against the CURRENT flow, not the pre-#2830 one.
 
 ---
 

@@ -33,6 +33,7 @@ function emptyPayload(over: Partial<OverviewPayload> = {}): OverviewPayload {
     messages_unread: 0,
     reminders_today: { count: 0, next: null },
     diary_last_7d: 3,
+    facts_learned_since_last: null,
     guided_journey: null,
     last_session_date_user_tz: null,
     ...over,
@@ -136,6 +137,7 @@ describe('rankNextBestActions — value × timeliness, always grounded', () => {
       messages_unread: 26,
       matches_unread: 15,
       diary_last_7d: 0,
+      facts_learned_since_last: null,
       guided_journey: { sessions_completed: 8, topics_learned: 18, topics_total: 90, next_session_title: 'Vitana Index', last_session_recall: 'Vitana Index' },
     });
     // Open 1: top action (messages).

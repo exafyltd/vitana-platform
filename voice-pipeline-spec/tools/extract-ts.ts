@@ -13,13 +13,14 @@
  * Run: npm run extract:ts
  */
 import { Project, Node, SyntaxKind, type CaseClause, type SwitchStatement } from 'ts-morph';
-import { writeFileSync, mkdirSync } from 'node:fs';
+import { writeFileSync, mkdirSync, readFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(__dirname, '..', '..');
 const ORB_LIVE = resolve(REPO_ROOT, 'services', 'gateway', 'src', 'routes', 'orb-live.ts');
+const ORB_TOOLS_SHARED = resolve(REPO_ROOT, 'services', 'gateway', 'src', 'services', 'orb-tools-shared.ts');
 const OUT_PATH = resolve(__dirname, '..', 'extracted', 'vertex.json');
 
 // Only switch statements with these discriminants count as tool dispatchers.
@@ -131,6 +132,20 @@ function main(): void {
     }
   }
 
+  // BOOTSTRAP-VOICE-CATALOG-COMPLETE: orb-live.ts's default case has a
+  // generic dispatch fallback — `if (ORB_TOOL_NAMES.includes(toolName))
+  // { … dispatchOrbToolForVertex … }` — so every tool in the shared
+  // ORB_TOOL_REGISTRY is Vertex-reachable even without its own `case` arm
+  // or `toolName === '...'` comparison. Without this, every tool added via
+  // the shared registry (the intended pattern going forward) shows up as a
+  // false-positive `missing_in_vertex` drift on every PR. Detect the idiom
+  // and, when present, count every shared-registry tool as covered.
+  if (/ORB_TOOL_NAMES\.includes\(\s*toolName\s*\)/.test(sf.getFullText())) {
+    for (const name of extractSharedRegistryNames(readSharedSource())) {
+      tools.push({ name, line: 0 });
+    }
+  }
+
   const out: ExtractedSurface = {
     source: 'services/gateway/src/routes/orb-live.ts',
     extracted_at: new Date().toISOString(),
@@ -207,6 +222,80 @@ function dedupeBy<T, K>(arr: T[], key: (x: T) => K): T[] {
     }
   }
   return out;
+}
+
+function readSharedSource(): string {
+  return readFileSync(ORB_TOOLS_SHARED, 'utf8');
+}
+
+// Regex-based extraction (not ts-morph) to match the sibling implementation
+// in scripts/voice-tools-manifest-reconcile.mjs — same source, same logic,
+// kept in sync deliberately. Pulls every literal key AND every
+// `...FOO_TOOL_HANDLERS` spread's own keys (resolved via its import path)
+// out of `export const ORB_TOOL_REGISTRY = { … }`.
+function extractSharedRegistryNames(src: string): Set<string> {
+  const idx = src.indexOf('export const ORB_TOOL_REGISTRY');
+  if (idx < 0) return new Set();
+  const open = src.indexOf('{', idx);
+  if (open < 0) return new Set();
+  let depth = 0;
+  let close = -1;
+  for (let i = open; i < src.length; i++) {
+    if (src[i] === '{') depth++;
+    else if (src[i] === '}') {
+      depth--;
+      if (depth === 0) {
+        close = i;
+        break;
+      }
+    }
+  }
+  if (close < 0) return new Set();
+  const body = src.slice(open + 1, close);
+  const keys = new Set<string>();
+  const pat = /^[ \t]*([a-zA-Z_][a-zA-Z0-9_]*)\s*(?::\s*[(a-zA-Z_]|,)/gm;
+  let m: RegExpExecArray | null;
+  while ((m = pat.exec(body)) !== null) keys.add(m[1]);
+
+  const spreadPat = /^[ \t]*\.\.\.([A-Z][A-Z0-9_]*)\s*,/gm;
+  const spreadNames = new Set<string>();
+  let sm: RegExpExecArray | null;
+  while ((sm = spreadPat.exec(body)) !== null) spreadNames.add(sm[1]);
+
+  for (const spreadName of spreadNames) {
+    const importRe = new RegExp(`import\\s*\\{[^}]*\\b${spreadName}\\b[^}]*\\}\\s*from\\s*'([^']+)'`);
+    const importMatch = src.match(importRe);
+    if (!importMatch) continue;
+    const modPath = resolve(dirname(ORB_TOOLS_SHARED), importMatch[1].replace(/^\.\//, '') + '.ts');
+    let modSrc: string;
+    try {
+      modSrc = readFileSync(modPath, 'utf8');
+    } catch {
+      continue;
+    }
+    const declIdx = modSrc.indexOf(`export const ${spreadName}`);
+    if (declIdx < 0) continue;
+    const modOpen = modSrc.indexOf('{', declIdx);
+    if (modOpen < 0) continue;
+    let modDepth = 0;
+    let modClose = -1;
+    for (let i = modOpen; i < modSrc.length; i++) {
+      if (modSrc[i] === '{') modDepth++;
+      else if (modSrc[i] === '}') {
+        modDepth--;
+        if (modDepth === 0) {
+          modClose = i;
+          break;
+        }
+      }
+    }
+    if (modClose < 0) continue;
+    const modBody = modSrc.slice(modOpen + 1, modClose);
+    let mm: RegExpExecArray | null;
+    const modPat = /^[ \t]*([a-zA-Z_][a-zA-Z0-9_]*)\s*(?::\s*[(a-zA-Z_]|,)/gm;
+    while ((mm = modPat.exec(modBody)) !== null) keys.add(mm[1]);
+  }
+  return keys;
 }
 
 main();

@@ -39,6 +39,7 @@ async function runPaymentMethodReminder(ctx: AutomationContext) {
 }
 
 // ── AP-0706: Creator Stripe Connect Onboarding ──────────────
+// app_users' primary key is user_id, not id.
 async function runCreatorStripeOnboarding(ctx: AutomationContext) {
   const payload = ctx.run.metadata as any;
   const userId = payload?.user_id;
@@ -50,7 +51,7 @@ async function runCreatorStripeOnboarding(ctx: AutomationContext) {
   const { data: user } = await supabase
     .from('app_users')
     .select('stripe_account_id, stripe_charges_enabled')
-    .eq('id', userId)
+    .eq('user_id', userId)
     .maybeSingle();
 
   if (user?.stripe_charges_enabled) {
@@ -141,6 +142,10 @@ async function runWalletCreditReward(ctx: AutomationContext) {
 }
 
 // ── AP-0710: Monetization Readiness Scoring ─────────────────
+// KNOWN GAP: monetization_signals and d28_emotional_signals were never
+// deployed (no substitute table exists) — both queries always no-op
+// (error, empty data), so this always returns the 50% baseline / not
+// vulnerable. Left as-is rather than inventing a replacement schema.
 async function runMonetizationReadinessCheck(ctx: AutomationContext) {
   const payload = ctx.run.metadata as any;
   const userId = payload?.user_id;
@@ -192,6 +197,10 @@ async function runMonetizationReadinessCheck(ctx: AutomationContext) {
 }
 
 // ── AP-0711: Weekly Earnings Report for Creators ────────────
+// app_users' primary key is user_id, not id. user_offers_memory (VTID-01092)
+// was never deployed — no substitute exists, so the transaction count always
+// reads 0; the notification itself (which never depended on real activity
+// gating) still goes out to real creators via the real app_users column.
 async function runCreatorWeeklyEarnings(ctx: AutomationContext) {
   const { supabase, tenantId } = ctx;
   let usersAffected = 0;
@@ -200,25 +209,126 @@ async function runCreatorWeeklyEarnings(ctx: AutomationContext) {
   // Find all creators (users with stripe_charges_enabled)
   const { data: creators } = await supabase
     .from('app_users')
-    .select('id, display_name')
+    .select('user_id, display_name')
     .eq('stripe_charges_enabled', true);
 
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
 
   for (const creator of creators || []) {
-    // Count services used this week
+    // KNOWN GAP: user_offers_memory doesn't exist live; txCount is always 0.
     const { count: txCount } = await supabase
       .from('user_offers_memory')
       .select('id', { count: 'exact', head: true })
       .eq('tenant_id', tenantId)
-      .eq('target_id', creator.id)
+      .eq('target_id', creator.user_id)
       .eq('state', 'used')
       .gte('updated_at', sevenDaysAgo);
 
-    ctx.notify(creator.id, 'orb_proactive_message', {
+    ctx.notify(creator.user_id, 'orb_proactive_message', {
       title: 'Your Weekly Earnings',
       body: `${txCount || 0} transactions this week. Check your Business Hub for details.`,
       data: { url: '/business/earnings' },
+    });
+
+    usersAffected++;
+    actionsTaken++;
+  }
+
+  return { usersAffected, actionsTaken };
+}
+
+// ── AP-0704: Subscription Expiry Warning ────────────────────
+// user_subscriptions (tenant_id, user_id, status, current_period_end,
+// cancel_at_period_end) is the live table. Warns users whose subscription
+// is set to lapse (cancel_at_period_end=true) within 3 days.
+const EXPIRY_WARNING_WINDOW_DAYS = 3;
+const EXPIRY_WARNING_COOLDOWN_DAYS = 7;
+
+async function runSubscriptionExpiryWarning(ctx: AutomationContext) {
+  const { supabase, tenantId } = ctx;
+  let usersAffected = 0;
+  let actionsTaken = 0;
+
+  const now = new Date();
+  const windowEnd = new Date(now.getTime() + EXPIRY_WARNING_WINDOW_DAYS * 86_400_000);
+
+  const { data: expiring } = await supabase
+    .from('user_subscriptions')
+    .select('user_id, plan_key, current_period_end')
+    .eq('tenant_id', tenantId)
+    .eq('status', 'active')
+    .eq('cancel_at_period_end', true)
+    .gte('current_period_end', now.toISOString())
+    .lte('current_period_end', windowEnd.toISOString())
+    .limit(500);
+
+  const cooldownCutoff = new Date(now.getTime() - EXPIRY_WARNING_COOLDOWN_DAYS * 86_400_000).toISOString();
+
+  for (const sub of expiring || []) {
+    const { data: recentWarning } = await supabase
+      .from('user_notifications')
+      .select('id')
+      .eq('user_id', sub.user_id)
+      .contains('data', { automation_id: 'AP-0704' })
+      .gte('created_at', cooldownCutoff)
+      .limit(1);
+    if (recentWarning && recentWarning.length > 0) continue;
+
+    const daysLeft = Math.max(1, Math.ceil((new Date(sub.current_period_end).getTime() - now.getTime()) / 86_400_000));
+
+    ctx.notify(sub.user_id, 'orb_proactive_message', {
+      title: 'Your Subscription Is Ending Soon',
+      body: `Your ${sub.plan_key || 'plan'} subscription ends in ${daysLeft} day${daysLeft === 1 ? '' : 's'}. Renew to keep your benefits.`,
+      data: { url: '/wallet/subscription', automation_id: 'AP-0704' },
+    });
+
+    usersAffected++;
+    actionsTaken++;
+  }
+
+  return { usersAffected, actionsTaken };
+}
+
+// ── AP-0712: Spending Insights for Users ────────────────────
+// wallet_transactions (from_user_id, to_currency dropped — from_currency/
+// amount/status; no tenant_id column) is the live VTN exchange ledger.
+// Summarizes the prior calendar month's completed outgoing spend per user.
+const SPENDING_INSIGHTS_MAX_USERS_PER_RUN = 1000;
+
+async function runSpendingInsights(ctx: AutomationContext) {
+  const { supabase } = ctx;
+  let usersAffected = 0;
+  let actionsTaken = 0;
+
+  const now = new Date();
+  const monthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  const monthEnd = new Date(now.getFullYear(), now.getMonth(), 1);
+
+  const users = (await ctx.queryTargetUsers()).slice(0, SPENDING_INSIGHTS_MAX_USERS_PER_RUN);
+
+  for (const { user_id } of users) {
+    const { data: txs } = await supabase
+      .from('wallet_transactions')
+      .select('amount, from_currency')
+      .eq('from_user_id', user_id)
+      .eq('status', 'completed')
+      .gte('created_at', monthStart.toISOString())
+      .lt('created_at', monthEnd.toISOString());
+
+    if (!txs?.length) continue;
+
+    const totalsByCurrency = new Map<string, number>();
+    for (const tx of txs) {
+      const currency = tx.from_currency || 'CREDITS';
+      totalsByCurrency.set(currency, (totalsByCurrency.get(currency) || 0) + Number(tx.amount || 0));
+    }
+
+    const summary = [...totalsByCurrency.entries()].map(([currency, total]) => `${Math.round(total)} ${currency}`).join(', ');
+
+    ctx.notify(user_id, 'orb_suggestion', {
+      title: 'Your Monthly Spending Summary',
+      body: `You spent ${summary} last month across ${txs.length} transaction${txs.length === 1 ? '' : 's'}.`,
+      data: { url: '/wallet', automation_id: 'AP-0712' },
     });
 
     usersAffected++;
@@ -232,6 +342,8 @@ export function registerWalletPaymentsHandlers(): void {
   registerHandler('runPaymentFailureRetry', runPaymentFailureRetry);
   registerHandler('runSubscriptionAudit', runSubscriptionAudit);
   registerHandler('runPaymentMethodReminder', runPaymentMethodReminder);
+  registerHandler('runSubscriptionExpiryWarning', runSubscriptionExpiryWarning);
+  registerHandler('runSpendingInsights', runSpendingInsights);
   registerHandler('runCreatorStripeOnboarding', runCreatorStripeOnboarding);
   registerHandler('runCreatorPayoutMonitor', runCreatorPayoutMonitor);
   registerHandler('runWalletCreditReward', runWalletCreditReward);

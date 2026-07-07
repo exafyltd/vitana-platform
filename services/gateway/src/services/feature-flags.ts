@@ -20,10 +20,18 @@ import { isStaging } from '../env';
 
 export type FeatureFlagSetting = 'off' | 'staging-only' | 'staging+prod';
 
+// Behavior-safe defaults (BOOTSTRAP-MEMORY-DAILY-LEARNING): shadow-mode flags
+// only LOG a naive-vs-ranked comparison and never change what ships, so they
+// default ON in staging to collect flip-evidence without an operator env
+// change. An explicit env value always wins.
+const DEFAULT_SETTINGS: Record<string, FeatureFlagSetting> = {
+  VOICE_RANKING_SHADOW: 'staging-only',
+};
+
 function readSetting(name: string): FeatureFlagSetting {
   const raw = process.env[`FEATURE_${name}_ENV`];
-  if (raw === 'staging-only' || raw === 'staging+prod') return raw;
-  return 'off';
+  if (raw === 'off' || raw === 'staging-only' || raw === 'staging+prod') return raw;
+  return DEFAULT_SETTINGS[name] ?? 'off';
 }
 
 /**

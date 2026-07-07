@@ -57,6 +57,7 @@ function makePayload(journey: OverviewPayload['journey']): OverviewPayload {
     messages_unread: 0,
     reminders_today: { count: 0, next: null },
     diary_last_7d: 0,
+    facts_learned_since_last: null,
     guided_journey: null,
     last_session_date_user_tz: '2026-05-31',
   };

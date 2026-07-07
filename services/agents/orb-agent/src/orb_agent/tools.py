@@ -930,9 +930,9 @@ async def get_index_improvement_suggestions(context: RunContext) -> str:
 
 
 @function_tool
-async def create_index_improvement_plan(context: RunContext, target_pillar: str) -> str:
+async def create_index_improvement_plan(context: RunContext, pillar: str) -> str:
     """Create a multi-step plan to improve a specific pillar (VTID-01983)."""
-    body = await _dispatch(context, "create_index_improvement_plan", {"target_pillar": target_pillar})
+    body = await _dispatch(context, "create_index_improvement_plan", {"pillar": pillar})
     return summarize(body)
 
 
@@ -1899,6 +1899,932 @@ async def get_current_screen(context: RunContext) -> str:
     return summarize(body)
 
 
+
+# ============================================================================
+# BOOTSTRAP-VOICE-CATALOG-COMPLETE — every tool built out from the Voice Tools
+# Catalog's `status: planned` backlog + P0 community-feature gaps. Handlers
+# live server-side in services/gateway/src/services/orb-tools/*.ts, dispatched
+# through the shared ORB_TOOL_REGISTRY via POST /api/v1/orb/tool — these
+# wrappers are thin: marshal args, call _dispatch[_with_directive], summarize.
+# ============================================================================
+
+@function_tool
+async def get_highest_vitana_index(context: RunContext) -> str:
+    """Get the community member with the highest Vitana Index right now."""
+    body = await _dispatch(context, "get_highest_vitana_index")
+    return summarize(body)
+
+
+@function_tool
+async def get_top_in_pillar(context: RunContext, pillar: str) -> str:
+    """Get the community member with the top score in ONE Vitana Index pillar."""
+    body = await _dispatch(context, "get_top_in_pillar", {
+            "pillar": pillar,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def get_first_member(context: RunContext) -> str:
+    """Get the very first (earliest-registered / OG) community member."""
+    body = await _dispatch(context, "get_first_member")
+    return summarize(body)
+
+
+@function_tool
+async def get_newest_member(context: RunContext) -> str:
+    """Get the most recently joined community member."""
+    body = await _dispatch(context, "get_newest_member")
+    return summarize(body)
+
+
+@function_tool
+async def get_most_followed(context: RunContext) -> str:
+    """Get the community member with the most followers."""
+    body = await _dispatch(context, "get_most_followed")
+    return summarize(body)
+
+
+@function_tool
+async def ask_who_is(context: RunContext, query: str) -> str:
+    """Answer ANY free-form 'who is...?' superlative question about the"""
+    body = await _dispatch(context, "ask_who_is", {
+            "query": query,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def list_diary_entries(context: RunContext, date_from: str | None = None, date_to: str | None = None, limit: float | None = None) -> str:
+    """List the user's Daily Diary entries, newest first, optionally within a date window."""
+    body = await _dispatch(context, "list_diary_entries", {
+            "date_from": date_from,
+            "date_to": date_to,
+            "limit": limit,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def get_diary_streak(context: RunContext) -> str:
+    """Get the user's diary streak: current consecutive days with an entry plus their longest streak ever."""
+    body = await _dispatch(context, "get_diary_streak")
+    return summarize(body)
+
+
+@function_tool
+async def get_memory_timeline(context: RunContext, date_from: str | None = None, date_to: str | None = None, limit: float | None = None) -> str:
+    """Chronological timeline of what Vitana remembers: memory items, extracted facts, and diary entries, newest first."""
+    body = await _dispatch(context, "get_memory_timeline", {
+            "date_from": date_from,
+            "date_to": date_to,
+            "limit": limit,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def recall_memory_about(context: RunContext, topic: str, category: str | None = None) -> str:
+    """Search stored memories and facts about ONE specific topic, person, or thing."""
+    body = await _dispatch(context, "recall_memory_about", {
+            "topic": topic,
+            "category": category,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def get_memory_garden_summary(context: RunContext) -> str:
+    """Overview of the user's Memory Garden: how many memories are stored per category."""
+    body = await _dispatch(context, "get_memory_garden_summary")
+    return summarize(body)
+
+
+@function_tool
+async def forget_memory(context: RunContext, memory_id: str, confirm: bool | None = None) -> str:
+    """Permanently delete ONE stored memory, only after the user explicitly confirms."""
+    body = await _dispatch(context, "forget_memory", {
+            "memory_id": memory_id,
+            "confirm": confirm,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def reschedule_event(context: RunContext, new_start: str, event_id: str | None = None, title_query: str | None = None, new_end: str | None = None, timezone: str | None = None) -> str:
+    """Move an existing calendar event to a new start time (duration is kept unless new_end is given)."""
+    body = await _dispatch(context, "reschedule_event", {
+            "new_start": new_start,
+            "event_id": event_id,
+            "title_query": title_query,
+            "new_end": new_end,
+            "timezone": timezone,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def cancel_event(context: RunContext, event_id: str | None = None, title_query: str | None = None, confirm: bool | None = None, timezone: str | None = None) -> str:
+    """Cancel (soft-delete) a calendar event — the event stays in history with status 'cancelled'."""
+    body = await _dispatch(context, "cancel_event", {
+            "event_id": event_id,
+            "title_query": title_query,
+            "confirm": confirm,
+            "timezone": timezone,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def complete_event(context: RunContext, event_id: str | None = None, title_query: str | None = None, outcome: str | None = None, notes: str | None = None, timezone: str | None = None) -> str:
+    """Mark a calendar event as completed, skipped, or partially done."""
+    body = await _dispatch(context, "complete_event", {
+            "event_id": event_id,
+            "title_query": title_query,
+            "outcome": outcome,
+            "notes": notes,
+            "timezone": timezone,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def find_free_slot(context: RunContext, duration_minutes: float, search_from: str | None = None, search_to: str | None = None, timezone: str | None = None) -> str:
+    """Find the next free slot of a given length in the user's calendar, within waking hours (8 AM-10 PM user-local)."""
+    body = await _dispatch(context, "find_free_slot", {
+            "duration_minutes": duration_minutes,
+            "search_from": search_from,
+            "search_to": search_to,
+            "timezone": timezone,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def get_event_details(context: RunContext, event_id: str | None = None, title_query: str | None = None, timezone: str | None = None) -> str:
+    """Read the full details of ONE calendar event: exact time, end, location, type, status, notes."""
+    body = await _dispatch(context, "get_event_details", {
+            "event_id": event_id,
+            "title_query": title_query,
+            "timezone": timezone,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def check_calendar_conflicts(context: RunContext, start_time: str, end_time: str | None = None, timezone: str | None = None) -> str:
+    """Check whether a proposed time window overlaps existing confirmed calendar events."""
+    body = await _dispatch(context, "check_calendar_conflicts", {
+            "start_time": start_time,
+            "end_time": end_time,
+            "timezone": timezone,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def snooze_reminder(context: RunContext, reminder_id: str | None = None, text_query: str | None = None, minutes: float | None = None) -> str:
+    """Push an existing reminder out by N minutes (default 10, max 1440)."""
+    body = await _dispatch(context, "snooze_reminder", {
+            "reminder_id": reminder_id,
+            "text_query": text_query,
+            "minutes": minutes,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def update_reminder(context: RunContext, reminder_id: str | None = None, text_query: str | None = None, new_text: str | None = None, new_time: str | None = None) -> str:
+    """Edit an existing reminder's text and/or time."""
+    body = await _dispatch(context, "update_reminder", {
+            "reminder_id": reminder_id,
+            "text_query": text_query,
+            "new_text": new_text,
+            "new_time": new_time,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def acknowledge_reminder(context: RunContext, reminder_id: str | None = None, text_query: str | None = None) -> str:
+    """Mark a fired reminder as heard/acknowledged so it stops being re-delivered."""
+    body = await _dispatch(context, "acknowledge_reminder", {
+            "reminder_id": reminder_id,
+            "text_query": text_query,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def complete_reminder(context: RunContext, reminder_id: str | None = None, text_query: str | None = None) -> str:
+    """Mark a reminder as DONE (the user did the thing). Sets status=completed."""
+    body = await _dispatch(context, "complete_reminder", {
+            "reminder_id": reminder_id,
+            "text_query": text_query,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def list_missed_reminders(context: RunContext) -> str:
+    """List reminders that fired but were never acknowledged (the user missed them)."""
+    body = await _dispatch(context, "list_missed_reminders")
+    return summarize(body)
+
+
+@function_tool
+async def set_alarm(context: RunContext, time: str, label: str | None = None, recurrence: str | None = None, timezone: str | None = None) -> str:
+    """Set a wake-up/clock alarm at a specific time of day (optionally recurring)."""
+    body = await _dispatch(context, "set_alarm", {
+            "time": time,
+            "label": label,
+            "recurrence": recurrence,
+            "timezone": timezone,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def list_alarms(context: RunContext, timezone: str | None = None) -> str:
+    """List the user's active alarms with times and labels."""
+    body = await _dispatch(context, "list_alarms", {
+            "timezone": timezone,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def delete_alarm(context: RunContext, alarm_id: str | None = None, label: str | None = None, time: str | None = None, timezone: str | None = None, confirm: bool | None = None) -> str:
+    """Cancel an alarm. Two-step confirm flow: first call WITHOUT confirm to find"""
+    body = await _dispatch(context, "delete_alarm", {
+            "alarm_id": alarm_id,
+            "label": label,
+            "time": time,
+            "timezone": timezone,
+            "confirm": confirm,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def start_timer(context: RunContext, duration_minutes: float, label: str | None = None) -> str:
+    """Start a countdown timer (1-1440 minutes)."""
+    body = await _dispatch(context, "start_timer", {
+            "duration_minutes": duration_minutes,
+            "label": label,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def start_pomodoro(context: RunContext, duration_minutes: float | None = None, label: str | None = None) -> str:
+    """Start a pomodoro focus block (5-90 minutes; 25 if omitted)."""
+    body = await _dispatch(context, "start_pomodoro", {
+            "duration_minutes": duration_minutes,
+            "label": label,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def list_active_timers(context: RunContext) -> str:
+    """List running timers and pomodoros with the remaining time on each."""
+    body = await _dispatch(context, "list_active_timers")
+    return summarize(body)
+
+
+@function_tool
+async def get_world_time(context: RunContext, location: str) -> str:
+    """Get the current local time in a city or IANA timezone (no internet needed)."""
+    body = await _dispatch(context, "get_world_time", {
+            "location": location,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def list_my_groups(context: RunContext) -> str:
+    """List the community groups the user belongs to, with member counts."""
+    body = await _dispatch(context, "list_my_groups")
+    return summarize(body)
+
+
+@function_tool
+async def create_group(context: RunContext, name: str, description: str | None = None, privacy: str | None = None, confirm: bool | None = None) -> str:
+    """Create a new community group. Requires a name; privacy is public or"""
+    body = await _dispatch_with_directive(context, "create_group", {
+            "name": name,
+            "description": description,
+            "privacy": privacy,
+            "confirm": confirm,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def join_group(context: RunContext, query: str | None = None, group_id: str | None = None) -> str:
+    """Join a community group by name or group_id. Resolves fuzzy names and"""
+    body = await _dispatch_with_directive(context, "join_group", {
+            "query": query,
+            "group_id": group_id,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def invite_to_group(context: RunContext, group: str | None = None, group_id: str | None = None, member_name: str | None = None, member_user_id: str | None = None, message: str | None = None) -> str:
+    """Invite another community member to a group. Resolves the member by"""
+    body = await _dispatch(context, "invite_to_group", {
+            "group": group,
+            "group_id": group_id,
+            "member_name": member_name,
+            "member_user_id": member_user_id,
+            "message": message,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def accept_invitation(context: RunContext, invitation_id: str | None = None, group: str | None = None) -> str:
+    """Accept a pending group invitation (joins the group). With no"""
+    body = await _dispatch_with_directive(context, "accept_invitation", {
+            "invitation_id": invitation_id,
+            "group": group,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def decline_invitation(context: RunContext, invitation_id: str | None = None, group: str | None = None, confirm: bool | None = None) -> str:
+    """Decline a pending group invitation. ALWAYS call once WITHOUT confirm"""
+    body = await _dispatch(context, "decline_invitation", {
+            "invitation_id": invitation_id,
+            "group": group,
+            "confirm": confirm,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def rsvp_event(context: RunContext, query: str | None = None, event_id: str | None = None) -> str:
+    """RSVP / sign the user up for a community event or meetup, by event_id"""
+    body = await _dispatch(context, "rsvp_event", {
+            "query": query,
+            "event_id": event_id,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def cancel_rsvp(context: RunContext, query: str | None = None, event_id: str | None = None, confirm: bool | None = None) -> str:
+    """Cancel the user's RSVP for an upcoming event. ALWAYS call once"""
+    body = await _dispatch(context, "cancel_rsvp", {
+            "query": query,
+            "event_id": event_id,
+            "confirm": confirm,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def list_upcoming_meetups(context: RunContext) -> str:
+    """List upcoming community meetups/events the user could attend, soonest"""
+    body = await _dispatch(context, "list_upcoming_meetups")
+    return summarize(body)
+
+
+@function_tool
+async def join_live_room(context: RunContext, query: str | None = None, room_id: str | None = None) -> str:
+    """Join/open a community live room by name or room_id. Returns a"""
+    body = await _dispatch_with_directive(context, "join_live_room", {
+            "query": query,
+            "room_id": room_id,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def start_conversation(context: RunContext, member: str | None = None, member_user_id: str | None = None, message: str | None = None) -> str:
+    """Start (or reuse) a direct-message conversation with a named community member,"""
+    body = await _dispatch(context, "start_conversation", {
+            "member": member,
+            "member_user_id": member_user_id,
+            "message": message,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def list_conversations(context: RunContext, limit: float | None = None) -> str:
+    """List the user's recent direct-message conversations, newest first, with"""
+    body = await _dispatch(context, "list_conversations", {
+            "limit": limit,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def mark_conversation_read(context: RunContext, member: str | None = None, member_user_id: str | None = None, all: bool | None = None) -> str:
+    """Mark direct messages as read. With member set, marks that conversation;"""
+    body = await _dispatch(context, "mark_conversation_read", {
+            "member": member,
+            "member_user_id": member_user_id,
+            "all": all,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def mute_conversation(context: RunContext, member: str | None = None) -> str:
+    """Mute a chat conversation. NOTE: chat muting is not supported in Vitana yet —"""
+    body = await _dispatch(context, "mute_conversation", {
+            "member": member,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def archive_conversation(context: RunContext, member: str | None = None) -> str:
+    """Archive a chat conversation. NOTE: chat archiving does not exist in Vitana —"""
+    body = await _dispatch(context, "archive_conversation", {
+            "member": member,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def update_account_visibility(context: RunContext, visibility: str, confirm: bool | None = None) -> str:
+    """Set the visibility of the user's WHOLE profile: public, followers_only, or private."""
+    body = await _dispatch(context, "update_account_visibility", {
+            "visibility": visibility,
+            "confirm": confirm,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def update_privacy_field(context: RunContext, field: str, visibility: str) -> str:
+    """Set the visibility of ONE profile field: public, followers_only, or private."""
+    body = await _dispatch(context, "update_privacy_field", {
+            "field": field,
+            "visibility": visibility,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def block_user(context: RunContext, member: str | None = None, member_user_id: str | None = None, confirm: bool | None = None) -> str:
+    """Block a community member so their posts and messages are hidden from the user."""
+    body = await _dispatch(context, "block_user", {
+            "member": member,
+            "member_user_id": member_user_id,
+            "confirm": confirm,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def unblock_user(context: RunContext, member: str | None = None, member_user_id: str | None = None) -> str:
+    """Unblock a previously blocked member so their posts and messages show again."""
+    body = await _dispatch(context, "unblock_user", {
+            "member": member,
+            "member_user_id": member_user_id,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def submit_bug_report(context: RunContext, summary: str, screen: str | None = None) -> str:
+    """File a bug ticket (kind=bug) in the feedback pipeline. No persona swap —"""
+    body = await _dispatch(context, "submit_bug_report", {
+            "summary": summary,
+            "screen": screen,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def submit_support_ticket(context: RunContext, summary: str) -> str:
+    """File a support ticket (kind=support_question) for a question the team"""
+    body = await _dispatch(context, "submit_support_ticket", {
+            "summary": summary,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def submit_marketplace_dispute(context: RunContext, summary: str, order_reference: str | None = None) -> str:
+    """File a marketplace dispute ticket (kind=marketplace_claim): refunds, wrong"""
+    body = await _dispatch(context, "submit_marketplace_dispute", {
+            "summary": summary,
+            "order_reference": order_reference,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def submit_account_issue(context: RunContext, summary: str) -> str:
+    """File an account ticket (kind=account_issue): login problems, password or"""
+    body = await _dispatch(context, "submit_account_issue", {
+            "summary": summary,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def list_my_tickets(context: RunContext) -> str:
+    """List the user's OPEN feedback tickets (bugs, support, disputes, account)"""
+    body = await _dispatch(context, "list_my_tickets")
+    return summarize(body)
+
+
+@function_tool
+async def set_language(context: RunContext, language: str) -> str:
+    """Set the user's app + voice language. Persists the same setting the app's"""
+    body = await _dispatch(context, "set_language", {
+            "language": language,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def set_theme(context: RunContext, theme: str | None = None) -> str:
+    """Handle a request to change the visual theme (light / dark / system)."""
+    body = await _dispatch(context, "set_theme", {
+            "theme": theme,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def set_voice_preferences(context: RunContext, pace: str | None = None, voice: str | None = None, tone: str | None = None) -> str:
+    """Tune the app's spoken-voice settings: pace (slow / normal / fast), voice"""
+    body = await _dispatch(context, "set_voice_preferences", {
+            "pace": pace,
+            "voice": voice,
+            "tone": tone,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def list_connected_apps(context: RunContext) -> str:
+    """List the user's connected integrations: Google, YouTube, social accounts,"""
+    body = await _dispatch(context, "list_connected_apps")
+    return summarize(body)
+
+
+@function_tool
+async def disconnect_app(context: RunContext, provider: str, confirm: bool | None = None) -> str:
+    """Disconnect one connected integration (Google, YouTube, Instagram, an AI"""
+    body = await _dispatch(context, "disconnect_app", {
+            "provider": provider,
+            "confirm": confirm,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def global_search(context: RunContext, query: str, limit: float | None = None) -> str:
+    """Unified community search across people, posts, events, groups, products,"""
+    body = await _dispatch(context, "global_search", {
+            "query": query,
+            "limit": limit,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def browse_news_feed(context: RunContext, limit: float | None = None, scope: str | None = None) -> str:
+    """Read the community news feed aloud: recent posts with author and a"""
+    body = await _dispatch(context, "browse_news_feed", {
+            "limit": limit,
+            "scope": scope,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def snooze_recommendation(context: RunContext, recommendation: str, hours: float | None = None) -> str:
+    """Snooze an Autopilot recommendation so it resurfaces later (default 24h,"""
+    body = await _dispatch(context, "snooze_recommendation", {
+            "recommendation": recommendation,
+            "hours": hours,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def dismiss_recommendation(context: RunContext, recommendation: str, reason: str | None = None, confirm: bool | None = None) -> str:
+    """Dismiss an Autopilot recommendation for good (it will not come back)."""
+    body = await _dispatch(context, "dismiss_recommendation", {
+            "recommendation": recommendation,
+            "reason": reason,
+            "confirm": confirm,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def explain_recommendation(context: RunContext, recommendation: str) -> str:
+    """Explain WHY a specific Autopilot recommendation was suggested: its"""
+    body = await _dispatch(context, "explain_recommendation", {
+            "recommendation": recommendation,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def update_intent(context: RunContext, intent: str, new_title: str | None = None, new_text: str | None = None, new_category: str | None = None) -> str:
+    """Edit one of the user's OWN intent posts (title, description text, or"""
+    body = await _dispatch(context, "update_intent", {
+            "intent": intent,
+            "new_title": new_title,
+            "new_text": new_text,
+            "new_category": new_category,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def delete_intent(context: RunContext, intent: str, confirm: bool | None = None) -> str:
+    """Take down one of the user's OWN intent posts from the board (closes it;"""
+    body = await _dispatch(context, "delete_intent", {
+            "intent": intent,
+            "confirm": confirm,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def browse_intent_board(context: RunContext, query: str | None = None, limit: float | None = None) -> str:
+    """Browse the open community intent board (Open Asks): what other members"""
+    body = await _dispatch(context, "browse_intent_board", {
+            "query": query,
+            "limit": limit,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def dispute_match(context: RunContext, match_id: str | None = None, reason: str | None = None, reason_category: str | None = None, confirm: bool | None = None) -> str:
+    """Open a dispute on a match the user is part of (no-show, misrepresented,"""
+    body = await _dispatch(context, "dispute_match", {
+            "match_id": match_id,
+            "reason": reason,
+            "reason_category": reason_category,
+            "confirm": confirm,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def find_perfect_match(context: RunContext, ask: str | None = None, kind_hint: str | None = None, confirmed: bool | None = None) -> str:
+    """Flagship people-match: find the PERFECT person for the user — workout"""
+    body = await _dispatch_with_directive(context, "find_perfect_match", {
+            "ask": ask,
+            "kind_hint": kind_hint,
+            "confirmed": confirmed,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def get_emotional_state(context: RunContext) -> str:
+    """Read the user's current emotional and cognitive signals (D28): mood,"""
+    body = await _dispatch(context, "get_emotional_state")
+    return summarize(body)
+
+
+@function_tool
+async def get_situational_awareness(context: RunContext, timezone: str | None = None) -> str:
+    """Summarize the user's current situation (D32): time-of-day window,"""
+    body = await _dispatch(context, "get_situational_awareness", {
+            "timezone": timezone,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def get_availability(context: RunContext, timezone: str | None = None) -> str:
+    """Check how available and ready the user is right now (D33): availability"""
+    body = await _dispatch(context, "get_availability", {
+            "timezone": timezone,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def get_environmental_context(context: RunContext) -> str:
+    """Read the user's environment and mobility context (D34): where they"""
+    body = await _dispatch(context, "get_environmental_context")
+    return summarize(body)
+
+
+@function_tool
+async def get_life_stage_context(context: RunContext) -> str:
+    """Read the user's life-stage context (D40): life phase and stability,"""
+    body = await _dispatch(context, "get_life_stage_context")
+    return summarize(body)
+
+
+@function_tool
+async def follow_member(context: RunContext, name: str) -> str:
+    """FOLLOW a community member by their spoken name."""
+    body = await _dispatch(context, "follow_member", {
+            "name": name,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def unfollow_member(context: RunContext, name: str, confirmed: bool | None = None) -> str:
+    """UNFOLLOW a community member by name. Two-step confirm:"""
+    body = await _dispatch(context, "unfollow_member", {
+            "name": name,
+            "confirmed": confirmed,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def get_notifications(context: RunContext, limit: float | None = None) -> str:
+    """READ the user's recent notifications, unread first. Speakable."""
+    body = await _dispatch(context, "get_notifications", {
+            "limit": limit,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def mark_notifications_read(context: RunContext, reference: str | None = None) -> str:
+    """MARK notifications as read — all unread ones, or only those whose title"""
+    body = await _dispatch(context, "mark_notifications_read", {
+            "reference": reference,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def get_wallet_balance(context: RunContext) -> str:
+    """READ-ONLY wallet snapshot: balance per currency, active subscription,"""
+    body = await _dispatch(context, "get_wallet_balance")
+    return summarize(body)
+
+
+@function_tool
+async def update_profile(context: RunContext, display_name: str | None = None, bio: str | None = None, city: str | None = None, country: str | None = None, location: str | None = None, confirmed: bool | None = None) -> str:
+    """UPDATE simple own-profile fields: display_name, bio, city, country, location."""
+    body = await _dispatch(context, "update_profile", {
+            "display_name": display_name,
+            "bio": bio,
+            "city": city,
+            "country": country,
+            "location": location,
+            "confirmed": confirmed,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def play_podcast(context: RunContext, query: str | None = None) -> str:
+    """PLAY an internal Vitana Media Hub podcast by title or topic. Returns an"""
+    body = await _dispatch_with_directive(context, "play_podcast", {
+            "query": query,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def like_post(context: RunContext, author_name: str, post_reference: str | None = None) -> str:
+    """LIKE a community feed post — resolves 'the last post from <name>' to that"""
+    body = await _dispatch(context, "like_post", {
+            "author_name": author_name,
+            "post_reference": post_reference,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def comment_on_post(context: RunContext, author_name: str, text: str, post_reference: str | None = None, confirmed: bool | None = None) -> str:
+    """COMMENT on a community feed post (public text). Two-step confirm:"""
+    body = await _dispatch(context, "comment_on_post", {
+            "author_name": author_name,
+            "text": text,
+            "post_reference": post_reference,
+            "confirmed": confirmed,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def dev_list_vtids(context: RunContext, status: str | None = None, limit: int | None = None) -> str:
+    """DEVELOPER ONLY. List recent VTID tasks from the ledger (id, title, status)."""
+    body = await _dispatch(context, "dev_list_vtids", {
+            "status": status,
+            "limit": limit,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def dev_get_vtid_status(context: RunContext, vtid: str) -> str:
+    """DEVELOPER ONLY. Get one VTID task by id — status, spec status, terminal state, claim."""
+    body = await _dispatch(context, "dev_get_vtid_status", {
+            "vtid": vtid,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def dev_list_pending_approvals(context: RunContext, limit: int | None = None) -> str:
+    """DEVELOPER ONLY. List PRs/actions waiting in the approvals queue (same queue as the Command Hub approvals view)."""
+    body = await _dispatch(context, "dev_list_pending_approvals", {
+            "limit": limit,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def dev_count_approvals(context: RunContext) -> str:
+    """DEVELOPER ONLY. Count how many items are pending approval."""
+    body = await _dispatch(context, "dev_count_approvals")
+    return summarize(body)
+
+
+@function_tool
+async def dev_approve_pr(context: RunContext, vtid: str | None = None, approval_id: str | None = None, confirm: bool | None = None) -> str:
+    """DEVELOPER ONLY. Approve a queued approval — merges its PR via the governed pipeline."""
+    body = await _dispatch(context, "dev_approve_pr", {
+            "vtid": vtid,
+            "approval_id": approval_id,
+            "confirm": confirm,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def dev_reject_pr(context: RunContext, reason: str, vtid: str | None = None, approval_id: str | None = None, confirm: bool | None = None) -> str:
+    """DEVELOPER ONLY. Reject a queued approval and record why."""
+    body = await _dispatch(context, "dev_reject_pr", {
+            "reason": reason,
+            "vtid": vtid,
+            "approval_id": approval_id,
+            "confirm": confirm,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def dev_list_voice_sessions(context: RunContext, status: str | None = None, limit: int | None = None) -> str:
+    """DEVELOPER ONLY. List recent ORB voice sessions from the Voice Lab (who, when, duration, turns)."""
+    body = await _dispatch(context, "dev_list_voice_sessions", {
+            "status": status,
+            "limit": limit,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def dev_list_routines(context: RunContext) -> str:
+    """DEVELOPER ONLY. List the daily Claude routines with last-run status."""
+    body = await _dispatch(context, "dev_list_routines")
+    return summarize(body)
+
+
+@function_tool
+async def dev_get_routine_detail(context: RunContext, name: str, runs_limit: int | None = None) -> str:
+    """DEVELOPER ONLY. Detail one routine plus its last runs."""
+    body = await _dispatch(context, "dev_get_routine_detail", {
+            "name": name,
+            "runs_limit": runs_limit,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def dev_list_active_healing(context: RunContext) -> str:
+    """DEVELOPER ONLY. Show self-healing work currently in flight: active healing VTIDs and pending diagnoses."""
+    body = await _dispatch(context, "dev_list_active_healing")
+    return summarize(body)
+
+
+@function_tool
+async def dev_get_autonomy_pulse(context: RunContext) -> str:
+    """DEVELOPER ONLY. One-shot autonomy status: pending findings, pending heals, executions"""
+    body = await _dispatch(context, "dev_get_autonomy_pulse")
+    return summarize(body)
+
+
+@function_tool
+async def dev_list_agents(context: RunContext, tier: str | None = None) -> str:
+    """DEVELOPER ONLY. List registered agents with heartbeat-derived health (healthy/degraded/down)."""
+    body = await _dispatch(context, "dev_list_agents", {
+            "tier": tier,
+        })
+    return summarize(body)
+
+
 # ---------------------------------------------------------------------------
 # Catalogue export — used by tests + libcst smoke
 # ---------------------------------------------------------------------------
@@ -1970,6 +2896,63 @@ def all_tool_names() -> list[str]:
         "find_perfect_product", "find_perfect_practitioner",
         # Navigation (3)
         "navigate", "navigate_to_screen", "get_current_screen",
+        # BOOTSTRAP-VOICE-CATALOG-COMPLETE — every tool built out from the
+        # Voice Tools Catalog's `status: planned` backlog + P0 community-
+        # feature gaps. Implementations live in services/gateway/src/
+        # services/orb-tools/*.ts, reached through the shared dispatcher via
+        # POST /api/v1/orb/tool exactly like the tools above.
+        # Superlatives (6)
+        "get_highest_vitana_index", "get_top_in_pillar", "get_first_member",
+        "get_newest_member", "get_most_followed", "ask_who_is",
+        # Diary + Memory (6)
+        "list_diary_entries", "get_diary_streak", "get_memory_timeline",
+        "recall_memory_about", "get_memory_garden_summary", "forget_memory",
+        # Calendar management (6)
+        "reschedule_event", "cancel_event", "complete_event", "find_free_slot",
+        "get_event_details", "check_calendar_conflicts",
+        # Reminders lifecycle (5)
+        "snooze_reminder", "update_reminder", "acknowledge_reminder",
+        "complete_reminder", "list_missed_reminders",
+        # Clock (7)
+        "set_alarm", "list_alarms", "delete_alarm", "start_timer",
+        "start_pomodoro", "list_active_timers", "get_world_time",
+        # Community groups (6)
+        "list_my_groups", "create_group", "join_group", "invite_to_group",
+        "accept_invitation", "decline_invitation",
+        # Events / RSVP (4)
+        "rsvp_event", "cancel_rsvp", "list_upcoming_meetups", "join_live_room",
+        # Chat management (5)
+        "start_conversation", "list_conversations", "mark_conversation_read",
+        "mute_conversation", "archive_conversation",
+        # Privacy (4)
+        "update_account_visibility", "update_privacy_field", "block_user",
+        "unblock_user",
+        # Feedback (5)
+        "submit_bug_report", "submit_support_ticket", "submit_marketplace_dispute",
+        "submit_account_issue", "list_my_tickets",
+        # Settings (5)
+        "set_language", "set_theme", "set_voice_preferences",
+        "list_connected_apps", "disconnect_app",
+        # Search / News (2)
+        "global_search", "browse_news_feed",
+        # Autopilot recommendation management (3)
+        "snooze_recommendation", "dismiss_recommendation", "explain_recommendation",
+        # Intent management (4)
+        "update_intent", "delete_intent", "browse_intent_board", "dispute_match",
+        # Match (1)
+        "find_perfect_match",
+        # Awareness (5)
+        "get_emotional_state", "get_situational_awareness", "get_availability",
+        "get_environmental_context", "get_life_stage_context",
+        # Developer — role-gated server-side (developer/admin/exafy_admin) (12)
+        "dev_list_vtids", "dev_get_vtid_status", "dev_list_pending_approvals",
+        "dev_count_approvals", "dev_approve_pr", "dev_reject_pr",
+        "dev_list_voice_sessions", "dev_list_routines", "dev_get_routine_detail",
+        "dev_list_active_healing", "dev_get_autonomy_pulse", "dev_list_agents",
+        # P0 community-feature gaps (9)
+        "follow_member", "unfollow_member", "get_notifications",
+        "mark_notifications_read", "get_wallet_balance", "update_profile",
+        "play_podcast", "like_post", "comment_on_post",
     ]
 
 

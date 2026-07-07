@@ -8,6 +8,9 @@
  * doesn't).
  */
 
+import * as fs from 'fs';
+import * as path from 'path';
+
 import {
   AUTOMATION_REGISTRY,
   getAutomation,
@@ -17,6 +20,39 @@ import { registerConnectPeopleHandlers } from '../../src/services/automation-han
 import { AutomationContext } from '../../src/types/automations';
 
 registerConnectPeopleHandlers();
+
+const SRC = path.join(__dirname, '..', '..', 'src', 'services', 'automation-handlers', 'connect-people.ts');
+
+describe('connect-people — source-level wall against never-deployed / wrong tables', () => {
+  const src = fs.readFileSync(SRC, 'utf8');
+
+  it('AP-0101/0102/0103/0105 no longer reference tables that were never deployed', () => {
+    expect(src).not.toMatch(/from\(['"]matches_daily['"]\)/);
+    expect(src).not.toMatch(/from\(['"]user_topic_profile['"]\)/);
+    expect(src).not.toMatch(/from\(['"]community_recommendations['"]\)/);
+  });
+
+  it('uses the real live tables instead', () => {
+    expect(src).toContain("from('daily_matches')");
+    expect(src).toContain("from('user_interests')");
+    expect(src).toContain("from('group_recommendations')");
+  });
+
+  it('relationship_edges queries use the real column set, not user_id/relationship_type', () => {
+    expect(src).not.toMatch(/\.eq\(['"]relationship_type['"],/);
+    expect(src).toContain("eq('edge_type', 'connected')");
+  });
+
+  it('never queries app_users or chat_messages with the wrong column names', () => {
+    expect(src).not.toMatch(/from\(['"]app_users['"]\)[\s\S]{0,150}\.eq\(['"]id['"],/);
+    expect(src).not.toMatch(/recipient_id\.eq/);
+  });
+
+  it('AP-0101 no longer references the never-deployed autopilot_prompt_prefs table', () => {
+    expect(src).not.toContain("from('autopilot_prompt_prefs')");
+    expect(src).toContain("from('user_notification_preferences')");
+  });
+});
 
 /**
  * Minimal thenable Supabase query-builder fake. Every chain method returns

@@ -30,10 +30,19 @@ import { recordAgentHeartbeat } from '../routes/agents-registry';
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
 const GOOGLE_GEMINI_API_KEY = process.env.GOOGLE_GEMINI_API_KEY;
+const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY;
 const VERTEX_PROJECT = process.env.GOOGLE_CLOUD_PROJECT || process.env.GCP_PROJECT || 'lovable-vitana-vers1';
 const VERTEX_LOCATION = process.env.VERTEX_LOCATION || 'us-central1';
 // Use flash model for extraction - faster and cheaper than pro
 const EXTRACTION_MODEL = 'gemini-2.0-flash';
+// BOOTSTRAP-MEMORY-DAILY-LEARNING: DeepSeek is now the PRIMARY extraction
+// provider — Vertex calls were failing at runtime on gateway-staging
+// (env reports GOOGLE_CLOUD_PROJECT set, but actual invocation returned
+// empty/errored for every tested conversation) while providers/health
+// cannot distinguish "configured" from "actually reachable". DeepSeek
+// (deepseek-chat, cheap + fast, matches llm-router.ts's adapter shape)
+// tries first; Vertex and the Gemini API key remain as fallbacks.
+const DEEPSEEK_MODEL = 'deepseek-chat';
 
 let vertexAI: VertexAI | null = null;
 try {
@@ -57,27 +66,36 @@ Return ONLY a JSON array of facts. Each fact must have:
 - "fact_value": the value (e.g. "Dusan", "Amsterdam", "blue", "Maria", "engineer")
 - "entity": "self" if about the user, "disclosed" if about someone else
 - "fact_value_type": "text", "date", or "number"
+- "stated": true if the user EXPLICITLY said it in their own words; false if you inferred it from context
 
 Common fact keys:
 - user_name, user_residence, user_hometown, user_birthday, user_occupation, user_company
 - user_favorite_color, user_favorite_food, user_favorite_drink, user_favorite_*
-- user_allergy, user_medication, user_health_condition
-- user_preference_*, user_goal_*
+- user_allergy, user_medication, user_health_condition, user_dietary_restriction, user_doctor_name
+- user_preference_*, user_goal_*, user_hobby_*, user_language, user_pet_name
 - spouse_name, fiancee_name, partner_name, mother_name, father_name, child_name, friend_name_*
+- sibling_name, colleague_name, grandchild_name (people the user mentions by role)
+- <person>_birthday, <person>_health_condition (dates/conditions of people the user discloses, e.g. spouse_birthday)
+- upcoming_event_* (a concrete planned event with its date, e.g. upcoming_event_wedding)
+
+Also capture meaningful OBSERVATIONS (stated:false) — things a caring companion would remember even though the user didn't declare them as facts:
+- user_observation_mood ("stressed about work"), user_observation_energy ("low, poor sleep")
+- user_observation_concern ("worried about mother's health"), user_observation_life_event ("moving apartments next month")
+Only when the conversation genuinely supports them — never guess.
 
 Rules:
-- Only extract facts the USER explicitly states (not assistant assumptions)
+- Mark facts the USER explicitly states with "stated": true; contextual inferences with "stated": false
 - If no facts are present, return an empty array: []
-- Do NOT invent facts. Only extract what is clearly stated.
-- Keep fact_value concise (1-5 words)
+- Do NOT invent facts. Only extract what the conversation clearly supports.
+- Keep fact_value concise (1-8 words)
 - For preferences, use "user_favorite_X" or "user_preference_X" as the key
 
 Example input:
-User: My name is Dusan and I live in Amsterdam. My favorite tea is Earl Grey.
+User: My name is Dusan and I live in Amsterdam. My favorite tea is Earl Grey. Ugh, barely slept, the deadline is killing me.
 Assistant: Nice to meet you Dusan! Amsterdam is a beautiful city.
 
 Example output:
-[{"fact_key":"user_name","fact_value":"Dusan","entity":"self","fact_value_type":"text"},{"fact_key":"user_residence","fact_value":"Amsterdam","entity":"self","fact_value_type":"text"},{"fact_key":"user_favorite_tea","fact_value":"Earl Grey","entity":"self","fact_value_type":"text"}]`;
+[{"fact_key":"user_name","fact_value":"Dusan","entity":"self","fact_value_type":"text","stated":true},{"fact_key":"user_residence","fact_value":"Amsterdam","entity":"self","fact_value_type":"text","stated":true},{"fact_key":"user_favorite_tea","fact_value":"Earl Grey","entity":"self","fact_value_type":"text","stated":true},{"fact_key":"user_observation_energy","fact_value":"poor sleep, work deadline stress","entity":"self","fact_value_type":"text","stated":false}]`;
 
 // =============================================================================
 // Types
@@ -88,16 +106,73 @@ interface ExtractedFact {
   fact_value: string;
   entity: string;
   fact_value_type: string;
+  /** True when the user explicitly said it; false for contextual inference. */
+  stated?: boolean;
 }
+
+// Base confidence by provenance (BOOTSTRAP-MEMORY-DAILY-LEARNING): the old
+// flat 0.80-for-everything made confidence meaningless — 333 of 339 facts in
+// prod were labeled assistant_inferred even when the user literally said them.
+const CONFIDENCE_STATED = 0.9;
+const CONFIDENCE_INFERRED = 0.7;
+// Re-mention bump: each time the same key+value is extracted again, confidence
+// grows (evidence-weighted memory) up to a cap.
+const CONFIDENCE_REMENTION_BUMP = 0.05;
+const CONFIDENCE_CAP = 0.98;
 
 // =============================================================================
 // Core: Extract facts using Gemini
 // =============================================================================
 
-async function callGeminiForExtraction(conversationText: string): Promise<ExtractedFact[]> {
-  console.log(`[VTID-01225-inline] Extracting from ${conversationText.length} chars, vertexAI=${!!vertexAI}, apiKey=${!!GOOGLE_GEMINI_API_KEY}`);
+async function callDeepSeekForExtraction(conversationText: string): Promise<ExtractedFact[]> {
+  if (!DEEPSEEK_API_KEY) return [];
+  try {
+    const response = await fetch('https://api.deepseek.com/chat/completions', {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${DEEPSEEK_API_KEY}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: DEEPSEEK_MODEL,
+        messages: [
+          { role: 'system', content: EXTRACTION_SYSTEM_PROMPT },
+          { role: 'user', content: conversationText },
+        ],
+        temperature: 0.1,
+        max_tokens: 512,
+      }),
+    });
+    if (!response.ok) {
+      const errBody = await response.text();
+      throw new Error(`DeepSeek returned ${response.status}: ${errBody.substring(0, 200)}`);
+    }
+    const data = (await response.json()) as {
+      choices?: Array<{ message?: { content?: string } }>;
+    };
+    const rawText = data.choices?.[0]?.message?.content || '[]';
+    console.log(`[VTID-01225-inline] DeepSeek response: ${rawText.substring(0, 200)}`);
+    return parseFactsResponse(rawText);
+  } catch (err: any) {
+    console.warn(`[VTID-01225-inline] DeepSeek extraction failed: ${err.message}`);
+    return [];
+  }
+}
 
-  // Try Vertex AI first (primary on Cloud Run)
+async function callGeminiForExtraction(conversationText: string): Promise<ExtractedFact[]> {
+  console.log(
+    `[VTID-01225-inline] Extracting from ${conversationText.length} chars, ` +
+      `deepseek=${!!DEEPSEEK_API_KEY}, vertexAI=${!!vertexAI}, apiKey=${!!GOOGLE_GEMINI_API_KEY}`,
+  );
+
+  // DeepSeek first (primary — see DEEPSEEK_MODEL comment above).
+  if (DEEPSEEK_API_KEY) {
+    const facts = await callDeepSeekForExtraction(conversationText);
+    if (facts.length > 0) return facts;
+    console.warn(`[VTID-01225-inline] DeepSeek returned 0 parseable facts, trying Vertex`);
+  }
+
+  // Try Vertex AI next
   if (vertexAI) {
     try {
       const model = vertexAI.getGenerativeModel({
@@ -200,13 +275,15 @@ function parseFactsResponse(raw: string): ExtractedFact[] {
     if (!Array.isArray(parsed)) return [];
 
     // Validate each fact
-    return parsed.filter((f: any) =>
-      f &&
-      typeof f.fact_key === 'string' && f.fact_key.length > 0 &&
-      typeof f.fact_value === 'string' && f.fact_value.length > 0 &&
-      typeof f.entity === 'string' &&
-      typeof f.fact_value_type === 'string'
-    );
+    return parsed
+      .filter((f: any) =>
+        f &&
+        typeof f.fact_key === 'string' && f.fact_key.length > 0 &&
+        typeof f.fact_value === 'string' && f.fact_value.length > 0 &&
+        typeof f.entity === 'string' &&
+        typeof f.fact_value_type === 'string'
+      )
+      .map((f: any) => ({ ...f, stated: f.stated === true }));
   } catch (err) {
     console.warn(`[VTID-01225-inline] Failed to parse extraction response: ${raw.substring(0, 100)}`);
     return [];
@@ -260,13 +337,50 @@ async function persistFact(
     console.warn(`[VTID-02000] canonical fact check failed (non-fatal):`, checkErr);
   }
 
+  // BOOTSTRAP-MEMORY-DAILY-LEARNING: real provenance + evidence-weighted
+  // confidence. Facts the user explicitly stated are user_stated @ 0.9;
+  // contextual inferences are assistant_inferred @ 0.7. A re-mention of the
+  // SAME key+value bumps the existing confidence instead of resetting it —
+  // repeated evidence makes memory more certain, and the conversational
+  // confirmation loop ("is that still right?") upgrades facts the same way.
+  const provenance = fact.stated ? 'user_stated' : 'assistant_inferred';
+  let confidence = fact.stated ? CONFIDENCE_STATED : CONFIDENCE_INFERRED;
+  try {
+    const existingResp = await fetch(
+      `${SUPABASE_URL}/rest/v1/memory_facts?` +
+        `tenant_id=eq.${encodeURIComponent(tenant_id)}&user_id=eq.${encodeURIComponent(user_id)}&` +
+        `fact_key=eq.${encodeURIComponent(effectiveFactKey)}&superseded_at=is.null&` +
+        `select=fact_value,provenance_confidence&limit=1`,
+      {
+        headers: {
+          apikey: SUPABASE_SERVICE_ROLE,
+          Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`,
+        },
+      },
+    );
+    if (existingResp.ok) {
+      const rows = (await existingResp.json()) as Array<{ fact_value?: string; provenance_confidence?: number }>;
+      const existing = rows?.[0];
+      if (
+        existing &&
+        typeof existing.fact_value === 'string' &&
+        existing.fact_value.trim().toLowerCase() === fact.fact_value.trim().toLowerCase()
+      ) {
+        const prior = Number(existing.provenance_confidence) || 0;
+        confidence = Math.min(CONFIDENCE_CAP, Math.max(confidence, prior + CONFIDENCE_REMENTION_BUMP));
+      }
+    }
+  } catch {
+    // Evidence lookup is best-effort; base confidence stands.
+  }
+
   // VTID-01952: Identity Lock chokepoint. Inline LLM extraction is an
   // inference path — never allowed to write identity-class facts (name,
   // DOB, gender, email, etc.). DB trigger is defense-in-depth.
   const lockCheck = await assertWriteFact({
     fact_key: effectiveFactKey,
-    provenance_source: 'assistant_inferred',
-    provenance_confidence: 0.80,
+    provenance_source: provenance,
+    provenance_confidence: confidence,
     actor_id: 'inline-fact-extractor',
     source_engine: 'inline-fact-extractor',
     tenant_id,
@@ -295,14 +409,25 @@ async function persistFact(
         p_fact_value: fact.fact_value,
         p_entity: fact.entity,
         p_fact_value_type: fact.fact_value_type,
-        p_provenance_source: 'assistant_inferred',
-        p_provenance_confidence: 0.80,
+        p_provenance_source: provenance,
+        p_provenance_confidence: confidence,
       }),
     });
 
     if (response.ok) {
       const factId = await response.json();
       console.log(`[VTID-01225-inline] Persisted: ${fact.fact_key}="${fact.fact_value}" (id=${factId})`);
+      // BOOTSTRAP-MEMORY-DAILY-LEARNING: embed on write (fire-and-forget).
+      // This path wrote 96% of live facts without embeddings, which left
+      // tier-2 semantic fact retrieval permanently blind.
+      if (typeof factId === 'string' && factId) {
+        try {
+          const { generateFactEmbeddingAsync } = await import('./memory-facts-service');
+          generateFactEmbeddingAsync(factId, effectiveFactKey, fact.fact_value);
+        } catch {
+          /* embedding is best-effort; the backfill automation catches misses */
+        }
+      }
       return true;
     } else {
       const errorText = await response.text();
@@ -372,7 +497,7 @@ export async function extractAndPersistFacts(input: {
  * Check if inline extraction is available (has LLM + Supabase config)
  */
 export function isInlineExtractionAvailable(): boolean {
-  const hasLLM = !!vertexAI || !!GOOGLE_GEMINI_API_KEY;
+  const hasLLM = !!DEEPSEEK_API_KEY || !!vertexAI || !!GOOGLE_GEMINI_API_KEY;
   const hasSupabase = !!SUPABASE_URL && !!SUPABASE_SERVICE_ROLE;
   return hasLLM && hasSupabase;
 }

@@ -88,6 +88,56 @@ function extractRegistry(src) {
   for (const m of body.matchAll(/^\s*([a-z_][a-z0-9_]*)\s*:/gm)) {
     keys.add(m[1]);
   }
+  // BOOTSTRAP-VOICE-CATALOG-COMPLETE: ES6 shorthand properties
+  // (`dev_list_vtids,` instead of `dev_list_vtids: dev_list_vtids,`, used by
+  // developer-tools.ts) have no colon and were invisible to the pattern above.
+  for (const m of body.matchAll(/^\s*([a-z_][a-z0-9_]*)\s*,/gm)) {
+    keys.add(m[1]);
+  }
+  // BOOTSTRAP-VOICE-CATALOG-COMPLETE: per-domain modules are merged in via
+  // `...FOO_TOOL_HANDLERS,` spreads (services/orb-tools/*.ts), not literal
+  // keys — resolve each spread identifier back to its import and pull its
+  // own handler-object keys the same way (same logic as the sibling fix in
+  // scripts/voice-tools-manifest-reconcile.mjs and
+  // voice-pipeline-spec/tools/extract-ts.ts — kept in sync deliberately).
+  for (const sm of body.matchAll(/^\s*\.\.\.([A-Z][A-Z0-9_]*)\s*,/gm)) {
+    const spreadName = sm[1];
+    const importMatch = src.match(
+      new RegExp(`import\\s*\\{[^}]*\\b${spreadName}\\b[^}]*\\}\\s*from\\s*'([^']+)'`),
+    );
+    if (!importMatch) continue;
+    const modPath = resolve(
+      ROOT,
+      'services/gateway/src/services',
+      importMatch[1].replace(/^\.\//, '') + '.ts',
+    );
+    let modSrc;
+    try {
+      modSrc = readFileSync(modPath, 'utf8');
+    } catch {
+      continue;
+    }
+    const declIdx = modSrc.indexOf(`export const ${spreadName}`);
+    if (declIdx < 0) continue;
+    const modOpen = modSrc.indexOf('{', declIdx);
+    if (modOpen < 0) continue;
+    let modDepth = 0;
+    let modClose = -1;
+    for (let i = modOpen; i < modSrc.length; i++) {
+      if (modSrc[i] === '{') modDepth++;
+      else if (modSrc[i] === '}') {
+        modDepth--;
+        if (modDepth === 0) {
+          modClose = i;
+          break;
+        }
+      }
+    }
+    if (modClose < 0) continue;
+    const modBody = modSrc.slice(modOpen + 1, modClose);
+    for (const mm of modBody.matchAll(/^\s*([a-z_][a-z0-9_]*)\s*:/gm)) keys.add(mm[1]);
+    for (const mm of modBody.matchAll(/^\s*([a-z_][a-z0-9_]*)\s*,/gm)) keys.add(mm[1]);
+  }
   return keys;
 }
 
@@ -214,13 +264,24 @@ const SHARED_ONLY_INTENTIONAL = new Set([
 ]);
 const intentionalInline = [];
 
+// BOOTSTRAP-VOICE-CATALOG-COMPLETE: orb-live.ts's default case has a
+// generic dispatch fallback — `if (ORB_TOOL_NAMES.includes(toolName))
+// { … dispatchOrbToolForVertex … }` — so EVERY tool in ORB_TOOL_REGISTRY
+// is Vertex-reachable even without its own `case` arm. This is the
+// intended pattern going forward: new tools land in the shared registry
+// and need no per-tool Vertex wiring at all. Without this check, every
+// tool added the new way is indistinguishable from a stale "forgot to
+// wire it" gap and fails ORB_TOOLS_PARITY_GATE=1 on every future PR.
+const HAS_GENERIC_VERTEX_FALLBACK = /ORB_TOOL_NAMES\.includes\(\s*toolName\s*\)/.test(vertexSrc);
+
 // Tracked separately so the report shows "shared-only OK" for the
-// dedicated-handler set without contributing to the warning exit code.
+// dedicated-handler set (and, when present, the generic-fallback set)
+// without contributing to the warning exit code.
 const sharedOnlyOk = [];
 for (const name of registry) {
   const v = vertexCases.get(name);
   if (!v) {
-    if (SHARED_ONLY_INTENTIONAL.has(name)) sharedOnlyOk.push(name);
+    if (SHARED_ONLY_INTENTIONAL.has(name) || HAS_GENERIC_VERTEX_FALLBACK) sharedOnlyOk.push(name);
     else sharedOnly.push(name);
     continue;
   }
@@ -288,13 +349,17 @@ if (sharedOnly.length > 0) {
 }
 
 if (sharedOnlyOk.length > 0) {
-  out += `### ℹ️ shared-only OK — ${sharedOnlyOk.length} tool(s) routed via dedicated Vertex handler\n\n`;
-  out += 'These are in `ORB_TOOL_REGISTRY` but DON\'T appear as a `case` arm in ';
-  out += 'the switch because Vertex routes them via a dedicated handler ';
-  out += '(handleNavigate / handleNavigateToScreen / handleGetCurrentScreen) ';
-  out += 'before the switch. Each handler delegates to the shared dispatcher ';
-  out += 'internally — full parity, just not via a case arm. ';
-  out += 'Allowlist: `SHARED_ONLY_INTENTIONAL` in `scripts/orb-tools-lift-scanner.mjs`.\n\n';
+  out += `### ℹ️ shared-only OK — ${sharedOnlyOk.length} tool(s) covered without a Vertex \`case\` arm\n\n`;
+  out += 'These are in `ORB_TOOL_REGISTRY` but DON\'T appear as a `case` arm in the switch. Two ways that\'s fine:\n\n';
+  out += '1. Routed via a dedicated Vertex handler (handleNavigate / handleNavigateToScreen / ';
+  out += 'handleGetCurrentScreen) before the switch — allowlisted in `SHARED_ONLY_INTENTIONAL`.\n';
+  if (HAS_GENERIC_VERTEX_FALLBACK) {
+    out += '2. Covered by the generic dispatch fallback in the switch\'s `default` case — ';
+    out += '`if (ORB_TOOL_NAMES.includes(toolName)) { …dispatchOrbToolForVertex… }` — detected in ';
+    out += 'orb-live.ts, so every registry tool is Vertex-reachable without per-tool wiring. ';
+    out += 'This is the intended pattern for new tools going forward.\n';
+  }
+  out += '\n';
   for (const n of sharedOnlyOk) {
     out += `- \`${n}\`\n`;
   }

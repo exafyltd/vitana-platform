@@ -107,9 +107,15 @@ not duplicate; read it.
 
 **1b — Define the typed brain, extract by wrapping, prove equivalence:**
 - `ConversationContext` (normalized input: transport, lang, role, surface/current_route,
-  recency bucket, first-time|returning, the `OverviewPayload` bundle, recent_nbas) and
-  `ConversationDecision` (typed output: register, opener_kind, nba, directive spec, +
-  the offer contract stub for Step 2). Put in `services/gateway/src/services/conversation/`.
+  recency bucket, first-time|returning, the `OverviewPayload` bundle, recent_nbas, **plus
+  the two post-v2 context layers — the assembled `AssistantMemoryContext` from the memory
+  orchestrator (#2830) and the `SocialContextPack` from social memory (#2832); see
+  `CONVERSATION_FLOW_HANDOFF.md` §3.1**) and `ConversationDecision` (typed output:
+  register, opener_kind, nba, directive spec, + the offer contract stub for Step 2). Put
+  in `services/gateway/src/services/conversation/`.
+  - The memory orchestrator's mandatory-injection guard (`assertMemoryContextInjected`)
+    becomes an expressible invariant of the brain; the social pack feeds NBA/offer ranking
+    (matches/messages are already in `OverviewPayload`; the pack is the superset).
 - `decideConversationFlow(ctx): ConversationDecision` — **first commit delegates to the
   existing logic and is proven byte-equal to the golden set.** Zero behavior change.
 
@@ -216,4 +222,5 @@ changes; parity scanner reports the 9 branches; **zero runtime behavior change**
 ## 9. Change log
 | Date | Change |
 |---|---|
+| 2026-06-30 | Step 1a shipped (PR #2825): pure `computeGreetingDecision` seam + golden suite + CI flow-guard extension (now covers `routes/orb-live.ts`/`orb-livekit.ts`) + `transport-flow-parity` scanner (warning). Reconciled the plan with two post-v2 layers that landed on `main` — the **memory orchestrator** (#2830/#2831, mandatory memory step) and the **social context pack** (#2832/#2833) — as first-class `ConversationContext` inputs + Hub observables (see `CONVERSATION_FLOW_HANDOFF.md` §3.1). Neither touched the greeting ladder, so the Step-1a seam is unaffected. |
 | 2026-06-29 | v3 roadmap authored + approved: consolidate-first ordering, every-surface mandate, non-overridable invariants, characterization-first strangler-fig method, demote hub to Step 4 (read-only) and tenant overrides to Step 6, first-PR = Step 1a. Supersedes the build-order in `CONVERSATION_FLOW_HANDOFF.md` (which remains the asset/Command-Hub reference). |

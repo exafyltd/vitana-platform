@@ -23,6 +23,11 @@ export type GatewayI18nKey =
   | 'notif.weekly_digest.body'
   | 'notif.weekly_summary.title'
   | 'notif.weekly_summary.body'
+  // BOOTSTRAP-MEMORY-DAILY-LEARNING: felt-learning surfaces
+  | 'notif.daily_learning.title'
+  | 'notif.daily_learning.body'
+  | 'notif.memory_match.title'
+  | 'notif.memory_match.body'
   | 'notif.weekly_reflection.title'
   | 'notif.weekly_reflection.body'
   | 'notif.meetup_starting_soon.title'
@@ -127,6 +132,10 @@ const DE: LocaleCatalog = {
   'notif.weekly_digest.body': 'Sieh dir an, was diese Woche in deiner Community passiert ist.',
   'notif.weekly_summary.title': 'Deine wöchentliche Zusammenfassung',
   'notif.weekly_summary.body': 'Hier ist ein Überblick über deine Aktivität und deinen Fortschritt diese Woche.',
+  'notif.daily_learning.title': 'Ich habe heute etwas über dich gelernt',
+  'notif.daily_learning.body': 'Dein Erinnerungsgarten ist heute um {count} neue Erinnerungen gewachsen. Schau vorbei, was ich mir gemerkt habe.',
+  'notif.memory_match.title': 'Mir ist etwas an dir aufgefallen',
+  'notif.memory_match.body': 'Ich habe mir gemerkt, dass du {trait} erwähnt hast – genau deshalb könnte dieses Match gut zu dir passen.',
   'notif.weekly_reflection.title': 'Wöchentliche Reflexion',
   'notif.weekly_reflection.body': 'Nimm dir ein paar Minuten Zeit, um über deine Woche nachzudenken und Absichten zu setzen.',
   'notif.meetup_starting_soon.title': 'Meetup beginnt bald',
@@ -222,6 +231,10 @@ const EN: LocaleCatalog = {
   'notif.weekly_digest.body': 'See what happened in your community this week.',
   'notif.weekly_summary.title': 'Your Weekly Summary',
   'notif.weekly_summary.body': 'Here\'s a snapshot of your activity and progress this week.',
+  'notif.daily_learning.title': 'I learned something new about you today',
+  'notif.daily_learning.body': 'Your memory garden grew by {count} new memories today. Take a look at what I noticed.',
+  'notif.memory_match.title': 'I noticed something about you',
+  'notif.memory_match.body': 'I remembered you mentioned {trait} — that is exactly why this match could be a great fit for you.',
   'notif.weekly_reflection.title': 'Weekly Reflection',
   'notif.weekly_reflection.body': 'Take a few minutes to reflect on your week and set intentions.',
   'notif.meetup_starting_soon.title': 'Meetup Starting Soon',

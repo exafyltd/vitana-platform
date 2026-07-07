@@ -58,6 +58,7 @@ function basePayload(overrides: Partial<OverviewPayload> = {}): OverviewPayload 
     reminders_today: { count: 0, next: null },
     guided_journey: null,
     diary_last_7d: 1,
+    facts_learned_since_last: null,
     last_session_date_user_tz: null,
     ...overrides,
   } as OverviewPayload;
