@@ -51,6 +51,15 @@ interface AmazonSourceConfig {
   commission_rate?: number;
   /** Hard cap on SearchItems pages per keyword (Amazon caps at 10 pages × 10 items). */
   max_pages?: number;
+  /**
+   * Sync mode (default 'keyword_search' for back-compat):
+   *  - 'keyword_search'  : SearchItems by keyword → broad ASIN-keyed catalog (original behaviour).
+   *  - 'curated_refresh' : GetItems by ASIN → refresh ONLY the operator-curated rows
+   *                        (source_product_id LIKE 'amazonae-%') with real Amazon images,
+   *                        preserving their curated title / EUR display price / rating.
+   *  - 'both'            : run both.
+   */
+  mode?: 'keyword_search' | 'curated_refresh' | 'both';
 }
 
 // https://webservices.amazon.com/paapi5/documentation/common-request-parameters.html
@@ -112,16 +121,16 @@ interface SearchItemsPayload {
   Resources: string[];
 }
 
-async function signedSearchItems(
+async function signedPaapiRequest(
   cfg: AmazonSourceConfig,
-  payload: SearchItemsPayload
+  path: string,
+  target: string,
+  payload: Record<string, unknown>
 ): Promise<Record<string, unknown>> {
   const mp = MARKETPLACE_MAP[cfg.marketplace];
   const service = 'ProductAdvertisingAPI';
   const region = mp.region;
   const host = mp.host;
-  const path = '/paapi5/searchitems';
-  const target = 'com.amazon.paapi5.v1.ProductAdvertisingAPIv1.SearchItems';
   const body = JSON.stringify(payload);
 
   // AWS timestamp: YYYYMMDD'T'HHMMSS'Z'
@@ -181,6 +190,17 @@ async function signedSearchItems(
     throw new Error(`Amazon PA-API HTTP ${resp.status} ${text.slice(0, 300)}`);
   }
   return (await resp.json()) as Record<string, unknown>;
+}
+
+const SEARCHITEMS_TARGET = 'com.amazon.paapi5.v1.ProductAdvertisingAPIv1.SearchItems';
+const GETITEMS_TARGET = 'com.amazon.paapi5.v1.ProductAdvertisingAPIv1.GetItems';
+
+function signedSearchItems(cfg: AmazonSourceConfig, payload: SearchItemsPayload): Promise<Record<string, unknown>> {
+  return signedPaapiRequest(cfg, '/paapi5/searchitems', SEARCHITEMS_TARGET, payload as unknown as Record<string, unknown>);
+}
+
+function signedGetItems(cfg: AmazonSourceConfig, payload: Record<string, unknown>): Promise<Record<string, unknown>> {
+  return signedPaapiRequest(cfg, '/paapi5/getitems', GETITEMS_TARGET, payload);
 }
 
 // ==================== Normalization ====================
@@ -305,9 +325,123 @@ const SEARCH_RESOURCES = [
 
 const RATE_LIMIT_MS = 1100; // 1 req/sec + headroom
 
+// ==================== Curated-ASIN refresh (GetItems) ====================
+//
+// The operator hand-curates a small set of Amazon recommendations (seeded with
+// a synthetic source_product_id like 'amazonae-ashwagandha-ksm66', with the real
+// ASIN embedded in the /dp/<ASIN> affiliate_url). Until PA-API is unlocked those
+// rows carry placeholder stock images. This pass calls GetItems for exactly those
+// ASINs and swaps in the REAL Amazon product photo — while preserving the curated
+// title, the EUR display price, and the rating (we deliberately do NOT overwrite
+// price/currency, because amazon.ae returns AED and our EU audience sees EUR).
+
+const GETITEMS_RESOURCES = ['Images.Primary.Large', 'Images.Variants.Large'];
+
+function extractAsinFromUrl(url: string | null | undefined): string | null {
+  if (!url) return null;
+  const m = url.match(/\/dp\/([A-Z0-9]{10})(?:[/?]|$)/i);
+  return m ? m[1].toUpperCase() : null;
+}
+
+function primaryImages(item: AmazonItem): string[] {
+  const images: string[] = [];
+  if (item.Images?.Primary?.Large?.URL) images.push(item.Images.Primary.Large.URL);
+  for (const v of item.Images?.Variants ?? []) {
+    if (v.Large?.URL && !images.includes(v.Large.URL)) images.push(v.Large.URL);
+  }
+  return images;
+}
+
+async function refreshCuratedAsins(
+  cfg: AmazonSourceConfig
+): Promise<{ refreshed: number; errors: number; error_sample: unknown[] }> {
+  const supabase = getSupabase();
+  if (!supabase) return { refreshed: 0, errors: 1, error_sample: [{ op: 'getitems', error: 'supabase unavailable' }] };
+
+  const { data, error } = await supabase
+    .from('products')
+    .select('id, affiliate_url')
+    .eq('source_network', 'amazon')
+    .like('source_product_id', 'amazonae-%');
+  if (error) return { refreshed: 0, errors: 1, error_sample: [{ op: 'getitems', error: error.message }] };
+
+  // Map real ASIN → curated product id
+  const asinToId = new Map<string, string>();
+  for (const r of (data ?? []) as Array<{ id: string; affiliate_url: string | null }>) {
+    const asin = extractAsinFromUrl(r.affiliate_url);
+    if (asin && !asinToId.has(asin)) asinToId.set(asin, r.id);
+  }
+  const asins = [...asinToId.keys()];
+  if (asins.length === 0) return { refreshed: 0, errors: 0, error_sample: [] };
+
+  let refreshed = 0, errors = 0;
+  const errorSample: unknown[] = [];
+  let lastReqAt = 0;
+
+  // GetItems accepts up to 10 ItemIds per request.
+  for (let i = 0; i < asins.length; i += 10) {
+    const batch = asins.slice(i, i + 10);
+    const delta = Date.now() - lastReqAt;
+    if (delta < RATE_LIMIT_MS) await new Promise((r) => setTimeout(r, RATE_LIMIT_MS - delta));
+    lastReqAt = Date.now();
+
+    let resp: Record<string, unknown>;
+    try {
+      resp = await signedGetItems(cfg, {
+        ItemIds: batch,
+        ItemIdType: 'ASIN',
+        PartnerTag: cfg.associate_tag,
+        PartnerType: 'Associates',
+        Marketplace: cfg.marketplace,
+        Resources: GETITEMS_RESOURCES,
+      });
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      errors++;
+      errorSample.push({ op: 'getitems', asins: batch, error: message });
+      break; // 403 = PA-API not yet granted — stop, nothing else will succeed
+    }
+
+    const itemsResult = resp.ItemsResult as { Items?: AmazonItem[] } | undefined;
+    for (const item of itemsResult?.Items ?? []) {
+      const pid = item.ASIN ? asinToId.get(item.ASIN.toUpperCase()) : undefined;
+      if (!pid) continue;
+      const images = primaryImages(item);
+      if (images.length === 0) continue;
+      // Update ONLY images — preserve curated title, EUR price, and rating.
+      const { error: upErr } = await supabase
+        .from('products')
+        .update({ images, updated_at: new Date().toISOString() })
+        .eq('id', pid);
+      if (upErr) { errors++; errorSample.push({ op: 'getitems.update', asin: item.ASIN, error: upErr.message }); }
+      else refreshed++;
+    }
+  }
+
+  return { refreshed, errors, error_sample: errorSample.slice(0, 10) };
+}
+
+// ==================== Per-marketplace sync ====================
+
 async function syncOneMarketplace(
   cfg: AmazonSourceConfig
-): Promise<{ inserted: number; updated: number; skipped: number; errors: number; error_sample: unknown[] }> {
+): Promise<{ inserted: number; updated: number; skipped: number; errors: number; refreshed: number; error_sample: unknown[] }> {
+  const mode = cfg.mode ?? 'keyword_search';
+  let refreshed = 0;
+  let refreshErrCount = 0;
+  const refreshErrors: unknown[] = [];
+
+  if (mode === 'curated_refresh' || mode === 'both') {
+    const r = await refreshCuratedAsins(cfg);
+    refreshed = r.refreshed;
+    refreshErrCount = r.errors;
+    refreshErrors.push(...r.error_sample);
+  }
+  if (mode === 'curated_refresh') {
+    // Curated-only: skip the broad keyword catalog pull entirely.
+    return { inserted: 0, updated: 0, skipped: 0, errors: refreshErrCount, refreshed, error_sample: refreshErrors.slice(0, 10) };
+  }
+
   const mp = MARKETPLACE_MAP[cfg.marketplace];
   const merchantId = await upsertMerchant({
     source_network: 'amazon',
@@ -323,7 +457,7 @@ async function syncOneMarketplace(
     customs_risk: 'low',
   });
   if (!merchantId) {
-    return { inserted: 0, updated: 0, skipped: 0, errors: 1, error_sample: [{ marketplace: cfg.marketplace, error: 'merchant upsert failed' }] };
+    return { inserted: 0, updated: 0, skipped: 0, errors: 1 + refreshErrCount, refreshed, error_sample: [...refreshErrors, { marketplace: cfg.marketplace, error: 'merchant upsert failed' }].slice(0, 10) };
   }
 
   const keywords = (cfg.keywords ?? 'supplement,vitamin')
@@ -332,8 +466,9 @@ async function syncOneMarketplace(
     .filter(Boolean);
   const maxPages = Math.max(1, Math.min(cfg.max_pages ?? 10, 10));
 
-  let inserted = 0, updated = 0, skipped = 0, errors = 0;
-  const errorSample: unknown[] = [];
+  let inserted = 0, updated = 0, skipped = 0;
+  let errors = refreshErrCount;
+  const errorSample: unknown[] = [...refreshErrors];
   let lastReqAt = 0;
 
   for (const kw of keywords) {
@@ -386,7 +521,7 @@ async function syncOneMarketplace(
     }
   }
 
-  return { inserted, updated, skipped, errors, error_sample: errorSample.slice(0, 10) };
+  return { inserted, updated, skipped, errors, refreshed, error_sample: errorSample.slice(0, 10) };
 }
 
 // ==================== Entry point ====================
@@ -394,8 +529,8 @@ async function syncOneMarketplace(
 export interface AmazonSyncResult {
   ok: boolean;
   marketplaces_synced: number;
-  totals: { inserted: number; updated: number; skipped: number; errors: number };
-  per_marketplace: Array<{ marketplace: string; inserted: number; updated: number; skipped: number; errors: number }>;
+  totals: { inserted: number; updated: number; skipped: number; errors: number; refreshed: number };
+  per_marketplace: Array<{ marketplace: string; inserted: number; updated: number; skipped: number; errors: number; refreshed: number }>;
   duration_ms: number;
 }
 
@@ -407,7 +542,7 @@ export async function runAmazonSync(triggered_by = 'scheduler'): Promise<AmazonS
     return {
       ok: true,
       marketplaces_synced: 0,
-      totals: { inserted: 0, updated: 0, skipped: 0, errors: 0 },
+      totals: { inserted: 0, updated: 0, skipped: 0, errors: 0, refreshed: 0 },
       per_marketplace: [],
       duration_ms: Date.now() - startTime,
     };
@@ -415,7 +550,7 @@ export async function runAmazonSync(triggered_by = 'scheduler'): Promise<AmazonS
 
   const run = await startSyncRun('amazon', triggered_by);
   const per_marketplace: AmazonSyncResult['per_marketplace'] = [];
-  const totals = { inserted: 0, updated: 0, skipped: 0, errors: 0 };
+  const totals = { inserted: 0, updated: 0, skipped: 0, errors: 0, refreshed: 0 };
   const errorSample: unknown[] = [];
 
   for (const cfg of configs) {
@@ -426,11 +561,13 @@ export async function runAmazonSync(triggered_by = 'scheduler'): Promise<AmazonS
       updated: stats.updated,
       skipped: stats.skipped,
       errors: stats.errors,
+      refreshed: stats.refreshed,
     });
     totals.inserted += stats.inserted;
     totals.updated += stats.updated;
     totals.skipped += stats.skipped;
     totals.errors += stats.errors;
+    totals.refreshed += stats.refreshed;
     if (stats.error_sample.length) errorSample.push(...stats.error_sample);
   }
 
@@ -439,7 +576,7 @@ export async function runAmazonSync(triggered_by = 'scheduler'): Promise<AmazonS
   const duration_ms = Date.now() - startTime;
   console.log(
     `[amazon-sync] done in ${duration_ms}ms — ${totals.inserted} inserted, ${totals.updated} updated, ` +
-    `${totals.skipped} skipped, ${totals.errors} errors across ${configs.length} marketplaces`
+    `${totals.refreshed} refreshed, ${totals.skipped} skipped, ${totals.errors} errors across ${configs.length} marketplaces`
   );
 
   return { ok: totals.errors === 0, marketplaces_synced: configs.length, totals, per_marketplace, duration_ms };

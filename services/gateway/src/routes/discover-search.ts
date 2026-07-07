@@ -262,8 +262,16 @@ router.get('/search', async (req: Request, res: Response) => {
       LATAM: ['LATAM'],
       OCEANIA: ['OCEANIA'],
     };
-    const allowedOrigins = friendlyMap[userRegion] ?? [userRegion];
-    query = query.in('origin_region', allowedOrigins);
+    // A region with no defined "friendly neighbors" (e.g. 'OTHER', or any
+    // app_users.region_group value outside the map above) used to fall back
+    // to `[userRegion]` — filtering to a single origin_region no product in
+    // the catalog actually has, which silently zeroed search results for
+    // those users. Unmapped regions now skip the origin filter instead
+    // (equivalent to 'international' for them) rather than showing nothing.
+    const allowedOrigins = friendlyMap[userRegion];
+    if (allowedOrigins) {
+      query = query.in('origin_region', allowedOrigins);
+    }
   }
   // For 'international' we apply no origin filter here — geo_policy still
   // applies but only as a ranking weight in this pass.

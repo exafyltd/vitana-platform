@@ -172,8 +172,17 @@ router.get('/feed', async (req: Request, res: Response) => {
       LATAM: ['LATAM'],
       OCEANIA: ['OCEANIA'],
     };
-    const allowedOrigins = friendlyMap[ctx.region_group] ?? [ctx.region_group];
-    candidateQuery = candidateQuery.in('origin_region', allowedOrigins);
+    // A region with no defined "friendly neighbors" (e.g. 'OTHER', or any
+    // value app_users.region_group can hold that isn't in the map above)
+    // used to fall back to `[ctx.region_group]` — filtering to a single
+    // origin_region no product in the catalog actually has, which silently
+    // zeroed the whole feed for those users. Unmapped regions now skip the
+    // origin filter instead (equivalent to 'international' for them) rather
+    // than showing nothing.
+    const allowedOrigins = friendlyMap[ctx.region_group];
+    if (allowedOrigins) {
+      candidateQuery = candidateQuery.in('origin_region', allowedOrigins);
+    }
   }
 
   candidateQuery = candidateQuery.order('rating', { ascending: false, nullsFirst: false }).limit(150);
