@@ -930,9 +930,9 @@ async def get_index_improvement_suggestions(context: RunContext) -> str:
 
 
 @function_tool
-async def create_index_improvement_plan(context: RunContext, target_pillar: str) -> str:
+async def create_index_improvement_plan(context: RunContext, pillar: str) -> str:
     """Create a multi-step plan to improve a specific pillar (VTID-01983)."""
-    body = await _dispatch(context, "create_index_improvement_plan", {"target_pillar": target_pillar})
+    body = await _dispatch(context, "create_index_improvement_plan", {"pillar": pillar})
     return summarize(body)
 
 
