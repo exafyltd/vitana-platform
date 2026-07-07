@@ -52,6 +52,18 @@ WHEN NOT TO CALL:
 - Pure small talk with no screen destination ("how are you", "thank you")
 - Quick factual questions ("what is longevity?")
 
+CONFIRMING A DESTINATION YOU JUST OFFERED: If you just offered to take
+the user somewhere by name (e.g. you asked "Should I take you to
+Connected Apps?" or "Soll ich dich zu den verbundenen Apps bringen?")
+and the user simply confirms without repeating the destination ("yes",
+"ja", "mach das", "do it", "gerne", "klar", "sure") — pass THE
+DESTINATION YOU OFFERED as the question, NOT the bare confirmation
+word. A confirmation carries no screen information on its own; the
+backend can only resolve the right screen from your own last offer.
+Example: you said "Soll ich dich zu den verbundenen Apps bringen?"
+and the user replies "Ja, mach das" — call navigate with
+question: "verbundene Apps", not question: "Ja, mach das".
+
 WHAT YOU GET BACK:
 - GUIDANCE: a short explanation you should speak naturally to the user,
   telling them about the feature and what they can do there.
@@ -140,6 +152,18 @@ WHEN TO CALL:
 WHEN NOT TO CALL:
 - Pure small talk with no screen destination ("how are you", "thank you")
 - Quick factual questions ("what is longevity?")
+
+CONFIRMING A DESTINATION YOU JUST OFFERED: If you just offered to take
+the user somewhere by name (e.g. you asked "Should I take you to
+Connected Apps?" or "Soll ich dich zu den verbundenen Apps bringen?")
+and the user simply confirms without repeating the destination ("yes",
+"ja", "mach das", "do it", "gerne", "klar", "sure") — pass THE
+DESTINATION YOU OFFERED as the question, NOT the bare confirmation
+word. A confirmation carries no screen information on its own; the
+backend can only resolve the right screen from your own last offer.
+Example: you said "Soll ich dich zu den verbundenen Apps bringen?"
+and the user replies "Ja, mach das" — call navigate with
+question: "verbundene Apps", not question: "Ja, mach das".
 
 WHAT YOU GET BACK:
 - GUIDANCE: a short explanation you should speak naturally to the user,
@@ -4881,6 +4905,18 @@ WHEN TO CALL:
 WHEN NOT TO CALL:
 - Pure small talk with no screen destination ("how are you", "thank you")
 - Quick factual questions ("what is longevity?")
+
+CONFIRMING A DESTINATION YOU JUST OFFERED: If you just offered to take
+the user somewhere by name (e.g. you asked "Should I take you to
+Connected Apps?" or "Soll ich dich zu den verbundenen Apps bringen?")
+and the user simply confirms without repeating the destination ("yes",
+"ja", "mach das", "do it", "gerne", "klar", "sure") — pass THE
+DESTINATION YOU OFFERED as the question, NOT the bare confirmation
+word. A confirmation carries no screen information on its own; the
+backend can only resolve the right screen from your own last offer.
+Example: you said "Soll ich dich zu den verbundenen Apps bringen?"
+and the user replies "Ja, mach das" — call navigate with
+question: "verbundene Apps", not question: "Ja, mach das".
 
 WHAT YOU GET BACK:
 - GUIDANCE: a short explanation you should speak naturally to the user,

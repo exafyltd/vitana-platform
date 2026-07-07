@@ -195,6 +195,17 @@ function matchesKeywords(row: AdmitadRow, keywords: string[]): boolean {
   return keywords.some((k) => hay.includes(k));
 }
 
+// The feed carries no shipping-destination data per row. Downstream geo
+// gates (discover-search.ts, discover-feed.ts, click-redirect.ts) treat an
+// unset ships_to_countries/ships_to_regions as "ships nowhere" for any user
+// with a known country — leaving these unset would make every imported row
+// invisible to logged-in users. Mirrors the ships list already used on the
+// hand-curated Admitad/AliExpress seed rows (broad dropship-style coverage).
+const DEFAULT_SHIPS_TO_COUNTRIES = [
+  'DE', 'AT', 'CH', 'FR', 'IT', 'ES', 'NL', 'BE', 'PL', 'SE', 'DK', 'FI', 'GB', 'IE', 'US', 'CA', 'AE', 'SA',
+];
+const DEFAULT_SHIPS_TO_REGIONS = ['EU', 'UK', 'US', 'MENA', 'GLOBAL'];
+
 function normalizeAdmitadRow(
   row: AdmitadRow,
   merchantId: string,
@@ -230,6 +241,8 @@ function normalizeAdmitadRow(
     affiliate_url: url,
     availability: 'in_stock', // this feed template carries no explicit stock column
     origin_country: country,
+    ships_to_countries: DEFAULT_SHIPS_TO_COUNTRIES,
+    ships_to_regions: DEFAULT_SHIPS_TO_REGIONS,
     health_goals: inferred.health_goals,
     dietary_tags: inferred.dietary_tags,
     ingredients_primary: inferred.ingredients_primary,
