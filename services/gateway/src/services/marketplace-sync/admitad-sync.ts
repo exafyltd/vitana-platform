@@ -190,9 +190,72 @@ function parseCents(amountStr: string | undefined): number | null {
   return Number.isNaN(n) ? null : Math.round(n * 100);
 }
 
+// Whole-catalog "WW Basic" feeds are dominated by unrelated categories
+// (kitchenware, power tools, toys, electronics, ...) whose product names
+// incidentally contain a bare keyword substring — e.g. "Zinc Alloy Ice Cream
+// Scoop" (zinc = alloy metal, not the mineral), "Protein Powder Measuring
+// Spoon" (a tool FOR protein powder, not protein powder), "Infant
+// Supplementary Food Scale" ("supplement" as a substring of "supplementary").
+// Excluding these categories outright is far more reliable than trying to
+// perfect keyword phrasing — confirmed against a real sync run where 100% of
+// 200 "matched" rows were false positives from exactly these categories.
+const EXCLUDED_CATEGORY_SUBSTRINGS = [
+  'kitchen', 'dining', 'tool', 'toy', 'action & toy', 'networking',
+  'pay on your order', 'electrical equipment', 'storage device', 'apparel',
+  'travel', 'computer', 'baby stroller', 'automotive', 'car ', 'furniture',
+  'jewelry', 'jewellery', 'watch', 'shoe', 'luggage', 'lighting', 'security',
+  'phone', 'cellphone', 'electronics', 'home improvement', 'hardware',
+];
+
+function isExcludedCategory(category: string | undefined): boolean {
+  if (!category) return false;
+  const c = category.toLowerCase();
+  return EXCLUDED_CATEGORY_SUBSTRINGS.some((s) => c.includes(s));
+}
+
 function matchesKeywords(row: AdmitadRow, keywords: string[]): boolean {
+  if (isExcludedCategory(row.category)) return false;
   const hay = `${row.name ?? ''} ${row.category ?? ''}`.toLowerCase();
-  return keywords.some((k) => hay.includes(k));
+  // Word-boundary match — a raw substring match let "supplement" match
+  // inside "supplementary" (baby-food tools), etc.
+  return keywords.some((k) => new RegExp(`\\b${escapeRegExp(k)}\\b`).test(hay));
+}
+
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+// Feed-native category strings (AliExpress's own taxonomy, e.g. "Health &
+// Beauty") never match our fixed category enum, so a genuinely-matched
+// wellness row would otherwise be invisible to discover-search.ts's
+// `category = 'supplements'` filter. Every row that survives the keyword +
+// category-denylist gate above is, by construction, a supplement/wellness
+// product — so it always gets our canonical category.
+const SUPPLEMENTS_CATEGORY = 'supplements';
+
+// Best-effort subcategory guess so matched rows slot into the existing
+// Discover thematic collections (CategoryShopSections' SECTION_ORDER) —
+// first matching bucket wins. Falls back to no subcategory (still visible
+// via category='supplements', just outside the themed rows).
+const SUBCATEGORY_RULES: Array<{ key: string; ingredients?: string[]; healthGoals?: string[] }> = [
+  { key: 'essential-fatty-acids', ingredients: ['omega-3', 'epa', 'dha', 'fish-oil', 'krill-oil', 'algae-oil'] },
+  { key: 'adaptogens', ingredients: ['ashwagandha', 'rhodiola', 'holy-basil', 'ginseng', 'panax-ginseng', 'cordyceps', 'reishi', 'chaga'], healthGoals: ['adrenal-support'] },
+  { key: 'nootropics', ingredients: ['l-theanine', 'ginkgo', 'bacopa', 'lions-mane', 'caffeine'], healthGoals: ['focus'] },
+  { key: 'performance', ingredients: ['creatine', 'taurine', 'carnitine'], healthGoals: ['muscle-recovery', 'weight-management'] },
+  { key: 'beauty', ingredients: ['collagen', 'hyaluronic-acid'], healthGoals: ['skin-hair-nails'] },
+  { key: 'longevity', ingredients: ['resveratrol', 'nad', 'coq10'], healthGoals: ['longevity'] },
+  { key: 'antioxidants', ingredients: ['quercetin', 'curcumin'] },
+  { key: 'minerals', ingredients: ['magnesium', 'magnesium-glycinate', 'magnesium-citrate', 'magnesium-threonate', 'zinc', 'iron', 'iron-bisglycinate', 'calcium', 'selenium', 'iodine'] },
+  { key: 'vitamins', ingredients: ['vitamin-c', 'vitamin-d3', 'vitamin-d2', 'vitamin-k2', 'vitamin-b12', 'vitamin-b6', 'folate', 'vitamin-a', 'vitamin-e', 'biotin'] },
+  { key: 'immunity', healthGoals: ['immune-support'] },
+];
+
+function guessSubcategory(ingredients: string[], healthGoals: string[]): string | undefined {
+  for (const rule of SUBCATEGORY_RULES) {
+    if (rule.ingredients?.some((i) => ingredients.includes(i))) return rule.key;
+    if (rule.healthGoals?.some((g) => healthGoals.includes(g))) return rule.key;
+  }
+  return undefined;
 }
 
 // The feed carries no shipping-destination data per row. Downstream geo
@@ -227,13 +290,15 @@ function normalizeAdmitadRow(
 
   const inferText = [title, row.category ?? ''].filter(Boolean).join(' ');
   const inferred = inferSupplementAttributes(inferText);
+  const subcategory = guessSubcategory(inferred.ingredients_primary, inferred.health_goals);
 
   return {
     merchant_id: merchantId,
     source_network: 'admitad_feed',
     source_product_id: `${advertiserSlug}-${id}`,
     title,
-    category: row.category,
+    category: SUPPLEMENTS_CATEGORY,
+    subcategory,
     price_cents: priceCents,
     currency,
     compare_at_price_cents: compareCents,
