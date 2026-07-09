@@ -125,7 +125,7 @@ router.post('/report', requireApiKey, async (req: Request, res: Response) => {
 /**
  * GET /health — Command Hub Overview's "basic test" grid polls this like
  * every other service, unauthenticated (see fetchServiceHealth in
- * command-hub/app.js) — same convention as every other `/api/v1/*/health`
+ * command-hub/app.js) — same convention as every other per-service health
  * endpoint. Exposes only aggregate timing numbers, nothing sensitive.
  * Reads the most recent run out of oasis_events rather than re-running
  * anything live (the actual test runs on its own cron).
