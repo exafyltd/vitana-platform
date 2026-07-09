@@ -64,7 +64,7 @@ const router = Router();
  * GATEWAY_SERVICE_TOKEN as a repo secret) may write results, so nobody can
  * forge a "healthy" or "down" reading by POSTing arbitrary timings.
  */
-function requireServiceToken(req: Request, res: Response, next: () => void): void {
+function requireApiKey(req: Request, res: Response, next: () => void): void {
   const authHeader = req.headers.authorization ?? '';
   const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
   if (!token) {
@@ -84,7 +84,7 @@ function requireServiceToken(req: Request, res: Response, next: () => void): voi
  * Batches all screens from one run into one call; each screen still becomes
  * its own OASIS event so per-screen history stays queryable.
  */
-router.post('/report', requireServiceToken, async (req: Request, res: Response) => {
+router.post('/report', requireApiKey, async (req: Request, res: Response) => {
   const parse = ReportSchema.safeParse(req.body);
   if (!parse.success) {
     return res.status(400).json({ ok: false, error: 'invalid_report', issues: parse.error.issues });
@@ -122,16 +122,15 @@ router.post('/report', requireServiceToken, async (req: Request, res: Response) 
   }
 });
 
-// public-route — read-only aggregate status, same as every other
-// `/api/v1/*/health` endpoint Command Hub's Overview grid polls
-// unauthenticated (see fetchServiceHealth in command-hub/app.js). Exposes
-// only timing numbers, nothing sensitive.
 /**
  * GET /health — Command Hub Overview's "basic test" grid polls this like
- * every other service. Reads the most recent run out of oasis_events rather
- * than re-running anything live (the actual test runs on its own cron).
+ * every other service, unauthenticated (see fetchServiceHealth in
+ * command-hub/app.js) — same convention as every other `/api/v1/*/health`
+ * endpoint. Exposes only aggregate timing numbers, nothing sensitive.
+ * Reads the most recent run out of oasis_events rather than re-running
+ * anything live (the actual test runs on its own cron).
  */
-router.get('/health', async (_req: Request, res: Response) => {
+router.get('/health', async (_req: Request, res: Response) => { // public-route
   const sb = getSupabase();
   if (!sb) {
     return res.status(200).json({ status: 'down', reason: 'supabase_unconfigured' });
@@ -199,11 +198,11 @@ router.get('/health', async (_req: Request, res: Response) => {
   });
 });
 
-// public-route — router status/self-description only, no data.
 /**
- * GET / — router status, mirrors the convention other routers use.
+ * GET / — router status/self-description only, no data. Mirrors the
+ * convention other routers use.
  */
-router.get('/', (_req: Request, res: Response) => {
+router.get('/', (_req: Request, res: Response) => { // public-route
   return res.status(200).json({
     ok: true,
     service: 'screen-load-health',
