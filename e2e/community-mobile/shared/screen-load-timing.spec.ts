@@ -48,9 +48,14 @@ type ScreenResult = {
 
 async function reportResults(results: ScreenResult[]) {
   try {
+    const serviceToken = process.env.GATEWAY_SERVICE_TOKEN;
+    if (!serviceToken) {
+      console.warn('[screen-load-timing] GATEWAY_SERVICE_TOKEN not set — skipping report POST');
+      return;
+    }
     await fetch(`${GATEWAY_URL}/api/v1/frontend/screen-load/report`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${serviceToken}` },
       body: JSON.stringify({ run_id: RUN_ID, environment: ENVIRONMENT, results }),
     });
   } catch (err) {

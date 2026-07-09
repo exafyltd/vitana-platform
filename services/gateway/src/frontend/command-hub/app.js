@@ -27951,11 +27951,12 @@ async function fetchServiceHealth(silentRefresh) {
         { name: 'Visual Interactive',   url: '/api/v1/visual/health',                    group: 'Visual & VTID' },
         { name: 'VTID Terminalize',     url: '/api/v1/oasis/vtid/terminalize/health',    group: 'Visual & VTID' },
         { name: 'VTID',                 url: '/api/v1/vtid/health',                      group: 'Visual & VTID' },
-        // VTID-SCREEN-LOAD-01: standard basic test — scheduled Playwright run
-        // (SCREEN-LOAD-TIMING.yml, every 30 min) measures mobile screen load
-        // time against production and reports here. 'down' means either a
-        // screen failed to load or the scheduled job itself hasn't reported
-        // in 3h+; 'degraded' means it's reporting but slow (p75 over budget).
+        // DEV-COMHU-03401 / VTID-SCREEN-LOAD-01: standard basic test —
+        // scheduled Playwright run (SCREEN-LOAD-TIMING.yml, every 30 min)
+        // measures mobile screen load time against production and reports
+        // here. 'down' means either a screen failed to load or the
+        // scheduled job itself hasn't reported in 3h+; 'degraded' means
+        // it's reporting but slow (p75 over budget).
         { name: 'Screen Load Time',     url: '/api/v1/frontend/screen-load/health',      group: 'Frontend & Performance' }
     ];
 
