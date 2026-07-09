@@ -44,6 +44,15 @@ import { synthesizeUserModel } from '../../src/services/user-model-synthesis';
 const mockedBatchEmbed = generateFactEmbeddings as jest.MockedFunction<typeof generateFactEmbeddings>;
 const mockedSynthesize = synthesizeUserModel as jest.MockedFunction<typeof synthesizeUserModel>;
 
+// AP-0913 mirrors posts via orb-memory-bridge's writeMemoryItemWithIdentity,
+// which opens its own real Supabase client internally (not injectable via
+// ctx.supabase) — mock it so the handler test stays hermetic.
+jest.mock('../../src/services/orb-memory-bridge', () => ({
+  writeMemoryItemWithIdentity: jest.fn(),
+}));
+import { writeMemoryItemWithIdentity } from '../../src/services/orb-memory-bridge';
+const mockedWriteMemoryItem = writeMemoryItemWithIdentity as jest.MockedFunction<typeof writeMemoryItemWithIdentity>;
+
 registerPersonalizationEnginesHandlers();
 registerMemoryIntelligenceHandlers();
 registerEventMeetupInitiativeHandlers();
@@ -74,6 +83,7 @@ function makeFakeSupabase(resultsByTable: Record<string, Array<{ data?: any; cou
         lte: () => chain,
         lt: () => chain,
         gt: () => chain,
+        filter: () => chain,
         contains: () => chain,
         overlaps: () => chain,
         or: () => chain,
@@ -129,6 +139,7 @@ describe('registry wiring — Phase 2 (5 new domains)', () => {
     'AP-0910': 'runMemoryEmbeddingBackfill',
     'AP-0911': 'runUserModelSynthesis',
     'AP-0912': 'runHealthCorrelationInsights',
+    'AP-0913': 'runOwnPostMemoryCapture',
     'AP-1401': 'runSmartEventCreation',
     'AP-1402': 'runCalendarAvailabilityCheck',
     'AP-1403': 'runAutoInvitationSender',
@@ -568,6 +579,95 @@ describe('runHealthCorrelationInsights (AP-0912)', () => {
       p_fact_key: 'health_insight_diary_lapse',
     }));
     expect(result.actionsTaken).toBe(1);
+  });
+});
+
+describe('runOwnPostMemoryCapture (AP-0913)', () => {
+  beforeEach(() => {
+    mockedWriteMemoryItem.mockReset();
+    mockedWriteMemoryItem.mockResolvedValue({ ok: true, id: 'mem-1', category_key: 'uncategorized' });
+  });
+
+  it('mirrors a new post into memory_items via writeMemoryItemWithIdentity', async () => {
+    const supabase: any = makeFakeSupabase({
+      profile_posts: [
+        {
+          data: [
+            { id: 'post-1', user_id: 'u1', content: 'Finished my morning run!', created_at: '2026-07-09T06:00:00Z' },
+          ],
+          error: null,
+        },
+      ],
+      memory_items: [{ data: [], error: null }], // nothing mirrored yet
+    });
+    const { ctx } = makeCtx(supabase);
+    const handler = getHandler('runOwnPostMemoryCapture')!;
+    const result = await handler(ctx);
+
+    expect(mockedWriteMemoryItem).toHaveBeenCalledWith(
+      { user_id: 'u1', tenant_id: 't-1' },
+      expect.objectContaining({
+        source: 'system',
+        content: 'Finished my morning run!',
+        content_json: { kind: 'community_post', post_id: 'post-1' },
+        occurred_at: '2026-07-09T06:00:00Z',
+      }),
+    );
+    expect(result.actionsTaken).toBe(1);
+    expect(result.usersAffected).toBe(1);
+  });
+
+  it('skips a post already mirrored (dedup by content_json->>post_id)', async () => {
+    const supabase: any = makeFakeSupabase({
+      profile_posts: [
+        {
+          data: [
+            { id: 'post-1', user_id: 'u1', content: 'Already mirrored', created_at: '2026-07-09T06:00:00Z' },
+          ],
+          error: null,
+        },
+      ],
+      memory_items: [{ data: [{ content_json: { post_id: 'post-1' } }], error: null }],
+    });
+    const { ctx } = makeCtx(supabase);
+    const handler = getHandler('runOwnPostMemoryCapture')!;
+    const result = await handler(ctx);
+
+    expect(mockedWriteMemoryItem).not.toHaveBeenCalled();
+    expect(result.actionsTaken).toBe(0);
+  });
+
+  it('skips posts with no user_id or empty content', async () => {
+    const supabase: any = makeFakeSupabase({
+      profile_posts: [
+        {
+          data: [
+            { id: 'post-1', user_id: null, content: 'orphaned', created_at: '2026-07-09T06:00:00Z' },
+            { id: 'post-2', user_id: 'u1', content: '   ', created_at: '2026-07-09T06:00:00Z' },
+          ],
+          error: null,
+        },
+      ],
+      memory_items: [{ data: [], error: null }],
+    });
+    const { ctx } = makeCtx(supabase);
+    const handler = getHandler('runOwnPostMemoryCapture')!;
+    const result = await handler(ctx);
+
+    expect(mockedWriteMemoryItem).not.toHaveBeenCalled();
+    expect(result.actionsTaken).toBe(0);
+  });
+
+  it('returns zero without querying memory_items when profile_posts has nothing new', async () => {
+    const supabase: any = makeFakeSupabase({
+      profile_posts: [{ data: [], error: null }],
+    });
+    const { ctx } = makeCtx(supabase);
+    const handler = getHandler('runOwnPostMemoryCapture')!;
+    const result = await handler(ctx);
+
+    expect(mockedWriteMemoryItem).not.toHaveBeenCalled();
+    expect(result).toEqual({ usersAffected: 0, actionsTaken: 0 });
   });
 });
 
