@@ -205,7 +205,7 @@ describe('VTID-02963 — send_chat_message rate-limit key uses real session id',
     const sb = makeStubSupabase({ inserts, appUsers: defaultAppUsers() });
 
     const result = await tool_send_chat_message(
-      { recipient_user_id: RECIPIENT_UUID, recipient_label: 'Dragan Red', body: 'hello' },
+      { recipient_user_id: RECIPIENT_UUID, recipient_label: 'Dragan Red', body: 'hello', confirmed: true },
       {
         user_id: SENDER_UUID,
         tenant_id: 'tenant-1',
@@ -243,7 +243,7 @@ describe('VTID-02963 — send_chat_message rate-limit key uses real session id',
     const sb = makeStubSupabase({ inserts, appUsers: defaultAppUsers() });
 
     const result = await tool_send_chat_message(
-      { recipient_user_id: RECIPIENT_UUID_2, recipient_label: 'Another User', body: 'hello' },
+      { recipient_user_id: RECIPIENT_UUID_2, recipient_label: 'Another User', body: 'hello', confirmed: true },
       {
         user_id: SENDER_UUID,
         tenant_id: 'tenant-1',
@@ -295,7 +295,7 @@ describe('VTID-02963 — send_chat_message rate-limit key uses real session id',
 
       const result = await tool_send_chat_message(
         // recipient_user_id is a spoken name, NOT a UUID — Gemini dropped it.
-        { recipient_user_id: 'Dragan Red', recipient_label: 'Dragan Red', body: 'hi' },
+        { recipient_user_id: 'Dragan Red', recipient_label: 'Dragan Red', body: 'hi', confirmed: true },
         {
           user_id: SENDER_UUID,
           tenant_id: 'tenant-1',
@@ -325,7 +325,7 @@ describe('VTID-02963 — send_chat_message rate-limit key uses real session id',
       const sb = makeStubSupabase({ inserts, appUsers });
 
       const result = await tool_send_chat_message(
-        { recipient_user_id: RECIPIENT_UUID, recipient_label: 'Dragan Red', body: 'hi' },
+        { recipient_user_id: RECIPIENT_UUID, recipient_label: 'Dragan Red', body: 'hi', confirmed: true },
         {
           user_id: SENDER_UUID,
           tenant_id: null,
@@ -349,7 +349,7 @@ describe('VTID-02963 — send_chat_message rate-limit key uses real session id',
       });
 
       const result = await tool_send_chat_message(
-        { recipient_user_id: RECIPIENT_UUID, recipient_label: 'Dragan Red', body: 'hi' },
+        { recipient_user_id: RECIPIENT_UUID, recipient_label: 'Dragan Red', body: 'hi', confirmed: true },
         {
           user_id: SENDER_UUID,
           tenant_id: 'tenant-1',
@@ -372,6 +372,161 @@ describe('VTID-02963 — send_chat_message rate-limit key uses real session id',
       expect(failEvents.length).toBe(1);
       expect((failEvents[0].payload as { reason: string }).reason).toBe('chat_messages_insert_error');
     });
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// BOOTSTRAP-MEMORY-DAILY-LEARNING — server-enforced confirm gate. Mirrors
+// create_community_post's stage:"awaiting_confirmation" → confirmed=true
+// contract. Previously send_chat_message had NO server-side gate at all —
+// confirmation existed only as a prompt instruction Gemini could skip,
+// sending on the very first call.
+// ─────────────────────────────────────────────────────────────────────────
+
+describe('BOOTSTRAP-MEMORY-DAILY-LEARNING — send_chat_message confirm gate', () => {
+  let emitSpy: jest.SpyInstance;
+
+  beforeEach(() => {
+    _resetSendCountersForTests();
+    emitSpy = jest
+      .spyOn(oasisEventService, 'emitOasisEvent')
+      .mockResolvedValue({ ok: true, event_id: 'evt-stub' });
+  });
+
+  afterEach(() => {
+    emitSpy.mockRestore();
+  });
+
+  test('first call without confirmed=true previews only — no insert, no notify, no quota consumed', async () => {
+    const inserts: CapturedInsert[] = [];
+    const sb = makeStubSupabase({ inserts, appUsers: defaultAppUsers() });
+    const notifyService = await import('../src/services/notification-service');
+    const notifySpy = jest.spyOn(notifyService, 'notifyUserAsync').mockImplementation(() => {});
+
+    try {
+      const result = await tool_send_chat_message(
+        { recipient_user_id: RECIPIENT_UUID, recipient_label: 'Dragan Red', body: 'When are we meeting again?' },
+        {
+          user_id: SENDER_UUID,
+          tenant_id: 'tenant-1',
+          role: 'user',
+          vitana_id: 'vit_send',
+          session_id: REAL_UUID_A,
+        },
+        sb,
+      );
+
+      expect(result.ok).toBe(true);
+      if (result.ok === true) {
+        expect(result.result).toMatchObject({
+          stage: 'awaiting_confirmation',
+          recipient_label: 'Dragan Red',
+          recipient_user_id: RECIPIENT_UUID,
+          message_preview: 'When are we meeting again?',
+        });
+      }
+      expect(inserts).toHaveLength(0);
+      expect(notifySpy).not.toHaveBeenCalled();
+
+      // Quota was never consumed by the preview call — a full 5-send cap
+      // is still available afterwards.
+      const quota = await checkVoiceSendQuota({
+        session_id: REAL_UUID_A,
+        actor_id: SENDER_UUID,
+        vitana_id: 'vit_send',
+        recipient_user_id: RECIPIENT_UUID,
+        recipient_vitana_id: 'vit_recv',
+        kind: 'message',
+        key_type: 'real_session',
+      });
+      expect(quota.remaining).toBe(4); // this probe call itself is the 1st of 5
+    } finally {
+      notifySpy.mockRestore();
+    }
+  });
+
+  test('explicit false is treated the same as omitted — still previews only', async () => {
+    const inserts: CapturedInsert[] = [];
+    const sb = makeStubSupabase({ inserts, appUsers: defaultAppUsers() });
+
+    const result = await tool_send_chat_message(
+      { recipient_user_id: RECIPIENT_UUID, recipient_label: 'Dragan Red', body: 'hi', confirmed: false },
+      {
+        user_id: SENDER_UUID,
+        tenant_id: 'tenant-1',
+        role: 'user',
+        vitana_id: 'vit_send',
+        session_id: REAL_UUID_A,
+      },
+      sb,
+    );
+
+    expect(result.ok).toBe(true);
+    if (result.ok === true) {
+      expect((result.result as { stage: string }).stage).toBe('awaiting_confirmation');
+    }
+    expect(inserts).toHaveLength(0);
+  });
+
+  test('second call with confirmed=true actually sends', async () => {
+    const inserts: CapturedInsert[] = [];
+    const sb = makeStubSupabase({ inserts, appUsers: defaultAppUsers() });
+    const identity = {
+      user_id: SENDER_UUID,
+      tenant_id: 'tenant-1',
+      role: 'user',
+      vitana_id: 'vit_send',
+      session_id: REAL_UUID_A,
+    };
+    const args = { recipient_user_id: RECIPIENT_UUID, recipient_label: 'Dragan Red', body: 'Ready to go?' };
+
+    const preview = await tool_send_chat_message(args, identity, sb);
+    expect(preview.ok).toBe(true);
+    if (preview.ok === true) {
+      expect((preview.result as { stage: string }).stage).toBe('awaiting_confirmation');
+    }
+    expect(inserts).toHaveLength(0);
+
+    const sent = await tool_send_chat_message({ ...args, confirmed: true }, identity, sb);
+    expect(sent.ok).toBe(true);
+    if (sent.ok === true) {
+      expect(sent.result).toMatchObject({ recipient_label: 'Dragan Red' });
+    }
+    expect(inserts).toHaveLength(1);
+    expect(inserts[0].row.content).toBe('Ready to go?');
+  });
+
+  test('recipient resolution failures (receiver not found) still fire on the unconfirmed preview call', async () => {
+    // The confirm gate must not mask real validation failures — a bad
+    // recipient should fail immediately, not silently "preview" a send
+    // that can never succeed.
+    const inserts: CapturedInsert[] = [];
+    const sb = makeStubSupabase({
+      inserts,
+      appUsers: {
+        [SENDER_UUID]: {
+          user_id: SENDER_UUID,
+          tenant_id: 'tenant-1',
+          display_name: 'Test Sender',
+          vitana_id: 'vit_send',
+        },
+      },
+    });
+
+    const result = await tool_send_chat_message(
+      { recipient_user_id: RECIPIENT_UUID, recipient_label: 'Dragan Red', body: 'hi' },
+      {
+        user_id: SENDER_UUID,
+        tenant_id: 'tenant-1',
+        role: 'user',
+        vitana_id: 'vit_send',
+        session_id: REAL_UUID_A,
+      },
+      sb,
+    );
+
+    expect(result.ok).toBe(false);
+    expect(inserts).toHaveLength(0);
   });
 });
 
@@ -499,7 +654,7 @@ describe('VTID-02966 — receiver guard + push notification parity', () => {
 
     try {
       const result = await tool_send_chat_message(
-        { recipient_user_id: RECIPIENT_UUID, recipient_label: 'Dragan Red', body: 'Good evening' },
+        { recipient_user_id: RECIPIENT_UUID, recipient_label: 'Dragan Red', body: 'Good evening', confirmed: true },
         {
           user_id: SENDER_UUID,
           tenant_id: 'tenant-1',
@@ -544,7 +699,7 @@ describe('VTID-02966 — receiver guard + push notification parity', () => {
     const longBody = 'X'.repeat(150);
     try {
       await tool_send_chat_message(
-        { recipient_user_id: RECIPIENT_UUID, recipient_label: 'Dragan Red', body: longBody },
+        { recipient_user_id: RECIPIENT_UUID, recipient_label: 'Dragan Red', body: longBody, confirmed: true },
         {
           user_id: SENDER_UUID,
           tenant_id: 'tenant-1',
@@ -634,7 +789,7 @@ describe('VTID-02966 — receiver guard + push notification parity', () => {
 
       try {
         await tool_send_chat_message(
-          { recipient_user_id: RECIPIENT_UUID, recipient_label: 'Dragan Red', body: 'hi' },
+          { recipient_user_id: RECIPIENT_UUID, recipient_label: 'Dragan Red', body: 'hi', confirmed: true },
           {
             user_id: SENDER_UUID,
             tenant_id: 'tenant-1',
@@ -681,7 +836,7 @@ describe('VTID-02966 — receiver guard + push notification parity', () => {
 
       try {
         await tool_send_chat_message(
-          { recipient_user_id: RECIPIENT_UUID, recipient_label: 'Dragan Red', body: 'hi' },
+          { recipient_user_id: RECIPIENT_UUID, recipient_label: 'Dragan Red', body: 'hi', confirmed: true },
           {
             user_id: SENDER_UUID,
             tenant_id: 'tenant-1',
@@ -742,7 +897,7 @@ describe('VTID-02969 — voice send next_actions from existing autopilot system'
     ]);
 
     const result = await tool_send_chat_message(
-      { recipient_user_id: RECIPIENT_UUID, recipient_label: 'Dragan Red', body: 'hi' },
+      { recipient_user_id: RECIPIENT_UUID, recipient_label: 'Dragan Red', body: 'hi', confirmed: true },
       {
         user_id: SENDER_UUID,
         tenant_id: 'tenant-1',
@@ -783,7 +938,7 @@ describe('VTID-02969 — voice send next_actions from existing autopilot system'
     nextActionsSpy = jest.spyOn(nextActions, 'getTopAutopilotNextActions').mockResolvedValue([]);
 
     const result = await tool_send_chat_message(
-      { recipient_user_id: RECIPIENT_UUID, recipient_label: 'Dragan Red', body: 'hi' },
+      { recipient_user_id: RECIPIENT_UUID, recipient_label: 'Dragan Red', body: 'hi', confirmed: true },
       {
         user_id: SENDER_UUID,
         tenant_id: 'tenant-1',
@@ -813,7 +968,7 @@ describe('VTID-02969 — voice send next_actions from existing autopilot system'
       .mockRejectedValue(new Error('simulated autopilot service outage'));
 
     const result = await tool_send_chat_message(
-      { recipient_user_id: RECIPIENT_UUID, recipient_label: 'Dragan Red', body: 'hi' },
+      { recipient_user_id: RECIPIENT_UUID, recipient_label: 'Dragan Red', body: 'hi', confirmed: true },
       {
         user_id: SENDER_UUID,
         tenant_id: 'tenant-1',
@@ -849,7 +1004,7 @@ describe('VTID-02969 — voice send next_actions from existing autopilot system'
 
     try {
       const result = await tool_send_chat_message(
-        { recipient_user_id: RECIPIENT_UUID, recipient_label: 'Dragan Red', body: 'hi' },
+        { recipient_user_id: RECIPIENT_UUID, recipient_label: 'Dragan Red', body: 'hi', confirmed: true },
         {
           user_id: SENDER_UUID,
           tenant_id: 'tenant-1',
