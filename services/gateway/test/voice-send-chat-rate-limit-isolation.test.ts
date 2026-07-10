@@ -205,7 +205,7 @@ describe('VTID-02963 — send_chat_message rate-limit key uses real session id',
     const sb = makeStubSupabase({ inserts, appUsers: defaultAppUsers() });
 
     const result = await tool_send_chat_message(
-      { recipient_user_id: RECIPIENT_UUID, recipient_label: 'Dragan Red', body: 'hello' },
+      { recipient_user_id: RECIPIENT_UUID, recipient_label: 'Dragan Red', body: 'hello', confirmed: true },
       {
         user_id: SENDER_UUID,
         tenant_id: 'tenant-1',
@@ -243,7 +243,7 @@ describe('VTID-02963 — send_chat_message rate-limit key uses real session id',
     const sb = makeStubSupabase({ inserts, appUsers: defaultAppUsers() });
 
     const result = await tool_send_chat_message(
-      { recipient_user_id: RECIPIENT_UUID_2, recipient_label: 'Another User', body: 'hello' },
+      { recipient_user_id: RECIPIENT_UUID_2, recipient_label: 'Another User', body: 'hello', confirmed: true },
       {
         user_id: SENDER_UUID,
         tenant_id: 'tenant-1',
@@ -295,7 +295,7 @@ describe('VTID-02963 — send_chat_message rate-limit key uses real session id',
 
       const result = await tool_send_chat_message(
         // recipient_user_id is a spoken name, NOT a UUID — Gemini dropped it.
-        { recipient_user_id: 'Dragan Red', recipient_label: 'Dragan Red', body: 'hi' },
+        { recipient_user_id: 'Dragan Red', recipient_label: 'Dragan Red', body: 'hi', confirmed: true },
         {
           user_id: SENDER_UUID,
           tenant_id: 'tenant-1',
@@ -325,7 +325,7 @@ describe('VTID-02963 — send_chat_message rate-limit key uses real session id',
       const sb = makeStubSupabase({ inserts, appUsers });
 
       const result = await tool_send_chat_message(
-        { recipient_user_id: RECIPIENT_UUID, recipient_label: 'Dragan Red', body: 'hi' },
+        { recipient_user_id: RECIPIENT_UUID, recipient_label: 'Dragan Red', body: 'hi', confirmed: true },
         {
           user_id: SENDER_UUID,
           tenant_id: null,
@@ -349,7 +349,7 @@ describe('VTID-02963 — send_chat_message rate-limit key uses real session id',
       });
 
       const result = await tool_send_chat_message(
-        { recipient_user_id: RECIPIENT_UUID, recipient_label: 'Dragan Red', body: 'hi' },
+        { recipient_user_id: RECIPIENT_UUID, recipient_label: 'Dragan Red', body: 'hi', confirmed: true },
         {
           user_id: SENDER_UUID,
           tenant_id: 'tenant-1',
@@ -499,7 +499,7 @@ describe('VTID-02966 — receiver guard + push notification parity', () => {
 
     try {
       const result = await tool_send_chat_message(
-        { recipient_user_id: RECIPIENT_UUID, recipient_label: 'Dragan Red', body: 'Good evening' },
+        { recipient_user_id: RECIPIENT_UUID, recipient_label: 'Dragan Red', body: 'Good evening', confirmed: true },
         {
           user_id: SENDER_UUID,
           tenant_id: 'tenant-1',
@@ -544,7 +544,7 @@ describe('VTID-02966 — receiver guard + push notification parity', () => {
     const longBody = 'X'.repeat(150);
     try {
       await tool_send_chat_message(
-        { recipient_user_id: RECIPIENT_UUID, recipient_label: 'Dragan Red', body: longBody },
+        { recipient_user_id: RECIPIENT_UUID, recipient_label: 'Dragan Red', body: longBody, confirmed: true },
         {
           user_id: SENDER_UUID,
           tenant_id: 'tenant-1',
@@ -634,7 +634,7 @@ describe('VTID-02966 — receiver guard + push notification parity', () => {
 
       try {
         await tool_send_chat_message(
-          { recipient_user_id: RECIPIENT_UUID, recipient_label: 'Dragan Red', body: 'hi' },
+          { recipient_user_id: RECIPIENT_UUID, recipient_label: 'Dragan Red', body: 'hi', confirmed: true },
           {
             user_id: SENDER_UUID,
             tenant_id: 'tenant-1',
@@ -681,7 +681,7 @@ describe('VTID-02966 — receiver guard + push notification parity', () => {
 
       try {
         await tool_send_chat_message(
-          { recipient_user_id: RECIPIENT_UUID, recipient_label: 'Dragan Red', body: 'hi' },
+          { recipient_user_id: RECIPIENT_UUID, recipient_label: 'Dragan Red', body: 'hi', confirmed: true },
           {
             user_id: SENDER_UUID,
             tenant_id: 'tenant-1',
@@ -742,7 +742,7 @@ describe('VTID-02969 — voice send next_actions from existing autopilot system'
     ]);
 
     const result = await tool_send_chat_message(
-      { recipient_user_id: RECIPIENT_UUID, recipient_label: 'Dragan Red', body: 'hi' },
+      { recipient_user_id: RECIPIENT_UUID, recipient_label: 'Dragan Red', body: 'hi', confirmed: true },
       {
         user_id: SENDER_UUID,
         tenant_id: 'tenant-1',
@@ -783,7 +783,7 @@ describe('VTID-02969 — voice send next_actions from existing autopilot system'
     nextActionsSpy = jest.spyOn(nextActions, 'getTopAutopilotNextActions').mockResolvedValue([]);
 
     const result = await tool_send_chat_message(
-      { recipient_user_id: RECIPIENT_UUID, recipient_label: 'Dragan Red', body: 'hi' },
+      { recipient_user_id: RECIPIENT_UUID, recipient_label: 'Dragan Red', body: 'hi', confirmed: true },
       {
         user_id: SENDER_UUID,
         tenant_id: 'tenant-1',
@@ -813,7 +813,7 @@ describe('VTID-02969 — voice send next_actions from existing autopilot system'
       .mockRejectedValue(new Error('simulated autopilot service outage'));
 
     const result = await tool_send_chat_message(
-      { recipient_user_id: RECIPIENT_UUID, recipient_label: 'Dragan Red', body: 'hi' },
+      { recipient_user_id: RECIPIENT_UUID, recipient_label: 'Dragan Red', body: 'hi', confirmed: true },
       {
         user_id: SENDER_UUID,
         tenant_id: 'tenant-1',
@@ -849,7 +849,7 @@ describe('VTID-02969 — voice send next_actions from existing autopilot system'
 
     try {
       const result = await tool_send_chat_message(
-        { recipient_user_id: RECIPIENT_UUID, recipient_label: 'Dragan Red', body: 'hi' },
+        { recipient_user_id: RECIPIENT_UUID, recipient_label: 'Dragan Red', body: 'hi', confirmed: true },
         {
           user_id: SENDER_UUID,
           tenant_id: 'tenant-1',

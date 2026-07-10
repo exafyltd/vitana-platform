@@ -2167,6 +2167,29 @@ export async function tool_send_chat_message(
       }
     }
 
+    // BOOTSTRAP-MEMORY-DAILY-LEARNING: server-enforced two-step confirm gate,
+    // mirroring create_community_post's stage:"awaiting_confirmation" →
+    // confirmed=true contract (orb-live.ts). Previously this tool had NO
+    // server-side gate at all — confirmation existed only as prompt
+    // instructions Gemini could (and occasionally did) skip, sending on the
+    // first call. Recipient resolution above is read-only, so it's safe to
+    // do on both the preview and the confirmed call; quota consumption and
+    // the actual insert are gated behind confirmed=true only.
+    const recipDisplayForPreview =
+      recipientLabel || recipientDisplayName || recipientVitanaId || recipientUserId;
+    if (args.confirmed !== true) {
+      return {
+        ok: true,
+        result: {
+          stage: 'awaiting_confirmation',
+          recipient_label: recipDisplayForPreview,
+          recipient_user_id: recipientUserId,
+          message_preview: body,
+        },
+        text: `Ready to send to ${recipDisplayForPreview}: "${body}". Read this back and only call send_chat_message again with confirmed=true after explicit confirmation.`,
+      };
+    }
+
     const quota = await checkVoiceSendQuota({
       session_id: rateLimitKey,
       actor_id: id.user_id,
