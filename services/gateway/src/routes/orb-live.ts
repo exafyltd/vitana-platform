@@ -1640,6 +1640,43 @@ const GREETING_PREBUFFER_FALLBACK_MS = 1500;
 // for staging without a redeploy.
 const CONTEXT_READY_GATE_TIMEOUT_MS = Number(process.env.ORB_CONTEXT_READY_GATE_TIMEOUT_MS || 4000);
 
+// BOOTSTRAP-ORB-CONNECT-HANG: the native WebSocket session-start path
+// (handleWsClientMessage) builds its bootstrap context (language pref,
+// memory/brain context pack, role, last-session info, admin briefing)
+// BEFORE the Gemini upstream connection is opened, and — unlike the
+// fast-start/SSE path above — never had a timeout gate on those awaits. A
+// single slow/hung Supabase call there stalls the whole handler forever:
+// the client never gets its "ready" ack and the ORB UI is stuck on
+// "connecting..." indefinitely. Race each stage against this timeout and
+// proceed with a safe fallback instead of hanging. Env-tunable for staging.
+const WS_BOOTSTRAP_STAGE_TIMEOUT_MS = Number(process.env.ORB_WS_BOOTSTRAP_STAGE_TIMEOUT_MS || 4000);
+
+export async function withBootstrapTimeout<T>(
+  promise: Promise<T>,
+  fallback: T,
+  label: string,
+  ms: number = WS_BOOTSTRAP_STAGE_TIMEOUT_MS,
+): Promise<T> {
+  let timer: ReturnType<typeof setTimeout>;
+  const timeout = new Promise<T>((resolve) => {
+    timer = setTimeout(() => {
+      console.warn(`[BOOTSTRAP-ORB-CONNECT-HANG] ${label} timed out after ${ms}ms — proceeding with fallback`);
+      resolve(fallback);
+    }, ms);
+  });
+  try {
+    return await Promise.race([
+      promise.catch((err: any) => {
+        console.warn(`[BOOTSTRAP-ORB-CONNECT-HANG] ${label} failed: ${err?.message}`);
+        return fallback;
+      }),
+      timeout,
+    ]);
+  } finally {
+    clearTimeout(timer!);
+  }
+}
+
 /**
  * DEV-COMHU-0513 — flush any greeting audio held back by the pre-buffer gate.
  *
@@ -13618,7 +13655,11 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
   // Resolve language: use client-requested language, fall back to stored preference, then 'en'
   let lang = normalizeLang(clientRequestedLangWs || 'en');
   if (!clientRequestedLangWs && effectiveBootstrapIdentity?.user_id && effectiveBootstrapIdentity?.tenant_id) {
-    const storedLangWs = await getStoredLanguagePreference(effectiveBootstrapIdentity.tenant_id, effectiveBootstrapIdentity.user_id);
+    const storedLangWs = await withBootstrapTimeout(
+      getStoredLanguagePreference(effectiveBootstrapIdentity.tenant_id, effectiveBootstrapIdentity.user_id),
+      null,
+      'getStoredLanguagePreference',
+    );
     if (storedLangWs) {
       lang = storedLangWs;
       console.log(`[LANG-PREF] WS: Using stored language preference: ${lang} for user=${effectiveBootstrapIdentity.user_id.substring(0, 8)}...`);
@@ -13641,22 +13682,39 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
     const usingDevFallbackWs = effectiveBootstrapIdentity.user_id === DEV_IDENTITY.USER_ID;
     console.log(`[VTID-01224] Building bootstrap context for session ${sessionId} user=${effectiveBootstrapIdentity.user_id.substring(0, 8)}...${usingDevFallbackWs ? ' (DEV_IDENTITY fallback)' : ''}`);
 
-    // Fetch role, context, and last session info in parallel for minimal latency
-    const [bootstrapResult, fetchedRole, fetchedWsSessionInfo, wsAutopilotOffer] = await Promise.all([
-      buildBootstrapContextPack(effectiveBootstrapIdentity, sessionId),
-      usingDevFallbackWs
-        ? Promise.resolve(DEV_IDENTITY.ACTIVE_ROLE)
-        : resolveEffectiveRole(effectiveBootstrapIdentity.user_id, effectiveBootstrapIdentity.tenant_id || ''),
-      fetchLastSessionInfo(effectiveBootstrapIdentity.user_id),
-      // VTID-03201: proactive Autopilot offer, fetched in parallel (no added
-      // critical-path latency). Appended only for community sessions below.
-      import('./autopilot-recommendations')
-        .then((m) => m.buildAutopilotOfferBlock(effectiveBootstrapIdentity.user_id))
-        .catch((err: any) => {
-          console.warn(`[VTID-03201] WS autopilot offer fetch failed: ${err?.message}`);
-          return '';
-        }),
-    ]);
+    // Fetch role, context, and last session info in parallel for minimal latency.
+    // BOOTSTRAP-ORB-CONNECT-HANG: gated by withBootstrapTimeout so a hung
+    // call in this group can't stall the session open indefinitely — falls
+    // back to "no bootstrap context" and proceeds instead.
+    const [bootstrapResult, fetchedRole, fetchedWsSessionInfo, wsAutopilotOffer] = await withBootstrapTimeout(
+      Promise.all([
+        buildBootstrapContextPack(effectiveBootstrapIdentity, sessionId),
+        usingDevFallbackWs
+          ? Promise.resolve(DEV_IDENTITY.ACTIVE_ROLE)
+          : resolveEffectiveRole(effectiveBootstrapIdentity.user_id, effectiveBootstrapIdentity.tenant_id || ''),
+        fetchLastSessionInfo(effectiveBootstrapIdentity.user_id),
+        // VTID-03201: proactive Autopilot offer, fetched in parallel (no added
+        // critical-path latency). Appended only for community sessions below.
+        import('./autopilot-recommendations')
+          .then((m) => m.buildAutopilotOfferBlock(effectiveBootstrapIdentity.user_id))
+          .catch((err: any) => {
+            console.warn(`[VTID-03201] WS autopilot offer fetch failed: ${err?.message}`);
+            return '';
+          }),
+      ]),
+      [
+        { latencyMs: 0, skippedReason: 'bootstrap_timeout' },
+        usingDevFallbackWs ? DEV_IDENTITY.ACTIVE_ROLE : null,
+        null,
+        '',
+      ] as [
+        { contextPack?: ContextPack; contextInstruction?: string; latencyMs: number; skippedReason?: string },
+        string | null,
+        { time: string; wasFailure: boolean } | null,
+        string,
+      ],
+      'buildBootstrapContextPack+role+lastSession+autopilotOffer',
+    );
     activeRole = fetchedRole;
     wsLastSessionInfo = fetchedWsSessionInfo;
 
@@ -13685,7 +13743,11 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
     // BOOTSTRAP-ADMIN-EE: admin-role WS sessions get a proactive briefing too.
     if (isAdminRole(activeRole) && effectiveBootstrapIdentity.tenant_id) {
       try {
-        const briefing = await fetchAdminBriefingBlock(effectiveBootstrapIdentity.tenant_id, 3);
+        const briefing = await withBootstrapTimeout(
+          fetchAdminBriefingBlock(effectiveBootstrapIdentity.tenant_id, 3),
+          null,
+          'fetchAdminBriefingBlock',
+        );
         if (briefing) {
           contextInstruction = contextInstruction
             ? `${contextInstruction}\n\n${briefing}`

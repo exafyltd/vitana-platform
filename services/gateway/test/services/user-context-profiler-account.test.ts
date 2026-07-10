@@ -107,8 +107,10 @@ describe('VTID-03037 profiler wire-up (source-text characterization)', () => {
     // Sequential placement would tack ~30-80ms onto bootstrap latency,
     // which matters on the LiveKit click→greeting path. The batch
     // destructure must include `account` so a future refactor can’t
-    // silently drop it.
-    expect(profilerSource).toMatch(/const\s+\[[^\]]*account[^\]]*\]\s*=\s*await\s+Promise\.all/);
+    // silently drop it. Allows an intervening timeout-race wrapper (e.g.
+    // withProfilerTimeout) around Promise.all — BOOTSTRAP-ORB-CONNECT-HANG —
+    // as long as Promise.all itself remains the parallel source of the batch.
+    expect(profilerSource).toMatch(/const\s+\[[^\]]*account[^\]]*\]\s*=\s*await\s+(?:\w+\(\s*)?Promise\.all/);
     expect(profilerSource).toMatch(/fetchAccountPromise/);
   });
 
