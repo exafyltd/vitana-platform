@@ -244,18 +244,32 @@ export async function sendPushToUser(
   userId: string,
   tenantId: string,
   payload: NotificationPayload,
-  supabase: SupabaseClient<any, any, any>
+  supabase: SupabaseClient<any, any, any>,
+  opts?: { excludeAppilixTagged?: boolean }
 ): Promise<number> {
   const { data: tokens } = await supabase
     .from('user_device_tokens')
-    .select('fcm_token')
+    .select('fcm_token, device_label')
     .eq('user_id', userId)
     .eq('tenant_id', tenantId);
 
   if (!tokens?.length) return 0;
 
+  // Tokens registered from inside the Appilix WebView (tagged "Appilix " by
+  // registerAppilixDevice()) can only be tapped safely via an Appilix-native
+  // push — a raw FCM push to that same device is what crashes the WebView
+  // (see the comment in notifyUser()). Callers that already tried Appilix
+  // and got no device pass excludeAppilixTagged so we don't repeat the
+  // crash-causing delivery on the very token Appilix just told us it can't
+  // reach.
+  const targets = opts?.excludeAppilixTagged
+    ? tokens.filter((t) => !t.device_label?.startsWith('Appilix '))
+    : tokens;
+
+  if (!targets.length) return 0;
+
   let sent = 0;
-  for (const { fcm_token } of tokens) {
+  for (const { fcm_token } of targets) {
     const ok = await sendPushNotification(fcm_token, payload);
     if (ok) {
       sent++;
@@ -596,7 +610,14 @@ export async function notifyUser(
       // doesn't pass the URL to Appilix's native tap handler.
       appilixSent = await sendAppilixPush(userId, payload);
       if (!appilixSent) {
-        pushed = await sendPushToUser(userId, tenantId, payload, supabase);
+        // Appilix reported no device for this user (e.g. its client-side
+        // identity registration never took) — do NOT retry via raw FCM on
+        // an Appilix-tagged token, since that's the exact delivery path
+        // that crashes the WebView on tap. Only non-Appilix tokens (real
+        // browser web-push) are safe to fall back to here.
+        pushed = await sendPushToUser(userId, tenantId, payload, supabase, {
+          excludeAppilixTagged: true,
+        });
       }
     } else {
       pushed = await sendPushToUser(userId, tenantId, payload, supabase);
