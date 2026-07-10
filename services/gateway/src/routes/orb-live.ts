@@ -1651,7 +1651,7 @@ const CONTEXT_READY_GATE_TIMEOUT_MS = Number(process.env.ORB_CONTEXT_READY_GATE_
 // proceed with a safe fallback instead of hanging. Env-tunable for staging.
 const WS_BOOTSTRAP_STAGE_TIMEOUT_MS = Number(process.env.ORB_WS_BOOTSTRAP_STAGE_TIMEOUT_MS || 4000);
 
-async function withBootstrapTimeout<T>(
+export async function withBootstrapTimeout<T>(
   promise: Promise<T>,
   fallback: T,
   label: string,

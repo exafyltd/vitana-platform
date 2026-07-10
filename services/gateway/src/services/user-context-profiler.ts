@@ -48,7 +48,7 @@ const cache = new Map<string, CacheEntry>();
 // safe default instead of hanging forever. Env-tunable for staging.
 const PROFILER_FETCH_TIMEOUT_MS = Number(process.env.USER_CONTEXT_PROFILER_TIMEOUT_MS || 3000);
 
-async function withProfilerTimeout<T>(promise: Promise<T>, fallback: T, label: string): Promise<T> {
+export async function withProfilerTimeout<T>(promise: Promise<T>, fallback: T, label: string): Promise<T> {
   let timer: ReturnType<typeof setTimeout>;
   const timeout = new Promise<T>((resolve) => {
     timer = setTimeout(() => {
