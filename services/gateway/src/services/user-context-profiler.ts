@@ -41,6 +41,34 @@ interface CacheEntry {
 
 const cache = new Map<string, CacheEntry>();
 
+// BOOTSTRAP-ORB-CONNECT-HANG: every fetch below previously had no timeout, so
+// a single slow/hung Supabase query could block getUserContextSummary (and
+// thus the whole ORB voice-session bootstrap) indefinitely — the "stuck on
+// connecting" bug. Race each stage against this timeout and fall back to a
+// safe default instead of hanging forever. Env-tunable for staging.
+const PROFILER_FETCH_TIMEOUT_MS = Number(process.env.USER_CONTEXT_PROFILER_TIMEOUT_MS || 3000);
+
+async function withProfilerTimeout<T>(promise: Promise<T>, fallback: T, label: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout>;
+  const timeout = new Promise<T>((resolve) => {
+    timer = setTimeout(() => {
+      console.warn(`[BOOTSTRAP-ORB-CONNECT-HANG] user-context-profiler.${label} timed out after ${PROFILER_FETCH_TIMEOUT_MS}ms — using fallback`);
+      resolve(fallback);
+    }, PROFILER_FETCH_TIMEOUT_MS);
+  });
+  try {
+    return await Promise.race([
+      promise.catch((err: any) => {
+        console.warn(`[BOOTSTRAP-ORB-CONNECT-HANG] user-context-profiler.${label} failed: ${err?.message}`);
+        return fallback;
+      }),
+      timeout,
+    ]);
+  } finally {
+    clearTimeout(timer!);
+  }
+}
+
 export interface GetProfileOptions {
   maxChars?: number;
   windowDays?: number;
@@ -959,7 +987,7 @@ export async function getUserContextSummary(
   const windowDays = opts.windowDays ?? DEFAULT_WINDOW_DAYS;
   const now = Date.now();
 
-  const version = await readProfilerVersion(client, userId);
+  const version = await withProfilerTimeout(readProfilerVersion(client, userId), 0, 'readProfilerVersion');
 
   // Cache hit?
   const hit = cache.get(userId);
@@ -969,7 +997,7 @@ export async function getUserContextSummary(
 
   // BOOTSTRAP-AWARENESS-REGISTRY: load admin config (60s cache) so each
   // section can be turned off / tuned globally without a redeploy.
-  const cfg = await getAwarenessConfig().catch(() => null);
+  const cfg = await withProfilerTimeout(getAwarenessConfig().catch(() => null), null, 'getAwarenessConfig');
 
   // Effective window: registry param overrides opts.windowDays.
   const effectiveWindowDays = cfg
@@ -1017,15 +1045,27 @@ export async function getUserContextSummary(
   // measurable latency because it parallelizes with the existing five.
   const fetchAccountPromise = fetchAppUsersAccount(client, userId);
 
-  const [activities, routines, prefs, vitana, factsResult, account, narrative] = await Promise.all([
-    fetchActivitiesIfWanted,
-    fetchRoutinesIfWanted,
-    fetchPrefsIfWanted,
-    fetchVitanaIfWanted,
-    fetchFactsIfWanted,
-    fetchAccountPromise,
-    fetchNarrativeIfWanted,
-  ]);
+  const [activities, routines, prefs, vitana, factsResult, account, narrative] = await withProfilerTimeout(
+    Promise.all([
+      fetchActivitiesIfWanted,
+      fetchRoutinesIfWanted,
+      fetchPrefsIfWanted,
+      fetchVitanaIfWanted,
+      fetchFactsIfWanted,
+      fetchAccountPromise,
+      fetchNarrativeIfWanted,
+    ]),
+    [[], [], [], null, { ok: true, facts: [] }, { createdAt: null }, null] as [
+      ActivityRow[],
+      RoutineRow[],
+      PreferenceRow[],
+      VitanaIndexFetchResult | null,
+      { ok: boolean; facts: any[] },
+      AccountRow,
+      { narrative: string; generated_at: string } | null,
+    ],
+    'getUserContextSummary.mainFetch',
+  );
 
   const sections = [
     // VTID-03037: account/tenure goes FIRST so the LLM reads "joined on
