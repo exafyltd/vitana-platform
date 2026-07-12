@@ -3812,6 +3812,11 @@ const state = {
 
     // Overview module
     overviewHealth: { items: [], loading: false, error: null, fetched: false },
+    // DEV-COMHU-03405: user's manual expand/collapse choice for the non-golden-
+    // path service health tier. A failure in that tier force-expands it
+    // regardless of this flag (see renderOverviewSystemView) — this only
+    // controls the collapsed state when everything back there is healthy.
+    overviewHealthTier2Expanded: false,
     overviewMetrics: { snapshot: null, loading: false, error: null, fetched: false },
     overviewRecentEvents: { items: [], loading: false, error: null, fetched: false },
     overviewErrors: { items: [], loading: false, error: null, fetched: false },
@@ -3845,6 +3850,15 @@ const state = {
         items: [],
         countTotal: 0,
         countCritical: 0,
+        lastRefreshed: null,
+        loading: false,
+        fetched: false,
+        error: null
+    },
+
+    // DEV-COMHU-03404: hourly oasis_events rollup for Overview sparklines
+    overviewTimeseries: {
+        series: null,
         lastRefreshed: null,
         loading: false,
         fetched: false,
@@ -30483,6 +30497,10 @@ function renderOverviewSystemView() {
     if (!state.actionRequired.fetched && !state.actionRequired.loading) {
         fetchActionRequired();
     }
+    // DEV-COMHU-03404: hourly rollup for the Operations tier sparklines
+    if (!state.overviewTimeseries.fetched && !state.overviewTimeseries.loading) {
+        fetchOverviewTimeseries();
+    }
     // Auto-refresh every 30s while the Overview is mounted. Use a single
     // timer keyed on the state to avoid stacking duplicates across renders.
     if (!state._actionRequiredTimer) {
@@ -30641,7 +30659,11 @@ function renderOverviewSystemView() {
             value: String(db.recentFailures.length),
             label: 'Errors (24h)',
             subtitle: db.recentFailures.length > 0 ? 'Latest: ' + dashboardRelativeTime(db.recentFailures[0] && db.recentFailures[0].created_at) : 'No errors',
-            color: metricColorInverse(db.recentFailures.length, 0, 5)
+            color: metricColorInverse(db.recentFailures.length, 0, 5),
+            // DEV-COMHU-03404: hourly trend for the last 24h, same status=error
+            // series the headline count above is drawn from — so "5 errors"
+            // reads as either "falling" or "spiking" instead of a bare number.
+            sparkline: state.overviewTimeseries.series ? state.overviewTimeseries.series.errors : null
         },
         {
             value: String(db.violationCount24h),
@@ -30759,15 +30781,22 @@ function renderOverviewSystemView() {
         'Failed VTID': '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke="#ef4444"/><line x1="15" y1="9" x2="9" y2="15" stroke="#ef4444"/><line x1="9" y1="9" x2="15" y2="15" stroke="#ef4444"/></svg>'
     };
 
+    var sparklineColors = { green: '#10b981', amber: '#f59e0b', red: '#ef4444', neutral: '#94a3b8' };
+
     function metricCardHTML(m, compact) {
         var icon = metricIcons[m.label] || '';
         var cardStyle = compact ? ' style="padding:0.55rem 0.5rem;"' : '';
         var valueStyle = compact ? ' style="font-size:1.2rem;"' : '';
+        // DEV-COMHU-03404: sparkline only renders when the caller supplied real
+        // hourly data (m.sparkline) — no fabricated trend when the rollup
+        // hasn't loaded yet or a metric has no backing timeseries.
+        var spark = (!compact && m.sparkline) ? sparklineSVG(m.sparkline, sparklineColors[m.color] || sparklineColors.neutral) : '';
         return '<div class="overview-metric-card"' + cardStyle + '>' +
             (icon && !compact ? '<div class="metric-icon">' + icon + '</div>' : '') +
             '<div class="metric-value metric-value-' + m.color + '"' + valueStyle + '>' + m.value + '</div>' +
             '<div class="metric-label">' + m.label + '</div>' +
             (m.subtitle ? '<div class="metric-subtitle">' + m.subtitle + '</div>' : '') +
+            spark +
             '</div>';
     }
 
@@ -30834,7 +30863,7 @@ function renderOverviewSystemView() {
     if (sortedHealth.length === 0) {
         var noH = document.createElement('div');
         noH.className = 'placeholder-content';
-        noH.textContent = state.serviceHealth.loading ? 'Loading health checks\u2026' : 'No service health data available.';
+        noH.textContent = state.serviceHealth.loading ? 'Loading health checks…' : 'No service health data available.';
         healthPanel.appendChild(noH);
     } else {
         // Failed services alert (if any)
@@ -30845,93 +30874,144 @@ function renderOverviewSystemView() {
             var failSection = document.createElement('div');
             failSection.className = 'overview-status-banner overview-status-critical overview-failed-services';
             var failHTML = '<strong>Critical Issues (' + failedSvcs.length + '):</strong> ';
-            failHTML += failedSvcs.map(function(s) { return s.name + ' (' + s.status + ')'; }).join(' \u2022 ');
+            failHTML += failedSvcs.map(function(s) { return s.name + ' (' + s.status + ')'; }).join(' • ');
             failSection.innerHTML = failHTML;
             healthPanel.appendChild(failSection);
         }
 
-        // Group services by their group field (from fetchServiceHealth) if available
-        var hasGroups = allHealthServices.some(function (s) { return s.group; });
-        if (hasGroups) {
-            // Build group buckets preserving group order from the endpoint list
-            var groupOrder = ['Core Infrastructure', 'AI & Assistant', 'Autopilot', 'Automation & Scheduling',
-                              'Community & Social', 'Domain & Context', 'Visual & VTID'];
-            var groupMap = {};
-            sortedHealth.forEach(function (s) {
-                var g = s.group || 'Other';
-                if (!groupMap[g]) groupMap[g] = [];
-                groupMap[g].push(s);
-            });
-            var orderedGroups = groupOrder.filter(function (g) { return groupMap[g]; });
-            Object.keys(groupMap).forEach(function (g) { if (orderedGroups.indexOf(g) < 0) orderedGroups.push(g); });
-
-            var groupsContainer = document.createElement('div');
-            groupsContainer.className = 'overview-health-groups';
-
-            orderedGroups.forEach(function (groupName) {
-                var svcs = groupMap[groupName];
-                var gHealthy = svcs.filter(function (s) { return s.status === 'ok' || s.status === 'healthy' || s.healthy; }).length;
-                var gFailed = svcs.filter(function (s) { return s.status === 'down' || s.status === 'error' || s.status === 'unhealthy'; }).length;
-                var gColorClass = gFailed > 0 ? 'red' : (gHealthy < svcs.length ? 'yellow' : 'green');
-
-                var groupBox = document.createElement('div');
-                groupBox.className = 'overview-health-group';
-
-                var groupTitle = document.createElement('div');
-                groupTitle.className = 'overview-health-group-title';
-                groupTitle.innerHTML = '<span>' + escapeHtml(groupName) + '</span>' +
-                    '<span class="overview-health-group-count metric-value-' + gColorClass + '">' +
-                    gHealthy + '/' + svcs.length + '</span>';
-                groupBox.appendChild(groupTitle);
-
-                var svcList = document.createElement('div');
-                svcList.className = 'overview-health-chip-row';
-                svcs.forEach(function (s) {
-                    var dotClass = (s.status === 'ok' || s.status === 'healthy' || s.healthy) ? 'green'
-                        : (s.status === 'degraded' || s.status === 'warning' || s.status === 'ok_governance_limited') ? 'yellow'
-                        : 'red';
-                    var chip = document.createElement('span');
-                    chip.className = 'health-pill';
-                    chip.title = s.name + ': ' + s.status + (s.latency_ms >= 0 ? ' (' + s.latency_ms + 'ms)' : '');
-                    chip.innerHTML = '<span class="health-dot health-dot-' + dotClass + '"></span>' +
-                        '<span class="health-pill-name">' + escapeHtml(s.name) + '</span>' +
-                        (s.latency_ms >= 0 ? '<span class="health-pill-latency">' + s.latency_ms + 'ms</span>' : '');
-                    svcList.appendChild(chip);
+        // DEV-COMHU-03405: renders one flat chip-row list for a given service
+        // set — factored out of the old single-tier renderer so it can be
+        // called once for the always-visible golden path and once for the
+        // collapsible rest, instead of duplicating the group/flat-grid logic.
+        function renderHealthServiceList(services) {
+            var listEl = document.createElement('div');
+            var hasGroups = services.some(function (s) { return s.group; });
+            if (hasGroups) {
+                // Build group buckets preserving group order from the endpoint list
+                var groupOrder = ['Core Infrastructure', 'AI & Assistant', 'Autopilot', 'Automation & Scheduling',
+                                  'Community & Social', 'Domain & Context', 'Visual & VTID'];
+                var groupMap = {};
+                services.forEach(function (s) {
+                    var g = s.group || 'Other';
+                    if (!groupMap[g]) groupMap[g] = [];
+                    groupMap[g].push(s);
                 });
-                groupBox.appendChild(svcList);
-                groupsContainer.appendChild(groupBox);
-            });
-            healthPanel.appendChild(groupsContainer);
-        } else {
-            // Fallback: flat grid (used when .group is not available yet)
-            var HEALTH_COLS = 6;
-            var HEALTH_ROWS = Math.ceil(sortedHealth.length / HEALTH_COLS);
-            var healthHTML = '<table style="width:100%;table-layout:fixed;border-collapse:separate;border-spacing:3px;">';
-            for (var hri = 0; hri < HEALTH_ROWS; hri++) {
-                healthHTML += '<tr>';
-                for (var hci = 0; hci < HEALTH_COLS; hci++) {
-                    var hidx = hri * HEALTH_COLS + hci;
-                    if (hidx < sortedHealth.length) {
-                        var hsvc = sortedHealth[hidx];
-                        var hdot = 'green';
-                        if (hsvc.status === 'degraded' || hsvc.status === 'warning' || hsvc.status === 'ok_governance_limited') hdot = 'yellow';
-                        if (hsvc.status === 'down' || hsvc.status === 'error' || hsvc.status === 'unhealthy') hdot = 'red';
-                        var hlatency = hsvc.latency_ms >= 0 ? '<div class="health-grid-card-latency">' + hsvc.latency_ms + 'ms</div>' : '';
-                        healthHTML += '<td style="padding:2px;vertical-align:top;">' +
-                            '<div class="health-grid-card" title="' + hsvc.name + ': ' + hsvc.status + '">' +
-                            '<div class="health-grid-card-name">' +
-                            '<span class="health-dot health-dot-' + hdot + '"></span>' + hsvc.name +
-                            '</div>' + hlatency + '</div></td>';
-                    } else {
-                        healthHTML += '<td style="padding:2px;"></td>';
+                var orderedGroups = groupOrder.filter(function (g) { return groupMap[g]; });
+                Object.keys(groupMap).forEach(function (g) { if (orderedGroups.indexOf(g) < 0) orderedGroups.push(g); });
+
+                var groupsContainer = document.createElement('div');
+                groupsContainer.className = 'overview-health-groups';
+
+                orderedGroups.forEach(function (groupName) {
+                    var svcs = groupMap[groupName];
+                    var gHealthy = svcs.filter(function (s) { return s.status === 'ok' || s.status === 'healthy' || s.healthy; }).length;
+                    var gFailed = svcs.filter(function (s) { return s.status === 'down' || s.status === 'error' || s.status === 'unhealthy'; }).length;
+                    var gColorClass = gFailed > 0 ? 'red' : (gHealthy < svcs.length ? 'yellow' : 'green');
+
+                    var groupBox = document.createElement('div');
+                    groupBox.className = 'overview-health-group';
+
+                    var groupTitle = document.createElement('div');
+                    groupTitle.className = 'overview-health-group-title';
+                    groupTitle.innerHTML = '<span>' + escapeHtml(groupName) + '</span>' +
+                        '<span class="overview-health-group-count metric-value-' + gColorClass + '">' +
+                        gHealthy + '/' + svcs.length + '</span>';
+                    groupBox.appendChild(groupTitle);
+
+                    var svcList = document.createElement('div');
+                    svcList.className = 'overview-health-chip-row';
+                    svcs.forEach(function (s) {
+                        var dotClass = (s.status === 'ok' || s.status === 'healthy' || s.healthy) ? 'green'
+                            : (s.status === 'degraded' || s.status === 'warning' || s.status === 'ok_governance_limited') ? 'yellow'
+                            : 'red';
+                        var chip = document.createElement('span');
+                        chip.className = 'health-pill';
+                        chip.title = s.name + ': ' + s.status + (s.latency_ms >= 0 ? ' (' + s.latency_ms + 'ms)' : '');
+                        chip.innerHTML = '<span class="health-dot health-dot-' + dotClass + '"></span>' +
+                            '<span class="health-pill-name">' + escapeHtml(s.name) + '</span>' +
+                            (s.latency_ms >= 0 ? '<span class="health-pill-latency">' + s.latency_ms + 'ms</span>' : '');
+                        svcList.appendChild(chip);
+                    });
+                    groupBox.appendChild(svcList);
+                    groupsContainer.appendChild(groupBox);
+                });
+                listEl.appendChild(groupsContainer);
+            } else {
+                // Fallback: flat grid (used when .group is not available yet)
+                var HEALTH_COLS = 6;
+                var HEALTH_ROWS = Math.ceil(services.length / HEALTH_COLS);
+                var healthHTML = '<table style="width:100%;table-layout:fixed;border-collapse:separate;border-spacing:3px;">';
+                for (var hri = 0; hri < HEALTH_ROWS; hri++) {
+                    healthHTML += '<tr>';
+                    for (var hci = 0; hci < HEALTH_COLS; hci++) {
+                        var hidx = hri * HEALTH_COLS + hci;
+                        if (hidx < services.length) {
+                            var hsvc = services[hidx];
+                            var hdot = 'green';
+                            if (hsvc.status === 'degraded' || hsvc.status === 'warning' || hsvc.status === 'ok_governance_limited') hdot = 'yellow';
+                            if (hsvc.status === 'down' || hsvc.status === 'error' || hsvc.status === 'unhealthy') hdot = 'red';
+                            var hlatency = hsvc.latency_ms >= 0 ? '<div class="health-grid-card-latency">' + hsvc.latency_ms + 'ms</div>' : '';
+                            healthHTML += '<td style="padding:2px;vertical-align:top;">' +
+                                '<div class="health-grid-card" title="' + hsvc.name + ': ' + hsvc.status + '">' +
+                                '<div class="health-grid-card-name">' +
+                                '<span class="health-dot health-dot-' + hdot + '"></span>' + hsvc.name +
+                                '</div>' + hlatency + '</div></td>';
+                        } else {
+                            healthHTML += '<td style="padding:2px;"></td>';
+                        }
                     }
+                    healthHTML += '</tr>';
                 }
-                healthHTML += '</tr>';
+                healthHTML += '</table>';
+                var healthGridEl = document.createElement('div');
+                healthGridEl.innerHTML = healthHTML;
+                listEl.appendChild(healthGridEl);
             }
-            healthHTML += '</table>';
-            var healthGridEl = document.createElement('div');
-            healthGridEl.innerHTML = healthHTML;
-            healthPanel.appendChild(healthGridEl);
+            return listEl;
+        }
+
+        // DEV-COMHU-03405: tier the 54 services instead of showing them all at
+        // equal weight. Golden path (criticalOrder, the same list already used
+        // to sort the top of the flat view) stays always expanded — that's
+        // Gateway/ORB/CI/Autopilot/Execute Runner/Operator, the services whose
+        // failure actually means the platform is down. Everything else
+        // collapses to a summary badge, expanding automatically the moment
+        // any of those services is unhealthy so a real problem is never
+        // hidden behind a click.
+        var tier1Services = sortedHealth.filter(function (s) { return criticalOrder.indexOf(s.name) >= 0; });
+        var tier2Services = sortedHealth.filter(function (s) { return criticalOrder.indexOf(s.name) < 0; });
+
+        if (tier1Services.length > 0) {
+            var tier1Label = document.createElement('div');
+            tier1Label.style.cssText = 'font-size:0.72rem;text-transform:uppercase;letter-spacing:0.08em;' +
+                'color:rgba(148,163,184,0.75);margin:0.4rem 0 0.35rem 0.1rem;';
+            tier1Label.textContent = 'Golden Path';
+            healthPanel.appendChild(tier1Label);
+            healthPanel.appendChild(renderHealthServiceList(tier1Services));
+        }
+
+        if (tier2Services.length > 0) {
+            var tier2Failed = tier2Services.filter(function (s) {
+                return s.status === 'down' || s.status === 'error' || s.status === 'unhealthy' || s.status === 'failed';
+            });
+            var tier2Healthy = tier2Services.filter(function (s) { return s.status === 'ok' || s.status === 'healthy' || s.healthy; }).length;
+            var tier2Expanded = state.overviewHealthTier2Expanded || tier2Failed.length > 0;
+
+            var tier2Toggle = document.createElement('button');
+            tier2Toggle.className = 'btn btn-sm';
+            tier2Toggle.style.cssText = 'margin:0.5rem 0 0.35rem 0;font-size:0.72rem;padding:2px 9px;';
+            tier2Toggle.textContent = (tier2Expanded ? '▾ ' : '▸ ') + 'Other Services — ' +
+                tier2Healthy + '/' + tier2Services.length + ' healthy' +
+                (tier2Failed.length > 0 ? ' (' + tier2Failed.length + ' down)' : '');
+            tier2Toggle.onclick = function () {
+                state.overviewHealthTier2Expanded = !state.overviewHealthTier2Expanded;
+                renderApp();
+            };
+            healthPanel.appendChild(tier2Toggle);
+
+            if (tier2Expanded) {
+                healthPanel.appendChild(renderHealthServiceList(tier2Services));
+            }
         }
     }
     container.appendChild(healthPanel);
@@ -31476,6 +31556,54 @@ async function fetchActionRequired(silentRefresh) {
     if (state.activeModule === 'overview' && state.activeTab === 'system-overview') {
         renderApp();
     }
+}
+
+// DEV-COMHU-03404: hourly rollup backing the Overview sparklines.
+async function fetchOverviewTimeseries(silentRefresh) {
+    if (state.overviewTimeseries.loading) return;
+    var isInitialLoad = !state.overviewTimeseries.fetched;
+    state.overviewTimeseries.loading = true;
+    state.overviewTimeseries.error = null;
+    if (isInitialLoad && !silentRefresh) renderApp();
+
+    try {
+        var r = await fetchWT('/api/v1/ops/overview-timeseries', {
+            headers: (typeof buildContextHeaders === 'function') ? buildContextHeaders({ Accept: 'application/json' }) : { Accept: 'application/json' }
+        });
+        if (!r.ok) {
+            state.overviewTimeseries.error = 'HTTP ' + r.status;
+        } else {
+            var body = await r.json();
+            state.overviewTimeseries.series = body.series || null;
+        }
+    } catch (err) {
+        state.overviewTimeseries.error = (err && err.message) ? err.message : String(err);
+    }
+    state.overviewTimeseries.lastRefreshed = new Date().toISOString();
+    state.overviewTimeseries.loading = false;
+    state.overviewTimeseries.fetched = true;
+    if (state.activeModule === 'overview' && state.activeTab === 'system-overview') {
+        renderApp();
+    }
+}
+
+// DEV-COMHU-03404: tiny inline-SVG sparkline — no chart library, respects the
+// "bundle JS locally / no CDNs" rule for free since it's just a <polyline>.
+// Renders as an HTML string so it slots into metricCardHTML's innerHTML build.
+function sparklineSVG(values, color) {
+    if (!Array.isArray(values) || values.length < 2) return '';
+    var w = 100, h = 24;
+    var max = Math.max.apply(null, values.concat([1])); // avoid /0 on all-zero series
+    var step = w / (values.length - 1);
+    var points = values.map(function (v, i) {
+        var x = i * step;
+        var y = h - (v / max) * (h - 3) - 1.5;
+        return x.toFixed(1) + ',' + y.toFixed(1);
+    }).join(' ');
+    return '<svg viewBox="0 0 ' + w + ' ' + h + '" preserveAspectRatio="none" ' +
+        'style="display:block;width:100%;height:20px;margin-top:4px;">' +
+        '<polyline points="' + points + '" fill="none" stroke="' + color + '" stroke-width="1.5" ' +
+        'stroke-linecap="round" stroke-linejoin="round" opacity="0.85"/></svg>';
 }
 
 // VTID-02031: Render "Action Required" panel — pinned at the top of the
