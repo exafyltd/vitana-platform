@@ -44,9 +44,14 @@ describe('orb-widget background/idle watchdog (mobile overheating fix)', () => {
     expect(body).toMatch(/_sessionStop\(\)/);
   });
 
-  it('reschedules itself only while the session is still active', () => {
+  it('reschedules itself while the overlay is open, not gated on _s.active', () => {
     const body = extractFunctionBody(source, 'function _startBackgroundWatchdog()');
-    expect(body).toMatch(/if \(_s\.active\) _startBackgroundWatchdog\(\);/);
+    expect(body).toMatch(/if \(_s\.overlayVisible\) _startBackgroundWatchdog\(\);/);
+    // Regression guard: _s.active only flips true after the up-to-8s session
+    // handshake and drops false during reconnect gaps — gating the reschedule
+    // on it let the watchdog die on its first tick for slow-but-successful
+    // opens (Codex review catch).
+    expect(body).not.toMatch(/if \(_s\.active\) _startBackgroundWatchdog\(\);/);
   });
 
   it('uses a 5s check interval and a 30s kill threshold', () => {

@@ -2487,7 +2487,16 @@
         _sessionStop();
         return;
       }
-      if (_s.active) _startBackgroundWatchdog();
+      // VTID-CODEX-REVIEW: gate on overlayVisible, not _s.active. _sessionStart's
+      // handshake can take up to 8s (longer than one BG_CHECK_MS tick) before
+      // _s.active flips true, and _s.active also drops false transiently during
+      // reconnect gaps. Gating the reschedule on _s.active let the watchdog die
+      // on its very first tick for any slow-but-successful open, or during a
+      // reconnect window — exactly when background protection matters most.
+      // overlayVisible spans the whole _show()...(_hide()/_sessionStop) window
+      // regardless of handshake/reconnect state, same as the guards elsewhere
+      // in this file (e.g. line ~905, ~997, ~3092).
+      if (_s.overlayVisible) _startBackgroundWatchdog();
     }, BG_CHECK_MS);
   }
 
