@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-07-12T19:38:52.054Z",
+  "generated_at": "2026-07-12T23:07:23.919Z",
   "source": "reconciled",
   "total": 594,
   "tools": [
@@ -7112,9 +7112,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Allocate a new VTID",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "confirm",
       "plan_domain": "C1 VTID / OASIS Lifecycle",
@@ -7129,9 +7132,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Create OASIS task",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "confirm",
       "plan_domain": "C1 VTID / OASIS Lifecycle",
@@ -7146,9 +7152,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Patch task fields",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "confirm",
       "plan_domain": "C1 VTID / OASIS Lifecycle",
@@ -7163,9 +7172,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Cancel task",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "confirm",
       "plan_domain": "C1 VTID / OASIS Lifecycle",
@@ -7180,9 +7192,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Mark complete",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "confirm",
       "plan_domain": "C1 VTID / OASIS Lifecycle",
@@ -7197,9 +7212,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Set is_terminal + outcome",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "confirm",
       "plan_domain": "C1 VTID / OASIS Lifecycle",
@@ -7214,9 +7232,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Discover eligible tasks",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "read",
       "plan_domain": "C1 VTID / OASIS Lifecycle",
@@ -7231,9 +7252,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "VTID projection",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "read",
       "plan_domain": "C1 VTID / OASIS Lifecycle",
@@ -7248,9 +7272,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Allocator on/off + health",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "read",
       "plan_domain": "C1 VTID / OASIS Lifecycle",
@@ -7265,9 +7292,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Query events by vtid/type/time",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "read",
       "plan_domain": "C1 VTID / OASIS Lifecycle",
@@ -7282,9 +7312,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Trigger execution",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "confirm",
       "plan_domain": "C1 VTID / OASIS Lifecycle",
@@ -7299,9 +7332,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Run a workflow",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "confirm",
       "plan_domain": "C1 VTID / OASIS Lifecycle",
@@ -7316,9 +7352,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Submit evidence for a VTID",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "write",
       "plan_domain": "C1 VTID / OASIS Lifecycle",
@@ -7333,9 +7372,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Work orders",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "read",
       "plan_domain": "C1 VTID / OASIS Lifecycle",
@@ -7350,9 +7392,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "One work order",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "read",
       "plan_domain": "C1 VTID / OASIS Lifecycle",
@@ -7367,9 +7412,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Evaluate action against rules",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "read",
       "plan_domain": "C2 Governance",
@@ -7384,9 +7432,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Status snapshot",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "read",
       "plan_domain": "C2 Governance",
@@ -7401,9 +7452,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Rules",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "read",
       "plan_domain": "C2 Governance",
@@ -7418,9 +7472,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "One rule by code",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "read",
       "plan_domain": "C2 Governance",
@@ -7435,9 +7492,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Violations",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "read",
       "plan_domain": "C2 Governance",
@@ -7452,9 +7512,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Enforcements",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "read",
       "plan_domain": "C2 Governance",
@@ -7469,9 +7532,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Live feed",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "read",
       "plan_domain": "C2 Governance",
@@ -7486,9 +7552,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Proposals",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "read",
       "plan_domain": "C2 Governance",
@@ -7503,9 +7572,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "New proposal",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "confirm",
       "plan_domain": "C2 Governance",
@@ -7520,9 +7592,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Update status",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "confirm",
       "plan_domain": "C2 Governance",
@@ -7537,9 +7612,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Read control key (EXECUTION_DISARMED etc.)",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "read",
       "plan_domain": "C2 Governance",
@@ -7554,9 +7632,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Flip control key",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "confirm",
       "plan_domain": "C2 Governance",
@@ -7571,9 +7652,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Key history",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "read",
       "plan_domain": "C2 Governance",
@@ -7588,9 +7672,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Create PR from branch",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "confirm",
       "plan_domain": "C3 CI/CD & Pull Requests",
@@ -7605,9 +7692,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "PR state + mergeability",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "read",
       "plan_domain": "C3 CI/CD & Pull Requests",
@@ -7622,9 +7712,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Check runs for a PR",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "read",
       "plan_domain": "C3 CI/CD & Pull Requests",
@@ -7639,9 +7732,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Open PRs w/ status",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "read",
       "plan_domain": "C3 CI/CD & Pull Requests",
@@ -7656,9 +7752,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Merge via governed pipeline",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "confirm",
       "plan_domain": "C3 CI/CD & Pull Requests",
@@ -7673,9 +7772,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Safe-merge flow",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "confirm",
       "plan_domain": "C3 CI/CD & Pull Requests",
@@ -7690,9 +7792,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Create revert PR",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "confirm",
       "plan_domain": "C3 CI/CD & Pull Requests",
@@ -7707,9 +7812,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Dispatch a GH workflow",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "confirm",
       "plan_domain": "C3 CI/CD & Pull Requests",
@@ -7724,9 +7832,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Runs for a workflow",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "read",
       "plan_domain": "C3 CI/CD & Pull Requests",
@@ -7741,9 +7852,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Jobs + failures for a run",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "read",
       "plan_domain": "C3 CI/CD & Pull Requests",
@@ -7758,9 +7872,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Merge lock status",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "read",
       "plan_domain": "C3 CI/CD & Pull Requests",
@@ -7775,9 +7892,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Release stuck lock",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "confirm",
       "plan_domain": "C3 CI/CD & Pull Requests",
@@ -7792,9 +7912,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "CI/CD pipeline health",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "read",
       "plan_domain": "C3 CI/CD & Pull Requests",
@@ -7809,9 +7932,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Approvals activity feed",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "read",
       "plan_domain": "C3 CI/CD & Pull Requests",
@@ -7826,9 +7952,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Deploy a service (staging path)",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "confirm",
       "plan_domain": "C4 Deployment & Release",
@@ -7843,9 +7972,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "The PUBLISH button by voice (double confirm + reason)",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "double_confirm",
       "plan_domain": "C4 Deployment & Release",
@@ -7860,9 +7992,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Cloud Run revisions",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "read",
       "plan_domain": "C4 Deployment & Release",
@@ -7877,9 +8012,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Deployment history",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "read",
       "plan_domain": "C4 Deployment & Release",
@@ -7894,9 +8032,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Deploy health",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "read",
       "plan_domain": "C4 Deployment & Release",
@@ -7911,9 +8052,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Promote canary",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "confirm",
       "plan_domain": "C4 Deployment & Release",
@@ -7928,9 +8072,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Abort canary",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "confirm",
       "plan_domain": "C4 Deployment & Release",
@@ -7945,9 +8092,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Revert gateway",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "confirm",
       "plan_domain": "C4 Deployment & Release",
@@ -7962,9 +8112,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Revert gateway + frontend",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "confirm",
       "plan_domain": "C4 Deployment & Release",
@@ -7979,9 +8132,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Canary target status",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "read",
       "plan_domain": "C4 Deployment & Release",
@@ -7996,9 +8152,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "What's on staging (env, build)",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "read",
       "plan_domain": "C4 Deployment & Release",
@@ -8013,9 +8172,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Diff staging vs prod builds",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "read",
       "plan_domain": "C4 Deployment & Release",
@@ -8030,9 +8192,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Recent releases",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "read",
       "plan_domain": "C4 Deployment & Release",
@@ -8948,9 +9113,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Running revision/build per service",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "read",
       "plan_domain": "C9 Observability",
@@ -8965,9 +9133,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "/alive + health across services",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "read",
       "plan_domain": "C9 Observability",
@@ -8982,9 +9153,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Recent error rates",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "read",
       "plan_domain": "C9 Observability",
@@ -8999,9 +9173,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Latency percentiles",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "read",
       "plan_domain": "C9 Observability",
@@ -9016,9 +9193,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Telemetry snapshot",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "read",
       "plan_domain": "C9 Observability",
@@ -9033,9 +9213,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Recent OASIS/system events",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "read",
       "plan_domain": "C9 Observability",
@@ -9050,9 +9233,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "ORB agent trace",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "read",
       "plan_domain": "C9 Observability",
@@ -9067,9 +9253,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Supervisor summary",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "read",
       "plan_domain": "C9 Observability",
@@ -9084,9 +9273,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Voice session turns",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "read",
       "plan_domain": "C9 Observability",
@@ -9101,9 +9293,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Session diagnostics",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "read",
       "plan_domain": "C9 Observability",
@@ -9118,9 +9313,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Greeting/NBA decisions",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "read",
       "plan_domain": "C9 Observability",
@@ -9135,9 +9333,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Recent tool failures",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "read",
       "plan_domain": "C9 Observability",
@@ -9152,9 +9353,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Tool health dashboard",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "read",
       "plan_domain": "C9 Observability",
@@ -9169,9 +9373,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Greeting monitor",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "read",
       "plan_domain": "C9 Observability",
@@ -9186,9 +9393,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "One registered agent detail",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "read",
       "plan_domain": "C9 Observability",

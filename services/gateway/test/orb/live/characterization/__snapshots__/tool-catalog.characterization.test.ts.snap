@@ -6479,6 +6479,1359 @@ Optionally filter by tier (service, embedded, scheduled). Speak problem agents f
           "type": "object",
         },
       },
+      {
+        "description": "DEVELOPER ONLY. Allocate a new VTID. TWO-STEP: call without confirm first, then again with confirm=true after the developer agrees.",
+        "name": "dev_allocate_vtid",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "description": "Set true only after explicit confirmation.",
+              "type": "boolean",
+            },
+            "layer": {
+              "description": "Layer, e.g. DEV, ADM. Default DEV.",
+              "type": "string",
+            },
+            "module": {
+              "description": "Module tag. Default TASK.",
+              "type": "string",
+            },
+            "source": {
+              "description": "Origin tag, e.g. "orb-voice".",
+              "type": "string",
+            },
+            "title": {
+              "description": "Optional title for the new VTID.",
+              "type": "string",
+            },
+          },
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. Create a new OASIS task/VTID with a title. TWO-STEP confirm.",
+        "name": "dev_create_task",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "description": "Set true only after explicit confirmation.",
+              "type": "boolean",
+            },
+            "target_roles": {
+              "description": "Target roles, e.g. ["DEV"].",
+              "items": {
+                "type": "string",
+              },
+              "type": "array",
+            },
+            "task_family": {
+              "description": "Task family, e.g. DEV, ADM, GOVRN. Default DEV.",
+              "type": "string",
+            },
+            "task_module": {
+              "description": "Task module tag. Default TASK.",
+              "type": "string",
+            },
+            "title": {
+              "description": "Task title. Required.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "title",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. Patch a VTID task's title/status/summary/assigned_to. Refuses terminal tasks. TWO-STEP confirm.",
+        "name": "dev_update_task",
+        "parameters": {
+          "properties": {
+            "assigned_to": {
+              "type": "string",
+            },
+            "confirm": {
+              "description": "Set true only after explicit confirmation.",
+              "type": "boolean",
+            },
+            "status": {
+              "description": "scheduled, in_progress, completed, pending, blocked, cancelled.",
+              "type": "string",
+            },
+            "summary": {
+              "type": "string",
+            },
+            "title": {
+              "type": "string",
+            },
+            "vtid": {
+              "description": "VTID reference, e.g. "VTID-01234" or "1234".",
+              "type": "string",
+            },
+          },
+          "required": [
+            "vtid",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. Cancel a VTID task (deletes it if not yet started, else marks it cancelled). TWO-STEP confirm.",
+        "name": "dev_cancel_task",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "description": "Set true only after explicit confirmation.",
+              "type": "boolean",
+            },
+            "vtid": {
+              "description": "VTID reference.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "vtid",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. Mark a VTID task complete with an outcome. TWO-STEP confirm.",
+        "name": "dev_complete_task",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "description": "Set true only after explicit confirmation.",
+              "type": "boolean",
+            },
+            "terminal_outcome": {
+              "description": "success, failed, or cancelled. Default success.",
+              "type": "string",
+            },
+            "vtid": {
+              "description": "VTID reference.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "vtid",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. Set is_terminal + terminal_outcome on a VTID directly (idempotent). TWO-STEP confirm.",
+        "name": "dev_terminalize_vtid",
+        "parameters": {
+          "properties": {
+            "commit_sha": {
+              "type": "string",
+            },
+            "confirm": {
+              "description": "Set true only after explicit confirmation.",
+              "type": "boolean",
+            },
+            "outcome": {
+              "description": "success, failed, or cancelled. Required.",
+              "type": "string",
+            },
+            "run_id": {
+              "type": "string",
+            },
+            "vtid": {
+              "description": "VTID reference.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "vtid",
+            "outcome",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. List VTIDs eligible for worker pickup (scheduled/allocated/in_progress).",
+        "name": "dev_discover_tasks",
+        "parameters": {
+          "properties": {
+            "limit": {
+              "description": "Max rows, 1-200. Default 20.",
+              "type": "integer",
+            },
+            "statuses": {
+              "description": "Comma-separated statuses to filter, e.g. "scheduled,in_progress".",
+              "type": "string",
+            },
+          },
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. VTID projection view: stage, status, attention flags for every non-deleted VTID.",
+        "name": "dev_get_vtid_projection",
+        "parameters": {
+          "properties": {
+            "limit": {
+              "description": "Max rows, 1-200. Default 20.",
+              "type": "integer",
+            },
+            "offset": {
+              "description": "Pagination offset.",
+              "type": "integer",
+            },
+          },
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. Whether the VTID allocator kill-switch is on or off, and why.",
+        "name": "dev_get_allocator_status",
+        "parameters": {
+          "properties": {},
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. Query OASIS events by vtid/topic/source/status.",
+        "name": "dev_query_oasis_events",
+        "parameters": {
+          "properties": {
+            "limit": {
+              "description": "1-200. Default 10.",
+              "type": "integer",
+            },
+            "source": {
+              "type": "string",
+            },
+            "status": {
+              "type": "string",
+            },
+            "type": {
+              "description": "Matched against the event topic (substring).",
+              "type": "string",
+            },
+            "vtid": {
+              "type": "string",
+            },
+          },
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. Route a VTID to the worker orchestrator for execution. TWO-STEP confirm.",
+        "name": "dev_execute_vtid",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "description": "Set true only after explicit confirmation.",
+              "type": "boolean",
+            },
+            "task_domain": {
+              "description": "frontend, backend, memory, infra, ai, or mixed.",
+              "type": "string",
+            },
+            "task_family": {
+              "type": "string",
+            },
+            "title": {
+              "description": "Work order title. Required.",
+              "type": "string",
+            },
+            "vtid": {
+              "description": "VTID reference.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "vtid",
+            "title",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. Validate/log a workflow action for a VTID. NOTE: this backend endpoint is validation-only today, it does not execute real work. TWO-STEP confirm.",
+        "name": "dev_run_exec_workflow",
+        "parameters": {
+          "properties": {
+            "action": {
+              "description": "Dotted action name, e.g. "deploy.trigger". Required.",
+              "type": "string",
+            },
+            "confirm": {
+              "description": "Set true only after explicit confirmation.",
+              "type": "boolean",
+            },
+            "params": {
+              "description": "Arbitrary params for the action.",
+              "type": "object",
+            },
+            "vtid": {
+              "description": "VTID reference.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "vtid",
+            "action",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. Submit subagent completion evidence for a VTID (files changed, outcome).",
+        "name": "dev_submit_evidence",
+        "parameters": {
+          "properties": {
+            "domain": {
+              "description": "frontend, backend, memory, infra, ai, or mixed. Required.",
+              "type": "string",
+            },
+            "files_changed": {
+              "type": "integer",
+            },
+            "result_ok": {
+              "description": "Whether the work succeeded. Default true.",
+              "type": "boolean",
+            },
+            "run_id": {
+              "description": "Required.",
+              "type": "string",
+            },
+            "vtid": {
+              "description": "VTID reference.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "vtid",
+            "domain",
+            "run_id",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. List pending work orders (maps to task discovery — there is no separate work-order table).",
+        "name": "dev_list_work_orders",
+        "parameters": {
+          "properties": {
+            "limit": {
+              "type": "integer",
+            },
+            "statuses": {
+              "type": "string",
+            },
+          },
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. Get one task/work-order by VTID.",
+        "name": "dev_get_work_order",
+        "parameters": {
+          "properties": {
+            "vtid": {
+              "description": "VTID reference. Required.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "vtid",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. Evaluate whether an action would be allowed by governance rules for a service/environment.",
+        "name": "dev_evaluate_governance",
+        "parameters": {
+          "properties": {
+            "action": {
+              "description": "Required.",
+              "type": "string",
+            },
+            "environment": {
+              "description": "Required.",
+              "type": "string",
+            },
+            "service": {
+              "description": "Required.",
+              "type": "string",
+            },
+            "vtid": {
+              "type": "string",
+            },
+          },
+          "required": [
+            "action",
+            "service",
+            "environment",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. Governance control-plane snapshot: which control keys are enabled/disabled.",
+        "name": "dev_governance_status",
+        "parameters": {
+          "properties": {},
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. List governance rules, optionally filtered by category/status/level/search.",
+        "name": "dev_list_governance_rules",
+        "parameters": {
+          "properties": {
+            "category": {
+              "type": "string",
+            },
+            "level": {
+              "type": "string",
+            },
+            "search": {
+              "type": "string",
+            },
+            "status": {
+              "type": "string",
+            },
+          },
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. Get one governance rule by its code, with recent evaluations.",
+        "name": "dev_get_governance_rule",
+        "parameters": {
+          "properties": {
+            "rule_code": {
+              "description": "Required.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "rule_code",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. List open/recent governance violations.",
+        "name": "dev_list_violations",
+        "parameters": {
+          "properties": {},
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. List recent governance enforcement actions.",
+        "name": "dev_list_enforcements",
+        "parameters": {
+          "properties": {},
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. Recent governance activity feed.",
+        "name": "dev_governance_feed",
+        "parameters": {
+          "properties": {},
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. List governance rule-change proposals, optionally filtered by status/rule_code.",
+        "name": "dev_list_proposals",
+        "parameters": {
+          "properties": {
+            "limit": {
+              "type": "integer",
+            },
+            "ruleCode": {
+              "type": "string",
+            },
+            "status": {
+              "description": "Draft, Under Review, Approved, Rejected, Implemented.",
+              "type": "string",
+            },
+          },
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. Create a governance rule-change proposal. TWO-STEP confirm.",
+        "name": "dev_create_proposal",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "description": "Set true only after explicit confirmation.",
+              "type": "boolean",
+            },
+            "proposed_rule": {
+              "description": "Required.",
+              "type": "string",
+            },
+            "rationale": {
+              "type": "string",
+            },
+            "rule_code": {
+              "description": "Required for Change/Deprecate.",
+              "type": "string",
+            },
+            "type": {
+              "description": ""New Rule", "Change Rule", or "Deprecate Rule". Required.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "type",
+            "proposed_rule",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. Change a proposal's status (Draft/Under Review/Approved/Rejected/Implemented). TWO-STEP confirm.",
+        "name": "dev_update_proposal",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "description": "Set true only after explicit confirmation.",
+              "type": "boolean",
+            },
+            "proposal_id": {
+              "description": "Required.",
+              "type": "string",
+            },
+            "status": {
+              "description": "Required.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "proposal_id",
+            "status",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. Read a governance control key (e.g. vtid_allocator_enabled, autopilot_execution_enabled).",
+        "name": "dev_get_control",
+        "parameters": {
+          "properties": {
+            "key": {
+              "description": "Required.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "key",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. Flip a governance control key on/off — a real kill-switch, requires a reason. TWO-STEP confirm.",
+        "name": "dev_set_control",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "description": "Set true only after explicit confirmation.",
+              "type": "boolean",
+            },
+            "duration_minutes": {
+              "description": "Optional auto-expiry.",
+              "type": "integer",
+            },
+            "enabled": {
+              "description": "Required.",
+              "type": "boolean",
+            },
+            "key": {
+              "description": "Required.",
+              "type": "string",
+            },
+            "reason": {
+              "description": "Required.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "key",
+            "enabled",
+            "reason",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. Change history for a governance control key.",
+        "name": "dev_get_control_history",
+        "parameters": {
+          "properties": {
+            "key": {
+              "description": "Required.",
+              "type": "string",
+            },
+            "limit": {
+              "type": "integer",
+            },
+          },
+          "required": [
+            "key",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. Create a PR from a branch into main. TWO-STEP confirm.",
+        "name": "dev_create_pr",
+        "parameters": {
+          "properties": {
+            "body": {
+              "type": "string",
+            },
+            "confirm": {
+              "description": "Set true only after explicit confirmation.",
+              "type": "boolean",
+            },
+            "head": {
+              "description": "Source branch. Required.",
+              "type": "string",
+            },
+            "repo": {
+              "description": "Default exafyltd/vitana-platform.",
+              "type": "string",
+            },
+            "title": {
+              "description": "Required.",
+              "type": "string",
+            },
+            "vtid": {
+              "description": "Required.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "vtid",
+            "title",
+            "head",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. PR state and mergeability.",
+        "name": "dev_get_pr_status",
+        "parameters": {
+          "properties": {
+            "pr_number": {
+              "description": "Required.",
+              "type": "integer",
+            },
+            "repo": {
+              "type": "string",
+            },
+          },
+          "required": [
+            "pr_number",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. CI check runs for a PR.",
+        "name": "dev_get_pr_checks",
+        "parameters": {
+          "properties": {
+            "pr_number": {
+              "description": "Required.",
+              "type": "integer",
+            },
+            "repo": {
+              "type": "string",
+            },
+          },
+          "required": [
+            "pr_number",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. List open PRs with CI/mergeable status.",
+        "name": "dev_list_open_prs",
+        "parameters": {
+          "properties": {
+            "limit": {
+              "type": "integer",
+            },
+            "repo": {
+              "type": "string",
+            },
+          },
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. Merge a PR through the governed pipeline (checks + governance + validator gate). TWO-STEP confirm.",
+        "name": "dev_merge_pr",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "description": "Set true only after explicit confirmation.",
+              "type": "boolean",
+            },
+            "pr_number": {
+              "description": "Required.",
+              "type": "integer",
+            },
+            "repo": {
+              "type": "string",
+            },
+            "vtid": {
+              "description": "Required.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "vtid",
+            "pr_number",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. Safe-merge a PR (checks + governance gate, no validator step). TWO-STEP confirm.",
+        "name": "dev_safe_merge",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "description": "Set true only after explicit confirmation.",
+              "type": "boolean",
+            },
+            "merge_strategy": {
+              "type": "string",
+            },
+            "pr_number": {
+              "description": "Required.",
+              "type": "integer",
+            },
+            "repo": {
+              "type": "string",
+            },
+            "require_checks": {
+              "type": "boolean",
+            },
+            "vtid": {
+              "description": "Required.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "vtid",
+            "pr_number",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. Open a revert PR for a given merge commit. TWO-STEP confirm.",
+        "name": "dev_revert_pr",
+        "parameters": {
+          "properties": {
+            "body": {
+              "type": "string",
+            },
+            "branch_name": {
+              "description": "Required — new branch name for the revert.",
+              "type": "string",
+            },
+            "confirm": {
+              "description": "Set true only after explicit confirmation.",
+              "type": "boolean",
+            },
+            "merge_sha": {
+              "description": "Required.",
+              "type": "string",
+            },
+            "repo": {
+              "type": "string",
+            },
+            "title": {
+              "type": "string",
+            },
+          },
+          "required": [
+            "merge_sha",
+            "branch_name",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. Dispatch a GitHub Actions workflow file by name. TWO-STEP confirm.",
+        "name": "dev_trigger_workflow",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "description": "Set true only after explicit confirmation.",
+              "type": "boolean",
+            },
+            "inputs": {
+              "description": "Workflow inputs.",
+              "type": "object",
+            },
+            "ref": {
+              "description": "Branch/ref. Default main.",
+              "type": "string",
+            },
+            "repo": {
+              "type": "string",
+            },
+            "workflow_id": {
+              "description": "Workflow filename, e.g. "STAGE-DEPLOY.yml". Required.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "workflow_id",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. Recent runs for a GitHub Actions workflow.",
+        "name": "dev_list_workflow_runs",
+        "parameters": {
+          "properties": {
+            "repo": {
+              "type": "string",
+            },
+            "workflow_id": {
+              "description": "Required.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "workflow_id",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. Jobs and failures for a specific workflow run.",
+        "name": "dev_get_run_jobs",
+        "parameters": {
+          "properties": {
+            "repo": {
+              "type": "string",
+            },
+            "run_id": {
+              "description": "Required.",
+              "type": "integer",
+            },
+          },
+          "required": [
+            "run_id",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. Current CI/CD merge lock status.",
+        "name": "dev_get_merge_lock",
+        "parameters": {
+          "properties": {},
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. Force-release a stuck merge lock for a VTID. TWO-STEP confirm.",
+        "name": "dev_release_merge_lock",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "description": "Set true only after explicit confirmation.",
+              "type": "boolean",
+            },
+            "reason": {
+              "type": "string",
+            },
+            "vtid": {
+              "description": "Required.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "vtid",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. CI/CD pipeline health (env config, runtime deploy, governance, AI services).",
+        "name": "dev_cicd_health",
+        "parameters": {
+          "properties": {},
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. GitHub-authoritative feed of open PRs and their approval-readiness.",
+        "name": "dev_approvals_feed",
+        "parameters": {
+          "properties": {
+            "limit": {
+              "type": "integer",
+            },
+            "repo": {
+              "type": "string",
+            },
+          },
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. Deploy a service to staging (never production — use dev_publish_to_prod for that). TWO-STEP confirm.",
+        "name": "dev_deploy_service",
+        "parameters": {
+          "properties": {
+            "branch": {
+              "description": "Default main.",
+              "type": "string",
+            },
+            "confirm": {
+              "description": "Set true only after explicit confirmation.",
+              "type": "boolean",
+            },
+            "environment": {
+              "description": "staging or dev. Default staging.",
+              "type": "string",
+            },
+            "service": {
+              "description": "Required.",
+              "type": "string",
+            },
+            "vtid": {
+              "description": "Required.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "vtid",
+            "service",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. The PUBLISH button by voice — promotes the tested staging build to production. DOUBLE-CONFIRM: requires a reason, then confirm=true, then confirm_again=true on a third call after re-confirming out loud. Requires a signed-in admin session.",
+        "name": "dev_publish_to_prod",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "description": "Set true after the first explicit confirmation.",
+              "type": "boolean",
+            },
+            "confirm_again": {
+              "description": "Set true after the SECOND explicit confirmation.",
+              "type": "boolean",
+            },
+            "confirm_short_sha": {
+              "type": "string",
+            },
+            "mode": {
+              "description": ""full" or "canary". Default full.",
+              "type": "string",
+            },
+            "reason": {
+              "description": "Required — why this publish is happening.",
+              "type": "string",
+            },
+            "vtid": {
+              "type": "string",
+            },
+          },
+          "required": [
+            "reason",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. Cloud Run revisions for a service. Requires an admin session.",
+        "name": "dev_list_revisions",
+        "parameters": {
+          "properties": {
+            "limit": {
+              "type": "integer",
+            },
+            "service": {
+              "description": "gateway, gateway-staging, community-app, or community-app-staging.",
+              "type": "string",
+            },
+          },
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. Deployment history, optionally filtered by service/environment.",
+        "name": "dev_list_deployments",
+        "parameters": {
+          "properties": {
+            "environment": {
+              "type": "string",
+            },
+            "limit": {
+              "type": "integer",
+            },
+            "service": {
+              "type": "string",
+            },
+          },
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. Deployment pipeline config health.",
+        "name": "dev_deployment_health",
+        "parameters": {
+          "properties": {},
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. Promote the canary revision to 100% traffic. Requires an admin session. TWO-STEP confirm.",
+        "name": "dev_promote_canary",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "type": "boolean",
+            },
+            "service": {
+              "description": "Default gateway.",
+              "type": "string",
+            },
+          },
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. Abort the canary and restore the stable revision to 100%. Requires an admin session. TWO-STEP confirm.",
+        "name": "dev_abort_canary",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "type": "boolean",
+            },
+            "service": {
+              "description": "Default gateway.",
+              "type": "string",
+            },
+          },
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. Revert a service to a prior revision. Requires an admin session. TWO-STEP confirm.",
+        "name": "dev_revert_deploy",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "type": "boolean",
+            },
+            "confirm_short_sha": {
+              "type": "string",
+            },
+            "service": {
+              "description": "Required.",
+              "type": "string",
+            },
+            "target_revision": {
+              "description": "Required.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "service",
+            "target_revision",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. Revert a service AND its paired frontend/backend counterpart together. Requires an admin session. TWO-STEP confirm.",
+        "name": "dev_revert_both",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "type": "boolean",
+            },
+            "service": {
+              "description": "Required.",
+              "type": "string",
+            },
+            "target_created_at": {
+              "type": "string",
+            },
+            "target_revision": {
+              "description": "Required.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "service",
+            "target_revision",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. Whether a canary traffic split is currently active for a service. Requires an admin session.",
+        "name": "dev_canary_status",
+        "parameters": {
+          "properties": {
+            "service": {
+              "description": "Default gateway.",
+              "type": "string",
+            },
+          },
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. What build/commit is currently on staging.",
+        "name": "dev_staging_status",
+        "parameters": {
+          "properties": {},
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. Whether staging and production are on the same build.",
+        "name": "dev_compare_staging_prod",
+        "parameters": {
+          "properties": {},
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. Recent releases across services.",
+        "name": "dev_release_feed",
+        "parameters": {
+          "properties": {
+            "environment": {
+              "type": "string",
+            },
+            "limit": {
+              "type": "integer",
+            },
+            "service": {
+              "type": "string",
+            },
+          },
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. Running revision/build info for this gateway instance.",
+        "name": "dev_build_info",
+        "parameters": {
+          "properties": {},
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. Health + /alive check for this gateway instance.",
+        "name": "dev_service_health",
+        "parameters": {
+          "properties": {},
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. Recent OASIS event error rate over a time window.",
+        "name": "dev_error_rate",
+        "parameters": {
+          "properties": {
+            "hours": {
+              "description": "Window size, default 24.",
+              "type": "integer",
+            },
+          },
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. Voice turn latency percentiles (p50/p95) over a time window.",
+        "name": "dev_latency_summary",
+        "parameters": {
+          "properties": {
+            "hours": {
+              "description": "Window size, default 24.",
+              "type": "integer",
+            },
+          },
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. Telemetry snapshot: recent events + pipeline stage counters.",
+        "name": "dev_telemetry_snapshot",
+        "parameters": {
+          "properties": {},
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. Recent OASIS/system events, most recent first.",
+        "name": "dev_recent_events",
+        "parameters": {
+          "properties": {
+            "limit": {
+              "type": "integer",
+            },
+          },
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. Recent ORB agent trace(s).",
+        "name": "dev_agent_trace",
+        "parameters": {
+          "properties": {
+            "limit": {
+              "type": "integer",
+            },
+            "phase": {
+              "type": "string",
+            },
+          },
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. Supervisor summary: dataset/shadow/finetune/canary/backlog sections.",
+        "name": "dev_supervisor_summary",
+        "parameters": {
+          "properties": {
+            "window_hours": {
+              "type": "integer",
+            },
+          },
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. Per-turn timeline for a voice session.",
+        "name": "dev_get_session_turns",
+        "parameters": {
+          "properties": {
+            "session_id": {
+              "description": "Required.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "session_id",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. Diagnostics analysis for a voice session.",
+        "name": "dev_get_session_diagnostics",
+        "parameters": {
+          "properties": {
+            "session_id": {
+              "description": "Required.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "session_id",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. Recent greeting/next-best-action decisions. Requires exafy_admin session.",
+        "name": "dev_conversation_decisions",
+        "parameters": {
+          "properties": {
+            "limit": {
+              "type": "integer",
+            },
+            "window_hours": {
+              "type": "integer",
+            },
+          },
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. Recent voice-tool failures, grouped by tool. Requires exafy_admin session.",
+        "name": "dev_tool_failures",
+        "parameters": {
+          "properties": {
+            "limit": {
+              "type": "integer",
+            },
+            "window_hours": {
+              "type": "integer",
+            },
+          },
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. Tool health rollup derived from recent failures (no dedicated dashboard exists). Requires exafy_admin session.",
+        "name": "dev_tool_health",
+        "parameters": {
+          "properties": {
+            "window_hours": {
+              "type": "integer",
+            },
+          },
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. Greeting-monitor view of recent conversation decisions (same source as dev_conversation_decisions). Requires exafy_admin session.",
+        "name": "dev_greeting_decisions",
+        "parameters": {
+          "properties": {
+            "limit": {
+              "type": "integer",
+            },
+            "window_hours": {
+              "type": "integer",
+            },
+          },
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. Detail for one registered agent by id.",
+        "name": "dev_get_agent_detail",
+        "parameters": {
+          "properties": {
+            "agent_id": {
+              "description": "Required.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "agent_id",
+          ],
+          "type": "object",
+        },
+      },
     ],
   },
   {
