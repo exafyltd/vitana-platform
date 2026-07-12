@@ -1,6 +1,6 @@
 {
-  "generated_at": "2026-07-12T18:17:25.959Z",
-  "source": "reconciled+plan-seed",
+  "generated_at": "2026-07-12T19:38:52.054Z",
+  "source": "reconciled",
   "total": 594,
   "tools": [
     {
@@ -2653,9 +2653,12 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Search products with filters (scope, category, price)",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "read",
       "plan_domain": "A1 Commerce & Marketplace Discovery",
@@ -2668,9 +2671,12 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Read out one product (price, rating, description)",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "read",
       "plan_domain": "A1 Commerce & Marketplace Discovery",
@@ -2683,9 +2689,12 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Supplements catalog",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "read",
       "plan_domain": "A1 Commerce & Marketplace Discovery",
@@ -2698,9 +2707,12 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Add supplement to personal regimen",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "write",
       "plan_domain": "A1 Commerce & Marketplace Discovery",
@@ -2713,9 +2725,12 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Current regimen",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "read",
       "plan_domain": "A1 Commerce & Marketplace Discovery",
@@ -2728,9 +2743,12 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Remove from regimen",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "write",
       "plan_domain": "A1 Commerce & Marketplace Discovery",
@@ -2743,9 +2761,12 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Wellness services directory",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "read",
       "plan_domain": "A1 Commerce & Marketplace Discovery",
@@ -2758,9 +2779,12 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Provider/practitioner detail",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "read",
       "plan_domain": "A1 Commerce & Marketplace Discovery",
@@ -2773,9 +2797,12 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Doctors & coaches directory",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "read",
       "plan_domain": "A1 Commerce & Marketplace Discovery",
@@ -2788,9 +2815,12 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Compatibility score with a coach",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "read",
       "plan_domain": "A1 Commerce & Marketplace Discovery",
@@ -2803,9 +2833,12 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Current deals & offers",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "read",
       "plan_domain": "A1 Commerce & Marketplace Discovery",
@@ -2818,9 +2851,12 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Apply promo code",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "write",
       "plan_domain": "A1 Commerce & Marketplace Discovery",
@@ -2833,9 +2869,12 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Shopping-agent recommendations",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "read",
       "plan_domain": "A1 Commerce & Marketplace Discovery",
@@ -2848,9 +2887,12 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Order history",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "read",
       "plan_domain": "A1 Commerce & Marketplace Discovery",
@@ -2863,9 +2905,12 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Track one order",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "read",
       "plan_domain": "A1 Commerce & Marketplace Discovery",
@@ -2878,9 +2923,12 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Repeat a previous order",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "confirm",
       "plan_domain": "A1 Commerce & Marketplace Discovery",
@@ -2893,9 +2941,12 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Add product to universal cart",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "write",
       "plan_domain": "A2 Cart & Checkout",
@@ -2908,9 +2959,12 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Read cart contents + total",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "read",
       "plan_domain": "A2 Cart & Checkout",
@@ -2923,9 +2977,12 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Change quantity",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "write",
       "plan_domain": "A2 Cart & Checkout",
@@ -2938,9 +2995,12 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Remove item",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "write",
       "plan_domain": "A2 Cart & Checkout",
@@ -2953,9 +3013,12 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Empty the cart",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "confirm",
       "plan_domain": "A2 Cart & Checkout",
@@ -2968,9 +3031,12 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Set/track budget meter",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "write",
       "plan_domain": "A2 Cart & Checkout",
@@ -2983,9 +3049,12 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Read pending AI purchase proposals",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "read",
       "plan_domain": "A2 Cart & Checkout",
@@ -2998,9 +3067,12 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Begin Stripe checkout (hands off to screen for payment)",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "confirm",
       "plan_domain": "A2 Cart & Checkout",
@@ -3013,9 +3085,12 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Balance + lifetime earnings + pending rewards + benefits",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "read",
       "plan_domain": "A3 Wallet & Payments",
@@ -3028,9 +3103,12 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Recent transactions",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "read",
       "plan_domain": "A3 Wallet & Payments",
@@ -3043,9 +3121,12 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Transfer credits to a member (resolve recipient → confirm)",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "confirm",
       "plan_domain": "A3 Wallet & Payments",
@@ -3058,9 +3139,12 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Send a payment request",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "write",
       "plan_domain": "A3 Wallet & Payments",
@@ -3073,9 +3157,12 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Exchange between currencies/credits",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "confirm",
       "plan_domain": "A3 Wallet & Payments",
@@ -3088,9 +3175,12 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Current EUR/USD/token rate",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "read",
       "plan_domain": "A3 Wallet & Payments",
@@ -3103,9 +3193,12 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Toggle display currency",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "write",
       "plan_domain": "A3 Wallet & Payments",
@@ -3118,9 +3211,12 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Referral earnings snapshot",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "read",
       "plan_domain": "A3 Wallet & Payments",
@@ -3133,9 +3229,12 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Commissions this month",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "read",
       "plan_domain": "A3 Wallet & Payments",
@@ -3148,9 +3247,12 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Pending rewards",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "read",
       "plan_domain": "A3 Wallet & Payments",
@@ -3163,9 +3265,12 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Incoming/outgoing requests",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "read",
       "plan_domain": "A3 Wallet & Payments",
@@ -3718,9 +3823,12 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Message a group thread",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "write",
       "plan_domain": "A8 Messaging depth",
@@ -3733,9 +3841,12 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Quote-reply to a specific message",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "write",
       "plan_domain": "A8 Messaging depth",
@@ -3748,9 +3859,12 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Emoji-react",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "write",
       "plan_domain": "A8 Messaging depth",
@@ -3763,9 +3877,12 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "New group conversation",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "write",
       "plan_domain": "A8 Messaging depth",
@@ -3778,9 +3895,12 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Add member to group chat",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "write",
       "plan_domain": "A8 Messaging depth",
@@ -3793,9 +3913,12 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Leave a group thread",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "confirm",
       "plan_domain": "A8 Messaging depth",
@@ -3808,9 +3931,12 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Share a calendar invite in a DM",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "write",
       "plan_domain": "A8 Messaging depth",
@@ -3823,9 +3949,12 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Call a member (WebRTC)",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "confirm",
       "plan_domain": "A8 Messaging depth",
@@ -3838,9 +3967,12 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Video-call a member",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "confirm",
       "plan_domain": "A8 Messaging depth",
@@ -4018,9 +4150,12 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Create a community event",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "confirm",
       "plan_domain": "A10 Events & Tickets",
@@ -4033,9 +4168,12 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Edit my event",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "write",
       "plan_domain": "A10 Events & Tickets",
@@ -4048,9 +4186,12 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Cancel my event",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "confirm",
       "plan_domain": "A10 Events & Tickets",
@@ -4063,9 +4204,12 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Create a meetup",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "confirm",
       "plan_domain": "A10 Events & Tickets",
@@ -4078,9 +4222,12 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Edit my meetup",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "write",
       "plan_domain": "A10 Events & Tickets",
@@ -4093,9 +4240,12 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Invite contacts/members",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "write",
       "plan_domain": "A10 Events & Tickets",
@@ -4108,9 +4258,12 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Purchase a ticket",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "confirm",
       "plan_domain": "A10 Events & Tickets",
@@ -4123,9 +4276,12 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "My event tickets",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "read",
       "plan_domain": "A10 Events & Tickets",
@@ -4138,9 +4294,12 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Share event link",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "write",
       "plan_domain": "A10 Events & Tickets",
@@ -4153,9 +4312,12 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Who's coming (organizer view)",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "read",
       "plan_domain": "A10 Events & Tickets",
@@ -4168,9 +4330,12 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Log nutrition/meal",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "write",
       "plan_domain": "A11 Health depth",
@@ -4183,9 +4348,12 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Log BP/HR/weight etc.",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "write",
       "plan_domain": "A11 Health depth",
@@ -4198,9 +4366,12 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Log mental-health check-in",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "write",
       "plan_domain": "A11 Health depth",
@@ -4213,9 +4384,12 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Record a lab value",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "write",
       "plan_domain": "A11 Health depth",
@@ -4228,9 +4402,12 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Trends across trackers",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "read",
       "plan_domain": "A11 Health depth",
@@ -4243,9 +4420,12 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Vitana streaks",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "read",
       "plan_domain": "A11 Health depth",
@@ -4258,9 +4438,12 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Order a lab test",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "confirm",
       "plan_domain": "A11 Health depth",
@@ -4273,9 +4456,12 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Read biomarker/lab results",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "read",
       "plan_domain": "A11 Health depth",
@@ -4288,9 +4474,12 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Run plan-generator wizard",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "confirm",
       "plan_domain": "A11 Health depth",
@@ -4303,9 +4492,12 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Active plans",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "read",
       "plan_domain": "A11 Health depth",
@@ -4318,9 +4510,12 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Plan adherence",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "read",
       "plan_domain": "A11 Health depth",
@@ -4333,9 +4528,12 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Conditions & risks",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "read",
       "plan_domain": "A11 Health depth",
@@ -4348,9 +4546,12 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Education resources on a topic",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "read",
       "plan_domain": "A11 Health depth",
@@ -4363,9 +4564,12 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Today's next best health action",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "read",
       "plan_domain": "A11 Health depth",
@@ -4378,9 +4582,12 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Start device pairing (navigates)",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "confirm",
       "plan_domain": "A11 Health depth",
