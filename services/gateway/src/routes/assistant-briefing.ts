@@ -3,8 +3,9 @@
  *
  *   GET /api/v1/assistant/briefing/developer
  *       — platform briefing for the developer assistant lane.
- *       Auth: Bearer JWT; caller must be exafy_admin OR have active_role
- *       developer/admin in their tenant (mirror of developerGate()).
+ *       Auth: requireAuth (Bearer JWT) + role gate: caller must be
+ *       exafy_admin OR have active_role developer/admin in their tenant
+ *       (mirror of developerGate()).
  *       Query: ?since=<ISO> (last-session time; default 24 h window).
  *
  *   GET /api/v1/assistant/briefing/admin/:tenantId
@@ -15,11 +16,12 @@
  *
  * Responses are the shared BriefingEnvelope, plus `rendered` (the prompt
  * block) so callers that inject into a system instruction don't re-render.
+ * Payloads are developer/admin-facing operational data — English by design.
  */
 
 import { Router, type Response } from 'express';
 import {
-  verifyAndExtractIdentity,
+  requireAuth,
   type AuthenticatedRequest,
 } from '../middleware/auth-supabase-jwt';
 import { requireTenantAdmin } from '../middleware/require-tenant-admin';
@@ -44,17 +46,12 @@ function parseSince(raw: unknown): string | null {
   return Number.isFinite(t) ? new Date(t).toISOString() : null;
 }
 
-router.get('/developer', async (req: AuthenticatedRequest, res: Response) => {
+router.get('/developer', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    const identity = req.identity;
+    if (!identity) {
       return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
     }
-    const verified = await verifyAndExtractIdentity(authHeader.slice(7));
-    if (!verified) {
-      return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
-    }
-    const identity = verified.identity;
 
     let allowed = identity.exafy_admin === true;
     if (!allowed && identity.tenant_id) {
