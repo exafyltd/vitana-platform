@@ -78,22 +78,18 @@ router.get('/developer', requireAuth, async (req: AuthenticatedRequest, res: Res
   }
 });
 
-router.get(
-  '/admin/:tenantId',
-  requireTenantAdmin,
-  async (req: AuthenticatedRequest, res: Response) => {
-    try {
-      const tenantId = String(req.params.tenantId || '').trim();
-      if (!tenantId) {
-        return res.status(400).json({ ok: false, error: 'tenant_id_required' });
-      }
-      const envelope = await buildAdminBriefing(tenantId, parseSince(req.query.since));
-      return res.json({ ...envelope, rendered: renderAdminBriefingBlock(envelope) });
-    } catch (err: any) {
-      console.error('[assistant-briefing] admin briefing failed:', err?.message || err);
-      return res.status(500).json({ ok: false, error: 'briefing_failed' });
+router.get('/admin/:tenantId', requireTenantAdmin, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const tenantId = String(req.params.tenantId || '').trim();
+    if (!tenantId) {
+      return res.status(400).json({ ok: false, error: 'tenant_id_required' });
     }
-  },
-);
+    const envelope = await buildAdminBriefing(tenantId, parseSince(req.query.since));
+    return res.json({ ...envelope, rendered: renderAdminBriefingBlock(envelope) });
+  } catch (err: any) {
+    console.error('[assistant-briefing] admin briefing failed:', err?.message || err);
+    return res.status(500).json({ ok: false, error: 'briefing_failed' });
+  }
+});
 
 export default router;
