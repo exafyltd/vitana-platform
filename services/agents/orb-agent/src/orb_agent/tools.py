@@ -2826,6 +2826,744 @@ async def dev_list_agents(context: RunContext, tier: str | None = None) -> str:
 
 
 # ---------------------------------------------------------------------------
+# BOOTSTRAP-VOICE-TOOLS-CATALOG-WAVE1 — 69 new voice tools built out from six
+# gateway handler modules (services/gateway/src/services/orb-tools/*.ts),
+# reached through the shared dispatcher exactly like the tools above. All use
+# _dispatch_with_directive since several of these (navigation redirects to
+# cart/checkout/product/event screens) can carry a `directive` payload.
+# ---------------------------------------------------------------------------
+
+
+# --- A1 Marketplace & Discovery (16) ---------------------------------------
+
+
+@function_tool
+async def search_marketplace(context: RunContext, q: str | None = None, category: str | None = None, price_min_cents: float | None = None, price_max_cents: float | None = None, limit: float | None = None) -> str:
+    """Search the Maxina marketplace for products by free-text query, category, or price range."""
+    body = await _dispatch_with_directive(context, "search_marketplace", {
+            "q": q,
+            "category": category,
+            "price_min_cents": price_min_cents,
+            "price_max_cents": price_max_cents,
+            "limit": limit,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def get_product_details(context: RunContext, product_id: str | None = None, query: str | None = None) -> str:
+    """Get details for one marketplace product by id or by spoken name."""
+    body = await _dispatch_with_directive(context, "get_product_details", {
+            "product_id": product_id,
+            "query": query,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def browse_supplements(context: RunContext, limit: float | None = None) -> str:
+    """Browse the marketplace supplements shop (not the personal supplement tracker)."""
+    body = await _dispatch_with_directive(context, "browse_supplements", {
+            "limit": limit,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def add_supplement_to_regimen(context: RunContext, name: str | None = None) -> str:
+    """NOT CURRENTLY AVAILABLE via voice — the personal supplement tracker has no gateway-side backing yet."""
+    body = await _dispatch_with_directive(context, "add_supplement_to_regimen", {
+            "name": name,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def list_my_supplements(context: RunContext) -> str:
+    """NOT CURRENTLY AVAILABLE via voice — always returns an error."""
+    body = await _dispatch_with_directive(context, "list_my_supplements")
+    return summarize(body)
+
+
+@function_tool
+async def remove_supplement_from_regimen(context: RunContext, name: str | None = None) -> str:
+    """NOT CURRENTLY AVAILABLE via voice — always returns an error."""
+    body = await _dispatch_with_directive(context, "remove_supplement_from_regimen", {
+            "name": name,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def browse_wellness_services(context: RunContext, limit: float | None = None) -> str:
+    """Browse wellness/nutrition/fitness/therapy/lab services listed in the marketplace."""
+    body = await _dispatch_with_directive(context, "browse_wellness_services", {
+            "limit": limit,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def get_provider_profile(context: RunContext, provider_id: str | None = None, query: str | None = None) -> str:
+    """Get one service/provider listing by id or spoken name (doctor, coach, wellness provider, etc)."""
+    body = await _dispatch_with_directive(context, "get_provider_profile", {
+            "provider_id": provider_id,
+            "query": query,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def browse_doctors_coaches(context: RunContext, limit: float | None = None) -> str:
+    """Browse doctors and coaches listed in the marketplace."""
+    body = await _dispatch_with_directive(context, "browse_doctors_coaches", {
+            "limit": limit,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def get_coach_compatibility(context: RunContext, provider_id: str | None = None) -> str:
+    """NOT CURRENTLY AVAILABLE via voice — no compatibility-scoring system exists yet."""
+    body = await _dispatch_with_directive(context, "get_coach_compatibility", {
+            "provider_id": provider_id,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def browse_deals_offers(context: RunContext, limit: float | None = None) -> str:
+    """Browse marketplace products currently on sale (discounted vs. their reference price)."""
+    body = await _dispatch_with_directive(context, "browse_deals_offers", {
+            "limit": limit,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def apply_discount_code(context: RunContext, code: str | None = None) -> str:
+    """NOT CURRENTLY AVAILABLE via voice — the discount-code system has no gateway-side backing yet."""
+    body = await _dispatch_with_directive(context, "apply_discount_code", {
+            "code": code,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def get_ai_product_picks(context: RunContext, prompt: str, max_items: float | None = None) -> str:
+    """Have the Vitana shopping agent propose marketplace products for a goal or need and stage them in the cart."""
+    body = await _dispatch_with_directive(context, "get_ai_product_picks", {
+            "prompt": prompt,
+            "max_items": max_items,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def list_my_orders(context: RunContext, limit: float | None = None) -> str:
+    """List the user's recent marketplace orders with status and amount."""
+    body = await _dispatch_with_directive(context, "list_my_orders", {
+            "limit": limit,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def get_order_status(context: RunContext, order_id: str | None = None) -> str:
+    """Check the status of one order by id, or the most recent order if no id is given."""
+    body = await _dispatch_with_directive(context, "get_order_status", {
+            "order_id": order_id,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def reorder_last_order(context: RunContext, confirm: bool | None = None) -> str:
+    """Add the user's most recent (still-available) purchase back to the cart. Call once without confirm first."""
+    body = await _dispatch_with_directive(context, "reorder_last_order", {
+            "confirm": confirm,
+        })
+    return summarize(body)
+
+
+# --- A2 Cart & Checkout (8) -------------------------------------------------
+
+
+@function_tool
+async def add_to_cart(context: RunContext, product_id: str | None = None, query: str | None = None, quantity: float | None = None) -> str:
+    """Add a marketplace product to the user's cart, by product_id or fuzzy product name."""
+    body = await _dispatch_with_directive(context, "add_to_cart", {
+            "product_id": product_id,
+            "query": query,
+            "quantity": quantity,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def view_cart(context: RunContext) -> str:
+    """Read the contents of the user's cart: items, quantities, prices, and the total."""
+    body = await _dispatch_with_directive(context, "view_cart")
+    return summarize(body)
+
+
+@function_tool
+async def update_cart_item(context: RunContext, quantity: float, item_id: str | None = None, query: str | None = None) -> str:
+    """Change the quantity of an item already in the cart, by item_id or fuzzy product name."""
+    body = await _dispatch_with_directive(context, "update_cart_item", {
+            "item_id": item_id,
+            "query": query,
+            "quantity": quantity,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def remove_from_cart(context: RunContext, item_id: str | None = None, query: str | None = None) -> str:
+    """Remove a single item from the cart, by item_id or fuzzy product name."""
+    body = await _dispatch_with_directive(context, "remove_from_cart", {
+            "item_id": item_id,
+            "query": query,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def clear_cart(context: RunContext, confirm: bool | None = None) -> str:
+    """Remove ALL items from the cart. Call once without confirm first."""
+    body = await _dispatch_with_directive(context, "clear_cart", {
+            "confirm": confirm,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def set_shopping_budget(context: RunContext, monthly_cap_amount: float | None = None, clear: bool | None = None) -> str:
+    """Set or clear the user's monthly shopping budget cap (advisory only, never blocks purchases)."""
+    body = await _dispatch_with_directive(context, "set_shopping_budget", {
+            "monthly_cap_amount": monthly_cap_amount,
+            "clear": clear,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def review_agent_purchase_proposals(context: RunContext) -> str:
+    """List the items the shopping agent (autopilot) has proposed and placed into the user's cart for review."""
+    body = await _dispatch_with_directive(context, "review_agent_purchase_proposals")
+    return summarize(body)
+
+
+@function_tool
+async def start_checkout(context: RunContext, confirm: bool | None = None) -> str:
+    """Begin checkout for the user's cart. Call once without confirm first; never charges anything by voice."""
+    body = await _dispatch_with_directive(context, "start_checkout", {
+            "confirm": confirm,
+        })
+    return summarize(body)
+
+
+# --- A3 Wallet & Payments (11) ----------------------------------------------
+
+
+@function_tool
+async def get_wallet_summary(context: RunContext) -> str:
+    """READ-ONLY wallet snapshot: balance per currency, active subscription, and referral rewards."""
+    body = await _dispatch_with_directive(context, "get_wallet_summary")
+    return summarize(body)
+
+
+@function_tool
+async def list_wallet_transactions(context: RunContext, limit: float | None = None, currency: str | None = None, cursor: str | None = None) -> str:
+    """READ-ONLY: list the user's recent wallet transactions, newest first."""
+    body = await _dispatch_with_directive(context, "list_wallet_transactions", {
+            "limit": limit,
+            "currency": currency,
+            "cursor": cursor,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def send_funds(context: RunContext, recipient_name: str | None = None, recipient_user_id: str | None = None, amount: float | None = None, currency: str | None = None, confirm: bool | None = None) -> str:
+    """Send money from the user's wallet to another Vitana member (internal transfer only, never a card charge)."""
+    body = await _dispatch_with_directive(context, "send_funds", {
+            "recipient_name": recipient_name,
+            "recipient_user_id": recipient_user_id,
+            "amount": amount,
+            "currency": currency,
+            "confirm": confirm,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def request_payment(context: RunContext, recipient_name: str | None = None, amount: float | None = None, currency: str | None = None, description: str | None = None) -> str:
+    """NOT YET AVAILABLE — always returns an error explaining there is no backing endpoint for payment requests."""
+    body = await _dispatch_with_directive(context, "request_payment", {
+            "recipient_name": recipient_name,
+            "amount": amount,
+            "currency": currency,
+            "description": description,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def exchange_currency(context: RunContext, amount: float | None = None, from_currency: str | None = None, to_currency: str | None = None, confirm: bool | None = None) -> str:
+    """NOT YET AVAILABLE — always returns an error: the wallet has no cross-currency conversion RPC."""
+    body = await _dispatch_with_directive(context, "exchange_currency", {
+            "amount": amount,
+            "from_currency": from_currency,
+            "to_currency": to_currency,
+            "confirm": confirm,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def get_exchange_rate(context: RunContext, from_currency: str | None = None, to_currency: str | None = None) -> str:
+    """NOT YET AVAILABLE — always returns an error: no exchange-rate table/RPC is wired into the gateway."""
+    body = await _dispatch_with_directive(context, "get_exchange_rate", {
+            "from_currency": from_currency,
+            "to_currency": to_currency,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def set_display_currency(context: RunContext, currency: str | None = None) -> str:
+    """NOT YET AVAILABLE — always returns an error: the display-currency toggle is stored only in the browser."""
+    body = await _dispatch_with_directive(context, "set_display_currency", {
+            "currency": currency,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def get_referral_earnings(context: RunContext) -> str:
+    """READ-ONLY: total referral rewards earned (confirmed) and pending, from the user's reward ledger."""
+    body = await _dispatch_with_directive(context, "get_referral_earnings")
+    return summarize(body)
+
+
+@function_tool
+async def get_commissions_summary(context: RunContext) -> str:
+    """READ-ONLY: commissions earned this calendar month — total, confirmed, and still-pending amounts."""
+    body = await _dispatch_with_directive(context, "get_commissions_summary")
+    return summarize(body)
+
+
+@function_tool
+async def get_pending_rewards(context: RunContext) -> str:
+    """READ-ONLY: rewards awaiting merchant confirmation (not yet payable)."""
+    body = await _dispatch_with_directive(context, "get_pending_rewards")
+    return summarize(body)
+
+
+@function_tool
+async def list_payment_requests(context: RunContext, direction: str | None = None) -> str:
+    """NOT YET AVAILABLE — always returns an error: payment requests have no structured table to list from."""
+    body = await _dispatch_with_directive(context, "list_payment_requests", {
+            "direction": direction,
+        })
+    return summarize(body)
+
+
+# --- A8 Messaging Depth (9) --------------------------------------------------
+
+
+@function_tool
+async def send_group_chat_message(context: RunContext, message: str, group: str | None = None, group_id: str | None = None, confirmed: bool | None = None) -> str:
+    """Send a text message to a group chat the user is a member of (not a 1-to-1 DM). Call once without confirmed first."""
+    body = await _dispatch_with_directive(context, "send_group_chat_message", {
+            "group": group,
+            "group_id": group_id,
+            "message": message,
+            "confirmed": confirmed,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def reply_to_message(context: RunContext, message_id: str | None = None, message: str | None = None) -> str:
+    """NOT AVAILABLE YET — Vitana chat has no reply/quote-thread feature; always answers that it is unavailable."""
+    body = await _dispatch_with_directive(context, "reply_to_message", {
+            "message_id": message_id,
+            "message": message,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def react_to_message(context: RunContext, message_id: str, emoji: str, remove: bool | None = None) -> str:
+    """Add (or remove) an emoji reaction on a chat message — one of the six supported emoji only."""
+    body = await _dispatch_with_directive(context, "react_to_message", {
+            "message_id": message_id,
+            "emoji": emoji,
+            "remove": remove,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def create_group_chat(context: RunContext, name: str, description: str | None = None, members: list[str] | None = None, confirm: bool | None = None) -> str:
+    """Create a new group chat, optionally adding named members immediately. Call once without confirm first."""
+    body = await _dispatch_with_directive(context, "create_group_chat", {
+            "name": name,
+            "description": description,
+            "members": members,
+            "confirm": confirm,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def add_group_chat_member(context: RunContext, group: str | None = None, group_id: str | None = None, member: str | None = None, member_user_id: str | None = None) -> str:
+    """Add a community member to a group chat the user already belongs to."""
+    body = await _dispatch_with_directive(context, "add_group_chat_member", {
+            "group": group,
+            "group_id": group_id,
+            "member": member,
+            "member_user_id": member_user_id,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def leave_group_chat(context: RunContext, group: str | None = None, group_id: str | None = None, confirm: bool | None = None) -> str:
+    """Leave a group chat. Call once without confirm first."""
+    body = await _dispatch_with_directive(context, "leave_group_chat", {
+            "group": group,
+            "group_id": group_id,
+            "confirm": confirm,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def send_calendar_invite_in_chat(context: RunContext, member: str | None = None, member_user_id: str | None = None, event: str | None = None, event_id: str | None = None, confirmed: bool | None = None) -> str:
+    """Share one of the user's own upcoming calendar events with a community member via direct message."""
+    body = await _dispatch_with_directive(context, "send_calendar_invite_in_chat", {
+            "member": member,
+            "member_user_id": member_user_id,
+            "event": event,
+            "event_id": event_id,
+            "confirmed": confirmed,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def start_voice_call(context: RunContext, member: str | None = None, member_user_id: str | None = None, confirmed: bool | None = None) -> str:
+    """Send another community member a request to start a voice call — Vitana cannot place a live call from voice."""
+    body = await _dispatch_with_directive(context, "start_voice_call", {
+            "member": member,
+            "member_user_id": member_user_id,
+            "confirmed": confirmed,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def start_video_call(context: RunContext, member: str | None = None, member_user_id: str | None = None, confirmed: bool | None = None) -> str:
+    """Send another community member a request to start a video call — Vitana cannot place a live call from voice."""
+    body = await _dispatch_with_directive(context, "start_video_call", {
+            "member": member,
+            "member_user_id": member_user_id,
+            "confirmed": confirmed,
+        })
+    return summarize(body)
+
+
+# --- A10 Events & Tickets (10) -----------------------------------------------
+
+
+@function_tool
+async def create_event(context: RunContext, title: str, start_time: str, description: str | None = None, location: str | None = None, virtual_link: str | None = None, end_time: str | None = None, max_participants: float | None = None, image_url: str | None = None, confirm: bool | None = None) -> str:
+    """Create a new ticketed/community event. Requires a title and start_time. Call once without confirm first."""
+    body = await _dispatch_with_directive(context, "create_event", {
+            "title": title,
+            "description": description,
+            "location": location,
+            "virtual_link": virtual_link,
+            "start_time": start_time,
+            "end_time": end_time,
+            "max_participants": max_participants,
+            "image_url": image_url,
+            "confirm": confirm,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def update_my_event(context: RunContext, query: str | None = None, event_id: str | None = None, title: str | None = None, description: str | None = None, location: str | None = None, virtual_link: str | None = None, start_time: str | None = None, end_time: str | None = None, max_participants: float | None = None, image_url: str | None = None) -> str:
+    """Edit one of the user's own upcoming events. Only the creator can edit, and only before it starts."""
+    body = await _dispatch_with_directive(context, "update_my_event", {
+            "query": query,
+            "event_id": event_id,
+            "title": title,
+            "description": description,
+            "location": location,
+            "virtual_link": virtual_link,
+            "start_time": start_time,
+            "end_time": end_time,
+            "max_participants": max_participants,
+            "image_url": image_url,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def cancel_my_event(context: RunContext, query: str | None = None, event_id: str | None = None, confirm: bool | None = None) -> str:
+    """Cancel (delete) one of the user's own upcoming events. Call once without confirm first."""
+    body = await _dispatch_with_directive(context, "cancel_my_event", {
+            "query": query,
+            "event_id": event_id,
+            "confirm": confirm,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def create_meetup(context: RunContext, title: str, start_time: str, description: str | None = None, location: str | None = None, virtual_link: str | None = None, end_time: str | None = None, max_participants: float | None = None, image_url: str | None = None, confirm: bool | None = None) -> str:
+    """Create a new casual community meetup. Requires a title and start_time. Call once without confirm first."""
+    body = await _dispatch_with_directive(context, "create_meetup", {
+            "title": title,
+            "description": description,
+            "location": location,
+            "virtual_link": virtual_link,
+            "start_time": start_time,
+            "end_time": end_time,
+            "max_participants": max_participants,
+            "image_url": image_url,
+            "confirm": confirm,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def update_my_meetup(context: RunContext, query: str | None = None, event_id: str | None = None, title: str | None = None, description: str | None = None, location: str | None = None, virtual_link: str | None = None, start_time: str | None = None, end_time: str | None = None, max_participants: float | None = None, image_url: str | None = None) -> str:
+    """Edit one of the user's own upcoming meetups. Only the creator can edit, and only before it starts."""
+    body = await _dispatch_with_directive(context, "update_my_meetup", {
+            "query": query,
+            "event_id": event_id,
+            "title": title,
+            "description": description,
+            "location": location,
+            "virtual_link": virtual_link,
+            "start_time": start_time,
+            "end_time": end_time,
+            "max_participants": max_participants,
+            "image_url": image_url,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def invite_to_event(context: RunContext, event: str | None = None, event_id: str | None = None, member_name: str | None = None, member_user_id: str | None = None) -> str:
+    """Invite a community member to an event or meetup by spoken name."""
+    body = await _dispatch_with_directive(context, "invite_to_event", {
+            "event": event,
+            "event_id": event_id,
+            "member_name": member_name,
+            "member_user_id": member_user_id,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def buy_event_ticket(context: RunContext, event: str | None = None, event_id: str | None = None, ticket_name: str | None = None, ticket_type_id: str | None = None, quantity: float | None = None, confirm: bool | None = None) -> str:
+    """Buy a ticket for an event. Checks availability/price, then call once without confirm first."""
+    body = await _dispatch_with_directive(context, "buy_event_ticket", {
+            "event": event,
+            "event_id": event_id,
+            "ticket_name": ticket_name,
+            "ticket_type_id": ticket_type_id,
+            "quantity": quantity,
+            "confirm": confirm,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def list_my_event_tickets(context: RunContext) -> str:
+    """List the user's own purchased (completed) event tickets."""
+    body = await _dispatch_with_directive(context, "list_my_event_tickets")
+    return summarize(body)
+
+
+@function_tool
+async def share_event(context: RunContext, query: str | None = None, event_id: str | None = None) -> str:
+    """Get a shareable public link for an event or meetup."""
+    body = await _dispatch_with_directive(context, "share_event", {
+            "query": query,
+            "event_id": event_id,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def get_event_attendees(context: RunContext, query: str | None = None, event_id: str | None = None) -> str:
+    """List who has RSVP'd to one of the user's OWN events (organizer view only)."""
+    body = await _dispatch_with_directive(context, "get_event_attendees", {
+            "query": query,
+            "event_id": event_id,
+        })
+    return summarize(body)
+
+
+# --- A11 Health Depth (15) ---------------------------------------------------
+
+
+@function_tool
+async def log_meal(context: RunContext, description: str | None = None, meal_type: str | None = None, calories: float | None = None, date: str | None = None) -> str:
+    """Log a meal (breakfast/lunch/dinner/snack) toward the nutrition pillar."""
+    body = await _dispatch_with_directive(context, "log_meal", {
+            "description": description,
+            "meal_type": meal_type,
+            "calories": calories,
+            "date": date,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def log_vitals(context: RunContext, heart_rate: float | None = None, weight_kg: float | None = None, systolic: float | None = None, diastolic: float | None = None, date: str | None = None) -> str:
+    """Log vitals: heart rate, weight, and/or blood pressure. Pass any subset."""
+    body = await _dispatch_with_directive(context, "log_vitals", {
+            "heart_rate": heart_rate,
+            "weight_kg": weight_kg,
+            "systolic": systolic,
+            "diastolic": diastolic,
+            "date": date,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def log_mood(context: RunContext, mood_score: float | None = None, mood_label: str | None = None, notes: str | None = None, date: str | None = None) -> str:
+    """Log a mental-health / mood check-in (1-5 scale, or a mood word)."""
+    body = await _dispatch_with_directive(context, "log_mood", {
+            "mood_score": mood_score,
+            "mood_label": mood_label,
+            "notes": notes,
+            "date": date,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def log_biomarker(context: RunContext, name: str, value: float, unit: str | None = None, biomarker_code: str | None = None, ref_range_low: float | None = None, ref_range_high: float | None = None, status: str | None = None, measured_at: str | None = None) -> str:
+    """Record a single lab/biomarker value the user reports out loud, creating a lab report entry."""
+    body = await _dispatch_with_directive(context, "log_biomarker", {
+            "name": name,
+            "value": value,
+            "unit": unit,
+            "biomarker_code": biomarker_code,
+            "ref_range_low": ref_range_low,
+            "ref_range_high": ref_range_high,
+            "status": status,
+            "measured_at": measured_at,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def get_health_trends(context: RunContext, days: float | None = None) -> str:
+    """Get the Vitana Index trend (total + per-pillar) over a recent window."""
+    body = await _dispatch_with_directive(context, "get_health_trends", {
+            "days": days,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def get_health_streaks(context: RunContext) -> str:
+    """Get the user's diary streak and per-pillar Vitana Index streaks."""
+    body = await _dispatch_with_directive(context, "get_health_streaks")
+    return summarize(body)
+
+
+@function_tool
+async def order_lab_test(context: RunContext, test_name: str | None = None) -> str:
+    """Order a lab test. NOT AVAILABLE YET — always returns an error explaining there is no ordering backend."""
+    body = await _dispatch_with_directive(context, "order_lab_test", {
+            "test_name": test_name,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def get_lab_results(context: RunContext, biomarker: str | None = None, limit: float | None = None) -> str:
+    """Read the user's recorded lab/biomarker results, most recent first."""
+    body = await _dispatch_with_directive(context, "get_lab_results", {
+            "biomarker": biomarker,
+            "limit": limit,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def generate_health_plan(context: RunContext, plan_type: str | None = None, confirm: bool | None = None) -> str:
+    """Create a starter health plan (template-based, not AI-personalized) for a pillar. Call once without confirm first."""
+    body = await _dispatch_with_directive(context, "generate_health_plan", {
+            "plan_type": plan_type,
+            "confirm": confirm,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def list_my_health_plans(context: RunContext) -> str:
+    """List the user's active health plans with adherence scores."""
+    body = await _dispatch_with_directive(context, "list_my_health_plans")
+    return summarize(body)
+
+
+@function_tool
+async def get_health_plan_progress(context: RunContext, plan_type: str | None = None, plan_id: str | None = None) -> str:
+    """Get adherence/progress for a specific active health plan."""
+    body = await _dispatch_with_directive(context, "get_health_plan_progress", {
+            "plan_type": plan_type,
+            "plan_id": plan_id,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def list_my_conditions(context: RunContext) -> str:
+    """List the user's recorded health conditions, allergies, medications, and dietary restrictions."""
+    body = await _dispatch_with_directive(context, "list_my_conditions")
+    return summarize(body)
+
+
+@function_tool
+async def get_health_education(context: RunContext, topic: str) -> str:
+    """Get grounded educational content on a health/longevity topic from the knowledge hub."""
+    body = await _dispatch_with_directive(context, "get_health_education", {
+            "topic": topic,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def get_next_best_action(context: RunContext) -> str:
+    """Get today's single highest-priority recommended health action."""
+    body = await _dispatch_with_directive(context, "get_next_best_action")
+    return summarize(body)
+
+
+@function_tool
+async def connect_health_device(context: RunContext, device_name: str | None = None) -> str:
+    """Start pairing a wearable/health device. Opens the health tracker screen where device connections are managed."""
+    body = await _dispatch_with_directive(context, "connect_health_device", {
+            "device_name": device_name,
+        })
+    return summarize(body)
+
+
+# ---------------------------------------------------------------------------
 # Catalogue export — used by tests + libcst smoke
 # ---------------------------------------------------------------------------
 
@@ -2953,6 +3691,40 @@ def all_tool_names() -> list[str]:
         "follow_member", "unfollow_member", "get_notifications",
         "mark_notifications_read", "get_wallet_balance", "update_profile",
         "play_podcast", "like_post", "comment_on_post",
+        # BOOTSTRAP-VOICE-TOOLS-CATALOG-WAVE1 — 69 tools from six new gateway
+        # handler modules (services/gateway/src/services/orb-tools/*.ts).
+        # A1 Marketplace & Discovery (16)
+        "search_marketplace", "get_product_details", "browse_supplements",
+        "add_supplement_to_regimen", "list_my_supplements",
+        "remove_supplement_from_regimen", "browse_wellness_services",
+        "get_provider_profile", "browse_doctors_coaches",
+        "get_coach_compatibility", "browse_deals_offers", "apply_discount_code",
+        "get_ai_product_picks", "list_my_orders", "get_order_status",
+        "reorder_last_order",
+        # A2 Cart & Checkout (8)
+        "add_to_cart", "view_cart", "update_cart_item", "remove_from_cart",
+        "clear_cart", "set_shopping_budget", "review_agent_purchase_proposals",
+        "start_checkout",
+        # A3 Wallet & Payments (11)
+        "get_wallet_summary", "list_wallet_transactions", "send_funds",
+        "request_payment", "exchange_currency", "get_exchange_rate",
+        "set_display_currency", "get_referral_earnings",
+        "get_commissions_summary", "get_pending_rewards",
+        "list_payment_requests",
+        # A8 Messaging Depth (9)
+        "send_group_chat_message", "reply_to_message", "react_to_message",
+        "create_group_chat", "add_group_chat_member", "leave_group_chat",
+        "send_calendar_invite_in_chat", "start_voice_call", "start_video_call",
+        # A10 Events & Tickets (10)
+        "create_event", "update_my_event", "cancel_my_event", "create_meetup",
+        "update_my_meetup", "invite_to_event", "buy_event_ticket",
+        "list_my_event_tickets", "share_event", "get_event_attendees",
+        # A11 Health Depth (15)
+        "log_meal", "log_vitals", "log_mood", "log_biomarker",
+        "get_health_trends", "get_health_streaks", "order_lab_test",
+        "get_lab_results", "generate_health_plan", "list_my_health_plans",
+        "get_health_plan_progress", "list_my_conditions",
+        "get_health_education", "get_next_best_action", "connect_health_device",
     ]
 
 

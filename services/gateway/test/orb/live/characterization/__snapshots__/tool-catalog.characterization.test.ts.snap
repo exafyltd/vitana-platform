@@ -4525,6 +4525,1610 @@ CALL THIS for: "Comment on Anna's post: great work" /
         },
       },
       {
+        "description": "Search the Maxina marketplace for products by free-text query, category,
+or price range. CALL WHEN the user says: "search the marketplace for ...",
+"find me some ...", "durchsuche den Marktplatz nach ...".
+Read the top results (name, price, rating) aloud.",
+        "name": "search_marketplace",
+        "parameters": {
+          "properties": {
+            "category": {
+              "description": "Exact product category (e.g. "supplements").",
+              "type": "string",
+            },
+            "limit": {
+              "description": "Max results to return (default 5, max 10).",
+              "type": "number",
+            },
+            "price_max_cents": {
+              "description": "Maximum price in cents.",
+              "type": "number",
+            },
+            "price_min_cents": {
+              "description": "Minimum price in cents.",
+              "type": "number",
+            },
+            "q": {
+              "description": "Free-text search query.",
+              "type": "string",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Get details for one marketplace product by id or by spoken name.
+CALL WHEN the user asks: "tell me about ...", "what is ... exactly",
+"erzähl mir mehr über ...".",
+        "name": "get_product_details",
+        "parameters": {
+          "properties": {
+            "product_id": {
+              "description": "Exact product UUID when known from a previous tool result.",
+              "type": "string",
+            },
+            "query": {
+              "description": "Spoken product name (fuzzy matched).",
+              "type": "string",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Browse the marketplace supplements shop (NOT the personal supplement
+tracker — that is unavailable via voice today).
+CALL WHEN the user says: "show me supplements", "what supplements do you
+have", "zeig mir Nahrungsergänzungsmittel".",
+        "name": "browse_supplements",
+        "parameters": {
+          "properties": {
+            "limit": {
+              "description": "Max results (default 8, max 10).",
+              "type": "number",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "NOT CURRENTLY AVAILABLE via voice — always returns an error explaining the personal supplement tracker has no gateway-side backing yet. Do not call unless the user explicitly asks to add a supplement to their personal regimen/tracker, then relay the unavailability honestly.",
+        "name": "add_supplement_to_regimen",
+        "parameters": {
+          "properties": {
+            "name": {
+              "description": "Supplement name.",
+              "type": "string",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "NOT CURRENTLY AVAILABLE via voice — always returns an error. Do not call unless the user explicitly asks to hear their personal supplement list, then relay the unavailability honestly.",
+        "name": "list_my_supplements",
+        "parameters": {
+          "properties": {},
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "NOT CURRENTLY AVAILABLE via voice — always returns an error. Do not call unless the user explicitly asks to remove a supplement from their personal regimen, then relay the unavailability honestly.",
+        "name": "remove_supplement_from_regimen",
+        "parameters": {
+          "properties": {
+            "name": {
+              "description": "Supplement name.",
+              "type": "string",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Browse wellness/nutrition/fitness/therapy/lab services listed in the
+Maxina marketplace. CALL WHEN the user asks about wellness services,
+massage, spa, recovery, or treatments — "Wellness-Services".",
+        "name": "browse_wellness_services",
+        "parameters": {
+          "properties": {
+            "limit": {
+              "description": "Max results (default 8, max 10).",
+              "type": "number",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Get one service/provider listing by id or spoken name (doctor, coach,
+wellness provider, etc). CALL WHEN the user asks about a specific
+provider or practitioner by name.",
+        "name": "get_provider_profile",
+        "parameters": {
+          "properties": {
+            "provider_id": {
+              "description": "Exact service/provider UUID when known.",
+              "type": "string",
+            },
+            "query": {
+              "description": "Spoken provider or service name (fuzzy matched).",
+              "type": "string",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Browse doctors and coaches listed in the marketplace. CALL WHEN the user
+asks to find a doctor, coach, practitioner, or specialist — "Ärzte &
+Coaches".",
+        "name": "browse_doctors_coaches",
+        "parameters": {
+          "properties": {
+            "limit": {
+              "description": "Max results (default 8, max 10).",
+              "type": "number",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "NOT CURRENTLY AVAILABLE via voice — always returns an error, since no compatibility-scoring system exists yet. Do not fabricate a score; relay the unavailability honestly if asked.",
+        "name": "get_coach_compatibility",
+        "parameters": {
+          "properties": {
+            "provider_id": {
+              "description": "Coach/provider UUID.",
+              "type": "string",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Browse marketplace products currently on sale (discounted vs. their
+reference price). CALL WHEN the user asks about deals, discounts,
+offers, promotions, or "what is on sale" — "Angebote & Deals".",
+        "name": "browse_deals_offers",
+        "parameters": {
+          "properties": {
+            "limit": {
+              "description": "Max results (default 8, max 10).",
+              "type": "number",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "NOT CURRENTLY AVAILABLE via voice — always returns an error, since the discount-code system has no gateway-side backing yet. Do not call unless the user explicitly asks to apply a promo code, then relay the unavailability honestly.",
+        "name": "apply_discount_code",
+        "parameters": {
+          "properties": {
+            "code": {
+              "description": "The discount/promo code.",
+              "type": "string",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Have the Vitana shopping agent propose marketplace products for a goal
+or need, filtered against the user's health/dietary/budget profile, and
+add them to the cart for review (NEVER charges anything).
+CALL WHEN the user says: "find me something for ...", "what should I take
+for ...", "shop for ... for me", "kauf mir etwas gegen ...".
+After the tool runs, read the picks + rationale aloud and tell the user
+to confirm payment on screen — never say payment completed.",
+        "name": "get_ai_product_picks",
+        "parameters": {
+          "properties": {
+            "max_items": {
+              "description": "Max picks to propose (default 4, max 6).",
+              "type": "number",
+            },
+            "prompt": {
+              "description": "What the user wants help finding/shopping for.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "prompt",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "List the user's recent marketplace orders with status and amount.
+CALL WHEN the user asks: "what have I ordered", "show my orders",
+"zeig mir meine Bestellungen".",
+        "name": "list_my_orders",
+        "parameters": {
+          "properties": {
+            "limit": {
+              "description": "Max orders to return (default 10, max 20).",
+              "type": "number",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Check the status of one order by id, or the most recent order if no id
+is given. CALL WHEN the user asks: "where is my order", "track my order",
+"wo ist meine Bestellung".",
+        "name": "get_order_status",
+        "parameters": {
+          "properties": {
+            "order_id": {
+              "description": "Exact order UUID when known.",
+              "type": "string",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Add the user's most recent (still-available) purchase back to the cart.
+ALWAYS call once WITHOUT confirm first — the tool returns a confirmation
+question; after the user says yes, call again with confirm:true. NEVER
+charges anything — only stages the cart.
+CALL WHEN the user says: "reorder my last order", "get me the same thing
+again", "bestelle das Gleiche nochmal".",
+        "name": "reorder_last_order",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "description": "Pass true ONLY after the user confirmed the reorder.",
+              "type": "boolean",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Add a marketplace product to the user's cart, by product_id or fuzzy
+product name. Bumps quantity if the product is already in the cart.
+CALL WHEN the user says: "add ... to my cart", "I want to buy ...",
+"lege ... in den Warenkorb", "ich möchte ... kaufen".
+If several products match, read the candidates and ask which one.",
+        "name": "add_to_cart",
+        "parameters": {
+          "properties": {
+            "product_id": {
+              "description": "Exact product UUID when already known from a previous tool result.",
+              "type": "string",
+            },
+            "quantity": {
+              "description": "How many to add. Defaults to 1.",
+              "type": "number",
+            },
+            "query": {
+              "description": "Spoken product name (fuzzy matched against the marketplace catalog).",
+              "type": "string",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Read the contents of the user's cart: items, quantities, prices, and
+the total. CALL WHEN the user asks: "what's in my cart?", "show my
+cart", "was ist in meinem Warenkorb?", "zeig mir meinen Warenkorb".
+Read the items and total aloud.",
+        "name": "view_cart",
+        "parameters": {
+          "properties": {},
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Change the quantity of an item already in the cart, by item_id or
+fuzzy product name. CALL WHEN the user says: "make it 2 of those",
+"change the quantity to ...", "ändere die Menge auf ...".
+If several items match, read the candidates and ask which one. Use
+remove_from_cart instead if the user wants to remove the item entirely.",
+        "name": "update_cart_item",
+        "parameters": {
+          "properties": {
+            "item_id": {
+              "description": "Exact cart item UUID when known from a previous tool result.",
+              "type": "string",
+            },
+            "quantity": {
+              "description": "The new quantity (must be positive).",
+              "type": "number",
+            },
+            "query": {
+              "description": "Spoken product name to find the cart line (fuzzy matched).",
+              "type": "string",
+            },
+          },
+          "required": [
+            "quantity",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Remove a single item from the cart, by item_id or fuzzy product name.
+CALL WHEN the user says: "remove ... from my cart", "take that out of
+my cart", "entferne ... aus dem Warenkorb".
+If several items match, read the candidates and ask which one.",
+        "name": "remove_from_cart",
+        "parameters": {
+          "properties": {
+            "item_id": {
+              "description": "Exact cart item UUID when known.",
+              "type": "string",
+            },
+            "query": {
+              "description": "Spoken product name to find the cart line (fuzzy matched).",
+              "type": "string",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Remove ALL items from the cart. ALWAYS call once WITHOUT confirm
+first — the tool returns a confirmation question listing what will be
+removed; after the user says yes, call again with confirm:true.
+CALL WHEN the user says: "clear my cart", "empty my cart", "remove
+everything", "leere meinen Warenkorb".",
+        "name": "clear_cart",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "description": "Pass true ONLY after the user confirmed clearing the cart.",
+              "type": "boolean",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Set or clear the user's monthly shopping budget cap, used as an
+advisory warning (never blocks purchases) when the cart plus this
+month's spending gets close to or exceeds it.
+CALL WHEN the user says: "set my monthly budget to ...", "limit my
+shopping to ... a month", "remove my budget", "setze mein monatliches
+Budget auf ...".",
+        "name": "set_shopping_budget",
+        "parameters": {
+          "properties": {
+            "clear": {
+              "description": "Pass true to remove the existing budget cap instead of setting one.",
+              "type": "boolean",
+            },
+            "monthly_cap_amount": {
+              "description": "Monthly cap in the user's major currency unit (e.g. 200 for 200 EUR).",
+              "type": "number",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "List the items the shopping agent (autopilot) has proposed and placed
+into the user's cart for review — each with its rationale, safety
+flags, and confidence. These are NOT yet purchased; the user can
+remove any with remove_from_cart or proceed with start_checkout.
+CALL WHEN the user asks: "what did the shopping agent pick for me?",
+"show my pending proposals", "was hat der Einkaufsassistent
+vorgeschlagen?".",
+        "name": "review_agent_purchase_proposals",
+        "parameters": {
+          "properties": {},
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Begin checkout for the user's cart. ALWAYS call once WITHOUT confirm
+first — the tool returns the cart total and asks for confirmation;
+after the user says yes, call again with confirm:true. This tool
+NEVER charges a card or completes payment by voice — it only
+validates the cart and navigates the user to the cart/checkout screen
+where THEY confirm payment themselves.
+CALL WHEN the user says: "check out", "let's pay for this", "go to
+checkout", "zur Kasse gehen", "ich möchte bezahlen".",
+        "name": "start_checkout",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "description": "Pass true ONLY after the user confirmed proceeding to checkout.",
+              "type": "boolean",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "READ-ONLY wallet snapshot: balance per currency, active subscription,
+lifetime + pending referral rewards, and recent activity.
+CALL WHEN the user asks: "give me my wallet summary", "how much do I have
+and how much have I earned", "wie steht es um mein Wallet".",
+        "name": "get_wallet_summary",
+        "parameters": {
+          "properties": {},
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "READ-ONLY: list the user's recent wallet transactions, newest first.
+Supports pagination via cursor (from a previous call's next_cursor).
+CALL WHEN the user asks: "show my transactions", "what did I spend
+recently", "zeig mir meine letzten Transaktionen".",
+        "name": "list_wallet_transactions",
+        "parameters": {
+          "properties": {
+            "currency": {
+              "description": "Optional: 'EUR' or 'USD' to filter to one currency.",
+              "type": "string",
+            },
+            "cursor": {
+              "description": "Pass the previous next_cursor to page further back.",
+              "type": "string",
+            },
+            "limit": {
+              "description": "How many to read out, 1-50. Uses 15 when omitted.",
+              "type": "number",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Send money from the user's wallet to another Vitana member (internal
+transfer only — never a card charge). ALWAYS call once WITHOUT confirm
+first — it resolves the recipient and previews the amount; after the user
+says yes, call again with confirm:true, recipient_user_id, amount and
+currency from the preview result.
+CALL WHEN the user says: "send Anna 20 euros", "transfer money to Peter",
+"schicke Anna 20 Euro".
+This is the ONLY tool that fully executes money movement by voice.",
+        "name": "send_funds",
+        "parameters": {
+          "properties": {
+            "amount": {
+              "description": "Amount in major currency units, e.g. 20 for 20.00.",
+              "type": "number",
+            },
+            "confirm": {
+              "description": "true ONLY after the user explicitly confirmed the preview.",
+              "type": "boolean",
+            },
+            "currency": {
+              "description": "'EUR' or 'USD'. Omit if the user has only one wallet currency.",
+              "type": "string",
+            },
+            "recipient_name": {
+              "description": "Spoken name of who to send money to.",
+              "type": "string",
+            },
+            "recipient_user_id": {
+              "description": "Exact recipient UUID once resolved from a previous call.",
+              "type": "string",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "NOT YET AVAILABLE — always returns an error explaining there is no
+backing endpoint for payment requests. Do not imply this worked; tell
+the user to send a payment request from the Wallet or Messages screen.",
+        "name": "request_payment",
+        "parameters": {
+          "properties": {
+            "amount": {
+              "description": "Amount requested, major currency units.",
+              "type": "number",
+            },
+            "currency": {
+              "description": "'EUR' or 'USD'.",
+              "type": "string",
+            },
+            "description": {
+              "description": "What the request is for.",
+              "type": "string",
+            },
+            "recipient_name": {
+              "description": "Spoken name of who the request would go to.",
+              "type": "string",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "NOT YET AVAILABLE — always returns an error: the wallet has no
+cross-currency conversion RPC. Do not imply this worked.",
+        "name": "exchange_currency",
+        "parameters": {
+          "properties": {
+            "amount": {
+              "description": "Amount to exchange.",
+              "type": "number",
+            },
+            "confirm": {
+              "description": "Not used — the tool is unavailable.",
+              "type": "boolean",
+            },
+            "from_currency": {
+              "description": "Source currency, e.g. 'EUR'.",
+              "type": "string",
+            },
+            "to_currency": {
+              "description": "Target currency, e.g. 'USD'.",
+              "type": "string",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "NOT YET AVAILABLE — always returns an error: no exchange-rate
+table/RPC is wired into the gateway.",
+        "name": "get_exchange_rate",
+        "parameters": {
+          "properties": {
+            "from_currency": {
+              "description": "e.g. 'EUR'.",
+              "type": "string",
+            },
+            "to_currency": {
+              "description": "e.g. 'USD'.",
+              "type": "string",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "NOT YET AVAILABLE — always returns an error: the display-currency toggle
+is stored only in the browser, not on any server-side record.",
+        "name": "set_display_currency",
+        "parameters": {
+          "properties": {
+            "currency": {
+              "description": "'EUR' or 'USD'.",
+              "type": "string",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "READ-ONLY: total referral rewards earned (confirmed) and pending, from
+the user's reward ledger.
+CALL WHEN the user asks: "how much have I earned from referrals",
+"was habe ich mit Empfehlungen verdient".",
+        "name": "get_referral_earnings",
+        "parameters": {
+          "properties": {},
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "READ-ONLY: commissions earned this calendar month — total, confirmed,
+and still-pending amounts.
+CALL WHEN the user asks: "what are my commissions this month",
+"wie viel Provision habe ich diesen Monat gemacht".",
+        "name": "get_commissions_summary",
+        "parameters": {
+          "properties": {},
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "READ-ONLY: rewards awaiting merchant confirmation (not yet payable).
+CALL WHEN the user asks: "do I have any pending rewards",
+"was ist noch ausstehend bei meinen Prämien".",
+        "name": "get_pending_rewards",
+        "parameters": {
+          "properties": {},
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "NOT YET AVAILABLE — always returns an error: payment requests have no
+structured table to list from.",
+        "name": "list_payment_requests",
+        "parameters": {
+          "properties": {
+            "direction": {
+              "description": "'incoming' or 'outgoing' — not used, tool is unavailable.",
+              "type": "string",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Send a text message to a group chat the user is a member of (not a 1-to-1 DM —
+use send_chat_message for that). ALWAYS call once WITHOUT confirmed first — the
+tool returns a preview; read it back and only call again with confirmed:true after
+explicit confirmation.
+CALL WHEN the user says: "message the running group", "tell everyone in Alle
+Beisammen ...", "schreib in die Gruppe ...".
+If several of the user's groups match, read the candidates and ask which one.",
+        "name": "send_group_chat_message",
+        "parameters": {
+          "properties": {
+            "confirmed": {
+              "description": "Pass true ONLY after the user confirmed the exact wording.",
+              "type": "boolean",
+            },
+            "group": {
+              "description": "Spoken group chat name (fuzzy matched among the user's own groups).",
+              "type": "string",
+            },
+            "group_id": {
+              "description": "Exact group UUID when already known.",
+              "type": "string",
+            },
+            "message": {
+              "description": "The message to send.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "message",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Reply to a specific earlier message. NOTE: Vitana chat has no reply/quote-thread
+feature yet — this tool always answers that it is unavailable. Relay that plainly
+and offer send_chat_message or send_group_chat_message instead, optionally quoting
+the original text inline in the new message.
+CALL WHEN the user says: "reply to that message", "antworte auf die Nachricht".",
+        "name": "reply_to_message",
+        "parameters": {
+          "properties": {
+            "message": {
+              "description": "The reply text the user wants to send.",
+              "type": "string",
+            },
+            "message_id": {
+              "description": "UUID of the message being replied to, if known.",
+              "type": "string",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Add (or remove) an emoji reaction on a chat message — one of 👍 ❤️ 😂 😮 🙏 🎉 only.
+Requires message_id from a previous tool result (e.g. from list_conversations or a
+group message read-back).
+CALL WHEN the user says: "react with a heart to that", "give that a thumbs up",
+"reagiere mit einem Herz darauf".
+Set remove:true to take the reaction back off.",
+        "name": "react_to_message",
+        "parameters": {
+          "properties": {
+            "emoji": {
+              "description": "One of: 👍 ❤️ 😂 😮 🙏 🎉",
+              "type": "string",
+            },
+            "message_id": {
+              "description": "UUID of the message to react to.",
+              "type": "string",
+            },
+            "remove": {
+              "description": "Pass true to remove a reaction the user previously added.",
+              "type": "boolean",
+            },
+          },
+          "required": [
+            "message_id",
+            "emoji",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Create a new group chat, optionally adding named members immediately. ALWAYS call
+once WITHOUT confirm first — the tool returns a confirmation question; after the
+user says yes, call again with confirm:true.
+CALL WHEN the user says: "create a group chat called ...", "start a new chat with
+me, Anna and Ben", "erstelle einen Gruppenchat ...".",
+        "name": "create_group_chat",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "description": "Pass true ONLY after the user confirmed the creation.",
+              "type": "boolean",
+            },
+            "description": {
+              "description": "Optional short description.",
+              "type": "string",
+            },
+            "members": {
+              "description": "Spoken names of members to add immediately (fuzzy resolved).",
+              "items": {
+                "type": "string",
+              },
+              "type": "array",
+            },
+            "name": {
+              "description": "The group chat name.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "name",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Add a community member to a group chat the user already belongs to.
+CALL WHEN the user says: "add Anna to the running group chat", "füge Anna dem
+Gruppenchat hinzu".
+If several of the user's groups or several matching members are found, ask which one.",
+        "name": "add_group_chat_member",
+        "parameters": {
+          "properties": {
+            "group": {
+              "description": "Spoken group chat name (fuzzy matched among the user's own groups).",
+              "type": "string",
+            },
+            "group_id": {
+              "description": "Exact group UUID when already known.",
+              "type": "string",
+            },
+            "member": {
+              "description": "Spoken name or Vitana ID of the member to add.",
+              "type": "string",
+            },
+            "member_user_id": {
+              "description": "UUID of the member if already resolved.",
+              "type": "string",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Leave a group chat. ALWAYS call once WITHOUT confirm first — the tool returns a
+confirmation question; after the user says yes, call again with the group_id and
+confirm:true.
+CALL WHEN the user says: "leave the running group chat", "verlasse den Gruppenchat
+...".",
+        "name": "leave_group_chat",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "description": "Pass true ONLY after the user confirmed leaving.",
+              "type": "boolean",
+            },
+            "group": {
+              "description": "Spoken group chat name (fuzzy matched among the user's own groups).",
+              "type": "string",
+            },
+            "group_id": {
+              "description": "Exact group UUID when already known.",
+              "type": "string",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Share one of the user's own upcoming calendar events with a community member via
+direct message. ALWAYS call once WITHOUT confirmed first — the tool returns a
+preview; after explicit confirmation call again with confirmed:true.
+CALL WHEN the user says: "send Anna the invite for my yoga session", "share my
+appointment with Ben", "schick Anna die Einladung zu meinem Termin".
+If several events or member matches are found, ask which one.",
+        "name": "send_calendar_invite_in_chat",
+        "parameters": {
+          "properties": {
+            "confirmed": {
+              "description": "Pass true ONLY after the user explicitly confirmed sending.",
+              "type": "boolean",
+            },
+            "event": {
+              "description": "Spoken event title (fuzzy matched against the user's own upcoming events).",
+              "type": "string",
+            },
+            "event_id": {
+              "description": "Exact calendar_events UUID when already known.",
+              "type": "string",
+            },
+            "member": {
+              "description": "Spoken name or Vitana ID of the recipient.",
+              "type": "string",
+            },
+            "member_user_id": {
+              "description": "UUID of the recipient if already resolved.",
+              "type": "string",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Send another community member a request to start a voice call. IMPORTANT: Vitana
+cannot place a live call from voice — calling only works client-side between two
+open apps. This tool sends a chat message + notification asking them to open the
+app; it never connects a call. ALWAYS call once WITHOUT confirmed first, then again
+with confirmed:true after explicit confirmation.
+CALL WHEN the user says: "call Anna", "start a voice call with Ben", "ruf Anna an".
+Afterwards, tell the user the request was sent and real-time calling needs both
+people in the app.",
+        "name": "start_voice_call",
+        "parameters": {
+          "properties": {
+            "confirmed": {
+              "description": "Pass true ONLY after the user explicitly confirmed sending the request.",
+              "type": "boolean",
+            },
+            "member": {
+              "description": "Spoken name or Vitana ID of the person to call.",
+              "type": "string",
+            },
+            "member_user_id": {
+              "description": "UUID of the member if already resolved.",
+              "type": "string",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Send another community member a request to start a video call. IMPORTANT: Vitana
+cannot place a live call from voice — calling only works client-side between two
+open apps. This tool sends a chat message + notification asking them to open the
+app; it never connects a call. ALWAYS call once WITHOUT confirmed first, then again
+with confirmed:true after explicit confirmation.
+CALL WHEN the user says: "video call Anna", "start a video chat with Ben", "starte
+einen Videoanruf mit Anna".
+Afterwards, tell the user the request was sent and real-time calling needs both
+people in the app.",
+        "name": "start_video_call",
+        "parameters": {
+          "properties": {
+            "confirmed": {
+              "description": "Pass true ONLY after the user explicitly confirmed sending the request.",
+              "type": "boolean",
+            },
+            "member": {
+              "description": "Spoken name or Vitana ID of the person to video call.",
+              "type": "string",
+            },
+            "member_user_id": {
+              "description": "UUID of the member if already resolved.",
+              "type": "string",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Create a new ticketed/community event. Requires a title and start_time.
+ALWAYS call once WITHOUT confirm first — the tool returns a
+confirmation question; after the user says yes, call again with
+confirm:true.
+CALL WHEN the user says: "create an event called ...", "schedule a new
+event", "erstelle ein Event ...", "plane eine neue Veranstaltung".",
+        "name": "create_event",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "description": "Pass true ONLY after the user confirmed the creation.",
+              "type": "boolean",
+            },
+            "description": {
+              "description": "Optional short event description.",
+              "type": "string",
+            },
+            "end_time": {
+              "description": "Optional ISO date/time the event ends.",
+              "type": "string",
+            },
+            "image_url": {
+              "description": "Optional cover image URL.",
+              "type": "string",
+            },
+            "location": {
+              "description": "Optional physical location.",
+              "type": "string",
+            },
+            "max_participants": {
+              "description": "Optional capacity cap.",
+              "type": "number",
+            },
+            "start_time": {
+              "description": "ISO date/time the event starts. Required.",
+              "type": "string",
+            },
+            "title": {
+              "description": "The event title.",
+              "type": "string",
+            },
+            "virtual_link": {
+              "description": "Optional virtual/streaming link.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "title",
+            "start_time",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Edit one of the user's own upcoming events (title, description,
+location, virtual_link, start_time, end_time, max_participants,
+image_url). Only the creator can edit, and only before it starts.
+CALL WHEN the user says: "change the time of my event ...", "update my
+event description", "ändere mein Event ...".",
+        "name": "update_my_event",
+        "parameters": {
+          "properties": {
+            "description": {
+              "description": "New description, if changing it.",
+              "type": "string",
+            },
+            "end_time": {
+              "description": "New ISO end_time, if changing it.",
+              "type": "string",
+            },
+            "event_id": {
+              "description": "Exact event UUID when known from a previous tool result.",
+              "type": "string",
+            },
+            "image_url": {
+              "description": "New cover image URL, if changing it.",
+              "type": "string",
+            },
+            "location": {
+              "description": "New location, if changing it.",
+              "type": "string",
+            },
+            "max_participants": {
+              "description": "New capacity cap, if changing it.",
+              "type": "number",
+            },
+            "query": {
+              "description": "Spoken title of the user's event (fuzzy matched).",
+              "type": "string",
+            },
+            "start_time": {
+              "description": "New ISO start_time, if changing it.",
+              "type": "string",
+            },
+            "title": {
+              "description": "New title, if changing it.",
+              "type": "string",
+            },
+            "virtual_link": {
+              "description": "New virtual link, if changing it.",
+              "type": "string",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Cancel (delete) one of the user's own upcoming events. ALWAYS call
+once WITHOUT confirm first — the tool returns a confirmation question;
+after the user says yes, call again with the event_id and confirm:true.
+CALL WHEN the user says: "cancel my event", "delete the ... event",
+"sage mein Event ... ab".",
+        "name": "cancel_my_event",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "description": "Pass true ONLY after the user confirmed the cancellation.",
+              "type": "boolean",
+            },
+            "event_id": {
+              "description": "Exact event UUID when known.",
+              "type": "string",
+            },
+            "query": {
+              "description": "Spoken title of the user's event (fuzzy matched).",
+              "type": "string",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Create a new casual community meetup (lighter-weight than a ticketed
+event). Requires a title and start_time. ALWAYS call once WITHOUT
+confirm first — the tool returns a confirmation question; after the
+user says yes, call again with confirm:true.
+CALL WHEN the user says: "create a meetup for ...", "start a walking
+meetup", "erstelle ein Meetup für ...".",
+        "name": "create_meetup",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "description": "Pass true ONLY after the user confirmed the creation.",
+              "type": "boolean",
+            },
+            "description": {
+              "description": "Optional short meetup description.",
+              "type": "string",
+            },
+            "end_time": {
+              "description": "Optional ISO date/time the meetup ends.",
+              "type": "string",
+            },
+            "image_url": {
+              "description": "Optional cover image URL.",
+              "type": "string",
+            },
+            "location": {
+              "description": "Optional physical location.",
+              "type": "string",
+            },
+            "max_participants": {
+              "description": "Optional capacity cap.",
+              "type": "number",
+            },
+            "start_time": {
+              "description": "ISO date/time the meetup starts. Required.",
+              "type": "string",
+            },
+            "title": {
+              "description": "The meetup title.",
+              "type": "string",
+            },
+            "virtual_link": {
+              "description": "Optional virtual/streaming link.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "title",
+            "start_time",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Edit one of the user's own upcoming meetups (title, description,
+location, virtual_link, start_time, end_time, max_participants,
+image_url). Only the creator can edit, and only before it starts.
+CALL WHEN the user says: "change my meetup time", "update the hiking
+meetup details", "ändere mein Meetup ...".",
+        "name": "update_my_meetup",
+        "parameters": {
+          "properties": {
+            "description": {
+              "description": "New description, if changing it.",
+              "type": "string",
+            },
+            "end_time": {
+              "description": "New ISO end_time, if changing it.",
+              "type": "string",
+            },
+            "event_id": {
+              "description": "Exact meetup UUID when known from a previous tool result.",
+              "type": "string",
+            },
+            "image_url": {
+              "description": "New cover image URL, if changing it.",
+              "type": "string",
+            },
+            "location": {
+              "description": "New location, if changing it.",
+              "type": "string",
+            },
+            "max_participants": {
+              "description": "New capacity cap, if changing it.",
+              "type": "number",
+            },
+            "query": {
+              "description": "Spoken title of the user's meetup (fuzzy matched).",
+              "type": "string",
+            },
+            "start_time": {
+              "description": "New ISO start_time, if changing it.",
+              "type": "string",
+            },
+            "title": {
+              "description": "New title, if changing it.",
+              "type": "string",
+            },
+            "virtual_link": {
+              "description": "New virtual link, if changing it.",
+              "type": "string",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Invite a community member to an event or meetup by spoken name. The
+member gets a pending invite on the event.
+CALL WHEN the user says: "invite Anna to my yoga meetup", "ask Ben to
+come to the event", "lade Anna zu meinem Event ... ein".
+If the tool lists several event or member candidates, ask which one.",
+        "name": "invite_to_event",
+        "parameters": {
+          "properties": {
+            "event": {
+              "description": "Spoken event/meetup title (fuzzy matched against upcoming events).",
+              "type": "string",
+            },
+            "event_id": {
+              "description": "Exact event UUID when known.",
+              "type": "string",
+            },
+            "member_name": {
+              "description": "Spoken name of the member to invite.",
+              "type": "string",
+            },
+            "member_user_id": {
+              "description": "Exact user UUID when known from a previous tool result.",
+              "type": "string",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Buy a ticket for an event. Checks ticket availability and price, then
+ALWAYS call once WITHOUT confirm first — the tool returns a price
+confirmation question; after the user says yes, call again with
+confirm:true. Even after confirming, payment is completed on the
+user's screen — this tool never charges a card by voice; it prepares
+the purchase and opens the ticket screen.
+CALL WHEN the user says: "buy a ticket for ...", "I want two tickets to
+the gala", "kauf mir ein Ticket für ...".",
+        "name": "buy_event_ticket",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "description": "Pass true ONLY after the user confirmed the price and purchase.",
+              "type": "boolean",
+            },
+            "event": {
+              "description": "Spoken event title (fuzzy matched against upcoming events).",
+              "type": "string",
+            },
+            "event_id": {
+              "description": "Exact event UUID when known.",
+              "type": "string",
+            },
+            "quantity": {
+              "description": "How many tickets to buy. Defaults to 1.",
+              "type": "number",
+            },
+            "ticket_name": {
+              "description": "Spoken ticket tier name (e.g. "VIP", "General Admission").",
+              "type": "string",
+            },
+            "ticket_type_id": {
+              "description": "Exact ticket type UUID when known.",
+              "type": "string",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "List the user's own purchased (completed) event tickets.
+CALL WHEN the user asks: "what tickets do I have?", "show my event
+tickets", "welche Tickets habe ich?".",
+        "name": "list_my_event_tickets",
+        "parameters": {
+          "properties": {},
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Get a shareable public link for an event or meetup (works even for
+people who aren't logged in). Does not send anything itself — just
+returns the link for the user to share however they like.
+CALL WHEN the user says: "share the yoga meetup", "get me a link for
+that event", "gib mir einen Link für das Event ...".",
+        "name": "share_event",
+        "parameters": {
+          "properties": {
+            "event_id": {
+              "description": "Exact event UUID when known.",
+              "type": "string",
+            },
+            "query": {
+              "description": "Spoken event/meetup title (fuzzy matched).",
+              "type": "string",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "List who has RSVP'd to one of the user's OWN events (organizer view
+only — the user must be the creator).
+CALL WHEN the user asks: "who's coming to my event?", "how many people
+signed up for my meetup?", "wer kommt zu meinem Event?".",
+        "name": "get_event_attendees",
+        "parameters": {
+          "properties": {
+            "event_id": {
+              "description": "Exact event UUID when known.",
+              "type": "string",
+            },
+            "query": {
+              "description": "Spoken title of the user's event (fuzzy matched).",
+              "type": "string",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Log a meal (breakfast/lunch/dinner/snack) toward the nutrition pillar.
+CALL WHEN the user says: "I just had breakfast", "log my lunch",
+"ich habe gerade gegessen", "trage mein Mittagessen ein".",
+        "name": "log_meal",
+        "parameters": {
+          "properties": {
+            "calories": {
+              "description": "Optional estimated calories.",
+              "type": "number",
+            },
+            "date": {
+              "description": "YYYY-MM-DD, defaults to today.",
+              "type": "string",
+            },
+            "description": {
+              "description": "What was eaten, e.g. "oatmeal with berries".",
+              "type": "string",
+            },
+            "meal_type": {
+              "description": "One of breakfast, lunch, dinner, snack.",
+              "type": "string",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Log vitals: heart rate, weight, and/or blood pressure. Pass any subset.
+Heart rate contributes to the Vitana Index exercise pillar; weight and
+blood pressure are recorded but do not currently move the Index.
+CALL WHEN the user says: "my heart rate is 68", "I weigh 74 kilos",
+"my blood pressure is 120 over 80", "meine Herzfrequenz ist ...".",
+        "name": "log_vitals",
+        "parameters": {
+          "properties": {
+            "date": {
+              "description": "YYYY-MM-DD, defaults to today.",
+              "type": "string",
+            },
+            "diastolic": {
+              "description": "Diastolic blood pressure (mmHg).",
+              "type": "number",
+            },
+            "heart_rate": {
+              "description": "Heart rate in bpm.",
+              "type": "number",
+            },
+            "systolic": {
+              "description": "Systolic blood pressure (mmHg).",
+              "type": "number",
+            },
+            "weight_kg": {
+              "description": "Body weight in kilograms.",
+              "type": "number",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Log a mental-health / mood check-in (1-5 scale, or a mood word).
+CALL WHEN the user says: "I feel great today", "log my mood as okay",
+"ich fühle mich heute gut".",
+        "name": "log_mood",
+        "parameters": {
+          "properties": {
+            "date": {
+              "description": "YYYY-MM-DD, defaults to today.",
+              "type": "string",
+            },
+            "mood_label": {
+              "description": "A word like 'great', 'okay', 'down' — used if mood_score is omitted.",
+              "type": "string",
+            },
+            "mood_score": {
+              "description": "1 (terrible) to 5 (fantastic).",
+              "type": "number",
+            },
+            "notes": {
+              "description": "Optional short note about why.",
+              "type": "string",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Record a single lab/biomarker value the user reports out loud (e.g. from
+a home test or a doctor visit), creating a lab report entry.
+CALL WHEN the user says: "my glucose was 95", "my cholesterol came back
+at 180", "mein Blutzucker war 95".",
+        "name": "log_biomarker",
+        "parameters": {
+          "properties": {
+            "biomarker_code": {
+              "description": "Optional code, e.g. 'HBA1C'.",
+              "type": "string",
+            },
+            "measured_at": {
+              "description": "Optional ISO timestamp; defaults to now.",
+              "type": "string",
+            },
+            "name": {
+              "description": "Biomarker name, e.g. 'glucose', 'LDL cholesterol'.",
+              "type": "string",
+            },
+            "ref_range_high": {
+              "description": "Optional reference range high.",
+              "type": "number",
+            },
+            "ref_range_low": {
+              "description": "Optional reference range low.",
+              "type": "number",
+            },
+            "status": {
+              "description": "Optional: 'low'|'normal'|'high'|'critical' — inferred from range if omitted.",
+              "type": "string",
+            },
+            "unit": {
+              "description": "Unit, e.g. 'mg/dL'.",
+              "type": "string",
+            },
+            "value": {
+              "description": "The measured value.",
+              "type": "number",
+            },
+          },
+          "required": [
+            "name",
+            "value",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Get the Vitana Index trend (total + per-pillar) over a recent window.
+CALL WHEN the user asks: "how have I been trending?", "am I improving?",
+"wie hat sich mein Index entwickelt?".",
+        "name": "get_health_trends",
+        "parameters": {
+          "properties": {
+            "days": {
+              "description": "Window size in days, default 14, max 90.",
+              "type": "number",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Get the user's diary streak and per-pillar Vitana Index streaks.
+CALL WHEN the user asks: "what's my streak?", "am I on a streak?",
+"wie lange ist meine Serie schon?".",
+        "name": "get_health_streaks",
+        "parameters": {
+          "properties": {},
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Order a lab test. NOT AVAILABLE YET — always returns an error explaining there is no ordering backend; tell the user this feature is not live yet.",
+        "name": "order_lab_test",
+        "parameters": {
+          "properties": {
+            "test_name": {
+              "description": "Name of the test requested.",
+              "type": "string",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Read the user's recorded lab/biomarker results, most recent first.
+CALL WHEN the user asks: "what were my last lab results?", "what's my
+cholesterol?", "wie waren meine letzten Laborwerte?".",
+        "name": "get_lab_results",
+        "parameters": {
+          "properties": {
+            "biomarker": {
+              "description": "Optional biomarker name/code to filter by.",
+              "type": "string",
+            },
+            "limit": {
+              "description": "Max results, default 10.",
+              "type": "number",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Create a starter health plan (template-based, not AI-personalized) for a
+pillar. ALWAYS call once WITHOUT confirm first — the tool returns a
+preview; after the user agrees, call again with confirm:true.
+CALL WHEN the user says: "make me a nutrition plan", "erstelle einen
+Ernährungsplan für mich".",
+        "name": "generate_health_plan",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "description": "Pass true ONLY after the user confirmed creating the plan.",
+              "type": "boolean",
+            },
+            "plan_type": {
+              "description": "One of nutrition, hydration, exercise, sleep, mental. Defaults to the weakest pillar.",
+              "type": "string",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "List the user's active health plans with adherence scores. CALL WHEN the user asks: "what plans do I have?", "welche Pläne habe ich?".",
+        "name": "list_my_health_plans",
+        "parameters": {
+          "properties": {},
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Get adherence/progress for a specific active health plan.
+CALL WHEN the user asks: "how's my plan going?", "am I keeping up with
+my sleep plan?", "wie läuft mein Plan?".",
+        "name": "get_health_plan_progress",
+        "parameters": {
+          "properties": {
+            "plan_id": {
+              "description": "Exact plan UUID if known.",
+              "type": "string",
+            },
+            "plan_type": {
+              "description": "One of nutrition, hydration, exercise, sleep, mental.",
+              "type": "string",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "List the user's recorded health conditions, allergies, medications, and
+dietary restrictions.
+CALL WHEN the user asks: "what conditions do I have on file?", "what
+are my allergies?", "welche Erkrankungen habe ich hinterlegt?".",
+        "name": "list_my_conditions",
+        "parameters": {
+          "properties": {},
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Get grounded educational content on a health/longevity topic from the
+knowledge hub.
+CALL WHEN the user asks: "tell me about HRV", "what is VO2 max?",
+"erkläre mir was Schlafqualität bedeutet".",
+        "name": "get_health_education",
+        "parameters": {
+          "properties": {
+            "topic": {
+              "description": "The health topic to explain.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "topic",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Get today's single highest-priority recommended health action.
+CALL WHEN the user asks: "what should I do today?", "what's my next
+step?", "was soll ich heute für meine Gesundheit tun?".
+If the result has an autopilot id, offer to call activate_recommendation.",
+        "name": "get_next_best_action",
+        "parameters": {
+          "properties": {},
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Start pairing a wearable/health device. Opens the health tracker screen
+where device connections are managed (pairing itself is a native/client flow).
+CALL WHEN the user says: "connect my Oura ring", "pair my device",
+"verbinde mein Gerät".",
+        "name": "connect_health_device",
+        "parameters": {
+          "properties": {
+            "device_name": {
+              "description": "Optional device name, e.g. "Oura Ring".",
+              "type": "string",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
         "description": "Return the top open admin_insights for this tenant, ranked by severity × confidence. Call this AT THE START of every admin orb session to know what needs attention. The bootstrap context already includes the briefing on session-open; only call again if the admin asks "what else?", "anything new?", or "give me the briefing again".",
         "name": "admin_briefing",
         "parameters": {
@@ -9303,6 +10907,1610 @@ CALL THIS for: "Comment on Anna's post: great work" /
             "author_name",
             "text",
           ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Search the Maxina marketplace for products by free-text query, category,
+or price range. CALL WHEN the user says: "search the marketplace for ...",
+"find me some ...", "durchsuche den Marktplatz nach ...".
+Read the top results (name, price, rating) aloud.",
+        "name": "search_marketplace",
+        "parameters": {
+          "properties": {
+            "category": {
+              "description": "Exact product category (e.g. "supplements").",
+              "type": "string",
+            },
+            "limit": {
+              "description": "Max results to return (default 5, max 10).",
+              "type": "number",
+            },
+            "price_max_cents": {
+              "description": "Maximum price in cents.",
+              "type": "number",
+            },
+            "price_min_cents": {
+              "description": "Minimum price in cents.",
+              "type": "number",
+            },
+            "q": {
+              "description": "Free-text search query.",
+              "type": "string",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Get details for one marketplace product by id or by spoken name.
+CALL WHEN the user asks: "tell me about ...", "what is ... exactly",
+"erzähl mir mehr über ...".",
+        "name": "get_product_details",
+        "parameters": {
+          "properties": {
+            "product_id": {
+              "description": "Exact product UUID when known from a previous tool result.",
+              "type": "string",
+            },
+            "query": {
+              "description": "Spoken product name (fuzzy matched).",
+              "type": "string",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Browse the marketplace supplements shop (NOT the personal supplement
+tracker — that is unavailable via voice today).
+CALL WHEN the user says: "show me supplements", "what supplements do you
+have", "zeig mir Nahrungsergänzungsmittel".",
+        "name": "browse_supplements",
+        "parameters": {
+          "properties": {
+            "limit": {
+              "description": "Max results (default 8, max 10).",
+              "type": "number",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "NOT CURRENTLY AVAILABLE via voice — always returns an error explaining the personal supplement tracker has no gateway-side backing yet. Do not call unless the user explicitly asks to add a supplement to their personal regimen/tracker, then relay the unavailability honestly.",
+        "name": "add_supplement_to_regimen",
+        "parameters": {
+          "properties": {
+            "name": {
+              "description": "Supplement name.",
+              "type": "string",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "NOT CURRENTLY AVAILABLE via voice — always returns an error. Do not call unless the user explicitly asks to hear their personal supplement list, then relay the unavailability honestly.",
+        "name": "list_my_supplements",
+        "parameters": {
+          "properties": {},
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "NOT CURRENTLY AVAILABLE via voice — always returns an error. Do not call unless the user explicitly asks to remove a supplement from their personal regimen, then relay the unavailability honestly.",
+        "name": "remove_supplement_from_regimen",
+        "parameters": {
+          "properties": {
+            "name": {
+              "description": "Supplement name.",
+              "type": "string",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Browse wellness/nutrition/fitness/therapy/lab services listed in the
+Maxina marketplace. CALL WHEN the user asks about wellness services,
+massage, spa, recovery, or treatments — "Wellness-Services".",
+        "name": "browse_wellness_services",
+        "parameters": {
+          "properties": {
+            "limit": {
+              "description": "Max results (default 8, max 10).",
+              "type": "number",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Get one service/provider listing by id or spoken name (doctor, coach,
+wellness provider, etc). CALL WHEN the user asks about a specific
+provider or practitioner by name.",
+        "name": "get_provider_profile",
+        "parameters": {
+          "properties": {
+            "provider_id": {
+              "description": "Exact service/provider UUID when known.",
+              "type": "string",
+            },
+            "query": {
+              "description": "Spoken provider or service name (fuzzy matched).",
+              "type": "string",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Browse doctors and coaches listed in the marketplace. CALL WHEN the user
+asks to find a doctor, coach, practitioner, or specialist — "Ärzte &
+Coaches".",
+        "name": "browse_doctors_coaches",
+        "parameters": {
+          "properties": {
+            "limit": {
+              "description": "Max results (default 8, max 10).",
+              "type": "number",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "NOT CURRENTLY AVAILABLE via voice — always returns an error, since no compatibility-scoring system exists yet. Do not fabricate a score; relay the unavailability honestly if asked.",
+        "name": "get_coach_compatibility",
+        "parameters": {
+          "properties": {
+            "provider_id": {
+              "description": "Coach/provider UUID.",
+              "type": "string",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Browse marketplace products currently on sale (discounted vs. their
+reference price). CALL WHEN the user asks about deals, discounts,
+offers, promotions, or "what is on sale" — "Angebote & Deals".",
+        "name": "browse_deals_offers",
+        "parameters": {
+          "properties": {
+            "limit": {
+              "description": "Max results (default 8, max 10).",
+              "type": "number",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "NOT CURRENTLY AVAILABLE via voice — always returns an error, since the discount-code system has no gateway-side backing yet. Do not call unless the user explicitly asks to apply a promo code, then relay the unavailability honestly.",
+        "name": "apply_discount_code",
+        "parameters": {
+          "properties": {
+            "code": {
+              "description": "The discount/promo code.",
+              "type": "string",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Have the Vitana shopping agent propose marketplace products for a goal
+or need, filtered against the user's health/dietary/budget profile, and
+add them to the cart for review (NEVER charges anything).
+CALL WHEN the user says: "find me something for ...", "what should I take
+for ...", "shop for ... for me", "kauf mir etwas gegen ...".
+After the tool runs, read the picks + rationale aloud and tell the user
+to confirm payment on screen — never say payment completed.",
+        "name": "get_ai_product_picks",
+        "parameters": {
+          "properties": {
+            "max_items": {
+              "description": "Max picks to propose (default 4, max 6).",
+              "type": "number",
+            },
+            "prompt": {
+              "description": "What the user wants help finding/shopping for.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "prompt",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "List the user's recent marketplace orders with status and amount.
+CALL WHEN the user asks: "what have I ordered", "show my orders",
+"zeig mir meine Bestellungen".",
+        "name": "list_my_orders",
+        "parameters": {
+          "properties": {
+            "limit": {
+              "description": "Max orders to return (default 10, max 20).",
+              "type": "number",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Check the status of one order by id, or the most recent order if no id
+is given. CALL WHEN the user asks: "where is my order", "track my order",
+"wo ist meine Bestellung".",
+        "name": "get_order_status",
+        "parameters": {
+          "properties": {
+            "order_id": {
+              "description": "Exact order UUID when known.",
+              "type": "string",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Add the user's most recent (still-available) purchase back to the cart.
+ALWAYS call once WITHOUT confirm first — the tool returns a confirmation
+question; after the user says yes, call again with confirm:true. NEVER
+charges anything — only stages the cart.
+CALL WHEN the user says: "reorder my last order", "get me the same thing
+again", "bestelle das Gleiche nochmal".",
+        "name": "reorder_last_order",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "description": "Pass true ONLY after the user confirmed the reorder.",
+              "type": "boolean",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Add a marketplace product to the user's cart, by product_id or fuzzy
+product name. Bumps quantity if the product is already in the cart.
+CALL WHEN the user says: "add ... to my cart", "I want to buy ...",
+"lege ... in den Warenkorb", "ich möchte ... kaufen".
+If several products match, read the candidates and ask which one.",
+        "name": "add_to_cart",
+        "parameters": {
+          "properties": {
+            "product_id": {
+              "description": "Exact product UUID when already known from a previous tool result.",
+              "type": "string",
+            },
+            "quantity": {
+              "description": "How many to add. Defaults to 1.",
+              "type": "number",
+            },
+            "query": {
+              "description": "Spoken product name (fuzzy matched against the marketplace catalog).",
+              "type": "string",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Read the contents of the user's cart: items, quantities, prices, and
+the total. CALL WHEN the user asks: "what's in my cart?", "show my
+cart", "was ist in meinem Warenkorb?", "zeig mir meinen Warenkorb".
+Read the items and total aloud.",
+        "name": "view_cart",
+        "parameters": {
+          "properties": {},
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Change the quantity of an item already in the cart, by item_id or
+fuzzy product name. CALL WHEN the user says: "make it 2 of those",
+"change the quantity to ...", "ändere die Menge auf ...".
+If several items match, read the candidates and ask which one. Use
+remove_from_cart instead if the user wants to remove the item entirely.",
+        "name": "update_cart_item",
+        "parameters": {
+          "properties": {
+            "item_id": {
+              "description": "Exact cart item UUID when known from a previous tool result.",
+              "type": "string",
+            },
+            "quantity": {
+              "description": "The new quantity (must be positive).",
+              "type": "number",
+            },
+            "query": {
+              "description": "Spoken product name to find the cart line (fuzzy matched).",
+              "type": "string",
+            },
+          },
+          "required": [
+            "quantity",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Remove a single item from the cart, by item_id or fuzzy product name.
+CALL WHEN the user says: "remove ... from my cart", "take that out of
+my cart", "entferne ... aus dem Warenkorb".
+If several items match, read the candidates and ask which one.",
+        "name": "remove_from_cart",
+        "parameters": {
+          "properties": {
+            "item_id": {
+              "description": "Exact cart item UUID when known.",
+              "type": "string",
+            },
+            "query": {
+              "description": "Spoken product name to find the cart line (fuzzy matched).",
+              "type": "string",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Remove ALL items from the cart. ALWAYS call once WITHOUT confirm
+first — the tool returns a confirmation question listing what will be
+removed; after the user says yes, call again with confirm:true.
+CALL WHEN the user says: "clear my cart", "empty my cart", "remove
+everything", "leere meinen Warenkorb".",
+        "name": "clear_cart",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "description": "Pass true ONLY after the user confirmed clearing the cart.",
+              "type": "boolean",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Set or clear the user's monthly shopping budget cap, used as an
+advisory warning (never blocks purchases) when the cart plus this
+month's spending gets close to or exceeds it.
+CALL WHEN the user says: "set my monthly budget to ...", "limit my
+shopping to ... a month", "remove my budget", "setze mein monatliches
+Budget auf ...".",
+        "name": "set_shopping_budget",
+        "parameters": {
+          "properties": {
+            "clear": {
+              "description": "Pass true to remove the existing budget cap instead of setting one.",
+              "type": "boolean",
+            },
+            "monthly_cap_amount": {
+              "description": "Monthly cap in the user's major currency unit (e.g. 200 for 200 EUR).",
+              "type": "number",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "List the items the shopping agent (autopilot) has proposed and placed
+into the user's cart for review — each with its rationale, safety
+flags, and confidence. These are NOT yet purchased; the user can
+remove any with remove_from_cart or proceed with start_checkout.
+CALL WHEN the user asks: "what did the shopping agent pick for me?",
+"show my pending proposals", "was hat der Einkaufsassistent
+vorgeschlagen?".",
+        "name": "review_agent_purchase_proposals",
+        "parameters": {
+          "properties": {},
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Begin checkout for the user's cart. ALWAYS call once WITHOUT confirm
+first — the tool returns the cart total and asks for confirmation;
+after the user says yes, call again with confirm:true. This tool
+NEVER charges a card or completes payment by voice — it only
+validates the cart and navigates the user to the cart/checkout screen
+where THEY confirm payment themselves.
+CALL WHEN the user says: "check out", "let's pay for this", "go to
+checkout", "zur Kasse gehen", "ich möchte bezahlen".",
+        "name": "start_checkout",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "description": "Pass true ONLY after the user confirmed proceeding to checkout.",
+              "type": "boolean",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "READ-ONLY wallet snapshot: balance per currency, active subscription,
+lifetime + pending referral rewards, and recent activity.
+CALL WHEN the user asks: "give me my wallet summary", "how much do I have
+and how much have I earned", "wie steht es um mein Wallet".",
+        "name": "get_wallet_summary",
+        "parameters": {
+          "properties": {},
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "READ-ONLY: list the user's recent wallet transactions, newest first.
+Supports pagination via cursor (from a previous call's next_cursor).
+CALL WHEN the user asks: "show my transactions", "what did I spend
+recently", "zeig mir meine letzten Transaktionen".",
+        "name": "list_wallet_transactions",
+        "parameters": {
+          "properties": {
+            "currency": {
+              "description": "Optional: 'EUR' or 'USD' to filter to one currency.",
+              "type": "string",
+            },
+            "cursor": {
+              "description": "Pass the previous next_cursor to page further back.",
+              "type": "string",
+            },
+            "limit": {
+              "description": "How many to read out, 1-50. Uses 15 when omitted.",
+              "type": "number",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Send money from the user's wallet to another Vitana member (internal
+transfer only — never a card charge). ALWAYS call once WITHOUT confirm
+first — it resolves the recipient and previews the amount; after the user
+says yes, call again with confirm:true, recipient_user_id, amount and
+currency from the preview result.
+CALL WHEN the user says: "send Anna 20 euros", "transfer money to Peter",
+"schicke Anna 20 Euro".
+This is the ONLY tool that fully executes money movement by voice.",
+        "name": "send_funds",
+        "parameters": {
+          "properties": {
+            "amount": {
+              "description": "Amount in major currency units, e.g. 20 for 20.00.",
+              "type": "number",
+            },
+            "confirm": {
+              "description": "true ONLY after the user explicitly confirmed the preview.",
+              "type": "boolean",
+            },
+            "currency": {
+              "description": "'EUR' or 'USD'. Omit if the user has only one wallet currency.",
+              "type": "string",
+            },
+            "recipient_name": {
+              "description": "Spoken name of who to send money to.",
+              "type": "string",
+            },
+            "recipient_user_id": {
+              "description": "Exact recipient UUID once resolved from a previous call.",
+              "type": "string",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "NOT YET AVAILABLE — always returns an error explaining there is no
+backing endpoint for payment requests. Do not imply this worked; tell
+the user to send a payment request from the Wallet or Messages screen.",
+        "name": "request_payment",
+        "parameters": {
+          "properties": {
+            "amount": {
+              "description": "Amount requested, major currency units.",
+              "type": "number",
+            },
+            "currency": {
+              "description": "'EUR' or 'USD'.",
+              "type": "string",
+            },
+            "description": {
+              "description": "What the request is for.",
+              "type": "string",
+            },
+            "recipient_name": {
+              "description": "Spoken name of who the request would go to.",
+              "type": "string",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "NOT YET AVAILABLE — always returns an error: the wallet has no
+cross-currency conversion RPC. Do not imply this worked.",
+        "name": "exchange_currency",
+        "parameters": {
+          "properties": {
+            "amount": {
+              "description": "Amount to exchange.",
+              "type": "number",
+            },
+            "confirm": {
+              "description": "Not used — the tool is unavailable.",
+              "type": "boolean",
+            },
+            "from_currency": {
+              "description": "Source currency, e.g. 'EUR'.",
+              "type": "string",
+            },
+            "to_currency": {
+              "description": "Target currency, e.g. 'USD'.",
+              "type": "string",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "NOT YET AVAILABLE — always returns an error: no exchange-rate
+table/RPC is wired into the gateway.",
+        "name": "get_exchange_rate",
+        "parameters": {
+          "properties": {
+            "from_currency": {
+              "description": "e.g. 'EUR'.",
+              "type": "string",
+            },
+            "to_currency": {
+              "description": "e.g. 'USD'.",
+              "type": "string",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "NOT YET AVAILABLE — always returns an error: the display-currency toggle
+is stored only in the browser, not on any server-side record.",
+        "name": "set_display_currency",
+        "parameters": {
+          "properties": {
+            "currency": {
+              "description": "'EUR' or 'USD'.",
+              "type": "string",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "READ-ONLY: total referral rewards earned (confirmed) and pending, from
+the user's reward ledger.
+CALL WHEN the user asks: "how much have I earned from referrals",
+"was habe ich mit Empfehlungen verdient".",
+        "name": "get_referral_earnings",
+        "parameters": {
+          "properties": {},
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "READ-ONLY: commissions earned this calendar month — total, confirmed,
+and still-pending amounts.
+CALL WHEN the user asks: "what are my commissions this month",
+"wie viel Provision habe ich diesen Monat gemacht".",
+        "name": "get_commissions_summary",
+        "parameters": {
+          "properties": {},
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "READ-ONLY: rewards awaiting merchant confirmation (not yet payable).
+CALL WHEN the user asks: "do I have any pending rewards",
+"was ist noch ausstehend bei meinen Prämien".",
+        "name": "get_pending_rewards",
+        "parameters": {
+          "properties": {},
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "NOT YET AVAILABLE — always returns an error: payment requests have no
+structured table to list from.",
+        "name": "list_payment_requests",
+        "parameters": {
+          "properties": {
+            "direction": {
+              "description": "'incoming' or 'outgoing' — not used, tool is unavailable.",
+              "type": "string",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Send a text message to a group chat the user is a member of (not a 1-to-1 DM —
+use send_chat_message for that). ALWAYS call once WITHOUT confirmed first — the
+tool returns a preview; read it back and only call again with confirmed:true after
+explicit confirmation.
+CALL WHEN the user says: "message the running group", "tell everyone in Alle
+Beisammen ...", "schreib in die Gruppe ...".
+If several of the user's groups match, read the candidates and ask which one.",
+        "name": "send_group_chat_message",
+        "parameters": {
+          "properties": {
+            "confirmed": {
+              "description": "Pass true ONLY after the user confirmed the exact wording.",
+              "type": "boolean",
+            },
+            "group": {
+              "description": "Spoken group chat name (fuzzy matched among the user's own groups).",
+              "type": "string",
+            },
+            "group_id": {
+              "description": "Exact group UUID when already known.",
+              "type": "string",
+            },
+            "message": {
+              "description": "The message to send.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "message",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Reply to a specific earlier message. NOTE: Vitana chat has no reply/quote-thread
+feature yet — this tool always answers that it is unavailable. Relay that plainly
+and offer send_chat_message or send_group_chat_message instead, optionally quoting
+the original text inline in the new message.
+CALL WHEN the user says: "reply to that message", "antworte auf die Nachricht".",
+        "name": "reply_to_message",
+        "parameters": {
+          "properties": {
+            "message": {
+              "description": "The reply text the user wants to send.",
+              "type": "string",
+            },
+            "message_id": {
+              "description": "UUID of the message being replied to, if known.",
+              "type": "string",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Add (or remove) an emoji reaction on a chat message — one of 👍 ❤️ 😂 😮 🙏 🎉 only.
+Requires message_id from a previous tool result (e.g. from list_conversations or a
+group message read-back).
+CALL WHEN the user says: "react with a heart to that", "give that a thumbs up",
+"reagiere mit einem Herz darauf".
+Set remove:true to take the reaction back off.",
+        "name": "react_to_message",
+        "parameters": {
+          "properties": {
+            "emoji": {
+              "description": "One of: 👍 ❤️ 😂 😮 🙏 🎉",
+              "type": "string",
+            },
+            "message_id": {
+              "description": "UUID of the message to react to.",
+              "type": "string",
+            },
+            "remove": {
+              "description": "Pass true to remove a reaction the user previously added.",
+              "type": "boolean",
+            },
+          },
+          "required": [
+            "message_id",
+            "emoji",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Create a new group chat, optionally adding named members immediately. ALWAYS call
+once WITHOUT confirm first — the tool returns a confirmation question; after the
+user says yes, call again with confirm:true.
+CALL WHEN the user says: "create a group chat called ...", "start a new chat with
+me, Anna and Ben", "erstelle einen Gruppenchat ...".",
+        "name": "create_group_chat",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "description": "Pass true ONLY after the user confirmed the creation.",
+              "type": "boolean",
+            },
+            "description": {
+              "description": "Optional short description.",
+              "type": "string",
+            },
+            "members": {
+              "description": "Spoken names of members to add immediately (fuzzy resolved).",
+              "items": {
+                "type": "string",
+              },
+              "type": "array",
+            },
+            "name": {
+              "description": "The group chat name.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "name",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Add a community member to a group chat the user already belongs to.
+CALL WHEN the user says: "add Anna to the running group chat", "füge Anna dem
+Gruppenchat hinzu".
+If several of the user's groups or several matching members are found, ask which one.",
+        "name": "add_group_chat_member",
+        "parameters": {
+          "properties": {
+            "group": {
+              "description": "Spoken group chat name (fuzzy matched among the user's own groups).",
+              "type": "string",
+            },
+            "group_id": {
+              "description": "Exact group UUID when already known.",
+              "type": "string",
+            },
+            "member": {
+              "description": "Spoken name or Vitana ID of the member to add.",
+              "type": "string",
+            },
+            "member_user_id": {
+              "description": "UUID of the member if already resolved.",
+              "type": "string",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Leave a group chat. ALWAYS call once WITHOUT confirm first — the tool returns a
+confirmation question; after the user says yes, call again with the group_id and
+confirm:true.
+CALL WHEN the user says: "leave the running group chat", "verlasse den Gruppenchat
+...".",
+        "name": "leave_group_chat",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "description": "Pass true ONLY after the user confirmed leaving.",
+              "type": "boolean",
+            },
+            "group": {
+              "description": "Spoken group chat name (fuzzy matched among the user's own groups).",
+              "type": "string",
+            },
+            "group_id": {
+              "description": "Exact group UUID when already known.",
+              "type": "string",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Share one of the user's own upcoming calendar events with a community member via
+direct message. ALWAYS call once WITHOUT confirmed first — the tool returns a
+preview; after explicit confirmation call again with confirmed:true.
+CALL WHEN the user says: "send Anna the invite for my yoga session", "share my
+appointment with Ben", "schick Anna die Einladung zu meinem Termin".
+If several events or member matches are found, ask which one.",
+        "name": "send_calendar_invite_in_chat",
+        "parameters": {
+          "properties": {
+            "confirmed": {
+              "description": "Pass true ONLY after the user explicitly confirmed sending.",
+              "type": "boolean",
+            },
+            "event": {
+              "description": "Spoken event title (fuzzy matched against the user's own upcoming events).",
+              "type": "string",
+            },
+            "event_id": {
+              "description": "Exact calendar_events UUID when already known.",
+              "type": "string",
+            },
+            "member": {
+              "description": "Spoken name or Vitana ID of the recipient.",
+              "type": "string",
+            },
+            "member_user_id": {
+              "description": "UUID of the recipient if already resolved.",
+              "type": "string",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Send another community member a request to start a voice call. IMPORTANT: Vitana
+cannot place a live call from voice — calling only works client-side between two
+open apps. This tool sends a chat message + notification asking them to open the
+app; it never connects a call. ALWAYS call once WITHOUT confirmed first, then again
+with confirmed:true after explicit confirmation.
+CALL WHEN the user says: "call Anna", "start a voice call with Ben", "ruf Anna an".
+Afterwards, tell the user the request was sent and real-time calling needs both
+people in the app.",
+        "name": "start_voice_call",
+        "parameters": {
+          "properties": {
+            "confirmed": {
+              "description": "Pass true ONLY after the user explicitly confirmed sending the request.",
+              "type": "boolean",
+            },
+            "member": {
+              "description": "Spoken name or Vitana ID of the person to call.",
+              "type": "string",
+            },
+            "member_user_id": {
+              "description": "UUID of the member if already resolved.",
+              "type": "string",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Send another community member a request to start a video call. IMPORTANT: Vitana
+cannot place a live call from voice — calling only works client-side between two
+open apps. This tool sends a chat message + notification asking them to open the
+app; it never connects a call. ALWAYS call once WITHOUT confirmed first, then again
+with confirmed:true after explicit confirmation.
+CALL WHEN the user says: "video call Anna", "start a video chat with Ben", "starte
+einen Videoanruf mit Anna".
+Afterwards, tell the user the request was sent and real-time calling needs both
+people in the app.",
+        "name": "start_video_call",
+        "parameters": {
+          "properties": {
+            "confirmed": {
+              "description": "Pass true ONLY after the user explicitly confirmed sending the request.",
+              "type": "boolean",
+            },
+            "member": {
+              "description": "Spoken name or Vitana ID of the person to video call.",
+              "type": "string",
+            },
+            "member_user_id": {
+              "description": "UUID of the member if already resolved.",
+              "type": "string",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Create a new ticketed/community event. Requires a title and start_time.
+ALWAYS call once WITHOUT confirm first — the tool returns a
+confirmation question; after the user says yes, call again with
+confirm:true.
+CALL WHEN the user says: "create an event called ...", "schedule a new
+event", "erstelle ein Event ...", "plane eine neue Veranstaltung".",
+        "name": "create_event",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "description": "Pass true ONLY after the user confirmed the creation.",
+              "type": "boolean",
+            },
+            "description": {
+              "description": "Optional short event description.",
+              "type": "string",
+            },
+            "end_time": {
+              "description": "Optional ISO date/time the event ends.",
+              "type": "string",
+            },
+            "image_url": {
+              "description": "Optional cover image URL.",
+              "type": "string",
+            },
+            "location": {
+              "description": "Optional physical location.",
+              "type": "string",
+            },
+            "max_participants": {
+              "description": "Optional capacity cap.",
+              "type": "number",
+            },
+            "start_time": {
+              "description": "ISO date/time the event starts. Required.",
+              "type": "string",
+            },
+            "title": {
+              "description": "The event title.",
+              "type": "string",
+            },
+            "virtual_link": {
+              "description": "Optional virtual/streaming link.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "title",
+            "start_time",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Edit one of the user's own upcoming events (title, description,
+location, virtual_link, start_time, end_time, max_participants,
+image_url). Only the creator can edit, and only before it starts.
+CALL WHEN the user says: "change the time of my event ...", "update my
+event description", "ändere mein Event ...".",
+        "name": "update_my_event",
+        "parameters": {
+          "properties": {
+            "description": {
+              "description": "New description, if changing it.",
+              "type": "string",
+            },
+            "end_time": {
+              "description": "New ISO end_time, if changing it.",
+              "type": "string",
+            },
+            "event_id": {
+              "description": "Exact event UUID when known from a previous tool result.",
+              "type": "string",
+            },
+            "image_url": {
+              "description": "New cover image URL, if changing it.",
+              "type": "string",
+            },
+            "location": {
+              "description": "New location, if changing it.",
+              "type": "string",
+            },
+            "max_participants": {
+              "description": "New capacity cap, if changing it.",
+              "type": "number",
+            },
+            "query": {
+              "description": "Spoken title of the user's event (fuzzy matched).",
+              "type": "string",
+            },
+            "start_time": {
+              "description": "New ISO start_time, if changing it.",
+              "type": "string",
+            },
+            "title": {
+              "description": "New title, if changing it.",
+              "type": "string",
+            },
+            "virtual_link": {
+              "description": "New virtual link, if changing it.",
+              "type": "string",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Cancel (delete) one of the user's own upcoming events. ALWAYS call
+once WITHOUT confirm first — the tool returns a confirmation question;
+after the user says yes, call again with the event_id and confirm:true.
+CALL WHEN the user says: "cancel my event", "delete the ... event",
+"sage mein Event ... ab".",
+        "name": "cancel_my_event",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "description": "Pass true ONLY after the user confirmed the cancellation.",
+              "type": "boolean",
+            },
+            "event_id": {
+              "description": "Exact event UUID when known.",
+              "type": "string",
+            },
+            "query": {
+              "description": "Spoken title of the user's event (fuzzy matched).",
+              "type": "string",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Create a new casual community meetup (lighter-weight than a ticketed
+event). Requires a title and start_time. ALWAYS call once WITHOUT
+confirm first — the tool returns a confirmation question; after the
+user says yes, call again with confirm:true.
+CALL WHEN the user says: "create a meetup for ...", "start a walking
+meetup", "erstelle ein Meetup für ...".",
+        "name": "create_meetup",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "description": "Pass true ONLY after the user confirmed the creation.",
+              "type": "boolean",
+            },
+            "description": {
+              "description": "Optional short meetup description.",
+              "type": "string",
+            },
+            "end_time": {
+              "description": "Optional ISO date/time the meetup ends.",
+              "type": "string",
+            },
+            "image_url": {
+              "description": "Optional cover image URL.",
+              "type": "string",
+            },
+            "location": {
+              "description": "Optional physical location.",
+              "type": "string",
+            },
+            "max_participants": {
+              "description": "Optional capacity cap.",
+              "type": "number",
+            },
+            "start_time": {
+              "description": "ISO date/time the meetup starts. Required.",
+              "type": "string",
+            },
+            "title": {
+              "description": "The meetup title.",
+              "type": "string",
+            },
+            "virtual_link": {
+              "description": "Optional virtual/streaming link.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "title",
+            "start_time",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Edit one of the user's own upcoming meetups (title, description,
+location, virtual_link, start_time, end_time, max_participants,
+image_url). Only the creator can edit, and only before it starts.
+CALL WHEN the user says: "change my meetup time", "update the hiking
+meetup details", "ändere mein Meetup ...".",
+        "name": "update_my_meetup",
+        "parameters": {
+          "properties": {
+            "description": {
+              "description": "New description, if changing it.",
+              "type": "string",
+            },
+            "end_time": {
+              "description": "New ISO end_time, if changing it.",
+              "type": "string",
+            },
+            "event_id": {
+              "description": "Exact meetup UUID when known from a previous tool result.",
+              "type": "string",
+            },
+            "image_url": {
+              "description": "New cover image URL, if changing it.",
+              "type": "string",
+            },
+            "location": {
+              "description": "New location, if changing it.",
+              "type": "string",
+            },
+            "max_participants": {
+              "description": "New capacity cap, if changing it.",
+              "type": "number",
+            },
+            "query": {
+              "description": "Spoken title of the user's meetup (fuzzy matched).",
+              "type": "string",
+            },
+            "start_time": {
+              "description": "New ISO start_time, if changing it.",
+              "type": "string",
+            },
+            "title": {
+              "description": "New title, if changing it.",
+              "type": "string",
+            },
+            "virtual_link": {
+              "description": "New virtual link, if changing it.",
+              "type": "string",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Invite a community member to an event or meetup by spoken name. The
+member gets a pending invite on the event.
+CALL WHEN the user says: "invite Anna to my yoga meetup", "ask Ben to
+come to the event", "lade Anna zu meinem Event ... ein".
+If the tool lists several event or member candidates, ask which one.",
+        "name": "invite_to_event",
+        "parameters": {
+          "properties": {
+            "event": {
+              "description": "Spoken event/meetup title (fuzzy matched against upcoming events).",
+              "type": "string",
+            },
+            "event_id": {
+              "description": "Exact event UUID when known.",
+              "type": "string",
+            },
+            "member_name": {
+              "description": "Spoken name of the member to invite.",
+              "type": "string",
+            },
+            "member_user_id": {
+              "description": "Exact user UUID when known from a previous tool result.",
+              "type": "string",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Buy a ticket for an event. Checks ticket availability and price, then
+ALWAYS call once WITHOUT confirm first — the tool returns a price
+confirmation question; after the user says yes, call again with
+confirm:true. Even after confirming, payment is completed on the
+user's screen — this tool never charges a card by voice; it prepares
+the purchase and opens the ticket screen.
+CALL WHEN the user says: "buy a ticket for ...", "I want two tickets to
+the gala", "kauf mir ein Ticket für ...".",
+        "name": "buy_event_ticket",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "description": "Pass true ONLY after the user confirmed the price and purchase.",
+              "type": "boolean",
+            },
+            "event": {
+              "description": "Spoken event title (fuzzy matched against upcoming events).",
+              "type": "string",
+            },
+            "event_id": {
+              "description": "Exact event UUID when known.",
+              "type": "string",
+            },
+            "quantity": {
+              "description": "How many tickets to buy. Defaults to 1.",
+              "type": "number",
+            },
+            "ticket_name": {
+              "description": "Spoken ticket tier name (e.g. "VIP", "General Admission").",
+              "type": "string",
+            },
+            "ticket_type_id": {
+              "description": "Exact ticket type UUID when known.",
+              "type": "string",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "List the user's own purchased (completed) event tickets.
+CALL WHEN the user asks: "what tickets do I have?", "show my event
+tickets", "welche Tickets habe ich?".",
+        "name": "list_my_event_tickets",
+        "parameters": {
+          "properties": {},
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Get a shareable public link for an event or meetup (works even for
+people who aren't logged in). Does not send anything itself — just
+returns the link for the user to share however they like.
+CALL WHEN the user says: "share the yoga meetup", "get me a link for
+that event", "gib mir einen Link für das Event ...".",
+        "name": "share_event",
+        "parameters": {
+          "properties": {
+            "event_id": {
+              "description": "Exact event UUID when known.",
+              "type": "string",
+            },
+            "query": {
+              "description": "Spoken event/meetup title (fuzzy matched).",
+              "type": "string",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "List who has RSVP'd to one of the user's OWN events (organizer view
+only — the user must be the creator).
+CALL WHEN the user asks: "who's coming to my event?", "how many people
+signed up for my meetup?", "wer kommt zu meinem Event?".",
+        "name": "get_event_attendees",
+        "parameters": {
+          "properties": {
+            "event_id": {
+              "description": "Exact event UUID when known.",
+              "type": "string",
+            },
+            "query": {
+              "description": "Spoken title of the user's event (fuzzy matched).",
+              "type": "string",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Log a meal (breakfast/lunch/dinner/snack) toward the nutrition pillar.
+CALL WHEN the user says: "I just had breakfast", "log my lunch",
+"ich habe gerade gegessen", "trage mein Mittagessen ein".",
+        "name": "log_meal",
+        "parameters": {
+          "properties": {
+            "calories": {
+              "description": "Optional estimated calories.",
+              "type": "number",
+            },
+            "date": {
+              "description": "YYYY-MM-DD, defaults to today.",
+              "type": "string",
+            },
+            "description": {
+              "description": "What was eaten, e.g. "oatmeal with berries".",
+              "type": "string",
+            },
+            "meal_type": {
+              "description": "One of breakfast, lunch, dinner, snack.",
+              "type": "string",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Log vitals: heart rate, weight, and/or blood pressure. Pass any subset.
+Heart rate contributes to the Vitana Index exercise pillar; weight and
+blood pressure are recorded but do not currently move the Index.
+CALL WHEN the user says: "my heart rate is 68", "I weigh 74 kilos",
+"my blood pressure is 120 over 80", "meine Herzfrequenz ist ...".",
+        "name": "log_vitals",
+        "parameters": {
+          "properties": {
+            "date": {
+              "description": "YYYY-MM-DD, defaults to today.",
+              "type": "string",
+            },
+            "diastolic": {
+              "description": "Diastolic blood pressure (mmHg).",
+              "type": "number",
+            },
+            "heart_rate": {
+              "description": "Heart rate in bpm.",
+              "type": "number",
+            },
+            "systolic": {
+              "description": "Systolic blood pressure (mmHg).",
+              "type": "number",
+            },
+            "weight_kg": {
+              "description": "Body weight in kilograms.",
+              "type": "number",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Log a mental-health / mood check-in (1-5 scale, or a mood word).
+CALL WHEN the user says: "I feel great today", "log my mood as okay",
+"ich fühle mich heute gut".",
+        "name": "log_mood",
+        "parameters": {
+          "properties": {
+            "date": {
+              "description": "YYYY-MM-DD, defaults to today.",
+              "type": "string",
+            },
+            "mood_label": {
+              "description": "A word like 'great', 'okay', 'down' — used if mood_score is omitted.",
+              "type": "string",
+            },
+            "mood_score": {
+              "description": "1 (terrible) to 5 (fantastic).",
+              "type": "number",
+            },
+            "notes": {
+              "description": "Optional short note about why.",
+              "type": "string",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Record a single lab/biomarker value the user reports out loud (e.g. from
+a home test or a doctor visit), creating a lab report entry.
+CALL WHEN the user says: "my glucose was 95", "my cholesterol came back
+at 180", "mein Blutzucker war 95".",
+        "name": "log_biomarker",
+        "parameters": {
+          "properties": {
+            "biomarker_code": {
+              "description": "Optional code, e.g. 'HBA1C'.",
+              "type": "string",
+            },
+            "measured_at": {
+              "description": "Optional ISO timestamp; defaults to now.",
+              "type": "string",
+            },
+            "name": {
+              "description": "Biomarker name, e.g. 'glucose', 'LDL cholesterol'.",
+              "type": "string",
+            },
+            "ref_range_high": {
+              "description": "Optional reference range high.",
+              "type": "number",
+            },
+            "ref_range_low": {
+              "description": "Optional reference range low.",
+              "type": "number",
+            },
+            "status": {
+              "description": "Optional: 'low'|'normal'|'high'|'critical' — inferred from range if omitted.",
+              "type": "string",
+            },
+            "unit": {
+              "description": "Unit, e.g. 'mg/dL'.",
+              "type": "string",
+            },
+            "value": {
+              "description": "The measured value.",
+              "type": "number",
+            },
+          },
+          "required": [
+            "name",
+            "value",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Get the Vitana Index trend (total + per-pillar) over a recent window.
+CALL WHEN the user asks: "how have I been trending?", "am I improving?",
+"wie hat sich mein Index entwickelt?".",
+        "name": "get_health_trends",
+        "parameters": {
+          "properties": {
+            "days": {
+              "description": "Window size in days, default 14, max 90.",
+              "type": "number",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Get the user's diary streak and per-pillar Vitana Index streaks.
+CALL WHEN the user asks: "what's my streak?", "am I on a streak?",
+"wie lange ist meine Serie schon?".",
+        "name": "get_health_streaks",
+        "parameters": {
+          "properties": {},
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Order a lab test. NOT AVAILABLE YET — always returns an error explaining there is no ordering backend; tell the user this feature is not live yet.",
+        "name": "order_lab_test",
+        "parameters": {
+          "properties": {
+            "test_name": {
+              "description": "Name of the test requested.",
+              "type": "string",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Read the user's recorded lab/biomarker results, most recent first.
+CALL WHEN the user asks: "what were my last lab results?", "what's my
+cholesterol?", "wie waren meine letzten Laborwerte?".",
+        "name": "get_lab_results",
+        "parameters": {
+          "properties": {
+            "biomarker": {
+              "description": "Optional biomarker name/code to filter by.",
+              "type": "string",
+            },
+            "limit": {
+              "description": "Max results, default 10.",
+              "type": "number",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Create a starter health plan (template-based, not AI-personalized) for a
+pillar. ALWAYS call once WITHOUT confirm first — the tool returns a
+preview; after the user agrees, call again with confirm:true.
+CALL WHEN the user says: "make me a nutrition plan", "erstelle einen
+Ernährungsplan für mich".",
+        "name": "generate_health_plan",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "description": "Pass true ONLY after the user confirmed creating the plan.",
+              "type": "boolean",
+            },
+            "plan_type": {
+              "description": "One of nutrition, hydration, exercise, sleep, mental. Defaults to the weakest pillar.",
+              "type": "string",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "List the user's active health plans with adherence scores. CALL WHEN the user asks: "what plans do I have?", "welche Pläne habe ich?".",
+        "name": "list_my_health_plans",
+        "parameters": {
+          "properties": {},
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Get adherence/progress for a specific active health plan.
+CALL WHEN the user asks: "how's my plan going?", "am I keeping up with
+my sleep plan?", "wie läuft mein Plan?".",
+        "name": "get_health_plan_progress",
+        "parameters": {
+          "properties": {
+            "plan_id": {
+              "description": "Exact plan UUID if known.",
+              "type": "string",
+            },
+            "plan_type": {
+              "description": "One of nutrition, hydration, exercise, sleep, mental.",
+              "type": "string",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "List the user's recorded health conditions, allergies, medications, and
+dietary restrictions.
+CALL WHEN the user asks: "what conditions do I have on file?", "what
+are my allergies?", "welche Erkrankungen habe ich hinterlegt?".",
+        "name": "list_my_conditions",
+        "parameters": {
+          "properties": {},
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Get grounded educational content on a health/longevity topic from the
+knowledge hub.
+CALL WHEN the user asks: "tell me about HRV", "what is VO2 max?",
+"erkläre mir was Schlafqualität bedeutet".",
+        "name": "get_health_education",
+        "parameters": {
+          "properties": {
+            "topic": {
+              "description": "The health topic to explain.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "topic",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Get today's single highest-priority recommended health action.
+CALL WHEN the user asks: "what should I do today?", "what's my next
+step?", "was soll ich heute für meine Gesundheit tun?".
+If the result has an autopilot id, offer to call activate_recommendation.",
+        "name": "get_next_best_action",
+        "parameters": {
+          "properties": {},
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Start pairing a wearable/health device. Opens the health tracker screen
+where device connections are managed (pairing itself is a native/client flow).
+CALL WHEN the user says: "connect my Oura ring", "pair my device",
+"verbinde mein Gerät".",
+        "name": "connect_health_device",
+        "parameters": {
+          "properties": {
+            "device_name": {
+              "description": "Optional device name, e.g. "Oura Ring".",
+              "type": "string",
+            },
+          },
+          "required": [],
           "type": "object",
         },
       },
