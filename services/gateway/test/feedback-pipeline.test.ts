@@ -185,6 +185,28 @@ jest.mock('@supabase/supabase-js', () => ({
 
 jest.mock('../src/middleware/auth-supabase-jwt', () => ({
   resolveVitanaId: jest.fn().mockResolvedValue(TEST_VITANA_ID),
+  // feedback-admin.ts now gates its whole router on requireAdminAuth (see
+  // security-audit fix) — simulate a verified exafy_admin caller so the
+  // existing test expectations (supervisor-only actions succeeding with
+  // TEST_TOKEN) keep exercising the same routes.
+  requireAdminAuth: jest.fn((req: any, res: any, next: any) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
+    }
+    req.identity = {
+      user_id: TEST_USER_ID,
+      email: null,
+      tenant_id: null,
+      exafy_admin: true,
+      role: 'authenticated',
+      aud: null,
+      exp: null,
+      iat: null,
+      vitana_id: TEST_VITANA_ID,
+    };
+    next();
+  }),
 }));
 
 jest.mock('../src/services/oasis-event-service', () => ({
