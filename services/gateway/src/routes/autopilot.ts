@@ -95,6 +95,36 @@ import {
 const router = Router();
 
 // =============================================================================
+// SECURITY (post-audit hardening): same defect as routes/execute.ts — this
+// whole router (bar /health, /pipeline/health) had NO authentication at
+// all. The only gate was X-BYPASS-ORCHESTRATOR, a documented
+// governance-violation marker (CLAUDE.md §"Bypass Header"), not a secret.
+// Anyone on the internet could drive the autopilot planner/worker/validator
+// pipeline — submit plans, mark work complete, start/stop the event loop —
+// with just that header. Reuses the same GATEWAY_SERVICE_TOKEN bearer
+// pattern as admin-staging.ts / execute.ts.
+// =============================================================================
+function requireServiceToken(req: Request, res: Response, next: () => void): void {
+  if (req.path === "/health" || req.path === "/pipeline/health") {
+    next();
+    return;
+  }
+  const header = req.header("authorization") ?? req.header("Authorization");
+  if (!header || !header.toLowerCase().startsWith("bearer ")) {
+    res.status(401).json({ ok: false, error: "missing bearer token" });
+    return;
+  }
+  const token = header.slice("bearer ".length).trim();
+  const expected = process.env.GATEWAY_SERVICE_TOKEN ?? "";
+  if (!expected || token !== expected) {
+    res.status(401).json({ ok: false, error: "invalid service token" });
+    return;
+  }
+  next();
+}
+router.use(requireServiceToken);
+
+// =============================================================================
 // VTID-01170: Deprecation Guard
 // =============================================================================
 

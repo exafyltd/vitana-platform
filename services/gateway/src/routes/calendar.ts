@@ -126,28 +126,33 @@ async function recomputeVitanaIndexForUser(
 const router = Router();
 const LOG_PREFIX = '[Calendar]';
 
-// VTID-LIVEKIT-TOOLS: apply optionalAuth so Bearer JWTs populate
-// req.identity. Mirrors the pattern in reminders.ts:60. Doesn't 401 when
-// absent — keeps X-User-ID + service-role paths working for older callers.
+// VTID-LIVEKIT-TOOLS: apply optionalAuth so Bearer JWTs populate req.identity.
 router.use(optionalAuth);
+
+// SECURITY (post-audit hardening): require a verified identity on every
+// route except /health. This router used to accept a bare X-User-ID /
+// X-Vitana-User header or ?user_id= query param with no verification at
+// all — any caller could read/write another user's calendar by setting
+// that header. The orb-agent's GatewayClient (the one real caller with a
+// legitimate reason to hit this API server-side) already sends a real
+// Supabase-signed user JWT as the Bearer token in the common case — see
+// gateway_client.py / session.py, which documents that anonymous sessions
+// (no user_jwt) getting 401 from tool endpoints is expected/acceptable.
+const OPEN_PATHS = new Set(['/health']);
+router.use((req: Request, res: Response, next) => {
+  if (OPEN_PATHS.has(req.path)) return next();
+  if (!(req as AuthenticatedRequest).identity?.user_id) {
+    return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
+  }
+  return next();
+});
 
 // =============================================================================
 // Helpers
 // =============================================================================
 
 function getUserId(req: Request): string | null {
-  // VTID-LIVEKIT-TOOLS: prefer the canonical Supabase JWT identity attached
-  // by middleware/auth-supabase-jwt.ts (the LiveKit orb-agent's
-  // GatewayClient sends a Bearer JWT). Fall back to the legacy `req.user.id`
-  // set by older middleware, then the X-User-* headers, then a
-  // query-string user_id.
-  const ident = (req as AuthenticatedRequest).identity;
-  if (ident?.user_id) return ident.user_id;
-  // @ts-ignore - legacy middleware sets req.user
-  if (req.user?.id) return req.user.id;
-  // @ts-ignore
-  if (req.user?.sub) return req.user.sub;
-  return req.get('X-User-ID') || req.get('X-Vitana-User') || (req.query.user_id as string) || null;
+  return (req as AuthenticatedRequest).identity?.user_id ?? null;
 }
 
 function getActiveRole(req: Request): string | null {
