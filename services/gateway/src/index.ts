@@ -471,8 +471,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const canaryTargetRouter = require('./routes/canary-target').default;
   // VTID-02031: Ops "Action Required" — pull surface mirroring Gchat pings
   const opsActionRequiredRouter = require('./routes/ops-action-required').default;
-  // BOOTSTRAP-35DAY-TRACKER: Training cycle tracker for System Overview
-  const trainingStatusRouter = require('./routes/training-status').default;
+  // DEV-COMHU-03404: Overview trend data — hourly oasis_events rollup for sparklines
+  const opsOverviewTimeseriesRouter = require('./routes/ops-overview-timeseries').default;
 
   // CORS setup - DEV-OASIS-0101
   setupCors(app);
@@ -1233,8 +1233,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   // VTID-02031: Ops Action Required — pull surface for Command Hub Overview
   mountRouterSync(app, '/api/v1/ops/action-required', opsActionRequiredRouter, { owner: 'ops-action-required' });
 
-  // BOOTSTRAP-35DAY-TRACKER: Training cycle tracker — Command Hub Overview "Training" section
-  mountRouterSync(app, '/api/v1/training', trainingStatusRouter, { owner: 'training-status' });
+  // DEV-COMHU-03404: Overview trend data — hourly oasis_events rollup for sparklines
+  mountRouterSync(app, '/api/v1/ops/overview-timeseries', opsOverviewTimeseriesRouter, { owner: 'ops-overview-timeseries' });
 
   // VTID-01097: Diary Templates - guided diary templates for memory quality
   mountRouterSync(app, '/api/v1/diary', diaryRouter, { owner: 'diary' });

@@ -3812,6 +3812,11 @@ const state = {
 
     // Overview module
     overviewHealth: { items: [], loading: false, error: null, fetched: false },
+    // DEV-COMHU-03405: user's manual expand/collapse choice for the non-golden-
+    // path service health tier. A failure in that tier force-expands it
+    // regardless of this flag (see renderOverviewSystemView) — this only
+    // controls the collapsed state when everything back there is healthy.
+    overviewHealthTier2Expanded: false,
     overviewMetrics: { snapshot: null, loading: false, error: null, fetched: false },
     overviewRecentEvents: { items: [], loading: false, error: null, fetched: false },
     overviewErrors: { items: [], loading: false, error: null, fetched: false },
@@ -3851,9 +3856,9 @@ const state = {
         error: null
     },
 
-    // BOOTSTRAP-35DAY-TRACKER: Training cycle tracker (System Overview "Training" section)
-    trainingStatus: {
-        data: null,
+    // DEV-COMHU-03404: hourly oasis_events rollup for Overview sparklines
+    overviewTimeseries: {
+        series: null,
         lastRefreshed: null,
         loading: false,
         fetched: false,
@@ -30492,9 +30497,9 @@ function renderOverviewSystemView() {
     if (!state.actionRequired.fetched && !state.actionRequired.loading) {
         fetchActionRequired();
     }
-    // BOOTSTRAP-35DAY-TRACKER: load the active training cycle for the Training section
-    if (!state.trainingStatus.fetched && !state.trainingStatus.loading) {
-        fetchTrainingStatus();
+    // DEV-COMHU-03404: hourly rollup for the Operations tier sparklines
+    if (!state.overviewTimeseries.fetched && !state.overviewTimeseries.loading) {
+        fetchOverviewTimeseries();
     }
     // Auto-refresh every 30s while the Overview is mounted. Use a single
     // timer keyed on the state to avoid stacking duplicates across renders.
@@ -30510,6 +30515,13 @@ function renderOverviewSystemView() {
     // VTID-02031: Action Required panel — pinned at very top so the
     // supervisor sees what needs human action before anything else.
     container.appendChild(renderActionRequiredPanel());
+
+    // DEV-COMHU-03403: VTID pipeline attention (broken/stuck/blocked/new-ready)
+    // rendered as a second triage list directly under Action Required, instead
+    // of as disconnected "Stuck VTID" / "Attention Queue" counts further down
+    // the page that the supervisor had to notice and reconcile separately.
+    var vtidAttentionSection = renderVtidAttentionSection();
+    if (vtidAttentionSection) container.appendChild(vtidAttentionSection);
 
     var db = state.overviewDashboard;
 
@@ -30609,22 +30621,9 @@ function renderOverviewSystemView() {
     container.appendChild(banner);
 
     // ═══════════════════════════════════════════════════════════════════════
-    // SECTION: Training — the multi-day training cycle tracker (goal in,
-    // verified outcome out). BOOTSTRAP-35DAY-TRACKER.
-    // Defensive: this section must never be able to break the whole Overview.
-    // ═══════════════════════════════════════════════════════════════════════
-    try {
-        container.appendChild(renderTrainingCycleSection());
-    } catch (trErr) {
-        if (typeof console !== 'undefined') console.warn('[training-section] render failed:', trErr);
-    }
-
-    // ═══════════════════════════════════════════════════════════════════════
     // SECTION 2: Key Metrics Grid
     // Layout owned by .overview-metrics-grid in styles.css.
     // ═══════════════════════════════════════════════════════════════════════
-    var metricsGrid = document.createElement('div');
-
     var summary = state.overviewPipelineSummary.snapshot;
     var deployRate = db.deploySuccessRate7d;
     var orbStats = db.orbSessionStats;
@@ -30642,71 +30641,29 @@ function renderOverviewSystemView() {
     }).length;
     var failedVtid = summary && summary.funnel ? (summary.funnel.rejected || 0) + (summary.funnel.broken || 0) : 0;
 
-    // ROW 1: 9 cards — core metrics + user metrics
-    var row1 = [
+    // DEV-COMHU-03403: three hierarchy tiers instead of one flat 18-card wall.
+    // "Stuck VTID" / "Attention Queue" were removed from here — that data now
+    // renders as an actual triage list in renderVtidAttentionSection() above,
+    // where it's actionable, instead of as a count you had to notice and
+    // cross-reference against the Action Required panel yourself.
+
+    // TIER 1 — Operations: is the platform itself healthy right now.
+    var opsRow = [
         {
-            value: deployRate && deployRate.rate !== null ? deployRate.rate + '%' : '\u2014',
+            value: deployRate && deployRate.rate !== null ? deployRate.rate + '%' : '—',
             label: 'Deploy Success',
             subtitle: deployRate ? deployRate.succeeded + '/' + deployRate.total + ' (7d)' : 'No data',
             color: deployRate && deployRate.rate !== null ? metricColor(deployRate.rate, 80, 50) : 'neutral'
         },
         {
-            value: orbStats ? orbStats.success_rate + '%' : '\u2014',
-            label: 'ORB Sessions',
-            subtitle: orbStats ? orbStats.sessions_24h + ' sessions (24h)' : 'No data',
-            color: orbStats && orbStats.sessions_24h > 0 ? metricColor(orbStats.success_rate, 80, 50) : (orbStats && orbStats.gemini_live_enabled ? 'neutral' : 'red')
-        },
-        {
-            value: summary && summary.funnel ? String(summary.funnel.completed || 0) : '\u2014',
-            label: 'Tasks Completed',
-            subtitle: summary && summary.funnel ? (summary.funnel.in_progress || 0) + ' in progress' : '',
-            color: summary && summary.funnel && summary.funnel.completed > 0 ? 'green' : 'neutral'
-        },
-        {
-            value: summary && summary.success_rate !== undefined ? Math.round(summary.success_rate) + '%' : '\u2014',
-            label: 'Automation Rate',
-            subtitle: '7d success rate',
-            color: summary ? metricColor(summary.success_rate, 80, 50) : 'neutral'
-        },
-        {
-            value: loopSt && loopSt.is_running ? 'Running' : (loopSt ? 'Stopped' : '\u2014'),
-            label: 'Autopilot Loop',
-            subtitle: loopSt && loopSt.processed_1h ? loopSt.processed_1h + ' processed/h' : '',
-            color: loopSt ? (loopSt.is_running ? 'green' : 'red') : 'neutral'
-        },
-        {
-            value: summary && summary.workers_active !== undefined ? (summary.workers_active ? 'Active' : 'Inactive') : '\u2014',
-            label: 'Workers',
-            subtitle: summary && summary.execution_armed ? 'Execution armed' : 'Execution off',
-            color: summary ? (summary.workers_active ? 'green' : 'red') : 'neutral'
-        },
-        {
-            value: String(uStats.total),
-            label: 'Registered Users',
-            subtitle: 'Total accounts',
-            color: uStats.total > 0 ? 'green' : 'neutral'
-        },
-        {
-            value: String(uStats.active_now),
-            label: 'Active Now',
-            subtitle: 'Last hour',
-            color: uStats.active_now > 0 ? 'green' : 'neutral'
-        },
-        {
-            value: String(uStats.new_7d),
-            label: 'New Users (7d)',
-            subtitle: 'Last 7 days',
-            color: uStats.new_7d > 0 ? 'green' : 'neutral'
-        }
-    ];
-
-    // ROW 2: 9 cards — errors, violations, VTID pipeline metrics
-    var row2 = [
-        {
             value: String(db.recentFailures.length),
             label: 'Errors (24h)',
             subtitle: db.recentFailures.length > 0 ? 'Latest: ' + dashboardRelativeTime(db.recentFailures[0] && db.recentFailures[0].created_at) : 'No errors',
-            color: metricColorInverse(db.recentFailures.length, 0, 5)
+            color: metricColorInverse(db.recentFailures.length, 0, 5),
+            // DEV-COMHU-03404: hourly trend for the last 24h, same status=error
+            // series the headline count above is drawn from — so "5 errors"
+            // reads as either "falling" or "spiking" instead of a bare number.
+            sparkline: state.overviewTimeseries.series ? state.overviewTimeseries.series.errors : null
         },
         {
             value: String(db.violationCount24h),
@@ -30715,22 +30672,56 @@ function renderOverviewSystemView() {
             color: metricColorInverse(db.violationCount24h, 0, 3)
         },
         {
+            value: loopSt && loopSt.is_running ? 'Running' : (loopSt ? 'Stopped' : '—'),
+            label: 'Autopilot Loop',
+            subtitle: loopSt && loopSt.processed_1h ? loopSt.processed_1h + ' processed/h' : '',
+            color: loopSt ? (loopSt.is_running ? 'green' : 'red') : 'neutral'
+        },
+        {
+            value: summary && summary.workers_active !== undefined ? (summary.workers_active ? 'Active' : 'Inactive') : '—',
+            label: 'Workers',
+            subtitle: summary && summary.execution_armed ? 'Execution armed' : 'Execution off',
+            color: summary ? (summary.workers_active ? 'green' : 'red') : 'neutral'
+        },
+        {
+            value: summary && summary.success_rate !== undefined ? Math.round(summary.success_rate) + '%' : '—',
+            label: 'Automation Rate',
+            subtitle: '7d success rate',
+            color: summary ? metricColor(summary.success_rate, 80, 50) : 'neutral'
+        },
+        {
+            value: orbStats ? orbStats.success_rate + '%' : '—',
+            label: 'ORB Sessions',
+            subtitle: orbStats ? orbStats.sessions_24h + ' sessions (24h)' : 'No data',
+            color: orbStats && orbStats.sessions_24h > 0 ? metricColor(orbStats.success_rate, 80, 50) : (orbStats && orbStats.gemini_live_enabled ? 'neutral' : 'red')
+        }
+    ];
+
+    // TIER 2 — VTID Pipeline: is work moving through the funnel.
+    var vtidRow = [
+        {
             value: String(newVtidToday),
             label: 'New VTID Today',
             subtitle: 'Created today',
             color: newVtidToday > 0 ? 'green' : 'neutral'
         },
         {
-            value: summary && summary.funnel ? String(summary.funnel.scheduled || 0) : '\u2014',
+            value: summary && summary.funnel ? String(summary.funnel.scheduled || 0) : '—',
             label: 'Scheduled VTID',
             subtitle: 'Awaiting execution',
             color: 'neutral'
         },
         {
-            value: summary && summary.funnel ? String(summary.funnel.in_progress || 0) : '\u2014',
+            value: summary && summary.funnel ? String(summary.funnel.in_progress || 0) : '—',
             label: 'In Progress VTID',
             subtitle: 'Currently running',
             color: summary && summary.funnel && summary.funnel.in_progress > 0 ? 'amber' : 'neutral'
+        },
+        {
+            value: summary && summary.funnel ? String(summary.funnel.completed || 0) : '—',
+            label: 'Tasks Completed',
+            subtitle: '7d total',
+            color: summary && summary.funnel && summary.funnel.completed > 0 ? 'green' : 'neutral'
         },
         {
             value: String(deploymentsToday),
@@ -30743,18 +30734,30 @@ function renderOverviewSystemView() {
             label: 'Failed VTID',
             subtitle: 'Rejected/broken',
             color: metricColorInverse(failedVtid, 0, 3)
+        }
+    ];
+
+    // TIER 3 — Community: product/growth signal, not an ops health signal.
+    // Visually de-emphasized (smaller cards) so it doesn't compete for
+    // attention with the two rows above.
+    var communityRow = [
+        {
+            value: String(uStats.total),
+            label: 'Registered Users',
+            subtitle: 'Total accounts',
+            color: 'neutral'
         },
         {
-            value: summary && summary.funnel ? String((summary.funnel.stuck || 0) + (summary.funnel.broken || 0)) : '0',
-            label: 'Stuck VTID',
-            subtitle: 'Needs attention',
-            color: summary && summary.funnel && (summary.funnel.stuck > 0 || summary.funnel.broken > 0) ? 'red' : 'green'
+            value: String(uStats.active_now),
+            label: 'Active Now',
+            subtitle: 'Last hour',
+            color: 'neutral'
         },
         {
-            value: summary && summary.attention_queue ? String(summary.attention_queue.length) : '0',
-            label: 'Attention Queue',
-            subtitle: 'Action required',
-            color: summary && summary.attention_queue && summary.attention_queue.length > 0 ? 'amber' : 'green'
+            value: String(uStats.new_7d),
+            label: 'New Users (7d)',
+            subtitle: 'Last 7 days',
+            color: 'neutral'
         }
     ];
 
@@ -30775,34 +30778,53 @@ function renderOverviewSystemView() {
         'Scheduled VTID': '<svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>',
         'In Progress VTID': '<svg viewBox="0 0 24 24"><line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/><line x1="4.93" y1="4.93" x2="7.76" y2="7.76"/><line x1="16.24" y1="16.24" x2="19.07" y2="19.07"/><line x1="2" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="22" y2="12"/></svg>',
         'Deploys Today': '<svg viewBox="0 0 24 24"><path d="M12 19V5"/><path d="M5 12l7-7 7 7"/></svg>',
-        'Failed VTID': '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke="#ef4444"/><line x1="15" y1="9" x2="9" y2="15" stroke="#ef4444"/><line x1="9" y1="9" x2="15" y2="15" stroke="#ef4444"/></svg>',
-        'Stuck VTID': '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke="#f59e0b"/><line x1="12" y1="8" x2="12" y2="12" stroke="#f59e0b"/><line x1="12" y1="16" x2="12.01" y2="16" stroke="#f59e0b"/></svg>',
-        'Attention Queue': '<svg viewBox="0 0 24 24"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>'
+        'Failed VTID': '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke="#ef4444"/><line x1="15" y1="9" x2="9" y2="15" stroke="#ef4444"/><line x1="9" y1="9" x2="15" y2="15" stroke="#ef4444"/></svg>'
     };
 
-    function metricCardHTML(m) {
+    var sparklineColors = { green: '#10b981', amber: '#f59e0b', red: '#ef4444', neutral: '#94a3b8' };
+
+    function metricCardHTML(m, compact) {
         var icon = metricIcons[m.label] || '';
-        return '<div class="overview-metric-card">' +
-            (icon ? '<div class="metric-icon">' + icon + '</div>' : '') +
-            '<div class="metric-value metric-value-' + m.color + '">' + m.value + '</div>' +
+        var cardStyle = compact ? ' style="padding:0.55rem 0.5rem;"' : '';
+        var valueStyle = compact ? ' style="font-size:1.2rem;"' : '';
+        // DEV-COMHU-03404: sparkline only renders when the caller supplied real
+        // hourly data (m.sparkline) — no fabricated trend when the rollup
+        // hasn't loaded yet or a metric has no backing timeseries.
+        var spark = (!compact && m.sparkline) ? sparklineSVG(m.sparkline, sparklineColors[m.color] || sparklineColors.neutral) : '';
+        return '<div class="overview-metric-card"' + cardStyle + '>' +
+            (icon && !compact ? '<div class="metric-icon">' + icon + '</div>' : '') +
+            '<div class="metric-value metric-value-' + m.color + '"' + valueStyle + '>' + m.value + '</div>' +
             '<div class="metric-label">' + m.label + '</div>' +
             (m.subtitle ? '<div class="metric-subtitle">' + m.subtitle + '</div>' : '') +
+            spark +
             '</div>';
     }
 
-    // Combine all 18 cards. Use CSS Grid (repeat(6, minmax(0, 1fr))) instead of
-    // a <table> so every card gets exactly 1/6 of the row width — no column can
-    // stretch because of content length ("Inactive" vs. numeric values).
-    var allMetrics = row1.concat(row2);
-    var metricsHTML = allMetrics.map(function (m) { return metricCardHTML(m); }).join('');
+    // DEV-COMHU-03403: each tier gets its own label + grid instead of one flat
+    // 18-card wall, so Operations (what's broken) reads first, VTID Pipeline
+    // (what's moving) second, and Community (growth, not ops health) last and
+    // visually quieter.
+    function renderMetricsGroup(groupTitle, metrics, compact) {
+        var section = document.createElement('div');
+        section.style.cssText = 'grid-column:1 / -1;margin-bottom:0.6rem;';
 
-    // Layout lives in styles.css (.overview-metrics-grid). Only the placement
-    // (full-width within the parent dashboard grid) is set inline.
-    metricsGrid.className = 'overview-metrics-grid';
-    metricsGrid.style.gridColumn = '1 / -1';
-    metricsGrid.innerHTML = metricsHTML;
+        var groupLabel = document.createElement('div');
+        groupLabel.style.cssText = 'font-size:0.72rem;text-transform:uppercase;letter-spacing:0.08em;' +
+            'color:rgba(148,163,184,0.75);margin:0 0 0.35rem 0.1rem;';
+        groupLabel.textContent = groupTitle;
+        section.appendChild(groupLabel);
 
-    container.appendChild(metricsGrid);
+        var grid = document.createElement('div');
+        grid.className = 'overview-metrics-grid';
+        if (compact) grid.style.opacity = '0.85';
+        grid.innerHTML = metrics.map(function (m) { return metricCardHTML(m, compact); }).join('');
+        section.appendChild(grid);
+        return section;
+    }
+
+    container.appendChild(renderMetricsGroup('Operations', opsRow, false));
+    container.appendChild(renderMetricsGroup('VTID Pipeline', vtidRow, false));
+    container.appendChild(renderMetricsGroup('Community', communityRow, true));
 
     // ═══════════════════════════════════════════════════════════════════════
     // SECTION 3: Service Health — Full-width grouped view (all 54 services)
@@ -30841,7 +30863,7 @@ function renderOverviewSystemView() {
     if (sortedHealth.length === 0) {
         var noH = document.createElement('div');
         noH.className = 'placeholder-content';
-        noH.textContent = state.serviceHealth.loading ? 'Loading health checks\u2026' : 'No service health data available.';
+        noH.textContent = state.serviceHealth.loading ? 'Loading health checks…' : 'No service health data available.';
         healthPanel.appendChild(noH);
     } else {
         // Failed services alert (if any)
@@ -30852,93 +30874,144 @@ function renderOverviewSystemView() {
             var failSection = document.createElement('div');
             failSection.className = 'overview-status-banner overview-status-critical overview-failed-services';
             var failHTML = '<strong>Critical Issues (' + failedSvcs.length + '):</strong> ';
-            failHTML += failedSvcs.map(function(s) { return s.name + ' (' + s.status + ')'; }).join(' \u2022 ');
+            failHTML += failedSvcs.map(function(s) { return s.name + ' (' + s.status + ')'; }).join(' • ');
             failSection.innerHTML = failHTML;
             healthPanel.appendChild(failSection);
         }
 
-        // Group services by their group field (from fetchServiceHealth) if available
-        var hasGroups = allHealthServices.some(function (s) { return s.group; });
-        if (hasGroups) {
-            // Build group buckets preserving group order from the endpoint list
-            var groupOrder = ['Core Infrastructure', 'AI & Assistant', 'Autopilot', 'Automation & Scheduling',
-                              'Community & Social', 'Domain & Context', 'Visual & VTID'];
-            var groupMap = {};
-            sortedHealth.forEach(function (s) {
-                var g = s.group || 'Other';
-                if (!groupMap[g]) groupMap[g] = [];
-                groupMap[g].push(s);
-            });
-            var orderedGroups = groupOrder.filter(function (g) { return groupMap[g]; });
-            Object.keys(groupMap).forEach(function (g) { if (orderedGroups.indexOf(g) < 0) orderedGroups.push(g); });
-
-            var groupsContainer = document.createElement('div');
-            groupsContainer.className = 'overview-health-groups';
-
-            orderedGroups.forEach(function (groupName) {
-                var svcs = groupMap[groupName];
-                var gHealthy = svcs.filter(function (s) { return s.status === 'ok' || s.status === 'healthy' || s.healthy; }).length;
-                var gFailed = svcs.filter(function (s) { return s.status === 'down' || s.status === 'error' || s.status === 'unhealthy'; }).length;
-                var gColorClass = gFailed > 0 ? 'red' : (gHealthy < svcs.length ? 'yellow' : 'green');
-
-                var groupBox = document.createElement('div');
-                groupBox.className = 'overview-health-group';
-
-                var groupTitle = document.createElement('div');
-                groupTitle.className = 'overview-health-group-title';
-                groupTitle.innerHTML = '<span>' + escapeHtml(groupName) + '</span>' +
-                    '<span class="overview-health-group-count metric-value-' + gColorClass + '">' +
-                    gHealthy + '/' + svcs.length + '</span>';
-                groupBox.appendChild(groupTitle);
-
-                var svcList = document.createElement('div');
-                svcList.className = 'overview-health-chip-row';
-                svcs.forEach(function (s) {
-                    var dotClass = (s.status === 'ok' || s.status === 'healthy' || s.healthy) ? 'green'
-                        : (s.status === 'degraded' || s.status === 'warning' || s.status === 'ok_governance_limited') ? 'yellow'
-                        : 'red';
-                    var chip = document.createElement('span');
-                    chip.className = 'health-pill';
-                    chip.title = s.name + ': ' + s.status + (s.latency_ms >= 0 ? ' (' + s.latency_ms + 'ms)' : '');
-                    chip.innerHTML = '<span class="health-dot health-dot-' + dotClass + '"></span>' +
-                        '<span class="health-pill-name">' + escapeHtml(s.name) + '</span>' +
-                        (s.latency_ms >= 0 ? '<span class="health-pill-latency">' + s.latency_ms + 'ms</span>' : '');
-                    svcList.appendChild(chip);
+        // DEV-COMHU-03405: renders one flat chip-row list for a given service
+        // set — factored out of the old single-tier renderer so it can be
+        // called once for the always-visible golden path and once for the
+        // collapsible rest, instead of duplicating the group/flat-grid logic.
+        function renderHealthServiceList(services) {
+            var listEl = document.createElement('div');
+            var hasGroups = services.some(function (s) { return s.group; });
+            if (hasGroups) {
+                // Build group buckets preserving group order from the endpoint list
+                var groupOrder = ['Core Infrastructure', 'AI & Assistant', 'Autopilot', 'Automation & Scheduling',
+                                  'Community & Social', 'Domain & Context', 'Visual & VTID'];
+                var groupMap = {};
+                services.forEach(function (s) {
+                    var g = s.group || 'Other';
+                    if (!groupMap[g]) groupMap[g] = [];
+                    groupMap[g].push(s);
                 });
-                groupBox.appendChild(svcList);
-                groupsContainer.appendChild(groupBox);
-            });
-            healthPanel.appendChild(groupsContainer);
-        } else {
-            // Fallback: flat grid (used when .group is not available yet)
-            var HEALTH_COLS = 6;
-            var HEALTH_ROWS = Math.ceil(sortedHealth.length / HEALTH_COLS);
-            var healthHTML = '<table style="width:100%;table-layout:fixed;border-collapse:separate;border-spacing:3px;">';
-            for (var hri = 0; hri < HEALTH_ROWS; hri++) {
-                healthHTML += '<tr>';
-                for (var hci = 0; hci < HEALTH_COLS; hci++) {
-                    var hidx = hri * HEALTH_COLS + hci;
-                    if (hidx < sortedHealth.length) {
-                        var hsvc = sortedHealth[hidx];
-                        var hdot = 'green';
-                        if (hsvc.status === 'degraded' || hsvc.status === 'warning' || hsvc.status === 'ok_governance_limited') hdot = 'yellow';
-                        if (hsvc.status === 'down' || hsvc.status === 'error' || hsvc.status === 'unhealthy') hdot = 'red';
-                        var hlatency = hsvc.latency_ms >= 0 ? '<div class="health-grid-card-latency">' + hsvc.latency_ms + 'ms</div>' : '';
-                        healthHTML += '<td style="padding:2px;vertical-align:top;">' +
-                            '<div class="health-grid-card" title="' + hsvc.name + ': ' + hsvc.status + '">' +
-                            '<div class="health-grid-card-name">' +
-                            '<span class="health-dot health-dot-' + hdot + '"></span>' + hsvc.name +
-                            '</div>' + hlatency + '</div></td>';
-                    } else {
-                        healthHTML += '<td style="padding:2px;"></td>';
+                var orderedGroups = groupOrder.filter(function (g) { return groupMap[g]; });
+                Object.keys(groupMap).forEach(function (g) { if (orderedGroups.indexOf(g) < 0) orderedGroups.push(g); });
+
+                var groupsContainer = document.createElement('div');
+                groupsContainer.className = 'overview-health-groups';
+
+                orderedGroups.forEach(function (groupName) {
+                    var svcs = groupMap[groupName];
+                    var gHealthy = svcs.filter(function (s) { return s.status === 'ok' || s.status === 'healthy' || s.healthy; }).length;
+                    var gFailed = svcs.filter(function (s) { return s.status === 'down' || s.status === 'error' || s.status === 'unhealthy'; }).length;
+                    var gColorClass = gFailed > 0 ? 'red' : (gHealthy < svcs.length ? 'yellow' : 'green');
+
+                    var groupBox = document.createElement('div');
+                    groupBox.className = 'overview-health-group';
+
+                    var groupTitle = document.createElement('div');
+                    groupTitle.className = 'overview-health-group-title';
+                    groupTitle.innerHTML = '<span>' + escapeHtml(groupName) + '</span>' +
+                        '<span class="overview-health-group-count metric-value-' + gColorClass + '">' +
+                        gHealthy + '/' + svcs.length + '</span>';
+                    groupBox.appendChild(groupTitle);
+
+                    var svcList = document.createElement('div');
+                    svcList.className = 'overview-health-chip-row';
+                    svcs.forEach(function (s) {
+                        var dotClass = (s.status === 'ok' || s.status === 'healthy' || s.healthy) ? 'green'
+                            : (s.status === 'degraded' || s.status === 'warning' || s.status === 'ok_governance_limited') ? 'yellow'
+                            : 'red';
+                        var chip = document.createElement('span');
+                        chip.className = 'health-pill';
+                        chip.title = s.name + ': ' + s.status + (s.latency_ms >= 0 ? ' (' + s.latency_ms + 'ms)' : '');
+                        chip.innerHTML = '<span class="health-dot health-dot-' + dotClass + '"></span>' +
+                            '<span class="health-pill-name">' + escapeHtml(s.name) + '</span>' +
+                            (s.latency_ms >= 0 ? '<span class="health-pill-latency">' + s.latency_ms + 'ms</span>' : '');
+                        svcList.appendChild(chip);
+                    });
+                    groupBox.appendChild(svcList);
+                    groupsContainer.appendChild(groupBox);
+                });
+                listEl.appendChild(groupsContainer);
+            } else {
+                // Fallback: flat grid (used when .group is not available yet)
+                var HEALTH_COLS = 6;
+                var HEALTH_ROWS = Math.ceil(services.length / HEALTH_COLS);
+                var healthHTML = '<table style="width:100%;table-layout:fixed;border-collapse:separate;border-spacing:3px;">';
+                for (var hri = 0; hri < HEALTH_ROWS; hri++) {
+                    healthHTML += '<tr>';
+                    for (var hci = 0; hci < HEALTH_COLS; hci++) {
+                        var hidx = hri * HEALTH_COLS + hci;
+                        if (hidx < services.length) {
+                            var hsvc = services[hidx];
+                            var hdot = 'green';
+                            if (hsvc.status === 'degraded' || hsvc.status === 'warning' || hsvc.status === 'ok_governance_limited') hdot = 'yellow';
+                            if (hsvc.status === 'down' || hsvc.status === 'error' || hsvc.status === 'unhealthy') hdot = 'red';
+                            var hlatency = hsvc.latency_ms >= 0 ? '<div class="health-grid-card-latency">' + hsvc.latency_ms + 'ms</div>' : '';
+                            healthHTML += '<td style="padding:2px;vertical-align:top;">' +
+                                '<div class="health-grid-card" title="' + hsvc.name + ': ' + hsvc.status + '">' +
+                                '<div class="health-grid-card-name">' +
+                                '<span class="health-dot health-dot-' + hdot + '"></span>' + hsvc.name +
+                                '</div>' + hlatency + '</div></td>';
+                        } else {
+                            healthHTML += '<td style="padding:2px;"></td>';
+                        }
                     }
+                    healthHTML += '</tr>';
                 }
-                healthHTML += '</tr>';
+                healthHTML += '</table>';
+                var healthGridEl = document.createElement('div');
+                healthGridEl.innerHTML = healthHTML;
+                listEl.appendChild(healthGridEl);
             }
-            healthHTML += '</table>';
-            var healthGridEl = document.createElement('div');
-            healthGridEl.innerHTML = healthHTML;
-            healthPanel.appendChild(healthGridEl);
+            return listEl;
+        }
+
+        // DEV-COMHU-03405: tier the 54 services instead of showing them all at
+        // equal weight. Golden path (criticalOrder, the same list already used
+        // to sort the top of the flat view) stays always expanded — that's
+        // Gateway/ORB/CI/Autopilot/Execute Runner/Operator, the services whose
+        // failure actually means the platform is down. Everything else
+        // collapses to a summary badge, expanding automatically the moment
+        // any of those services is unhealthy so a real problem is never
+        // hidden behind a click.
+        var tier1Services = sortedHealth.filter(function (s) { return criticalOrder.indexOf(s.name) >= 0; });
+        var tier2Services = sortedHealth.filter(function (s) { return criticalOrder.indexOf(s.name) < 0; });
+
+        if (tier1Services.length > 0) {
+            var tier1Label = document.createElement('div');
+            tier1Label.style.cssText = 'font-size:0.72rem;text-transform:uppercase;letter-spacing:0.08em;' +
+                'color:rgba(148,163,184,0.75);margin:0.4rem 0 0.35rem 0.1rem;';
+            tier1Label.textContent = 'Golden Path';
+            healthPanel.appendChild(tier1Label);
+            healthPanel.appendChild(renderHealthServiceList(tier1Services));
+        }
+
+        if (tier2Services.length > 0) {
+            var tier2Failed = tier2Services.filter(function (s) {
+                return s.status === 'down' || s.status === 'error' || s.status === 'unhealthy' || s.status === 'failed';
+            });
+            var tier2Healthy = tier2Services.filter(function (s) { return s.status === 'ok' || s.status === 'healthy' || s.healthy; }).length;
+            var tier2Expanded = state.overviewHealthTier2Expanded || tier2Failed.length > 0;
+
+            var tier2Toggle = document.createElement('button');
+            tier2Toggle.className = 'btn btn-sm';
+            tier2Toggle.style.cssText = 'margin:0.5rem 0 0.35rem 0;font-size:0.72rem;padding:2px 9px;';
+            tier2Toggle.textContent = (tier2Expanded ? '▾ ' : '▸ ') + 'Other Services — ' +
+                tier2Healthy + '/' + tier2Services.length + ' healthy' +
+                (tier2Failed.length > 0 ? ' (' + tier2Failed.length + ' down)' : '');
+            tier2Toggle.onclick = function () {
+                state.overviewHealthTier2Expanded = !state.overviewHealthTier2Expanded;
+                renderApp();
+            };
+            healthPanel.appendChild(tier2Toggle);
+
+            if (tier2Expanded) {
+                healthPanel.appendChild(renderHealthServiceList(tier2Services));
+            }
         }
     }
     container.appendChild(healthPanel);
@@ -31485,199 +31558,52 @@ async function fetchActionRequired(silentRefresh) {
     }
 }
 
-// BOOTSTRAP-35DAY-TRACKER: fetch the active training cycle + per-day goals/outcomes.
-async function fetchTrainingStatus(silentRefresh) {
-    if (state.trainingStatus.loading) return;
-    var isInitialLoad = !state.trainingStatus.fetched;
-    state.trainingStatus.loading = true;
-    state.trainingStatus.error = null;
+// DEV-COMHU-03404: hourly rollup backing the Overview sparklines.
+async function fetchOverviewTimeseries(silentRefresh) {
+    if (state.overviewTimeseries.loading) return;
+    var isInitialLoad = !state.overviewTimeseries.fetched;
+    state.overviewTimeseries.loading = true;
+    state.overviewTimeseries.error = null;
     if (isInitialLoad && !silentRefresh) renderApp();
 
     try {
-        var r = await fetchWT('/api/v1/training/status', {
+        var r = await fetchWT('/api/v1/ops/overview-timeseries', {
             headers: (typeof buildContextHeaders === 'function') ? buildContextHeaders({ Accept: 'application/json' }) : { Accept: 'application/json' }
         });
         if (!r.ok) {
-            state.trainingStatus.error = 'HTTP ' + r.status;
+            state.overviewTimeseries.error = 'HTTP ' + r.status;
         } else {
-            state.trainingStatus.data = await r.json();
+            var body = await r.json();
+            state.overviewTimeseries.series = body.series || null;
         }
     } catch (err) {
-        state.trainingStatus.error = (err && err.message) ? err.message : String(err);
+        state.overviewTimeseries.error = (err && err.message) ? err.message : String(err);
     }
-    state.trainingStatus.lastRefreshed = new Date().toISOString();
-    state.trainingStatus.loading = false;
-    state.trainingStatus.fetched = true;
+    state.overviewTimeseries.lastRefreshed = new Date().toISOString();
+    state.overviewTimeseries.loading = false;
+    state.overviewTimeseries.fetched = true;
     if (state.activeModule === 'overview' && state.activeTab === 'system-overview') {
         renderApp();
     }
 }
 
-// BOOTSTRAP-35DAY-TRACKER: render the "Training" section for System Overview.
-// Generic across cycles — header adapts to cycle.label / length_days.
-function renderTrainingCycleSection() {
-    var ts = state.trainingStatus;
-    var section = document.createElement('div');
-    section.style.cssText = 'margin:0.85rem 0;border:1px solid rgba(99,102,241,0.35);border-radius:10px;' +
-        'background:linear-gradient(180deg,rgba(49,46,129,0.18),rgba(15,23,42,0.25));overflow:hidden;';
-
-    // ── Header ──
-    var head = document.createElement('div');
-    head.style.cssText = 'display:flex;align-items:center;gap:0.6rem;padding:0.7rem 0.95rem;' +
-        'border-bottom:1px solid rgba(99,102,241,0.25);';
-    var hIcon = document.createElement('span'); hIcon.textContent = '🎓'; hIcon.style.cssText = 'font-size:1.05rem;';
-    var hTitle = document.createElement('strong'); hTitle.style.cssText = 'color:#c7d2fe;font-size:0.95rem;';
-    var hSpacer = document.createElement('span'); hSpacer.style.flex = '1';
-    var hMeta = document.createElement('span'); hMeta.style.cssText = 'font-size:0.72rem;color:rgba(199,210,254,0.65);';
-    var hRefresh = document.createElement('button');
-    hRefresh.className = 'btn btn-sm'; hRefresh.textContent = 'Refresh';
-    hRefresh.style.cssText = 'padding:1px 8px;font-size:0.72rem;';
-    hRefresh.onclick = function () { state.trainingStatus.fetched = false; fetchTrainingStatus(); };
-    head.appendChild(hIcon); head.appendChild(hTitle); head.appendChild(hSpacer); head.appendChild(hMeta); head.appendChild(hRefresh);
-    section.appendChild(head);
-
-    var body = document.createElement('div');
-    body.style.cssText = 'padding:0.85rem 0.95rem;';
-
-    if (ts.error && !ts.data) {
-        hTitle.textContent = 'Training';
-        var err = document.createElement('div');
-        err.style.cssText = 'font-size:0.8rem;color:#fca5a5;';
-        err.textContent = '⚠️ Could not load training status: ' + ts.error;
-        body.appendChild(err);
-        section.appendChild(body);
-        return section;
-    }
-    if (!ts.data) {
-        hTitle.textContent = 'Training';
-        var load = document.createElement('div');
-        load.style.cssText = 'font-size:0.8rem;color:#93c5fd;';
-        load.textContent = 'Loading training cycle…';
-        body.appendChild(load);
-        section.appendChild(body);
-        return section;
-    }
-
-    var data = ts.data;
-    var cycle = data.cycle || {};
-    var live = data.live || {};
-    var today = data.today || null;
-    var days = Array.isArray(data.days) ? data.days : [];
-
-    hTitle.textContent = (cycle.label || 'Training') + ' · Day ' + (cycle.current_day || 1) + ' of ' + (cycle.length_days || '—');
-    hMeta.textContent = (data.source === 'db' ? '' : 'bootstrap · ') + (ts.lastRefreshed ? dashboardRelativeTime(ts.lastRefreshed) : '');
-
-    var statusColors = {
-        success: { fg: '#86efac', bg: 'rgba(34,197,94,0.14)', dot: '#22c55e' },
-        running: { fg: '#fcd34d', bg: 'rgba(245,158,11,0.14)', dot: '#f59e0b' },
-        failure: { fg: '#fca5a5', bg: 'rgba(239,68,68,0.14)', dot: '#ef4444' },
-        partial: { fg: '#fdba74', bg: 'rgba(249,115,22,0.14)', dot: '#f97316' },
-        pending: { fg: '#cbd5e1', bg: 'rgba(148,163,184,0.12)', dot: '#94a3b8' }
-    };
-    function colorFor(s) { return statusColors[s] || statusColors.pending; }
-
-    // ── Today's goal card ──
-    var goalCard = document.createElement('div');
-    var tc = colorFor(today ? today.status : 'pending');
-    goalCard.style.cssText = 'border:1px solid ' + tc.dot + '55;background:' + tc.bg + ';border-radius:8px;padding:0.7rem 0.85rem;margin-bottom:0.75rem;';
-    var gLabel = document.createElement('div');
-    gLabel.style.cssText = 'font-size:0.68rem;text-transform:uppercase;letter-spacing:0.08em;color:rgba(226,232,240,0.6);margin-bottom:0.3rem;';
-    gLabel.textContent = "Today's Goal — End of Day";
-    goalCard.appendChild(gLabel);
-    var gText = document.createElement('div');
-    gText.style.cssText = 'font-size:0.9rem;color:#f1f5f9;line-height:1.45;';
-    gText.textContent = today && today.goal ? today.goal : 'No goal set for today yet.';
-    goalCard.appendChild(gText);
-
-    var gStatus = document.createElement('span');
-    gStatus.style.cssText = 'display:inline-block;margin-top:0.5rem;font-size:0.7rem;font-weight:700;border-radius:999px;padding:2px 9px;color:' + tc.fg + ';background:rgba(0,0,0,0.25);';
-    gStatus.textContent = (today ? today.status : 'pending').toUpperCase();
-    goalCard.appendChild(gStatus);
-
-    if (today && today.outcome) {
-        var gOut = document.createElement('div');
-        gOut.style.cssText = 'margin-top:0.5rem;font-size:0.8rem;color:#cbd5e1;line-height:1.4;';
-        gOut.innerHTML = '<strong style="color:#e2e8f0;">Outcome:</strong> ';
-        gOut.appendChild(document.createTextNode(today.outcome + (today.evidence ? ' — ' + today.evidence : '')));
-        goalCard.appendChild(gOut);
-    }
-    body.appendChild(goalCard);
-
-    // ── Initiated-today list ──
-    if (today && Array.isArray(today.initiated) && today.initiated.length) {
-        var initWrap = document.createElement('div');
-        initWrap.style.cssText = 'margin-bottom:0.75rem;';
-        var initLabel = document.createElement('div');
-        initLabel.style.cssText = 'font-size:0.68rem;text-transform:uppercase;letter-spacing:0.08em;color:rgba(226,232,240,0.6);margin-bottom:0.35rem;';
-        initLabel.textContent = 'Initiated Today';
-        initWrap.appendChild(initLabel);
-        today.initiated.forEach(function (it) {
-            var row = document.createElement('div');
-            row.style.cssText = 'display:flex;align-items:flex-start;gap:0.5rem;padding:0.28rem 0;font-size:0.82rem;color:#e2e8f0;';
-            var dot = document.createElement('span');
-            var ic = colorFor(it.status === 'done' ? 'success' : (it.status || 'pending'));
-            dot.style.cssText = 'flex:0 0 auto;width:8px;height:8px;border-radius:50%;margin-top:0.45rem;background:' + ic.dot + ';';
-            var txt = document.createElement('span');
-            txt.textContent = it.label + (it.detail ? ' — ' + it.detail : '');
-            row.appendChild(dot); row.appendChild(txt);
-            initWrap.appendChild(row);
-        });
-        body.appendChild(initWrap);
-    }
-
-    // ── Live tiles: training job · gateway revision · flags ──
-    var tiles = document.createElement('div');
-    tiles.style.cssText = 'display:flex;flex-wrap:wrap;gap:0.5rem;margin-bottom:0.75rem;';
-    function tile(label, value, valColor) {
-        var t = document.createElement('div');
-        t.style.cssText = 'flex:1 1 160px;min-width:140px;border:1px solid rgba(148,163,184,0.2);border-radius:7px;padding:0.5rem 0.65rem;background:rgba(15,23,42,0.3);';
-        var l = document.createElement('div');
-        l.style.cssText = 'font-size:0.64rem;text-transform:uppercase;letter-spacing:0.06em;color:rgba(148,163,184,0.8);';
-        l.textContent = label;
-        var v = document.createElement('div');
-        v.style.cssText = 'font-size:0.82rem;color:' + (valColor || '#e2e8f0') + ';margin-top:0.2rem;word-break:break-all;';
-        v.textContent = value;
-        t.appendChild(l); t.appendChild(v);
-        return t;
-    }
-    var job = live.training_job || {};
-    var jobColor = job.state === 'JOB_STATE_SUCCEEDED' ? '#86efac'
-        : (job.state === 'JOB_STATE_FAILED' ? '#fca5a5' : '#fcd34d');
-    tiles.appendChild(tile('Training Job', (job.state || 'unknown') + (job.job_id ? ' · ' + job.job_id : ''), jobColor));
-    tiles.appendChild(tile('Gateway Revision', live.gateway_revision || '—', '#93c5fd'));
-    var flags = live.flags || {};
-    var onCount = Object.keys(flags).filter(function (k) { return flags[k]; }).length;
-    tiles.appendChild(tile('Wave-0 Flags', onCount + ' of ' + Object.keys(flags).length + ' ON', onCount === 0 ? '#86efac' : '#fcd34d'));
-    body.appendChild(tiles);
-
-    // ── 35-day strip ──
-    var stripLabel = document.createElement('div');
-    stripLabel.style.cssText = 'font-size:0.68rem;text-transform:uppercase;letter-spacing:0.08em;color:rgba(226,232,240,0.6);margin-bottom:0.35rem;';
-    stripLabel.textContent = cycle.length_days + '-Day Track';
-    body.appendChild(stripLabel);
-
-    var strip = document.createElement('div');
-    strip.style.cssText = 'display:flex;flex-wrap:wrap;gap:4px;';
-    var byNum = {};
-    days.forEach(function (d) { byNum[d.day_number] = d; });
-    for (var i = 1; i <= (cycle.length_days || 35); i++) {
-        var cell = document.createElement('div');
-        var d = byNum[i];
-        var cc = d ? colorFor(d.status) : statusColors.pending;
-        var isCurrent = i === cycle.current_day;
-        cell.style.cssText = 'width:24px;height:24px;border-radius:5px;display:flex;align-items:center;justify-content:center;' +
-            'font-size:0.62rem;color:' + (d ? cc.fg : 'rgba(148,163,184,0.6)') + ';' +
-            'background:' + (d ? cc.bg : 'rgba(148,163,184,0.08)') + ';' +
-            'border:1px solid ' + (isCurrent ? cc.dot : 'rgba(148,163,184,0.18)') + ';' +
-            (isCurrent ? 'box-shadow:0 0 0 1px ' + cc.dot + ';font-weight:700;' : '');
-        cell.textContent = String(i);
-        if (d && d.goal) cell.title = 'Day ' + i + ': ' + d.goal + ' [' + d.status + ']';
-        strip.appendChild(cell);
-    }
-    body.appendChild(strip);
-
-    section.appendChild(body);
-    return section;
+// DEV-COMHU-03404: tiny inline-SVG sparkline — no chart library, respects the
+// "bundle JS locally / no CDNs" rule for free since it's just a <polyline>.
+// Renders as an HTML string so it slots into metricCardHTML's innerHTML build.
+function sparklineSVG(values, color) {
+    if (!Array.isArray(values) || values.length < 2) return '';
+    var w = 100, h = 24;
+    var max = Math.max.apply(null, values.concat([1])); // avoid /0 on all-zero series
+    var step = w / (values.length - 1);
+    var points = values.map(function (v, i) {
+        var x = i * step;
+        var y = h - (v / max) * (h - 3) - 1.5;
+        return x.toFixed(1) + ',' + y.toFixed(1);
+    }).join(' ');
+    return '<svg viewBox="0 0 ' + w + ' ' + h + '" preserveAspectRatio="none" ' +
+        'style="display:block;width:100%;height:20px;margin-top:4px;">' +
+        '<polyline points="' + points + '" fill="none" stroke="' + color + '" stroke-width="1.5" ' +
+        'stroke-linecap="round" stroke-linejoin="round" opacity="0.85"/></svg>';
 }
 
 // VTID-02031: Render "Action Required" panel — pinned at the top of the
@@ -31828,6 +31754,112 @@ function renderActionRequiredCard(item) {
         summary.style.cssText = 'font-size:0.78rem;color:rgba(229,231,235,0.78);line-height:1.4;';
         summary.textContent = item.summary;
         card.appendChild(summary);
+    }
+    return card;
+}
+
+// DEV-COMHU-03403: renders the same VTID pipeline attention_queue that used to
+// power the standalone "Stuck VTID" / "Attention Queue" metric cards, as a
+// second triage list under renderActionRequiredPanel(). Distinct data source
+// (autopilot pipeline summary, not ops-action-required) so it gets its own
+// header rather than being silently merged into the panel above — but same
+// visual language, so the two read as one coherent "what needs me" surface
+// instead of a banner plus two disconnected numbers elsewhere on the page.
+function renderVtidAttentionSection() {
+    var summary = state.overviewPipelineSummary.snapshot;
+    var queue = summary && Array.isArray(summary.attention_queue) ? summary.attention_queue : [];
+    if (queue.length === 0) return null;
+
+    var wrapper = document.createElement('div');
+    wrapper.style.cssText = 'margin-bottom:0.85rem;border-radius:8px;overflow:hidden;border:1px solid rgba(245,158,11,0.35);' +
+        'background:rgba(15,23,42,0.35);';
+
+    var header = document.createElement('div');
+    header.style.cssText = 'display:flex;align-items:center;gap:0.65rem;padding:0.65rem 0.95rem;font-size:0.9rem;';
+    var icon = document.createElement('span');
+    icon.style.cssText = 'font-size:1.05rem;';
+    icon.textContent = '🔧';
+    var title = document.createElement('strong');
+    title.style.cssText = 'color:#fcd34d;';
+    title.textContent = 'VTID Pipeline — ' + queue.length + ' item' + (queue.length === 1 ? '' : 's') + ' need attention';
+    header.appendChild(icon);
+    header.appendChild(title);
+    wrapper.appendChild(header);
+
+    var list = document.createElement('div');
+    list.style.cssText = 'display:flex;flex-direction:column;gap:0.4rem;padding:0 0.95rem 0.85rem 0.95rem;';
+    queue.slice(0, 10).forEach(function (item) {
+        list.appendChild(renderVtidAttentionCard(item));
+    });
+    if (queue.length > 10) {
+        var moreLine = document.createElement('div');
+        moreLine.style.cssText = 'padding:0.45rem 0.55rem;font-size:0.74rem;color:rgba(229,231,235,0.65);text-align:center;font-style:italic;';
+        moreLine.textContent = 'Showing top 10 of ' + queue.length + ' items — see VTID Ledger for the full list';
+        list.appendChild(moreLine);
+    }
+    wrapper.appendChild(list);
+    return wrapper;
+}
+
+function renderVtidAttentionCard(item) {
+    var sevStyles = {
+        BROKEN: { bg: 'rgba(239,68,68,0.25)', fg: '#fca5a5' },
+        STUCK: { bg: 'rgba(245,158,11,0.22)', fg: '#fcd34d' },
+        BLOCKED: { bg: 'rgba(249,115,22,0.22)', fg: '#fdba74' },
+        NEW: { bg: 'rgba(99,102,241,0.20)', fg: '#a5b4fc' }
+    };
+    var sev = sevStyles[item.severity] || sevStyles.STUCK;
+
+    var card = document.createElement('a');
+    card.href = '#';
+    card.style.cssText = 'display:flex;flex-direction:column;gap:0.2rem;padding:0.55rem 0.85rem;' +
+        'background:rgba(15,23,42,0.55);border:1px solid rgba(255,255,255,0.08);border-radius:6px;' +
+        'text-decoration:none;color:inherit;cursor:pointer;transition:background 120ms ease;';
+    card.onmouseenter = function () { card.style.background = 'rgba(15,23,42,0.85)'; };
+    card.onmouseleave = function () { card.style.background = 'rgba(15,23,42,0.55)'; };
+    // DEV-COMHU-2025-0008's OASIS VTID Ledger view already owns the detail
+    // drawer for a single VTID (fetchOasisVtidDetail); reuse it instead of
+    // inventing a new drilldown surface.
+    card.onclick = function (e) {
+        e.preventDefault();
+        state.activeModule = 'oasis';
+        state.activeTab = 'vtid-ledger';
+        fetchOasisVtidDetail(item.vtid);
+    };
+
+    var topRow = document.createElement('div');
+    topRow.style.cssText = 'display:flex;align-items:center;gap:0.5rem;font-size:0.85rem;';
+
+    var sevBadge = document.createElement('span');
+    sevBadge.style.cssText = 'display:inline-block;padding:1px 7px;border-radius:3px;font-size:0.7rem;font-weight:600;' +
+        'letter-spacing:0.04em;text-transform:uppercase;background:' + sev.bg + ';color:' + sev.fg + ';';
+    sevBadge.textContent = (item.severity || 'stuck').toLowerCase();
+    topRow.appendChild(sevBadge);
+
+    var vtidBadge = document.createElement('span');
+    vtidBadge.style.cssText = 'display:inline-block;padding:1px 6px;border-radius:3px;font-size:0.68rem;font-weight:500;' +
+        'background:rgba(255,255,255,0.06);color:rgba(229,231,235,0.75);font-family:monospace;';
+    vtidBadge.textContent = item.vtid || '';
+    topRow.appendChild(vtidBadge);
+
+    var titleEl = document.createElement('strong');
+    titleEl.style.cssText = 'flex:1;color:#f3f4f6;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
+    titleEl.textContent = item.title || item.vtid || '';
+    topRow.appendChild(titleEl);
+
+    if (item.stuck_minutes !== undefined && item.stuck_minutes !== null) {
+        var age = document.createElement('span');
+        age.style.cssText = 'font-size:0.7rem;color:rgba(229,231,235,0.55);white-space:nowrap;';
+        age.textContent = item.stuck_minutes + 'm';
+        topRow.appendChild(age);
+    }
+    card.appendChild(topRow);
+
+    if (item.reason) {
+        var reason = document.createElement('div');
+        reason.style.cssText = 'font-size:0.78rem;color:rgba(229,231,235,0.78);line-height:1.4;';
+        reason.textContent = item.reason;
+        card.appendChild(reason);
     }
     return card;
 }
