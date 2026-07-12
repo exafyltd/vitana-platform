@@ -30498,6 +30498,13 @@ function renderOverviewSystemView() {
     // supervisor sees what needs human action before anything else.
     container.appendChild(renderActionRequiredPanel());
 
+    // DEV-COMHU-03403: VTID pipeline attention (broken/stuck/blocked/new-ready)
+    // rendered as a second triage list directly under Action Required, instead
+    // of as disconnected "Stuck VTID" / "Attention Queue" counts further down
+    // the page that the supervisor had to notice and reconcile separately.
+    var vtidAttentionSection = renderVtidAttentionSection();
+    if (vtidAttentionSection) container.appendChild(vtidAttentionSection);
+
     var db = state.overviewDashboard;
 
     // ── Loading / Error banner (inline, non-blocking) ──
@@ -30599,8 +30606,6 @@ function renderOverviewSystemView() {
     // SECTION 2: Key Metrics Grid
     // Layout owned by .overview-metrics-grid in styles.css.
     // ═══════════════════════════════════════════════════════════════════════
-    var metricsGrid = document.createElement('div');
-
     var summary = state.overviewPipelineSummary.snapshot;
     var deployRate = db.deploySuccessRate7d;
     var orbStats = db.orbSessionStats;
@@ -30618,66 +30623,20 @@ function renderOverviewSystemView() {
     }).length;
     var failedVtid = summary && summary.funnel ? (summary.funnel.rejected || 0) + (summary.funnel.broken || 0) : 0;
 
-    // ROW 1: 9 cards — core metrics + user metrics
-    var row1 = [
+    // DEV-COMHU-03403: three hierarchy tiers instead of one flat 18-card wall.
+    // "Stuck VTID" / "Attention Queue" were removed from here — that data now
+    // renders as an actual triage list in renderVtidAttentionSection() above,
+    // where it's actionable, instead of as a count you had to notice and
+    // cross-reference against the Action Required panel yourself.
+
+    // TIER 1 — Operations: is the platform itself healthy right now.
+    var opsRow = [
         {
-            value: deployRate && deployRate.rate !== null ? deployRate.rate + '%' : '\u2014',
+            value: deployRate && deployRate.rate !== null ? deployRate.rate + '%' : '—',
             label: 'Deploy Success',
             subtitle: deployRate ? deployRate.succeeded + '/' + deployRate.total + ' (7d)' : 'No data',
             color: deployRate && deployRate.rate !== null ? metricColor(deployRate.rate, 80, 50) : 'neutral'
         },
-        {
-            value: orbStats ? orbStats.success_rate + '%' : '\u2014',
-            label: 'ORB Sessions',
-            subtitle: orbStats ? orbStats.sessions_24h + ' sessions (24h)' : 'No data',
-            color: orbStats && orbStats.sessions_24h > 0 ? metricColor(orbStats.success_rate, 80, 50) : (orbStats && orbStats.gemini_live_enabled ? 'neutral' : 'red')
-        },
-        {
-            value: summary && summary.funnel ? String(summary.funnel.completed || 0) : '\u2014',
-            label: 'Tasks Completed',
-            subtitle: summary && summary.funnel ? (summary.funnel.in_progress || 0) + ' in progress' : '',
-            color: summary && summary.funnel && summary.funnel.completed > 0 ? 'green' : 'neutral'
-        },
-        {
-            value: summary && summary.success_rate !== undefined ? Math.round(summary.success_rate) + '%' : '\u2014',
-            label: 'Automation Rate',
-            subtitle: '7d success rate',
-            color: summary ? metricColor(summary.success_rate, 80, 50) : 'neutral'
-        },
-        {
-            value: loopSt && loopSt.is_running ? 'Running' : (loopSt ? 'Stopped' : '\u2014'),
-            label: 'Autopilot Loop',
-            subtitle: loopSt && loopSt.processed_1h ? loopSt.processed_1h + ' processed/h' : '',
-            color: loopSt ? (loopSt.is_running ? 'green' : 'red') : 'neutral'
-        },
-        {
-            value: summary && summary.workers_active !== undefined ? (summary.workers_active ? 'Active' : 'Inactive') : '\u2014',
-            label: 'Workers',
-            subtitle: summary && summary.execution_armed ? 'Execution armed' : 'Execution off',
-            color: summary ? (summary.workers_active ? 'green' : 'red') : 'neutral'
-        },
-        {
-            value: String(uStats.total),
-            label: 'Registered Users',
-            subtitle: 'Total accounts',
-            color: uStats.total > 0 ? 'green' : 'neutral'
-        },
-        {
-            value: String(uStats.active_now),
-            label: 'Active Now',
-            subtitle: 'Last hour',
-            color: uStats.active_now > 0 ? 'green' : 'neutral'
-        },
-        {
-            value: String(uStats.new_7d),
-            label: 'New Users (7d)',
-            subtitle: 'Last 7 days',
-            color: uStats.new_7d > 0 ? 'green' : 'neutral'
-        }
-    ];
-
-    // ROW 2: 9 cards — errors, violations, VTID pipeline metrics
-    var row2 = [
         {
             value: String(db.recentFailures.length),
             label: 'Errors (24h)',
@@ -30691,22 +30650,56 @@ function renderOverviewSystemView() {
             color: metricColorInverse(db.violationCount24h, 0, 3)
         },
         {
+            value: loopSt && loopSt.is_running ? 'Running' : (loopSt ? 'Stopped' : '—'),
+            label: 'Autopilot Loop',
+            subtitle: loopSt && loopSt.processed_1h ? loopSt.processed_1h + ' processed/h' : '',
+            color: loopSt ? (loopSt.is_running ? 'green' : 'red') : 'neutral'
+        },
+        {
+            value: summary && summary.workers_active !== undefined ? (summary.workers_active ? 'Active' : 'Inactive') : '—',
+            label: 'Workers',
+            subtitle: summary && summary.execution_armed ? 'Execution armed' : 'Execution off',
+            color: summary ? (summary.workers_active ? 'green' : 'red') : 'neutral'
+        },
+        {
+            value: summary && summary.success_rate !== undefined ? Math.round(summary.success_rate) + '%' : '—',
+            label: 'Automation Rate',
+            subtitle: '7d success rate',
+            color: summary ? metricColor(summary.success_rate, 80, 50) : 'neutral'
+        },
+        {
+            value: orbStats ? orbStats.success_rate + '%' : '—',
+            label: 'ORB Sessions',
+            subtitle: orbStats ? orbStats.sessions_24h + ' sessions (24h)' : 'No data',
+            color: orbStats && orbStats.sessions_24h > 0 ? metricColor(orbStats.success_rate, 80, 50) : (orbStats && orbStats.gemini_live_enabled ? 'neutral' : 'red')
+        }
+    ];
+
+    // TIER 2 — VTID Pipeline: is work moving through the funnel.
+    var vtidRow = [
+        {
             value: String(newVtidToday),
             label: 'New VTID Today',
             subtitle: 'Created today',
             color: newVtidToday > 0 ? 'green' : 'neutral'
         },
         {
-            value: summary && summary.funnel ? String(summary.funnel.scheduled || 0) : '\u2014',
+            value: summary && summary.funnel ? String(summary.funnel.scheduled || 0) : '—',
             label: 'Scheduled VTID',
             subtitle: 'Awaiting execution',
             color: 'neutral'
         },
         {
-            value: summary && summary.funnel ? String(summary.funnel.in_progress || 0) : '\u2014',
+            value: summary && summary.funnel ? String(summary.funnel.in_progress || 0) : '—',
             label: 'In Progress VTID',
             subtitle: 'Currently running',
             color: summary && summary.funnel && summary.funnel.in_progress > 0 ? 'amber' : 'neutral'
+        },
+        {
+            value: summary && summary.funnel ? String(summary.funnel.completed || 0) : '—',
+            label: 'Tasks Completed',
+            subtitle: '7d total',
+            color: summary && summary.funnel && summary.funnel.completed > 0 ? 'green' : 'neutral'
         },
         {
             value: String(deploymentsToday),
@@ -30719,18 +30712,30 @@ function renderOverviewSystemView() {
             label: 'Failed VTID',
             subtitle: 'Rejected/broken',
             color: metricColorInverse(failedVtid, 0, 3)
+        }
+    ];
+
+    // TIER 3 — Community: product/growth signal, not an ops health signal.
+    // Visually de-emphasized (smaller cards) so it doesn't compete for
+    // attention with the two rows above.
+    var communityRow = [
+        {
+            value: String(uStats.total),
+            label: 'Registered Users',
+            subtitle: 'Total accounts',
+            color: 'neutral'
         },
         {
-            value: summary && summary.funnel ? String((summary.funnel.stuck || 0) + (summary.funnel.broken || 0)) : '0',
-            label: 'Stuck VTID',
-            subtitle: 'Needs attention',
-            color: summary && summary.funnel && (summary.funnel.stuck > 0 || summary.funnel.broken > 0) ? 'red' : 'green'
+            value: String(uStats.active_now),
+            label: 'Active Now',
+            subtitle: 'Last hour',
+            color: 'neutral'
         },
         {
-            value: summary && summary.attention_queue ? String(summary.attention_queue.length) : '0',
-            label: 'Attention Queue',
-            subtitle: 'Action required',
-            color: summary && summary.attention_queue && summary.attention_queue.length > 0 ? 'amber' : 'green'
+            value: String(uStats.new_7d),
+            label: 'New Users (7d)',
+            subtitle: 'Last 7 days',
+            color: 'neutral'
         }
     ];
 
@@ -30751,34 +30756,46 @@ function renderOverviewSystemView() {
         'Scheduled VTID': '<svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>',
         'In Progress VTID': '<svg viewBox="0 0 24 24"><line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/><line x1="4.93" y1="4.93" x2="7.76" y2="7.76"/><line x1="16.24" y1="16.24" x2="19.07" y2="19.07"/><line x1="2" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="22" y2="12"/></svg>',
         'Deploys Today': '<svg viewBox="0 0 24 24"><path d="M12 19V5"/><path d="M5 12l7-7 7 7"/></svg>',
-        'Failed VTID': '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke="#ef4444"/><line x1="15" y1="9" x2="9" y2="15" stroke="#ef4444"/><line x1="9" y1="9" x2="15" y2="15" stroke="#ef4444"/></svg>',
-        'Stuck VTID': '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke="#f59e0b"/><line x1="12" y1="8" x2="12" y2="12" stroke="#f59e0b"/><line x1="12" y1="16" x2="12.01" y2="16" stroke="#f59e0b"/></svg>',
-        'Attention Queue': '<svg viewBox="0 0 24 24"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>'
+        'Failed VTID': '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke="#ef4444"/><line x1="15" y1="9" x2="9" y2="15" stroke="#ef4444"/><line x1="9" y1="9" x2="15" y2="15" stroke="#ef4444"/></svg>'
     };
 
-    function metricCardHTML(m) {
+    function metricCardHTML(m, compact) {
         var icon = metricIcons[m.label] || '';
-        return '<div class="overview-metric-card">' +
-            (icon ? '<div class="metric-icon">' + icon + '</div>' : '') +
-            '<div class="metric-value metric-value-' + m.color + '">' + m.value + '</div>' +
+        var cardStyle = compact ? ' style="padding:0.55rem 0.5rem;"' : '';
+        var valueStyle = compact ? ' style="font-size:1.2rem;"' : '';
+        return '<div class="overview-metric-card"' + cardStyle + '>' +
+            (icon && !compact ? '<div class="metric-icon">' + icon + '</div>' : '') +
+            '<div class="metric-value metric-value-' + m.color + '"' + valueStyle + '>' + m.value + '</div>' +
             '<div class="metric-label">' + m.label + '</div>' +
             (m.subtitle ? '<div class="metric-subtitle">' + m.subtitle + '</div>' : '') +
             '</div>';
     }
 
-    // Combine all 18 cards. Use CSS Grid (repeat(6, minmax(0, 1fr))) instead of
-    // a <table> so every card gets exactly 1/6 of the row width — no column can
-    // stretch because of content length ("Inactive" vs. numeric values).
-    var allMetrics = row1.concat(row2);
-    var metricsHTML = allMetrics.map(function (m) { return metricCardHTML(m); }).join('');
+    // DEV-COMHU-03403: each tier gets its own label + grid instead of one flat
+    // 18-card wall, so Operations (what's broken) reads first, VTID Pipeline
+    // (what's moving) second, and Community (growth, not ops health) last and
+    // visually quieter.
+    function renderMetricsGroup(groupTitle, metrics, compact) {
+        var section = document.createElement('div');
+        section.style.cssText = 'grid-column:1 / -1;margin-bottom:0.6rem;';
 
-    // Layout lives in styles.css (.overview-metrics-grid). Only the placement
-    // (full-width within the parent dashboard grid) is set inline.
-    metricsGrid.className = 'overview-metrics-grid';
-    metricsGrid.style.gridColumn = '1 / -1';
-    metricsGrid.innerHTML = metricsHTML;
+        var groupLabel = document.createElement('div');
+        groupLabel.style.cssText = 'font-size:0.72rem;text-transform:uppercase;letter-spacing:0.08em;' +
+            'color:rgba(148,163,184,0.75);margin:0 0 0.35rem 0.1rem;';
+        groupLabel.textContent = groupTitle;
+        section.appendChild(groupLabel);
 
-    container.appendChild(metricsGrid);
+        var grid = document.createElement('div');
+        grid.className = 'overview-metrics-grid';
+        if (compact) grid.style.opacity = '0.85';
+        grid.innerHTML = metrics.map(function (m) { return metricCardHTML(m, compact); }).join('');
+        section.appendChild(grid);
+        return section;
+    }
+
+    container.appendChild(renderMetricsGroup('Operations', opsRow, false));
+    container.appendChild(renderMetricsGroup('VTID Pipeline', vtidRow, false));
+    container.appendChild(renderMetricsGroup('Community', communityRow, true));
 
     // ═══════════════════════════════════════════════════════════════════════
     // SECTION 3: Service Health — Full-width grouped view (all 54 services)
@@ -31609,6 +31626,112 @@ function renderActionRequiredCard(item) {
         summary.style.cssText = 'font-size:0.78rem;color:rgba(229,231,235,0.78);line-height:1.4;';
         summary.textContent = item.summary;
         card.appendChild(summary);
+    }
+    return card;
+}
+
+// DEV-COMHU-03403: renders the same VTID pipeline attention_queue that used to
+// power the standalone "Stuck VTID" / "Attention Queue" metric cards, as a
+// second triage list under renderActionRequiredPanel(). Distinct data source
+// (autopilot pipeline summary, not ops-action-required) so it gets its own
+// header rather than being silently merged into the panel above — but same
+// visual language, so the two read as one coherent "what needs me" surface
+// instead of a banner plus two disconnected numbers elsewhere on the page.
+function renderVtidAttentionSection() {
+    var summary = state.overviewPipelineSummary.snapshot;
+    var queue = summary && Array.isArray(summary.attention_queue) ? summary.attention_queue : [];
+    if (queue.length === 0) return null;
+
+    var wrapper = document.createElement('div');
+    wrapper.style.cssText = 'margin-bottom:0.85rem;border-radius:8px;overflow:hidden;border:1px solid rgba(245,158,11,0.35);' +
+        'background:rgba(15,23,42,0.35);';
+
+    var header = document.createElement('div');
+    header.style.cssText = 'display:flex;align-items:center;gap:0.65rem;padding:0.65rem 0.95rem;font-size:0.9rem;';
+    var icon = document.createElement('span');
+    icon.style.cssText = 'font-size:1.05rem;';
+    icon.textContent = '🔧';
+    var title = document.createElement('strong');
+    title.style.cssText = 'color:#fcd34d;';
+    title.textContent = 'VTID Pipeline — ' + queue.length + ' item' + (queue.length === 1 ? '' : 's') + ' need attention';
+    header.appendChild(icon);
+    header.appendChild(title);
+    wrapper.appendChild(header);
+
+    var list = document.createElement('div');
+    list.style.cssText = 'display:flex;flex-direction:column;gap:0.4rem;padding:0 0.95rem 0.85rem 0.95rem;';
+    queue.slice(0, 10).forEach(function (item) {
+        list.appendChild(renderVtidAttentionCard(item));
+    });
+    if (queue.length > 10) {
+        var moreLine = document.createElement('div');
+        moreLine.style.cssText = 'padding:0.45rem 0.55rem;font-size:0.74rem;color:rgba(229,231,235,0.65);text-align:center;font-style:italic;';
+        moreLine.textContent = 'Showing top 10 of ' + queue.length + ' items — see VTID Ledger for the full list';
+        list.appendChild(moreLine);
+    }
+    wrapper.appendChild(list);
+    return wrapper;
+}
+
+function renderVtidAttentionCard(item) {
+    var sevStyles = {
+        BROKEN: { bg: 'rgba(239,68,68,0.25)', fg: '#fca5a5' },
+        STUCK: { bg: 'rgba(245,158,11,0.22)', fg: '#fcd34d' },
+        BLOCKED: { bg: 'rgba(249,115,22,0.22)', fg: '#fdba74' },
+        NEW: { bg: 'rgba(99,102,241,0.20)', fg: '#a5b4fc' }
+    };
+    var sev = sevStyles[item.severity] || sevStyles.STUCK;
+
+    var card = document.createElement('a');
+    card.href = '#';
+    card.style.cssText = 'display:flex;flex-direction:column;gap:0.2rem;padding:0.55rem 0.85rem;' +
+        'background:rgba(15,23,42,0.55);border:1px solid rgba(255,255,255,0.08);border-radius:6px;' +
+        'text-decoration:none;color:inherit;cursor:pointer;transition:background 120ms ease;';
+    card.onmouseenter = function () { card.style.background = 'rgba(15,23,42,0.85)'; };
+    card.onmouseleave = function () { card.style.background = 'rgba(15,23,42,0.55)'; };
+    // DEV-COMHU-2025-0008's OASIS VTID Ledger view already owns the detail
+    // drawer for a single VTID (fetchOasisVtidDetail); reuse it instead of
+    // inventing a new drilldown surface.
+    card.onclick = function (e) {
+        e.preventDefault();
+        state.activeModule = 'oasis';
+        state.activeTab = 'vtid-ledger';
+        fetchOasisVtidDetail(item.vtid);
+    };
+
+    var topRow = document.createElement('div');
+    topRow.style.cssText = 'display:flex;align-items:center;gap:0.5rem;font-size:0.85rem;';
+
+    var sevBadge = document.createElement('span');
+    sevBadge.style.cssText = 'display:inline-block;padding:1px 7px;border-radius:3px;font-size:0.7rem;font-weight:600;' +
+        'letter-spacing:0.04em;text-transform:uppercase;background:' + sev.bg + ';color:' + sev.fg + ';';
+    sevBadge.textContent = (item.severity || 'stuck').toLowerCase();
+    topRow.appendChild(sevBadge);
+
+    var vtidBadge = document.createElement('span');
+    vtidBadge.style.cssText = 'display:inline-block;padding:1px 6px;border-radius:3px;font-size:0.68rem;font-weight:500;' +
+        'background:rgba(255,255,255,0.06);color:rgba(229,231,235,0.75);font-family:monospace;';
+    vtidBadge.textContent = item.vtid || '';
+    topRow.appendChild(vtidBadge);
+
+    var titleEl = document.createElement('strong');
+    titleEl.style.cssText = 'flex:1;color:#f3f4f6;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
+    titleEl.textContent = item.title || item.vtid || '';
+    topRow.appendChild(titleEl);
+
+    if (item.stuck_minutes !== undefined && item.stuck_minutes !== null) {
+        var age = document.createElement('span');
+        age.style.cssText = 'font-size:0.7rem;color:rgba(229,231,235,0.55);white-space:nowrap;';
+        age.textContent = item.stuck_minutes + 'm';
+        topRow.appendChild(age);
+    }
+    card.appendChild(topRow);
+
+    if (item.reason) {
+        var reason = document.createElement('div');
+        reason.style.cssText = 'font-size:0.78rem;color:rgba(229,231,235,0.78);line-height:1.4;';
+        reason.textContent = item.reason;
+        card.appendChild(reason);
     }
     return card;
 }
