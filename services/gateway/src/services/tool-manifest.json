@@ -1,7 +1,7 @@
 {
-  "generated_at": "2026-07-06T14:48:07.618Z",
-  "source": "reconciled",
-  "total": 169,
+  "generated_at": "2026-07-12T18:17:25.959Z",
+  "source": "reconciled+plan-seed",
+  "total": 594,
   "tools": [
     {
       "name": "search_knowledge",
@@ -2645,6 +2645,6806 @@
       "wired_in": [
         "vertex"
       ]
+    },
+    {
+      "name": "search_marketplace",
+      "surface": "Marketplace",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Search products with filters (scope, category, price)",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "A1 Commerce & Marketplace Discovery",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "get_product_details",
+      "surface": "Marketplace",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Read out one product (price, rating, description)",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "A1 Commerce & Marketplace Discovery",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "browse_supplements",
+      "surface": "Marketplace",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Supplements catalog",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "A1 Commerce & Marketplace Discovery",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "add_supplement_to_regimen",
+      "surface": "Marketplace",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Add supplement to personal regimen",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "write",
+      "plan_domain": "A1 Commerce & Marketplace Discovery",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "list_my_supplements",
+      "surface": "Marketplace",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Current regimen",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "A1 Commerce & Marketplace Discovery",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "remove_supplement_from_regimen",
+      "surface": "Marketplace",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Remove from regimen",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "write",
+      "plan_domain": "A1 Commerce & Marketplace Discovery",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "browse_wellness_services",
+      "surface": "Marketplace",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Wellness services directory",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "A1 Commerce & Marketplace Discovery",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "get_provider_profile",
+      "surface": "Marketplace",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Provider/practitioner detail",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "A1 Commerce & Marketplace Discovery",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "browse_doctors_coaches",
+      "surface": "Marketplace",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Doctors & coaches directory",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "A1 Commerce & Marketplace Discovery",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "get_coach_compatibility",
+      "surface": "Marketplace",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Compatibility score with a coach",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "A1 Commerce & Marketplace Discovery",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "browse_deals_offers",
+      "surface": "Marketplace",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Current deals & offers",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "A1 Commerce & Marketplace Discovery",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "apply_discount_code",
+      "surface": "Marketplace",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Apply promo code",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "write",
+      "plan_domain": "A1 Commerce & Marketplace Discovery",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "get_ai_product_picks",
+      "surface": "Marketplace",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Shopping-agent recommendations",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "A1 Commerce & Marketplace Discovery",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "list_my_orders",
+      "surface": "Marketplace",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Order history",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "A1 Commerce & Marketplace Discovery",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "get_order_status",
+      "surface": "Marketplace",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Track one order",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "A1 Commerce & Marketplace Discovery",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "reorder_last_order",
+      "surface": "Marketplace",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Repeat a previous order",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "confirm",
+      "plan_domain": "A1 Commerce & Marketplace Discovery",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "add_to_cart",
+      "surface": "Marketplace",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Add product to universal cart",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "write",
+      "plan_domain": "A2 Cart & Checkout",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "view_cart",
+      "surface": "Marketplace",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Read cart contents + total",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "A2 Cart & Checkout",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "update_cart_item",
+      "surface": "Marketplace",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Change quantity",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "write",
+      "plan_domain": "A2 Cart & Checkout",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "remove_from_cart",
+      "surface": "Marketplace",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Remove item",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "write",
+      "plan_domain": "A2 Cart & Checkout",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "clear_cart",
+      "surface": "Marketplace",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Empty the cart",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "confirm",
+      "plan_domain": "A2 Cart & Checkout",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "set_shopping_budget",
+      "surface": "Marketplace",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Set/track budget meter",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "write",
+      "plan_domain": "A2 Cart & Checkout",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "review_agent_purchase_proposals",
+      "surface": "Marketplace",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Read pending AI purchase proposals",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "A2 Cart & Checkout",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "start_checkout",
+      "surface": "Marketplace",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Begin Stripe checkout (hands off to screen for payment)",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "confirm",
+      "plan_domain": "A2 Cart & Checkout",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "get_wallet_summary",
+      "surface": "Wallet",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Balance + lifetime earnings + pending rewards + benefits",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "A3 Wallet & Payments",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "list_wallet_transactions",
+      "surface": "Wallet",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Recent transactions",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "A3 Wallet & Payments",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "send_funds",
+      "surface": "Wallet",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Transfer credits to a member (resolve recipient → confirm)",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "confirm",
+      "plan_domain": "A3 Wallet & Payments",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "request_payment",
+      "surface": "Wallet",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Send a payment request",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "write",
+      "plan_domain": "A3 Wallet & Payments",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "exchange_currency",
+      "surface": "Wallet",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Exchange between currencies/credits",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "confirm",
+      "plan_domain": "A3 Wallet & Payments",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "get_exchange_rate",
+      "surface": "Wallet",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Current EUR/USD/token rate",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "A3 Wallet & Payments",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "set_display_currency",
+      "surface": "Wallet",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Toggle display currency",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "write",
+      "plan_domain": "A3 Wallet & Payments",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "get_referral_earnings",
+      "surface": "Wallet",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Referral earnings snapshot",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "A3 Wallet & Payments",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "get_commissions_summary",
+      "surface": "Wallet",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Commissions this month",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "A3 Wallet & Payments",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "get_pending_rewards",
+      "surface": "Wallet",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Pending rewards",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "A3 Wallet & Payments",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "list_payment_requests",
+      "surface": "Wallet",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Incoming/outgoing requests",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "A3 Wallet & Payments",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "get_my_subscription",
+      "surface": "Billing",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Current plan, renewal date, minutes left",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "read",
+      "plan_domain": "A4 Subscriptions & Billing",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "compare_subscription_plans",
+      "surface": "Billing",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Plans + prices readout",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "read",
+      "plan_domain": "A4 Subscriptions & Billing",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "upgrade_subscription",
+      "surface": "Billing",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Upgrade plan",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "confirm",
+      "plan_domain": "A4 Subscriptions & Billing",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "cancel_subscription",
+      "surface": "Billing",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Cancel plan",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "confirm",
+      "plan_domain": "A4 Subscriptions & Billing",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "add_voice_minutes",
+      "surface": "Billing",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Buy extra minutes",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "confirm",
+      "plan_domain": "A4 Subscriptions & Billing",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "redeem_subscription_code",
+      "surface": "Billing",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Redeem sub code",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "write",
+      "plan_domain": "A4 Subscriptions & Billing",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "get_billing_history",
+      "surface": "Billing",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Invoices/preview",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "read",
+      "plan_domain": "A4 Subscriptions & Billing",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "redeem_voucher",
+      "surface": "Referrals",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Redeem gift/voucher code",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "write",
+      "plan_domain": "A5 Vouchers & Referrals",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "send_gift_voucher",
+      "surface": "Referrals",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Gift a voucher to someone",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "confirm",
+      "plan_domain": "A5 Vouchers & Referrals",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "get_referral_link",
+      "surface": "Referrals",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Read/share referral link",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "read",
+      "plan_domain": "A5 Vouchers & Referrals",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "invite_friend",
+      "surface": "Referrals",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Send an invite",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "confirm",
+      "plan_domain": "A5 Vouchers & Referrals",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "get_referral_status",
+      "surface": "Referrals",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Who joined via my link",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "read",
+      "plan_domain": "A5 Vouchers & Referrals",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "activate_reseller",
+      "surface": "Referrals",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Activate reseller status",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "confirm",
+      "plan_domain": "A5 Vouchers & Referrals",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "list_my_services",
+      "surface": "Business",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "My service listings",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "A6 Business Hub — seller/creator side",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "create_service",
+      "surface": "Business",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Create a service listing",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "confirm",
+      "plan_domain": "A6 Business Hub — seller/creator side",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "update_service",
+      "surface": "Business",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Edit price/description/availability",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "write",
+      "plan_domain": "A6 Business Hub — seller/creator side",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "archive_service",
+      "surface": "Business",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Take a service offline",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "confirm",
+      "plan_domain": "A6 Business Hub — seller/creator side",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "list_my_packages",
+      "surface": "Business",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "My packages",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "A6 Business Hub — seller/creator side",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "create_package",
+      "surface": "Business",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Create package/bundle",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "confirm",
+      "plan_domain": "A6 Business Hub — seller/creator side",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "list_my_clients",
+      "surface": "Business",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Client list",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "A6 Business Hub — seller/creator side",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "get_client_overview",
+      "surface": "Business",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "One client's history",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "A6 Business Hub — seller/creator side",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "list_business_orders",
+      "surface": "Business",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Incoming orders",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "A6 Business Hub — seller/creator side",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "get_business_order_detail",
+      "surface": "Business",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "One order",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "A6 Business Hub — seller/creator side",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "get_business_kpis",
+      "surface": "Business",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Revenue/booking KPIs",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "A6 Business Hub — seller/creator side",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "get_earnings_breakdown",
+      "surface": "Business",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Earnings by source + ledger",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "A6 Business Hub — seller/creator side",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "list_business_opportunities",
+      "surface": "Business",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Missions/opportunities",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "A6 Business Hub — seller/creator side",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "get_reseller_payouts",
+      "surface": "Business",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Reseller sales & payouts",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "A6 Business Hub — seller/creator side",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "list_live_rooms_now",
+      "surface": "LiveRooms",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "What's live right now",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "read",
+      "plan_domain": "A7 Live Rooms / Go Live",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "get_live_room_details",
+      "surface": "LiveRooms",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Room info, host, access price",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "read",
+      "plan_domain": "A7 Live Rooms / Go Live",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "go_live",
+      "surface": "LiveRooms",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Start hosting (opens room)",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "confirm",
+      "plan_domain": "A7 Live Rooms / Go Live",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "create_live_room",
+      "surface": "LiveRooms",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Create a room",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "confirm",
+      "plan_domain": "A7 Live Rooms / Go Live",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "schedule_live_session",
+      "surface": "LiveRooms",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Schedule future session",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "write",
+      "plan_domain": "A7 Live Rooms / Go Live",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "purchase_room_access",
+      "surface": "LiveRooms",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Buy access to a paid room",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "confirm",
+      "plan_domain": "A7 Live Rooms / Go Live",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "extend_live_session",
+      "surface": "LiveRooms",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Extend timer",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "write",
+      "plan_domain": "A7 Live Rooms / Go Live",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "end_live_session",
+      "surface": "LiveRooms",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "End my stream",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "confirm",
+      "plan_domain": "A7 Live Rooms / Go Live",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "play_room_recording",
+      "surface": "LiveRooms",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Watch a past recording",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "read",
+      "plan_domain": "A7 Live Rooms / Go Live",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "send_group_chat_message",
+      "surface": "Chat",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Message a group thread",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "write",
+      "plan_domain": "A8 Messaging depth",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "reply_to_message",
+      "surface": "Chat",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Quote-reply to a specific message",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "write",
+      "plan_domain": "A8 Messaging depth",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "react_to_message",
+      "surface": "Chat",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Emoji-react",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "write",
+      "plan_domain": "A8 Messaging depth",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "create_group_chat",
+      "surface": "Chat",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "New group conversation",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "write",
+      "plan_domain": "A8 Messaging depth",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "add_group_chat_member",
+      "surface": "Chat",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Add member to group chat",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "write",
+      "plan_domain": "A8 Messaging depth",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "leave_group_chat",
+      "surface": "Chat",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Leave a group thread",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "confirm",
+      "plan_domain": "A8 Messaging depth",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "send_calendar_invite_in_chat",
+      "surface": "Chat",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Share a calendar invite in a DM",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "write",
+      "plan_domain": "A8 Messaging depth",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "start_voice_call",
+      "surface": "Chat",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Call a member (WebRTC)",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "confirm",
+      "plan_domain": "A8 Messaging depth",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "start_video_call",
+      "surface": "Chat",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Video-call a member",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "confirm",
+      "plan_domain": "A8 Messaging depth",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "share_post",
+      "surface": "Community",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Share/repost content",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "write",
+      "plan_domain": "A9 Feed, Content, Shorts, Asks & Challenges",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "bookmark_post",
+      "surface": "Community",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Save content",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "write",
+      "plan_domain": "A9 Feed, Content, Shorts, Asks & Challenges",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "list_my_bookmarks",
+      "surface": "Community",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Read saved items",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "read",
+      "plan_domain": "A9 Feed, Content, Shorts, Asks & Challenges",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "edit_my_post",
+      "surface": "Community",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Edit own post",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "write",
+      "plan_domain": "A9 Feed, Content, Shorts, Asks & Challenges",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "delete_my_post",
+      "surface": "Community",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Delete own post",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "confirm",
+      "plan_domain": "A9 Feed, Content, Shorts, Asks & Challenges",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "comment_on_short",
+      "surface": "Community",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Comment on a short video",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "write",
+      "plan_domain": "A9 Feed, Content, Shorts, Asks & Challenges",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "post_open_ask",
+      "surface": "Community",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Publish an Open Ask",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "write",
+      "plan_domain": "A9 Feed, Content, Shorts, Asks & Challenges",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "answer_open_ask",
+      "surface": "Community",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Answer someone's ask",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "write",
+      "plan_domain": "A9 Feed, Content, Shorts, Asks & Challenges",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "list_open_asks",
+      "surface": "Community",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Browse open asks",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "read",
+      "plan_domain": "A9 Feed, Content, Shorts, Asks & Challenges",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "join_challenge",
+      "surface": "Community",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Join a community challenge",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "write",
+      "plan_domain": "A9 Feed, Content, Shorts, Asks & Challenges",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "get_challenge_progress",
+      "surface": "Community",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "My challenge standing",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "read",
+      "plan_domain": "A9 Feed, Content, Shorts, Asks & Challenges",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "create_event",
+      "surface": "Events",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Create a community event",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "confirm",
+      "plan_domain": "A10 Events & Tickets",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "update_my_event",
+      "surface": "Events",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Edit my event",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "write",
+      "plan_domain": "A10 Events & Tickets",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "cancel_my_event",
+      "surface": "Events",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Cancel my event",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "confirm",
+      "plan_domain": "A10 Events & Tickets",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "create_meetup",
+      "surface": "Events",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Create a meetup",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "confirm",
+      "plan_domain": "A10 Events & Tickets",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "update_my_meetup",
+      "surface": "Events",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Edit my meetup",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "write",
+      "plan_domain": "A10 Events & Tickets",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "invite_to_event",
+      "surface": "Events",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Invite contacts/members",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "write",
+      "plan_domain": "A10 Events & Tickets",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "buy_event_ticket",
+      "surface": "Events",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Purchase a ticket",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "confirm",
+      "plan_domain": "A10 Events & Tickets",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "list_my_event_tickets",
+      "surface": "Events",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "My event tickets",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "A10 Events & Tickets",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "share_event",
+      "surface": "Events",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Share event link",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "write",
+      "plan_domain": "A10 Events & Tickets",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "get_event_attendees",
+      "surface": "Events",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Who's coming (organizer view)",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "A10 Events & Tickets",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "log_meal",
+      "surface": "Health",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Log nutrition/meal",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "write",
+      "plan_domain": "A11 Health depth",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "log_vitals",
+      "surface": "Health",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Log BP/HR/weight etc.",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "write",
+      "plan_domain": "A11 Health depth",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "log_mood",
+      "surface": "Health",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Log mental-health check-in",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "write",
+      "plan_domain": "A11 Health depth",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "log_biomarker",
+      "surface": "Health",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Record a lab value",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "write",
+      "plan_domain": "A11 Health depth",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "get_health_trends",
+      "surface": "Health",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Trends across trackers",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "A11 Health depth",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "get_health_streaks",
+      "surface": "Health",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Vitana streaks",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "A11 Health depth",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "order_lab_test",
+      "surface": "Health",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Order a lab test",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "confirm",
+      "plan_domain": "A11 Health depth",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "get_lab_results",
+      "surface": "Health",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Read biomarker/lab results",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "A11 Health depth",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "generate_health_plan",
+      "surface": "Health",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Run plan-generator wizard",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "confirm",
+      "plan_domain": "A11 Health depth",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "list_my_health_plans",
+      "surface": "Health",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Active plans",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "A11 Health depth",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "get_health_plan_progress",
+      "surface": "Health",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Plan adherence",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "A11 Health depth",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "list_my_conditions",
+      "surface": "Health",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Conditions & risks",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "A11 Health depth",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "get_health_education",
+      "surface": "Health",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Education resources on a topic",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "A11 Health depth",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "get_next_best_action",
+      "surface": "Health",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Today's next best health action",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "A11 Health depth",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "connect_health_device",
+      "surface": "Health",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Start device pairing (navigates)",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "confirm",
+      "plan_domain": "A11 Health depth",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "set_goal",
+      "surface": "Goals",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Set a goal / north star",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "write",
+      "plan_domain": "A12 Goals & Journey",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "list_my_goals",
+      "surface": "Goals",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Active goals",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "read",
+      "plan_domain": "A12 Goals & Journey",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "update_goal",
+      "surface": "Goals",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Adjust a goal",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "write",
+      "plan_domain": "A12 Goals & Journey",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "get_goal_progress",
+      "surface": "Goals",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Progress readout",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "read",
+      "plan_domain": "A12 Goals & Journey",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "get_journey_checkpoints",
+      "surface": "Goals",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Journey checkpoints",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "read",
+      "plan_domain": "A12 Goals & Journey",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "get_daily_priority",
+      "surface": "Goals",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Today's priority",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "read",
+      "plan_domain": "A12 Goals & Journey",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "edit_memory",
+      "surface": "Memory",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Correct a stored memory",
+      "wired_in": [],
+      "priority": "P2",
+      "risk": "write",
+      "plan_domain": "A13 Memory & Diary extras",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "archive_memory",
+      "surface": "Memory",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Archive (soft-hide) memory",
+      "wired_in": [],
+      "priority": "P2",
+      "risk": "write",
+      "plan_domain": "A13 Memory & Diary extras",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "reinforce_memory",
+      "surface": "Memory",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Mark memory as important",
+      "wired_in": [],
+      "priority": "P2",
+      "risk": "write",
+      "plan_domain": "A13 Memory & Diary extras",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "promote_memory_to_knowledge",
+      "surface": "Memory",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Promote to knowledge base",
+      "wired_in": [],
+      "priority": "P2",
+      "risk": "write",
+      "plan_domain": "A13 Memory & Diary extras",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "set_memory_permissions",
+      "surface": "Memory",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Memory privacy controls",
+      "wired_in": [],
+      "priority": "P2",
+      "risk": "write",
+      "plan_domain": "A13 Memory & Diary extras",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "get_what_vitana_knows",
+      "surface": "Memory",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "\"What do you know about me\" summary",
+      "wired_in": [],
+      "priority": "P2",
+      "risk": "read",
+      "plan_domain": "A13 Memory & Diary extras",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "add_diary_photo",
+      "surface": "Memory",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Attach photo to diary (navigates to picker)",
+      "wired_in": [],
+      "priority": "P2",
+      "risk": "write",
+      "plan_domain": "A13 Memory & Diary extras",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "set_profile_theme",
+      "surface": "Profile",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Change profile theme",
+      "wired_in": [],
+      "priority": "P2",
+      "risk": "write",
+      "plan_domain": "A14 Profile & Social depth",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "get_profile_completeness",
+      "surface": "Profile",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Completeness % + missing items",
+      "wired_in": [],
+      "priority": "P2",
+      "risk": "read",
+      "plan_domain": "A14 Profile & Social depth",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "add_gallery_photo",
+      "surface": "Profile",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Add to gallery (navigates to picker)",
+      "wired_in": [],
+      "priority": "P2",
+      "risk": "write",
+      "plan_domain": "A14 Profile & Social depth",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "share_my_profile",
+      "surface": "Profile",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Share profile link/QR",
+      "wired_in": [],
+      "priority": "P2",
+      "risk": "read",
+      "plan_domain": "A14 Profile & Social depth",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "get_my_milestones",
+      "surface": "Profile",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Achievements & milestones",
+      "wired_in": [],
+      "priority": "P2",
+      "risk": "read",
+      "plan_domain": "A14 Profile & Social depth",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "view_member_profile",
+      "surface": "Profile",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Spoken summary of a member",
+      "wired_in": [],
+      "priority": "P2",
+      "risk": "read",
+      "plan_domain": "A14 Profile & Social depth",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "list_member_posts",
+      "surface": "Profile",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "A member's recent posts",
+      "wired_in": [],
+      "priority": "P2",
+      "risk": "read",
+      "plan_domain": "A14 Profile & Social depth",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "update_service_offerings",
+      "surface": "Profile",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Edit services shown on profile",
+      "wired_in": [],
+      "priority": "P2",
+      "risk": "write",
+      "plan_domain": "A14 Profile & Social depth",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "list_contacts",
+      "surface": "Campaigns",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "My contacts",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "read",
+      "plan_domain": "A15 Contacts, Campaigns & Social Sharing",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "add_contact",
+      "surface": "Campaigns",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Add a contact",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "write",
+      "plan_domain": "A15 Contacts, Campaigns & Social Sharing",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "sync_contacts",
+      "surface": "Campaigns",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Trigger contact import/sync",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "confirm",
+      "plan_domain": "A15 Contacts, Campaigns & Social Sharing",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "create_campaign",
+      "surface": "Campaigns",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Create sharing campaign",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "confirm",
+      "plan_domain": "A15 Contacts, Campaigns & Social Sharing",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "activate_campaign",
+      "surface": "Campaigns",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Activate a campaign",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "confirm",
+      "plan_domain": "A15 Contacts, Campaigns & Social Sharing",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "get_campaign_stats",
+      "surface": "Campaigns",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Campaign performance",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "read",
+      "plan_domain": "A15 Contacts, Campaigns & Social Sharing",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "schedule_social_post",
+      "surface": "Campaigns",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Schedule post to socials",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "confirm",
+      "plan_domain": "A15 Contacts, Campaigns & Social Sharing",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "list_scheduled_posts",
+      "surface": "Campaigns",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Scheduled queue",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "read",
+      "plan_domain": "A15 Contacts, Campaigns & Social Sharing",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "cancel_scheduled_post",
+      "surface": "Campaigns",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Remove from queue",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "write",
+      "plan_domain": "A15 Contacts, Campaigns & Social Sharing",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "share_to_social",
+      "surface": "Campaigns",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Share now to connected platform",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "confirm",
+      "plan_domain": "A15 Contacts, Campaigns & Social Sharing",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "set_notification_preferences",
+      "surface": "Settings",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Per-category notif prefs",
+      "wired_in": [],
+      "priority": "P2",
+      "risk": "write",
+      "plan_domain": "A16 Notifications & Settings depth",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "enable_do_not_disturb",
+      "surface": "Settings",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "DND / quiet hours",
+      "wired_in": [],
+      "priority": "P2",
+      "risk": "write",
+      "plan_domain": "A16 Notifications & Settings depth",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "connect_google_account",
+      "surface": "Settings",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Start Google connect flow",
+      "wired_in": [],
+      "priority": "P2",
+      "risk": "confirm",
+      "plan_domain": "A16 Notifications & Settings depth",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "admin_lookup_user",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Find user by name/email/vitana_id",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "B1 Users & RBAC",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "admin_list_users",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "List/filter users",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "B1 Users & RBAC",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "admin_get_user_detail",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Full user record",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "B1 Users & RBAC",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "admin_roles_summary",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Role distribution",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "B1 Users & RBAC",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "admin_grant_role",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Grant a role",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "confirm",
+      "plan_domain": "B1 Users & RBAC",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "admin_revoke_role",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Revoke a role",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "confirm",
+      "plan_domain": "B1 Users & RBAC",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "admin_set_trust_tier",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Change trust tier",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "confirm",
+      "plan_domain": "B1 Users & RBAC",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "admin_get_at_risk_members",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "At-risk members (overview)",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "B1 Users & RBAC",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "admin_list_tenants",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Tenants list",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "read",
+      "plan_domain": "B2 Tenants & Settings",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "admin_get_tenant",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Tenant detail",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "read",
+      "plan_domain": "B2 Tenants & Settings",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "admin_update_tenant_profile",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Edit tenant profile",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "confirm",
+      "plan_domain": "B2 Tenants & Settings",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "admin_get_feature_flags",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Read flags",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "read",
+      "plan_domain": "B2 Tenants & Settings",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "admin_set_feature_flag",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Flip a flag",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "confirm",
+      "plan_domain": "B2 Tenants & Settings",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "admin_update_branding",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Branding settings",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "confirm",
+      "plan_domain": "B2 Tenants & Settings",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "admin_list_tenant_integrations",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Integrations status",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "read",
+      "plan_domain": "B2 Tenants & Settings",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "admin_list_signups",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Recent signups",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "read",
+      "plan_domain": "B3 Signups & Invitations",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "admin_get_signup_stats",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Signup funnel stats",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "read",
+      "plan_domain": "B3 Signups & Invitations",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "admin_list_signup_attempts",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Failed/pending attempts",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "read",
+      "plan_domain": "B3 Signups & Invitations",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "admin_repair_signup",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Repair a broken signup",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "confirm",
+      "plan_domain": "B3 Signups & Invitations",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "admin_create_invitation",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Invite someone",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "confirm",
+      "plan_domain": "B3 Signups & Invitations",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "admin_list_invitations",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Open invitations",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "read",
+      "plan_domain": "B3 Signups & Invitations",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "admin_revoke_invitation",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Revoke invitation",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "confirm",
+      "plan_domain": "B3 Signups & Invitations",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "admin_list_moderation_queue",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Pending items",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "B4 Content Moderation",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "admin_get_moderation_item",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "One item detail",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "B4 Content Moderation",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "admin_moderation_stats",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Queue stats",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "B4 Content Moderation",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "admin_approve_content",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Approve item",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "confirm",
+      "plan_domain": "B4 Content Moderation",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "admin_reject_content",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Reject/remove item",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "confirm",
+      "plan_domain": "B4 Content Moderation",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "admin_flag_content",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Flag for review",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "write",
+      "plan_domain": "B4 Content Moderation",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "admin_list_reports",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "User reports",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "B4 Content Moderation",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "admin_get_report",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "One report",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "B4 Content Moderation",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "admin_list_meetups",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "All meetups",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "read",
+      "plan_domain": "B5 Community Oversight",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "admin_delete_meetup",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Remove a meetup",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "confirm",
+      "plan_domain": "B5 Community Oversight",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "admin_list_groups",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "All groups",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "read",
+      "plan_domain": "B5 Community Oversight",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "admin_list_live_rooms",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "All live rooms (supervision)",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "read",
+      "plan_domain": "B5 Community Oversight",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "admin_list_creators",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Creators list",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "read",
+      "plan_domain": "B5 Community Oversight",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "admin_list_memberships",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Memberships",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "read",
+      "plan_domain": "B5 Community Oversight",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "admin_community_stats",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Community-wide stats",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "read",
+      "plan_domain": "B5 Community Oversight",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "admin_activity_feed",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Tenant activity feed + alerts",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "read",
+      "plan_domain": "B5 Community Oversight",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "admin_marketplace_overview",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Marketplace KPIs",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "B6 Marketplace Admin",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "admin_list_merchants",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Merchants",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "B6 Marketplace Admin",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "admin_update_merchant",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Edit merchant status",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "confirm",
+      "plan_domain": "B6 Marketplace Admin",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "admin_list_products",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Products (admin view)",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "B6 Marketplace Admin",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "admin_update_product",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Edit/approve product",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "confirm",
+      "plan_domain": "B6 Marketplace Admin",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "admin_bulk_product_action",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Bulk enable/disable",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "confirm",
+      "plan_domain": "B6 Marketplace Admin",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "admin_get_feed_curation",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Curation rules",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "B6 Marketplace Admin",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "admin_update_feed_curation",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Change curation",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "confirm",
+      "plan_domain": "B6 Marketplace Admin",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "admin_list_geo_policies",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Geo policies",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "B6 Marketplace Admin",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "admin_update_geo_policy",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Edit geo policy",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "confirm",
+      "plan_domain": "B6 Marketplace Admin",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "admin_trigger_source_sync",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Sync a product network",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "confirm",
+      "plan_domain": "B6 Marketplace Admin",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "admin_get_ingestion_coverage",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Ingestion runs & coverage",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "B6 Marketplace Admin",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "admin_credit_wallet",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Credit a user's wallet",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "confirm",
+      "plan_domain": "B7 Billing & Wallet Admin",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "admin_debit_wallet",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Debit adjustment",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "confirm",
+      "plan_domain": "B7 Billing & Wallet Admin",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "admin_get_founding_status",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Founding-member status",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "read",
+      "plan_domain": "B7 Billing & Wallet Admin",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "admin_get_monetization_config",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Monetization config",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "read",
+      "plan_domain": "B7 Billing & Wallet Admin",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "admin_update_monetization_config",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Update config",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "confirm",
+      "plan_domain": "B7 Billing & Wallet Admin",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "admin_run_monetization_detect",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Run detection",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "write",
+      "plan_domain": "B7 Billing & Wallet Admin",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "admin_kb_search",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Search tenant KB",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "read",
+      "plan_domain": "B8 Knowledge Base Admin",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "admin_kb_list_docs",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "List docs",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "read",
+      "plan_domain": "B8 Knowledge Base Admin",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "admin_kb_create_doc",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Create doc",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "confirm",
+      "plan_domain": "B8 Knowledge Base Admin",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "admin_kb_update_doc",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Update doc",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "confirm",
+      "plan_domain": "B8 Knowledge Base Admin",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "admin_kb_delete_doc",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Delete doc",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "confirm",
+      "plan_domain": "B8 Knowledge Base Admin",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "admin_kb_reindex",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Reindex KB",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "confirm",
+      "plan_domain": "B8 Knowledge Base Admin",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "admin_kb_baseline_optout",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Opt out of a baseline doc",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "confirm",
+      "plan_domain": "B8 Knowledge Base Admin",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "admin_system_kb_update",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Update system KB doc (exafy_admin)",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "confirm",
+      "plan_domain": "B8 Knowledge Base Admin",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "admin_get_assistant_config",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Config per surface",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "read",
+      "plan_domain": "B9 Assistant & Voice Config",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "admin_set_assistant_config",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Update config",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "confirm",
+      "plan_domain": "B9 Assistant & Voice Config",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "admin_list_assistant_speeches",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Canned speeches",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "read",
+      "plan_domain": "B9 Assistant & Voice Config",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "admin_set_assistant_speech",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Edit a speech",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "confirm",
+      "plan_domain": "B9 Assistant & Voice Config",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "admin_get_awareness_config",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Awareness registry",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "read",
+      "plan_domain": "B9 Assistant & Voice Config",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "admin_set_awareness_config",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Set awareness signal config",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "confirm",
+      "plan_domain": "B9 Assistant & Voice Config",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "admin_bulk_set_awareness",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Bulk update",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "confirm",
+      "plan_domain": "B9 Assistant & Voice Config",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "admin_list_specialists",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Personas",
+      "wired_in": [],
+      "priority": "P2",
+      "risk": "read",
+      "plan_domain": "B10 Specialists / Personas",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "admin_get_specialist",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "One persona + versions",
+      "wired_in": [],
+      "priority": "P2",
+      "risk": "read",
+      "plan_domain": "B10 Specialists / Personas",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "admin_create_specialist",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "New persona",
+      "wired_in": [],
+      "priority": "P2",
+      "risk": "confirm",
+      "plan_domain": "B10 Specialists / Personas",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "admin_update_specialist",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Edit persona",
+      "wired_in": [],
+      "priority": "P2",
+      "risk": "confirm",
+      "plan_domain": "B10 Specialists / Personas",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "admin_rollback_specialist",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Roll back version",
+      "wired_in": [],
+      "priority": "P2",
+      "risk": "confirm",
+      "plan_domain": "B10 Specialists / Personas",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "admin_set_specialist_tools",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Bind tools",
+      "wired_in": [],
+      "priority": "P2",
+      "risk": "confirm",
+      "plan_domain": "B10 Specialists / Personas",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "admin_set_specialist_kb",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Bind KB",
+      "wired_in": [],
+      "priority": "P2",
+      "risk": "confirm",
+      "plan_domain": "B10 Specialists / Personas",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "admin_set_specialist_status",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Enable/disable",
+      "wired_in": [],
+      "priority": "P2",
+      "risk": "confirm",
+      "plan_domain": "B10 Specialists / Personas",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "admin_test_specialist_connection",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Test connection",
+      "wired_in": [],
+      "priority": "P2",
+      "risk": "read",
+      "plan_domain": "B10 Specialists / Personas",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "admin_approve_specialist_ticket",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Approve lifecycle ticket",
+      "wired_in": [],
+      "priority": "P2",
+      "risk": "confirm",
+      "plan_domain": "B10 Specialists / Personas",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "admin_compose_broadcast",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Draft a broadcast (returns preview)",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "write",
+      "plan_domain": "B11 Notifications & Broadcast",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "admin_send_broadcast",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Send to audience",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "confirm",
+      "plan_domain": "B11 Notifications & Broadcast",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "admin_list_broadcasts",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Sent history",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "B11 Notifications & Broadcast",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "admin_notification_pref_stats",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Opt-in/out stats",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "B11 Notifications & Broadcast",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "admin_create_notification_category",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "New category",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "confirm",
+      "plan_domain": "B11 Notifications & Broadcast",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "admin_update_notification_category",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Edit category",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "confirm",
+      "plan_domain": "B11 Notifications & Broadcast",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "admin_test_notification_category",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Send test",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "write",
+      "plan_domain": "B11 Notifications & Broadcast",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "admin_governance_status",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Governance status",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "B12 Governance & Controls",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "admin_list_governance_rules",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Rules",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "B12 Governance & Controls",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "admin_list_violations",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Violations feed",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "B12 Governance & Controls",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "admin_list_proposals",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Proposals",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "B12 Governance & Controls",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "admin_create_proposal",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "New proposal",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "confirm",
+      "plan_domain": "B12 Governance & Controls",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "admin_update_proposal_status",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Approve/reject proposal",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "confirm",
+      "plan_domain": "B12 Governance & Controls",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "admin_get_control_key",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Read a control (kill switches)",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "B12 Governance & Controls",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "admin_set_control_key",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Flip a control key",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "confirm",
+      "plan_domain": "B12 Governance & Controls",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "admin_get_autopilot_settings",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Settings",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "read",
+      "plan_domain": "B13 Autopilot Admin",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "admin_update_autopilot_settings",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Patch settings",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "confirm",
+      "plan_domain": "B13 Autopilot Admin",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "admin_list_autopilot_bindings",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Bindings",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "read",
+      "plan_domain": "B13 Autopilot Admin",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "admin_create_autopilot_binding",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "New binding",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "confirm",
+      "plan_domain": "B13 Autopilot Admin",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "admin_delete_autopilot_binding",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Remove binding",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "confirm",
+      "plan_domain": "B13 Autopilot Admin",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "admin_list_autopilot_runs",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Runs",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "read",
+      "plan_domain": "B13 Autopilot Admin",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "admin_autopilot_run_stats",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Run stats",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "read",
+      "plan_domain": "B13 Autopilot Admin",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "admin_update_autopilot_wave",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Edit wave",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "confirm",
+      "plan_domain": "B13 Autopilot Admin",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "admin_analytics_summary",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Product analytics summary",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "read",
+      "plan_domain": "B14 Analytics & Intent Engine",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "admin_assistant_analytics",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Assistant usage",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "read",
+      "plan_domain": "B14 Analytics & Intent Engine",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "admin_journey_analytics",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Journeys",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "read",
+      "plan_domain": "B14 Analytics & Intent Engine",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "admin_feature_analytics",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Feature usage",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "read",
+      "plan_domain": "B14 Analytics & Intent Engine",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "admin_interest_analytics",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Interests",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "read",
+      "plan_domain": "B14 Analytics & Intent Engine",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "admin_intent_engine_stats",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Intent/match KPIs",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "read",
+      "plan_domain": "B14 Analytics & Intent Engine",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "admin_close_intent",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Force-close an intent",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "confirm",
+      "plan_domain": "B14 Analytics & Intent Engine",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "admin_recompute_intent",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Recompute matches",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "confirm",
+      "plan_domain": "B14 Analytics & Intent Engine",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "admin_resolve_dispute",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Resolve match dispute",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "confirm",
+      "plan_domain": "B14 Analytics & Intent Engine",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "admin_archive_intent",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Archive intent",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "confirm",
+      "plan_domain": "B14 Analytics & Intent Engine",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "admin_list_feedback_tickets",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Support tickets",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "B15 Feedback & Support Admin",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "admin_get_feedback_ticket",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "One ticket",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "B15 Feedback & Support Admin",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "admin_feedback_kpis",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Support KPIs",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "B15 Feedback & Support Admin",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "admin_list_handoffs",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Recent handoffs",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "B15 Feedback & Support Admin",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "admin_act_on_ticket",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Resolve/assign/respond",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "confirm",
+      "plan_domain": "B15 Feedback & Support Admin",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "admin_audit_actions_log",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Admin actions audit",
+      "wired_in": [],
+      "priority": "P2",
+      "risk": "read",
+      "plan_domain": "B16 Audit, i18n & Memory Ops",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "admin_audit_access_log",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Access audit",
+      "wired_in": [],
+      "priority": "P2",
+      "risk": "read",
+      "plan_domain": "B16 Audit, i18n & Memory Ops",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "admin_i18n_translate",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Run translation job",
+      "wired_in": [],
+      "priority": "P2",
+      "risk": "confirm",
+      "plan_domain": "B16 Audit, i18n & Memory Ops",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "admin_i18n_audit",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Run LLM locale audit",
+      "wired_in": [],
+      "priority": "P2",
+      "risk": "confirm",
+      "plan_domain": "B16 Audit, i18n & Memory Ops",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "admin_run_memory_consolidator",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Run memory consolidation",
+      "wired_in": [],
+      "priority": "P2",
+      "risk": "confirm",
+      "plan_domain": "B16 Audit, i18n & Memory Ops",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "admin_run_embeddings_backfill",
+      "surface": "Admin",
+      "category": "admin",
+      "role": [
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Run embeddings backfill",
+      "wired_in": [],
+      "priority": "P2",
+      "risk": "confirm",
+      "plan_domain": "B16 Audit, i18n & Memory Ops",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_allocate_vtid",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Allocate a new VTID",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "confirm",
+      "plan_domain": "C1 VTID / OASIS Lifecycle",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_create_task",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Create OASIS task",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "confirm",
+      "plan_domain": "C1 VTID / OASIS Lifecycle",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_update_task",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Patch task fields",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "confirm",
+      "plan_domain": "C1 VTID / OASIS Lifecycle",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_cancel_task",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Cancel task",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "confirm",
+      "plan_domain": "C1 VTID / OASIS Lifecycle",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_complete_task",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Mark complete",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "confirm",
+      "plan_domain": "C1 VTID / OASIS Lifecycle",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_terminalize_vtid",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Set is_terminal + outcome",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "confirm",
+      "plan_domain": "C1 VTID / OASIS Lifecycle",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_discover_tasks",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Discover eligible tasks",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "C1 VTID / OASIS Lifecycle",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_get_vtid_projection",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "VTID projection",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "C1 VTID / OASIS Lifecycle",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_get_allocator_status",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Allocator on/off + health",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "C1 VTID / OASIS Lifecycle",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_query_oasis_events",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Query events by vtid/type/time",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "C1 VTID / OASIS Lifecycle",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_execute_vtid",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Trigger execution",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "confirm",
+      "plan_domain": "C1 VTID / OASIS Lifecycle",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_run_exec_workflow",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Run a workflow",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "confirm",
+      "plan_domain": "C1 VTID / OASIS Lifecycle",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_submit_evidence",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Submit evidence for a VTID",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "write",
+      "plan_domain": "C1 VTID / OASIS Lifecycle",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_list_work_orders",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Work orders",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "C1 VTID / OASIS Lifecycle",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_get_work_order",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "One work order",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "C1 VTID / OASIS Lifecycle",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_evaluate_governance",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Evaluate action against rules",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "C2 Governance",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_governance_status",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Status snapshot",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "C2 Governance",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_list_governance_rules",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Rules",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "C2 Governance",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_get_governance_rule",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "One rule by code",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "C2 Governance",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_list_violations",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Violations",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "C2 Governance",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_list_enforcements",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Enforcements",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "C2 Governance",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_governance_feed",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Live feed",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "C2 Governance",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_list_proposals",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Proposals",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "C2 Governance",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_create_proposal",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "New proposal",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "confirm",
+      "plan_domain": "C2 Governance",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_update_proposal",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Update status",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "confirm",
+      "plan_domain": "C2 Governance",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_get_control",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Read control key (EXECUTION_DISARMED etc.)",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "C2 Governance",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_set_control",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Flip control key",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "confirm",
+      "plan_domain": "C2 Governance",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_get_control_history",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Key history",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "C2 Governance",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_create_pr",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Create PR from branch",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "confirm",
+      "plan_domain": "C3 CI/CD & Pull Requests",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_get_pr_status",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "PR state + mergeability",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "C3 CI/CD & Pull Requests",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_get_pr_checks",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Check runs for a PR",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "C3 CI/CD & Pull Requests",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_list_open_prs",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Open PRs w/ status",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "C3 CI/CD & Pull Requests",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_merge_pr",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Merge via governed pipeline",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "confirm",
+      "plan_domain": "C3 CI/CD & Pull Requests",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_safe_merge",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Safe-merge flow",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "confirm",
+      "plan_domain": "C3 CI/CD & Pull Requests",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_revert_pr",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Create revert PR",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "confirm",
+      "plan_domain": "C3 CI/CD & Pull Requests",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_trigger_workflow",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Dispatch a GH workflow",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "confirm",
+      "plan_domain": "C3 CI/CD & Pull Requests",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_list_workflow_runs",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Runs for a workflow",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "C3 CI/CD & Pull Requests",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_get_run_jobs",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Jobs + failures for a run",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "C3 CI/CD & Pull Requests",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_get_merge_lock",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Merge lock status",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "C3 CI/CD & Pull Requests",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_release_merge_lock",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Release stuck lock",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "confirm",
+      "plan_domain": "C3 CI/CD & Pull Requests",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_cicd_health",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "CI/CD pipeline health",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "C3 CI/CD & Pull Requests",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_approvals_feed",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Approvals activity feed",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "C3 CI/CD & Pull Requests",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_deploy_service",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Deploy a service (staging path)",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "confirm",
+      "plan_domain": "C4 Deployment & Release",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_publish_to_prod",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "The PUBLISH button by voice (double confirm + reason)",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "double_confirm",
+      "plan_domain": "C4 Deployment & Release",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_list_revisions",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Cloud Run revisions",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "C4 Deployment & Release",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_list_deployments",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Deployment history",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "C4 Deployment & Release",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_deployment_health",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Deploy health",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "C4 Deployment & Release",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_promote_canary",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Promote canary",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "confirm",
+      "plan_domain": "C4 Deployment & Release",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_abort_canary",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Abort canary",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "confirm",
+      "plan_domain": "C4 Deployment & Release",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_revert_deploy",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Revert gateway",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "confirm",
+      "plan_domain": "C4 Deployment & Release",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_revert_both",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Revert gateway + frontend",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "confirm",
+      "plan_domain": "C4 Deployment & Release",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_canary_status",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Canary target status",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "C4 Deployment & Release",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_staging_status",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "What's on staging (env, build)",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "C4 Deployment & Release",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_compare_staging_prod",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Diff staging vs prod builds",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "C4 Deployment & Release",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_release_feed",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Recent releases",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "C4 Deployment & Release",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_list_workers",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Registered workers",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "read",
+      "plan_domain": "C5 Worker Orchestrator",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_orchestrator_stats",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Stats",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "read",
+      "plan_domain": "C5 Worker Orchestrator",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_list_pending_worker_tasks",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Pending queue",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "read",
+      "plan_domain": "C5 Worker Orchestrator",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_get_task_progress",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Progress of claimed task",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "read",
+      "plan_domain": "C5 Worker Orchestrator",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_release_claim",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Release a stuck claim",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "confirm",
+      "plan_domain": "C5 Worker Orchestrator",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_list_subagents",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Subagents",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "read",
+      "plan_domain": "C5 Worker Orchestrator",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_list_worker_skills",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Skills",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "read",
+      "plan_domain": "C5 Worker Orchestrator",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_cleanup_stale_claims",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Cleanup stale claims",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "confirm",
+      "plan_domain": "C5 Worker Orchestrator",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_orchestrator_health",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Health",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "read",
+      "plan_domain": "C5 Worker Orchestrator",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_route_to_subagent",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Route task to subagent",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "confirm",
+      "plan_domain": "C5 Worker Orchestrator",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_autopilot_loop_status",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Loop status",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "read",
+      "plan_domain": "C6 Autopilot Controller & Loop",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_start_autopilot_loop",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Start loop",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "confirm",
+      "plan_domain": "C6 Autopilot Controller & Loop",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_stop_autopilot_loop",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Stop loop",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "confirm",
+      "plan_domain": "C6 Autopilot Controller & Loop",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_autopilot_loop_history",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Loop history",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "read",
+      "plan_domain": "C6 Autopilot Controller & Loop",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_reset_loop_cursor",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Reset cursor",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "confirm",
+      "plan_domain": "C6 Autopilot Controller & Loop",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_controller_status",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Controller status",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "read",
+      "plan_domain": "C6 Autopilot Controller & Loop",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_list_controller_runs",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Runs",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "read",
+      "plan_domain": "C6 Autopilot Controller & Loop",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_get_controller_run",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "One run",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "read",
+      "plan_domain": "C6 Autopilot Controller & Loop",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_plan_task",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Plan a VTID",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "confirm",
+      "plan_domain": "C6 Autopilot Controller & Loop",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_start_task_work",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Start work",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "confirm",
+      "plan_domain": "C6 Autopilot Controller & Loop",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_complete_task_work",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Complete work",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "confirm",
+      "plan_domain": "C6 Autopilot Controller & Loop",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_validate_task",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Validate",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "read",
+      "plan_domain": "C6 Autopilot Controller & Loop",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_list_pending_plans",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Pending plans",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "read",
+      "plan_domain": "C6 Autopilot Controller & Loop",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_get_task_spec",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Spec for VTID",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "read",
+      "plan_domain": "C6 Autopilot Controller & Loop",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_autopilot_pipeline_health",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Pipeline health + summary",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "read",
+      "plan_domain": "C6 Autopilot Controller & Loop",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_trigger_scan",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Run a scanner",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "confirm",
+      "plan_domain": "C7 Dev-Autopilot Scanners & Findings",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_list_scanners",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Scanners",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "read",
+      "plan_domain": "C7 Dev-Autopilot Scanners & Findings",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_list_impact_rules",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Impact rules",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "read",
+      "plan_domain": "C7 Dev-Autopilot Scanners & Findings",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_get_auto_approve_config",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Auto-approve config",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "read",
+      "plan_domain": "C7 Dev-Autopilot Scanners & Findings",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_list_scan_runs",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Scan runs",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "read",
+      "plan_domain": "C7 Dev-Autopilot Scanners & Findings",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_get_scan_run",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "One run",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "read",
+      "plan_domain": "C7 Dev-Autopilot Scanners & Findings",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_findings_queue",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Findings queue",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "read",
+      "plan_domain": "C7 Dev-Autopilot Scanners & Findings",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_get_finding",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "One finding",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "read",
+      "plan_domain": "C7 Dev-Autopilot Scanners & Findings",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_generate_finding_plan",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Generate fix plan",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "confirm",
+      "plan_domain": "C7 Dev-Autopilot Scanners & Findings",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_reject_finding",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Reject finding",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "confirm",
+      "plan_domain": "C7 Dev-Autopilot Scanners & Findings",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_snooze_finding",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Snooze",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "write",
+      "plan_domain": "C7 Dev-Autopilot Scanners & Findings",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_approve_auto_execute",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Approve auto-execution",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "confirm",
+      "plan_domain": "C7 Dev-Autopilot Scanners & Findings",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_cancel_execution",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Cancel execution",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "confirm",
+      "plan_domain": "C7 Dev-Autopilot Scanners & Findings",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_list_executions",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Executions",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "read",
+      "plan_domain": "C7 Dev-Autopilot Scanners & Findings",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_get_execution_lineage",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Lineage",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "read",
+      "plan_domain": "C7 Dev-Autopilot Scanners & Findings",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_report_incident",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "File an incident",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "confirm",
+      "plan_domain": "C8 Self-Healing",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_healing_config",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Config",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "read",
+      "plan_domain": "C8 Self-Healing",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_set_healing_mode",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Change mode",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "confirm",
+      "plan_domain": "C8 Self-Healing",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_healing_kill_switch",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Flip kill switch",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "confirm",
+      "plan_domain": "C8 Self-Healing",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_healing_history",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Heal history",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "read",
+      "plan_domain": "C8 Self-Healing",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_healing_metrics",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Metrics summary",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "read",
+      "plan_domain": "C8 Self-Healing",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_approve_heal",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Approve pending heal",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "confirm",
+      "plan_domain": "C8 Self-Healing",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_reject_heal",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Reject heal",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "confirm",
+      "plan_domain": "C8 Self-Healing",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_verify_heal",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Verify a heal",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "read",
+      "plan_domain": "C8 Self-Healing",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_rollback_heal",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Roll back a heal",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "confirm",
+      "plan_domain": "C8 Self-Healing",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_list_quarantine",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Quarantined items",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "read",
+      "plan_domain": "C8 Self-Healing",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_release_quarantine",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Release from quarantine",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "confirm",
+      "plan_domain": "C8 Self-Healing",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_shadow_comparison",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Staging shadow-comparison report",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "read",
+      "plan_domain": "C8 Self-Healing",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_build_info",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Running revision/build per service",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "C9 Observability",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_service_health",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "/alive + health across services",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "C9 Observability",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_error_rate",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Recent error rates",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "C9 Observability",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_latency_summary",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Latency percentiles",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "C9 Observability",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_telemetry_snapshot",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Telemetry snapshot",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "C9 Observability",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_recent_events",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Recent OASIS/system events",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "C9 Observability",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_agent_trace",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "ORB agent trace",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "C9 Observability",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_supervisor_summary",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Supervisor summary",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "C9 Observability",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_get_session_turns",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Voice session turns",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "C9 Observability",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_get_session_diagnostics",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Session diagnostics",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "C9 Observability",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_conversation_decisions",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Greeting/NBA decisions",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "C9 Observability",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_tool_failures",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Recent tool failures",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "C9 Observability",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_tool_health",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Tool health dashboard",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "C9 Observability",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_greeting_decisions",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Greeting monitor",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "C9 Observability",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_get_agent_detail",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "One registered agent detail",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "C9 Observability",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_run_test_suite",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Run a suite",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "confirm",
+      "plan_domain": "C10 Testing & QA",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_list_test_suites",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Suites",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "read",
+      "plan_domain": "C10 Testing & QA",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_list_test_runs",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Runs",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "read",
+      "plan_domain": "C10 Testing & QA",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_get_test_run",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "One run + failures",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "read",
+      "plan_domain": "C10 Testing & QA",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_run_e2e",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Trigger E2E workflow",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "confirm",
+      "plan_domain": "C10 Testing & QA",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_orb_monitor_status",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "ORB monitor status",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "read",
+      "plan_domain": "C10 Testing & QA",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_trigger_orb_monitor",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Trigger ORB monitor",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "confirm",
+      "plan_domain": "C10 Testing & QA",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_list_test_contracts",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Test contracts",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "read",
+      "plan_domain": "C10 Testing & QA",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_run_orb_selfcheck",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "ORB tools selfcheck",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "confirm",
+      "plan_domain": "C10 Testing & QA",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_voice_lab_probe",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Voice-lab probe",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "read",
+      "plan_domain": "C10 Testing & QA",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_list_pending_migrations",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Unapplied migration files",
+      "wired_in": [],
+      "priority": "P2",
+      "risk": "read",
+      "plan_domain": "C11 Database & Migrations",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_run_staging_migration",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Dispatch staging migration",
+      "wired_in": [],
+      "priority": "P2",
+      "risk": "confirm",
+      "plan_domain": "C11 Database & Migrations",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_run_prod_migration",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Dispatch prod migration (double confirm + reason)",
+      "wired_in": [],
+      "priority": "P2",
+      "risk": "double_confirm",
+      "plan_domain": "C11 Database & Migrations",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_migration_status",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Last migration run status",
+      "wired_in": [],
+      "priority": "P2",
+      "risk": "read",
+      "plan_domain": "C11 Database & Migrations",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_run_backfill",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Run a named backfill",
+      "wired_in": [],
+      "priority": "P2",
+      "risk": "confirm",
+      "plan_domain": "C11 Database & Migrations",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_schema_info",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Table/schema summary from DATABASE_SCHEMA.md",
+      "wired_in": [],
+      "priority": "P2",
+      "risk": "read",
+      "plan_domain": "C11 Database & Migrations",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_list_dev_users",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Dev-access users",
+      "wired_in": [],
+      "priority": "P2",
+      "risk": "read",
+      "plan_domain": "C12 Dev Access, Simulator & Meta",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_grant_access",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Grant dev access",
+      "wired_in": [],
+      "priority": "P2",
+      "risk": "confirm",
+      "plan_domain": "C12 Dev Access, Simulator & Meta",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_revoke_access",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Revoke dev access",
+      "wired_in": [],
+      "priority": "P2",
+      "risk": "confirm",
+      "plan_domain": "C12 Dev Access, Simulator & Meta",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_mint_token",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Mint a dev token",
+      "wired_in": [],
+      "priority": "P2",
+      "risk": "confirm",
+      "plan_domain": "C12 Dev Access, Simulator & Meta",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_open_hub_panel",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Navigate Command Hub to module/tab",
+      "wired_in": [],
+      "priority": "P2",
+      "risk": "read",
+      "plan_domain": "C12 Dev Access, Simulator & Meta",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_run_simulator",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Dry-run conversation decision for a user",
+      "wired_in": [],
+      "priority": "P2",
+      "risk": "read",
+      "plan_domain": "C12 Dev Access, Simulator & Meta",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_journey_context",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Journey context readout",
+      "wired_in": [],
+      "priority": "P2",
+      "risk": "read",
+      "plan_domain": "C12 Dev Access, Simulator & Meta",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_voice_catalog_stats",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Catalog stats (live/planned/parity)",
+      "wired_in": [],
+      "priority": "P2",
+      "risk": "read",
+      "plan_domain": "C12 Dev Access, Simulator & Meta",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_get_voice_tool_detail",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "One tool's manifest entry",
+      "wired_in": [],
+      "priority": "P2",
+      "risk": "read",
+      "plan_domain": "C12 Dev Access, Simulator & Meta",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_run_routine_now",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Fire a routine immediately",
+      "wired_in": [],
+      "priority": "P2",
+      "risk": "confirm",
+      "plan_domain": "C12 Dev Access, Simulator & Meta",
+      "plan": "expansion-v2"
+    },
+    {
+      "name": "dev_system_briefing",
+      "surface": "Developer",
+      "category": "developer",
+      "role": [
+        "developer",
+        "admin",
+        "exafy_admin"
+      ],
+      "status": "planned",
+      "description": "Composite morning briefing: health + deploys + approvals + violations + failing checks",
+      "wired_in": [],
+      "priority": "P2",
+      "risk": "read",
+      "plan_domain": "C12 Dev Access, Simulator & Meta",
+      "plan": "expansion-v2"
     }
   ]
 }
