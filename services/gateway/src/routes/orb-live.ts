@@ -137,6 +137,21 @@ import {
   RECEPTIONIST_KEY as RECEPTIONIST_PERSONA_KEY,
 } from '../services/persona-registry';
 import { dispatchVoiceFailureFireAndForget } from '../services/voice-self-healing-adapter';
+// FB-2026-05-000061: grace-period debouncer for the user-facing
+// connection_issue alert. Shipped in PR #1884 but never wired in (the
+// executor could not modify this file at the time). A transient upstream
+// ws error that recovers within the grace window (any upstream message or
+// a successful transparent reconnect) no longer surfaces "internet
+// problems" to a user whose session is actually fine.
+import { ConnectionIssueDebouncer } from '../services/connection-issue-debouncer';
+
+// FB-2026-05-000061: one instance for the whole route module, keyed by
+// sessionId. 2s default grace; operator-tunable without redeploy of config.
+const connectionIssueDebouncer = new ConnectionIssueDebouncer();
+const CONNECTION_ISSUE_GRACE_MS = Math.max(
+  0,
+  Number(process.env.ORB_CONNECTION_ISSUE_GRACE_MS || '') || 2000,
+);
 import { fetchAdminBriefingBlock, isAdminRole } from '../services/admin-scanners/briefing';
 import { ADMIN_TOOL_HANDLERS, ADMIN_TOOL_NAMES, ADMIN_TOOL_SCHEMAS } from '../services/admin-voice-tools';
 import { getUserContextSummary } from '../services/user-context-profiler';
@@ -1165,6 +1180,9 @@ setInterval(() => {
         },
       });
       s.active = false;
+      // FB-2026-05-000061: drop any pending debounced connection alert with
+      // the session so the timer map can't leak on TTL-purged sessions.
+      connectionIssueDebouncer.cleanup(sid);
       liveSessions.delete(sid);
       purged++;
     }
@@ -7068,6 +7086,13 @@ async function connectToLiveAPI(
     // A8.3a.1: register the named handler.
     ws.on('message', handleUpstreamLiveMessage);
 
+    // FB-2026-05-000061: any upstream traffic after a ws 'error' means the
+    // connection is alive — cancel the pending debounced connection_issue
+    // alert. No-op (cheap Map lookup) when nothing is pending.
+    ws.on('message', () => {
+      connectionIssueDebouncer.resolveIssue(session.sessionId);
+    });
+
     // Handle WebSocket errors
     ws.on('error', (error) => {
       console.error(`[VTID-01219] Live API WebSocket error for session ${session.sessionId}:`, error);
@@ -7082,26 +7107,36 @@ async function connectToLiveAPI(
         clearInterval(session.silenceKeepaliveInterval);
         session.silenceKeepaliveInterval = undefined;
       }
-      // VTID-WATCHDOG: Send connection_issue immediately (best-effort).
+      // VTID-WATCHDOG: Send connection_issue (best-effort).
       // Do NOT clear the watchdog — if this SSE/WS send fails (pipe broken),
       // the watchdog will fire later as a backup.
       // VTID-02637: dedupe — error and close handlers both fire on the same
       // disconnect. Without the flag the user heard "internet problems" twice.
+      // FB-2026-05-000061: don't alarm immediately — a transient upstream
+      // error that recovers (any upstream message, or a successful
+      // transparent reconnect) cancels the pending alert via resolveIssue.
+      // A genuine disconnect is still announced promptly by the close
+      // handler below, which emits without a grace period and sets
+      // connectionIssueEmitted — making this debounced callback a no-op.
       if (session.active && !session.connectionIssueEmitted) {
-        session.connectionIssueEmitted = true;
-        const lang = session.lang || 'en';
-        const issueEvent = {
-          type: 'connection_issue',
-          reason: 'upstream_error',
-          message: getConnectionIssueMessage(lang),
-          should_close: true,
-        };
-        if (session.sseResponse) {
-          try { session.sseResponse.write(`data: ${JSON.stringify(issueEvent)}\n\n`); } catch (_e) { /* ignore */ }
-        }
-        if (session.clientWs && session.clientWs.readyState === WebSocket.OPEN) {
-          try { session.clientWs.send(JSON.stringify(issueEvent)); } catch (_e) { /* ignore */ }
-        }
+        connectionIssueDebouncer.reportIssue(session.sessionId, CONNECTION_ISSUE_GRACE_MS, () => {
+          if (!session.active || session.connectionIssueEmitted) return;
+          session.connectionIssueEmitted = true;
+          const lang = session.lang || 'en';
+          const issueEvent = {
+            type: 'connection_issue',
+            reason: 'upstream_error',
+            message: getConnectionIssueMessage(lang),
+            should_close: true,
+          };
+          emitDiag(session, 'connection_issue_debounce_confirmed', { grace_ms: CONNECTION_ISSUE_GRACE_MS });
+          if (session.sseResponse) {
+            try { session.sseResponse.write(`data: ${JSON.stringify(issueEvent)}\n\n`); } catch (_e) { /* ignore */ }
+          }
+          if (session.clientWs && session.clientWs.readyState === WebSocket.OPEN) {
+            try { session.clientWs.send(JSON.stringify(issueEvent)); } catch (_e) { /* ignore */ }
+          }
+        });
       }
 
       if (!setupComplete) {
@@ -7225,6 +7260,12 @@ async function connectToLiveAPI(
           onTurnComplete,
           onInterrupted
         ).then(reconnected => {
+          if (reconnected) {
+            // FB-2026-05-000061: the session recovered transparently — the
+            // pending debounced "internet problems" alert (armed by the ws
+            // 'error' handler) must not fire on a healthy session.
+            connectionIssueDebouncer.resolveIssue(session.sessionId);
+          }
           if (!reconnected) {
             // Reconnection failed — notify client as final disconnect (SSE or WS)
             console.warn(`[VTID-STREAM-RECONNECT] Reconnection failed for ${session.sessionId} — notifying client`);
@@ -9859,6 +9900,9 @@ router.post('/stop', (req: Request, res: Response) => {
   }
 
   session.active = false;
+  // FB-2026-05-000061: a user-initiated stop must not fire a queued
+  // "connection problems" alert afterwards.
+  connectionIssueDebouncer.cleanup(body.sessionId);
   sessions.delete(body.sessionId);
 
   console.log(`[ORB-LIVE] Session stopped: ${body.sessionId}`);
