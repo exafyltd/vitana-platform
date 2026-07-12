@@ -9112,8 +9112,7 @@ async function generateMemoryEnhancedSystemInstruction(
       }
 
       // Journey stage \u2014 canonical day_in_journey (same source the ORB
-      // greeting and My Journey screen read via getJourneyState /
-      // user_journey.started_at). The old journey-calendar-mapper
+      // greeting and My Journey screen read). The old journey-calendar-mapper
       // getJourneyStage() call here passed `new Date()` where it expected
       // the user's REGISTRATION date, so `Date.now() - Date.now()` always
       // floored to 0 \u2014 every live session was told "Journey: Day 0 of 90",
@@ -9123,12 +9122,11 @@ async function generateMemoryEnhancedSystemInstruction(
         const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
         if (SUPABASE_URL && SUPABASE_SERVICE_ROLE) {
           const { createClient: createJourneyClient } = await import('@supabase/supabase-js');
-          const { getJourneyState } = await import('../services/journey/user-journey-service');
+          const { getJourneyStageForPrompt } = await import('../services/journey/journey-stage-for-prompt');
           const journeySupabase = createJourneyClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE);
-          const journeyState = await getJourneyState(journeySupabase, effectiveIdentity.user_id);
-          if (journeyState) {
-            const waveName = journeyState.current_wave?.name ?? 'Discovery';
-            calLines += `\nJourney: Day ${journeyState.day_in_journey} of ${journeyState.total_days} \u2014 "${waveName}"\n`;
+          const journeyStage = await getJourneyStageForPrompt(journeySupabase, effectiveIdentity.user_id);
+          if (journeyStage) {
+            calLines += `\nJourney: Day ${journeyStage.day_number} of ${journeyStage.total_days} \u2014 "${journeyStage.wave_name}"\n`;
           }
         }
       } catch {}

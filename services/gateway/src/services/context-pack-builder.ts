@@ -885,16 +885,9 @@ export async function buildContextPack(
             const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
             if (SUPABASE_URL && SUPABASE_SERVICE_ROLE) {
               const { createClient: createJourneyClient } = await import('@supabase/supabase-js');
-              const { getJourneyState } = await import('./journey/user-journey-service');
+              const { getJourneyStageForPrompt } = await import('./journey/journey-stage-for-prompt');
               const journeySupabase = createJourneyClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE);
-              const journeyState = await getJourneyState(journeySupabase, input.lens.user_id);
-              if (journeyState) {
-                journeyStage = {
-                  day_number: journeyState.day_in_journey,
-                  total_days: journeyState.total_days,
-                  wave_name: journeyState.current_wave?.name ?? 'Discovery',
-                };
-              }
+              journeyStage = (await getJourneyStageForPrompt(journeySupabase, input.lens.user_id)) ?? undefined;
             }
           } catch {}
           calendarContext = {
