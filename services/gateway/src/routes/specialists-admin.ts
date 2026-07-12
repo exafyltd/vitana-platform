@@ -24,31 +24,23 @@
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { createClient } from '@supabase/supabase-js';
+import { requireAdminAuth, AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
 
 const router = Router();
 const VTID = 'VTID-02047-PH5';
 
+// SECURITY (post-audit hardening): every route below mutates or reads
+// agent personas / system prompts / tool bindings — Command Hub operator
+// surface. Previously gated by a bespoke ensureAuth() that only
+// base64-decoded the JWT's `sub` claim with NO signature verification and
+// NO role check, so any caller with a forged Bearer token could rewrite
+// every persona's system_prompt. requireAdminAuth verifies the JWT
+// signature (jose.jwtVerify) and requires app_metadata.exafy_admin=true.
+router.use(requireAdminAuth);
+
 function getServiceClient() {
   return createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE!,
     { auth: { persistSession: false, autoRefreshToken: false } });
-}
-
-function getBearerToken(req: Request): string | null {
-  const h = req.headers.authorization;
-  return h && h.startsWith('Bearer ') ? h.slice(7) : null;
-}
-
-function decodeJwtSub(token: string): string | null {
-  try { return JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString()).sub ?? null; }
-  catch { return null; }
-}
-
-function ensureAuth(req: Request, res: Response): string | null {
-  const token = getBearerToken(req);
-  if (!token) { res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' }); return null; }
-  const userId = decodeJwtSub(token);
-  if (!userId) { res.status(401).json({ ok: false, error: 'INVALID_TOKEN' }); return null; }
-  return userId;
 }
 
 async function writeAudit(actorUserId: string, personaId: string | null, action: string, before: unknown, after: unknown) {
@@ -67,7 +59,6 @@ async function writeAudit(actorUserId: string, personaId: string | null, action:
 // ---------------------------------------------------------------------------
 
 router.get('/', async (req: Request, res: Response) => {
-  if (!ensureAuth(req, res)) return;
   const supabase = getServiceClient();
   const { data: personas, error } = await supabase
     .from('agent_personas')
@@ -90,7 +81,6 @@ router.get('/', async (req: Request, res: Response) => {
 });
 
 router.get('/:key', async (req: Request, res: Response) => {
-  if (!ensureAuth(req, res)) return;
   const supabase = getServiceClient();
   const { data: persona, error } = await supabase
     .from('agent_personas')
@@ -134,7 +124,7 @@ const PersonaCreateSchema = z.object({
 });
 
 router.post('/', async (req: Request, res: Response) => {
-  const userId = ensureAuth(req, res); if (!userId) return;
+  const userId = (req as AuthenticatedRequest).identity!.user_id;
   const v = PersonaCreateSchema.safeParse(req.body);
   if (!v.success) {
     return res.status(400).json({ ok: false, error: 'VALIDATION_FAILED', details: v.error.errors });
@@ -200,7 +190,7 @@ const ToolRegisterSchema = z.object({
 });
 
 router.post('/tools', async (req: Request, res: Response) => {
-  const userId = ensureAuth(req, res); if (!userId) return;
+  const userId = (req as AuthenticatedRequest).identity!.user_id;
   const v = ToolRegisterSchema.safeParse(req.body);
   if (!v.success) {
     return res.status(400).json({ ok: false, error: 'VALIDATION_FAILED', details: v.error.errors });
@@ -250,7 +240,7 @@ const PersonaUpdateSchema = z.object({
 });
 
 router.put('/:key', async (req: Request, res: Response) => {
-  const userId = ensureAuth(req, res); if (!userId) return;
+  const userId = (req as AuthenticatedRequest).identity!.user_id;
   const v = PersonaUpdateSchema.safeParse(req.body);
   if (!v.success) return res.status(400).json({ ok: false, error: 'VALIDATION_FAILED', details: v.error.errors });
 
@@ -297,7 +287,6 @@ router.put('/:key', async (req: Request, res: Response) => {
 // ---------------------------------------------------------------------------
 
 router.get('/:key/versions', async (req: Request, res: Response) => {
-  if (!ensureAuth(req, res)) return;
   const supabase = getServiceClient();
   const { data: persona } = await supabase.from('agent_personas').select('id').eq('key', req.params.key).maybeSingle();
   if (!persona) return res.status(404).json({ ok: false, error: 'NOT_FOUND' });
@@ -311,7 +300,7 @@ router.get('/:key/versions', async (req: Request, res: Response) => {
 });
 
 router.post('/:key/rollback/:version', async (req: Request, res: Response) => {
-  const userId = ensureAuth(req, res); if (!userId) return;
+  const userId = (req as AuthenticatedRequest).identity!.user_id;
   const targetVersion = parseInt(req.params.version, 10);
   if (!Number.isFinite(targetVersion)) return res.status(400).json({ ok: false, error: 'BAD_VERSION' });
 
@@ -357,7 +346,6 @@ router.post('/:key/rollback/:version', async (req: Request, res: Response) => {
 // ---------------------------------------------------------------------------
 
 router.get('/tools', async (req: Request, res: Response) => {
-  if (!ensureAuth(req, res)) return;
   const supabase = getServiceClient();
   const { data, error } = await supabase.from('agent_tools').select('*').order('blast_radius').order('key');
   if (error) return res.status(502).json({ ok: false, error: error.message });
@@ -367,7 +355,7 @@ router.get('/tools', async (req: Request, res: Response) => {
 const KeyArraySchema = z.object({ keys: z.array(z.string()).max(100) });
 
 router.put('/:key/tools', async (req: Request, res: Response) => {
-  const userId = ensureAuth(req, res); if (!userId) return;
+  const userId = (req as AuthenticatedRequest).identity!.user_id;
   const v = KeyArraySchema.safeParse(req.body);
   if (!v.success) return res.status(400).json({ ok: false, error: 'VALIDATION_FAILED' });
 
@@ -389,7 +377,7 @@ router.put('/:key/tools', async (req: Request, res: Response) => {
 });
 
 router.put('/:key/kb', async (req: Request, res: Response) => {
-  const userId = ensureAuth(req, res); if (!userId) return;
+  const userId = (req as AuthenticatedRequest).identity!.user_id;
   const v = KeyArraySchema.safeParse(req.body);
   if (!v.success) return res.status(400).json({ ok: false, error: 'VALIDATION_FAILED' });
 
@@ -413,7 +401,7 @@ router.put('/:key/kb', async (req: Request, res: Response) => {
 const KeywordsSchema = z.object({ keywords: z.array(z.string().max(200)).max(200) });
 
 router.put('/:key/keywords', async (req: Request, res: Response) => {
-  const userId = ensureAuth(req, res); if (!userId) return;
+  const userId = (req as AuthenticatedRequest).identity!.user_id;
   const v = KeywordsSchema.safeParse(req.body);
   if (!v.success) return res.status(400).json({ ok: false, error: 'VALIDATION_FAILED' });
   const supabase = getServiceClient();
@@ -445,7 +433,7 @@ async function updateVitanaPhrases(
   column: 'forward_request_phrases' | 'stay_inline_phrases',
   action: string,
 ) {
-  const userId = ensureAuth(req, res); if (!userId) return;
+  const userId = (req as AuthenticatedRequest).identity!.user_id;
   const v = PhrasesSchema.safeParse(req.body);
   if (!v.success) return res.status(400).json({ ok: false, error: 'VALIDATION_FAILED', details: v.error.errors });
 
@@ -499,7 +487,7 @@ router.put('/vitana/stay-inline-phrases', (req, res) =>
 const StatusSchema = z.object({ enabled: z.boolean() });
 
 router.patch('/:key/status', async (req: Request, res: Response) => {
-  const userId = ensureAuth(req, res); if (!userId) return;
+  const userId = (req as AuthenticatedRequest).identity!.user_id;
   const key = req.params.key;
   if (key === 'vitana') {
     return res.status(400).json({ ok: false, error: 'VITANA_ALWAYS_ON',
@@ -553,7 +541,6 @@ router.patch('/:key/status', async (req: Request, res: Response) => {
 // Same payload regardless of which persona would receive it.
 
 router.get('/context-preview', async (req: Request, res: Response) => {
-  if (!ensureAuth(req, res)) return;
   const userId = String(req.query.user_id || '').trim();
   if (!userId || !/^[0-9a-f-]{36}$/i.test(userId)) {
     return res.status(400).json({ ok: false, error: 'BAD_USER_ID',
@@ -570,7 +557,6 @@ router.get('/context-preview', async (req: Request, res: Response) => {
 // ---------------------------------------------------------------------------
 
 router.get('/audit', async (req: Request, res: Response) => {
-  if (!ensureAuth(req, res)) return;
   const limit = Math.min(parseInt(String(req.query.limit ?? '100'), 10) || 100, 500);
   const personaKey = req.query.persona_key as string | undefined;
   const supabase = getServiceClient();
