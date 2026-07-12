@@ -5,11 +5,39 @@
  * looks identical whether errors are falling or accelerating.
  *
  * Read-only and side-effect-free. Mounted at /api/v1/ops/overview-timeseries.
+ * Dev-only (requireDevRole) — same auth shape as autonomy-pulse.ts, since
+ * this is internal Command Hub telemetry, not a public API.
  */
 
-import { Router, Request, Response } from 'express';
+import { Router, Request, Response, NextFunction } from 'express';
+import { requireAuth, AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
 
 const router = Router();
+
+// Same shape as routes/autonomy-pulse.ts's requireDevRole: internal-service
+// bypass header for server-to-server calls, otherwise requireAuth + the
+// exafy_admin flag.
+async function requireDevRole(req: Request, res: Response, next: NextFunction): Promise<void> {
+  if (req.get('X-Gateway-Internal') === (process.env.GATEWAY_INTERNAL_TOKEN || '__dev__') &&
+      process.env.GATEWAY_INTERNAL_TOKEN) {
+    return next();
+  }
+  let authFailed = false;
+  await requireAuth(req as AuthenticatedRequest, res, () => {
+    const identity = (req as AuthenticatedRequest).identity;
+    if (!identity) {
+      authFailed = true;
+      res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
+      return;
+    }
+    if (identity.exafy_admin === true) return next();
+    authFailed = true;
+    res.status(403).json({ ok: false, error: 'Overview timeseries requires developer access (exafy_admin)' });
+  });
+  if (authFailed) return;
+}
+
+router.use(requireDevRole);
 
 const LOOKBACK_HOURS = 24;
 // Cap per-series row fetch so a noisy window can't blow up the query.
@@ -47,7 +75,8 @@ async function pgGetTimestamps(
 
 // Buckets a list of ISO timestamps into LOOKBACK_HOURS 1-hour buckets ending
 // now, oldest first — so the array can be dropped straight into a sparkline.
-function bucketize(timestamps: string[]): number[] {
+// Exported for unit testing (test/ops-overview-timeseries.test.ts).
+export function bucketize(timestamps: string[]): number[] {
   const now = Date.now();
   const buckets = new Array(LOOKBACK_HOURS).fill(0);
   for (const ts of timestamps) {
