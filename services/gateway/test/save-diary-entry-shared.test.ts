@@ -179,6 +179,37 @@ describe('VTID-03042 — save_diary_entry lifted to shared dispatcher', () => {
     expect(sb._calls).toHaveLength(0);
   });
 
+  // REGRESSION: a bare "yes/help me" reply to Vitana's own "want help
+  // logging today?" nudge is consent, not diary content. It must never be
+  // persisted as a fabricated entry (see live-system-instruction.ts Section
+  // M "bare consent" exception for the prompt-side half of this fix).
+  test('10. bare consent phrases ("ja", "hilf mir", "yes", "help me") are rejected, DB untouched', async () => {
+    const phrases = ['ja', 'Ja.', 'hilf mir', 'Ja, hilf mir!', 'yes', 'help me', 'okay', 'sure'];
+    for (const raw_text of phrases) {
+      const sb = makeStubSupabase({});
+      const result = await tool_save_diary_entry({ raw_text }, identity, sb as never);
+      expect(result.ok).toBe(true); // ok:true — it's a "needs content" signal, not a hard error
+      if (result.ok !== true) continue;
+      expect((result.result as { needs_content?: boolean }).needs_content).toBe(true);
+      expect(sb._calls).toHaveLength(0); // never touched diary_entries / RPC
+    }
+  });
+
+  test('11. real content that happens to start with "ja"/"yes" is NOT treated as bare consent', async () => {
+    const sb = makeStubSupabase({
+      preIndexRow: null,
+      rpcReturn: { data: { ok: true, score_total: 50 } },
+    });
+    const result = await tool_save_diary_entry(
+      { raw_text: 'Ja, ich habe heute zwei Liter Wasser getrunken und bin joggen gewesen.' },
+      identity,
+      sb as never,
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok !== true) return;
+    expect(sb._calls.some((c) => c.table === 'diary_entries' && c.op === 'insert')).toBe(true);
+  });
+
   test('5. text is voice-friendly and mentions the entry_date', async () => {
     const sb = makeStubSupabase({
       preIndexRow: null,

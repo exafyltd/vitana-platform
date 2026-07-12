@@ -4084,6 +4084,15 @@ async function tool_get_pillar_subscores(
 //   5) compute per-pillar delta
 //   6) celebrate diary streak (non-blocking)
 // ---------------------------------------------------------------------------
+
+// Bare acceptance of a "want help logging?" nudge, in the languages the
+// diary nudge/CTA is rendered in — DE and EN. Matches the WHOLE trimmed
+// string (optionally followed by punctuation) so real diary content that
+// happens to start with "yes" or "ja" ("Ja, ich habe heute 2L Wasser
+// getrunken") is never caught by this — only a standalone consent phrase.
+const BARE_CONSENT_RX =
+  /^(ja|okay?|klar|gerne|sicher|yes|sure|help me|hilf mir|ja,? hilf mir|yes,? help me|ja bitte|yes please)[.!,]*$/i;
+
 export async function tool_save_diary_entry(
   args: OrbToolArgs,
   identity: OrbToolIdentity,
@@ -4095,6 +4104,19 @@ export async function tool_save_diary_entry(
   }
   if (!identity.user_id) {
     return { ok: false, error: 'user_id is required' };
+  }
+  // DEV-COMHU-0505-follow-up: a bare acceptance of a diary nudge ("ja",
+  // "hilf mir", "yes", "okay") is not diary content — it's consent to be
+  // asked what to log. Without this the model could (and did) pass the
+  // user's own "yes, help me" straight through as raw_text, fabricating a
+  // persisted diary entry with no real content. Reject it here as a
+  // backstop regardless of what the live prompt does upstream.
+  if (BARE_CONSENT_RX.test(rawText)) {
+    return {
+      ok: true,
+      result: { needs_content: true },
+      text: 'That was just an acceptance, not diary content. Ask the user what they would like to log for today, then call save_diary_entry again with their actual words.',
+    };
   }
 
   const argDate = typeof args.entry_date === 'string' ? args.entry_date : undefined;
