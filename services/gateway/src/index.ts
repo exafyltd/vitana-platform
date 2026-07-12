@@ -1233,6 +1233,12 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   // VTID-02031: Ops Action Required — pull surface for Command Hub Overview
   mountRouterSync(app, '/api/v1/ops/action-required', opsActionRequiredRouter, { owner: 'ops-action-required' });
 
+  // VTID-ASSISTANT-ROLES: role-aware assistant briefings (developer + tenant
+  // admin). Consumed by the ORB session-start injection and the get_briefing
+  // voice tools; also directly queryable by the Command Hub / admin console.
+  const assistantBriefingRouter = require('./routes/assistant-briefing').default;
+  mountRouterSync(app, '/api/v1/assistant/briefing', assistantBriefingRouter, { owner: 'assistant-briefing' });
+
   // DEV-COMHU-03404: Overview trend data — hourly oasis_events rollup for sparklines
   mountRouterSync(app, '/api/v1/ops/overview-timeseries', opsOverviewTimeseriesRouter, { owner: 'ops-overview-timeseries' });
 

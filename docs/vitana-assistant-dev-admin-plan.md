@@ -1,10 +1,32 @@
 # Vitana Assistant for Developer & Admin Roles — Extended Development Plan
 
-**Status:** PLAN — for review before execution. No code changes in this PR.
+**Status:** IMPLEMENTED (first full pass on this branch — see "Implementation Status" below).
 **Scope:** `exafyltd/vitana-platform` (gateway/ORB backend) + `exafyltd/vitana-v1` (frontend surfaces)
 **Date:** 2026-07-12
 
 ---
+
+## 0a. Implementation Status (this branch)
+
+Shipped in this branch (all gateway-side; frontend needs no change — the ORB widget already sends
+`current_route`, which drives surface resolution):
+
+| Plan phase | Delivered |
+|---|---|
+| **0 — Role cutover** | `admin_orb` persona (defaults; DB-overridable via the existing personality admin); admin-surface overlay in `live-system-instruction.ts`; community blocks (proactive leadership, guided journey, index coaching, proactive-opener override) gated off operational surfaces and replaced by a `BRIEFING-FIRST OPENING` protocol; `dev_orb` greeting/tools updated to briefing-first + two-step confirm; `assistant-role-registry.ts` developer/admin allowlists reconciled to real tool names; scoped enforcement `shouldBlockToolRoleAware` wired into `dispatchOrbTool` behind `FEATURE_ROLE_AWARE_ASSISTANT_ENV` (community stays shadow-only) |
+| **1 — Dev briefing** | `services/assistant-briefing/{briefing-types,briefing-cache,developer-briefing-service}.ts` (9 timeout-bounded sources, deterministic ranking, next-step derivation); `GET /api/v1/assistant/briefing/developer`; session-start injection for `/command-hub` sessions; `dev_get_briefing` + T0 tools (`dev_list_pending_heals`, `dev_list_findings`, `dev_list_executions`, `dev_list_test_runs`, `dev_get_governance_controls`) |
+| **2 — Dev actions** | `orb-tools/action-guard.ts` (brake control `assistant_actions_enabled`, two-step confirm, per-session rate limit, OASIS `vtid.decision.assistant_action` audit); T1 `dev_run_test_suite`/`dev_generate_finding_plan`/`dev_snooze_finding`/`dev_allocate_vtid`; T2 `dev_approve_heal`/`dev_reject_heal`/`dev_rollback_heal`/`dev_approve_finding_execute`/`dev_reject_finding`/`dev_cancel_execution`/`dev_publish_to_prod` (caller-JWT, exafy-admin enforced server-side)/`dev_disarm_control` (disarm-only asymmetry) |
+| **3 — Admin briefing** | `admin-briefing-service.ts` (7 tenant-scoped sources, moderation-SLA/insight/alert/funnel ranking); `GET /api/v1/assistant/briefing/admin/:tenantId` behind `requireTenantAdmin`; session-start injection for `/admin` sessions (supersedes the legacy insights-only block, which remains as fallback); T0 `admin_get_briefing`/`admin_get_overview`/`admin_list_moderation_queue`/`admin_get_signup_funnel`/`admin_find_member`/`admin_list_invitations` |
+| **4 — Admin actions** | `admin_invite_member`/`admin_revoke_invitation` (T1), `admin_approve_content`/`admin_reject_content`/`admin_grant_role`/`admin_revoke_role` (T2) — all through the action guard, all self-calling tenant-admin routes **with the caller's own JWT** (tenant isolation enforced by the platform, tenantId never taken from model output; developer/infra grants blocked by voice per VTID-01230) |
+| **5 — Tests** | 25 new unit tests (briefing ranking determinism, action-guard state machine, registry↔tool-name reconciliation incl. cross-lane isolation); all 51 existing orb/live suites (697 tests) green; community instruction snapshots byte-identical; `authenticated-admin` tool-catalog snapshot intentionally updated |
+
+Not yet shipped (follow-ups): proactive in-session alerts via the devhub SSE feed, scheduled push
+briefings, LLM-judged eval suites wired into `/api/v1/testing`, Command Hub metrics tab extension,
+exafy cross-tenant briefing variant.
+
+Rollout: merge → staging auto-deploy → set `FEATURE_ROLE_AWARE_ASSISTANT_ENV=staging-only` on
+`gateway-staging` → verify both lanes by voice → PUBLISH + graduate the flag to `staging+prod`.
+Emergency brakes: disarm `assistant_actions_enabled` (kills all T1/T2 dispatch) or unset the flag.
 
 ## 0. Executive Summary
 

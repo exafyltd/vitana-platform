@@ -4875,6 +4875,585 @@ Optionally filter by tier (service, embedded, scheduled). Speak problem agents f
           "type": "object",
         },
       },
+      {
+        "description": "DEVELOPER ONLY. Fetch the current developer briefing: platform status, what changed since the
+last session, ranked immediate-attention items, and the recommended next step.
+Call when the developer asks "what's the status", "brief me", "what changed", "was ist der Stand",
+or mid-session to refresh ("what changed while we talked?"). Speak it per the briefing-first protocol.",
+        "name": "dev_get_briefing",
+        "parameters": {
+          "properties": {
+            "since": {
+              "description": "Optional ISO timestamp for the since-last-session window.",
+              "type": "string",
+            },
+          },
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. List self-healing fixes waiting for human approval, with endpoint, failure class
+and diagnosis summary. Call when the developer asks "what heals are pending", "show the pending
+fixes", "welche Fixes warten". Then offer dev_approve_heal / dev_reject_heal.",
+        "name": "dev_list_pending_heals",
+        "parameters": {
+          "properties": {
+            "limit": {
+              "description": "Max items, 1-20. Use 5.",
+              "type": "integer",
+            },
+          },
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. List dev-autopilot findings (self-improvement queue) ranked by impact.
+Call when the developer asks "what did the autopilot find", "show the findings", "improvement queue".
+Then offer plan/approve/reject/snooze per finding.",
+        "name": "dev_list_findings",
+        "parameters": {
+          "properties": {
+            "limit": {
+              "description": "Max items, 1-20. Use 5.",
+              "type": "integer",
+            },
+            "status": {
+              "description": "Finding status filter, default "new".",
+              "type": "string",
+            },
+          },
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. List dev-autopilot executions (status "active" = in flight; or "failed"/"completed"/"all").
+Call when the developer asks "what is the autopilot executing", "any failed executions".",
+        "name": "dev_list_executions",
+        "parameters": {
+          "properties": {
+            "status": {
+              "description": "active (default), failed, completed, or all.",
+              "type": "string",
+            },
+          },
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. List recent E2E test runs and available suites.
+Call when the developer asks "how are the tests", "did the E2E pass", "test status".",
+        "name": "dev_list_test_runs",
+        "parameters": {
+          "properties": {
+            "limit": {
+              "description": "Max runs, 1-20. Use 5.",
+              "type": "integer",
+            },
+          },
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. Read the governance control plane: every kill-switch key with its armed/disarmed state.
+Call when the developer asks "are the kill switches armed", "governance status", "is execution armed".",
+        "name": "dev_get_governance_controls",
+        "parameters": {
+          "properties": {},
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. Start an E2E test run for one or more projects (e.g. hub-developer, desktop-community, all).
+TWO-STEP: first call WITHOUT confirm to get the read-back; call again with confirm=true after an explicit yes.",
+        "name": "dev_run_test_suite",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "description": "Set true ONLY after the user explicitly confirmed the read-back. First call MUST omit this.",
+              "type": "boolean",
+            },
+            "projects": {
+              "description": "Project ids, e.g. ["hub-developer"] or ["all"].",
+              "items": {
+                "type": "string",
+              },
+              "type": "array",
+            },
+          },
+          "required": [
+            "projects",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. Ask the autopilot planner to generate an implementation plan for a finding.
+TWO-STEP confirm. finding_id comes from dev_list_findings.",
+        "name": "dev_generate_finding_plan",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "description": "Set true ONLY after the user explicitly confirmed the read-back. First call MUST omit this.",
+              "type": "boolean",
+            },
+            "finding_id": {
+              "description": "The finding id (UUID) from dev_list_findings.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "finding_id",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. Snooze an autopilot finding for N hours (default 24). TWO-STEP confirm.",
+        "name": "dev_snooze_finding",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "description": "Set true ONLY after the user explicitly confirmed the read-back. First call MUST omit this.",
+              "type": "boolean",
+            },
+            "finding_id": {
+              "description": "The finding id.",
+              "type": "string",
+            },
+            "hours": {
+              "description": "Snooze duration in hours, 1-720. Default 24.",
+              "type": "integer",
+            },
+          },
+          "required": [
+            "finding_id",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. Allocate the next VTID in the global ledger with a title.
+Call when the developer says "create a task for …", "allocate a VTID for …". TWO-STEP confirm.",
+        "name": "dev_allocate_vtid",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "description": "Set true ONLY after the user explicitly confirmed the read-back. First call MUST omit this.",
+              "type": "boolean",
+            },
+            "title": {
+              "description": "Task title.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "title",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. APPROVE a pending self-healing fix — dispatches it into autonomous execution.
+TWO-STEP confirm: read back what the fix does first. id = the full UUID from dev_list_pending_heals.",
+        "name": "dev_approve_heal",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "description": "Set true ONLY after the user explicitly confirmed the read-back. First call MUST omit this.",
+              "type": "boolean",
+            },
+            "id": {
+              "description": "Full UUID of the pending self_healing_log item.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "id",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. REJECT a pending self-healing fix with a required reason. TWO-STEP confirm.",
+        "name": "dev_reject_heal",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "description": "Set true ONLY after the user explicitly confirmed the read-back. First call MUST omit this.",
+              "type": "boolean",
+            },
+            "id": {
+              "description": "Full UUID of the pending item.",
+              "type": "string",
+            },
+            "reason": {
+              "description": "Why it is rejected. Required.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "id",
+            "reason",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. ROLL BACK an executed self-healing fix to its pre-fix snapshot.
+Call when the developer says "roll back that fix", "revert the healing on VTID X". TWO-STEP confirm.",
+        "name": "dev_rollback_heal",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "description": "Set true ONLY after the user explicitly confirmed the read-back. First call MUST omit this.",
+              "type": "boolean",
+            },
+            "vtid": {
+              "description": "The healing VTID, e.g. "VTID-03412".",
+              "type": "string",
+            },
+          },
+          "required": [
+            "vtid",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. Approve an autopilot finding for AUTONOMOUS EXECUTION (code → branch → PR → CI → merge).
+One finding at a time — never batch by voice. TWO-STEP confirm with full read-back.",
+        "name": "dev_approve_finding_execute",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "description": "Set true ONLY after the user explicitly confirmed the read-back. First call MUST omit this.",
+              "type": "boolean",
+            },
+            "finding_id": {
+              "description": "The finding id.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "finding_id",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. Reject an autopilot finding so it is not proposed again. TWO-STEP confirm.",
+        "name": "dev_reject_finding",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "description": "Set true ONLY after the user explicitly confirmed the read-back. First call MUST omit this.",
+              "type": "boolean",
+            },
+            "finding_id": {
+              "description": "The finding id.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "finding_id",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. Cancel an in-flight autopilot execution. TWO-STEP confirm.",
+        "name": "dev_cancel_execution",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "description": "Set true ONLY after the user explicitly confirmed the read-back. First call MUST omit this.",
+              "type": "boolean",
+            },
+            "execution_id": {
+              "description": "Execution id from dev_list_executions.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "execution_id",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY (and only for super-admins — the endpoint verifies the caller's own credentials).
+Promote the verified STAGING build to PRODUCTION — the same governed action as the Command Hub PUBLISH button.
+Before proposing this, confirm staging has been verified. TWO-STEP confirm with full read-back.",
+        "name": "dev_publish_to_prod",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "description": "Set true ONLY after the user explicitly confirmed the read-back. First call MUST omit this.",
+              "type": "boolean",
+            },
+            "mode": {
+              "description": ""full" (default) or "canary".",
+              "type": "string",
+            },
+          },
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. DISARM (never arm) a governance kill-switch control, with a required reason.
+Call when the developer says "stop the autopilot", "hit the kill switch", "disable assistant actions".
+The assistant can only disarm — re-arming is a human act in the Command Hub. TWO-STEP confirm.",
+        "name": "dev_disarm_control",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "description": "Set true ONLY after the user explicitly confirmed the read-back. First call MUST omit this.",
+              "type": "boolean",
+            },
+            "key": {
+              "description": "Control key, e.g. autopilot_execution_enabled, vtid_allocator_enabled, assistant_actions_enabled.",
+              "type": "string",
+            },
+            "reason": {
+              "description": "Why it is being disarmed. Required — recorded in the audit.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "key",
+            "reason",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "ADMIN ONLY. Fetch the current tenant briefing: status, what changed since the last session,
+ranked immediate-attention items (moderation SLA, insights, alerts, stuck signups), and the
+recommended next step. Call when the admin asks "what's the status", "brief me", "was ist los".",
+        "name": "admin_get_briefing",
+        "parameters": {
+          "properties": {
+            "since": {
+              "description": "Optional ISO timestamp for the delta window.",
+              "type": "string",
+            },
+          },
+          "type": "object",
+        },
+      },
+      {
+        "description": "ADMIN ONLY. Read the tenant overview: summary (KPIs), at-risk members, activity, or alerts.
+Call when the admin asks "how many members", "who is at risk", "any alerts".",
+        "name": "admin_get_overview",
+        "parameters": {
+          "properties": {
+            "section": {
+              "description": "summary (default), at-risk, activity, or alerts.",
+              "type": "string",
+            },
+          },
+          "type": "object",
+        },
+      },
+      {
+        "description": "ADMIN ONLY. List content items awaiting moderation (pending or flagged) for this tenant.
+Call when the admin asks "what needs moderation", "show reported content", "moderation queue".
+Then walk through them ONE at a time with admin_approve_content / admin_reject_content.",
+        "name": "admin_list_moderation_queue",
+        "parameters": {
+          "properties": {
+            "limit": {
+              "description": "Max items, 1-20. Use 5.",
+              "type": "integer",
+            },
+            "status": {
+              "description": "pending (default), flagged, approved, rejected.",
+              "type": "string",
+            },
+          },
+          "type": "object",
+        },
+      },
+      {
+        "description": "ADMIN ONLY. Summarize the 7-day signup funnel (started → onboarded, where people drop off).",
+        "name": "admin_get_signup_funnel",
+        "parameters": {
+          "properties": {},
+          "type": "object",
+        },
+      },
+      {
+        "description": "ADMIN ONLY. Find a member of THIS tenant by name or email fragment; returns user_id, role, join date.
+Call before role changes ("make Anna a staff member" → find Anna first, read the match back).",
+        "name": "admin_find_member",
+        "parameters": {
+          "properties": {
+            "query": {
+              "description": "Name or email fragment.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "query",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "ADMIN ONLY. List tenant invitations by status (pending default, accepted, revoked).",
+        "name": "admin_list_invitations",
+        "parameters": {
+          "properties": {
+            "status": {
+              "description": "pending (default), accepted, or revoked.",
+              "type": "string",
+            },
+          },
+          "type": "object",
+        },
+      },
+      {
+        "description": "ADMIN ONLY. Send a tenant invitation to an email address with roles (default community).
+ALWAYS read the email address back letter-perfect before confirming. TWO-STEP confirm.",
+        "name": "admin_invite_member",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "description": "Set true ONLY after the admin explicitly confirmed the read-back. First call MUST omit this.",
+              "type": "boolean",
+            },
+            "email": {
+              "description": "Recipient email — read it back to the admin before confirming.",
+              "type": "string",
+            },
+            "roles": {
+              "description": "Roles, default ["community"].",
+              "items": {
+                "type": "string",
+              },
+              "type": "array",
+            },
+          },
+          "required": [
+            "email",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "ADMIN ONLY. Revoke a pending invitation. TWO-STEP confirm.",
+        "name": "admin_revoke_invitation",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "description": "Set true ONLY after the admin explicitly confirmed the read-back. First call MUST omit this.",
+              "type": "boolean",
+            },
+            "invitation_id": {
+              "description": "Invitation id from admin_list_invitations.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "invitation_id",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "ADMIN ONLY. APPROVE a moderation item — it becomes public to the community.
+Describe the item to the admin first. TWO-STEP confirm. One item at a time.",
+        "name": "admin_approve_content",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "description": "Set true ONLY after the admin explicitly confirmed the read-back. First call MUST omit this.",
+              "type": "boolean",
+            },
+            "item_id": {
+              "description": "Item id from admin_list_moderation_queue.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "item_id",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "ADMIN ONLY. REJECT a moderation item — it is hidden from the community (affects the uploader).
+Describe the item to the admin first. TWO-STEP confirm. One item at a time.",
+        "name": "admin_reject_content",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "description": "Set true ONLY after the admin explicitly confirmed the read-back. First call MUST omit this.",
+              "type": "boolean",
+            },
+            "item_id": {
+              "description": "Item id from admin_list_moderation_queue.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "item_id",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "ADMIN ONLY. Grant a role (community/patient/professional/staff/admin) to a member of this tenant.
+Developer and infra are super-admin-only and CANNOT be granted by voice. Find the member first
+with admin_find_member and read the match back. TWO-STEP confirm.",
+        "name": "admin_grant_role",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "description": "Set true ONLY after the admin explicitly confirmed the read-back. First call MUST omit this.",
+              "type": "boolean",
+            },
+            "role": {
+              "description": "community, patient, professional, staff, or admin.",
+              "type": "string",
+            },
+            "user_id": {
+              "description": "Target user id from admin_find_member.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "user_id",
+            "role",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "ADMIN ONLY. Revoke a granted role from a member (community base role cannot be revoked). TWO-STEP confirm.",
+        "name": "admin_revoke_role",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "description": "Set true ONLY after the admin explicitly confirmed the read-back. First call MUST omit this.",
+              "type": "boolean",
+            },
+            "role": {
+              "description": "Role to revoke.",
+              "type": "string",
+            },
+            "user_id": {
+              "description": "Target user id.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "user_id",
+            "role",
+          ],
+          "type": "object",
+        },
+      },
     ],
   },
   {

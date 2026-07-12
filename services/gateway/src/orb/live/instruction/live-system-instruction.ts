@@ -441,6 +441,16 @@ export function buildLiveSystemInstruction(
   };
   const resolvedSurface = resolveSurface();
   const isCommandHubSurface = resolvedSurface === 'command-hub';
+  // VTID-ASSISTANT-ROLES: the admin surface gets its own persona overlay
+  // (admin_orb), mirroring the dev_orb overlay below. Before this, the
+  // '/admin' branch of resolveSurface existed but applied no overlay, so
+  // admins got the community wellness persona.
+  const isAdminSurface = resolvedSurface === 'admin';
+  // Operational surfaces (developer + admin) share one property: community
+  // wellness prompt content (proactive-leadership choreography, guided
+  // journey, Vitana Index coaching, matchmaking) must NOT be emitted —
+  // it wastes tokens and produces wrong behavior on work surfaces.
+  const isOperationalSurface = isCommandHubSurface || isAdminSurface;
   let identityLockRoleLine = "the user's life companion and instruction manual";
   if (isCommandHubSurface) {
     const devOrbConfig = getPersonalityConfigSync('dev_orb') as Record<string, any>;
@@ -451,6 +461,16 @@ export function buildLiveSystemInstruction(
     if (devOrbConfig.voice_important_section) voiceLiveConfig.important_section = devOrbConfig.voice_important_section;
     if (typeof devOrbConfig.voice_identity_lock_role === 'string' && devOrbConfig.voice_identity_lock_role.trim()) {
       identityLockRoleLine = devOrbConfig.voice_identity_lock_role;
+    }
+  } else if (isAdminSurface) {
+    const adminOrbConfig = getPersonalityConfigSync('admin_orb') as Record<string, any>;
+    if (adminOrbConfig.voice_base_identity) voiceLiveConfig.base_identity = adminOrbConfig.voice_base_identity;
+    if (adminOrbConfig.voice_general_behavior) voiceLiveConfig.general_behavior = adminOrbConfig.voice_general_behavior;
+    if (adminOrbConfig.voice_greeting_rules) voiceLiveConfig.greeting_rules = adminOrbConfig.voice_greeting_rules;
+    if (adminOrbConfig.voice_tools_section) voiceLiveConfig.tools_section = adminOrbConfig.voice_tools_section;
+    if (adminOrbConfig.voice_important_section) voiceLiveConfig.important_section = adminOrbConfig.voice_important_section;
+    if (typeof adminOrbConfig.voice_identity_lock_role === 'string' && adminOrbConfig.voice_identity_lock_role.trim()) {
+      identityLockRoleLine = adminOrbConfig.voice_identity_lock_role;
     }
   }
 
@@ -553,7 +573,14 @@ ${voiceLiveConfig.general_behavior || `- Be warm, patient, and empathetic
 - Match response length to the question: a quick yes/no question gets a sentence; a substantive question ("how is my sleep trending?", "what should I focus on this week?", "tell me about X") gets a substantive answer (4-8 sentences). Don't pad short answers, but never truncate substantive ones — a real conversation has variable response length.
 - Use natural conversational tone, not bullet points
 - Speak in complete thoughts; avoid clipped one-liners that force the user to ask follow-ups they didn't intend`}
-
+${isOperationalSurface ? `
+BRIEFING-FIRST OPENING (OPERATIONAL SURFACE — ABSOLUTE):
+- If your context below contains a "## CURRENT BRIEFING" section, your FIRST utterance MUST deliver it in this exact order: (1) STATUS — one or two sentences of current system/tenant state; (2) WHAT'S GOING ON — what happened since the last session; (3) IMMEDIATE ATTENTION — the ranked items that need action now, most urgent first; (4) NEXT STEP — the single recommended action, ending with an offer to take it ("Say the word and I'll walk you through it" / "Want me to start with that?").
+- Keep the spoken briefing under ~45 seconds. Compress; do not enumerate every item — name counts and the top 1-3 items.
+- Ground every number in the briefing data. If a briefing source is marked degraded, say honestly that you could not check it — NEVER invent status.
+- After the briefing, follow the user's lead. Answer status questions from the briefing data first; call the matching read tool for anything fresher or deeper.
+- ACTION DISCIPLINE: propose one action at a time. For any tool that changes state, read back exactly what will happen and get an explicit yes before calling it with confirm=true. Never chain two state-changing actions on a single confirmation.
+` : `
 PROACTIVE LEADERSHIP — RULE 0 (ABSOLUTE, EVERY TURN, NO EXCEPTIONS, ALL TENURES):
 - You ALWAYS lead. You NEVER ask the user to choose, decide, or supply the direction — not at the opener, and NOT after any step. If the user knows what they want, they say it unprompted; your job is to PROPOSE the concrete next step yourself, every single time. This holds for brand-new AND long-time users alike.
 - BANNED — never say any of these, or ANY paraphrase, in ANY language, at ANY point in the conversation (opener or follow-up):
@@ -592,7 +619,7 @@ GUIDED JOURNEY — A COHERENT THROUGH-LINE (for first-time and new users):
 - WHEN THE USER NAMES A TOPIC ("play the topic about the Vitana Index", "das Thema Schlaf", "the five pillars topic"): call **narrate_guided_session with topic_query** set to their words — it matches that exact topic across all 254. Speak the returned script IN FULL.
 - WHEN THE USER ASKS ABOUT A SESSION (its TITLE or what it covers — "what is the title of session 1?", "was ist Session 3?", "wie heißt die erste Session?", "which session covers sleep?"): call **narrate_guided_session with session_number (and info_only: true)**, or with topic_query+info_only for a named topic. Answer with the EXACT session_title the tool returns. You do NOT know session titles on your own — NEVER guess one, and NEVER name a Journey Foundation step ("Vitana Index", "Life Compass", "Profile", etc.) as a session's title; those are setup steps, not curriculum sessions. After stating the real title, offer to play it.
 - COHERENCE — pick ONE thing and stay with it across a turn. NEVER jump between unrelated proposals in consecutive turns (the forbidden pattern: "let's set your goal" → then "let's look at your profile" → then opening Community Members). If you proposed something and they said yes, deliver THAT — do not switch subject mid-flow.
-
+`}
 GREETING RULES (CRITICAL):
 ${isReconnect
     ? '- VTID-02637 RECONNECT SILENCE RULE: This is a transparent server-side resume. The user has NOT noticed any pause and may already be mid-thought. DO NOT speak first. DO NOT greet, apologize, or acknowledge any "interruption", "reconnection", "resume", "I\'m back", "where were we", "picking up", "I\'m listening", or anything similar. Stay completely silent. Your next utterance must be a direct response to whatever the user says next, with NO prefix acknowledgment. If the user says nothing, you say nothing — silence is correct.'
@@ -611,7 +638,7 @@ ${voiceLiveConfig.tools_section || '- Use search_memory to recall information th
 - Use set_reminder when the user asks to be reminded ("remind me at 8pm to take my magnesium", "erinnere mich um 20 Uhr"). Compute the absolute UTC ISO timestamp from their words + their local timezone. Confirm verbally afterwards using the returned human_time.
 - Use find_reminders to look up reminders before deleting, OR to read back the count when the user says "delete all my reminders".
 - Use delete_reminder to cancel reminders. CRITICAL: ALWAYS verbally ask "Are you sure?" first and only call with confirmed=true after the user explicitly says yes.
-${isCommandHubSurface ? '' : `- You ARE the instruction manual. The Knowledge Hub has 92 chapters of platform docs (Vitana Index, Five Pillars, Life Compass, autopilot, diary, biomarkers, wallet, sharing, community, etc.). Anything that is "how does X work", "what is X", "explain X", "tell me about X", "show me how X", "teach me X", "I am new", "first time" — answer it inline using search_knowledge. NEVER call report_to_specialist for instruction-manual questions, even if the user uses words that sound like "support". A first-time user asking how to use the diary is a TEACHING MOMENT, not a customer-support ticket. Specialists handle BROKEN STATE only.
+${isOperationalSurface ? '' : `- You ARE the instruction manual. The Knowledge Hub has 92 chapters of platform docs (Vitana Index, Five Pillars, Life Compass, autopilot, diary, biomarkers, wallet, sharing, community, etc.). Anything that is "how does X work", "what is X", "explain X", "tell me about X", "show me how X", "teach me X", "I am new", "first time" — answer it inline using search_knowledge. NEVER call report_to_specialist for instruction-manual questions, even if the user uses words that sound like "support". A first-time user asking how to use the diary is a TEACHING MOMENT, not a customer-support ticket. Specialists handle BROKEN STATE only.
 - SHORT-FIRST, THEN OFFER THE DEEP DIVE (for "what is X / explain X / tell me about X"): give a SHORT answer first — 2–3 sentences, the gist — then OFFER the fuller version as a single proposal, e.g. "Das war die Kurzfassung. Wenn du magst, gehe ich tiefer und gebe dir die ausführliche Einführung — soll ich?" / "That was the short version. If you like, I can give you the deeper, full introduction — shall I?". Let the user decide. If they say YES, call **narrate_guided_session with topic_query** set to the subject (e.g. "Vitanaland", "Vitana Index") to play the authored deep-dive script in full; if there is no matching authored topic, simply go deeper from your own knowledge. If the short version is enough for them, move on. (This is a single yes/no offer to go deeper — allowed; it is NOT the banned passive "what do you want?".)
 - Use report_to_specialist ONLY when the user has described a CONCRETE PROBLEM (bug, broken state, refund, account lockout, claim) AND has EXPLICITLY agreed to be connected after you proposed it. Always propose before calling: "Shall I bring in Devon to file this?" Wait for yes. Implicit consent does not count. The backend gate re-checks the user's actual recent words (not your summary). If the gate returns STAY_INLINE or the forward budget is exhausted, silently answer inline — never mention the routing decision.
 - HARD RULE — handoff truthfulness (VTID-03033): NEVER say you are connecting the user to Devon, NEVER speak a bridge sentence ("let me connect you to…", "ich verbinde dich mit…", "passing you to…"), and NEVER imply Devon has joined, UNLESS the most recent report_to_specialist call returned a tool message that begins with "STATUS: handoff_created." Any other STATUS (stay_inline / vague / failed / failed_network / ticket_filed_no_handoff) means the handoff did NOT happen — follow that branch's ACTION line and stay with the user yourself. Saying you are connecting them when STATUS is not "handoff_created" is a critical failure.
@@ -739,7 +766,7 @@ ${trimmedHistory}
   // can EXPLAIN the difference in open conversation, not just switch modes on
   // the navigate path. Gated by the same flag that powers the mode switch, so
   // knowledge and capability stay in lockstep.
-  if (process.env.NAV_GUIDED_JOURNEY === 'true') {
+  if (process.env.NAV_GUIDED_JOURNEY === 'true' && !isOperationalSurface) {
     instruction += buildJourneyModesSection(lang);
   }
 
@@ -784,7 +811,9 @@ ${trimmedHistory}
   // greeting policy + the generic baseline above. The companion architecture
   // depends on this — without primacy, Gemini's trained "How can I help?"
   // reflex wins.
-  if (includeProactiveOpener)
+  // VTID-ASSISTANT-ROLES: proactive-opener choreography is community-only —
+  // on operational surfaces the briefing-first opening owns the first turn.
+  if (includeProactiveOpener && !isOperationalSurface)
   instruction += `\n\n## PROACTIVE OPENER OVERRIDE (HIGHEST PRIORITY — VTID-01927)
 
 When the brain context appended below contains either:
@@ -820,7 +849,10 @@ the policy above as normal.`;
     );
     const profileSummary = profileMatch ? profileMatch[0].trim() : '';
 
-    if (includeActivityAwareness && profileSummary && profileSummary.length > 100) {
+    // VTID-ASSISTANT-ROLES: the activity-awareness/wellness-coaching stack
+    // (Vitana Index rules, diary logging, promotional dictation) is
+    // community-only prompt content — never emitted on dev/admin surfaces.
+    if (includeActivityAwareness && profileSummary && profileSummary.length > 100 && !isOperationalSurface) {
       instruction += `\n\n## ACTIVITY AWARENESS OVERRIDE (HIGHEST PRIORITY — BOOTSTRAP-HISTORY-AWARE-TIMELINE)
 
 This block REPLACES any instinct to say "I don't know what you've been doing"

@@ -307,24 +307,39 @@ export const ROLE_PROFILES: Readonly<Record<AssistantRole, AssistantRoleProfile>
       'You are Vitana for the platform admin. You see system health, finances, training, publish history, ' +
       'self-healing, and may execute canary/revert. Tone is operational + technical.',
     tone: 'operational',
+    // VTID-ASSISTANT-ROLES: reconciled to REAL dispatchable ORB tool names
+    // (ORB_TOOL_REGISTRY keys) so runtime enforcement can be turned on for
+    // this role without denying legitimate tools. 'admin_*' covers the
+    // admin voice tools (services/admin-voice-tools.ts) and the tenant-admin
+    // action tools (services/orb-tools/admin-action-tools.ts). The shared
+    // read tools below are the platform-neutral ones an admin session
+    // legitimately uses. Roles are NOT inherited: the admin lane does NOT
+    // include the dev_* developer plane (Command Hub) tools.
     tool_allowlist: [
-      'list_recent_deployments',
-      'get_canary_state',
-      'get_credit_burn_rate',
-      'list_active_finetune_jobs',
-      'publish_canary',
-      'promote_canary',
-      'abort_canary',
-      'revert_deployment',
-      'send_chat_message',
-      'remember',
+      'admin_*',
+      'search_memory',
+      'search_knowledge',
+      'search_web',
+      'get_current_screen',
+      'navigate',
+      'navigate_to_screen',
+      'recall_conversation_at_time',
+      'explain_feature',
+      'offer_action',
+      'end_teaching_session',
     ],
     tool_denylist: [
-      // Admin still doesn't touch raw CI/CD source code or trigger
-      // training submission directly — that path lives in developer
-      // / infra roles.
-      'cicd_force_*',
-      'devops_drop_*',
+      // Admin does not drive the developer plane by voice — that is the
+      // developer lane (Command Hub). Explicit deny beats the closed world
+      // so a future 'admin_dev_*' name can't accidentally widen it.
+      'dev_publish_to_prod',
+      'dev_revert_prod',
+      // No community wellness/coaching tools in the admin lane.
+      'ask_pillar_agent',
+      'create_index_improvement_plan',
+      'save_diary_entry',
+      'find_match',
+      'play_music',
     ],
     memory_policy: {
       read_categories: ['professional', 'community', 'developer', 'infra'],
@@ -359,27 +374,39 @@ export const ROLE_PROFILES: Readonly<Record<AssistantRole, AssistantRoleProfile>
       'You are Vitana the engineering co-pilot. Tone is technical, terse, code-aware. You see code, CI runs, ' +
       'PRs, autopilot queue, gate dashboards, training status. You do NOT see end-user wellness memory.',
     tone: 'technical',
+    // VTID-ASSISTANT-ROLES: reconciled to REAL dispatchable ORB tool names
+    // (ORB_TOOL_REGISTRY keys). 'dev_*' covers the developer voice tools
+    // (services/orb-tools/developer-tools.ts) and the developer action
+    // tools (services/orb-tools/developer-action-tools.ts): VTID ledger,
+    // approvals, self-healing supervision + approve/reject/rollback,
+    // autopilot findings lifecycle, test runs, governance controls,
+    // briefing. The shared read tools below are platform-neutral.
     tool_allowlist: [
-      'search_codebase',
-      'get_pr_status',
-      'get_workflow_run',
-      'list_autopilot_queue',
-      'read_gate_report',
-      'read_canary_readiness',
-      'read_shadow_report',
-      'allocate_vtid',
-      'send_chat_message',
-      'remember',
+      'dev_*',
+      'search_memory',
+      'search_knowledge',
+      'search_web',
+      'get_current_screen',
+      'navigate',
+      'navigate_to_screen',
+      'recall_conversation_at_time',
+      'explain_feature',
+      'offer_action',
+      'end_teaching_session',
     ],
     tool_denylist: [
-      // Developer assistant MUST NOT receive community wellness tools
-      // or publish / promote canary (admin lane only).
-      'get_pillar_status',
-      'find_partner',
-      'find_member',
-      'publish_canary',
-      'promote_canary',
-      'log_symptom',
+      // Developer assistant MUST NOT receive community wellness tools —
+      // explicit deny on the highest-risk ones; the closed world denies
+      // the rest by default.
+      'ask_pillar_agent',
+      'create_index_improvement_plan',
+      'save_diary_entry',
+      'find_match',
+      'find_community_member',
+      'play_music',
+      'send_chat_message',
+      // Tenant-admin plane is the admin lane, not the developer lane.
+      'admin_*',
     ],
     memory_policy: {
       read_categories: ['developer', 'infra'],

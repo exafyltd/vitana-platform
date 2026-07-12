@@ -28,6 +28,7 @@ import { ADMIN_TOOL_SCHEMAS } from '../../../services/admin-voice-tools';
 import {
   NEW_DOMAIN_TOOL_DECLARATIONS,
   DEVELOPER_DOMAIN_TOOL_DECLARATIONS,
+  ADMIN_DOMAIN_TOOL_DECLARATIONS,
 } from '../../../services/orb-tools-shared';
 
 
@@ -2494,6 +2495,15 @@ export function buildLiveApiTools(
         // server-side regardless (developer-tools.ts developerGate()).
         ...(activeRole && ['admin', 'exafy_admin', 'developer'].includes(activeRole)
           ? DEVELOPER_DOMAIN_TOOL_DECLARATIONS
+          : []),
+        // VTID-ASSISTANT-ROLES — tenant-admin lane tools (briefing, overview,
+        // moderation, invitations, roles). Declared for admin/exafy_admin
+        // only; developer sessions do NOT get the admin lane (roles are not
+        // inherited — assistant-role-registry.ts). Handlers re-check via
+        // adminGate() server-side regardless, and the role-aware dispatcher
+        // enforcement polices the edges when the feature flag is live.
+        ...(activeRole && ['admin', 'exafy_admin'].includes(activeRole)
+          ? ADMIN_DOMAIN_TOOL_DECLARATIONS
           : []),
       ],
     },
