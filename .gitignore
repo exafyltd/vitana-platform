@@ -32,3 +32,5 @@ Thumbs.db
 .worktrees/
 .claude/worktrees/
 .test-venv/
+
+__pycache__/
