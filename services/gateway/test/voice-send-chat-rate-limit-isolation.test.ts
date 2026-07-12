@@ -36,6 +36,11 @@ import * as oasisEventService from '../src/services/oasis-event-service';
 
 jest.mock('../src/middleware/auth-supabase-jwt', () => ({
   resolveVitanaId: jest.fn(async (userId: string) => `vit_${userId.slice(0, 4)}`),
+  // routes/autopilot-recommendations.ts (transitively imported via
+  // autopilot-voice-next-actions.ts) now calls optionalAuth at module load
+  // (security-audit fix) — this test never exercises that router over HTTP,
+  // it just needs the module to import without crashing.
+  optionalAuth: jest.fn((_req: any, _res: any, next: any) => next()),
 }));
 
 const REAL_UUID_A = '11111111-1111-4111-8111-111111111111';
