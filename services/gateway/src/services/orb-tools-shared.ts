@@ -47,6 +47,16 @@ import { DISCOVERY_TOOL_HANDLERS, DISCOVERY_TOOL_DECLARATIONS } from './orb-tool
 import { AWARENESS_TOOL_HANDLERS, AWARENESS_TOOL_DECLARATIONS } from './orb-tools/awareness-tools';
 import { DEVELOPER_TOOL_HANDLERS, DEVELOPER_TOOL_DECLARATIONS } from './orb-tools/developer-tools';
 import { P0_GAP_TOOL_HANDLERS, P0_GAP_TOOL_DECLARATIONS } from './orb-tools/p0-gap-tools';
+// WAVE-1-VOICE-CATALOG-V2 — first wave of the approved 425-tool expansion
+// (docs/VOICE_TOOLS_EXPANSION_PLAN.md): community P0 domains covering
+// commerce/marketplace, cart/checkout, wallet transfers, messaging depth,
+// events/tickets, and health depth.
+import { MARKETPLACE_DISCOVERY_TOOL_HANDLERS, MARKETPLACE_DISCOVERY_TOOL_DECLARATIONS } from './orb-tools/marketplace-discovery-tools';
+import { CART_CHECKOUT_TOOL_HANDLERS, CART_CHECKOUT_TOOL_DECLARATIONS } from './orb-tools/cart-checkout-tools';
+import { WALLET_PAYMENTS_TOOL_HANDLERS, WALLET_PAYMENTS_TOOL_DECLARATIONS } from './orb-tools/wallet-payments-tools';
+import { MESSAGING_DEPTH_TOOL_HANDLERS, MESSAGING_DEPTH_TOOL_DECLARATIONS } from './orb-tools/messaging-depth-tools';
+import { EVENTS_TICKETS_TOOL_HANDLERS, EVENTS_TICKETS_TOOL_DECLARATIONS } from './orb-tools/events-tickets-tools';
+import { HEALTH_DEPTH_TOOL_HANDLERS, HEALTH_DEPTH_TOOL_DECLARATIONS } from './orb-tools/health-depth-tools';
 import {
   lookupScreen,
   lookupByAlias,
@@ -5142,6 +5152,13 @@ export const ORB_TOOL_REGISTRY: Record<string, OrbToolHandler> = {
   ...AWARENESS_TOOL_HANDLERS,
   ...DEVELOPER_TOOL_HANDLERS,
   ...P0_GAP_TOOL_HANDLERS,
+  // WAVE-1-VOICE-CATALOG-V2
+  ...MARKETPLACE_DISCOVERY_TOOL_HANDLERS,
+  ...CART_CHECKOUT_TOOL_HANDLERS,
+  ...WALLET_PAYMENTS_TOOL_HANDLERS,
+  ...MESSAGING_DEPTH_TOOL_HANDLERS,
+  ...EVENTS_TICKETS_TOOL_HANDLERS,
+  ...HEALTH_DEPTH_TOOL_HANDLERS,
 };
 
 // BOOTSTRAP-VOICE-CATALOG-COMPLETE — combined Vertex/Gemini function
@@ -5160,6 +5177,13 @@ export const NEW_DOMAIN_TOOL_DECLARATIONS: Array<Record<string, unknown>> = [
   ...DISCOVERY_TOOL_DECLARATIONS,
   ...AWARENESS_TOOL_DECLARATIONS,
   ...P0_GAP_TOOL_DECLARATIONS,
+  // WAVE-1-VOICE-CATALOG-V2
+  ...MARKETPLACE_DISCOVERY_TOOL_DECLARATIONS,
+  ...CART_CHECKOUT_TOOL_DECLARATIONS,
+  ...WALLET_PAYMENTS_TOOL_DECLARATIONS,
+  ...MESSAGING_DEPTH_TOOL_DECLARATIONS,
+  ...EVENTS_TICKETS_TOOL_DECLARATIONS,
+  ...HEALTH_DEPTH_TOOL_DECLARATIONS,
 ];
 
 // Developer tools are role-gated the same way ADMIN_TOOL_SCHEMAS is —
