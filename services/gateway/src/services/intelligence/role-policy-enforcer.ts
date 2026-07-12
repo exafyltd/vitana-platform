@@ -196,6 +196,48 @@ export function shouldBlockTool(
   return decision.enforced && !decision.allowed;
 }
 
+// ---------------------------------------------------------------------------
+// VTID-ASSISTANT-ROLES — scoped role-aware enforcement
+// ---------------------------------------------------------------------------
+
+export const ROLE_AWARE_FEATURE_NAME = 'ROLE_AWARE_ASSISTANT';
+
+/**
+ * Roles whose registry tool allowlists have been RECONCILED with the real
+ * ORB_TOOL_REGISTRY names and may therefore be enforced without denying
+ * legitimate tools. The global FEATURE_ROLE_POLICY_ENFORCE flag stays off
+ * until community/patient/professional/staff names are reconciled too —
+ * this scoped path lets the developer/admin lanes go live first.
+ *
+ * 'exafy_admin' is intentionally absent: it is not an AssistantRole (no
+ * profile) and the super-admin lane is never voice-policy-restricted.
+ */
+const RECONCILED_ROLES = new Set(['developer', 'admin']);
+
+/**
+ * Scoped variant of shouldBlockTool: enforces the registry policy ONLY for
+ * roles in RECONCILED_ROLES, gated by FEATURE_ROLE_AWARE_ASSISTANT_ENV.
+ * All other roles fall through to the existing global shadow behavior
+ * (log-only unless FEATURE_ROLE_POLICY_ENFORCE is live).
+ */
+export function shouldBlockToolRoleAware(
+  role: string | null | undefined,
+  toolName: string,
+  ctx: ShadowLogContext = {},
+): boolean {
+  const normalizedRole = String(role ?? '').toLowerCase();
+  if (RECONCILED_ROLES.has(normalizedRole) && isFeatureLive(ROLE_AWARE_FEATURE_NAME)) {
+    const decision = assertToolAllowed(normalizedRole, toolName);
+    if (!decision.allowed) {
+      logPolicyViolation({ ...decision, enforced: true }, ctx);
+      return true;
+    }
+    return false;
+  }
+  // Not a reconciled role (or feature off) — existing global behavior.
+  return shouldBlockTool(role, toolName, ctx);
+}
+
 /**
  * Convenience for call sites: check a context source, log on violation,
  * and return whether the caller SHOULD block.

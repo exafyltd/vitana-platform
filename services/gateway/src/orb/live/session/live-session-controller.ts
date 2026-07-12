@@ -95,6 +95,18 @@ import {
   fetchAdminBriefingBlock,
   isAdminRole,
 } from '../../../services/admin-scanners/briefing';
+// VTID-ASSISTANT-ROLES: role-aware session-start briefings. Developer
+// sessions (Command Hub route) get the platform briefing; admin sessions
+// (/admin route) get the tenant briefing. Both render as the
+// `## CURRENT BRIEFING` block the BRIEFING-FIRST OPENING rule consumes.
+import {
+  buildDeveloperBriefing,
+  renderDeveloperBriefingBlock,
+} from '../../../services/assistant-briefing/developer-briefing-service';
+import {
+  buildAdminBriefing,
+  renderAdminBriefingBlock,
+} from '../../../services/assistant-briefing/admin-briefing-service';
 import { dispatchVoiceFailureFireAndForget } from '../../../services/voice-self-healing-adapter';
 import { cogneeExtractorClient } from '../../../services/cognee-extractor-client';
 import {
@@ -866,6 +878,27 @@ export async function handleLiveSessionStart(
             return null;
           })
         : Promise.resolve(null),
+      // VTID-ASSISTANT-ROLES: developer briefing — fetched only for
+      // Command Hub sessions (route-gated so community sessions pay
+      // nothing). Appended below once the role is resolved.
+      (typeof (body as any).current_route === 'string' && (body as any).current_route.startsWith('/command-hub')
+        ? buildDeveloperBriefing(null)
+            .then((env) => renderDeveloperBriefingBlock(env))
+            .catch((err: any) => {
+              console.warn(`[VTID-ASSISTANT-ROLES] developer briefing fetch failed: ${err?.message}`);
+              return null;
+            })
+        : Promise.resolve(null)),
+      // VTID-ASSISTANT-ROLES: tenant-admin briefing — fetched only for
+      // /admin-surface sessions with a tenant.
+      (typeof (body as any).current_route === 'string' && (body as any).current_route.startsWith('/admin') && bootstrapIdentity.tenant_id
+        ? buildAdminBriefing(bootstrapIdentity.tenant_id, null)
+            .then((env) => renderAdminBriefingBlock(env))
+            .catch((err: any) => {
+              console.warn(`[VTID-ASSISTANT-ROLES] admin briefing fetch failed: ${err?.message}`);
+              return null;
+            })
+        : Promise.resolve(null)),
       // VTID-03201: proactive Autopilot offer. Fetched in parallel (no critical-path
       // cost) so Vitana can offer "you have things waiting in your Autopilot, want me
       // to run through them?" Only appended for community sessions (gated in .then).
@@ -880,7 +913,7 @@ export async function handleLiveSessionStart(
     ]);
 
     contextReadyPromise = bootstrapWork
-      .then(async ([bootstrapResult, fetchedSseRole, fetchedSessionInfo, storedLangResult, adminBriefing, autopilotOffer]) => {
+      .then(async ([bootstrapResult, fetchedSseRole, fetchedSessionInfo, storedLangResult, adminBriefing, developerBriefing, adminBriefingV2, autopilotOffer]) => {
         let resolvedRole = fetchedSseRole;
         const sseRoute = typeof (body as any).current_route === 'string' ? (body as any).current_route : '';
         if (sseRoute.startsWith('/command-hub') && (!resolvedRole || resolvedRole === 'community')) {
@@ -899,7 +932,39 @@ export async function handleLiveSessionStart(
           finalContext = finalContext ? `${finalContext}\n\n${autopilotOffer}` : autopilotOffer;
           console.log(`[VTID-03201] Autopilot proactive offer injected into SSE session ${sessionId} (${autopilotOffer.length} chars)`);
         }
-        if (isAdminRole(resolvedRole) && adminBriefing) {
+        // VTID-ASSISTANT-ROLES: developer sessions (Command Hub surface) get
+        // the platform briefing as the `## CURRENT BRIEFING` block — the
+        // BRIEFING-FIRST OPENING rule in the system instruction makes it the
+        // first utterance (status → since-last → attention → next step).
+        if (developerBriefing && ['developer', 'admin', 'exafy_admin'].includes(String(resolvedRole))) {
+          finalContext = finalContext ? `${finalContext}\n\n${developerBriefing}` : developerBriefing;
+          emitOasisEvent({
+            vtid: 'VTID-ASSISTANT-ROLES',
+            type: 'assistant.briefing.injected' as any,
+            source: 'orb-live',
+            status: 'info',
+            message: `Developer briefing injected into SSE session ${sessionId}`,
+            payload: { session_id: sessionId, role: resolvedRole, lane: 'developer', chars: developerBriefing.length },
+            actor_id: bootstrapIdentity.user_id,
+            actor_role: 'operator',
+            surface: 'orb',
+          }).catch(() => {});
+        } else if (isAdminRole(resolvedRole) && adminBriefingV2) {
+          // Admin surface: the richer tenant briefing (status/delta/attention/
+          // next-step) supersedes the legacy insights-only block.
+          finalContext = finalContext ? `${finalContext}\n\n${adminBriefingV2}` : adminBriefingV2;
+          emitOasisEvent({
+            vtid: 'VTID-ASSISTANT-ROLES',
+            type: 'assistant.briefing.injected' as any,
+            source: 'orb-live',
+            status: 'info',
+            message: `Admin tenant briefing injected into SSE session ${sessionId}`,
+            payload: { session_id: sessionId, tenant_id: bootstrapIdentity.tenant_id, role: resolvedRole, lane: 'admin', chars: adminBriefingV2.length },
+            actor_id: bootstrapIdentity.user_id,
+            actor_role: 'admin',
+            surface: 'orb',
+          }).catch(() => {});
+        } else if (isAdminRole(resolvedRole) && adminBriefing) {
           finalContext = finalContext ? `${finalContext}\n\n${adminBriefing}` : adminBriefing;
           emitOasisEvent({
             vtid: 'BOOTSTRAP-ADMIN-EE',

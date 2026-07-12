@@ -26,7 +26,7 @@
  */
 
 import { SupabaseClient } from '@supabase/supabase-js';
-import { shouldBlockTool } from './intelligence/role-policy-enforcer';
+import { shouldBlockToolRoleAware } from './intelligence/role-policy-enforcer';
 // VTID-03255 — Journey Foundation voice tool: writes every answer + returns next move.
 import { tool_record_journey_answer } from './journey-foundation/record-journey-answer-tool';
 import { fetchVitanaIndexForProfiler } from './user-context-profiler';
@@ -46,6 +46,17 @@ import { FEEDBACK_SETTINGS_TOOL_HANDLERS, FEEDBACK_SETTINGS_TOOL_DECLARATIONS } 
 import { DISCOVERY_TOOL_HANDLERS, DISCOVERY_TOOL_DECLARATIONS } from './orb-tools/discovery-tools';
 import { AWARENESS_TOOL_HANDLERS, AWARENESS_TOOL_DECLARATIONS } from './orb-tools/awareness-tools';
 import { DEVELOPER_TOOL_HANDLERS, DEVELOPER_TOOL_DECLARATIONS } from './orb-tools/developer-tools';
+// VTID-ASSISTANT-ROLES — briefing + guarded action tools for the developer
+// and admin assistant lanes. Same role-gated declaration pattern as the
+// developer tools; every action handler routes through the action guard.
+import {
+  DEVELOPER_ACTION_TOOL_HANDLERS,
+  DEVELOPER_ACTION_TOOL_DECLARATIONS,
+} from './orb-tools/developer-action-tools';
+import {
+  ADMIN_ACTION_TOOL_HANDLERS,
+  ADMIN_ACTION_TOOL_DECLARATIONS,
+} from './orb-tools/admin-action-tools';
 import { P0_GAP_TOOL_HANDLERS, P0_GAP_TOOL_DECLARATIONS } from './orb-tools/p0-gap-tools';
 import {
   lookupScreen,
@@ -5142,6 +5153,9 @@ export const ORB_TOOL_REGISTRY: Record<string, OrbToolHandler> = {
   ...AWARENESS_TOOL_HANDLERS,
   ...DEVELOPER_TOOL_HANDLERS,
   ...P0_GAP_TOOL_HANDLERS,
+  // VTID-ASSISTANT-ROLES — developer/admin briefing + guarded action tools.
+  ...DEVELOPER_ACTION_TOOL_HANDLERS,
+  ...ADMIN_ACTION_TOOL_HANDLERS,
 };
 
 // BOOTSTRAP-VOICE-CATALOG-COMPLETE — combined Vertex/Gemini function
@@ -5166,7 +5180,17 @@ export const NEW_DOMAIN_TOOL_DECLARATIONS: Array<Record<string, unknown>> = [
 // declared only for developer/admin/exafy_admin sessions. Kept separate so
 // live-tool-catalog.ts can apply the same activeRole check it already uses
 // for ADMIN_TOOL_SCHEMAS.
-export const DEVELOPER_DOMAIN_TOOL_DECLARATIONS: Array<Record<string, unknown>> = DEVELOPER_TOOL_DECLARATIONS;
+export const DEVELOPER_DOMAIN_TOOL_DECLARATIONS: Array<Record<string, unknown>> = [
+  ...DEVELOPER_TOOL_DECLARATIONS,
+  // VTID-ASSISTANT-ROLES — developer briefing + guarded action tools share
+  // the developer lane's role gate in live-tool-catalog.ts.
+  ...DEVELOPER_ACTION_TOOL_DECLARATIONS,
+];
+
+// VTID-ASSISTANT-ROLES — tenant-admin lane declarations (briefing, overview,
+// moderation, invitations, roles). Gated to admin/exafy_admin in
+// live-tool-catalog.ts; handlers re-check via adminGate() regardless.
+export const ADMIN_DOMAIN_TOOL_DECLARATIONS: Array<Record<string, unknown>> = ADMIN_ACTION_TOOL_DECLARATIONS;
 
 export const ORB_TOOL_NAMES = Object.keys(ORB_TOOL_REGISTRY);
 
@@ -5199,7 +5223,13 @@ export async function dispatchOrbTool(
   // is flipped to staging+prod, otherwise legitimate tools would be denied.
   // Until that mapping exists this hook is shadow-only telemetry; do NOT
   // enable FEATURE_ROLE_POLICY_ENFORCE in prod. See role-policy-enforcer.ts.
-  if (shouldBlockTool(identity.role, name, { surface: 'orb-tool', session_id: identity.session_id ?? undefined, actor_id: identity.user_id })) {
+  // VTID-ASSISTANT-ROLES: scoped role-aware enforcement. For the RECONCILED
+  // roles (developer, admin — whose registry allowlists match real tool
+  // names) this ENFORCES the closed-world policy when
+  // FEATURE_ROLE_AWARE_ASSISTANT_ENV is live. All other roles keep the
+  // original shadow-only behavior (log, never block) until their names are
+  // reconciled and FEATURE_ROLE_POLICY_ENFORCE graduates.
+  if (shouldBlockToolRoleAware(identity.role, name, { surface: 'orb-tool', session_id: identity.session_id ?? undefined, actor_id: identity.user_id })) {
     return { ok: false, error: `tool '${name}' not permitted for role '${identity.role ?? '(null)'}'` };
   }
 
