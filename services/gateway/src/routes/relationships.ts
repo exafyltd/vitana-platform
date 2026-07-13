@@ -25,6 +25,26 @@ import { notifyUserAsync } from '../services/notification-service';
 
 const router = Router();
 
+/**
+ * Run `fn` over `items` with at most `limit` in flight at once. Used by the
+ * Cognee batch-persist endpoint so large extraction payloads don't issue one
+ * sequential RPC round-trip per row, while still bounding DB pressure.
+ */
+async function mapWithConcurrency<T>(
+  items: T[],
+  limit: number,
+  fn: (item: T) => Promise<void>
+): Promise<void> {
+  let next = 0;
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (next < items.length) {
+      const i = next++;
+      await fn(items[i]);
+    }
+  });
+  await Promise.all(workers);
+}
+
 // =============================================================================
 // VTID-01087: Constants & Types
 // =============================================================================
@@ -1068,8 +1088,9 @@ router.post('/from-cognee', async (req: Request, res: Response) => {
   const entityNodeMap = new Map<string, string>();
 
   try {
-    // 1. Create/get nodes for all entities
-    for (const entity of payload.entities) {
+    // 1. Create/get nodes for all entities (bounded-concurrency: one RPC per
+    // entity, but no longer one sequential round-trip per entity)
+    await mapWithConcurrency(payload.entities, 8, async (entity) => {
       const { data: nodeResult, error: nodeError } = await supabase.rpc('relationship_ensure_node', {
         p_node_type: entity.vitana_node_type,
         p_title: entity.name,
@@ -1085,7 +1106,7 @@ router.post('/from-cognee', async (req: Request, res: Response) => {
       if (nodeError) {
         results.errors.push(`Node error for "${entity.name}": ${nodeError.message}`);
         console.warn(`[VTID-01225] Node creation failed for "${entity.name}":`, nodeError.message);
-        continue;
+        return;
       }
 
       if (nodeResult?.ok) {
@@ -1098,21 +1119,22 @@ router.post('/from-cognee', async (req: Request, res: Response) => {
       } else {
         results.errors.push(`Node error for "${entity.name}": ${nodeResult?.error || 'Unknown'}`);
       }
-    }
+    });
 
-    // 2. Create edges for all relationships
-    for (const rel of payload.relationships) {
+    // 2. Create edges for all relationships (needs the full entityNodeMap
+    // from step 1, so this stage starts only after all nodes are ensured)
+    await mapWithConcurrency(payload.relationships, 8, async (rel) => {
       const fromNodeId = entityNodeMap.get(rel.from_entity);
       const toNodeId = entityNodeMap.get(rel.to_entity);
 
       if (!fromNodeId) {
         results.errors.push(`Missing from_node for relationship: ${rel.from_entity} -> ${rel.to_entity}`);
-        continue;
+        return;
       }
 
       if (!toNodeId) {
         results.errors.push(`Missing to_node for relationship: ${rel.from_entity} -> ${rel.to_entity}`);
-        continue;
+        return;
       }
 
       const { data: edgeResult, error: edgeError } = await supabase.rpc('relationship_add_edge', {
@@ -1132,7 +1154,7 @@ router.post('/from-cognee', async (req: Request, res: Response) => {
       if (edgeError) {
         results.errors.push(`Edge error for "${rel.from_entity}" -> "${rel.to_entity}": ${edgeError.message}`);
         console.warn(`[VTID-01225] Edge creation failed:`, edgeError.message);
-        continue;
+        return;
       }
 
       if (edgeResult?.ok) {
@@ -1144,10 +1166,10 @@ router.post('/from-cognee', async (req: Request, res: Response) => {
       } else {
         results.errors.push(`Edge error: ${edgeResult?.error || 'Unknown'}`);
       }
-    }
+    });
 
     // 3. Update signals
-    for (const signal of payload.signals) {
+    await mapWithConcurrency(payload.signals, 8, async (signal) => {
       const { data: signalResult, error: signalError } = await supabase.rpc('relationship_update_signal', {
         p_signal_key: signal.signal_key,
         p_confidence: signal.confidence,
@@ -1162,7 +1184,7 @@ router.post('/from-cognee', async (req: Request, res: Response) => {
       if (signalError) {
         results.errors.push(`Signal error for "${signal.signal_key}": ${signalError.message}`);
         console.warn(`[VTID-01225] Signal update failed:`, signalError.message);
-        continue;
+        return;
       }
 
       if (signalResult?.ok) {
@@ -1174,7 +1196,7 @@ router.post('/from-cognee', async (req: Request, res: Response) => {
       } else {
         results.errors.push(`Signal error: ${signalResult?.error || 'Unknown'}`);
       }
-    }
+    });
 
     const durationMs = Date.now() - startTime;
 

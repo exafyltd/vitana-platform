@@ -2,6 +2,7 @@ import express from 'express';
 import path from 'path';
 import fs from 'fs';
 import cors from 'cors';
+import compression from 'compression';
 
 const app = express();
 const PORT = process.env.PORT || 8080;
@@ -477,6 +478,18 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   // CORS setup - DEV-OASIS-0101
   setupCors(app);
   app.use(sseHeaders);
+
+  // Cloud Run does not gzip responses; compress everything except SSE streams,
+  // which must flush per-event and would sit in the compressor's buffer.
+  app.use(
+    compression({
+      filter: (req, res) => {
+        if ((req.headers.accept || '').includes('text/event-stream')) return false;
+        if (String(res.getHeader('Content-Type') || '').includes('text/event-stream')) return false;
+        return compression.filter(req, res);
+      },
+    })
+  );
 
   // VTID-01230: Raw body parser for Stripe Connect webhooks (MUST come BEFORE express.json())
   app.use('/api/v1/stripe/webhook', express.raw({ type: 'application/json' }));

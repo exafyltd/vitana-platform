@@ -41,13 +41,25 @@ async function getServiceClient() {
 }
 
 // ── Helper: get all active users for a tenant ────────────────
+// Pages through user_tenants: Supabase REST caps a single select at ~1000
+// rows, which silently truncated large tenants (users past the cap never
+// received scheduled notifications).
 async function getActiveUsers(supabase: any, tenantId: string): Promise<Array<{ user_id: string }>> {
-  const { data } = await supabase
-    .from('user_tenants')
-    .select('user_id')
-    .eq('tenant_id', tenantId)
-    .eq('is_primary', true);
-  return data || [];
+  const PAGE_SIZE = 1000;
+  const users: Array<{ user_id: string }> = [];
+  for (let offset = 0; ; offset += PAGE_SIZE) {
+    const { data } = await supabase
+      .from('user_tenants')
+      .select('user_id')
+      .eq('tenant_id', tenantId)
+      .eq('is_primary', true)
+      .order('user_id', { ascending: true })
+      .range(offset, offset + PAGE_SIZE - 1);
+    const page = data || [];
+    users.push(...page);
+    if (page.length < PAGE_SIZE) break;
+  }
+  return users;
 }
 
 // ── Helper: extract tenant_id from body or use default ───────
