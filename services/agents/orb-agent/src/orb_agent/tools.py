@@ -5201,6 +5201,438 @@ async def admin_archive_intent(context: RunContext, older_than_days: int | None 
 
 
 # ---------------------------------------------------------------------------
+# WAVE-5-VOICE-CATALOG-V2 — Developer P1 (63)
+# Implementations live in services/gateway/src/services/orb-tools/*.ts,
+# reached through the shared dispatcher via POST /api/v1/orb/tool exactly
+# like the tools above.
+# ---------------------------------------------------------------------------
+
+
+# --- C5 Worker Orchestrator (9) ---------------------------------------------
+
+
+@function_tool
+async def dev_list_workers(context: RunContext) -> str:
+    """DEVELOPER ONLY. List registered orchestrator workers."""
+    body = await _dispatch(context, "dev_list_workers", {})
+    return summarize(body)
+
+
+@function_tool
+async def dev_orchestrator_stats(context: RunContext) -> str:
+    """DEVELOPER ONLY. Worker connector stats."""
+    body = await _dispatch(context, "dev_orchestrator_stats", {})
+    return summarize(body)
+
+
+@function_tool
+async def dev_list_pending_worker_tasks(context: RunContext, worker_id: str | None = None, limit: int | None = None) -> str:
+    """DEVELOPER ONLY. Pending worker task queue."""
+    body = await _dispatch(context, "dev_list_pending_worker_tasks", {"worker_id": worker_id, "limit": limit})
+    return summarize(body)
+
+
+@function_tool
+async def dev_release_claim(context: RunContext, vtid: str, worker_id: str, reason: str | None = None, confirm: bool | None = None) -> str:
+    """DEVELOPER ONLY. Release a stuck VTID claim. TWO-STEP confirm."""
+    body = await _dispatch(context, "dev_release_claim", {"vtid": vtid, "worker_id": worker_id, "reason": reason, "confirm": confirm})
+    return summarize(body)
+
+
+@function_tool
+async def dev_list_subagents(context: RunContext) -> str:
+    """DEVELOPER ONLY. List legacy subagent registry entries."""
+    body = await _dispatch(context, "dev_list_subagents", {})
+    return summarize(body)
+
+
+@function_tool
+async def dev_list_worker_skills(context: RunContext) -> str:
+    """DEVELOPER ONLY. Worker skills + preflight chains."""
+    body = await _dispatch(context, "dev_list_worker_skills", {})
+    return summarize(body)
+
+
+@function_tool
+async def dev_cleanup_stale_claims(context: RunContext, confirm: bool | None = None) -> str:
+    """DEVELOPER ONLY. Expire all stale worker claims platform-wide. TWO-STEP confirm."""
+    body = await _dispatch(context, "dev_cleanup_stale_claims", {"confirm": confirm})
+    return summarize(body)
+
+
+@function_tool
+async def dev_orchestrator_health(context: RunContext) -> str:
+    """DEVELOPER ONLY. Orchestrator service health + subagent lanes."""
+    body = await _dispatch(context, "dev_orchestrator_health", {})
+    return summarize(body)
+
+
+@function_tool
+async def dev_route_to_subagent(context: RunContext, vtid: str, title: str, task_family: str | None = None, task_domain: str | None = None, target_paths: list[str] | None = None, spec_content: str | None = None, confirm: bool | None = None) -> str:
+    """DEVELOPER ONLY. Route a VTID work order to a subagent for execution. TWO-STEP confirm."""
+    body = await _dispatch(context, "dev_route_to_subagent", {
+            "vtid": vtid, "title": title, "task_family": task_family, "task_domain": task_domain,
+            "target_paths": target_paths, "spec_content": spec_content, "confirm": confirm,
+        })
+    return summarize(body)
+
+
+# --- C6 Autopilot Controller & Loop (12) ------------------------------------
+
+
+@function_tool
+async def dev_autopilot_loop_status(context: RunContext) -> str:
+    """DEVELOPER ONLY. Autopilot event loop status."""
+    body = await _dispatch(context, "dev_autopilot_loop_status", {})
+    return summarize(body)
+
+
+@function_tool
+async def dev_start_autopilot_loop(context: RunContext, confirm: bool | None = None) -> str:
+    """DEVELOPER ONLY. Start the autopilot event loop. TWO-STEP confirm."""
+    body = await _dispatch(context, "dev_start_autopilot_loop", {"confirm": confirm})
+    return summarize(body)
+
+
+@function_tool
+async def dev_stop_autopilot_loop(context: RunContext, confirm: bool | None = None) -> str:
+    """DEVELOPER ONLY. Stop the autopilot event loop. TWO-STEP confirm."""
+    body = await _dispatch(context, "dev_stop_autopilot_loop", {"confirm": confirm})
+    return summarize(body)
+
+
+@function_tool
+async def dev_autopilot_loop_history(context: RunContext, limit: int | None = None) -> str:
+    """DEVELOPER ONLY. Recent autopilot loop events."""
+    body = await _dispatch(context, "dev_autopilot_loop_history", {"limit": limit})
+    return summarize(body)
+
+
+@function_tool
+async def dev_reset_loop_cursor(context: RunContext, timestamp: str | None = None, reason: str | None = None, confirm: bool | None = None) -> str:
+    """DEVELOPER ONLY. Reset the autopilot loop cursor to a timestamp (or "now"). TWO-STEP confirm."""
+    body = await _dispatch(context, "dev_reset_loop_cursor", {"timestamp": timestamp, "reason": reason, "confirm": confirm})
+    return summarize(body)
+
+
+@function_tool
+async def dev_controller_status(context: RunContext) -> str:
+    """DEVELOPER ONLY. Autopilot controller status."""
+    body = await _dispatch(context, "dev_controller_status", {})
+    return summarize(body)
+
+
+@function_tool
+async def dev_list_controller_runs(context: RunContext) -> str:
+    """DEVELOPER ONLY. Active controller runs."""
+    body = await _dispatch(context, "dev_list_controller_runs", {})
+    return summarize(body)
+
+
+@function_tool
+async def dev_get_controller_run(context: RunContext, vtid: str) -> str:
+    """DEVELOPER ONLY. One controller run by VTID."""
+    body = await _dispatch(context, "dev_get_controller_run", {"vtid": vtid})
+    return summarize(body)
+
+
+@function_tool
+async def dev_validate_task(context: RunContext, vtid: str, mode: str | None = None) -> str:
+    """DEVELOPER ONLY. Run governance validation for a VTID."""
+    body = await _dispatch(context, "dev_validate_task", {"vtid": vtid, "mode": mode})
+    return summarize(body)
+
+
+@function_tool
+async def dev_list_pending_plans(context: RunContext) -> str:
+    """DEVELOPER ONLY. Tasks awaiting a plan."""
+    body = await _dispatch(context, "dev_list_pending_plans", {})
+    return summarize(body)
+
+
+@function_tool
+async def dev_get_task_spec(context: RunContext, vtid: str) -> str:
+    """DEVELOPER ONLY. Spec snapshot for a VTID."""
+    body = await _dispatch(context, "dev_get_task_spec", {"vtid": vtid})
+    return summarize(body)
+
+
+@function_tool
+async def dev_autopilot_pipeline_health(context: RunContext) -> str:
+    """DEVELOPER ONLY. Autopilot pipeline health + task funnel summary."""
+    body = await _dispatch(context, "dev_autopilot_pipeline_health", {})
+    return summarize(body)
+
+
+# --- C7 Dev-Autopilot Scanners & Findings (14) ------------------------------
+
+
+@function_tool
+async def dev_list_scanners(context: RunContext) -> str:
+    """EXAFY_ADMIN ONLY. List dev-autopilot scanners."""
+    body = await _dispatch(context, "dev_list_scanners", {})
+    return summarize(body)
+
+
+@function_tool
+async def dev_list_impact_rules(context: RunContext) -> str:
+    """EXAFY_ADMIN ONLY. List impact rules."""
+    body = await _dispatch(context, "dev_list_impact_rules", {})
+    return summarize(body)
+
+
+@function_tool
+async def dev_get_auto_approve_config(context: RunContext) -> str:
+    """EXAFY_ADMIN ONLY. Auto-approve config, budget, and autonomy progress."""
+    body = await _dispatch(context, "dev_get_auto_approve_config", {})
+    return summarize(body)
+
+
+@function_tool
+async def dev_list_scan_runs(context: RunContext, limit: int | None = None) -> str:
+    """EXAFY_ADMIN ONLY. Recent scan runs."""
+    body = await _dispatch(context, "dev_list_scan_runs", {"limit": limit})
+    return summarize(body)
+
+
+@function_tool
+async def dev_get_scan_run(context: RunContext, run_id: str) -> str:
+    """EXAFY_ADMIN ONLY. One scan run by id."""
+    body = await _dispatch(context, "dev_get_scan_run", {"run_id": run_id})
+    return summarize(body)
+
+
+@function_tool
+async def dev_findings_queue(context: RunContext, kind: str | None = None, status: str | None = None, risk: str | None = None, domain: str | None = None, sort: str | None = None, limit: int | None = None) -> str:
+    """EXAFY_ADMIN ONLY. Findings queue."""
+    body = await _dispatch(context, "dev_findings_queue", {"kind": kind, "status": status, "risk": risk, "domain": domain, "sort": sort, "limit": limit})
+    return summarize(body)
+
+
+@function_tool
+async def dev_get_finding(context: RunContext, finding_id: str) -> str:
+    """EXAFY_ADMIN ONLY. One finding + plan versions."""
+    body = await _dispatch(context, "dev_get_finding", {"finding_id": finding_id})
+    return summarize(body)
+
+
+@function_tool
+async def dev_generate_finding_plan(context: RunContext, finding_id: str, confirm: bool | None = None) -> str:
+    """EXAFY_ADMIN ONLY. Generate a fix plan for a finding. TWO-STEP confirm."""
+    body = await _dispatch(context, "dev_generate_finding_plan", {"finding_id": finding_id, "confirm": confirm})
+    return summarize(body)
+
+
+@function_tool
+async def dev_reject_finding(context: RunContext, finding_id: str, confirm: bool | None = None) -> str:
+    """EXAFY_ADMIN ONLY. Reject a finding. TWO-STEP confirm."""
+    body = await _dispatch(context, "dev_reject_finding", {"finding_id": finding_id, "confirm": confirm})
+    return summarize(body)
+
+
+@function_tool
+async def dev_snooze_finding(context: RunContext, finding_id: str, hours: int | None = None) -> str:
+    """EXAFY_ADMIN ONLY. Snooze a finding for N hours (default 24, max 720)."""
+    body = await _dispatch(context, "dev_snooze_finding", {"finding_id": finding_id, "hours": hours})
+    return summarize(body)
+
+
+@function_tool
+async def dev_approve_auto_execute(context: RunContext, finding_id: str, confirm: bool | None = None) -> str:
+    """EXAFY_ADMIN ONLY. Approve a finding for autonomous execution + merge, no further review. TWO-STEP confirm."""
+    body = await _dispatch(context, "dev_approve_auto_execute", {"finding_id": finding_id, "confirm": confirm})
+    return summarize(body)
+
+
+@function_tool
+async def dev_cancel_execution(context: RunContext, execution_id: str, confirm: bool | None = None) -> str:
+    """EXAFY_ADMIN ONLY. Cancel a running execution. TWO-STEP confirm."""
+    body = await _dispatch(context, "dev_cancel_execution", {"execution_id": execution_id, "confirm": confirm})
+    return summarize(body)
+
+
+@function_tool
+async def dev_list_executions(context: RunContext, status: str | None = None, limit: int | None = None) -> str:
+    """EXAFY_ADMIN ONLY. List executions (defaults to active only)."""
+    body = await _dispatch(context, "dev_list_executions", {"status": status, "limit": limit})
+    return summarize(body)
+
+
+@function_tool
+async def dev_get_execution_lineage(context: RunContext, execution_id: str) -> str:
+    """EXAFY_ADMIN ONLY. Execution lineage (root + all descendants)."""
+    body = await _dispatch(context, "dev_get_execution_lineage", {"execution_id": execution_id})
+    return summarize(body)
+
+
+# --- C8 Self-Healing (13) ----------------------------------------------------
+
+
+@function_tool
+async def dev_report_incident(context: RunContext, service: str, summary: str, confirm: bool | None = None) -> str:
+    """DEVELOPER ONLY. File a manual incident for a service. TWO-STEP confirm."""
+    body = await _dispatch(context, "dev_report_incident", {"service": service, "summary": summary, "confirm": confirm})
+    return summarize(body)
+
+
+@function_tool
+async def dev_healing_config(context: RunContext) -> str:
+    """DEVELOPER ONLY. Self-healing enabled state + autonomy level."""
+    body = await _dispatch(context, "dev_healing_config", {})
+    return summarize(body)
+
+
+@function_tool
+async def dev_set_healing_mode(context: RunContext, autonomy_level: int, confirm: bool | None = None) -> str:
+    """DEVELOPER ONLY. Set the self-healing autonomy level (0-4). TWO-STEP confirm."""
+    body = await _dispatch(context, "dev_set_healing_mode", {"autonomy_level": autonomy_level, "confirm": confirm})
+    return summarize(body)
+
+
+@function_tool
+async def dev_healing_kill_switch(context: RunContext, action: str, reason: str | None = None, confirm: bool | None = None) -> str:
+    """DEVELOPER ONLY. Activate or deactivate the self-healing kill switch. TWO-STEP confirm."""
+    body = await _dispatch(context, "dev_healing_kill_switch", {"action": action, "reason": reason, "confirm": confirm})
+    return summarize(body)
+
+
+@function_tool
+async def dev_healing_history(context: RunContext, limit: int | None = None, failure_class: str | None = None, outcome: str | None = None) -> str:
+    """DEVELOPER ONLY. Recent self-healing events."""
+    body = await _dispatch(context, "dev_healing_history", {"limit": limit, "failure_class": failure_class, "outcome": outcome})
+    return summarize(body)
+
+
+@function_tool
+async def dev_healing_metrics(context: RunContext, days: int | None = None) -> str:
+    """DEVELOPER ONLY. Self-healing metrics summary over N days (default 7)."""
+    body = await _dispatch(context, "dev_healing_metrics", {"days": days})
+    return summarize(body)
+
+
+@function_tool
+async def dev_approve_heal(context: RunContext, heal_id: str, confirm: bool | None = None) -> str:
+    """DEVELOPER ONLY. Approve a pending heal. TWO-STEP confirm."""
+    body = await _dispatch(context, "dev_approve_heal", {"heal_id": heal_id, "confirm": confirm})
+    return summarize(body)
+
+
+@function_tool
+async def dev_reject_heal(context: RunContext, heal_id: str, reason: str | None = None, confirm: bool | None = None) -> str:
+    """DEVELOPER ONLY. Reject a pending heal. TWO-STEP confirm."""
+    body = await _dispatch(context, "dev_reject_heal", {"heal_id": heal_id, "reason": reason, "confirm": confirm})
+    return summarize(body)
+
+
+@function_tool
+async def dev_verify_heal(context: RunContext, vtid: str) -> str:
+    """DEVELOPER ONLY. Run a blast-radius verification check for a heal."""
+    body = await _dispatch(context, "dev_verify_heal", {"vtid": vtid})
+    return summarize(body)
+
+
+@function_tool
+async def dev_rollback_heal(context: RunContext, vtid: str, confirm: bool | None = None) -> str:
+    """DEVELOPER ONLY. Roll back a heal to its pre-fix snapshot. TWO-STEP confirm."""
+    body = await _dispatch(context, "dev_rollback_heal", {"vtid": vtid, "confirm": confirm})
+    return summarize(body)
+
+
+@function_tool
+async def dev_list_quarantine(context: RunContext, failure_class: str, signature: str) -> str:
+    """DEVELOPER ONLY. Look up a quarantine entry by failure class + signature (no browsable list exists)."""
+    body = await _dispatch(context, "dev_list_quarantine", {"failure_class": failure_class, "signature": signature})
+    return summarize(body)
+
+
+@function_tool
+async def dev_release_quarantine(context: RunContext, failure_class: str, signature: str, reason: str | None = None, confirm: bool | None = None) -> str:
+    """DEVELOPER ONLY. Release a class/signature pair from quarantine. TWO-STEP confirm."""
+    body = await _dispatch(context, "dev_release_quarantine", {"failure_class": failure_class, "signature": signature, "reason": reason, "confirm": confirm})
+    return summarize(body)
+
+
+@function_tool
+async def dev_shadow_comparison(context: RunContext, window_hours: int | None = None) -> str:
+    """DEVELOPER ONLY. Staging shadow-comparison report over a time window (default 48h)."""
+    body = await _dispatch(context, "dev_shadow_comparison", {"window_hours": window_hours})
+    return summarize(body)
+
+
+# --- C10 Testing & QA (10) ---------------------------------------------------
+
+
+@function_tool
+async def dev_run_test_suite(context: RunContext, projects: list[str], type: str | None = None, community_url: str | None = None, confirm: bool | None = None) -> str:
+    """DEVELOPER ONLY. Run one or more named test suites/projects. TWO-STEP confirm."""
+    body = await _dispatch(context, "dev_run_test_suite", {"projects": projects, "type": type, "community_url": community_url, "confirm": confirm})
+    return summarize(body)
+
+
+@function_tool
+async def dev_list_test_suites(context: RunContext) -> str:
+    """DEVELOPER ONLY. List available test suites/projects."""
+    body = await _dispatch(context, "dev_list_test_suites", {})
+    return summarize(body)
+
+
+@function_tool
+async def dev_list_test_runs(context: RunContext, type: str | None = None, limit: int | None = None) -> str:
+    """DEVELOPER ONLY. Recent test runs."""
+    body = await _dispatch(context, "dev_list_test_runs", {"type": type, "limit": limit})
+    return summarize(body)
+
+
+@function_tool
+async def dev_get_test_run(context: RunContext, run_id: str) -> str:
+    """DEVELOPER ONLY. One test run + its results."""
+    body = await _dispatch(context, "dev_get_test_run", {"run_id": run_id})
+    return summarize(body)
+
+
+@function_tool
+async def dev_run_e2e(context: RunContext, projects: list[str] | None = None, confirm: bool | None = None) -> str:
+    """DEVELOPER ONLY. Run the full E2E test suite. TWO-STEP confirm."""
+    body = await _dispatch(context, "dev_run_e2e", {"projects": projects, "confirm": confirm})
+    return summarize(body)
+
+
+@function_tool
+async def dev_orb_monitor_status(context: RunContext) -> str:
+    """DEVELOPER ONLY. Recent ORB monitor workflow runs."""
+    body = await _dispatch(context, "dev_orb_monitor_status", {})
+    return summarize(body)
+
+
+@function_tool
+async def dev_trigger_orb_monitor(context: RunContext, confirm: bool | None = None) -> str:
+    """DEVELOPER ONLY. Trigger the ORB monitor workflow. TWO-STEP confirm."""
+    body = await _dispatch(context, "dev_trigger_orb_monitor", {"confirm": confirm})
+    return summarize(body)
+
+
+@function_tool
+async def dev_list_test_contracts(context: RunContext, service: str | None = None, environment: str | None = None, owner: str | None = None, status: str | None = None, contract_type: str | None = None) -> str:
+    """EXAFY_ADMIN ONLY. List registered test contracts."""
+    body = await _dispatch(context, "dev_list_test_contracts", {"service": service, "environment": environment, "owner": owner, "status": status, "contract_type": contract_type})
+    return summarize(body)
+
+
+@function_tool
+async def dev_run_orb_selfcheck(context: RunContext, user_id: str | None = None, tools: list[str] | None = None, confirm: bool | None = None) -> str:
+    """EXAFY_ADMIN ONLY. Run the curated ORB tools selfcheck against real user data. TWO-STEP confirm."""
+    body = await _dispatch(context, "dev_run_orb_selfcheck", {"user_id": user_id, "tools": tools, "confirm": confirm})
+    return summarize(body)
+
+
+@function_tool
+async def dev_voice_lab_probe(context: RunContext) -> str:
+    """DEVELOPER ONLY. Run a synthetic voice-lab probe."""
+    body = await _dispatch(context, "dev_voice_lab_probe", {})
+    return summarize(body)
+
+
+# ---------------------------------------------------------------------------
 # Catalogue export — used by tests + libcst smoke
 # ---------------------------------------------------------------------------
 
@@ -5460,6 +5892,32 @@ def all_tool_names() -> list[str]:
         "admin_feature_analytics", "admin_interest_analytics", "admin_intent_engine_stats",
         "admin_close_intent", "admin_recompute_intent", "admin_resolve_dispute",
         "admin_archive_intent",
+        # WAVE-5-VOICE-CATALOG-V2 — Developer P1 (63)
+        # C5 Worker Orchestrator (9)
+        "dev_list_workers", "dev_orchestrator_stats", "dev_list_pending_worker_tasks",
+        "dev_release_claim", "dev_list_subagents", "dev_list_worker_skills",
+        "dev_cleanup_stale_claims", "dev_orchestrator_health", "dev_route_to_subagent",
+        # C6 Autopilot Controller & Loop (12)
+        "dev_autopilot_loop_status", "dev_start_autopilot_loop", "dev_stop_autopilot_loop",
+        "dev_autopilot_loop_history", "dev_reset_loop_cursor", "dev_controller_status",
+        "dev_list_controller_runs", "dev_get_controller_run", "dev_validate_task",
+        "dev_list_pending_plans", "dev_get_task_spec", "dev_autopilot_pipeline_health",
+        # C7 Dev-Autopilot Scanners & Findings (14)
+        "dev_list_scanners", "dev_list_impact_rules", "dev_get_auto_approve_config",
+        "dev_list_scan_runs", "dev_get_scan_run", "dev_findings_queue", "dev_get_finding",
+        "dev_generate_finding_plan", "dev_reject_finding", "dev_snooze_finding",
+        "dev_approve_auto_execute", "dev_cancel_execution", "dev_list_executions",
+        "dev_get_execution_lineage",
+        # C8 Self-Healing (13)
+        "dev_report_incident", "dev_healing_config", "dev_set_healing_mode",
+        "dev_healing_kill_switch", "dev_healing_history", "dev_healing_metrics",
+        "dev_approve_heal", "dev_reject_heal", "dev_verify_heal", "dev_rollback_heal",
+        "dev_list_quarantine", "dev_release_quarantine", "dev_shadow_comparison",
+        # C10 Testing & QA (10)
+        "dev_run_test_suite", "dev_list_test_suites", "dev_list_test_runs",
+        "dev_get_test_run", "dev_run_e2e", "dev_orb_monitor_status",
+        "dev_trigger_orb_monitor", "dev_list_test_contracts", "dev_run_orb_selfcheck",
+        "dev_voice_lab_probe",
     ]
 
 

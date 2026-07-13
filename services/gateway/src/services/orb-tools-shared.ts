@@ -86,6 +86,14 @@ import { ADMIN_TENANTS_SIGNUPS_TOOL_HANDLERS, ADMIN_TENANTS_SIGNUPS_TOOL_DECLARA
 import { ADMIN_OVERSIGHT_BILLING_TOOL_HANDLERS, ADMIN_OVERSIGHT_BILLING_TOOL_DECLARATIONS } from './orb-tools/admin-oversight-billing-tools';
 import { ADMIN_KB_ASSISTANT_TOOL_HANDLERS, ADMIN_KB_ASSISTANT_TOOL_DECLARATIONS } from './orb-tools/admin-kb-assistant-tools';
 import { ADMIN_AUTOPILOT_ANALYTICS_TOOL_HANDLERS, ADMIN_AUTOPILOT_ANALYTICS_TOOL_DECLARATIONS } from './orb-tools/admin-autopilot-analytics-tools';
+// WAVE-5-VOICE-CATALOG-V2 — fifth wave of the approved 425-tool expansion:
+// developer P1 domains covering worker orchestrator, autopilot controller &
+// loop, dev-autopilot scanners/findings, self-healing, and testing & QA.
+import { WORKER_ORCHESTRATOR_TOOL_HANDLERS, WORKER_ORCHESTRATOR_TOOL_DECLARATIONS } from './orb-tools/worker-orchestrator-tools';
+import { AUTOPILOT_CONTROLLER_TOOL_HANDLERS, AUTOPILOT_CONTROLLER_TOOL_DECLARATIONS } from './orb-tools/autopilot-controller-tools';
+import { DEV_AUTOPILOT_SCANNERS_TOOL_HANDLERS, DEV_AUTOPILOT_SCANNERS_TOOL_DECLARATIONS } from './orb-tools/dev-autopilot-scanners-tools';
+import { SELF_HEALING_TOOL_HANDLERS, SELF_HEALING_TOOL_DECLARATIONS } from './orb-tools/self-healing-tools';
+import { TESTING_QA_TOOL_HANDLERS, TESTING_QA_TOOL_DECLARATIONS } from './orb-tools/testing-qa-tools';
 import {
   lookupScreen,
   lookupByAlias,
@@ -5210,6 +5218,12 @@ export const ORB_TOOL_REGISTRY: Record<string, OrbToolHandler> = {
   ...ADMIN_OVERSIGHT_BILLING_TOOL_HANDLERS,
   ...ADMIN_KB_ASSISTANT_TOOL_HANDLERS,
   ...ADMIN_AUTOPILOT_ANALYTICS_TOOL_HANDLERS,
+  // WAVE-5-VOICE-CATALOG-V2
+  ...WORKER_ORCHESTRATOR_TOOL_HANDLERS,
+  ...AUTOPILOT_CONTROLLER_TOOL_HANDLERS,
+  ...DEV_AUTOPILOT_SCANNERS_TOOL_HANDLERS,
+  ...SELF_HEALING_TOOL_HANDLERS,
+  ...TESTING_QA_TOOL_HANDLERS,
 };
 
 // BOOTSTRAP-VOICE-CATALOG-COMPLETE — combined Vertex/Gemini function
@@ -5254,6 +5268,12 @@ export const DEVELOPER_DOMAIN_TOOL_DECLARATIONS: Array<Record<string, unknown>> 
   ...CICD_PR_TOOL_DECLARATIONS,
   ...DEPLOYMENT_RELEASE_TOOL_DECLARATIONS,
   ...OBSERVABILITY_TOOL_DECLARATIONS,
+  // WAVE-5-VOICE-CATALOG-V2
+  ...WORKER_ORCHESTRATOR_TOOL_DECLARATIONS,
+  ...AUTOPILOT_CONTROLLER_TOOL_DECLARATIONS,
+  ...DEV_AUTOPILOT_SCANNERS_TOOL_DECLARATIONS,
+  ...SELF_HEALING_TOOL_DECLARATIONS,
+  ...TESTING_QA_TOOL_DECLARATIONS,
 ];
 
 // WAVE-3-VOICE-CATALOG-V2 — admin_* declarations, injected by

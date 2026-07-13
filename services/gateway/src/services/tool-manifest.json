@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-07-13T00:41:26.079Z",
+  "generated_at": "2026-07-13T06:35:51.173Z",
   "source": "reconciled",
   "total": 594,
   "tools": [
@@ -8614,9 +8614,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Registered workers",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P1",
       "risk": "read",
       "plan_domain": "C5 Worker Orchestrator",
@@ -8631,9 +8634,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Stats",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P1",
       "risk": "read",
       "plan_domain": "C5 Worker Orchestrator",
@@ -8648,9 +8654,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Pending queue",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P1",
       "risk": "read",
       "plan_domain": "C5 Worker Orchestrator",
@@ -8682,9 +8691,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Release a stuck claim",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P1",
       "risk": "confirm",
       "plan_domain": "C5 Worker Orchestrator",
@@ -8699,9 +8711,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Subagents",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P1",
       "risk": "read",
       "plan_domain": "C5 Worker Orchestrator",
@@ -8716,9 +8731,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Skills",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P1",
       "risk": "read",
       "plan_domain": "C5 Worker Orchestrator",
@@ -8733,9 +8751,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Cleanup stale claims",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P1",
       "risk": "confirm",
       "plan_domain": "C5 Worker Orchestrator",
@@ -8750,9 +8771,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Health",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P1",
       "risk": "read",
       "plan_domain": "C5 Worker Orchestrator",
@@ -8767,9 +8791,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Route task to subagent",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P1",
       "risk": "confirm",
       "plan_domain": "C5 Worker Orchestrator",
@@ -8784,9 +8811,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Loop status",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P1",
       "risk": "read",
       "plan_domain": "C6 Autopilot Controller & Loop",
@@ -8801,9 +8831,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Start loop",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P1",
       "risk": "confirm",
       "plan_domain": "C6 Autopilot Controller & Loop",
@@ -8818,9 +8851,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Stop loop",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P1",
       "risk": "confirm",
       "plan_domain": "C6 Autopilot Controller & Loop",
@@ -8835,9 +8871,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Loop history",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P1",
       "risk": "read",
       "plan_domain": "C6 Autopilot Controller & Loop",
@@ -8852,9 +8891,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Reset cursor",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P1",
       "risk": "confirm",
       "plan_domain": "C6 Autopilot Controller & Loop",
@@ -8869,9 +8911,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Controller status",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P1",
       "risk": "read",
       "plan_domain": "C6 Autopilot Controller & Loop",
@@ -8886,9 +8931,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Runs",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P1",
       "risk": "read",
       "plan_domain": "C6 Autopilot Controller & Loop",
@@ -8903,9 +8951,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "One run",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P1",
       "risk": "read",
       "plan_domain": "C6 Autopilot Controller & Loop",
@@ -8971,9 +9022,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Validate",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P1",
       "risk": "read",
       "plan_domain": "C6 Autopilot Controller & Loop",
@@ -8988,9 +9042,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Pending plans",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P1",
       "risk": "read",
       "plan_domain": "C6 Autopilot Controller & Loop",
@@ -9005,9 +9062,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Spec for VTID",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P1",
       "risk": "read",
       "plan_domain": "C6 Autopilot Controller & Loop",
@@ -9022,9 +9082,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Pipeline health + summary",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P1",
       "risk": "read",
       "plan_domain": "C6 Autopilot Controller & Loop",
@@ -9056,9 +9119,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Scanners",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P1",
       "risk": "read",
       "plan_domain": "C7 Dev-Autopilot Scanners & Findings",
@@ -9073,9 +9139,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Impact rules",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P1",
       "risk": "read",
       "plan_domain": "C7 Dev-Autopilot Scanners & Findings",
@@ -9090,9 +9159,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Auto-approve config",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P1",
       "risk": "read",
       "plan_domain": "C7 Dev-Autopilot Scanners & Findings",
@@ -9107,9 +9179,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Scan runs",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P1",
       "risk": "read",
       "plan_domain": "C7 Dev-Autopilot Scanners & Findings",
@@ -9124,9 +9199,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "One run",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P1",
       "risk": "read",
       "plan_domain": "C7 Dev-Autopilot Scanners & Findings",
@@ -9141,9 +9219,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Findings queue",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P1",
       "risk": "read",
       "plan_domain": "C7 Dev-Autopilot Scanners & Findings",
@@ -9158,9 +9239,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "One finding",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P1",
       "risk": "read",
       "plan_domain": "C7 Dev-Autopilot Scanners & Findings",
@@ -9175,9 +9259,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Generate fix plan",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P1",
       "risk": "confirm",
       "plan_domain": "C7 Dev-Autopilot Scanners & Findings",
@@ -9192,9 +9279,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Reject finding",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P1",
       "risk": "confirm",
       "plan_domain": "C7 Dev-Autopilot Scanners & Findings",
@@ -9209,9 +9299,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Snooze",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P1",
       "risk": "write",
       "plan_domain": "C7 Dev-Autopilot Scanners & Findings",
@@ -9226,9 +9319,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Approve auto-execution",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P1",
       "risk": "confirm",
       "plan_domain": "C7 Dev-Autopilot Scanners & Findings",
@@ -9243,9 +9339,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Cancel execution",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P1",
       "risk": "confirm",
       "plan_domain": "C7 Dev-Autopilot Scanners & Findings",
@@ -9260,9 +9359,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Executions",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P1",
       "risk": "read",
       "plan_domain": "C7 Dev-Autopilot Scanners & Findings",
@@ -9277,9 +9379,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Lineage",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P1",
       "risk": "read",
       "plan_domain": "C7 Dev-Autopilot Scanners & Findings",
@@ -9294,9 +9399,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "File an incident",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P1",
       "risk": "confirm",
       "plan_domain": "C8 Self-Healing",
@@ -9311,9 +9419,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Config",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P1",
       "risk": "read",
       "plan_domain": "C8 Self-Healing",
@@ -9328,9 +9439,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Change mode",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P1",
       "risk": "confirm",
       "plan_domain": "C8 Self-Healing",
@@ -9345,9 +9459,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Flip kill switch",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P1",
       "risk": "confirm",
       "plan_domain": "C8 Self-Healing",
@@ -9362,9 +9479,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Heal history",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P1",
       "risk": "read",
       "plan_domain": "C8 Self-Healing",
@@ -9379,9 +9499,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Metrics summary",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P1",
       "risk": "read",
       "plan_domain": "C8 Self-Healing",
@@ -9396,9 +9519,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Approve pending heal",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P1",
       "risk": "confirm",
       "plan_domain": "C8 Self-Healing",
@@ -9413,9 +9539,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Reject heal",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P1",
       "risk": "confirm",
       "plan_domain": "C8 Self-Healing",
@@ -9430,9 +9559,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Verify a heal",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P1",
       "risk": "read",
       "plan_domain": "C8 Self-Healing",
@@ -9447,9 +9579,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Roll back a heal",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P1",
       "risk": "confirm",
       "plan_domain": "C8 Self-Healing",
@@ -9464,9 +9599,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Quarantined items",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P1",
       "risk": "read",
       "plan_domain": "C8 Self-Healing",
@@ -9481,9 +9619,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Release from quarantine",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P1",
       "risk": "confirm",
       "plan_domain": "C8 Self-Healing",
@@ -9498,9 +9639,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Staging shadow-comparison report",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P1",
       "risk": "read",
       "plan_domain": "C8 Self-Healing",
@@ -9815,9 +9959,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Run a suite",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P1",
       "risk": "confirm",
       "plan_domain": "C10 Testing & QA",
@@ -9832,9 +9979,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Suites",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P1",
       "risk": "read",
       "plan_domain": "C10 Testing & QA",
@@ -9849,9 +9999,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Runs",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P1",
       "risk": "read",
       "plan_domain": "C10 Testing & QA",
@@ -9866,9 +10019,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "One run + failures",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P1",
       "risk": "read",
       "plan_domain": "C10 Testing & QA",
@@ -9883,9 +10039,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Trigger E2E workflow",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P1",
       "risk": "confirm",
       "plan_domain": "C10 Testing & QA",
@@ -9900,9 +10059,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "ORB monitor status",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P1",
       "risk": "read",
       "plan_domain": "C10 Testing & QA",
@@ -9917,9 +10079,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Trigger ORB monitor",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P1",
       "risk": "confirm",
       "plan_domain": "C10 Testing & QA",
@@ -9934,9 +10099,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Test contracts",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P1",
       "risk": "read",
       "plan_domain": "C10 Testing & QA",
@@ -9951,9 +10119,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "ORB tools selfcheck",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P1",
       "risk": "confirm",
       "plan_domain": "C10 Testing & QA",
@@ -9968,9 +10139,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Voice-lab probe",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P1",
       "risk": "read",
       "plan_domain": "C10 Testing & QA",
