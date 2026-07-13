@@ -2808,7 +2808,85 @@ If the result has an autopilot id, offer to call activate_recommendation.
 Start pairing a wearable/health device. Opens the health tracker screen
 where device connections are managed (pairing itself is a native/client flow).
 CALL WHEN the user says: "connect my Oura ring", "pair my device",
-"verbinde mein Gerät"."
+"verbinde mein Gerät".
+
+### get_my_subscription
+Current plan, status, renewal date, and voice-minutes usage.
+
+### compare_subscription_plans
+List subscription plans with prices.
+
+### upgrade_subscription
+Start Stripe checkout to upgrade the subscription — hands off to the screen for payment. TWO-STEP confirm.
+
+### cancel_subscription
+Opens the Stripe billing portal to cancel (no direct in-voice cancel exists).
+
+### add_voice_minutes
+Start Stripe checkout to buy a voice-minutes credit pack — hands off to the screen for payment. TWO-STEP confirm.
+
+### redeem_subscription_code
+Redeem a subscription code to grant a plan directly.
+
+### get_billing_history
+Opens the Stripe billing portal, which shows invoice history (no in-voice invoice list exists).
+
+### get_referral_link
+Your referral link — generates one if you don't have one yet.
+
+### invite_friend
+Generate a shareable invite link (there is no automated email/SMS send yet — the user must share it themselves). TWO-STEP confirm.
+
+### get_referral_status
+Who joined via your referral link and reward status.
+
+### list_live_rooms_now
+What live rooms are live or scheduled right now.
+
+### get_live_room_details
+Room info, host, access level for one live room.
+
+### go_live
+Start hosting now (creates a live session on your room).
+
+### create_live_room
+Create a new live room. TWO-STEP confirm.
+
+### schedule_live_session
+Schedule a future live session on your room.
+
+### purchase_room_access
+Prepare payment for a paid room — hands off to the screen to confirm the charge.
+
+### end_live_session
+End your current live session. TWO-STEP confirm.
+
+### list_open_asks
+Browse open community asks.
+
+### edit_my_post
+Edit the content of your own post. TWO-STEP confirm.
+
+### delete_my_post
+Permanently delete your own post. TWO-STEP confirm.
+
+### set_goal
+Set your goal / north star. You have one active goal at a time.
+
+### list_my_goals
+Your active goal (single-goal model, not a list).
+
+### update_goal
+Adjust your goal — re-state the full goal text even when only changing the date/target.
+
+### get_goal_progress
+Progress readout on your active goal.
+
+### get_journey_checkpoints
+Checkpoints in your goal plan.
+
+### create_service
+Create a service listing in the Business Hub catalog. NOTE: there is no way to list, edit, or archive services by voice yet. TWO-STEP confirm."
 `;
 
 exports[`A0.1 characterization: buildLiveSystemInstruction renders a stable system instruction for persona "day-180-veteran-reconnect": persona:day-180-veteran-reconnect 1`] = `
@@ -5361,5 +5439,83 @@ If the result has an autopilot id, offer to call activate_recommendation.
 Start pairing a wearable/health device. Opens the health tracker screen
 where device connections are managed (pairing itself is a native/client flow).
 CALL WHEN the user says: "connect my Oura ring", "pair my device",
-"verbinde mein Gerät"."
+"verbinde mein Gerät".
+
+### get_my_subscription
+Current plan, status, renewal date, and voice-minutes usage.
+
+### compare_subscription_plans
+List subscription plans with prices.
+
+### upgrade_subscription
+Start Stripe checkout to upgrade the subscription — hands off to the screen for payment. TWO-STEP confirm.
+
+### cancel_subscription
+Opens the Stripe billing portal to cancel (no direct in-voice cancel exists).
+
+### add_voice_minutes
+Start Stripe checkout to buy a voice-minutes credit pack — hands off to the screen for payment. TWO-STEP confirm.
+
+### redeem_subscription_code
+Redeem a subscription code to grant a plan directly.
+
+### get_billing_history
+Opens the Stripe billing portal, which shows invoice history (no in-voice invoice list exists).
+
+### get_referral_link
+Your referral link — generates one if you don't have one yet.
+
+### invite_friend
+Generate a shareable invite link (there is no automated email/SMS send yet — the user must share it themselves). TWO-STEP confirm.
+
+### get_referral_status
+Who joined via your referral link and reward status.
+
+### list_live_rooms_now
+What live rooms are live or scheduled right now.
+
+### get_live_room_details
+Room info, host, access level for one live room.
+
+### go_live
+Start hosting now (creates a live session on your room).
+
+### create_live_room
+Create a new live room. TWO-STEP confirm.
+
+### schedule_live_session
+Schedule a future live session on your room.
+
+### purchase_room_access
+Prepare payment for a paid room — hands off to the screen to confirm the charge.
+
+### end_live_session
+End your current live session. TWO-STEP confirm.
+
+### list_open_asks
+Browse open community asks.
+
+### edit_my_post
+Edit the content of your own post. TWO-STEP confirm.
+
+### delete_my_post
+Permanently delete your own post. TWO-STEP confirm.
+
+### set_goal
+Set your goal / north star. You have one active goal at a time.
+
+### list_my_goals
+Your active goal (single-goal model, not a list).
+
+### update_goal
+Adjust your goal — re-state the full goal text even when only changing the date/target.
+
+### get_goal_progress
+Progress readout on your active goal.
+
+### get_journey_checkpoints
+Checkpoints in your goal plan.
+
+### create_service
+Create a service listing in the Business Hub catalog. NOTE: there is no way to list, edit, or archive services by voice yet. TWO-STEP confirm."
 `;
