@@ -4133,6 +4133,406 @@ async def dev_get_agent_detail(context: RunContext, agent_id: str) -> str:
 
 
 # ---------------------------------------------------------------------------
+# WAVE-3-VOICE-CATALOG-V2 — Admin P0: users/RBAC, content moderation,
+# marketplace admin, notifications/broadcast, governance/controls,
+# feedback/support (48 tools). All dispatch through the shared gateway
+# registry (services/gateway/src/services/orb-tools/admin-*-tools.ts).
+# ---------------------------------------------------------------------------
+
+# B1 Users & RBAC (8)
+
+
+@function_tool
+async def admin_lookup_user(context: RunContext, query: str, limit: int | None = None) -> str:
+    """ADMIN ONLY. Find a user by name, email, or vitana_id."""
+    body = await _dispatch(context, "admin_lookup_user", {"query": query, "limit": limit})
+    return summarize(body)
+
+
+@function_tool
+async def admin_list_users(context: RunContext, query: str | None = None, role: str | None = None, limit: int | None = None) -> str:
+    """ADMIN ONLY. List/filter users by search query or role."""
+    body = await _dispatch(context, "admin_list_users", {"query": query, "role": role, "limit": limit})
+    return summarize(body)
+
+
+@function_tool
+async def admin_get_user_detail(context: RunContext, user_id: str) -> str:
+    """ADMIN ONLY. Full user record by user_id."""
+    body = await _dispatch(context, "admin_get_user_detail", {"user_id": user_id})
+    return summarize(body)
+
+
+@function_tool
+async def admin_roles_summary(context: RunContext) -> str:
+    """ADMIN ONLY. Role distribution counts."""
+    body = await _dispatch(context, "admin_roles_summary", {})
+    return summarize(body)
+
+
+@function_tool
+async def admin_grant_role(context: RunContext, user_id: str, role: str, tenant_id: str | None = None, confirm: bool | None = None) -> str:
+    """ADMIN ONLY. Grant a role to a user. TWO-STEP confirm."""
+    body = await _dispatch(context, "admin_grant_role", {"user_id": user_id, "role": role, "tenant_id": tenant_id, "confirm": confirm})
+    return summarize(body)
+
+
+@function_tool
+async def admin_revoke_role(context: RunContext, user_id: str, role: str, tenant_id: str | None = None, confirm: bool | None = None) -> str:
+    """ADMIN ONLY. Revoke a role from a user (cannot revoke community). TWO-STEP confirm."""
+    body = await _dispatch(context, "admin_revoke_role", {"user_id": user_id, "role": role, "tenant_id": tenant_id, "confirm": confirm})
+    return summarize(body)
+
+
+@function_tool
+async def admin_set_trust_tier(context: RunContext, vitana_id: str, tier: str, reason: str | None = None, confirm: bool | None = None) -> str:
+    """ADMIN ONLY (exafy_admin/operator only). Change a user's trust tier. TWO-STEP confirm."""
+    body = await _dispatch(context, "admin_set_trust_tier", {"vitana_id": vitana_id, "tier": tier, "reason": reason, "confirm": confirm})
+    return summarize(body)
+
+
+@function_tool
+async def admin_get_at_risk_members(context: RunContext) -> str:
+    """ADMIN ONLY. At-risk members overview for the current tenant."""
+    body = await _dispatch(context, "admin_get_at_risk_members", {})
+    return summarize(body)
+
+
+# B4 Content Moderation (8)
+
+
+@function_tool
+async def admin_list_moderation_queue(context: RunContext, status: str | None = None, type: str | None = None, limit: int | None = None) -> str:
+    """ADMIN ONLY. List pending content-moderation items."""
+    body = await _dispatch(context, "admin_list_moderation_queue", {"status": status, "type": type, "limit": limit})
+    return summarize(body)
+
+
+@function_tool
+async def admin_get_moderation_item(context: RunContext, item_id: str) -> str:
+    """ADMIN ONLY. Detail for one moderation queue item."""
+    body = await _dispatch(context, "admin_get_moderation_item", {"item_id": item_id})
+    return summarize(body)
+
+
+@function_tool
+async def admin_moderation_stats(context: RunContext) -> str:
+    """ADMIN ONLY. Moderation queue stats."""
+    body = await _dispatch(context, "admin_moderation_stats", {})
+    return summarize(body)
+
+
+@function_tool
+async def admin_approve_content(context: RunContext, item_id: str, confirm: bool | None = None) -> str:
+    """ADMIN ONLY. Approve a moderation item. TWO-STEP confirm."""
+    body = await _dispatch(context, "admin_approve_content", {"item_id": item_id, "confirm": confirm})
+    return summarize(body)
+
+
+@function_tool
+async def admin_reject_content(context: RunContext, item_id: str, confirm: bool | None = None) -> str:
+    """ADMIN ONLY. Reject a moderation item. TWO-STEP confirm."""
+    body = await _dispatch(context, "admin_reject_content", {"item_id": item_id, "confirm": confirm})
+    return summarize(body)
+
+
+@function_tool
+async def admin_flag_content(context: RunContext, item_id: str, confirm: bool | None = None) -> str:
+    """ADMIN ONLY. Flag a moderation item for further review. TWO-STEP confirm."""
+    body = await _dispatch(context, "admin_flag_content", {"item_id": item_id, "confirm": confirm})
+    return summarize(body)
+
+
+@function_tool
+async def admin_list_reports(context: RunContext, limit: int | None = None) -> str:
+    """ADMIN ONLY. List user reports (falls back to flagged media — no report table exists yet)."""
+    body = await _dispatch(context, "admin_list_reports", {"limit": limit})
+    return summarize(body)
+
+
+@function_tool
+async def admin_get_report(context: RunContext) -> str:
+    """ADMIN ONLY. Get one user report. NOTE: not implemented in the backend yet."""
+    body = await _dispatch(context, "admin_get_report", {})
+    return summarize(body)
+
+
+# B6 Marketplace Admin (12)
+
+
+@function_tool
+async def admin_marketplace_overview(context: RunContext) -> str:
+    """ADMIN ONLY. Marketplace KPIs overview."""
+    body = await _dispatch(context, "admin_marketplace_overview", {})
+    return summarize(body)
+
+
+@function_tool
+async def admin_list_merchants(context: RunContext, source_network: str | None = None, is_active: bool | None = None, search: str | None = None, limit: int | None = None) -> str:
+    """ADMIN ONLY. List merchants."""
+    body = await _dispatch(context, "admin_list_merchants", {"source_network": source_network, "is_active": is_active, "search": search, "limit": limit})
+    return summarize(body)
+
+
+@function_tool
+async def admin_update_merchant(context: RunContext, merchant_id: str, name: str | None = None, is_active: bool | None = None, quality_score: float | None = None, customs_risk: str | None = None, commission_rate: float | None = None, admin_notes: str | None = None, requires_admin_review: bool | None = None, confirm: bool | None = None) -> str:
+    """ADMIN ONLY. Edit a merchant's status/quality/commission/notes. TWO-STEP confirm."""
+    body = await _dispatch(context, "admin_update_merchant", {
+            "merchant_id": merchant_id, "name": name, "is_active": is_active, "quality_score": quality_score,
+            "customs_risk": customs_risk, "commission_rate": commission_rate, "admin_notes": admin_notes,
+            "requires_admin_review": requires_admin_review, "confirm": confirm,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def admin_list_products(context: RunContext, source_network: str | None = None, category: str | None = None, origin_region: str | None = None, search: str | None = None, requires_admin_review: bool | None = None, is_active: bool | None = None, limit: int | None = None) -> str:
+    """ADMIN ONLY. List products (admin view)."""
+    body = await _dispatch(context, "admin_list_products", {
+            "source_network": source_network, "category": category, "origin_region": origin_region,
+            "search": search, "requires_admin_review": requires_admin_review, "is_active": is_active, "limit": limit,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def admin_update_product(context: RunContext, product_id: str, title: str | None = None, description: str | None = None, is_active: bool | None = None, requires_admin_review: bool | None = None, admin_review_reason: str | None = None, admin_notes: str | None = None, customs_risk: str | None = None, confirm: bool | None = None) -> str:
+    """ADMIN ONLY. Edit/approve a product. TWO-STEP confirm."""
+    body = await _dispatch(context, "admin_update_product", {
+            "product_id": product_id, "title": title, "description": description, "is_active": is_active,
+            "requires_admin_review": requires_admin_review, "admin_review_reason": admin_review_reason,
+            "admin_notes": admin_notes, "customs_risk": customs_risk, "confirm": confirm,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def admin_bulk_product_action(context: RunContext, product_ids: list[str], action: str, reason: str | None = None, confirm: bool | None = None) -> str:
+    """ADMIN ONLY. Bulk enable/disable/flag products (max 100 per call). TWO-STEP confirm."""
+    body = await _dispatch(context, "admin_bulk_product_action", {"product_ids": product_ids, "action": action, "reason": reason, "confirm": confirm})
+    return summarize(body)
+
+
+@function_tool
+async def admin_get_feed_curation(context: RunContext) -> str:
+    """ADMIN ONLY. Read the feed curation config."""
+    body = await _dispatch(context, "admin_get_feed_curation", {})
+    return summarize(body)
+
+
+@function_tool
+async def admin_update_feed_curation(context: RunContext, config_id: str, max_products_per_merchant: int | None = None, max_products_per_category: int | None = None, personalization_weight_override: float | None = None, notes: str | None = None, confirm: bool | None = None) -> str:
+    """ADMIN ONLY. Change feed curation rules. TWO-STEP confirm."""
+    body = await _dispatch(context, "admin_update_feed_curation", {
+            "config_id": config_id, "max_products_per_merchant": max_products_per_merchant,
+            "max_products_per_category": max_products_per_category,
+            "personalization_weight_override": personalization_weight_override, "notes": notes, "confirm": confirm,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def admin_list_geo_policies(context: RunContext) -> str:
+    """ADMIN ONLY. List geo policies."""
+    body = await _dispatch(context, "admin_list_geo_policies", {})
+    return summarize(body)
+
+
+@function_tool
+async def admin_update_geo_policy(context: RunContext, policy_id: str, is_active: bool | None = None, weight: float | None = None, user_opt_out_scope: str | None = None, description: str | None = None, confirm: bool | None = None) -> str:
+    """ADMIN ONLY. Edit a geo policy. TWO-STEP confirm."""
+    body = await _dispatch(context, "admin_update_geo_policy", {
+            "policy_id": policy_id, "is_active": is_active, "weight": weight,
+            "user_opt_out_scope": user_opt_out_scope, "description": description, "confirm": confirm,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def admin_trigger_source_sync(context: RunContext, network: str, confirm: bool | None = None) -> str:
+    """ADMIN ONLY. Trigger a live product sync from a network. TWO-STEP confirm."""
+    body = await _dispatch(context, "admin_trigger_source_sync", {"network": network, "confirm": confirm})
+    return summarize(body)
+
+
+@function_tool
+async def admin_get_ingestion_coverage(context: RunContext, view: str | None = None) -> str:
+    """ADMIN ONLY. Ingestion run history and origin/ships-to coverage matrix."""
+    body = await _dispatch(context, "admin_get_ingestion_coverage", {"view": view})
+    return summarize(body)
+
+
+# B11 Notifications & Broadcast (7)
+
+
+@function_tool
+async def admin_compose_broadcast(context: RunContext, title: str, body: str, recipient_ids: list[str] | None = None, recipient_role: str | None = None, send_to_all: bool | None = None, tenant_id: str | None = None) -> str:
+    """ADMIN ONLY. Preview a broadcast draft (audience size + text) WITHOUT sending."""
+    result = await _dispatch(context, "admin_compose_broadcast", {
+            "title": title, "body": body, "recipient_ids": recipient_ids,
+            "recipient_role": recipient_role, "send_to_all": send_to_all, "tenant_id": tenant_id,
+        })
+    return summarize(result)
+
+
+@function_tool
+async def admin_send_broadcast(context: RunContext, title: str, body: str, recipient_ids: list[str] | None = None, recipient_role: str | None = None, send_to_all: bool | None = None, tenant_id: str | None = None, confirm: bool | None = None) -> str:
+    """ADMIN ONLY. Send a notification NOW to the resolved audience. TWO-STEP confirm — no undo."""
+    result = await _dispatch(context, "admin_send_broadcast", {
+            "title": title, "body": body, "recipient_ids": recipient_ids, "recipient_role": recipient_role,
+            "send_to_all": send_to_all, "tenant_id": tenant_id, "confirm": confirm,
+        })
+    return summarize(result)
+
+
+@function_tool
+async def admin_list_broadcasts(context: RunContext, type: str | None = None, user_id: str | None = None, search: str | None = None, days: int | None = None, limit: int | None = None) -> str:
+    """ADMIN ONLY. Sent notification history."""
+    body = await _dispatch(context, "admin_list_broadcasts", {"type": type, "user_id": user_id, "search": search, "days": days, "limit": limit})
+    return summarize(body)
+
+
+@function_tool
+async def admin_notification_pref_stats(context: RunContext, tenant_id: str | None = None) -> str:
+    """ADMIN ONLY. Notification opt-in/out stats plus 30-day send/read counts."""
+    body = await _dispatch(context, "admin_notification_pref_stats", {"tenant_id": tenant_id})
+    return summarize(body)
+
+
+@function_tool
+async def admin_create_notification_category(context: RunContext, type: str, display_name: str, description: str | None = None, tenant_id: str | None = None, confirm: bool | None = None) -> str:
+    """ADMIN ONLY. Create a new notification category. TWO-STEP confirm."""
+    result = await _dispatch(context, "admin_create_notification_category", {
+            "type": type, "display_name": display_name, "description": description, "tenant_id": tenant_id, "confirm": confirm,
+        })
+    return summarize(result)
+
+
+@function_tool
+async def admin_update_notification_category(context: RunContext, category_id: str, display_name: str | None = None, description: str | None = None, is_active: bool | None = None, confirm: bool | None = None) -> str:
+    """ADMIN ONLY. Edit a notification category (type is immutable). TWO-STEP confirm."""
+    body = await _dispatch(context, "admin_update_notification_category", {
+            "category_id": category_id, "display_name": display_name, "description": description,
+            "is_active": is_active, "confirm": confirm,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def admin_test_notification_category(context: RunContext, category_id: str) -> str:
+    """ADMIN ONLY. Send a test notification for a category to your own account."""
+    body = await _dispatch(context, "admin_test_notification_category", {"category_id": category_id})
+    return summarize(body)
+
+
+# B12 Governance & Controls (8)
+
+
+@function_tool
+async def admin_governance_status(context: RunContext) -> str:
+    """ADMIN ONLY. Governance control-plane snapshot."""
+    body = await _dispatch(context, "admin_governance_status", {})
+    return summarize(body)
+
+
+@function_tool
+async def admin_list_governance_rules(context: RunContext, category: str | None = None, status: str | None = None, level: str | None = None, search: str | None = None) -> str:
+    """ADMIN ONLY. List governance rules."""
+    body = await _dispatch(context, "admin_list_governance_rules", {"category": category, "status": status, "level": level, "search": search})
+    return summarize(body)
+
+
+@function_tool
+async def admin_list_violations(context: RunContext) -> str:
+    """ADMIN ONLY. List open/recent governance violations."""
+    body = await _dispatch(context, "admin_list_violations", {})
+    return summarize(body)
+
+
+@function_tool
+async def admin_list_proposals(context: RunContext, status: str | None = None, ruleCode: str | None = None, limit: int | None = None) -> str:
+    """ADMIN ONLY. List governance rule-change proposals."""
+    body = await _dispatch(context, "admin_list_proposals", {"status": status, "ruleCode": ruleCode, "limit": limit})
+    return summarize(body)
+
+
+@function_tool
+async def admin_create_proposal(context: RunContext, type: str, proposed_rule: str, rule_code: str | None = None, rationale: str | None = None, confirm: bool | None = None) -> str:
+    """ADMIN ONLY. Create a governance rule-change proposal. TWO-STEP confirm."""
+    body = await _dispatch(context, "admin_create_proposal", {
+            "type": type, "proposed_rule": proposed_rule, "rule_code": rule_code, "rationale": rationale, "confirm": confirm,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def admin_update_proposal_status(context: RunContext, proposal_id: str, status: str, confirm: bool | None = None) -> str:
+    """ADMIN ONLY. Change a proposal's status. TWO-STEP confirm."""
+    body = await _dispatch(context, "admin_update_proposal_status", {"proposal_id": proposal_id, "status": status, "confirm": confirm})
+    return summarize(body)
+
+
+@function_tool
+async def admin_get_control_key(context: RunContext, key: str) -> str:
+    """ADMIN ONLY. Read a governance control key."""
+    body = await _dispatch(context, "admin_get_control_key", {"key": key})
+    return summarize(body)
+
+
+@function_tool
+async def admin_set_control_key(context: RunContext, key: str, enabled: bool, reason: str, duration_minutes: int | None = None, confirm: bool | None = None) -> str:
+    """ADMIN ONLY. Flip a governance control key on/off. Requires a reason. TWO-STEP confirm."""
+    body = await _dispatch(context, "admin_set_control_key", {
+            "key": key, "enabled": enabled, "reason": reason, "duration_minutes": duration_minutes, "confirm": confirm,
+        })
+    return summarize(body)
+
+
+# B15 Feedback & Support Admin (5)
+
+
+@function_tool
+async def admin_list_feedback_tickets(context: RunContext, status: str | None = None, kind: str | None = None, priority: str | None = None, surface: str | None = None, resolver_agent: str | None = None, limit: int | None = None) -> str:
+    """ADMIN ONLY. List support/feedback tickets."""
+    body = await _dispatch(context, "admin_list_feedback_tickets", {
+            "status": status, "kind": kind, "priority": priority, "surface": surface,
+            "resolver_agent": resolver_agent, "limit": limit,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def admin_get_feedback_ticket(context: RunContext, ticket_id: str) -> str:
+    """ADMIN ONLY. Full detail for one feedback ticket, including handoff history."""
+    body = await _dispatch(context, "admin_get_feedback_ticket", {"ticket_id": ticket_id})
+    return summarize(body)
+
+
+@function_tool
+async def admin_feedback_kpis(context: RunContext) -> str:
+    """ADMIN ONLY. Platform-wide support KPIs (last 30 days)."""
+    body = await _dispatch(context, "admin_feedback_kpis", {})
+    return summarize(body)
+
+
+@function_tool
+async def admin_list_handoffs(context: RunContext, limit: int | None = None) -> str:
+    """ADMIN ONLY. Recent specialist handoffs."""
+    body = await _dispatch(context, "admin_list_handoffs", {"limit": limit})
+    return summarize(body)
+
+
+@function_tool
+async def admin_act_on_ticket(context: RunContext, ticket_id: str, action: str, reason: str | None = None, duplicate_of: str | None = None, notes: str | None = None, confirm: bool | None = None) -> str:
+    """ADMIN ONLY. Act on a feedback ticket: draft_answer, draft_spec, draft_resolution, approve, send_answer, resolve, reject, or mark_duplicate. TWO-STEP confirm."""
+    body = await _dispatch(context, "admin_act_on_ticket", {
+            "ticket_id": ticket_id, "action": action, "reason": reason,
+            "duplicate_of": duplicate_of, "notes": notes, "confirm": confirm,
+        })
+    return summarize(body)
+
+
+# ---------------------------------------------------------------------------
 # Catalogue export — used by tests + libcst smoke
 # ---------------------------------------------------------------------------
 
@@ -4325,6 +4725,32 @@ def all_tool_names() -> list[str]:
         "dev_get_session_diagnostics", "dev_conversation_decisions",
         "dev_tool_failures", "dev_tool_health", "dev_greeting_decisions",
         "dev_get_agent_detail",
+        # WAVE-3-VOICE-CATALOG-V2 — Admin P0 (48)
+        # B1 Users & RBAC (8)
+        "admin_lookup_user", "admin_list_users", "admin_get_user_detail",
+        "admin_roles_summary", "admin_grant_role", "admin_revoke_role",
+        "admin_set_trust_tier", "admin_get_at_risk_members",
+        # B4 Content Moderation (8)
+        "admin_list_moderation_queue", "admin_get_moderation_item",
+        "admin_moderation_stats", "admin_approve_content", "admin_reject_content",
+        "admin_flag_content", "admin_list_reports", "admin_get_report",
+        # B6 Marketplace Admin (12)
+        "admin_marketplace_overview", "admin_list_merchants", "admin_update_merchant",
+        "admin_list_products", "admin_update_product", "admin_bulk_product_action",
+        "admin_get_feed_curation", "admin_update_feed_curation",
+        "admin_list_geo_policies", "admin_update_geo_policy",
+        "admin_trigger_source_sync", "admin_get_ingestion_coverage",
+        # B11 Notifications & Broadcast (7)
+        "admin_compose_broadcast", "admin_send_broadcast", "admin_list_broadcasts",
+        "admin_notification_pref_stats", "admin_create_notification_category",
+        "admin_update_notification_category", "admin_test_notification_category",
+        # B12 Governance & Controls (8)
+        "admin_governance_status", "admin_list_governance_rules",
+        "admin_list_violations", "admin_list_proposals", "admin_create_proposal",
+        "admin_update_proposal_status", "admin_get_control_key", "admin_set_control_key",
+        # B15 Feedback & Support Admin (5)
+        "admin_list_feedback_tickets", "admin_get_feedback_ticket",
+        "admin_feedback_kpis", "admin_list_handoffs", "admin_act_on_ticket",
     ]
 
 
