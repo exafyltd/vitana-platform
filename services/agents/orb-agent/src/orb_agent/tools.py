@@ -5633,6 +5633,300 @@ async def dev_voice_lab_probe(context: RunContext) -> str:
 
 
 # ---------------------------------------------------------------------------
+# WAVE-6-VOICE-CATALOG-V2 — sixth and final wave of the approved 425-tool
+# expansion. Implementations live in services/gateway/src/services/orb-tools/*.ts,
+# reached through the shared dispatcher via POST /api/v1/orb/tool exactly
+# like the tools above.
+# ---------------------------------------------------------------------------
+
+
+# --- B10 Admin Specialists / Personas (9) -----------------------------------
+
+
+@function_tool
+async def admin_list_specialists(context: RunContext) -> str:
+    """ADMIN ONLY. List specialist personas."""
+    body = await _dispatch(context, "admin_list_specialists", {})
+    return summarize(body)
+
+
+@function_tool
+async def admin_get_specialist(context: RunContext, key: str) -> str:
+    """ADMIN ONLY. One persona + version history."""
+    body = await _dispatch(context, "admin_get_specialist", {"key": key})
+    return summarize(body)
+
+
+@function_tool
+async def admin_create_specialist(context: RunContext, key: str, display_name: str, role: str, system_prompt: str, voice_id: str | None = None, handles_kinds: list[str] | None = None, status: str | None = None, confirm: bool | None = None) -> str:
+    """ADMIN ONLY. Create a new specialist persona. TWO-STEP confirm."""
+    body = await _dispatch(context, "admin_create_specialist", {
+            "key": key, "display_name": display_name, "role": role, "system_prompt": system_prompt,
+            "voice_id": voice_id, "handles_kinds": handles_kinds, "status": status, "confirm": confirm,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def admin_update_specialist(context: RunContext, key: str, display_name: str | None = None, role: str | None = None, system_prompt: str | None = None, status: str | None = None, change_note: str | None = None, confirm: bool | None = None) -> str:
+    """ADMIN ONLY. Edit a specialist persona (snapshots the prior version). TWO-STEP confirm."""
+    body = await _dispatch(context, "admin_update_specialist", {
+            "key": key, "display_name": display_name, "role": role, "system_prompt": system_prompt,
+            "status": status, "change_note": change_note, "confirm": confirm,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def admin_rollback_specialist(context: RunContext, key: str, version: int, confirm: bool | None = None) -> str:
+    """ADMIN ONLY. Roll back a specialist to a prior version. TWO-STEP confirm."""
+    body = await _dispatch(context, "admin_rollback_specialist", {"key": key, "version": version, "confirm": confirm})
+    return summarize(body)
+
+
+@function_tool
+async def admin_set_specialist_tools(context: RunContext, key: str, tool_keys: list[str], confirm: bool | None = None) -> str:
+    """ADMIN ONLY. Replace the set of voice tools bound to a specialist. TWO-STEP confirm."""
+    body = await _dispatch(context, "admin_set_specialist_tools", {"key": key, "tool_keys": tool_keys, "confirm": confirm})
+    return summarize(body)
+
+
+@function_tool
+async def admin_set_specialist_kb(context: RunContext, key: str, kb_keys: list[str], confirm: bool | None = None) -> str:
+    """ADMIN ONLY. Replace the set of knowledge-base scopes bound to a specialist. TWO-STEP confirm."""
+    body = await _dispatch(context, "admin_set_specialist_kb", {"key": key, "kb_keys": kb_keys, "confirm": confirm})
+    return summarize(body)
+
+
+@function_tool
+async def admin_set_specialist_status(context: RunContext, key: str, enabled: bool, confirm: bool | None = None) -> str:
+    """ADMIN ONLY. Enable or disable a specialist (the "vitana" persona can never be disabled). TWO-STEP confirm."""
+    body = await _dispatch(context, "admin_set_specialist_status", {"key": key, "enabled": enabled, "confirm": confirm})
+    return summarize(body)
+
+
+@function_tool
+async def admin_test_specialist_connection(context: RunContext, connection_id: str) -> str:
+    """ADMIN ONLY. Test a specialist's third-party connection (stub providers only today)."""
+    body = await _dispatch(context, "admin_test_specialist_connection", {"connection_id": connection_id})
+    return summarize(body)
+
+
+# --- B16 Admin Audit & Memory Ops (4) ---------------------------------------
+
+
+@function_tool
+async def admin_audit_actions_log(context: RunContext, limit: int | None = None, action: str | None = None) -> str:
+    """ADMIN ONLY. Recent admin actions audit log."""
+    body = await _dispatch(context, "admin_audit_actions_log", {"limit": limit, "action": action})
+    return summarize(body)
+
+
+@function_tool
+async def admin_audit_access_log(context: RunContext, limit: int | None = None) -> str:
+    """ADMIN ONLY. Recent login/logout/role-change access events."""
+    body = await _dispatch(context, "admin_audit_access_log", {"limit": limit})
+    return summarize(body)
+
+
+@function_tool
+async def admin_run_memory_consolidator(context: RunContext, user_id: str | None = None, tenant_id: str | None = None, loops: list[str] | None = None, confirm: bool | None = None) -> str:
+    """EXAFY_ADMIN ONLY. Run the nightly memory consolidator on demand. TWO-STEP confirm."""
+    body = await _dispatch(context, "admin_run_memory_consolidator", {"user_id": user_id, "tenant_id": tenant_id, "loops": loops, "confirm": confirm})
+    return summarize(body)
+
+
+@function_tool
+async def admin_run_embeddings_backfill(context: RunContext, batch_size: int | None = None, dry_run: bool | None = None, confirm: bool | None = None) -> str:
+    """EXAFY_ADMIN ONLY. Backfill missing memory_items embeddings. TWO-STEP confirm (dry_run=true skips confirmation)."""
+    body = await _dispatch(context, "admin_run_embeddings_backfill", {"batch_size": batch_size, "dry_run": dry_run, "confirm": confirm})
+    return summarize(body)
+
+
+# --- A13 Memory & Diary extras + A14 Profile & Social depth (10) -----------
+
+
+@function_tool
+async def edit_memory(context: RunContext, memory_item_id: str, new_content: str, correction_notes: str | None = None, confirm: bool | None = None) -> str:
+    """Correct the content of a stored memory. TWO-STEP confirm."""
+    body = await _dispatch(context, "edit_memory", {"memory_item_id": memory_item_id, "new_content": new_content, "correction_notes": correction_notes, "confirm": confirm})
+    return summarize(body)
+
+
+@function_tool
+async def reinforce_memory(context: RunContext, memory_item_id: str, confirmation_notes: str | None = None) -> str:
+    """Confirm a memory as accurate and trustworthy (raises its confidence score)."""
+    body = await _dispatch(context, "reinforce_memory", {"memory_item_id": memory_item_id, "confirmation_notes": confirmation_notes})
+    return summarize(body)
+
+
+@function_tool
+async def set_memory_permissions(context: RunContext, domain: str, visibility: str, confirm: bool | None = None) -> str:
+    """Set who can see a category of your memory (diary, garden, relationships, longevity, timeline). TWO-STEP confirm."""
+    body = await _dispatch(context, "set_memory_permissions", {"domain": domain, "visibility": visibility, "confirm": confirm})
+    return summarize(body)
+
+
+@function_tool
+async def get_what_vitana_knows(context: RunContext) -> str:
+    """"What do you know about me" — summary of your memory garden by category."""
+    body = await _dispatch(context, "get_what_vitana_knows", {})
+    return summarize(body)
+
+
+@function_tool
+async def add_diary_photo(context: RunContext) -> str:
+    """Opens the diary screen so you can attach a photo (voice cannot upload directly)."""
+    body = await _dispatch_with_directive(context, "add_diary_photo", {})
+    return summarize(body)
+
+
+@function_tool
+async def get_profile_completeness(context: RunContext) -> str:
+    """Your taste/lifestyle profile completeness percentage."""
+    body = await _dispatch(context, "get_profile_completeness", {})
+    return summarize(body)
+
+
+@function_tool
+async def share_my_profile(context: RunContext) -> str:
+    """Get your shareable profile link."""
+    body = await _dispatch(context, "share_my_profile", {})
+    return summarize(body)
+
+
+@function_tool
+async def get_my_milestones(context: RunContext, limit: int | None = None) -> str:
+    """Your achieved milestones."""
+    body = await _dispatch(context, "get_my_milestones", {"limit": limit})
+    return summarize(body)
+
+
+@function_tool
+async def view_member_profile(context: RunContext, user_id: str | None = None, handle: str | None = None) -> str:
+    """Spoken summary of a community member's public profile."""
+    body = await _dispatch(context, "view_member_profile", {"user_id": user_id, "handle": handle})
+    return summarize(body)
+
+
+@function_tool
+async def update_service_offerings(context: RunContext, offers: list[dict] | None = None, confirm: bool | None = None) -> str:
+    """Replace the service offerings shown on your profile. TWO-STEP confirm."""
+    body = await _dispatch(context, "update_service_offerings", {"offers": offers, "confirm": confirm})
+    return summarize(body)
+
+
+# --- C11 Database & Migrations (4) ------------------------------------------
+
+
+@function_tool
+async def dev_run_staging_migration(context: RunContext, migration_file: str, confirm: bool | None = None) -> str:
+    """DEVELOPER ONLY. Apply a SQL migration file to STAGING. TWO-STEP confirm."""
+    body = await _dispatch(context, "dev_run_staging_migration", {"migration_file": migration_file, "confirm": confirm})
+    return summarize(body)
+
+
+@function_tool
+async def dev_run_prod_migration(context: RunContext, migration_file: str, reason: str, confirm: bool | None = None) -> str:
+    """DEVELOPER ONLY. Apply a SQL migration file DIRECTLY TO PRODUCTION. Requires a stated reason. TWO-STEP confirm."""
+    body = await _dispatch(context, "dev_run_prod_migration", {"migration_file": migration_file, "reason": reason, "confirm": confirm})
+    return summarize(body)
+
+
+@function_tool
+async def dev_migration_status(context: RunContext, target: str | None = None, limit: int | None = None) -> str:
+    """DEVELOPER ONLY. Recent staging or production migration workflow runs."""
+    body = await _dispatch(context, "dev_migration_status", {"target": target, "limit": limit})
+    return summarize(body)
+
+
+@function_tool
+async def dev_run_backfill(context: RunContext, name: str, locales: str | None = None, curriculum: str | None = None, limit: int | None = None, batch_size: int | None = None, dry_run: bool | None = None, confirm: bool | None = None) -> str:
+    """DEVELOPER ONLY (embeddings additionally requires exafy_admin). Run a named backfill job: "journey_translations" or "embeddings". TWO-STEP confirm."""
+    body = await _dispatch(context, "dev_run_backfill", {
+            "name": name, "locales": locales, "curriculum": curriculum, "limit": limit,
+            "batch_size": batch_size, "dry_run": dry_run, "confirm": confirm,
+        })
+    return summarize(body)
+
+
+# --- C12 Dev Access, Simulator & Meta (10) ----------------------------------
+
+
+@function_tool
+async def dev_list_dev_users(context: RunContext, query: str | None = None) -> str:
+    """EXAFY_ADMIN ONLY. List users with exafy_admin dev-hub access."""
+    body = await _dispatch(context, "dev_list_dev_users", {"query": query})
+    return summarize(body)
+
+
+@function_tool
+async def dev_grant_access(context: RunContext, email: str, confirm: bool | None = None) -> str:
+    """EXAFY_ADMIN ONLY. Grant exafy_admin dev-hub access to a user by email. TWO-STEP confirm."""
+    body = await _dispatch(context, "dev_grant_access", {"email": email, "confirm": confirm})
+    return summarize(body)
+
+
+@function_tool
+async def dev_revoke_access(context: RunContext, email: str, confirm: bool | None = None) -> str:
+    """EXAFY_ADMIN ONLY. Revoke exafy_admin dev-hub access from a user by email. TWO-STEP confirm."""
+    body = await _dispatch(context, "dev_revoke_access", {"email": email, "confirm": confirm})
+    return summarize(body)
+
+
+@function_tool
+async def dev_mint_token(context: RunContext, email: str, role: str, tenant_id: str | None = None, confirm: bool | None = None) -> str:
+    """EXAFY_ADMIN ONLY. Mint a dev-sandbox session token for a user. TWO-STEP confirm."""
+    body = await _dispatch(context, "dev_mint_token", {"email": email, "role": role, "tenant_id": tenant_id, "confirm": confirm})
+    return summarize(body)
+
+
+@function_tool
+async def dev_open_hub_panel(context: RunContext, screen_id: str) -> str:
+    """DEVELOPER ONLY. Navigate to a Command Hub screen/panel by screen_id."""
+    body = await _dispatch_with_directive(context, "dev_open_hub_panel", {"screen_id": screen_id})
+    return summarize(body)
+
+
+@function_tool
+async def dev_run_simulator(context: RunContext, user_id: str, lang: str | None = None, timezone: str | None = None, bucket: str | None = None, first_time: bool | None = None, briefing_due: bool | None = None, current_route: str | None = None) -> str:
+    """EXAFY_ADMIN ONLY. Dry-run the conversation-opening decision for a user, without speaking or emitting."""
+    body = await _dispatch(context, "dev_run_simulator", {
+            "user_id": user_id, "lang": lang, "timezone": timezone, "bucket": bucket,
+            "first_time": first_time, "briefing_due": briefing_due, "current_route": current_route,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def dev_journey_context(context: RunContext, user_id: str, tenant_id: str | None = None) -> str:
+    """EXAFY_ADMIN ONLY. Durable assistant-state signals stored for a user (journey/onboarding context)."""
+    body = await _dispatch(context, "dev_journey_context", {"user_id": user_id, "tenant_id": tenant_id})
+    return summarize(body)
+
+
+@function_tool
+async def dev_voice_catalog_stats(context: RunContext) -> str:
+    """DEVELOPER ONLY. Aggregate counts of this voice tool catalog."""
+    body = await _dispatch(context, "dev_voice_catalog_stats", {})
+    return summarize(body)
+
+
+@function_tool
+async def dev_get_voice_tool_detail(context: RunContext, name: str) -> str:
+    """DEVELOPER ONLY. Full manifest entry for one voice tool by name."""
+    body = await _dispatch(context, "dev_get_voice_tool_detail", {"name": name})
+    return summarize(body)
+
+
+@function_tool
+async def dev_system_briefing(context: RunContext, limit: int | None = None) -> str:
+    """DEVELOPER ONLY. Combined roll-up: service health, deployments, approvals, violations, CI/CD health."""
+    body = await _dispatch(context, "dev_system_briefing", {"limit": limit})
+    return summarize(body)
+
+
+# ---------------------------------------------------------------------------
 # Catalogue export — used by tests + libcst smoke
 # ---------------------------------------------------------------------------
 
@@ -5918,6 +6212,25 @@ def all_tool_names() -> list[str]:
         "dev_get_test_run", "dev_run_e2e", "dev_orb_monitor_status",
         "dev_trigger_orb_monitor", "dev_list_test_contracts", "dev_run_orb_selfcheck",
         "dev_voice_lab_probe",
+        # WAVE-6-VOICE-CATALOG-V2 — final wave (37)
+        # B10 Admin Specialists / Personas (9)
+        "admin_list_specialists", "admin_get_specialist", "admin_create_specialist",
+        "admin_update_specialist", "admin_rollback_specialist", "admin_set_specialist_tools",
+        "admin_set_specialist_kb", "admin_set_specialist_status", "admin_test_specialist_connection",
+        # B16 Admin Audit & Memory Ops (4)
+        "admin_audit_actions_log", "admin_audit_access_log", "admin_run_memory_consolidator",
+        "admin_run_embeddings_backfill",
+        # A13 Memory & Diary extras + A14 Profile & Social depth (10)
+        "edit_memory", "reinforce_memory", "set_memory_permissions", "get_what_vitana_knows",
+        "add_diary_photo", "get_profile_completeness", "share_my_profile", "get_my_milestones",
+        "view_member_profile", "update_service_offerings",
+        # C11 Database & Migrations (4)
+        "dev_run_staging_migration", "dev_run_prod_migration", "dev_migration_status",
+        "dev_run_backfill",
+        # C12 Dev Access, Simulator & Meta (10)
+        "dev_list_dev_users", "dev_grant_access", "dev_revoke_access", "dev_mint_token",
+        "dev_open_hub_panel", "dev_run_simulator", "dev_journey_context",
+        "dev_voice_catalog_stats", "dev_get_voice_tool_detail", "dev_system_briefing",
     ]
 
 

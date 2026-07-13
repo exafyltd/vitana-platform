@@ -2886,7 +2886,37 @@ Progress readout on your active goal.
 Checkpoints in your goal plan.
 
 ### create_service
-Create a service listing in the Business Hub catalog. NOTE: there is no way to list, edit, or archive services by voice yet. TWO-STEP confirm."
+Create a service listing in the Business Hub catalog. NOTE: there is no way to list, edit, or archive services by voice yet. TWO-STEP confirm.
+
+### edit_memory
+Correct the content of a stored memory. TWO-STEP confirm.
+
+### reinforce_memory
+Confirm a memory as accurate and trustworthy (raises its confidence score).
+
+### set_memory_permissions
+Set who can see a category of your memory (diary, garden, relationships, longevity, timeline). TWO-STEP confirm.
+
+### get_what_vitana_knows
+"What do you know about me" — summary of your memory garden by category.
+
+### add_diary_photo
+Opens the diary screen so you can attach a photo (voice cannot upload directly).
+
+### get_profile_completeness
+Your taste/lifestyle profile completeness percentage.
+
+### share_my_profile
+Get your shareable profile link.
+
+### get_my_milestones
+Your achieved milestones.
+
+### view_member_profile
+Spoken summary of a community member's public profile.
+
+### update_service_offerings
+Replace the service offerings shown on your profile. TWO-STEP confirm."
 `;
 
 exports[`A0.1 characterization: buildLiveSystemInstruction renders a stable system instruction for persona "day-180-veteran-reconnect": persona:day-180-veteran-reconnect 1`] = `
@@ -5517,5 +5547,35 @@ Progress readout on your active goal.
 Checkpoints in your goal plan.
 
 ### create_service
-Create a service listing in the Business Hub catalog. NOTE: there is no way to list, edit, or archive services by voice yet. TWO-STEP confirm."
+Create a service listing in the Business Hub catalog. NOTE: there is no way to list, edit, or archive services by voice yet. TWO-STEP confirm.
+
+### edit_memory
+Correct the content of a stored memory. TWO-STEP confirm.
+
+### reinforce_memory
+Confirm a memory as accurate and trustworthy (raises its confidence score).
+
+### set_memory_permissions
+Set who can see a category of your memory (diary, garden, relationships, longevity, timeline). TWO-STEP confirm.
+
+### get_what_vitana_knows
+"What do you know about me" — summary of your memory garden by category.
+
+### add_diary_photo
+Opens the diary screen so you can attach a photo (voice cannot upload directly).
+
+### get_profile_completeness
+Your taste/lifestyle profile completeness percentage.
+
+### share_my_profile
+Get your shareable profile link.
+
+### get_my_milestones
+Your achieved milestones.
+
+### view_member_profile
+Spoken summary of a community member's public profile.
+
+### update_service_offerings
+Replace the service offerings shown on your profile. TWO-STEP confirm."
 `;

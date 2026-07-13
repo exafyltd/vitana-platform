@@ -94,6 +94,15 @@ import { AUTOPILOT_CONTROLLER_TOOL_HANDLERS, AUTOPILOT_CONTROLLER_TOOL_DECLARATI
 import { DEV_AUTOPILOT_SCANNERS_TOOL_HANDLERS, DEV_AUTOPILOT_SCANNERS_TOOL_DECLARATIONS } from './orb-tools/dev-autopilot-scanners-tools';
 import { SELF_HEALING_TOOL_HANDLERS, SELF_HEALING_TOOL_DECLARATIONS } from './orb-tools/self-healing-tools';
 import { TESTING_QA_TOOL_HANDLERS, TESTING_QA_TOOL_DECLARATIONS } from './orb-tools/testing-qa-tools';
+// WAVE-6-VOICE-CATALOG-V2 — sixth and final wave of the approved 425-tool
+// expansion: admin specialists/personas, admin audit & memory ops, community
+// memory/diary extras + profile/social depth, developer database &
+// migrations, and developer access/simulator/meta.
+import { ADMIN_SPECIALISTS_TOOL_HANDLERS, ADMIN_SPECIALISTS_TOOL_DECLARATIONS } from './orb-tools/admin-specialists-tools';
+import { ADMIN_AUDIT_MEMORY_OPS_TOOL_HANDLERS, ADMIN_AUDIT_MEMORY_OPS_TOOL_DECLARATIONS } from './orb-tools/admin-audit-memory-ops-tools';
+import { MEMORY_DIARY_SOCIAL_TOOL_HANDLERS, MEMORY_DIARY_SOCIAL_TOOL_DECLARATIONS } from './orb-tools/memory-diary-social-tools';
+import { DATABASE_MIGRATIONS_TOOL_HANDLERS, DATABASE_MIGRATIONS_TOOL_DECLARATIONS } from './orb-tools/database-migrations-tools';
+import { DEV_ACCESS_SIMULATOR_META_TOOL_HANDLERS, DEV_ACCESS_SIMULATOR_META_TOOL_DECLARATIONS } from './orb-tools/dev-access-simulator-meta-tools';
 import {
   lookupScreen,
   lookupByAlias,
@@ -5224,6 +5233,12 @@ export const ORB_TOOL_REGISTRY: Record<string, OrbToolHandler> = {
   ...DEV_AUTOPILOT_SCANNERS_TOOL_HANDLERS,
   ...SELF_HEALING_TOOL_HANDLERS,
   ...TESTING_QA_TOOL_HANDLERS,
+  // WAVE-6-VOICE-CATALOG-V2
+  ...ADMIN_SPECIALISTS_TOOL_HANDLERS,
+  ...ADMIN_AUDIT_MEMORY_OPS_TOOL_HANDLERS,
+  ...MEMORY_DIARY_SOCIAL_TOOL_HANDLERS,
+  ...DATABASE_MIGRATIONS_TOOL_HANDLERS,
+  ...DEV_ACCESS_SIMULATOR_META_TOOL_HANDLERS,
 };
 
 // BOOTSTRAP-VOICE-CATALOG-COMPLETE — combined Vertex/Gemini function
@@ -5254,6 +5269,8 @@ export const NEW_DOMAIN_TOOL_DECLARATIONS: Array<Record<string, unknown>> = [
   ...LIVE_ROOMS_TOOL_DECLARATIONS,
   ...FEED_GOALS_TOOL_DECLARATIONS,
   ...BUSINESS_HUB_TOOL_DECLARATIONS,
+  // WAVE-6-VOICE-CATALOG-V2 (community)
+  ...MEMORY_DIARY_SOCIAL_TOOL_DECLARATIONS,
 ];
 
 // Developer tools are role-gated the same way ADMIN_TOOL_SCHEMAS is —
@@ -5274,6 +5291,9 @@ export const DEVELOPER_DOMAIN_TOOL_DECLARATIONS: Array<Record<string, unknown>> 
   ...DEV_AUTOPILOT_SCANNERS_TOOL_DECLARATIONS,
   ...SELF_HEALING_TOOL_DECLARATIONS,
   ...TESTING_QA_TOOL_DECLARATIONS,
+  // WAVE-6-VOICE-CATALOG-V2
+  ...DATABASE_MIGRATIONS_TOOL_DECLARATIONS,
+  ...DEV_ACCESS_SIMULATOR_META_TOOL_DECLARATIONS,
 ];
 
 // WAVE-3-VOICE-CATALOG-V2 — admin_* declarations, injected by
@@ -5291,6 +5311,9 @@ export const ADMIN_DOMAIN_TOOL_DECLARATIONS: Array<Record<string, unknown>> = [
   ...ADMIN_OVERSIGHT_BILLING_TOOL_DECLARATIONS,
   ...ADMIN_KB_ASSISTANT_TOOL_DECLARATIONS,
   ...ADMIN_AUTOPILOT_ANALYTICS_TOOL_DECLARATIONS,
+  // WAVE-6-VOICE-CATALOG-V2
+  ...ADMIN_SPECIALISTS_TOOL_DECLARATIONS,
+  ...ADMIN_AUDIT_MEMORY_OPS_TOOL_DECLARATIONS,
 ];
 
 export const ORB_TOOL_NAMES = Object.keys(ORB_TOOL_REGISTRY);
