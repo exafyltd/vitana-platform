@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-07-13T06:35:51.173Z",
+  "generated_at": "2026-07-13T09:25:47.290Z",
   "source": "reconciled",
   "total": 594,
   "tools": [
@@ -4768,9 +4768,12 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Correct a stored memory",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P2",
       "risk": "write",
       "plan_domain": "A13 Memory & Diary extras",
@@ -4798,9 +4801,12 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Mark memory as important",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P2",
       "risk": "write",
       "plan_domain": "A13 Memory & Diary extras",
@@ -4828,9 +4834,12 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Memory privacy controls",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P2",
       "risk": "write",
       "plan_domain": "A13 Memory & Diary extras",
@@ -4843,9 +4852,12 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "\"What do you know about me\" summary",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P2",
       "risk": "read",
       "plan_domain": "A13 Memory & Diary extras",
@@ -4858,9 +4870,12 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Attach photo to diary (navigates to picker)",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P2",
       "risk": "write",
       "plan_domain": "A13 Memory & Diary extras",
@@ -4888,9 +4903,12 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Completeness % + missing items",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P2",
       "risk": "read",
       "plan_domain": "A14 Profile & Social depth",
@@ -4918,9 +4936,12 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Share profile link/QR",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P2",
       "risk": "read",
       "plan_domain": "A14 Profile & Social depth",
@@ -4933,9 +4954,12 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Achievements & milestones",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P2",
       "risk": "read",
       "plan_domain": "A14 Profile & Social depth",
@@ -4948,9 +4972,12 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Spoken summary of a member",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P2",
       "risk": "read",
       "plan_domain": "A14 Profile & Social depth",
@@ -4978,9 +5005,12 @@
       "role": [
         "community"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Edit services shown on profile",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P2",
       "risk": "write",
       "plan_domain": "A14 Profile & Social depth",
@@ -6535,9 +6565,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Personas",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P2",
       "risk": "read",
       "plan_domain": "B10 Specialists / Personas",
@@ -6551,9 +6584,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "One persona + versions",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P2",
       "risk": "read",
       "plan_domain": "B10 Specialists / Personas",
@@ -6567,9 +6603,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "New persona",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P2",
       "risk": "confirm",
       "plan_domain": "B10 Specialists / Personas",
@@ -6583,9 +6622,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Edit persona",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P2",
       "risk": "confirm",
       "plan_domain": "B10 Specialists / Personas",
@@ -6599,9 +6641,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Roll back version",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P2",
       "risk": "confirm",
       "plan_domain": "B10 Specialists / Personas",
@@ -6615,9 +6660,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Bind tools",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P2",
       "risk": "confirm",
       "plan_domain": "B10 Specialists / Personas",
@@ -6631,9 +6679,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Bind KB",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P2",
       "risk": "confirm",
       "plan_domain": "B10 Specialists / Personas",
@@ -6647,9 +6698,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Enable/disable",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P2",
       "risk": "confirm",
       "plan_domain": "B10 Specialists / Personas",
@@ -6663,9 +6717,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Test connection",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P2",
       "risk": "read",
       "plan_domain": "B10 Specialists / Personas",
@@ -7417,9 +7474,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Admin actions audit",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P2",
       "risk": "read",
       "plan_domain": "B16 Audit, i18n & Memory Ops",
@@ -7433,9 +7493,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Access audit",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P2",
       "risk": "read",
       "plan_domain": "B16 Audit, i18n & Memory Ops",
@@ -7481,9 +7544,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Run memory consolidation",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P2",
       "risk": "confirm",
       "plan_domain": "B16 Audit, i18n & Memory Ops",
@@ -7497,9 +7563,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Run embeddings backfill",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P2",
       "risk": "confirm",
       "plan_domain": "B16 Audit, i18n & Memory Ops",
@@ -10176,9 +10245,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Dispatch staging migration",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P2",
       "risk": "confirm",
       "plan_domain": "C11 Database & Migrations",
@@ -10193,9 +10265,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Dispatch prod migration (double confirm + reason)",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P2",
       "risk": "double_confirm",
       "plan_domain": "C11 Database & Migrations",
@@ -10210,9 +10285,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Last migration run status",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P2",
       "risk": "read",
       "plan_domain": "C11 Database & Migrations",
@@ -10227,9 +10305,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Run a named backfill",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P2",
       "risk": "confirm",
       "plan_domain": "C11 Database & Migrations",
@@ -10261,9 +10342,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Dev-access users",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P2",
       "risk": "read",
       "plan_domain": "C12 Dev Access, Simulator & Meta",
@@ -10278,9 +10362,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Grant dev access",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P2",
       "risk": "confirm",
       "plan_domain": "C12 Dev Access, Simulator & Meta",
@@ -10295,9 +10382,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Revoke dev access",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P2",
       "risk": "confirm",
       "plan_domain": "C12 Dev Access, Simulator & Meta",
@@ -10312,9 +10402,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Mint a dev token",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P2",
       "risk": "confirm",
       "plan_domain": "C12 Dev Access, Simulator & Meta",
@@ -10329,9 +10422,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Navigate Command Hub to module/tab",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P2",
       "risk": "read",
       "plan_domain": "C12 Dev Access, Simulator & Meta",
@@ -10346,9 +10442,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Dry-run conversation decision for a user",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P2",
       "risk": "read",
       "plan_domain": "C12 Dev Access, Simulator & Meta",
@@ -10363,9 +10462,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Journey context readout",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P2",
       "risk": "read",
       "plan_domain": "C12 Dev Access, Simulator & Meta",
@@ -10380,9 +10482,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Catalog stats (live/planned/parity)",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P2",
       "risk": "read",
       "plan_domain": "C12 Dev Access, Simulator & Meta",
@@ -10397,9 +10502,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "One tool's manifest entry",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P2",
       "risk": "read",
       "plan_domain": "C12 Dev Access, Simulator & Meta",
@@ -10431,9 +10539,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Composite morning briefing: health + deploys + approvals + violations + failing checks",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P2",
       "risk": "read",
       "plan_domain": "C12 Dev Access, Simulator & Meta",
