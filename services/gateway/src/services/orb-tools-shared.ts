@@ -57,6 +57,14 @@ import { WALLET_PAYMENTS_TOOL_HANDLERS, WALLET_PAYMENTS_TOOL_DECLARATIONS } from
 import { MESSAGING_DEPTH_TOOL_HANDLERS, MESSAGING_DEPTH_TOOL_DECLARATIONS } from './orb-tools/messaging-depth-tools';
 import { EVENTS_TICKETS_TOOL_HANDLERS, EVENTS_TICKETS_TOOL_DECLARATIONS } from './orb-tools/events-tickets-tools';
 import { HEALTH_DEPTH_TOOL_HANDLERS, HEALTH_DEPTH_TOOL_DECLARATIONS } from './orb-tools/health-depth-tools';
+// WAVE-2-VOICE-CATALOG-V2 — second wave of the approved 425-tool expansion:
+// developer P0 domains covering VTID/OASIS lifecycle, governance, CI/CD &
+// PRs, deployment/release, and observability (docs/VOICE_TOOLS_EXPANSION_PLAN.md).
+import { VTID_LIFECYCLE_TOOL_HANDLERS, VTID_LIFECYCLE_TOOL_DECLARATIONS } from './orb-tools/vtid-lifecycle-tools';
+import { GOVERNANCE_TOOL_HANDLERS, GOVERNANCE_TOOL_DECLARATIONS } from './orb-tools/governance-tools';
+import { CICD_PR_TOOL_HANDLERS, CICD_PR_TOOL_DECLARATIONS } from './orb-tools/cicd-pr-tools';
+import { DEPLOYMENT_RELEASE_TOOL_HANDLERS, DEPLOYMENT_RELEASE_TOOL_DECLARATIONS } from './orb-tools/deployment-release-tools';
+import { OBSERVABILITY_TOOL_HANDLERS, OBSERVABILITY_TOOL_DECLARATIONS } from './orb-tools/observability-tools';
 import {
   lookupScreen,
   lookupByAlias,
@@ -5159,6 +5167,12 @@ export const ORB_TOOL_REGISTRY: Record<string, OrbToolHandler> = {
   ...MESSAGING_DEPTH_TOOL_HANDLERS,
   ...EVENTS_TICKETS_TOOL_HANDLERS,
   ...HEALTH_DEPTH_TOOL_HANDLERS,
+  // WAVE-2-VOICE-CATALOG-V2
+  ...VTID_LIFECYCLE_TOOL_HANDLERS,
+  ...GOVERNANCE_TOOL_HANDLERS,
+  ...CICD_PR_TOOL_HANDLERS,
+  ...DEPLOYMENT_RELEASE_TOOL_HANDLERS,
+  ...OBSERVABILITY_TOOL_HANDLERS,
 };
 
 // BOOTSTRAP-VOICE-CATALOG-COMPLETE — combined Vertex/Gemini function
@@ -5190,7 +5204,15 @@ export const NEW_DOMAIN_TOOL_DECLARATIONS: Array<Record<string, unknown>> = [
 // declared only for developer/admin/exafy_admin sessions. Kept separate so
 // live-tool-catalog.ts can apply the same activeRole check it already uses
 // for ADMIN_TOOL_SCHEMAS.
-export const DEVELOPER_DOMAIN_TOOL_DECLARATIONS: Array<Record<string, unknown>> = DEVELOPER_TOOL_DECLARATIONS;
+export const DEVELOPER_DOMAIN_TOOL_DECLARATIONS: Array<Record<string, unknown>> = [
+  ...DEVELOPER_TOOL_DECLARATIONS,
+  // WAVE-2-VOICE-CATALOG-V2
+  ...VTID_LIFECYCLE_TOOL_DECLARATIONS,
+  ...GOVERNANCE_TOOL_DECLARATIONS,
+  ...CICD_PR_TOOL_DECLARATIONS,
+  ...DEPLOYMENT_RELEASE_TOOL_DECLARATIONS,
+  ...OBSERVABILITY_TOOL_DECLARATIONS,
+];
 
 export const ORB_TOOL_NAMES = Object.keys(ORB_TOOL_REGISTRY);
 

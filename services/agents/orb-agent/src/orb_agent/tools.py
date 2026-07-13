@@ -3564,6 +3564,575 @@ async def connect_health_device(context: RunContext, device_name: str | None = N
 
 
 # ---------------------------------------------------------------------------
+# WAVE-2-VOICE-CATALOG-V2 — Developer P0: VTID/OASIS lifecycle, governance,
+# CI/CD & PRs, deployment/release, observability (70 tools). All dispatch
+# through the shared gateway registry (services/gateway/src/services/
+# orb-tools/{vtid-lifecycle,governance,cicd-pr,deployment-release,
+# observability}-tools.ts) via _dispatch — same generic-fallback pattern the
+# existing 12 developer tools above already use.
+# ---------------------------------------------------------------------------
+
+# C1 VTID / OASIS Lifecycle (15)
+
+
+@function_tool
+async def dev_allocate_vtid(context: RunContext, source: str | None = None, layer: str | None = None, module: str | None = None, title: str | None = None, confirm: bool | None = None) -> str:
+    """DEVELOPER ONLY. Allocate a new VTID. TWO-STEP confirm."""
+    body = await _dispatch(context, "dev_allocate_vtid", {
+            "source": source, "layer": layer, "module": module, "title": title, "confirm": confirm,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def dev_create_task(context: RunContext, title: str, task_family: str | None = None, task_module: str | None = None, target_roles: list[str] | None = None, confirm: bool | None = None) -> str:
+    """DEVELOPER ONLY. Create a new OASIS task/VTID with a title. TWO-STEP confirm."""
+    body = await _dispatch(context, "dev_create_task", {
+            "title": title, "task_family": task_family, "task_module": task_module,
+            "target_roles": target_roles, "confirm": confirm,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def dev_update_task(context: RunContext, vtid: str, title: str | None = None, status: str | None = None, summary: str | None = None, assigned_to: str | None = None, confirm: bool | None = None) -> str:
+    """DEVELOPER ONLY. Patch a VTID task's title/status/summary/assigned_to. Refuses terminal tasks. TWO-STEP confirm."""
+    body = await _dispatch(context, "dev_update_task", {
+            "vtid": vtid, "title": title, "status": status, "summary": summary,
+            "assigned_to": assigned_to, "confirm": confirm,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def dev_cancel_task(context: RunContext, vtid: str, confirm: bool | None = None) -> str:
+    """DEVELOPER ONLY. Cancel a VTID task. TWO-STEP confirm."""
+    body = await _dispatch(context, "dev_cancel_task", {"vtid": vtid, "confirm": confirm})
+    return summarize(body)
+
+
+@function_tool
+async def dev_complete_task(context: RunContext, vtid: str, terminal_outcome: str | None = None, confirm: bool | None = None) -> str:
+    """DEVELOPER ONLY. Mark a VTID task complete with an outcome. TWO-STEP confirm."""
+    body = await _dispatch(context, "dev_complete_task", {
+            "vtid": vtid, "terminal_outcome": terminal_outcome, "confirm": confirm,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def dev_terminalize_vtid(context: RunContext, vtid: str, outcome: str, run_id: str | None = None, commit_sha: str | None = None, confirm: bool | None = None) -> str:
+    """DEVELOPER ONLY. Set is_terminal + terminal_outcome on a VTID directly. TWO-STEP confirm."""
+    body = await _dispatch(context, "dev_terminalize_vtid", {
+            "vtid": vtid, "outcome": outcome, "run_id": run_id, "commit_sha": commit_sha, "confirm": confirm,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def dev_discover_tasks(context: RunContext, statuses: str | None = None, limit: int | None = None) -> str:
+    """DEVELOPER ONLY. List VTIDs eligible for worker pickup."""
+    body = await _dispatch(context, "dev_discover_tasks", {"statuses": statuses, "limit": limit})
+    return summarize(body)
+
+
+@function_tool
+async def dev_get_vtid_projection(context: RunContext, limit: int | None = None, offset: int | None = None) -> str:
+    """DEVELOPER ONLY. VTID projection view: stage, status, attention flags."""
+    body = await _dispatch(context, "dev_get_vtid_projection", {"limit": limit, "offset": offset})
+    return summarize(body)
+
+
+@function_tool
+async def dev_get_allocator_status(context: RunContext) -> str:
+    """DEVELOPER ONLY. Whether the VTID allocator kill-switch is on or off."""
+    body = await _dispatch(context, "dev_get_allocator_status", {})
+    return summarize(body)
+
+
+@function_tool
+async def dev_query_oasis_events(context: RunContext, vtid: str | None = None, type: str | None = None, source: str | None = None, status: str | None = None, limit: int | None = None) -> str:
+    """DEVELOPER ONLY. Query OASIS events by vtid/topic/source/status."""
+    body = await _dispatch(context, "dev_query_oasis_events", {
+            "vtid": vtid, "type": type, "source": source, "status": status, "limit": limit,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def dev_execute_vtid(context: RunContext, vtid: str, title: str, task_family: str | None = None, task_domain: str | None = None, confirm: bool | None = None) -> str:
+    """DEVELOPER ONLY. Route a VTID to the worker orchestrator for execution. TWO-STEP confirm."""
+    body = await _dispatch(context, "dev_execute_vtid", {
+            "vtid": vtid, "title": title, "task_family": task_family, "task_domain": task_domain, "confirm": confirm,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def dev_run_exec_workflow(context: RunContext, vtid: str, action: str, params: dict[str, Any] | None = None, confirm: bool | None = None) -> str:
+    """DEVELOPER ONLY. Validate/log a workflow action for a VTID (validation-only endpoint, does not execute real work). TWO-STEP confirm."""
+    body = await _dispatch(context, "dev_run_exec_workflow", {
+            "vtid": vtid, "action": action, "params": params, "confirm": confirm,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def dev_submit_evidence(context: RunContext, vtid: str, domain: str, run_id: str, result_ok: bool | None = None, files_changed: int | None = None) -> str:
+    """DEVELOPER ONLY. Submit subagent completion evidence for a VTID."""
+    body = await _dispatch(context, "dev_submit_evidence", {
+            "vtid": vtid, "domain": domain, "run_id": run_id, "result_ok": result_ok, "files_changed": files_changed,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def dev_list_work_orders(context: RunContext, statuses: str | None = None, limit: int | None = None) -> str:
+    """DEVELOPER ONLY. List pending work orders (maps to task discovery)."""
+    body = await _dispatch(context, "dev_list_work_orders", {"statuses": statuses, "limit": limit})
+    return summarize(body)
+
+
+@function_tool
+async def dev_get_work_order(context: RunContext, vtid: str) -> str:
+    """DEVELOPER ONLY. Get one task/work-order by VTID."""
+    body = await _dispatch(context, "dev_get_work_order", {"vtid": vtid})
+    return summarize(body)
+
+
+# C2 Governance (13)
+
+
+@function_tool
+async def dev_evaluate_governance(context: RunContext, action: str, service: str, environment: str, vtid: str | None = None) -> str:
+    """DEVELOPER ONLY. Evaluate whether an action would be allowed by governance rules."""
+    body = await _dispatch(context, "dev_evaluate_governance", {
+            "action": action, "service": service, "environment": environment, "vtid": vtid,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def dev_governance_status(context: RunContext) -> str:
+    """DEVELOPER ONLY. Governance control-plane snapshot."""
+    body = await _dispatch(context, "dev_governance_status", {})
+    return summarize(body)
+
+
+@function_tool
+async def dev_list_governance_rules(context: RunContext, category: str | None = None, status: str | None = None, level: str | None = None, search: str | None = None) -> str:
+    """DEVELOPER ONLY. List governance rules."""
+    body = await _dispatch(context, "dev_list_governance_rules", {
+            "category": category, "status": status, "level": level, "search": search,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def dev_get_governance_rule(context: RunContext, rule_code: str) -> str:
+    """DEVELOPER ONLY. Get one governance rule by its code."""
+    body = await _dispatch(context, "dev_get_governance_rule", {"rule_code": rule_code})
+    return summarize(body)
+
+
+@function_tool
+async def dev_list_violations(context: RunContext) -> str:
+    """DEVELOPER ONLY. List open/recent governance violations."""
+    body = await _dispatch(context, "dev_list_violations", {})
+    return summarize(body)
+
+
+@function_tool
+async def dev_list_enforcements(context: RunContext) -> str:
+    """DEVELOPER ONLY. List recent governance enforcement actions."""
+    body = await _dispatch(context, "dev_list_enforcements", {})
+    return summarize(body)
+
+
+@function_tool
+async def dev_governance_feed(context: RunContext) -> str:
+    """DEVELOPER ONLY. Recent governance activity feed."""
+    body = await _dispatch(context, "dev_governance_feed", {})
+    return summarize(body)
+
+
+@function_tool
+async def dev_list_proposals(context: RunContext, status: str | None = None, ruleCode: str | None = None, limit: int | None = None) -> str:
+    """DEVELOPER ONLY. List governance rule-change proposals."""
+    body = await _dispatch(context, "dev_list_proposals", {"status": status, "ruleCode": ruleCode, "limit": limit})
+    return summarize(body)
+
+
+@function_tool
+async def dev_create_proposal(context: RunContext, type: str, proposed_rule: str, rule_code: str | None = None, rationale: str | None = None, confirm: bool | None = None) -> str:
+    """DEVELOPER ONLY. Create a governance rule-change proposal. TWO-STEP confirm."""
+    body = await _dispatch(context, "dev_create_proposal", {
+            "type": type, "proposed_rule": proposed_rule, "rule_code": rule_code,
+            "rationale": rationale, "confirm": confirm,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def dev_update_proposal(context: RunContext, proposal_id: str, status: str, confirm: bool | None = None) -> str:
+    """DEVELOPER ONLY. Change a proposal's status. TWO-STEP confirm."""
+    body = await _dispatch(context, "dev_update_proposal", {
+            "proposal_id": proposal_id, "status": status, "confirm": confirm,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def dev_get_control(context: RunContext, key: str) -> str:
+    """DEVELOPER ONLY. Read a governance control key (e.g. vtid_allocator_enabled)."""
+    body = await _dispatch(context, "dev_get_control", {"key": key})
+    return summarize(body)
+
+
+@function_tool
+async def dev_set_control(context: RunContext, key: str, enabled: bool, reason: str, duration_minutes: int | None = None, confirm: bool | None = None) -> str:
+    """DEVELOPER ONLY. Flip a governance control key on/off. Requires a reason. TWO-STEP confirm."""
+    body = await _dispatch(context, "dev_set_control", {
+            "key": key, "enabled": enabled, "reason": reason,
+            "duration_minutes": duration_minutes, "confirm": confirm,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def dev_get_control_history(context: RunContext, key: str, limit: int | None = None) -> str:
+    """DEVELOPER ONLY. Change history for a governance control key."""
+    body = await _dispatch(context, "dev_get_control_history", {"key": key, "limit": limit})
+    return summarize(body)
+
+
+# C3 CI/CD & Pull Requests (14)
+
+
+@function_tool
+async def dev_create_pr(context: RunContext, vtid: str, title: str, head: str, body: str | None = None, repo: str | None = None, confirm: bool | None = None) -> str:
+    """DEVELOPER ONLY. Create a PR from a branch into main. TWO-STEP confirm."""
+    result = await _dispatch(context, "dev_create_pr", {
+            "vtid": vtid, "title": title, "head": head, "body": body, "repo": repo, "confirm": confirm,
+        })
+    return summarize(result)
+
+
+@function_tool
+async def dev_get_pr_status(context: RunContext, pr_number: int, repo: str | None = None) -> str:
+    """DEVELOPER ONLY. PR state and mergeability."""
+    body = await _dispatch(context, "dev_get_pr_status", {"pr_number": pr_number, "repo": repo})
+    return summarize(body)
+
+
+@function_tool
+async def dev_get_pr_checks(context: RunContext, pr_number: int, repo: str | None = None) -> str:
+    """DEVELOPER ONLY. CI check runs for a PR."""
+    body = await _dispatch(context, "dev_get_pr_checks", {"pr_number": pr_number, "repo": repo})
+    return summarize(body)
+
+
+@function_tool
+async def dev_list_open_prs(context: RunContext, limit: int | None = None, repo: str | None = None) -> str:
+    """DEVELOPER ONLY. List open PRs with CI/mergeable status."""
+    body = await _dispatch(context, "dev_list_open_prs", {"limit": limit, "repo": repo})
+    return summarize(body)
+
+
+@function_tool
+async def dev_merge_pr(context: RunContext, vtid: str, pr_number: int, repo: str | None = None, confirm: bool | None = None) -> str:
+    """DEVELOPER ONLY. Merge a PR through the governed pipeline. TWO-STEP confirm."""
+    body = await _dispatch(context, "dev_merge_pr", {
+            "vtid": vtid, "pr_number": pr_number, "repo": repo, "confirm": confirm,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def dev_safe_merge(context: RunContext, vtid: str, pr_number: int, repo: str | None = None, require_checks: bool | None = None, merge_strategy: str | None = None, confirm: bool | None = None) -> str:
+    """DEVELOPER ONLY. Safe-merge a PR. TWO-STEP confirm."""
+    body = await _dispatch(context, "dev_safe_merge", {
+            "vtid": vtid, "pr_number": pr_number, "repo": repo, "require_checks": require_checks,
+            "merge_strategy": merge_strategy, "confirm": confirm,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def dev_revert_pr(context: RunContext, merge_sha: str, branch_name: str, title: str | None = None, body: str | None = None, repo: str | None = None, confirm: bool | None = None) -> str:
+    """DEVELOPER ONLY. Open a revert PR for a given merge commit. TWO-STEP confirm."""
+    result = await _dispatch(context, "dev_revert_pr", {
+            "merge_sha": merge_sha, "branch_name": branch_name, "title": title,
+            "body": body, "repo": repo, "confirm": confirm,
+        })
+    return summarize(result)
+
+
+@function_tool
+async def dev_trigger_workflow(context: RunContext, workflow_id: str, ref: str | None = None, inputs: dict[str, str] | None = None, repo: str | None = None, confirm: bool | None = None) -> str:
+    """DEVELOPER ONLY. Dispatch a GitHub Actions workflow file by name. TWO-STEP confirm."""
+    body = await _dispatch(context, "dev_trigger_workflow", {
+            "workflow_id": workflow_id, "ref": ref, "inputs": inputs, "repo": repo, "confirm": confirm,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def dev_list_workflow_runs(context: RunContext, workflow_id: str, repo: str | None = None) -> str:
+    """DEVELOPER ONLY. Recent runs for a GitHub Actions workflow."""
+    body = await _dispatch(context, "dev_list_workflow_runs", {"workflow_id": workflow_id, "repo": repo})
+    return summarize(body)
+
+
+@function_tool
+async def dev_get_run_jobs(context: RunContext, run_id: int, repo: str | None = None) -> str:
+    """DEVELOPER ONLY. Jobs and failures for a specific workflow run."""
+    body = await _dispatch(context, "dev_get_run_jobs", {"run_id": run_id, "repo": repo})
+    return summarize(body)
+
+
+@function_tool
+async def dev_get_merge_lock(context: RunContext) -> str:
+    """DEVELOPER ONLY. Current CI/CD merge lock status."""
+    body = await _dispatch(context, "dev_get_merge_lock", {})
+    return summarize(body)
+
+
+@function_tool
+async def dev_release_merge_lock(context: RunContext, vtid: str, reason: str | None = None, confirm: bool | None = None) -> str:
+    """DEVELOPER ONLY. Force-release a stuck merge lock for a VTID. TWO-STEP confirm."""
+    body = await _dispatch(context, "dev_release_merge_lock", {"vtid": vtid, "reason": reason, "confirm": confirm})
+    return summarize(body)
+
+
+@function_tool
+async def dev_cicd_health(context: RunContext) -> str:
+    """DEVELOPER ONLY. CI/CD pipeline health."""
+    body = await _dispatch(context, "dev_cicd_health", {})
+    return summarize(body)
+
+
+@function_tool
+async def dev_approvals_feed(context: RunContext, limit: int | None = None, repo: str | None = None) -> str:
+    """DEVELOPER ONLY. GitHub-authoritative feed of open PRs and their approval-readiness."""
+    body = await _dispatch(context, "dev_approvals_feed", {"limit": limit, "repo": repo})
+    return summarize(body)
+
+
+# C4 Deployment & Release (13)
+
+
+@function_tool
+async def dev_deploy_service(context: RunContext, vtid: str, service: str, environment: str | None = None, branch: str | None = None, confirm: bool | None = None) -> str:
+    """DEVELOPER ONLY. Deploy a service to staging (never production). TWO-STEP confirm."""
+    body = await _dispatch(context, "dev_deploy_service", {
+            "vtid": vtid, "service": service, "environment": environment, "branch": branch, "confirm": confirm,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def dev_publish_to_prod(context: RunContext, reason: str, mode: str | None = None, vtid: str | None = None, confirm_short_sha: str | None = None, confirm: bool | None = None, confirm_again: bool | None = None) -> str:
+    """DEVELOPER ONLY. The PUBLISH button by voice — promotes staging to production. DOUBLE-CONFIRM required, plus a reason."""
+    body = await _dispatch(context, "dev_publish_to_prod", {
+            "reason": reason, "mode": mode, "vtid": vtid, "confirm_short_sha": confirm_short_sha,
+            "confirm": confirm, "confirm_again": confirm_again,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def dev_list_revisions(context: RunContext, service: str | None = None, limit: int | None = None) -> str:
+    """DEVELOPER ONLY. Cloud Run revisions for a service. Requires an admin session."""
+    body = await _dispatch(context, "dev_list_revisions", {"service": service, "limit": limit})
+    return summarize(body)
+
+
+@function_tool
+async def dev_list_deployments(context: RunContext, service: str | None = None, environment: str | None = None, limit: int | None = None) -> str:
+    """DEVELOPER ONLY. Deployment history."""
+    body = await _dispatch(context, "dev_list_deployments", {"service": service, "environment": environment, "limit": limit})
+    return summarize(body)
+
+
+@function_tool
+async def dev_deployment_health(context: RunContext) -> str:
+    """DEVELOPER ONLY. Deployment pipeline config health."""
+    body = await _dispatch(context, "dev_deployment_health", {})
+    return summarize(body)
+
+
+@function_tool
+async def dev_promote_canary(context: RunContext, service: str | None = None, confirm: bool | None = None) -> str:
+    """DEVELOPER ONLY. Promote the canary revision to 100% traffic. Requires an admin session. TWO-STEP confirm."""
+    body = await _dispatch(context, "dev_promote_canary", {"service": service, "confirm": confirm})
+    return summarize(body)
+
+
+@function_tool
+async def dev_abort_canary(context: RunContext, service: str | None = None, confirm: bool | None = None) -> str:
+    """DEVELOPER ONLY. Abort the canary and restore the stable revision. Requires an admin session. TWO-STEP confirm."""
+    body = await _dispatch(context, "dev_abort_canary", {"service": service, "confirm": confirm})
+    return summarize(body)
+
+
+@function_tool
+async def dev_revert_deploy(context: RunContext, service: str, target_revision: str, confirm_short_sha: str | None = None, confirm: bool | None = None) -> str:
+    """DEVELOPER ONLY. Revert a service to a prior revision. Requires an admin session. TWO-STEP confirm."""
+    body = await _dispatch(context, "dev_revert_deploy", {
+            "service": service, "target_revision": target_revision,
+            "confirm_short_sha": confirm_short_sha, "confirm": confirm,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def dev_revert_both(context: RunContext, service: str, target_revision: str, target_created_at: str | None = None, confirm: bool | None = None) -> str:
+    """DEVELOPER ONLY. Revert a service AND its paired counterpart together. Requires an admin session. TWO-STEP confirm."""
+    body = await _dispatch(context, "dev_revert_both", {
+            "service": service, "target_revision": target_revision,
+            "target_created_at": target_created_at, "confirm": confirm,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def dev_canary_status(context: RunContext, service: str | None = None) -> str:
+    """DEVELOPER ONLY. Whether a canary traffic split is active. Requires an admin session."""
+    body = await _dispatch(context, "dev_canary_status", {"service": service})
+    return summarize(body)
+
+
+@function_tool
+async def dev_staging_status(context: RunContext) -> str:
+    """DEVELOPER ONLY. What build/commit is currently on staging."""
+    body = await _dispatch(context, "dev_staging_status", {})
+    return summarize(body)
+
+
+@function_tool
+async def dev_compare_staging_prod(context: RunContext) -> str:
+    """DEVELOPER ONLY. Whether staging and production are on the same build."""
+    body = await _dispatch(context, "dev_compare_staging_prod", {})
+    return summarize(body)
+
+
+@function_tool
+async def dev_release_feed(context: RunContext, service: str | None = None, environment: str | None = None, limit: int | None = None) -> str:
+    """DEVELOPER ONLY. Recent releases across services."""
+    body = await _dispatch(context, "dev_release_feed", {"service": service, "environment": environment, "limit": limit})
+    return summarize(body)
+
+
+# C9 Observability (15)
+
+
+@function_tool
+async def dev_build_info(context: RunContext) -> str:
+    """DEVELOPER ONLY. Running revision/build info for this gateway instance."""
+    body = await _dispatch(context, "dev_build_info", {})
+    return summarize(body)
+
+
+@function_tool
+async def dev_service_health(context: RunContext) -> str:
+    """DEVELOPER ONLY. Health + /alive check for this gateway instance."""
+    body = await _dispatch(context, "dev_service_health", {})
+    return summarize(body)
+
+
+@function_tool
+async def dev_error_rate(context: RunContext, hours: int | None = None) -> str:
+    """DEVELOPER ONLY. Recent OASIS event error rate over a time window."""
+    body = await _dispatch(context, "dev_error_rate", {"hours": hours})
+    return summarize(body)
+
+
+@function_tool
+async def dev_latency_summary(context: RunContext, hours: int | None = None) -> str:
+    """DEVELOPER ONLY. Voice turn latency percentiles over a time window."""
+    body = await _dispatch(context, "dev_latency_summary", {"hours": hours})
+    return summarize(body)
+
+
+@function_tool
+async def dev_telemetry_snapshot(context: RunContext) -> str:
+    """DEVELOPER ONLY. Telemetry snapshot: recent events + pipeline stage counters."""
+    body = await _dispatch(context, "dev_telemetry_snapshot", {})
+    return summarize(body)
+
+
+@function_tool
+async def dev_recent_events(context: RunContext, limit: int | None = None) -> str:
+    """DEVELOPER ONLY. Recent OASIS/system events."""
+    body = await _dispatch(context, "dev_recent_events", {"limit": limit})
+    return summarize(body)
+
+
+@function_tool
+async def dev_agent_trace(context: RunContext, phase: str | None = None, limit: int | None = None) -> str:
+    """DEVELOPER ONLY. Recent ORB agent trace(s)."""
+    body = await _dispatch(context, "dev_agent_trace", {"phase": phase, "limit": limit})
+    return summarize(body)
+
+
+@function_tool
+async def dev_supervisor_summary(context: RunContext, window_hours: int | None = None) -> str:
+    """DEVELOPER ONLY. Supervisor summary: dataset/shadow/finetune/canary/backlog sections."""
+    body = await _dispatch(context, "dev_supervisor_summary", {"window_hours": window_hours})
+    return summarize(body)
+
+
+@function_tool
+async def dev_get_session_turns(context: RunContext, session_id: str) -> str:
+    """DEVELOPER ONLY. Per-turn timeline for a voice session."""
+    body = await _dispatch(context, "dev_get_session_turns", {"session_id": session_id})
+    return summarize(body)
+
+
+@function_tool
+async def dev_get_session_diagnostics(context: RunContext, session_id: str) -> str:
+    """DEVELOPER ONLY. Diagnostics analysis for a voice session."""
+    body = await _dispatch(context, "dev_get_session_diagnostics", {"session_id": session_id})
+    return summarize(body)
+
+
+@function_tool
+async def dev_conversation_decisions(context: RunContext, limit: int | None = None, window_hours: int | None = None) -> str:
+    """DEVELOPER ONLY. Recent greeting/next-best-action decisions. Requires exafy_admin session."""
+    body = await _dispatch(context, "dev_conversation_decisions", {"limit": limit, "window_hours": window_hours})
+    return summarize(body)
+
+
+@function_tool
+async def dev_tool_failures(context: RunContext, limit: int | None = None, window_hours: int | None = None) -> str:
+    """DEVELOPER ONLY. Recent voice-tool failures, grouped by tool. Requires exafy_admin session."""
+    body = await _dispatch(context, "dev_tool_failures", {"limit": limit, "window_hours": window_hours})
+    return summarize(body)
+
+
+@function_tool
+async def dev_tool_health(context: RunContext, window_hours: int | None = None) -> str:
+    """DEVELOPER ONLY. Tool health rollup derived from recent failures. Requires exafy_admin session."""
+    body = await _dispatch(context, "dev_tool_health", {"window_hours": window_hours})
+    return summarize(body)
+
+
+@function_tool
+async def dev_greeting_decisions(context: RunContext, limit: int | None = None, window_hours: int | None = None) -> str:
+    """DEVELOPER ONLY. Greeting-monitor view of recent conversation decisions. Requires exafy_admin session."""
+    body = await _dispatch(context, "dev_greeting_decisions", {"limit": limit, "window_hours": window_hours})
+    return summarize(body)
+
+
+@function_tool
+async def dev_get_agent_detail(context: RunContext, agent_id: str) -> str:
+    """DEVELOPER ONLY. Detail for one registered agent by id."""
+    body = await _dispatch(context, "dev_get_agent_detail", {"agent_id": agent_id})
+    return summarize(body)
+
+
+# ---------------------------------------------------------------------------
 # Catalogue export — used by tests + libcst smoke
 # ---------------------------------------------------------------------------
 
@@ -3725,6 +4294,37 @@ def all_tool_names() -> list[str]:
         "get_lab_results", "generate_health_plan", "list_my_health_plans",
         "get_health_plan_progress", "list_my_conditions",
         "get_health_education", "get_next_best_action", "connect_health_device",
+        # WAVE-2-VOICE-CATALOG-V2 — Developer P0 (70)
+        # C1 VTID / OASIS Lifecycle (15)
+        "dev_allocate_vtid", "dev_create_task", "dev_update_task", "dev_cancel_task",
+        "dev_complete_task", "dev_terminalize_vtid", "dev_discover_tasks",
+        "dev_get_vtid_projection", "dev_get_allocator_status", "dev_query_oasis_events",
+        "dev_execute_vtid", "dev_run_exec_workflow", "dev_submit_evidence",
+        "dev_list_work_orders", "dev_get_work_order",
+        # C2 Governance (13)
+        "dev_evaluate_governance", "dev_governance_status", "dev_list_governance_rules",
+        "dev_get_governance_rule", "dev_list_violations", "dev_list_enforcements",
+        "dev_governance_feed", "dev_list_proposals", "dev_create_proposal",
+        "dev_update_proposal", "dev_get_control", "dev_set_control",
+        "dev_get_control_history",
+        # C3 CI/CD & Pull Requests (14)
+        "dev_create_pr", "dev_get_pr_status", "dev_get_pr_checks", "dev_list_open_prs",
+        "dev_merge_pr", "dev_safe_merge", "dev_revert_pr", "dev_trigger_workflow",
+        "dev_list_workflow_runs", "dev_get_run_jobs", "dev_get_merge_lock",
+        "dev_release_merge_lock", "dev_cicd_health", "dev_approvals_feed",
+        # C4 Deployment & Release (13)
+        "dev_deploy_service", "dev_publish_to_prod", "dev_list_revisions",
+        "dev_list_deployments", "dev_deployment_health", "dev_promote_canary",
+        "dev_abort_canary", "dev_revert_deploy", "dev_revert_both",
+        "dev_canary_status", "dev_staging_status", "dev_compare_staging_prod",
+        "dev_release_feed",
+        # C9 Observability (15)
+        "dev_build_info", "dev_service_health", "dev_error_rate",
+        "dev_latency_summary", "dev_telemetry_snapshot", "dev_recent_events",
+        "dev_agent_trace", "dev_supervisor_summary", "dev_get_session_turns",
+        "dev_get_session_diagnostics", "dev_conversation_decisions",
+        "dev_tool_failures", "dev_tool_health", "dev_greeting_decisions",
+        "dev_get_agent_detail",
     ]
 
 
