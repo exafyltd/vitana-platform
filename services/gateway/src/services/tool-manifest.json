@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-07-12T23:07:23.919Z",
+  "generated_at": "2026-07-13T00:10:55.347Z",
   "source": "reconciled",
   "total": 594,
   "tools": [
@@ -5111,9 +5111,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Find user by name/email/vitana_id",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "read",
       "plan_domain": "B1 Users & RBAC",
@@ -5127,9 +5130,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "List/filter users",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "read",
       "plan_domain": "B1 Users & RBAC",
@@ -5143,9 +5149,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Full user record",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "read",
       "plan_domain": "B1 Users & RBAC",
@@ -5159,9 +5168,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Role distribution",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "read",
       "plan_domain": "B1 Users & RBAC",
@@ -5175,9 +5187,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Grant a role",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "confirm",
       "plan_domain": "B1 Users & RBAC",
@@ -5191,9 +5206,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Revoke a role",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "confirm",
       "plan_domain": "B1 Users & RBAC",
@@ -5207,9 +5225,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Change trust tier",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "confirm",
       "plan_domain": "B1 Users & RBAC",
@@ -5223,9 +5244,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "At-risk members (overview)",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "read",
       "plan_domain": "B1 Users & RBAC",
@@ -5463,9 +5487,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Pending items",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "read",
       "plan_domain": "B4 Content Moderation",
@@ -5479,9 +5506,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "One item detail",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "read",
       "plan_domain": "B4 Content Moderation",
@@ -5495,9 +5525,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Queue stats",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "read",
       "plan_domain": "B4 Content Moderation",
@@ -5511,9 +5544,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Approve item",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "confirm",
       "plan_domain": "B4 Content Moderation",
@@ -5527,9 +5563,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Reject/remove item",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "confirm",
       "plan_domain": "B4 Content Moderation",
@@ -5543,9 +5582,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Flag for review",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "write",
       "plan_domain": "B4 Content Moderation",
@@ -5559,9 +5601,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "User reports",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "read",
       "plan_domain": "B4 Content Moderation",
@@ -5575,9 +5620,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "One report",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "read",
       "plan_domain": "B4 Content Moderation",
@@ -5719,9 +5767,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Marketplace KPIs",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "read",
       "plan_domain": "B6 Marketplace Admin",
@@ -5735,9 +5786,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Merchants",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "read",
       "plan_domain": "B6 Marketplace Admin",
@@ -5751,9 +5805,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Edit merchant status",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "confirm",
       "plan_domain": "B6 Marketplace Admin",
@@ -5767,9 +5824,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Products (admin view)",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "read",
       "plan_domain": "B6 Marketplace Admin",
@@ -5783,9 +5843,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Edit/approve product",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "confirm",
       "plan_domain": "B6 Marketplace Admin",
@@ -5799,9 +5862,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Bulk enable/disable",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "confirm",
       "plan_domain": "B6 Marketplace Admin",
@@ -5815,9 +5881,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Curation rules",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "read",
       "plan_domain": "B6 Marketplace Admin",
@@ -5831,9 +5900,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Change curation",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "confirm",
       "plan_domain": "B6 Marketplace Admin",
@@ -5847,9 +5919,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Geo policies",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "read",
       "plan_domain": "B6 Marketplace Admin",
@@ -5863,9 +5938,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Edit geo policy",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "confirm",
       "plan_domain": "B6 Marketplace Admin",
@@ -5879,9 +5957,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Sync a product network",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "confirm",
       "plan_domain": "B6 Marketplace Admin",
@@ -5895,9 +5976,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Ingestion runs & coverage",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "read",
       "plan_domain": "B6 Marketplace Admin",
@@ -6407,9 +6491,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Draft a broadcast (returns preview)",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "write",
       "plan_domain": "B11 Notifications & Broadcast",
@@ -6423,9 +6510,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Send to audience",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "confirm",
       "plan_domain": "B11 Notifications & Broadcast",
@@ -6439,9 +6529,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Sent history",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "read",
       "plan_domain": "B11 Notifications & Broadcast",
@@ -6455,9 +6548,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Opt-in/out stats",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "read",
       "plan_domain": "B11 Notifications & Broadcast",
@@ -6471,9 +6567,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "New category",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "confirm",
       "plan_domain": "B11 Notifications & Broadcast",
@@ -6487,9 +6586,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Edit category",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "confirm",
       "plan_domain": "B11 Notifications & Broadcast",
@@ -6503,9 +6605,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Send test",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "write",
       "plan_domain": "B11 Notifications & Broadcast",
@@ -6519,9 +6624,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Governance status",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "read",
       "plan_domain": "B12 Governance & Controls",
@@ -6535,9 +6643,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Rules",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "read",
       "plan_domain": "B12 Governance & Controls",
@@ -6551,9 +6662,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Violations feed",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "read",
       "plan_domain": "B12 Governance & Controls",
@@ -6567,9 +6681,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Proposals",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "read",
       "plan_domain": "B12 Governance & Controls",
@@ -6583,9 +6700,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "New proposal",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "confirm",
       "plan_domain": "B12 Governance & Controls",
@@ -6599,9 +6719,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Approve/reject proposal",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "confirm",
       "plan_domain": "B12 Governance & Controls",
@@ -6615,9 +6738,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Read a control (kill switches)",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "read",
       "plan_domain": "B12 Governance & Controls",
@@ -6631,9 +6757,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Flip a control key",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "confirm",
       "plan_domain": "B12 Governance & Controls",
@@ -6935,9 +7064,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Support tickets",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "read",
       "plan_domain": "B15 Feedback & Support Admin",
@@ -6951,9 +7083,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "One ticket",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "read",
       "plan_domain": "B15 Feedback & Support Admin",
@@ -6967,9 +7102,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Support KPIs",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "read",
       "plan_domain": "B15 Feedback & Support Admin",
@@ -6983,9 +7121,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Recent handoffs",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "read",
       "plan_domain": "B15 Feedback & Support Admin",
@@ -6999,9 +7140,12 @@
         "admin",
         "exafy_admin"
       ],
-      "status": "planned",
+      "status": "live",
       "description": "Resolve/assign/respond",
-      "wired_in": [],
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
       "priority": "P0",
       "risk": "confirm",
       "plan_domain": "B15 Feedback & Support Admin",

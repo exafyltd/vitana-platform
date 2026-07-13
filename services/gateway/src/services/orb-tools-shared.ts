@@ -65,6 +65,15 @@ import { GOVERNANCE_TOOL_HANDLERS, GOVERNANCE_TOOL_DECLARATIONS } from './orb-to
 import { CICD_PR_TOOL_HANDLERS, CICD_PR_TOOL_DECLARATIONS } from './orb-tools/cicd-pr-tools';
 import { DEPLOYMENT_RELEASE_TOOL_HANDLERS, DEPLOYMENT_RELEASE_TOOL_DECLARATIONS } from './orb-tools/deployment-release-tools';
 import { OBSERVABILITY_TOOL_HANDLERS, OBSERVABILITY_TOOL_DECLARATIONS } from './orb-tools/observability-tools';
+// WAVE-3-VOICE-CATALOG-V2 — third wave of the approved 425-tool expansion:
+// admin P0 domains covering users/RBAC, content moderation, marketplace
+// admin, notifications/broadcast, governance/controls, and feedback/support.
+import { ADMIN_USERS_RBAC_TOOL_HANDLERS, ADMIN_USERS_RBAC_TOOL_DECLARATIONS } from './orb-tools/admin-users-rbac-tools';
+import { ADMIN_MODERATION_TOOL_HANDLERS, ADMIN_MODERATION_TOOL_DECLARATIONS } from './orb-tools/admin-moderation-tools';
+import { ADMIN_MARKETPLACE_TOOL_HANDLERS, ADMIN_MARKETPLACE_TOOL_DECLARATIONS } from './orb-tools/admin-marketplace-tools';
+import { ADMIN_NOTIFICATIONS_TOOL_HANDLERS, ADMIN_NOTIFICATIONS_TOOL_DECLARATIONS } from './orb-tools/admin-notifications-tools';
+import { ADMIN_GOVERNANCE_TOOL_HANDLERS, ADMIN_GOVERNANCE_TOOL_DECLARATIONS } from './orb-tools/admin-governance-tools';
+import { ADMIN_FEEDBACK_TOOL_HANDLERS, ADMIN_FEEDBACK_TOOL_DECLARATIONS } from './orb-tools/admin-feedback-tools';
 import {
   lookupScreen,
   lookupByAlias,
@@ -5173,6 +5182,13 @@ export const ORB_TOOL_REGISTRY: Record<string, OrbToolHandler> = {
   ...CICD_PR_TOOL_HANDLERS,
   ...DEPLOYMENT_RELEASE_TOOL_HANDLERS,
   ...OBSERVABILITY_TOOL_HANDLERS,
+  // WAVE-3-VOICE-CATALOG-V2
+  ...ADMIN_USERS_RBAC_TOOL_HANDLERS,
+  ...ADMIN_MODERATION_TOOL_HANDLERS,
+  ...ADMIN_MARKETPLACE_TOOL_HANDLERS,
+  ...ADMIN_NOTIFICATIONS_TOOL_HANDLERS,
+  ...ADMIN_GOVERNANCE_TOOL_HANDLERS,
+  ...ADMIN_FEEDBACK_TOOL_HANDLERS,
 };
 
 // BOOTSTRAP-VOICE-CATALOG-COMPLETE — combined Vertex/Gemini function
@@ -5212,6 +5228,18 @@ export const DEVELOPER_DOMAIN_TOOL_DECLARATIONS: Array<Record<string, unknown>> 
   ...CICD_PR_TOOL_DECLARATIONS,
   ...DEPLOYMENT_RELEASE_TOOL_DECLARATIONS,
   ...OBSERVABILITY_TOOL_DECLARATIONS,
+];
+
+// WAVE-3-VOICE-CATALOG-V2 — admin_* declarations, injected by
+// live-tool-catalog.ts alongside ADMIN_TOOL_SCHEMAS under the same
+// admin/exafy_admin/developer role gate.
+export const ADMIN_DOMAIN_TOOL_DECLARATIONS: Array<Record<string, unknown>> = [
+  ...ADMIN_USERS_RBAC_TOOL_DECLARATIONS,
+  ...ADMIN_MODERATION_TOOL_DECLARATIONS,
+  ...ADMIN_MARKETPLACE_TOOL_DECLARATIONS,
+  ...ADMIN_NOTIFICATIONS_TOOL_DECLARATIONS,
+  ...ADMIN_GOVERNANCE_TOOL_DECLARATIONS,
+  ...ADMIN_FEEDBACK_TOOL_DECLARATIONS,
 ];
 
 export const ORB_TOOL_NAMES = Object.keys(ORB_TOOL_REGISTRY);

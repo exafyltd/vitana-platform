@@ -7832,6 +7832,1055 @@ Optionally filter by tier (service, embedded, scheduled). Speak problem agents f
           "type": "object",
         },
       },
+      {
+        "description": "ADMIN ONLY. Find a user by name, email, or vitana_id.",
+        "name": "admin_lookup_user",
+        "parameters": {
+          "properties": {
+            "limit": {
+              "type": "integer",
+            },
+            "query": {
+              "description": "Required.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "query",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "ADMIN ONLY. List/filter users by search query or role.",
+        "name": "admin_list_users",
+        "parameters": {
+          "properties": {
+            "limit": {
+              "type": "integer",
+            },
+            "query": {
+              "type": "string",
+            },
+            "role": {
+              "type": "string",
+            },
+          },
+          "type": "object",
+        },
+      },
+      {
+        "description": "ADMIN ONLY. Full user record by user_id.",
+        "name": "admin_get_user_detail",
+        "parameters": {
+          "properties": {
+            "user_id": {
+              "description": "Required.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "user_id",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "ADMIN ONLY. Role distribution counts.",
+        "name": "admin_roles_summary",
+        "parameters": {
+          "properties": {},
+          "type": "object",
+        },
+      },
+      {
+        "description": "ADMIN ONLY. Grant a role to a user. TWO-STEP confirm.",
+        "name": "admin_grant_role",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "type": "boolean",
+            },
+            "role": {
+              "description": "community, patient, professional, staff, admin, developer, or infra. Required.",
+              "type": "string",
+            },
+            "tenant_id": {
+              "type": "string",
+            },
+            "user_id": {
+              "description": "Required.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "user_id",
+            "role",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "ADMIN ONLY. Revoke a role from a user (cannot revoke community). TWO-STEP confirm.",
+        "name": "admin_revoke_role",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "type": "boolean",
+            },
+            "role": {
+              "description": "Required.",
+              "type": "string",
+            },
+            "tenant_id": {
+              "type": "string",
+            },
+            "user_id": {
+              "description": "Required.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "user_id",
+            "role",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "ADMIN ONLY (exafy_admin/operator only). Change a user's trust tier. TWO-STEP confirm.",
+        "name": "admin_set_trust_tier",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "type": "boolean",
+            },
+            "reason": {
+              "type": "string",
+            },
+            "tier": {
+              "description": "unverified, community_verified, pro_verified, or id_verified. Required.",
+              "type": "string",
+            },
+            "vitana_id": {
+              "description": "Required.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "vitana_id",
+            "tier",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "ADMIN ONLY. At-risk members overview for the current tenant (profile-inactivity heuristic).",
+        "name": "admin_get_at_risk_members",
+        "parameters": {
+          "properties": {},
+          "type": "object",
+        },
+      },
+      {
+        "description": "ADMIN ONLY. List pending content-moderation items, optionally filtered by status/type.",
+        "name": "admin_list_moderation_queue",
+        "parameters": {
+          "properties": {
+            "limit": {
+              "type": "integer",
+            },
+            "status": {
+              "type": "string",
+            },
+            "type": {
+              "type": "string",
+            },
+          },
+          "type": "object",
+        },
+      },
+      {
+        "description": "ADMIN ONLY. Detail for one moderation queue item.",
+        "name": "admin_get_moderation_item",
+        "parameters": {
+          "properties": {
+            "item_id": {
+              "description": "Required.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "item_id",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "ADMIN ONLY. Moderation queue stats (counts by status/type).",
+        "name": "admin_moderation_stats",
+        "parameters": {
+          "properties": {},
+          "type": "object",
+        },
+      },
+      {
+        "description": "ADMIN ONLY. Approve a moderation item (makes it public). TWO-STEP confirm.",
+        "name": "admin_approve_content",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "type": "boolean",
+            },
+            "item_id": {
+              "description": "Required.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "item_id",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "ADMIN ONLY. Reject a moderation item (removes from public). TWO-STEP confirm.",
+        "name": "admin_reject_content",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "type": "boolean",
+            },
+            "item_id": {
+              "description": "Required.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "item_id",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "ADMIN ONLY. Flag a moderation item for further review. TWO-STEP confirm.",
+        "name": "admin_flag_content",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "type": "boolean",
+            },
+            "item_id": {
+              "description": "Required.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "item_id",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "ADMIN ONLY. List user reports. NOTE: no dedicated report table exists yet — shows flagged media instead.",
+        "name": "admin_list_reports",
+        "parameters": {
+          "properties": {
+            "limit": {
+              "type": "integer",
+            },
+          },
+          "type": "object",
+        },
+      },
+      {
+        "description": "ADMIN ONLY. Get one user report. NOTE: not implemented in the backend yet.",
+        "name": "admin_get_report",
+        "parameters": {
+          "properties": {},
+          "type": "object",
+        },
+      },
+      {
+        "description": "ADMIN ONLY. Marketplace KPIs overview.",
+        "name": "admin_marketplace_overview",
+        "parameters": {
+          "properties": {},
+          "type": "object",
+        },
+      },
+      {
+        "description": "ADMIN ONLY. List merchants, filterable by source_network/is_active/search.",
+        "name": "admin_list_merchants",
+        "parameters": {
+          "properties": {
+            "is_active": {
+              "type": "boolean",
+            },
+            "limit": {
+              "type": "integer",
+            },
+            "search": {
+              "type": "string",
+            },
+            "source_network": {
+              "type": "string",
+            },
+          },
+          "type": "object",
+        },
+      },
+      {
+        "description": "ADMIN ONLY. Edit a merchant's status/quality/commission/notes. TWO-STEP confirm.",
+        "name": "admin_update_merchant",
+        "parameters": {
+          "properties": {
+            "admin_notes": {
+              "type": "string",
+            },
+            "commission_rate": {
+              "type": "number",
+            },
+            "confirm": {
+              "type": "boolean",
+            },
+            "customs_risk": {
+              "type": "string",
+            },
+            "is_active": {
+              "type": "boolean",
+            },
+            "merchant_id": {
+              "description": "Required.",
+              "type": "string",
+            },
+            "name": {
+              "type": "string",
+            },
+            "quality_score": {
+              "type": "number",
+            },
+            "requires_admin_review": {
+              "type": "boolean",
+            },
+          },
+          "required": [
+            "merchant_id",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "ADMIN ONLY. List products (admin view), filterable by network/category/region/review-flag/search.",
+        "name": "admin_list_products",
+        "parameters": {
+          "properties": {
+            "category": {
+              "type": "string",
+            },
+            "is_active": {
+              "type": "boolean",
+            },
+            "limit": {
+              "type": "integer",
+            },
+            "origin_region": {
+              "type": "string",
+            },
+            "requires_admin_review": {
+              "type": "boolean",
+            },
+            "search": {
+              "type": "string",
+            },
+            "source_network": {
+              "type": "string",
+            },
+          },
+          "type": "object",
+        },
+      },
+      {
+        "description": "ADMIN ONLY. Edit/approve a product. TWO-STEP confirm.",
+        "name": "admin_update_product",
+        "parameters": {
+          "properties": {
+            "admin_notes": {
+              "type": "string",
+            },
+            "admin_review_reason": {
+              "type": "string",
+            },
+            "confirm": {
+              "type": "boolean",
+            },
+            "customs_risk": {
+              "type": "string",
+            },
+            "description": {
+              "type": "string",
+            },
+            "excluded_from_regions": {
+              "items": {
+                "type": "string",
+              },
+              "type": "array",
+            },
+            "is_active": {
+              "type": "boolean",
+            },
+            "product_id": {
+              "description": "Required.",
+              "type": "string",
+            },
+            "requires_admin_review": {
+              "type": "boolean",
+            },
+            "title": {
+              "type": "string",
+            },
+          },
+          "required": [
+            "product_id",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "ADMIN ONLY. Bulk enable/disable/flag products (max 100 per call). TWO-STEP confirm.",
+        "name": "admin_bulk_product_action",
+        "parameters": {
+          "properties": {
+            "action": {
+              "description": "hide, clear_review, flag_review, deactivate, or reactivate. Required.",
+              "type": "string",
+            },
+            "confirm": {
+              "type": "boolean",
+            },
+            "product_ids": {
+              "description": "Required, max 100.",
+              "items": {
+                "type": "string",
+              },
+              "type": "array",
+            },
+            "reason": {
+              "type": "string",
+            },
+          },
+          "required": [
+            "product_ids",
+            "action",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "ADMIN ONLY. Read the feed curation config.",
+        "name": "admin_get_feed_curation",
+        "parameters": {
+          "properties": {},
+          "type": "object",
+        },
+      },
+      {
+        "description": "ADMIN ONLY. Change feed curation rules. TWO-STEP confirm.",
+        "name": "admin_update_feed_curation",
+        "parameters": {
+          "properties": {
+            "category_mix": {
+              "type": "object",
+            },
+            "config_id": {
+              "description": "Required.",
+              "type": "string",
+            },
+            "confirm": {
+              "type": "boolean",
+            },
+            "diversity_rules": {
+              "type": "object",
+            },
+            "featured_product_ids": {
+              "items": {
+                "type": "string",
+              },
+              "type": "array",
+            },
+            "max_products_per_category": {
+              "type": "integer",
+            },
+            "max_products_per_merchant": {
+              "type": "integer",
+            },
+            "notes": {
+              "type": "string",
+            },
+            "personalization_weight_override": {
+              "type": "number",
+            },
+            "starter_conditions": {
+              "type": "object",
+            },
+          },
+          "required": [
+            "config_id",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "ADMIN ONLY. List geo policies.",
+        "name": "admin_list_geo_policies",
+        "parameters": {
+          "properties": {},
+          "type": "object",
+        },
+      },
+      {
+        "description": "ADMIN ONLY. Edit a geo policy. TWO-STEP confirm.",
+        "name": "admin_update_geo_policy",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "type": "boolean",
+            },
+            "description": {
+              "type": "string",
+            },
+            "is_active": {
+              "type": "boolean",
+            },
+            "policy_id": {
+              "description": "Required.",
+              "type": "string",
+            },
+            "user_opt_out_scope": {
+              "type": "string",
+            },
+            "weight": {
+              "type": "number",
+            },
+          },
+          "required": [
+            "policy_id",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "ADMIN ONLY. Trigger a live product sync from a network (runs synchronously). TWO-STEP confirm.",
+        "name": "admin_trigger_source_sync",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "type": "boolean",
+            },
+            "network": {
+              "description": "shopify, cj, amazon, rakuten, awin, or admitad. Required.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "network",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "ADMIN ONLY. Ingestion run history and origin/ships-to coverage matrix.",
+        "name": "admin_get_ingestion_coverage",
+        "parameters": {
+          "properties": {
+            "view": {
+              "description": ""runs", "coverage", or omit for both.",
+              "type": "string",
+            },
+          },
+          "type": "object",
+        },
+      },
+      {
+        "description": "ADMIN ONLY. Preview a broadcast draft (audience size + text) WITHOUT sending. There is no server-side draft storage.",
+        "name": "admin_compose_broadcast",
+        "parameters": {
+          "properties": {
+            "body": {
+              "description": "Required.",
+              "type": "string",
+            },
+            "recipient_ids": {
+              "items": {
+                "type": "string",
+              },
+              "type": "array",
+            },
+            "recipient_role": {
+              "type": "string",
+            },
+            "send_to_all": {
+              "type": "boolean",
+            },
+            "tenant_id": {
+              "type": "string",
+            },
+            "title": {
+              "description": "Required.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "title",
+            "body",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "ADMIN ONLY. Send a notification NOW to the resolved audience (max 500 recipients). TWO-STEP confirm — no undo.",
+        "name": "admin_send_broadcast",
+        "parameters": {
+          "properties": {
+            "body": {
+              "description": "Required.",
+              "type": "string",
+            },
+            "channel": {
+              "type": "string",
+            },
+            "confirm": {
+              "type": "boolean",
+            },
+            "priority": {
+              "type": "string",
+            },
+            "recipient_ids": {
+              "items": {
+                "type": "string",
+              },
+              "type": "array",
+            },
+            "recipient_role": {
+              "type": "string",
+            },
+            "send_to_all": {
+              "type": "boolean",
+            },
+            "tenant_id": {
+              "type": "string",
+            },
+            "title": {
+              "description": "Required.",
+              "type": "string",
+            },
+            "type": {
+              "type": "string",
+            },
+          },
+          "required": [
+            "title",
+            "body",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "ADMIN ONLY. Sent notification history (general log, not broadcast-only).",
+        "name": "admin_list_broadcasts",
+        "parameters": {
+          "properties": {
+            "days": {
+              "type": "integer",
+            },
+            "limit": {
+              "type": "integer",
+            },
+            "search": {
+              "type": "string",
+            },
+            "type": {
+              "type": "string",
+            },
+            "user_id": {
+              "type": "string",
+            },
+          },
+          "type": "object",
+        },
+      },
+      {
+        "description": "ADMIN ONLY. Notification opt-in/out stats plus 30-day send/read counts.",
+        "name": "admin_notification_pref_stats",
+        "parameters": {
+          "properties": {
+            "tenant_id": {
+              "type": "string",
+            },
+          },
+          "type": "object",
+        },
+      },
+      {
+        "description": "ADMIN ONLY. Create a new notification category. TWO-STEP confirm.",
+        "name": "admin_create_notification_category",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "type": "boolean",
+            },
+            "default_enabled": {
+              "type": "boolean",
+            },
+            "description": {
+              "type": "string",
+            },
+            "display_name": {
+              "description": "Required.",
+              "type": "string",
+            },
+            "icon": {
+              "type": "string",
+            },
+            "mapped_types": {
+              "items": {
+                "type": "string",
+              },
+              "type": "array",
+            },
+            "sort_order": {
+              "type": "integer",
+            },
+            "tenant_id": {
+              "description": "Omit for a global category.",
+              "type": "string",
+            },
+            "type": {
+              "description": "chat, calendar, or community. Required.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "type",
+            "display_name",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "ADMIN ONLY. Edit a notification category (type is immutable). TWO-STEP confirm.",
+        "name": "admin_update_notification_category",
+        "parameters": {
+          "properties": {
+            "category_id": {
+              "description": "Required.",
+              "type": "string",
+            },
+            "confirm": {
+              "type": "boolean",
+            },
+            "default_enabled": {
+              "type": "boolean",
+            },
+            "description": {
+              "type": "string",
+            },
+            "display_name": {
+              "type": "string",
+            },
+            "icon": {
+              "type": "string",
+            },
+            "is_active": {
+              "type": "boolean",
+            },
+            "mapped_types": {
+              "items": {
+                "type": "string",
+              },
+              "type": "array",
+            },
+            "sort_order": {
+              "type": "integer",
+            },
+          },
+          "required": [
+            "category_id",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "ADMIN ONLY. Send a test notification for a category to your own account (self-test only).",
+        "name": "admin_test_notification_category",
+        "parameters": {
+          "properties": {
+            "category_id": {
+              "description": "Required.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "category_id",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "ADMIN ONLY. Governance control-plane snapshot.",
+        "name": "admin_governance_status",
+        "parameters": {
+          "properties": {},
+          "type": "object",
+        },
+      },
+      {
+        "description": "ADMIN ONLY. List governance rules.",
+        "name": "admin_list_governance_rules",
+        "parameters": {
+          "properties": {
+            "category": {
+              "type": "string",
+            },
+            "level": {
+              "type": "string",
+            },
+            "search": {
+              "type": "string",
+            },
+            "status": {
+              "type": "string",
+            },
+          },
+          "type": "object",
+        },
+      },
+      {
+        "description": "ADMIN ONLY. List open/recent governance violations.",
+        "name": "admin_list_violations",
+        "parameters": {
+          "properties": {},
+          "type": "object",
+        },
+      },
+      {
+        "description": "ADMIN ONLY. List governance rule-change proposals.",
+        "name": "admin_list_proposals",
+        "parameters": {
+          "properties": {
+            "limit": {
+              "type": "integer",
+            },
+            "ruleCode": {
+              "type": "string",
+            },
+            "status": {
+              "type": "string",
+            },
+          },
+          "type": "object",
+        },
+      },
+      {
+        "description": "ADMIN ONLY. Create a governance rule-change proposal. TWO-STEP confirm.",
+        "name": "admin_create_proposal",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "type": "boolean",
+            },
+            "proposed_rule": {
+              "description": "Required.",
+              "type": "string",
+            },
+            "rationale": {
+              "type": "string",
+            },
+            "rule_code": {
+              "type": "string",
+            },
+            "type": {
+              "description": "Required.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "type",
+            "proposed_rule",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "ADMIN ONLY. Change a proposal's status. TWO-STEP confirm.",
+        "name": "admin_update_proposal_status",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "type": "boolean",
+            },
+            "proposal_id": {
+              "description": "Required.",
+              "type": "string",
+            },
+            "status": {
+              "description": "Required.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "proposal_id",
+            "status",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "ADMIN ONLY. Read a governance control key.",
+        "name": "admin_get_control_key",
+        "parameters": {
+          "properties": {
+            "key": {
+              "description": "Required.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "key",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "ADMIN ONLY. Flip a governance control key on/off — a real kill-switch, requires a reason. TWO-STEP confirm.",
+        "name": "admin_set_control_key",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "type": "boolean",
+            },
+            "duration_minutes": {
+              "type": "integer",
+            },
+            "enabled": {
+              "description": "Required.",
+              "type": "boolean",
+            },
+            "key": {
+              "description": "Required.",
+              "type": "string",
+            },
+            "reason": {
+              "description": "Required.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "key",
+            "enabled",
+            "reason",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "ADMIN ONLY. List support/feedback tickets, filterable by status/kind/priority/surface/resolver_agent.",
+        "name": "admin_list_feedback_tickets",
+        "parameters": {
+          "properties": {
+            "kind": {
+              "type": "string",
+            },
+            "limit": {
+              "type": "integer",
+            },
+            "priority": {
+              "type": "string",
+            },
+            "resolver_agent": {
+              "type": "string",
+            },
+            "status": {
+              "type": "string",
+            },
+            "surface": {
+              "type": "string",
+            },
+          },
+          "type": "object",
+        },
+      },
+      {
+        "description": "ADMIN ONLY. Full detail for one feedback ticket, including handoff history.",
+        "name": "admin_get_feedback_ticket",
+        "parameters": {
+          "properties": {
+            "ticket_id": {
+              "description": "Required.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "ticket_id",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "ADMIN ONLY. Platform-wide support KPIs (last 30 days).",
+        "name": "admin_feedback_kpis",
+        "parameters": {
+          "properties": {},
+          "type": "object",
+        },
+      },
+      {
+        "description": "ADMIN ONLY. Recent specialist handoffs.",
+        "name": "admin_list_handoffs",
+        "parameters": {
+          "properties": {
+            "limit": {
+              "type": "integer",
+            },
+          },
+          "type": "object",
+        },
+      },
+      {
+        "description": "ADMIN ONLY. Act on a feedback ticket: draft_answer, draft_spec, draft_resolution, approve, send_answer, resolve, reject, or mark_duplicate. There is no "assign" action — that concept doesn't exist in the schema. TWO-STEP confirm.",
+        "name": "admin_act_on_ticket",
+        "parameters": {
+          "properties": {
+            "action": {
+              "description": "Required.",
+              "type": "string",
+            },
+            "confirm": {
+              "type": "boolean",
+            },
+            "duplicate_of": {
+              "description": "Required for mark_duplicate.",
+              "type": "string",
+            },
+            "notes": {
+              "type": "string",
+            },
+            "reason": {
+              "description": "Required for reject.",
+              "type": "string",
+            },
+            "ticket_id": {
+              "description": "Required.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "ticket_id",
+            "action",
+          ],
+          "type": "object",
+        },
+      },
     ],
   },
   {
