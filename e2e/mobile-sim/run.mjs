@@ -64,7 +64,9 @@ async function main() {
   const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
   const outDir = args.out || join(HERE, 'artifacts', `${platform}-${stamp}`);
   const report = new RunReport(outDir);
-  const sim = new SimUse({ device, log: msg => process.env.SIM_USE_VERBOSE && console.error(msg) });
+  // optional debug flag — never required by any workflow or deploy config
+  const verbose = (process.env.SIM_USE_VERBOSE ?? '') !== '';
+  const sim = new SimUse({ device, log: msg => verbose && console.error(msg) });
 
   console.error(`Device: ${device} (${platform})  URL: ${args.url}  Flow: ${args.flow}\n`);
 

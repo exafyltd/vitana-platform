@@ -44,6 +44,9 @@ Login credentials come from `TEST_USER_EMAIL` / `TEST_USER_PASSWORD` (same
 envs as the Playwright fixtures). Without a password the smoke flow runs
 unauthenticated and covers public screens only.
 
+Optional: set `SIM_USE_VERBOSE=1` to echo every sim-use CLI invocation to
+stderr (off by default).
+
 Artifacts land in `mobile-sim/artifacts/<platform>-<timestamp>/`:
 numbered screenshots, per-step accessibility outlines (`*.outline.txt`),
 and `summary.json`.
