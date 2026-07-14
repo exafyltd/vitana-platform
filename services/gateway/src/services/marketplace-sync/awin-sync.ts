@@ -247,11 +247,27 @@ const SUBCATEGORY_RULES: Array<{ key: string; patterns: RegExp[] }> = [
   { key: 'face-care', patterns: [/skin\s*care/, /facial/, /\bface\b/] },
 ];
 
-function guessSubcategory(googleProductCategory: string | undefined, productType: string | undefined): string | undefined {
+// MISSHA's feed leaves google_product_category/product_type BLANK for a
+// meaningful chunk of SKUs (verified: ~20% of a real 200-row sync). Title
+// keywords are a weaker signal than a real taxonomy field, so this only
+// runs as a fallback when the primary rules above found nothing.
+const TITLE_FALLBACK_RULES: Array<{ key: string; patterns: RegExp[] }> = [
+  { key: 'makeup', patterns: [/\blip\s*(balm|tint|stick)\b/, /\bmascara\b/, /\bbb\s*cream\b/, /\bcc\s*cream\b/, /\bblush(er)?\b/, /\beyeliner\b/, /\beyebrow\b/, /\bconcealer\b/, /\bfoundation\b/] },
+  { key: 'hair-care', patterns: [/\bhair\b/] },
+  { key: 'body-care', patterns: [/\bbody\s*lotion\b/, /\bbody\s*wash\b/] },
+  { key: 'face-care', patterns: [/\bessence\b/, /\bampoule\b/, /\bserum\b/, /\btoner\b/, /\beye\s*cream\b/, /\bnight\s*repair\b/, /\bemulsion\b/, /\bcollagen\b/, /\bmoistur/] },
+];
+
+function guessSubcategory(googleProductCategory: string | undefined, productType: string | undefined, title: string | undefined): string | undefined {
   const hay = `${googleProductCategory ?? ''} ${productType ?? ''}`.toLowerCase();
-  if (!hay.trim()) return undefined;
-  for (const rule of SUBCATEGORY_RULES) {
-    if (rule.patterns.some((p) => p.test(hay))) return rule.key;
+  if (hay.trim()) {
+    for (const rule of SUBCATEGORY_RULES) {
+      if (rule.patterns.some((p) => p.test(hay))) return rule.key;
+    }
+  }
+  const titleHay = (title ?? '').toLowerCase();
+  for (const rule of TITLE_FALLBACK_RULES) {
+    if (rule.patterns.some((p) => p.test(titleHay))) return rule.key;
   }
   return undefined;
 }
@@ -293,7 +309,7 @@ function normalizeAwinRow(
     description_long: row.description,
     brand: row.brand,
     category: cfg.category ?? DEFAULT_CATEGORY,
-    subcategory: guessSubcategory(row.google_product_category, row.product_type),
+    subcategory: guessSubcategory(row.google_product_category, row.product_type, row.title),
     price_cents: priceCents,
     currency,
     compare_at_price_cents: compareCents,
