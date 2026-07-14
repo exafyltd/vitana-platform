@@ -50,8 +50,8 @@
  *     "max_products_per_feed": 500,
  *     "max_rows_scanned": 50000,
  *     "merchant_country": "US",
- *     "ships_to_countries": ["US"],
- *     "ships_to_regions": ["US"]
+ *     "ships_to_countries": ["DE", "AT", "US", ...],
+ *     "ships_to_regions": ["EU", "US"]
  *   }
  *
  * The download_token in each feed_url is a personal export credential tied
@@ -90,8 +90,14 @@ interface AwinSourceConfig {
 }
 
 const DEFAULT_CATEGORY = 'skincare';
-const DEFAULT_SHIPS_TO_COUNTRIES = ['US'];
-const DEFAULT_SHIPS_TO_REGIONS = ['US'];
+// Confirmed with the operator: MISSHA US ships to the EU/Germany too, not
+// just the US despite the storefront name — the feed itself carries no
+// shipping data to derive this from. Mirrors admitad-sync.ts's default
+// (broad dropship-style coverage) rather than assuming "US" from a brand name.
+const DEFAULT_SHIPS_TO_COUNTRIES = [
+  'DE', 'AT', 'CH', 'FR', 'IT', 'ES', 'NL', 'BE', 'PL', 'SE', 'DK', 'FI', 'GB', 'IE', 'US', 'CA', 'AE', 'SA',
+];
+const DEFAULT_SHIPS_TO_REGIONS = ['EU', 'UK', 'US', 'MENA', 'GLOBAL'];
 
 async function loadSourceConfigs(): Promise<AwinSourceConfig[]> {
   const supabase = getSupabase();
