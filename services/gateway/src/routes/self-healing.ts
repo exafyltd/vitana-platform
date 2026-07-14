@@ -42,6 +42,11 @@ import {
   AutonomyLevel,
   ENDPOINT_FILE_MAP,
 } from '../types/self-healing';
+import {
+  requireServiceOrAdmin,
+  requireAdminOnly,
+  getControlPlaneActor,
+} from '../middleware/require-service-or-admin';
 
 const router = Router();
 
@@ -66,6 +71,9 @@ function supabaseHeaders() {
 // Config helpers
 // ═══════════════════════════════════════════════════════════════════
 
+// FAIL-CLOSED (audit P0-5): a degraded control plane must never GRANT authority.
+// If we cannot positively confirm self-healing is enabled, treat it as disabled.
+// The row must exist AND not be explicitly false for self-healing to run.
 async function isSelfHealingEnabled(): Promise<boolean> {
   if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) return false;
   try {
@@ -73,31 +81,55 @@ async function isSelfHealingEnabled(): Promise<boolean> {
       `${SUPABASE_URL}/rest/v1/system_config?key=eq.self_healing_enabled&select=value`,
       { headers: supabaseHeaders() },
     );
-    if (!resp.ok) return true; // default enabled
+    if (!resp.ok) {
+      console.error('[self-healing][FAIL-CLOSED] enabled-check HTTP error — treating as DISABLED');
+      return false;
+    }
     const rows = (await resp.json()) as Array<{ value: unknown }>;
-    if (rows.length === 0) return true;
+    if (rows.length === 0) {
+      console.error('[self-healing][FAIL-CLOSED] no self_healing_enabled config row — treating as DISABLED');
+      return false;
+    }
     return rows[0].value !== false && rows[0].value !== 'false';
-  } catch {
-    return true; // default enabled
+  } catch (err: any) {
+    console.error(`[self-healing][FAIL-CLOSED] enabled-check exception (${err?.message}) — treating as DISABLED`);
+    return false;
   }
 }
 
 // VTID-02032: Exported alongside processFailingService so the routines
 // bridge runs at the same autonomy level as the canonical /report path.
+// FAIL-CLOSED (audit P0-5): a control-plane outage must not INCREASE authority.
+// Every failure/ambiguity resolves to OBSERVE_ONLY (the lowest, log-only level)
+// instead of the previous AUTO_FIX_SIMPLE default that silently re-armed level 3.
 export async function getAutonomyLevel(): Promise<AutonomyLevel> {
-  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) return AutonomyLevel.AUTO_FIX_SIMPLE;
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
+    console.error('[self-healing][FAIL-CLOSED] autonomy-level: Supabase not configured — OBSERVE_ONLY');
+    return AutonomyLevel.OBSERVE_ONLY;
+  }
   try {
     const resp = await fetch(
       `${SUPABASE_URL}/rest/v1/system_config?key=eq.self_healing_autonomy_level&select=value`,
       { headers: supabaseHeaders() },
     );
-    if (!resp.ok) return AutonomyLevel.AUTO_FIX_SIMPLE;
+    if (!resp.ok) {
+      console.error('[self-healing][FAIL-CLOSED] autonomy-level HTTP error — OBSERVE_ONLY');
+      return AutonomyLevel.OBSERVE_ONLY;
+    }
     const rows = (await resp.json()) as Array<{ value: unknown }>;
-    if (rows.length === 0) return AutonomyLevel.AUTO_FIX_SIMPLE;
+    if (rows.length === 0) {
+      console.error('[self-healing][FAIL-CLOSED] no autonomy-level config row — OBSERVE_ONLY');
+      return AutonomyLevel.OBSERVE_ONLY;
+    }
     const level = Number(rows[0].value);
-    return isNaN(level) ? AutonomyLevel.AUTO_FIX_SIMPLE : level as AutonomyLevel;
-  } catch {
-    return AutonomyLevel.AUTO_FIX_SIMPLE;
+    if (isNaN(level)) {
+      console.error('[self-healing][FAIL-CLOSED] autonomy-level parse failure — OBSERVE_ONLY');
+      return AutonomyLevel.OBSERVE_ONLY;
+    }
+    return level as AutonomyLevel;
+  } catch (err: any) {
+    console.error(`[self-healing][FAIL-CLOSED] autonomy-level exception (${err?.message}) — OBSERVE_ONLY`);
+    return AutonomyLevel.OBSERVE_ONLY;
   }
 }
 
@@ -152,8 +184,11 @@ async function shouldBeginDiagnosis(endpoint: string): Promise<{ proceed: boolea
 
     return { proceed: true };
   } catch (err: any) {
-    console.warn(`[self-healing] Dedup check error: ${err.message}`);
-    return { proceed: true }; // allow on error — better to try than to silently skip
+    // FAIL-CLOSED (audit P0-5): if we cannot evaluate the dedup / circuit-breaker
+    // guards, do NOT dispatch. Proceeding on error was how a degraded control
+    // plane bypassed the one-active-VTID-per-endpoint and 5/24h attempt caps.
+    console.error(`[self-healing][FAIL-CLOSED] dedup check error (${err?.message}) — skipping to avoid ungated dispatch`);
+    return { proceed: false, reason: `dedup check failed: ${err?.message}` };
   }
 }
 
@@ -361,7 +396,7 @@ router.get('/health', (_req: Request, res: Response) => {
  * POST /report — Receive health report from collect-status.py
  * Triggers the self-healing pipeline for each down service.
  */
-router.post('/report', async (req: Request, res: Response) => {
+router.post('/report', requireServiceOrAdmin, async (req: Request, res: Response) => {
   try {
     const report = req.body as HealthReport;
 
@@ -499,7 +534,7 @@ router.post('/report', async (req: Request, res: Response) => {
 /**
  * POST /kill-switch — Enable or disable self-healing
  */
-router.post('/kill-switch', async (req: Request, res: Response) => {
+router.post('/kill-switch', requireAdminOnly, async (req: Request, res: Response) => {
   try {
     const { action, operator, reason } = req.body as {
       action: 'activate' | 'deactivate';
@@ -546,7 +581,7 @@ router.post('/kill-switch', async (req: Request, res: Response) => {
       source: 'self-healing',
       status: action === 'activate' ? 'warning' : 'info',
       message: `Self-healing kill switch ${action}d by ${operator || 'api'}`,
-      payload: { operator, reason, enabled },
+      payload: { operator, reason, enabled, actor: getControlPlaneActor(req) },
     });
 
     await notifyGChat(
@@ -579,7 +614,7 @@ router.get('/config', async (_req: Request, res: Response) => {
 /**
  * PATCH /config — Update autonomy level
  */
-router.patch('/config', async (req: Request, res: Response) => {
+router.patch('/config', requireAdminOnly, async (req: Request, res: Response) => {
   try {
     const { autonomy_level, operator } = req.body as { autonomy_level: number; operator?: string };
 
@@ -830,7 +865,7 @@ router.get('/pending-approval', async (req: Request, res: Response) => {
  * dispatches the existing fix spec to the worker orchestrator with the
  * same bounded retry as the auto-approved path.
  */
-router.post('/approve', async (req: Request, res: Response) => {
+router.post('/approve', requireAdminOnly, async (req: Request, res: Response) => {
   try {
     if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
       return res.status(500).json({ ok: false, error: 'Supabase not configured' });
@@ -938,7 +973,7 @@ router.post('/approve', async (req: Request, res: Response) => {
  * Marks the self_healing_log row as escalated with human_rejected reason
  * so it leaves the Awaiting Approval list and lands in history.
  */
-router.post('/reject', async (req: Request, res: Response) => {
+router.post('/reject', requireAdminOnly, async (req: Request, res: Response) => {
   try {
     if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
       return res.status(500).json({ ok: false, error: 'Supabase not configured' });
@@ -1035,7 +1070,7 @@ router.get('/snapshots/:vtid', async (req: Request, res: Response) => {
 /**
  * POST /verify/:vtid — Manually trigger post-fix verification
  */
-router.post('/verify/:vtid', async (req: Request, res: Response) => {
+router.post('/verify/:vtid', requireAdminOnly, async (req: Request, res: Response) => {
   try {
     const { vtid } = req.params;
     console.log(`[self-healing] Manual verification triggered for ${vtid}`);
@@ -1050,7 +1085,7 @@ router.post('/verify/:vtid', async (req: Request, res: Response) => {
 /**
  * POST /rollback/:vtid — Manually trigger rollback
  */
-router.post('/rollback/:vtid', async (req: Request, res: Response) => {
+router.post('/rollback/:vtid', requireAdminOnly, async (req: Request, res: Response) => {
   try {
     if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
       return res.status(500).json({ ok: false, error: 'Supabase not configured' });
