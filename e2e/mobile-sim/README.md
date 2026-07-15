@@ -37,7 +37,9 @@ npm run test:device       # iOS Simulator, staging URL, smoke flow
 ```
 
 Options (after `--`): `--url <url>` (default `$COMMUNITY_URL` or
-`https://preview.vitanaland.com`), `--flow smoke|observe`,
+`https://preview.vitanaland.com`, **+`/maxina`** — the bare domain root is
+the multi-tenant portal-selector grid with no login form; `/maxina` is the
+actual community app + auth screen), `--flow smoke|observe`,
 `--platform ios|android`, `--device <UDID|serial>`, `--out <dir>`.
 
 Login credentials come from `TEST_USER_EMAIL` / `TEST_USER_PASSWORD` (same

@@ -24,9 +24,9 @@ on:
   workflow_dispatch:
     inputs:
       url:
-        description: 'Frontend URL to test'
+        description: 'Frontend URL to test (the bare domain is the portal-selector — use /maxina for the actual app + login)'
         required: false
-        default: 'https://preview.vitanaland.com'
+        default: 'https://preview.vitanaland.com/maxina'
       flow:
         description: 'Flow to run'
         type: choice

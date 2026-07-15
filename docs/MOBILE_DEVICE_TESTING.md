@@ -20,7 +20,10 @@ Playwright suites provide.
 
 Both layers test the same deployed URLs (staging
 `preview.vitanaland.com` by default; prod `vitanaland.com`; per-PR
-previews `community-app-pr-<n>`).
+previews `community-app-pr-<n>`) — but the device layer opens a browser at
+a real URL rather than injecting a route via the test harness, so it must
+target an actual app screen. `/maxina` (not the bare domain root, which is
+a portal-selector page — see below) is the smoke flow's default.
 
 ## What sim-use is
 
@@ -74,12 +77,19 @@ you what that host can do and how to fix or where to fall back.
 
 ```bash
 sim-use android init --device <serial>   # installs the bridge APK
-adb -s <serial> shell am start -a android.intent.action.VIEW -d https://preview.vitanaland.com
+adb -s <serial> shell am start -a android.intent.action.VIEW -d https://preview.vitanaland.com/maxina
 sim-use ui --device <serial>
 ```
 
 ## Conventions
 
+- **Target `/maxina`, not the bare domain root.** `/` renders
+  `src/pages/Index.tsx` — a multi-tenant portal-selector grid (Maxina /
+  AlKalma / Earthlinks / Exafy Admin cards), not the community app. It has
+  no login form and no bottom nav, so a flow pointed there will correctly
+  find nothing to authenticate or tap — that's not a failure, it's the
+  wrong entry URL. `/maxina` (`src/pages/portals/MaxinaPortal.tsx`) is the
+  actual sign-in screen; `run.mjs`'s default URL already appends it.
 - Test **staging or PR previews** by default; prod only when explicitly
   asked (consistent with the staging-first cutover, CLAUDE.md §16).
 - The smoke flow discovers nav from the accessibility tree instead of

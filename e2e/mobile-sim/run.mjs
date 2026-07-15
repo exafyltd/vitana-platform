@@ -27,8 +27,13 @@ import { doctor } from './doctor.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
+// The bare root ("/") is the multi-tenant portal-selector grid (Maxina /
+// AlKalma / Earthlinks / Exafy Admin cards) — no login form, no bottom nav.
+// The actual community app + auth form lives at /maxina (src/pages/portals/
+// MaxinaPortal.tsx). Default there so the smoke flow reaches a real login
+// screen instead of the portal chooser.
 const DEFAULT_URL =
-  process.env.COMMUNITY_URL || 'https://preview.vitanaland.com';
+  (process.env.COMMUNITY_URL || 'https://preview.vitanaland.com').replace(/\/$/, '') + '/maxina';
 
 const { values: args } = parseArgs({
   options: {

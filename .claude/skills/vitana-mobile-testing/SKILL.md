@@ -53,7 +53,7 @@ the observe → act → verify loop:
 
 ```bash
 UDID=$(xcrun simctl list devices booted -j | python3 -c "import json,sys; print(json.load(sys.stdin)['devices'].__iter__().__next__() if False else [d['udid'] for l in json.load(sys.stdin)['devices'].values() for d in l][0])" 2>/dev/null || sim-use devices)
-xcrun simctl openurl "$UDID" "https://preview.vitanaland.com"   # open the app
+xcrun simctl openurl "$UDID" "https://preview.vitanaland.com/maxina"  # open the app (NOT the bare root)
 sim-use ui --device "$UDID"                                     # observe
 sim-use tap --label "Anmelden" --device "$UDID"                 # act
 sim-use ui --device "$UDID"                                     # verify
@@ -74,10 +74,17 @@ Vitana specifics to keep in mind:
 - **Login:** the scripted flow (`flows/login.mjs`) drives the real form. For
   quick manual sessions the browser may still hold a previous session —
   navigate to `/logout` to reset.
-- **Environments:** staging `https://preview.vitanaland.com` (default),
-  prod `https://vitanaland.com`, per-PR previews
-  `https://community-app-pr-<n>-*.run.app`. Test staging/PR previews unless
-  explicitly asked to check prod.
+- **The bare domain root is NOT the app.** `/` renders the multi-tenant
+  portal-selector grid (Maxina / AlKalma / Earthlinks / Exafy Admin cards) —
+  no login form, no bottom nav. That's by design, not a bug — a flow that
+  finds nothing to tap there hasn't failed. The community app (551+ screens,
+  real login form) lives at **`/maxina`** — `run.mjs`'s default URL already
+  appends it; when opening the app manually via `xcrun simctl openurl` or
+  `adb shell am start`, target `/maxina` too.
+- **Environments:** staging `https://preview.vitanaland.com/maxina`
+  (default), prod `https://vitanaland.com/maxina`, per-PR previews
+  `https://community-app-pr-<n>-*.run.app/maxina`. Test staging/PR previews
+  unless explicitly asked to check prod.
 
 ## 3. Android
 
