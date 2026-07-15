@@ -13,6 +13,7 @@ import { z } from 'zod';
 import { randomUUID } from 'crypto';
 import { getSupabase } from '../lib/supabase';
 import { requireAuth } from '../middleware/auth-supabase-jwt';
+import { emitOasisEvent } from '../services/oasis-event-service';
 
 const router = Router();
 router.use(requireAuth as any);
@@ -97,6 +98,16 @@ router.post('/recommendations', async (req: Request, res: Response) => {
       return res.status(500).json({ ok: false, error: 'RECOMMENDATION_CREATE_FAILED', message: createErr?.message });
     }
     recommendationId = created.id;
+
+    await emitOasisEvent({
+      type: 'discover.recommendation.created' as any,
+      source: 'gateway',
+      vtid: 'VTID-02950',
+      status: 'info',
+      message: `User recommended product ${product_id}`,
+      actor_id: userId,
+      payload: { tenant_id: tenantId, user_id: userId, product_id, recommendation_id: recommendationId },
+    }).catch(() => { /* non-fatal, mirrors emitAdminActivity's swallow pattern */ });
   }
 
   const origin = (process.env.COMMUNITY_APP_URL || 'https://community-app-q74ibpv6ia-uc.a.run.app').replace(/\/+$/, '');
