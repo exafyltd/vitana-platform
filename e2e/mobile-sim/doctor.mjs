@@ -18,9 +18,12 @@ const ok = m => console.log(`  ✓ ${m}`);
 const warn = m => console.log(`  ! ${m}`);
 const fail = m => console.log(`  ✗ ${m}`);
 
+// Generous timeout: on a cold CI runner (simulator mid-boot, Gatekeeper
+// assessing fresh binaries) first invocations can take 15-30s — a tight
+// timeout here misreports installed tools as missing (seen on macos-15).
 async function has(bin, args = ['--version']) {
   try {
-    const { stdout } = await execFileP(bin, args, { timeout: 15_000 });
+    const { stdout } = await execFileP(bin, args, { timeout: 60_000 });
     return stdout.trim().split('\n')[0];
   } catch {
     return null;

@@ -67,7 +67,11 @@ jobs:
           xcrun simctl bootstatus "$UDID" -b
           echo "udid=$UDID" >> "$GITHUB_OUTPUT"
 
-      - name: Preflight (sim-use doctor)
+      # Advisory only: on a loaded runner the probes can be slow and a false
+      # negative here must not kill the run — the flow step below fails
+      # loudly on its own if sim-use is genuinely unusable.
+      - name: Preflight (sim-use doctor, advisory)
+        continue-on-error: true
         run: cd e2e && npm run sim:doctor
 
       - name: Run device flow
