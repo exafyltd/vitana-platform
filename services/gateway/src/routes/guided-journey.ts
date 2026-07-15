@@ -18,6 +18,7 @@ import {
   getJourneyState,
   setJourneyMode,
   completePractice,
+  recordListenedSession,
 } from '../services/guided-journey/guided-journey-state';
 import { recordSessionListen } from '../services/guided-journey/journey-index-award';
 import { emitOasisEvent } from '../services/oasis-event-service';
@@ -115,22 +116,30 @@ router.post('/practice-complete', requireAuth, async (req: AuthenticatedRequest,
   }
 });
 
-// BOOTSTRAP-GUIDED-JOURNEY-POPUP — award +2 Vitana Index points for listening
-// to a session. Fired when the user taps a topic and Vitana narrates it (the
-// Topic Explanation popup then appears). Idempotent per topic: replays never
-// double-award. The bonus surfaces on the user-facing Vitana Index read.
-// POST /api/v1/journey/session-listened  { topicId } → { ok, awarded, points }.
+// BOOTSTRAP-GUIDED-JOURNEY-POPUP — the user listened to a guided session.
+// Fired when the user taps a session/topic and Vitana narrates it. Does TWO
+// things, in priority order:
+//   1) DURABLE PROGRESS (primary): advance `current_session` so the "Sitzung N"
+//      ring reads from the account, not per-browser localStorage. This is the
+//      fix for the ring resetting and for staging/production showing different
+//      numbers for the same user — both now read the same server-side marker.
+//   2) +2 VITANA INDEX AWARD (best-effort): idempotent per topic; replays never
+//      double-award. Wrapped so a failure here (e.g. the awards ledger table not
+//      yet provisioned) can NEVER fail the durable progress write above.
+// POST /api/v1/journey/session-listened  { session, topicId? }
+//   → { ok, awarded, points, current_session }.
 router.post('/session-listened', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   const userId = req.identity?.user_id;
   if (!userId) {
     return res.status(401).json({ ok: false, error: 'unauthenticated', vtid: 'BOOTSTRAP-GUIDED-JOURNEY-POPUP' });
   }
-  const topicId = req.body?.topicId as unknown;
-  if (typeof topicId !== 'string' || !topicId.trim()) {
+  const session = Number(req.body?.session);
+  const topicId = typeof req.body?.topicId === 'string' ? req.body.topicId.trim() : '';
+  if (!Number.isInteger(session) || session <= 0) {
     return res.status(400).json({
       ok: false,
-      error: 'invalid_topic_id',
-      detail: 'topicId is required',
+      error: 'invalid_session',
+      detail: 'session (positive integer) is required',
       vtid: 'BOOTSTRAP-GUIDED-JOURNEY-POPUP',
     });
   }
@@ -138,44 +147,60 @@ router.post('/session-listened', requireAuth, async (req: AuthenticatedRequest, 
   if (!client) {
     return res.status(500).json({ ok: false, error: 'supabase_not_configured', vtid: 'BOOTSTRAP-GUIDED-JOURNEY-POPUP' });
   }
+
+  // 1) Durable progress — must succeed. A failure here is a real error.
+  let state;
   try {
-    const result = await recordSessionListen(client, userId, topicId.trim());
-    // Record the index movement only on a real first-time award (the state
-    // transition), mirroring the calendar path's `index.recomputed` event so the
-    // +2 surfaces in the user's Index movement history. Replays award nothing →
-    // no event. Best-effort: never block the response on OASIS.
-    if (result.awarded) {
-      // Best-effort; emitOasisEvent never throws (internal try/catch returns
-      // { ok:false }), so `void` is safe. actor_id attributes it to the user so
-      // the +2 shows up in their Vitana Index movement history (last_movement).
-      void emitOasisEvent({
-        vtid: 'SYSTEM',
-        type: 'index.recomputed' as any,
-        source: 'guided-journey-api',
-        actor_id: userId,
-        surface: 'api',
-        status: 'info',
-        message: `Vitana Index +${result.points} for listening to a guided session (${topicId.trim()})`,
-        payload: {
-          user_id: userId,
-          topic_id: topicId.trim(),
-          delta_total: result.points,
-          total_bonus: result.totalBonus,
-          reason: 'guided_session_listen',
-        },
-      });
-    }
-    return res.json({
-      ok: true,
-      awarded: result.awarded,
-      points: result.points,
-      total_bonus: result.totalBonus,
-      vtid: 'BOOTSTRAP-GUIDED-JOURNEY-POPUP',
-    });
+    state = await recordListenedSession(client, userId, session);
   } catch (err: any) {
-    console.error(`[BOOTSTRAP-GUIDED-JOURNEY-POPUP] session-listened failed: ${err?.message}`);
+    console.error(`[BOOTSTRAP-GUIDED-JOURNEY-POPUP] session-listened persist failed: ${err?.message}`);
     return res.status(500).json({ ok: false, error: 'session_listened_failed', vtid: 'BOOTSTRAP-GUIDED-JOURNEY-POPUP' });
   }
+
+  // 2) +2 Vitana Index award — best-effort, keyed by topic. Never blocks or
+  //    fails the durable progress write. Logged (not silenced) on failure.
+  let awarded = false;
+  let points = 0;
+  let totalBonus = 0;
+  if (topicId) {
+    try {
+      const result = await recordSessionListen(client, userId, topicId);
+      awarded = result.awarded;
+      points = result.points;
+      totalBonus = result.totalBonus;
+      if (result.awarded) {
+        // Mirror the calendar path's `index.recomputed` event so the +2 surfaces
+        // in the user's Index movement history. emitOasisEvent never throws.
+        void emitOasisEvent({
+          vtid: 'SYSTEM',
+          type: 'index.recomputed' as any,
+          source: 'guided-journey-api',
+          actor_id: userId,
+          surface: 'api',
+          status: 'info',
+          message: `Vitana Index +${result.points} for listening to a guided session (${topicId})`,
+          payload: {
+            user_id: userId,
+            topic_id: topicId,
+            delta_total: result.points,
+            total_bonus: result.totalBonus,
+            reason: 'guided_session_listen',
+          },
+        });
+      }
+    } catch (err: any) {
+      console.warn(`[BOOTSTRAP-GUIDED-JOURNEY-POPUP] index award skipped (non-fatal): ${err?.message}`);
+    }
+  }
+
+  return res.json({
+    ok: true,
+    awarded,
+    points,
+    total_bonus: totalBonus,
+    current_session: state.currentSession,
+    vtid: 'BOOTSTRAP-GUIDED-JOURNEY-POPUP',
+  });
 });
 
 export default router;
