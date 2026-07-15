@@ -220,6 +220,126 @@ async function* streamAwinRows(
   if (streamError) throw streamError;
 }
 
+// ==================== Feed discovery ====================
+
+/**
+ * A product feed the publisher account can access, as returned by Awin's
+ * datafeed *list* endpoint. This is what removes the manual "go find the
+ * feed_id in the dashboard" step: call listAwinFeeds() and you get every
+ * feed_id / advertiser_id pair you're entitled to, ready to drop into the
+ * `feeds` array of an Awin source config.
+ */
+export interface AwinAvailableFeed {
+  feed_id: string;
+  advertiser_id: string;
+  advertiser_name: string;
+  primary_region?: string;
+  membership_status?: string;
+  language?: string;
+  vertical?: string;
+  product_count?: number;
+}
+
+/**
+ * Minimal RFC-4180 CSV row parser — handles quoted fields containing commas
+ * and doubled-quote escapes. Awin advertiser names routinely contain commas
+ * ("Acme Health, Inc."), so a naive split() corrupts the columns.
+ */
+function parseCsvLine(line: string): string[] {
+  const out: string[] = [];
+  let cur = '';
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (inQuotes) {
+      if (ch === '"') {
+        if (line[i + 1] === '"') { cur += '"'; i++; } // escaped quote
+        else inQuotes = false;
+      } else cur += ch;
+    } else if (ch === '"') {
+      inQuotes = true;
+    } else if (ch === ',') {
+      out.push(cur); cur = '';
+    } else cur += ch;
+  }
+  out.push(cur);
+  return out.map((s) => s.trim());
+}
+
+/**
+ * List every product data feed this publisher's API key can download.
+ *
+ * Awin exposes a CSV catalog of feeds at
+ *   https://productdata.awin.com/datafeed/list/apikey/{key}/
+ * with one row per feed the account is entitled to (joined advertisers that
+ * publish a datafeed). We map the columns we care about by HEADER NAME rather
+ * than position, since Awin has reordered/extended the export over time.
+ *
+ * @param apiKey  the publisher datafeed API key (path-stamped, not Bearer)
+ * @param opts.joinedOnly  keep only rows whose membership status looks joined/active
+ */
+export async function listAwinFeeds(
+  apiKey: string,
+  opts: { joinedOnly?: boolean } = {}
+): Promise<AwinAvailableFeed[]> {
+  if (!apiKey) throw new Error('listAwinFeeds: apiKey required');
+  const url = `https://productdata.awin.com/datafeed/list/apikey/${encodeURIComponent(apiKey)}/`;
+  const resp = await fetch(url, { headers: { Accept: 'text/csv' } });
+  if (!resp.ok) {
+    const body = await resp.text().catch(() => '(no body)');
+    throw new Error(`Awin feed list HTTP ${resp.status} ${body.slice(0, 300)}`);
+  }
+  const text = await resp.text();
+  const lines = text.split(/\r?\n/).filter((l) => l.trim().length > 0);
+  if (lines.length < 2) return [];
+
+  const header = parseCsvLine(lines[0]).map((h) => h.toLowerCase());
+  const idx = (...names: string[]) => {
+    for (const n of names) {
+      const i = header.indexOf(n);
+      if (i !== -1) return i;
+    }
+    return -1;
+  };
+  const iFeed = idx('feed id', 'feedid', 'feed_id');
+  const iAdv = idx('advertiser id', 'advertiserid', 'advertiser_id');
+  const iName = idx('advertiser name', 'advertisername', 'advertiser_name');
+  const iRegion = idx('primary region', 'region');
+  const iStatus = idx('membership status', 'membership', 'status');
+  const iLang = idx('language', 'languages');
+  const iVertical = idx('vertical', 'sector');
+  const iCount = idx('no of products', 'number of products', 'products');
+
+  if (iFeed === -1 || iAdv === -1) {
+    throw new Error(`Awin feed list: unexpected columns [${header.join(', ')}]`);
+  }
+
+  const feeds: AwinAvailableFeed[] = [];
+  for (let r = 1; r < lines.length; r++) {
+    const cols = parseCsvLine(lines[r]);
+    const feed_id = cols[iFeed];
+    const advertiser_id = cols[iAdv];
+    if (!feed_id || !advertiser_id) continue;
+    const membership_status = iStatus !== -1 ? cols[iStatus] : undefined;
+    if (opts.joinedOnly && membership_status) {
+      const s = membership_status.toLowerCase();
+      if (!(s.includes('join') || s.includes('active') || s.includes('approved'))) continue;
+    }
+    const rawCount = iCount !== -1 ? Number((cols[iCount] || '').replace(/[^0-9]/g, '')) : NaN;
+    feeds.push({
+      feed_id,
+      advertiser_id,
+      advertiser_name: (iName !== -1 ? cols[iName] : '') || `Awin Advertiser ${advertiser_id}`,
+      primary_region: iRegion !== -1 ? cols[iRegion] || undefined : undefined,
+      membership_status,
+      language: iLang !== -1 ? cols[iLang] || undefined : undefined,
+      vertical: iVertical !== -1 ? cols[iVertical] || undefined : undefined,
+      product_count: Number.isFinite(rawCount) ? rawCount : undefined,
+    });
+  }
+  return feeds;
+}
+
 // ==================== Normalization ====================
 
 /** Parses a combined "11.50 USD" price string into cents + currency. */
