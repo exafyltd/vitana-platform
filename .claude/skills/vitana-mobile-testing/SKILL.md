@@ -40,7 +40,8 @@ The **smoke flow** opens the app in the device browser, logs in through the
 real form (env `TEST_USER_EMAIL` / `TEST_USER_PASSWORD`; defaults to the
 shared e2e user `e2e-test@vitana.dev`), discovers the bottom navigation from
 the live accessibility tree, taps every tab, verifies each screen changes,
-and saves a screenshot + outline per step to `e2e/mobile-sim/artifacts/`.
+and saves a screenshot + outline per step to `e2e/mobile-sim/artifacts/`,
+plus `session.mp4` — a video of the whole run for human review.
 
 In CI: dispatch `.github/workflows/MOBILE-DEVICE-E2E.yml` (macOS runner,
 iOS Simulator; artifacts uploaded).

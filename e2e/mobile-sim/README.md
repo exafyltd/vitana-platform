@@ -49,7 +49,9 @@ stderr (off by default).
 
 Artifacts land in `mobile-sim/artifacts/<platform>-<timestamp>/`:
 numbered screenshots, per-step accessibility outlines (`*.outline.txt`),
-and `summary.json`.
+`summary.json`, and `session.mp4` — a video recording of the entire run
+(browser opening, login being typed, every tab tap), so anyone can watch
+the test as a replay. Recording is best-effort and never fails the run.
 
 ## CI
 

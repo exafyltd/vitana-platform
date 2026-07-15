@@ -80,8 +80,26 @@ async function main() {
     password: process.env.TEST_USER_PASSWORD || '',
   };
 
-  if (args.flow === 'observe') await observeFlow(ctx);
-  else await smokeFlow(ctx);
+  // Record the whole session as MP4 (best-effort — a broken recorder must
+  // never fail the test run). Lands in the artifacts dir as session.mp4.
+  let recording = null;
+  try {
+    recording = sim.startRecording(join(outDir, 'session.mp4'));
+  } catch { /* recording unavailable — flows still run */ }
+
+  try {
+    if (args.flow === 'observe') await observeFlow(ctx);
+    else await smokeFlow(ctx);
+  } finally {
+    if (recording) {
+      const res = await recording.stop();
+      report.record({
+        label: 'session video',
+        ok: true, // informational — never fails the run
+        detail: res.ok ? 'session.mp4' : `recording unavailable: ${res.detail}`,
+      });
+    }
+  }
 
   const summary = report.finish({ device, platform, url: args.url });
   process.exit(summary.failed > 0 ? 1 : 0);

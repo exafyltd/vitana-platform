@@ -10,7 +10,7 @@
  * Requires a macOS host with sim-use installed (`brew tap lycorp-jp/tap &&
  * brew install lycorp-jp/tap/sim-use`). Run `npm run sim:doctor` to verify.
  */
-import { execFile } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 
 const execFileP = promisify(execFile);
@@ -181,6 +181,47 @@ export class SimUse {
   async screenshot(outputPath) {
     const { stdout } = await this.raw(['screenshot', '--output', outputPath]);
     return stdout.trim() || outputPath;
+  }
+
+  /**
+   * Start an MP4 recording of the device screen (cross-platform).
+   * sim-use record-video runs until interrupted and finalises the file on
+   * SIGINT, so this spawns it in the background and returns a handle:
+   *   const rec = sim.startRecording('run.mp4');
+   *   ... drive the device ...
+   *   const { ok } = await rec.stop();   // SIGINT + wait for finalise
+   * Best-effort by design — callers should treat a failed recording as a
+   * warning, never as a failed test run.
+   */
+  startRecording(outputPath, { fps = 10 } = {}) {
+    const args = ['record-video', '--fps', String(fps), '--output', outputPath, ...this.deviceArgs()];
+    this.log(`$ ${this.bin} ${args.join(' ')} (background)`);
+    const child = spawn(this.bin, args, { stdio: ['ignore', 'ignore', 'pipe'] });
+    let stderr = '';
+    child.stderr.on('data', d => { stderr += d; });
+    child.on('error', () => { /* surfaced via exitCode check in stop() */ });
+    const exited = new Promise(resolve => child.on('close', code => resolve(code)));
+    const killOnExit = () => child.kill('SIGKILL');
+    process.once('exit', killOnExit);
+    return {
+      path: outputPath,
+      async stop() {
+        process.removeListener('exit', killOnExit);
+        if (child.exitCode !== null) {
+          return { ok: false, path: outputPath, detail: stderr.trim() || 'recorder exited early' };
+        }
+        child.kill('SIGINT'); // sim-use finalises the MP4 before exiting
+        const code = await Promise.race([
+          exited,
+          new Promise(r => setTimeout(r, 20_000, 'timeout')),
+        ]);
+        if (code === 'timeout') {
+          child.kill('SIGKILL');
+          return { ok: false, path: outputPath, detail: 'finalise timed out after 20s' };
+        }
+        return { ok: code === 0, path: outputPath, detail: code === 0 ? '' : stderr.trim() };
+      },
+    };
   }
 
   /** `soft` | `hidden` — decides between paste default and --via-menu. */
