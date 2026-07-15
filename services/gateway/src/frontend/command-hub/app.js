@@ -12535,74 +12535,6 @@ async function triggerMarketplaceSync(network) {
 }
 
 // =============================================================================
-// VTID-02950 · Recommend & Earn — Awin order-conversion sync + commission rate
-// =============================================================================
-
-async function triggerAwinOrderSync() {
-    try {
-        showToast('Pulling Awin conversions…', 'info');
-        var resp = await fetch('/api/v1/admin/marketplace/sync-orders/awin', {
-            method: 'POST',
-            headers: Object.assign({ 'Content-Type': 'application/json' }, buildContextHeaders()),
-        });
-        var json = await resp.json();
-        if (!resp.ok || !json.ok) throw new Error(json.error || ('HTTP ' + resp.status));
-        var r = json.result || {};
-        showToast(
-            'Awin orders — fetched ' + (r.fetched||0) + ', attributed ' + (r.attributed||0) +
-            ', credited ' + (r.credited||0) + ', unattributed ' + (r.unattributed||0),
-            'success'
-        );
-    } catch (err) {
-        console.error('[VTID-02950] Awin order sync failed:', err);
-        showToast('Awin order sync failed: ' + err.message, 'error');
-    }
-}
-
-async function fetchCommissionSettings() {
-    state.adminCommissionSettingsLoading = true;
-    renderApp();
-    try {
-        var resp = await fetch('/api/v1/admin/marketplace/commission-settings', {
-            method: 'GET',
-            headers: buildContextHeaders(),
-        });
-        var json = await resp.json();
-        if (!resp.ok || !json.ok) throw new Error(json.error || ('HTTP ' + resp.status));
-        state.adminCommissionDefaultRate = json.default_rate;
-        state.adminCommissionSettingsFetched = true;
-    } catch (err) {
-        console.error('[VTID-02950] fetch commission settings failed:', err);
-    } finally {
-        state.adminCommissionSettingsLoading = false;
-        renderApp();
-    }
-}
-
-async function submitCommissionSettings(ratePercent) {
-    var rate = Number(ratePercent) / 100;
-    if (!isFinite(rate) || rate <= 0 || rate > 1) {
-        showToast('Rate must be between 0 and 100%', 'error');
-        return;
-    }
-    try {
-        var resp = await fetch('/api/v1/admin/marketplace/commission-settings', {
-            method: 'PATCH',
-            headers: Object.assign({ 'Content-Type': 'application/json' }, buildContextHeaders()),
-            body: JSON.stringify({ default_rate: rate }),
-        });
-        var json = await resp.json();
-        if (!resp.ok || !json.ok) throw new Error(json.error || ('HTTP ' + resp.status));
-        state.adminCommissionDefaultRate = json.default_rate;
-        showToast('Default recommendation commission rate saved: ' + (rate * 100).toFixed(0) + '%', 'success');
-        renderApp();
-    } catch (err) {
-        console.error('[VTID-02950] save commission settings failed:', err);
-        showToast('Save failed: ' + err.message, 'error');
-    }
-}
-
-// =============================================================================
 // VTID-03107 · Billing v1 — operator dashboard
 // =============================================================================
 // Operator tab at /command-hub/admin/billing-dashboard/.
@@ -13383,45 +13315,7 @@ function renderAdminMarketplaceShopsView() {
         })(providers[si].key, providers[si].display_name);
     }
 
-    // VTID-02950: pulls real Awin purchase conversions (distinct from the
-    // product-catalog sync buttons above) and credits recommendation
-    // commissions for any that carry an attribution_recommendation_id.
-    var awinOrderSyncBtn = document.createElement('button');
-    awinOrderSyncBtn.className = 'btn btn-secondary btn-sm';
-    awinOrderSyncBtn.textContent = 'Sync Awin Orders now';
-    awinOrderSyncBtn.title = 'Pulls real Awin purchase conversions and credits recommendation commissions';
-    awinOrderSyncBtn.onclick = function () { triggerAwinOrderSync(); };
-    toolbar.appendChild(awinOrderSyncBtn);
-
     container.appendChild(toolbar);
-
-    // VTID-02950: Recommend & Earn commission-rate panel
-    if (!state.adminCommissionSettingsFetched && !state.adminCommissionSettingsLoading) {
-        fetchCommissionSettings();
-    }
-    var commissionPanel = document.createElement('div');
-    commissionPanel.className = 'admin-panel';
-    commissionPanel.style.cssText = 'margin:1rem 0;padding:1rem;border:1px solid var(--border-color,#e2e2e2);border-radius:8px;';
-    var currentRatePct = state.adminCommissionDefaultRate != null ? (state.adminCommissionDefaultRate * 100).toFixed(0) : '20';
-    commissionPanel.innerHTML =
-        '<h3 style="margin:0 0 0.5rem;font-size:1rem;">Recommend &amp; Earn — default commission rate</h3>' +
-        '<p class="admin-detail-note" style="margin:0 0 0.75rem;">Recommenders earn this % of Vitana\'s own earned commission on a sale. ' +
-        'Override per-merchant on the Merchants screen. Amazon.ae is always excluded (affiliate terms forbid it).</p>' +
-        '<div style="display:flex;align-items:center;gap:0.5rem;">' +
-        '<input id="commission-rate-input" type="number" min="0" max="100" step="1" value="' + escapeHtml(currentRatePct) + '" ' +
-        'style="width:80px;" class="admin-input" />' +
-        '<span>%</span>' +
-        '<button id="commission-rate-save" class="btn btn-primary btn-sm">Save</button>' +
-        '</div>';
-    container.appendChild(commissionPanel);
-    // Wired after append (element must exist in the DOM for getElementById).
-    setTimeout(function () {
-        var saveBtn = document.getElementById('commission-rate-save');
-        var input = document.getElementById('commission-rate-input');
-        if (saveBtn && input) {
-            saveBtn.onclick = function () { submitCommissionSettings(input.value); };
-        }
-    }, 0);
 
     // Create form (collapsible)
     if (state.adminMpShopsShowCreateForm) {
