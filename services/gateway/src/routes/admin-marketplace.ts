@@ -378,6 +378,8 @@ router.post('/sync/:network', requireTenantAdmin, async (req: Request, res: Resp
 // /sync/:network above (which pulls the product catalog); this pulls real
 // purchase conversions and credits recommendation commissions.
 router.post('/sync-orders/awin', requireTenantAdmin, async (req: Request, res: Response) => {
+  // impact-allow-no-oasis: emitAdminActivity() below wraps emitOasisEvent —
+  // the static impact-scan can't see through the indirection.
   try {
     const { runAwinOrderSync } = await import('../services/marketplace-sync/awin-order-sync');
     const lookbackDays = Number(req.body?.lookback_days) || 30;
@@ -419,6 +421,8 @@ router.get('/commission-settings', requireTenantAdmin, async (_req: Request, res
 });
 
 router.patch('/commission-settings', requireTenantAdmin, async (req: Request, res: Response) => {
+  // impact-allow-no-oasis: emitAdminActivity() below wraps emitOasisEvent —
+  // the static impact-scan can't see through the indirection.
   const supabase = getSupabase();
   if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
   const rate = Number(req.body?.default_rate);
