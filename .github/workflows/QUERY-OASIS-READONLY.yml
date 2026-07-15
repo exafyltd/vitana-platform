@@ -1,0 +1,48 @@
+name: Query OASIS (read-only)
+# BOOTSTRAP-READONLY-QUERY: ad-hoc read-only SQL against Supabase from a
+# runner, for sessions where direct DB access is unavailable (e.g. Claude
+# Code cloud sessions behind a network egress allowlist). The connection is
+# forced read-only via default_transaction_read_only, so this cannot mutate
+# state regardless of the SQL passed in.
+on:
+  workflow_dispatch:
+    inputs:
+      sql:
+        description: 'Read-only SQL to run (result printed as JSON)'
+        required: true
+        default: >-
+          SELECT created_at, message, payload FROM oasis_events
+          WHERE type = 'voice.latency.measured'
+          ORDER BY created_at DESC LIMIT 20
+  # Push trigger: sessions whose GitHub integration lacks actions:write can
+  # run a query by editing query.sql next to this file and pushing. The
+  # workflow_dispatch input takes precedence when present.
+  push:
+    branches: ['claude/**']
+    paths:
+      - '.github/workflows/QUERY-OASIS-READONLY.yml'
+      - '.github/workflows/query.sql'
+
+jobs:
+  query:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run query
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          QUERY_SQL: ${{ inputs.sql }}
+        run: |
+          set -euo pipefail
+          sudo apt-get install -y postgresql-client > /dev/null 2>&1
+          if [ -z "${QUERY_SQL:-}" ] && [ -f .github/workflows/query.sql ]; then
+            QUERY_SQL=$(cat .github/workflows/query.sql)
+          fi
+          echo "=== QUERY ==="
+          echo "${QUERY_SQL}"
+          echo "=== RESULT_JSON_BEGIN ==="
+          PGOPTIONS="-c default_transaction_read_only=on" \
+            psql -v ON_ERROR_STOP=1 -t -A -P pager=off "${SUPABASE_DB_URL}" \
+            -c "SELECT COALESCE(json_agg(t), '[]'::json) FROM (${QUERY_SQL}) t;"
+          echo "=== RESULT_JSON_END ==="

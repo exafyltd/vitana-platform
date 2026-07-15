@@ -3,7 +3,21 @@
     "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
   },
   "permissions": {
-    "allow": ["Bash(*)", "Edit", "Write", "Skill"]
+    "allow": [
+      "Bash(*)",
+      "Edit",
+      "Write",
+      "Skill",
+      "Read",
+      "Glob",
+      "Grep",
+      "WebFetch",
+      "WebSearch",
+      "mcp__Supabase",
+      "mcp__github",
+      "mcp__claude-code-remote"
+    ],
+    "defaultMode": "dontAsk"
   },
   "hooks": {
     "PostToolUse": [
