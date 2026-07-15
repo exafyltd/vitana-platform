@@ -108,6 +108,8 @@ async function main() {
 
 main().catch(err => {
   console.error(`\nFatal: ${err.message}`);
+  if (err.command) console.error(`Command: ${err.command}`);
+  if (err.stderr?.trim()) console.error(`Stderr: ${err.stderr.trim()}`);
   if (err.hint) console.error(`Hint: ${err.hint}`);
   process.exit(1);
 });

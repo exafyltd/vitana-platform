@@ -16,15 +16,21 @@ import { promisify } from 'node:util';
 const execFileP = promisify(execFile);
 
 const DEFAULT_TIMEOUT_MS = 60_000;
+// `ui` on a just-booted simulator pays for the daemon's first FBSimulatorControl
+// + accessibility-tree init, which can run well past 60s on a loaded/virtualized
+// CI Mac (observed: cold `ui` timing out with no stderr — a bare SIGTERM kill,
+// not a reported error). Give the observe path more headroom than fast act calls.
+const OBSERVE_TIMEOUT_MS = 120_000;
 
 export class SimUseError extends Error {
-  constructor(message, { command, stdout, stderr, hint } = {}) {
+  constructor(message, { command, stdout, stderr, hint, timedOut } = {}) {
     super(message);
     this.name = 'SimUseError';
     this.command = command;
     this.stdout = stdout;
     this.stderr = stderr;
     this.hint = hint;
+    this.timedOut = timedOut;
   }
 }
 
@@ -59,17 +65,26 @@ export class SimUse {
           hint: 'Install on macOS: brew tap lycorp-jp/tap && brew install lycorp-jp/tap/sim-use',
         });
       }
-      throw new SimUseError(`sim-use command failed: ${err.message}`, {
-        command: `${this.bin} ${full.join(' ')}`,
-        stdout: err.stdout,
-        stderr: err.stderr,
-      });
+      const timedOut = err.killed === true && (err.signal === 'SIGTERM' || err.signal === 'SIGKILL');
+      const detail = [err.stderr?.trim(), err.stdout?.trim()].filter(Boolean).join(' | ');
+      throw new SimUseError(
+        timedOut
+          ? `sim-use command timed out after ${timeoutMs}ms with no output (daemon may still be initialising)`
+          : `sim-use command failed: ${detail || err.message}`,
+        {
+          command: `${this.bin} ${full.join(' ')}`,
+          stdout: err.stdout,
+          stderr: err.stderr,
+          timedOut,
+          hint: timedOut ? 'Retry — first `ui` call on a cold simulator can be slow. Persistent timeouts may indicate the sim-use daemon needs a restart (`sim-use daemon stop --all`).' : undefined,
+        },
+      );
     }
   }
 
   /** Run a sim-use command with --json and return the parsed data payload. */
   async json(args, opts = {}) {
-    const { stdout } = await this.raw([...args, '--json'], opts);
+    const { stdout } = await this.raw([...args, '--json'], { timeoutMs: OBSERVE_TIMEOUT_MS, ...opts });
     let envelope;
     try {
       envelope = JSON.parse(stdout);
@@ -105,17 +120,23 @@ export class SimUse {
    * the structured JSON envelope data (entries with frames, aliases, lists).
    */
   async ui() {
-    const [{ stdout }, data] = [
-      await this.raw(['ui']),
-      await this.json(['ui']),
-    ];
+    const data = await this.json(['ui']);
+    const { stdout } = await this.raw(['ui'], { timeoutMs: OBSERVE_TIMEOUT_MS });
     return { outline: stdout.trim(), data };
   }
 
-  /** Outline only — cheapest observe call. */
-  async outline() {
-    const { stdout } = await this.raw(['ui']);
-    return stdout.trim();
+  /** Outline only — cheapest observe call. Slow on a cold daemon; see OBSERVE_TIMEOUT_MS. */
+  async outline({ retries = 0, retryDelayMs = 5000, onRetry } = {}) {
+    for (let attempt = 0; ; attempt++) {
+      try {
+        const { stdout } = await this.raw(['ui'], { timeoutMs: OBSERVE_TIMEOUT_MS });
+        return stdout.trim();
+      } catch (err) {
+        if (attempt >= retries || !err.timedOut) throw err;
+        onRetry?.(attempt + 1, err);
+        await new Promise(r => setTimeout(r, retryDelayMs));
+      }
+    }
   }
 
   /**

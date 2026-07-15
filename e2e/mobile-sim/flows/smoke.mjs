@@ -17,8 +17,15 @@ import { loginFlow } from './login.mjs';
 
 const TAPPABLE_RE = /Button|Link|Tab|Cell|Image/i;
 
-async function observe(sim, report, label, { screenshot = true } = {}) {
-  const outline = await sim.outline();
+async function observe(sim, report, label, { screenshot = true, retries = 0 } = {}) {
+  const outline = await sim.outline({
+    retries,
+    onRetry: (n, err) => report.record({
+      label: `${label} (retry ${n})`,
+      ok: true,
+      detail: `sim-use ui timed out, retrying: ${err.message}`,
+    }),
+  });
   let shot;
   if (screenshot) {
     shot = report.screenshotPath(label);
@@ -33,7 +40,10 @@ export async function smokeFlow(ctx) {
   // 1. Open the app in the device browser
   await openUrl({ device, platform, url });
   await sleep(8000); // browser launch + SPA boot
-  const first = await observe(sim, report, 'app loaded');
+  // First observe pays for the daemon's cold FBSimulatorControl + AX init on
+  // a just-booted simulator — retry through transient timeouts here so a
+  // slow (not broken) daemon doesn't fail the whole run.
+  const first = await observe(sim, report, 'app loaded', { retries: 2 });
   const blank = first.outline.split('\n').length < 4;
   report.record({
     label: 'app loaded',
@@ -115,7 +125,14 @@ export async function smokeFlow(ctx) {
 export async function observeFlow({ sim, report, device, platform, url }) {
   await openUrl({ device, platform, url });
   await sleep(8000);
-  const outline = await sim.outline();
+  const outline = await sim.outline({
+    retries: 2,
+    onRetry: (n, err) => report.record({
+      label: `observe (retry ${n})`,
+      ok: true,
+      detail: `sim-use ui timed out, retrying: ${err.message}`,
+    }),
+  });
   const shot = report.screenshotPath('observe');
   await sim.screenshot(shot);
   try {
