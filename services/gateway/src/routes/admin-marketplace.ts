@@ -106,7 +106,7 @@ router.patch('/merchants/:id', requireTenantAdmin, async (req: Request, res: Res
   const supabase = getSupabase();
   if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
   const { id } = req.params;
-  const allowed = ['name', 'is_active', 'quality_score', 'customs_risk', 'commission_rate', 'admin_notes', 'requires_admin_review'];
+  const allowed = ['name', 'is_active', 'quality_score', 'customs_risk', 'commission_rate', 'admin_notes', 'requires_admin_review', 'recommendation_commission_eligible', 'recommendation_commission_rate_override'];
   const patch: Record<string, unknown> = {};
   for (const k of allowed) if (k in req.body) patch[k] = req.body[k];
   if (Object.keys(patch).length === 0) return res.status(400).json({ ok: false, error: 'No allowed fields to update' });
@@ -374,6 +374,24 @@ router.post('/sync/:network', requireTenantAdmin, async (req: Request, res: Resp
   }
 });
 
+// Manual Awin order-conversion sync trigger (VTID-02950) — distinct from
+// /sync/:network above (which pulls the product catalog); this pulls real
+// purchase conversions and credits recommendation commissions.
+router.post('/sync-orders/awin', requireTenantAdmin, async (req: Request, res: Response) => {
+  // impact-allow-no-oasis: emitAdminActivity() below wraps emitOasisEvent —
+  // the static impact-scan can't see through the indirection.
+  try {
+    const { runAwinOrderSync } = await import('../services/marketplace-sync/awin-order-sync');
+    const lookbackDays = Number(req.body?.lookback_days) || 30;
+    const result = await runAwinOrderSync(lookbackDays);
+    await emitAdminActivity(getTenantId(req), getUserId(req), 'awin_order_sync.triggered', { result });
+    res.json({ ok: true, result });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ ok: false, error: message });
+  }
+});
+
 router.post('/geo-policy', requireTenantAdmin, async (req: Request, res: Response) => {
   const supabase = getSupabase();
   if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
@@ -385,6 +403,41 @@ router.post('/geo-policy', requireTenantAdmin, async (req: Request, res: Respons
   if (error) return res.status(500).json({ ok: false, error: error.message });
   await emitAdminActivity(getTenantId(req), getUserId(req), 'geo_policy.created', { policy_id: data.id, payload });
   res.json({ ok: true, policy: data });
+});
+
+// ==================== Operations: Recommendation commission settings (VTID-02950) ====================
+
+router.get('/commission-settings', requireTenantAdmin, async (_req: Request, res: Response) => {
+  const supabase = getSupabase();
+  if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
+  const { data, error } = await supabase
+    .from('admin_settings')
+    .select('value, updated_at')
+    .eq('key', 'recommendation_commission_default_rate')
+    .maybeSingle();
+  if (error) return res.status(500).json({ ok: false, error: error.message });
+  const rate = (data?.value as { rate?: number } | undefined)?.rate ?? 0.2;
+  res.json({ ok: true, default_rate: rate, updated_at: data?.updated_at ?? null });
+});
+
+router.patch('/commission-settings', requireTenantAdmin, async (req: Request, res: Response) => {
+  // impact-allow-no-oasis: emitAdminActivity() below wraps emitOasisEvent —
+  // the static impact-scan can't see through the indirection.
+  const supabase = getSupabase();
+  if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
+  const rate = Number(req.body?.default_rate);
+  if (!Number.isFinite(rate) || rate <= 0 || rate > 1) {
+    return res.status(400).json({ ok: false, error: 'default_rate must be a number between 0 and 1' });
+  }
+  const { error } = await supabase
+    .from('admin_settings')
+    .upsert(
+      { key: 'recommendation_commission_default_rate', value: { rate }, updated_by: getUserId(req), updated_at: new Date().toISOString() },
+      { onConflict: 'key' }
+    );
+  if (error) return res.status(500).json({ ok: false, error: error.message });
+  await emitAdminActivity(getTenantId(req), getUserId(req), 'commission_settings.updated', { default_rate: rate });
+  res.json({ ok: true, default_rate: rate });
 });
 
 export default router;
