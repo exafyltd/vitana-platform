@@ -30,6 +30,11 @@ const AUTH_NAMES = [
   // requireExafyAdmin: admin-role gate (middleware/auth-supabase-jwt) used by the
   // admin routes (notifications, orb-tools selfcheck). It IS auth.
   'requireExafyAdmin',
+  // requireServiceOrAdmin / requireAdminOnly: canonical control-plane gates
+  // (middleware/require-service-or-admin) used by the self-healing router.
+  // requireServiceOrAdmin = GATEWAY_SERVICE_TOKEN or exafy_admin JWT;
+  // requireAdminOnly = exafy_admin JWT only. Both ARE auth.
+  'requireServiceOrAdmin', 'requireAdminOnly',
 ];
 const ROUTE_PREFIX_RE = /^\s*router\.(get|post|put|patch|delete)\s*\(/;
 

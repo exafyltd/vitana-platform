@@ -626,6 +626,9 @@ router.patch('/config', requireAdminOnly, async (req: Request, res: Response) =>
       return res.status(500).json({ ok: false, error: 'Supabase not configured' });
     }
 
+    // Capture the prior level so the audit event records old → new.
+    const previousLevel = await getAutonomyLevel();
+
     await fetch(`${SUPABASE_URL}/rest/v1/system_config?key=eq.self_healing_autonomy_level`, {
       method: 'PATCH',
       headers: supabaseHeaders(),
@@ -637,6 +640,23 @@ router.patch('/config', requireAdminOnly, async (req: Request, res: Response) =>
     });
 
     const levelNames = ['OBSERVE_ONLY', 'DIAGNOSE_ONLY', 'SPEC_AND_WAIT', 'AUTO_FIX_SIMPLE', 'FULL_AUTO'];
+
+    // Audit the autonomy change (P0-1 item 6): changing the self-healing
+    // autonomy level is a governance decision — record actor, old, and new.
+    await emitOasisEvent({
+      type: 'self-healing.autonomy.changed',
+      vtid: 'SYSTEM',
+      source: 'self-healing',
+      status: 'warning',
+      message: `Self-healing autonomy level ${levelNames[previousLevel] ?? previousLevel} → ${levelNames[autonomy_level] ?? autonomy_level}`,
+      payload: {
+        previous_level: previousLevel,
+        new_level: autonomy_level,
+        operator: operator || 'api',
+        actor: getControlPlaneActor(req),
+      },
+    });
+
     return res.json({
       ok: true,
       autonomy_level,
@@ -1075,6 +1095,17 @@ router.post('/verify/:vtid', requireAdminOnly, async (req: Request, res: Respons
     const { vtid } = req.params;
     console.log(`[self-healing] Manual verification triggered for ${vtid}`);
 
+    // Audit the operator-triggered action (P0-1 item 6). The verification
+    // itself emits its own success/escalate/blast-radius events downstream.
+    await emitOasisEvent({
+      type: 'self-healing.verify.requested',
+      vtid,
+      source: 'self-healing',
+      status: 'info',
+      message: `Manual verification requested for ${vtid}`,
+      payload: { actor: getControlPlaneActor(req) },
+    });
+
     const result = await verifyFixWithBlastRadiusCheck(vtid);
     return res.json({ ok: true, result });
   } catch (err: any) {
@@ -1107,6 +1138,17 @@ router.post('/rollback/:vtid', requireAdminOnly, async (req: Request, res: Respo
     if (!snapshots || snapshots.length === 0) {
       return res.status(404).json({ ok: false, error: 'No pre-fix snapshot found for this VTID' });
     }
+
+    // Audit the operator-triggered action (P0-1 item 6). executeRollback emits
+    // its own rollback.started / rollback.completed events downstream.
+    await emitOasisEvent({
+      type: 'self-healing.rollback.requested_by_operator',
+      vtid,
+      source: 'self-healing',
+      status: 'warning',
+      message: `Manual rollback requested for ${vtid}`,
+      payload: { actor: getControlPlaneActor(req) },
+    });
 
     await executeRollback(vtid, snapshots[0]);
     return res.json({ ok: true, message: `Rollback requested for ${vtid}` });

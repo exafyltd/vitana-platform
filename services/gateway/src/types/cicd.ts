@@ -729,6 +729,11 @@ export type CicdEventType =
   | 'self-healing.dispatch.retried'
   | 'self-healing.approved'
   | 'self-healing.rejected'
+  // Control-plane audit events (self-healing hardening, audit P0-1 item 6):
+  // operator-attributable governance/mutation actions.
+  | 'self-healing.autonomy.changed'
+  | 'self-healing.verify.requested'
+  | 'self-healing.rollback.requested_by_operator'
   | 'autopilot.task.spec.created'
   // VTID-DEV-ASSIST: Developer Assistant Events
   | 'dev_assist.spec.generated'
