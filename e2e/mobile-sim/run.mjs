@@ -77,7 +77,8 @@ async function main() {
     platform,
     url: args.url,
     email: process.env.TEST_USER_EMAIL || 'e2e-test@vitana.dev',
-    password: process.env.TEST_USER_PASSWORD || '',
+    // Same fallback as e2e/fixtures/test-users.ts — shared e2e test account
+    password: process.env.TEST_USER_PASSWORD || 'VitanaE2eTest2026!',
   };
 
   // Record the whole session as MP4 (best-effort — a broken recorder must
