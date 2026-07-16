@@ -54,6 +54,43 @@ prefix on the ALB while GCP staging serves it at the domain root (SPA
 fallback happens to work because nginx rewrites unknown paths itself, but
 the base-path decision should be made deliberately before cutover).
 
+## Update 2026-07-16 ~17:05Z — gaps #2 (stale image) and #3 (CORS) fixed in a new image, blocked on ECR push
+
+A replacement gateway image was built in-session and **verified locally**,
+but cannot be pushed: `claude-staging-validation` has ECR auth/pull but not
+`ecr:InitiateLayerUpload`/`PutImage` (AmazonECS_FullAccess does not include
+ECR pushes). Grant push on `repository/vitana/gateway` (e.g.
+`AmazonEC2ContainerRegistryPowerUser`) and the fix ships in minutes.
+
+What the new image contains (tagged `vitana/gateway:e7a2e42` locally,
+built from branch commit `e7a2e42` = current `main` + the CORS fix):
+
+- **Current `main` code** — the missing `/api/v1/discover` + intents routers
+  are present: local boot answers `application/json` on
+  `/api/v1/discover/feed` (500 only because the bare test container has no
+  Supabase secrets; ECS injects them).
+- **CORS fix** (`services/gateway/src/middleware/cors.ts`, committed on this
+  branch): the AWS ALB origin added to `ALLOWED_ORIGINS` — local preflight
+  with that Origin returns 204 + `Access-Control-Allow-Origin`. The list is
+  hardcoded, so this HAD to be a code change + rebuild; the commit should be
+  merged to `main` so future images keep it.
+- Build method (sandbox constraints, documented for reproducibility): Docker
+  Hub and registry.npmjs.org are blocked from this environment, so the image
+  was assembled `FROM` the existing ECR image (prod `dependencies` in
+  `package.json` are identical between it and `main`), with `dist/` freshly
+  compiled from branch source via `tsc --noCheck` (TypeScript 6.0.2 from npm
+  cache; emit-only — full typechecking was impossible without the pinned
+  5.9.3 + `@types/*`, which the registry block prevented; CI typechecks the
+  same code on merge) plus the `copy-frontend`/`copy-data` assets and a
+  regenerated `BUILD_INFO`.
+
+After the push lands, remaining steps for gap #2/#3: `aws ecs update-service
+--force-new-deployment` (or a task-def revision adding
+`GIT_COMMIT_SHA=<sha>` to also clear the build-info WARN — git_commit is
+read from that env var at runtime), then re-run the parity suite. Expected
+remaining FAIL: only #4 (frontend bundle gateway URL), which needs a
+`vitana-v1` rebuild and the DNS decision.
+
 ## Note on the ECS attachment method
 
 The attachments were made with `aws ecs update-service --load-balancers ...`
