@@ -26,7 +26,18 @@ export async function loginFlow({ sim, report, email, password }, depth = 0) {
     return false;
   }
 
-  const outline = await sim.outline();
+  // This runner class has shown 80-120s per `ui` call under load (heavy
+  // animated React SPA, not the lightweight native-app case sim-use
+  // benchmarks against) — give the login-screen observe the same timeout
+  // retry as the first "app loaded" observe, not just a single shot.
+  const outline = await sim.outline({
+    retries: 2,
+    onRetry: (n, err) => report.record({
+      label: `login screen observe (retry ${n})`,
+      ok: true,
+      detail: `sim-use ui timed out, retrying: ${err.message}`,
+    }),
+  });
   report.record({ label: 'login screen observe', ok: true, outline });
 
   const fields = textFieldEntries(outline);

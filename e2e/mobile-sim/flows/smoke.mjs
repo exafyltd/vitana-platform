@@ -39,7 +39,10 @@ export async function smokeFlow(ctx) {
 
   // 1. Open the app in the device browser
   await openUrl({ device, platform, url });
-  await sleep(8000); // browser launch + SPA boot
+  // MaxinaPortal is a heavy animated SPA (framer-motion, video preload) —
+  // give it real time to paint before the first observe, on top of that
+  // observe's own retry/timeout headroom below.
+  await sleep(20_000);
   // First observe pays for the daemon's cold FBSimulatorControl + AX init on
   // a just-booted simulator — retry through transient timeouts here so a
   // slow (not broken) daemon doesn't fail the whole run.
@@ -124,7 +127,7 @@ export async function smokeFlow(ctx) {
  */
 export async function observeFlow({ sim, report, device, platform, url }) {
   await openUrl({ device, platform, url });
-  await sleep(8000);
+  await sleep(20_000);
   const outline = await sim.outline({
     retries: 2,
     onRetry: (n, err) => report.record({

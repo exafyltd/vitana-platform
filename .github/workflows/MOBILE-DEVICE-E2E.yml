@@ -41,7 +41,10 @@ jobs:
   ios-simulator:
     name: iOS Simulator (${{ inputs.device_name }})
     runs-on: macos-15
-    timeout-minutes: 40
+    # This runner class has shown 80-120s per sim-use `ui` call under load
+    # (heavy animated SPA), not sim-use's usual ~200-300ms — give a full
+    # smoke run (several observe/retry cycles) real headroom.
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
 
