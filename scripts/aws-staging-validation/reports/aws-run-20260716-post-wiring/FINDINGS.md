@@ -32,11 +32,16 @@ within ~90 seconds. No security-group changes were needed
 security headers, WebSocket upgrade behavior, latency, frontend
 reachability and SPA fallback all now PASS.
 
-## Remaining gaps (each needs a deliberate fix, none reachable read-only)
+**Update (same day, 16:18Z):** gap #1 below was subsequently fixed live
+(task definition `vitana-gateway:5`), so the effective count is
+**3 FAILs / 2 WARNs** — the parity-report.md in this directory predates
+that fix and still shows the env-identity row as FAIL.
+
+## Remaining gaps
 
 | # | Check | Cause | Fix |
 |---|-------|-------|-----|
-| 1 | env identity (`env='production'`) | Task def sets `ENV=staging`, but the gateway reads **`VITANA_ENV`** (`services/gateway/src/env.ts`, used by `admin-health.ts`) | Add `VITANA_ENV=staging` to the `vitana-gateway` task definition (new revision + service update) |
+| 1 | ~~env identity (`env='production'`)~~ **RESOLVED 2026-07-16 16:18Z** | Task def set `ENV=staging`, but the gateway reads **`VITANA_ENV`** (`services/gateway/src/env.ts`, used by `admin-health.ts`) | **Applied:** registered task definition `vitana-gateway:5` with `VITANA_ENV=staging` added (kept `ENV=staging`), rolled the service to steady state, verified `/api/v1/admin/health` → `env=staging` through the ALB. Mirror into Terraform/task-def source, same drift warning as below. |
 | 2 | Route mounts: `/api/v1/discover`, `/api/v1/intents`, `/api/v1/intent-board`, `/api/v1/intent-categories` missing | AWS runs a **stale gateway image** — those routers shipped recently (e.g. Discover/VTID-02950 merged 2026-07-16); build-info also stamps no `git_commit` | Rebuild/redeploy the AWS gateway image from current `main`, and stamp `GIT_COMMIT_SHA` in the AWS build pipeline (WARN #1) |
 | 3 | CORS preflight unanswered | The gateway's allowed-origins list doesn't include the ALB origin used as `Origin:` in the probe. Partly an artifact of having no real DNS name — but the eventual AWS staging frontend origin must be allowlisted | Create the AWS staging DNS names, then add the frontend origin to the gateway CORS config |
 | 4 | Frontend→gateway wiring | The AWS frontend bundle bakes `https://gateway.vitanaland.com` — which currently resolves to a **Google** IP, i.e. the AWS frontend silently calls the GCP gateway | Rebuild the frontend with `VITE_GATEWAY_URL` pointing at the AWS staging gateway hostname once DNS exists |
