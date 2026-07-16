@@ -98,11 +98,28 @@ if [[ -f "$REF_DIR/routes.json" && -f "$CAND_DIR/routes.json" ]]; then
   n_extra=$(echo "$extra" | jq 'length')
   total=$(jq 'length' "$REF_DIR/routes.json")
   if [[ "$n_missing" == "0" ]]; then
-    row PASS "Route mounts" "all $total probed prefixes mounted on both environments"
+    row PASS "Route mounts" "no reference-mounted prefix is missing on $CAND_LABEL ($total prefixes probed)"
   else
     row FAIL "Route mounts" "$n_missing prefixes mounted on $REF_LABEL but NOT on $CAND_LABEL: $(echo "$missing" | jq -cr '.[0:10] | join(", ")')$( [[ $n_missing -gt 10 ]] && echo " (+$((n_missing-10)) more)" )"
   fi
   [[ "$n_extra" != "0" ]] && row WARN "Route mounts (extra)" "$n_extra prefixes mounted on $CAND_LABEL only: $(echo "$extra" | jq -cr '.[0:10] | join(", ")')"
+  # Response-class diff across ALL probed prefixes (not just the mounted
+  # ones): a prefix that answers 401-json on the reference but 404-html on
+  # the candidate is a parity signal even when the boolean "mounted"
+  # heuristic can't see it (bare-prefix GETs on routers without a root
+  # handler fall through to the default 404 on BOTH sides — those match and
+  # stay quiet here).
+  code_diffs=$(jq -n --slurpfile r "$REF_DIR/routes.json" --slurpfile c "$CAND_DIR/routes.json" '
+    [ $r[0][] as $rr
+      | ($c[0][] | select(.prefix == $rr.prefix)) as $cc
+      | select($rr.http_code != $cc.http_code)
+      | "\($rr.prefix) (\($rr.http_code)→\($cc.http_code))" ]')
+  n_code_diffs=$(echo "$code_diffs" | jq 'length')
+  if [[ "$n_code_diffs" == "0" ]]; then
+    row PASS "Route response codes" "identical status codes on all $total probed prefixes"
+  else
+    row WARN "Route response codes" "$n_code_diffs prefixes answer with different status codes: $(echo "$code_diffs" | jq -cr '.[0:10] | join(", ")')$( [[ $n_code_diffs -gt 10 ]] && echo " (+$((n_code_diffs-10)) more)" )"
+  fi
 else
   row WARN "Route mounts" "routes.json missing on one side — probe did not run"
 fi
