@@ -1,0 +1,87 @@
+# AWS-STAGING-VALIDATION — black-box parity validation of the new AWS
+# staging environment against the existing GCP staging environment.
+#
+# Manually dispatched with the AWS URLs as inputs. Runs entirely from the
+# Actions runner (open egress; no GCP/AWS credentials needed — every probed
+# endpoint is auth-free by design, see docs/STAGING.md §8).
+#
+# Output:
+#   - Parity report in the run's step summary (PASS/FAIL/WARN table)
+#   - Raw snapshots + report uploaded as artifacts
+#   - Job fails when any parity check FAILs
+#
+# Companion docs: docs/AWS-STAGING-VALIDATION.md (full plan incl. manual
+# checklist), scripts/aws-staging-validation/README.md (script usage).
+
+name: AWS Staging Validation (parity vs GCP)
+
+on:
+  workflow_dispatch:
+    inputs:
+      aws_gateway_url:
+        description: 'AWS staging gateway base URL (e.g. https://staging-gateway.example.aws)'
+        required: true
+      aws_frontend_url:
+        description: 'AWS staging frontend base URL'
+        required: false
+        default: ''
+      gcp_gateway_url:
+        description: 'GCP staging gateway base URL (reference)'
+        required: false
+        default: 'https://preview-gateway.vitanaland.com'
+      gcp_frontend_url:
+        description: 'GCP staging frontend base URL (reference)'
+        required: false
+        default: 'https://preview.vitanaland.com'
+
+permissions:
+  contents: read
+
+jobs:
+  parity:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Refresh route manifest from gateway source
+        run: node scripts/aws-staging-validation/generate-route-manifest.mjs
+
+      - name: Snapshot GCP staging (reference)
+        run: |
+          scripts/aws-staging-validation/capture-snapshot.sh \
+            --label gcp \
+            --gateway  "${{ inputs.gcp_gateway_url }}" \
+            --frontend "${{ inputs.gcp_frontend_url }}" \
+            --out snapshots/gcp
+
+      - name: Snapshot AWS staging (candidate)
+        run: |
+          FRONTEND_ARGS=()
+          if [ -n "${{ inputs.aws_frontend_url }}" ]; then
+            FRONTEND_ARGS=(--frontend "${{ inputs.aws_frontend_url }}")
+          fi
+          scripts/aws-staging-validation/capture-snapshot.sh \
+            --label aws \
+            --gateway "${{ inputs.aws_gateway_url }}" \
+            "${FRONTEND_ARGS[@]}" \
+            --out snapshots/aws
+
+      - name: Compare snapshots → parity report
+        id: compare
+        run: |
+          set +e
+          scripts/aws-staging-validation/compare-snapshots.sh \
+            snapshots/gcp snapshots/aws parity-report.md
+          RC=$?
+          cat parity-report.md >> "$GITHUB_STEP_SUMMARY"
+          exit $RC
+
+      - name: Upload snapshots + report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: aws-staging-parity-${{ github.run_number }}
+          path: |
+            snapshots/
+            parity-report.md
+          retention-days: 30
