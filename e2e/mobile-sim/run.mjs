@@ -75,6 +75,23 @@ async function main() {
 
   console.error(`Device: ${device} (${platform})  URL: ${args.url}  Flow: ${args.flow}\n`);
 
+  // Record the whole session as MP4 (best-effort — a broken recorder must
+  // never fail the test run). Lands in the artifacts dir as session.mp4.
+  //
+  // Started lazily by the flow itself, AFTER the first successful `ui` call
+  // has warmed the per-UDID daemon — starting `record-video` concurrently
+  // with the daemon's cold init raced and left the daemon socket completely
+  // unreachable in CI (observed: "Timed out after 5.0s waiting for daemon
+  // socket"). Sequencing costs the first few seconds of the video, which is
+  // a fine trade against the run reliably working at all.
+  const recordingHandle = { instance: null };
+  const beginRecording = () => {
+    if (recordingHandle.instance) return;
+    try {
+      recordingHandle.instance = sim.startRecording(join(outDir, 'session.mp4'));
+    } catch { /* recording unavailable — flow still runs */ }
+  };
+
   const ctx = {
     sim,
     report,
@@ -84,25 +101,25 @@ async function main() {
     email: process.env.TEST_USER_EMAIL || 'e2e-test@vitana.dev',
     // Same fallback as e2e/fixtures/test-users.ts — shared e2e test account
     password: process.env.TEST_USER_PASSWORD || 'VitanaE2eTest2026!',
+    beginRecording,
   };
-
-  // Record the whole session as MP4 (best-effort — a broken recorder must
-  // never fail the test run). Lands in the artifacts dir as session.mp4.
-  let recording = null;
-  try {
-    recording = sim.startRecording(join(outDir, 'session.mp4'));
-  } catch { /* recording unavailable — flows still run */ }
 
   try {
     if (args.flow === 'observe') await observeFlow(ctx);
     else await smokeFlow(ctx);
   } finally {
-    if (recording) {
-      const res = await recording.stop();
+    if (recordingHandle.instance) {
+      const res = await recordingHandle.instance.stop();
       report.record({
         label: 'session video',
         ok: true, // informational — never fails the run
         detail: res.ok ? 'session.mp4' : `recording unavailable: ${res.detail}`,
+      });
+    } else {
+      report.record({
+        label: 'session video',
+        ok: true,
+        detail: 'recording never started — daemon warmup did not complete',
       });
     }
   }

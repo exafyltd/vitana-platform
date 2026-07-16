@@ -35,7 +35,7 @@ async function observe(sim, report, label, { screenshot = true, retries = 0 } = 
 }
 
 export async function smokeFlow(ctx) {
-  const { sim, report, device, platform, url } = ctx;
+  const { sim, report, device, platform, url, beginRecording } = ctx;
 
   // 1. Open the app in the device browser
   await openUrl({ device, platform, url });
@@ -47,6 +47,10 @@ export async function smokeFlow(ctx) {
   // a just-booted simulator — retry through transient timeouts here so a
   // slow (not broken) daemon doesn't fail the whole run.
   const first = await observe(sim, report, 'app loaded', { retries: 2 });
+  // Only start the recorder once the daemon has proven it's up (this call
+  // succeeded) — starting it concurrently with a cold daemon init raced and
+  // left the daemon socket unreachable. See run.mjs for the incident detail.
+  beginRecording?.();
   const blank = first.outline.split('\n').length < 4;
   report.record({
     label: 'app loaded',
@@ -125,7 +129,7 @@ export async function smokeFlow(ctx) {
  * Observe-only flow: open the URL and dump outline + screenshot. Useful as a
  * quick "eyes on the app" check without any interaction.
  */
-export async function observeFlow({ sim, report, device, platform, url }) {
+export async function observeFlow({ sim, report, device, platform, url, beginRecording }) {
   await openUrl({ device, platform, url });
   await sleep(20_000);
   const outline = await sim.outline({
@@ -136,6 +140,8 @@ export async function observeFlow({ sim, report, device, platform, url }) {
       detail: `sim-use ui timed out, retrying: ${err.message}`,
     }),
   });
+  // Daemon proven up — safe to start the recorder now (see run.mjs).
+  beginRecording?.();
   const shot = report.screenshotPath('observe');
   await sim.screenshot(shot);
   try {
