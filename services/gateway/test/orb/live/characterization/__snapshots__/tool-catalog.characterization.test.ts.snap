@@ -6129,6 +6129,596 @@ CALL WHEN the user says: "connect my Oura ring", "pair my device",
         },
       },
       {
+        "description": "Current plan, status, renewal date, and voice-minutes usage.",
+        "name": "get_my_subscription",
+        "parameters": {
+          "properties": {},
+          "type": "object",
+        },
+      },
+      {
+        "description": "List subscription plans with prices.",
+        "name": "compare_subscription_plans",
+        "parameters": {
+          "properties": {},
+          "type": "object",
+        },
+      },
+      {
+        "description": "Start Stripe checkout to upgrade the subscription — hands off to the screen for payment. TWO-STEP confirm.",
+        "name": "upgrade_subscription",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "type": "boolean",
+            },
+            "price_key": {
+              "description": "Required.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "price_key",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Opens the Stripe billing portal to cancel (no direct in-voice cancel exists).",
+        "name": "cancel_subscription",
+        "parameters": {
+          "properties": {},
+          "type": "object",
+        },
+      },
+      {
+        "description": "Start Stripe checkout to buy a voice-minutes credit pack — hands off to the screen for payment. TWO-STEP confirm.",
+        "name": "add_voice_minutes",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "type": "boolean",
+            },
+            "credit_pack": {
+              "description": "starter, boost, or power. Required.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "credit_pack",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Redeem a subscription code to grant a plan directly.",
+        "name": "redeem_subscription_code",
+        "parameters": {
+          "properties": {
+            "code": {
+              "description": "Required.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "code",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Opens the Stripe billing portal, which shows invoice history (no in-voice invoice list exists).",
+        "name": "get_billing_history",
+        "parameters": {
+          "properties": {},
+          "type": "object",
+        },
+      },
+      {
+        "description": "Your referral link — generates one if you don't have one yet.",
+        "name": "get_referral_link",
+        "parameters": {
+          "properties": {},
+          "type": "object",
+        },
+      },
+      {
+        "description": "Generate a shareable invite link (there is no automated email/SMS send yet — the user must share it themselves). TWO-STEP confirm.",
+        "name": "invite_friend",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "type": "boolean",
+            },
+          },
+          "type": "object",
+        },
+      },
+      {
+        "description": "Who joined via your referral link and reward status.",
+        "name": "get_referral_status",
+        "parameters": {
+          "properties": {},
+          "type": "object",
+        },
+      },
+      {
+        "description": "What live rooms are live or scheduled right now.",
+        "name": "list_live_rooms_now",
+        "parameters": {
+          "properties": {},
+          "type": "object",
+        },
+      },
+      {
+        "description": "Room info, host, access level for one live room.",
+        "name": "get_live_room_details",
+        "parameters": {
+          "properties": {
+            "room_id": {
+              "description": "Required.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "room_id",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Start hosting now (creates a live session on your room).",
+        "name": "go_live",
+        "parameters": {
+          "properties": {
+            "access_level": {
+              "type": "string",
+            },
+            "room_id": {
+              "description": "Required.",
+              "type": "string",
+            },
+            "session_title": {
+              "type": "string",
+            },
+          },
+          "required": [
+            "room_id",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Create a new live room. TWO-STEP confirm.",
+        "name": "create_live_room",
+        "parameters": {
+          "properties": {
+            "access_level": {
+              "description": "public or group.",
+              "type": "string",
+            },
+            "confirm": {
+              "type": "boolean",
+            },
+            "price": {
+              "type": "number",
+            },
+            "starts_at": {
+              "type": "string",
+            },
+            "title": {
+              "description": "Required.",
+              "type": "string",
+            },
+            "topic_keys": {
+              "items": {
+                "type": "string",
+              },
+              "type": "array",
+            },
+          },
+          "required": [
+            "title",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Schedule a future live session on your room.",
+        "name": "schedule_live_session",
+        "parameters": {
+          "properties": {
+            "room_id": {
+              "description": "Required.",
+              "type": "string",
+            },
+            "session_title": {
+              "type": "string",
+            },
+            "starts_at": {
+              "description": "ISO timestamp. Required.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "room_id",
+            "starts_at",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Prepare payment for a paid room — hands off to the screen to confirm the charge.",
+        "name": "purchase_room_access",
+        "parameters": {
+          "properties": {
+            "room_id": {
+              "description": "Required.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "room_id",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "End your current live session. TWO-STEP confirm.",
+        "name": "end_live_session",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "type": "boolean",
+            },
+            "room_id": {
+              "description": "Required.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "room_id",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Browse open community asks.",
+        "name": "list_open_asks",
+        "parameters": {
+          "properties": {
+            "category_prefix": {
+              "type": "string",
+            },
+            "kind": {
+              "type": "string",
+            },
+            "limit": {
+              "type": "integer",
+            },
+          },
+          "type": "object",
+        },
+      },
+      {
+        "description": "Edit the content of your own post. TWO-STEP confirm.",
+        "name": "edit_my_post",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "type": "boolean",
+            },
+            "content": {
+              "description": "Required.",
+              "type": "string",
+            },
+            "post_id": {
+              "description": "Required.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "post_id",
+            "content",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Permanently delete your own post. TWO-STEP confirm.",
+        "name": "delete_my_post",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "type": "boolean",
+            },
+            "post_id": {
+              "description": "Required.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "post_id",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Set your goal / north star. You have one active goal at a time.",
+        "name": "set_goal",
+        "parameters": {
+          "properties": {
+            "category": {
+              "type": "string",
+            },
+            "goal": {
+              "description": "The goal statement. Required.",
+              "type": "string",
+            },
+            "starting_value": {
+              "type": "number",
+            },
+            "target_date": {
+              "type": "string",
+            },
+            "target_unit": {
+              "type": "string",
+            },
+            "target_value": {
+              "type": "number",
+            },
+          },
+          "required": [
+            "goal",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Your active goal (single-goal model, not a list).",
+        "name": "list_my_goals",
+        "parameters": {
+          "properties": {},
+          "type": "object",
+        },
+      },
+      {
+        "description": "Adjust your goal — re-state the full goal text even when only changing the date/target.",
+        "name": "update_goal",
+        "parameters": {
+          "properties": {
+            "category": {
+              "type": "string",
+            },
+            "goal": {
+              "description": "The full, updated goal statement. Required.",
+              "type": "string",
+            },
+            "target_date": {
+              "type": "string",
+            },
+            "target_unit": {
+              "type": "string",
+            },
+            "target_value": {
+              "type": "number",
+            },
+          },
+          "required": [
+            "goal",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Progress readout on your active goal.",
+        "name": "get_goal_progress",
+        "parameters": {
+          "properties": {},
+          "type": "object",
+        },
+      },
+      {
+        "description": "Checkpoints in your goal plan.",
+        "name": "get_journey_checkpoints",
+        "parameters": {
+          "properties": {},
+          "type": "object",
+        },
+      },
+      {
+        "description": "Create a service listing in the Business Hub catalog. NOTE: there is no way to list, edit, or archive services by voice yet. TWO-STEP confirm.",
+        "name": "create_service",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "type": "boolean",
+            },
+            "name": {
+              "description": "Required.",
+              "type": "string",
+            },
+            "provider_name": {
+              "type": "string",
+            },
+            "service_type": {
+              "description": "coaching, consulting, workshop, class, session, or other. Required.",
+              "type": "string",
+            },
+            "topic_keys": {
+              "items": {
+                "type": "string",
+              },
+              "type": "array",
+            },
+          },
+          "required": [
+            "name",
+            "service_type",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Correct the content of a stored memory. TWO-STEP confirm.",
+        "name": "edit_memory",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "type": "boolean",
+            },
+            "correction_notes": {
+              "type": "string",
+            },
+            "memory_item_id": {
+              "description": "Required.",
+              "type": "string",
+            },
+            "new_content": {
+              "description": "Required.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "memory_item_id",
+            "new_content",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Confirm a memory as accurate and trustworthy (raises its confidence score).",
+        "name": "reinforce_memory",
+        "parameters": {
+          "properties": {
+            "confirmation_notes": {
+              "type": "string",
+            },
+            "memory_item_id": {
+              "description": "Required.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "memory_item_id",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Set who can see a category of your memory (diary, garden, relationships, longevity, timeline). TWO-STEP confirm.",
+        "name": "set_memory_permissions",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "type": "boolean",
+            },
+            "domain": {
+              "description": "diary, garden, relationships, longevity, or timeline. Required.",
+              "type": "string",
+            },
+            "visibility": {
+              "description": "private, connections, professionals, or custom. Required.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "domain",
+            "visibility",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": ""What do you know about me" — summary of your memory garden by category.",
+        "name": "get_what_vitana_knows",
+        "parameters": {
+          "properties": {},
+          "type": "object",
+        },
+      },
+      {
+        "description": "Opens the diary screen so you can attach a photo (voice cannot upload directly).",
+        "name": "add_diary_photo",
+        "parameters": {
+          "properties": {},
+          "type": "object",
+        },
+      },
+      {
+        "description": "Your taste/lifestyle profile completeness percentage.",
+        "name": "get_profile_completeness",
+        "parameters": {
+          "properties": {},
+          "type": "object",
+        },
+      },
+      {
+        "description": "Get your shareable profile link.",
+        "name": "share_my_profile",
+        "parameters": {
+          "properties": {},
+          "type": "object",
+        },
+      },
+      {
+        "description": "Your achieved milestones.",
+        "name": "get_my_milestones",
+        "parameters": {
+          "properties": {
+            "limit": {
+              "type": "number",
+            },
+          },
+          "type": "object",
+        },
+      },
+      {
+        "description": "Spoken summary of a community member's public profile.",
+        "name": "view_member_profile",
+        "parameters": {
+          "properties": {
+            "handle": {
+              "type": "string",
+            },
+            "user_id": {
+              "type": "string",
+            },
+          },
+          "type": "object",
+        },
+      },
+      {
+        "description": "Replace the service offerings shown on your profile. TWO-STEP confirm.",
+        "name": "update_service_offerings",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "type": "boolean",
+            },
+            "offers": {
+              "description": "Required, replaces existing offerings. Each: {category, title, short_description?, price_min_cents?, price_max_cents?, currency?, contact_via?}.",
+              "items": {
+                "properties": {
+                  "category": {
+                    "type": "string",
+                  },
+                  "title": {
+                    "type": "string",
+                  },
+                },
+                "type": "object",
+              },
+              "type": "array",
+            },
+          },
+          "required": [
+            "offers",
+          ],
+          "type": "object",
+        },
+      },
+      {
         "description": "Return the top open admin_insights for this tenant, ranked by severity × confidence. Call this AT THE START of every admin orb session to know what needs attention. The bootstrap context already includes the briefing on session-open; only call again if the admin asks "what else?", "anything new?", or "give me the briefing again".",
         "name": "admin_briefing",
         "parameters": {
@@ -7833,6 +8423,1212 @@ Optionally filter by tier (service, embedded, scheduled). Speak problem agents f
         },
       },
       {
+        "description": "DEVELOPER ONLY. List registered orchestrator workers.",
+        "name": "dev_list_workers",
+        "parameters": {
+          "properties": {},
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. Worker connector stats.",
+        "name": "dev_orchestrator_stats",
+        "parameters": {
+          "properties": {},
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. Pending worker task queue.",
+        "name": "dev_list_pending_worker_tasks",
+        "parameters": {
+          "properties": {
+            "limit": {
+              "type": "number",
+            },
+            "worker_id": {
+              "type": "string",
+            },
+          },
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. Release a stuck VTID claim. TWO-STEP confirm.",
+        "name": "dev_release_claim",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "type": "boolean",
+            },
+            "reason": {
+              "type": "string",
+            },
+            "vtid": {
+              "description": "Required.",
+              "type": "string",
+            },
+            "worker_id": {
+              "description": "Required.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "vtid",
+            "worker_id",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. List legacy subagent registry entries.",
+        "name": "dev_list_subagents",
+        "parameters": {
+          "properties": {},
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. Worker skills + preflight chains.",
+        "name": "dev_list_worker_skills",
+        "parameters": {
+          "properties": {},
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. Expire all stale worker claims platform-wide. TWO-STEP confirm.",
+        "name": "dev_cleanup_stale_claims",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "type": "boolean",
+            },
+          },
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. Orchestrator service health + subagent lanes.",
+        "name": "dev_orchestrator_health",
+        "parameters": {
+          "properties": {},
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. Route a VTID work order to a subagent for execution. TWO-STEP confirm.",
+        "name": "dev_route_to_subagent",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "type": "boolean",
+            },
+            "spec_content": {
+              "type": "string",
+            },
+            "target_paths": {
+              "items": {
+                "type": "string",
+              },
+              "type": "array",
+            },
+            "task_domain": {
+              "description": "frontend, backend, memory, infra, ai, or mixed.",
+              "type": "string",
+            },
+            "task_family": {
+              "type": "string",
+            },
+            "title": {
+              "description": "Required.",
+              "type": "string",
+            },
+            "vtid": {
+              "description": "VTID-NNNN format. Required.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "vtid",
+            "title",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. Autopilot event loop status.",
+        "name": "dev_autopilot_loop_status",
+        "parameters": {
+          "properties": {},
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. Start the autopilot event loop. TWO-STEP confirm.",
+        "name": "dev_start_autopilot_loop",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "type": "boolean",
+            },
+          },
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. Stop the autopilot event loop. TWO-STEP confirm.",
+        "name": "dev_stop_autopilot_loop",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "type": "boolean",
+            },
+          },
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. Recent autopilot loop events.",
+        "name": "dev_autopilot_loop_history",
+        "parameters": {
+          "properties": {
+            "limit": {
+              "type": "number",
+            },
+          },
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. Reset the autopilot loop cursor to a timestamp (or "now"). TWO-STEP confirm.",
+        "name": "dev_reset_loop_cursor",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "type": "boolean",
+            },
+            "reason": {
+              "type": "string",
+            },
+            "timestamp": {
+              "description": "ISO timestamp or "now". Defaults to "now".",
+              "type": "string",
+            },
+          },
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. Autopilot controller status.",
+        "name": "dev_controller_status",
+        "parameters": {
+          "properties": {},
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. Active controller runs.",
+        "name": "dev_list_controller_runs",
+        "parameters": {
+          "properties": {},
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. One controller run by VTID.",
+        "name": "dev_get_controller_run",
+        "parameters": {
+          "properties": {
+            "vtid": {
+              "description": "Required.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "vtid",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. Run governance validation for a VTID.",
+        "name": "dev_validate_task",
+        "parameters": {
+          "properties": {
+            "mode": {
+              "type": "string",
+            },
+            "vtid": {
+              "description": "Required.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "vtid",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. Tasks awaiting a plan.",
+        "name": "dev_list_pending_plans",
+        "parameters": {
+          "properties": {},
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. Spec snapshot for a VTID.",
+        "name": "dev_get_task_spec",
+        "parameters": {
+          "properties": {
+            "vtid": {
+              "description": "Required.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "vtid",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. Autopilot pipeline health + task funnel summary.",
+        "name": "dev_autopilot_pipeline_health",
+        "parameters": {
+          "properties": {},
+          "type": "object",
+        },
+      },
+      {
+        "description": "EXAFY_ADMIN ONLY. List dev-autopilot scanners.",
+        "name": "dev_list_scanners",
+        "parameters": {
+          "properties": {},
+          "type": "object",
+        },
+      },
+      {
+        "description": "EXAFY_ADMIN ONLY. List impact rules.",
+        "name": "dev_list_impact_rules",
+        "parameters": {
+          "properties": {},
+          "type": "object",
+        },
+      },
+      {
+        "description": "EXAFY_ADMIN ONLY. Auto-approve config, budget, and autonomy progress.",
+        "name": "dev_get_auto_approve_config",
+        "parameters": {
+          "properties": {},
+          "type": "object",
+        },
+      },
+      {
+        "description": "EXAFY_ADMIN ONLY. Recent scan runs.",
+        "name": "dev_list_scan_runs",
+        "parameters": {
+          "properties": {
+            "limit": {
+              "type": "number",
+            },
+          },
+          "type": "object",
+        },
+      },
+      {
+        "description": "EXAFY_ADMIN ONLY. One scan run by id.",
+        "name": "dev_get_scan_run",
+        "parameters": {
+          "properties": {
+            "run_id": {
+              "description": "Required.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "run_id",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "EXAFY_ADMIN ONLY. Findings queue.",
+        "name": "dev_findings_queue",
+        "parameters": {
+          "properties": {
+            "domain": {
+              "type": "string",
+            },
+            "kind": {
+              "type": "string",
+            },
+            "limit": {
+              "type": "number",
+            },
+            "risk": {
+              "type": "string",
+            },
+            "sort": {
+              "type": "string",
+            },
+            "status": {
+              "type": "string",
+            },
+          },
+          "type": "object",
+        },
+      },
+      {
+        "description": "EXAFY_ADMIN ONLY. One finding + plan versions.",
+        "name": "dev_get_finding",
+        "parameters": {
+          "properties": {
+            "finding_id": {
+              "description": "Required.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "finding_id",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "EXAFY_ADMIN ONLY. Generate a fix plan for a finding. TWO-STEP confirm.",
+        "name": "dev_generate_finding_plan",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "type": "boolean",
+            },
+            "finding_id": {
+              "description": "Required.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "finding_id",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "EXAFY_ADMIN ONLY. Reject a finding. TWO-STEP confirm.",
+        "name": "dev_reject_finding",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "type": "boolean",
+            },
+            "finding_id": {
+              "description": "Required.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "finding_id",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "EXAFY_ADMIN ONLY. Snooze a finding for N hours (default 24, max 720).",
+        "name": "dev_snooze_finding",
+        "parameters": {
+          "properties": {
+            "finding_id": {
+              "description": "Required.",
+              "type": "string",
+            },
+            "hours": {
+              "type": "number",
+            },
+          },
+          "required": [
+            "finding_id",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "EXAFY_ADMIN ONLY. Approve a finding for autonomous execution + merge, no further review. TWO-STEP confirm.",
+        "name": "dev_approve_auto_execute",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "type": "boolean",
+            },
+            "finding_id": {
+              "description": "Required.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "finding_id",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "EXAFY_ADMIN ONLY. Cancel a running execution. TWO-STEP confirm.",
+        "name": "dev_cancel_execution",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "type": "boolean",
+            },
+            "execution_id": {
+              "description": "Required.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "execution_id",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "EXAFY_ADMIN ONLY. List executions (defaults to active only).",
+        "name": "dev_list_executions",
+        "parameters": {
+          "properties": {
+            "limit": {
+              "type": "number",
+            },
+            "status": {
+              "type": "string",
+            },
+          },
+          "type": "object",
+        },
+      },
+      {
+        "description": "EXAFY_ADMIN ONLY. Execution lineage (root + all descendants).",
+        "name": "dev_get_execution_lineage",
+        "parameters": {
+          "properties": {
+            "execution_id": {
+              "description": "Required.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "execution_id",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. File a manual incident for a service. TWO-STEP confirm.",
+        "name": "dev_report_incident",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "type": "boolean",
+            },
+            "service": {
+              "description": "Required.",
+              "type": "string",
+            },
+            "summary": {
+              "description": "Required.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "service",
+            "summary",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. Self-healing enabled state + autonomy level.",
+        "name": "dev_healing_config",
+        "parameters": {
+          "properties": {},
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. Set the self-healing autonomy level (0-4). TWO-STEP confirm.",
+        "name": "dev_set_healing_mode",
+        "parameters": {
+          "properties": {
+            "autonomy_level": {
+              "description": "0-4. Required.",
+              "type": "number",
+            },
+            "confirm": {
+              "type": "boolean",
+            },
+          },
+          "required": [
+            "autonomy_level",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. Activate or deactivate the self-healing kill switch. TWO-STEP confirm.",
+        "name": "dev_healing_kill_switch",
+        "parameters": {
+          "properties": {
+            "action": {
+              "description": "activate or deactivate. Required.",
+              "type": "string",
+            },
+            "confirm": {
+              "type": "boolean",
+            },
+            "reason": {
+              "type": "string",
+            },
+          },
+          "required": [
+            "action",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. Recent self-healing events.",
+        "name": "dev_healing_history",
+        "parameters": {
+          "properties": {
+            "failure_class": {
+              "type": "string",
+            },
+            "limit": {
+              "type": "number",
+            },
+            "outcome": {
+              "type": "string",
+            },
+          },
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. Self-healing metrics summary over N days (default 7).",
+        "name": "dev_healing_metrics",
+        "parameters": {
+          "properties": {
+            "days": {
+              "type": "number",
+            },
+          },
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. Approve a pending heal. TWO-STEP confirm.",
+        "name": "dev_approve_heal",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "type": "boolean",
+            },
+            "heal_id": {
+              "description": "Required.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "heal_id",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. Reject a pending heal. TWO-STEP confirm.",
+        "name": "dev_reject_heal",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "type": "boolean",
+            },
+            "heal_id": {
+              "description": "Required.",
+              "type": "string",
+            },
+            "reason": {
+              "type": "string",
+            },
+          },
+          "required": [
+            "heal_id",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. Run a blast-radius verification check for a heal.",
+        "name": "dev_verify_heal",
+        "parameters": {
+          "properties": {
+            "vtid": {
+              "description": "Required.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "vtid",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. Roll back a heal to its pre-fix snapshot. TWO-STEP confirm.",
+        "name": "dev_rollback_heal",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "type": "boolean",
+            },
+            "vtid": {
+              "description": "Required.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "vtid",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. Look up a quarantine entry by failure class + signature (no browsable list exists).",
+        "name": "dev_list_quarantine",
+        "parameters": {
+          "properties": {
+            "failure_class": {
+              "description": "Required.",
+              "type": "string",
+            },
+            "signature": {
+              "description": "Required.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "failure_class",
+            "signature",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. Release a class/signature pair from quarantine. TWO-STEP confirm.",
+        "name": "dev_release_quarantine",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "type": "boolean",
+            },
+            "failure_class": {
+              "description": "Required.",
+              "type": "string",
+            },
+            "reason": {
+              "type": "string",
+            },
+            "signature": {
+              "description": "Required.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "failure_class",
+            "signature",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. Staging shadow-comparison report over a time window (default 48h).",
+        "name": "dev_shadow_comparison",
+        "parameters": {
+          "properties": {
+            "window_hours": {
+              "type": "number",
+            },
+          },
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. Run one or more named test suites/projects. TWO-STEP confirm.",
+        "name": "dev_run_test_suite",
+        "parameters": {
+          "properties": {
+            "community_url": {
+              "type": "string",
+            },
+            "confirm": {
+              "type": "boolean",
+            },
+            "projects": {
+              "description": "Required — suite/project names.",
+              "items": {
+                "type": "string",
+              },
+              "type": "array",
+            },
+            "type": {
+              "type": "string",
+            },
+          },
+          "required": [
+            "projects",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. List available test suites/projects.",
+        "name": "dev_list_test_suites",
+        "parameters": {
+          "properties": {},
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. Recent test runs.",
+        "name": "dev_list_test_runs",
+        "parameters": {
+          "properties": {
+            "limit": {
+              "type": "number",
+            },
+            "type": {
+              "type": "string",
+            },
+          },
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. One test run + its results.",
+        "name": "dev_get_test_run",
+        "parameters": {
+          "properties": {
+            "run_id": {
+              "description": "Required.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "run_id",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. Run the full E2E test suite. TWO-STEP confirm.",
+        "name": "dev_run_e2e",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "type": "boolean",
+            },
+            "projects": {
+              "description": "Optional subset; defaults to all.",
+              "items": {
+                "type": "string",
+              },
+              "type": "array",
+            },
+          },
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. Recent ORB monitor workflow runs.",
+        "name": "dev_orb_monitor_status",
+        "parameters": {
+          "properties": {},
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. Trigger the ORB monitor workflow. TWO-STEP confirm.",
+        "name": "dev_trigger_orb_monitor",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "type": "boolean",
+            },
+          },
+          "type": "object",
+        },
+      },
+      {
+        "description": "EXAFY_ADMIN ONLY. List registered test contracts.",
+        "name": "dev_list_test_contracts",
+        "parameters": {
+          "properties": {
+            "contract_type": {
+              "type": "string",
+            },
+            "environment": {
+              "type": "string",
+            },
+            "owner": {
+              "type": "string",
+            },
+            "service": {
+              "type": "string",
+            },
+            "status": {
+              "type": "string",
+            },
+          },
+          "type": "object",
+        },
+      },
+      {
+        "description": "EXAFY_ADMIN ONLY. Run the curated ORB tools selfcheck against real user data. TWO-STEP confirm.",
+        "name": "dev_run_orb_selfcheck",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "type": "boolean",
+            },
+            "tools": {
+              "items": {
+                "type": "string",
+              },
+              "type": "array",
+            },
+            "user_id": {
+              "type": "string",
+            },
+          },
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. Run a synthetic voice-lab probe.",
+        "name": "dev_voice_lab_probe",
+        "parameters": {
+          "properties": {},
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. Apply a SQL migration file to STAGING via RUN-STAGING-MIGRATION.yml. TWO-STEP confirm.",
+        "name": "dev_run_staging_migration",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "description": "Set true only after explicit confirmation.",
+              "type": "boolean",
+            },
+            "migration_file": {
+              "description": "Path under supabase/migrations/, e.g. supabase/migrations/20260601_foo.sql. Required.",
+              "type": "string",
+            },
+            "ref": {
+              "description": "Branch/ref. Default main.",
+              "type": "string",
+            },
+            "repo": {
+              "type": "string",
+            },
+          },
+          "required": [
+            "migration_file",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. Apply a SQL migration file DIRECTLY TO PRODUCTION via RUN-MIGRATION.yml — no staging step. Requires a stated reason. TWO-STEP confirm.",
+        "name": "dev_run_prod_migration",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "description": "Set true only after explicit confirmation.",
+              "type": "boolean",
+            },
+            "migration_file": {
+              "description": "Path under supabase/migrations/. Required.",
+              "type": "string",
+            },
+            "reason": {
+              "description": "Why this must run against prod directly. Required.",
+              "type": "string",
+            },
+            "ref": {
+              "description": "Branch/ref. Default main.",
+              "type": "string",
+            },
+            "repo": {
+              "type": "string",
+            },
+          },
+          "required": [
+            "migration_file",
+            "reason",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. Recent staging or production migration workflow runs.",
+        "name": "dev_migration_status",
+        "parameters": {
+          "properties": {
+            "limit": {
+              "type": "integer",
+            },
+            "repo": {
+              "type": "string",
+            },
+            "target": {
+              "description": ""staging" (default) or "production".",
+              "type": "string",
+            },
+          },
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY (embeddings additionally requires exafy_admin). Run a named backfill job: "journey_translations" or "embeddings". TWO-STEP confirm (embeddings skips confirm when dry_run=true).",
+        "name": "dev_run_backfill",
+        "parameters": {
+          "properties": {
+            "batch_size": {
+              "description": "embeddings only. 1-200, default 50.",
+              "type": "number",
+            },
+            "confirm": {
+              "description": "Set true only after explicit confirmation.",
+              "type": "boolean",
+            },
+            "curriculum": {
+              "description": "journey_translations only. Default v2.",
+              "type": "string",
+            },
+            "dry_run": {
+              "type": "boolean",
+            },
+            "limit": {
+              "description": "journey_translations only.",
+              "type": "integer",
+            },
+            "locales": {
+              "description": "journey_translations only. Default en,es,sr.",
+              "type": "string",
+            },
+            "name": {
+              "description": "One of: journey_translations, embeddings. Required.",
+              "type": "string",
+            },
+            "ref": {
+              "type": "string",
+            },
+            "repo": {
+              "type": "string",
+            },
+          },
+          "required": [
+            "name",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "EXAFY_ADMIN ONLY. List users with exafy_admin dev-hub access.",
+        "name": "dev_list_dev_users",
+        "parameters": {
+          "properties": {
+            "query": {
+              "description": "Optional email substring filter.",
+              "type": "string",
+            },
+          },
+          "type": "object",
+        },
+      },
+      {
+        "description": "EXAFY_ADMIN ONLY. Grant exafy_admin dev-hub access to a user by email. TWO-STEP confirm.",
+        "name": "dev_grant_access",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "type": "boolean",
+            },
+            "email": {
+              "description": "Required.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "email",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "EXAFY_ADMIN ONLY. Revoke exafy_admin dev-hub access from a user by email (cannot self-revoke). TWO-STEP confirm.",
+        "name": "dev_revoke_access",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "type": "boolean",
+            },
+            "email": {
+              "description": "Required.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "email",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "EXAFY_ADMIN ONLY. Mint a dev-sandbox session token for a user (works only in the dev-sandbox environment). TWO-STEP confirm.",
+        "name": "dev_mint_token",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "type": "boolean",
+            },
+            "email": {
+              "description": "Required.",
+              "type": "string",
+            },
+            "role": {
+              "description": "patient, community, professional, staff, admin, developer, or infra. Required.",
+              "type": "string",
+            },
+            "tenant_id": {
+              "type": "string",
+            },
+          },
+          "required": [
+            "email",
+            "role",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. Navigate to a Command Hub screen/panel by screen_id.",
+        "name": "dev_open_hub_panel",
+        "parameters": {
+          "properties": {
+            "screen_id": {
+              "description": "e.g. DEVHUB.OVERVIEW.SYSTEM_OVERVIEW. Required.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "screen_id",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "EXAFY_ADMIN ONLY. Dry-run the conversation-opening decision (register + next-best-actions) for a user, without speaking or emitting.",
+        "name": "dev_run_simulator",
+        "parameters": {
+          "properties": {
+            "briefing_due": {
+              "type": "boolean",
+            },
+            "bucket": {
+              "description": "Temporal bucket, e.g. same_day.",
+              "type": "string",
+            },
+            "current_route": {
+              "type": "string",
+            },
+            "first_time": {
+              "type": "boolean",
+            },
+            "lang": {
+              "type": "string",
+            },
+            "timezone": {
+              "type": "string",
+            },
+            "user_id": {
+              "description": "Required.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "user_id",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "EXAFY_ADMIN ONLY. Durable assistant-state signals stored for a user (journey/onboarding context).",
+        "name": "dev_journey_context",
+        "parameters": {
+          "properties": {
+            "tenant_id": {
+              "type": "string",
+            },
+            "user_id": {
+              "description": "Required.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "user_id",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. Aggregate counts of this voice tool catalog (by status, surface, role, wiring).",
+        "name": "dev_voice_catalog_stats",
+        "parameters": {
+          "properties": {},
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. Full manifest entry for one voice tool by name.",
+        "name": "dev_get_voice_tool_detail",
+        "parameters": {
+          "properties": {
+            "name": {
+              "description": "Required.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "name",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "DEVELOPER ONLY. Combined roll-up: service health, recent deployments, pending approvals, governance violations, CI/CD health.",
+        "name": "dev_system_briefing",
+        "parameters": {
+          "properties": {
+            "limit": {
+              "type": "number",
+            },
+          },
+          "type": "object",
+        },
+      },
+      {
         "description": "ADMIN ONLY. Find a user by name, email, or vitana_id.",
         "name": "admin_lookup_user",
         "parameters": {
@@ -8878,6 +10674,1360 @@ Optionally filter by tier (service, embedded, scheduled). Speak problem agents f
             "ticket_id",
             "action",
           ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "ADMIN ONLY. List tenants.",
+        "name": "admin_list_tenants",
+        "parameters": {
+          "properties": {
+            "query": {
+              "type": "string",
+            },
+          },
+          "type": "object",
+        },
+      },
+      {
+        "description": "ADMIN ONLY. Tenant detail.",
+        "name": "admin_get_tenant",
+        "parameters": {
+          "properties": {
+            "tenant_id": {
+              "description": "Required.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "tenant_id",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "ADMIN ONLY. Replace a tenant's profile settings. TWO-STEP confirm.",
+        "name": "admin_update_tenant_profile",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "type": "boolean",
+            },
+            "profile": {
+              "description": "Required.",
+              "type": "object",
+            },
+            "tenant_id": {
+              "type": "string",
+            },
+          },
+          "required": [
+            "profile",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "ADMIN ONLY. Read a tenant's feature flags.",
+        "name": "admin_get_feature_flags",
+        "parameters": {
+          "properties": {
+            "tenant_id": {
+              "type": "string",
+            },
+          },
+          "type": "object",
+        },
+      },
+      {
+        "description": "ADMIN ONLY. Flip a single feature flag for a tenant. TWO-STEP confirm.",
+        "name": "admin_set_feature_flag",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "type": "boolean",
+            },
+            "key": {
+              "description": "Required.",
+              "type": "string",
+            },
+            "tenant_id": {
+              "type": "string",
+            },
+            "value": {
+              "description": "Required.",
+            },
+          },
+          "required": [
+            "key",
+            "value",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "ADMIN ONLY. Replace a tenant's branding settings. TWO-STEP confirm.",
+        "name": "admin_update_branding",
+        "parameters": {
+          "properties": {
+            "branding": {
+              "description": "Required.",
+              "type": "object",
+            },
+            "confirm": {
+              "type": "boolean",
+            },
+            "tenant_id": {
+              "type": "string",
+            },
+          },
+          "required": [
+            "branding",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "ADMIN ONLY. Integrations status for a tenant.",
+        "name": "admin_list_tenant_integrations",
+        "parameters": {
+          "properties": {
+            "tenant_id": {
+              "type": "string",
+            },
+          },
+          "type": "object",
+        },
+      },
+      {
+        "description": "ADMIN ONLY. Recent signups.",
+        "name": "admin_list_signups",
+        "parameters": {
+          "properties": {
+            "limit": {
+              "type": "integer",
+            },
+            "search": {
+              "type": "string",
+            },
+            "stage": {
+              "type": "string",
+            },
+            "tenant_id": {
+              "type": "string",
+            },
+          },
+          "type": "object",
+        },
+      },
+      {
+        "description": "ADMIN ONLY. Signup funnel stats.",
+        "name": "admin_get_signup_stats",
+        "parameters": {
+          "properties": {
+            "days": {
+              "type": "integer",
+            },
+            "tenant_id": {
+              "type": "string",
+            },
+          },
+          "type": "object",
+        },
+      },
+      {
+        "description": "ADMIN ONLY. Failed/pending signup attempts.",
+        "name": "admin_list_signup_attempts",
+        "parameters": {
+          "properties": {
+            "limit": {
+              "type": "integer",
+            },
+            "search": {
+              "type": "string",
+            },
+            "status": {
+              "type": "string",
+            },
+          },
+          "type": "object",
+        },
+      },
+      {
+        "description": "ADMIN ONLY. Repair a broken signup (creates missing profile rows). TWO-STEP confirm.",
+        "name": "admin_repair_signup",
+        "parameters": {
+          "properties": {
+            "attempt_id": {
+              "description": "Required.",
+              "type": "string",
+            },
+            "confirm": {
+              "type": "boolean",
+            },
+          },
+          "required": [
+            "attempt_id",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "ADMIN ONLY. Invite someone to a tenant. TWO-STEP confirm.",
+        "name": "admin_create_invitation",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "type": "boolean",
+            },
+            "email": {
+              "description": "Required.",
+              "type": "string",
+            },
+            "message": {
+              "type": "string",
+            },
+            "roles": {
+              "items": {
+                "type": "string",
+              },
+              "type": "array",
+            },
+            "tenant_id": {
+              "type": "string",
+            },
+          },
+          "required": [
+            "email",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "ADMIN ONLY. Open invitations for a tenant.",
+        "name": "admin_list_invitations",
+        "parameters": {
+          "properties": {
+            "status": {
+              "type": "string",
+            },
+            "tenant_id": {
+              "type": "string",
+            },
+          },
+          "type": "object",
+        },
+      },
+      {
+        "description": "ADMIN ONLY. Revoke a pending invitation. TWO-STEP confirm.",
+        "name": "admin_revoke_invitation",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "type": "boolean",
+            },
+            "invitation_id": {
+              "description": "Required.",
+              "type": "string",
+            },
+            "tenant_id": {
+              "type": "string",
+            },
+          },
+          "required": [
+            "invitation_id",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "List all community meetups (admin oversight).",
+        "name": "admin_list_meetups",
+        "parameters": {
+          "properties": {
+            "limit": {
+              "type": "number",
+            },
+          },
+          "type": "object",
+        },
+      },
+      {
+        "description": "Permanently delete a meetup. TWO-STEP confirm.",
+        "name": "admin_delete_meetup",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "type": "boolean",
+            },
+            "meetup_id": {
+              "description": "Required.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "meetup_id",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "List all community groups (admin oversight).",
+        "name": "admin_list_groups",
+        "parameters": {
+          "properties": {
+            "limit": {
+              "type": "number",
+            },
+          },
+          "type": "object",
+        },
+      },
+      {
+        "description": "List all live rooms across the tenant (admin supervision).",
+        "name": "admin_list_live_rooms",
+        "parameters": {
+          "properties": {
+            "limit": {
+              "type": "number",
+            },
+          },
+          "type": "object",
+        },
+      },
+      {
+        "description": "List creator/service profiles.",
+        "name": "admin_list_creators",
+        "parameters": {
+          "properties": {
+            "limit": {
+              "type": "number",
+            },
+          },
+          "type": "object",
+        },
+      },
+      {
+        "description": "List community memberships.",
+        "name": "admin_list_memberships",
+        "parameters": {
+          "properties": {
+            "limit": {
+              "type": "number",
+            },
+          },
+          "type": "object",
+        },
+      },
+      {
+        "description": "Community-wide counts: meetups, groups, live rooms, memberships.",
+        "name": "admin_community_stats",
+        "parameters": {
+          "properties": {},
+          "type": "object",
+        },
+      },
+      {
+        "description": "Recent community activity (meetups + live rooms).",
+        "name": "admin_activity_feed",
+        "parameters": {
+          "properties": {},
+          "type": "object",
+        },
+      },
+      {
+        "description": "Credit a user wallet by a manual amount (exafy_admin only). TWO-STEP confirm.",
+        "name": "admin_credit_wallet",
+        "parameters": {
+          "properties": {
+            "amount_minor": {
+              "description": "Positive integer, minor units (cents). Required.",
+              "type": "number",
+            },
+            "confirm": {
+              "type": "boolean",
+            },
+            "currency": {
+              "description": "EUR or USD. Required.",
+              "type": "string",
+            },
+            "description": {
+              "type": "string",
+            },
+            "user_id": {
+              "description": "Required.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "user_id",
+            "currency",
+            "amount_minor",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Debit a user wallet by a manual amount (exafy_admin only). TWO-STEP confirm.",
+        "name": "admin_debit_wallet",
+        "parameters": {
+          "properties": {
+            "amount_minor": {
+              "description": "Positive integer, minor units (cents). Required.",
+              "type": "number",
+            },
+            "confirm": {
+              "type": "boolean",
+            },
+            "currency": {
+              "description": "EUR or USD. Required.",
+              "type": "string",
+            },
+            "description": {
+              "type": "string",
+            },
+            "user_id": {
+              "description": "Required.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "user_id",
+            "currency",
+            "amount_minor",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Founding-member campaign progress (spots used / remaining).",
+        "name": "admin_get_founding_status",
+        "parameters": {
+          "properties": {},
+          "type": "object",
+        },
+      },
+      {
+        "description": "Current monetization engine configuration (thresholds, cooldowns).",
+        "name": "admin_get_monetization_config",
+        "parameters": {
+          "properties": {},
+          "type": "object",
+        },
+      },
+      {
+        "description": "Run financial/value signal detection on a sample message (debugging).",
+        "name": "admin_run_monetization_detect",
+        "parameters": {
+          "properties": {
+            "message": {
+              "description": "Required.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "message",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Search the tenant knowledge base.",
+        "name": "admin_kb_search",
+        "parameters": {
+          "properties": {
+            "query": {
+              "description": "Required.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "query",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "List KB documents (tenant + baseline).",
+        "name": "admin_kb_list_docs",
+        "parameters": {
+          "properties": {
+            "q": {
+              "type": "string",
+            },
+            "source": {
+              "description": "tenant or baseline.",
+              "type": "string",
+            },
+            "status": {
+              "type": "string",
+            },
+          },
+          "type": "object",
+        },
+      },
+      {
+        "description": "Create a new tenant KB document. TWO-STEP confirm.",
+        "name": "admin_kb_create_doc",
+        "parameters": {
+          "properties": {
+            "body": {
+              "type": "string",
+            },
+            "confirm": {
+              "type": "boolean",
+            },
+            "source": {
+              "type": "string",
+            },
+            "title": {
+              "description": "Required.",
+              "type": "string",
+            },
+            "topics": {
+              "items": {
+                "type": "string",
+              },
+              "type": "array",
+            },
+          },
+          "required": [
+            "title",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Update a tenant KB document. TWO-STEP confirm.",
+        "name": "admin_kb_update_doc",
+        "parameters": {
+          "properties": {
+            "body": {
+              "type": "string",
+            },
+            "confirm": {
+              "type": "boolean",
+            },
+            "document_id": {
+              "description": "Required.",
+              "type": "string",
+            },
+            "status": {
+              "type": "string",
+            },
+            "title": {
+              "type": "string",
+            },
+            "topics": {
+              "items": {
+                "type": "string",
+              },
+              "type": "array",
+            },
+          },
+          "required": [
+            "document_id",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Delete a tenant KB document. TWO-STEP confirm.",
+        "name": "admin_kb_delete_doc",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "type": "boolean",
+            },
+            "document_id": {
+              "description": "Required.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "document_id",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Queue re-indexing of a KB document.",
+        "name": "admin_kb_reindex",
+        "parameters": {
+          "properties": {
+            "document_id": {
+              "description": "Required.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "document_id",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Opt this tenant out of (or back into) a baseline KB doc.",
+        "name": "admin_kb_baseline_optout",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "type": "boolean",
+            },
+            "document_id": {
+              "description": "Required.",
+              "type": "string",
+            },
+            "opt_in": {
+              "description": "true to opt back in, false/omit to opt out.",
+              "type": "boolean",
+            },
+          },
+          "required": [
+            "document_id",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Edit a system-wide (vitana_system) KB doc — exafy_admin only, affects every tenant. TWO-STEP confirm.",
+        "name": "admin_system_kb_update",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "type": "boolean",
+            },
+            "content": {
+              "type": "string",
+            },
+            "document_id": {
+              "description": "Required.",
+              "type": "string",
+            },
+            "tags": {
+              "items": {
+                "type": "string",
+              },
+              "type": "array",
+            },
+            "title": {
+              "type": "string",
+            },
+          },
+          "required": [
+            "document_id",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Assistant personality config for one surface (global + tenant override).",
+        "name": "admin_get_assistant_config",
+        "parameters": {
+          "properties": {
+            "surface_key": {
+              "description": "Required.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "surface_key",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Set a tenant override for an assistant surface config. TWO-STEP confirm.",
+        "name": "admin_set_assistant_config",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "type": "boolean",
+            },
+            "surface_key": {
+              "description": "Required.",
+              "type": "string",
+            },
+            "system_prompt_override": {
+              "type": "string",
+            },
+          },
+          "required": [
+            "surface_key",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "List canned assistant speeches with effective text.",
+        "name": "admin_list_assistant_speeches",
+        "parameters": {
+          "properties": {},
+          "type": "object",
+        },
+      },
+      {
+        "description": "Set a tenant override for a canned speech. TWO-STEP confirm.",
+        "name": "admin_set_assistant_speech",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "type": "boolean",
+            },
+            "speech_key": {
+              "description": "Required.",
+              "type": "string",
+            },
+            "text": {
+              "description": "Required.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "speech_key",
+            "text",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Platform-wide awareness signal registry (manifest + overrides + resolved).",
+        "name": "admin_get_awareness_config",
+        "parameters": {
+          "properties": {},
+          "type": "object",
+        },
+      },
+      {
+        "description": "Enable/disable one awareness signal (platform-wide). TWO-STEP confirm.",
+        "name": "admin_set_awareness_config",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "type": "boolean",
+            },
+            "enabled": {
+              "description": "Required.",
+              "type": "boolean",
+            },
+            "key": {
+              "description": "Required.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "key",
+            "enabled",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Bulk update multiple awareness signals at once. TWO-STEP confirm.",
+        "name": "admin_bulk_set_awareness",
+        "parameters": {
+          "properties": {
+            "changes": {
+              "description": "Required. Array of {key, enabled, params?}.",
+              "items": {
+                "properties": {
+                  "enabled": {
+                    "type": "boolean",
+                  },
+                  "key": {
+                    "type": "string",
+                  },
+                },
+                "type": "object",
+              },
+              "type": "array",
+            },
+            "confirm": {
+              "type": "boolean",
+            },
+          },
+          "required": [
+            "changes",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Tenant autopilot settings (enabled, limits, schedule).",
+        "name": "admin_get_autopilot_settings",
+        "parameters": {
+          "properties": {},
+          "type": "object",
+        },
+      },
+      {
+        "description": "Update tenant autopilot settings. TWO-STEP confirm.",
+        "name": "admin_update_autopilot_settings",
+        "parameters": {
+          "properties": {
+            "auto_activate_threshold": {
+              "type": "number",
+            },
+            "confirm": {
+              "type": "boolean",
+            },
+            "enabled": {
+              "type": "boolean",
+            },
+            "max_activations_per_day": {
+              "type": "number",
+            },
+            "max_recommendations_per_day": {
+              "type": "number",
+            },
+          },
+          "type": "object",
+        },
+      },
+      {
+        "description": "List automation bindings active for this tenant.",
+        "name": "admin_list_autopilot_bindings",
+        "parameters": {
+          "properties": {},
+          "type": "object",
+        },
+      },
+      {
+        "description": "Create or update an automation binding. TWO-STEP confirm.",
+        "name": "admin_create_autopilot_binding",
+        "parameters": {
+          "properties": {
+            "automation_id": {
+              "description": "Required.",
+              "type": "string",
+            },
+            "confirm": {
+              "type": "boolean",
+            },
+            "enabled": {
+              "type": "boolean",
+            },
+            "max_runs_per_day": {
+              "type": "number",
+            },
+            "requires_approval": {
+              "type": "boolean",
+            },
+          },
+          "required": [
+            "automation_id",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Remove an automation binding. TWO-STEP confirm.",
+        "name": "admin_delete_autopilot_binding",
+        "parameters": {
+          "properties": {
+            "binding_id": {
+              "description": "Required.",
+              "type": "string",
+            },
+            "confirm": {
+              "type": "boolean",
+            },
+          },
+          "required": [
+            "binding_id",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "List automation execution runs.",
+        "name": "admin_list_autopilot_runs",
+        "parameters": {
+          "properties": {
+            "automation_id": {
+              "type": "string",
+            },
+            "limit": {
+              "type": "number",
+            },
+            "status": {
+              "type": "string",
+            },
+          },
+          "type": "object",
+        },
+      },
+      {
+        "description": "Execution run statistics for the tenant.",
+        "name": "admin_autopilot_run_stats",
+        "parameters": {
+          "properties": {},
+          "type": "object",
+        },
+      },
+      {
+        "description": "Enable/disable an autopilot wave for this tenant. TWO-STEP confirm.",
+        "name": "admin_update_autopilot_wave",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "type": "boolean",
+            },
+            "enabled": {
+              "type": "boolean",
+            },
+            "wave_id": {
+              "description": "Required.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "wave_id",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Product analytics KPI overview (users, sessions, top routes).",
+        "name": "admin_analytics_summary",
+        "parameters": {
+          "properties": {
+            "days": {
+              "description": "1-90, default 30.",
+              "type": "number",
+            },
+          },
+          "type": "object",
+        },
+      },
+      {
+        "description": "Assistant usage analytics (intents, topics, tools, p95 latency).",
+        "name": "admin_assistant_analytics",
+        "parameters": {
+          "properties": {
+            "days": {
+              "type": "number",
+            },
+          },
+          "type": "object",
+        },
+      },
+      {
+        "description": "User journey analytics (entry/exit routes, top paths, drop-offs).",
+        "name": "admin_journey_analytics",
+        "parameters": {
+          "properties": {
+            "days": {
+              "type": "number",
+            },
+          },
+          "type": "object",
+        },
+      },
+      {
+        "description": "Feature adoption analytics (opens, completions, repeat users).",
+        "name": "admin_feature_analytics",
+        "parameters": {
+          "properties": {
+            "days": {
+              "type": "number",
+            },
+          },
+          "type": "object",
+        },
+      },
+      {
+        "description": "Detected interest/topic analytics.",
+        "name": "admin_interest_analytics",
+        "parameters": {
+          "properties": {
+            "days": {
+              "type": "number",
+            },
+          },
+          "type": "object",
+        },
+      },
+      {
+        "description": "Intent Engine dashboard stats (exafy_admin only).",
+        "name": "admin_intent_engine_stats",
+        "parameters": {
+          "properties": {},
+          "type": "object",
+        },
+      },
+      {
+        "description": "Force-close a user intent (exafy_admin only). TWO-STEP confirm.",
+        "name": "admin_close_intent",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "type": "boolean",
+            },
+            "intent_id": {
+              "description": "Required.",
+              "type": "string",
+            },
+            "reason": {
+              "type": "string",
+            },
+          },
+          "required": [
+            "intent_id",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Recompute matches for one intent, or trigger the daily fan-out for all open intents if intent_id is omitted (exafy_admin only). TWO-STEP confirm.",
+        "name": "admin_recompute_intent",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "type": "boolean",
+            },
+            "intent_id": {
+              "type": "string",
+            },
+          },
+          "type": "object",
+        },
+      },
+      {
+        "description": "Resolve or dismiss an intent-match dispute (exafy_admin only). TWO-STEP confirm.",
+        "name": "admin_resolve_dispute",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "type": "boolean",
+            },
+            "dispute_id": {
+              "description": "Required.",
+              "type": "string",
+            },
+            "resolution": {
+              "description": "Min 5 chars. Required.",
+              "type": "string",
+            },
+            "status": {
+              "description": "resolved or dismissed. Required.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "dispute_id",
+            "status",
+            "resolution",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Batch-archive old intent matches by age (exafy_admin only; this is a batch job, not single-intent). TWO-STEP confirm.",
+        "name": "admin_archive_intent",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "type": "boolean",
+            },
+            "older_than_days": {
+              "description": "Default 90, min 7.",
+              "type": "number",
+            },
+          },
+          "type": "object",
+        },
+      },
+      {
+        "description": "ADMIN ONLY. List specialist personas.",
+        "name": "admin_list_specialists",
+        "parameters": {
+          "properties": {},
+          "type": "object",
+        },
+      },
+      {
+        "description": "ADMIN ONLY. One persona + version history.",
+        "name": "admin_get_specialist",
+        "parameters": {
+          "properties": {
+            "key": {
+              "description": "Required.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "key",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "ADMIN ONLY. Create a new specialist persona. TWO-STEP confirm.",
+        "name": "admin_create_specialist",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "type": "boolean",
+            },
+            "display_name": {
+              "description": "Required.",
+              "type": "string",
+            },
+            "handles_kinds": {
+              "items": {
+                "type": "string",
+              },
+              "type": "array",
+            },
+            "key": {
+              "description": "Lowercase, starts with a letter. Required.",
+              "type": "string",
+            },
+            "role": {
+              "description": "Required.",
+              "type": "string",
+            },
+            "status": {
+              "description": "active, draft, or disabled.",
+              "type": "string",
+            },
+            "system_prompt": {
+              "description": "Required.",
+              "type": "string",
+            },
+            "voice_id": {
+              "type": "string",
+            },
+          },
+          "required": [
+            "key",
+            "display_name",
+            "role",
+            "system_prompt",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "ADMIN ONLY. Edit a specialist persona (snapshots the prior version). TWO-STEP confirm.",
+        "name": "admin_update_specialist",
+        "parameters": {
+          "properties": {
+            "change_note": {
+              "type": "string",
+            },
+            "confirm": {
+              "type": "boolean",
+            },
+            "display_name": {
+              "type": "string",
+            },
+            "key": {
+              "description": "Required.",
+              "type": "string",
+            },
+            "role": {
+              "type": "string",
+            },
+            "status": {
+              "type": "string",
+            },
+            "system_prompt": {
+              "type": "string",
+            },
+          },
+          "required": [
+            "key",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "ADMIN ONLY. Roll back a specialist to a prior version. TWO-STEP confirm.",
+        "name": "admin_rollback_specialist",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "type": "boolean",
+            },
+            "key": {
+              "description": "Required.",
+              "type": "string",
+            },
+            "version": {
+              "description": "Required.",
+              "type": "number",
+            },
+          },
+          "required": [
+            "key",
+            "version",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "ADMIN ONLY. Replace the set of voice tools bound to a specialist. TWO-STEP confirm.",
+        "name": "admin_set_specialist_tools",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "type": "boolean",
+            },
+            "key": {
+              "description": "Required.",
+              "type": "string",
+            },
+            "tool_keys": {
+              "description": "Required, replaces existing bindings.",
+              "items": {
+                "type": "string",
+              },
+              "type": "array",
+            },
+          },
+          "required": [
+            "key",
+            "tool_keys",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "ADMIN ONLY. Replace the set of knowledge-base scopes bound to a specialist. TWO-STEP confirm.",
+        "name": "admin_set_specialist_kb",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "type": "boolean",
+            },
+            "kb_keys": {
+              "description": "Required, replaces existing bindings.",
+              "items": {
+                "type": "string",
+              },
+              "type": "array",
+            },
+            "key": {
+              "description": "Required.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "key",
+            "kb_keys",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "ADMIN ONLY. Enable or disable a specialist (the "vitana" persona can never be disabled). TWO-STEP confirm.",
+        "name": "admin_set_specialist_status",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "type": "boolean",
+            },
+            "enabled": {
+              "description": "Required.",
+              "type": "boolean",
+            },
+            "key": {
+              "description": "Required.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "key",
+            "enabled",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "ADMIN ONLY. Test a specialist's third-party connection (stub providers only today).",
+        "name": "admin_test_specialist_connection",
+        "parameters": {
+          "properties": {
+            "connection_id": {
+              "description": "Required.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "connection_id",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "ADMIN ONLY. Recent admin actions audit log.",
+        "name": "admin_audit_actions_log",
+        "parameters": {
+          "properties": {
+            "action": {
+              "type": "string",
+            },
+            "limit": {
+              "type": "number",
+            },
+          },
+          "type": "object",
+        },
+      },
+      {
+        "description": "ADMIN ONLY. Recent login/logout/role-change access events.",
+        "name": "admin_audit_access_log",
+        "parameters": {
+          "properties": {
+            "limit": {
+              "type": "number",
+            },
+          },
+          "type": "object",
+        },
+      },
+      {
+        "description": "EXAFY_ADMIN ONLY. Run the nightly memory consolidator on demand — scope to one user, or omit for a heavy all-users sweep. TWO-STEP confirm.",
+        "name": "admin_run_memory_consolidator",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "type": "boolean",
+            },
+            "loops": {
+              "items": {
+                "type": "string",
+              },
+              "type": "array",
+            },
+            "tenant_id": {
+              "type": "string",
+            },
+            "user_id": {
+              "type": "string",
+            },
+          },
+          "type": "object",
+        },
+      },
+      {
+        "description": "EXAFY_ADMIN ONLY. Backfill missing memory_items embeddings. TWO-STEP confirm (dry_run=true skips confirmation).",
+        "name": "admin_run_embeddings_backfill",
+        "parameters": {
+          "properties": {
+            "batch_size": {
+              "description": "1-200, default 50.",
+              "type": "number",
+            },
+            "confirm": {
+              "type": "boolean",
+            },
+            "dry_run": {
+              "type": "boolean",
+            },
+          },
           "type": "object",
         },
       },
@@ -14913,6 +18063,596 @@ CALL WHEN the user says: "connect my Oura ring", "pair my device",
             },
           },
           "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Current plan, status, renewal date, and voice-minutes usage.",
+        "name": "get_my_subscription",
+        "parameters": {
+          "properties": {},
+          "type": "object",
+        },
+      },
+      {
+        "description": "List subscription plans with prices.",
+        "name": "compare_subscription_plans",
+        "parameters": {
+          "properties": {},
+          "type": "object",
+        },
+      },
+      {
+        "description": "Start Stripe checkout to upgrade the subscription — hands off to the screen for payment. TWO-STEP confirm.",
+        "name": "upgrade_subscription",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "type": "boolean",
+            },
+            "price_key": {
+              "description": "Required.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "price_key",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Opens the Stripe billing portal to cancel (no direct in-voice cancel exists).",
+        "name": "cancel_subscription",
+        "parameters": {
+          "properties": {},
+          "type": "object",
+        },
+      },
+      {
+        "description": "Start Stripe checkout to buy a voice-minutes credit pack — hands off to the screen for payment. TWO-STEP confirm.",
+        "name": "add_voice_minutes",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "type": "boolean",
+            },
+            "credit_pack": {
+              "description": "starter, boost, or power. Required.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "credit_pack",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Redeem a subscription code to grant a plan directly.",
+        "name": "redeem_subscription_code",
+        "parameters": {
+          "properties": {
+            "code": {
+              "description": "Required.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "code",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Opens the Stripe billing portal, which shows invoice history (no in-voice invoice list exists).",
+        "name": "get_billing_history",
+        "parameters": {
+          "properties": {},
+          "type": "object",
+        },
+      },
+      {
+        "description": "Your referral link — generates one if you don't have one yet.",
+        "name": "get_referral_link",
+        "parameters": {
+          "properties": {},
+          "type": "object",
+        },
+      },
+      {
+        "description": "Generate a shareable invite link (there is no automated email/SMS send yet — the user must share it themselves). TWO-STEP confirm.",
+        "name": "invite_friend",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "type": "boolean",
+            },
+          },
+          "type": "object",
+        },
+      },
+      {
+        "description": "Who joined via your referral link and reward status.",
+        "name": "get_referral_status",
+        "parameters": {
+          "properties": {},
+          "type": "object",
+        },
+      },
+      {
+        "description": "What live rooms are live or scheduled right now.",
+        "name": "list_live_rooms_now",
+        "parameters": {
+          "properties": {},
+          "type": "object",
+        },
+      },
+      {
+        "description": "Room info, host, access level for one live room.",
+        "name": "get_live_room_details",
+        "parameters": {
+          "properties": {
+            "room_id": {
+              "description": "Required.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "room_id",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Start hosting now (creates a live session on your room).",
+        "name": "go_live",
+        "parameters": {
+          "properties": {
+            "access_level": {
+              "type": "string",
+            },
+            "room_id": {
+              "description": "Required.",
+              "type": "string",
+            },
+            "session_title": {
+              "type": "string",
+            },
+          },
+          "required": [
+            "room_id",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Create a new live room. TWO-STEP confirm.",
+        "name": "create_live_room",
+        "parameters": {
+          "properties": {
+            "access_level": {
+              "description": "public or group.",
+              "type": "string",
+            },
+            "confirm": {
+              "type": "boolean",
+            },
+            "price": {
+              "type": "number",
+            },
+            "starts_at": {
+              "type": "string",
+            },
+            "title": {
+              "description": "Required.",
+              "type": "string",
+            },
+            "topic_keys": {
+              "items": {
+                "type": "string",
+              },
+              "type": "array",
+            },
+          },
+          "required": [
+            "title",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Schedule a future live session on your room.",
+        "name": "schedule_live_session",
+        "parameters": {
+          "properties": {
+            "room_id": {
+              "description": "Required.",
+              "type": "string",
+            },
+            "session_title": {
+              "type": "string",
+            },
+            "starts_at": {
+              "description": "ISO timestamp. Required.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "room_id",
+            "starts_at",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Prepare payment for a paid room — hands off to the screen to confirm the charge.",
+        "name": "purchase_room_access",
+        "parameters": {
+          "properties": {
+            "room_id": {
+              "description": "Required.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "room_id",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "End your current live session. TWO-STEP confirm.",
+        "name": "end_live_session",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "type": "boolean",
+            },
+            "room_id": {
+              "description": "Required.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "room_id",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Browse open community asks.",
+        "name": "list_open_asks",
+        "parameters": {
+          "properties": {
+            "category_prefix": {
+              "type": "string",
+            },
+            "kind": {
+              "type": "string",
+            },
+            "limit": {
+              "type": "integer",
+            },
+          },
+          "type": "object",
+        },
+      },
+      {
+        "description": "Edit the content of your own post. TWO-STEP confirm.",
+        "name": "edit_my_post",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "type": "boolean",
+            },
+            "content": {
+              "description": "Required.",
+              "type": "string",
+            },
+            "post_id": {
+              "description": "Required.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "post_id",
+            "content",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Permanently delete your own post. TWO-STEP confirm.",
+        "name": "delete_my_post",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "type": "boolean",
+            },
+            "post_id": {
+              "description": "Required.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "post_id",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Set your goal / north star. You have one active goal at a time.",
+        "name": "set_goal",
+        "parameters": {
+          "properties": {
+            "category": {
+              "type": "string",
+            },
+            "goal": {
+              "description": "The goal statement. Required.",
+              "type": "string",
+            },
+            "starting_value": {
+              "type": "number",
+            },
+            "target_date": {
+              "type": "string",
+            },
+            "target_unit": {
+              "type": "string",
+            },
+            "target_value": {
+              "type": "number",
+            },
+          },
+          "required": [
+            "goal",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Your active goal (single-goal model, not a list).",
+        "name": "list_my_goals",
+        "parameters": {
+          "properties": {},
+          "type": "object",
+        },
+      },
+      {
+        "description": "Adjust your goal — re-state the full goal text even when only changing the date/target.",
+        "name": "update_goal",
+        "parameters": {
+          "properties": {
+            "category": {
+              "type": "string",
+            },
+            "goal": {
+              "description": "The full, updated goal statement. Required.",
+              "type": "string",
+            },
+            "target_date": {
+              "type": "string",
+            },
+            "target_unit": {
+              "type": "string",
+            },
+            "target_value": {
+              "type": "number",
+            },
+          },
+          "required": [
+            "goal",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Progress readout on your active goal.",
+        "name": "get_goal_progress",
+        "parameters": {
+          "properties": {},
+          "type": "object",
+        },
+      },
+      {
+        "description": "Checkpoints in your goal plan.",
+        "name": "get_journey_checkpoints",
+        "parameters": {
+          "properties": {},
+          "type": "object",
+        },
+      },
+      {
+        "description": "Create a service listing in the Business Hub catalog. NOTE: there is no way to list, edit, or archive services by voice yet. TWO-STEP confirm.",
+        "name": "create_service",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "type": "boolean",
+            },
+            "name": {
+              "description": "Required.",
+              "type": "string",
+            },
+            "provider_name": {
+              "type": "string",
+            },
+            "service_type": {
+              "description": "coaching, consulting, workshop, class, session, or other. Required.",
+              "type": "string",
+            },
+            "topic_keys": {
+              "items": {
+                "type": "string",
+              },
+              "type": "array",
+            },
+          },
+          "required": [
+            "name",
+            "service_type",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Correct the content of a stored memory. TWO-STEP confirm.",
+        "name": "edit_memory",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "type": "boolean",
+            },
+            "correction_notes": {
+              "type": "string",
+            },
+            "memory_item_id": {
+              "description": "Required.",
+              "type": "string",
+            },
+            "new_content": {
+              "description": "Required.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "memory_item_id",
+            "new_content",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Confirm a memory as accurate and trustworthy (raises its confidence score).",
+        "name": "reinforce_memory",
+        "parameters": {
+          "properties": {
+            "confirmation_notes": {
+              "type": "string",
+            },
+            "memory_item_id": {
+              "description": "Required.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "memory_item_id",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Set who can see a category of your memory (diary, garden, relationships, longevity, timeline). TWO-STEP confirm.",
+        "name": "set_memory_permissions",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "type": "boolean",
+            },
+            "domain": {
+              "description": "diary, garden, relationships, longevity, or timeline. Required.",
+              "type": "string",
+            },
+            "visibility": {
+              "description": "private, connections, professionals, or custom. Required.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "domain",
+            "visibility",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": ""What do you know about me" — summary of your memory garden by category.",
+        "name": "get_what_vitana_knows",
+        "parameters": {
+          "properties": {},
+          "type": "object",
+        },
+      },
+      {
+        "description": "Opens the diary screen so you can attach a photo (voice cannot upload directly).",
+        "name": "add_diary_photo",
+        "parameters": {
+          "properties": {},
+          "type": "object",
+        },
+      },
+      {
+        "description": "Your taste/lifestyle profile completeness percentage.",
+        "name": "get_profile_completeness",
+        "parameters": {
+          "properties": {},
+          "type": "object",
+        },
+      },
+      {
+        "description": "Get your shareable profile link.",
+        "name": "share_my_profile",
+        "parameters": {
+          "properties": {},
+          "type": "object",
+        },
+      },
+      {
+        "description": "Your achieved milestones.",
+        "name": "get_my_milestones",
+        "parameters": {
+          "properties": {
+            "limit": {
+              "type": "number",
+            },
+          },
+          "type": "object",
+        },
+      },
+      {
+        "description": "Spoken summary of a community member's public profile.",
+        "name": "view_member_profile",
+        "parameters": {
+          "properties": {
+            "handle": {
+              "type": "string",
+            },
+            "user_id": {
+              "type": "string",
+            },
+          },
+          "type": "object",
+        },
+      },
+      {
+        "description": "Replace the service offerings shown on your profile. TWO-STEP confirm.",
+        "name": "update_service_offerings",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "type": "boolean",
+            },
+            "offers": {
+              "description": "Required, replaces existing offerings. Each: {category, title, short_description?, price_min_cents?, price_max_cents?, currency?, contact_via?}.",
+              "items": {
+                "properties": {
+                  "category": {
+                    "type": "string",
+                  },
+                  "title": {
+                    "type": "string",
+                  },
+                },
+                "type": "object",
+              },
+              "type": "array",
+            },
+          },
+          "required": [
+            "offers",
+          ],
           "type": "object",
         },
       },

@@ -74,6 +74,35 @@ import { ADMIN_MARKETPLACE_TOOL_HANDLERS, ADMIN_MARKETPLACE_TOOL_DECLARATIONS } 
 import { ADMIN_NOTIFICATIONS_TOOL_HANDLERS, ADMIN_NOTIFICATIONS_TOOL_DECLARATIONS } from './orb-tools/admin-notifications-tools';
 import { ADMIN_GOVERNANCE_TOOL_HANDLERS, ADMIN_GOVERNANCE_TOOL_DECLARATIONS } from './orb-tools/admin-governance-tools';
 import { ADMIN_FEEDBACK_TOOL_HANDLERS, ADMIN_FEEDBACK_TOOL_DECLARATIONS } from './orb-tools/admin-feedback-tools';
+// WAVE-4-VOICE-CATALOG-V2 — fourth wave of the approved 425-tool expansion:
+// community P1 (subscriptions/billing, live rooms, feed/goals, business hub)
+// and admin P1 (tenants/signups, community oversight/billing admin, KB &
+// assistant config, autopilot & analytics admin).
+import { SUBSCRIPTIONS_BILLING_TOOL_HANDLERS, SUBSCRIPTIONS_BILLING_TOOL_DECLARATIONS } from './orb-tools/subscriptions-billing-tools';
+import { LIVE_ROOMS_TOOL_HANDLERS, LIVE_ROOMS_TOOL_DECLARATIONS } from './orb-tools/live-rooms-tools';
+import { FEED_GOALS_TOOL_HANDLERS, FEED_GOALS_TOOL_DECLARATIONS } from './orb-tools/feed-goals-tools';
+import { BUSINESS_HUB_TOOL_HANDLERS, BUSINESS_HUB_TOOL_DECLARATIONS } from './orb-tools/business-hub-tools';
+import { ADMIN_TENANTS_SIGNUPS_TOOL_HANDLERS, ADMIN_TENANTS_SIGNUPS_TOOL_DECLARATIONS } from './orb-tools/admin-tenants-signups-tools';
+import { ADMIN_OVERSIGHT_BILLING_TOOL_HANDLERS, ADMIN_OVERSIGHT_BILLING_TOOL_DECLARATIONS } from './orb-tools/admin-oversight-billing-tools';
+import { ADMIN_KB_ASSISTANT_TOOL_HANDLERS, ADMIN_KB_ASSISTANT_TOOL_DECLARATIONS } from './orb-tools/admin-kb-assistant-tools';
+import { ADMIN_AUTOPILOT_ANALYTICS_TOOL_HANDLERS, ADMIN_AUTOPILOT_ANALYTICS_TOOL_DECLARATIONS } from './orb-tools/admin-autopilot-analytics-tools';
+// WAVE-5-VOICE-CATALOG-V2 — fifth wave of the approved 425-tool expansion:
+// developer P1 domains covering worker orchestrator, autopilot controller &
+// loop, dev-autopilot scanners/findings, self-healing, and testing & QA.
+import { WORKER_ORCHESTRATOR_TOOL_HANDLERS, WORKER_ORCHESTRATOR_TOOL_DECLARATIONS } from './orb-tools/worker-orchestrator-tools';
+import { AUTOPILOT_CONTROLLER_TOOL_HANDLERS, AUTOPILOT_CONTROLLER_TOOL_DECLARATIONS } from './orb-tools/autopilot-controller-tools';
+import { DEV_AUTOPILOT_SCANNERS_TOOL_HANDLERS, DEV_AUTOPILOT_SCANNERS_TOOL_DECLARATIONS } from './orb-tools/dev-autopilot-scanners-tools';
+import { SELF_HEALING_TOOL_HANDLERS, SELF_HEALING_TOOL_DECLARATIONS } from './orb-tools/self-healing-tools';
+import { TESTING_QA_TOOL_HANDLERS, TESTING_QA_TOOL_DECLARATIONS } from './orb-tools/testing-qa-tools';
+// WAVE-6-VOICE-CATALOG-V2 — sixth and final wave of the approved 425-tool
+// expansion: admin specialists/personas, admin audit & memory ops, community
+// memory/diary extras + profile/social depth, developer database &
+// migrations, and developer access/simulator/meta.
+import { ADMIN_SPECIALISTS_TOOL_HANDLERS, ADMIN_SPECIALISTS_TOOL_DECLARATIONS } from './orb-tools/admin-specialists-tools';
+import { ADMIN_AUDIT_MEMORY_OPS_TOOL_HANDLERS, ADMIN_AUDIT_MEMORY_OPS_TOOL_DECLARATIONS } from './orb-tools/admin-audit-memory-ops-tools';
+import { MEMORY_DIARY_SOCIAL_TOOL_HANDLERS, MEMORY_DIARY_SOCIAL_TOOL_DECLARATIONS } from './orb-tools/memory-diary-social-tools';
+import { DATABASE_MIGRATIONS_TOOL_HANDLERS, DATABASE_MIGRATIONS_TOOL_DECLARATIONS } from './orb-tools/database-migrations-tools';
+import { DEV_ACCESS_SIMULATOR_META_TOOL_HANDLERS, DEV_ACCESS_SIMULATOR_META_TOOL_DECLARATIONS } from './orb-tools/dev-access-simulator-meta-tools';
 import {
   lookupScreen,
   lookupByAlias,
@@ -4111,6 +4140,15 @@ async function tool_get_pillar_subscores(
 //   5) compute per-pillar delta
 //   6) celebrate diary streak (non-blocking)
 // ---------------------------------------------------------------------------
+
+// Bare acceptance of a "want help logging?" nudge, in the languages the
+// diary nudge/CTA is rendered in — DE and EN. Matches the WHOLE trimmed
+// string (optionally followed by punctuation) so real diary content that
+// happens to start with "yes" or "ja" ("Ja, ich habe heute 2L Wasser
+// getrunken") is never caught by this — only a standalone consent phrase.
+const BARE_CONSENT_RX =
+  /^(ja|okay?|klar|gerne|sicher|yes|sure|help me|hilf mir|ja,? hilf mir|yes,? help me|ja bitte|yes please)[.!,]*$/i;
+
 export async function tool_save_diary_entry(
   args: OrbToolArgs,
   identity: OrbToolIdentity,
@@ -4122,6 +4160,19 @@ export async function tool_save_diary_entry(
   }
   if (!identity.user_id) {
     return { ok: false, error: 'user_id is required' };
+  }
+  // DEV-COMHU-0505-follow-up: a bare acceptance of a diary nudge ("ja",
+  // "hilf mir", "yes", "okay") is not diary content — it's consent to be
+  // asked what to log. Without this the model could (and did) pass the
+  // user's own "yes, help me" straight through as raw_text, fabricating a
+  // persisted diary entry with no real content. Reject it here as a
+  // backstop regardless of what the live prompt does upstream.
+  if (BARE_CONSENT_RX.test(rawText)) {
+    return {
+      ok: true,
+      result: { needs_content: true },
+      text: 'That was just an acceptance, not diary content. Ask the user what they would like to log for today, then call save_diary_entry again with their actual words.',
+    };
   }
 
   const argDate = typeof args.entry_date === 'string' ? args.entry_date : undefined;
@@ -5189,6 +5240,27 @@ export const ORB_TOOL_REGISTRY: Record<string, OrbToolHandler> = {
   ...ADMIN_NOTIFICATIONS_TOOL_HANDLERS,
   ...ADMIN_GOVERNANCE_TOOL_HANDLERS,
   ...ADMIN_FEEDBACK_TOOL_HANDLERS,
+  // WAVE-4-VOICE-CATALOG-V2
+  ...SUBSCRIPTIONS_BILLING_TOOL_HANDLERS,
+  ...LIVE_ROOMS_TOOL_HANDLERS,
+  ...FEED_GOALS_TOOL_HANDLERS,
+  ...BUSINESS_HUB_TOOL_HANDLERS,
+  ...ADMIN_TENANTS_SIGNUPS_TOOL_HANDLERS,
+  ...ADMIN_OVERSIGHT_BILLING_TOOL_HANDLERS,
+  ...ADMIN_KB_ASSISTANT_TOOL_HANDLERS,
+  ...ADMIN_AUTOPILOT_ANALYTICS_TOOL_HANDLERS,
+  // WAVE-5-VOICE-CATALOG-V2
+  ...WORKER_ORCHESTRATOR_TOOL_HANDLERS,
+  ...AUTOPILOT_CONTROLLER_TOOL_HANDLERS,
+  ...DEV_AUTOPILOT_SCANNERS_TOOL_HANDLERS,
+  ...SELF_HEALING_TOOL_HANDLERS,
+  ...TESTING_QA_TOOL_HANDLERS,
+  // WAVE-6-VOICE-CATALOG-V2
+  ...ADMIN_SPECIALISTS_TOOL_HANDLERS,
+  ...ADMIN_AUDIT_MEMORY_OPS_TOOL_HANDLERS,
+  ...MEMORY_DIARY_SOCIAL_TOOL_HANDLERS,
+  ...DATABASE_MIGRATIONS_TOOL_HANDLERS,
+  ...DEV_ACCESS_SIMULATOR_META_TOOL_HANDLERS,
 };
 
 // BOOTSTRAP-VOICE-CATALOG-COMPLETE — combined Vertex/Gemini function
@@ -5214,6 +5286,13 @@ export const NEW_DOMAIN_TOOL_DECLARATIONS: Array<Record<string, unknown>> = [
   ...MESSAGING_DEPTH_TOOL_DECLARATIONS,
   ...EVENTS_TICKETS_TOOL_DECLARATIONS,
   ...HEALTH_DEPTH_TOOL_DECLARATIONS,
+  // WAVE-4-VOICE-CATALOG-V2 (community)
+  ...SUBSCRIPTIONS_BILLING_TOOL_DECLARATIONS,
+  ...LIVE_ROOMS_TOOL_DECLARATIONS,
+  ...FEED_GOALS_TOOL_DECLARATIONS,
+  ...BUSINESS_HUB_TOOL_DECLARATIONS,
+  // WAVE-6-VOICE-CATALOG-V2 (community)
+  ...MEMORY_DIARY_SOCIAL_TOOL_DECLARATIONS,
 ];
 
 // Developer tools are role-gated the same way ADMIN_TOOL_SCHEMAS is —
@@ -5228,6 +5307,15 @@ export const DEVELOPER_DOMAIN_TOOL_DECLARATIONS: Array<Record<string, unknown>> 
   ...CICD_PR_TOOL_DECLARATIONS,
   ...DEPLOYMENT_RELEASE_TOOL_DECLARATIONS,
   ...OBSERVABILITY_TOOL_DECLARATIONS,
+  // WAVE-5-VOICE-CATALOG-V2
+  ...WORKER_ORCHESTRATOR_TOOL_DECLARATIONS,
+  ...AUTOPILOT_CONTROLLER_TOOL_DECLARATIONS,
+  ...DEV_AUTOPILOT_SCANNERS_TOOL_DECLARATIONS,
+  ...SELF_HEALING_TOOL_DECLARATIONS,
+  ...TESTING_QA_TOOL_DECLARATIONS,
+  // WAVE-6-VOICE-CATALOG-V2
+  ...DATABASE_MIGRATIONS_TOOL_DECLARATIONS,
+  ...DEV_ACCESS_SIMULATOR_META_TOOL_DECLARATIONS,
 ];
 
 // WAVE-3-VOICE-CATALOG-V2 — admin_* declarations, injected by
@@ -5240,6 +5328,14 @@ export const ADMIN_DOMAIN_TOOL_DECLARATIONS: Array<Record<string, unknown>> = [
   ...ADMIN_NOTIFICATIONS_TOOL_DECLARATIONS,
   ...ADMIN_GOVERNANCE_TOOL_DECLARATIONS,
   ...ADMIN_FEEDBACK_TOOL_DECLARATIONS,
+  // WAVE-4-VOICE-CATALOG-V2
+  ...ADMIN_TENANTS_SIGNUPS_TOOL_DECLARATIONS,
+  ...ADMIN_OVERSIGHT_BILLING_TOOL_DECLARATIONS,
+  ...ADMIN_KB_ASSISTANT_TOOL_DECLARATIONS,
+  ...ADMIN_AUTOPILOT_ANALYTICS_TOOL_DECLARATIONS,
+  // WAVE-6-VOICE-CATALOG-V2
+  ...ADMIN_SPECIALISTS_TOOL_DECLARATIONS,
+  ...ADMIN_AUDIT_MEMORY_OPS_TOOL_DECLARATIONS,
 ];
 
 export const ORB_TOOL_NAMES = Object.keys(ORB_TOOL_REGISTRY);

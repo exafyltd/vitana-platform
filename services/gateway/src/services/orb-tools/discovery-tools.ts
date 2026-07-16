@@ -487,6 +487,47 @@ async function resolveRecommendation(
   statuses: string[] | null,
   toolName: string,
 ): Promise<RecResolution> {
+  // No spoken reference — the user is likely reacting to the recommendation
+  // Vitana just offered (e.g. declined "activate?" but asked to hear more,
+  // or said "snooze/dismiss it" without naming it). That offer's id is the
+  // pending CTA persisted by wake-brief-wiring into orb_session_state (same
+  // fallback tool_activate_recommendation already uses below — see
+  // orb-tools-shared.ts). Without this, every such follow-up fell through to
+  // the broad "several recommendations match" ambiguity branch further down,
+  // even when there was only ever one specific recommendation on the table.
+  if (!ref && id.user_id) {
+    try {
+      const { readOrbSessionState } = await import('../orb/orb-session-state');
+      const pending = await readOrbSessionState<{ tool?: string; payload?: { id?: string } }>(
+        sb,
+        id.user_id,
+        'pending_cta',
+      );
+      const pendingId =
+        pending &&
+        pending.value &&
+        pending.value.tool === 'activate_recommendation' &&
+        typeof pending.value.payload?.id === 'string'
+          ? pending.value.payload.id.trim()
+          : '';
+      if (pendingId) {
+        const { data, error } = await sb
+          .from('autopilot_recommendations')
+          .select('*')
+          .eq('id', pendingId)
+          .maybeSingle();
+        const rec = !error ? (data as RecRow | null) : null;
+        if (rec && (!rec.user_id || rec.user_id === id.user_id)) {
+          return { ok: true, rec };
+        }
+        // Pending CTA is stale/inaccessible — fall through to the normal
+        // resolution below rather than failing outright.
+      }
+    } catch {
+      // Best-effort fallback only; fall through to normal resolution.
+    }
+  }
+
   if (UUID_RX.test(ref)) {
     const { data, error } = await sb
       .from('autopilot_recommendations')
