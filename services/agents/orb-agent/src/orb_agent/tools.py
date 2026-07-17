@@ -2826,6 +2826,3107 @@ async def dev_list_agents(context: RunContext, tier: str | None = None) -> str:
 
 
 # ---------------------------------------------------------------------------
+# BOOTSTRAP-VOICE-TOOLS-CATALOG-WAVE1 — 69 new voice tools built out from six
+# gateway handler modules (services/gateway/src/services/orb-tools/*.ts),
+# reached through the shared dispatcher exactly like the tools above. All use
+# _dispatch_with_directive since several of these (navigation redirects to
+# cart/checkout/product/event screens) can carry a `directive` payload.
+# ---------------------------------------------------------------------------
+
+
+# --- A1 Marketplace & Discovery (16) ---------------------------------------
+
+
+@function_tool
+async def search_marketplace(context: RunContext, q: str | None = None, category: str | None = None, price_min_cents: float | None = None, price_max_cents: float | None = None, limit: float | None = None) -> str:
+    """Search the Maxina marketplace for products by free-text query, category, or price range."""
+    body = await _dispatch_with_directive(context, "search_marketplace", {
+            "q": q,
+            "category": category,
+            "price_min_cents": price_min_cents,
+            "price_max_cents": price_max_cents,
+            "limit": limit,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def get_product_details(context: RunContext, product_id: str | None = None, query: str | None = None) -> str:
+    """Get details for one marketplace product by id or by spoken name."""
+    body = await _dispatch_with_directive(context, "get_product_details", {
+            "product_id": product_id,
+            "query": query,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def browse_supplements(context: RunContext, limit: float | None = None) -> str:
+    """Browse the marketplace supplements shop (not the personal supplement tracker)."""
+    body = await _dispatch_with_directive(context, "browse_supplements", {
+            "limit": limit,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def add_supplement_to_regimen(context: RunContext, name: str | None = None) -> str:
+    """NOT CURRENTLY AVAILABLE via voice — the personal supplement tracker has no gateway-side backing yet."""
+    body = await _dispatch_with_directive(context, "add_supplement_to_regimen", {
+            "name": name,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def list_my_supplements(context: RunContext) -> str:
+    """NOT CURRENTLY AVAILABLE via voice — always returns an error."""
+    body = await _dispatch_with_directive(context, "list_my_supplements")
+    return summarize(body)
+
+
+@function_tool
+async def remove_supplement_from_regimen(context: RunContext, name: str | None = None) -> str:
+    """NOT CURRENTLY AVAILABLE via voice — always returns an error."""
+    body = await _dispatch_with_directive(context, "remove_supplement_from_regimen", {
+            "name": name,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def browse_wellness_services(context: RunContext, limit: float | None = None) -> str:
+    """Browse wellness/nutrition/fitness/therapy/lab services listed in the marketplace."""
+    body = await _dispatch_with_directive(context, "browse_wellness_services", {
+            "limit": limit,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def get_provider_profile(context: RunContext, provider_id: str | None = None, query: str | None = None) -> str:
+    """Get one service/provider listing by id or spoken name (doctor, coach, wellness provider, etc)."""
+    body = await _dispatch_with_directive(context, "get_provider_profile", {
+            "provider_id": provider_id,
+            "query": query,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def browse_doctors_coaches(context: RunContext, limit: float | None = None) -> str:
+    """Browse doctors and coaches listed in the marketplace."""
+    body = await _dispatch_with_directive(context, "browse_doctors_coaches", {
+            "limit": limit,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def get_coach_compatibility(context: RunContext, provider_id: str | None = None) -> str:
+    """NOT CURRENTLY AVAILABLE via voice — no compatibility-scoring system exists yet."""
+    body = await _dispatch_with_directive(context, "get_coach_compatibility", {
+            "provider_id": provider_id,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def browse_deals_offers(context: RunContext, limit: float | None = None) -> str:
+    """Browse marketplace products currently on sale (discounted vs. their reference price)."""
+    body = await _dispatch_with_directive(context, "browse_deals_offers", {
+            "limit": limit,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def apply_discount_code(context: RunContext, code: str | None = None) -> str:
+    """NOT CURRENTLY AVAILABLE via voice — the discount-code system has no gateway-side backing yet."""
+    body = await _dispatch_with_directive(context, "apply_discount_code", {
+            "code": code,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def get_ai_product_picks(context: RunContext, prompt: str, max_items: float | None = None) -> str:
+    """Have the Vitana shopping agent propose marketplace products for a goal or need and stage them in the cart."""
+    body = await _dispatch_with_directive(context, "get_ai_product_picks", {
+            "prompt": prompt,
+            "max_items": max_items,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def list_my_orders(context: RunContext, limit: float | None = None) -> str:
+    """List the user's recent marketplace orders with status and amount."""
+    body = await _dispatch_with_directive(context, "list_my_orders", {
+            "limit": limit,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def get_order_status(context: RunContext, order_id: str | None = None) -> str:
+    """Check the status of one order by id, or the most recent order if no id is given."""
+    body = await _dispatch_with_directive(context, "get_order_status", {
+            "order_id": order_id,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def reorder_last_order(context: RunContext, confirm: bool | None = None) -> str:
+    """Add the user's most recent (still-available) purchase back to the cart. Call once without confirm first."""
+    body = await _dispatch_with_directive(context, "reorder_last_order", {
+            "confirm": confirm,
+        })
+    return summarize(body)
+
+
+# --- A2 Cart & Checkout (8) -------------------------------------------------
+
+
+@function_tool
+async def add_to_cart(context: RunContext, product_id: str | None = None, query: str | None = None, quantity: float | None = None) -> str:
+    """Add a marketplace product to the user's cart, by product_id or fuzzy product name."""
+    body = await _dispatch_with_directive(context, "add_to_cart", {
+            "product_id": product_id,
+            "query": query,
+            "quantity": quantity,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def view_cart(context: RunContext) -> str:
+    """Read the contents of the user's cart: items, quantities, prices, and the total."""
+    body = await _dispatch_with_directive(context, "view_cart")
+    return summarize(body)
+
+
+@function_tool
+async def update_cart_item(context: RunContext, quantity: float, item_id: str | None = None, query: str | None = None) -> str:
+    """Change the quantity of an item already in the cart, by item_id or fuzzy product name."""
+    body = await _dispatch_with_directive(context, "update_cart_item", {
+            "item_id": item_id,
+            "query": query,
+            "quantity": quantity,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def remove_from_cart(context: RunContext, item_id: str | None = None, query: str | None = None) -> str:
+    """Remove a single item from the cart, by item_id or fuzzy product name."""
+    body = await _dispatch_with_directive(context, "remove_from_cart", {
+            "item_id": item_id,
+            "query": query,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def clear_cart(context: RunContext, confirm: bool | None = None) -> str:
+    """Remove ALL items from the cart. Call once without confirm first."""
+    body = await _dispatch_with_directive(context, "clear_cart", {
+            "confirm": confirm,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def set_shopping_budget(context: RunContext, monthly_cap_amount: float | None = None, clear: bool | None = None) -> str:
+    """Set or clear the user's monthly shopping budget cap (advisory only, never blocks purchases)."""
+    body = await _dispatch_with_directive(context, "set_shopping_budget", {
+            "monthly_cap_amount": monthly_cap_amount,
+            "clear": clear,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def review_agent_purchase_proposals(context: RunContext) -> str:
+    """List the items the shopping agent (autopilot) has proposed and placed into the user's cart for review."""
+    body = await _dispatch_with_directive(context, "review_agent_purchase_proposals")
+    return summarize(body)
+
+
+@function_tool
+async def start_checkout(context: RunContext, confirm: bool | None = None) -> str:
+    """Begin checkout for the user's cart. Call once without confirm first; never charges anything by voice."""
+    body = await _dispatch_with_directive(context, "start_checkout", {
+            "confirm": confirm,
+        })
+    return summarize(body)
+
+
+# --- A3 Wallet & Payments (11) ----------------------------------------------
+
+
+@function_tool
+async def get_wallet_summary(context: RunContext) -> str:
+    """READ-ONLY wallet snapshot: balance per currency, active subscription, and referral rewards."""
+    body = await _dispatch_with_directive(context, "get_wallet_summary")
+    return summarize(body)
+
+
+@function_tool
+async def list_wallet_transactions(context: RunContext, limit: float | None = None, currency: str | None = None, cursor: str | None = None) -> str:
+    """READ-ONLY: list the user's recent wallet transactions, newest first."""
+    body = await _dispatch_with_directive(context, "list_wallet_transactions", {
+            "limit": limit,
+            "currency": currency,
+            "cursor": cursor,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def send_funds(context: RunContext, recipient_name: str | None = None, recipient_user_id: str | None = None, amount: float | None = None, currency: str | None = None, confirm: bool | None = None) -> str:
+    """Send money from the user's wallet to another Vitana member (internal transfer only, never a card charge)."""
+    body = await _dispatch_with_directive(context, "send_funds", {
+            "recipient_name": recipient_name,
+            "recipient_user_id": recipient_user_id,
+            "amount": amount,
+            "currency": currency,
+            "confirm": confirm,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def request_payment(context: RunContext, recipient_name: str | None = None, amount: float | None = None, currency: str | None = None, description: str | None = None) -> str:
+    """NOT YET AVAILABLE — always returns an error explaining there is no backing endpoint for payment requests."""
+    body = await _dispatch_with_directive(context, "request_payment", {
+            "recipient_name": recipient_name,
+            "amount": amount,
+            "currency": currency,
+            "description": description,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def exchange_currency(context: RunContext, amount: float | None = None, from_currency: str | None = None, to_currency: str | None = None, confirm: bool | None = None) -> str:
+    """NOT YET AVAILABLE — always returns an error: the wallet has no cross-currency conversion RPC."""
+    body = await _dispatch_with_directive(context, "exchange_currency", {
+            "amount": amount,
+            "from_currency": from_currency,
+            "to_currency": to_currency,
+            "confirm": confirm,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def get_exchange_rate(context: RunContext, from_currency: str | None = None, to_currency: str | None = None) -> str:
+    """NOT YET AVAILABLE — always returns an error: no exchange-rate table/RPC is wired into the gateway."""
+    body = await _dispatch_with_directive(context, "get_exchange_rate", {
+            "from_currency": from_currency,
+            "to_currency": to_currency,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def set_display_currency(context: RunContext, currency: str | None = None) -> str:
+    """NOT YET AVAILABLE — always returns an error: the display-currency toggle is stored only in the browser."""
+    body = await _dispatch_with_directive(context, "set_display_currency", {
+            "currency": currency,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def get_referral_earnings(context: RunContext) -> str:
+    """READ-ONLY: total referral rewards earned (confirmed) and pending, from the user's reward ledger."""
+    body = await _dispatch_with_directive(context, "get_referral_earnings")
+    return summarize(body)
+
+
+@function_tool
+async def get_commissions_summary(context: RunContext) -> str:
+    """READ-ONLY: commissions earned this calendar month — total, confirmed, and still-pending amounts."""
+    body = await _dispatch_with_directive(context, "get_commissions_summary")
+    return summarize(body)
+
+
+@function_tool
+async def get_pending_rewards(context: RunContext) -> str:
+    """READ-ONLY: rewards awaiting merchant confirmation (not yet payable)."""
+    body = await _dispatch_with_directive(context, "get_pending_rewards")
+    return summarize(body)
+
+
+@function_tool
+async def list_payment_requests(context: RunContext, direction: str | None = None) -> str:
+    """NOT YET AVAILABLE — always returns an error: payment requests have no structured table to list from."""
+    body = await _dispatch_with_directive(context, "list_payment_requests", {
+            "direction": direction,
+        })
+    return summarize(body)
+
+
+# --- A8 Messaging Depth (9) --------------------------------------------------
+
+
+@function_tool
+async def send_group_chat_message(context: RunContext, message: str, group: str | None = None, group_id: str | None = None, confirmed: bool | None = None) -> str:
+    """Send a text message to a group chat the user is a member of (not a 1-to-1 DM). Call once without confirmed first."""
+    body = await _dispatch_with_directive(context, "send_group_chat_message", {
+            "group": group,
+            "group_id": group_id,
+            "message": message,
+            "confirmed": confirmed,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def reply_to_message(context: RunContext, message_id: str | None = None, message: str | None = None) -> str:
+    """NOT AVAILABLE YET — Vitana chat has no reply/quote-thread feature; always answers that it is unavailable."""
+    body = await _dispatch_with_directive(context, "reply_to_message", {
+            "message_id": message_id,
+            "message": message,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def react_to_message(context: RunContext, message_id: str, emoji: str, remove: bool | None = None) -> str:
+    """Add (or remove) an emoji reaction on a chat message — one of the six supported emoji only."""
+    body = await _dispatch_with_directive(context, "react_to_message", {
+            "message_id": message_id,
+            "emoji": emoji,
+            "remove": remove,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def create_group_chat(context: RunContext, name: str, description: str | None = None, members: list[str] | None = None, confirm: bool | None = None) -> str:
+    """Create a new group chat, optionally adding named members immediately. Call once without confirm first."""
+    body = await _dispatch_with_directive(context, "create_group_chat", {
+            "name": name,
+            "description": description,
+            "members": members,
+            "confirm": confirm,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def add_group_chat_member(context: RunContext, group: str | None = None, group_id: str | None = None, member: str | None = None, member_user_id: str | None = None) -> str:
+    """Add a community member to a group chat the user already belongs to."""
+    body = await _dispatch_with_directive(context, "add_group_chat_member", {
+            "group": group,
+            "group_id": group_id,
+            "member": member,
+            "member_user_id": member_user_id,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def leave_group_chat(context: RunContext, group: str | None = None, group_id: str | None = None, confirm: bool | None = None) -> str:
+    """Leave a group chat. Call once without confirm first."""
+    body = await _dispatch_with_directive(context, "leave_group_chat", {
+            "group": group,
+            "group_id": group_id,
+            "confirm": confirm,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def send_calendar_invite_in_chat(context: RunContext, member: str | None = None, member_user_id: str | None = None, event: str | None = None, event_id: str | None = None, confirmed: bool | None = None) -> str:
+    """Share one of the user's own upcoming calendar events with a community member via direct message."""
+    body = await _dispatch_with_directive(context, "send_calendar_invite_in_chat", {
+            "member": member,
+            "member_user_id": member_user_id,
+            "event": event,
+            "event_id": event_id,
+            "confirmed": confirmed,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def start_voice_call(context: RunContext, member: str | None = None, member_user_id: str | None = None, confirmed: bool | None = None) -> str:
+    """Send another community member a request to start a voice call — Vitana cannot place a live call from voice."""
+    body = await _dispatch_with_directive(context, "start_voice_call", {
+            "member": member,
+            "member_user_id": member_user_id,
+            "confirmed": confirmed,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def start_video_call(context: RunContext, member: str | None = None, member_user_id: str | None = None, confirmed: bool | None = None) -> str:
+    """Send another community member a request to start a video call — Vitana cannot place a live call from voice."""
+    body = await _dispatch_with_directive(context, "start_video_call", {
+            "member": member,
+            "member_user_id": member_user_id,
+            "confirmed": confirmed,
+        })
+    return summarize(body)
+
+
+# --- A10 Events & Tickets (10) -----------------------------------------------
+
+
+@function_tool
+async def create_event(context: RunContext, title: str, start_time: str, description: str | None = None, location: str | None = None, virtual_link: str | None = None, end_time: str | None = None, max_participants: float | None = None, image_url: str | None = None, confirm: bool | None = None) -> str:
+    """Create a new ticketed/community event. Requires a title and start_time. Call once without confirm first."""
+    body = await _dispatch_with_directive(context, "create_event", {
+            "title": title,
+            "description": description,
+            "location": location,
+            "virtual_link": virtual_link,
+            "start_time": start_time,
+            "end_time": end_time,
+            "max_participants": max_participants,
+            "image_url": image_url,
+            "confirm": confirm,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def update_my_event(context: RunContext, query: str | None = None, event_id: str | None = None, title: str | None = None, description: str | None = None, location: str | None = None, virtual_link: str | None = None, start_time: str | None = None, end_time: str | None = None, max_participants: float | None = None, image_url: str | None = None) -> str:
+    """Edit one of the user's own upcoming events. Only the creator can edit, and only before it starts."""
+    body = await _dispatch_with_directive(context, "update_my_event", {
+            "query": query,
+            "event_id": event_id,
+            "title": title,
+            "description": description,
+            "location": location,
+            "virtual_link": virtual_link,
+            "start_time": start_time,
+            "end_time": end_time,
+            "max_participants": max_participants,
+            "image_url": image_url,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def cancel_my_event(context: RunContext, query: str | None = None, event_id: str | None = None, confirm: bool | None = None) -> str:
+    """Cancel (delete) one of the user's own upcoming events. Call once without confirm first."""
+    body = await _dispatch_with_directive(context, "cancel_my_event", {
+            "query": query,
+            "event_id": event_id,
+            "confirm": confirm,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def create_meetup(context: RunContext, title: str, start_time: str, description: str | None = None, location: str | None = None, virtual_link: str | None = None, end_time: str | None = None, max_participants: float | None = None, image_url: str | None = None, confirm: bool | None = None) -> str:
+    """Create a new casual community meetup. Requires a title and start_time. Call once without confirm first."""
+    body = await _dispatch_with_directive(context, "create_meetup", {
+            "title": title,
+            "description": description,
+            "location": location,
+            "virtual_link": virtual_link,
+            "start_time": start_time,
+            "end_time": end_time,
+            "max_participants": max_participants,
+            "image_url": image_url,
+            "confirm": confirm,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def update_my_meetup(context: RunContext, query: str | None = None, event_id: str | None = None, title: str | None = None, description: str | None = None, location: str | None = None, virtual_link: str | None = None, start_time: str | None = None, end_time: str | None = None, max_participants: float | None = None, image_url: str | None = None) -> str:
+    """Edit one of the user's own upcoming meetups. Only the creator can edit, and only before it starts."""
+    body = await _dispatch_with_directive(context, "update_my_meetup", {
+            "query": query,
+            "event_id": event_id,
+            "title": title,
+            "description": description,
+            "location": location,
+            "virtual_link": virtual_link,
+            "start_time": start_time,
+            "end_time": end_time,
+            "max_participants": max_participants,
+            "image_url": image_url,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def invite_to_event(context: RunContext, event: str | None = None, event_id: str | None = None, member_name: str | None = None, member_user_id: str | None = None) -> str:
+    """Invite a community member to an event or meetup by spoken name."""
+    body = await _dispatch_with_directive(context, "invite_to_event", {
+            "event": event,
+            "event_id": event_id,
+            "member_name": member_name,
+            "member_user_id": member_user_id,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def buy_event_ticket(context: RunContext, event: str | None = None, event_id: str | None = None, ticket_name: str | None = None, ticket_type_id: str | None = None, quantity: float | None = None, confirm: bool | None = None) -> str:
+    """Buy a ticket for an event. Checks availability/price, then call once without confirm first."""
+    body = await _dispatch_with_directive(context, "buy_event_ticket", {
+            "event": event,
+            "event_id": event_id,
+            "ticket_name": ticket_name,
+            "ticket_type_id": ticket_type_id,
+            "quantity": quantity,
+            "confirm": confirm,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def list_my_event_tickets(context: RunContext) -> str:
+    """List the user's own purchased (completed) event tickets."""
+    body = await _dispatch_with_directive(context, "list_my_event_tickets")
+    return summarize(body)
+
+
+@function_tool
+async def share_event(context: RunContext, query: str | None = None, event_id: str | None = None) -> str:
+    """Get a shareable public link for an event or meetup."""
+    body = await _dispatch_with_directive(context, "share_event", {
+            "query": query,
+            "event_id": event_id,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def get_event_attendees(context: RunContext, query: str | None = None, event_id: str | None = None) -> str:
+    """List who has RSVP'd to one of the user's OWN events (organizer view only)."""
+    body = await _dispatch_with_directive(context, "get_event_attendees", {
+            "query": query,
+            "event_id": event_id,
+        })
+    return summarize(body)
+
+
+# --- A11 Health Depth (15) ---------------------------------------------------
+
+
+@function_tool
+async def log_meal(context: RunContext, description: str | None = None, meal_type: str | None = None, calories: float | None = None, date: str | None = None) -> str:
+    """Log a meal (breakfast/lunch/dinner/snack) toward the nutrition pillar."""
+    body = await _dispatch_with_directive(context, "log_meal", {
+            "description": description,
+            "meal_type": meal_type,
+            "calories": calories,
+            "date": date,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def log_vitals(context: RunContext, heart_rate: float | None = None, weight_kg: float | None = None, systolic: float | None = None, diastolic: float | None = None, date: str | None = None) -> str:
+    """Log vitals: heart rate, weight, and/or blood pressure. Pass any subset."""
+    body = await _dispatch_with_directive(context, "log_vitals", {
+            "heart_rate": heart_rate,
+            "weight_kg": weight_kg,
+            "systolic": systolic,
+            "diastolic": diastolic,
+            "date": date,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def log_mood(context: RunContext, mood_score: float | None = None, mood_label: str | None = None, notes: str | None = None, date: str | None = None) -> str:
+    """Log a mental-health / mood check-in (1-5 scale, or a mood word)."""
+    body = await _dispatch_with_directive(context, "log_mood", {
+            "mood_score": mood_score,
+            "mood_label": mood_label,
+            "notes": notes,
+            "date": date,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def log_biomarker(context: RunContext, name: str, value: float, unit: str | None = None, biomarker_code: str | None = None, ref_range_low: float | None = None, ref_range_high: float | None = None, status: str | None = None, measured_at: str | None = None) -> str:
+    """Record a single lab/biomarker value the user reports out loud, creating a lab report entry."""
+    body = await _dispatch_with_directive(context, "log_biomarker", {
+            "name": name,
+            "value": value,
+            "unit": unit,
+            "biomarker_code": biomarker_code,
+            "ref_range_low": ref_range_low,
+            "ref_range_high": ref_range_high,
+            "status": status,
+            "measured_at": measured_at,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def get_health_trends(context: RunContext, days: float | None = None) -> str:
+    """Get the Vitana Index trend (total + per-pillar) over a recent window."""
+    body = await _dispatch_with_directive(context, "get_health_trends", {
+            "days": days,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def get_health_streaks(context: RunContext) -> str:
+    """Get the user's diary streak and per-pillar Vitana Index streaks."""
+    body = await _dispatch_with_directive(context, "get_health_streaks")
+    return summarize(body)
+
+
+@function_tool
+async def order_lab_test(context: RunContext, test_name: str | None = None) -> str:
+    """Order a lab test. NOT AVAILABLE YET — always returns an error explaining there is no ordering backend."""
+    body = await _dispatch_with_directive(context, "order_lab_test", {
+            "test_name": test_name,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def get_lab_results(context: RunContext, biomarker: str | None = None, limit: float | None = None) -> str:
+    """Read the user's recorded lab/biomarker results, most recent first."""
+    body = await _dispatch_with_directive(context, "get_lab_results", {
+            "biomarker": biomarker,
+            "limit": limit,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def generate_health_plan(context: RunContext, plan_type: str | None = None, confirm: bool | None = None) -> str:
+    """Create a starter health plan (template-based, not AI-personalized) for a pillar. Call once without confirm first."""
+    body = await _dispatch_with_directive(context, "generate_health_plan", {
+            "plan_type": plan_type,
+            "confirm": confirm,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def list_my_health_plans(context: RunContext) -> str:
+    """List the user's active health plans with adherence scores."""
+    body = await _dispatch_with_directive(context, "list_my_health_plans")
+    return summarize(body)
+
+
+@function_tool
+async def get_health_plan_progress(context: RunContext, plan_type: str | None = None, plan_id: str | None = None) -> str:
+    """Get adherence/progress for a specific active health plan."""
+    body = await _dispatch_with_directive(context, "get_health_plan_progress", {
+            "plan_type": plan_type,
+            "plan_id": plan_id,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def list_my_conditions(context: RunContext) -> str:
+    """List the user's recorded health conditions, allergies, medications, and dietary restrictions."""
+    body = await _dispatch_with_directive(context, "list_my_conditions")
+    return summarize(body)
+
+
+@function_tool
+async def get_health_education(context: RunContext, topic: str) -> str:
+    """Get grounded educational content on a health/longevity topic from the knowledge hub."""
+    body = await _dispatch_with_directive(context, "get_health_education", {
+            "topic": topic,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def get_next_best_action(context: RunContext) -> str:
+    """Get today's single highest-priority recommended health action."""
+    body = await _dispatch_with_directive(context, "get_next_best_action")
+    return summarize(body)
+
+
+@function_tool
+async def connect_health_device(context: RunContext, device_name: str | None = None) -> str:
+    """Start pairing a wearable/health device. Opens the health tracker screen where device connections are managed."""
+    body = await _dispatch_with_directive(context, "connect_health_device", {
+            "device_name": device_name,
+        })
+    return summarize(body)
+
+
+# ---------------------------------------------------------------------------
+# WAVE-2-VOICE-CATALOG-V2 — Developer P0: VTID/OASIS lifecycle, governance,
+# CI/CD & PRs, deployment/release, observability (70 tools). All dispatch
+# through the shared gateway registry (services/gateway/src/services/
+# orb-tools/{vtid-lifecycle,governance,cicd-pr,deployment-release,
+# observability}-tools.ts) via _dispatch — same generic-fallback pattern the
+# existing 12 developer tools above already use.
+# ---------------------------------------------------------------------------
+
+# C1 VTID / OASIS Lifecycle (15)
+
+
+@function_tool
+async def dev_allocate_vtid(context: RunContext, source: str | None = None, layer: str | None = None, module: str | None = None, title: str | None = None, confirm: bool | None = None) -> str:
+    """DEVELOPER ONLY. Allocate a new VTID. TWO-STEP confirm."""
+    body = await _dispatch(context, "dev_allocate_vtid", {
+            "source": source, "layer": layer, "module": module, "title": title, "confirm": confirm,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def dev_create_task(context: RunContext, title: str, task_family: str | None = None, task_module: str | None = None, target_roles: list[str] | None = None, confirm: bool | None = None) -> str:
+    """DEVELOPER ONLY. Create a new OASIS task/VTID with a title. TWO-STEP confirm."""
+    body = await _dispatch(context, "dev_create_task", {
+            "title": title, "task_family": task_family, "task_module": task_module,
+            "target_roles": target_roles, "confirm": confirm,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def dev_update_task(context: RunContext, vtid: str, title: str | None = None, status: str | None = None, summary: str | None = None, assigned_to: str | None = None, confirm: bool | None = None) -> str:
+    """DEVELOPER ONLY. Patch a VTID task's title/status/summary/assigned_to. Refuses terminal tasks. TWO-STEP confirm."""
+    body = await _dispatch(context, "dev_update_task", {
+            "vtid": vtid, "title": title, "status": status, "summary": summary,
+            "assigned_to": assigned_to, "confirm": confirm,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def dev_cancel_task(context: RunContext, vtid: str, confirm: bool | None = None) -> str:
+    """DEVELOPER ONLY. Cancel a VTID task. TWO-STEP confirm."""
+    body = await _dispatch(context, "dev_cancel_task", {"vtid": vtid, "confirm": confirm})
+    return summarize(body)
+
+
+@function_tool
+async def dev_complete_task(context: RunContext, vtid: str, terminal_outcome: str | None = None, confirm: bool | None = None) -> str:
+    """DEVELOPER ONLY. Mark a VTID task complete with an outcome. TWO-STEP confirm."""
+    body = await _dispatch(context, "dev_complete_task", {
+            "vtid": vtid, "terminal_outcome": terminal_outcome, "confirm": confirm,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def dev_terminalize_vtid(context: RunContext, vtid: str, outcome: str, run_id: str | None = None, commit_sha: str | None = None, confirm: bool | None = None) -> str:
+    """DEVELOPER ONLY. Set is_terminal + terminal_outcome on a VTID directly. TWO-STEP confirm."""
+    body = await _dispatch(context, "dev_terminalize_vtid", {
+            "vtid": vtid, "outcome": outcome, "run_id": run_id, "commit_sha": commit_sha, "confirm": confirm,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def dev_discover_tasks(context: RunContext, statuses: str | None = None, limit: int | None = None) -> str:
+    """DEVELOPER ONLY. List VTIDs eligible for worker pickup."""
+    body = await _dispatch(context, "dev_discover_tasks", {"statuses": statuses, "limit": limit})
+    return summarize(body)
+
+
+@function_tool
+async def dev_get_vtid_projection(context: RunContext, limit: int | None = None, offset: int | None = None) -> str:
+    """DEVELOPER ONLY. VTID projection view: stage, status, attention flags."""
+    body = await _dispatch(context, "dev_get_vtid_projection", {"limit": limit, "offset": offset})
+    return summarize(body)
+
+
+@function_tool
+async def dev_get_allocator_status(context: RunContext) -> str:
+    """DEVELOPER ONLY. Whether the VTID allocator kill-switch is on or off."""
+    body = await _dispatch(context, "dev_get_allocator_status", {})
+    return summarize(body)
+
+
+@function_tool
+async def dev_query_oasis_events(context: RunContext, vtid: str | None = None, type: str | None = None, source: str | None = None, status: str | None = None, limit: int | None = None) -> str:
+    """DEVELOPER ONLY. Query OASIS events by vtid/topic/source/status."""
+    body = await _dispatch(context, "dev_query_oasis_events", {
+            "vtid": vtid, "type": type, "source": source, "status": status, "limit": limit,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def dev_execute_vtid(context: RunContext, vtid: str, title: str, task_family: str | None = None, task_domain: str | None = None, confirm: bool | None = None) -> str:
+    """DEVELOPER ONLY. Route a VTID to the worker orchestrator for execution. TWO-STEP confirm."""
+    body = await _dispatch(context, "dev_execute_vtid", {
+            "vtid": vtid, "title": title, "task_family": task_family, "task_domain": task_domain, "confirm": confirm,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def dev_run_exec_workflow(context: RunContext, vtid: str, action: str, params: dict[str, Any] | None = None, confirm: bool | None = None) -> str:
+    """DEVELOPER ONLY. Validate/log a workflow action for a VTID (validation-only endpoint, does not execute real work). TWO-STEP confirm."""
+    body = await _dispatch(context, "dev_run_exec_workflow", {
+            "vtid": vtid, "action": action, "params": params, "confirm": confirm,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def dev_submit_evidence(context: RunContext, vtid: str, domain: str, run_id: str, result_ok: bool | None = None, files_changed: int | None = None) -> str:
+    """DEVELOPER ONLY. Submit subagent completion evidence for a VTID."""
+    body = await _dispatch(context, "dev_submit_evidence", {
+            "vtid": vtid, "domain": domain, "run_id": run_id, "result_ok": result_ok, "files_changed": files_changed,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def dev_list_work_orders(context: RunContext, statuses: str | None = None, limit: int | None = None) -> str:
+    """DEVELOPER ONLY. List pending work orders (maps to task discovery)."""
+    body = await _dispatch(context, "dev_list_work_orders", {"statuses": statuses, "limit": limit})
+    return summarize(body)
+
+
+@function_tool
+async def dev_get_work_order(context: RunContext, vtid: str) -> str:
+    """DEVELOPER ONLY. Get one task/work-order by VTID."""
+    body = await _dispatch(context, "dev_get_work_order", {"vtid": vtid})
+    return summarize(body)
+
+
+# C2 Governance (13)
+
+
+@function_tool
+async def dev_evaluate_governance(context: RunContext, action: str, service: str, environment: str, vtid: str | None = None) -> str:
+    """DEVELOPER ONLY. Evaluate whether an action would be allowed by governance rules."""
+    body = await _dispatch(context, "dev_evaluate_governance", {
+            "action": action, "service": service, "environment": environment, "vtid": vtid,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def dev_governance_status(context: RunContext) -> str:
+    """DEVELOPER ONLY. Governance control-plane snapshot."""
+    body = await _dispatch(context, "dev_governance_status", {})
+    return summarize(body)
+
+
+@function_tool
+async def dev_list_governance_rules(context: RunContext, category: str | None = None, status: str | None = None, level: str | None = None, search: str | None = None) -> str:
+    """DEVELOPER ONLY. List governance rules."""
+    body = await _dispatch(context, "dev_list_governance_rules", {
+            "category": category, "status": status, "level": level, "search": search,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def dev_get_governance_rule(context: RunContext, rule_code: str) -> str:
+    """DEVELOPER ONLY. Get one governance rule by its code."""
+    body = await _dispatch(context, "dev_get_governance_rule", {"rule_code": rule_code})
+    return summarize(body)
+
+
+@function_tool
+async def dev_list_violations(context: RunContext) -> str:
+    """DEVELOPER ONLY. List open/recent governance violations."""
+    body = await _dispatch(context, "dev_list_violations", {})
+    return summarize(body)
+
+
+@function_tool
+async def dev_list_enforcements(context: RunContext) -> str:
+    """DEVELOPER ONLY. List recent governance enforcement actions."""
+    body = await _dispatch(context, "dev_list_enforcements", {})
+    return summarize(body)
+
+
+@function_tool
+async def dev_governance_feed(context: RunContext) -> str:
+    """DEVELOPER ONLY. Recent governance activity feed."""
+    body = await _dispatch(context, "dev_governance_feed", {})
+    return summarize(body)
+
+
+@function_tool
+async def dev_list_proposals(context: RunContext, status: str | None = None, ruleCode: str | None = None, limit: int | None = None) -> str:
+    """DEVELOPER ONLY. List governance rule-change proposals."""
+    body = await _dispatch(context, "dev_list_proposals", {"status": status, "ruleCode": ruleCode, "limit": limit})
+    return summarize(body)
+
+
+@function_tool
+async def dev_create_proposal(context: RunContext, type: str, proposed_rule: str, rule_code: str | None = None, rationale: str | None = None, confirm: bool | None = None) -> str:
+    """DEVELOPER ONLY. Create a governance rule-change proposal. TWO-STEP confirm."""
+    body = await _dispatch(context, "dev_create_proposal", {
+            "type": type, "proposed_rule": proposed_rule, "rule_code": rule_code,
+            "rationale": rationale, "confirm": confirm,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def dev_update_proposal(context: RunContext, proposal_id: str, status: str, confirm: bool | None = None) -> str:
+    """DEVELOPER ONLY. Change a proposal's status. TWO-STEP confirm."""
+    body = await _dispatch(context, "dev_update_proposal", {
+            "proposal_id": proposal_id, "status": status, "confirm": confirm,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def dev_get_control(context: RunContext, key: str) -> str:
+    """DEVELOPER ONLY. Read a governance control key (e.g. vtid_allocator_enabled)."""
+    body = await _dispatch(context, "dev_get_control", {"key": key})
+    return summarize(body)
+
+
+@function_tool
+async def dev_set_control(context: RunContext, key: str, enabled: bool, reason: str, duration_minutes: int | None = None, confirm: bool | None = None) -> str:
+    """DEVELOPER ONLY. Flip a governance control key on/off. Requires a reason. TWO-STEP confirm."""
+    body = await _dispatch(context, "dev_set_control", {
+            "key": key, "enabled": enabled, "reason": reason,
+            "duration_minutes": duration_minutes, "confirm": confirm,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def dev_get_control_history(context: RunContext, key: str, limit: int | None = None) -> str:
+    """DEVELOPER ONLY. Change history for a governance control key."""
+    body = await _dispatch(context, "dev_get_control_history", {"key": key, "limit": limit})
+    return summarize(body)
+
+
+# C3 CI/CD & Pull Requests (14)
+
+
+@function_tool
+async def dev_create_pr(context: RunContext, vtid: str, title: str, head: str, body: str | None = None, repo: str | None = None, confirm: bool | None = None) -> str:
+    """DEVELOPER ONLY. Create a PR from a branch into main. TWO-STEP confirm."""
+    result = await _dispatch(context, "dev_create_pr", {
+            "vtid": vtid, "title": title, "head": head, "body": body, "repo": repo, "confirm": confirm,
+        })
+    return summarize(result)
+
+
+@function_tool
+async def dev_get_pr_status(context: RunContext, pr_number: int, repo: str | None = None) -> str:
+    """DEVELOPER ONLY. PR state and mergeability."""
+    body = await _dispatch(context, "dev_get_pr_status", {"pr_number": pr_number, "repo": repo})
+    return summarize(body)
+
+
+@function_tool
+async def dev_get_pr_checks(context: RunContext, pr_number: int, repo: str | None = None) -> str:
+    """DEVELOPER ONLY. CI check runs for a PR."""
+    body = await _dispatch(context, "dev_get_pr_checks", {"pr_number": pr_number, "repo": repo})
+    return summarize(body)
+
+
+@function_tool
+async def dev_list_open_prs(context: RunContext, limit: int | None = None, repo: str | None = None) -> str:
+    """DEVELOPER ONLY. List open PRs with CI/mergeable status."""
+    body = await _dispatch(context, "dev_list_open_prs", {"limit": limit, "repo": repo})
+    return summarize(body)
+
+
+@function_tool
+async def dev_merge_pr(context: RunContext, vtid: str, pr_number: int, repo: str | None = None, confirm: bool | None = None) -> str:
+    """DEVELOPER ONLY. Merge a PR through the governed pipeline. TWO-STEP confirm."""
+    body = await _dispatch(context, "dev_merge_pr", {
+            "vtid": vtid, "pr_number": pr_number, "repo": repo, "confirm": confirm,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def dev_safe_merge(context: RunContext, vtid: str, pr_number: int, repo: str | None = None, require_checks: bool | None = None, merge_strategy: str | None = None, confirm: bool | None = None) -> str:
+    """DEVELOPER ONLY. Safe-merge a PR. TWO-STEP confirm."""
+    body = await _dispatch(context, "dev_safe_merge", {
+            "vtid": vtid, "pr_number": pr_number, "repo": repo, "require_checks": require_checks,
+            "merge_strategy": merge_strategy, "confirm": confirm,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def dev_revert_pr(context: RunContext, merge_sha: str, branch_name: str, title: str | None = None, body: str | None = None, repo: str | None = None, confirm: bool | None = None) -> str:
+    """DEVELOPER ONLY. Open a revert PR for a given merge commit. TWO-STEP confirm."""
+    result = await _dispatch(context, "dev_revert_pr", {
+            "merge_sha": merge_sha, "branch_name": branch_name, "title": title,
+            "body": body, "repo": repo, "confirm": confirm,
+        })
+    return summarize(result)
+
+
+@function_tool
+async def dev_trigger_workflow(context: RunContext, workflow_id: str, ref: str | None = None, inputs: dict[str, str] | None = None, repo: str | None = None, confirm: bool | None = None) -> str:
+    """DEVELOPER ONLY. Dispatch a GitHub Actions workflow file by name. TWO-STEP confirm."""
+    body = await _dispatch(context, "dev_trigger_workflow", {
+            "workflow_id": workflow_id, "ref": ref, "inputs": inputs, "repo": repo, "confirm": confirm,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def dev_list_workflow_runs(context: RunContext, workflow_id: str, repo: str | None = None) -> str:
+    """DEVELOPER ONLY. Recent runs for a GitHub Actions workflow."""
+    body = await _dispatch(context, "dev_list_workflow_runs", {"workflow_id": workflow_id, "repo": repo})
+    return summarize(body)
+
+
+@function_tool
+async def dev_get_run_jobs(context: RunContext, run_id: int, repo: str | None = None) -> str:
+    """DEVELOPER ONLY. Jobs and failures for a specific workflow run."""
+    body = await _dispatch(context, "dev_get_run_jobs", {"run_id": run_id, "repo": repo})
+    return summarize(body)
+
+
+@function_tool
+async def dev_get_merge_lock(context: RunContext) -> str:
+    """DEVELOPER ONLY. Current CI/CD merge lock status."""
+    body = await _dispatch(context, "dev_get_merge_lock", {})
+    return summarize(body)
+
+
+@function_tool
+async def dev_release_merge_lock(context: RunContext, vtid: str, reason: str | None = None, confirm: bool | None = None) -> str:
+    """DEVELOPER ONLY. Force-release a stuck merge lock for a VTID. TWO-STEP confirm."""
+    body = await _dispatch(context, "dev_release_merge_lock", {"vtid": vtid, "reason": reason, "confirm": confirm})
+    return summarize(body)
+
+
+@function_tool
+async def dev_cicd_health(context: RunContext) -> str:
+    """DEVELOPER ONLY. CI/CD pipeline health."""
+    body = await _dispatch(context, "dev_cicd_health", {})
+    return summarize(body)
+
+
+@function_tool
+async def dev_approvals_feed(context: RunContext, limit: int | None = None, repo: str | None = None) -> str:
+    """DEVELOPER ONLY. GitHub-authoritative feed of open PRs and their approval-readiness."""
+    body = await _dispatch(context, "dev_approvals_feed", {"limit": limit, "repo": repo})
+    return summarize(body)
+
+
+# C4 Deployment & Release (13)
+
+
+@function_tool
+async def dev_deploy_service(context: RunContext, vtid: str, service: str, environment: str | None = None, branch: str | None = None, confirm: bool | None = None) -> str:
+    """DEVELOPER ONLY. Deploy a service to staging (never production). TWO-STEP confirm."""
+    body = await _dispatch(context, "dev_deploy_service", {
+            "vtid": vtid, "service": service, "environment": environment, "branch": branch, "confirm": confirm,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def dev_publish_to_prod(context: RunContext, reason: str, mode: str | None = None, vtid: str | None = None, confirm_short_sha: str | None = None, confirm: bool | None = None, confirm_again: bool | None = None) -> str:
+    """DEVELOPER ONLY. The PUBLISH button by voice — promotes staging to production. DOUBLE-CONFIRM required, plus a reason."""
+    body = await _dispatch(context, "dev_publish_to_prod", {
+            "reason": reason, "mode": mode, "vtid": vtid, "confirm_short_sha": confirm_short_sha,
+            "confirm": confirm, "confirm_again": confirm_again,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def dev_list_revisions(context: RunContext, service: str | None = None, limit: int | None = None) -> str:
+    """DEVELOPER ONLY. Cloud Run revisions for a service. Requires an admin session."""
+    body = await _dispatch(context, "dev_list_revisions", {"service": service, "limit": limit})
+    return summarize(body)
+
+
+@function_tool
+async def dev_list_deployments(context: RunContext, service: str | None = None, environment: str | None = None, limit: int | None = None) -> str:
+    """DEVELOPER ONLY. Deployment history."""
+    body = await _dispatch(context, "dev_list_deployments", {"service": service, "environment": environment, "limit": limit})
+    return summarize(body)
+
+
+@function_tool
+async def dev_deployment_health(context: RunContext) -> str:
+    """DEVELOPER ONLY. Deployment pipeline config health."""
+    body = await _dispatch(context, "dev_deployment_health", {})
+    return summarize(body)
+
+
+@function_tool
+async def dev_promote_canary(context: RunContext, service: str | None = None, confirm: bool | None = None) -> str:
+    """DEVELOPER ONLY. Promote the canary revision to 100% traffic. Requires an admin session. TWO-STEP confirm."""
+    body = await _dispatch(context, "dev_promote_canary", {"service": service, "confirm": confirm})
+    return summarize(body)
+
+
+@function_tool
+async def dev_abort_canary(context: RunContext, service: str | None = None, confirm: bool | None = None) -> str:
+    """DEVELOPER ONLY. Abort the canary and restore the stable revision. Requires an admin session. TWO-STEP confirm."""
+    body = await _dispatch(context, "dev_abort_canary", {"service": service, "confirm": confirm})
+    return summarize(body)
+
+
+@function_tool
+async def dev_revert_deploy(context: RunContext, service: str, target_revision: str, confirm_short_sha: str | None = None, confirm: bool | None = None) -> str:
+    """DEVELOPER ONLY. Revert a service to a prior revision. Requires an admin session. TWO-STEP confirm."""
+    body = await _dispatch(context, "dev_revert_deploy", {
+            "service": service, "target_revision": target_revision,
+            "confirm_short_sha": confirm_short_sha, "confirm": confirm,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def dev_revert_both(context: RunContext, service: str, target_revision: str, target_created_at: str | None = None, confirm: bool | None = None) -> str:
+    """DEVELOPER ONLY. Revert a service AND its paired counterpart together. Requires an admin session. TWO-STEP confirm."""
+    body = await _dispatch(context, "dev_revert_both", {
+            "service": service, "target_revision": target_revision,
+            "target_created_at": target_created_at, "confirm": confirm,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def dev_canary_status(context: RunContext, service: str | None = None) -> str:
+    """DEVELOPER ONLY. Whether a canary traffic split is active. Requires an admin session."""
+    body = await _dispatch(context, "dev_canary_status", {"service": service})
+    return summarize(body)
+
+
+@function_tool
+async def dev_staging_status(context: RunContext) -> str:
+    """DEVELOPER ONLY. What build/commit is currently on staging."""
+    body = await _dispatch(context, "dev_staging_status", {})
+    return summarize(body)
+
+
+@function_tool
+async def dev_compare_staging_prod(context: RunContext) -> str:
+    """DEVELOPER ONLY. Whether staging and production are on the same build."""
+    body = await _dispatch(context, "dev_compare_staging_prod", {})
+    return summarize(body)
+
+
+@function_tool
+async def dev_release_feed(context: RunContext, service: str | None = None, environment: str | None = None, limit: int | None = None) -> str:
+    """DEVELOPER ONLY. Recent releases across services."""
+    body = await _dispatch(context, "dev_release_feed", {"service": service, "environment": environment, "limit": limit})
+    return summarize(body)
+
+
+# C9 Observability (15)
+
+
+@function_tool
+async def dev_build_info(context: RunContext) -> str:
+    """DEVELOPER ONLY. Running revision/build info for this gateway instance."""
+    body = await _dispatch(context, "dev_build_info", {})
+    return summarize(body)
+
+
+@function_tool
+async def dev_service_health(context: RunContext) -> str:
+    """DEVELOPER ONLY. Health + /alive check for this gateway instance."""
+    body = await _dispatch(context, "dev_service_health", {})
+    return summarize(body)
+
+
+@function_tool
+async def dev_error_rate(context: RunContext, hours: int | None = None) -> str:
+    """DEVELOPER ONLY. Recent OASIS event error rate over a time window."""
+    body = await _dispatch(context, "dev_error_rate", {"hours": hours})
+    return summarize(body)
+
+
+@function_tool
+async def dev_latency_summary(context: RunContext, hours: int | None = None) -> str:
+    """DEVELOPER ONLY. Voice turn latency percentiles over a time window."""
+    body = await _dispatch(context, "dev_latency_summary", {"hours": hours})
+    return summarize(body)
+
+
+@function_tool
+async def dev_telemetry_snapshot(context: RunContext) -> str:
+    """DEVELOPER ONLY. Telemetry snapshot: recent events + pipeline stage counters."""
+    body = await _dispatch(context, "dev_telemetry_snapshot", {})
+    return summarize(body)
+
+
+@function_tool
+async def dev_recent_events(context: RunContext, limit: int | None = None) -> str:
+    """DEVELOPER ONLY. Recent OASIS/system events."""
+    body = await _dispatch(context, "dev_recent_events", {"limit": limit})
+    return summarize(body)
+
+
+@function_tool
+async def dev_agent_trace(context: RunContext, phase: str | None = None, limit: int | None = None) -> str:
+    """DEVELOPER ONLY. Recent ORB agent trace(s)."""
+    body = await _dispatch(context, "dev_agent_trace", {"phase": phase, "limit": limit})
+    return summarize(body)
+
+
+@function_tool
+async def dev_supervisor_summary(context: RunContext, window_hours: int | None = None) -> str:
+    """DEVELOPER ONLY. Supervisor summary: dataset/shadow/finetune/canary/backlog sections."""
+    body = await _dispatch(context, "dev_supervisor_summary", {"window_hours": window_hours})
+    return summarize(body)
+
+
+@function_tool
+async def dev_get_session_turns(context: RunContext, session_id: str) -> str:
+    """DEVELOPER ONLY. Per-turn timeline for a voice session."""
+    body = await _dispatch(context, "dev_get_session_turns", {"session_id": session_id})
+    return summarize(body)
+
+
+@function_tool
+async def dev_get_session_diagnostics(context: RunContext, session_id: str) -> str:
+    """DEVELOPER ONLY. Diagnostics analysis for a voice session."""
+    body = await _dispatch(context, "dev_get_session_diagnostics", {"session_id": session_id})
+    return summarize(body)
+
+
+@function_tool
+async def dev_conversation_decisions(context: RunContext, limit: int | None = None, window_hours: int | None = None) -> str:
+    """DEVELOPER ONLY. Recent greeting/next-best-action decisions. Requires exafy_admin session."""
+    body = await _dispatch(context, "dev_conversation_decisions", {"limit": limit, "window_hours": window_hours})
+    return summarize(body)
+
+
+@function_tool
+async def dev_tool_failures(context: RunContext, limit: int | None = None, window_hours: int | None = None) -> str:
+    """DEVELOPER ONLY. Recent voice-tool failures, grouped by tool. Requires exafy_admin session."""
+    body = await _dispatch(context, "dev_tool_failures", {"limit": limit, "window_hours": window_hours})
+    return summarize(body)
+
+
+@function_tool
+async def dev_tool_health(context: RunContext, window_hours: int | None = None) -> str:
+    """DEVELOPER ONLY. Tool health rollup derived from recent failures. Requires exafy_admin session."""
+    body = await _dispatch(context, "dev_tool_health", {"window_hours": window_hours})
+    return summarize(body)
+
+
+@function_tool
+async def dev_greeting_decisions(context: RunContext, limit: int | None = None, window_hours: int | None = None) -> str:
+    """DEVELOPER ONLY. Greeting-monitor view of recent conversation decisions. Requires exafy_admin session."""
+    body = await _dispatch(context, "dev_greeting_decisions", {"limit": limit, "window_hours": window_hours})
+    return summarize(body)
+
+
+@function_tool
+async def dev_get_agent_detail(context: RunContext, agent_id: str) -> str:
+    """DEVELOPER ONLY. Detail for one registered agent by id."""
+    body = await _dispatch(context, "dev_get_agent_detail", {"agent_id": agent_id})
+    return summarize(body)
+
+
+# ---------------------------------------------------------------------------
+# WAVE-3-VOICE-CATALOG-V2 — Admin P0: users/RBAC, content moderation,
+# marketplace admin, notifications/broadcast, governance/controls,
+# feedback/support (48 tools). All dispatch through the shared gateway
+# registry (services/gateway/src/services/orb-tools/admin-*-tools.ts).
+# ---------------------------------------------------------------------------
+
+# B1 Users & RBAC (8)
+
+
+@function_tool
+async def admin_lookup_user(context: RunContext, query: str, limit: int | None = None) -> str:
+    """ADMIN ONLY. Find a user by name, email, or vitana_id."""
+    body = await _dispatch(context, "admin_lookup_user", {"query": query, "limit": limit})
+    return summarize(body)
+
+
+@function_tool
+async def admin_list_users(context: RunContext, query: str | None = None, role: str | None = None, limit: int | None = None) -> str:
+    """ADMIN ONLY. List/filter users by search query or role."""
+    body = await _dispatch(context, "admin_list_users", {"query": query, "role": role, "limit": limit})
+    return summarize(body)
+
+
+@function_tool
+async def admin_get_user_detail(context: RunContext, user_id: str) -> str:
+    """ADMIN ONLY. Full user record by user_id."""
+    body = await _dispatch(context, "admin_get_user_detail", {"user_id": user_id})
+    return summarize(body)
+
+
+@function_tool
+async def admin_roles_summary(context: RunContext) -> str:
+    """ADMIN ONLY. Role distribution counts."""
+    body = await _dispatch(context, "admin_roles_summary", {})
+    return summarize(body)
+
+
+@function_tool
+async def admin_grant_role(context: RunContext, user_id: str, role: str, tenant_id: str | None = None, confirm: bool | None = None) -> str:
+    """ADMIN ONLY. Grant a role to a user. TWO-STEP confirm."""
+    body = await _dispatch(context, "admin_grant_role", {"user_id": user_id, "role": role, "tenant_id": tenant_id, "confirm": confirm})
+    return summarize(body)
+
+
+@function_tool
+async def admin_revoke_role(context: RunContext, user_id: str, role: str, tenant_id: str | None = None, confirm: bool | None = None) -> str:
+    """ADMIN ONLY. Revoke a role from a user (cannot revoke community). TWO-STEP confirm."""
+    body = await _dispatch(context, "admin_revoke_role", {"user_id": user_id, "role": role, "tenant_id": tenant_id, "confirm": confirm})
+    return summarize(body)
+
+
+@function_tool
+async def admin_set_trust_tier(context: RunContext, vitana_id: str, tier: str, reason: str | None = None, confirm: bool | None = None) -> str:
+    """ADMIN ONLY (exafy_admin/operator only). Change a user's trust tier. TWO-STEP confirm."""
+    body = await _dispatch(context, "admin_set_trust_tier", {"vitana_id": vitana_id, "tier": tier, "reason": reason, "confirm": confirm})
+    return summarize(body)
+
+
+@function_tool
+async def admin_get_at_risk_members(context: RunContext) -> str:
+    """ADMIN ONLY. At-risk members overview for the current tenant."""
+    body = await _dispatch(context, "admin_get_at_risk_members", {})
+    return summarize(body)
+
+
+# B4 Content Moderation (8)
+
+
+@function_tool
+async def admin_list_moderation_queue(context: RunContext, status: str | None = None, type: str | None = None, limit: int | None = None) -> str:
+    """ADMIN ONLY. List pending content-moderation items."""
+    body = await _dispatch(context, "admin_list_moderation_queue", {"status": status, "type": type, "limit": limit})
+    return summarize(body)
+
+
+@function_tool
+async def admin_get_moderation_item(context: RunContext, item_id: str) -> str:
+    """ADMIN ONLY. Detail for one moderation queue item."""
+    body = await _dispatch(context, "admin_get_moderation_item", {"item_id": item_id})
+    return summarize(body)
+
+
+@function_tool
+async def admin_moderation_stats(context: RunContext) -> str:
+    """ADMIN ONLY. Moderation queue stats."""
+    body = await _dispatch(context, "admin_moderation_stats", {})
+    return summarize(body)
+
+
+@function_tool
+async def admin_approve_content(context: RunContext, item_id: str, confirm: bool | None = None) -> str:
+    """ADMIN ONLY. Approve a moderation item. TWO-STEP confirm."""
+    body = await _dispatch(context, "admin_approve_content", {"item_id": item_id, "confirm": confirm})
+    return summarize(body)
+
+
+@function_tool
+async def admin_reject_content(context: RunContext, item_id: str, confirm: bool | None = None) -> str:
+    """ADMIN ONLY. Reject a moderation item. TWO-STEP confirm."""
+    body = await _dispatch(context, "admin_reject_content", {"item_id": item_id, "confirm": confirm})
+    return summarize(body)
+
+
+@function_tool
+async def admin_flag_content(context: RunContext, item_id: str, confirm: bool | None = None) -> str:
+    """ADMIN ONLY. Flag a moderation item for further review. TWO-STEP confirm."""
+    body = await _dispatch(context, "admin_flag_content", {"item_id": item_id, "confirm": confirm})
+    return summarize(body)
+
+
+@function_tool
+async def admin_list_reports(context: RunContext, limit: int | None = None) -> str:
+    """ADMIN ONLY. List user reports (falls back to flagged media — no report table exists yet)."""
+    body = await _dispatch(context, "admin_list_reports", {"limit": limit})
+    return summarize(body)
+
+
+@function_tool
+async def admin_get_report(context: RunContext) -> str:
+    """ADMIN ONLY. Get one user report. NOTE: not implemented in the backend yet."""
+    body = await _dispatch(context, "admin_get_report", {})
+    return summarize(body)
+
+
+# B6 Marketplace Admin (12)
+
+
+@function_tool
+async def admin_marketplace_overview(context: RunContext) -> str:
+    """ADMIN ONLY. Marketplace KPIs overview."""
+    body = await _dispatch(context, "admin_marketplace_overview", {})
+    return summarize(body)
+
+
+@function_tool
+async def admin_list_merchants(context: RunContext, source_network: str | None = None, is_active: bool | None = None, search: str | None = None, limit: int | None = None) -> str:
+    """ADMIN ONLY. List merchants."""
+    body = await _dispatch(context, "admin_list_merchants", {"source_network": source_network, "is_active": is_active, "search": search, "limit": limit})
+    return summarize(body)
+
+
+@function_tool
+async def admin_update_merchant(context: RunContext, merchant_id: str, name: str | None = None, is_active: bool | None = None, quality_score: float | None = None, customs_risk: str | None = None, commission_rate: float | None = None, admin_notes: str | None = None, requires_admin_review: bool | None = None, confirm: bool | None = None) -> str:
+    """ADMIN ONLY. Edit a merchant's status/quality/commission/notes. TWO-STEP confirm."""
+    body = await _dispatch(context, "admin_update_merchant", {
+            "merchant_id": merchant_id, "name": name, "is_active": is_active, "quality_score": quality_score,
+            "customs_risk": customs_risk, "commission_rate": commission_rate, "admin_notes": admin_notes,
+            "requires_admin_review": requires_admin_review, "confirm": confirm,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def admin_list_products(context: RunContext, source_network: str | None = None, category: str | None = None, origin_region: str | None = None, search: str | None = None, requires_admin_review: bool | None = None, is_active: bool | None = None, limit: int | None = None) -> str:
+    """ADMIN ONLY. List products (admin view)."""
+    body = await _dispatch(context, "admin_list_products", {
+            "source_network": source_network, "category": category, "origin_region": origin_region,
+            "search": search, "requires_admin_review": requires_admin_review, "is_active": is_active, "limit": limit,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def admin_update_product(context: RunContext, product_id: str, title: str | None = None, description: str | None = None, is_active: bool | None = None, requires_admin_review: bool | None = None, admin_review_reason: str | None = None, admin_notes: str | None = None, customs_risk: str | None = None, confirm: bool | None = None) -> str:
+    """ADMIN ONLY. Edit/approve a product. TWO-STEP confirm."""
+    body = await _dispatch(context, "admin_update_product", {
+            "product_id": product_id, "title": title, "description": description, "is_active": is_active,
+            "requires_admin_review": requires_admin_review, "admin_review_reason": admin_review_reason,
+            "admin_notes": admin_notes, "customs_risk": customs_risk, "confirm": confirm,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def admin_bulk_product_action(context: RunContext, product_ids: list[str], action: str, reason: str | None = None, confirm: bool | None = None) -> str:
+    """ADMIN ONLY. Bulk enable/disable/flag products (max 100 per call). TWO-STEP confirm."""
+    body = await _dispatch(context, "admin_bulk_product_action", {"product_ids": product_ids, "action": action, "reason": reason, "confirm": confirm})
+    return summarize(body)
+
+
+@function_tool
+async def admin_get_feed_curation(context: RunContext) -> str:
+    """ADMIN ONLY. Read the feed curation config."""
+    body = await _dispatch(context, "admin_get_feed_curation", {})
+    return summarize(body)
+
+
+@function_tool
+async def admin_update_feed_curation(context: RunContext, config_id: str, max_products_per_merchant: int | None = None, max_products_per_category: int | None = None, personalization_weight_override: float | None = None, notes: str | None = None, confirm: bool | None = None) -> str:
+    """ADMIN ONLY. Change feed curation rules. TWO-STEP confirm."""
+    body = await _dispatch(context, "admin_update_feed_curation", {
+            "config_id": config_id, "max_products_per_merchant": max_products_per_merchant,
+            "max_products_per_category": max_products_per_category,
+            "personalization_weight_override": personalization_weight_override, "notes": notes, "confirm": confirm,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def admin_list_geo_policies(context: RunContext) -> str:
+    """ADMIN ONLY. List geo policies."""
+    body = await _dispatch(context, "admin_list_geo_policies", {})
+    return summarize(body)
+
+
+@function_tool
+async def admin_update_geo_policy(context: RunContext, policy_id: str, is_active: bool | None = None, weight: float | None = None, user_opt_out_scope: str | None = None, description: str | None = None, confirm: bool | None = None) -> str:
+    """ADMIN ONLY. Edit a geo policy. TWO-STEP confirm."""
+    body = await _dispatch(context, "admin_update_geo_policy", {
+            "policy_id": policy_id, "is_active": is_active, "weight": weight,
+            "user_opt_out_scope": user_opt_out_scope, "description": description, "confirm": confirm,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def admin_trigger_source_sync(context: RunContext, network: str, confirm: bool | None = None) -> str:
+    """ADMIN ONLY. Trigger a live product sync from a network. TWO-STEP confirm."""
+    body = await _dispatch(context, "admin_trigger_source_sync", {"network": network, "confirm": confirm})
+    return summarize(body)
+
+
+@function_tool
+async def admin_get_ingestion_coverage(context: RunContext, view: str | None = None) -> str:
+    """ADMIN ONLY. Ingestion run history and origin/ships-to coverage matrix."""
+    body = await _dispatch(context, "admin_get_ingestion_coverage", {"view": view})
+    return summarize(body)
+
+
+# B11 Notifications & Broadcast (7)
+
+
+@function_tool
+async def admin_compose_broadcast(context: RunContext, title: str, body: str, recipient_ids: list[str] | None = None, recipient_role: str | None = None, send_to_all: bool | None = None, tenant_id: str | None = None) -> str:
+    """ADMIN ONLY. Preview a broadcast draft (audience size + text) WITHOUT sending."""
+    result = await _dispatch(context, "admin_compose_broadcast", {
+            "title": title, "body": body, "recipient_ids": recipient_ids,
+            "recipient_role": recipient_role, "send_to_all": send_to_all, "tenant_id": tenant_id,
+        })
+    return summarize(result)
+
+
+@function_tool
+async def admin_send_broadcast(context: RunContext, title: str, body: str, recipient_ids: list[str] | None = None, recipient_role: str | None = None, send_to_all: bool | None = None, tenant_id: str | None = None, confirm: bool | None = None) -> str:
+    """ADMIN ONLY. Send a notification NOW to the resolved audience. TWO-STEP confirm — no undo."""
+    result = await _dispatch(context, "admin_send_broadcast", {
+            "title": title, "body": body, "recipient_ids": recipient_ids, "recipient_role": recipient_role,
+            "send_to_all": send_to_all, "tenant_id": tenant_id, "confirm": confirm,
+        })
+    return summarize(result)
+
+
+@function_tool
+async def admin_list_broadcasts(context: RunContext, type: str | None = None, user_id: str | None = None, search: str | None = None, days: int | None = None, limit: int | None = None) -> str:
+    """ADMIN ONLY. Sent notification history."""
+    body = await _dispatch(context, "admin_list_broadcasts", {"type": type, "user_id": user_id, "search": search, "days": days, "limit": limit})
+    return summarize(body)
+
+
+@function_tool
+async def admin_notification_pref_stats(context: RunContext, tenant_id: str | None = None) -> str:
+    """ADMIN ONLY. Notification opt-in/out stats plus 30-day send/read counts."""
+    body = await _dispatch(context, "admin_notification_pref_stats", {"tenant_id": tenant_id})
+    return summarize(body)
+
+
+@function_tool
+async def admin_create_notification_category(context: RunContext, type: str, display_name: str, description: str | None = None, tenant_id: str | None = None, confirm: bool | None = None) -> str:
+    """ADMIN ONLY. Create a new notification category. TWO-STEP confirm."""
+    result = await _dispatch(context, "admin_create_notification_category", {
+            "type": type, "display_name": display_name, "description": description, "tenant_id": tenant_id, "confirm": confirm,
+        })
+    return summarize(result)
+
+
+@function_tool
+async def admin_update_notification_category(context: RunContext, category_id: str, display_name: str | None = None, description: str | None = None, is_active: bool | None = None, confirm: bool | None = None) -> str:
+    """ADMIN ONLY. Edit a notification category (type is immutable). TWO-STEP confirm."""
+    body = await _dispatch(context, "admin_update_notification_category", {
+            "category_id": category_id, "display_name": display_name, "description": description,
+            "is_active": is_active, "confirm": confirm,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def admin_test_notification_category(context: RunContext, category_id: str) -> str:
+    """ADMIN ONLY. Send a test notification for a category to your own account."""
+    body = await _dispatch(context, "admin_test_notification_category", {"category_id": category_id})
+    return summarize(body)
+
+
+# B12 Governance & Controls (8)
+
+
+@function_tool
+async def admin_governance_status(context: RunContext) -> str:
+    """ADMIN ONLY. Governance control-plane snapshot."""
+    body = await _dispatch(context, "admin_governance_status", {})
+    return summarize(body)
+
+
+@function_tool
+async def admin_list_governance_rules(context: RunContext, category: str | None = None, status: str | None = None, level: str | None = None, search: str | None = None) -> str:
+    """ADMIN ONLY. List governance rules."""
+    body = await _dispatch(context, "admin_list_governance_rules", {"category": category, "status": status, "level": level, "search": search})
+    return summarize(body)
+
+
+@function_tool
+async def admin_list_violations(context: RunContext) -> str:
+    """ADMIN ONLY. List open/recent governance violations."""
+    body = await _dispatch(context, "admin_list_violations", {})
+    return summarize(body)
+
+
+@function_tool
+async def admin_list_proposals(context: RunContext, status: str | None = None, ruleCode: str | None = None, limit: int | None = None) -> str:
+    """ADMIN ONLY. List governance rule-change proposals."""
+    body = await _dispatch(context, "admin_list_proposals", {"status": status, "ruleCode": ruleCode, "limit": limit})
+    return summarize(body)
+
+
+@function_tool
+async def admin_create_proposal(context: RunContext, type: str, proposed_rule: str, rule_code: str | None = None, rationale: str | None = None, confirm: bool | None = None) -> str:
+    """ADMIN ONLY. Create a governance rule-change proposal. TWO-STEP confirm."""
+    body = await _dispatch(context, "admin_create_proposal", {
+            "type": type, "proposed_rule": proposed_rule, "rule_code": rule_code, "rationale": rationale, "confirm": confirm,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def admin_update_proposal_status(context: RunContext, proposal_id: str, status: str, confirm: bool | None = None) -> str:
+    """ADMIN ONLY. Change a proposal's status. TWO-STEP confirm."""
+    body = await _dispatch(context, "admin_update_proposal_status", {"proposal_id": proposal_id, "status": status, "confirm": confirm})
+    return summarize(body)
+
+
+@function_tool
+async def admin_get_control_key(context: RunContext, key: str) -> str:
+    """ADMIN ONLY. Read a governance control key."""
+    body = await _dispatch(context, "admin_get_control_key", {"key": key})
+    return summarize(body)
+
+
+@function_tool
+async def admin_set_control_key(context: RunContext, key: str, enabled: bool, reason: str, duration_minutes: int | None = None, confirm: bool | None = None) -> str:
+    """ADMIN ONLY. Flip a governance control key on/off. Requires a reason. TWO-STEP confirm."""
+    body = await _dispatch(context, "admin_set_control_key", {
+            "key": key, "enabled": enabled, "reason": reason, "duration_minutes": duration_minutes, "confirm": confirm,
+        })
+    return summarize(body)
+
+
+# B15 Feedback & Support Admin (5)
+
+
+@function_tool
+async def admin_list_feedback_tickets(context: RunContext, status: str | None = None, kind: str | None = None, priority: str | None = None, surface: str | None = None, resolver_agent: str | None = None, limit: int | None = None) -> str:
+    """ADMIN ONLY. List support/feedback tickets."""
+    body = await _dispatch(context, "admin_list_feedback_tickets", {
+            "status": status, "kind": kind, "priority": priority, "surface": surface,
+            "resolver_agent": resolver_agent, "limit": limit,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def admin_get_feedback_ticket(context: RunContext, ticket_id: str) -> str:
+    """ADMIN ONLY. Full detail for one feedback ticket, including handoff history."""
+    body = await _dispatch(context, "admin_get_feedback_ticket", {"ticket_id": ticket_id})
+    return summarize(body)
+
+
+@function_tool
+async def admin_feedback_kpis(context: RunContext) -> str:
+    """ADMIN ONLY. Platform-wide support KPIs (last 30 days)."""
+    body = await _dispatch(context, "admin_feedback_kpis", {})
+    return summarize(body)
+
+
+@function_tool
+async def admin_list_handoffs(context: RunContext, limit: int | None = None) -> str:
+    """ADMIN ONLY. Recent specialist handoffs."""
+    body = await _dispatch(context, "admin_list_handoffs", {"limit": limit})
+    return summarize(body)
+
+
+@function_tool
+async def admin_act_on_ticket(context: RunContext, ticket_id: str, action: str, reason: str | None = None, duplicate_of: str | None = None, notes: str | None = None, confirm: bool | None = None) -> str:
+    """ADMIN ONLY. Act on a feedback ticket: draft_answer, draft_spec, draft_resolution, approve, send_answer, resolve, reject, or mark_duplicate. TWO-STEP confirm."""
+    body = await _dispatch(context, "admin_act_on_ticket", {
+            "ticket_id": ticket_id, "action": action, "reason": reason,
+            "duplicate_of": duplicate_of, "notes": notes, "confirm": confirm,
+        })
+    return summarize(body)
+
+
+# ---------------------------------------------------------------------------
+# WAVE-4-VOICE-CATALOG-V2 — Community P1 + Admin P1 (86)
+# Implementations live in services/gateway/src/services/orb-tools/*.ts,
+# reached through the shared dispatcher via POST /api/v1/orb/tool exactly
+# like the tools above.
+# ---------------------------------------------------------------------------
+
+
+# --- A4+A5 Subscriptions & Billing (10) -------------------------------------
+
+
+@function_tool
+async def get_my_subscription(context: RunContext) -> str:
+    """Current plan, status, renewal date, and voice-minutes usage."""
+    body = await _dispatch(context, "get_my_subscription", {})
+    return summarize(body)
+
+
+@function_tool
+async def compare_subscription_plans(context: RunContext) -> str:
+    """List subscription plans with prices."""
+    body = await _dispatch(context, "compare_subscription_plans", {})
+    return summarize(body)
+
+
+@function_tool
+async def upgrade_subscription(context: RunContext, price_key: str, confirm: bool | None = None) -> str:
+    """Start Stripe checkout to upgrade the subscription — hands off to the screen for payment. TWO-STEP confirm."""
+    body = await _dispatch_with_directive(context, "upgrade_subscription", {"price_key": price_key, "confirm": confirm})
+    return summarize(body)
+
+
+@function_tool
+async def cancel_subscription(context: RunContext) -> str:
+    """Opens the Stripe billing portal to cancel (no direct in-voice cancel exists)."""
+    body = await _dispatch_with_directive(context, "cancel_subscription", {})
+    return summarize(body)
+
+
+@function_tool
+async def add_voice_minutes(context: RunContext, credit_pack: str, confirm: bool | None = None) -> str:
+    """Start Stripe checkout to buy a voice-minutes credit pack (starter, boost, or power) — hands off to the screen for payment. TWO-STEP confirm."""
+    body = await _dispatch_with_directive(context, "add_voice_minutes", {"credit_pack": credit_pack, "confirm": confirm})
+    return summarize(body)
+
+
+@function_tool
+async def redeem_subscription_code(context: RunContext, code: str) -> str:
+    """Redeem a subscription code to grant a plan directly."""
+    body = await _dispatch(context, "redeem_subscription_code", {"code": code})
+    return summarize(body)
+
+
+@function_tool
+async def get_billing_history(context: RunContext) -> str:
+    """Opens the Stripe billing portal, which shows invoice history (no in-voice invoice list exists)."""
+    body = await _dispatch_with_directive(context, "get_billing_history", {})
+    return summarize(body)
+
+
+@function_tool
+async def get_referral_link(context: RunContext) -> str:
+    """Your referral link — generates one if you don't have one yet."""
+    body = await _dispatch(context, "get_referral_link", {})
+    return summarize(body)
+
+
+@function_tool
+async def invite_friend(context: RunContext, confirm: bool | None = None) -> str:
+    """Generate a shareable invite link (there is no automated email/SMS send yet). TWO-STEP confirm."""
+    body = await _dispatch(context, "invite_friend", {"confirm": confirm})
+    return summarize(body)
+
+
+@function_tool
+async def get_referral_status(context: RunContext) -> str:
+    """Who joined via your referral link and reward status."""
+    body = await _dispatch(context, "get_referral_status", {})
+    return summarize(body)
+
+
+# --- A7 Live Rooms / Go Live (7) --------------------------------------------
+
+
+@function_tool
+async def list_live_rooms_now(context: RunContext) -> str:
+    """What live rooms are live or scheduled right now."""
+    body = await _dispatch(context, "list_live_rooms_now", {})
+    return summarize(body)
+
+
+@function_tool
+async def get_live_room_details(context: RunContext, room_id: str) -> str:
+    """Room info, host, access level for one live room."""
+    body = await _dispatch(context, "get_live_room_details", {"room_id": room_id})
+    return summarize(body)
+
+
+@function_tool
+async def go_live(context: RunContext, room_id: str, session_title: str | None = None, access_level: str | None = None) -> str:
+    """Start hosting now (creates a live session on your room)."""
+    body = await _dispatch(context, "go_live", {"room_id": room_id, "session_title": session_title, "access_level": access_level})
+    return summarize(body)
+
+
+@function_tool
+async def create_live_room(context: RunContext, title: str, topic_keys: list[str] | None = None, starts_at: str | None = None, access_level: str | None = None, price: float | None = None, confirm: bool | None = None) -> str:
+    """Create a new live room. TWO-STEP confirm."""
+    body = await _dispatch(context, "create_live_room", {
+            "title": title, "topic_keys": topic_keys, "starts_at": starts_at,
+            "access_level": access_level, "price": price, "confirm": confirm,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def schedule_live_session(context: RunContext, room_id: str, starts_at: str, session_title: str | None = None) -> str:
+    """Schedule a future live session on your room."""
+    body = await _dispatch(context, "schedule_live_session", {"room_id": room_id, "starts_at": starts_at, "session_title": session_title})
+    return summarize(body)
+
+
+@function_tool
+async def purchase_room_access(context: RunContext, room_id: str) -> str:
+    """Prepare payment for a paid room — hands off to the screen to confirm the charge."""
+    body = await _dispatch_with_directive(context, "purchase_room_access", {"room_id": room_id})
+    return summarize(body)
+
+
+@function_tool
+async def end_live_session(context: RunContext, room_id: str, confirm: bool | None = None) -> str:
+    """End your current live session. TWO-STEP confirm."""
+    body = await _dispatch(context, "end_live_session", {"room_id": room_id, "confirm": confirm})
+    return summarize(body)
+
+
+# --- A9 Feed extras + A12 Goals & Journey (8) -------------------------------
+
+
+@function_tool
+async def list_open_asks(context: RunContext, kind: str | None = None, category_prefix: str | None = None, limit: int | None = None) -> str:
+    """Browse open community asks."""
+    body = await _dispatch(context, "list_open_asks", {"kind": kind, "category_prefix": category_prefix, "limit": limit})
+    return summarize(body)
+
+
+@function_tool
+async def edit_my_post(context: RunContext, post_id: str, content: str, confirm: bool | None = None) -> str:
+    """Edit the content of your own post. TWO-STEP confirm."""
+    body = await _dispatch(context, "edit_my_post", {"post_id": post_id, "content": content, "confirm": confirm})
+    return summarize(body)
+
+
+@function_tool
+async def delete_my_post(context: RunContext, post_id: str, confirm: bool | None = None) -> str:
+    """Permanently delete your own post. TWO-STEP confirm."""
+    body = await _dispatch(context, "delete_my_post", {"post_id": post_id, "confirm": confirm})
+    return summarize(body)
+
+
+@function_tool
+async def set_goal(context: RunContext, goal: str, category: str | None = None, target_value: float | None = None, target_unit: str | None = None, target_date: str | None = None, starting_value: float | None = None) -> str:
+    """Set your goal / north star. You have one active goal at a time."""
+    body = await _dispatch(context, "set_goal", {
+            "goal": goal, "category": category, "target_value": target_value,
+            "target_unit": target_unit, "target_date": target_date, "starting_value": starting_value,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def list_my_goals(context: RunContext) -> str:
+    """Your active goal (single-goal model, not a list)."""
+    body = await _dispatch(context, "list_my_goals", {})
+    return summarize(body)
+
+
+@function_tool
+async def update_goal(context: RunContext, goal: str, category: str | None = None, target_value: float | None = None, target_unit: str | None = None, target_date: str | None = None) -> str:
+    """Adjust your goal — re-state the full goal text even when only changing the date/target."""
+    body = await _dispatch(context, "update_goal", {
+            "goal": goal, "category": category, "target_value": target_value,
+            "target_unit": target_unit, "target_date": target_date,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def get_goal_progress(context: RunContext) -> str:
+    """Progress readout on your active goal."""
+    body = await _dispatch(context, "get_goal_progress", {})
+    return summarize(body)
+
+
+@function_tool
+async def get_journey_checkpoints(context: RunContext) -> str:
+    """Checkpoints in your goal plan."""
+    body = await _dispatch(context, "get_journey_checkpoints", {})
+    return summarize(body)
+
+
+# --- A6 Business Hub (1) -----------------------------------------------------
+
+
+@function_tool
+async def create_service(context: RunContext, name: str, service_type: str, topic_keys: list[str] | None = None, provider_name: str | None = None, confirm: bool | None = None) -> str:
+    """Create a service listing in the Business Hub catalog. NOTE: no list/edit/archive by voice yet. TWO-STEP confirm."""
+    body = await _dispatch(context, "create_service", {
+            "name": name, "service_type": service_type, "topic_keys": topic_keys,
+            "provider_name": provider_name, "confirm": confirm,
+        })
+    return summarize(body)
+
+
+# --- B2+B3 Tenants & Settings + Signups & Invitations (14) ------------------
+
+
+@function_tool
+async def admin_list_tenants(context: RunContext, query: str | None = None) -> str:
+    """ADMIN ONLY. List tenants."""
+    body = await _dispatch(context, "admin_list_tenants", {"query": query})
+    return summarize(body)
+
+
+@function_tool
+async def admin_get_tenant(context: RunContext, tenant_id: str) -> str:
+    """ADMIN ONLY. Tenant detail."""
+    body = await _dispatch(context, "admin_get_tenant", {"tenant_id": tenant_id})
+    return summarize(body)
+
+
+@function_tool
+async def admin_update_tenant_profile(context: RunContext, profile: dict[str, Any], tenant_id: str | None = None, confirm: bool | None = None) -> str:
+    """ADMIN ONLY. Replace a tenant's profile settings. TWO-STEP confirm."""
+    body = await _dispatch(context, "admin_update_tenant_profile", {"tenant_id": tenant_id, "profile": profile, "confirm": confirm})
+    return summarize(body)
+
+
+@function_tool
+async def admin_get_feature_flags(context: RunContext, tenant_id: str | None = None) -> str:
+    """ADMIN ONLY. Read a tenant's feature flags."""
+    body = await _dispatch(context, "admin_get_feature_flags", {"tenant_id": tenant_id})
+    return summarize(body)
+
+
+@function_tool
+async def admin_set_feature_flag(context: RunContext, key: str, value: Any, tenant_id: str | None = None, confirm: bool | None = None) -> str:
+    """ADMIN ONLY. Flip a single feature flag for a tenant. TWO-STEP confirm."""
+    body = await _dispatch(context, "admin_set_feature_flag", {"tenant_id": tenant_id, "key": key, "value": value, "confirm": confirm})
+    return summarize(body)
+
+
+@function_tool
+async def admin_update_branding(context: RunContext, branding: dict[str, Any], tenant_id: str | None = None, confirm: bool | None = None) -> str:
+    """ADMIN ONLY. Replace a tenant's branding settings. TWO-STEP confirm."""
+    body = await _dispatch(context, "admin_update_branding", {"tenant_id": tenant_id, "branding": branding, "confirm": confirm})
+    return summarize(body)
+
+
+@function_tool
+async def admin_list_tenant_integrations(context: RunContext, tenant_id: str | None = None) -> str:
+    """ADMIN ONLY. Integrations status for a tenant."""
+    body = await _dispatch(context, "admin_list_tenant_integrations", {"tenant_id": tenant_id})
+    return summarize(body)
+
+
+@function_tool
+async def admin_list_signups(context: RunContext, stage: str | None = None, tenant_id: str | None = None, search: str | None = None, limit: int | None = None) -> str:
+    """ADMIN ONLY. Recent signups."""
+    body = await _dispatch(context, "admin_list_signups", {"stage": stage, "tenant_id": tenant_id, "search": search, "limit": limit})
+    return summarize(body)
+
+
+@function_tool
+async def admin_get_signup_stats(context: RunContext, days: int | None = None, tenant_id: str | None = None) -> str:
+    """ADMIN ONLY. Signup funnel stats."""
+    body = await _dispatch(context, "admin_get_signup_stats", {"days": days, "tenant_id": tenant_id})
+    return summarize(body)
+
+
+@function_tool
+async def admin_list_signup_attempts(context: RunContext, status: str | None = None, search: str | None = None, limit: int | None = None) -> str:
+    """ADMIN ONLY. Failed/pending signup attempts."""
+    body = await _dispatch(context, "admin_list_signup_attempts", {"status": status, "search": search, "limit": limit})
+    return summarize(body)
+
+
+@function_tool
+async def admin_repair_signup(context: RunContext, attempt_id: str, confirm: bool | None = None) -> str:
+    """ADMIN ONLY. Repair a broken signup (creates missing profile rows). TWO-STEP confirm."""
+    body = await _dispatch(context, "admin_repair_signup", {"attempt_id": attempt_id, "confirm": confirm})
+    return summarize(body)
+
+
+@function_tool
+async def admin_create_invitation(context: RunContext, email: str, tenant_id: str | None = None, roles: list[str] | None = None, message: str | None = None, confirm: bool | None = None) -> str:
+    """ADMIN ONLY. Invite someone to a tenant. TWO-STEP confirm."""
+    body = await _dispatch(context, "admin_create_invitation", {
+            "tenant_id": tenant_id, "email": email, "roles": roles, "message": message, "confirm": confirm,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def admin_list_invitations(context: RunContext, tenant_id: str | None = None, status: str | None = None) -> str:
+    """ADMIN ONLY. Open invitations for a tenant."""
+    body = await _dispatch(context, "admin_list_invitations", {"tenant_id": tenant_id, "status": status})
+    return summarize(body)
+
+
+@function_tool
+async def admin_revoke_invitation(context: RunContext, invitation_id: str, tenant_id: str | None = None, confirm: bool | None = None) -> str:
+    """ADMIN ONLY. Revoke a pending invitation. TWO-STEP confirm."""
+    body = await _dispatch(context, "admin_revoke_invitation", {"tenant_id": tenant_id, "invitation_id": invitation_id, "confirm": confirm})
+    return summarize(body)
+
+
+# --- B5 Community Oversight + B7 Billing & Wallet Admin (13) ----------------
+
+
+@function_tool
+async def admin_list_meetups(context: RunContext, limit: int | None = None) -> str:
+    """ADMIN ONLY. List all community meetups."""
+    body = await _dispatch(context, "admin_list_meetups", {"limit": limit})
+    return summarize(body)
+
+
+@function_tool
+async def admin_delete_meetup(context: RunContext, meetup_id: str, confirm: bool | None = None) -> str:
+    """ADMIN ONLY. Permanently delete a meetup. TWO-STEP confirm."""
+    body = await _dispatch(context, "admin_delete_meetup", {"meetup_id": meetup_id, "confirm": confirm})
+    return summarize(body)
+
+
+@function_tool
+async def admin_list_groups(context: RunContext, limit: int | None = None) -> str:
+    """ADMIN ONLY. List all community groups."""
+    body = await _dispatch(context, "admin_list_groups", {"limit": limit})
+    return summarize(body)
+
+
+@function_tool
+async def admin_list_live_rooms(context: RunContext, limit: int | None = None) -> str:
+    """ADMIN ONLY. List all live rooms across the tenant (supervision)."""
+    body = await _dispatch(context, "admin_list_live_rooms", {"limit": limit})
+    return summarize(body)
+
+
+@function_tool
+async def admin_list_creators(context: RunContext, limit: int | None = None) -> str:
+    """ADMIN ONLY. List creator/service profiles."""
+    body = await _dispatch(context, "admin_list_creators", {"limit": limit})
+    return summarize(body)
+
+
+@function_tool
+async def admin_list_memberships(context: RunContext, limit: int | None = None) -> str:
+    """ADMIN ONLY. List community memberships."""
+    body = await _dispatch(context, "admin_list_memberships", {"limit": limit})
+    return summarize(body)
+
+
+@function_tool
+async def admin_community_stats(context: RunContext) -> str:
+    """ADMIN ONLY. Community-wide counts: meetups, groups, live rooms, memberships."""
+    body = await _dispatch(context, "admin_community_stats", {})
+    return summarize(body)
+
+
+@function_tool
+async def admin_activity_feed(context: RunContext) -> str:
+    """ADMIN ONLY. Recent community activity (meetups + live rooms)."""
+    body = await _dispatch(context, "admin_activity_feed", {})
+    return summarize(body)
+
+
+@function_tool
+async def admin_credit_wallet(context: RunContext, user_id: str, currency: str, amount_minor: int, description: str | None = None, confirm: bool | None = None) -> str:
+    """exafy_admin ONLY. Credit a user wallet by a manual amount. TWO-STEP confirm."""
+    body = await _dispatch(context, "admin_credit_wallet", {
+            "user_id": user_id, "currency": currency, "amount_minor": amount_minor,
+            "description": description, "confirm": confirm,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def admin_debit_wallet(context: RunContext, user_id: str, currency: str, amount_minor: int, description: str | None = None, confirm: bool | None = None) -> str:
+    """exafy_admin ONLY. Debit a user wallet by a manual amount. TWO-STEP confirm."""
+    body = await _dispatch(context, "admin_debit_wallet", {
+            "user_id": user_id, "currency": currency, "amount_minor": amount_minor,
+            "description": description, "confirm": confirm,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def admin_get_founding_status(context: RunContext) -> str:
+    """ADMIN ONLY. Founding-member campaign progress (spots used / remaining)."""
+    body = await _dispatch(context, "admin_get_founding_status", {})
+    return summarize(body)
+
+
+@function_tool
+async def admin_get_monetization_config(context: RunContext) -> str:
+    """ADMIN ONLY. Current monetization engine configuration (thresholds, cooldowns)."""
+    body = await _dispatch(context, "admin_get_monetization_config", {})
+    return summarize(body)
+
+
+@function_tool
+async def admin_run_monetization_detect(context: RunContext, message: str) -> str:
+    """ADMIN ONLY. Run financial/value signal detection on a sample message (debugging)."""
+    body = await _dispatch(context, "admin_run_monetization_detect", {"message": message})
+    return summarize(body)
+
+
+# --- B8+B9 Knowledge Base Admin + Assistant & Voice Config (15) -------------
+
+
+@function_tool
+async def admin_kb_search(context: RunContext, query: str) -> str:
+    """ADMIN ONLY. Search the tenant knowledge base."""
+    body = await _dispatch(context, "admin_kb_search", {"query": query})
+    return summarize(body)
+
+
+@function_tool
+async def admin_kb_list_docs(context: RunContext, source: str | None = None, status: str | None = None, q: str | None = None) -> str:
+    """ADMIN ONLY. List KB documents (tenant + baseline)."""
+    body = await _dispatch(context, "admin_kb_list_docs", {"source": source, "status": status, "q": q})
+    return summarize(body)
+
+
+@function_tool
+async def admin_kb_create_doc(context: RunContext, title: str, body_text: str | None = None, source: str | None = None, topics: list[str] | None = None, confirm: bool | None = None) -> str:
+    """ADMIN ONLY. Create a new tenant KB document. TWO-STEP confirm."""
+    body = await _dispatch(context, "admin_kb_create_doc", {"title": title, "body": body_text, "source": source, "topics": topics, "confirm": confirm})
+    return summarize(body)
+
+
+@function_tool
+async def admin_kb_update_doc(context: RunContext, document_id: str, title: str | None = None, body_text: str | None = None, topics: list[str] | None = None, status: str | None = None, confirm: bool | None = None) -> str:
+    """ADMIN ONLY. Update a tenant KB document. TWO-STEP confirm."""
+    body = await _dispatch(context, "admin_kb_update_doc", {
+            "document_id": document_id, "title": title, "body": body_text,
+            "topics": topics, "status": status, "confirm": confirm,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def admin_kb_delete_doc(context: RunContext, document_id: str, confirm: bool | None = None) -> str:
+    """ADMIN ONLY. Delete a tenant KB document. TWO-STEP confirm."""
+    body = await _dispatch(context, "admin_kb_delete_doc", {"document_id": document_id, "confirm": confirm})
+    return summarize(body)
+
+
+@function_tool
+async def admin_kb_reindex(context: RunContext, document_id: str) -> str:
+    """ADMIN ONLY. Queue re-indexing of a KB document."""
+    body = await _dispatch(context, "admin_kb_reindex", {"document_id": document_id})
+    return summarize(body)
+
+
+@function_tool
+async def admin_kb_baseline_optout(context: RunContext, document_id: str, opt_in: bool | None = None, confirm: bool | None = None) -> str:
+    """ADMIN ONLY. Opt this tenant out of (or back into) a baseline KB doc."""
+    body = await _dispatch(context, "admin_kb_baseline_optout", {"document_id": document_id, "opt_in": opt_in, "confirm": confirm})
+    return summarize(body)
+
+
+@function_tool
+async def admin_system_kb_update(context: RunContext, document_id: str, title: str | None = None, content: str | None = None, tags: list[str] | None = None, confirm: bool | None = None) -> str:
+    """exafy_admin ONLY. Edit a system-wide (vitana_system) KB doc — affects every tenant. TWO-STEP confirm."""
+    body = await _dispatch(context, "admin_system_kb_update", {
+            "document_id": document_id, "title": title, "content": content, "tags": tags, "confirm": confirm,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def admin_get_assistant_config(context: RunContext, surface_key: str) -> str:
+    """ADMIN ONLY. Assistant personality config for one surface (global + tenant override)."""
+    body = await _dispatch(context, "admin_get_assistant_config", {"surface_key": surface_key})
+    return summarize(body)
+
+
+@function_tool
+async def admin_set_assistant_config(context: RunContext, surface_key: str, system_prompt_override: str | None = None, confirm: bool | None = None) -> str:
+    """ADMIN ONLY. Set a tenant override for an assistant surface config. TWO-STEP confirm."""
+    body = await _dispatch(context, "admin_set_assistant_config", {
+            "surface_key": surface_key, "system_prompt_override": system_prompt_override, "confirm": confirm,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def admin_list_assistant_speeches(context: RunContext) -> str:
+    """ADMIN ONLY. List canned assistant speeches with effective text."""
+    body = await _dispatch(context, "admin_list_assistant_speeches", {})
+    return summarize(body)
+
+
+@function_tool
+async def admin_set_assistant_speech(context: RunContext, speech_key: str, text: str, confirm: bool | None = None) -> str:
+    """ADMIN ONLY. Set a tenant override for a canned speech. TWO-STEP confirm."""
+    body = await _dispatch(context, "admin_set_assistant_speech", {"speech_key": speech_key, "text": text, "confirm": confirm})
+    return summarize(body)
+
+
+@function_tool
+async def admin_get_awareness_config(context: RunContext) -> str:
+    """ADMIN ONLY. Platform-wide awareness signal registry."""
+    body = await _dispatch(context, "admin_get_awareness_config", {})
+    return summarize(body)
+
+
+@function_tool
+async def admin_set_awareness_config(context: RunContext, key: str, enabled: bool, confirm: bool | None = None) -> str:
+    """ADMIN ONLY. Enable/disable one awareness signal (platform-wide). TWO-STEP confirm."""
+    body = await _dispatch(context, "admin_set_awareness_config", {"key": key, "enabled": enabled, "confirm": confirm})
+    return summarize(body)
+
+
+@function_tool
+async def admin_bulk_set_awareness(context: RunContext, changes: list[dict[str, Any]], confirm: bool | None = None) -> str:
+    """ADMIN ONLY. Bulk update multiple awareness signals at once. TWO-STEP confirm."""
+    body = await _dispatch(context, "admin_bulk_set_awareness", {"changes": changes, "confirm": confirm})
+    return summarize(body)
+
+
+# --- B13 Autopilot Admin + B14 Analytics & Intent Engine (18) ---------------
+
+
+@function_tool
+async def admin_get_autopilot_settings(context: RunContext) -> str:
+    """ADMIN ONLY. Tenant autopilot settings (enabled, limits, schedule)."""
+    body = await _dispatch(context, "admin_get_autopilot_settings", {})
+    return summarize(body)
+
+
+@function_tool
+async def admin_update_autopilot_settings(context: RunContext, enabled: bool | None = None, max_recommendations_per_day: int | None = None, max_activations_per_day: int | None = None, auto_activate_threshold: float | None = None, confirm: bool | None = None) -> str:
+    """ADMIN ONLY. Update tenant autopilot settings. TWO-STEP confirm."""
+    body = await _dispatch(context, "admin_update_autopilot_settings", {
+            "enabled": enabled, "max_recommendations_per_day": max_recommendations_per_day,
+            "max_activations_per_day": max_activations_per_day,
+            "auto_activate_threshold": auto_activate_threshold, "confirm": confirm,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def admin_list_autopilot_bindings(context: RunContext) -> str:
+    """ADMIN ONLY. List automation bindings active for this tenant."""
+    body = await _dispatch(context, "admin_list_autopilot_bindings", {})
+    return summarize(body)
+
+
+@function_tool
+async def admin_create_autopilot_binding(context: RunContext, automation_id: str, enabled: bool | None = None, requires_approval: bool | None = None, max_runs_per_day: int | None = None, confirm: bool | None = None) -> str:
+    """ADMIN ONLY. Create or update an automation binding. TWO-STEP confirm."""
+    body = await _dispatch(context, "admin_create_autopilot_binding", {
+            "automation_id": automation_id, "enabled": enabled,
+            "requires_approval": requires_approval, "max_runs_per_day": max_runs_per_day, "confirm": confirm,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def admin_delete_autopilot_binding(context: RunContext, binding_id: str, confirm: bool | None = None) -> str:
+    """ADMIN ONLY. Remove an automation binding. TWO-STEP confirm."""
+    body = await _dispatch(context, "admin_delete_autopilot_binding", {"binding_id": binding_id, "confirm": confirm})
+    return summarize(body)
+
+
+@function_tool
+async def admin_list_autopilot_runs(context: RunContext, limit: int | None = None, status: str | None = None, automation_id: str | None = None) -> str:
+    """ADMIN ONLY. List automation execution runs."""
+    body = await _dispatch(context, "admin_list_autopilot_runs", {"limit": limit, "status": status, "automation_id": automation_id})
+    return summarize(body)
+
+
+@function_tool
+async def admin_autopilot_run_stats(context: RunContext) -> str:
+    """ADMIN ONLY. Execution run statistics for the tenant."""
+    body = await _dispatch(context, "admin_autopilot_run_stats", {})
+    return summarize(body)
+
+
+@function_tool
+async def admin_update_autopilot_wave(context: RunContext, wave_id: str, enabled: bool | None = None, confirm: bool | None = None) -> str:
+    """ADMIN ONLY. Enable/disable an autopilot wave for this tenant. TWO-STEP confirm."""
+    body = await _dispatch(context, "admin_update_autopilot_wave", {"wave_id": wave_id, "enabled": enabled, "confirm": confirm})
+    return summarize(body)
+
+
+@function_tool
+async def admin_analytics_summary(context: RunContext, days: int | None = None) -> str:
+    """ADMIN ONLY. Product analytics KPI overview (users, sessions, top routes)."""
+    body = await _dispatch(context, "admin_analytics_summary", {"days": days})
+    return summarize(body)
+
+
+@function_tool
+async def admin_assistant_analytics(context: RunContext, days: int | None = None) -> str:
+    """ADMIN ONLY. Assistant usage analytics (intents, topics, tools, p95 latency)."""
+    body = await _dispatch(context, "admin_assistant_analytics", {"days": days})
+    return summarize(body)
+
+
+@function_tool
+async def admin_journey_analytics(context: RunContext, days: int | None = None) -> str:
+    """ADMIN ONLY. User journey analytics (entry/exit routes, top paths, drop-offs)."""
+    body = await _dispatch(context, "admin_journey_analytics", {"days": days})
+    return summarize(body)
+
+
+@function_tool
+async def admin_feature_analytics(context: RunContext, days: int | None = None) -> str:
+    """ADMIN ONLY. Feature adoption analytics (opens, completions, repeat users)."""
+    body = await _dispatch(context, "admin_feature_analytics", {"days": days})
+    return summarize(body)
+
+
+@function_tool
+async def admin_interest_analytics(context: RunContext, days: int | None = None) -> str:
+    """ADMIN ONLY. Detected interest/topic analytics."""
+    body = await _dispatch(context, "admin_interest_analytics", {"days": days})
+    return summarize(body)
+
+
+@function_tool
+async def admin_intent_engine_stats(context: RunContext) -> str:
+    """exafy_admin ONLY. Intent Engine dashboard stats."""
+    body = await _dispatch(context, "admin_intent_engine_stats", {})
+    return summarize(body)
+
+
+@function_tool
+async def admin_close_intent(context: RunContext, intent_id: str, reason: str | None = None, confirm: bool | None = None) -> str:
+    """exafy_admin ONLY. Force-close a user intent. TWO-STEP confirm."""
+    body = await _dispatch(context, "admin_close_intent", {"intent_id": intent_id, "reason": reason, "confirm": confirm})
+    return summarize(body)
+
+
+@function_tool
+async def admin_recompute_intent(context: RunContext, intent_id: str | None = None, confirm: bool | None = None) -> str:
+    """exafy_admin ONLY. Recompute matches for one intent, or trigger the daily fan-out for all open intents if intent_id is omitted. TWO-STEP confirm."""
+    body = await _dispatch(context, "admin_recompute_intent", {"intent_id": intent_id, "confirm": confirm})
+    return summarize(body)
+
+
+@function_tool
+async def admin_resolve_dispute(context: RunContext, dispute_id: str, status: str, resolution: str, confirm: bool | None = None) -> str:
+    """exafy_admin ONLY. Resolve or dismiss an intent-match dispute. TWO-STEP confirm."""
+    body = await _dispatch(context, "admin_resolve_dispute", {"dispute_id": dispute_id, "status": status, "resolution": resolution, "confirm": confirm})
+    return summarize(body)
+
+
+@function_tool
+async def admin_archive_intent(context: RunContext, older_than_days: int | None = None, confirm: bool | None = None) -> str:
+    """exafy_admin ONLY. Batch-archive old intent matches by age (default 90 days, min 7). TWO-STEP confirm."""
+    body = await _dispatch(context, "admin_archive_intent", {"older_than_days": older_than_days, "confirm": confirm})
+    return summarize(body)
+
+
+# ---------------------------------------------------------------------------
+# WAVE-5-VOICE-CATALOG-V2 — Developer P1 (63)
+# Implementations live in services/gateway/src/services/orb-tools/*.ts,
+# reached through the shared dispatcher via POST /api/v1/orb/tool exactly
+# like the tools above.
+# ---------------------------------------------------------------------------
+
+
+# --- C5 Worker Orchestrator (9) ---------------------------------------------
+
+
+@function_tool
+async def dev_list_workers(context: RunContext) -> str:
+    """DEVELOPER ONLY. List registered orchestrator workers."""
+    body = await _dispatch(context, "dev_list_workers", {})
+    return summarize(body)
+
+
+@function_tool
+async def dev_orchestrator_stats(context: RunContext) -> str:
+    """DEVELOPER ONLY. Worker connector stats."""
+    body = await _dispatch(context, "dev_orchestrator_stats", {})
+    return summarize(body)
+
+
+@function_tool
+async def dev_list_pending_worker_tasks(context: RunContext, worker_id: str | None = None, limit: int | None = None) -> str:
+    """DEVELOPER ONLY. Pending worker task queue."""
+    body = await _dispatch(context, "dev_list_pending_worker_tasks", {"worker_id": worker_id, "limit": limit})
+    return summarize(body)
+
+
+@function_tool
+async def dev_release_claim(context: RunContext, vtid: str, worker_id: str, reason: str | None = None, confirm: bool | None = None) -> str:
+    """DEVELOPER ONLY. Release a stuck VTID claim. TWO-STEP confirm."""
+    body = await _dispatch(context, "dev_release_claim", {"vtid": vtid, "worker_id": worker_id, "reason": reason, "confirm": confirm})
+    return summarize(body)
+
+
+@function_tool
+async def dev_list_subagents(context: RunContext) -> str:
+    """DEVELOPER ONLY. List legacy subagent registry entries."""
+    body = await _dispatch(context, "dev_list_subagents", {})
+    return summarize(body)
+
+
+@function_tool
+async def dev_list_worker_skills(context: RunContext) -> str:
+    """DEVELOPER ONLY. Worker skills + preflight chains."""
+    body = await _dispatch(context, "dev_list_worker_skills", {})
+    return summarize(body)
+
+
+@function_tool
+async def dev_cleanup_stale_claims(context: RunContext, confirm: bool | None = None) -> str:
+    """DEVELOPER ONLY. Expire all stale worker claims platform-wide. TWO-STEP confirm."""
+    body = await _dispatch(context, "dev_cleanup_stale_claims", {"confirm": confirm})
+    return summarize(body)
+
+
+@function_tool
+async def dev_orchestrator_health(context: RunContext) -> str:
+    """DEVELOPER ONLY. Orchestrator service health + subagent lanes."""
+    body = await _dispatch(context, "dev_orchestrator_health", {})
+    return summarize(body)
+
+
+@function_tool
+async def dev_route_to_subagent(context: RunContext, vtid: str, title: str, task_family: str | None = None, task_domain: str | None = None, target_paths: list[str] | None = None, spec_content: str | None = None, confirm: bool | None = None) -> str:
+    """DEVELOPER ONLY. Route a VTID work order to a subagent for execution. TWO-STEP confirm."""
+    body = await _dispatch(context, "dev_route_to_subagent", {
+            "vtid": vtid, "title": title, "task_family": task_family, "task_domain": task_domain,
+            "target_paths": target_paths, "spec_content": spec_content, "confirm": confirm,
+        })
+    return summarize(body)
+
+
+# --- C6 Autopilot Controller & Loop (12) ------------------------------------
+
+
+@function_tool
+async def dev_autopilot_loop_status(context: RunContext) -> str:
+    """DEVELOPER ONLY. Autopilot event loop status."""
+    body = await _dispatch(context, "dev_autopilot_loop_status", {})
+    return summarize(body)
+
+
+@function_tool
+async def dev_start_autopilot_loop(context: RunContext, confirm: bool | None = None) -> str:
+    """DEVELOPER ONLY. Start the autopilot event loop. TWO-STEP confirm."""
+    body = await _dispatch(context, "dev_start_autopilot_loop", {"confirm": confirm})
+    return summarize(body)
+
+
+@function_tool
+async def dev_stop_autopilot_loop(context: RunContext, confirm: bool | None = None) -> str:
+    """DEVELOPER ONLY. Stop the autopilot event loop. TWO-STEP confirm."""
+    body = await _dispatch(context, "dev_stop_autopilot_loop", {"confirm": confirm})
+    return summarize(body)
+
+
+@function_tool
+async def dev_autopilot_loop_history(context: RunContext, limit: int | None = None) -> str:
+    """DEVELOPER ONLY. Recent autopilot loop events."""
+    body = await _dispatch(context, "dev_autopilot_loop_history", {"limit": limit})
+    return summarize(body)
+
+
+@function_tool
+async def dev_reset_loop_cursor(context: RunContext, timestamp: str | None = None, reason: str | None = None, confirm: bool | None = None) -> str:
+    """DEVELOPER ONLY. Reset the autopilot loop cursor to a timestamp (or "now"). TWO-STEP confirm."""
+    body = await _dispatch(context, "dev_reset_loop_cursor", {"timestamp": timestamp, "reason": reason, "confirm": confirm})
+    return summarize(body)
+
+
+@function_tool
+async def dev_controller_status(context: RunContext) -> str:
+    """DEVELOPER ONLY. Autopilot controller status."""
+    body = await _dispatch(context, "dev_controller_status", {})
+    return summarize(body)
+
+
+@function_tool
+async def dev_list_controller_runs(context: RunContext) -> str:
+    """DEVELOPER ONLY. Active controller runs."""
+    body = await _dispatch(context, "dev_list_controller_runs", {})
+    return summarize(body)
+
+
+@function_tool
+async def dev_get_controller_run(context: RunContext, vtid: str) -> str:
+    """DEVELOPER ONLY. One controller run by VTID."""
+    body = await _dispatch(context, "dev_get_controller_run", {"vtid": vtid})
+    return summarize(body)
+
+
+@function_tool
+async def dev_validate_task(context: RunContext, vtid: str, mode: str | None = None) -> str:
+    """DEVELOPER ONLY. Run governance validation for a VTID."""
+    body = await _dispatch(context, "dev_validate_task", {"vtid": vtid, "mode": mode})
+    return summarize(body)
+
+
+@function_tool
+async def dev_list_pending_plans(context: RunContext) -> str:
+    """DEVELOPER ONLY. Tasks awaiting a plan."""
+    body = await _dispatch(context, "dev_list_pending_plans", {})
+    return summarize(body)
+
+
+@function_tool
+async def dev_get_task_spec(context: RunContext, vtid: str) -> str:
+    """DEVELOPER ONLY. Spec snapshot for a VTID."""
+    body = await _dispatch(context, "dev_get_task_spec", {"vtid": vtid})
+    return summarize(body)
+
+
+@function_tool
+async def dev_autopilot_pipeline_health(context: RunContext) -> str:
+    """DEVELOPER ONLY. Autopilot pipeline health + task funnel summary."""
+    body = await _dispatch(context, "dev_autopilot_pipeline_health", {})
+    return summarize(body)
+
+
+# --- C7 Dev-Autopilot Scanners & Findings (14) ------------------------------
+
+
+@function_tool
+async def dev_list_scanners(context: RunContext) -> str:
+    """EXAFY_ADMIN ONLY. List dev-autopilot scanners."""
+    body = await _dispatch(context, "dev_list_scanners", {})
+    return summarize(body)
+
+
+@function_tool
+async def dev_list_impact_rules(context: RunContext) -> str:
+    """EXAFY_ADMIN ONLY. List impact rules."""
+    body = await _dispatch(context, "dev_list_impact_rules", {})
+    return summarize(body)
+
+
+@function_tool
+async def dev_get_auto_approve_config(context: RunContext) -> str:
+    """EXAFY_ADMIN ONLY. Auto-approve config, budget, and autonomy progress."""
+    body = await _dispatch(context, "dev_get_auto_approve_config", {})
+    return summarize(body)
+
+
+@function_tool
+async def dev_list_scan_runs(context: RunContext, limit: int | None = None) -> str:
+    """EXAFY_ADMIN ONLY. Recent scan runs."""
+    body = await _dispatch(context, "dev_list_scan_runs", {"limit": limit})
+    return summarize(body)
+
+
+@function_tool
+async def dev_get_scan_run(context: RunContext, run_id: str) -> str:
+    """EXAFY_ADMIN ONLY. One scan run by id."""
+    body = await _dispatch(context, "dev_get_scan_run", {"run_id": run_id})
+    return summarize(body)
+
+
+@function_tool
+async def dev_findings_queue(context: RunContext, kind: str | None = None, status: str | None = None, risk: str | None = None, domain: str | None = None, sort: str | None = None, limit: int | None = None) -> str:
+    """EXAFY_ADMIN ONLY. Findings queue."""
+    body = await _dispatch(context, "dev_findings_queue", {"kind": kind, "status": status, "risk": risk, "domain": domain, "sort": sort, "limit": limit})
+    return summarize(body)
+
+
+@function_tool
+async def dev_get_finding(context: RunContext, finding_id: str) -> str:
+    """EXAFY_ADMIN ONLY. One finding + plan versions."""
+    body = await _dispatch(context, "dev_get_finding", {"finding_id": finding_id})
+    return summarize(body)
+
+
+@function_tool
+async def dev_generate_finding_plan(context: RunContext, finding_id: str, confirm: bool | None = None) -> str:
+    """EXAFY_ADMIN ONLY. Generate a fix plan for a finding. TWO-STEP confirm."""
+    body = await _dispatch(context, "dev_generate_finding_plan", {"finding_id": finding_id, "confirm": confirm})
+    return summarize(body)
+
+
+@function_tool
+async def dev_reject_finding(context: RunContext, finding_id: str, confirm: bool | None = None) -> str:
+    """EXAFY_ADMIN ONLY. Reject a finding. TWO-STEP confirm."""
+    body = await _dispatch(context, "dev_reject_finding", {"finding_id": finding_id, "confirm": confirm})
+    return summarize(body)
+
+
+@function_tool
+async def dev_snooze_finding(context: RunContext, finding_id: str, hours: int | None = None) -> str:
+    """EXAFY_ADMIN ONLY. Snooze a finding for N hours (default 24, max 720)."""
+    body = await _dispatch(context, "dev_snooze_finding", {"finding_id": finding_id, "hours": hours})
+    return summarize(body)
+
+
+@function_tool
+async def dev_approve_auto_execute(context: RunContext, finding_id: str, confirm: bool | None = None) -> str:
+    """EXAFY_ADMIN ONLY. Approve a finding for autonomous execution + merge, no further review. TWO-STEP confirm."""
+    body = await _dispatch(context, "dev_approve_auto_execute", {"finding_id": finding_id, "confirm": confirm})
+    return summarize(body)
+
+
+@function_tool
+async def dev_cancel_execution(context: RunContext, execution_id: str, confirm: bool | None = None) -> str:
+    """EXAFY_ADMIN ONLY. Cancel a running execution. TWO-STEP confirm."""
+    body = await _dispatch(context, "dev_cancel_execution", {"execution_id": execution_id, "confirm": confirm})
+    return summarize(body)
+
+
+@function_tool
+async def dev_list_executions(context: RunContext, status: str | None = None, limit: int | None = None) -> str:
+    """EXAFY_ADMIN ONLY. List executions (defaults to active only)."""
+    body = await _dispatch(context, "dev_list_executions", {"status": status, "limit": limit})
+    return summarize(body)
+
+
+@function_tool
+async def dev_get_execution_lineage(context: RunContext, execution_id: str) -> str:
+    """EXAFY_ADMIN ONLY. Execution lineage (root + all descendants)."""
+    body = await _dispatch(context, "dev_get_execution_lineage", {"execution_id": execution_id})
+    return summarize(body)
+
+
+# --- C8 Self-Healing (13) ----------------------------------------------------
+
+
+@function_tool
+async def dev_report_incident(context: RunContext, service: str, summary: str, confirm: bool | None = None) -> str:
+    """DEVELOPER ONLY. File a manual incident for a service. TWO-STEP confirm."""
+    body = await _dispatch(context, "dev_report_incident", {"service": service, "summary": summary, "confirm": confirm})
+    return summarize(body)
+
+
+@function_tool
+async def dev_healing_config(context: RunContext) -> str:
+    """DEVELOPER ONLY. Self-healing enabled state + autonomy level."""
+    body = await _dispatch(context, "dev_healing_config", {})
+    return summarize(body)
+
+
+@function_tool
+async def dev_set_healing_mode(context: RunContext, autonomy_level: int, confirm: bool | None = None) -> str:
+    """DEVELOPER ONLY. Set the self-healing autonomy level (0-4). TWO-STEP confirm."""
+    body = await _dispatch(context, "dev_set_healing_mode", {"autonomy_level": autonomy_level, "confirm": confirm})
+    return summarize(body)
+
+
+@function_tool
+async def dev_healing_kill_switch(context: RunContext, action: str, reason: str | None = None, confirm: bool | None = None) -> str:
+    """DEVELOPER ONLY. Activate or deactivate the self-healing kill switch. TWO-STEP confirm."""
+    body = await _dispatch(context, "dev_healing_kill_switch", {"action": action, "reason": reason, "confirm": confirm})
+    return summarize(body)
+
+
+@function_tool
+async def dev_healing_history(context: RunContext, limit: int | None = None, failure_class: str | None = None, outcome: str | None = None) -> str:
+    """DEVELOPER ONLY. Recent self-healing events."""
+    body = await _dispatch(context, "dev_healing_history", {"limit": limit, "failure_class": failure_class, "outcome": outcome})
+    return summarize(body)
+
+
+@function_tool
+async def dev_healing_metrics(context: RunContext, days: int | None = None) -> str:
+    """DEVELOPER ONLY. Self-healing metrics summary over N days (default 7)."""
+    body = await _dispatch(context, "dev_healing_metrics", {"days": days})
+    return summarize(body)
+
+
+@function_tool
+async def dev_approve_heal(context: RunContext, heal_id: str, confirm: bool | None = None) -> str:
+    """DEVELOPER ONLY. Approve a pending heal. TWO-STEP confirm."""
+    body = await _dispatch(context, "dev_approve_heal", {"heal_id": heal_id, "confirm": confirm})
+    return summarize(body)
+
+
+@function_tool
+async def dev_reject_heal(context: RunContext, heal_id: str, reason: str | None = None, confirm: bool | None = None) -> str:
+    """DEVELOPER ONLY. Reject a pending heal. TWO-STEP confirm."""
+    body = await _dispatch(context, "dev_reject_heal", {"heal_id": heal_id, "reason": reason, "confirm": confirm})
+    return summarize(body)
+
+
+@function_tool
+async def dev_verify_heal(context: RunContext, vtid: str) -> str:
+    """DEVELOPER ONLY. Run a blast-radius verification check for a heal."""
+    body = await _dispatch(context, "dev_verify_heal", {"vtid": vtid})
+    return summarize(body)
+
+
+@function_tool
+async def dev_rollback_heal(context: RunContext, vtid: str, confirm: bool | None = None) -> str:
+    """DEVELOPER ONLY. Roll back a heal to its pre-fix snapshot. TWO-STEP confirm."""
+    body = await _dispatch(context, "dev_rollback_heal", {"vtid": vtid, "confirm": confirm})
+    return summarize(body)
+
+
+@function_tool
+async def dev_list_quarantine(context: RunContext, failure_class: str, signature: str) -> str:
+    """DEVELOPER ONLY. Look up a quarantine entry by failure class + signature (no browsable list exists)."""
+    body = await _dispatch(context, "dev_list_quarantine", {"failure_class": failure_class, "signature": signature})
+    return summarize(body)
+
+
+@function_tool
+async def dev_release_quarantine(context: RunContext, failure_class: str, signature: str, reason: str | None = None, confirm: bool | None = None) -> str:
+    """DEVELOPER ONLY. Release a class/signature pair from quarantine. TWO-STEP confirm."""
+    body = await _dispatch(context, "dev_release_quarantine", {"failure_class": failure_class, "signature": signature, "reason": reason, "confirm": confirm})
+    return summarize(body)
+
+
+@function_tool
+async def dev_shadow_comparison(context: RunContext, window_hours: int | None = None) -> str:
+    """DEVELOPER ONLY. Staging shadow-comparison report over a time window (default 48h)."""
+    body = await _dispatch(context, "dev_shadow_comparison", {"window_hours": window_hours})
+    return summarize(body)
+
+
+# --- C10 Testing & QA (10) ---------------------------------------------------
+
+
+@function_tool
+async def dev_run_test_suite(context: RunContext, projects: list[str], type: str | None = None, community_url: str | None = None, confirm: bool | None = None) -> str:
+    """DEVELOPER ONLY. Run one or more named test suites/projects. TWO-STEP confirm."""
+    body = await _dispatch(context, "dev_run_test_suite", {"projects": projects, "type": type, "community_url": community_url, "confirm": confirm})
+    return summarize(body)
+
+
+@function_tool
+async def dev_list_test_suites(context: RunContext) -> str:
+    """DEVELOPER ONLY. List available test suites/projects."""
+    body = await _dispatch(context, "dev_list_test_suites", {})
+    return summarize(body)
+
+
+@function_tool
+async def dev_list_test_runs(context: RunContext, type: str | None = None, limit: int | None = None) -> str:
+    """DEVELOPER ONLY. Recent test runs."""
+    body = await _dispatch(context, "dev_list_test_runs", {"type": type, "limit": limit})
+    return summarize(body)
+
+
+@function_tool
+async def dev_get_test_run(context: RunContext, run_id: str) -> str:
+    """DEVELOPER ONLY. One test run + its results."""
+    body = await _dispatch(context, "dev_get_test_run", {"run_id": run_id})
+    return summarize(body)
+
+
+@function_tool
+async def dev_run_e2e(context: RunContext, projects: list[str] | None = None, confirm: bool | None = None) -> str:
+    """DEVELOPER ONLY. Run the full E2E test suite. TWO-STEP confirm."""
+    body = await _dispatch(context, "dev_run_e2e", {"projects": projects, "confirm": confirm})
+    return summarize(body)
+
+
+@function_tool
+async def dev_orb_monitor_status(context: RunContext) -> str:
+    """DEVELOPER ONLY. Recent ORB monitor workflow runs."""
+    body = await _dispatch(context, "dev_orb_monitor_status", {})
+    return summarize(body)
+
+
+@function_tool
+async def dev_trigger_orb_monitor(context: RunContext, confirm: bool | None = None) -> str:
+    """DEVELOPER ONLY. Trigger the ORB monitor workflow. TWO-STEP confirm."""
+    body = await _dispatch(context, "dev_trigger_orb_monitor", {"confirm": confirm})
+    return summarize(body)
+
+
+@function_tool
+async def dev_list_test_contracts(context: RunContext, service: str | None = None, environment: str | None = None, owner: str | None = None, status: str | None = None, contract_type: str | None = None) -> str:
+    """EXAFY_ADMIN ONLY. List registered test contracts."""
+    body = await _dispatch(context, "dev_list_test_contracts", {"service": service, "environment": environment, "owner": owner, "status": status, "contract_type": contract_type})
+    return summarize(body)
+
+
+@function_tool
+async def dev_run_orb_selfcheck(context: RunContext, user_id: str | None = None, tools: list[str] | None = None, confirm: bool | None = None) -> str:
+    """EXAFY_ADMIN ONLY. Run the curated ORB tools selfcheck against real user data. TWO-STEP confirm."""
+    body = await _dispatch(context, "dev_run_orb_selfcheck", {"user_id": user_id, "tools": tools, "confirm": confirm})
+    return summarize(body)
+
+
+@function_tool
+async def dev_voice_lab_probe(context: RunContext) -> str:
+    """DEVELOPER ONLY. Run a synthetic voice-lab probe."""
+    body = await _dispatch(context, "dev_voice_lab_probe", {})
+    return summarize(body)
+
+
+# ---------------------------------------------------------------------------
+# WAVE-6-VOICE-CATALOG-V2 — sixth and final wave of the approved 425-tool
+# expansion. Implementations live in services/gateway/src/services/orb-tools/*.ts,
+# reached through the shared dispatcher via POST /api/v1/orb/tool exactly
+# like the tools above.
+# ---------------------------------------------------------------------------
+
+
+# --- B10 Admin Specialists / Personas (9) -----------------------------------
+
+
+@function_tool
+async def admin_list_specialists(context: RunContext) -> str:
+    """ADMIN ONLY. List specialist personas."""
+    body = await _dispatch(context, "admin_list_specialists", {})
+    return summarize(body)
+
+
+@function_tool
+async def admin_get_specialist(context: RunContext, key: str) -> str:
+    """ADMIN ONLY. One persona + version history."""
+    body = await _dispatch(context, "admin_get_specialist", {"key": key})
+    return summarize(body)
+
+
+@function_tool
+async def admin_create_specialist(context: RunContext, key: str, display_name: str, role: str, system_prompt: str, voice_id: str | None = None, handles_kinds: list[str] | None = None, status: str | None = None, confirm: bool | None = None) -> str:
+    """ADMIN ONLY. Create a new specialist persona. TWO-STEP confirm."""
+    body = await _dispatch(context, "admin_create_specialist", {
+            "key": key, "display_name": display_name, "role": role, "system_prompt": system_prompt,
+            "voice_id": voice_id, "handles_kinds": handles_kinds, "status": status, "confirm": confirm,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def admin_update_specialist(context: RunContext, key: str, display_name: str | None = None, role: str | None = None, system_prompt: str | None = None, status: str | None = None, change_note: str | None = None, confirm: bool | None = None) -> str:
+    """ADMIN ONLY. Edit a specialist persona (snapshots the prior version). TWO-STEP confirm."""
+    body = await _dispatch(context, "admin_update_specialist", {
+            "key": key, "display_name": display_name, "role": role, "system_prompt": system_prompt,
+            "status": status, "change_note": change_note, "confirm": confirm,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def admin_rollback_specialist(context: RunContext, key: str, version: int, confirm: bool | None = None) -> str:
+    """ADMIN ONLY. Roll back a specialist to a prior version. TWO-STEP confirm."""
+    body = await _dispatch(context, "admin_rollback_specialist", {"key": key, "version": version, "confirm": confirm})
+    return summarize(body)
+
+
+@function_tool
+async def admin_set_specialist_tools(context: RunContext, key: str, tool_keys: list[str], confirm: bool | None = None) -> str:
+    """ADMIN ONLY. Replace the set of voice tools bound to a specialist. TWO-STEP confirm."""
+    body = await _dispatch(context, "admin_set_specialist_tools", {"key": key, "tool_keys": tool_keys, "confirm": confirm})
+    return summarize(body)
+
+
+@function_tool
+async def admin_set_specialist_kb(context: RunContext, key: str, kb_keys: list[str], confirm: bool | None = None) -> str:
+    """ADMIN ONLY. Replace the set of knowledge-base scopes bound to a specialist. TWO-STEP confirm."""
+    body = await _dispatch(context, "admin_set_specialist_kb", {"key": key, "kb_keys": kb_keys, "confirm": confirm})
+    return summarize(body)
+
+
+@function_tool
+async def admin_set_specialist_status(context: RunContext, key: str, enabled: bool, confirm: bool | None = None) -> str:
+    """ADMIN ONLY. Enable or disable a specialist (the "vitana" persona can never be disabled). TWO-STEP confirm."""
+    body = await _dispatch(context, "admin_set_specialist_status", {"key": key, "enabled": enabled, "confirm": confirm})
+    return summarize(body)
+
+
+@function_tool
+async def admin_test_specialist_connection(context: RunContext, connection_id: str) -> str:
+    """ADMIN ONLY. Test a specialist's third-party connection (stub providers only today)."""
+    body = await _dispatch(context, "admin_test_specialist_connection", {"connection_id": connection_id})
+    return summarize(body)
+
+
+# --- B16 Admin Audit & Memory Ops (4) ---------------------------------------
+
+
+@function_tool
+async def admin_audit_actions_log(context: RunContext, limit: int | None = None, action: str | None = None) -> str:
+    """ADMIN ONLY. Recent admin actions audit log."""
+    body = await _dispatch(context, "admin_audit_actions_log", {"limit": limit, "action": action})
+    return summarize(body)
+
+
+@function_tool
+async def admin_audit_access_log(context: RunContext, limit: int | None = None) -> str:
+    """ADMIN ONLY. Recent login/logout/role-change access events."""
+    body = await _dispatch(context, "admin_audit_access_log", {"limit": limit})
+    return summarize(body)
+
+
+@function_tool
+async def admin_run_memory_consolidator(context: RunContext, user_id: str | None = None, tenant_id: str | None = None, loops: list[str] | None = None, confirm: bool | None = None) -> str:
+    """EXAFY_ADMIN ONLY. Run the nightly memory consolidator on demand. TWO-STEP confirm."""
+    body = await _dispatch(context, "admin_run_memory_consolidator", {"user_id": user_id, "tenant_id": tenant_id, "loops": loops, "confirm": confirm})
+    return summarize(body)
+
+
+@function_tool
+async def admin_run_embeddings_backfill(context: RunContext, batch_size: int | None = None, dry_run: bool | None = None, confirm: bool | None = None) -> str:
+    """EXAFY_ADMIN ONLY. Backfill missing memory_items embeddings. TWO-STEP confirm (dry_run=true skips confirmation)."""
+    body = await _dispatch(context, "admin_run_embeddings_backfill", {"batch_size": batch_size, "dry_run": dry_run, "confirm": confirm})
+    return summarize(body)
+
+
+# --- A13 Memory & Diary extras + A14 Profile & Social depth (10) -----------
+
+
+@function_tool
+async def edit_memory(context: RunContext, memory_item_id: str, new_content: str, correction_notes: str | None = None, confirm: bool | None = None) -> str:
+    """Correct the content of a stored memory. TWO-STEP confirm."""
+    body = await _dispatch(context, "edit_memory", {"memory_item_id": memory_item_id, "new_content": new_content, "correction_notes": correction_notes, "confirm": confirm})
+    return summarize(body)
+
+
+@function_tool
+async def reinforce_memory(context: RunContext, memory_item_id: str, confirmation_notes: str | None = None) -> str:
+    """Confirm a memory as accurate and trustworthy (raises its confidence score)."""
+    body = await _dispatch(context, "reinforce_memory", {"memory_item_id": memory_item_id, "confirmation_notes": confirmation_notes})
+    return summarize(body)
+
+
+@function_tool
+async def set_memory_permissions(context: RunContext, domain: str, visibility: str, confirm: bool | None = None) -> str:
+    """Set who can see a category of your memory (diary, garden, relationships, longevity, timeline). TWO-STEP confirm."""
+    body = await _dispatch(context, "set_memory_permissions", {"domain": domain, "visibility": visibility, "confirm": confirm})
+    return summarize(body)
+
+
+@function_tool
+async def get_what_vitana_knows(context: RunContext) -> str:
+    """"What do you know about me" — summary of your memory garden by category."""
+    body = await _dispatch(context, "get_what_vitana_knows", {})
+    return summarize(body)
+
+
+@function_tool
+async def add_diary_photo(context: RunContext) -> str:
+    """Opens the diary screen so you can attach a photo (voice cannot upload directly)."""
+    body = await _dispatch_with_directive(context, "add_diary_photo", {})
+    return summarize(body)
+
+
+@function_tool
+async def get_profile_completeness(context: RunContext) -> str:
+    """Your taste/lifestyle profile completeness percentage."""
+    body = await _dispatch(context, "get_profile_completeness", {})
+    return summarize(body)
+
+
+@function_tool
+async def share_my_profile(context: RunContext) -> str:
+    """Get your shareable profile link."""
+    body = await _dispatch(context, "share_my_profile", {})
+    return summarize(body)
+
+
+@function_tool
+async def get_my_milestones(context: RunContext, limit: int | None = None) -> str:
+    """Your achieved milestones."""
+    body = await _dispatch(context, "get_my_milestones", {"limit": limit})
+    return summarize(body)
+
+
+@function_tool
+async def view_member_profile(context: RunContext, user_id: str | None = None, handle: str | None = None) -> str:
+    """Spoken summary of a community member's public profile."""
+    body = await _dispatch(context, "view_member_profile", {"user_id": user_id, "handle": handle})
+    return summarize(body)
+
+
+@function_tool
+async def update_service_offerings(context: RunContext, offers: list[dict] | None = None, confirm: bool | None = None) -> str:
+    """Replace the service offerings shown on your profile. TWO-STEP confirm."""
+    body = await _dispatch(context, "update_service_offerings", {"offers": offers, "confirm": confirm})
+    return summarize(body)
+
+
+# --- C11 Database & Migrations (4) ------------------------------------------
+
+
+@function_tool
+async def dev_run_staging_migration(context: RunContext, migration_file: str, confirm: bool | None = None) -> str:
+    """DEVELOPER ONLY. Apply a SQL migration file to STAGING. TWO-STEP confirm."""
+    body = await _dispatch(context, "dev_run_staging_migration", {"migration_file": migration_file, "confirm": confirm})
+    return summarize(body)
+
+
+@function_tool
+async def dev_run_prod_migration(context: RunContext, migration_file: str, reason: str, confirm: bool | None = None) -> str:
+    """DEVELOPER ONLY. Apply a SQL migration file DIRECTLY TO PRODUCTION. Requires a stated reason. TWO-STEP confirm."""
+    body = await _dispatch(context, "dev_run_prod_migration", {"migration_file": migration_file, "reason": reason, "confirm": confirm})
+    return summarize(body)
+
+
+@function_tool
+async def dev_migration_status(context: RunContext, target: str | None = None, limit: int | None = None) -> str:
+    """DEVELOPER ONLY. Recent staging or production migration workflow runs."""
+    body = await _dispatch(context, "dev_migration_status", {"target": target, "limit": limit})
+    return summarize(body)
+
+
+@function_tool
+async def dev_run_backfill(context: RunContext, name: str, locales: str | None = None, curriculum: str | None = None, limit: int | None = None, batch_size: int | None = None, dry_run: bool | None = None, confirm: bool | None = None) -> str:
+    """DEVELOPER ONLY (embeddings additionally requires exafy_admin). Run a named backfill job: "journey_translations" or "embeddings". TWO-STEP confirm."""
+    body = await _dispatch(context, "dev_run_backfill", {
+            "name": name, "locales": locales, "curriculum": curriculum, "limit": limit,
+            "batch_size": batch_size, "dry_run": dry_run, "confirm": confirm,
+        })
+    return summarize(body)
+
+
+# --- C12 Dev Access, Simulator & Meta (10) ----------------------------------
+
+
+@function_tool
+async def dev_list_dev_users(context: RunContext, query: str | None = None) -> str:
+    """EXAFY_ADMIN ONLY. List users with exafy_admin dev-hub access."""
+    body = await _dispatch(context, "dev_list_dev_users", {"query": query})
+    return summarize(body)
+
+
+@function_tool
+async def dev_grant_access(context: RunContext, email: str, confirm: bool | None = None) -> str:
+    """EXAFY_ADMIN ONLY. Grant exafy_admin dev-hub access to a user by email. TWO-STEP confirm."""
+    body = await _dispatch(context, "dev_grant_access", {"email": email, "confirm": confirm})
+    return summarize(body)
+
+
+@function_tool
+async def dev_revoke_access(context: RunContext, email: str, confirm: bool | None = None) -> str:
+    """EXAFY_ADMIN ONLY. Revoke exafy_admin dev-hub access from a user by email. TWO-STEP confirm."""
+    body = await _dispatch(context, "dev_revoke_access", {"email": email, "confirm": confirm})
+    return summarize(body)
+
+
+@function_tool
+async def dev_mint_token(context: RunContext, email: str, role: str, tenant_id: str | None = None, confirm: bool | None = None) -> str:
+    """EXAFY_ADMIN ONLY. Mint a dev-sandbox session token for a user. TWO-STEP confirm."""
+    body = await _dispatch(context, "dev_mint_token", {"email": email, "role": role, "tenant_id": tenant_id, "confirm": confirm})
+    return summarize(body)
+
+
+@function_tool
+async def dev_open_hub_panel(context: RunContext, screen_id: str) -> str:
+    """DEVELOPER ONLY. Navigate to a Command Hub screen/panel by screen_id."""
+    body = await _dispatch_with_directive(context, "dev_open_hub_panel", {"screen_id": screen_id})
+    return summarize(body)
+
+
+@function_tool
+async def dev_run_simulator(context: RunContext, user_id: str, lang: str | None = None, timezone: str | None = None, bucket: str | None = None, first_time: bool | None = None, briefing_due: bool | None = None, current_route: str | None = None) -> str:
+    """EXAFY_ADMIN ONLY. Dry-run the conversation-opening decision for a user, without speaking or emitting."""
+    body = await _dispatch(context, "dev_run_simulator", {
+            "user_id": user_id, "lang": lang, "timezone": timezone, "bucket": bucket,
+            "first_time": first_time, "briefing_due": briefing_due, "current_route": current_route,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def dev_journey_context(context: RunContext, user_id: str, tenant_id: str | None = None) -> str:
+    """EXAFY_ADMIN ONLY. Durable assistant-state signals stored for a user (journey/onboarding context)."""
+    body = await _dispatch(context, "dev_journey_context", {"user_id": user_id, "tenant_id": tenant_id})
+    return summarize(body)
+
+
+@function_tool
+async def dev_voice_catalog_stats(context: RunContext) -> str:
+    """DEVELOPER ONLY. Aggregate counts of this voice tool catalog."""
+    body = await _dispatch(context, "dev_voice_catalog_stats", {})
+    return summarize(body)
+
+
+@function_tool
+async def dev_get_voice_tool_detail(context: RunContext, name: str) -> str:
+    """DEVELOPER ONLY. Full manifest entry for one voice tool by name."""
+    body = await _dispatch(context, "dev_get_voice_tool_detail", {"name": name})
+    return summarize(body)
+
+
+@function_tool
+async def dev_system_briefing(context: RunContext, limit: int | None = None) -> str:
+    """DEVELOPER ONLY. Combined roll-up: service health, deployments, approvals, violations, CI/CD health."""
+    body = await _dispatch(context, "dev_system_briefing", {"limit": limit})
+    return summarize(body)
+
+
+# ---------------------------------------------------------------------------
 # Catalogue export — used by tests + libcst smoke
 # ---------------------------------------------------------------------------
 
@@ -2953,6 +6054,183 @@ def all_tool_names() -> list[str]:
         "follow_member", "unfollow_member", "get_notifications",
         "mark_notifications_read", "get_wallet_balance", "update_profile",
         "play_podcast", "like_post", "comment_on_post",
+        # BOOTSTRAP-VOICE-TOOLS-CATALOG-WAVE1 — 69 tools from six new gateway
+        # handler modules (services/gateway/src/services/orb-tools/*.ts).
+        # A1 Marketplace & Discovery (16)
+        "search_marketplace", "get_product_details", "browse_supplements",
+        "add_supplement_to_regimen", "list_my_supplements",
+        "remove_supplement_from_regimen", "browse_wellness_services",
+        "get_provider_profile", "browse_doctors_coaches",
+        "get_coach_compatibility", "browse_deals_offers", "apply_discount_code",
+        "get_ai_product_picks", "list_my_orders", "get_order_status",
+        "reorder_last_order",
+        # A2 Cart & Checkout (8)
+        "add_to_cart", "view_cart", "update_cart_item", "remove_from_cart",
+        "clear_cart", "set_shopping_budget", "review_agent_purchase_proposals",
+        "start_checkout",
+        # A3 Wallet & Payments (11)
+        "get_wallet_summary", "list_wallet_transactions", "send_funds",
+        "request_payment", "exchange_currency", "get_exchange_rate",
+        "set_display_currency", "get_referral_earnings",
+        "get_commissions_summary", "get_pending_rewards",
+        "list_payment_requests",
+        # A8 Messaging Depth (9)
+        "send_group_chat_message", "reply_to_message", "react_to_message",
+        "create_group_chat", "add_group_chat_member", "leave_group_chat",
+        "send_calendar_invite_in_chat", "start_voice_call", "start_video_call",
+        # A10 Events & Tickets (10)
+        "create_event", "update_my_event", "cancel_my_event", "create_meetup",
+        "update_my_meetup", "invite_to_event", "buy_event_ticket",
+        "list_my_event_tickets", "share_event", "get_event_attendees",
+        # A11 Health Depth (15)
+        "log_meal", "log_vitals", "log_mood", "log_biomarker",
+        "get_health_trends", "get_health_streaks", "order_lab_test",
+        "get_lab_results", "generate_health_plan", "list_my_health_plans",
+        "get_health_plan_progress", "list_my_conditions",
+        "get_health_education", "get_next_best_action", "connect_health_device",
+        # WAVE-2-VOICE-CATALOG-V2 — Developer P0 (70)
+        # C1 VTID / OASIS Lifecycle (15)
+        "dev_allocate_vtid", "dev_create_task", "dev_update_task", "dev_cancel_task",
+        "dev_complete_task", "dev_terminalize_vtid", "dev_discover_tasks",
+        "dev_get_vtid_projection", "dev_get_allocator_status", "dev_query_oasis_events",
+        "dev_execute_vtid", "dev_run_exec_workflow", "dev_submit_evidence",
+        "dev_list_work_orders", "dev_get_work_order",
+        # C2 Governance (13)
+        "dev_evaluate_governance", "dev_governance_status", "dev_list_governance_rules",
+        "dev_get_governance_rule", "dev_list_violations", "dev_list_enforcements",
+        "dev_governance_feed", "dev_list_proposals", "dev_create_proposal",
+        "dev_update_proposal", "dev_get_control", "dev_set_control",
+        "dev_get_control_history",
+        # C3 CI/CD & Pull Requests (14)
+        "dev_create_pr", "dev_get_pr_status", "dev_get_pr_checks", "dev_list_open_prs",
+        "dev_merge_pr", "dev_safe_merge", "dev_revert_pr", "dev_trigger_workflow",
+        "dev_list_workflow_runs", "dev_get_run_jobs", "dev_get_merge_lock",
+        "dev_release_merge_lock", "dev_cicd_health", "dev_approvals_feed",
+        # C4 Deployment & Release (13)
+        "dev_deploy_service", "dev_publish_to_prod", "dev_list_revisions",
+        "dev_list_deployments", "dev_deployment_health", "dev_promote_canary",
+        "dev_abort_canary", "dev_revert_deploy", "dev_revert_both",
+        "dev_canary_status", "dev_staging_status", "dev_compare_staging_prod",
+        "dev_release_feed",
+        # C9 Observability (15)
+        "dev_build_info", "dev_service_health", "dev_error_rate",
+        "dev_latency_summary", "dev_telemetry_snapshot", "dev_recent_events",
+        "dev_agent_trace", "dev_supervisor_summary", "dev_get_session_turns",
+        "dev_get_session_diagnostics", "dev_conversation_decisions",
+        "dev_tool_failures", "dev_tool_health", "dev_greeting_decisions",
+        "dev_get_agent_detail",
+        # WAVE-3-VOICE-CATALOG-V2 — Admin P0 (48)
+        # B1 Users & RBAC (8)
+        "admin_lookup_user", "admin_list_users", "admin_get_user_detail",
+        "admin_roles_summary", "admin_grant_role", "admin_revoke_role",
+        "admin_set_trust_tier", "admin_get_at_risk_members",
+        # B4 Content Moderation (8)
+        "admin_list_moderation_queue", "admin_get_moderation_item",
+        "admin_moderation_stats", "admin_approve_content", "admin_reject_content",
+        "admin_flag_content", "admin_list_reports", "admin_get_report",
+        # B6 Marketplace Admin (12)
+        "admin_marketplace_overview", "admin_list_merchants", "admin_update_merchant",
+        "admin_list_products", "admin_update_product", "admin_bulk_product_action",
+        "admin_get_feed_curation", "admin_update_feed_curation",
+        "admin_list_geo_policies", "admin_update_geo_policy",
+        "admin_trigger_source_sync", "admin_get_ingestion_coverage",
+        # B11 Notifications & Broadcast (7)
+        "admin_compose_broadcast", "admin_send_broadcast", "admin_list_broadcasts",
+        "admin_notification_pref_stats", "admin_create_notification_category",
+        "admin_update_notification_category", "admin_test_notification_category",
+        # B12 Governance & Controls (8)
+        "admin_governance_status", "admin_list_governance_rules",
+        "admin_list_violations", "admin_list_proposals", "admin_create_proposal",
+        "admin_update_proposal_status", "admin_get_control_key", "admin_set_control_key",
+        # B15 Feedback & Support Admin (5)
+        "admin_list_feedback_tickets", "admin_get_feedback_ticket",
+        "admin_feedback_kpis", "admin_list_handoffs", "admin_act_on_ticket",
+        # WAVE-4-VOICE-CATALOG-V2 — Community P1 + Admin P1 (86)
+        # A4+A5 Subscriptions & Billing (10)
+        "get_my_subscription", "compare_subscription_plans", "upgrade_subscription",
+        "cancel_subscription", "add_voice_minutes", "redeem_subscription_code",
+        "get_billing_history", "get_referral_link", "invite_friend", "get_referral_status",
+        # A7 Live Rooms / Go Live (7)
+        "list_live_rooms_now", "get_live_room_details", "go_live", "create_live_room",
+        "schedule_live_session", "purchase_room_access", "end_live_session",
+        # A9 Feed extras + A12 Goals & Journey (8)
+        "list_open_asks", "edit_my_post", "delete_my_post", "set_goal",
+        "list_my_goals", "update_goal", "get_goal_progress", "get_journey_checkpoints",
+        # A6 Business Hub (1)
+        "create_service",
+        # B2+B3 Tenants & Settings + Signups & Invitations (14)
+        "admin_list_tenants", "admin_get_tenant", "admin_update_tenant_profile",
+        "admin_get_feature_flags", "admin_set_feature_flag", "admin_update_branding",
+        "admin_list_tenant_integrations", "admin_list_signups", "admin_get_signup_stats",
+        "admin_list_signup_attempts", "admin_repair_signup", "admin_create_invitation",
+        "admin_list_invitations", "admin_revoke_invitation",
+        # B5 Community Oversight + B7 Billing & Wallet Admin (13)
+        "admin_list_meetups", "admin_delete_meetup", "admin_list_groups",
+        "admin_list_live_rooms", "admin_list_creators", "admin_list_memberships",
+        "admin_community_stats", "admin_activity_feed", "admin_credit_wallet",
+        "admin_debit_wallet", "admin_get_founding_status", "admin_get_monetization_config",
+        "admin_run_monetization_detect",
+        # B8+B9 Knowledge Base Admin + Assistant & Voice Config (15)
+        "admin_kb_search", "admin_kb_list_docs", "admin_kb_create_doc",
+        "admin_kb_update_doc", "admin_kb_delete_doc", "admin_kb_reindex",
+        "admin_kb_baseline_optout", "admin_system_kb_update", "admin_get_assistant_config",
+        "admin_set_assistant_config", "admin_list_assistant_speeches",
+        "admin_set_assistant_speech", "admin_get_awareness_config",
+        "admin_set_awareness_config", "admin_bulk_set_awareness",
+        # B13 Autopilot Admin + B14 Analytics & Intent Engine (18)
+        "admin_get_autopilot_settings", "admin_update_autopilot_settings",
+        "admin_list_autopilot_bindings", "admin_create_autopilot_binding",
+        "admin_delete_autopilot_binding", "admin_list_autopilot_runs",
+        "admin_autopilot_run_stats", "admin_update_autopilot_wave",
+        "admin_analytics_summary", "admin_assistant_analytics", "admin_journey_analytics",
+        "admin_feature_analytics", "admin_interest_analytics", "admin_intent_engine_stats",
+        "admin_close_intent", "admin_recompute_intent", "admin_resolve_dispute",
+        "admin_archive_intent",
+        # WAVE-5-VOICE-CATALOG-V2 — Developer P1 (63)
+        # C5 Worker Orchestrator (9)
+        "dev_list_workers", "dev_orchestrator_stats", "dev_list_pending_worker_tasks",
+        "dev_release_claim", "dev_list_subagents", "dev_list_worker_skills",
+        "dev_cleanup_stale_claims", "dev_orchestrator_health", "dev_route_to_subagent",
+        # C6 Autopilot Controller & Loop (12)
+        "dev_autopilot_loop_status", "dev_start_autopilot_loop", "dev_stop_autopilot_loop",
+        "dev_autopilot_loop_history", "dev_reset_loop_cursor", "dev_controller_status",
+        "dev_list_controller_runs", "dev_get_controller_run", "dev_validate_task",
+        "dev_list_pending_plans", "dev_get_task_spec", "dev_autopilot_pipeline_health",
+        # C7 Dev-Autopilot Scanners & Findings (14)
+        "dev_list_scanners", "dev_list_impact_rules", "dev_get_auto_approve_config",
+        "dev_list_scan_runs", "dev_get_scan_run", "dev_findings_queue", "dev_get_finding",
+        "dev_generate_finding_plan", "dev_reject_finding", "dev_snooze_finding",
+        "dev_approve_auto_execute", "dev_cancel_execution", "dev_list_executions",
+        "dev_get_execution_lineage",
+        # C8 Self-Healing (13)
+        "dev_report_incident", "dev_healing_config", "dev_set_healing_mode",
+        "dev_healing_kill_switch", "dev_healing_history", "dev_healing_metrics",
+        "dev_approve_heal", "dev_reject_heal", "dev_verify_heal", "dev_rollback_heal",
+        "dev_list_quarantine", "dev_release_quarantine", "dev_shadow_comparison",
+        # C10 Testing & QA (10)
+        "dev_run_test_suite", "dev_list_test_suites", "dev_list_test_runs",
+        "dev_get_test_run", "dev_run_e2e", "dev_orb_monitor_status",
+        "dev_trigger_orb_monitor", "dev_list_test_contracts", "dev_run_orb_selfcheck",
+        "dev_voice_lab_probe",
+        # WAVE-6-VOICE-CATALOG-V2 — final wave (37)
+        # B10 Admin Specialists / Personas (9)
+        "admin_list_specialists", "admin_get_specialist", "admin_create_specialist",
+        "admin_update_specialist", "admin_rollback_specialist", "admin_set_specialist_tools",
+        "admin_set_specialist_kb", "admin_set_specialist_status", "admin_test_specialist_connection",
+        # B16 Admin Audit & Memory Ops (4)
+        "admin_audit_actions_log", "admin_audit_access_log", "admin_run_memory_consolidator",
+        "admin_run_embeddings_backfill",
+        # A13 Memory & Diary extras + A14 Profile & Social depth (10)
+        "edit_memory", "reinforce_memory", "set_memory_permissions", "get_what_vitana_knows",
+        "add_diary_photo", "get_profile_completeness", "share_my_profile", "get_my_milestones",
+        "view_member_profile", "update_service_offerings",
+        # C11 Database & Migrations (4)
+        "dev_run_staging_migration", "dev_run_prod_migration", "dev_migration_status",
+        "dev_run_backfill",
+        # C12 Dev Access, Simulator & Meta (10)
+        "dev_list_dev_users", "dev_grant_access", "dev_revoke_access", "dev_mint_token",
+        "dev_open_hub_panel", "dev_run_simulator", "dev_journey_context",
+        "dev_voice_catalog_stats", "dev_get_voice_tool_detail", "dev_system_briefing",
     ]
 
 

@@ -22,6 +22,7 @@ export type SpendEarningReferenceType =
   | 'marketplace_order'
   | 'marketplace_earning'
   | 'live_room_tip'
+  | 'recommendation_commission'
   | 'manual';
 
 export interface SpendInput {

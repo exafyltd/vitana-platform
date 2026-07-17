@@ -9,7 +9,11 @@
     "test:community": "npx playwright test --project=desktop-community --project=mobile-community",
     "test:shared": "npx playwright test --project=desktop-shared --project=mobile-shared --project=hub-shared",
     "test:headed": "npx playwright test --headed",
-    "report": "npx playwright show-report"
+    "report": "npx playwright show-report",
+    "sim:doctor": "node mobile-sim/doctor.mjs",
+    "test:device": "node mobile-sim/run.mjs",
+    "test:device:ios": "node mobile-sim/run.mjs --platform ios",
+    "test:device:android": "node mobile-sim/run.mjs --platform android"
   },
   "devDependencies": {
     "@playwright/test": "^1.52.0",

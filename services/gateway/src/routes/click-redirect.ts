@@ -111,6 +111,11 @@ function stampAffiliateUrl(baseUrl: string, clickId: string, userIdHash: string 
     if (url.hostname.includes('cj.com') || url.hostname.includes('cj.dotomi.com')) {
       url.searchParams.set('sid', clickId);
     }
+    // Awin-specific clickref — read back by awin-order-sync.ts's Transactions
+    // API pull (VTID-02950) to reverse-attribute a conversion to this click.
+    if (url.hostname.includes('awin1.com') || url.hostname.includes('awin.com')) {
+      url.searchParams.set('clickref', clickId);
+    }
     return url.toString();
   } catch {
     // Malformed URL — return as-is
@@ -295,8 +300,10 @@ router.get('/:product_id', async (req: Request, res: Response) => {
     return;
   }
 
-  // Log click + generate stable click_id
-  const clickId = randomUUID();
+  // Log click + generate stable click_id. Compact (no dashes, 32 hex chars) so
+  // it fits comfortably inside affiliate networks' sub-id length limits (Awin's
+  // clickref, for example) — still effectively unique (from a random UUID).
+  const clickId = randomUUID().replace(/-/g, '');
   const userIdHash = user_id ? createHash('sha256').update(user_id).digest('hex').slice(0, 16) : null;
   const stampedUrl = stampAffiliateUrl(product.affiliate_url, clickId, userIdHash);
 
@@ -321,6 +328,13 @@ router.get('/:product_id', async (req: Request, res: Response) => {
     })
     .then(({ error }) => {
       if (error) console.error('[click-redirect] click log insert failed (non-fatal):', error);
+      if (attribution_recommendation_id) {
+        supabase
+          .rpc('increment_product_recommendation_click', { p_recommendation_id: attribution_recommendation_id })
+          .then(({ error: rpcError }: { error: unknown }) => {
+            if (rpcError) console.error('[click-redirect] recommendation click-count bump failed (non-fatal):', rpcError);
+          });
+      }
     });
 
   // Emit outbound event for reward-system consumption (fire-and-forget)
