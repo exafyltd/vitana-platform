@@ -1,3 +1,8 @@
+-- impact-allow-solo-migration: modifies existing SECURITY DEFINER functions
+-- called directly by the frontend via supabase.rpc() — there is no gateway/
+-- worker TypeScript route wrapping them, so there is no code change to pair
+-- this with.
+--
 -- Harden legacy wallet RPCs before real-money launch.
 --
 -- Found during wallet-reset work: update_user_balance, process_wallet_exchange,

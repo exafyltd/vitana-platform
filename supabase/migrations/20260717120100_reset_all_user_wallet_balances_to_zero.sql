@@ -1,3 +1,7 @@
+-- impact-allow-solo-migration: one-time data backfill/reset (plus its own new
+-- audit table) against a schema already read/written by existing frontend
+-- code; no gateway/worker code needs to change alongside it.
+--
 -- One-time real-world-launch reset: zero every user's USD/EUR/Credits/VTNA balance.
 -- Captures pre-reset values in an audit table before zeroing so support can answer
 -- "what did I have before the reset" if ever needed.
