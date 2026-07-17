@@ -116,6 +116,103 @@ CREATE TABLE personalization_audit (
 
 ---
 
+### Wallet System (USD / Credits / VTNA) — added 2026-07-17
+
+**This is the live, production system backing the wallet UI** (`useWallet.ts`
+in `vitana-v1` → `user_wallets` + RPCs below). It predates and is entirely
+separate from the newer EUR/USD Stripe deposit tables (`wallet_accounts`,
+`wallet_deposits`, `wallet_ledger_entries`) added for real fiat deposits —
+those exist but currently hold no data and are not yet wired into the
+existing wallet UI.
+
+**Known dead code:** the `wallet_transactions`/`wallet_balances` "Credits
+ledger" described in earlier automations-engine migrations
+(`20260318000000_vtid_01250_autopilot_automations_engine.sql`) never
+actually took effect — `CREATE TABLE IF NOT EXISTS wallet_transactions`
+silently no-op'd because a table of that name already existed (below) with
+a completely different, incompatible column set, which means that
+migration's later statements referencing `tenant_id`/`type` columns broke
+and `wallet_balances` was never created. `credit_wallet_for_earning()` /
+`debit_wallet_for_spend()` / `update_wallet_balance()` exist as functions
+but will error if called (`wallet_balances` doesn't exist). Do not build on
+this path without fixing or removing it first.
+
+```sql
+CREATE TABLE public.user_wallets (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL,
+  currency_type TEXT NOT NULL,      -- 'USD' | 'VTNA' | 'CREDITS'
+  balance NUMERIC(15,2) NOT NULL DEFAULT 0.00,   -- was 1000.00 until VTID wallet-reset
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(user_id, currency_type)
+);
+
+CREATE TABLE public.wallet_transactions (   -- old (2025-09) schema; still the live one
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  from_user_id UUID, to_user_id UUID,
+  transaction_type TEXT NOT NULL,   -- 'transfer' | 'exchange' | 'reward' | 'purchase'
+  from_currency TEXT, to_currency TEXT,
+  amount NUMERIC(15,2) NOT NULL,
+  exchange_rate NUMERIC(10,4),
+  fees NUMERIC(15,2) DEFAULT 0.00,
+  status TEXT DEFAULT 'pending',
+  metadata JSONB,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE public.exchange_rates (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  from_currency TEXT NOT NULL, to_currency TEXT NOT NULL,
+  rate NUMERIC(10,6) NOT NULL,
+  trend TEXT, change_24h NUMERIC(5,2) DEFAULT 0.00,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  is_active BOOLEAN DEFAULT true    -- current canonical rate: only is_active=true rows count
+);
+
+CREATE TABLE public.wallet_balance_resets (   -- added VTID wallet-reset, 2026-07-17
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL,
+  source_table TEXT NOT NULL,       -- 'user_wallets' | 'wallet_accounts'
+  currency_type TEXT NOT NULL,
+  previous_balance NUMERIC NOT NULL,
+  reset_at TIMESTAMPTZ DEFAULT NOW(),
+  reason TEXT NOT NULL
+);
+```
+
+**Canonical exchange rate** (the only `is_active=true` rows in
+`exchange_rates`, matching `vitana-v1`'s `src/lib/exchangeRates.ts`):
+**1 USD = 100 CREDITS = 100 VTNA**, VTNA:CREDITS at 1:1 parity.
+
+**RPCs** (`get_user_balance`, `update_user_balance`, `initialize_user_wallet`,
+`process_wallet_exchange`, `process_wallet_transfer`,
+`process_wallet_exchange_and_send`) are `SECURITY DEFINER` and
+`GRANT EXECUTE`'d to `authenticated`. **Security fix (2026-07-17,
+`20260717120000_harden_wallet_rpc_ownership_and_rate_lookup.sql`):** none of
+them previously checked that the caller (`auth.uid()`) owned the
+`user_id`/`from_user_id` parameter being debited/credited — any authenticated
+user could fabricate balance for themselves or drain another user's wallet by
+calling the RPC directly. All four now raise if `auth.uid()` is set and
+doesn't match the account being debited (`auth.uid() IS NULL` — i.e.
+service-role/backend calls — still passes through). `process_wallet_exchange`
+and `process_wallet_exchange_and_send` also no longer trust a client-supplied
+exchange rate; they look it up from `exchange_rates` (`is_active=true`)
+server-side.
+
+**Real-world-launch reset (2026-07-17,
+`20260717120100_reset_all_user_wallet_balances_to_zero.sql`):** every
+existing user's `user_wallets.balance` (209 users × USD/CREDITS/VTNA) was
+zeroed; pre-reset values were archived into `wallet_balance_resets` first.
+`initialize_user_wallet()`/`get_user_balance()` and the `user_wallets.balance`
+column default were changed from seeding/falling back to `1000.00` to `0.00`,
+so new signups start at zero. `wallet_accounts` (EUR/USD Stripe wallet) had
+no non-zero rows to reset (185 users, all already 0 — no real deposits made
+yet).
+
+---
+
 ## ⚠️ DEPRECATED / DO NOT USE
 
 ### VtidLedger (PascalCase)
@@ -414,6 +511,7 @@ CREATE TABLE my_new_table (
 | 2026-05-21 | Seeded 21 ranker policy rows in `decision_policy` under `ranker.pillar_weighter.*` — 10 weights/dampeners, 3 balance thresholds, 6 journey-mode decay curve points, 2 misc (compass decay, pillar score cap). Phase C.2 of decision-contract refactor. Values byte-identical to `DEFAULT_RANKER_CONFIG` + inline literals in `index-pillar-weighter.ts`. Consumers land in Phase C.3 / C.5+. | Claude | VTID-03131 |
 | 2026-06-01 | Added `seed_community_onboarding_autopilot(uuid)` function + `seed_onboarding_autopilot_on_primary_membership` AFTER INSERT trigger on `user_tenants` (WHEN `is_primary=true`). Seeds the day0 community onboarding Autopilot bundle (8 `onboarding_*` rows in `autopilot_recommendations`) on signup — bypass-proof, since vitana-v1 authenticates directly via Supabase Auth and never hit the gateway `/auth/login` first-login hook (same root cause + trigger pattern as VTID-03089 welcome chat). Mirrors `STAGE_TEMPLATES.day0` in `community-user-analyzer.ts` (drift-guarded by `autopilot-onboarding-seed-bundle.test.ts`); fingerprints match the TS generator so the cron/lazy-gen dedupe against the seed. Idempotent + fail-soft. Includes a 7-day backfill of recent zero-rec community members. | Claude | BOOTSTRAP-ONBOARDING-AUTOPILOT-SEED |
 | 2026-06-07 | Added Video Shop (Vitanaland) backend slice: `shop_videos`, `shop_video_anchors` (single-primary index), `shop_saved_products`, `shop_video_events` (non-OASIS funnel sink). Threaded `source_video_id`/`source_creator_id` attribution onto `universal_cart_items` + `product_orders` and widened the `source_surface` CHECK to admit `video_shop`. New surface over `products` + Universal Cart — no second commerce system; no wallet buy-now in V1. | Claude | VTID-03237 |
+| 2026-07-17 | Documented the live wallet system (`user_wallets`, `wallet_transactions`, `exchange_rates` — previously undocumented). Fixed a critical vuln: `update_user_balance`/`process_wallet_exchange`/`process_wallet_transfer`/`process_wallet_exchange_and_send` let any authenticated user debit/credit an arbitrary `user_id`; added `auth.uid()` ownership checks and made the exchange RPCs read the server-side `exchange_rates` row instead of trusting a client-supplied rate. Real-world-launch reset: zeroed all 209 users' USD/CREDITS/VTNA balances (archived pre-reset values in new `wallet_balance_resets` table); changed `initialize_user_wallet()`/`get_user_balance()`/`user_wallets.balance` default from seeding `1000.00` to `0.00`. Flagged the `wallet_transactions`/`wallet_balances` "Credits ledger" from VTID-01250 as dead code — it never took effect due to a table-name collision. | Claude | BOOTSTRAP-WALLET-RESET |
 
 ---
 
