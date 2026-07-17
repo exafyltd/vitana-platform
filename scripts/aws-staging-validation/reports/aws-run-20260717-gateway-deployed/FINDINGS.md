@@ -47,6 +47,7 @@ serves the SPA at its hostname root with working deep-route fallback.
 | Task def `vitana-gateway:7` (image pin + env block above) | live only |
 | CORS allowlist for AWS staging hostnames | this branch (merge to `main`) |
 | ECR `vitana/gateway:latest` now = main+CORS fix (was 2026-07-14 build) | ECR |
+| Task def `vitana-gateway:8` — `SUPABASE_JWT_SECRET` bound as a plain env var (2026-07-17). Verified: e2e-test login via Supabase REST → `GET /api/v1/journey/state` on `preview-aws-gateway.vitanaland.com` returns 200 with real state, so authenticated JWT verification works on AWS. **Hygiene note:** plain task-def env is readable by anyone with `ecs:DescribeTaskDefinition` — move to AWS Secrets Manager (`secrets` block + execution-role read grant) when the remaining secrets (`GATEWAY_SERVICE_TOKEN`, `OPENAI_API_KEY`, `DEEPSEEK_API_KEY`, Gemini key) are wired | live only |
 
 ## Next steps to full parity + sign-off
 
