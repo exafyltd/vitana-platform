@@ -49,14 +49,14 @@ export function developerGate(id: OrbToolIdentity): OrbToolResult | null {
 // Small helpers
 // ---------------------------------------------------------------------------
 
-function clampLimit(raw: unknown, def: number, max: number): number {
+export function clampLimit(raw: unknown, def: number, max: number): number {
   const n = Number(raw);
   if (!Number.isFinite(n)) return def;
   return Math.max(1, Math.min(max, Math.round(n)));
 }
 
 /** Compact relative age for speech ("12 min ago", "3 h ago", "2 days ago"). */
-function relAge(iso: string | null | undefined): string {
+export function relAge(iso: string | null | undefined): string {
   if (!iso) return 'unknown time';
   const ms = Date.now() - new Date(iso).getTime();
   if (!Number.isFinite(ms)) return 'unknown time';
@@ -95,17 +95,23 @@ export function approvalIdForVtid(vtid: string): string {
 }
 
 /** Same gateway-self-call base the approvals route itself uses. */
-function gatewayBaseUrl(): string {
+export function gatewayBaseUrl(): string {
   return process.env.GATEWAY_URL || `http://localhost:${process.env.PORT || 8080}`;
 }
 
-async function approvalsApi(
+/**
+ * Generic gateway self-call, shared by every Wave 2 developer-tool domain
+ * module (VTID/OASIS lifecycle, governance, CI/CD, deployment, observability)
+ * so each one doesn't re-implement the same fetch-and-parse boilerplate.
+ * Mirrors the narrower approvalsApi() below, just not fixed to one prefix.
+ */
+export async function gatewayApiCall(
   path: string,
-  init?: { method?: string; body?: unknown },
+  init?: { method?: string; body?: unknown; headers?: Record<string, string> },
 ): Promise<{ ok: boolean; status: number; body: Record<string, unknown> }> {
-  const res = await fetch(`${gatewayBaseUrl()}/api/v1/approvals${path}`, {
+  const res = await fetch(`${gatewayBaseUrl()}${path}`, {
     method: init?.method || 'GET',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...(init?.headers ?? {}) },
     body: init?.body !== undefined ? JSON.stringify(init.body) : undefined,
   });
   let body: Record<string, unknown> = {};
@@ -115,6 +121,13 @@ async function approvalsApi(
     /* non-JSON body — keep {} */
   }
   return { ok: res.ok, status: res.status, body };
+}
+
+async function approvalsApi(
+  path: string,
+  init?: { method?: string; body?: unknown },
+): Promise<{ ok: boolean; status: number; body: Record<string, unknown> }> {
+  return gatewayApiCall(`/api/v1/approvals${path}`, init);
 }
 
 // ---------------------------------------------------------------------------

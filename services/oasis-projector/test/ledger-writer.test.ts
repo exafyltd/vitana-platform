@@ -478,7 +478,6 @@ describe('LedgerWriter (VTID-0521)', () => {
       expect(result.created).toBe(5);
     });
   });
-<<<<<<< HEAD
 
   // VTID-0522: Tests for tasks API column mapping
   describe('VTID-0522: Tasks API Column Mapping', () => {
@@ -618,6 +617,4 @@ describe('LedgerWriter (VTID-0521)', () => {
       expect(entry.summary).toBe('Original summary');
     });
   });
-=======
->>>>>>> claude/auto-vtid-ledger-writer-014epsPGWZMwKqBJb1iJZrzg
 });

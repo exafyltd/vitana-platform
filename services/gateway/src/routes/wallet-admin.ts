@@ -35,6 +35,7 @@ const ALLOWED_REFERENCE_TYPES: ReadonlySet<string> = new Set<SpendEarningReferen
   'marketplace_order',
   'marketplace_earning',
   'live_room_tip',
+  'recommendation_commission',
   'manual',
 ]);
 

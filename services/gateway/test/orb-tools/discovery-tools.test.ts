@@ -452,6 +452,49 @@ describe('explain_recommendation', () => {
     const res = await tool_explain_recommendation({ recommendation: UUID }, ANON, sb);
     expect(res.ok).toBe(false);
   });
+
+  // REGRESSION: "describe what you mean" / "show me" after declining the
+  // spoken "should I activate it?" offer used to fall through to the broad
+  // "several recommendations match" search (no name to filter by) and ask
+  // the user to disambiguate among unrelated rows — even though there was
+  // only ever ONE specific recommendation on the table. It should instead
+  // resolve straight to the pending CTA's id, same fallback
+  // tool_activate_recommendation already uses for a bare "yes".
+  it('falls back to the pending CTA id when asked about "it" with no name given', async () => {
+    const { sb } = makeSb({
+      orb_session_state: [
+        {
+          data: {
+            value: { tool: 'activate_recommendation', payload: { id: UUID } },
+            expires_at: '2999-01-01T00:00:00Z',
+          },
+          error: null,
+        },
+      ],
+      autopilot_recommendations: [{ data: REC, error: null }],
+    });
+    const res = await tool_explain_recommendation({}, IDENT, sb);
+    expect(res.ok).toBe(true);
+    if (res.ok) expect(res.text).toContain('Implement Sleep Quality Tracking');
+  });
+
+  it('ignores an expired pending CTA and falls through to normal resolution', async () => {
+    const { sb } = makeSb({
+      orb_session_state: [
+        {
+          data: {
+            value: { tool: 'activate_recommendation', payload: { id: UUID } },
+            expires_at: '2020-01-01T00:00:00Z', // expired
+          },
+          error: null,
+        },
+      ],
+      autopilot_recommendations: [{ data: [], error: null }],
+    });
+    const res = await tool_explain_recommendation({}, IDENT, sb);
+    expect(res.ok).toBe(true);
+    if (res.ok) expect(res.text).toContain('no open recommendations');
+  });
 });
 
 // ---------------------------------------------------------------------------
