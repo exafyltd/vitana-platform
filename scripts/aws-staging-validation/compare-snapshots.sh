@@ -40,6 +40,12 @@ jf() { jq -r "$2 // empty" "$1" 2>/dev/null; }
 for side in "$REF_DIR:$REF_LABEL" "$CAND_DIR:$CAND_LABEL"; do
   d="${side%%:*}"; l="${side##*:}"
   code=$(jf "$d/health.meta.json" '.http_code')
+  # Older/partial snapshots may lack the *.meta.json sidecar; fall back to
+  # the parsed health body — an ok:true health.json only exists if the
+  # endpoint answered 200 JSON at capture time.
+  if [[ -z "$code" && "$(jf "$d/health.json" '.ok')" == "true" ]]; then
+    code=200
+  fi
   if [[ "$code" == "200" ]]; then
     row PASS "$l gateway reachable" "/api/v1/admin/health → 200"
   else
