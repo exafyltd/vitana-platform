@@ -28,6 +28,7 @@ import { ADMIN_TOOL_SCHEMAS } from '../../../services/admin-voice-tools';
 import {
   NEW_DOMAIN_TOOL_DECLARATIONS,
   DEVELOPER_DOMAIN_TOOL_DECLARATIONS,
+  ADMIN_DOMAIN_TOOL_DECLARATIONS,
 } from '../../../services/orb-tools-shared';
 
 
@@ -2494,6 +2495,12 @@ export function buildLiveApiTools(
         // server-side regardless (developer-tools.ts developerGate()).
         ...(activeRole && ['admin', 'exafy_admin', 'developer'].includes(activeRole)
           ? DEVELOPER_DOMAIN_TOOL_DECLARATIONS
+          : []),
+        // WAVE-3-VOICE-CATALOG-V2 — Admin voice tools (users/RBAC, moderation,
+        // marketplace, notifications, governance, feedback). Handlers re-check
+        // role server-side regardless (admin-users-rbac-tools.ts adminGate()).
+        ...(activeRole && ['admin', 'exafy_admin', 'developer'].includes(activeRole)
+          ? ADMIN_DOMAIN_TOOL_DECLARATIONS
           : []),
       ],
     },

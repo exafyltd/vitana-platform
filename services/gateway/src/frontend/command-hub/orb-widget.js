@@ -233,6 +233,7 @@
     _alertBuffersLoaded: false,
     _isReconnecting: false,
     _recoveryWatchdog: null,         // VTID-01987: setInterval handle for the 5s health probe
+    _bgWatchdogTimer: null,          // background/idle watchdog — see _startBackgroundWatchdog
     _disconnectStuck: false,
     // VTID-03098: user-initiated stop guard. Set true at the top of
     // _sessionStop (X button / VitanaOrb.hide() / signup-close), cleared at
@@ -1532,6 +1533,7 @@
     // setTimeout reconnect callbacks) must see this flag and bail.
     _s._userInitiatedStop = true;
     _stopWatchdog();
+    _stopBackgroundWatchdog();
     _stopSpeakingWatchdog(); // DEV-COMHU-0501
     clearTimeout(_s._listeningIdleTimer);
 
@@ -2457,6 +2459,55 @@
   }
 
   // ============================================================
+  // BACKGROUND/IDLE WATCHDOG — mobile overheating fix
+  // ============================================================
+  //
+  // This widget has no Page Visibility handling anywhere (no
+  // visibilitychange/pagehide listeners). On some Appilix/Android WebView
+  // builds `document.visibilityState` misreports "visible" even while the
+  // app is backgrounded, so that API can't be trusted anyway. Detect real
+  // OS-level throttling instead: schedule a timer for BG_CHECK_MS and check
+  // how late it actually fires. A timer that drifts by more than
+  // BG_KILL_DRIFT_MS was frozen/deprioritized for that long — which only
+  // happens when the app is genuinely backgrounded — and is a reliable
+  // signal independent of what the visibility API claims. On detection,
+  // fully stop the session so the mic + audio pipeline don't keep running
+  // hot in the user's pocket.
+  var BG_CHECK_MS = 5000;
+  var BG_KILL_DRIFT_MS = 30000;
+
+  function _startBackgroundWatchdog() {
+    _stopBackgroundWatchdog();
+    var scheduledAt = Date.now();
+    _s._bgWatchdogTimer = setTimeout(function () {
+      var drift = Date.now() - scheduledAt - BG_CHECK_MS;
+      if (drift > BG_KILL_DRIFT_MS) {
+        console.warn('[VTOrb] Background watchdog: timer drifted ' + drift + 'ms — app was backgrounded, ending session');
+        _setStatus(_cfg.lang.startsWith('de') ? 'Sitzung beendet — App war im Hintergrund.' : 'Session ended — app was in the background.');
+        _sessionStop();
+        return;
+      }
+      // VTID-CODEX-REVIEW: gate on overlayVisible, not _s.active. _sessionStart's
+      // handshake can take up to 8s (longer than one BG_CHECK_MS tick) before
+      // _s.active flips true, and _s.active also drops false transiently during
+      // reconnect gaps. Gating the reschedule on _s.active let the watchdog die
+      // on its very first tick for any slow-but-successful open, or during a
+      // reconnect window — exactly when background protection matters most.
+      // overlayVisible spans the whole _show()...(_hide()/_sessionStop) window
+      // regardless of handshake/reconnect state, same as the guards elsewhere
+      // in this file (e.g. line ~905, ~997, ~3092).
+      if (_s.overlayVisible) _startBackgroundWatchdog();
+    }, BG_CHECK_MS);
+  }
+
+  function _stopBackgroundWatchdog() {
+    if (_s._bgWatchdogTimer) {
+      clearTimeout(_s._bgWatchdogTimer);
+      _s._bgWatchdogTimer = null;
+    }
+  }
+
+  // ============================================================
   // DEV-COMHU-0501 — ORB Recovery 0.1: cross-provider speaking-state watchdog
   // ============================================================
   //
@@ -2824,6 +2875,7 @@
     _s.voiceState = 'CONNECTING';
     _setStatus(_cfg.lang.startsWith('de') ? 'Verbinden...' : 'Connecting...');
     _updateUI();
+    _startBackgroundWatchdog();
     _sessionStart();
   }
 
