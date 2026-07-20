@@ -242,6 +242,50 @@ different signatures to coexist); the migration explicitly `DROP`s the
 stale 4-arg overload afterward so only the atomic, logging-capable version
 can be called.
 
+**VTNA/Credits merge (2026-07-20, BOOTSTRAP-VTNA-CREDITS-MERGE,
+`20260720200000_fold_vtna_balance_into_credits.sql`):** VTNA (marketed in the
+UI as a stakeable, appreciating "token" with governance voting and passive
+staking-APY rewards) and CREDITS already had fixed 1:1 parity and identical
+closed-loop/non-withdrawable semantics — VTNA's investment-flavored framing
+had already caused an Apple App Store rejection under guideline 3.1.5(iii)
+(looked like a crypto exchange); the existing workaround only hid the
+stake/exchange/withdraw UI on iOS, leaving it live on web/Android. Merged
+the two into a single user-facing currency, "VTNA Credits" (`vitana-v1`):
+removed the dedicated Buy-VTNA-Tokens and Stake-VTNA-Tokens popups and all
+staking-APY/governance/appreciation copy; removed VTNA as a selectable
+currency from every send/request/exchange/booking-payment picker; the
+separate VTNA balance card/tile is gone, folded into one "VTNA Credits"
+balance. **No `currency_type` schema change** — `CREDITS` remains the
+canonical DB value (relabeled "VTNA Credits" only in UI copy); `VTNA` stays
+a valid historical value on existing `wallet_transactions` rows and in the
+`currency_type`/`ExchangeRate` TypeScript unions for backward-compat
+display, it is simply never written by any live code path going forward.
+This migration defensively folds any nonzero `user_wallets` VTNA balance
+into CREDITS before the frontend permanently stops writing to VTNA;
+verified no-op at authoring time (all 212 users had VTNA balance = 0.00,
+consistent with the 2026-07-17 reset). `exchange_rates`' VTNA-related rows
+are left in place (harmless, unread) rather than deleted, since nothing
+queries them anymore.
+
+Also fixed in the same PR (found during this work, unrelated to the
+merge): `WalletMasterActionPopup.tsx`'s "quick actions" menu called
+`updateBalance()` directly with hardcoded amounts and no real payment or
+withdrawal behind them — tapping "Buy Credits"/"Buy Tokens"/"Claim Rewards"
+fabricated free balance, and "Withdraw & Cash Out" silently destroyed real
+USD balance with a fake "submitted for processing" toast and no actual
+withdrawal. Removed; the real, working equivalents (Stripe-backed
+`BuyCreditsPopup`, transaction-logged `WithdrawPopup`) are wired directly on
+the Wallet balance cards and unaffected.
+
+**Not in scope for this pass (flagged, not fixed):** a handful of "wallet
+intelligence" dashboard widgets (staking-optimization/APY/governance/
+tokenomics cards on `pages/wallet/Balance.tsx`'s Tokens tab and elsewhere)
+still show fabricated mock data with similar investment-flavored framing;
+this pass only removed the copy/mock-data directly tied to the two deleted
+VTNA popups and two intelligence-card snippets that explicitly referenced
+"VTNA conversion rates." A full sweep of fabricated wallet dashboard
+widgets is separate, larger, not-yet-approved work.
+
 ---
 
 ## ⚠️ DEPRECATED / DO NOT USE
@@ -521,6 +565,7 @@ CREATE TABLE my_new_table (
 
 | Date | Change | Author | VTID |
 |------|--------|--------|------|
+| 2026-07-20 | Merged VTNA and Credits into one "VTNA Credits" currency; stripped staking-APY/governance/appreciation copy (previous cause of an Apple 3.1.5(iii) rejection) from the two dedicated VTNA popups and every send/request/exchange/booking currency picker in vitana-v1; defensive DB migration folding any nonzero VTNA balance into CREDITS (no-op, verified). Also fixed an unrelated bug found in the same pass: `WalletMasterActionPopup`'s quick-action menu fabricated free balance and silently destroyed real USD balance via a fake withdrawal. | Claude | BOOTSTRAP-VTNA-CREDITS-MERGE |
 | 2025-11-11 | Initial schema documentation | Claude | DEV-COMMU-0055 |
 | 2025-11-11 | Fixed vtid_ledger vs VtidLedger mismatch | Claude | DEV-COMMU-0055 |
 | 2025-12-31 | Added personalization_audit table for cross-domain personalization | Claude | VTID-01096 |
