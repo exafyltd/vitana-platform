@@ -23,6 +23,7 @@ import {
   type OrbToolArgs,
   type OrbToolIdentity,
 } from '../services/orb-tools-shared';
+import { resolveEffectiveRole } from './orb-live';
 
 const router = Router();
 const VTID = 'VTID-LIVEKIT-TOOLS';
@@ -46,10 +47,20 @@ router.post('/orb/tool', requireAuth, async (req: AuthenticatedRequest, res: Res
   if (!userId) {
     return res.status(401).json({ ok: false, error: 'unauthenticated', vtid: VTID });
   }
+  // BOOTSTRAP-VOICE-CATALOG-COMPLETE: req.identity.role is the raw Supabase
+  // JWT `role` claim (the DB role, e.g. "authenticated") — NEVER the app-level
+  // role (community/developer/admin/exafy_admin). Role-gated tools (e.g.
+  // developer-tools.ts's dev_* suite) must see the SAME resolved role Vertex
+  // sessions do, or they deny every legitimate developer/admin LiveKit call.
+  // Falls back to the raw JWT role if resolution fails or tenant is unknown.
+  const tenantId = req.identity?.tenant_id ?? null;
+  const effectiveRole = tenantId
+    ? await resolveEffectiveRole(userId, tenantId).catch(() => null)
+    : null;
   const identity: OrbToolIdentity = {
     user_id: userId,
-    tenant_id: req.identity?.tenant_id ?? null,
-    role: req.identity?.role ?? null,
+    tenant_id: tenantId,
+    role: effectiveRole ?? req.identity?.role ?? null,
     vitana_id: req.identity?.vitana_id ?? null,
   };
   const sb = adminClient() || getSupabase();

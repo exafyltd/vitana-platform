@@ -578,6 +578,7 @@ gcloud logging read "resource.type=cloud_run_revision AND resource.labels.servic
 | `DATABASE_SCHEMA.md` | Canonical database schema reference |
 | `config/service-path-map.json` | Service to path mapping |
 | `.github/workflows/EXEC-DEPLOY.yml` | Deployment workflow |
+| `docs/MOBILE_DEVICE_TESTING.md` | Device-level frontend testing (sim-use: iOS Simulator / Android) |
 
 ---
 
@@ -1024,6 +1025,7 @@ Use these PATs with the GitHub REST API (`api.github.com`) for all PR and deploy
 
 | Date | Change | VTID |
 |------|--------|------|
+| 2026-07-13 | Integrated lycorp-jp/sim-use device-testing layer: `e2e/mobile-sim/` driver + smoke flow (iOS Simulator / Android), `MOBILE-DEVICE-E2E.yml` macOS-runner workflow, vendored sim-use agent skill + `vitana-mobile-testing` glue skill, `docs/MOBILE_DEVICE_TESTING.md` | BOOTSTRAP-SIM-USE-DEVICE-TESTING |
 | 2026-06-04 | Staging-first cutover (time-gated, effective Mon 8 Jun 2026 10:00 Europe/Berlin): added a `cutover_gate` job to every auto-to-prod workflow (`AUTO-DEPLOY`, `DEPLOY-ORB-AGENT`, `DEPLOY-AUTOPILOT-JOB`, `VTID-02409-BOOTSTRAP`) that freezes the push path post-cutover while leaving manual dispatch open; added manual escape hatch `scripts/deploy/publish-to-prod.sh`; rewrote §15/§16 + IF-THEN CI/CD rules. Before cutover all paths still reach prod; after, auto = staging, prod = PUBLISH button / manual exception. Frontend (`vitana-v1`) gated in parallel. | BOOTSTRAP-STAGING-FIRST-CUTOVER |
 | 2026-04-14 | Replaced broad visual verification with targeted protocol: screenshot what you changed, interact with it, verify it works | VTID-01917 |
 | 2026-03-19 | Added CI/CD deployment pipeline critical lessons (Auto Deploy ≠ actual deploy) | BOOTSTRAP-OPERATOR-NAV-FIX |

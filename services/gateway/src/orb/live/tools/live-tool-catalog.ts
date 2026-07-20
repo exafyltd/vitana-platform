@@ -20,6 +20,16 @@
  */
 
 import { ADMIN_TOOL_SCHEMAS } from '../../../services/admin-voice-tools';
+// BOOTSTRAP-VOICE-CATALOG-COMPLETE — Vertex declarations for every tool built
+// out from the Voice Tools Catalog's `status: planned` backlog + the P0
+// community-feature gaps. Handlers live in services/orb-tools/*, spread into
+// the shared ORB_TOOL_REGISTRY in orb-tools-shared.ts; these are just the
+// function_declarations Vertex needs to see the tools exist.
+import {
+  NEW_DOMAIN_TOOL_DECLARATIONS,
+  DEVELOPER_DOMAIN_TOOL_DECLARATIONS,
+  ADMIN_DOMAIN_TOOL_DECLARATIONS,
+} from '../../../services/orb-tools-shared';
 
 
 /**
@@ -143,6 +153,18 @@ export function buildLiveApiTools(
         'WHEN NOT TO CALL:',
         '- Pure small talk with no screen destination ("how are you", "thank you")',
         '- Quick factual questions ("what is longevity?")',
+        '',
+        'CONFIRMING A DESTINATION YOU JUST OFFERED: If you just offered to take',
+        'the user somewhere by name (e.g. you asked "Should I take you to',
+        'Connected Apps?" or "Soll ich dich zu den verbundenen Apps bringen?")',
+        'and the user simply confirms without repeating the destination ("yes",',
+        '"ja", "mach das", "do it", "gerne", "klar", "sure") — pass THE',
+        'DESTINATION YOU OFFERED as the question, NOT the bare confirmation',
+        'word. A confirmation carries no screen information on its own; the',
+        'backend can only resolve the right screen from your own last offer.',
+        'Example: you said "Soll ich dich zu den verbundenen Apps bringen?"',
+        'and the user replies "Ja, mach das" — call navigate with',
+        'question: "verbundene Apps", not question: "Ja, mach das".',
         '',
         'WHAT YOU GET BACK:',
         '- GUIDANCE: a short explanation you should speak naturally to the user,',
@@ -1618,11 +1640,14 @@ export function buildLiveApiTools(
             '     ({display_name1}), @<vid2> ({display_name2}). Which one?"',
             '     Wait for them to pick by Vitana ID, by name, or by',
             '     position ("the first one", "Daniela Müller").',
-            '  4. After a recipient is chosen, NEVER call send_chat_message',
-            '     or share_link directly — first read the message back to',
-            '     the user verbatim and ask "say send to confirm or cancel',
-            '     to stop". Only on explicit confirmation, call the send',
-            '     tool.',
+            '  4. After a recipient is chosen: for share_link, read the',
+            '     message back to the user verbatim first and only call it',
+            '     on explicit confirmation. For send_chat_message, its own',
+            '     confirmation contract is server-enforced — call it once',
+            '     WITHOUT confirmed=true to get the read-back preview, read',
+            '     that back, then call it again WITH confirmed=true only on',
+            '     explicit confirmation (see send_chat_message\'s own',
+            '     description for the full contract).',
             '',
             'NEVER resolve to the user\'s own ID — the resolver excludes self.',
             'NEVER skip this step before sending; the send tools assume a',
@@ -1646,15 +1671,37 @@ export function buildLiveApiTools(
         {
           name: 'send_chat_message',
           description: [
-            'Send a direct message to another Vitana user. ONLY call this',
-            'after resolve_recipient has returned a candidate AND the user',
-            'has verbally confirmed both the recipient AND the message body',
-            '(e.g. "yes send it", "send", "confirm", "ja schick es").',
+            'Send a direct message to another Vitana user ON THEIR BEHALF.',
+            'ONLY call this after resolve_recipient has returned a candidate.',
+            '',
+            'PROACTIVE OFFER: this is one of the clearest ways to show the user',
+            'what Vitana can do for them. When memory/network context makes it',
+            'natural — the user mentions a person you have context on, or a plan',
+            'to reconnect with someone — you may OFFER to send the message for',
+            'them in one short line ("Want me to ask Mariia when you\'re meeting',
+            'up again? Just say the word."). Never require them to dictate a',
+            'message unprompted; you can draft a short, natural one from context',
+            'and read it back for approval.',
+            '',
+            'CONFIRMATION CONTRACT (mandatory — never auto-send, the server',
+            'enforces this — a call without confirmed=true never delivers):',
+            '1. Call send_chat_message(recipient_user_id, recipient_label, body)',
+            '   WITHOUT confirmed=true. The server returns stage:',
+            '   "awaiting_confirmation" with the resolved recipient and message',
+            '   for read-back — nothing is sent yet.',
+            '2. Read the recipient AND message body back to the user verbatim',
+            '   ("Ready to send Mariia: \'...\'").',
+            '3. Wait for explicit confirmation (send / yes / confirm / ja schick es).',
+            '4. Call send_chat_message again with the SAME arguments PLUS',
+            '   confirmed=true to actually deliver it.',
             '',
             'NEVER call this without resolve_recipient first.',
             'NEVER auto-fire on "I want to message X" — always read back and wait.',
             '',
-            'After a successful send, acknowledge briefly: "Sent to @<vid>."',
+            'SUCCESS CONTRACT: only when the response contains stage:"sent" has',
+            'the message actually gone out — acknowledge briefly ("Sent to',
+            '@<vid>."). When stage:"awaiting_confirmation", do the read-back;',
+            'do NOT claim it was sent.',
             'If the response says rate_limited, tell the user: "I can\'t send',
             'any more messages this session — please open the app to continue."',
           ].join('\n'),
@@ -1671,7 +1718,11 @@ export function buildLiveApiTools(
               },
               body: {
                 type: 'string',
-                description: 'The message body, exactly as the user dictated it. Do not rephrase or summarize.',
+                description: 'The message body, exactly as the user dictated it (or as you drafted it for their approval). Do not rephrase or summarize once confirmed.',
+              },
+              confirmed: {
+                type: 'boolean',
+                description: 'Pass true ONLY after the user explicitly confirmed the read-back of both recipient and message. Omit or false for the preview call.',
               },
             },
             required: ['recipient_user_id', 'recipient_label', 'body'],
@@ -2424,11 +2475,32 @@ export function buildLiveApiTools(
             required: [],
           },
         },
+        // BOOTSTRAP-VOICE-CATALOG-COMPLETE — every tool built out from the
+        // Voice Tools Catalog's `status: planned` backlog + P0 community-
+        // feature gaps (Superlatives, Diary, Memory, Calendar management,
+        // Reminders lifecycle, Clock, Groups, Events/RSVP, Chat management,
+        // Privacy, Feedback, Settings, Search/News, Autopilot management,
+        // Intent management, Awareness, follow/notifications/wallet-read/
+        // profile/media/likes). Community-role tools — always declared for
+        // authenticated sessions, same as everything else in this array.
+        ...NEW_DOMAIN_TOOL_DECLARATIONS,
         // BOOTSTRAP-ADMIN-DD: admin voice tools — only injected when active_role
         // is admin / exafy_admin / developer. Community sessions never see them
         // and the orb dispatcher rejects them server-side regardless.
         ...(activeRole && ['admin', 'exafy_admin', 'developer'].includes(activeRole)
           ? ADMIN_TOOL_SCHEMAS
+          : []),
+        // BOOTSTRAP-VOICE-CATALOG-COMPLETE — Developer voice tools (VTID-02782).
+        // Same role gate as ADMIN_TOOL_SCHEMAS; handlers re-check role
+        // server-side regardless (developer-tools.ts developerGate()).
+        ...(activeRole && ['admin', 'exafy_admin', 'developer'].includes(activeRole)
+          ? DEVELOPER_DOMAIN_TOOL_DECLARATIONS
+          : []),
+        // WAVE-3-VOICE-CATALOG-V2 — Admin voice tools (users/RBAC, moderation,
+        // marketplace, notifications, governance, feedback). Handlers re-check
+        // role server-side regardless (admin-users-rbac-tools.ts adminGate()).
+        ...(activeRole && ['admin', 'exafy_admin', 'developer'].includes(activeRole)
+          ? ADMIN_DOMAIN_TOOL_DECLARATIONS
           : []),
       ],
     },

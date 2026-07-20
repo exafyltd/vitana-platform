@@ -617,11 +617,19 @@ async function runMemoryEmbeddingBackfill(ctx: AutomationContext) {
   }
   if (!rows?.length) return { usersAffected: 0, actionsTaken: 0 };
 
-  const { generateBatchEmbeddings } = await import('../embedding-service');
+  // BOOTSTRAP-MEMORY-DAILY-LEARNING: memory_facts.embedding is a fixed
+  // vector(768) column (confirmed via pg_attribute on staging) — a
+  // DIFFERENT dimension from memory_items' vector(1536). Must use the
+  // dedicated 768-dim generator, never embedding-service.ts's
+  // generateBatchEmbeddings (hardcoded 1536 for memory_items — every
+  // write from that path was silently rejected by Postgres's dimension
+  // check; confirmed on staging: 100 valid 1536d vectors generated,
+  // 0 stored).
+  const { generateFactEmbeddings } = await import('../memory-facts-service');
   const texts = (rows as Array<{ fact_key: string; fact_value: string }>).map(
     (r) => `${r.fact_key}: ${r.fact_value}`,
   );
-  const batch = await generateBatchEmbeddings(texts);
+  const batch = await generateFactEmbeddings(texts);
   if (!batch.ok || !batch.embeddings) {
     ctx.log(`batch embedding failed: ${batch.error}`);
     return { usersAffected: 0, actionsTaken: 0 };
@@ -827,6 +835,96 @@ async function runHealthCorrelationInsights(ctx: AutomationContext) {
   return { usersAffected, actionsTaken };
 }
 
+// ── AP-0913: Own Post Memory Capture ────────────────────────
+// BOOTSTRAP-MEMORY-DAILY-LEARNING: the community feed (profile_posts) never
+// fed the assistant's memory at all — nothing mirrored a user's own post
+// content anywhere Vitana could retrieve it, so it could never say "the
+// post you wrote about X" (confirmed: zero references to profile_posts in
+// cognee-extractor-client.ts or any prior AP-090x handler). This covers
+// posts from EVERY origin (app UI, voice's create_community_post), not
+// just voice-created ones, since it reads profile_posts directly rather
+// than hooking one write path. Mirrors into memory_items — not
+// memory_facts — because a feed of posts is naturally many-valued
+// (unlike a rolling single fact) and memory_items' existing EPISODIC
+// fallback ladder (mem-broker.ts) already retrieves by recency/importance
+// with no further plumbing needed.
+// Hourly with a 65-min lookback (5-min overlap over the cron cadence)
+// gives every post at least one capture opportunity even under drift;
+// the content_json->>post_id dedup check makes re-scanning the overlap
+// safe (no duplicate rows).
+const OWN_POST_CAPTURE_WINDOW_MS = 65 * 60 * 1000;
+const OWN_POST_CAPTURE_MAX_PER_RUN = 300;
+
+async function runOwnPostMemoryCapture(ctx: AutomationContext) {
+  const { supabase, tenantId } = ctx;
+  const sinceIso = new Date(Date.now() - OWN_POST_CAPTURE_WINDOW_MS).toISOString();
+
+  const { data: posts, error } = await supabase
+    .from('profile_posts')
+    .select('id, user_id, content, created_at')
+    .gte('created_at', sinceIso)
+    .neq('moderation_status', 'rejected')
+    .order('created_at', { ascending: true })
+    .limit(OWN_POST_CAPTURE_MAX_PER_RUN);
+  if (error) {
+    ctx.log(`profile_posts scan failed: ${error.message}`);
+    return { usersAffected: 0, actionsTaken: 0 };
+  }
+
+  const candidates = (posts || []).filter(
+    (p: any) => p.user_id && typeof p.content === 'string' && p.content.trim(),
+  ) as Array<{ id: string; user_id: string; content: string; created_at: string }>;
+  if (candidates.length === 0) return { usersAffected: 0, actionsTaken: 0 };
+
+  // Dedup against posts already mirrored (overlap window re-scans them).
+  const postIds = candidates.map((p) => p.id);
+  const { data: existingRows } = await supabase
+    .from('memory_items')
+    .select('content_json')
+    .eq('tenant_id', tenantId)
+    .filter('content_json->>post_id', 'in', `(${postIds.join(',')})`);
+  const alreadyMirrored = new Set(
+    ((existingRows || []) as Array<{ content_json: any }>)
+      .map((r) => r.content_json?.post_id)
+      .filter(Boolean),
+  );
+
+  const { writeMemoryItemWithIdentity } = await import('../orb-memory-bridge');
+
+  const affectedUsers = new Set<string>();
+  let actionsTaken = 0;
+  for (const post of candidates) {
+    if (alreadyMirrored.has(post.id)) continue;
+    try {
+      const result = await writeMemoryItemWithIdentity(
+        { user_id: post.user_id, tenant_id: tenantId },
+        {
+          source: 'system',
+          content: post.content,
+          content_json: { kind: 'community_post', post_id: post.id },
+          occurred_at: post.created_at,
+          importance: 40,
+          skipFiltering: true,
+        },
+      );
+      if (result.ok && !result.skipped) {
+        actionsTaken++;
+        affectedUsers.add(post.user_id);
+      } else if (!result.ok) {
+        ctx.log(`post→memory mirror failed for post ${post.id}: ${result.error}`);
+      }
+    } catch (err: any) {
+      ctx.log(`post→memory mirror threw for post ${post.id}: ${err?.message}`);
+    }
+  }
+
+  await ctx.emitEvent('autopilot.memory.own_posts_captured', {
+    posts_scanned: candidates.length,
+    posts_mirrored: actionsTaken,
+  });
+  return { usersAffected: affectedUsers.size, actionsTaken };
+}
+
 export function registerMemoryIntelligenceHandlers(): void {
   registerHandler('runMemoryInformedMatching', runMemoryInformedMatching);
   registerHandler('runFactExtractionAudit', runFactExtractionAudit);
@@ -839,4 +937,5 @@ export function registerMemoryIntelligenceHandlers(): void {
   registerHandler('runMemoryEmbeddingBackfill', runMemoryEmbeddingBackfill);
   registerHandler('runUserModelSynthesis', runUserModelSynthesis);
   registerHandler('runHealthCorrelationInsights', runHealthCorrelationInsights);
+  registerHandler('runOwnPostMemoryCapture', runOwnPostMemoryCapture);
 }

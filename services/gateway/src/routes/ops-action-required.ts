@@ -19,6 +19,7 @@
  */
 
 import { Router, Request, Response } from 'express';
+import { probeEndpoint, isJsonHealthy, resolveProbeTarget } from '../services/self-healing-probe';
 
 const router = Router();
 
@@ -166,11 +167,27 @@ async function fetchSelfHealEscalations(
       created_at: string;
       diagnosis: any;
     }>;
-    return rows
-      .filter((row) => {
-        const ep = row.endpoint || '';
-        return !SELF_HEAL_ENDPOINT_BLOCKLIST.some((prefix) => ep.startsWith(prefix));
-      })
+    const candidates = rows.filter((row) => {
+      const ep = row.endpoint || '';
+      return !SELF_HEAL_ENDPOINT_BLOCKLIST.some((prefix) => ep.startsWith(prefix));
+    });
+
+    // VTID-02031d: the reconciler only re-probes rows still outcome='pending'.
+    // Once a row is tombstoned 'escalated'/'rolled_back' nothing re-checks it,
+    // so an endpoint that recovered minutes after tombstoning still shows as
+    // an open action item for the rest of the 24h lookback window. Re-probe
+    // live here (same probe the pre-probe gate and reconciler use) and drop
+    // rows whose endpoint is healthy right now — they don't need a human.
+    const stillDown = await Promise.all(
+      candidates.map(async (row) => {
+        const target = resolveProbeTarget(row.endpoint);
+        if (!target) return true; // not an HTTP target (e.g. voice-error://) — can't re-probe, keep it
+        const probe = await probeEndpoint(target, { timeoutMs: 4000 });
+        return !isJsonHealthy(probe);
+      }),
+    );
+    return candidates
+      .filter((_, i) => stillDown[i])
       .map((row) => {
         const reason =
           row.diagnosis?.reason ??

@@ -1,0 +1,62 @@
+name: Screen Load Timing (Basic Test)
+run-name: VTID-SCREEN-LOAD-01 — Screen Load Timing
+
+# VTID-SCREEN-LOAD-01 — standard basic test for Command Hub Overview.
+#
+# Runs the mobile screen-load-timing spec against production on a schedule
+# and reports every result to the gateway, which turns it into the
+# "Screen Load Time" entry in Command Hub's Overview service-health grid
+# (see fetchServiceHealth in services/gateway/src/frontend/command-hub/app.js).
+#
+# This is deliberately independent of the RUM beacon pipe (vitana-v1
+# src/lib/rum.ts), which is still staging-only — this gives Command Hub a
+# real, always-fresh signal on production screen load times without waiting
+# on that flag to graduate.
+
+on:
+  schedule:
+    # Every 30 minutes.
+    - cron: '7,37 * * * *'
+  workflow_dispatch:
+    inputs:
+      community_url:
+        description: 'Community app URL to test against'
+        required: false
+        type: string
+        default: 'https://vitanaland.com'
+
+concurrency:
+  group: screen-load-timing
+  cancel-in-progress: false
+
+jobs:
+  screen-load-timing:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install E2E dependencies
+        working-directory: e2e
+        run: npm ci
+
+      - name: Install Playwright browsers
+        working-directory: e2e
+        run: npx playwright install chromium --with-deps
+
+      - name: Run screen load timing
+        working-directory: e2e
+        run: npx playwright test --project=mobile-shared screen-load-timing.spec.ts
+        env:
+          COMMUNITY_URL: ${{ inputs.community_url || 'https://vitanaland.com' }}
+          GATEWAY_URL: https://gateway-q74ibpv6ia-uc.a.run.app
+          SCREEN_LOAD_ENV: production
+          SCREEN_LOAD_RUN_ID: ${{ github.run_id }}-${{ github.run_attempt }}
+          TEST_USER_EMAIL: ${{ secrets.TEST_USER_EMAIL }}
+          TEST_USER_PASSWORD: ${{ secrets.TEST_USER_PASSWORD }}
+          SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
+          GATEWAY_SERVICE_TOKEN: ${{ secrets.GATEWAY_SERVICE_TOKEN }}

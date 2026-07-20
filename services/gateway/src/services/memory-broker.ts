@@ -193,7 +193,7 @@ export interface NetworkPerson {
 export interface NetworkBlock {
   kind: 'NETWORK';
   people: NetworkPerson[];
-  source: 'mem_graph_edges';
+  source: 'relationship_edges';
   fetched_at: string;
 }
 
@@ -790,7 +790,17 @@ async function fetchTrajectoryBlock(
 }
 
 // -----------------------------------------------------------------------------
-// NETWORK — mem_graph_edges + relationship_nodes (closest people)
+// NETWORK — relationship_edges + relationship_nodes (closest people)
+//
+// BOOTSTRAP-MEMORY-DAILY-LEARNING: this previously read `mem_graph_edges`,
+// a table with a real schema but ZERO writers anywhere in the codebase
+// (its only writer, mem-tier2-writer.ts's mirrorGraphEdge, is never called
+// and is additionally gated behind a disabled flag) — so this block was
+// structurally always empty. The real, AP-0909-populated graph lives in
+// `relationship_edges` (polymorphic source/target, no `user_id` or
+// `valid_to` columns — different shape from mem_graph_edges) joined to
+// `relationship_nodes` (whose display column is `title`, not
+// `display_name`). Verified against the live schema 2026-07-07.
 // -----------------------------------------------------------------------------
 
 async function fetchNetworkBlock(
@@ -801,48 +811,49 @@ async function fetchNetworkBlock(
   const supabase = getSupabase();
   if (!supabase) return { block: null, latency_ms: Date.now() - t0 };
 
-  // Active edges where the user is one endpoint, ordered by strength then
-  // recent interaction. Resolve target node via relationship_nodes.
+  // AP-0909 always writes the user as source_type='person', source_id=userId
+  // (mutual-follow edges are written in BOTH directions as separate rows, so
+  // this single-sided filter still covers them). Ordered by strength then
+  // recent interaction, mirroring the original intent.
   const { data: edges, error } = await supabase
-    .from('mem_graph_edges')
+    .from('relationship_edges')
     .select('source_type, source_id, target_type, target_id, edge_type, strength, last_interaction_at')
     .eq('tenant_id', input.tenant_id)
-    .eq('user_id', input.user_id)
-    .is('valid_to', null)
+    .eq('source_type', 'person')
+    .eq('source_id', input.user_id)
     .order('strength', { ascending: false })
     .order('last_interaction_at', { ascending: false, nullsFirst: false })
     .limit(limit);
 
   if (error) {
-    console.warn(`[${VTID}] mem_graph_edges query failed: ${error.message}`);
+    console.warn(`[${VTID}] relationship_edges query failed: ${error.message}`);
     return { block: null, latency_ms: Date.now() - t0 };
   }
 
-  // Resolve "the other side" of each edge into relationship_nodes for display name.
-  const nodeIds = Array.from(new Set(
-    (edges ?? []).map(e => e.target_type === 'user' || e.target_type === 'person' ? e.target_id : e.source_id)
-  ));
+  // Resolve the target side of each edge into relationship_nodes for a name.
+  // target_type is always 'person' for both AP-0909 edge kinds ('suggested'
+  // for disclosed facts, 'connected' for mutual follows), but a 'connected'
+  // target may be a real app user (no relationship_nodes row exists for
+  // those — target_id IS the user_id directly) rather than a projected node.
+  const nodeIds = Array.from(new Set((edges ?? []).map((e) => e.target_id)));
 
-  let nodesById: Record<string, { display_name: string | null; node_type: string }> = {};
+  let nodesById: Record<string, { title: string | null; node_type: string }> = {};
   if (nodeIds.length > 0) {
     const { data: nodes } = await supabase
       .from('relationship_nodes')
-      .select('id, display_name, node_type')
+      .select('id, title, node_type')
       .in('id', nodeIds);
     nodesById = Object.fromEntries(
-      (nodes ?? []).map(n => [n.id, { display_name: n.display_name, node_type: n.node_type }])
+      (nodes ?? []).map((n) => [n.id, { title: n.title, node_type: n.node_type }])
     );
   }
 
-  const people: NetworkPerson[] = (edges ?? []).map(e => {
-    const isOutbound = e.source_type === 'user' || e.source_type === 'person';
-    const otherNodeId = isOutbound ? e.target_id : e.source_id;
-    const otherNodeType = isOutbound ? e.target_type : e.source_type;
-    const node = nodesById[otherNodeId];
+  const people: NetworkPerson[] = (edges ?? []).map((e) => {
+    const node = nodesById[e.target_id];
     return {
-      node_id: otherNodeId,
-      display_name: node?.display_name ?? null,
-      node_type: node?.node_type ?? otherNodeType,
+      node_id: e.target_id,
+      display_name: node?.title ?? null,
+      node_type: node?.node_type ?? e.target_type,
       edge_type: e.edge_type,
       strength: e.strength,
       last_interaction_at: e.last_interaction_at,
@@ -852,7 +863,7 @@ async function fetchNetworkBlock(
   const block: NetworkBlock = {
     kind: 'NETWORK',
     people,
-    source: 'mem_graph_edges',
+    source: 'relationship_edges',
     fetched_at: new Date().toISOString(),
   };
   return { block, latency_ms: Date.now() - t0 };
@@ -1235,11 +1246,11 @@ export async function getMemoryContext(input: MemoryReadInput): Promise<MemoryPa
       withBudget(fetchNetworkBlock(input, 20), budgetMs).then(r => {
         if (r.timedOut) {
           degraded = true;
-          latencyPerStream['mem_graph_edges'] = budgetMs;
+          latencyPerStream['relationship_edges'] = budgetMs;
         } else if (r.value?.block) {
           blocks['NETWORK'] = r.value.block;
-          streamsHit.push('mem_graph_edges');
-          latencyPerStream['mem_graph_edges'] = r.value.latency_ms;
+          streamsHit.push('relationship_edges');
+          latencyPerStream['relationship_edges'] = r.value.latency_ms;
         }
       })
     );
