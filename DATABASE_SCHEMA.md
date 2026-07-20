@@ -211,6 +211,37 @@ so new signups start at zero. `wallet_accounts` (EUR/USD Stripe wallet) had
 no non-zero rows to reset (185 users, all already 0 — no real deposits made
 yet).
 
+**Deposit bridge (2026-07-20,
+`20260720090000_bridge_credit_deposit_into_legacy_user_wallets.sql`):** the
+real Stripe deposit flow (`wallet.ts` → `deposit-service.ts` → webhook →
+`credit_deposit`) credited `wallet_accounts`, a table the wallet UI never
+reads. `credit_deposit` now also mirrors USD deposits into `user_wallets`,
+atomically, in the same row-locked transaction as the `wallet_accounts`
+credit. Also fixed `createDeposit`'s Stripe `success_url`/`cancel_url`,
+which pointed at `/wallet/deposit/success` and `/wallet/deposit/canceled` —
+routes that never existed in the `vitana-v1` SPA — to redirect to the
+existing `/wallet` route with query params instead. Paired with a
+`vitana-v1` change wiring `AddFundsPopup` to this real flow in place of a
+direct fake balance write.
+
+**Atomicity + transaction logging (2026-07-20,
+`20260720190000_fix_wallet_rpc_atomicity_and_transaction_logging.sql`):**
+`update_user_balance`, `process_wallet_exchange`, `process_wallet_transfer`,
+and `process_wallet_exchange_and_send` all had the same TOCTOU race —
+`SELECT balance`, check sufficiency in application code, `THEN UPDATE` — a
+double-tap or retried request could double-spend. Rewritten as a single
+atomic `UPDATE ... WHERE balance >= amount RETURNING balance` in all four.
+`update_user_balance` also gained optional `p_transaction_type`/
+`p_description` params so it can log to `wallet_transactions` like the
+other three already did (it previously never did, so Withdraw/Stake/Spend
+left zero history). CHECK constraint extended with `'withdrawal'`/`'stake'`
+to cover those two actions. Note: adding the two new trailing params to
+`update_user_balance` via `CREATE OR REPLACE` created a second overload
+instead of replacing the original (Postgres allows same-name functions with
+different signatures to coexist); the migration explicitly `DROP`s the
+stale 4-arg overload afterward so only the atomic, logging-capable version
+can be called.
+
 ---
 
 ## ⚠️ DEPRECATED / DO NOT USE
@@ -512,6 +543,7 @@ CREATE TABLE my_new_table (
 | 2026-06-01 | Added `seed_community_onboarding_autopilot(uuid)` function + `seed_onboarding_autopilot_on_primary_membership` AFTER INSERT trigger on `user_tenants` (WHEN `is_primary=true`). Seeds the day0 community onboarding Autopilot bundle (8 `onboarding_*` rows in `autopilot_recommendations`) on signup — bypass-proof, since vitana-v1 authenticates directly via Supabase Auth and never hit the gateway `/auth/login` first-login hook (same root cause + trigger pattern as VTID-03089 welcome chat). Mirrors `STAGE_TEMPLATES.day0` in `community-user-analyzer.ts` (drift-guarded by `autopilot-onboarding-seed-bundle.test.ts`); fingerprints match the TS generator so the cron/lazy-gen dedupe against the seed. Idempotent + fail-soft. Includes a 7-day backfill of recent zero-rec community members. | Claude | BOOTSTRAP-ONBOARDING-AUTOPILOT-SEED |
 | 2026-06-07 | Added Video Shop (Vitanaland) backend slice: `shop_videos`, `shop_video_anchors` (single-primary index), `shop_saved_products`, `shop_video_events` (non-OASIS funnel sink). Threaded `source_video_id`/`source_creator_id` attribution onto `universal_cart_items` + `product_orders` and widened the `source_surface` CHECK to admit `video_shop`. New surface over `products` + Universal Cart — no second commerce system; no wallet buy-now in V1. | Claude | VTID-03237 |
 | 2026-07-17 | Documented the live wallet system (`user_wallets`, `wallet_transactions`, `exchange_rates` — previously undocumented). Fixed a critical vuln: `update_user_balance`/`process_wallet_exchange`/`process_wallet_transfer`/`process_wallet_exchange_and_send` let any authenticated user debit/credit an arbitrary `user_id`; added `auth.uid()` ownership checks and made the exchange RPCs read the server-side `exchange_rates` row instead of trusting a client-supplied rate. Real-world-launch reset: zeroed all 209 users' USD/CREDITS/VTNA balances (archived pre-reset values in new `wallet_balance_resets` table); changed `initialize_user_wallet()`/`get_user_balance()`/`user_wallets.balance` default from seeding `1000.00` to `0.00`. Flagged the `wallet_transactions`/`wallet_balances` "Credits ledger" from VTID-01250 as dead code — it never took effect due to a table-name collision. | Claude | BOOTSTRAP-WALLET-RESET |
+| 2026-07-20 | Bridged the real Stripe deposit flow (`credit_deposit`) to also credit the legacy `user_wallets` balance the wallet UI reads, and fixed its Stripe success/cancel redirect URLs, which pointed at SPA routes that never existed. Separately, fixed a TOCTOU race shared by all four wallet-mutating RPCs (`update_user_balance`/`process_wallet_exchange`/`process_wallet_transfer`/`process_wallet_exchange_and_send`) by replacing SELECT-then-UPDATE with a single atomic `UPDATE ... WHERE balance >= amount`; gave `update_user_balance` the ability to log to `wallet_transactions` (added `'withdrawal'`/`'stake'` to the type CHECK) so Withdraw/Stake/Spend actions stop leaving zero transaction history. | Claude | BOOTSTRAP-WALLET-RESET |
 
 ---
 
