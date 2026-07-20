@@ -6719,6 +6719,804 @@ CALL WHEN the user says: "connect my Oura ring", "pair my device",
         },
       },
       {
+        "description": "Start a guided marketplace conversation for a product, service,
+practitioner or diagnostic need. CALL WHEN the user asks for shopping
+guidance rather than a specific item: "I want a full shopping guide",
+"help me find something for my energy", "ich brauche eine Einkaufsberatung".
+Then follow the returned next step. Never read long specifications aloud.",
+        "name": "start_marketplace_discover_assistant",
+        "parameters": {
+          "properties": {
+            "budget_max_amount": {
+              "description": "Budget ceiling in whole currency units (e.g. 150).",
+              "type": "number",
+            },
+            "exclusions": {
+              "description": "Comma-separated things to avoid (e.g. "pills").",
+              "type": "string",
+            },
+            "goal": {
+              "description": "The stated goal/need, if the user already said it.",
+              "type": "string",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Build a concise personalized recommendation set (max 3 options with
+short rationales) for the recorded shopping goal, across products and
+services. Nothing is added to the cart. CALL WHEN the goal (and the most
+important criteria) are known. Present each option in ONE sentence.",
+        "name": "build_personalized_shopping_guide",
+        "parameters": {
+          "properties": {
+            "budget_max_amount": {
+              "description": "Budget ceiling in whole currency units.",
+              "type": "number",
+            },
+            "goal": {
+              "description": "Override goal (otherwise the recorded one is used).",
+              "type": "string",
+            },
+            "max_items": {
+              "description": "Max options (default 3).",
+              "type": "number",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Update the current recommendations from conversational feedback.
+CALL WHEN the user reacts to picks: "cheaper", "nothing with pills",
+"I prefer something for home", "etwas Günstigeres bitte".",
+        "name": "refine_marketplace_recommendations",
+        "parameters": {
+          "properties": {
+            "budget_max_amount": {
+              "description": "New budget ceiling in whole currency units.",
+              "type": "number",
+            },
+            "exclude": {
+              "description": "Comma-separated new exclusions from the feedback.",
+              "type": "string",
+            },
+            "prefer": {
+              "description": "What the user now prefers (e.g. "tea", "home test").",
+              "type": "string",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Explain one current pick: what it is, why it was chosen for this user,
+practical use, and relevant limitations. CALL WHEN the user asks "why
+this one?", "tell me more about the second option", "warum empfiehlst du
+mir das?". Answer concisely — what/why/limits, never the full spec.",
+        "name": "explain_marketplace_recommendation",
+        "parameters": {
+          "properties": {
+            "position": {
+              "description": "1-based position of the pick ("the second one" → 2).",
+              "type": "number",
+            },
+            "product_id": {
+              "description": "Exact product UUID when known.",
+              "type": "string",
+            },
+            "title": {
+              "description": "Spoken name of the pick.",
+              "type": "string",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Confirm the chosen option and stage it into the basket (NEVER charges;
+payment stays on screen). ALWAYS call once WITHOUT confirm first — it
+returns a read-back of name and price; after the user says yes, call
+again with confirm:true. CALL WHEN the user picks an option: "take the
+second one", "add it to my basket", "nimm das erste".",
+        "name": "complete_marketplace_selection",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "description": "Pass true ONLY after the user confirmed the read-back.",
+              "type": "boolean",
+            },
+            "position": {
+              "description": "1-based position of the chosen pick.",
+              "type": "number",
+            },
+            "product_id": {
+              "description": "Exact product UUID when known.",
+              "type": "string",
+            },
+            "title": {
+              "description": "Spoken name of the chosen pick.",
+              "type": "string",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Record what the user wants to achieve, solve, explore or purchase.
+CALL WHEN the user states a shopping goal in a guided conversation:
+"I want to improve my sleep", "ich will meine Energie verbessern".",
+        "name": "capture_shopping_goal",
+        "parameters": {
+          "properties": {
+            "budget_max_amount": {
+              "description": "Budget ceiling if stated.",
+              "type": "number",
+            },
+            "exclusions": {
+              "description": "Comma-separated exclusions if stated (e.g. "pills").",
+              "type": "string",
+            },
+            "goal": {
+              "description": "The goal in the user's words.",
+              "type": "string",
+            },
+            "urgency": {
+              "description": "Urgency if stated (e.g. "this week").",
+              "type": "string",
+            },
+          },
+          "required": [
+            "goal",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Get the smallest set of still-missing criteria (budget, format,
+exclusions, urgency) for the recorded goal so you ask only the most
+important follow-up question. CALL BEFORE building the guide when the
+request was vague. Ask ONE question at a time, never a questionnaire.",
+        "name": "clarify_shopping_need",
+        "parameters": {
+          "properties": {},
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Determine whether a need maps to a product, service, diagnostic test,
+practitioner or combination, with the suggested next tool. CALL WHEN
+unsure which direction a marketplace request should take.",
+        "name": "classify_marketplace_intent",
+        "parameters": {
+          "properties": {
+            "need": {
+              "description": "The stated need (defaults to the recorded goal).",
+              "type": "string",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Save reusable shopping preferences the user explicitly stated: budget,
+dietary needs, values, exclusions, excluded brands/categories, preferred
+format. CALL ONLY after the user stated the preference or agreed to save
+it: "remember that I'm vegan", "merk dir, dass ich keine Kapseln will".",
+        "name": "save_marketplace_preferences",
+        "parameters": {
+          "properties": {
+            "budget_monthly_amount": {
+              "description": "Monthly budget in whole currency units.",
+              "type": "number",
+            },
+            "dietary": {
+              "description": "Comma-separated dietary needs (e.g. "vegan, gluten-free").",
+              "type": "string",
+            },
+            "excluded_brands": {
+              "description": "Comma-separated brands to exclude.",
+              "type": "string",
+            },
+            "excluded_categories": {
+              "description": "Comma-separated categories to exclude.",
+              "type": "string",
+            },
+            "exclusions": {
+              "description": "Comma-separated things to avoid (e.g. "pills").",
+              "type": "string",
+            },
+            "format": {
+              "description": "Preferred formats (e.g. "home, online").",
+              "type": "string",
+            },
+            "values": {
+              "description": "Comma-separated values (e.g. "sustainable, local").",
+              "type": "string",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Read the user's saved marketplace preferences. CALL WHEN the user asks
+"what do you know about my shopping preferences?" or before explaining
+why a recommendation was personalized.",
+        "name": "get_marketplace_preferences",
+        "parameters": {
+          "properties": {},
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Clear all saved marketplace preferences. ALWAYS call once WITHOUT
+confirm first — it reads back what would be cleared; after the user says
+yes, call again with confirm:true. CALL WHEN the user asks to forget or
+reset their shopping preferences.",
+        "name": "reset_marketplace_preferences",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "description": "Pass true ONLY after the user confirmed.",
+              "type": "boolean",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Get the minimum relevant context for a shopping request: saved
+preferences, shopping budget and spend, recent orders, active goal.
+CALL at the start of a guided shopping conversation, or when the user
+asks "why are you recommending this to me?" — then answer citing their
+stated preferences in plain language, never an algorithm score.",
+        "name": "get_marketplace_context",
+        "parameters": {
+          "properties": {},
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Dismiss a recommended product so it is not proposed again. CALL WHEN
+the user rejects a recommendation: "not that one", "don't show me this
+again", "das interessiert mich nicht".",
+        "name": "dismiss_marketplace_recommendation",
+        "parameters": {
+          "properties": {
+            "position": {
+              "description": "1-based position of the pick to dismiss.",
+              "type": "number",
+            },
+            "product_id": {
+              "description": "Exact product UUID when known.",
+              "type": "string",
+            },
+            "title": {
+              "description": "Spoken name of the item to dismiss.",
+              "type": "string",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Unified marketplace search across products AND services for one stated
+need. CALL WHEN the user describes a need without saying whether they
+want a product or a service: "something for my back pain", "etwas für
+besseren Schlaf". Mention at most 3 options, one sentence each.",
+        "name": "discover_marketplace_options",
+        "parameters": {
+          "properties": {
+            "budget_max_amount": {
+              "description": "Budget ceiling in whole currency units.",
+              "type": "number",
+            },
+            "limit": {
+              "description": "Max options (default 4, max 6).",
+              "type": "number",
+            },
+            "need": {
+              "description": "The stated need or desired outcome.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "need",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Search products by PURPOSE rather than product name, filtered against
+saved preferences (exclusions, budget). CALL WHEN the user describes
+what they want to achieve: "something that helps me focus", "etwas
+gegen Müdigkeit".",
+        "name": "search_products_by_need",
+        "parameters": {
+          "properties": {
+            "budget_max_amount": {
+              "description": "Budget ceiling in whole currency units.",
+              "type": "number",
+            },
+            "limit": {
+              "description": "Max results (default 5, max 8).",
+              "type": "number",
+            },
+            "need": {
+              "description": "The purpose/need to search for.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "need",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Search marketplace services (wellness, nutrition, therapy, labs) by the
+desired outcome. CALL WHEN the user wants help through a service rather
+than a product: "a sleep consultation", "eine Ernährungsberatung".",
+        "name": "search_services_by_need",
+        "parameters": {
+          "properties": {
+            "limit": {
+              "description": "Max results (default 5, max 8).",
+              "type": "number",
+            },
+            "need": {
+              "description": "The desired outcome.",
+              "type": "string",
+            },
+            "service_types": {
+              "description": "Optional comma-separated types: coach, doctor, lab, wellness, nutrition, fitness, therapy.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "need",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Filter products by declared dietary tags and certifications (vegan,
+gluten-free, organic, …). CALL WHEN values/dietary constraints are the
+point of the request: "only vegan options", "nur vegane Produkte".
+Only DECLARED product data counts — say so if nothing declares the tag.",
+        "name": "search_marketplace_by_values",
+        "parameters": {
+          "properties": {
+            "certifications": {
+              "description": "Comma-separated certifications (e.g. "organic").",
+              "type": "string",
+            },
+            "dietary_tags": {
+              "description": "Comma-separated dietary tags (e.g. "vegan, gluten-free").",
+              "type": "string",
+            },
+            "limit": {
+              "description": "Max results (default 5, max 8).",
+              "type": "number",
+            },
+            "need": {
+              "description": "Optional need to combine with the filter.",
+              "type": "string",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Find alternatives to a product the user dislikes or cannot use, in the
+same category. CALL WHEN the user says "what else is there like this",
+"not this brand", "gibt es Alternativen dazu?".",
+        "name": "search_marketplace_alternatives",
+        "parameters": {
+          "properties": {
+            "different_brand": {
+              "description": "True if the user wants a different brand.",
+              "type": "boolean",
+            },
+            "limit": {
+              "description": "Max alternatives (default 3, max 6).",
+              "type": "number",
+            },
+            "position": {
+              "description": "1-based position among the current picks.",
+              "type": "number",
+            },
+            "product_id": {
+              "description": "UUID of the product to replace, when known.",
+              "type": "string",
+            },
+            "reason": {
+              "description": "Why the user wants an alternative (improves the search).",
+              "type": "string",
+            },
+            "title": {
+              "description": "Spoken name of the product to replace.",
+              "type": "string",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Return up to 3 best-fit product picks with short rationales — WITHOUT
+adding anything to the cart (unlike get_ai_product_picks, which stages
+the cart). CALL WHEN the user wants recommendations to hear first:
+"what would you recommend for ...", "was würdest du mir empfehlen?".",
+        "name": "generate_top_marketplace_picks",
+        "parameters": {
+          "properties": {
+            "max_items": {
+              "description": "Max picks (default 3).",
+              "type": "number",
+            },
+            "prompt": {
+              "description": "What the user is looking for.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "prompt",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Recommend whether to start with a product, a service/assessment, a
+practitioner, or a combination for the stated goal. CALL WHEN the user
+is unsure what kind of help they need: "I don't know whether I need
+supplements or a blood test", "ich weiß nicht, was ich brauche".",
+        "name": "recommend_marketplace_path",
+        "parameters": {
+          "properties": {
+            "goal": {
+              "description": "The goal (defaults to the recorded one).",
+              "type": "string",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Find a suitable cheaper alternative to a current pick or named product.
+CALL WHEN the user says "too expensive", "something cheaper", "zu teuer,
+gibt es was Günstigeres?". Mention the saving and any trade-off.",
+        "name": "recommend_lower_cost_option",
+        "parameters": {
+          "properties": {
+            "position": {
+              "description": "1-based position among the current picks.",
+              "type": "number",
+            },
+            "product_id": {
+              "description": "UUID of the too-expensive product, when known.",
+              "type": "string",
+            },
+            "title": {
+              "description": "Spoken name of the product.",
+              "type": "string",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Explain why an option was recommended, from the RECORDED rationale.
+CALL WHEN the user asks "why are you recommending this?", "warum
+empfiehlst du mir das?". Cite stated preferences and the recorded
+reason in plain language — never an algorithm score. If there is no
+recorded reason, say so honestly.",
+        "name": "explain_why_recommended",
+        "parameters": {
+          "properties": {
+            "position": {
+              "description": "1-based position among the current picks.",
+              "type": "number",
+            },
+            "product_id": {
+              "description": "UUID of the recommended product, when known.",
+              "type": "string",
+            },
+            "title": {
+              "description": "Spoken name.",
+              "type": "string",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Personalized SHORT product summary: what it is, what it is for, why it
+may fit this user, one relevant limitation. CALL instead of reading a
+product description aloud. 2–3 spoken sentences maximum.",
+        "name": "summarize_product_for_user",
+        "parameters": {
+          "properties": {
+            "position": {
+              "description": "1-based position among the current picks.",
+              "type": "number",
+            },
+            "product_id": {
+              "description": "Product UUID, when known.",
+              "type": "string",
+            },
+            "title": {
+              "description": "Spoken product name.",
+              "type": "string",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Only the most important product facts: price, dosage/serving, declared
+allergens, safety notes, availability. CALL WHEN the user asks a
+factual detail: "how many servings?", "what's the dosage?", "welche
+Allergene enthält es?". Read only what was asked.",
+        "name": "get_key_product_facts",
+        "parameters": {
+          "properties": {
+            "position": {
+              "description": "1-based position among the current picks.",
+              "type": "number",
+            },
+            "product_id": {
+              "description": "Product UUID, when known.",
+              "type": "string",
+            },
+            "title": {
+              "description": "Spoken product name.",
+              "type": "string",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Compare up to 3 options on price, rating, availability, dietary fit —
+speaking only the differences that matter to this user. CALL WHEN the
+user asks to compare: "compare the first two", "was ist der
+Unterschied?". Defaults to the current picks.",
+        "name": "compare_marketplace_options",
+        "parameters": {
+          "properties": {
+            "product_ids": {
+              "description": "Comma-separated product UUIDs, when known.",
+              "type": "string",
+            },
+            "titles": {
+              "description": "Comma-separated spoken product names.",
+              "type": "string",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Save one product (or all current picks) to the user's shortlist for
+later. CALL WHEN the user says "save that one", "put it on my list",
+"merk dir das". Products only — services cannot be shortlisted yet.",
+        "name": "shortlist_marketplace_options",
+        "parameters": {
+          "properties": {
+            "all_picks": {
+              "description": "True to shortlist all current picks.",
+              "type": "boolean",
+            },
+            "position": {
+              "description": "1-based position among the current picks.",
+              "type": "number",
+            },
+            "product_id": {
+              "description": "Product UUID, when known.",
+              "type": "string",
+            },
+            "title": {
+              "description": "Spoken product name.",
+              "type": "string",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Read the user's saved shortlist. CALL WHEN the user asks "what's on my
+shortlist?", "zeig mir meine Merkliste".",
+        "name": "view_marketplace_shortlist",
+        "parameters": {
+          "properties": {
+            "limit": {
+              "description": "Max items (default 10, max 20).",
+              "type": "number",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Remove one product from the shortlist. CALL WHEN the user says "remove
+... from my list", "nimm das von meiner Merkliste".",
+        "name": "remove_from_marketplace_shortlist",
+        "parameters": {
+          "properties": {
+            "product_id": {
+              "description": "Product UUID, when known.",
+              "type": "string",
+            },
+            "title": {
+              "description": "Spoken product name.",
+              "type": "string",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Check one product against the user's saved preferences (dietary,
+exclusions, brands, budget) using only DECLARED product data. CALL WHEN
+the user asks "is this suitable for me?", "ist das für mich geeignet?".
+Report what could NOT be verified instead of guessing. Never a medical
+judgement.",
+        "name": "check_product_suitability",
+        "parameters": {
+          "properties": {
+            "position": {
+              "description": "1-based position among the current picks.",
+              "type": "number",
+            },
+            "product_id": {
+              "description": "Product UUID, when known.",
+              "type": "string",
+            },
+            "title": {
+              "description": "Spoken product name.",
+              "type": "string",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Detect repeated or overlapping products in the basket. CALL before
+checkout or WHEN the user asks "is anything doubled in my basket?",
+"habe ich etwas doppelt im Warenkorb?".",
+        "name": "check_cart_duplication",
+        "parameters": {
+          "properties": {},
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Read the monthly shopping budget, spend so far, remaining headroom, and
+whether the current basket would exceed it. CALL WHEN the user asks
+about their budget or before an expensive addition: "how is my shopping
+budget?", "wie steht mein Einkaufsbudget?".",
+        "name": "review_shopping_budget",
+        "parameters": {
+          "properties": {},
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Read back the exact selected option (name, price, availability) and ask
+for explicit confirmation BEFORE any cart action. CALL WHEN the user
+picks an option in conversation. On the user's yes, follow with
+add_selected_option_to_cart confirm:true. Never skip this read-back.",
+        "name": "confirm_marketplace_selection",
+        "parameters": {
+          "properties": {
+            "position": {
+              "description": "1-based position among the current picks.",
+              "type": "number",
+            },
+            "product_id": {
+              "description": "Product UUID, when known.",
+              "type": "string",
+            },
+            "title": {
+              "description": "Spoken product name.",
+              "type": "string",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Stage the confirmed selection into the universal basket. NEVER charges —
+payment is a screen handoff. ALWAYS run the confirm_marketplace_selection
+read-back (or call once without confirm) first; pass confirm:true only
+after the user said yes. CALL WHEN the user confirms adding the chosen
+item: "yes, add it", "ja, in den Warenkorb".",
+        "name": "add_selected_option_to_cart",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "description": "Pass true ONLY after the user confirmed the read-back.",
+              "type": "boolean",
+            },
+            "position": {
+              "description": "1-based position among the current picks.",
+              "type": "number",
+            },
+            "product_id": {
+              "description": "Product UUID, when known.",
+              "type": "string",
+            },
+            "title": {
+              "description": "Spoken product name.",
+              "type": "string",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Check the whole basket for duplicates, conflicts with saved preferences,
+declared allergens and availability problems before checkout. CALL WHEN
+the user says "check my basket", "is everything in my cart okay?",
+"prüf meinen Warenkorb".",
+        "name": "review_cart_suitability",
+        "parameters": {
+          "properties": {},
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Explain why a specific basket item is there (added by the user, the
+shopping agent, a reorder — with the recorded rationale). CALL WHEN the
+user asks "why is this in my basket?", "warum ist das in meinem
+Warenkorb?".",
+        "name": "explain_cart_item",
+        "parameters": {
+          "properties": {
+            "product_id": {
+              "description": "Product UUID, when known.",
+              "type": "string",
+            },
+            "title": {
+              "description": "Spoken product name.",
+              "type": "string",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
         "description": "Return the top open admin_insights for this tenant, ranked by severity × confidence. Call this AT THE START of every admin orb session to know what needs attention. The bootstrap context already includes the briefing on session-open; only call again if the admin asks "what else?", "anything new?", or "give me the briefing again".",
         "name": "admin_briefing",
         "parameters": {
@@ -18653,6 +19451,804 @@ CALL WHEN the user says: "connect my Oura ring", "pair my device",
           "required": [
             "offers",
           ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Start a guided marketplace conversation for a product, service,
+practitioner or diagnostic need. CALL WHEN the user asks for shopping
+guidance rather than a specific item: "I want a full shopping guide",
+"help me find something for my energy", "ich brauche eine Einkaufsberatung".
+Then follow the returned next step. Never read long specifications aloud.",
+        "name": "start_marketplace_discover_assistant",
+        "parameters": {
+          "properties": {
+            "budget_max_amount": {
+              "description": "Budget ceiling in whole currency units (e.g. 150).",
+              "type": "number",
+            },
+            "exclusions": {
+              "description": "Comma-separated things to avoid (e.g. "pills").",
+              "type": "string",
+            },
+            "goal": {
+              "description": "The stated goal/need, if the user already said it.",
+              "type": "string",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Build a concise personalized recommendation set (max 3 options with
+short rationales) for the recorded shopping goal, across products and
+services. Nothing is added to the cart. CALL WHEN the goal (and the most
+important criteria) are known. Present each option in ONE sentence.",
+        "name": "build_personalized_shopping_guide",
+        "parameters": {
+          "properties": {
+            "budget_max_amount": {
+              "description": "Budget ceiling in whole currency units.",
+              "type": "number",
+            },
+            "goal": {
+              "description": "Override goal (otherwise the recorded one is used).",
+              "type": "string",
+            },
+            "max_items": {
+              "description": "Max options (default 3).",
+              "type": "number",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Update the current recommendations from conversational feedback.
+CALL WHEN the user reacts to picks: "cheaper", "nothing with pills",
+"I prefer something for home", "etwas Günstigeres bitte".",
+        "name": "refine_marketplace_recommendations",
+        "parameters": {
+          "properties": {
+            "budget_max_amount": {
+              "description": "New budget ceiling in whole currency units.",
+              "type": "number",
+            },
+            "exclude": {
+              "description": "Comma-separated new exclusions from the feedback.",
+              "type": "string",
+            },
+            "prefer": {
+              "description": "What the user now prefers (e.g. "tea", "home test").",
+              "type": "string",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Explain one current pick: what it is, why it was chosen for this user,
+practical use, and relevant limitations. CALL WHEN the user asks "why
+this one?", "tell me more about the second option", "warum empfiehlst du
+mir das?". Answer concisely — what/why/limits, never the full spec.",
+        "name": "explain_marketplace_recommendation",
+        "parameters": {
+          "properties": {
+            "position": {
+              "description": "1-based position of the pick ("the second one" → 2).",
+              "type": "number",
+            },
+            "product_id": {
+              "description": "Exact product UUID when known.",
+              "type": "string",
+            },
+            "title": {
+              "description": "Spoken name of the pick.",
+              "type": "string",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Confirm the chosen option and stage it into the basket (NEVER charges;
+payment stays on screen). ALWAYS call once WITHOUT confirm first — it
+returns a read-back of name and price; after the user says yes, call
+again with confirm:true. CALL WHEN the user picks an option: "take the
+second one", "add it to my basket", "nimm das erste".",
+        "name": "complete_marketplace_selection",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "description": "Pass true ONLY after the user confirmed the read-back.",
+              "type": "boolean",
+            },
+            "position": {
+              "description": "1-based position of the chosen pick.",
+              "type": "number",
+            },
+            "product_id": {
+              "description": "Exact product UUID when known.",
+              "type": "string",
+            },
+            "title": {
+              "description": "Spoken name of the chosen pick.",
+              "type": "string",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Record what the user wants to achieve, solve, explore or purchase.
+CALL WHEN the user states a shopping goal in a guided conversation:
+"I want to improve my sleep", "ich will meine Energie verbessern".",
+        "name": "capture_shopping_goal",
+        "parameters": {
+          "properties": {
+            "budget_max_amount": {
+              "description": "Budget ceiling if stated.",
+              "type": "number",
+            },
+            "exclusions": {
+              "description": "Comma-separated exclusions if stated (e.g. "pills").",
+              "type": "string",
+            },
+            "goal": {
+              "description": "The goal in the user's words.",
+              "type": "string",
+            },
+            "urgency": {
+              "description": "Urgency if stated (e.g. "this week").",
+              "type": "string",
+            },
+          },
+          "required": [
+            "goal",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Get the smallest set of still-missing criteria (budget, format,
+exclusions, urgency) for the recorded goal so you ask only the most
+important follow-up question. CALL BEFORE building the guide when the
+request was vague. Ask ONE question at a time, never a questionnaire.",
+        "name": "clarify_shopping_need",
+        "parameters": {
+          "properties": {},
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Determine whether a need maps to a product, service, diagnostic test,
+practitioner or combination, with the suggested next tool. CALL WHEN
+unsure which direction a marketplace request should take.",
+        "name": "classify_marketplace_intent",
+        "parameters": {
+          "properties": {
+            "need": {
+              "description": "The stated need (defaults to the recorded goal).",
+              "type": "string",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Save reusable shopping preferences the user explicitly stated: budget,
+dietary needs, values, exclusions, excluded brands/categories, preferred
+format. CALL ONLY after the user stated the preference or agreed to save
+it: "remember that I'm vegan", "merk dir, dass ich keine Kapseln will".",
+        "name": "save_marketplace_preferences",
+        "parameters": {
+          "properties": {
+            "budget_monthly_amount": {
+              "description": "Monthly budget in whole currency units.",
+              "type": "number",
+            },
+            "dietary": {
+              "description": "Comma-separated dietary needs (e.g. "vegan, gluten-free").",
+              "type": "string",
+            },
+            "excluded_brands": {
+              "description": "Comma-separated brands to exclude.",
+              "type": "string",
+            },
+            "excluded_categories": {
+              "description": "Comma-separated categories to exclude.",
+              "type": "string",
+            },
+            "exclusions": {
+              "description": "Comma-separated things to avoid (e.g. "pills").",
+              "type": "string",
+            },
+            "format": {
+              "description": "Preferred formats (e.g. "home, online").",
+              "type": "string",
+            },
+            "values": {
+              "description": "Comma-separated values (e.g. "sustainable, local").",
+              "type": "string",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Read the user's saved marketplace preferences. CALL WHEN the user asks
+"what do you know about my shopping preferences?" or before explaining
+why a recommendation was personalized.",
+        "name": "get_marketplace_preferences",
+        "parameters": {
+          "properties": {},
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Clear all saved marketplace preferences. ALWAYS call once WITHOUT
+confirm first — it reads back what would be cleared; after the user says
+yes, call again with confirm:true. CALL WHEN the user asks to forget or
+reset their shopping preferences.",
+        "name": "reset_marketplace_preferences",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "description": "Pass true ONLY after the user confirmed.",
+              "type": "boolean",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Get the minimum relevant context for a shopping request: saved
+preferences, shopping budget and spend, recent orders, active goal.
+CALL at the start of a guided shopping conversation, or when the user
+asks "why are you recommending this to me?" — then answer citing their
+stated preferences in plain language, never an algorithm score.",
+        "name": "get_marketplace_context",
+        "parameters": {
+          "properties": {},
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Dismiss a recommended product so it is not proposed again. CALL WHEN
+the user rejects a recommendation: "not that one", "don't show me this
+again", "das interessiert mich nicht".",
+        "name": "dismiss_marketplace_recommendation",
+        "parameters": {
+          "properties": {
+            "position": {
+              "description": "1-based position of the pick to dismiss.",
+              "type": "number",
+            },
+            "product_id": {
+              "description": "Exact product UUID when known.",
+              "type": "string",
+            },
+            "title": {
+              "description": "Spoken name of the item to dismiss.",
+              "type": "string",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Unified marketplace search across products AND services for one stated
+need. CALL WHEN the user describes a need without saying whether they
+want a product or a service: "something for my back pain", "etwas für
+besseren Schlaf". Mention at most 3 options, one sentence each.",
+        "name": "discover_marketplace_options",
+        "parameters": {
+          "properties": {
+            "budget_max_amount": {
+              "description": "Budget ceiling in whole currency units.",
+              "type": "number",
+            },
+            "limit": {
+              "description": "Max options (default 4, max 6).",
+              "type": "number",
+            },
+            "need": {
+              "description": "The stated need or desired outcome.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "need",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Search products by PURPOSE rather than product name, filtered against
+saved preferences (exclusions, budget). CALL WHEN the user describes
+what they want to achieve: "something that helps me focus", "etwas
+gegen Müdigkeit".",
+        "name": "search_products_by_need",
+        "parameters": {
+          "properties": {
+            "budget_max_amount": {
+              "description": "Budget ceiling in whole currency units.",
+              "type": "number",
+            },
+            "limit": {
+              "description": "Max results (default 5, max 8).",
+              "type": "number",
+            },
+            "need": {
+              "description": "The purpose/need to search for.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "need",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Search marketplace services (wellness, nutrition, therapy, labs) by the
+desired outcome. CALL WHEN the user wants help through a service rather
+than a product: "a sleep consultation", "eine Ernährungsberatung".",
+        "name": "search_services_by_need",
+        "parameters": {
+          "properties": {
+            "limit": {
+              "description": "Max results (default 5, max 8).",
+              "type": "number",
+            },
+            "need": {
+              "description": "The desired outcome.",
+              "type": "string",
+            },
+            "service_types": {
+              "description": "Optional comma-separated types: coach, doctor, lab, wellness, nutrition, fitness, therapy.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "need",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Filter products by declared dietary tags and certifications (vegan,
+gluten-free, organic, …). CALL WHEN values/dietary constraints are the
+point of the request: "only vegan options", "nur vegane Produkte".
+Only DECLARED product data counts — say so if nothing declares the tag.",
+        "name": "search_marketplace_by_values",
+        "parameters": {
+          "properties": {
+            "certifications": {
+              "description": "Comma-separated certifications (e.g. "organic").",
+              "type": "string",
+            },
+            "dietary_tags": {
+              "description": "Comma-separated dietary tags (e.g. "vegan, gluten-free").",
+              "type": "string",
+            },
+            "limit": {
+              "description": "Max results (default 5, max 8).",
+              "type": "number",
+            },
+            "need": {
+              "description": "Optional need to combine with the filter.",
+              "type": "string",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Find alternatives to a product the user dislikes or cannot use, in the
+same category. CALL WHEN the user says "what else is there like this",
+"not this brand", "gibt es Alternativen dazu?".",
+        "name": "search_marketplace_alternatives",
+        "parameters": {
+          "properties": {
+            "different_brand": {
+              "description": "True if the user wants a different brand.",
+              "type": "boolean",
+            },
+            "limit": {
+              "description": "Max alternatives (default 3, max 6).",
+              "type": "number",
+            },
+            "position": {
+              "description": "1-based position among the current picks.",
+              "type": "number",
+            },
+            "product_id": {
+              "description": "UUID of the product to replace, when known.",
+              "type": "string",
+            },
+            "reason": {
+              "description": "Why the user wants an alternative (improves the search).",
+              "type": "string",
+            },
+            "title": {
+              "description": "Spoken name of the product to replace.",
+              "type": "string",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Return up to 3 best-fit product picks with short rationales — WITHOUT
+adding anything to the cart (unlike get_ai_product_picks, which stages
+the cart). CALL WHEN the user wants recommendations to hear first:
+"what would you recommend for ...", "was würdest du mir empfehlen?".",
+        "name": "generate_top_marketplace_picks",
+        "parameters": {
+          "properties": {
+            "max_items": {
+              "description": "Max picks (default 3).",
+              "type": "number",
+            },
+            "prompt": {
+              "description": "What the user is looking for.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "prompt",
+          ],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Recommend whether to start with a product, a service/assessment, a
+practitioner, or a combination for the stated goal. CALL WHEN the user
+is unsure what kind of help they need: "I don't know whether I need
+supplements or a blood test", "ich weiß nicht, was ich brauche".",
+        "name": "recommend_marketplace_path",
+        "parameters": {
+          "properties": {
+            "goal": {
+              "description": "The goal (defaults to the recorded one).",
+              "type": "string",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Find a suitable cheaper alternative to a current pick or named product.
+CALL WHEN the user says "too expensive", "something cheaper", "zu teuer,
+gibt es was Günstigeres?". Mention the saving and any trade-off.",
+        "name": "recommend_lower_cost_option",
+        "parameters": {
+          "properties": {
+            "position": {
+              "description": "1-based position among the current picks.",
+              "type": "number",
+            },
+            "product_id": {
+              "description": "UUID of the too-expensive product, when known.",
+              "type": "string",
+            },
+            "title": {
+              "description": "Spoken name of the product.",
+              "type": "string",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Explain why an option was recommended, from the RECORDED rationale.
+CALL WHEN the user asks "why are you recommending this?", "warum
+empfiehlst du mir das?". Cite stated preferences and the recorded
+reason in plain language — never an algorithm score. If there is no
+recorded reason, say so honestly.",
+        "name": "explain_why_recommended",
+        "parameters": {
+          "properties": {
+            "position": {
+              "description": "1-based position among the current picks.",
+              "type": "number",
+            },
+            "product_id": {
+              "description": "UUID of the recommended product, when known.",
+              "type": "string",
+            },
+            "title": {
+              "description": "Spoken name.",
+              "type": "string",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Personalized SHORT product summary: what it is, what it is for, why it
+may fit this user, one relevant limitation. CALL instead of reading a
+product description aloud. 2–3 spoken sentences maximum.",
+        "name": "summarize_product_for_user",
+        "parameters": {
+          "properties": {
+            "position": {
+              "description": "1-based position among the current picks.",
+              "type": "number",
+            },
+            "product_id": {
+              "description": "Product UUID, when known.",
+              "type": "string",
+            },
+            "title": {
+              "description": "Spoken product name.",
+              "type": "string",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Only the most important product facts: price, dosage/serving, declared
+allergens, safety notes, availability. CALL WHEN the user asks a
+factual detail: "how many servings?", "what's the dosage?", "welche
+Allergene enthält es?". Read only what was asked.",
+        "name": "get_key_product_facts",
+        "parameters": {
+          "properties": {
+            "position": {
+              "description": "1-based position among the current picks.",
+              "type": "number",
+            },
+            "product_id": {
+              "description": "Product UUID, when known.",
+              "type": "string",
+            },
+            "title": {
+              "description": "Spoken product name.",
+              "type": "string",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Compare up to 3 options on price, rating, availability, dietary fit —
+speaking only the differences that matter to this user. CALL WHEN the
+user asks to compare: "compare the first two", "was ist der
+Unterschied?". Defaults to the current picks.",
+        "name": "compare_marketplace_options",
+        "parameters": {
+          "properties": {
+            "product_ids": {
+              "description": "Comma-separated product UUIDs, when known.",
+              "type": "string",
+            },
+            "titles": {
+              "description": "Comma-separated spoken product names.",
+              "type": "string",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Save one product (or all current picks) to the user's shortlist for
+later. CALL WHEN the user says "save that one", "put it on my list",
+"merk dir das". Products only — services cannot be shortlisted yet.",
+        "name": "shortlist_marketplace_options",
+        "parameters": {
+          "properties": {
+            "all_picks": {
+              "description": "True to shortlist all current picks.",
+              "type": "boolean",
+            },
+            "position": {
+              "description": "1-based position among the current picks.",
+              "type": "number",
+            },
+            "product_id": {
+              "description": "Product UUID, when known.",
+              "type": "string",
+            },
+            "title": {
+              "description": "Spoken product name.",
+              "type": "string",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Read the user's saved shortlist. CALL WHEN the user asks "what's on my
+shortlist?", "zeig mir meine Merkliste".",
+        "name": "view_marketplace_shortlist",
+        "parameters": {
+          "properties": {
+            "limit": {
+              "description": "Max items (default 10, max 20).",
+              "type": "number",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Remove one product from the shortlist. CALL WHEN the user says "remove
+... from my list", "nimm das von meiner Merkliste".",
+        "name": "remove_from_marketplace_shortlist",
+        "parameters": {
+          "properties": {
+            "product_id": {
+              "description": "Product UUID, when known.",
+              "type": "string",
+            },
+            "title": {
+              "description": "Spoken product name.",
+              "type": "string",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Check one product against the user's saved preferences (dietary,
+exclusions, brands, budget) using only DECLARED product data. CALL WHEN
+the user asks "is this suitable for me?", "ist das für mich geeignet?".
+Report what could NOT be verified instead of guessing. Never a medical
+judgement.",
+        "name": "check_product_suitability",
+        "parameters": {
+          "properties": {
+            "position": {
+              "description": "1-based position among the current picks.",
+              "type": "number",
+            },
+            "product_id": {
+              "description": "Product UUID, when known.",
+              "type": "string",
+            },
+            "title": {
+              "description": "Spoken product name.",
+              "type": "string",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Detect repeated or overlapping products in the basket. CALL before
+checkout or WHEN the user asks "is anything doubled in my basket?",
+"habe ich etwas doppelt im Warenkorb?".",
+        "name": "check_cart_duplication",
+        "parameters": {
+          "properties": {},
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Read the monthly shopping budget, spend so far, remaining headroom, and
+whether the current basket would exceed it. CALL WHEN the user asks
+about their budget or before an expensive addition: "how is my shopping
+budget?", "wie steht mein Einkaufsbudget?".",
+        "name": "review_shopping_budget",
+        "parameters": {
+          "properties": {},
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Read back the exact selected option (name, price, availability) and ask
+for explicit confirmation BEFORE any cart action. CALL WHEN the user
+picks an option in conversation. On the user's yes, follow with
+add_selected_option_to_cart confirm:true. Never skip this read-back.",
+        "name": "confirm_marketplace_selection",
+        "parameters": {
+          "properties": {
+            "position": {
+              "description": "1-based position among the current picks.",
+              "type": "number",
+            },
+            "product_id": {
+              "description": "Product UUID, when known.",
+              "type": "string",
+            },
+            "title": {
+              "description": "Spoken product name.",
+              "type": "string",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Stage the confirmed selection into the universal basket. NEVER charges —
+payment is a screen handoff. ALWAYS run the confirm_marketplace_selection
+read-back (or call once without confirm) first; pass confirm:true only
+after the user said yes. CALL WHEN the user confirms adding the chosen
+item: "yes, add it", "ja, in den Warenkorb".",
+        "name": "add_selected_option_to_cart",
+        "parameters": {
+          "properties": {
+            "confirm": {
+              "description": "Pass true ONLY after the user confirmed the read-back.",
+              "type": "boolean",
+            },
+            "position": {
+              "description": "1-based position among the current picks.",
+              "type": "number",
+            },
+            "product_id": {
+              "description": "Product UUID, when known.",
+              "type": "string",
+            },
+            "title": {
+              "description": "Spoken product name.",
+              "type": "string",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Check the whole basket for duplicates, conflicts with saved preferences,
+declared allergens and availability problems before checkout. CALL WHEN
+the user says "check my basket", "is everything in my cart okay?",
+"prüf meinen Warenkorb".",
+        "name": "review_cart_suitability",
+        "parameters": {
+          "properties": {},
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Explain why a specific basket item is there (added by the user, the
+shopping agent, a reorder — with the recorded rationale). CALL WHEN the
+user asks "why is this in my basket?", "warum ist das in meinem
+Warenkorb?".",
+        "name": "explain_cart_item",
+        "parameters": {
+          "properties": {
+            "product_id": {
+              "description": "Product UUID, when known.",
+              "type": "string",
+            },
+            "title": {
+              "description": "Spoken product name.",
+              "type": "string",
+            },
+          },
+          "required": [],
           "type": "object",
         },
       },
