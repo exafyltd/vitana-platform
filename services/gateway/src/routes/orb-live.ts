@@ -1275,7 +1275,7 @@ function terminateExistingSessionsForUser(userId: string, excludeSessionId?: str
 // Cloud Run does NOT auto-set GOOGLE_CLOUD_PROJECT env var.
 // Fallback to hardcoded project ID for Cloud Run deployments.
 // A2 (orb-live-refactor): VERTEX_PROJECT_ID + VERTEX_LOCATION lifted to orb/live/config.ts.
-import { VERTEX_PROJECT_ID, VERTEX_LOCATION } from '../orb/live/config';
+import { VERTEX_PROJECT_ID, VERTEX_LOCATION, GEMINI_LIVE_USE_API_KEY } from '../orb/live/config';
 // A1 (orb-live-refactor): VERTEX_LIVE_MODEL + VERTEX_TTS_MODEL lifted to
 // orb/live/protocol.ts. Same values, same callers; the constants now live
 // in a shared module so A3/A7/A9 don't have to re-declare them.
@@ -1355,6 +1355,10 @@ import {
 // A8.3b.2 will rename / remove this adapter; for now it remains the active
 // call path so frontends + transparent reconnect see no behavior change.
 import { VertexLiveClient } from '../orb/live/upstream/vertex-live-client';
+// BOOTSTRAP-AWS-STAGING-VALIDATION: alternate upstream for non-GCP compute
+// (AWS) where Vertex OAuth ADC has no metadata server to resolve from. See
+// GEMINI_LIVE_USE_API_KEY (orb/live/config.ts) for the selection switch.
+import { GeminiApiKeyLiveClient } from '../orb/live/upstream/gemini-api-key-live-client';
 // L1 (VTID-02976): provider-selection plumbing for the upstream live client.
 // Pure selector — `connectToLiveAPI` reads env + voice.active_provider, then
 // asks the selector which provider to use, then emits OASIS events for the
@@ -6344,6 +6348,11 @@ async function connectToLiveAPI(
   if (!VERTEX_PROJECT_ID || !VERTEX_LOCATION) {
     throw new Error('Missing VERTEX_PROJECT_ID or VERTEX_LOCATION');
   }
+  // BOOTSTRAP-AWS-STAGING-VALIDATION: fail fast if the api_key transport is
+  // selected but no key is configured — same shape as the ADC check above.
+  if (GEMINI_LIVE_USE_API_KEY && !GEMINI_API_KEY) {
+    throw new Error('GEMINI_LIVE_TRANSPORT=api_key but GOOGLE_GEMINI_API_KEY is missing');
+  }
 
   // L1 (VTID-02976) / L2.1 (VTID-02980): consult the upstream provider
   // selector. The selector is a pure function — it never reads env / DB /
@@ -6475,6 +6484,7 @@ async function connectToLiveAPI(
   // to log what we're about to ask it to do.
   console.log(`[VTID-01219] Using model: ${VERTEX_LIVE_MODEL}`);
   console.log(`[VTID-01219] Project: ${VERTEX_PROJECT_ID}, Location: ${VERTEX_LOCATION}`);
+  console.log(`[BOOTSTRAP-AWS-STAGING-VALIDATION] Live API transport: ${GEMINI_LIVE_USE_API_KEY ? 'api_key (AI Studio)' : 'vertex (OAuth/ADC)'}`);
 
   // A8.3b.1 (VTID-02971): the WS lifecycle now flows through the A7
   // UpstreamLiveClient boundary via VertexLiveClient. The orb-specific
@@ -6515,7 +6525,13 @@ async function connectToLiveAPI(
   );
 
   return new Promise<WebSocket>(async (resolve, reject) => {
-    const vertex = new VertexLiveClient();
+    // BOOTSTRAP-AWS-STAGING-VALIDATION: both classes implement the same
+    // UpstreamLiveClient surface (see gemini-api-key-live-client.ts header
+    // for why a sibling class rather than a subclass) — every `vertex.*`
+    // call below works unchanged regardless of which one is selected.
+    const vertex: VertexLiveClient | GeminiApiKeyLiveClient = GEMINI_LIVE_USE_API_KEY
+      ? new GeminiApiKeyLiveClient()
+      : new VertexLiveClient();
 
     // VTID-03273 Pillar B — capture the rolling native session-resumption handle.
     // Stored on the session (the durable Conversation), replayed in the next
@@ -7006,7 +7022,11 @@ async function connectToLiveAPI(
         vadSilenceMs: session.vadSilenceMs,
         systemInstruction: 'overridden',
         // A8.3b.2: VertexLiveClient.connect() invokes this directly.
-        getAccessToken,
+        // BOOTSTRAP-AWS-STAGING-VALIDATION: api_key transport reuses this
+        // same provider-neutral credential hook (types.ts documents it as
+        // "Other providers may use it for API keys / JWTs") to hand back
+        // the raw Gemini API key instead of an OAuth token.
+        getAccessToken: GEMINI_LIVE_USE_API_KEY ? async () => GEMINI_API_KEY : getAccessToken,
         connectTimeoutMs: 15000,
         customSetupMessage: buildOrbVertexSetupEnvelope,
       });
