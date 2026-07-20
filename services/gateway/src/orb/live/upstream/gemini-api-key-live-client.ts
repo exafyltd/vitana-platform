@@ -67,8 +67,14 @@ export interface GeminiApiKeyLiveClientDeps {
 const DEFAULT_CONNECT_TIMEOUT_MS = 15_000;
 const DEFAULT_INPUT_MIME = 'audio/pcm;rate=16000';
 const DEFAULT_OUTPUT_MIME = `audio/pcm;rate=${AUDIO_OUT_RATE_HZ}`;
+// BOOTSTRAP-AWS-STAGING-VALIDATION: v1beta, not v1alpha. Confirmed via
+// Command Hub's own model dropdown (frontend/command-hub/app.js:
+// `{ value: 'gemini-2.0-flash-live-001', label: 'Gemini 2.0 Flash Live' }`)
+// that this model name is correct — v1alpha rejected it with "not found for
+// API version v1alpha" specifically, pointing at the API version being
+// wrong rather than the model name.
 const AI_STUDIO_LIVE_WS_BASE =
-  'wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent';
+  'wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent';
 
 /** Build the AI Studio Live API WebSocket URL. Exposed for tests. */
 export function buildAiStudioBidiGenerateContentUrl(apiKey: string): string {
