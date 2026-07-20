@@ -507,8 +507,17 @@ describe('VTID-01225: Fact Parsing Edge Cases', () => {
       tenant_id: 't', user_id: 'u', session_id: 's',
     });
 
-    // Should have called Gemini API as fallback
-    const geminiCalls = fetchCalls.filter(c => c.url.includes('generativelanguage.googleapis.com'));
+    // Should have called Gemini API as fallback for EXTRACTION specifically.
+    // Filtered on ':generateContent' (not just the bare domain) because
+    // successful extraction now fires a fire-and-forget fact-embedding call
+    // (generateFactEmbeddingAsync) that ALSO falls back to Gemini when
+    // OPENAI_API_KEY isn't set (as here) — via a different endpoint,
+    // ':embedContent'. A bare-domain filter would flakily double-count
+    // depending on whether that fire-and-forget promise resolved before
+    // this assertion runs.
+    const geminiCalls = fetchCalls.filter(
+      (c) => c.url.includes('generativelanguage.googleapis.com') && c.url.includes(':generateContent'),
+    );
     expect(geminiCalls.length).toBe(1);
 
     // Should still persist the fact

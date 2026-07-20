@@ -852,6 +852,17 @@ const MEMORY_INTEL: AutomationDefinition[] = [
     targetRoles: [...MEMBER_ROLES],
     handler: 'runHealthCorrelationInsights',
   },
+  {
+    // Mirrors each user's own community-feed posts (profile_posts, any
+    // origin) into memory_items so Vitana can reference them by name
+    // ("the post you wrote about X") instead of never mentioning them.
+    // Hourly with a 65-min lookback; dedup makes overlap safe.
+    id: 'AP-0913', name: 'Own Post Memory Capture', domain: 'memory-intelligence',
+    status: 'IMPLEMENTED', priority: 'P2', triggerType: 'cron',
+    triggerConfig: { cronExpression: '15 * * * *' }, // hourly at :15
+    targetRoles: [...MEMBER_ROLES],
+    handler: 'runOwnPostMemoryCapture',
+  },
 ];
 
 // =============================================================================

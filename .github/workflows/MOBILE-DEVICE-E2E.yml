@@ -1,0 +1,93 @@
+# MOBILE-DEVICE-E2E — real-device-layer frontend testing via sim-use
+# (https://github.com/lycorp-jp/sim-use)
+#
+# Runs the Vitana web frontend on a REAL iOS Simulator (macOS runner) and
+# drives it through the platform accessibility tree: opens the app in Safari,
+# logs in through the actual form, taps every bottom-nav tab, and captures a
+# screenshot + accessibility outline of every screen state.
+#
+# This complements (does not replace) the Playwright suites in e2e/ — those
+# run viewport *emulation* on Linux; this workflow exercises the real device
+# rendering + touch pipeline.
+#
+# Dispatch-only by design: macOS runners are expensive and the run hits a
+# deployed environment. No push/schedule trigger.
+#
+# Android note: sim-use also drives Android emulators/devices, but the CLI
+# itself needs a macOS host and GitHub-hosted macOS runners cannot reliably
+# host an Android emulator. Run Android locally on a Mac:
+#   sim-use android init --device <serial>
+#   cd e2e && npm run test:device:android
+name: MOBILE-DEVICE-E2E
+
+on:
+  workflow_dispatch:
+    inputs:
+      url:
+        description: 'Frontend URL to test'
+        required: false
+        default: 'https://preview.vitanaland.com'
+      flow:
+        description: 'Flow to run'
+        type: choice
+        options: [smoke, observe]
+        default: smoke
+      device_name:
+        description: 'Simulator device name (substring match)'
+        required: false
+        default: 'iPhone 16'
+
+jobs:
+  ios-simulator:
+    name: iOS Simulator (${{ inputs.device_name }})
+    runs-on: macos-15
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install sim-use
+        run: |
+          brew tap lycorp-jp/tap || { brew trust lycorp-jp/tap && brew tap lycorp-jp/tap; }
+          brew install lycorp-jp/tap/sim-use
+          sim-use --version
+
+      - name: Boot iOS Simulator
+        id: sim
+        run: |
+          UDID=$(xcrun simctl list devices available -j | python3 -c "
+          import json, sys
+          data = json.load(sys.stdin)
+          sims = [d for l in data['devices'].values() for d in l if 'iPhone' in d['name']]
+          prefer = [d for d in sims if '${{ inputs.device_name }}' in d['name']]
+          pick = (prefer or sims)[-1]
+          print(pick['udid'])
+          ")
+          echo "Booting $UDID"
+          xcrun simctl boot "$UDID" || true
+          xcrun simctl bootstatus "$UDID" -b
+          echo "udid=$UDID" >> "$GITHUB_OUTPUT"
+
+      - name: Preflight (sim-use doctor)
+        run: cd e2e && npm run sim:doctor
+
+      - name: Run device flow
+        env:
+          TEST_USER_EMAIL: e2e-test@vitana.dev
+          TEST_USER_PASSWORD: ${{ secrets.TEST_USER_PASSWORD }}
+        run: |
+          cd e2e
+          node mobile-sim/run.mjs \
+            --platform ios \
+            --device "${{ steps.sim.outputs.udid }}" \
+            --url "${{ inputs.url }}" \
+            --flow "${{ inputs.flow }}" \
+            --out mobile-sim/artifacts/run
+
+      - name: Upload artifacts (screenshots + outlines + summary)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mobile-device-e2e-ios
+          path: e2e/mobile-sim/artifacts/
+          if-no-files-found: warn
+          retention-days: 14

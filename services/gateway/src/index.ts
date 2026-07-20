@@ -68,6 +68,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const { vtidRouter } = require('./routes/vtid');
   // VTID-03177 (PROFILE): RUM beacon receiver from vitana-v1 frontend
   const { rumBeaconRouter } = require('./routes/rum-beacon');
+  // VTID-SCREEN-LOAD-01: synthetic screen-load-time basic test — ingest +
+  // Command Hub Overview health check (independent of the RUM feature flag).
+  const { screenLoadHealthRouter } = require('./routes/screen-load-health');
   // VTID-03204 (Phase 1 W2): one-off staging-only admin endpoint for the
   // tenant_settings.data_export_ok consent flip. Hard-gated on isStaging
   // inside the router; mounted unconditionally because route registration
@@ -168,6 +171,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const publicProfileOgRouter = require('./routes/public-profile-og').default;
   // VTID-02000: Discover feed (lifecycle-aware default browse)
   const discoverFeedRouter = require('./routes/discover-feed').default;
+  // VTID-02950: Recommend & Earn — user product recommendations + commission stats
+  const discoverRecommendationsRouter = require('./routes/discover-recommendations').default;
   // VTID-02000: Maxina admin marketplace routes
   const adminMarketplaceRouter = require('./routes/admin-marketplace').default;
   // VTID-02000: Internal scheduler-authed sync trigger (shared secret, no user JWT)
@@ -468,8 +473,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const canaryTargetRouter = require('./routes/canary-target').default;
   // VTID-02031: Ops "Action Required" — pull surface mirroring Gchat pings
   const opsActionRequiredRouter = require('./routes/ops-action-required').default;
-  // BOOTSTRAP-35DAY-TRACKER: Training cycle tracker for System Overview
-  const trainingStatusRouter = require('./routes/training-status').default;
+  // DEV-COMHU-03404: Overview trend data — hourly oasis_events rollup for sparklines
+  const opsOverviewTimeseriesRouter = require('./routes/ops-overview-timeseries').default;
 
   // CORS setup - DEV-OASIS-0101
   setupCors(app);
@@ -647,6 +652,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   mountRouterSync(app, '/api/v1/vtid', vtidRouter, { owner: 'vtid' });
   // VTID-03177 (PROFILE): RUM beacon — POST /api/v1/rum/beacon
   mountRouterSync(app, '/api/v1/rum', rumBeaconRouter, { owner: 'rum-beacon' });
+  // VTID-SCREEN-LOAD-01: POST /api/v1/frontend/screen-load/report, GET /api/v1/frontend/screen-load/health
+  mountRouterSync(app, '/api/v1/frontend/screen-load', screenLoadHealthRouter, { owner: 'screen-load-health' });
   // VTID-03204 (Phase 1 W2): POST /api/v1/admin/staging/tenant-consent/flip
   mountRouterSync(app, '/api/v1/admin/staging', adminStagingRouter, { owner: 'admin-staging' });
   // BOOTSTRAP-SUPERVISOR-SUMMARY: GET /api/v1/supervisor/summary — one read-only
@@ -1014,6 +1021,7 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   // VTID-02000: Discover search + feed (unified marketplace query surface)
   mountRouterSync(app, '/api/v1/discover', discoverSearchRouter, { owner: 'discover-search' });
   mountRouterSync(app, '/api/v1/discover', discoverFeedRouter, { owner: 'discover-feed' });
+  mountRouterSync(app, '/api/v1/discover', discoverRecommendationsRouter, { owner: 'discover-recommendations' });
   // Public, auth-less profile lookup for crawler OG previews
   mountRouterSync(app, '/api/v1/public', publicProfileOgRouter, { owner: 'public-profile-og' });
   // VTID-02000: Maxina admin marketplace
@@ -1228,8 +1236,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   // VTID-02031: Ops Action Required — pull surface for Command Hub Overview
   mountRouterSync(app, '/api/v1/ops/action-required', opsActionRequiredRouter, { owner: 'ops-action-required' });
 
-  // BOOTSTRAP-35DAY-TRACKER: Training cycle tracker — Command Hub Overview "Training" section
-  mountRouterSync(app, '/api/v1/training', trainingStatusRouter, { owner: 'training-status' });
+  // DEV-COMHU-03404: Overview trend data — hourly oasis_events rollup for sparklines
+  mountRouterSync(app, '/api/v1/ops/overview-timeseries', opsOverviewTimeseriesRouter, { owner: 'ops-overview-timeseries' });
 
   // VTID-01097: Diary Templates - guided diary templates for memory quality
   mountRouterSync(app, '/api/v1/diary', diaryRouter, { owner: 'diary' });

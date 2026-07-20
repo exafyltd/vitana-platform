@@ -923,6 +923,10 @@ export type CicdEventType =
   // Inert in prod until FEATURE_LATENCY_TELEMETRY_ENV is flipped on.
   | 'voice.latency.measured'        // per-turn phased latency: audio_in_first_byte..audio_out_first_chunk
   | 'screen.latency.measured'       // per-route TTFB / Server-Timing breakdown from gateway
+  // VTID-SCREEN-LOAD-01: scheduled Playwright job's per-screen load-time
+  // result — independent of FEATURE_LATENCY_TELEMETRY_ENV, always live so
+  // Command Hub Overview has a signal even while RUM stays staging-only.
+  | 'screen.load.synthetic_test'    // synthetic mobile screen-load-time basic test result
   | 'eval.shadow.compared'          // shadow harness compared primary vs candidate model on one eval input
   | 'eval.coverage.report'          // periodic golden-corpus coverage report (replay-runner output)
   | 'dataset.extraction.completed'  // dataset-extraction cron finished one slice; metadata.rows / .target

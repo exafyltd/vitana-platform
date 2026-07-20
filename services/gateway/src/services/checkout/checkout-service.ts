@@ -33,6 +33,7 @@
 import { randomUUID } from 'crypto';
 import { getSupabase } from '../../lib/supabase';
 import { debitWalletForSpend } from '../wallet/spend-earning-service';
+import { creditRecommenderForOrder } from '../recommendation-commissions/credit-recommender';
 import type { WalletCurrency } from '../../types/wallet';
 
 export const VTID = 'VTID-03237';
@@ -363,6 +364,16 @@ export async function checkoutUniversalCart(input: CheckoutCartInput): Promise<C
       .in('external_order_id', walletExts);
     if (updRes.error) {
       console.error(`[${VTID}] order convert failed for checkout ${checkoutId}:`, updRes.error.message);
+    }
+
+    // 9a-ii. Recommendation-commission crediting — a no-op today for first-party
+    // orders (they don't carry commission_cents yet), but future-proofs the
+    // hook point if a margin-based commission is ever added for these SKUs.
+    for (const line of walletLines) {
+      if (!line.orderId) continue;
+      creditRecommenderForOrder(line.orderId).catch((e) =>
+        console.error(`[${VTID}] creditRecommenderForOrder failed (non-fatal):`, e)
+      );
     }
 
     walletOrder = {

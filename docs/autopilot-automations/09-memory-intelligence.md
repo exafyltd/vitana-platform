@@ -203,3 +203,15 @@ One LLM pass per active user (≥3 facts) connecting facts + routines + active g
 
 **What it does:**
 Deterministic (no-LLM, no hallucinated health claims) correlation rules over `vitana_index_scores` and `diary_entries`: pillar trends (≥10-point move over ~2 weeks) and diary lapses (silent week after a ≥3-entry week) become `health_insight_*` memory facts (provenance `system_observed`, confidence 0.9). Auto-superseded as the picture changes; surfaced through the felt-learning detector and woven into AP-0911 narratives.
+
+## AP-0913 — Own Post Memory Capture
+
+| Field | Value |
+|-------|-------|
+| **Status** | `IMPLEMENTED` |
+| **Priority** | `P2` |
+| **Trigger** | Cron, hourly at :15 |
+| **Handler** | `runOwnPostMemoryCapture` |
+
+**What it does:**
+BOOTSTRAP-MEMORY-DAILY-LEARNING: the community feed (`profile_posts`) never fed the assistant's memory at all, so Vitana could never reference a user's own post ("the post you wrote about X") — confirmed zero references to `profile_posts` anywhere in the extraction pipeline. Scans `profile_posts` created in the last 65 minutes (5-min overlap over the hourly cron cadence) for every origin — app UI posts and voice's `create_community_post` alike — and mirrors each into `memory_items` via `writeMemoryItemWithIdentity` (`source: 'system'`, `content_json: { kind: 'community_post', post_id }`, `occurred_at` = the post's own timestamp). Uses `memory_items` rather than a rolling `memory_facts` row because a feed of posts is naturally many-valued, and the existing EPISODIC fallback ladder in `memory-broker.ts` already retrieves `memory_items` by recency/importance with no further plumbing. Deduplicates against already-mirrored posts (`content_json->>post_id`) so the overlap window never double-writes.
