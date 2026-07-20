@@ -109,35 +109,36 @@ describe('BOOTSTRAP-AWS-STAGING-VALIDATION: GeminiApiKeyLiveClient', () => {
       );
     });
 
-    it('rewrites a Vertex-shaped model id to the bare AI Studio form', () => {
-      expect(
-        toAiStudioModelId(
-          'projects/lovable-vitana-vers1/locations/us-central1/publishers/google/models/gemini-live-2.5-flash-native-audio',
-        ),
-      ).toBe('models/gemini-live-2.5-flash-native-audio');
+    it('adds the models/ prefix to a bare model id', () => {
+      expect(toAiStudioModelId('gemini-2.0-flash-live-001')).toBe(
+        'models/gemini-2.0-flash-live-001',
+      );
     });
 
-    it('passes through an already-bare model id unchanged (idempotent)', () => {
-      expect(toAiStudioModelId('models/gemini-live-2.5-flash-native-audio')).toBe(
-        'models/gemini-live-2.5-flash-native-audio',
+    it('passes through an already-prefixed model id unchanged (idempotent)', () => {
+      expect(toAiStudioModelId('models/gemini-2.0-flash-live-001')).toBe(
+        'models/gemini-2.0-flash-live-001',
       );
     });
   });
 
-  describe('connect() sends the rewritten envelope', () => {
-    it('rewrites setup.model from the default builder before sending', async () => {
+  describe('connect() always overrides setup.model to the AI Studio catalog', () => {
+    it('overrides the Vertex-shaped model from the default builder', async () => {
       const socket = new MockSocket();
       const client = new GeminiApiKeyLiveClient({ createSocket: () => socket });
       await connectClient(client, socket);
 
       expect(client.getState()).toBe('open');
       const sentSetup = JSON.parse(socket.sent[0]);
-      expect(sentSetup.setup.model).toBe('models/gemini-live-2.5-flash-native-audio');
+      // baseOptions() sets model to a Vertex-catalog id (gemini-live-2.5-...) —
+      // confirmed unreachable via AI Studio's endpoint (code 1008). The client
+      // must always substitute its own AI_STUDIO_LIVE_MODEL, not derive from it.
+      expect(sentSetup.setup.model).toBe('models/gemini-2.0-flash-live-001');
       // Rest of the envelope is untouched — same builder as Vertex.
       expect(sentSetup.setup.generation_config.response_modalities).toEqual(['AUDIO']);
     });
 
-    it('rewrites setup.model from a customSetupMessage override too', async () => {
+    it('overrides the model from a customSetupMessage override too', async () => {
       const socket = new MockSocket();
       const client = new GeminiApiKeyLiveClient({ createSocket: () => socket });
       const options = baseOptions({
@@ -152,7 +153,7 @@ describe('BOOTSTRAP-AWS-STAGING-VALIDATION: GeminiApiKeyLiveClient', () => {
       await connectClient(client, socket, options);
 
       const sentSetup = JSON.parse(socket.sent[0]);
-      expect(sentSetup.setup.model).toBe('models/gemini-live-2.5-flash-native-audio');
+      expect(sentSetup.setup.model).toBe('models/gemini-2.0-flash-live-001');
       expect(sentSetup.setup.system_instruction.parts[0].text).toBe('persona override');
     });
 

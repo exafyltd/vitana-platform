@@ -21,17 +21,22 @@
  * and the AI Studio Live API share the same underlying BidiGenerateContent
  * proto definitions. The two concrete differences are:
  *   1. Auth: API key (`?key=`) instead of an OAuth `Authorization: Bearer`.
- *   2. Model id format: bare `models/{model}` instead of Vertex's
- *      `projects/{p}/locations/{l}/publishers/google/models/{model}` — the
- *      setup envelope built by callers (orb-live.ts's `customSetupMessage`)
- *      is Vertex-shaped, so this client rewrites just the `model` field
- *      after building it, rather than forking the (large) envelope-builder.
+ *   2. Model: Vertex and AI Studio have SEPARATE model catalogs — Vertex's
+ *      Live model (gemini-live-2.5-flash-native-audio) is not reachable
+ *      through AI Studio's public endpoint at all (confirmed empirically:
+ *      code 1008, "models/gemini-live-2.5-flash-native-audio is not found
+ *      for API version v1alpha, or is not supported for bidiGenerateContent").
+ *      The setup envelope built by callers (orb-live.ts's
+ *      `customSetupMessage`) is Vertex-shaped, so this client always
+ *      overrides `setup.model` to AI_STUDIO_LIVE_MODEL after building it,
+ *      rather than forking the (large) envelope-builder.
  *
- * UNVERIFIED IN PRODUCTION: this path has not yet been exercised against a
- * live ORB session. Confirm in AWS CloudWatch logs (`/vitana/gateway`) that
- * a real session reaches `setup_complete` (this client's `connect()`
- * resolving) rather than an auth/handshake error before treating AWS ORB
- * voice as fixed.
+ * CONFIRMED on AWS staging (2026-07-20): a real ORB session reaches a
+ * genuine WebSocket handshake with Google's AI Studio Live API — the ADC
+ * blocker is gone. The model catalog mismatch above was the next blocker
+ * found via that same live test; AI_STUDIO_LIVE_MODEL is the fix, NOT yet
+ * re-verified end-to-end (audio/setup_complete) — confirm in CloudWatch
+ * logs before treating AWS ORB voice as fixed.
  */
 
 import WebSocket from 'ws';
@@ -52,6 +57,7 @@ import type {
 import { AUDIO_OUT_RATE_HZ } from '../protocol';
 import { buildSetupMessage, parseDurationMs } from './vertex-live-client';
 import type { VertexWebSocketLike } from './vertex-live-client';
+import { AI_STUDIO_LIVE_MODEL } from '../config';
 
 export interface GeminiApiKeyLiveClientDeps {
   /** Factory for the underlying socket. Defaults to a real `ws` connection. */
@@ -70,13 +76,13 @@ export function buildAiStudioBidiGenerateContentUrl(apiKey: string): string {
 }
 
 /**
- * Rewrite a Vertex-shaped `setup.model` (`projects/.../models/{name}`) to
- * the bare AI Studio form (`models/{name}`). Already-bare values pass
- * through unchanged.
+ * Ensure an AI Studio model id carries the required `models/` prefix.
+ * Vertex and AI Studio have separate model catalogs (see file header) —
+ * this does NOT derive the id from a Vertex model string; callers must
+ * pass the actual AI-Studio-catalog model name (AI_STUDIO_LIVE_MODEL).
  */
-export function toAiStudioModelId(vertexModelId: string): string {
-  const name = vertexModelId.split('/').pop() || vertexModelId;
-  return `models/${name}`;
+export function toAiStudioModelId(model: string): string {
+  return model.startsWith('models/') ? model : `models/${model}`;
 }
 
 /**
@@ -194,9 +200,12 @@ export class GeminiApiKeyLiveClient implements UpstreamLiveClient {
           const envelope = options.customSetupMessage
             ? await Promise.resolve(options.customSetupMessage())
             : buildSetupMessage(options);
+          // Always override to AI Studio's own model catalog — the
+          // envelope's model field is Vertex-shaped and Vertex's Live
+          // model is not reachable through this endpoint (see file header).
           const setup = (envelope as { setup?: Record<string, unknown> }).setup;
-          if (setup && typeof setup.model === 'string') {
-            setup.model = toAiStudioModelId(setup.model);
+          if (setup) {
+            setup.model = toAiStudioModelId(AI_STUDIO_LIVE_MODEL);
           }
           ws.send(JSON.stringify(envelope));
         } catch (err) {
