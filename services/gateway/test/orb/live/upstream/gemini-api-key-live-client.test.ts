@@ -170,6 +170,21 @@ describe('BOOTSTRAP-AWS-STAGING-VALIDATION: GeminiApiKeyLiveClient', () => {
     });
   });
 
+  describe('handshake-close diagnostics', () => {
+    it('rejects with the close reason text when the server closes before setup_complete', async () => {
+      const socket = new MockSocket();
+      const client = new GeminiApiKeyLiveClient({ createSocket: () => socket });
+      const connectPromise = client.connect(baseOptions());
+      await new Promise((resolve) => setImmediate(resolve));
+      socket.fireOpen();
+      await new Promise((resolve) => setImmediate(resolve));
+      socket.fireClose(1008, 'invalid_argument: setup.model unsupported');
+      await expect(connectPromise).rejects.toThrow(
+        'Live API closed during handshake (code=1008): invalid_argument: setup.model unsupported',
+      );
+    });
+  });
+
   describe('dispatch + close parity with VertexLiveClient', () => {
     it('forwards audio output and tool calls after connect', async () => {
       const socket = new MockSocket();
