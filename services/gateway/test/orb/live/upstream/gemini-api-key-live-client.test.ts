@@ -110,14 +110,14 @@ describe('BOOTSTRAP-AWS-STAGING-VALIDATION: GeminiApiKeyLiveClient', () => {
     });
 
     it('adds the models/ prefix to a bare model id', () => {
-      expect(toAiStudioModelId('gemini-2.0-flash-live-001')).toBe(
-        'models/gemini-2.0-flash-live-001',
+      expect(toAiStudioModelId('gemini-2.5-flash-native-audio-latest')).toBe(
+        'models/gemini-2.5-flash-native-audio-latest',
       );
     });
 
     it('passes through an already-prefixed model id unchanged (idempotent)', () => {
-      expect(toAiStudioModelId('models/gemini-2.0-flash-live-001')).toBe(
-        'models/gemini-2.0-flash-live-001',
+      expect(toAiStudioModelId('models/gemini-2.5-flash-native-audio-latest')).toBe(
+        'models/gemini-2.5-flash-native-audio-latest',
       );
     });
   });
@@ -133,7 +133,7 @@ describe('BOOTSTRAP-AWS-STAGING-VALIDATION: GeminiApiKeyLiveClient', () => {
       // baseOptions() sets model to a Vertex-catalog id (gemini-live-2.5-...) —
       // confirmed unreachable via AI Studio's endpoint (code 1008). The client
       // must always substitute its own AI_STUDIO_LIVE_MODEL, not derive from it.
-      expect(sentSetup.setup.model).toBe('models/gemini-2.0-flash-live-001');
+      expect(sentSetup.setup.model).toBe('models/gemini-2.5-flash-native-audio-latest');
       // Rest of the envelope is untouched — same builder as Vertex.
       expect(sentSetup.setup.generation_config.response_modalities).toEqual(['AUDIO']);
     });
@@ -153,7 +153,7 @@ describe('BOOTSTRAP-AWS-STAGING-VALIDATION: GeminiApiKeyLiveClient', () => {
       await connectClient(client, socket, options);
 
       const sentSetup = JSON.parse(socket.sent[0]);
-      expect(sentSetup.setup.model).toBe('models/gemini-2.0-flash-live-001');
+      expect(sentSetup.setup.model).toBe('models/gemini-2.5-flash-native-audio-latest');
       expect(sentSetup.setup.system_instruction.parts[0].text).toBe('persona override');
     });
 

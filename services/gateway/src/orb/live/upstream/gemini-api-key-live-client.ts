@@ -21,22 +21,24 @@
  * and the AI Studio Live API share the same underlying BidiGenerateContent
  * proto definitions. The two concrete differences are:
  *   1. Auth: API key (`?key=`) instead of an OAuth `Authorization: Bearer`.
- *   2. Model: Vertex and AI Studio have SEPARATE model catalogs — Vertex's
- *      Live model (gemini-live-2.5-flash-native-audio) is not reachable
- *      through AI Studio's public endpoint at all (confirmed empirically:
- *      code 1008, "models/gemini-live-2.5-flash-native-audio is not found
- *      for API version v1alpha, or is not supported for bidiGenerateContent").
- *      The setup envelope built by callers (orb-live.ts's
- *      `customSetupMessage`) is Vertex-shaped, so this client always
- *      overrides `setup.model` to AI_STUDIO_LIVE_MODEL after building it,
- *      rather than forking the (large) envelope-builder.
+ *   2. Model: Vertex and AI Studio have SEPARATE model catalogs. Neither
+ *      Vertex's Live model (gemini-live-2.5-flash-native-audio) nor the
+ *      commonly-referenced gemini-2.0-flash-live-001 exist in this key's AI
+ *      Studio catalog — confirmed via GET /api/v1/debug/ai-studio-models
+ *      (a temporary ListModels proxy, routes/debug-ai-studio-models.ts),
+ *      which showed exactly one bidiGenerateContent-capable model out of
+ *      ~50: gemini-2.5-flash-native-audio-latest. The setup envelope built
+ *      by callers (orb-live.ts's `customSetupMessage`) is Vertex-shaped, so
+ *      this client always overrides `setup.model` to AI_STUDIO_LIVE_MODEL
+ *      after building it, rather than forking the (large) envelope-builder.
  *
  * CONFIRMED on AWS staging (2026-07-20): a real ORB session reaches a
  * genuine WebSocket handshake with Google's AI Studio Live API — the ADC
- * blocker is gone. The model catalog mismatch above was the next blocker
- * found via that same live test; AI_STUDIO_LIVE_MODEL is the fix, NOT yet
- * re-verified end-to-end (audio/setup_complete) — confirm in CloudWatch
- * logs before treating AWS ORB voice as fixed.
+ * blocker is gone. Two more model-name guesses failed after that (both
+ * v1alpha and v1beta rejected them); ListModels ground truth resolved it.
+ * AI_STUDIO_LIVE_MODEL = gemini-2.5-flash-native-audio-latest is the fix,
+ * NOT yet re-verified end-to-end (audio/setup_complete) — confirm in
+ * CloudWatch logs before treating AWS ORB voice as fixed.
  */
 
 import WebSocket from 'ws';
@@ -67,12 +69,10 @@ export interface GeminiApiKeyLiveClientDeps {
 const DEFAULT_CONNECT_TIMEOUT_MS = 15_000;
 const DEFAULT_INPUT_MIME = 'audio/pcm;rate=16000';
 const DEFAULT_OUTPUT_MIME = `audio/pcm;rate=${AUDIO_OUT_RATE_HZ}`;
-// BOOTSTRAP-AWS-STAGING-VALIDATION: v1beta, not v1alpha. Confirmed via
-// Command Hub's own model dropdown (frontend/command-hub/app.js:
-// `{ value: 'gemini-2.0-flash-live-001', label: 'Gemini 2.0 Flash Live' }`)
-// that this model name is correct — v1alpha rejected it with "not found for
-// API version v1alpha" specifically, pointing at the API version being
-// wrong rather than the model name.
+// BOOTSTRAP-AWS-STAGING-VALIDATION: v1beta. ListModels ground truth (see
+// file header) confirmed the same bidiGenerateContent-capable model shows
+// up identically under v1alpha and v1beta for this key — v1beta chosen as
+// AI Studio's documented, non-alpha surface.
 const AI_STUDIO_LIVE_WS_BASE =
   'wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent';
 
