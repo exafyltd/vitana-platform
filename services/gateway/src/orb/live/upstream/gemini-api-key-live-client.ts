@@ -260,7 +260,16 @@ export class GeminiApiKeyLiveClient implements UpstreamLiveClient {
         if (!settled) {
           settled = true;
           this.clearConnectTimeout();
-          reject(new Error(`Live API closed during handshake (code=${code})`));
+          // Include the close reason text (when the server sent one) so a
+          // handshake failure is diagnosable from the rejected error message
+          // alone — this is a NEW, unverified provider integration, so
+          // guessing at causes from a bare close code is not good enough.
+          const reasonText = reason?.toString?.();
+          reject(
+            new Error(
+              `Live API closed during handshake (code=${code})${reasonText ? `: ${reasonText}` : ''}`,
+            ),
+          );
         }
       });
     });

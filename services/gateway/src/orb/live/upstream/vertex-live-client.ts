@@ -303,7 +303,16 @@ export class VertexLiveClient implements UpstreamLiveClient {
             );
             return;
           }
-          reject(new Error(`Live API closed during handshake (code=${code})`));
+          // BOOTSTRAP-AWS-STAGING-VALIDATION: include the close reason text
+          // (when the server sent one) so a handshake failure other than
+          // the 1007/1009 size case above is diagnosable from the rejected
+          // error message alone, instead of just a bare code.
+          const reasonText = reason?.toString?.();
+          reject(
+            new Error(
+              `Live API closed during handshake (code=${code})${reasonText ? `: ${reasonText}` : ''}`,
+            ),
+          );
         }
       });
     });
