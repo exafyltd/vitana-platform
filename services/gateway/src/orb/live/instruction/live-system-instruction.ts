@@ -402,6 +402,21 @@ export function buildLiveSystemInstruction(
   // wellness companion. Default (undefined or 'vitanaland') is unchanged
   // behavior — the existing community persona.
   surface?: string | null,
+  // BOOTSTRAP-AWS-STAGING-VALIDATION: drop the redundant `## AVAILABLE TOOLS`
+  // prose directory (see renderAvailableToolsSection call below) for callers
+  // whose transport already carries the structured function_declarations in
+  // the setup/session envelope AND doesn't need the LiveKit-only workaround
+  // this block exists for (reason #1 at the call site: livekit-plugins-google
+  // doesn't fully serialize @function_tool metadata onto the wire). Both the
+  // Vertex and AI Studio (API-key) raw-WebSocket paths always send structured
+  // declarations, so the prose block is genuinely redundant text there — on a
+  // heavy-tool-catalog user (250+ tools) it alone can run well past 100 KB,
+  // which is what pushed the aggregate system_instruction over AI Studio's
+  // real context budget and caused a code=1007 "invalid argument" close on
+  // the very first client_content send (setup itself is accepted). Passed
+  // true only for the AI Studio transport for now — Vertex keeps existing
+  // behavior unchanged pending a decision to trim it there too.
+  omitToolsProse?: boolean,
 ): string {
   const languageNames: Record<string, string> = {
     'en': 'English',
@@ -1363,7 +1378,7 @@ M. DIARY LOGGING IS A TOOL CALL, NOT A NAVIGATION. (VTID-01983)
     currentRoute ?? undefined,
     activeRole ?? undefined,
   );
-  if (toolsBlock) {
+  if (toolsBlock && !omitToolsProse) {
     instruction += `\n\n## AVAILABLE TOOLS\n\nYou have the following tools available. Call the matching tool immediately when the user asks about anything in its description — do NOT say "I don't have access" or "I can't do that". Tools you didn't see in your own function-declarations array but DO see described below are still callable; the runtime resolves the call through the shared dispatcher. Never invent a tool name not listed here.\n\n${toolsBlock}`;
   }
 

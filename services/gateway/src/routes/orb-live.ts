@@ -6900,6 +6900,13 @@ async function connectToLiveAPI(
                         // VTID-01967: Canonical Vitana ID handle (already resolved
                         // by optionalAuth → resolveVitanaId on session start).
                         session.identity?.vitana_id ?? null,
+                        undefined, // omitGreetingPolicy — unchanged (Vertex/AI Studio still need it)
+                        undefined, // surface — unchanged (route-based heuristic)
+                        // BOOTSTRAP-AWS-STAGING-VALIDATION: drop the redundant
+                        // `## AVAILABLE TOOLS` prose block on the AI Studio
+                        // transport only — see buildLiveSystemInstruction's
+                        // omitToolsProse param comment. Vertex keeps it.
+                        GEMINI_LIVE_USE_API_KEY,
                       ))) as string
             }]
           },
