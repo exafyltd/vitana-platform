@@ -1,0 +1,11 @@
+{
+  "label": "aws",
+  "gateway": "https://vitana-alb-prod-1579322953.eu-central-1.elb.amazonaws.com",
+  "frontend": "https://vitana-alb-prod-1579322953.eu-central-1.elb.amazonaws.com/community",
+  "captured_at": "2026-07-16T15:31:40Z",
+  "health_meta": {
+    "http_code": 503,
+    "content_type": "text/html",
+    "time_total": 0.868948
+  }
+}
