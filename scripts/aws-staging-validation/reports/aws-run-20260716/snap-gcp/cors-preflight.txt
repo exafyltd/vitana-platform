@@ -1,0 +1,6 @@
+HTTP/1.1 200 Connection Established
+HTTP/2 204 
+access-control-allow-origin: https://preview.vitanaland.com
+access-control-allow-headers: Authorization,Content-Type,apikey,X-Vitana-Active-Role,X-Vitana-Tenant,X-Vitana-User,X-User-ID
+access-control-allow-methods: GET,POST,PUT,PATCH,DELETE,OPTIONS
+access-control-max-age: 86400

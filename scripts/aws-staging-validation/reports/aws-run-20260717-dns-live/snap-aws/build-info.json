@@ -1,0 +1,9 @@
+{
+  "ok": true,
+  "env": "staging",
+  "cloud_run_service": null,
+  "cloud_run_revision": null,
+  "git_commit": null,
+  "booted_at": "2026-07-16T16:18:20.337Z",
+  "marker": null
+}
