@@ -44,17 +44,17 @@ export const GEMINI_LIVE_USE_API_KEY =
 
 /**
  * BOOTSTRAP-AWS-STAGING-VALIDATION: model id for the api_key (AI Studio)
- * transport. Confirmed empirically on AWS staging that Vertex's own Live
- * model (gemini-live-2.5-flash-native-audio) is NOT reachable through
- * Google's public v1alpha bidiGenerateContent endpoint — the handshake
- * closes with code 1008 and the reason text "models/gemini-live-2.5-flash-
- * native-audio is not found for API version v1alpha, or is not supported
- * for bidiGenerateContent." Vertex AI and AI Studio Live have separate
- * model catalogs; this is AI Studio's publicly documented Live model.
+ * transport. Neither Vertex's Live model (gemini-live-2.5-flash-native-audio)
+ * nor the commonly-referenced gemini-2.0-flash-live-001 are reachable through
+ * this key's AI Studio catalog (confirmed via GET /api/v1/debug/ai-studio-models,
+ * a temporary ListModels proxy — see routes/debug-ai-studio-models.ts). Of the
+ * ~50 models GOOGLE_GEMINI_API_KEY can see under both v1alpha and v1beta,
+ * exactly one supports bidiGenerateContent: gemini-2.5-flash-native-audio-latest.
+ * Vertex AI and AI Studio Live have separate model catalogs.
  * Override via env var if Google's catalog changes without a redeploy.
  */
 export const AI_STUDIO_LIVE_MODEL =
-  process.env.AI_STUDIO_LIVE_MODEL || 'gemini-2.0-flash-live-001';
+  process.env.AI_STUDIO_LIVE_MODEL || 'gemini-2.5-flash-native-audio-latest';
 
 /**
  * Live (ORB voice) session timeout. After 30 minutes of inactivity the
