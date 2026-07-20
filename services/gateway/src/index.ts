@@ -1,3 +1,4 @@
+import './lib/gcp-adc-bootstrap'; // must run before any GoogleAuth()/Vertex client is constructed
 import express from 'express';
 import path from 'path';
 import fs from 'fs';
