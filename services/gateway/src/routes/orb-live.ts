@@ -9108,7 +9108,6 @@ async function generateMemoryEnhancedSystemInstruction(
   try {
     if (effectiveIdentity.user_id) {
       const { getUserTodayEvents, getUserUpcomingEvents, getCalendarGaps } = await import('../services/calendar-service');
-      const { getJourneyStage } = await import('../services/journey-calendar-mapper');
       const calRole = session.role || 'community';
       const [todayEvents, upcomingEvents, gaps] = await Promise.all([
         getUserTodayEvents(effectiveIdentity.user_id, calRole),
@@ -9146,11 +9145,23 @@ async function generateMemoryEnhancedSystemInstruction(
         }
       }
 
-      // Journey stage
+      // Journey stage \u2014 canonical day_in_journey (same source the ORB
+      // greeting and My Journey screen read). The old journey-calendar-mapper
+      // getJourneyStage() call here passed `new Date()` where it expected
+      // the user's REGISTRATION date, so `Date.now() - Date.now()` always
+      // floored to 0 \u2014 every live session was told "Journey: Day 0 of 90",
+      // regardless of the user's real tenure.
       try {
-        const journeyStage = getJourneyStage(new Date());
-        if (journeyStage) {
-          calLines += `\nJourney: Day ${journeyStage.day_number} of ${journeyStage.total_days} \u2014 "${journeyStage.wave_name}"\n`;
+        const SUPABASE_URL = process.env.SUPABASE_URL;
+        const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
+        if (SUPABASE_URL && SUPABASE_SERVICE_ROLE) {
+          const { createClient: createJourneyClient } = await import('@supabase/supabase-js');
+          const { getJourneyStageForPrompt } = await import('../services/journey/journey-stage-for-prompt');
+          const journeySupabase = createJourneyClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE);
+          const journeyStage = await getJourneyStageForPrompt(journeySupabase, effectiveIdentity.user_id);
+          if (journeyStage) {
+            calLines += `\nJourney: Day ${journeyStage.day_number} of ${journeyStage.total_days} \u2014 "${journeyStage.wave_name}"\n`;
+          }
         }
       } catch {}
 
