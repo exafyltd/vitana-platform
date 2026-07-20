@@ -12,8 +12,8 @@
  *   - memory-broker         → GOVERNANCE block (dismissed recommendations
  *                             + proactive pauses = the do-not-repeat list)
  *   - life_compass          → active goals
- *   - user_preferences /    → explicit + inferred preferences
- *     user_inferred_preferences
+ *   - memory_facts          → explicit + inferred preferences
+ *     (user_preference_* keys, via preference-facts.ts)
  *
  * and returns ONE prompt block wrapped in an unmistakable sentinel:
  *
@@ -51,6 +51,7 @@ import {
 import {
   computeRetrievalRouterDecision,
 } from './retrieval-router';
+import { fetchPreferenceFacts } from './preference-facts';
 import { ContextLens, createContextLens } from '../types/context-lens';
 import {
   ContextPack,
@@ -239,62 +240,22 @@ async function fetchActiveGoals(userId: string): Promise<ActiveGoal[]> {
 }
 
 /**
- * Explicit + high-confidence inferred preferences. Same tables and
- * thresholds as user-context-profiler.fetchPreferences (explicit wins,
- * inferred only above 0.55 confidence).
+ * Explicit + high-confidence inferred preferences, read from memory_facts
+ * under the user_preference_* fact-key prefix (see preference-facts.ts).
+ * The previous sources — user_preferences key/value columns and the
+ * user_inferred_preferences table — never matched the live schema and
+ * silently returned nothing. Verified against production 2026-07-05.
  */
-async function fetchPreferences(userId: string): Promise<PreferenceEntry[]> {
+async function fetchPreferences(tenantId: string, userId: string): Promise<PreferenceEntry[]> {
   const supabase = getSupabase();
   if (!supabase) return [];
-  const out: PreferenceEntry[] = [];
-  const [explicit, inferred] = await Promise.all([
-    supabase
-      .from('user_preferences')
-      .select('category, preference_key, preference_value')
-      .eq('user_id', userId)
-      .limit(15),
-    supabase
-      .from('user_inferred_preferences')
-      .select('category, preference_key, preference_value, confidence')
-      .eq('user_id', userId)
-      .order('confidence', { ascending: false })
-      .limit(10),
-  ]);
-  if (!explicit.error && explicit.data) {
-    for (const row of explicit.data as any[]) {
-      out.push({
-        category: row.category ?? 'preference',
-        key: row.preference_key ?? '',
-        value: stringifyPreferenceValue(row.preference_value),
-        source: 'explicit',
-      });
-    }
-  }
-  const seen = new Set(out.map((p) => `${p.category}:${p.key}`));
-  if (!inferred.error && inferred.data) {
-    for (const row of inferred.data as any[]) {
-      if ((row.confidence ?? 0) < 0.55) continue;
-      const dedupeKey = `${row.category ?? 'preference'}:${row.preference_key ?? ''}`;
-      if (seen.has(dedupeKey)) continue; // explicit always wins
-      out.push({
-        category: row.category ?? 'preference',
-        key: row.preference_key ?? '',
-        value: stringifyPreferenceValue(row.preference_value),
-        source: 'inferred',
-      });
-    }
-  }
-  return out;
-}
-
-function stringifyPreferenceValue(v: unknown): string {
-  if (v == null) return '';
-  if (typeof v === 'string') return v;
-  try {
-    return JSON.stringify(v);
-  } catch {
-    return String(v);
-  }
+  const facts = await fetchPreferenceFacts(supabase, userId, { tenantId, limit: 15 });
+  return facts.map((f) => ({
+    category: 'preference',
+    key: f.key,
+    value: f.value,
+    source: f.source,
+  }));
 }
 
 /**
@@ -405,7 +366,33 @@ Before you answer, silently decide:
      or precision — never as proof that you remember.
   4. Is any memory conflicting or outdated? The user's CURRENT message
      always wins over stored memory; treat the stored version as stale
-     and do not argue from it.
+     and do not argue from it. When the user contradicts something you
+     remembered, briefly ACKNOWLEDGE the update in passing ("noted —
+     mornings now instead of evenings") so they feel the memory adapting,
+     then move on. Never defend the old version.
+  5. CONFIRMATION LOOP: if an [inferred] memory item is directly relevant
+     to this turn, you may weave ONE light confirmation into your answer
+     ("you mentioned once you prefer evening runs — is that still right?").
+     At most one confirmation per conversation, only when it fits
+     naturally, and never for [explicit] items the user already stated.
+  6. NAME SPECIFICS, DON'T GENERICIZE: when the memory above names a real
+     person, match, post, or event, say that name/detail instead of a
+     vague stand-in. "How are things with Mariia?" beats "how's your
+     friend?"; "your match with David" beats "one of your matches"; "the
+     post about your morning run" beats "something you posted." This is
+     what makes the user feel actually known, not just remembered-at.
+     Still respect privacy: never name a THIRD person's private detail
+     that isn't already visible to the user (e.g. don't disclose someone
+     else's health info), and never invent a name that isn't in memory.
+  7. OFFER TO ACT, DON'T JUST RECITE: when memory surfaces something the
+     user could naturally act on right now (reconnect with someone, follow
+     up on a plan, share an update), you may offer to do it FOR them in
+     one short line, in your own words — e.g. "Want me to ask Mariia when
+     you're meeting up again? Just say the word." If they say yes (or
+     something like "do it"), proceed to actually perform the action via
+     your tools; do not just acknowledge. At most one such offer per
+     conversation, only when it clearly fits the moment, never as a
+     checklist.
 
 Style rules for memory (non-negotiable):
 - Weave memory into your voice so the conversation feels deeply personal
@@ -429,6 +416,27 @@ Style rules for memory (non-negotiable):
 /**
  * Compose the full sentinel-wrapped memory block.
  */
+/**
+ * Cold-start curiosity (BOOTSTRAP-MEMORY-DAILY-LEARNING): with almost no
+ * stored facts there is nothing to be intelligent about — the median live
+ * user has ONE fact. Until the corpus exists, the assistant earns it: one
+ * natural get-to-know-you question per conversation, never an interview.
+ */
+export const COLD_START_FACTS_THRESHOLD = 5;
+
+function buildColdStartSection(): string {
+  return `<get_to_know_the_user>
+You still know very little about this user. Once per conversation, where it
+fits naturally, weave in ONE curious, caring question about their life —
+sleep and daily rhythm, the people who matter to them, what they are working
+toward, or what a good day looks like for them. Pick whichever is closest to
+the current topic. Never ask more than one, never make it feel like a form,
+and skip it entirely if the user is in the middle of something urgent.
+</get_to_know_the_user>
+
+`;
+}
+
 export function formatMemoryContextForPrompt(input: {
   context_pack: ContextPack;
   goals: ActiveGoal[];
@@ -438,13 +446,15 @@ export function formatMemoryContextForPrompt(input: {
   social_block?: string;
   skip_goal_section?: boolean;
   user_timezone?: string;
+  /** Cold start: almost no stored facts — inject the get-to-know directive. */
+  cold_start?: boolean;
 }): string {
   const packBlock = formatContextPackForLLM(input.context_pack, {
     userTimezone: input.user_timezone,
   });
 
   return `${MEMORY_CONTEXT_SENTINEL}
-${packBlock}${buildGoalsSection(input.goals, input.skip_goal_section === true)}${buildPreferencesSection(input.preferences)}${input.social_block || ''}${buildDoNotRepeatSection(input.do_not_repeat)}${buildSelfCheckSection()}
+${packBlock}${buildGoalsSection(input.goals, input.skip_goal_section === true)}${buildPreferencesSection(input.preferences)}${input.social_block || ''}${buildDoNotRepeatSection(input.do_not_repeat)}${input.cold_start ? buildColdStartSection() : ''}${buildSelfCheckSection()}
 ${MEMORY_CONTEXT_END_SENTINEL}
 `;
 }
@@ -579,7 +589,7 @@ export async function buildAssistantMemoryContext(
   const [packRes, goalsRes, prefsRes, dnrRes, socialRes] = await Promise.allSettled([
     buildContextPack(contextPackInput),
     communityRole ? fetchActiveGoals(input.user_id) : Promise.resolve([]),
-    fetchPreferences(input.user_id),
+    fetchPreferences(input.tenant_id, input.user_id),
     fetchDoNotRepeat(input.tenant_id, input.user_id),
     fetchSocial,
   ]);
@@ -635,6 +645,9 @@ export async function buildAssistantMemoryContext(
     do_not_repeat: doNotRepeat,
     skip_goal_section: input.skip_goal_section || !communityRole,
     user_timezone: input.user_timezone,
+    // Cold start only on community surfaces — dev/admin consoles must never
+    // get get-to-know-you prompts.
+    cold_start: communityRole && factsLoaded < COLD_START_FACTS_THRESHOLD,
   });
 
   const telemetry: MemoryTurnTelemetry = {

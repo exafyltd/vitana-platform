@@ -627,6 +627,105 @@ export async function listFactsByConfidence(
 // Async Embedding Generation (VTID-01225)
 // =============================================================================
 
+// BOOTSTRAP-MEMORY-DAILY-LEARNING: memory_facts.embedding is a FIXED
+// vector(768) column — confirmed via pg_attribute.atttypmod on staging
+// 2026-07-06 — a DIFFERENT dimension from memory_items.embedding's
+// vector(1536) (see embedding-service.ts, VTID-01978). Every write here
+// MUST use this dedicated 768-dim path, never the shared embedding-service
+// (which is correctly hardcoded to 1536 for memory_items and must stay
+// that way). Before this fix, every OpenAI-generated embedding (native
+// 1536d) was silently REJECTED by Postgres on the vector-dimension check —
+// confirmed on staging: an OpenAI batch call generated 100 valid 1536d
+// vectors, and all 100 UPDATEs failed, leaving embedded=0. The 21
+// historically-embedded facts matched Gemini's text-embedding-004 (native
+// 768d) fallback, which happened to be dimension-compatible by accident.
+const FACT_EMBEDDING_DIMENSIONS = 768;
+const FACT_EMBEDDING_OPENAI_MODEL = 'text-embedding-3-small';
+const FACT_EMBEDDING_GEMINI_MODEL = 'text-embedding-004';
+
+interface FactEmbeddingBatchResult {
+  ok: boolean;
+  embeddings?: number[][];
+  model?: string;
+  error?: string;
+}
+
+async function callOpenAIForFactEmbeddings(texts: string[]): Promise<FactEmbeddingBatchResult> {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) return { ok: false, error: 'OPENAI_API_KEY not configured' };
+  try {
+    const response = await fetch('https://api.openai.com/v1/embeddings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+      body: JSON.stringify({
+        input: texts,
+        model: FACT_EMBEDDING_OPENAI_MODEL,
+        // Matryoshka-truncated native output at the exact column width —
+        // NOT a naive post-hoc slice of a 1536d vector.
+        dimensions: FACT_EMBEDDING_DIMENSIONS,
+        encoding_format: 'float',
+      }),
+    });
+    if (!response.ok) {
+      const body = await response.text();
+      return { ok: false, error: `OpenAI ${response.status}: ${body.slice(0, 200)}` };
+    }
+    const data = (await response.json()) as { data?: Array<{ embedding?: number[] }> };
+    const embeddings = (data.data || []).map((d) => d.embedding).filter(Array.isArray) as number[][];
+    if (embeddings.length !== texts.length) {
+      return { ok: false, error: `expected ${texts.length} embeddings, got ${embeddings.length}` };
+    }
+    return { ok: true, embeddings, model: FACT_EMBEDDING_OPENAI_MODEL };
+  } catch (err: any) {
+    return { ok: false, error: err?.message ?? String(err) };
+  }
+}
+
+async function callGeminiForFactEmbeddings(texts: string[]): Promise<FactEmbeddingBatchResult> {
+  const apiKey = process.env.GOOGLE_GEMINI_API_KEY;
+  if (!apiKey) return { ok: false, error: 'GOOGLE_GEMINI_API_KEY not configured' };
+  try {
+    const embeddings: number[][] = [];
+    for (const text of texts) {
+      const response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${FACT_EMBEDDING_GEMINI_MODEL}:embedContent?key=${apiKey}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ content: { parts: [{ text }] } }),
+        },
+      );
+      if (!response.ok) {
+        const body = await response.text();
+        return { ok: false, error: `Gemini ${response.status}: ${body.slice(0, 200)}` };
+      }
+      const data = (await response.json()) as { embedding?: { values?: number[] } };
+      const vec = data.embedding?.values;
+      if (!Array.isArray(vec)) return { ok: false, error: 'missing embedding in Gemini response' };
+      embeddings.push(vec);
+    }
+    return { ok: true, embeddings, model: FACT_EMBEDDING_GEMINI_MODEL };
+  } catch (err: any) {
+    return { ok: false, error: err?.message ?? String(err) };
+  }
+}
+
+/**
+ * Generate 768-dim embeddings matching memory_facts.embedding's fixed
+ * vector(768) column. OpenAI (requested at native 768d) primary, Gemini
+ * text-embedding-004 (native 768d) fallback. Exported for AP-0910's batch
+ * backfill; also used internally by generateFactEmbeddingAsync below.
+ */
+export async function generateFactEmbeddings(texts: string[]): Promise<FactEmbeddingBatchResult> {
+  if (texts.length === 0) return { ok: true, embeddings: [] };
+  const openai = await callOpenAIForFactEmbeddings(texts);
+  if (openai.ok) return openai;
+  console.warn(`[${VTID}] OpenAI fact-embedding failed, trying Gemini: ${openai.error}`);
+  const gemini = await callGeminiForFactEmbeddings(texts);
+  if (gemini.ok) return gemini;
+  return { ok: false, error: `OpenAI: ${openai.error}; Gemini: ${gemini.error}` };
+}
+
 /**
  * Generate and store an embedding for a memory fact (async, non-blocking).
  *
@@ -646,13 +745,12 @@ export function generateFactEmbeddingAsync(
   // Fire-and-forget — don't await
   (async () => {
     try {
-      const { generateEmbedding } = await import('./embedding-service');
-
       // Embed the combined key+value for semantic searchability
       const textToEmbed = `${factKey}: ${factValue}`;
-      const result = await generateEmbedding(textToEmbed);
+      const result = await generateFactEmbeddings([textToEmbed]);
+      const embedding = result.embeddings?.[0];
 
-      if (!result.ok || !result.embedding) {
+      if (!result.ok || !embedding) {
         console.warn(`[${VTID}] Embedding generation failed for fact ${factId}: ${result.error}`);
         return;
       }
@@ -663,8 +761,8 @@ export function generateFactEmbeddingAsync(
       const { error } = await supabase
         .from('memory_facts')
         .update({
-          embedding: JSON.stringify(result.embedding),
-          embedding_model: result.model || 'text-embedding-3-small',
+          embedding: JSON.stringify(embedding),
+          embedding_model: result.model || FACT_EMBEDDING_OPENAI_MODEL,
           embedding_updated_at: new Date().toISOString(),
         })
         .eq('id', factId);
@@ -672,7 +770,7 @@ export function generateFactEmbeddingAsync(
       if (error) {
         console.warn(`[${VTID}] Embedding storage failed for fact ${factId}: ${error.message}`);
       } else {
-        console.log(`[${VTID}] Embedding stored for fact ${factId} (${result.latency_ms}ms)`);
+        console.log(`[${VTID}] Embedding stored for fact ${factId}`);
       }
     } catch (err: any) {
       console.warn(`[${VTID}] Async embedding failed for fact ${factId}: ${err.message}`);
@@ -690,5 +788,6 @@ export default {
   checkFactsForDerivedAnswer,
   formatFactsForContext,
   estimateFactsTokens,
-  generateFactEmbeddingAsync
+  generateFactEmbeddingAsync,
+  generateFactEmbeddings
 };

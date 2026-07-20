@@ -23,6 +23,12 @@ const ALLOWED_ORIGINS = [
   // login on staging while curl (no Origin header) looked healthy.
   "https://preview-gateway.vitanaland.com",                    // Staging gateway custom domain (Command Hub)
   "https://gateway-staging-q74ibpv6ia-uc.a.run.app",           // Staging gateway Cloud Run URL
+  // BOOTSTRAP-AWS-STAGING-VALIDATION: AWS staging stack (eu-central-1 ALB).
+  // Frontend origin, plus the gateway's OWN domain for Command Hub
+  // same-origin POSTs (same reasoning as BOOTSTRAP-STAGING-GATEWAY-CORS
+  // above for the GCP staging domains).
+  "https://preview-aws.vitanaland.com",                        // AWS staging frontend
+  "https://preview-aws-gateway.vitanaland.com",                // AWS staging gateway (Command Hub)
 ];
 
 // VTID-01226: Dynamic origin patterns for Lovable-hosted frontends

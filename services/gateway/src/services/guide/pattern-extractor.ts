@@ -11,9 +11,10 @@
  *   - Nightly (via existing scheduler.ts pattern — separate VTID to wire cron)
  *   - On-demand (e.g., after a major calendar update)
  *
- * STATUS: function is fully implemented + idempotent. Cron wiring is
- * deferred — for now the function is exposed and can be invoked manually
- * or by a future scheduled job.
+ * STATUS: fully implemented + idempotent. Wired to the nightly AP-0906
+ * automation (automation-registry.ts / automation-handlers/
+ * memory-intelligence.ts), which fans extractPatternsForUser out over
+ * users with recent calendar activity.
  */
 
 import { getSupabase } from '../../lib/supabase';
@@ -93,9 +94,12 @@ export async function extractPatternsForUser(userId: string): Promise<ExtractRes
 
   const sinceIso = new Date(Date.now() - LOOKBACK_DAYS * 86400000).toISOString();
 
+  // NOTE: no time_slot column here — the live calendar_events table does
+  // not have one, and PostgREST rejects the whole select when any column
+  // is missing (verified against production schema 2026-07-05).
   const { data: events, error } = await supabase
     .from('calendar_events')
-    .select('id, start_time, completion_status, status, event_type, wellness_tags, time_slot')
+    .select('id, start_time, completion_status, status, event_type, wellness_tags')
     .eq('user_id', userId)
     .gte('start_time', sinceIso);
 
@@ -111,7 +115,6 @@ export async function extractPatternsForUser(userId: string): Promise<ExtractRes
     status: string;
     event_type: string;
     wellness_tags: string[] | null;
-    time_slot: string | null;
   };
 
   const evList = (events as EvShape[]).filter((e) => e.start_time);

@@ -150,8 +150,7 @@ function makeFakeSupabase(overrides: Record<string, (select: string) => any[]> =
     user_muted_authors: () => [],
     user_hidden_posts: () => [],
     life_compass: () => [{ primary_goal: 'Improve sleep quality', category: 'sleep' }],
-    user_preferences: () => [],
-    user_inferred_preferences: () => [],
+    memory_facts: () => [],
     ...overrides,
   };
 
@@ -163,7 +162,7 @@ function makeFakeSupabase(overrides: Record<string, (select: string) => any[]> =
         selectCols = cols;
         return chain;
       };
-      for (const m of ['eq', 'in', 'or', 'gte', 'lt', 'is', 'neq', 'order', 'limit']) {
+      for (const m of ['eq', 'in', 'or', 'gte', 'lt', 'is', 'neq', 'order', 'limit', 'like']) {
         chain[m] = () => chain;
       }
       const resolve = () => {

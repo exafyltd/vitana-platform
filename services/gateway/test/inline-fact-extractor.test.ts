@@ -136,8 +136,60 @@ describe('VTID-01225: Inline Fact Extractor', () => {
       expect(firstWrite.body).toHaveProperty('p_fact_value');
       expect(firstWrite.body).toHaveProperty('p_entity');
       expect(firstWrite.body).toHaveProperty('p_fact_value_type');
+      // Facts without stated:true are contextual inferences → 0.7 base
+      // confidence (BOOTSTRAP-MEMORY-DAILY-LEARNING evidence-weighted model).
       expect(firstWrite.body).toHaveProperty('p_provenance_source', 'assistant_inferred');
-      expect(firstWrite.body).toHaveProperty('p_provenance_confidence', 0.80);
+      expect(firstWrite.body).toHaveProperty('p_provenance_confidence', 0.7);
+    });
+
+    it('writes stated facts as user_stated with higher base confidence', async () => {
+      vertexResponseText = JSON.stringify([
+        { fact_key: 'user_favorite_tea', fact_value: 'Earl Grey', entity: 'self', fact_value_type: 'text', stated: true },
+      ]);
+      await extractAndPersistFacts({
+        conversationText: 'User: My favorite tea is Earl Grey, definitely.\nAssistant: Noted!',
+        tenant_id: 'tenant-123',
+        user_id: 'user-456',
+        session_id: 'session-789',
+      });
+      const writeFactCalls = fetchCalls.filter(c => c.url.includes('write_fact'));
+      expect(writeFactCalls.length).toBe(1);
+      expect(writeFactCalls[0].body).toHaveProperty('p_provenance_source', 'user_stated');
+      expect(writeFactCalls[0].body).toHaveProperty('p_provenance_confidence', 0.9);
+    });
+
+    it('bumps confidence when the same key+value is re-mentioned (evidence-weighted)', async () => {
+      vertexResponseText = JSON.stringify([
+        { fact_key: 'user_favorite_tea', fact_value: 'Earl Grey', entity: 'self', fact_value_type: 'text', stated: true },
+      ]);
+      // The pre-write evidence lookup finds an existing identical fact @ 0.9.
+      mockFetch.mockImplementation(async (url: string, options?: RequestInit) => {
+        const method = options?.method || 'GET';
+        const body = options?.body ? JSON.parse(options.body as string) : undefined;
+        fetchCalls.push({ url, method, body });
+        if (url.includes('/rest/v1/memory_facts?')) {
+          return { ok: true, json: async () => ([{ fact_value: 'Earl Grey', provenance_confidence: 0.9 }]) };
+        }
+        if (url.includes('generateContent')) {
+          return {
+            ok: true,
+            json: async () => ({ candidates: [{ content: { parts: [{ text: vertexResponseText }] } }] }),
+          };
+        }
+        if (url.includes('/rest/v1/rpc/write_fact')) {
+          return { ok: true, json: async () => 'fact-uuid-123' };
+        }
+        return { ok: true, json: async () => ({}), text: async () => '' };
+      });
+      await extractAndPersistFacts({
+        conversationText: 'User: Like I said, Earl Grey is my favorite tea.\nAssistant: I remember!',
+        tenant_id: 'tenant-123',
+        user_id: 'user-456',
+        session_id: 'session-789',
+      });
+      const writeFactCalls = fetchCalls.filter(c => c.url.includes('rpc/write_fact'));
+      expect(writeFactCalls.length).toBe(1);
+      expect(writeFactCalls[0].body.p_provenance_confidence).toBeCloseTo(0.95);
     });
 
     it('should pass correct authorization headers to write_fact', async () => {
@@ -259,9 +311,11 @@ describe('VTID-01225: Inline Fact Extractor', () => {
         expect(typeof body.p_provenance_source).toBe('string');
         expect(typeof body.p_provenance_confidence).toBe('number');
 
-        // Verify provenance values
-        expect(body.p_provenance_source).toBe('assistant_inferred');
-        expect(body.p_provenance_confidence).toBe(0.80);
+        // Provenance is stated-aware: user_stated (0.9 base) for explicit
+        // statements, assistant_inferred (0.7 base) for contextual inference.
+        expect(['user_stated', 'assistant_inferred']).toContain(body.p_provenance_source);
+        expect(body.p_provenance_confidence).toBeGreaterThanOrEqual(0.7);
+        expect(body.p_provenance_confidence).toBeLessThanOrEqual(0.98);
       }
     });
 
@@ -453,8 +507,17 @@ describe('VTID-01225: Fact Parsing Edge Cases', () => {
       tenant_id: 't', user_id: 'u', session_id: 's',
     });
 
-    // Should have called Gemini API as fallback
-    const geminiCalls = fetchCalls.filter(c => c.url.includes('generativelanguage.googleapis.com'));
+    // Should have called Gemini API as fallback for EXTRACTION specifically.
+    // Filtered on ':generateContent' (not just the bare domain) because
+    // successful extraction now fires a fire-and-forget fact-embedding call
+    // (generateFactEmbeddingAsync) that ALSO falls back to Gemini when
+    // OPENAI_API_KEY isn't set (as here) — via a different endpoint,
+    // ':embedContent'. A bare-domain filter would flakily double-count
+    // depending on whether that fire-and-forget promise resolved before
+    // this assertion runs.
+    const geminiCalls = fetchCalls.filter(
+      (c) => c.url.includes('generativelanguage.googleapis.com') && c.url.includes(':generateContent'),
+    );
     expect(geminiCalls.length).toBe(1);
 
     // Should still persist the fact

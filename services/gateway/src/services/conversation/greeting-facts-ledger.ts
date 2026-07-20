@@ -95,7 +95,10 @@ export async function readGreetingLedger(inputs: LedgerIdentity): Promise<Greeti
         SIGNAL_GREETING_LAST_UTTERANCE,
         'wake_cadence:sessions_today',
       ]);
-    if (error) return { ...EMPTY_GREETING_LEDGER };
+    if (error) {
+      emitLedgerReadFailure(inputs, error.message);
+      return { ...EMPTY_GREETING_LEDGER };
+    }
     const out: GreetingLedger = { ...EMPTY_GREETING_LEDGER, facts: {} };
     for (const row of (data || []) as Array<{ signal_name: string; value: unknown }>) {
       if (row.signal_name === SIGNAL_GREETING_FACTS) {
@@ -120,9 +123,31 @@ export async function readGreetingLedger(inputs: LedgerIdentity): Promise<Greeti
       }
     }
     return out;
-  } catch {
+  } catch (e) {
+    emitLedgerReadFailure(inputs, e instanceof Error ? e.message : String(e));
     return { ...EMPTY_GREETING_LEDGER };
   }
+}
+
+/**
+ * The ledger stays fail-open (a DB outage must never silence a greeting),
+ * but the failure is no longer invisible: emit an OASIS event so the
+ * continuity loss shows up in ops instead of silently degrading greetings.
+ * Fire-and-forget; dynamic import avoids a service-layer cycle.
+ */
+function emitLedgerReadFailure(inputs: LedgerIdentity, reason: string): void {
+  import('../oasis-event-service')
+    .then(({ emitOasisEvent }) =>
+      emitOasisEvent({
+        vtid: 'BOOTSTRAP-MEMORY-DAILY-LEARNING',
+        type: 'memory.greeting_ledger.read_failed',
+        source: 'gateway',
+        status: 'warning',
+        message: `greeting-facts ledger read failed open: ${reason}`,
+        payload: { user_id: inputs.userId, tenant_id: inputs.tenantId, reason },
+      } as any),
+    )
+    .catch(() => {});
 }
 
 export function parseFacts(value: unknown): Record<string, SpokenFact> {
@@ -211,6 +236,12 @@ export function extractSpokenFactsFromPayload(p: OverviewPayload | null): Record
     out.vitana_index = p.vitana_index.today;
   }
   if (typeof p.diary_last_7d === 'number') out.diary_last_7d = p.diary_last_7d;
+  // 6th signal (BOOTSTRAP-MEMORY-DAILY-LEARNING): facts Vitana learned since
+  // the last session. Only tracked when > 0 — a zero would pollute the ledger
+  // with a "new" fact that carries no news.
+  if (p.facts_learned_since_last && p.facts_learned_since_last.count > 0) {
+    out.facts_learned = p.facts_learned_since_last.count;
+  }
   return out;
 }
 

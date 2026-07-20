@@ -758,11 +758,13 @@ const MEMORY_INTEL: AutomationDefinition[] = [
     handler: 'runFactExtractionAudit',
   },
   {
+    // Retired (BOOTSTRAP-MEMORY-DAILY-LEARNING): its decay double-decayed
+    // the rows Loop 13 (nightly consolidator) already maintains, on a
+    // conflicting formula. Loop 13 is the single decay mechanism.
     id: 'AP-0903', name: 'Relationship Graph Maintenance', domain: 'memory-intelligence',
-    status: 'IMPLEMENTED', priority: 'P2', triggerType: 'cron',
-    triggerConfig: { cronExpression: '0 4 * * 0' }, // Sunday 4am
+    status: 'DEPRECATED', priority: 'P2', triggerType: 'cron',
+    triggerConfig: { cronExpression: '0 4 * * 0' },
     targetRoles: [...MEMBER_ROLES],
-    handler: 'runRelationshipGraphMaintenance',
   },
   {
     id: 'AP-0904', name: 'Semantic Memory Search for Autopilot Context', domain: 'memory-intelligence',
@@ -777,6 +779,89 @@ const MEMORY_INTEL: AutomationDefinition[] = [
     triggerConfig: { eventTopic: 'automation.pre_execute' },
     targetRoles: ALL_ROLES,
     handler: 'runKnowledgeBaseContextForSuggestions',
+  },
+  {
+    // Wires guide/pattern-extractor (VTID-01936) — previously fully built
+    // but caller-less. Nightly, before the profiler's morning reads.
+    id: 'AP-0906', name: 'Routine Pattern Extraction', domain: 'memory-intelligence',
+    status: 'IMPLEMENTED', priority: 'P2', triggerType: 'cron',
+    triggerConfig: { cronExpression: '30 3 * * *' }, // daily 3:30am
+    targetRoles: [...MEMBER_ROLES],
+    handler: 'runRoutinePatternExtraction',
+  },
+  {
+    // "I learned something new about you today" — the standalone half of the
+    // shared felt-learning detector; the greeting ledger (6th signal) wins
+    // for users who opened a session, this catches the rest. Evening slot so
+    // the day's conversations have been extracted.
+    id: 'AP-0907', name: 'Daily Learning Digest', domain: 'memory-intelligence',
+    status: 'IMPLEMENTED', priority: 'P2', triggerType: 'cron',
+    triggerConfig: { cronExpression: '10 18 * * *' }, // daily 18:10
+    targetRoles: [...MEMBER_ROLES],
+    handler: 'runDailyLearningDigest',
+  },
+  {
+    // Turns AP-0906's user_routines into user_preference_* memory_facts
+    // (provenance behavior_inferred) so preferences grow from behavior, not
+    // just conversation. Runs after AP-0906's 3:30am extraction.
+    id: 'AP-0908', name: 'Behavior-Derived Preference Inference', domain: 'memory-intelligence',
+    status: 'IMPLEMENTED', priority: 'P2', triggerType: 'cron',
+    triggerConfig: { cronExpression: '40 4 * * *' }, // daily 4:40am
+    targetRoles: [...MEMBER_ROLES],
+    handler: 'runBehaviorPreferenceInference',
+  },
+  {
+    // The relationship graph as a DERIVED INDEX: nightly projection of
+    // person-facts + mutual follows into relationship_nodes/edges (the only
+    // creation path since Cognee's Phase 8 retirement). Loop 13 decays.
+    id: 'AP-0909', name: 'Relationship Graph Projection', domain: 'memory-intelligence',
+    status: 'IMPLEMENTED', priority: 'P2', triggerType: 'cron',
+    triggerConfig: { cronExpression: '50 3 * * *' }, // daily 3:50am, after AP-0906
+    targetRoles: [...MEMBER_ROLES],
+    handler: 'runRelationshipGraphProjection',
+  },
+  {
+    // Drains the fact-embedding backlog (96% of live facts were unembedded,
+    // blinding tier-2 semantic retrieval). Hourly, 100/run, cheap no-op when
+    // the backlog is empty; new writes embed inline in the extractor.
+    id: 'AP-0910', name: 'Memory Embedding Backfill', domain: 'memory-intelligence',
+    status: 'IMPLEMENTED', priority: 'P2', triggerType: 'cron',
+    triggerConfig: { cronExpression: '25 * * * *' }, // hourly at :25
+    targetRoles: [...MEMBER_ROLES],
+    handler: 'runMemoryEmbeddingBackfill',
+  },
+  {
+    // Nightly narrative profile synthesis — one LLM pass per active user
+    // connecting facts/routines/goal/Index into a compact "who is this
+    // person" paragraph for the ORB bootstrap. After all nightly writers
+    // (AP-0906 3:30, AP-0909 3:50, AP-0908 4:40) so it reads fresh inputs.
+    id: 'AP-0911', name: 'User Model Synthesis', domain: 'memory-intelligence',
+    status: 'IMPLEMENTED', priority: 'P1', triggerType: 'cron',
+    triggerConfig: { cronExpression: '5 5 * * *' }, // daily 5:05am
+    targetRoles: [...MEMBER_ROLES],
+    handler: 'runUserModelSynthesis',
+  },
+  {
+    // Deterministic health-correlation insights (pillar trends, diary
+    // lapses) written as health_insight_* memory facts — the "sees
+    // contextual influence" beat, grounded in real Index/diary data.
+    // Before synthesis (5:05) so narratives can weave fresh insights.
+    id: 'AP-0912', name: 'Health Correlation Insights', domain: 'memory-intelligence',
+    status: 'IMPLEMENTED', priority: 'P1', triggerType: 'cron',
+    triggerConfig: { cronExpression: '55 4 * * *' }, // daily 4:55am
+    targetRoles: [...MEMBER_ROLES],
+    handler: 'runHealthCorrelationInsights',
+  },
+  {
+    // Mirrors each user's own community-feed posts (profile_posts, any
+    // origin) into memory_items so Vitana can reference them by name
+    // ("the post you wrote about X") instead of never mentioning them.
+    // Hourly with a 65-min lookback; dedup makes overlap safe.
+    id: 'AP-0913', name: 'Own Post Memory Capture', domain: 'memory-intelligence',
+    status: 'IMPLEMENTED', priority: 'P2', triggerType: 'cron',
+    triggerConfig: { cronExpression: '15 * * * *' }, // hourly at :15
+    targetRoles: [...MEMBER_ROLES],
+    handler: 'runOwnPostMemoryCapture',
   },
 ];
 

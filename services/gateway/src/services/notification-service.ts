@@ -84,6 +84,10 @@ export const TYPE_META: Record<string, TypeMeta> = {
   orb_proactive_message:           { channel: 'push_and_inapp', priority: 'p1', category: 'chat' },
   conversation_followup_reminder:  { channel: 'inapp',          priority: 'p2', category: 'chat' },
   orb_suggestion:                  { channel: 'push_and_inapp', priority: 'p1', category: 'chat' },
+  // Emitted by the notify_on_reaction() Postgres trigger on message_reactions
+  // inserts (not via notifyUser()), so this entry is documentation/parity
+  // only — the trigger hardcodes the same channel/priority in its INSERT.
+  message_reaction:                { channel: 'push_and_inapp', priority: 'p2', category: 'chat' },
   // Calendar
   daily_recompute_complete:  { channel: 'silent',          priority: 'p3', category: 'calendar' },
   morning_briefing_ready:    { channel: 'push_and_inapp', priority: 'p1', category: 'calendar' },

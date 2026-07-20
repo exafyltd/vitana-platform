@@ -1,0 +1,117 @@
+name: TEST-SUITE
+# BOOTSTRAP-TEST-COVERAGE: the routine that actually runs the platform's
+# unit tests. Before this workflow existed, the gateway's 7,400+ Jest tests
+# never ran in CI (UNIT.yml is a deliberate no-op required check, and the
+# test step in CICDL-GATEWAY-CI.yml is commented out).
+#
+# Triggers:
+#   - every pull request touching a service
+#   - every push to main touching a service
+#   - nightly cron (catches dependency drift / main-only breakage)
+#   - manual dispatch
+#
+# Scope & exclusions are documented in docs/TEST_COVERAGE_PLAN.md.
+# oasis-projector is intentionally absent until its stale suite is repaired
+# (Phase 1 of the plan).
+
+run-name: 'Test Suite (${{ github.event_name }} on ${{ github.ref_name }})'
+
+on:
+  pull_request:
+    paths:
+      - 'services/**'
+      - '.github/workflows/TEST-SUITE.yml'
+  push:
+    branches: [ main ]
+    paths:
+      - 'services/**'
+      - '.github/workflows/TEST-SUITE.yml'
+  schedule:
+    # Nightly stability run — 03:17 UTC (odd minute to avoid cron rush)
+    - cron: '17 3 * * *'
+  workflow_dispatch: {}
+
+concurrency:
+  group: test-suite-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  gateway:
+    name: Gateway (Jest, ~7.5k tests)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: services/gateway
+    steps:
+      - uses: actions/checkout@v4
+      # No explicit version: the action reads packageManager from the root
+      # package.json (pnpm@9.0.0). Passing a version too makes it error with
+      # "Multiple versions of pnpm specified" — see the note in UNIT.yml.
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+      - name: Install
+        run: pnpm install --frozen-lockfile
+      - name: Run Jest suite
+        run: npx jest --silent --maxWorkers=100%
+        env:
+          NODE_ENV: test
+
+  services:
+    name: ${{ matrix.service }} (${{ matrix.runner }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - service: vcaop
+            install: npm install --no-audit --no-fund
+            test: npm test
+            runner: jest
+          - service: autopilot-worker
+            install: npm ci --no-audit --no-fund
+            test: npx jest --silent
+            runner: jest
+          - service: worker-runner
+            install: npm ci --no-audit --no-fund
+            test: npx jest --silent
+            runner: jest
+          - service: openclaw-bridge
+            install: pnpm install --frozen-lockfile
+            test: npx vitest run
+            runner: vitest
+    defaults:
+      run:
+        working-directory: services/${{ matrix.service }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        if: contains(matrix.install, 'pnpm')
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+      - name: Install
+        run: ${{ matrix.install }}
+      - name: Run tests
+        run: ${{ matrix.test }}
+        env:
+          NODE_ENV: test
+
+  summary:
+    name: Test Suite Summary
+    needs: [gateway, services]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Report
+        run: |
+          echo "gateway: ${{ needs.gateway.result }}"
+          echo "services: ${{ needs.services.result }}"
+          if [ "${{ needs.gateway.result }}" != "success" ] || [ "${{ needs.services.result }}" != "success" ]; then
+            echo "❌ Test suite failed — see docs/TEST_COVERAGE_PLAN.md §4.3 (escalation rule)"
+            exit 1
+          fi
+          echo "✅ All platform test suites green"
