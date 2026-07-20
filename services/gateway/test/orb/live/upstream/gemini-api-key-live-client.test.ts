@@ -99,13 +99,13 @@ describe('BOOTSTRAP-AWS-STAGING-VALIDATION: GeminiApiKeyLiveClient', () => {
   describe('URL + model-id rewrite (the actual new behavior)', () => {
     it('builds the AI Studio BidiGenerateContent URL with the key as a query param', () => {
       expect(buildAiStudioBidiGenerateContentUrl('my-key')).toBe(
-        'wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=my-key',
+        'wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=my-key',
       );
     });
 
     it('URL-encodes special characters in the key', () => {
       expect(buildAiStudioBidiGenerateContentUrl('a/b+c')).toBe(
-        'wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=a%2Fb%2Bc',
+        'wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=a%2Fb%2Bc',
       );
     });
 
