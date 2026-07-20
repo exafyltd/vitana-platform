@@ -6353,6 +6353,12 @@ async function connectToLiveAPI(
   if (GEMINI_LIVE_USE_API_KEY && !GEMINI_API_KEY) {
     throw new Error('GEMINI_LIVE_TRANSPORT=api_key but GOOGLE_GEMINI_API_KEY is missing');
   }
+  // flow-test-exempt: this touches connectToLiveAPI's transport selection
+  // only (which upstream client + credential to use), not any conversation-
+  // flow decision (greeting, persona routing, turn handling, tool dispatch —
+  // all unchanged and still driven by buildOrbVertexSetupEnvelope below).
+  // The new logic itself (URL/key building, model-id rewrite) has a
+  // dedicated same-PR test suite: test/orb/live/upstream/gemini-api-key-live-client.test.ts.
 
   // L1 (VTID-02976) / L2.1 (VTID-02980): consult the upstream provider
   // selector. The selector is a pure function — it never reads env / DB /
