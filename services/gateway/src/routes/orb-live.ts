@@ -420,6 +420,14 @@ const ALLOWED_ORIGINS = [
   // prod returned 200 + a session for its own origin.
   'https://preview.vitanaland.com',          // Staging community-app (community-app-staging)
   'https://preview-gateway.vitanaland.com',  // Staging gateway custom domain (command-hub orb)
+  // BOOTSTRAP-AWS-STAGING-VALIDATION: AWS staging origins (ECS stack behind
+  // vitana-alb-prod, Cloudflare-proxied). Same failure mode as the GCP
+  // staging entries above: without these, POST /orb/live/session/start
+  // returns 403 "Origin not allowed" and the orb hangs on "Connecting…" on
+  // preview-aws.* — confirmed in the browser console 2026-07-20 while the
+  // direct-API smoke (no Origin header) passed.
+  'https://preview-aws.vitanaland.com',          // AWS staging community-app
+  'https://preview-aws-gateway.vitanaland.com',  // AWS staging gateway (command-hub orb)
   'http://localhost:8080',
   'http://localhost:8081',  // VTID-01225: Mobile dev server
   'http://localhost:3000',
