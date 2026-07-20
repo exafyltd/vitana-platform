@@ -329,6 +329,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const autonomyPulseRouter = require('./routes/autonomy-pulse').default;
   // Autonomy Trace — unified timeline of autonomous work-in-flight + history
   const autonomyTraceRouter = require('./routes/autonomy-trace').default;
+  // BOOTSTRAP-AWS-STAGING-VALIDATION: TEMPORARY — AI Studio ListModels debug proxy
+  const debugAiStudioModelsRouter = require('./routes/debug-ai-studio-models').default;
   // VTID-01250: Social Connect (AP-1305/AP-1306)
   const socialConnectRouter = require('./routes/social-connect').default;
   // Intelligent Calendar — Phase 1: Backend Calendar API
@@ -751,6 +753,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   mountRouterSync(app, '/api/v1/dev-autopilot', devAutopilotRouter, { owner: 'dev-autopilot' });
   mountRouterSync(app, '/api/v1/autonomy', autonomyPulseRouter, { owner: 'autonomy-pulse' });
   mountRouterSync(app, '/api/v1/autonomy', autonomyTraceRouter, { owner: 'autonomy-trace' });
+
+  // BOOTSTRAP-AWS-STAGING-VALIDATION: TEMPORARY — remove once AI_STUDIO_LIVE_MODEL is confirmed
+  mountRouterSync(app, '/api/v1', debugAiStudioModelsRouter, { owner: 'debug-ai-studio-models' });
 
   // VTID-01250: Social Connect — OAuth, profile enrichment, auto-share (AP-1305/AP-1306)
   mountRouterSync(app, '/api/v1/social-accounts', socialConnectRouter, { owner: 'social-connect' });
