@@ -1,0 +1,1046 @@
+[
+  {
+    "prefix": "/api/v1/actions",
+    "http_code": 404,
+    "content_type": "text/html; charset=utf-8",
+    "mounted": false
+  },
+  {
+    "prefix": "/api/v1/admin",
+    "http_code": 404,
+    "content_type": "text/html; charset=utf-8",
+    "mounted": false
+  },
+  {
+    "prefix": "/api/v1/admin/ai-assistants",
+    "http_code": 404,
+    "content_type": "text/html; charset=utf-8",
+    "mounted": false
+  },
+  {
+    "prefix": "/api/v1/admin/autopilot",
+    "http_code": 404,
+    "content_type": "text/html; charset=utf-8",
+    "mounted": false
+  },
+  {
+    "prefix": "/api/v1/admin/feedback",
+    "http_code": 404,
+    "content_type": "text/html; charset=utf-8",
+    "mounted": false
+  },
+  {
+    "prefix": "/api/v1/admin/i18n-ops",
+    "http_code": 404,
+    "content_type": "text/html; charset=utf-8",
+    "mounted": false
+  },
+  {
+    "prefix": "/api/v1/admin/intent-engine",
+    "http_code": 404,
+    "content_type": "text/html; charset=utf-8",
+    "mounted": false
+  },
+  {
+    "prefix": "/api/v1/admin/invitations",
+    "http_code": 404,
+    "content_type": "text/html; charset=utf-8",
+    "mounted": false
+  },
+  {
+    "prefix": "/api/v1/admin/journey-checklist",
+    "http_code": 401,
+    "content_type": "application/json; charset=utf-8",
+    "mounted": true
+  },
+  {
+    "prefix": "/api/v1/admin/marketplace",
+    "http_code": 404,
+    "content_type": "text/html; charset=utf-8",
+    "mounted": false
+  },
+  {
+    "prefix": "/api/v1/admin/moderation",
+    "http_code": 404,
+    "content_type": "text/html; charset=utf-8",
+    "mounted": false
+  },
+  {
+    "prefix": "/api/v1/admin/navigator",
+    "http_code": 401,
+    "content_type": "application/json; charset=utf-8",
+    "mounted": true
+  },
+  {
+    "prefix": "/api/v1/admin/notification-categories",
+    "http_code": 401,
+    "content_type": "application/json; charset=utf-8",
+    "mounted": true
+  },
+  {
+    "prefix": "/api/v1/admin/notifications",
+    "http_code": 401,
+    "content_type": "application/json; charset=utf-8",
+    "mounted": true
+  },
+  {
+    "prefix": "/api/v1/admin/orb-tools",
+    "http_code": 404,
+    "content_type": "text/html; charset=utf-8",
+    "mounted": false
+  },
+  {
+    "prefix": "/api/v1/admin/signups",
+    "http_code": 401,
+    "content_type": "application/json; charset=utf-8",
+    "mounted": true
+  },
+  {
+    "prefix": "/api/v1/admin/specialists",
+    "http_code": 401,
+    "content_type": "application/json; charset=utf-8",
+    "mounted": true
+  },
+  {
+    "prefix": "/api/v1/admin/staging",
+    "http_code": 404,
+    "content_type": "text/html; charset=utf-8",
+    "mounted": false
+  },
+  {
+    "prefix": "/api/v1/admin/system-kb",
+    "http_code": 401,
+    "content_type": "application/json; charset=utf-8",
+    "mounted": true
+  },
+  {
+    "prefix": "/api/v1/admin/tenants",
+    "http_code": 401,
+    "content_type": "application/json; charset=utf-8",
+    "mounted": true
+  },
+  {
+    "prefix": "/api/v1/admin/tenants/:tenantId/analytics",
+    "http_code": 401,
+    "content_type": "application/json; charset=utf-8",
+    "mounted": true
+  },
+  {
+    "prefix": "/api/v1/admin/tenants/:tenantId/assistant",
+    "http_code": 401,
+    "content_type": "application/json; charset=utf-8",
+    "mounted": true
+  },
+  {
+    "prefix": "/api/v1/admin/tenants/:tenantId/assistant/speeches",
+    "http_code": 401,
+    "content_type": "application/json; charset=utf-8",
+    "mounted": true
+  },
+  {
+    "prefix": "/api/v1/admin/tenants/:tenantId/audit",
+    "http_code": 401,
+    "content_type": "application/json; charset=utf-8",
+    "mounted": true
+  },
+  {
+    "prefix": "/api/v1/admin/tenants/:tenantId/community",
+    "http_code": 404,
+    "content_type": "text/html; charset=utf-8",
+    "mounted": false
+  },
+  {
+    "prefix": "/api/v1/admin/tenants/:tenantId/content",
+    "http_code": 404,
+    "content_type": "text/html; charset=utf-8",
+    "mounted": false
+  },
+  {
+    "prefix": "/api/v1/admin/tenants/:tenantId/health-index",
+    "http_code": 401,
+    "content_type": "application/json; charset=utf-8",
+    "mounted": true
+  },
+  {
+    "prefix": "/api/v1/admin/tenants/:tenantId/insights",
+    "http_code": 401,
+    "content_type": "application/json; charset=utf-8",
+    "mounted": true
+  },
+  {
+    "prefix": "/api/v1/admin/tenants/:tenantId/invitations",
+    "http_code": 401,
+    "content_type": "application/json; charset=utf-8",
+    "mounted": true
+  },
+  {
+    "prefix": "/api/v1/admin/tenants/:tenantId/kb",
+    "http_code": 404,
+    "content_type": "text/html; charset=utf-8",
+    "mounted": false
+  },
+  {
+    "prefix": "/api/v1/admin/tenants/:tenantId/kpis",
+    "http_code": 401,
+    "content_type": "application/json; charset=utf-8",
+    "mounted": true
+  },
+  {
+    "prefix": "/api/v1/admin/tenants/:tenantId/overview",
+    "http_code": 404,
+    "content_type": "text/html; charset=utf-8",
+    "mounted": false
+  },
+  {
+    "prefix": "/api/v1/admin/tenants/:tenantId/settings",
+    "http_code": 401,
+    "content_type": "application/json; charset=utf-8",
+    "mounted": true
+  },
+  {
+    "prefix": "/api/v1/admin/users",
+    "http_code": 401,
+    "content_type": "application/json; charset=utf-8",
+    "mounted": true
+  },
+  {
+    "prefix": "/api/v1/agents/triage",
+    "http_code": 404,
+    "content_type": "text/html; charset=utf-8",
+    "mounted": false
+  },
+  {
+    "prefix": "/api/v1/ai-personality",
+    "http_code": 200,
+    "content_type": "application/json; charset=utf-8",
+    "mounted": true
+  },
+  {
+    "prefix": "/api/v1/alignment",
+    "http_code": 404,
+    "content_type": "text/html; charset=utf-8",
+    "mounted": false
+  },
+  {
+    "prefix": "/api/v1/analytics",
+    "http_code": 404,
+    "content_type": "text/html; charset=utf-8",
+    "mounted": false
+  },
+  {
+    "prefix": "/api/v1/approvals",
+    "http_code": 404,
+    "content_type": "text/html; charset=utf-8",
+    "mounted": false
+  },
+  {
+    "prefix": "/api/v1/assistant",
+    "http_code": 404,
+    "content_type": "text/html; charset=utf-8",
+    "mounted": false
+  },
+  {
+    "prefix": "/api/v1/auth",
+    "http_code": 404,
+    "content_type": "text/html; charset=utf-8",
+    "mounted": false
+  },
+  {
+    "prefix": "/api/v1/automations",
+    "http_code": 404,
+    "content_type": "text/html; charset=utf-8",
+    "mounted": false
+  },
+  {
+    "prefix": "/api/v1/autonomy",
+    "http_code": 404,
+    "content_type": "text/html; charset=utf-8",
+    "mounted": false
+  },
+  {
+    "prefix": "/api/v1/autopilot",
+    "http_code": 404,
+    "content_type": "text/html; charset=utf-8",
+    "mounted": false
+  },
+  {
+    "prefix": "/api/v1/autopilot/recommendations",
+    "http_code": 200,
+    "content_type": "application/json; charset=utf-8",
+    "mounted": true
+  },
+  {
+    "prefix": "/api/v1/availability",
+    "http_code": 404,
+    "content_type": "text/html; charset=utf-8",
+    "mounted": false
+  },
+  {
+    "prefix": "/api/v1/awareness",
+    "http_code": 404,
+    "content_type": "text/html; charset=utf-8",
+    "mounted": false
+  },
+  {
+    "prefix": "/api/v1/billing",
+    "http_code": 404,
+    "content_type": "text/html; charset=utf-8",
+    "mounted": false
+  },
+  {
+    "prefix": "/api/v1/billing/webhooks/stripe",
+    "http_code": 404,
+    "content_type": "text/html; charset=utf-8",
+    "mounted": false
+  },
+  {
+    "prefix": "/api/v1/board",
+    "http_code": 200,
+    "content_type": "application/json; charset=utf-8",
+    "mounted": true
+  },
+  {
+    "prefix": "/api/v1/boundaries",
+    "http_code": 404,
+    "content_type": "text/html; charset=utf-8",
+    "mounted": false
+  },
+  {
+    "prefix": "/api/v1/calendar",
+    "http_code": 404,
+    "content_type": "text/html; charset=utf-8",
+    "mounted": false
+  },
+  {
+    "prefix": "/api/v1/canary-target",
+    "http_code": 404,
+    "content_type": "text/html; charset=utf-8",
+    "mounted": false
+  },
+  {
+    "prefix": "/api/v1/capabilities",
+    "http_code": 200,
+    "content_type": "application/json; charset=utf-8",
+    "mounted": true
+  },
+  {
+    "prefix": "/api/v1/capacity",
+    "http_code": 404,
+    "content_type": "text/html; charset=utf-8",
+    "mounted": false
+  },
+  {
+    "prefix": "/api/v1/catalog/ingest",
+    "http_code": 404,
+    "content_type": "text/html; charset=utf-8",
+    "mounted": false
+  },
+  {
+    "prefix": "/api/v1/celebrations",
+    "http_code": 401,
+    "content_type": "application/json; charset=utf-8",
+    "mounted": true
+  },
+  {
+    "prefix": "/api/v1/chat",
+    "http_code": 404,
+    "content_type": "text/html; charset=utf-8",
+    "mounted": false
+  },
+  {
+    "prefix": "/api/v1/chat/groups",
+    "http_code": 401,
+    "content_type": "application/json; charset=utf-8",
+    "mounted": true
+  },
+  {
+    "prefix": "/api/v1/cicd",
+    "http_code": 404,
+    "content_type": "text/html; charset=utf-8",
+    "mounted": false
+  },
+  {
+    "prefix": "/api/v1/commandhub",
+    "http_code": 404,
+    "content_type": "text/html; charset=utf-8",
+    "mounted": false
+  },
+  {
+    "prefix": "/api/v1/commandhub/board",
+    "http_code": 200,
+    "content_type": "application/json; charset=utf-8",
+    "mounted": true
+  },
+  {
+    "prefix": "/api/v1/community",
+    "http_code": 404,
+    "content_type": "text/html; charset=utf-8",
+    "mounted": false
+  },
+  {
+    "prefix": "/api/v1/connectors",
+    "http_code": 404,
+    "content_type": "text/html; charset=utf-8",
+    "mounted": false
+  },
+  {
+    "prefix": "/api/v1/context/mobility",
+    "http_code": 401,
+    "content_type": "application/json; charset=utf-8",
+    "mounted": true
+  },
+  {
+    "prefix": "/api/v1/conversation",
+    "http_code": 404,
+    "content_type": "text/html; charset=utf-8",
+    "mounted": false
+  },
+  {
+    "prefix": "/api/v1/cover-images",
+    "http_code": 404,
+    "content_type": "text/html; charset=utf-8",
+    "mounted": false
+  },
+  {
+    "prefix": "/api/v1/creators",
+    "http_code": 404,
+    "content_type": "text/html; charset=utf-8",
+    "mounted": false
+  },
+  {
+    "prefix": "/api/v1/deploy",
+    "http_code": 404,
+    "content_type": "text/html; charset=utf-8",
+    "mounted": false
+  },
+  {
+    "prefix": "/api/v1/dev-access",
+    "http_code": 404,
+    "content_type": "text/html; charset=utf-8",
+    "mounted": false
+  },
+  {
+    "prefix": "/api/v1/dev-autopilot",
+    "http_code": 404,
+    "content_type": "text/html; charset=utf-8",
+    "mounted": false
+  },
+  {
+    "prefix": "/api/v1/dev/auth",
+    "http_code": 404,
+    "content_type": "text/html; charset=utf-8",
+    "mounted": false
+  },
+  {
+    "prefix": "/api/v1/diag",
+    "http_code": 404,
+    "content_type": "text/html; charset=utf-8",
+    "mounted": false
+  },
+  {
+    "prefix": "/api/v1/diary",
+    "http_code": 404,
+    "content_type": "text/html; charset=utf-8",
+    "mounted": false
+  },
+  {
+    "prefix": "/api/v1/discover",
+    "http_code": 401,
+    "content_type": "application/json; charset=utf-8",
+    "mounted": true
+  },
+  {
+    "prefix": "/api/v1/execute",
+    "http_code": 404,
+    "content_type": "text/html; charset=utf-8",
+    "mounted": false
+  },
+  {
+    "prefix": "/api/v1/feedback",
+    "http_code": 404,
+    "content_type": "text/html; charset=utf-8",
+    "mounted": false
+  },
+  {
+    "prefix": "/api/v1/feedback/intake",
+    "http_code": 404,
+    "content_type": "text/html; charset=utf-8",
+    "mounted": false
+  },
+  {
+    "prefix": "/api/v1/feedback/tickets",
+    "http_code": 404,
+    "content_type": "text/html; charset=utf-8",
+    "mounted": false
+  },
+  {
+    "prefix": "/api/v1/forecast",
+    "http_code": 200,
+    "content_type": "application/json; charset=utf-8",
+    "mounted": true
+  },
+  {
+    "prefix": "/api/v1/frontend/screen-load",
+    "http_code": 200,
+    "content_type": "application/json; charset=utf-8",
+    "mounted": true
+  },
+  {
+    "prefix": "/api/v1/github",
+    "http_code": 404,
+    "content_type": "text/html; charset=utf-8",
+    "mounted": false
+  },
+  {
+    "prefix": "/api/v1/goal-plan",
+    "http_code": 401,
+    "content_type": "application/json; charset=utf-8",
+    "mounted": true
+  },
+  {
+    "prefix": "/api/v1/governance",
+    "http_code": 404,
+    "content_type": "text/html; charset=utf-8",
+    "mounted": false
+  },
+  {
+    "prefix": "/api/v1/governance/controls",
+    "http_code": 200,
+    "content_type": "application/json; charset=utf-8",
+    "mounted": true
+  },
+  {
+    "prefix": "/api/v1/health",
+    "http_code": 200,
+    "content_type": "application/json; charset=utf-8",
+    "mounted": true
+  },
+  {
+    "prefix": "/api/v1/intake",
+    "http_code": 404,
+    "content_type": "text/html; charset=utf-8",
+    "mounted": false
+  },
+  {
+    "prefix": "/api/v1/integrations",
+    "http_code": 401,
+    "content_type": "application/json; charset=utf-8",
+    "mounted": true
+  },
+  {
+    "prefix": "/api/v1/integrations/ai-assistants",
+    "http_code": 401,
+    "content_type": "application/json; charset=utf-8",
+    "mounted": true
+  },
+  {
+    "prefix": "/api/v1/intent-board",
+    "http_code": 401,
+    "content_type": "application/json; charset=utf-8",
+    "mounted": true
+  },
+  {
+    "prefix": "/api/v1/intent-categories",
+    "http_code": 401,
+    "content_type": "application/json; charset=utf-8",
+    "mounted": true
+  },
+  {
+    "prefix": "/api/v1/intent-matches",
+    "http_code": 404,
+    "content_type": "text/html; charset=utf-8",
+    "mounted": false
+  },
+  {
+    "prefix": "/api/v1/intents",
+    "http_code": 401,
+    "content_type": "application/json; charset=utf-8",
+    "mounted": true
+  },
+  {
+    "prefix": "/api/v1/internal/marketplace",
+    "http_code": 404,
+    "content_type": "text/html; charset=utf-8",
+    "mounted": false
+  },
+  {
+    "prefix": "/api/v1/journey",
+    "http_code": 404,
+    "content_type": "text/html; charset=utf-8",
+    "mounted": false
+  },
+  {
+    "prefix": "/api/v1/journey-checklist",
+    "http_code": 401,
+    "content_type": "application/json; charset=utf-8",
+    "mounted": true
+  },
+  {
+    "prefix": "/api/v1/journey-foundation",
+    "http_code": 401,
+    "content_type": "application/json; charset=utf-8",
+    "mounted": true
+  },
+  {
+    "prefix": "/api/v1/landing-route",
+    "http_code": 401,
+    "content_type": "application/json; charset=utf-8",
+    "mounted": true
+  },
+  {
+    "prefix": "/api/v1/life-stage",
+    "http_code": 404,
+    "content_type": "text/html; charset=utf-8",
+    "mounted": false
+  },
+  {
+    "prefix": "/api/v1/live",
+    "http_code": 404,
+    "content_type": "text/html; charset=utf-8",
+    "mounted": false
+  },
+  {
+    "prefix": "/api/v1/llm",
+    "http_code": 404,
+    "content_type": "text/html; charset=utf-8",
+    "mounted": false
+  },
+  {
+    "prefix": "/api/v1/location",
+    "http_code": 404,
+    "content_type": "text/html; charset=utf-8",
+    "mounted": false
+  },
+  {
+    "prefix": "/api/v1/locations",
+    "http_code": 404,
+    "content_type": "text/html; charset=utf-8",
+    "mounted": false
+  },
+  {
+    "prefix": "/api/v1/longevity",
+    "http_code": 200,
+    "content_type": "application/json; charset=utf-8",
+    "mounted": true
+  },
+  {
+    "prefix": "/api/v1/longevity-news",
+    "http_code": 200,
+    "content_type": "application/json; charset=utf-8",
+    "mounted": true
+  },
+  {
+    "prefix": "/api/v1/longitudinal",
+    "http_code": 200,
+    "content_type": "application/json; charset=utf-8",
+    "mounted": true
+  },
+  {
+    "prefix": "/api/v1/match",
+    "http_code": 200,
+    "content_type": "application/json; charset=utf-8",
+    "mounted": true
+  },
+  {
+    "prefix": "/api/v1/me",
+    "http_code": 401,
+    "content_type": "application/json; charset=utf-8",
+    "mounted": true
+  },
+  {
+    "prefix": "/api/v1/media-hub",
+    "http_code": 404,
+    "content_type": "text/html; charset=utf-8",
+    "mounted": false
+  },
+  {
+    "prefix": "/api/v1/memory",
+    "http_code": 404,
+    "content_type": "text/html; charset=utf-8",
+    "mounted": false
+  },
+  {
+    "prefix": "/api/v1/memory/social",
+    "http_code": 401,
+    "content_type": "application/json; charset=utf-8",
+    "mounted": true
+  },
+  {
+    "prefix": "/api/v1/mitigation",
+    "http_code": 404,
+    "content_type": "text/html; charset=utf-8",
+    "mounted": false
+  },
+  {
+    "prefix": "/api/v1/monetization",
+    "http_code": 404,
+    "content_type": "text/html; charset=utf-8",
+    "mounted": false
+  },
+  {
+    "prefix": "/api/v1/my-journey",
+    "http_code": 401,
+    "content_type": "application/json; charset=utf-8",
+    "mounted": true
+  },
+  {
+    "prefix": "/api/v1/news-feed",
+    "http_code": 404,
+    "content_type": "text/html; charset=utf-8",
+    "mounted": false
+  },
+  {
+    "prefix": "/api/v1/notifications",
+    "http_code": 401,
+    "content_type": "application/json; charset=utf-8",
+    "mounted": true
+  },
+  {
+    "prefix": "/api/v1/notifications/category-preferences",
+    "http_code": 401,
+    "content_type": "application/json; charset=utf-8",
+    "mounted": true
+  },
+  {
+    "prefix": "/api/v1/oasis/specs",
+    "http_code": 200,
+    "content_type": "application/json; charset=utf-8",
+    "mounted": true
+  },
+  {
+    "prefix": "/api/v1/operator",
+    "http_code": 404,
+    "content_type": "text/html; charset=utf-8",
+    "mounted": false
+  },
+  {
+    "prefix": "/api/v1/opportunities",
+    "http_code": 404,
+    "content_type": "text/html; charset=utf-8",
+    "mounted": false
+  },
+  {
+    "prefix": "/api/v1/ops/action-required",
+    "http_code": 200,
+    "content_type": "application/json; charset=utf-8",
+    "mounted": true
+  },
+  {
+    "prefix": "/api/v1/ops/overview-timeseries",
+    "http_code": 401,
+    "content_type": "application/json; charset=utf-8",
+    "mounted": true
+  },
+  {
+    "prefix": "/api/v1/orb",
+    "http_code": 404,
+    "content_type": "text/html; charset=utf-8",
+    "mounted": false
+  },
+  {
+    "prefix": "/api/v1/overload",
+    "http_code": 404,
+    "content_type": "text/html; charset=utf-8",
+    "mounted": false
+  },
+  {
+    "prefix": "/api/v1/personalization",
+    "http_code": 200,
+    "content_type": "application/json; charset=utf-8",
+    "mounted": true
+  },
+  {
+    "prefix": "/api/v1/pillar-agents",
+    "http_code": 404,
+    "content_type": "text/html; charset=utf-8",
+    "mounted": false
+  },
+  {
+    "prefix": "/api/v1/predictive-signals",
+    "http_code": 401,
+    "content_type": "application/json; charset=utf-8",
+    "mounted": true
+  },
+  {
+    "prefix": "/api/v1/presence",
+    "http_code": 404,
+    "content_type": "text/html; charset=utf-8",
+    "mounted": false
+  },
+  {
+    "prefix": "/api/v1/presence/did-you-know",
+    "http_code": 401,
+    "content_type": "application/json; charset=utf-8",
+    "mounted": true
+  },
+  {
+    "prefix": "/api/v1/public",
+    "http_code": 404,
+    "content_type": "text/html; charset=utf-8",
+    "mounted": false
+  },
+  {
+    "prefix": "/api/v1/recommendations",
+    "http_code": 404,
+    "content_type": "text/html; charset=utf-8",
+    "mounted": false
+  },
+  {
+    "prefix": "/api/v1/reinforcement",
+    "http_code": 200,
+    "content_type": "application/json; charset=utf-8",
+    "mounted": true
+  },
+  {
+    "prefix": "/api/v1/relationships",
+    "http_code": 404,
+    "content_type": "text/html; charset=utf-8",
+    "mounted": false
+  },
+  {
+    "prefix": "/api/v1/reminders",
+    "http_code": 401,
+    "content_type": "application/json; charset=utf-8",
+    "mounted": true
+  },
+  {
+    "prefix": "/api/v1/roles",
+    "http_code": 404,
+    "content_type": "text/html; charset=utf-8",
+    "mounted": false
+  },
+  {
+    "prefix": "/api/v1/routing",
+    "http_code": 404,
+    "content_type": "text/html; charset=utf-8",
+    "mounted": false
+  },
+  {
+    "prefix": "/api/v1/rum",
+    "http_code": 404,
+    "content_type": "text/html; charset=utf-8",
+    "mounted": false
+  },
+  {
+    "prefix": "/api/v1/scheduled-notifications",
+    "http_code": 404,
+    "content_type": "text/html; charset=utf-8",
+    "mounted": false
+  },
+  {
+    "prefix": "/api/v1/scheduler",
+    "http_code": 404,
+    "content_type": "text/html; charset=utf-8",
+    "mounted": false
+  },
+  {
+    "prefix": "/api/v1/self-healing",
+    "http_code": 404,
+    "content_type": "text/html; charset=utf-8",
+    "mounted": false
+  },
+  {
+    "prefix": "/api/v1/shop-feed",
+    "http_code": 404,
+    "content_type": "text/html; charset=utf-8",
+    "mounted": false
+  },
+  {
+    "prefix": "/api/v1/shopping-agent",
+    "http_code": 404,
+    "content_type": "text/html; charset=utf-8",
+    "mounted": false
+  },
+  {
+    "prefix": "/api/v1/signals",
+    "http_code": 404,
+    "content_type": "text/html; charset=utf-8",
+    "mounted": false
+  },
+  {
+    "prefix": "/api/v1/situational",
+    "http_code": 404,
+    "content_type": "text/html; charset=utf-8",
+    "mounted": false
+  },
+  {
+    "prefix": "/api/v1/social",
+    "http_code": 404,
+    "content_type": "text/html; charset=utf-8",
+    "mounted": false
+  },
+  {
+    "prefix": "/api/v1/social-accounts",
+    "http_code": 404,
+    "content_type": "text/html; charset=utf-8",
+    "mounted": false
+  },
+  {
+    "prefix": "/api/v1/specs",
+    "http_code": 404,
+    "content_type": "text/html; charset=utf-8",
+    "mounted": false
+  },
+  {
+    "prefix": "/api/v1/stripe",
+    "http_code": 404,
+    "content_type": "text/html; charset=utf-8",
+    "mounted": false
+  },
+  {
+    "prefix": "/api/v1/stripe/webhook",
+    "http_code": 404,
+    "content_type": "text/html; charset=utf-8",
+    "mounted": false
+  },
+  {
+    "prefix": "/api/v1/supervisor",
+    "http_code": 404,
+    "content_type": "text/html; charset=utf-8",
+    "mounted": false
+  },
+  {
+    "prefix": "/api/v1/taste-alignment",
+    "http_code": 200,
+    "content_type": "application/json; charset=utf-8",
+    "mounted": true
+  },
+  {
+    "prefix": "/api/v1/telemetry",
+    "http_code": 404,
+    "content_type": "text/html; charset=utf-8",
+    "mounted": false
+  },
+  {
+    "prefix": "/api/v1/testing",
+    "http_code": 404,
+    "content_type": "text/html; charset=utf-8",
+    "mounted": false
+  },
+  {
+    "prefix": "/api/v1/topics",
+    "http_code": 404,
+    "content_type": "text/html; charset=utf-8",
+    "mounted": false
+  },
+  {
+    "prefix": "/api/v1/universal-cart",
+    "http_code": 401,
+    "content_type": "application/json; charset=utf-8",
+    "mounted": true
+  },
+  {
+    "prefix": "/api/v1/user-preferences",
+    "http_code": 200,
+    "content_type": "application/json; charset=utf-8",
+    "mounted": true
+  },
+  {
+    "prefix": "/api/v1/user/limitations",
+    "http_code": 401,
+    "content_type": "application/json; charset=utf-8",
+    "mounted": true
+  },
+  {
+    "prefix": "/api/v1/users",
+    "http_code": 404,
+    "content_type": "text/html; charset=utf-8",
+    "mounted": false
+  },
+  {
+    "prefix": "/api/v1/vaea",
+    "http_code": 401,
+    "content_type": "application/json; charset=utf-8",
+    "mounted": true
+  },
+  {
+    "prefix": "/api/v1/vcaop",
+    "http_code": 401,
+    "content_type": "application/json; charset=utf-8",
+    "mounted": true
+  },
+  {
+    "prefix": "/api/v1/vcaop/awin",
+    "http_code": 401,
+    "content_type": "application/json; charset=utf-8",
+    "mounted": true
+  },
+  {
+    "prefix": "/api/v1/vcaop/postback",
+    "http_code": 401,
+    "content_type": "application/json; charset=utf-8",
+    "mounted": true
+  },
+  {
+    "prefix": "/api/v1/vcaop/shopify",
+    "http_code": 401,
+    "content_type": "application/json; charset=utf-8",
+    "mounted": true
+  },
+  {
+    "prefix": "/api/v1/visual",
+    "http_code": 404,
+    "content_type": "text/html; charset=utf-8",
+    "mounted": false
+  },
+  {
+    "prefix": "/api/v1/vitana-index",
+    "http_code": 401,
+    "content_type": "application/json; charset=utf-8",
+    "mounted": true
+  },
+  {
+    "prefix": "/api/v1/voice-feedback",
+    "http_code": 404,
+    "content_type": "text/html; charset=utf-8",
+    "mounted": false
+  },
+  {
+    "prefix": "/api/v1/voice-lab",
+    "http_code": 401,
+    "content_type": "application/json; charset=utf-8",
+    "mounted": true
+  },
+  {
+    "prefix": "/api/v1/voice-tools",
+    "http_code": 404,
+    "content_type": "text/html; charset=utf-8",
+    "mounted": false
+  },
+  {
+    "prefix": "/api/v1/vtid",
+    "http_code": 404,
+    "content_type": "text/html; charset=utf-8",
+    "mounted": false
+  },
+  {
+    "prefix": "/api/v1/wearables",
+    "http_code": 404,
+    "content_type": "text/html; charset=utf-8",
+    "mounted": false
+  },
+  {
+    "prefix": "/api/v1/wearables/waitlist",
+    "http_code": 401,
+    "content_type": "application/json; charset=utf-8",
+    "mounted": true
+  },
+  {
+    "prefix": "/command-hub",
+    "http_code": 301,
+    "content_type": "text/html; charset=UTF-8",
+    "mounted": true
+  },
+  {
+    "prefix": "/r",
+    "http_code": 404,
+    "content_type": "text/html; charset=utf-8",
+    "mounted": false
+  },
+  {
+    "prefix": "/voice-lab",
+    "http_code": 301,
+    "content_type": "text/html; charset=UTF-8",
+    "mounted": true
+  }
+]

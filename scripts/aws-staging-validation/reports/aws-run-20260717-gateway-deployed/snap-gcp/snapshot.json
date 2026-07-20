@@ -1,0 +1,11 @@
+{
+  "label": "gcp",
+  "gateway": "https://preview-gateway.vitanaland.com",
+  "frontend": "https://preview.vitanaland.com",
+  "captured_at": "2026-07-17T08:11:13Z",
+  "health_meta": {
+    "http_code": 200,
+    "content_type": "application/json; charset=utf-8",
+    "time_total": 0.250385
+  }
+}
