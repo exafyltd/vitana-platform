@@ -41,7 +41,16 @@ const SECTION_SURFACE = {
   A5: 'Referrals', A6: 'Business', A7: 'LiveRooms', A8: 'Chat',
   A9: 'Community', A10: 'Events', A11: 'Health', A12: 'Goals',
   A13: 'Memory', A14: 'Profile', A15: 'Campaigns', A16: 'Settings',
+  // Marketplace Voice Assistant — expansion v3 (A17–A30 in the same plan doc)
+  A17: 'Marketplace', A18: 'Marketplace', A19: 'Marketplace', A20: 'Marketplace',
+  A21: 'Marketplace', A22: 'Marketplace', A23: 'Marketplace', A24: 'Marketplace',
+  A25: 'Marketplace', A26: 'Marketplace', A27: 'Marketplace', A28: 'Marketplace',
+  A29: 'Marketplace', A30: 'Marketplace',
 };
+
+// Section id → plan tag. A17+ belong to the Marketplace Voice Assistant
+// expansion (v3); everything before it is the original 425-tool plan (v2).
+const planTag = (sectionId) => (Number(sectionId.slice(1)) >= 17 && sectionId[0] === 'A' ? 'marketplace-va-v3' : 'expansion-v2');
 
 const SECTION_RE = /^## ([ABC]\d+)\.\s+(.+?)\s+\((\d+)\)\s+—\s+(P\d)/;
 const ROW_RE = /^\|\s*\d+\s*\|\s*`([a-z0-9_]+)`\s*(⚠️⚠️|⚠️)?\s*\|\s*(.+?)\s*\|\s*(R|W)\s*\|/;
@@ -86,7 +95,7 @@ function parsePlan(md) {
       priority: section.priority,
       risk,
       plan_domain: `${section.id} ${section.title}`,
-      plan: 'expansion-v2',
+      plan: planTag(section.id),
     });
     sectionCount++;
   }
@@ -107,19 +116,22 @@ function parsePlan(md) {
 }
 
 function main() {
-  const planned = parsePlan(readFileSync(PLAN, 'utf8'));
+  const parsed = parsePlan(readFileSync(PLAN, 'utf8'));
   const manifest = JSON.parse(readFileSync(MANIFEST, 'utf8'));
   const existing = new Set(manifest.tools.map((t) => t.name));
 
-  const collisions = planned.filter((t) => existing.has(t.name));
-  if (collisions.length) {
-    for (const c of collisions) console.error(`[seed] name already in manifest: ${c.name}`);
-    throw new Error('plan tool names collide with existing manifest entries — rename in the plan');
+  // Idempotent (per the header contract): plan entries whose name already
+  // exists in the manifest are skipped, never touched — re-running after a
+  // previous seed (or after a wave went live) must not downgrade or duplicate.
+  const skipped = parsed.filter((t) => existing.has(t.name));
+  const planned = parsed.filter((t) => !existing.has(t.name));
+  if (skipped.length) {
+    console.log(`[seed] skipping ${skipped.length} plan entries already in the manifest (idempotent re-run)`);
   }
 
   const byPart = { A: 0, B: 0, C: 0 };
   for (const t of planned) byPart[t.plan_domain[0]]++;
-  console.log(`[seed] parsed ${planned.length} planned tools (community=${byPart.A}, admin=${byPart.B}, developer=${byPart.C})`);
+  console.log(`[seed] parsed ${planned.length} new planned tools (community=${byPart.A}, admin=${byPart.B}, developer=${byPart.C})`);
 
   if (DRY_RUN) {
     console.log('[seed] dry-run: manifest not written');

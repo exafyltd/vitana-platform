@@ -103,6 +103,13 @@ import { ADMIN_AUDIT_MEMORY_OPS_TOOL_HANDLERS, ADMIN_AUDIT_MEMORY_OPS_TOOL_DECLA
 import { MEMORY_DIARY_SOCIAL_TOOL_HANDLERS, MEMORY_DIARY_SOCIAL_TOOL_DECLARATIONS } from './orb-tools/memory-diary-social-tools';
 import { DATABASE_MIGRATIONS_TOOL_HANDLERS, DATABASE_MIGRATIONS_TOOL_DECLARATIONS } from './orb-tools/database-migrations-tools';
 import { DEV_ACCESS_SIMULATOR_META_TOOL_HANDLERS, DEV_ACCESS_SIMULATOR_META_TOOL_DECLARATIONS } from './orb-tools/dev-access-simulator-meta-tools';
+// WAVE-MVA-1 — Marketplace Voice Assistant (expansion v3, plan sections
+// A17–A30): guided-shopping orchestrators + intent/preferences, and the
+// discovery/recommendation/explanation/compare/suitability/cart-confirm
+// journey layer (docs/VOICE_TOOLS_EXPANSION_PLAN.md, "Marketplace Voice
+// Assistant" part).
+import { MARKETPLACE_GUIDE_TOOL_HANDLERS, MARKETPLACE_GUIDE_TOOL_DECLARATIONS } from './orb-tools/marketplace-guide-tools';
+import { MARKETPLACE_JOURNEY_TOOL_HANDLERS, MARKETPLACE_JOURNEY_TOOL_DECLARATIONS } from './orb-tools/marketplace-journey-tools';
 import {
   lookupScreen,
   lookupByAlias,
@@ -5261,6 +5268,9 @@ export const ORB_TOOL_REGISTRY: Record<string, OrbToolHandler> = {
   ...MEMORY_DIARY_SOCIAL_TOOL_HANDLERS,
   ...DATABASE_MIGRATIONS_TOOL_HANDLERS,
   ...DEV_ACCESS_SIMULATOR_META_TOOL_HANDLERS,
+  // WAVE-MVA-1 (Marketplace Voice Assistant)
+  ...MARKETPLACE_GUIDE_TOOL_HANDLERS,
+  ...MARKETPLACE_JOURNEY_TOOL_HANDLERS,
 };
 
 // BOOTSTRAP-VOICE-CATALOG-COMPLETE — combined Vertex/Gemini function
@@ -5293,6 +5303,9 @@ export const NEW_DOMAIN_TOOL_DECLARATIONS: Array<Record<string, unknown>> = [
   ...BUSINESS_HUB_TOOL_DECLARATIONS,
   // WAVE-6-VOICE-CATALOG-V2 (community)
   ...MEMORY_DIARY_SOCIAL_TOOL_DECLARATIONS,
+  // WAVE-MVA-1 (Marketplace Voice Assistant, community)
+  ...MARKETPLACE_GUIDE_TOOL_DECLARATIONS,
+  ...MARKETPLACE_JOURNEY_TOOL_DECLARATIONS,
 ];
 
 // Developer tools are role-gated the same way ADMIN_TOOL_SCHEMAS is —
