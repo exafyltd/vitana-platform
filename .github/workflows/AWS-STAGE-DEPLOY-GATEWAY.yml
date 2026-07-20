@@ -1,0 +1,222 @@
+# AWS-STAGE-DEPLOY-GATEWAY — build the gateway from `main`, push to ECR,
+# and roll the ECS service on the AWS staging stack.
+#
+# AWS twin of STAGE-DEPLOY.yml (which deploys gateway-staging on GCP Cloud
+# Run). Written as part of taking full ownership of the AWS environment
+# after the migration-team handover (BOOTSTRAP-AWS-STAGING-VALIDATION).
+#
+# Design choices:
+# - The existing task definition is PRESERVED: only the container image and
+#   the commit-stamp env vars (GIT_COMMIT_SHA / COMMIT_SHA /
+#   BUILD_INFO_MARKER) are replaced. Env vars and secrets bound on the task
+#   def (VITANA_ENV, feature flags, SUPABASE_JWT_SECRET, …) carry forward —
+#   the task def is the AWS analogue of STAGE-DEPLOY.yml's authoritative
+#   ENV_VARS block, so this workflow does not re-declare it.
+# - Smoke gate mirrors STAGE-DEPLOY.yml: /api/v1/admin/health must report
+#   env=staging AND /api/v1/admin/build-info must report the deployed
+#   commit — otherwise the job fails loudly (CLAUDE.md §15).
+# - OASIS event + software_versions row are emitted best-effort via
+#   Supabase REST when SUPABASE_URL / SUPABASE_SERVICE_ROLE repo secrets
+#   exist, so the Command Hub CLOCK history sees AWS staging deploys.
+#
+# Required repository secrets:
+#   AWS_STAGING_ACCESS_KEY_ID / AWS_STAGING_SECRET_ACCESS_KEY
+#   (IAM user claude-staging-validation — ECR push + ECS update)
+# Optional repository secrets (for OASIS/CLOCK visibility):
+#   SUPABASE_URL / SUPABASE_SERVICE_ROLE
+
+name: AWS Stage Deploy Gateway (ECS)
+
+on:
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: 'Reason for this AWS staging gateway deploy'
+        required: false
+        default: 'manual deploy'
+      gateway_url:
+        description: 'Public gateway URL for post-deploy verification'
+        required: false
+        default: 'https://preview-aws-gateway.vitanaland.com'
+      aws_region:
+        description: 'AWS region'
+        required: false
+        default: 'eu-central-1'
+      ecr_repository:
+        description: 'ECR repository name for the gateway image'
+        required: false
+        default: 'vitana/gateway'
+      ecs_cluster:
+        description: 'ECS cluster name'
+        required: false
+        default: 'Vitana-ECS-Cluster'
+      ecs_service:
+        description: 'ECS service name'
+        required: false
+        default: 'vitana-gateway'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: aws-stage-deploy-gateway
+  cancel-in-progress: false
+
+jobs:
+  build-push-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve commit metadata + refresh BUILD_INFO
+        id: commit
+        run: |
+          SHORT="$(git rev-parse --short=12 HEAD)"
+          {
+            echo "sha=$GITHUB_SHA"
+            echo "short=$SHORT"
+          } >> "$GITHUB_OUTPUT"
+          # The gateway Dockerfile COPYs BUILD_INFO into the image; refresh
+          # it so the baked file reflects this build, not the last commit
+          # that happened to touch it.
+          {
+            echo "$GITHUB_SHA"
+            echo "Build: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          } > services/gateway/BUILD_INFO
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_STAGING_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_STAGING_SECRET_ACCESS_KEY }}
+          aws-region: ${{ inputs.aws_region }}
+
+      - name: Login to Amazon ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Preflight — verify ECR repo + ECS service exist
+        run: |
+          set -e
+          if ! aws ecr describe-repositories --repository-names "${{ inputs.ecr_repository }}" >/dev/null 2>&1; then
+            echo "::error::ECR repository '${{ inputs.ecr_repository }}' not found. Available repositories:"
+            aws ecr describe-repositories --query 'repositories[].repositoryName' --output table
+            exit 1
+          fi
+          if ! aws ecs describe-services --cluster "${{ inputs.ecs_cluster }}" --services "${{ inputs.ecs_service }}" \
+               --query 'services[0].status' --output text 2>/dev/null | grep -q ACTIVE; then
+            echo "::error::ECS service '${{ inputs.ecs_service }}' not ACTIVE in cluster '${{ inputs.ecs_cluster }}'. Services:"
+            aws ecs list-services --cluster "${{ inputs.ecs_cluster }}" --output table
+            exit 1
+          fi
+
+      - name: Build and push image
+        id: build
+        env:
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+        run: |
+          set -e
+          IMAGE="$REGISTRY/${{ inputs.ecr_repository }}:${{ steps.commit.outputs.short }}"
+          docker build -t "$IMAGE" -t "$REGISTRY/${{ inputs.ecr_repository }}:staging-latest" services/gateway
+          docker push "$IMAGE"
+          docker push "$REGISTRY/${{ inputs.ecr_repository }}:staging-latest"
+          echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
+          echo "Pushed $IMAGE"
+
+      - name: Register task-definition revision + roll the service
+        run: |
+          set -e
+          IMAGE="${{ steps.build.outputs.image }}"
+          SHA="${{ steps.commit.outputs.sha }}"
+          SHORT="${{ steps.commit.outputs.short }}"
+          TD_ARN=$(aws ecs describe-services --cluster "${{ inputs.ecs_cluster }}" --services "${{ inputs.ecs_service }}" \
+            --query 'services[0].taskDefinition' --output text)
+          echo "Current task definition: $TD_ARN"
+          # Swap image + re-stamp commit env vars; preserve everything else
+          # (env block, secrets, resources). upsert semantics for the three
+          # stamp vars so first-run task defs without them still work.
+          NEW_DEF=$(aws ecs describe-task-definition --task-definition "$TD_ARN" --query taskDefinition \
+            | jq --arg IMG "$IMAGE" --arg SHA "$SHA" --arg SHORT "$SHORT" '
+                .containerDefinitions[0].image = $IMG
+                | .containerDefinitions[0].environment |=
+                    ( [ .[] | select(.name | IN("GIT_COMMIT_SHA","COMMIT_SHA","BUILD_INFO_MARKER") | not) ]
+                      + [ {name:"GIT_COMMIT_SHA", value:$SHA},
+                          {name:"COMMIT_SHA", value:$SHA},
+                          {name:"BUILD_INFO_MARKER", value:$SHORT} ] )
+                | del(.taskDefinitionArn, .revision, .status, .requiresAttributes,
+                      .compatibilities, .registeredAt, .registeredBy, .deregisteredAt)')
+          NEW_ARN=$(aws ecs register-task-definition --cli-input-json "$NEW_DEF" \
+            --query 'taskDefinition.taskDefinitionArn' --output text)
+          echo "Registered $NEW_ARN"
+          aws ecs update-service --cluster "${{ inputs.ecs_cluster }}" --service "${{ inputs.ecs_service }}" \
+            --task-definition "$NEW_ARN" >/dev/null
+          echo "Waiting for service to stabilize (up to ~10 min)…"
+          aws ecs wait services-stable --cluster "${{ inputs.ecs_cluster }}" --services "${{ inputs.ecs_service }}"
+          echo "Service stable on $NEW_ARN"
+
+      - name: Smoke — env=staging + deployed commit live
+        run: |
+          set -e
+          URL="${{ inputs.gateway_url }}"
+          SHA="${{ steps.commit.outputs.sha }}"
+          for i in 1 2 3 4 5 6; do
+            HEALTH=$(curl -fsS "$URL/api/v1/admin/health" 2>/dev/null || echo '')
+            BUILD=$(curl -fsS "$URL/api/v1/admin/build-info" 2>/dev/null || echo '')
+            ENV=$(echo "$HEALTH" | jq -r '.env // empty')
+            COMMIT=$(echo "$BUILD" | jq -r '.git_commit // empty')
+            if [ "$ENV" = "staging" ] && [ "$COMMIT" = "$SHA" ]; then
+              echo "✓ env=staging, git_commit=$COMMIT"
+              exit 0
+            fi
+            echo "Attempt $i: env='$ENV' commit='$COMMIT' (want staging/$SHA) — retry in 15s"
+            sleep 15
+          done
+          echo "::error::Smoke failed — health/build-info did not report env=staging with the deployed commit"
+          exit 1
+
+      - name: Emit OASIS event + software_versions row (best-effort)
+        if: always()
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SVC: ${{ secrets.SUPABASE_SERVICE_ROLE }}
+          SHA: ${{ steps.commit.outputs.sha }}
+          SHORT: ${{ steps.commit.outputs.short }}
+          OUTCOME: ${{ job.status }}
+        run: |
+          set +e
+          if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_SVC" ]; then
+            echo "::notice::SUPABASE_URL / SUPABASE_SERVICE_ROLE repo secrets not set — skipping OASIS/CLOCK emission (deploy itself unaffected)."
+            exit 0
+          fi
+          STATUS=$([ "$OUTCOME" = "success" ] && echo success || echo error)
+          TOPIC=$([ "$OUTCOME" = "success" ] && echo staging.deploy.completed || echo staging.deploy.failed)
+          curl -fsS -X POST "$SUPABASE_URL/rest/v1/software_versions" \
+            -H "Content-Type: application/json" -H "apikey: $SUPABASE_SVC" \
+            -H "Authorization: Bearer $SUPABASE_SVC" -H "Prefer: return=minimal" \
+            -d "$(jq -nc --arg sha "$SHA" --arg st "$STATUS" \
+              '{service:"vitana-gateway-aws", git_commit:$sha, deploy_type:"normal", initiator:"agent", status:$st, environment:"staging"}')" \
+            || echo "::warning::software_versions insert failed; continuing."
+          curl -fsS -X POST "$SUPABASE_URL/rest/v1/oasis_events" \
+            -H "Content-Type: application/json" -H "apikey: $SUPABASE_SVC" \
+            -H "Authorization: Bearer $SUPABASE_SVC" -H "Prefer: return=minimal" \
+            -d "$(jq -nc --arg sha "$SHA" --arg short "$SHORT" --arg st "$STATUS" --arg topic "$TOPIC" '{
+              vtid: "BOOTSTRAP-AWS-STAGE-DEPLOY",
+              topic: $topic,
+              service: "vitana-gateway-aws",
+              role: "CICD",
+              model: "aws-stage-deploy",
+              status: $st,
+              message: ("AWS-STAGE-DEPLOY-GATEWAY: " + $short),
+              metadata: { env: "staging", platform: "aws-ecs", git_commit: $sha, workflow: "AWS-STAGE-DEPLOY-GATEWAY.yml" }
+            }')" || echo "::warning::oasis_events insert failed; continuing."
+
+      - name: Summary
+        if: success()
+        run: |
+          {
+            echo "## AWS staging gateway deploy"
+            echo "- Image: \`${{ steps.build.outputs.image }}\`"
+            echo "- Commit: \`${{ steps.commit.outputs.sha }}\`"
+            echo "- Verified live at: ${{ inputs.gateway_url }}"
+            echo "- Reason: ${{ inputs.reason }}"
+          } >> "$GITHUB_STEP_SUMMARY"
