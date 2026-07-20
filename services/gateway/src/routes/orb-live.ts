@@ -8108,14 +8108,21 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
       voiceWakeBriefReason: _voiceReasonSync,
     });
     if (_syncDecision.directive !== null) {
-      ws.send(
-        JSON.stringify({
-          client_content: {
-            turns: [{ role: 'user', parts: [{ text: _syncDecision.directive }] }],
-            turn_complete: true,
-          },
-        }),
+      const _greetingClientContentMsg = JSON.stringify({
+        client_content: {
+          turns: [{ role: 'user', parts: [{ text: _syncDecision.directive }] }],
+          turn_complete: true,
+        },
+      });
+      // BOOTSTRAP-AWS-STAGING-VALIDATION: diagnosing a code=1007 "Request
+      // contains an invalid argument" close from AI Studio's Live API right
+      // after this exact send (Vertex accepts it fine). Log size + a safe
+      // preview so the real payload is inspectable in CloudWatch instead of
+      // guessed at — remove once the AI-Studio-vs-Vertex divergence is found.
+      console.log(
+        `[BOOTSTRAP-AWS-STAGING-VALIDATION] Sending greeting client_content for session ${session.sessionId}: wakeOpener=${_syncDecision.wakeOpener} bytes=${Buffer.byteLength(_greetingClientContentMsg)} directive_chars=${_syncDecision.directive.length} preview=${JSON.stringify(_syncDecision.directive.slice(0, 200))}`,
       );
+      ws.send(_greetingClientContentMsg);
     }
     session.greetingSent = true;
     session.greetingTurnIndex = session.turn_count;
