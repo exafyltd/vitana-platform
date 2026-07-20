@@ -29,6 +29,20 @@ export const VERTEX_PROJECT_ID =
 export const VERTEX_LOCATION = process.env.VERTEX_AI_LOCATION || 'us-central1';
 
 /**
+ * BOOTSTRAP-AWS-STAGING-VALIDATION: ORB's Live API upstream normally
+ * authenticates to Vertex AI via OAuth Application Default Credentials,
+ * which resolve for free on Cloud Run (GCP metadata server) but have
+ * nothing to resolve from on non-GCP compute (AWS ECS has no metadata
+ * server — see lib/gcp-adc-bootstrap.ts for the same problem on the REST
+ * side). Setting GEMINI_LIVE_TRANSPORT=api_key switches `connectToLiveAPI`
+ * to `GeminiApiKeyLiveClient`, which talks to the Google AI Studio Live API
+ * using a plain Gemini API key (GOOGLE_GEMINI_API_KEY) — no GCP credential
+ * needed at all. Unset (default 'vertex') on GCP, where ADC already works.
+ */
+export const GEMINI_LIVE_USE_API_KEY =
+  (process.env.GEMINI_LIVE_TRANSPORT || 'vertex').toLowerCase() === 'api_key';
+
+/**
  * Live (ORB voice) session timeout. After 30 minutes of inactivity the
  * periodic session sweep purges the entry from `liveSessions`. SSE/WS
  * cleanup handlers handle the happy path; this is the safety net.
