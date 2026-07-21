@@ -212,12 +212,14 @@ export const VALID_PROVIDERS: LLMProvider[] = [
  * on a mid-tier or light option.
  *
  * `bedrock`'s value is NOT a plain model ID — Bedrock cross-region inference
- * requires the resolved inference profile ID (e.g. `eu.anthropic.claude-*`),
- * which is still blocked on AWS console/CLI access (VTID-03403). Read from
- * BEDROCK_MODEL_ID once that's resolved; the literal fallback below is an
- * unconfirmed placeholder for the dropdown default only — it does not affect
- * `ADAPTERS.bedrock.call()`, which always uses the per-stage DB policy's
- * configured model string, never this constant.
+ * requires the resolved inference profile ID. Confirmed via
+ * `aws bedrock list-inference-profiles` (VTID-03403): the Claude Sonnet 4.6
+ * cross-region profile in `eu-central-1` is `eu.anthropic.claude-sonnet-4-6`
+ * (no `-v1:0` suffix — that was an earlier unconfirmed guess). Read from
+ * BEDROCK_MODEL_ID if set; the literal below is only the dropdown's
+ * convenience default — it does not affect `ADAPTERS.bedrock.call()`, which
+ * always uses the per-stage DB policy's configured model string, never this
+ * constant.
  */
 export const PROVIDER_FLAGSHIPS: Record<LLMProvider, string> = {
   anthropic: 'claude-opus-4-7',
@@ -225,7 +227,7 @@ export const PROVIDER_FLAGSHIPS: Record<LLMProvider, string> = {
   openai: 'gpt-5',
   deepseek: 'deepseek-reasoner',
   claude_subscription: 'claude-opus-4-7',
-  bedrock: process.env.BEDROCK_MODEL_ID || 'eu.anthropic.claude-sonnet-4-6-v1:0',
+  bedrock: process.env.BEDROCK_MODEL_ID || 'eu.anthropic.claude-sonnet-4-6',
 };
 
 /**
