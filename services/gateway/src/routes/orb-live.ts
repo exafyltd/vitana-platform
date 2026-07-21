@@ -11204,6 +11204,9 @@ router.post('/session/finalize', async (req: Request, res: Response) => {
 /**
  * VTID-01039: GET /session/:orb_session_id - Get full transcript + summary
  */
+// public-route: pre-existing anonymous route (no auth wrapper on main before
+// this PR either); the session id itself is the access token, and this PR
+// only adds a passthrough guard for the /session/continuity path below.
 router.get('/session/:orb_session_id', (req: Request, res: Response, next: NextFunction) => {
   const { orb_session_id } = req.params;
 
