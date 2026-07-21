@@ -1160,5 +1160,46 @@ added to claim due rows and transition `active → fired`.
 
 ---
 
+## VTID-02950 — Recommend & Earn (Business tab)
+
+Backs the owner's private "Business" segment (click/conversion/commission
+stats, `discover-recommendations.ts`) and, as of
+BOOTSTRAP-PUBLIC-BUSINESS-PROFILE, a public read-only storefront view for
+profile visitors (`discover-recommendations-public.ts`) — same table, two
+response shapes: the public endpoint drops all stats/earnings columns.
+**Migration:** `supabase/migrations/20260715120000_vtid_02950_recommendation_commissions.sql`
+
+### product_recommendations
+
+**Purpose:** One row per (user, product) a community member has recommended
+from Discover. Tracks clicks/conversions/commission earned for the owner's
+private dashboard; only `status='active'` rows are exposed to other users.
+
+```sql
+CREATE TABLE product_recommendations (
+  id                       UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id                UUID,
+  user_id                  UUID NOT NULL,
+  product_id               UUID NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+  merchant_id              UUID REFERENCES merchants(id) ON DELETE SET NULL,
+  sharing_link_id          UUID REFERENCES sharing_links(id) ON DELETE SET NULL,
+  status                   TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','disabled')),
+  click_count              INT NOT NULL DEFAULT 0,
+  conversion_count         INT NOT NULL DEFAULT 0,
+  commission_earned_minor  BIGINT NOT NULL DEFAULT 0,
+  commission_currency      CHAR(3) NOT NULL DEFAULT 'EUR',
+  created_at               TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at               TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (user_id, product_id)
+);
+```
+
+**Auth model:** RLS on, owner-select-only (`auth.uid() = user_id`) +
+service-role full access. **All gateway routes use the service-role client,
+bypassing RLS** — the route code's response-shaping (dropping stats fields
+for the public endpoint) is the actual privacy boundary, not RLS.
+
+---
+
 **Remember:** This file is the SINGLE SOURCE OF TRUTH for table names.
 When in doubt, CHECK HERE FIRST!

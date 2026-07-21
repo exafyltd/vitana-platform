@@ -174,6 +174,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const discoverFeedRouter = require('./routes/discover-feed').default;
   // VTID-02950: Recommend & Earn — user product recommendations + commission stats
   const discoverRecommendationsRouter = require('./routes/discover-recommendations').default;
+  // BOOTSTRAP-PUBLIC-BUSINESS-PROFILE: another user's public recommendations
+  // (Business tab, visitor view) — no owner-only stats, see file header.
+  const discoverRecommendationsPublicRouter = require('./routes/discover-recommendations-public').default;
   // VTID-02000: Maxina admin marketplace routes
   const adminMarketplaceRouter = require('./routes/admin-marketplace').default;
   // VTID-02000: Internal scheduler-authed sync trigger (shared secret, no user JWT)
@@ -1028,6 +1031,7 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   mountRouterSync(app, '/api/v1/discover', discoverSearchRouter, { owner: 'discover-search' });
   mountRouterSync(app, '/api/v1/discover', discoverFeedRouter, { owner: 'discover-feed' });
   mountRouterSync(app, '/api/v1/discover', discoverRecommendationsRouter, { owner: 'discover-recommendations' });
+  mountRouterSync(app, '/api/v1/discover', discoverRecommendationsPublicRouter, { owner: 'discover-recommendations-public' });
   // Public, auth-less profile lookup for crawler OG previews
   mountRouterSync(app, '/api/v1/public', publicProfileOgRouter, { owner: 'public-profile-og' });
   // VTID-02000: Maxina admin marketplace
