@@ -325,6 +325,47 @@ Located at: `config/service-path-map.json`
 
 ---
 
+## 2b. LLM ROUTING — BEDROCK PROVIDER (VTID-03403)
+
+The gateway's LLM dispatcher (`services/gateway/src/services/llm-router.ts`)
+selects a provider per-*stage* from the DB-backed `llm_routing_policy` table
+(editable via the Command Hub dropdown), via an `ADAPTERS: Record<LLMProvider,
+ProviderAdapter>` map. **Anthropic Claude via Amazon Bedrock (`'bedrock'`) is
+one of these adapters**, alongside `anthropic`, `openai`, `vertex`,
+`deepseek`, and `claude_subscription`.
+
+- **Region:** `eu-central-1` — the only region with any Vitana AWS
+  infrastructure for account `472838866351` (confirmed via
+  `scripts/aws-staging-validation/reports/aws-run-20260716/FINDINGS.md`).
+  Read from `AWS_BEDROCK_REGION` (falls back to `AWS_REGION`, then
+  `us-east-1`).
+- **Activation gate:** `BEDROCK_ROLE_ARN` env var. Unset → the adapter
+  reports itself unavailable (`not_configured`) and the router skips it like
+  any other provider with missing credentials. Setting it in
+  `gateway-staging` is a deliberate, separate action — not a byproduct of
+  deploying this code.
+- **Model selection:** `ADAPTERS.bedrock.call()` takes the model string
+  straight from whatever the active stage's `llm_routing_policy` row
+  specifies — for Bedrock this must be a resolved **cross-region inference
+  profile ID** (e.g. `eu.anthropic.claude-sonnet-4-6-v1:0`), not a bare
+  on-demand model ID. `PROVIDER_FLAGSHIPS.bedrock`
+  (`services/gateway/src/constants/llm-defaults.ts`) is only the Command Hub
+  dropdown's convenience default — read from `BEDROCK_MODEL_ID` if set.
+- **Not selected by default anywhere.** Adding the adapter does not change
+  any stage's routing — Bedrock only runs when an operator explicitly points
+  a stage at `'bedrock'`.
+- **Not yet supported:** vision (`image`/`images`) and tool calling
+  (`tools`/`forceTool`) — the adapter returns an explicit error for these
+  rather than silently dropping them or mis-serializing the request.
+- **Implementation:** `services/gateway/src/providers/bedrock.ts`
+  (`invokeBedrock()`) does the actual `BedrockRuntimeClient.send()` call;
+  `bedrockAdapter` in `llm-router.ts` adapts it to the router's
+  `ProviderAdapter` interface. Provider/model/latency logging comes for
+  free via the router's existing `startLLMCall`/`completeLLMCall`/
+  `failLLMCall` telemetry — no Bedrock-specific logging code needed.
+
+---
+
 ## 3. DATABASE (SUPABASE)
 
 ### Critical Rules
