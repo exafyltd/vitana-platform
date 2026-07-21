@@ -43,7 +43,8 @@ export type LLMProvider =
   | 'vertex'
   | 'openai'
   | 'deepseek'
-  | 'claude_subscription';
+  | 'claude_subscription'
+  | 'bedrock';
 
 /**
  * Stage routing configuration
@@ -202,12 +203,21 @@ export const VALID_PROVIDERS: LLMProvider[] = [
   'openai',
   'deepseek',
   'claude_subscription',
+  'bedrock',
 ];
 
 /**
  * Per-provider flagship — looked up by the Command Hub dropdown so flipping
  * providers always lands on the strongest model from the new provider, never
  * on a mid-tier or light option.
+ *
+ * `bedrock`'s value is NOT a plain model ID — Bedrock cross-region inference
+ * requires the resolved inference profile ID (e.g. `eu.anthropic.claude-*`),
+ * which is still blocked on AWS console/CLI access (VTID-03403). Read from
+ * BEDROCK_MODEL_ID once that's resolved; the literal fallback below is an
+ * unconfirmed placeholder for the dropdown default only — it does not affect
+ * `ADAPTERS.bedrock.call()`, which always uses the per-stage DB policy's
+ * configured model string, never this constant.
  */
 export const PROVIDER_FLAGSHIPS: Record<LLMProvider, string> = {
   anthropic: 'claude-opus-4-7',
@@ -215,6 +225,7 @@ export const PROVIDER_FLAGSHIPS: Record<LLMProvider, string> = {
   openai: 'gpt-5',
   deepseek: 'deepseek-reasoner',
   claude_subscription: 'claude-opus-4-7',
+  bedrock: process.env.BEDROCK_MODEL_ID || 'eu.anthropic.claude-sonnet-4-6-v1:0',
 };
 
 /**

@@ -1,23 +1,28 @@
+import { BedrockRuntimeClient, InvokeModelCommand } from '@aws-sdk/client-bedrock-runtime';
+
 /**
- * Anthropic-via-Bedrock provider — Phase 1 W1 (VTID-03181 VOICE-LAT).
+ * Anthropic-via-Bedrock provider (VTID-03181 VOICE-LAT W1; wired in
+ * VTID-03403 W3/W4, reopened from VTID-03402 after an autopilot false
+ * completion — see VTID-03402/03403 spec history).
  *
- * DORMANT in W1. Activates in W3+ once an AWS account is provisioned and
- * BEDROCK_ROLE_ARN env var is set. The runtime check below early-returns
- * a typed error so callers can fall back to Vertex/Anthropic seamlessly.
+ * Still dormant until BEDROCK_ROLE_ARN is set on a real deployment (AWS
+ * IAM/model-access provisioning is tracked separately in VTID-03403 and
+ * requires AWS console/CLI access). The runtime check below early-returns
+ * a typed error so callers can fall back to another provider seamlessly.
  *
- * The @aws-sdk/client-bedrock-runtime dep is NOT added in W1 — we use a
- * dynamic require() inside the function so the build stays green without
- * the install. When BEDROCK_ROLE_ARN is set in W3, the corresponding PR
- * also runs `npm i @aws-sdk/client-bedrock-runtime` in the same commit.
- *
- * Wire path: conversation-router.ts (W4 migration) reads
- * preferred_provider='bedrock' and routes here. Until then, this module
- * is unreferenced — included only so the import surface is fixed.
+ * Wire path: services/gateway/src/services/llm-router.ts registers a
+ * `bedrockAdapter` in its `ADAPTERS` map, calling `invokeBedrock()` below.
+ * There is no `conversation-router.ts` and no `preferred_provider` field —
+ * that mechanism never existed; the real dispatch is per-stage via the
+ * DB-backed `llm_routing_policy`, same as every other provider.
  */
 
 export interface BedrockInvokeRequest {
   model: string;
-  messages: Array<{ role: 'user' | 'assistant' | 'system'; content: string }>;
+  messages: Array<{ role: 'user' | 'assistant'; content: string }>;
+  /** Top-level system prompt, matching Anthropic's Messages API shape
+   *  (including via Bedrock) — NOT a role:'system' entry in `messages`. */
+  system?: string;
   max_tokens?: number;
   temperature?: number;
   tools?: unknown[];
@@ -33,7 +38,7 @@ export interface BedrockInvokeResponse {
 
 export interface BedrockInvokeError {
   ok: false;
-  error: 'not_configured' | 'sdk_missing' | 'invoke_failed';
+  error: 'not_configured' | 'invoke_failed';
   message: string;
 }
 
@@ -47,44 +52,27 @@ export async function invokeBedrock(
     return {
       ok: false,
       error: 'not_configured',
-      message: 'BEDROCK_ROLE_ARN env var not set; Bedrock is dormant until W3 AWS provisioning lands',
-    };
-  }
-
-  let BedrockRuntimeClient: unknown;
-  let InvokeModelCommand: unknown;
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const mod = require('@aws-sdk/client-bedrock-runtime');
-    BedrockRuntimeClient = mod.BedrockRuntimeClient;
-    InvokeModelCommand = mod.InvokeModelCommand;
-  } catch {
-    return {
-      ok: false,
-      error: 'sdk_missing',
-      message: '@aws-sdk/client-bedrock-runtime not installed; run `npm i @aws-sdk/client-bedrock-runtime` then redeploy',
+      message: 'BEDROCK_ROLE_ARN env var not set; Bedrock is dormant until AWS provisioning lands (VTID-03403)',
     };
   }
 
   const start = Date.now();
   try {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const client = new (BedrockRuntimeClient as any)({ region: BEDROCK_REGION });
+    const client = new BedrockRuntimeClient({ region: BEDROCK_REGION });
     const body = JSON.stringify({
       anthropic_version: 'bedrock-2023-05-31',
       max_tokens: req.max_tokens ?? 2048,
       temperature: req.temperature ?? 0.5,
+      ...(req.system ? { system: req.system } : {}),
       messages: req.messages,
     });
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const command = new (InvokeModelCommand as any)({
+    const command = new InvokeModelCommand({
       modelId: req.model,
       contentType: 'application/json',
       accept: 'application/json',
       body,
     });
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const resp = await (client as any).send(command);
+    const resp = await client.send(command);
     const payload = JSON.parse(new TextDecoder().decode(resp.body));
     const text = Array.isArray(payload.content) && payload.content[0]?.text ? payload.content[0].text : '';
     return {
