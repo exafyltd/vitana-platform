@@ -6902,11 +6902,22 @@ async function connectToLiveAPI(
                         session.identity?.vitana_id ?? null,
                         undefined, // omitGreetingPolicy — unchanged (Vertex/AI Studio still need it)
                         undefined, // surface — unchanged (route-based heuristic)
-                        // BOOTSTRAP-AWS-STAGING-VALIDATION: drop the redundant
-                        // `## AVAILABLE TOOLS` prose block on the AI Studio
-                        // transport only — see buildLiveSystemInstruction's
-                        // omitToolsProse param comment. Vertex keeps it.
-                        GEMINI_LIVE_USE_API_KEY,
+                        // BOOTSTRAP-ORB-INSTRUCTION-BUDGET: drop the redundant
+                        // `## AVAILABLE TOOLS` prose block on BOTH raw-WS
+                        // transports (Vertex and AI Studio). The prose is
+                        // generated from the exact same buildLiveApiTools()
+                        // declarations this envelope already carries
+                        // structurally (renderAvailableToolsSection), so it is
+                        // redundant by construction here; it exists only for
+                        // LiveKit, whose call site does NOT set this flag.
+                        // #2905 dropped it for AI Studio when it blew that
+                        // transport's budget; the Wave-MVA-1 catalog growth
+                        // (+35 tools, PR #2895) then pushed the authenticated
+                        // Vertex instruction to ~49k tokens → Gemini Live
+                        // closed every authenticated session with code 1007
+                        // ("user system instruction has 48787 tokens") —
+                        // prod ORB stuck at "Verbinden…". Always omit here.
+                        true,
                       ))) as string
             }]
           },
