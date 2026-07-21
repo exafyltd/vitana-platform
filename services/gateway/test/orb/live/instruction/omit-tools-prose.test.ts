@@ -53,3 +53,38 @@ describe('BOOTSTRAP-AWS-STAGING-VALIDATION: omitToolsProse', () => {
     expect(withBlock.length).toBeGreaterThan(withoutBlock.length);
   });
 });
+
+describe('BOOTSTRAP-ORB-INSTRUCTION-BUDGET: raw-WS transports always omit the prose', () => {
+  // Prod incident lock: with the full catalog (683 manifest / 500+ live
+  // tools), the prose block alone pushes an authenticated instruction to
+  // ~49k tokens — Gemini Live closes the session with code=1007 ("user
+  // system instruction has 48787 tokens") and the ORB freezes at
+  // "Verbinden…". The single Vertex/AI-Studio call site in routes/orb-live.ts
+  // must therefore pass omitToolsProse=true UNCONDITIONALLY (it was
+  // GEMINI_LIVE_USE_API_KEY-gated, which left Vertex prod exposed). The
+  // structured function_declarations in the same setup envelope keep every
+  // tool callable — the prose is redundant by construction on these
+  // transports (renderAvailableToolsSection reads the same declarations).
+  it('routes/orb-live.ts passes omitToolsProse=true unconditionally at the raw-WS call site', () => {
+    const fs = require('fs') as typeof import('fs');
+    const path = require('path') as typeof import('path');
+    const src = fs
+      .readFileSync(path.join(__dirname, '../../../../src/routes/orb-live.ts'), 'utf8')
+      .replace(/\r\n/g, '\n');
+    // The omitGreetingPolicy/surface/omitToolsProse positional tail of the
+    // buildLiveSystemInstruction call. A revert to the transport-gated flag
+    // (GEMINI_LIVE_USE_API_KEY) or to `undefined` re-opens the prod outage.
+    const tail = /omitGreetingPolicy[^]*?surface — unchanged[^]*?\n\s*(true|GEMINI_LIVE_USE_API_KEY|undefined|false),\n\s*\)\)\) as string/;
+    const m = src.match(tail);
+    expect(m).not.toBeNull();
+    expect(m![1]).toBe('true');
+  });
+
+  it('the prose drop reclaims the bulk of the authenticated instruction budget', () => {
+    const withBlock = build(false);
+    const withoutBlock = build(true);
+    // The block is the dominant cost: dropping it must reclaim well over
+    // half of the assembled instruction on a full-catalog community build.
+    expect(withoutBlock.length).toBeLessThan(withBlock.length / 2);
+  });
+});
