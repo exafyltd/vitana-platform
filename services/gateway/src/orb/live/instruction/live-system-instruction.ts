@@ -413,9 +413,12 @@ export function buildLiveSystemInstruction(
   // heavy-tool-catalog user (250+ tools) it alone can run well past 100 KB,
   // which is what pushed the aggregate system_instruction over AI Studio's
   // real context budget and caused a code=1007 "invalid argument" close on
-  // the very first client_content send (setup itself is accepted). Passed
-  // true only for the AI Studio transport for now — Vertex keeps existing
-  // behavior unchanged pending a decision to trim it there too.
+  // the very first client_content send (setup itself is accepted).
+  // BOOTSTRAP-ORB-INSTRUCTION-BUDGET: now passed true for BOTH raw-WS
+  // transports (Vertex included) — after the Wave-MVA-1 catalog growth the
+  // authenticated Vertex instruction hit ~49k tokens and Gemini Live closed
+  // every authenticated prod session with the same code=1007. Only LiveKit
+  // (which genuinely needs the prose) leaves this unset.
   omitToolsProse?: boolean,
 ): string {
   const languageNames: Record<string, string> = {
