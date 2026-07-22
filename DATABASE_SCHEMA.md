@@ -150,7 +150,7 @@ CREATE TABLE public.user_wallets (
 
 CREATE TABLE public.wallet_transactions (   -- old (2025-09) schema; still the live one
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  from_user_id UUID, to_user_id UUID,
+  from_user_id UUID, to_user_id UUID,       -- reference auth.users.id, NOT profiles.id
   transaction_type TEXT NOT NULL,   -- 'transfer' | 'exchange' | 'reward' | 'purchase'
   from_currency TEXT, to_currency TEXT,
   amount NUMERIC(15,2) NOT NULL,
@@ -161,6 +161,9 @@ CREATE TABLE public.wallet_transactions (   -- old (2025-09) schema; still the l
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
+-- from_user_id/to_user_id → profiles.user_id via wallet_transactions_from_user_id_fkey
+-- / _to_user_id_fkey (added 2026-07-21, NOT VALID — see change log). profiles.id is a
+-- separate surrogate PK; profiles.user_id is the actual auth.users.id link (UNIQUE).
 
 CREATE TABLE public.exchange_rates (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -285,6 +288,25 @@ this pass only removed the copy/mock-data directly tied to the two deleted
 VTNA popups and two intelligence-card snippets that explicitly referenced
 "VTNA conversion rates." A full sweep of fabricated wallet dashboard
 widgets is separate, larger, not-yet-approved work.
+
+**Missing `wallet_transactions` FK constraints (2026-07-21,
+`20260721180000_add_wallet_transactions_profile_fkeys.sql`):** found while
+verifying the VTNA/Credits merge deploy on AWS staging — the Wallet's
+"Recent Activity" transaction list has never actually worked. `useWallet.ts`'s
+`fetchTransactions` embeds sender/recipient profile info via named
+PostgREST hints (`profiles!wallet_transactions_from_user_id_fkey` /
+`_to_user_id_fkey`), but `wallet_transactions.from_user_id`/`to_user_id` had
+**zero** foreign key constraints at all — every call 400'd with "Could not
+find a relationship." Pre-existing bug, unrelated to the merge itself.
+Added both named FK constraints, targeting `profiles.user_id` (the actual
+`auth.users.id` link — `profiles.id` is a separate surrogate PK). Added
+`NOT VALID` since 7-11 of 85 existing rows have a user_id with no matching
+profile (stale test/reset-era data); PostgREST recognizes `NOT VALID` FKs
+for relationship embedding immediately, and the constraint still fully
+enforces on every new INSERT/UPDATE going forward — only the historical
+rows are exempted from the initial validation scan. Verified end-to-end via
+a direct PostgREST request against the live project: `200 OK` with real
+`from_profile`/`to_profile` data resolved.
 
 ---
 
@@ -565,6 +587,7 @@ CREATE TABLE my_new_table (
 
 | Date | Change | Author | VTID |
 |------|--------|--------|------|
+| 2026-07-21 | Added missing `wallet_transactions_from_user_id_fkey`/`_to_user_id_fkey` (NOT VALID, targeting `profiles.user_id`) — the Wallet's "Recent Activity" transaction list had never worked; every `fetchTransactions` PostgREST embed 400'd for lack of any FK on `from_user_id`/`to_user_id`. Found while verifying the VTNA/Credits merge deploy on AWS staging; unrelated pre-existing bug. Verified with a direct PostgREST request (200 OK, real profile data resolved). | Claude | — |
 | 2026-07-20 | Merged VTNA and Credits into one "VTNA Credits" currency; stripped staking-APY/governance/appreciation copy (previous cause of an Apple 3.1.5(iii) rejection) from the two dedicated VTNA popups and every send/request/exchange/booking currency picker in vitana-v1; defensive DB migration folding any nonzero VTNA balance into CREDITS (no-op, verified). Also fixed an unrelated bug found in the same pass: `WalletMasterActionPopup`'s quick-action menu fabricated free balance and silently destroyed real USD balance via a fake withdrawal. | Claude | BOOTSTRAP-VTNA-CREDITS-MERGE |
 | 2025-11-11 | Initial schema documentation | Claude | DEV-COMMU-0055 |
 | 2025-11-11 | Fixed vtid_ledger vs VtidLedger mismatch | Claude | DEV-COMMU-0055 |
