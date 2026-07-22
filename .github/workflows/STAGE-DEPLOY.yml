@@ -179,6 +179,16 @@ jobs:
             # no-op'd on preview-gateway.vitanaland.com.
             "OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}"
             "DEEPSEEK_API_KEY=${{ secrets.DEEPSEEK_API_KEY }}"
+            # VTID-03403: Bedrock activation gate + region. Not a secret — the
+            # SDK auth comes from AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY below,
+            # this is just the presence flag invokeBedrock() checks. Bake into
+            # this workflow (not a one-off gcloud call) for the same reason as
+            # every other entry above: --set-env-vars REPLACES the whole env on
+            # every STAGE-DEPLOY run, so anything set out-of-band gets wiped on
+            # the next push (confirmed live: it wiped a manual binding of this
+            # exact var).
+            "AWS_BEDROCK_REGION=eu-central-1"
+            "BEDROCK_ROLE_ARN=gateway-staging-static-iam-user"
           )
 
           # Comma-joined for --set-env-vars (replaces, not merges — we want the
@@ -201,6 +211,12 @@ jobs:
             "SUPABASE_ANON_KEY=SUPABASE_ANON_KEY:latest"
             "SUPABASE_JWT_SECRET=SUPABASE_JWT_SECRET:latest"
             "GOOGLE_GEMINI_API_KEY=GOOGLE_GEMINI_API_KEY:latest"
+            # VTID-03403: static IAM user credentials for the Bedrock adapter.
+            # --set-secrets REPLACES too — same trap as ENV_VARS above, this is
+            # the durable fix (was previously bound via a one-off
+            # gcloud run services update that this workflow wiped on redeploy).
+            "AWS_ACCESS_KEY_ID=gateway-aws-access-key-id:latest"
+            "AWS_SECRET_ACCESS_KEY=gateway-aws-secret-access-key:latest"
           )
           SECRETS_JOINED=$(IFS=, ; echo "${SECRETS[*]}")
 
