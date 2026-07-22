@@ -40,10 +40,15 @@ export async function doctor() {
   } else {
     fail(`Host is ${process.platform} — sim-use requires a macOS 14+ host.`);
     console.log(`
-  This host cannot run the iOS Simulator or the sim-use CLI.
+  This host cannot run the iOS Simulator or the sim-use CLI (this is a
+  hard requirement of sim-use itself — a macOS-only Swift/Xcode binary —
+  not something specific to this container).
   Options:
-    • Run this suite on a Mac:            cd e2e && npm run test:device
-    • Run it in CI (macOS runner):        gh workflow run MOBILE-DEVICE-E2E.yml
+    • Android instead — no Mac needed:    cd e2e && npm run sim:doctor:android
+      (adb + uiautomator; runs here if a device/emulator is reachable, or
+      via .github/workflows/ANDROID-DEVICE-E2E.yml on ubuntu-latest CI)
+    • Run this iOS suite on a Mac:        cd e2e && npm run test:device
+    • Run iOS in CI (macOS runner):       gh workflow run MOBILE-DEVICE-E2E.yml
     • Viewport-emulation fallback here:   cd e2e && npm run test:mobile
       (Playwright iPhone-14 emulation — same routes, no real device layer)
 `);
