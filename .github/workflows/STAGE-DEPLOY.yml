@@ -179,6 +179,18 @@ jobs:
             # no-op'd on preview-gateway.vitanaland.com.
             "OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}"
             "DEEPSEEK_API_KEY=${{ secrets.DEEPSEEK_API_KEY }}"
+            # BOOTSTRAP-GEMINI-TO-CLAUDE: Claude Sonnet 4.6 direct-API key for
+            # the Tier A migrated call sites (spec generation, intent
+            # classify/extract, matchmaker, architecture investigator —
+            # services/gateway/src/services/claude-text-client.ts). Bound as
+            # a plain GitHub Actions secret, same pattern EXEC-DEPLOY.yml
+            # already uses for prod's gateway (no GCP Secret Manager entry
+            # for this key). Without it, callClaudeText() returns null and
+            # every migrated call site silently falls back to its
+            # deterministic default — this was previously unbound on
+            # gateway-staging, so live testing showed CLASSIFY_LOW_CONFIDENCE
+            # with confidence 0 instead of real Claude responses.
+            "ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }}"
           )
 
           # Comma-joined for --set-env-vars (replaces, not merges — we want the
