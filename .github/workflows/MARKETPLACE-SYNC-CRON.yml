@@ -59,9 +59,13 @@ jobs:
             -d '{}')
           echo "$RESP"
           cat /tmp/sync-response.json | jq . || cat /tmp/sync-response.json
-          # Fail if HTTP != 200 OR ok != true
-          if ! grep -q '"HTTP 200"' <<< "$RESP"; then
-            echo "::error::non-200 response"; exit 1
+          # Fail if HTTP != 200 OR ok != true.
+          # NOTE (was a bug): curl's -w "HTTP %{http_code}" writes the literal
+          # text `HTTP 200`, with no surrounding quotes. Matching against the
+          # quoted string '"HTTP 200"' never matched, so this check failed on
+          # every run regardless of the real HTTP status — including on 200s.
+          if [[ "$RESP" != "HTTP 200"* ]]; then
+            echo "::error::non-200 response ($RESP)"; exit 1
           fi
           OK=$(jq -r '.ok // false' /tmp/sync-response.json)
           if [ "$OK" != "true" ]; then
