@@ -408,7 +408,10 @@ router.get('/models', async (req: Request, res: Response) => {
     cost_per_1k: string;
     usage: string;
   }> = [
-    // Vertex AI (voice/live pipeline only — chat/spec routes migrated to Claude, see below)
+    // Vertex AI (Operator Chat NOT yet migrated — routes/operator.ts still
+    // calls processWithGemini/gemini-operator.ts, default gemini-2.5-pro —
+    // plus voice/live pipeline)
+    { provider: 'vertex-ai', model_id: 'gemini-2.5-pro', status: 'active', avg_latency: 850, cost_per_1k: '0.0035', usage: 'Operator Chat (not yet migrated — see gemini-operator.ts)' },
     { provider: 'vertex-ai', model_id: 'gemini-2.0-flash', status: 'active', avg_latency: 320, cost_per_1k: '0.00015', usage: 'Fact extraction, fast queries' },
     { provider: 'vertex-ai', model_id: 'gemini-1.5-pro', status: 'active', avg_latency: 920, cost_per_1k: '0.0035', usage: 'Fallback routing, long context' },
     // Gemini API
@@ -419,10 +422,11 @@ router.get('/models', async (req: Request, res: Response) => {
     { provider: 'openai', model_id: 'gpt-4o', status: 'active', avg_latency: 900, cost_per_1k: '0.0050', usage: 'ChatGPT (user-supplied key)' },
     { provider: 'openai', model_id: 'gpt-4o-mini', status: 'active', avg_latency: 400, cost_per_1k: '0.00015', usage: 'ChatGPT fast (user-supplied key)' },
     // Anthropic
-    // BOOTSTRAP-GEMINI-TO-CLAUDE: Operator Chat, spec generation, intent
-    // classify/extract, matchmaker, and the architecture investigator now
-    // call Claude Sonnet 4.6 directly (server-side key, not user-supplied).
-    { provider: 'anthropic', model_id: 'claude-sonnet-4-6', status: 'active', avg_latency: 700, cost_per_1k: '0.003', usage: 'Operator Chat, spec generation, intent classify/extract, matchmaker, architecture investigator' },
+    // BOOTSTRAP-GEMINI-TO-CLAUDE: spec generation, intent classify/extract,
+    // matchmaker, and the architecture investigator now call Claude Sonnet
+    // 4.6 directly (server-side key, not user-supplied). Operator Chat
+    // itself is NOT included — that's the still-Gemini row above.
+    { provider: 'anthropic', model_id: 'claude-sonnet-4-6', status: 'active', avg_latency: 700, cost_per_1k: '0.003', usage: 'Spec generation, intent classify/extract, matchmaker, architecture investigator' },
     { provider: 'anthropic', model_id: 'claude-sonnet-4-6', status: 'active', avg_latency: 700, cost_per_1k: '0.003', usage: 'Claude default (user-supplied key)' },
     { provider: 'anthropic', model_id: 'claude-haiku-4-5-20251001', status: 'active', avg_latency: 350, cost_per_1k: '0.0008', usage: 'Claude fast (user-supplied key)' },
     { provider: 'anthropic', model_id: 'claude-opus-4-7', status: 'configured', avg_latency: 1200, cost_per_1k: '0.015', usage: 'Claude premium (user-supplied key)' },
