@@ -73,16 +73,30 @@ jobs:
             exit 1
           fi
 
-          # Surface totals so the workflow run page shows them at a glance
+          # Surface totals so the workflow run page shows them at a glance.
+          # NOTE (was a bug): for network=all, per-provider results are nested
+          # under `.result.providers.<name>`, not `.result.<name>` directly
+          # (see services/gateway/src/routes/internal-marketplace-sync.ts,
+          # runAllMarketplaceSync's `result.providers` shape). The old paths
+          # (`.result.shopify`, `.result.cj`) were always null, so `to_entries`
+          # threw `null (null) has no keys` and the job died with exit 5 — a
+          # second bug masked until now by the HTTP-200 grep bug above always
+          # failing first.
           {
             echo "## Marketplace sync — $NETWORK"
             if [ "$NETWORK" = "all" ]; then
               echo "### Shopify"
-              jq -r '.result.shopify.totals | to_entries | map("- \(.key): \(.value)") | join("\n")' /tmp/sync-response.json
+              jq -r '.result.providers.shopify.totals // {} | to_entries | map("- \(.key): \(.value)") | join("\n")' /tmp/sync-response.json
               echo "### CJ"
-              jq -r '.result.cj.totals | to_entries | map("- \(.key): \(.value)") | join("\n")' /tmp/sync-response.json
+              jq -r '.result.providers.cj.totals // {} | to_entries | map("- \(.key): \(.value)") | join("\n")' /tmp/sync-response.json
+              FAILED=$(jq -r '.result.providers | to_entries | map(select(.value.ok == false)) | map(.key) | join(", ")' /tmp/sync-response.json)
+              if [ -n "$FAILED" ]; then
+                echo ""
+                echo "### ⚠️ Providers reporting errors: $FAILED"
+                echo "(job still passes — the top-level \`ok\` gate only requires the sync to have *run*, not every provider to be error-free; investigate per-provider \`errors\` counts above if this persists)"
+              fi
             else
-              jq -r '.result.totals | to_entries | map("- \(.key): \(.value)") | join("\n")' /tmp/sync-response.json
+              jq -r '.result.totals // {} | to_entries | map("- \(.key): \(.value)") | join("\n")' /tmp/sync-response.json
             fi
             echo ""
             echo "**Duration:** $(jq -r '.duration_ms' /tmp/sync-response.json)ms"
