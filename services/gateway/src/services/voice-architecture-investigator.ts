@@ -11,47 +11,38 @@
  *   - Recent oasis_events for the session/class
  *   - Deterministic spec body if available (voice-spec-hints)
  *
- * Calls Vertex Gemini with a strict structured-output schema. The schema
- * requires per-hypothesis confidence, top-3 disconfirming data points,
- * and ≥ 3 alternative architectures with pros/cons/links — designed to
- * make polished hallucination harder. Persists the report to
- * voice_architecture_reports and emits voice.healing.investigation.completed.
+ * Calls Claude Sonnet 4.6 with a strict schema described in the prompt
+ * (Claude Sonnet 4.6 doesn't support native structured-output enforcement —
+ * see claude-text-client.ts / model-migration notes). The schema requires
+ * per-hypothesis confidence, top-3 disconfirming data points, and ≥ 3
+ * alternative architectures with pros/cons/links — designed to make
+ * polished hallucination harder — and validateReport() below is the
+ * enforcement backstop since the provider can't guarantee the shape.
+ * Persists the report to voice_architecture_reports and emits
+ * voice.healing.investigation.completed.
  *
  * The recommendation is NEVER auto-executed. Architectural pivots remain
  * a human decision (review in Healing dashboard, PR #8).
  *
- * v2 (post-canary): swap the Vertex call for Claude Managed Agents with
- * web_search and web_fetch tools — see Incident Triage Agent in memory.
+ * BOOTSTRAP-GEMINI-TO-CLAUDE: migrated off Vertex Gemini to Claude Sonnet
+ * 4.6 via the direct Anthropic API. Note: the INVESTIGATED SYSTEM (the ORB
+ * voice pipeline itself) still runs on Vertex Gemini Live — only the model
+ * doing the investigating changed.
+ *
+ * v2 (post-canary): swap for Claude Managed Agents with web_search and
+ * web_fetch tools — see Incident Triage Agent in memory.
  *
  * Plan: .claude/plans/the-biggest-issues-and-fizzy-wozniak.md
  */
 
-import { VertexAI } from '@google-cloud/vertexai';
-import { GoogleAuth } from 'google-auth-library';
 import { emitOasisEvent } from './oasis-event-service';
 import { getVoiceSpecHint } from './voice-spec-hints';
 import { notifyGChat } from './self-healing-snapshot-service';
+import { callClaudeText, CLAUDE_SONNET_4_6 } from './claude-text-client';
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
-const VERTEX_PROJECT =
-  process.env.GOOGLE_CLOUD_PROJECT ||
-  process.env.GCP_PROJECT ||
-  'lovable-vitana-vers1';
-const INVESTIGATOR_MODEL = process.env.VOICE_INVESTIGATOR_MODEL || 'gemini-2.5-pro';
-
-// =============================================================================
-// Vertex client (lazy init — same pattern as self-healing-spec-service)
-// =============================================================================
-
-let vertexAI: VertexAI | null = null;
-let googleAuth: GoogleAuth | null = null;
-try {
-  googleAuth = new GoogleAuth({ scopes: ['https://www.googleapis.com/auth/cloud-platform'] });
-  vertexAI = new VertexAI({ project: VERTEX_PROJECT, location: 'us-central1' });
-} catch (err: any) {
-  console.warn(`[voice-architecture-investigator] Vertex init failed: ${err.message}`);
-}
+const INVESTIGATOR_MODEL = process.env.VOICE_INVESTIGATOR_MODEL || CLAUDE_SONNET_4_6;
 
 // =============================================================================
 // Pre-vetted alternative architectures (v1 — agent picks the relevant subset
@@ -500,63 +491,55 @@ const RESPONSE_SCHEMA = {
 };
 
 /**
- * BOOTSTRAP-LLM-ROUTER (Phase G): the investigator now routes through the
- * provider router instead of calling Vertex directly. Operator picks the
- * provider per `classifier` stage from the Command Hub dropdown. We use
- * the router's tool-use mode (forceTool) to get structured output across
- * any provider — Anthropic, OpenAI, Vertex/Gemini, DeepSeek all support
- * function calling. The report shape is unchanged; we just parse from
- * `toolCall.arguments` instead of from a JSON-mode text response.
+ * BOOTSTRAP-GEMINI-TO-CLAUDE: calls Claude Sonnet 4.6 directly via
+ * claude-text-client.ts. Claude Sonnet 4.6 has no native structured-output
+ * enforcement, so the schema is embedded as a textual instruction in the
+ * prompt and validateReport() below is the real enforcement backstop.
+ * (VTID-02002 history: this previously went through a multi-provider router
+ * whose fallback model didn't exist, silently failing every automatic
+ * investigator spawn — bypassing the router in favor of a direct call is
+ * what fixed that, and this migration keeps the direct-call shape.)
  */
-interface VertexInvestigatorResult {
+interface ClaudeInvestigatorResult {
   report: InvestigatorReport | null;
   error: string | null;
   raw_text?: string;
 }
 
-async function callVertexInvestigator(prompt: string): Promise<VertexInvestigatorResult> {
-  // VTID-02002: was using callViaRouter('classifier', ...) — but that router's
-  // primary (deepseek-reasoner) doesn't support forced tool_choice and its
-  // fallback was pointing at a non-existent model name (gemini-3-pro-preview),
-  // so 100% of automatic investigator spawns failed silently into stub reports.
-  // Bypass the router and call Vertex directly with the same pattern
-  // self-healing-spec-service.ts uses successfully in production today
-  // (vertexAI.getGenerativeModel + gemini-2.5-pro + responseSchema).
-  if (!vertexAI) {
-    return { report: null, error: 'vertex_not_initialized' };
-  }
+/** Pull the first balanced JSON object out of a model response, tolerating fences/prose. */
+function extractJsonObject(raw: string): string {
+  const cleaned = raw.trim().replace(/^```(?:json)?/i, '').replace(/```$/, '').trim();
+  if (cleaned.startsWith('{')) return cleaned;
+  const start = cleaned.indexOf('{');
+  const end = cleaned.lastIndexOf('}');
+  return start >= 0 && end > start ? cleaned.slice(start, end + 1) : cleaned;
+}
+
+async function callClaudeInvestigator(prompt: string): Promise<ClaudeInvestigatorResult> {
   try {
-    const model = vertexAI.getGenerativeModel({
+    const text = await callClaudeText({
       model: INVESTIGATOR_MODEL,
-      generationConfig: {
-        temperature: 0.4,
-        maxOutputTokens: 8192,
-        topP: 0.9,
-        responseMimeType: 'application/json',
-        responseSchema: RESPONSE_SCHEMA as any,
-      },
+      system:
+        'Return ONE JSON object only — no markdown fences, no prose before or after — ' +
+        `conforming exactly to this JSON Schema:\n${JSON.stringify(RESPONSE_SCHEMA)}`,
+      prompt,
+      maxTokens: 8192,
+      temperature: 0.4,
     });
-    const result = await model.generateContent({
-      contents: [{ role: 'user', parts: [{ text: prompt }] }],
-    });
-    const text = result.response?.candidates?.[0]?.content?.parts?.[0]?.text;
     if (!text) {
-      return {
-        report: null,
-        error: `vertex_no_text_in_response: candidates=${result.response?.candidates?.length ?? 0}`,
-      };
+      return { report: null, error: 'claude_no_text_in_response' };
     }
     try {
-      return { report: JSON.parse(text) as InvestigatorReport, error: null, raw_text: text };
+      return { report: JSON.parse(extractJsonObject(text)) as InvestigatorReport, error: null, raw_text: text };
     } catch (parseErr: any) {
       return {
         report: null,
-        error: `vertex_json_parse_failed: ${parseErr?.message ?? 'unknown'}`,
+        error: `claude_json_parse_failed: ${parseErr?.message ?? 'unknown'}`,
         raw_text: text.slice(0, 4000),
       };
     }
   } catch (err: any) {
-    const detail = `vertex_threw: ${err?.message ?? String(err)}`;
+    const detail = `claude_threw: ${err?.message ?? String(err)}`;
     console.warn(`[voice-architecture-investigator] ${detail}`);
     return { report: null, error: detail };
   }
@@ -692,26 +675,8 @@ export async function spawnInvestigator(input: InvestigatorInput): Promise<Inves
   const ev = await gatherEvidence(input);
   const summary = summarizeEvidence(input, ev);
 
-  if (!vertexAI) {
-    // VTID-01996: persist stub even when client uninitialized so ops can see
-    // the failure pattern (currently only mode==test or env misconfig).
-    const stubId = await persistFailureStub(
-      input,
-      'vertex_unavailable',
-      'Vertex client not initialized at module load; investigator skipped.',
-      summary,
-    );
-    return {
-      ok: false,
-      report_id: stubId,
-      validation: { ok: false, reason: 'vertex_unavailable' },
-      vertex_responded: false,
-      detail: 'Vertex client not initialized; investigator skipped.',
-    };
-  }
-
   const prompt = buildPrompt(input, ev, summary);
-  const callResult = await callVertexInvestigator(prompt);
+  const callResult = await callClaudeInvestigator(prompt);
 
   if (!callResult.report) {
     // VTID-01996: persist a failure stub so ops sees WHY the investigator
@@ -719,16 +684,16 @@ export async function spawnInvestigator(input: InvestigatorInput): Promise<Inves
     // produced 0 visible rows and the gap was invisible.
     const stubId = await persistFailureStub(
       input,
-      'vertex_no_response',
-      callResult.error ?? 'Vertex returned no parseable JSON and no error captured.',
+      'claude_no_response',
+      callResult.error ?? 'Claude returned no parseable JSON and no error captured.',
       summary,
     );
     return {
       ok: false,
       report_id: stubId,
-      validation: { ok: false, reason: 'vertex_no_response' },
+      validation: { ok: false, reason: 'claude_no_response' },
       vertex_responded: false,
-      detail: `Vertex no usable response: ${callResult.error ?? 'unknown'}`,
+      detail: `Claude no usable response: ${callResult.error ?? 'unknown'}`,
     };
   }
 
