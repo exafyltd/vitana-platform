@@ -43,7 +43,7 @@ const createChain = () => {
 const mockChain = createChain();
 const mockGetSupabase = jest.fn(() => mockChain as any);
 
-jest.mock('../src/lib/supabase', () => ({
+jest.mock('../../src/lib/supabase', () => ({
   getSupabase: mockGetSupabase,
 }));
 
@@ -53,7 +53,7 @@ jest.mock('jose');
 // App setup — mount the router under the same prefix used in production
 // ---------------------------------------------------------------------------
 
-import router from '../src/routes/wearables-waitlist';
+import router from '../../src/routes/wearables-waitlist';
 
 const app = express();
 app.use(express.json());
