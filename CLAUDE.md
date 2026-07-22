@@ -325,6 +325,47 @@ Located at: `config/service-path-map.json`
 
 ---
 
+## 2b. LLM ROUTING — BEDROCK PROVIDER (VTID-03403)
+
+The gateway's LLM dispatcher (`services/gateway/src/services/llm-router.ts`)
+selects a provider per-*stage* from the DB-backed `llm_routing_policy` table
+(editable via the Command Hub dropdown), via an `ADAPTERS: Record<LLMProvider,
+ProviderAdapter>` map. **Anthropic Claude via Amazon Bedrock (`'bedrock'`) is
+one of these adapters**, alongside `anthropic`, `openai`, `vertex`,
+`deepseek`, and `claude_subscription`.
+
+- **Region:** `eu-central-1` — the only region with any Vitana AWS
+  infrastructure for account `472838866351` (confirmed via
+  `scripts/aws-staging-validation/reports/aws-run-20260716/FINDINGS.md`).
+  Read from `AWS_BEDROCK_REGION` (falls back to `AWS_REGION`, then
+  `us-east-1`).
+- **Activation gate:** `BEDROCK_ROLE_ARN` env var. Unset → the adapter
+  reports itself unavailable (`not_configured`) and the router skips it like
+  any other provider with missing credentials. Setting it in
+  `gateway-staging` is a deliberate, separate action — not a byproduct of
+  deploying this code.
+- **Model selection:** `ADAPTERS.bedrock.call()` takes the model string
+  straight from whatever the active stage's `llm_routing_policy` row
+  specifies — for Bedrock this must be a resolved **cross-region inference
+  profile ID** (e.g. `eu.anthropic.claude-sonnet-4-6-v1:0`), not a bare
+  on-demand model ID. `PROVIDER_FLAGSHIPS.bedrock`
+  (`services/gateway/src/constants/llm-defaults.ts`) is only the Command Hub
+  dropdown's convenience default — read from `BEDROCK_MODEL_ID` if set.
+- **Not selected by default anywhere.** Adding the adapter does not change
+  any stage's routing — Bedrock only runs when an operator explicitly points
+  a stage at `'bedrock'`.
+- **Not yet supported:** vision (`image`/`images`) and tool calling
+  (`tools`/`forceTool`) — the adapter returns an explicit error for these
+  rather than silently dropping them or mis-serializing the request.
+- **Implementation:** `services/gateway/src/providers/bedrock.ts`
+  (`invokeBedrock()`) does the actual `BedrockRuntimeClient.send()` call;
+  `bedrockAdapter` in `llm-router.ts` adapts it to the router's
+  `ProviderAdapter` interface. Provider/model/latency logging comes for
+  free via the router's existing `startLLMCall`/`completeLLMCall`/
+  `failLLMCall` telemetry — no Bedrock-specific logging code needed.
+
+---
+
 ## 3. DATABASE (SUPABASE)
 
 ### Critical Rules
@@ -1025,6 +1066,7 @@ Use these PATs with the GitHub REST API (`api.github.com`) for all PR and deploy
 
 | Date | Change | VTID |
 |------|--------|------|
+| 2026-07-21 | Public "Business" tab: profile visitors can now see another user's active product recommendations (storefront card, buy-through with commission attributed to the profile owner via the existing VTID-02950 `?rec=`/`rec_id` flow). New public endpoint `GET /api/v1/discover/recommendations/:vitanaId` (`discover-recommendations-public.ts`), auth-required (any logged-in viewer, not owner-only), never returns click/conversion/commission fields. No formal VTID existed for this extension; tracked under this BOOTSTRAP tag pending one. | BOOTSTRAP-PUBLIC-BUSINESS-PROFILE |
 | 2026-07-13 | Integrated lycorp-jp/sim-use device-testing layer: `e2e/mobile-sim/` driver + smoke flow (iOS Simulator / Android), `MOBILE-DEVICE-E2E.yml` macOS-runner workflow, vendored sim-use agent skill + `vitana-mobile-testing` glue skill, `docs/MOBILE_DEVICE_TESTING.md` | BOOTSTRAP-SIM-USE-DEVICE-TESTING |
 | 2026-06-04 | Staging-first cutover (time-gated, effective Mon 8 Jun 2026 10:00 Europe/Berlin): added a `cutover_gate` job to every auto-to-prod workflow (`AUTO-DEPLOY`, `DEPLOY-ORB-AGENT`, `DEPLOY-AUTOPILOT-JOB`, `VTID-02409-BOOTSTRAP`) that freezes the push path post-cutover while leaving manual dispatch open; added manual escape hatch `scripts/deploy/publish-to-prod.sh`; rewrote §15/§16 + IF-THEN CI/CD rules. Before cutover all paths still reach prod; after, auto = staging, prod = PUBLISH button / manual exception. Frontend (`vitana-v1`) gated in parallel. | BOOTSTRAP-STAGING-FIRST-CUTOVER |
 | 2026-04-14 | Replaced broad visual verification with targeted protocol: screenshot what you changed, interact with it, verify it works | VTID-01917 |
