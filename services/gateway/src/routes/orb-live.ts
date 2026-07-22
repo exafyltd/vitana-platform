@@ -41,7 +41,7 @@
  * - CSP compliant: No inline scripts/styles
  */
 
-import { Router, Request, Response } from 'express';
+import { Router, Request, Response, NextFunction } from 'express';
 import { randomUUID } from 'crypto';
 import { TextToSpeechClient, protos } from '@google-cloud/text-to-speech';
 import { processWithGemini, setThreadIdentity } from '../services/gemini-operator';
@@ -11204,8 +11204,18 @@ router.post('/session/finalize', async (req: Request, res: Response) => {
 /**
  * VTID-01039: GET /session/:orb_session_id - Get full transcript + summary
  */
-router.get('/session/:orb_session_id', (req: Request, res: Response) => {
+// public-route: pre-existing anonymous route (no auth wrapper on main before
+// this PR either); the session id itself is the access token, and this PR
+// only adds a passthrough guard for the /session/continuity path below.
+router.get('/session/:orb_session_id', (req: Request, res: Response, next: NextFunction) => {
   const { orb_session_id } = req.params;
+
+  // GET /session/continuity is a separate, more specific route registered
+  // later in this file — without this guard it's unreachable, since Express
+  // matches routes in registration order and this wildcard comes first.
+  if (orb_session_id === 'continuity') {
+    return next();
+  }
 
   if (!orb_session_id) {
     return res.status(400).json({
