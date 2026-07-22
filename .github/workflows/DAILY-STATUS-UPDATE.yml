@@ -32,13 +32,13 @@ jobs:
           else
             git commit -m "chore: hourly status - $(date -u +'%Y-%m-%d %H:%M:%S UTC')"
             # Publish to a dedicated, unprotected branch instead of `main`.
-            # `main` requires the VALIDATOR-CHECK "validate" status check,
-            # which only ever runs on pull_request — a direct push here can
-            # never satisfy it, so every push to main was rejected with
-            # GH006 (protected branch). docs/STATUS.md is a generated report,
-            # not governed feature code, so it doesn't need to go through the
-            # VTID/evidence-pack validator at all; publishing it to its own
-            # branch keeps the report flowing without touching branch
-            # protection or the validator gate.
+            # `main` requires the "validate" status check (the `validate` job
+            # in ENFORCE-FRONTEND-CANONICAL-SOURCE.yml), which only ever runs
+            # on pull_request — a direct push here can never satisfy it, so
+            # every push to main was rejected with GH006 (protected branch).
+            # docs/STATUS.md is a generated report, not frontend source, so it
+            # doesn't need that check at all; publishing it to its own branch
+            # keeps the report flowing without touching branch protection or
+            # the validator gate.
             git push --force origin "HEAD:refs/heads/automation/status-report"
           fi
