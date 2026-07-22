@@ -1,4 +1,5 @@
 import { BedrockRuntimeClient, InvokeModelCommand } from '@aws-sdk/client-bedrock-runtime';
+import { NodeHttpHandler } from '@smithy/node-http-handler';
 
 /**
  * Anthropic-via-Bedrock provider (VTID-03181 VOICE-LAT W1; wired in
@@ -58,7 +59,14 @@ export async function invokeBedrock(
 
   const start = Date.now();
   try {
-    const client = new BedrockRuntimeClient({ region: BEDROCK_REGION });
+    // Force HTTP/1.1: the SDK's default handler can negotiate HTTP/2 against
+    // Bedrock Runtime's regional endpoint, which breaks inside Cloud Run's
+    // sandboxed network stack (NGHTTP2_PROTOCOL_ERROR — confirmed via a real
+    // staging call in VTID-03403). NodeHttpHandler forces HTTP/1.1.
+    const client = new BedrockRuntimeClient({
+      region: BEDROCK_REGION,
+      requestHandler: new NodeHttpHandler(),
+    });
     const body = JSON.stringify({
       anthropic_version: 'bedrock-2023-05-31',
       max_tokens: req.max_tokens ?? 2048,
