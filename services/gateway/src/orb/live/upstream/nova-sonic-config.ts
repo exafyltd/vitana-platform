@@ -146,3 +146,26 @@ export function isNovaSonicIdentityAllowed(
   if (tenant && config.canaryTenantIds.has(tenant)) return true;
   return false;
 }
+
+/**
+ * Health payload for `GET /api/v1/orb/nova-sonic/health`. Pure and
+ * secret-free by construction — Nova credentials live in the ECS task role;
+ * no key material exists in the gateway's environment to leak.
+ */
+export function buildNovaSonicHealthPayload(env: NodeJS.ProcessEnv): Record<string, unknown> {
+  const cfg = getNovaSonicConfig(env);
+  return {
+    ok: true,
+    configured: cfg.issues.length === 0,
+    enabled: cfg.enabled,
+    ready: cfg.ready,
+    provider: 'nova_sonic',
+    model: cfg.modelId,
+    region: cfg.region,
+    credential_source: 'ecs_task_role',
+    supported_languages: [...NOVA_SONIC_SUPPORTED_LANGUAGES],
+    canary_user_count: cfg.canaryUserIds.size,
+    canary_tenant_count: cfg.canaryTenantIds.size,
+    issues: [...cfg.issues],
+  };
+}

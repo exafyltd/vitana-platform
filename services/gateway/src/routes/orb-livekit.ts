@@ -98,7 +98,7 @@ import { getLiveKitAgentReadiness } from '../orb/live/upstream/livekit-agent-con
 // BOOTSTRAP-NOVA-SONIC-VOICE: Nova readiness for the global-flip gate + health.
 import {
   getNovaSonicConfig,
-  NOVA_SONIC_SUPPORTED_LANGUAGES,
+  buildNovaSonicHealthPayload,
 } from '../orb/live/upstream/nova-sonic-config';
 // VTID-03052: wake-brief continuation wiring on the LiveKit path.
 // `decideWakeBriefForSession` already runs from Vertex's session-start
@@ -617,21 +617,7 @@ router.post(
 // is no key material to leak and none is read here).
 // ---------------------------------------------------------------------------
 router.get('/orb/nova-sonic/health', async (_req: Request, res: Response) => {
-  const cfg = getNovaSonicConfig(process.env);
-  return res.json({
-    ok: true,
-    configured: cfg.issues.length === 0,
-    enabled: cfg.enabled,
-    ready: cfg.ready,
-    provider: 'nova_sonic',
-    model: cfg.modelId,
-    region: cfg.region,
-    credential_source: 'ecs_task_role',
-    supported_languages: [...NOVA_SONIC_SUPPORTED_LANGUAGES],
-    canary_user_count: cfg.canaryUserIds.size,
-    canary_tenant_count: cfg.canaryTenantIds.size,
-    issues: [...cfg.issues],
-  });
+  return res.json(buildNovaSonicHealthPayload(process.env));
 });
 
 // ---------------------------------------------------------------------------

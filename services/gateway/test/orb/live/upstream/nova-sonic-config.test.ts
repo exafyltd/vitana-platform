@@ -126,3 +126,38 @@ describe('isNovaSonicIdentityAllowed', () => {
     expect(isNovaSonicIdentityAllowed(empty, { userId: U1, tenantId: T1 })).toBe(false);
   });
 });
+
+describe('buildNovaSonicHealthPayload', () => {
+  const { buildNovaSonicHealthPayload } = require('../../../../src/orb/live/upstream/nova-sonic-config');
+
+  it('reports a disabled-but-clean configuration', () => {
+    expect(buildNovaSonicHealthPayload({} as NodeJS.ProcessEnv)).toEqual({
+      ok: true,
+      configured: true,
+      enabled: false,
+      ready: false,
+      provider: 'nova_sonic',
+      model: 'amazon.nova-2-sonic-v1:0',
+      region: 'eu-north-1',
+      credential_source: 'ecs_task_role',
+      supported_languages: ['en', 'de', 'fr', 'es'],
+      canary_user_count: 0,
+      canary_tenant_count: 0,
+      issues: [],
+    });
+  });
+
+  it('reports counts and typed issues without leaking allowlist contents or secrets', () => {
+    const payload = buildNovaSonicHealthPayload({
+      NOVA_SONIC_ENABLED: 'true',
+      NOVA_SONIC_CANARY_USER_IDS: 'a27552a3-0257-4305-8ed0-351a80fd3701',
+      NOVA_SONIC_REGION: 'us-east-1',
+      AWS_SECRET_ACCESS_KEY: 'should-never-appear',
+    } as NodeJS.ProcessEnv);
+    expect(payload.canary_user_count).toBe(1);
+    expect(payload.issues).toEqual(['nova_region_invalid']);
+    const flat = JSON.stringify(payload);
+    expect(flat).not.toContain('a27552a3');
+    expect(flat).not.toContain('should-never-appear');
+  });
+});

@@ -1787,13 +1787,24 @@ export function handleToolCall(
   }
 }
 
-/** Usage totals — stored for session-level telemetry (Task 7 wires OASIS). */
+/** Usage totals — stored on the session and emitted through the existing
+ * live-session event stream (no parallel analytics; no raw text/audio). */
 export function handleUsage(
   ctx: UpstreamSessionHandlerContext,
   event: UpstreamUsageEvent,
 ): void {
   (ctx.session as any).lastUsageTotals = event;
   ctx.deps.emitDiag(ctx.session, 'usage_totals', { ...event });
+  ctx.deps.emitLiveSessionEvent('orb.live.upstream.usage', {
+    session_id: ctx.session.sessionId,
+    provider: ctx.session.upstreamProvider ?? 'vertex',
+    input_speech_tokens: event.inputSpeechTokens ?? null,
+    input_text_tokens: event.inputTextTokens ?? null,
+    output_speech_tokens: event.outputSpeechTokens ?? null,
+    output_text_tokens: event.outputTextTokens ?? null,
+    total_input_tokens: event.totalInputTokens ?? null,
+    total_output_tokens: event.totalOutputTokens ?? null,
+  }).catch(() => { /* usage telemetry is best-effort */ });
 }
 
 /** Upstream error — typed error to the session error callback. */
