@@ -24,6 +24,7 @@ describe('getNovaSonicConfig', () => {
         modelId: 'amazon.nova-2-sonic-v1:0',
         connectTimeoutMs: 15000,
         rotationAfterMs: 435000,
+        keepWarmMs: 240000,
         issues: [],
       }),
     );
@@ -71,11 +72,26 @@ describe('getNovaSonicConfig', () => {
       NOVA_SONIC_ENABLED: 'true',
       NOVA_SONIC_CONNECT_TIMEOUT_MS: 'soon',
       NOVA_SONIC_ROTATION_AFTER_MS: '-5',
+      NOVA_SONIC_KEEPWARM_MS: 'often',
     } as NodeJS.ProcessEnv);
     expect(cfg.ready).toBe(false);
     expect(cfg.issues).toEqual(
-      expect.arrayContaining(['nova_connect_timeout_invalid', 'nova_rotation_after_invalid']),
+      expect.arrayContaining([
+        'nova_connect_timeout_invalid',
+        'nova_rotation_after_invalid',
+        'nova_keepwarm_invalid',
+      ]),
     );
+  });
+
+  it('keep-warm accepts 0 as an explicit disable (no issue)', () => {
+    const cfg = getNovaSonicConfig({
+      NOVA_SONIC_ENABLED: 'true',
+      NOVA_SONIC_KEEPWARM_MS: '0',
+    } as NodeJS.ProcessEnv);
+    expect(cfg.keepWarmMs).toBe(0);
+    expect(cfg.ready).toBe(true);
+    expect(cfg.issues).toEqual([]);
   });
 });
 

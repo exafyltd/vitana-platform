@@ -107,6 +107,28 @@ playback queue clears on every interruption; usage telemetry
 (`orb.live.upstream.usage`) on every completed session; no raw
 audio/transcripts/credentials/SigV4 in CloudWatch/OASIS.
 
+## 5b. Latency posture (what keeps Nova fast)
+
+Three mechanisms remove connection setup from the session critical path —
+verify all three from CloudWatch logs after enabling Nova:
+
+1. **Boot prewarm** — `[BOOTSTRAP-NOVA-SONIC-VOICE] Bedrock prewarm complete`
+   at task start: SDK loaded, task-role credentials resolved, and the
+   TLS/HTTP/2 path to `bedrock-runtime.eu-north-1` established via a
+   zero-cost warm request (a signed `InvokeModel` against the
+   `vitana.connection-warmup` marker id — rejected 4xx before inference,
+   never billed).
+2. **Shared HTTP/2 client** — all Nova sessions reuse one pooled client;
+   no per-session TCP/TLS/H2 setup.
+3. **Keep-warm loop** — `bedrock keep-warm ok ms=<n>` every
+   `NOVA_SONIC_KEEPWARM_MS` (default 240 s, safely under the handler's
+   480 s idle drop; `0` disables). This keeps the pool warm through quiet
+   periods so the first user after a lull still gets the warm path.
+
+Measure the effect with the Test Bench's live probes (`connect_ms` should
+sit at roughly one eu-central-1→eu-north-1 round-trip once warm) and the
+`latency_comparison` check against the Vertex baseline.
+
 ## 6. Expand (AWS staging only)
 
 One internal tenant → observe one working day → intended test cohort.

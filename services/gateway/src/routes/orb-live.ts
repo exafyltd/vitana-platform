@@ -1390,6 +1390,7 @@ import {
 } from '../orb/live/upstream/nova-sonic-config';
 import { resolveNovaSonicVoice } from '../orb/live/voice/nova-sonic-voice';
 import { prewarmNovaSonicBedrock } from '../orb/live/upstream/nova-sonic-live-client';
+import { startNovaSonicKeepWarm } from '../orb/live/upstream/nova-sonic-keepwarm';
 import { createUpstreamClient } from '../orb/live/upstream/upstream-client-factory';
 import { bindUpstreamSessionHandlers } from '../orb/live/session/upstream-message-handler';
 import { createNovaWsFacade } from '../orb/live/upstream/nova-ws-facade';
@@ -1591,6 +1592,11 @@ if (googleAuth && VERTEX_PROJECT_ID) {
   if (novaBootCfg.ready) {
     void prewarmNovaSonicBedrock(novaBootCfg).then((ok) =>
       console.log(`[BOOTSTRAP-NOVA-SONIC-VOICE] Bedrock prewarm ${ok ? 'complete' : 'failed (lazy fallback on first connect)'}`));
+    // Keep the pooled HTTP/2 session + credentials hot between real
+    // sessions (NodeHttp2Handler drops idle sessions after 8 min, which
+    // would put TLS/H2 setup back on the next user's critical path).
+    const keepWarm = startNovaSonicKeepWarm(novaBootCfg);
+    console.log(`[BOOTSTRAP-NOVA-SONIC-VOICE] Bedrock keep-warm ${keepWarm ? `enabled (every ${novaBootCfg.keepWarmMs}ms)` : 'disabled'}`);
   }
 }
 

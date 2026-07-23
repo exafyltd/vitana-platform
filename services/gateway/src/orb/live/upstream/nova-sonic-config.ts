@@ -26,6 +26,9 @@ export type NovaSonicLanguage = (typeof NOVA_SONIC_SUPPORTED_LANGUAGES)[number];
 const DEFAULT_CONNECT_TIMEOUT_MS = 15_000;
 /** 7m15s — rotate 45s before Bedrock's 8-minute bidirectional stream cap. */
 const DEFAULT_ROTATION_AFTER_MS = 435_000;
+// Under NodeHttp2Handler's 480s idle sessionTimeout so the pooled HTTP/2
+// session never expires between pings.
+const DEFAULT_KEEPWARM_MS = 240_000;
 
 export type NovaSonicConfigIssue =
   | 'nova_region_invalid'
@@ -33,7 +36,8 @@ export type NovaSonicConfigIssue =
   | 'nova_canary_user_ids_invalid'
   | 'nova_canary_tenant_ids_invalid'
   | 'nova_connect_timeout_invalid'
-  | 'nova_rotation_after_invalid';
+  | 'nova_rotation_after_invalid'
+  | 'nova_keepwarm_invalid';
 
 export interface NovaSonicConfig {
   enabled: boolean;
@@ -43,6 +47,12 @@ export interface NovaSonicConfig {
   canaryTenantIds: ReadonlySet<string>;
   connectTimeoutMs: number;
   rotationAfterMs: number;
+  /**
+   * Interval for the Bedrock connection keep-warm ping (latency: keeps the
+   * pooled HTTP/2 session + resolved credentials hot between real sessions;
+   * NodeHttp2Handler drops idle sessions after 8 min). 0 disables.
+   */
+  keepWarmMs: number;
   /**
    * Typed configuration problems. Non-empty issues force `ready` false —
    * misconfiguration is never silently corrected into live traffic.
@@ -86,6 +96,14 @@ function parsePositiveInt(raw: string | undefined, fallback: number): number | n
   return n;
 }
 
+/** Like parsePositiveInt but 0 is legal ("explicitly disabled"). */
+function parseNonNegativeInt(raw: string | undefined, fallback: number): number | null {
+  if (raw === undefined || raw.trim() === '') return fallback;
+  const n = Number(raw);
+  if (!Number.isInteger(n) || n < 0) return null;
+  return n;
+}
+
 /** Parse Nova configuration from an environment bag. Pure — never throws. */
 export function getNovaSonicConfig(env: NodeJS.ProcessEnv): NovaSonicConfig {
   const issues: NovaSonicConfigIssue[] = [];
@@ -118,6 +136,12 @@ export function getNovaSonicConfig(env: NodeJS.ProcessEnv): NovaSonicConfig {
   );
   if (rotationAfterMs === null) issues.push('nova_rotation_after_invalid');
 
+  const keepWarmMs = parseNonNegativeInt(
+    env.NOVA_SONIC_KEEPWARM_MS,
+    DEFAULT_KEEPWARM_MS,
+  );
+  if (keepWarmMs === null) issues.push('nova_keepwarm_invalid');
+
   return {
     enabled,
     region: NOVA_SONIC_REGION,
@@ -126,6 +150,7 @@ export function getNovaSonicConfig(env: NodeJS.ProcessEnv): NovaSonicConfig {
     canaryTenantIds: canaryTenantIds ?? new Set(),
     connectTimeoutMs: connectTimeoutMs ?? DEFAULT_CONNECT_TIMEOUT_MS,
     rotationAfterMs: rotationAfterMs ?? DEFAULT_ROTATION_AFTER_MS,
+    keepWarmMs: keepWarmMs ?? DEFAULT_KEEPWARM_MS,
     issues,
     ready: enabled && issues.length === 0,
   };

@@ -7,6 +7,7 @@ import {
   NovaSonicLiveClient,
   NovaInputQueue,
   classifyNovaError,
+  warmNovaSonicConnection,
   __setSharedBedrockClientForTests,
   type NovaBedrockLike,
 } from '../../../../src/orb/live/upstream/nova-sonic-live-client';
@@ -375,5 +376,33 @@ describe('shared Bedrock client (latency: HTTP/2 session reuse)', () => {
     await client.connect(baseOptions());
     await client.close('done');
     expect(owned.destroy).toHaveBeenCalled();
+  });
+});
+
+describe('warmNovaSonicConnection (zero-cost connection warm)', () => {
+  afterEach(() => {
+    __setSharedBedrockClientForTests(null);
+  });
+
+  it('a 4xx rejection means the path is warm — returns latency', async () => {
+    const shared: NovaBedrockLike = {
+      send: jest.fn(async () => {
+        throw Object.assign(new Error('raw AWS text must not leak'), { name: 'ValidationException' });
+      }),
+    };
+    __setSharedBedrockClientForTests(shared);
+    const ms = await warmNovaSonicConnection(config);
+    expect(typeof ms).toBe('number');
+    expect(shared.send).toHaveBeenCalledTimes(1);
+  });
+
+  it('a transport-level failure returns null (typed, no throw)', async () => {
+    const shared: NovaBedrockLike = {
+      send: jest.fn(async () => {
+        throw Object.assign(new Error('socket hang up'), { name: 'ModelStreamErrorException' });
+      }),
+    };
+    __setSharedBedrockClientForTests(shared);
+    expect(await warmNovaSonicConnection(config)).toBeNull();
   });
 });
