@@ -139,6 +139,15 @@ jobs:
           echo "Pushed $IMAGE"
 
       - name: Register task-definition revision + roll the service
+        env:
+          # BOOTSTRAP-NOVA-SONIC-VOICE: Nova canary configuration comes from
+          # environment-scoped repository VARIABLES (not secrets — nothing here
+          # is secret; credentials are the ECS task role). Defaults keep Nova
+          # disabled with an empty canary. Model + region are FIXED here, not
+          # variables — changing them is a code decision, not a knob.
+          NOVA_SONIC_ENABLED: ${{ vars.AWS_STAGE_NOVA_SONIC_ENABLED || 'false' }}
+          NOVA_SONIC_CANARY_USER_IDS: ${{ vars.AWS_STAGE_NOVA_SONIC_CANARY_USER_IDS || '' }}
+          NOVA_SONIC_CANARY_TENANT_IDS: ${{ vars.AWS_STAGE_NOVA_SONIC_CANARY_TENANT_IDS || '' }}
         run: |
           set -e
           IMAGE="${{ steps.build.outputs.image }}"
@@ -150,14 +159,28 @@ jobs:
           # Swap image + re-stamp commit env vars; preserve everything else
           # (env block, secrets, resources). upsert semantics for the three
           # stamp vars so first-run task defs without them still work.
+          # BOOTSTRAP-NOVA-SONIC-VOICE: the five Nova vars are upserted on
+          # EVERY deploy so a canary flip (or rollback to disabled/empty) is
+          # exactly one variable change + one dispatch. Never AWS access keys
+          # here — Nova auth is the task role via the SDK default chain.
           NEW_DEF=$(aws ecs describe-task-definition --task-definition "$TD_ARN" --query taskDefinition \
-            | jq --arg IMG "$IMAGE" --arg SHA "$SHA" --arg SHORT "$SHORT" '
+            | jq --arg IMG "$IMAGE" --arg SHA "$SHA" --arg SHORT "$SHORT" \
+                 --arg NOVA_ENABLED "$NOVA_SONIC_ENABLED" \
+                 --arg NOVA_USERS "$NOVA_SONIC_CANARY_USER_IDS" \
+                 --arg NOVA_TENANTS "$NOVA_SONIC_CANARY_TENANT_IDS" '
                 .containerDefinitions[0].image = $IMG
                 | .containerDefinitions[0].environment |=
-                    ( [ .[] | select(.name | IN("GIT_COMMIT_SHA","COMMIT_SHA","BUILD_INFO_MARKER") | not) ]
+                    ( [ .[] | select(.name | IN("GIT_COMMIT_SHA","COMMIT_SHA","BUILD_INFO_MARKER",
+                                                "NOVA_SONIC_ENABLED","NOVA_SONIC_REGION","NOVA_SONIC_MODEL_ID",
+                                                "NOVA_SONIC_CANARY_USER_IDS","NOVA_SONIC_CANARY_TENANT_IDS") | not) ]
                       + [ {name:"GIT_COMMIT_SHA", value:$SHA},
                           {name:"COMMIT_SHA", value:$SHA},
-                          {name:"BUILD_INFO_MARKER", value:$SHORT} ] )
+                          {name:"BUILD_INFO_MARKER", value:$SHORT},
+                          {name:"NOVA_SONIC_ENABLED", value:$NOVA_ENABLED},
+                          {name:"NOVA_SONIC_REGION", value:"eu-north-1"},
+                          {name:"NOVA_SONIC_MODEL_ID", value:"amazon.nova-2-sonic-v1:0"},
+                          {name:"NOVA_SONIC_CANARY_USER_IDS", value:$NOVA_USERS},
+                          {name:"NOVA_SONIC_CANARY_TENANT_IDS", value:$NOVA_TENANTS} ] )
                 | del(.taskDefinitionArn, .revision, .status, .requiresAttributes,
                       .compatibilities, .registeredAt, .registeredBy, .deregisteredAt)')
           NEW_ARN=$(aws ecs register-task-definition --cli-input-json "$NEW_DEF" \
@@ -188,6 +211,20 @@ jobs:
           done
           echo "::error::Smoke failed — health/build-info did not report env=staging with the deployed commit"
           exit 1
+
+      - name: Smoke — Nova Sonic health surface present
+        run: |
+          set -e
+          URL="${{ env.GATEWAY_URL }}"
+          NOVA=$(curl -fsS "$URL/api/v1/orb/nova-sonic/health")
+          echo "$NOVA" | jq .
+          REGION=$(echo "$NOVA" | jq -r '.region // empty')
+          MODEL=$(echo "$NOVA" | jq -r '.model // empty')
+          if [ "$REGION" != "eu-north-1" ] || [ "$MODEL" != "amazon.nova-2-sonic-v1:0" ]; then
+            echo "::error::Nova health reports region='$REGION' model='$MODEL' — expected eu-north-1 / amazon.nova-2-sonic-v1:0"
+            exit 1
+          fi
+          echo "✓ Nova Sonic health: enabled=$(echo "$NOVA" | jq -r '.enabled') ready=$(echo "$NOVA" | jq -r '.ready') canary_users=$(echo "$NOVA" | jq -r '.canary_user_count')"
 
       - name: Emit OASIS event + software_versions row (best-effort)
         if: always()
