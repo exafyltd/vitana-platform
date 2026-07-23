@@ -221,3 +221,64 @@ describe('BOOTSTRAP-AWS-STAGING-VALIDATION: GeminiApiKeyLiveClient', () => {
     });
   });
 });
+
+// BOOTSTRAP-NOVA-SONIC-VOICE — Task 1 contract additions.
+describe('provider-neutral contract additions (BOOTSTRAP-NOVA-SONIC-VOICE)', () => {
+  it('sendToolResult sends the shared tool_response envelope', async () => {
+    const socket = new MockSocket();
+    const client = new GeminiApiKeyLiveClient({ createSocket: () => socket });
+    await connectClient(client, socket);
+
+    const sent = client.sendToolResult({
+      callId: 'call-9',
+      name: 'get_current_screen',
+      success: true,
+      output: '{"screen":"journey"}',
+    });
+    expect(sent).toBe(true);
+    expect(JSON.parse(socket.sent.at(-1)!)).toEqual({
+      tool_response: {
+        function_responses: [
+          { name: 'get_current_screen', response: { output: '{"screen":"journey"}' } },
+        ],
+      },
+    });
+  });
+
+  it('constructor getApiKey dep takes precedence over the deprecated options hook', async () => {
+    const socket = new MockSocket();
+    let capturedUrl = '';
+    const client = new GeminiApiKeyLiveClient({
+      createSocket: (url) => {
+        capturedUrl = url;
+        return socket;
+      },
+      getApiKey: async () => 'dep-key',
+    });
+    await connectClient(client, socket);
+    expect(capturedUrl).toContain('key=dep-key');
+  });
+
+  it('connect rejects with a typed error when no key supplier exists anywhere', async () => {
+    const client = new GeminiApiKeyLiveClient({ createSocket: () => new MockSocket() });
+    const options = baseOptions();
+    delete (options as Record<string, unknown>).getAccessToken;
+    await expect(client.connect(options)).rejects.toThrow(/gemini_config_missing/);
+  });
+
+  it('close(reason) surfaces the reason and transcript deltas carry isFinal: false', async () => {
+    const socket = new MockSocket();
+    const client = new GeminiApiKeyLiveClient({ createSocket: () => socket });
+    const transcripts: Array<{ isFinal: boolean }> = [];
+    const closes: Array<{ reason?: string }> = [];
+    client.onTranscript((e) => transcripts.push(e));
+    client.onClose((e) => closes.push(e));
+    await connectClient(client, socket);
+    socket.fireMessage({ server_content: { output_transcription: { text: 'hi' } } });
+    await client.close('provider_stream_rotation');
+    expect(transcripts).toEqual([
+      expect.objectContaining({ text: 'hi', isFinal: false }),
+    ]);
+    expect(closes).toEqual([expect.objectContaining({ reason: 'provider_stream_rotation' })]);
+  });
+});

@@ -53,10 +53,18 @@ export type UpstreamConnectionState =
 export interface UpstreamConnectOptions {
   /** Provider-qualified model identifier (e.g. `gemini-live-2.5-flash-native-audio`). */
   model: string;
-  /** GCP project (or equivalent tenant identifier for non-Vertex providers). */
-  projectId: string;
-  /** Provider region (Vertex: `us-central1`). */
-  location: string;
+  /**
+   * @deprecated BOOTSTRAP-NOVA-SONIC-VOICE: provider credentials/identity
+   * belong in provider constructor deps (`VertexLiveClientDeps.projectId`),
+   * not the provider-neutral connect options. Optional during migration;
+   * constructor deps take precedence when both are supplied.
+   */
+  projectId?: string;
+  /**
+   * @deprecated BOOTSTRAP-NOVA-SONIC-VOICE: see `projectId` — move to
+   * provider constructor deps (`VertexLiveClientDeps.location`).
+   */
+  location?: string;
   /** Voice ID to use for TTS output (provider-specific name). */
   voiceName: string;
   /** Response modalities. Vertex maps `'audio'` → `['AUDIO']`, `'text'` → `['TEXT']`. */
@@ -74,11 +82,14 @@ export interface UpstreamConnectOptions {
   /** Connection timeout for the initial handshake. Default 15 000 ms. */
   connectTimeoutMs?: number;
   /**
-   * Async credential supplier. Vertex implementation calls this once per
-   * `connect()` to obtain an OAuth access token. Other providers may use it
-   * for API keys / JWTs.
+   * @deprecated BOOTSTRAP-NOVA-SONIC-VOICE: credential suppliers belong in
+   * provider constructor deps (`VertexLiveClientDeps.getAccessToken` /
+   * `GeminiApiKeyLiveClientDeps.getApiKey`), not the provider-neutral
+   * connect options — Nova (SDK default credential chain) has no token
+   * callback at all. Optional during migration; constructor deps take
+   * precedence when both are supplied.
    */
-  getAccessToken: () => Promise<string>;
+  getAccessToken?: () => Promise<string>;
 
   /**
    * A8.3b.1 (VTID-02971) — optional custom setup-message builder. When set,
@@ -148,6 +159,54 @@ export interface TranscriptEvent {
   direction: 'input' | 'output';
   /** Text delta. May be a single word or a longer fragment. */
   text: string;
+  /**
+   * BOOTSTRAP-NOVA-SONIC-VOICE: whether this event carries committed/final
+   * text for its content block. Gemini/Vertex stream deltas — always
+   * `false` there (callers accumulate). Nova emits final user ASR
+   * (`isFinal: true`) and speculative-then-final assistant text.
+   */
+  isFinal: boolean;
+  /**
+   * Nova-only generation stage for assistant transcript. `'SPECULATIVE'`
+   * text may be revised; `'FINAL'` is the committed transcript to persist.
+   * Absent for providers without staged generation (Vertex/Gemini).
+   */
+  generationStage?: 'SPECULATIVE' | 'FINAL';
+}
+
+/**
+ * BOOTSTRAP-NOVA-SONIC-VOICE: provider-neutral tool-execution result the
+ * session layer hands back to the model after dispatching a `ToolCallEvent`.
+ *
+ * Every provider REQUIRES a result for every tool call it issued — Nova
+ * waits indefinitely on a `toolUse` that never receives a `toolResult`, so
+ * failed tools must still produce a result (`success: false` + `error`).
+ */
+export interface UpstreamToolResult {
+  /** Provider-issued call ID (`ToolCallEvent.calls[].id`) for correlation. */
+  callId?: string;
+  /** Function name as declared in the tools schema. */
+  name: string;
+  /** Whether tool execution succeeded. */
+  success: boolean;
+  /** Serialized tool output (typically JSON text) for the model. */
+  output: string;
+  /** Failure detail when `success` is false. */
+  error?: string;
+}
+
+/**
+ * BOOTSTRAP-NOVA-SONIC-VOICE: normalized usage/billing totals emitted by
+ * providers that report them (Nova `usageEvent`). All fields optional —
+ * providers fill what they know.
+ */
+export interface UpstreamUsageEvent {
+  inputSpeechTokens?: number;
+  inputTextTokens?: number;
+  outputSpeechTokens?: number;
+  outputTextTokens?: number;
+  totalInputTokens?: number;
+  totalOutputTokens?: number;
 }
 
 /**
@@ -293,6 +352,16 @@ export interface UpstreamLiveClient {
    */
   sendEndOfTurn(): boolean;
 
+  /**
+   * BOOTSTRAP-NOVA-SONIC-VOICE: return a tool-execution result to the model
+   * for a previously received `ToolCallEvent`. MUST be called exactly once
+   * per tool call, success or failure — Nova stalls forever on an
+   * unanswered `toolUse`.
+   *
+   * Returns `true` if sent, `false` if not `open`.
+   */
+  sendToolResult(result: UpstreamToolResult): boolean;
+
   /** Register a handler for audio chunks streamed back from the model. */
   onAudioOutput(handler: (event: AudioOutputEvent) => void): void;
 
@@ -321,6 +390,13 @@ export interface UpstreamLiveClient {
    */
   onGoAway?(handler: (event: GoAwayEvent) => void): void;
 
+  /**
+   * BOOTSTRAP-NOVA-SONIC-VOICE: register a handler for usage/billing
+   * totals. Optional — providers without usage reporting (Vertex/Gemini
+   * Live today) accept the registration and simply never fire it.
+   */
+  onUsage?(handler: (event: UpstreamUsageEvent) => void): void;
+
   /** Register a handler for transport / protocol errors. */
   onError(handler: (event: UpstreamErrorEvent) => void): void;
 
@@ -330,8 +406,13 @@ export interface UpstreamLiveClient {
   /**
    * Close the upstream connection. Idempotent — calling on a closed client
    * is a no-op. Emits a final `onClose` event with `initiatedLocally: true`.
+   *
+   * BOOTSTRAP-NOVA-SONIC-VOICE: `reason` is a short machine-readable label
+   * (`'persona_swap'`, `'provider_stream_rotation'`, …) forwarded to the
+   * provider where the transport supports one (WS close reason) and echoed
+   * on the final `UpstreamCloseEvent.reason`.
    */
-  close(): Promise<void>;
+  close(reason?: string): Promise<void>;
 
   /** Current lifecycle state. Always reflects the last transition. */
   getState(): UpstreamConnectionState;
