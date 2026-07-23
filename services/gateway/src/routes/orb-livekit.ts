@@ -616,8 +616,9 @@ router.post(
 // visibility with NO secrets (credential source is the ECS task role; there
 // is no key material to leak and none is read here).
 // ---------------------------------------------------------------------------
-// public-route — configuration health surface, secret-free by construction
+// Configuration health surface, secret-free by construction
 // (buildNovaSonicHealthPayload exposes counts and typed issues only).
+// public-route
 router.get('/orb/nova-sonic/health', async (_req: Request, res: Response) => {
   return res.json(buildNovaSonicHealthPayload(process.env));
 });
