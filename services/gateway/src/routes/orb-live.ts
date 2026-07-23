@@ -855,7 +855,14 @@ export interface GeminiLiveSession {
   lang: string;
   voiceStyle?: string;
   responseModalities: string[];
-  upstreamWs: any | null;  // WebSocket to Vertex Live API
+  upstreamWs: any | null;  // WebSocket to Vertex Live API (or the Nova ws-facade)
+  // BOOTSTRAP-NOVA-SONIC-VOICE: the provider-neutral upstream client when a
+  // non-WebSocket provider (Nova Sonic) carries this session. When set,
+  // `upstreamWs` holds the ws-shaped facade over this client so legacy send
+  // sites keep working; typed events flow via bindUpstreamSessionHandlers.
+  upstreamClient?: UpstreamLiveClient | null;
+  // Which upstream provider carries this session ('vertex' default).
+  upstreamProvider?: 'vertex' | 'livekit' | 'nova_sonic';
   sseResponse: Response | null;
   active: boolean;
   // VTID-02047 voice channel-swap: persona currently driving the voice channel.
@@ -1371,6 +1378,21 @@ import {
 // `ORB_LIVEKIT_CANARY_ENABLED` env + `voice.livekit_canary_enabled`/
 // `voice.livekit_canary_allowlist` system_config rows. NEVER throws.
 import { getLiveKitCanaryConfig } from '../orb/live/upstream/livekit-canary-config';
+// BOOTSTRAP-NOVA-SONIC-VOICE (Task 6): Nova 2 Sonic wiring — config gates,
+// voice mapping, client factory, normalized session binding, and the
+// ws-shaped facade that lets every legacy upstreamWs call site (greeting
+// engine, sync-flow nudges, stall recovery, WS/SSE input handlers) drive
+// the Nova client without learning a second wire protocol.
+import {
+  getNovaSonicConfig,
+  isNovaSonicIdentityAllowed,
+  isNovaSonicLanguageSupported,
+} from '../orb/live/upstream/nova-sonic-config';
+import { resolveNovaSonicVoice } from '../orb/live/voice/nova-sonic-voice';
+import { createUpstreamClient } from '../orb/live/upstream/upstream-client-factory';
+import { bindUpstreamSessionHandlers } from '../orb/live/session/upstream-message-handler';
+import { createNovaWsFacade } from '../orb/live/upstream/nova-ws-facade';
+import type { UpstreamLiveClient } from '../orb/live/upstream/types';
 // NOTE: `getVoiceConfig` is already imported above (line ~92).
 // A3 (orb-live-refactor): system instruction builder + its private helpers
 // (describeTimeSince, describeRoute, buildTemporalJourneyContextSection,
@@ -6343,16 +6365,10 @@ async function connectToLiveAPI(
   onInterrupted?: () => void
 ): Promise<WebSocket> {
   console.log(`[VTID-01219] connectToLiveAPI called for session ${session.sessionId}`);
-
-  // VTID-01222: Fail fast if project/location missing
-  if (!VERTEX_PROJECT_ID || !VERTEX_LOCATION) {
-    throw new Error('Missing VERTEX_PROJECT_ID or VERTEX_LOCATION');
-  }
-  // BOOTSTRAP-AWS-STAGING-VALIDATION: fail fast if the api_key transport is
-  // selected but no key is configured — same shape as the ADC check above.
-  if (GEMINI_LIVE_USE_API_KEY && !GEMINI_API_KEY) {
-    throw new Error('GEMINI_LIVE_TRANSPORT=api_key but GOOGLE_GEMINI_API_KEY is missing');
-  }
+  // BOOTSTRAP-NOVA-SONIC-VOICE (Task 6): provider-specific configuration is
+  // validated AFTER selection — Vertex values are checked only when the
+  // session actually rides Vertex/Gemini, Nova config only for Nova. The
+  // fail-fast checks moved below the selector call.
   // flow-test-exempt: this touches connectToLiveAPI's transport selection
   // only (which upstream client + credential to use), not any conversation-
   // flow decision (greeting, persona routing, turn handling, tool dispatch —
@@ -6378,6 +6394,19 @@ async function connectToLiveAPI(
   try {
     const __voiceCfg = await getVoiceConfig();
     const __canary = await getLiveKitCanaryConfig();
+    // BOOTSTRAP-NOVA-SONIC-VOICE: precompute the Nova gates. Language falls
+    // back to Vertex BEFORE any upstream connection is opened; identity is
+    // matched against the env-scoped canary allowlists (never the shared
+    // system_config row — AWS and GCP staging share that data). The runtime
+    // gate keys off ECS_CONTAINER_METADATA_URI* (present on ECS/Fargate,
+    // absent on Cloud Run, where the HTTP/2 stream cannot be carried).
+    const __novaCfg = getNovaSonicConfig(process.env);
+    const __novaRuntime: 'aws-ecs' | 'gcp-cloud-run' | 'unknown' =
+      process.env.ECS_CONTAINER_METADATA_URI_V4 || process.env.ECS_CONTAINER_METADATA_URI
+        ? 'aws-ecs'
+        : process.env.K_SERVICE
+          ? 'gcp-cloud-run'
+          : 'unknown';
     __upstreamDecision = selectUpstreamProvider({
       envProviderOverride: process.env.ORB_LIVE_PROVIDER,
       systemConfigActiveProvider: __voiceCfg.active_provider,
@@ -6394,6 +6423,15 @@ async function connectToLiveAPI(
       identity: {
         tenantId: session.identity?.tenant_id ?? null,
         userId: session.identity?.user_id ?? null,
+      },
+      nova: {
+        enabled: __novaCfg.ready,
+        identityAllowed: isNovaSonicIdentityAllowed(__novaCfg, {
+          userId: session.identity?.user_id ?? null,
+          tenantId: session.identity?.tenant_id ?? null,
+        }),
+        languageSupported: isNovaSonicLanguageSupported(session.lang),
+        runtime: __novaRuntime === 'aws-ecs' ? 'aws-ecs' : __novaRuntime,
       },
     });
   } catch (e) {
@@ -6482,6 +6520,22 @@ async function connectToLiveAPI(
           'this consumer-side pin and wire the real LiveKit media client.',
       } as any,
     } as any).catch(() => { /* best-effort */ });
+  }
+
+  // BOOTSTRAP-NOVA-SONIC-VOICE (Task 6): provider-specific fail-fast AFTER
+  // selection. Vertex/Gemini config is required only when the session rides
+  // the Google path; a Nova session validates Nova config instead (its
+  // typed readiness already gated the selector decision above).
+  if (__upstreamDecision.provider !== 'nova_sonic') {
+    // VTID-01222: Fail fast if project/location missing
+    if (!VERTEX_PROJECT_ID || !VERTEX_LOCATION) {
+      throw new Error('Missing VERTEX_PROJECT_ID or VERTEX_LOCATION');
+    }
+    // BOOTSTRAP-AWS-STAGING-VALIDATION: fail fast if the api_key transport is
+    // selected but no key is configured — same shape as the ADC check above.
+    if (GEMINI_LIVE_USE_API_KEY && !GEMINI_API_KEY) {
+      throw new Error('GEMINI_LIVE_TRANSPORT=api_key but GOOGLE_GEMINI_API_KEY is missing');
+    }
   }
 
   // A8.3b.2 (VTID-02972): the legacy raw-WebSocket scaffolding is gone.
@@ -7027,6 +7081,232 @@ async function connectToLiveAPI(
       return setupMessage as unknown as Record<string, unknown>;
     };
 
+    // BOOTSTRAP-NOVA-SONIC-VOICE (Task 6): Nova branch. The shared session
+    // configuration (system instruction, context, tool catalog, persona
+    // overrides) is built by the SAME envelope builder the Vertex path uses
+    // — buildOrbVertexSetupEnvelope awaits the context promise and encodes
+    // buildLiveSystemInstruction + buildLiveApiTools — then decoded into
+    // provider-neutral parts and re-encoded through nova-sonic-protocol.ts
+    // inside the client. Parity by construction, not by duplication.
+    if (__upstreamDecision.provider === 'nova_sonic') {
+      try {
+        const novaCfg = getNovaSonicConfig(process.env);
+        const envelope = (await buildOrbVertexSetupEnvelope()) as { setup?: Record<string, any> };
+        const setup = envelope.setup ?? {};
+        const novaSystemInstruction: string =
+          setup.system_instruction?.parts?.[0]?.text ?? '';
+        const novaTools: Array<Record<string, unknown>> = Array.isArray(setup.tools)
+          ? (setup.tools as Array<Record<string, unknown>>)
+          : [];
+        const novaPersona = ((session as any).activePersona as string) || 'vitana';
+        const novaVoice =
+          resolveNovaSonicVoice({ language: session.lang || 'en', persona: novaPersona }) ?? 'tiffany';
+
+        // Rotation (Bedrock caps a bidirectional stream at 8 minutes): open
+        // the REPLACEMENT stream first (same connect path → same context/
+        // history rebuild + persona voice re-resolution), switch the session
+        // to it, then close the old stream. The browser WS/SSE stays
+        // connected and no greeting replays (greetingSent remains true).
+        let rotateNovaStream: (() => Promise<void>) | null = null;
+
+        const novaClient = createUpstreamClient('nova_sonic', {
+          nova: {
+            config: novaCfg,
+            voiceId: novaVoice,
+            onRotationDue: () => {
+              void rotateNovaStream?.();
+            },
+          },
+        });
+
+        rotateNovaStream = async () => {
+          if (!session.active) return;
+          (session as any)._novaRotationInFlight = true;
+          emitDiag(session, 'nova_rotation_started', { provider: 'nova_sonic' });
+          void emitOasisEvent({
+            type: 'orb.upstream.nova.rotation_started',
+            vtid: 'BOOTSTRAP-NOVA-SONIC-VOICE',
+            payload: { session_id: session.sessionId, provider: 'nova_sonic', reason: 'provider_stream_rotation' } as any,
+          } as any).catch(() => { /* best-effort */ });
+          try {
+            const ok = await attemptTransparentReconnect(
+              session,
+              onAudioResponse,
+              onTextResponse,
+              onError,
+              onTurnComplete,
+              onInterrupted,
+            );
+            if (ok) {
+              // Planned rotation must not consume the failure-reconnect
+              // budget — refund the slot the reconnect helper just took.
+              (session as any)._reconnectCount = Math.max(0, ((session as any)._reconnectCount || 1) - 1);
+              await novaClient.close('provider_stream_rotation');
+              emitDiag(session, 'nova_rotation_succeeded', { provider: 'nova_sonic' });
+              void emitOasisEvent({
+                type: 'orb.upstream.nova.rotation_succeeded',
+                vtid: 'BOOTSTRAP-NOVA-SONIC-VOICE',
+                payload: { session_id: session.sessionId, provider: 'nova_sonic' } as any,
+              } as any).catch(() => { /* best-effort */ });
+            } else {
+              // Replacement failed — keep the old stream until its Bedrock
+              // deadline; its eventual close surfaces ONE typed issue via
+              // the close handler (rotation flag cleared below).
+              emitDiag(session, 'nova_rotation_failed', { provider: 'nova_sonic', code: 'nova_rotation_failed' });
+              void emitOasisEvent({
+                type: 'orb.upstream.nova.rotation_failed',
+                vtid: 'BOOTSTRAP-NOVA-SONIC-VOICE',
+                payload: { session_id: session.sessionId, provider: 'nova_sonic', code: 'nova_rotation_failed' } as any,
+              } as any).catch(() => { /* best-effort */ });
+            }
+          } catch (e) {
+            emitDiag(session, 'nova_rotation_failed', {
+              provider: 'nova_sonic',
+              code: 'nova_rotation_failed',
+              error: (e as Error).message,
+            });
+          } finally {
+            (session as any)._novaRotationInFlight = false;
+          }
+        };
+
+        bindUpstreamSessionHandlers({
+          session,
+          client: novaClient,
+          callbacks: { onAudioResponse, onTextResponse, onError, onTurnComplete, onInterrupted },
+          deps: {
+            clearResponseWatchdog,
+            detectAuthIntent,
+            emitDiag,
+            emitLiveSessionEvent,
+            executeLiveApiTool,
+            isDevSandbox,
+            sendAudioToLiveAPI,
+            sendFunctionResponseToLiveAPI,
+            sendWsMessage,
+            startResponseWatchdog,
+            markVoiceLatency,
+            finalizeVoiceTurnLatency,
+          },
+          // Nova needs no synthetic PCM keepalive — server-side turn
+          // detection keeps its stream alive; rotation handles the 8-min cap.
+          options: { enableSilenceKeepalive: false },
+        });
+
+        // Close policy: diag always; on an unexpected close of an active,
+        // non-rotating session, emit ONE typed connection issue (same dedupe
+        // contract as the Vertex ws close handler).
+        novaClient.onClose((closeEvent) => {
+          emitDiag(session, 'upstream_closed', {
+            provider: 'nova_sonic',
+            reason: closeEvent.reason ?? null,
+            initiated_locally: closeEvent.initiatedLocally,
+          });
+          if (session.upstreamClient === novaClient) {
+            session.upstreamClient = null;
+          }
+          const rotationInFlight = (session as any)._novaRotationInFlight === true;
+          const swapInFlight = (session as any)._personaSwapInFlight === true;
+          if (swapInFlight) {
+            // Persona swap: transparent reconnect through the same connect
+            // path (mirrors the Vertex code-1000 swap handling). The swap
+            // flag is consumed by attemptTransparentReconnect itself.
+            void attemptTransparentReconnect(
+              session,
+              onAudioResponse,
+              onTextResponse,
+              onError,
+              onTurnComplete,
+              onInterrupted,
+            ).then((ok) => {
+              (session as any)._personaSwapInFlight = false;
+              if (!ok) {
+                console.warn('[BOOTSTRAP-NOVA-SONIC-VOICE] persona-swap reconnect failed');
+              }
+            }).catch((e) => {
+              (session as any)._personaSwapInFlight = false;
+              console.warn(`[BOOTSTRAP-NOVA-SONIC-VOICE] persona-swap reconnect failed: ${(e as Error).message}`);
+            });
+            return;
+          }
+          if (
+            session.active &&
+            !closeEvent.initiatedLocally &&
+            !rotationInFlight &&
+            !session.connectionIssueEmitted
+          ) {
+            session.connectionIssueEmitted = true;
+            const lang = session.lang || 'en';
+            const issueEvent = {
+              type: 'connection_issue',
+              reason: 'upstream_disconnected',
+              message: getConnectionIssueMessage(lang),
+              should_close: true,
+            };
+            if (session.sseResponse) {
+              try { session.sseResponse.write(`data: ${JSON.stringify(issueEvent)}\n\n`); } catch (_e) { /* ignore */ }
+            }
+            if (session.clientWs && session.clientWs.readyState === WebSocket.OPEN) {
+              try { session.clientWs.send(JSON.stringify(issueEvent)); } catch (_e) { /* ignore */ }
+            }
+          }
+        });
+
+        session.upstreamClient = novaClient;
+        session.upstreamProvider = 'nova_sonic';
+        const novaConnectStart = Date.now();
+        await novaClient.connect({
+          model: novaCfg.modelId,
+          voiceName: novaVoice,
+          responseModalities: session.responseModalities.includes('audio') ? ['audio'] : ['text'],
+          vadSilenceMs: session.vadSilenceMs,
+          systemInstruction: novaSystemInstruction,
+          tools: novaTools,
+          connectTimeoutMs: novaCfg.connectTimeoutMs,
+        });
+        setupComplete = true;
+        clearTimeout(connectionTimeout);
+        session.establishLatency?.mark('upstream_connected');
+        console.log(
+          `[BOOTSTRAP-NOVA-SONIC-VOICE] Nova stream open for session ${session.sessionId}: ` +
+            `model=${novaCfg.modelId} region=${novaCfg.region} voice=${novaVoice} connect_ms=${Date.now() - novaConnectStart}`,
+        );
+        void emitOasisEvent({
+          type: 'orb.upstream.nova.connect_succeeded',
+          vtid: 'BOOTSTRAP-NOVA-SONIC-VOICE',
+          payload: {
+            session_id: session.sessionId,
+            provider: 'nova_sonic',
+            model: novaCfg.modelId,
+            region: novaCfg.region,
+            voice: novaVoice,
+            connect_ms: Date.now() - novaConnectStart,
+            status: 'success',
+          } as any,
+        } as any).catch(() => { /* best-effort */ });
+
+        // The ws-shaped facade lets every legacy upstreamWs call site
+        // (greeting engine, nudges, input handlers, stop path) drive Nova.
+        resolve(createNovaWsFacade(novaClient) as unknown as WebSocket);
+        return;
+      } catch (err) {
+        clearTimeout(connectionTimeout);
+        session.upstreamClient = null;
+        void emitOasisEvent({
+          type: 'orb.upstream.nova.connect_failed',
+          vtid: 'BOOTSTRAP-NOVA-SONIC-VOICE',
+          payload: {
+            session_id: session.sessionId,
+            provider: 'nova_sonic',
+            error: (err as Error).message,
+            status: 'error',
+          } as any,
+        } as any).catch(() => { /* best-effort */ });
+        reject(err as Error);
+        return;
+      }
+    }
+
     // A8.3b.1 (VTID-02971): open the upstream connection through the A7
     // UpstreamLiveClient boundary. `vertex.connect()` performs the auth
     // header attach, the ws.on('open') handshake, awaits our custom
@@ -7476,8 +7756,11 @@ async function attemptTransparentReconnect(
   // as a silent UI cue. Uses the _personaSwapInFlight flag so both swap
   // directions (Vitana ↔ specialist) are covered.
   const isPersonaSwap = !!(session as any)._personaSwapInFlight;
+  // BOOTSTRAP-NOVA-SONIC-VOICE: a planned Nova stream rotation is invisible
+  // to the user — no "reconnecting"/"reconnected" cues, no greeting replay.
+  const isNovaRotation = !!(session as any)._novaRotationInFlight;
 
-  if (!isPersonaSwap) {
+  if (!isPersonaSwap && !isNovaRotation) {
     // Notify client that we're reconnecting (informational, not an error)
     // Works for both SSE and WS transports
     const reconnectMsg = { type: 'reconnecting', reconnect_count: reconnectCount + 1, message: 'Extending session...' };
@@ -7513,13 +7796,15 @@ async function attemptTransparentReconnect(
     // Persona-swap path uses a different type so the widget doesn't speak
     // the "Okay, das Netz ist wieder da" recovery line — the new persona
     // greets in their own voice, which is the correct cue.
-    const reconnectedMsg = isPersonaSwap
-      ? { type: 'persona_swap_reconnected', persona: (session as any).activePersona }
-      : { type: 'reconnected', reconnect_count: reconnectCount + 1 };
-    if (session.sseResponse) {
-      try { session.sseResponse.write(`data: ${JSON.stringify(reconnectedMsg)}\n\n`); } catch (e) { /* SSE may be closed */ }
-    } else if (session.clientWs && session.clientWs.readyState === WebSocket.OPEN) {
-      try { sendWsMessage(session.clientWs, reconnectedMsg); } catch (e) { /* WS may be closed */ }
+    if (!isNovaRotation) {
+      const reconnectedMsg = isPersonaSwap
+        ? { type: 'persona_swap_reconnected', persona: (session as any).activePersona }
+        : { type: 'reconnected', reconnect_count: reconnectCount + 1 };
+      if (session.sseResponse) {
+        try { session.sseResponse.write(`data: ${JSON.stringify(reconnectedMsg)}\n\n`); } catch (e) { /* SSE may be closed */ }
+      } else if (session.clientWs && session.clientWs.readyState === WebSocket.OPEN) {
+        try { sendWsMessage(session.clientWs, reconnectedMsg); } catch (e) { /* WS may be closed */ }
+      }
     }
 
     // After a successful persona swap, send a one-shot client_content nudge
