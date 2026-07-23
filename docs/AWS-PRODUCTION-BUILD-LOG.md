@@ -301,3 +301,67 @@ aws ecs register-task-definition --cli-input-json file://<patched>.json --region
 aws ecs update-service --cluster Vitana-ECS-Cluster --service <service> \
   --task-definition <family>:<new-revision> --region eu-central-1
 ```
+
+---
+
+## Addendum (2026-07-23 cont'd): VTID-03409 community-app + VTID-03410 oasis-operator
+
+Extending AWS-DR to a second and third service, per explicit user
+request, continuing the assessment of full-cutover feasibility.
+
+### VTID-03409 — AWS Production for community-app (frontend)
+
+New ECS service `vitana-community-app-awsdr`, target group
+`vitana-tg-community-awsdr`, ALB host rule `dr-app.vitanaland.com`
+(priority 6 — below the path-based rules at 10/20, per the priority
+lesson from the gateway build). New workflow
+`AWS-PROD-DEPLOY-FRONTEND.yml` in `exafyltd/vitana-v1`
+(`workflow_dispatch`-only, required `reason`), bakes the CANONICAL GCP
+prod gateway URL (`gateway.vitanaland.com`) into the Vite build via
+`.env.production` at build time — this is a static SPA, there is no
+runtime env var to flip after the fact. Reuses the existing
+`AWS_STAGING_ACCESS_KEY_ID`/`SECRET` repo secrets (static keys, same
+shortcut already present for AWS staging — a dedicated OIDC role is a
+follow-up, not built here to avoid a second IAM-elevation round-trip).
+
+### VTID-03410 — Rebuild oasis-operator for AWS Production (DR)
+
+Real source never existed in git for this service (see the VTID-03408
+addendum above) — restored `services/oasis-operator/main.py` verbatim
+from the last known-good snapshot (`main.py.backup-20251101-111126`,
+Nov 2025), added `requirements.txt` + `Dockerfile` (neither existed
+before), and deleted the now-superseded `.backup*` files. **One
+deliberate change from the backup:** the CORS allowlist previously only
+covered legacy Lovable preview origins; added the current Vitana gateway
+hosts (`gateway.vitanaland.com`, `preview-gateway.vitanaland.com`,
+`preview-aws-gateway.vitanaland.com`, `dr-gateway.vitanaland.com`) since
+that's how the Command Hub is actually served today — without this the
+restored service would silently reject every real request via CORS.
+
+New ECS service `vitana-oasis-operator-awsdr` (256 CPU / 512 MB — this
+is a lightweight, stateless, in-memory-only service with zero database
+dependency), target group `vitana-tg-oasis-op-awsdr`, ALB host rule
+`dr-oasis-operator.vitanaland.com` (priority 7). New workflow
+`AWS-PROD-DEPLOY-OASIS-OPERATOR.yml` — the first governed CI/CD path
+this service has ever had on any platform — reuses the GitHub-OIDC
+deploy role from VTID-03398 (`vitana-gateway-awsdr-deploy-role`), whose
+inline policy was extended (via the still-active temporary IAM grant on
+this session's user, see the VTID-03398 section above) to add the
+`vitana/oasis-operator` ECR repository alongside `vitana/gateway`.
+
+Initial task definition uses the ECR repo's pre-existing `:latest` tag
+(the same image the old broken `vitana-oasis-operator` service runs) as
+a placeholder so `create-service` doesn't fail on a missing image; the
+first real dispatch of `AWS-PROD-DEPLOY-OASIS-OPERATOR.yml` builds and
+ships the actual restored code under an `awsdr-<sha>` tag.
+
+### Verdict so far
+
+Gateway (VTID-03398), the 3 backend bug-fixes (VTID-03408), the frontend
+(VTID-03409), and oasis-operator (VTID-03410) now all have real AWS-DR
+infrastructure and deploy pipelines. `oasis-projector`, `worker-runner`,
+and `verification-engine` are functionally correct but still lack
+VTID-03398-grade rigor (dedicated ALB rule, autoscaling, alarms,
+dispatch-only CI, OIDC) of their own — they're bug-fixed, not yet built
+out to the same standard as gateway. A full GCP→AWS cutover is closer
+than it was, but still not a same-day undertaking.

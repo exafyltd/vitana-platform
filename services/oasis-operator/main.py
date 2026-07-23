@@ -2,8 +2,17 @@
 OASIS Operator - Command Hub Backend
 VTID: DEV-AICOR-0015
 
+Restored from the last known-good snapshot (main.py.backup-20251101-111126)
+under VTID-03410 — no current source existed in git history for this
+service; see docs/AWS-PRODUCTION-BUILD-LOG.md for the investigation that
+found this. Only change from the backup: the CORS allowlist, which
+previously only covered legacy Lovable preview origins and would have
+silently rejected every request from the Command Hub as it's actually
+served today (gateway.vitanaland.com and its DR/staging counterparts).
+
 Enhanced with:
-- Dynamic origin matching for Lovable preview URLs
+- Dynamic origin matching for Lovable preview URLs (legacy, kept for
+  backward compatibility) and current Vitana gateway hosts
 - Proper SSE CORS with preflight support
 - Heartbeat mechanism
 - In-memory event storage
@@ -11,7 +20,6 @@ Enhanced with:
 
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse, StreamingResponse
-from fastapi.middleware.cors import CORSMiddleware
 import asyncio
 import json
 import logging
@@ -30,11 +38,18 @@ app = FastAPI(title="OASIS Operator", version="1.0.0")
 # CORS Configuration - Dynamic Origin Matching
 # ========================================
 
-# Allowed origin patterns
+# Allowed origin patterns. Legacy Lovable preview patterns are kept for
+# backward compatibility; the vitanaland.com patterns cover every current
+# place the Command Hub is actually served from (GCP prod, GCP staging,
+# AWS staging, AWS Production DR).
 ALLOWED_ORIGIN_PATTERNS = [
     r"https://preview--vitana-v1\.lovable\.app",
     r"https://id-preview--[a-f0-9-]+\.lovable\.app",
-    r"https://[a-f0-9-]+\.lovableproject\.com"
+    r"https://[a-f0-9-]+\.lovableproject\.com",
+    r"https://gateway\.vitanaland\.com",
+    r"https://preview-gateway\.vitanaland\.com",
+    r"https://preview-aws-gateway\.vitanaland\.com",
+    r"https://dr-gateway\.vitanaland\.com",
 ]
 
 def is_origin_allowed(origin: str) -> bool:
@@ -61,7 +76,7 @@ def get_cors_headers(origin: Optional[str]) -> Dict[str, str]:
 async def cors_middleware(request: Request, call_next):
     """Handle CORS for all requests, including SSE."""
     origin = request.headers.get("origin")
-    
+
     # Handle OPTIONS (preflight) requests
     if request.method == "OPTIONS":
         headers = get_cors_headers(origin)
@@ -71,16 +86,16 @@ async def cors_middleware(request: Request, call_next):
                 headers=headers
             )
         return Response(status_code=403, content="Origin not allowed")
-    
+
     # Process the request
     response = await call_next(request)
-    
+
     # Add CORS headers to response
     if origin and is_origin_allowed(origin):
         cors_headers = get_cors_headers(origin)
         for key, value in cors_headers.items():
             response.headers[key] = value
-    
+
     return response
 
 # ========================================
@@ -89,39 +104,39 @@ async def cors_middleware(request: Request, call_next):
 
 class EventStore:
     """In-memory event storage with deque for efficient operations."""
-    
+
     def __init__(self, max_size: int = 1000):
         self.events: deque = deque(maxlen=max_size)
         self.subscribers: List[asyncio.Queue] = []
         self.lock = asyncio.Lock()
-    
+
     async def add_event(self, event: Dict):
         """Add an event and notify all subscribers."""
         async with self.lock:
             # Add timestamp if not present
             if "timestamp" not in event:
                 event["timestamp"] = datetime.utcnow().isoformat() + "Z"
-            
+
             self.events.append(event)
-            
+
             # Notify all subscribers
             for queue in self.subscribers:
                 try:
                     await queue.put(event)
                 except Exception as e:
                     logger.error(f"Error notifying subscriber: {e}")
-    
+
     async def get_recent_events(self, limit: int = 50) -> List[Dict]:
         """Get the most recent events."""
         async with self.lock:
             return list(self.events)[-limit:]
-    
+
     async def subscribe(self) -> asyncio.Queue:
         """Subscribe to new events."""
         queue = asyncio.Queue(maxsize=100)
         self.subscribers.append(queue)
         return queue
-    
+
     async def unsubscribe(self, queue: asyncio.Queue):
         """Unsubscribe from events."""
         if queue in self.subscribers:
@@ -232,20 +247,20 @@ async def post_event(request: Request):
 @app.get("/api/v1/events/stream")
 async def event_stream(request: Request):
     """SSE endpoint for real-time events."""
-    
+
     async def generate():
         # Subscribe to events
         queue = await event_store.subscribe()
-        
+
         try:
             # Send connection established message
             yield f"data: {json.dumps({'event_type': 'connection.established', 'timestamp': datetime.utcnow().isoformat() + 'Z'})}\n\n"
-            
+
             # Send recent events first
             recent = await event_store.get_recent_events(10)
             for event in recent:
                 yield f"data: {json.dumps(event)}\n\n"
-            
+
             # Stream new events
             while True:
                 try:
@@ -255,7 +270,7 @@ async def event_stream(request: Request):
                 except asyncio.TimeoutError:
                     # Send comment to keep connection alive
                     yield f": keepalive\n\n"
-                
+
         except asyncio.CancelledError:
             logger.info("SSE connection cancelled")
         except Exception as e:
@@ -263,7 +278,7 @@ async def event_stream(request: Request):
         finally:
             await event_store.unsubscribe(queue)
             logger.info("SSE subscriber removed")
-    
+
     return StreamingResponse(
         generate(),
         media_type="text/event-stream",
@@ -290,7 +305,7 @@ async def chat(request: Request):
     try:
         data = await request.json()
         message = data.get("message", "")
-        
+
         # Emit chat event
         chat_event = {
             "event_type": "chat.message",
@@ -302,7 +317,7 @@ async def chat(request: Request):
             }
         }
         await event_store.add_event(chat_event)
-        
+
         return {
             "status": "success",
             "response": f"Received: {message}",
