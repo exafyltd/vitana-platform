@@ -355,7 +355,7 @@ a placeholder so `create-service` doesn't fail on a missing image; the
 first real dispatch of `AWS-PROD-DEPLOY-OASIS-OPERATOR.yml` builds and
 ships the actual restored code under an `awsdr-<sha>` tag.
 
-### Verdict so far
+### Verdict at this point
 
 Gateway (VTID-03398), the 3 backend bug-fixes (VTID-03408), the frontend
 (VTID-03409), and oasis-operator (VTID-03410) now all have real AWS-DR
@@ -365,3 +365,88 @@ VTID-03398-grade rigor (dedicated ALB rule, autoscaling, alarms,
 dispatch-only CI, OIDC) of their own — they're bug-fixed, not yet built
 out to the same standard as gateway. A full GCP→AWS cutover is closer
 than it was, but still not a same-day undertaking.
+
+---
+
+## Addendum (2026-07-23 cont'd again): VTID-03411 harden the 3 backend services
+
+Extends `oasis-projector`, `worker-runner`, and `verification-engine`
+(fixed but not yet governed under VTID-03408) toward gateway-grade
+rigor — **without** autoscaling or public ALB/DNS, both deliberately
+excluded after review.
+
+### Why no autoscaling
+
+Read `services/oasis-projector/src/ledger-writer.ts`: the VTID Ledger
+Writer has no cross-instance locking (no advisory lock, no `SKIP
+LOCKED`, no leader election) — running N>1 replicas risks duplicate
+event processing. CLAUDE.md's own hard governance rule, "Never run
+parallel VTID executions," backs this up directly. `worker-runner`'s
+claim-based design (`claimed_by`/`claim_expires_at`, atomic claims via
+the gateway) is plausibly safe for N>1 but wasn't reviewed carefully
+enough to act on that assumption here — kept at fixed `desiredCount`
+alongside the other two rather than guessed into autoscaling.
+
+### Why no public ALB/DNS
+
+None of the three have any evidence of external HTTP callers (unlike
+gateway/frontend/oasis-operator, which are all directly called by
+browsers or each other over the public internet) — `worker-runner`
+polls outward to the gateway, `oasis-projector` reconciles the DB in a
+loop, `verification-engine` self-registers a heartbeat outward. Adding
+public endpoints for services that don't need them would be
+unjustified new attack surface.
+
+### What was actually added
+
+- **ECS-level container `healthCheck`** on all 3 task definitions.
+  Before this, `aws ecs describe-tasks` reported `healthStatus: UNKNOWN`
+  for all three — ECS Fargate does **not** automatically honor a Docker
+  image's own `HEALTHCHECK` instruction (confirmed directly:
+  `worker-runner`'s Dockerfile already has one, and it was still
+  reporting `UNKNOWN`); an explicit `healthCheck` field on the task
+  definition container is required regardless. Commands used per
+  container's available tooling: `wget --spider` for the two
+  node:20-alpine services (`oasis-projector` → `/ready`, which itself
+  verifies the Aurora connection that VTID-03408 fixed; `worker-runner`
+  → `/alive`), and a `python3 -c "import urllib.request; ..."`
+  one-liner for `verification-engine` (`/health`) since its
+  `python:3.11-slim` base has no curl/wget. All three now report
+  `healthStatus: HEALTHY` after a forced redeploy.
+- **3 new deploy workflows** — `AWS-PROD-DEPLOY-OASIS-PROJECTOR.yml`,
+  `AWS-PROD-DEPLOY-WORKER-RUNNER.yml`,
+  `AWS-PROD-DEPLOY-VERIFICATION-ENGINE.yml` —
+  `workflow_dispatch`-only, required `reason`, never on push, reusing
+  the VTID-03398 GitHub-OIDC deploy role (policy extended again to cover
+  these 3 ECR repos + `ecs:ListTasks`/`ecs:DescribeTasks`, needed since
+  there's no public URL to curl — verification reads the task's
+  `healthStatus` directly via the AWS API instead).
+- **9 CloudWatch alarms** (running-task-count-low, CPU-high,
+  memory-high × 3 services).
+- **Container Insights enabled on `Vitana-ECS-Cluster`** (cluster-wide)
+  — it was off, which would have left the running-task-count alarms
+  permanently starved of data (`ECS/ContainerInsights` namespace metrics
+  don't exist without it). This benefits every service on the shared
+  cluster, not just these three.
+
+### Commands run
+
+```bash
+# Add ECS-level health check (per service, tool varies by base image):
+# node:20-alpine -> wget --spider; python:3.11-slim -> python3 urllib
+# (patch task def JSON, then:)
+aws ecs register-task-definition --cli-input-json file://<patched>.json --region eu-central-1
+aws ecs update-service --cluster Vitana-ECS-Cluster --service <service> \
+  --task-definition <family>:<new-revision> --region eu-central-1
+
+# Enable Container Insights
+aws ecs update-cluster-settings --cluster Vitana-ECS-Cluster \
+  --settings name=containerInsights,value=enabled --region eu-central-1
+
+# Alarms (repeated per service, 3 alarms each)
+aws cloudwatch put-metric-alarm --alarm-name <service>-running-count-low \
+  --namespace ECS/ContainerInsights --metric-name RunningTaskCount \
+  --dimensions Name=ClusterName,Value=Vitana-ECS-Cluster Name=ServiceName,Value=<service> \
+  --statistic Minimum --period 300 --evaluation-periods 2 --threshold 1 \
+  --comparison-operator LessThanThreshold --treat-missing-data breaching --region eu-central-1
+```
