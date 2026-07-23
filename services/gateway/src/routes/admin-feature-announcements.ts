@@ -30,6 +30,7 @@ import { notifyUsersAsync, NotificationPayload } from '../services/notification-
 import { bulkGetUserLocales } from '../i18n/server-locale';
 import { tt, type GatewayLocale } from '../i18n/catalog';
 import { requireExafyAdmin, AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
+import { emitOasisEvent } from '../services/oasis-event-service';
 
 const router = Router();
 const VTID = 'ADMIN-FEATURE-ANNOUNCEMENTS';
@@ -40,6 +41,26 @@ interface LocalizedText {
   en: string;
   de: string;
   [locale: string]: string | undefined;
+}
+
+// No dedicated CicdEventType exists for this yet (no formal VTID) — reuse
+// 'assistant.turn' as the generic admin-activity channel, same shortcut
+// admin-marketplace.ts takes. Non-fatal: a logging failure must never block
+// the publish action itself.
+async function emitPublishEvent(payload: Record<string, unknown>, adminEmail: string) {
+  try {
+    await emitOasisEvent({
+      vtid: 'BOOTSTRAP-FEATURE-ANNOUNCEMENTS',
+      type: 'assistant.turn',
+      source: 'gateway',
+      status: 'info',
+      message: `Feature announcement published by ${adminEmail}`,
+      actor_email: adminEmail,
+      actor_role: 'admin',
+      surface: 'api',
+      payload,
+    });
+  } catch { /* non-fatal */ }
 }
 
 function pickLocale(text: LocalizedText, locale: GatewayLocale): string {
@@ -159,6 +180,11 @@ router.post('/', async (req: AuthenticatedRequest, res: Response) => {
     console.log(
       `[${VTID}] ${isTestSend ? 'Test-published' : 'Published'} announcement ${announcementId} by ${email} ` +
       `to ${targetUserIds.length} user(s) across ${groups.size} locale(s)`,
+    );
+
+    await emitPublishEvent(
+      { announcement_id: announcementId, tenant_id, variant, test_send: isTestSend, sent_to: targetUserIds.length },
+      email,
     );
 
     return res.json({
