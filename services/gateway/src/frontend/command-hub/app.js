@@ -16093,7 +16093,12 @@ function renderActiveProviderBanner() {
         var span = banner.querySelector('.active-provider-value');
         if (span) {
             span.textContent = info.active_provider || 'vertex';
-            span.style.color = info.active_provider === 'livekit' ? '#22c55e' : '#facc15';
+            // BOOTSTRAP-NOVA-SONIC-VOICE: nova_sonic shown in violet; the
+            // global flip stays a vertex<->livekit toggle (Nova rides the
+            // per-identity canary, and its global flip is env-locked).
+            span.style.color = info.active_provider === 'livekit' ? '#22c55e'
+                : info.active_provider === 'nova_sonic' ? '#a78bfa'
+                : '#facc15';
         }
         btn.disabled = false;
         btn.textContent = info.active_provider === 'livekit' ? 'Flip to Vertex' : 'Flip to LiveKit';
@@ -31048,7 +31053,9 @@ function renderOverviewSystemView() {
         var provVal = document.createElement('span');
         provVal.className = 'orb-config-value';
         provVal.style.color = '#94a3b8';
-        provVal.textContent = orbProvider === 'livekit' ? 'LiveKit' : 'Vertex';
+        provVal.textContent = orbProvider === 'livekit' ? 'LiveKit'
+            : orbProvider === 'nova_sonic' ? 'Nova 2 Sonic'
+            : 'Vertex';
         provRow.appendChild(provLabel);
         provRow.appendChild(provVal);
         orbPanel.appendChild(provRow);

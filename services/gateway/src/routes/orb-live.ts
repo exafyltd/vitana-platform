@@ -13235,7 +13235,7 @@ router.get('/health', async (_req: Request, res: Response) => {
   //
   // We gather the exact same inputs selectUpstreamProvider() reads at session
   // connect time, then derive runtime readiness from the resolved provider.
-  let activeProvider: 'vertex' | 'livekit' = 'vertex';
+  let activeProvider: 'vertex' | 'livekit' | 'nova_sonic' = 'vertex';
   let providerReason = 'default';
   let livekitReady = false;
   try {
