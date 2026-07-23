@@ -47,7 +47,7 @@ router.get('/meetups', requireTenantAdmin, async (req: AuthenticatedRequest, res
     const organizerIds = [...new Set(events.map((e: any) => e.created_by).filter(Boolean))];
     const { data: profiles } = await supabase
       .from('app_users')
-      .select('user_id, email, display_name, avatar_url')
+      .select('user_id, email, display_name, avatar_url:profile->>avatar_url')
       .in('user_id', organizerIds);
 
     const profileMap: Record<string, any> = {};

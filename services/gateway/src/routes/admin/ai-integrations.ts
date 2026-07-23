@@ -111,9 +111,9 @@ router.get('/policies/:tenant', async (req: Request, res: Response) => {
   let tenantId = tenantParam;
   // Allow slug-based lookup
   if (!/^[0-9a-fA-F-]{36}$/.test(tenantParam)) {
-    const { data: tRow } = await supabase.from('tenants').select('id').eq('slug', tenantParam).maybeSingle();
+    const { data: tRow } = await supabase.from('tenants').select('tenant_id').eq('slug', tenantParam).maybeSingle();
     if (!tRow) return res.status(404).json({ ok: false, error: 'TENANT_NOT_FOUND' });
-    tenantId = tRow.id;
+    tenantId = tRow.tenant_id;
   }
 
   const { data, error } = await supabase
@@ -138,9 +138,9 @@ router.put('/policies/:tenant', async (req: Request, res: Response) => {
   const tenantParam = req.params.tenant;
   let tenantId = tenantParam;
   if (!/^[0-9a-fA-F-]{36}$/.test(tenantParam)) {
-    const { data: tRow } = await supabase.from('tenants').select('id').eq('slug', tenantParam).maybeSingle();
+    const { data: tRow } = await supabase.from('tenants').select('tenant_id').eq('slug', tenantParam).maybeSingle();
     if (!tRow) return res.status(404).json({ ok: false, error: 'TENANT_NOT_FOUND' });
-    tenantId = tRow.id;
+    tenantId = tRow.tenant_id;
   }
 
   const body = (req.body ?? {}) as {
@@ -228,8 +228,8 @@ router.get('/connections', async (req: Request, res: Response) => {
   if (tenantParam) {
     let tenantId = tenantParam;
     if (!/^[0-9a-fA-F-]{36}$/.test(tenantParam)) {
-      const { data: tRow } = await supabase.from('tenants').select('id').eq('slug', tenantParam).maybeSingle();
-      if (tRow) tenantId = tRow.id;
+      const { data: tRow } = await supabase.from('tenants').select('tenant_id').eq('slug', tenantParam).maybeSingle();
+      if (tRow) tenantId = tRow.tenant_id;
     }
     query = query.eq('tenant_id', tenantId);
   }
@@ -298,8 +298,8 @@ router.get('/consent-log', async (req: Request, res: Response) => {
   if (tenantParam) {
     let tenantId = tenantParam;
     if (!/^[0-9a-fA-F-]{36}$/.test(tenantParam)) {
-      const { data: tRow } = await supabase.from('tenants').select('id').eq('slug', tenantParam).maybeSingle();
-      if (tRow) tenantId = tRow.id;
+      const { data: tRow } = await supabase.from('tenants').select('tenant_id').eq('slug', tenantParam).maybeSingle();
+      if (tRow) tenantId = tRow.tenant_id;
     }
     query = query.eq('tenant_id', tenantId);
   }
