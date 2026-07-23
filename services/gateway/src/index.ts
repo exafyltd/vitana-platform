@@ -405,6 +405,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const orbToolsSelfcheckRouter = require('./routes/orb-tools-selfcheck').default;
   // Admin: Notification Compose & Tracking
   const adminNotificationsRouter = require('./routes/admin-notifications').default;
+  // Admin: Feature Announcement News Feed cards (BOOTSTRAP-FEATURE-ANNOUNCEMENTS)
+  const adminFeatureAnnouncementsRouter = require('./routes/admin-feature-announcements').default;
   // Admin: Notification Category Management (CRUD + Test)
   const adminNotificationCategoriesRouter = require('./routes/admin-notification-categories').default;
   // User: Notification Category Preferences (toggle categories on/off)
@@ -1162,6 +1164,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   // Admin: Notification Compose & Tracking
   mountRouterSync(app, '/api/v1/admin/orb-tools', orbToolsSelfcheckRouter, { owner: 'orb-tools-selfcheck' });
   mountRouterSync(app, '/api/v1/admin/notifications', adminNotificationsRouter, { owner: 'admin-notifications' });
+
+  // Admin: Feature Announcement News Feed cards
+  mountRouterSync(app, '/api/v1/admin/feature-announcements', adminFeatureAnnouncementsRouter, { owner: 'admin-feature-announcements' });
 
   // Admin: Notification Category Management
   mountRouterSync(app, '/api/v1/admin/notification-categories', adminNotificationCategoriesRouter, { owner: 'admin-notification-categories' });

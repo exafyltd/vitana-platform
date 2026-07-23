@@ -1201,5 +1201,43 @@ for the public endpoint) is the actual privacy boundary, not RLS.
 
 ---
 
+## Feature Announcement News Feed Cards (BOOTSTRAP-FEATURE-ANNOUNCEMENTS)
+
+Backs the "Brand New Feature" / "Did You Know" News Feed cards
+(vitana-v1 `src/components/home/FeatureAnnouncementCard.tsx`). One row = one
+admin-published announcement, shown to every member of its tenant until
+deactivated. Written only via the gateway's admin-only endpoint
+(`services/gateway/src/routes/admin-feature-announcements.ts`, mounted at
+`/api/v1/admin/feature-announcements`), which also fans out an
+in-app + push `feature_announcement` notification to every tenant member in
+their own locale.
+
+### feature_announcements
+
+```sql
+CREATE TABLE feature_announcements (
+  id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id      UUID NOT NULL,
+  variant        TEXT NOT NULL CHECK (variant IN ('brand-new-feature', 'did-you-know-feature')),
+  feature_title  JSONB NOT NULL,  -- { "en": "...", "de": "..." }
+  description    JSONB NOT NULL,  -- { "en": "...", "de": "..." }
+  deep_link      TEXT NOT NULL,
+  is_active      BOOLEAN NOT NULL DEFAULT TRUE,
+  target_user_ids UUID[],  -- NULL = whole tenant; set = staged test send to specific users
+  created_by     TEXT,
+  notified_at    TIMESTAMPTZ,
+  created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+```
+
+**Auth model:** RLS on. `SELECT` for any authenticated user whose
+`user_tenants` row matches `tenant_id` AND (`target_user_ids IS NULL` OR
+`auth.uid() = ANY(target_user_ids)`), AND `is_active = true`; `ALL` for
+`service_role` (mirrors `ai_provider_policies`). Frontend reads it directly
+via the Supabase client (same pattern as `profile_posts`/`media_uploads` in
+`useAllNewsFeed.ts`) — no gateway GET route needed for the card itself.
+
+---
+
 **Remember:** This file is the SINGLE SOURCE OF TRUTH for table names.
 When in doubt, CHECK HERE FIRST!
