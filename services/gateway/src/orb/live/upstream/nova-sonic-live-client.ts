@@ -214,9 +214,56 @@ async function defaultBedrockFactory(config: NovaSonicConfig): Promise<NovaBedro
 }
 
 /**
- * Boot-time prewarm: build the shared client and resolve the credential
- * chain (ECS task-role fetch) off the session critical path. Best-effort —
- * a failure falls back to lazy construction on first connect.
+ * Marker model id for the zero-cost connection warm-up. Bedrock rejects it
+ * with a fast 4xx BEFORE any inference (no charge, no stream), but the
+ * signed request rides — and therefore establishes — the pooled DNS + TCP +
+ * TLS + HTTP/2 path a real session will reuse.
+ */
+const NOVA_WARMUP_MARKER_MODEL_ID = 'vitana.connection-warmup';
+
+/**
+ * Fire one zero-cost signed request through the shared client to establish
+ * (or refresh) the pooled HTTP/2 session and keep resolved credentials hot.
+ * The expected outcome is a typed 4xx — that still means the connection is
+ * warm. Returns latency ms on success-shaped outcomes, null on transport
+ * failure. Never logs or returns raw AWS error text.
+ */
+export async function warmNovaSonicConnection(config: NovaSonicConfig): Promise<number | null> {
+  try {
+    const client = await defaultBedrockFactory(config);
+    const { InvokeModelCommand } = await import('@aws-sdk/client-bedrock-runtime');
+    const t0 = Date.now();
+    try {
+      await Promise.race([
+        client.send(new InvokeModelCommand({
+          modelId: NOVA_WARMUP_MARKER_MODEL_ID,
+          contentType: 'application/json',
+          body: new Uint8Array(0),
+        })),
+        new Promise((_, reject) => {
+          const t = setTimeout(() => reject(Object.assign(new Error('warmup timeout'), { name: 'TimeoutError' })), 10_000);
+          (t as NodeJS.Timeout).unref?.();
+        }),
+      ]);
+      return Date.now() - t0;
+    } catch (err) {
+      const code = classifyNovaError(err);
+      // 4xx categories mean the request reached Bedrock — connection is warm.
+      if (code === 'nova_validation' || code === 'nova_model_not_found' || code === 'nova_access_denied') {
+        return Date.now() - t0;
+      }
+      return null;
+    }
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Boot-time prewarm: build the shared client, resolve the credential chain
+ * (ECS task-role fetch), and establish the TLS/HTTP/2 path — all off the
+ * session critical path. Best-effort — a failure falls back to lazy
+ * construction on first connect.
  */
 export async function prewarmNovaSonicBedrock(config: NovaSonicConfig): Promise<boolean> {
   try {
@@ -234,6 +281,8 @@ export async function prewarmNovaSonicBedrock(config: NovaSonicConfig): Promise<
         }),
       ]);
     }
+    // Establish the actual network path, not just the credentials.
+    await warmNovaSonicConnection(config);
     return true;
   } catch {
     return false;
