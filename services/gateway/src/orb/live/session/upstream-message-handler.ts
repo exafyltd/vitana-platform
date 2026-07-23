@@ -1379,3 +1379,952 @@ export function createUpstreamLiveMessageHandler(
 
   return handleUpstreamLiveMessage;
 }
+
+// ---------------------------------------------------------------------------
+// BOOTSTRAP-NOVA-SONIC-VOICE (Task 2): provider-neutral session binding.
+//
+// `bindUpstreamSessionHandlers` registers typed handlers on any
+// `UpstreamLiveClient` and reproduces the session behavior of the raw
+// handler above from NORMALIZED events instead of vendor payloads. The raw
+// `createUpstreamLiveMessageHandler` path stays untouched (and structurally
+// locked by the characterization suites) for the production Vertex route;
+// this binding is the seam new providers (Nova Sonic) connect through, and
+// the provider-parity suite drives BOTH fake Vertex and fake Nova clients
+// through it to prove the behavior is vendor-independent.
+//
+// Behavior contract mirrored from the raw handler:
+//   - audio: nav gating, model-speaking gate, greeting re-emit + duplicate
+//     suppression, watchdog, latency marks, forward via onAudioResponse.
+//   - transcripts: greeting-prompt filter, buffers, SSE/WS events, loop
+//     guards, thinking notifications. Nova additions: input isFinal:true,
+//     assistant SPECULATIVE forwarded but only FINAL persisted.
+//   - tools: execute via deps.executeLiveApiTool, ALWAYS answer through
+//     `client.sendToolResult` (grace-shaped) — success or failure — because
+//     Nova stalls forever on an unanswered toolUse.
+//   - turn_complete / interrupted: identical session bookkeeping, memory,
+//     chat bridge, extraction, navigation dispatch, persona-swap close
+//     (via `client.close('persona_swap')` instead of raw ws.close).
+// ---------------------------------------------------------------------------
+
+import type {
+  AudioOutputEvent as UpstreamAudioOutputEvent,
+  InterruptedEvent as UpstreamInterruptedEvent,
+  ToolCallEvent as UpstreamToolCallEvent,
+  TranscriptEvent as UpstreamTranscriptEvent,
+  TurnCompleteEvent as UpstreamTurnCompleteEvent,
+  UpstreamCloseEvent as UpstreamClientCloseEvent,
+  UpstreamErrorEvent as UpstreamClientErrorEvent,
+  UpstreamLiveClient,
+  UpstreamUsageEvent,
+} from '../upstream/types';
+
+export interface UpstreamSessionHandlerContext {
+  session: GeminiLiveSession;
+  client: UpstreamLiveClient;
+  callbacks: {
+    onAudioResponse: (audioB64: string) => void;
+    onTextResponse: (text: string) => void;
+    onError: (error: Error) => void;
+    onTurnComplete?: () => void;
+    onInterrupted?: () => void;
+  };
+  deps: UpstreamMessageHandlerDeps;
+  /**
+   * Provider-tuning knobs. `enableSilenceKeepalive` re-arms the PCM silence
+   * keepalive from the loop-guard paths (Vertex/Gemini need it; Nova does
+   * not — server turn detection keeps its stream alive without synthetic
+   * PCM).
+   */
+  options?: {
+    enableSilenceKeepalive?: boolean;
+  };
+}
+
+/** Interruption — mirror of the raw handler's `interrupted` branch. */
+export function handleInterrupted(
+  ctx: UpstreamSessionHandlerContext,
+  _event: UpstreamInterruptedEvent,
+): void {
+  const { session } = ctx;
+  console.log(`[VTID-VOICE-INIT] Interrupted for session ${session.sessionId}`);
+  session.isModelSpeaking = false;
+  session.outputTranscriptBuffer = '';
+  session.pendingEventLinks = [];
+  if (session.sseResponse) {
+    writeSseEvent(session.sseResponse, { type: 'interrupted' });
+  }
+  ctx.callbacks.onInterrupted?.();
+  ctx.deps.finalizeVoiceTurnLatency(session, 'error');
+}
+
+/** Audio output — mirror of the raw handler's inline_data branch. */
+export function handleAudioOutput(
+  ctx: UpstreamSessionHandlerContext,
+  event: UpstreamAudioOutputEvent,
+): void {
+  const { session } = ctx;
+
+  if (session.navigationDispatched) {
+    session.audioOutChunks++;
+    if (session.audioOutChunks % 50 === 1) {
+      console.log(`[VTID-NAV-HOTFIX] Dropping post-nav audio chunk ${session.audioOutChunks} for session ${session.sessionId}`);
+    }
+    return;
+  }
+
+  if (!session.isModelSpeaking) {
+    session.isModelSpeaking = true;
+    session.consecutiveToolCalls = 0;
+    session.vertexHasShownLife = true;
+    console.log(`[VTID-VOICE-INIT] Model started speaking for session ${session.sessionId} — mic audio gated`);
+    ctx.deps.markVoiceLatency(session, 'audio_out_first_chunk');
+    ctx.deps.emitDiag(session, 'model_start_speaking');
+
+    const gateGreeting = !!session.greetingSent;
+    const gateTurnZero = session.turn_count === 0;
+    const gateNoChunks = !session.audioOutChunks;
+    if (gateGreeting && gateTurnZero && gateNoChunks) {
+      const preGreetingMs = Date.now() - session.createdAt.getTime();
+      ctx.deps.emitLiveSessionEvent('orb.live.greeting.delivered', {
+        session_id: session.sessionId,
+        user_id: session.identity?.user_id || 'anonymous',
+        tenant_id: session.identity?.tenant_id || null,
+        transport: session.clientWs ? 'websocket' : 'sse',
+        pre_greeting_ms: preGreetingMs,
+        lang: session.lang,
+        is_anonymous: session.isAnonymous || false,
+        reconnect_count: (session as any)._reconnectCount || 0,
+      }).catch((err: any) => {
+        console.warn(`[BOOTSTRAP-ORB-HOTFIX-1] emit failed: ${err?.message || err}`);
+      });
+    }
+
+    // Structural greeting re-emit suppression (see raw handler for the full
+    // rationale) — a new model turn with zero user speech so far can only be
+    // an unsolicited opener re-emit.
+    if (
+      session.greetingSent
+      && session.turn_count >= 1
+      && session.consecutiveModelTurns >= session.turn_count
+      && (session.inputTranscriptBuffer || '').trim().length === 0
+      && (session as any).suppressCurrentTurnAudio !== true
+    ) {
+      (session as any).suppressCurrentTurnAudio = true;
+      console.warn(
+        `[BOOTSTRAP-ORB-GREETING-REEMIT] Suppressing unsolicited greeting re-emit for session ${session.sessionId} ` +
+        `(turn_count=${session.turn_count}, consecutiveModelTurns=${session.consecutiveModelTurns}) — user has not spoken yet`,
+      );
+      ctx.deps.emitDiag(session, 'greeting_reemit_suppressed', {
+        turn_count: session.turn_count,
+        consecutive_model_turns: session.consecutiveModelTurns,
+      });
+    }
+  }
+
+  ctx.deps.startResponseWatchdog(session, getTurnResponseTimeoutMs(), 'audio_stall');
+  session.audioOutChunks++;
+  if ((session as any).suppressCurrentTurnAudio === true) {
+    (session as any).currentTurnAudioChunksDropped =
+      ((session as any).currentTurnAudioChunksDropped || 0) + 1;
+    if ((session as any).currentTurnAudioChunksDropped % 25 === 1) {
+      console.warn(
+        `[VTID-03143] Suppressing duplicate-turn audio chunk for session ${session.sessionId} (dropped=${(session as any).currentTurnAudioChunksDropped} so far this turn)`,
+      );
+    }
+    return;
+  }
+  ctx.callbacks.onAudioResponse(event.dataB64);
+}
+
+/** Transcript (both directions) — mirror + Nova final/speculative semantics. */
+export function handleTranscript(
+  ctx: UpstreamSessionHandlerContext,
+  event: UpstreamTranscriptEvent,
+): void {
+  const { session } = ctx;
+
+  if (event.direction === 'input') {
+    const inputTranscription = event.text;
+    const isGreetingPrompt = session.greetingSent && session.turn_count === 0 &&
+      (inputTranscription.includes('greet the user') || inputTranscription.includes('begrüße den Benutzer'));
+    if (isGreetingPrompt) {
+      console.log(`[VTID-VOICE-INIT] Filtering greeting prompt from input transcription: "${inputTranscription.substring(0, 60)}..."`);
+      return;
+    }
+    session.vertexHasShownLife = true;
+    if (!session.inputTranscriptBuffer) {
+      ctx.deps.markVoiceLatency(session, 'transcript_ready', { chars: inputTranscription.length });
+    }
+    ctx.deps.emitDiag(session, 'input_transcription', { text_preview: inputTranscription.substring(0, 80) });
+    if (session.sseResponse) {
+      writeSseEvent(session.sseResponse, { type: 'input_transcript', text: inputTranscription });
+    }
+    session.inputTranscriptBuffer += (session.inputTranscriptBuffer ? ' ' : '') + inputTranscription;
+    session.consecutiveModelTurns = 0;
+    session.consecutiveToolCalls = 0;
+
+    // Loop-guard re-arm of the PCM silence keepalive — provider-local:
+    // only providers that need synthetic silence (Vertex/Gemini) get it.
+    if (
+      ctx.options?.enableSilenceKeepalive
+      && !session.silenceKeepaliveInterval
+    ) {
+      session.silenceKeepaliveInterval = setInterval(() => {
+        if (ctx.client.getState() !== 'open' || !session.active) return;
+        if (session.isModelSpeaking) return;
+        const idleMs = Date.now() - session.lastAudioForwardedTime;
+        if (idleMs >= getSilenceIdleThresholdMs()) {
+          try {
+            ctx.client.sendAudioChunk(SILENCE_AUDIO_B64, 'audio/pcm;rate=16000');
+          } catch (_e) { /* client closing */ }
+        }
+      }, getSilenceKeepaliveIntervalMs());
+    }
+
+    ctx.deps.startResponseWatchdog(session, getTurnResponseTimeoutMs(), 'response_timeout');
+
+    if (!session.isModelSpeaking) {
+      const thinkingMsg = { type: 'thinking' };
+      if (session.sseResponse) {
+        writeSseEvent(session.sseResponse, thinkingMsg);
+      }
+      if (session.clientWs && session.clientWs.readyState === WebSocket.OPEN) {
+        try { ctx.deps.sendWsMessage(session.clientWs, thinkingMsg); } catch (_e) { /* WS closed */ }
+      }
+    }
+    return;
+  }
+
+  // Output (assistant) transcript.
+  const outputTranscription = event.text;
+  if (session.navigationDispatched) {
+    console.log(`[VTID-NAV-HOTFIX] Dropping post-nav output transcription: "${outputTranscription.substring(0, 60)}..."`);
+    return;
+  }
+
+  // Nova staged generation: FINAL replaces the accumulated speculative
+  // buffer (the committed transcript — persist exactly once, never both
+  // copies). SPECULATIVE and Vertex-style deltas accumulate + forward.
+  if (event.generationStage === 'FINAL') {
+    session.outputTranscriptBuffer = outputTranscription;
+    return;
+  }
+
+  if (session.sseResponse) {
+    writeSseEvent(session.sseResponse, { type: 'output_transcript', text: outputTranscription });
+  }
+  session.outputTranscriptBuffer += outputTranscription;
+
+  // VTID-03143 duplicate-turn detection (same normalization + prefix rule
+  // as the raw handler).
+  const SUPPRESS_PREFIX_CHARS = 30;
+  const recent: string[] = ((session as any).recentAssistantTexts as string[]) || [];
+  if (
+    !(session as any).suppressCurrentTurnAudio
+    && session.outputTranscriptBuffer.length >= SUPPRESS_PREFIX_CHARS
+    && recent.length > 0
+  ) {
+    const norm = (s: string) =>
+      s.toLowerCase().replace(/[^\p{L}\p{N} ]+/gu, ' ').replace(/\s+/g, ' ').trim();
+    const currentPrefix = norm(session.outputTranscriptBuffer).slice(0, SUPPRESS_PREFIX_CHARS);
+    for (const prevText of recent) {
+      const prevPrefix = norm(prevText).slice(0, SUPPRESS_PREFIX_CHARS);
+      if (prevPrefix.length >= 20 && prevPrefix === currentPrefix) {
+        (session as any).suppressCurrentTurnAudio = true;
+        console.warn(
+          `[VTID-03143] Duplicate turn detected for session ${session.sessionId} — suppressing audio for the rest of this turn. matched_prefix="${currentPrefix.slice(0, 60)}"`,
+        );
+        ctx.deps.emitDiag(session, 'duplicate_turn_detected', {
+          matched_prefix_chars: currentPrefix.length,
+          buffer_len: session.outputTranscriptBuffer.length,
+        });
+        break;
+      }
+    }
+  }
+}
+
+/** Tool calls — mirror of the raw handler's tool_call branch, answering
+ * through `ctx.client.sendToolResult` (every call gets a result). */
+export function handleToolCall(
+  ctx: UpstreamSessionHandlerContext,
+  event: UpstreamToolCallEvent,
+): void {
+  const { session } = ctx;
+  const toolNames = event.calls.map((c) => c.name);
+  session.consecutiveToolCalls++;
+  console.log(`[VTID-01224] Tool call received for session ${session.sessionId} (consecutive: ${session.consecutiveToolCalls}/${getMaxConsecutiveToolCalls()}): ${toolNames.join(',')}`);
+  ctx.deps.emitDiag(session, 'tool_call', { tools: toolNames, consecutive: session.consecutiveToolCalls });
+
+  const toolThinkingMsg = { type: 'thinking', reason: 'tool_call', tools: toolNames };
+  if (session.sseResponse) {
+    writeSseEvent(session.sseResponse, toolThinkingMsg);
+  }
+  if (session.clientWs && session.clientWs.readyState === WebSocket.OPEN) {
+    try { ctx.deps.sendWsMessage(session.clientWs, toolThinkingMsg); } catch (_e) { /* WS closed */ }
+  }
+
+  if (session.consecutiveToolCalls > getMaxConsecutiveToolCalls()) {
+    console.warn(`[VTID-TOOLGUARD] Tool call loop detected for session ${session.sessionId}: ${session.consecutiveToolCalls} consecutive calls (limit: ${getMaxConsecutiveToolCalls()}). Sending synthetic loop-break response.`);
+    ctx.deps.emitDiag(session, 'tool_loop_guard', { consecutive: session.consecutiveToolCalls, dropped_tools: toolNames });
+    ctx.deps.emitLiveSessionEvent('orb.live.tool_loop_guard_activated', {
+      session_id: session.sessionId,
+      consecutive: session.consecutiveToolCalls,
+      tools: toolNames,
+      function_call_count: event.calls.length,
+    }, 'warning').catch(() => { });
+    for (const fc of event.calls) {
+      ctx.client.sendToolResult({
+        callId: fc.id || randomUUID(),
+        name: fc.name,
+        success: false,
+        output: '',
+        error: 'Tool loop guard: too many consecutive tool calls. Respond to the user now with the information already gathered from earlier tool results. Do not call any more tools in this turn.',
+      });
+    }
+    return;
+  }
+
+  for (const fc of event.calls) {
+    const toolName = fc.name;
+    const toolArgs = fc.args || {};
+    const callId = fc.id || randomUUID();
+
+    console.log(`[VTID-01224] Executing tool: ${toolName} with args: ${JSON.stringify(toolArgs)}`);
+
+    const toolStartTime = Date.now();
+    ctx.deps.executeLiveApiTool(session, toolName, toolArgs)
+      .then((result) => {
+        const toolElapsed = Date.now() - toolStartTime;
+        console.log(`[VTID-01224] Tool ${toolName} completed in ${toolElapsed}ms, success=${result.success}, resultLen=${result.result.length}`);
+
+        // VTID-LINK: push title+URL pairs from tool results to the client.
+        if (result.success && result.result) {
+          const linkPairs: { title: string; url: string }[] = [];
+          const lines = result.result.split('\n');
+          for (const line of lines) {
+            const linkMatch = line.match(/\| Link: (https?:\/\/[^\s|]+)/);
+            if (linkMatch) {
+              const url = linkMatch[1];
+              const title = line.split('|')[0].trim();
+              if (url && title && !linkPairs.some(p => p.url === url)) {
+                linkPairs.push({ title, url });
+              }
+            }
+          }
+          if (linkPairs.length === 0) {
+            const urlRegex = /https?:\/\/[^\s"',)}\]]+/g;
+            const urls = result.result.match(urlRegex);
+            if (urls) {
+              for (const url of [...new Set(urls)] as string[]) {
+                if (!linkPairs.some(p => p.url === url)) {
+                  linkPairs.push({ title: '', url });
+                }
+              }
+            }
+          }
+          if (linkPairs.length > 0) {
+            for (const { url } of linkPairs) {
+              const linkMsg = { type: 'link', url, tool: toolName };
+              if (session.sseResponse) {
+                writeSseEvent(session.sseResponse, linkMsg);
+              }
+              if (session.clientWs && session.clientWs.readyState === WebSocket.OPEN) {
+                try { ctx.deps.sendWsMessage(session.clientWs, linkMsg); } catch (_e) { /* WS closed */ }
+              }
+            }
+            console.log(`[VTID-LINK] Sent ${linkPairs.length} link(s) to client from ${toolName}`);
+            session.pendingEventLinks.push(...linkPairs);
+          }
+        }
+
+        // VTID-03245 graceful pivot on failure — the model never hears raw
+        // errors; telemetry still records the true outcome below.
+        const modelFacingResult = graceToolResultForModel(toolName, result);
+        const sent = ctx.client.sendToolResult({
+          callId,
+          name: toolName,
+          success: modelFacingResult.success,
+          output: modelFacingResult.result ?? '',
+          error: modelFacingResult.error,
+        });
+        if (!sent) {
+          console.error(`[VTID-01224] tool result NOT sent for ${toolName} — upstream client no longer open. Session ${session.sessionId} may be stalled.`);
+        }
+
+        emitOasisEvent({
+          vtid: 'VTID-01224',
+          type: 'orb.live.tool.executed',
+          source: 'orb-live-ws',
+          status: result.success ? 'info' : 'warning',
+          message: `Tool ${toolName} executed in ${toolElapsed}ms: ${result.success ? 'success' : 'failed'}`,
+          payload: {
+            session_id: session.sessionId,
+            tool_name: toolName,
+            tool_args: toolArgs,
+            success: result.success,
+            result_length: result.result.length,
+            elapsed_ms: toolElapsed,
+            response_sent: sent,
+            result_preview: result.result.substring(0, 200),
+            error: result.error || null,
+          },
+        }).catch(() => { });
+      })
+      .catch((err) => {
+        const toolElapsed = Date.now() - toolStartTime;
+        console.error(`[VTID-01224] Tool ${toolName} threw after ${toolElapsed}ms:`, err);
+        // A failed tool ALWAYS gets a model-facing result — Nova waits
+        // indefinitely on an unanswered toolUse.
+        ctx.client.sendToolResult({
+          callId,
+          name: toolName,
+          success: false,
+          output: '',
+          error: err.message,
+        });
+      });
+  }
+}
+
+/** Usage totals — stored for session-level telemetry (Task 7 wires OASIS). */
+export function handleUsage(
+  ctx: UpstreamSessionHandlerContext,
+  event: UpstreamUsageEvent,
+): void {
+  (ctx.session as any).lastUsageTotals = event;
+  ctx.deps.emitDiag(ctx.session, 'usage_totals', { ...event });
+}
+
+/** Upstream error — typed error to the session error callback. */
+export function handleUpstreamError(
+  ctx: UpstreamSessionHandlerContext,
+  event: UpstreamClientErrorEvent,
+): void {
+  console.error(`[BOOTSTRAP-NOVA-SONIC-VOICE] Upstream error for session ${ctx.session.sessionId}: code=${event.code} message=${event.message}`);
+  ctx.callbacks.onError(new Error(`${event.code}: ${event.message}`));
+}
+
+/** Upstream close — diagnostic only; reconnect policy stays with the route. */
+export function handleUpstreamClose(
+  ctx: UpstreamSessionHandlerContext,
+  event: UpstreamClientCloseEvent,
+): void {
+  ctx.deps.emitDiag(ctx.session, 'upstream_closed', {
+    code: event.code ?? null,
+    reason: event.reason ?? null,
+    initiated_locally: event.initiatedLocally,
+  });
+}
+
+/** Turn complete — mirror of the raw handler's turn_complete branch. */
+export function handleTurnComplete(
+  ctx: UpstreamSessionHandlerContext,
+  _event: UpstreamTurnCompleteEvent,
+): void {
+  const { session } = ctx;
+
+  ctx.deps.clearResponseWatchdog(session);
+  session.isModelSpeaking = false;
+  session.turnCompleteAt = Date.now();
+  console.log(`[VTID-VOICE-INIT] Model stopped speaking for session ${session.sessionId} — mic audio ungated (cooldown ${getPostTurnCooldownMs()}ms)`);
+  ctx.deps.emitDiag(session, 'turn_complete');
+
+  if (session.identity?.tenant_id && session.identity?.user_id) {
+    const _cadenceSb = getSupabase();
+    if (_cadenceSb) {
+      const _cadTenant = session.identity.tenant_id;
+      const _cadUser = session.identity.user_id;
+      void import('../../../services/wake-cadence-signals')
+        .then(({ recordWakeTurn }) =>
+          recordWakeTurn({ supabase: _cadenceSb, tenantId: _cadTenant, userId: _cadUser }),
+        )
+        .catch(() => { /* cadence write is best-effort */ });
+    }
+  }
+  ctx.deps.finalizeVoiceTurnLatency(session, 'success');
+
+  // VTID-02047 persona swap: close the upstream through the provider-neutral
+  // client; the route's reconnect path rebuilds with persona overrides while
+  // the browser transport stays connected.
+  const pendingSwap = (session as any).pendingPersonaSwap;
+  if (pendingSwap && session.active) {
+    (session as any).activePersona = pendingSwap;
+    (session as any).pendingPersonaSwap = null;
+    (session as any)._personaSwapInFlight = true;
+    console.log(`[VTID-02047] turn_complete fired with pending persona swap → closing upstream for transparent reconnect to ${pendingSwap}`);
+    void ctx.client.close('persona_swap').catch((_e) => {
+      console.warn('[VTID-02047] persona swap close failed:', _e);
+    });
+  }
+
+  session.turn_count++;
+  session.consecutiveModelTurns++;
+  const isGreetingTurn = session.greetingSent && session.turn_count === (session.greetingTurnIndex ?? 0) + 1;
+  console.log(`[VTID-01219] Turn complete for session ${session.sessionId} (turn ${session.turn_count}, isGreeting=${isGreetingTurn}, consecutiveModelTurns=${session.consecutiveModelTurns})`);
+
+  const completedTranscript = (session.outputTranscriptBuffer || '').trim();
+  const wasSuppressed = (session as any).suppressCurrentTurnAudio === true;
+  const droppedChunks = (session as any).currentTurnAudioChunksDropped || 0;
+  if (wasSuppressed) {
+    console.log(
+      `[VTID-03143] Turn complete with suppression — session ${session.sessionId}, dropped ${droppedChunks} duplicate chunks. transcript_chars=${completedTranscript.length}`,
+    );
+    ctx.deps.emitDiag(session, 'duplicate_turn_suppressed_at_complete', {
+      dropped_chunks: droppedChunks,
+      transcript_chars: completedTranscript.length,
+    });
+  } else if (completedTranscript.length >= 30) {
+    const recent: string[] = ((session as any).recentAssistantTexts as string[]) || [];
+    recent.push(completedTranscript);
+    while (recent.length > 3) recent.shift();
+    (session as any).recentAssistantTexts = recent;
+  }
+  (session as any).suppressCurrentTurnAudio = false;
+  (session as any).currentTurnAudioChunksDropped = 0;
+
+  // Anonymous-session auth-intent detection + turn limits.
+  if (session.isAnonymous && !isGreetingTurn) {
+    const tc = session.turn_count;
+    const intentText = session.inputTranscriptBuffer.trim();
+    if (intentText.length > 0 && !session.signupIntentDetected) {
+      const detected = ctx.deps.detectAuthIntent(intentText);
+      if (detected) {
+        session.signupIntentDetected = true;
+        session.authIntent = detected;
+        console.log(`[VTID-ANON-AUTH-INTENT] ${detected} intent detected at turn ${tc} for session ${session.sessionId}`);
+      }
+    }
+    if (session.signupIntentDetected || tc > 8) {
+      const authIntent = session.authIntent;
+      const reason = authIntent
+        ? (authIntent === 'login' ? 'login_intent' : 'signup_intent')
+        : 'turn_limit';
+      console.log(`[VTID-ANON-NUDGE] Session ending: reason=${reason}, turn=${tc}, session=${session.sessionId}`);
+      const payload: Record<string, unknown> = {
+        type: 'session_limit_reached',
+        reason,
+        message: reason === 'login_intent'
+          ? 'Guiding to login.'
+          : reason === 'signup_intent'
+            ? 'Guiding to registration.'
+            : 'Please register to continue.',
+      };
+      if (authIntent === 'login') {
+        payload.redirect = '/maxina?tab=signin';
+      } else if (authIntent === 'signup') {
+        payload.redirect = '/maxina?tab=signup';
+      }
+      if (session.sseResponse) {
+        writeSseEvent(session.sseResponse, payload);
+      }
+      if ((session as any).clientWs && (session as any).clientWs.readyState === WebSocket.OPEN) {
+        try { ctx.deps.sendWsMessage((session as any).clientWs, payload); } catch (_e) { /* ignore */ }
+      }
+    }
+  }
+
+  // Loop guard: pause the silence keepalive so the provider idles the loop out.
+  if (session.consecutiveModelTurns > getMaxConsecutiveModelTurns() && !isGreetingTurn) {
+    console.warn(`[VTID-LOOPGUARD] Response loop detected for session ${session.sessionId}: ${session.consecutiveModelTurns} consecutive model turns without user speech — pausing silence keepalive`);
+    if (session.silenceKeepaliveInterval) {
+      clearInterval(session.silenceKeepaliveInterval);
+      session.silenceKeepaliveInterval = undefined;
+    }
+  }
+
+  let chatBridgeUserText = '';
+  let chatBridgeAssistantText = '';
+
+  if (session.inputTranscriptBuffer.length > 0 && !isGreetingTurn) {
+    const userText = session.inputTranscriptBuffer.trim();
+    chatBridgeUserText = userText;
+
+    // VTID-01953 identity-mutation intent intercept.
+    if (session.identity?.user_id && session.identity?.tenant_id) {
+      handleIdentityIntent({
+        utterance: userText,
+        user_id: session.identity.user_id,
+        tenant_id: session.identity.tenant_id,
+        source: 'orb-live',
+        conversation_turn_id: session.sessionId,
+      }).then((result) => {
+        if (!result.handled) return;
+        console.log(
+          `[VTID-01953] Identity-mutation intent intercepted on ORB voice: ` +
+          `fact_key=${result.detected_fact_key}, pattern="${result.detected_pattern}"`
+        );
+        const redirectPayload = {
+          type: 'identity_redirect',
+          redirect_target: result.redirect_target,
+          fact_key: result.detected_fact_key,
+          pattern: result.detected_pattern,
+        };
+        if (session.sseResponse) {
+          writeSseEvent(session.sseResponse, redirectPayload);
+        }
+        if ((session as any).clientWs && (session as any).clientWs.readyState === WebSocket.OPEN) {
+          try { ctx.deps.sendWsMessage((session as any).clientWs, redirectPayload); } catch (_e) { /* ignore */ }
+        }
+      }).catch((err) => {
+        console.warn('[VTID-01953] handleIdentityIntent failed (non-fatal):', err);
+      });
+    }
+
+    // NAV_CONTINUATION_BIND acceptance gate (fire-and-forget, fail-open).
+    if (
+      process.env.NAV_CONTINUATION_BIND === 'true' &&
+      !session.pendingNavigation &&
+      !session.navigationDispatched &&
+      session.identity?.user_id
+    ) {
+      const _accSb = getSupabase();
+      const _accUser = session.identity.user_id;
+      if (_accSb) {
+        import('../../../services/assistant-continuation/acceptance-gate')
+          .then(({ maybeBindAcceptance, makeSupabaseAcceptanceDeps }) =>
+            maybeBindAcceptance(
+              { userText, userId: _accUser },
+              makeSupabaseAcceptanceDeps(_accSb),
+            ),
+          )
+          .then((bound) => {
+            if (!bound || bound.tool !== 'navigate_to_screen') return;
+            const p = bound.payload as { screen_id?: string; route?: string; title?: string };
+            if (!p.screen_id || !p.route) return;
+            if (session.pendingNavigation || session.navigationDispatched) return;
+            const directive = {
+              type: 'orb_directive',
+              directive: 'navigate',
+              screen_id: p.screen_id,
+              route: p.route,
+              title: p.title || p.screen_id,
+              reason: 'continuation_accept',
+              vtid: 'VTID-NAV-01',
+            };
+            if (session.sseResponse) writeSseEvent(session.sseResponse, directive);
+            if ((session as any).clientWs && (session as any).clientWs.readyState === WebSocket.OPEN) {
+              try { ctx.deps.sendWsMessage((session as any).clientWs, directive); } catch (_e) { /* WS closed */ }
+            }
+            session.navigationDispatched = true;
+            console.log(
+              `[NAV-CONTINUATION-BIND] accepted pending offer → ${p.screen_id} (${p.route}) — session=${session.sessionId}`,
+            );
+          })
+          .catch((err) =>
+            console.warn(
+              '[NAV-CONTINUATION-BIND] acceptance gate failed (non-fatal):',
+              err instanceof Error ? err.message : err,
+            ),
+          );
+      }
+    }
+
+    session.transcriptTurns.push({
+      role: 'user',
+      text: userText,
+      timestamp: new Date().toISOString()
+    });
+    if (session.identity && session.identity.tenant_id && session.identity.user_id) {
+      addSessionTurn(session.sessionId, session.identity.tenant_id, session.identity.user_id, 'user', userText);
+      addTurnRedis(session.sessionId, session.identity.tenant_id, session.identity.user_id, 'user', userText)
+        .catch(() => { /* logged inside redis-turn-buffer */ });
+    }
+    let userMemoryIdentity: MemoryIdentity | null = null;
+    if (session.identity && session.identity.tenant_id) {
+      userMemoryIdentity = {
+        user_id: session.identity.user_id,
+        tenant_id: session.identity.tenant_id
+      };
+    } else if (ctx.deps.isDevSandbox()) {
+      userMemoryIdentity = {
+        user_id: DEV_IDENTITY.USER_ID,
+        tenant_id: DEV_IDENTITY.TENANT_ID
+      };
+    }
+    if (userMemoryIdentity && userText.length > 20) {
+      writeMemoryItemWithIdentity(userMemoryIdentity, {
+        source: 'orb_voice',
+        content: userText,
+        content_json: {
+          direction: 'user',
+          channel: 'orb',
+          mode: 'live_voice',
+          orb_session_id: session.sessionId,
+          conversation_id: session.conversation_id
+        },
+      }).catch(err => console.warn(`[VTID-01225-THROTTLE] Failed to write user transcript to memory: ${err.message}`));
+    }
+  }
+  session.inputTranscriptBuffer = '';
+
+  // VTID-LINK-INJECT: append pending event links to the output transcript.
+  if (session.pendingEventLinks.length > 0) {
+    const seen = new Set<string>();
+    const allLinks = session.pendingEventLinks.filter(p => {
+      if (seen.has(p.url)) return false;
+      seen.add(p.url);
+      return true;
+    });
+    const spokenText = session.outputTranscriptBuffer.toLowerCase();
+    const mentionedLinks = allLinks.filter(p => {
+      if (!p.title) return true;
+      const words = p.title.toLowerCase().split(/\s+/).filter(w => w.length > 3);
+      return words.some(w => spokenText.includes(w));
+    });
+    const linksToInject = mentionedLinks.length > 0 ? mentionedLinks : allLinks;
+    let formattedBlock: string;
+    if (linksToInject.length === 1) {
+      const p = linksToInject[0];
+      formattedBlock = p.title
+        ? `\n\n${p.title}\n${p.url}`
+        : `\n\n${p.url}`;
+    } else {
+      const listItems = linksToInject.map((p, i) =>
+        p.title ? `${i + 1}. ${p.title}\n   ${p.url}` : `${i + 1}. ${p.url}`
+      );
+      formattedBlock = `\n\n${listItems.join('\n\n')}`;
+    }
+    session.outputTranscriptBuffer += formattedBlock;
+    console.log(`[VTID-LINK-INJECT] Injected ${linksToInject.length}/${allLinks.length} event link(s) into output transcript`);
+    if (session.sseResponse) {
+      writeSseEvent(session.sseResponse, { type: 'output_transcript', text: formattedBlock });
+    }
+    if (session.clientWs && session.clientWs.readyState === WebSocket.OPEN) {
+      try { ctx.deps.sendWsMessage(session.clientWs, { type: 'output_transcript', text: formattedBlock }); } catch (_e) { /* WS closed */ }
+    }
+    session.pendingEventLinks = [];
+  }
+
+  if (session.outputTranscriptBuffer.length > 0) {
+    const fullTranscript = session.outputTranscriptBuffer.trim();
+    chatBridgeAssistantText = fullTranscript;
+
+    const isFirstAssistantTurn = !session.transcriptTurns.some(
+      (t) => t.role === 'assistant',
+    );
+    if (
+      isFirstAssistantTurn &&
+      session.identity?.tenant_id &&
+      session.identity?.user_id
+    ) {
+      const _gflTenant = session.identity.tenant_id;
+      const _gflUser = session.identity.user_id;
+      const _gflSb = getSupabase();
+      if (_gflSb) {
+        import('../../../services/conversation/greeting-facts-ledger')
+          .then(({ recordGreetingUtterance }) =>
+            recordGreetingUtterance({
+              supabase: _gflSb,
+              tenantId: _gflTenant,
+              userId: _gflUser,
+              utterance: fullTranscript,
+            }),
+          )
+          .catch(() => { /* continuity is best-effort */ });
+      }
+    }
+
+    if ((session as any).personaForcedFirstMessage
+        && !((session as any).personaFirstUtteranceDelivered as boolean | undefined)) {
+      (session as any).personaFirstUtteranceDelivered = true;
+    }
+
+    if (isGreetingTurn) {
+      console.log(`[VTID-VOICE-INIT] Skipping memory write for greeting turn: "${fullTranscript.substring(0, 80)}..."`);
+      session.transcriptTurns.push({
+        role: 'assistant',
+        text: fullTranscript,
+        timestamp: new Date().toISOString(),
+        persona: ((session as any).activePersona as string | undefined) || 'vitana',
+      });
+    } else {
+      console.log(`[VTID-01225] Writing assistant turn to memory: "${fullTranscript.substring(0, 100)}..."`);
+      session.transcriptTurns.push({
+        role: 'assistant',
+        text: fullTranscript,
+        timestamp: new Date().toISOString(),
+        persona: ((session as any).activePersona as string | undefined) || 'vitana',
+      });
+
+      // VTID-02670 anti-impersonation guard (repeat drift → hard reconnect
+      // through the provider-neutral client).
+      try {
+        const activePersonaForCheck = ((session as any).activePersona as string | undefined) || 'vitana';
+        const PERSONA_KEYS = ['vitana', 'devon', 'sage', 'atlas', 'mira'];
+        const IMPERSONATION_RE = /\b(?:I(?:'?m| am)|this is|here(?:'?s| is)|on behalf of|me, |it'?s)\s+(vitana|devon|sage|atlas|mira)\b/i;
+        const m = fullTranscript.match(IMPERSONATION_RE);
+        if (m) {
+          const claimed = m[1].toLowerCase();
+          if (PERSONA_KEYS.includes(claimed) && claimed !== activePersonaForCheck) {
+            const driftCount = (((session as any).identityDriftCount as number | undefined) ?? 0) + 1;
+            (session as any).identityDriftCount = driftCount;
+            console.warn(`[VTID-02670] Identity drift detected: active=${activePersonaForCheck}, claimed=${claimed}, count=${driftCount}`);
+            import('../../../services/oasis-event-service').then(({ emitOasisEvent }) => {
+              emitOasisEvent({
+                vtid: 'VTID-02670',
+                type: 'orb.persona.identity_drift' as any,
+                source: 'orb-live',
+                status: driftCount > 1 ? 'error' : 'warning',
+                message: `${activePersonaForCheck} introduced themselves as ${claimed}`,
+                payload: {
+                  session_id: session.sessionId,
+                  active_persona: activePersonaForCheck,
+                  claimed_persona: claimed,
+                  drift_count: driftCount,
+                  utterance: fullTranscript.substring(0, 500),
+                },
+                actor_id: session.identity?.user_id,
+                actor_role: 'system',
+                surface: 'orb',
+                vitana_id: session.identity?.vitana_id ?? undefined,
+              });
+            }).catch(() => undefined);
+            if (driftCount >= 2) {
+              console.warn(`[VTID-02670] Forcing hard reconnect to re-anchor persona ${activePersonaForCheck}`);
+              (session as any)._personaSwapInFlight = true;
+              void ctx.client.close('persona_drift_reanchor').catch(() => { /* ignore */ });
+            }
+          }
+        }
+      } catch { /* non-blocking */ }
+
+      if (session.identity && session.identity.tenant_id && session.identity.user_id) {
+        addSessionTurn(session.sessionId, session.identity.tenant_id, session.identity.user_id, 'assistant', fullTranscript);
+        addTurnRedis(session.sessionId, session.identity.tenant_id, session.identity.user_id, 'assistant', fullTranscript)
+          .catch(() => { /* logged inside redis-turn-buffer */ });
+      }
+      // VTID-01225-CLEANUP: assistant responses are NOT written to
+      // memory_items (pollution prevention) — same policy as the raw path.
+    }
+
+    session.outputTranscriptBuffer = '';
+  }
+
+  // VTID-CHAT-BRIDGE: voice transcripts → chat_messages (fire-and-forget).
+  if (session.identity?.user_id && session.identity?.tenant_id) {
+    const bridgeSupabase = getSupabase();
+    if (bridgeSupabase) {
+      const bridgeUserId = session.identity.user_id;
+      const bridgeTenantId = session.identity.tenant_id;
+      const bridgeMeta = {
+        orb_session_id: session.sessionId,
+        turn_index: session.turn_count,
+        voice_language: session.lang,
+      };
+      const userMsgTime = new Date();
+      const assistantMsgTime = new Date(userMsgTime.getTime() + 1);
+
+      if (chatBridgeUserText.length > 0) {
+        bridgeSupabase.from('chat_messages').insert({
+          tenant_id: bridgeTenantId,
+          sender_id: bridgeUserId,
+          receiver_id: VITANA_BOT_USER_ID,
+          content: chatBridgeUserText,
+          message_type: 'voice_transcript',
+          metadata: { ...bridgeMeta, direction: 'user_to_vitana' },
+          created_at: userMsgTime.toISOString(),
+        }).then(({ error }) => {
+          if (error) console.warn(`[VTID-CHAT-BRIDGE] User transcript write failed: ${error.message}`);
+        });
+      }
+
+      if (chatBridgeAssistantText.length > 0) {
+        bridgeSupabase.from('chat_messages').insert({
+          tenant_id: bridgeTenantId,
+          sender_id: VITANA_BOT_USER_ID,
+          receiver_id: bridgeUserId,
+          content: chatBridgeAssistantText,
+          message_type: 'voice_transcript',
+          metadata: { ...bridgeMeta, direction: 'vitana_to_user', is_greeting: isGreetingTurn },
+          read_at: assistantMsgTime.toISOString(),
+          created_at: assistantMsgTime.toISOString(),
+        }).then(({ error }) => {
+          if (error) console.warn(`[VTID-CHAT-BRIDGE] Vitana transcript write failed: ${error.message}`);
+        });
+      }
+    }
+  }
+
+  // Deduplicated incremental fact extraction.
+  if (session.identity && session.identity.tenant_id) {
+    const recentTurns = session.transcriptTurns.slice(-4);
+    if (recentTurns.length > 0) {
+      const recentText = recentTurns
+        .map(t => `${t.role === 'user' ? 'User' : 'Assistant'}: ${t.text}`)
+        .join('\n');
+      deduplicatedExtract({
+        conversationText: recentText,
+        tenant_id: session.identity.tenant_id,
+        user_id: session.identity.user_id,
+        session_id: session.sessionId,
+        turn_count: session.turn_count,
+        force: !!session.pendingNavigation,
+      });
+    }
+  }
+
+  // VTID-NAV: dispatch pending navigation AFTER memory/bridge/extraction.
+  if (session.pendingNavigation) {
+    const nav = session.pendingNavigation;
+    const directive = {
+      type: 'orb_directive',
+      directive: 'navigate',
+      screen_id: nav.screen_id,
+      route: nav.route,
+      title: nav.title,
+      reason: nav.reason,
+      vtid: 'VTID-NAV-01',
+    };
+    if (session.sseResponse) {
+      writeSseEvent(session.sseResponse, directive);
+    }
+    if ((session as any).clientWs && (session as any).clientWs.readyState === WebSocket.OPEN) {
+      try { ctx.deps.sendWsMessage((session as any).clientWs, directive); } catch (_e) { /* WS closed */ }
+    }
+    console.log(`[VTID-NAV-01] orb_directive dispatched: navigate to ${nav.screen_id} (${nav.route}) — session=${session.sessionId}`);
+    emitOasisEvent({
+      vtid: 'VTID-NAV-01',
+      type: 'orb.navigator.dispatched',
+      source: 'orb-live-ws',
+      status: 'info',
+      message: `dispatched navigate to ${nav.screen_id}`,
+      payload: {
+        session_id: session.sessionId,
+        screen_id: nav.screen_id,
+        route: nav.route,
+        decision_source: nav.decision_source,
+        drain_wait_ms: Date.now() - nav.requested_at,
+      },
+    }).catch(() => {});
+    session.pendingNavigation = undefined;
+  } else {
+    console.log(`[VTID-NAV-DIAG] turn_complete for session ${session.sessionId}: NO pendingNavigation (navigationDispatched=${!!session.navigationDispatched}, consecutiveToolCalls=${session.consecutiveToolCalls}) — widget will transition to listening`);
+  }
+
+  if (session.sseResponse) {
+    writeSseEvent(session.sseResponse, {
+      type: 'turn_complete',
+      is_greeting: isGreetingTurn,
+    });
+  }
+  ctx.callbacks.onTurnComplete?.();
+}
+
+/**
+ * Register every provider-neutral handler on `ctx.client` exactly once.
+ * Callers register callbacks BEFORE `client.connect()` (per the
+ * `UpstreamLiveClient` contract) so no handshake-time event is dropped.
+ */
+export function bindUpstreamSessionHandlers(
+  ctx: UpstreamSessionHandlerContext,
+): void {
+  ctx.client.onAudioOutput((event) => handleAudioOutput(ctx, event));
+  ctx.client.onTranscript((event) => handleTranscript(ctx, event));
+  ctx.client.onToolCall((event) => handleToolCall(ctx, event));
+  ctx.client.onTurnComplete((event) => handleTurnComplete(ctx, event));
+  ctx.client.onInterrupted((event) => handleInterrupted(ctx, event));
+  ctx.client.onUsage?.((event) => handleUsage(ctx, event));
+  ctx.client.onError((event) => handleUpstreamError(ctx, event));
+  ctx.client.onClose((event) => handleUpstreamClose(ctx, event));
+}
