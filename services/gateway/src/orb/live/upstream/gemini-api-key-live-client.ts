@@ -55,6 +55,8 @@ import type {
   UpstreamConnectionState,
   UpstreamErrorEvent,
   UpstreamLiveClient,
+  UpstreamToolResult,
+  UpstreamUsageEvent,
 } from './types';
 import { AUDIO_OUT_RATE_HZ } from '../protocol';
 import { buildSetupMessage, parseDurationMs } from './vertex-live-client';
@@ -64,6 +66,13 @@ import { AI_STUDIO_LIVE_MODEL } from '../config';
 export interface GeminiApiKeyLiveClientDeps {
   /** Factory for the underlying socket. Defaults to a real `ws` connection. */
   createSocket?: (url: string, headers: Record<string, string>) => VertexWebSocketLike;
+
+  /**
+   * BOOTSTRAP-NOVA-SONIC-VOICE: API-key supplier on the constructor (the
+   * provider-credential seam). Takes precedence over the deprecated
+   * `options.getAccessToken` fallback during migration.
+   */
+  getApiKey?: () => Promise<string>;
 }
 
 const DEFAULT_CONNECT_TIMEOUT_MS = 15_000;
@@ -113,12 +122,16 @@ export class GeminiApiKeyLiveClient implements UpstreamLiveClient {
   private closeEmitted = false;
   private connectTimeout: NodeJS.Timeout | null = null;
   private localCloseRequested = false;
+  private localCloseReason: string | undefined;
+  private usageHandler: ((e: UpstreamUsageEvent) => void) | null = null;
+  private readonly depGetApiKey: (() => Promise<string>) | undefined;
 
   constructor(deps: GeminiApiKeyLiveClientDeps = {}) {
     this.createSocket =
       deps.createSocket ??
       ((url, headers) =>
         new WebSocket(url, { headers }) as unknown as VertexWebSocketLike);
+    this.depGetApiKey = deps.getApiKey;
   }
 
   getState(): UpstreamConnectionState {
@@ -157,6 +170,12 @@ export class GeminiApiKeyLiveClient implements UpstreamLiveClient {
     this.goAwayHandler = handler;
   }
 
+  onUsage(handler: (event: UpstreamUsageEvent) => void): void {
+    // AI Studio Live does not stream usage totals today — accepted, never fires.
+    this.usageHandler = handler;
+    void this.usageHandler;
+  }
+
   onError(handler: (event: UpstreamErrorEvent) => void): void {
     this.errorHandler = handler;
   }
@@ -172,11 +191,17 @@ export class GeminiApiKeyLiveClient implements UpstreamLiveClient {
 
     this.state = 'connecting';
 
-    // Reuses the provider-neutral credential hook per its own contract
-    // ("Other providers may use it for API keys / JWTs" — types.ts) — the
-    // caller passes a function returning the raw Gemini API key here
-    // instead of an OAuth token fetcher.
-    const apiKey = await options.getAccessToken();
+    // Credential precedence (BOOTSTRAP-NOVA-SONIC-VOICE): constructor dep
+    // first, then the deprecated provider-neutral options hook as a
+    // migration fallback.
+    const getApiKey = this.depGetApiKey ?? options.getAccessToken;
+    if (!getApiKey) {
+      this.state = 'error';
+      throw new Error(
+        'gemini_config_missing: no getApiKey supplied via GeminiApiKeyLiveClientDeps or connect options',
+      );
+    }
+    const apiKey = await getApiKey();
     const url = buildAiStudioBidiGenerateContentUrl(apiKey);
     const ws = this.createSocket(url, { 'Content-Type': 'application/json' });
     this.ws = ws;
@@ -341,18 +366,45 @@ export class GeminiApiKeyLiveClient implements UpstreamLiveClient {
     }
   }
 
-  async close(): Promise<void> {
+  sendToolResult(result: UpstreamToolResult): boolean {
+    if (this.state !== 'open' || !this.ws) return false;
+    if (this.ws.readyState !== WebSocket.OPEN) return false;
+
+    // Same BidiGenerateContent envelope as VertexLiveClient.sendToolResult
+    // (shared proto definitions) — 'id' rejected, failures as Error output.
+    const outputText = result.success ? result.output : `Error: ${result.error ?? 'tool failed'}`;
+    const message = {
+      tool_response: {
+        function_responses: [
+          {
+            name: result.name,
+            response: { output: outputText },
+          },
+        ],
+      },
+    };
+
+    try {
+      this.ws.send(JSON.stringify(message));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async close(reason?: string): Promise<void> {
     if (this.state === 'closed' || this.state === 'closing') return;
     this.localCloseRequested = true;
+    this.localCloseReason = reason;
     this.state = 'closing';
     this.clearConnectTimeout();
     try {
-      this.ws?.close();
+      this.ws?.close(1000, reason);
     } catch {
       /* ignore */
     }
     if (!this.closeEmitted) {
-      this.finalizeClose({ initiatedLocally: true });
+      this.finalizeClose({ initiatedLocally: true, reason });
     }
   }
 
@@ -385,11 +437,12 @@ export class GeminiApiKeyLiveClient implements UpstreamLiveClient {
       const inputText = typeof inputTransObj === 'string' ? inputTransObj : inputTransObj?.text;
       const outputText = typeof outputTransObj === 'string' ? outputTransObj : outputTransObj?.text;
 
+      // Streamed deltas — never final (BOOTSTRAP-NOVA-SONIC-VOICE).
       if (inputText) {
-        this.transcriptHandler?.({ direction: 'input', text: inputText });
+        this.transcriptHandler?.({ direction: 'input', text: inputText, isFinal: false });
       }
       if (outputText) {
-        this.transcriptHandler?.({ direction: 'output', text: outputText });
+        this.transcriptHandler?.({ direction: 'output', text: outputText, isFinal: false });
       }
 
       if (serverContent.turn_complete || serverContent.turnComplete) {
@@ -429,7 +482,7 @@ export class GeminiApiKeyLiveClient implements UpstreamLiveClient {
     if (this.closeEmitted) return;
     this.finalizeClose({
       code,
-      reason: reason?.toString?.() || undefined,
+      reason: reason?.toString?.() || this.localCloseReason || undefined,
       initiatedLocally: this.localCloseRequested,
     });
   }
