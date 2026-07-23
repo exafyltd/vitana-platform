@@ -41,6 +41,10 @@ describe('runNovaSonicTestSuite', () => {
     }
     expect(byKey.live_connect_probe?.status).toBe('skip');
     expect(byKey.live_connect_probe?.detail).toMatch(/not requested/);
+    expect(byKey.vertex_baseline_probe?.status).toBe('skip');
+    expect(byKey.vertex_baseline_probe?.detail).toMatch(/not requested/);
+    expect(byKey.latency_comparison?.status).toBe('skip');
+    expect(byKey.latency_comparison?.detail).toMatch(/not requested/);
   });
 
   it('live probe requested but Nova disabled → typed SKIP, no stream opened', async () => {
@@ -49,6 +53,12 @@ describe('runNovaSonicTestSuite', () => {
     const probe = summary.checks.find((c) => c.key === 'live_connect_probe');
     expect(probe?.status).toBe('skip');
     expect(probe?.detail).toMatch(/not ready/);
+    // No paid Google stream without Nova metrics to compare against.
+    const baseline = summary.checks.find((c) => c.key === 'vertex_baseline_probe');
+    expect(baseline?.status).toBe('skip');
+    expect(baseline?.detail).toMatch(/baseline comparison unnecessary/);
+    const comparison = summary.checks.find((c) => c.key === 'latency_comparison');
+    expect(comparison?.status).toBe('skip');
     expect(summary.live_probe_requested).toBe(true);
   });
 

@@ -183,7 +183,7 @@ export interface NovaSonicLiveClientDeps {
   audioHighWaterMark?: number;
 }
 
-async function defaultBedrockFactory(config: NovaSonicConfig): Promise<NovaBedrockLike> {
+async function buildBedrockClient(config: NovaSonicConfig): Promise<NovaBedrockLike> {
   // Lazy imports keep Bedrock/HTTP2 out of the require graph for GCP
   // deployments that never enable Nova.
   const { BedrockRuntimeClient } = await import('@aws-sdk/client-bedrock-runtime');
@@ -197,6 +197,54 @@ async function defaultBedrockFactory(config: NovaSonicConfig): Promise<NovaBedro
   }) as unknown as NovaBedrockLike;
 }
 
+/**
+ * Shared Bedrock client, reused across sessions. NodeHttp2Handler pools
+ * HTTP/2 sessions per authority, so reuse lets a new ORB session skip SDK
+ * import + credential-chain resolution + TCP/TLS/HTTP2 setup — the same
+ * latency treatment the Vertex path gets from its boot-time ADC token
+ * prewarm (see orb-live.ts, ORB-CONVERSATION-LATENCY).
+ */
+let sharedBedrockClient: NovaBedrockLike | null = null;
+
+async function defaultBedrockFactory(config: NovaSonicConfig): Promise<NovaBedrockLike> {
+  if (!sharedBedrockClient) {
+    sharedBedrockClient = await buildBedrockClient(config);
+  }
+  return sharedBedrockClient;
+}
+
+/**
+ * Boot-time prewarm: build the shared client and resolve the credential
+ * chain (ECS task-role fetch) off the session critical path. Best-effort —
+ * a failure falls back to lazy construction on first connect.
+ */
+export async function prewarmNovaSonicBedrock(config: NovaSonicConfig): Promise<boolean> {
+  try {
+    const client = await defaultBedrockFactory(config);
+    const credentialsProvider = (client as {
+      config?: { credentials?: () => Promise<unknown> };
+    }).config?.credentials;
+    if (typeof credentialsProvider === 'function') {
+      // Cap the warm-up so a hung metadata endpoint can't stall boot.
+      await Promise.race([
+        credentialsProvider(),
+        new Promise((_, reject) => {
+          const t = setTimeout(() => reject(new Error('prewarm timeout')), 5_000);
+          (t as NodeJS.Timeout).unref?.();
+        }),
+      ]);
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Test seam: inject/clear the shared client without touching real AWS SDKs. */
+export function __setSharedBedrockClientForTests(client: NovaBedrockLike | null): void {
+  sharedBedrockClient = client;
+}
+
 export class NovaSonicLiveClient implements UpstreamLiveClient {
   private state: UpstreamConnectionState = 'idle';
   private readonly deps: NovaSonicLiveClientDeps;
@@ -204,6 +252,9 @@ export class NovaSonicLiveClient implements UpstreamLiveClient {
   private readonly audioContentName = randomUUID();
   private queue: NovaInputQueue;
   private bedrock: NovaBedrockLike | null = null;
+  /** True when this instance built its own client (injected factory) and
+   *  may destroy it on close; the shared default client is never destroyed. */
+  private ownsBedrock = false;
   private normalizer = new NovaOutputNormalizer();
   private rotationTimer: NodeJS.Timeout | null = null;
   private rotationFired = false;
@@ -275,9 +326,13 @@ export class NovaSonicLiveClient implements UpstreamLiveClient {
     this.queue.push(buildAudioContentStart({ promptName: this.promptName, contentName: this.audioContentName }));
 
     try {
-      this.bedrock = this.deps.createBedrockClient
-        ? this.deps.createBedrockClient()
-        : await defaultBedrockFactory(this.deps.config);
+      if (this.deps.createBedrockClient) {
+        this.bedrock = this.deps.createBedrockClient();
+        this.ownsBedrock = true;
+      } else {
+        this.bedrock = await defaultBedrockFactory(this.deps.config);
+        this.ownsBedrock = false;
+      }
 
       const commandInput = { modelId: this.deps.config.modelId, body: this.queue };
       let command: unknown = commandInput;
@@ -460,7 +515,9 @@ export class NovaSonicLiveClient implements UpstreamLiveClient {
       this.finalizeClose({ initiatedLocally: true, reason });
     }
     try {
-      this.bedrock?.destroy?.();
+      // Never destroy the shared client — its pooled HTTP/2 sessions are
+      // exactly what makes the next session's connect fast.
+      if (this.ownsBedrock) this.bedrock?.destroy?.();
     } catch {
       /* ignore */
     }

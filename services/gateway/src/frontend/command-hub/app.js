@@ -37661,7 +37661,7 @@ function renderNovaSonicTestView() {
         + '<span style="color:#94a3b8;font-size:11px;letter-spacing:0.05em;">AUTOMATED TESTS</span>'
         + '<div style="display:flex;align-items:center;gap:12px;">'
         + '<label style="display:flex;align-items:center;gap:6px;font-size:12px;color:#e5e7eb;cursor:pointer;">'
-        + '<input type="checkbox" class="nst-live-probe" /> include live Bedrock probe (opens a real stream, measures latency)'
+        + '<input type="checkbox" class="nst-live-probe" /> include live probes (real Nova + Vertex streams; measures and compares latency)'
         + '</label>'
         + '<button class="nst-run-btn" style="padding:8px 16px;background:#f97316;color:#0f172a;border:none;border-radius:6px;font-weight:bold;cursor:pointer;">Run Tests</button>'
         + '</div></div>'

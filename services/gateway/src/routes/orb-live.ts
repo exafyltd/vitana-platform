@@ -1389,6 +1389,7 @@ import {
   isNovaSonicLanguageSupported,
 } from '../orb/live/upstream/nova-sonic-config';
 import { resolveNovaSonicVoice } from '../orb/live/voice/nova-sonic-voice';
+import { prewarmNovaSonicBedrock } from '../orb/live/upstream/nova-sonic-live-client';
 import { createUpstreamClient } from '../orb/live/upstream/upstream-client-factory';
 import { bindUpstreamSessionHandlers } from '../orb/live/session/upstream-message-handler';
 import { createNovaWsFacade } from '../orb/live/upstream/nova-ws-facade';
@@ -1578,6 +1579,19 @@ if (googleAuth && VERTEX_PROJECT_ID) {
     .then(() => console.log('[VTID-01219] ORB Voice access token prewarmed'))
     .catch((err: any) =>
       console.warn('[VTID-01219] ORB Voice access-token prewarm failed (will fetch lazily):', err?.message));
+}
+
+// BOOTSTRAP-NOVA-SONIC-VOICE: same latency treatment for Nova — when Nova is
+// ready on this runtime, build the shared Bedrock HTTP/2 client and resolve
+// the ECS task-role credential chain at boot, so the first canary session
+// skips SDK import + credential + TLS setup on its connect critical path.
+// No-op wherever NOVA_SONIC_ENABLED is unset (all of GCP).
+{
+  const novaBootCfg = getNovaSonicConfig(process.env);
+  if (novaBootCfg.ready) {
+    void prewarmNovaSonicBedrock(novaBootCfg).then((ok) =>
+      console.log(`[BOOTSTRAP-NOVA-SONIC-VOICE] Bedrock prewarm ${ok ? 'complete' : 'failed (lazy fallback on first connect)'}`));
+  }
 }
 
 // VTID-03126 (Phase D.3): LIVE_API_VOICES Record moved out of this file

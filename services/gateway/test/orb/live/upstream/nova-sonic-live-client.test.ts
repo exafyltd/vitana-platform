@@ -7,6 +7,7 @@ import {
   NovaSonicLiveClient,
   NovaInputQueue,
   classifyNovaError,
+  __setSharedBedrockClientForTests,
   type NovaBedrockLike,
 } from '../../../../src/orb/live/upstream/nova-sonic-live-client';
 import { getNovaSonicConfig } from '../../../../src/orb/live/upstream/nova-sonic-config';
@@ -331,5 +332,48 @@ describe('NovaInputQueue', () => {
     expect(q.pushAudio({ event: { audioInput: {} } })).toBe(true);
     expect(q.pushAudio({ event: { audioInput: {} } })).toBe(false);
     expect(q.push({ event: { toolResult: {} } })).toBe(true);
+  });
+});
+
+describe('shared Bedrock client (latency: HTTP/2 session reuse)', () => {
+  afterEach(() => {
+    __setSharedBedrockClientForTests(null);
+  });
+
+  function makeSharedFake(): NovaBedrockLike & { destroy: jest.Mock; send: jest.Mock } {
+    return {
+      send: jest.fn(async () => ({ body: new FakeResponseBody() })),
+      destroy: jest.fn(),
+    };
+  }
+
+  it('reuses the shared client across sessions and never destroys it on close', async () => {
+    const shared = makeSharedFake();
+    __setSharedBedrockClientForTests(shared);
+
+    const first = new NovaSonicLiveClient({ config, voiceId: 'tina', createCommand: (i) => i });
+    await first.connect(baseOptions());
+    await first.close('session_one_done');
+    expect(shared.destroy).not.toHaveBeenCalled();
+
+    const second = new NovaSonicLiveClient({ config, voiceId: 'tina', createCommand: (i) => i });
+    await second.connect(baseOptions());
+    await second.close('session_two_done');
+
+    expect(shared.send).toHaveBeenCalledTimes(2);
+    expect(shared.destroy).not.toHaveBeenCalled();
+  });
+
+  it('an injected per-client factory still owns (and destroys) its client', async () => {
+    const owned = makeSharedFake();
+    const client = new NovaSonicLiveClient({
+      config,
+      voiceId: 'tina',
+      createBedrockClient: () => owned,
+      createCommand: (i) => i,
+    });
+    await client.connect(baseOptions());
+    await client.close('done');
+    expect(owned.destroy).toHaveBeenCalled();
   });
 });
