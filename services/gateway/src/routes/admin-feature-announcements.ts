@@ -70,6 +70,9 @@ function pickLocale(text: LocalizedText, locale: GatewayLocale): string {
 // ── POST / — Create + publish an announcement ────────────────
 
 router.post('/', async (req: AuthenticatedRequest, res: Response) => {
+  // impact-allow-no-oasis: emitPublishEvent() above wraps emitOasisEvent —
+  // the static impact-scan can't see through the indirection (same shortcut
+  // admin-marketplace.ts's emitAdminActivity() already takes).
   const supabase = getSupabase();
   if (!supabase) return res.status(500).json({ ok: false, error: 'SUPABASE_UNAVAILABLE' });
 
