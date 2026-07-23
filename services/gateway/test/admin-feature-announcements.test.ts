@@ -19,17 +19,29 @@ let mockSupabase: any;
 const notifyUsersAsyncMock = jest.fn();
 const bulkGetUserLocalesMock = jest.fn();
 
+// Mirrors the real two-stage contract: requireAuth verifies the token and
+// sets req.identity; requireExafyAdmin only checks it (must run after).
 jest.mock('../src/middleware/auth-supabase-jwt', () => ({
-  requireExafyAdmin: (req: any, res: any, next: any) => {
+  requireAuth: (req: any, res: any, next: any) => {
     const h = req.headers.authorization;
     if (h === 'Bearer admin') {
       req.identity = { user_id: 'admin-1', email: 'admin@exafy.io', exafy_admin: true };
       return next();
     }
     if (h === 'Bearer user') {
-      return res.status(403).json({ ok: false, error: 'FORBIDDEN' });
+      req.identity = { user_id: 'user-1', email: 'user@example.com', exafy_admin: false };
+      return next();
     }
     return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
+  },
+  requireExafyAdmin: (req: any, res: any, next: any) => {
+    if (!req.identity) {
+      return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
+    }
+    if (!req.identity.exafy_admin) {
+      return res.status(403).json({ ok: false, error: 'FORBIDDEN' });
+    }
+    return next();
   },
 }));
 

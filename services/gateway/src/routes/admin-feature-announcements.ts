@@ -29,13 +29,17 @@ import { getSupabase } from '../lib/supabase';
 import { notifyUsersAsync, NotificationPayload } from '../services/notification-service';
 import { bulkGetUserLocales } from '../i18n/server-locale';
 import { tt, type GatewayLocale } from '../i18n/catalog';
-import { requireExafyAdmin, AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
+import { requireAuth, requireExafyAdmin, AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
 import { emitOasisEvent } from '../services/oasis-event-service';
 
 const router = Router();
 const VTID = 'ADMIN-FEATURE-ANNOUNCEMENTS';
 
-router.use(requireExafyAdmin);
+// requireExafyAdmin only CHECKS req.identity — it must run after requireAuth,
+// which actually verifies the JWT and populates req.identity. admin-notifications.ts
+// (the file this route was modeled on) is missing requireAuth too — same bug,
+// out of scope to fix here, but worth flagging separately.
+router.use(requireAuth, requireExafyAdmin);
 
 interface LocalizedText {
   en: string;
