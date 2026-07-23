@@ -1,0 +1,250 @@
+# AWS Production (DR) — Gateway: Build Log
+
+**VTID:** VTID-03398 · **Built:** 2026-07-23 · **Branch:** `claude/aws-production-build`
+
+Supersedes `docs/AWS-PRODUCTION-HANDOVER.md` as the current-state reference
+for the AWS DR gateway. That doc's "what's not built yet" list undercounted
+what already existed in this AWS account (see "Pre-existing state found"
+below) — this log records what's real as of this build.
+
+No IaC exists in this repo (same as staging) — everything below was
+provisioned by hand via `aws-cli`. Commands are captured verbatim so this is
+reproducible/auditable even without Terraform/CDK.
+
+---
+
+## Scope confirmed with the user
+
+Parallel/DR production for the `gateway` service only, alongside GCP prod
+(canonical) and the existing AWS staging (`vitana-gateway`, unaffected by
+this build). AWS prod shares GCP prod's Supabase project
+(`inmkhvwdcuyhnxkgfvsb`) — confirmed via the pre-existing
+`vitana/supabase/prod/*` Secrets Manager entries. The AWS production Aurora
+database (in sync with Supabase) was already provisioned by the user ahead
+of this session.
+
+## Pre-existing state found (important — read before assuming "not built yet")
+
+Before provisioning anything, read-only investigation (`aws elbv2
+describe-target-groups` / `describe-load-balancers` / `describe-listeners`,
+`aws ecs list-services`) found:
+
+- `vitana-alb-prod` — a fully-built internet-facing ALB (created
+  2026-07-10) with a real ACM cert for `vitanaland.com` / `*.vitanaland.com`,
+  serving `preview-aws-gateway.vitanaland.com` / `preview-aws.vitanaland.com`
+  via Cloudflare CNAME. Its `vitana-tg-gateway-prod` / `vitana-tg-community-prod`
+  target groups are misleadingly named — they actually carry **staging**
+  traffic (`vitana-gateway` / `vitana-community-app` ECS services). This is
+  a naming leftover, not a hidden second prod build — confirmed by checking
+  `env` in `/api/v1/admin/health` responses through that ALB (`staging`).
+- **29 ECS services** in `Vitana-ECS-Cluster`, all created within the same
+  3-second window (2026-07-09T13:25:05 UTC) — a single scripted
+  bulk-provisioning event predating this session. Includes
+  `vitana-community-app`, `vitana-oasis-operator`, `vitana-oasis-projector`,
+  `vitana-worker-runner`, `vitana-vitana-verification-engine`, plus ~17
+  services with no counterpart in CLAUDE.md or GCP. **None of these were
+  touched by this build** — gateway-only scope was strictly honored. Their
+  origin/purpose is outside this VTID's scope; flagged to the user, who
+  confirmed the AWS prod DB layer (Aurora, in sync with Supabase) is
+  intentional and authorized proceeding.
+- Data layer already provisioned for prod: RDS Aurora PostgreSQL cluster
+  `vitana-aurora-prod` (writer + reader endpoints), ElastiCache Redis
+  `vitana-redis-prod`, and Secrets Manager entries
+  `vitana/supabase/prod/{url,anon-key,service-role-key,jwt-secret}` and
+  `vitana/aurora/prod/{master-password,database-url}`.
+
+## What this build added (all new, additively named `*-awsdr` / `dr-*`)
+
+| Resource | Name / value |
+|---|---|
+| CloudWatch log group | `/vitana/gateway-awsdr` |
+| ECS task definition family | `vitana-gateway-awsdr` (revision 1, cloned from `vitana-gateway`'s live staging task def, prod values swapped in) |
+| ECS service | `vitana-gateway-awsdr` in `Vitana-ECS-Cluster`, Fargate, desiredCount=1 (autoscaling 1–4, see below) |
+| ELBv2 target group | `vitana-tg-gateway-awsdr` (port 8080, health check `/alive`) |
+| ALB listener rule | Host-header `dr-gateway.vitanaland.com` → `vitana-tg-gateway-awsdr`, **priority 5** on `vitana-alb-prod`'s existing HTTPS listener (443) |
+| DNS | Cloudflare CNAME `dr-gateway.vitanaland.com` → `vitana-alb-prod-1579322953.eu-central-1.elb.amazonaws.com` (proxied, same pattern as staging's `preview-aws-gateway`) |
+| TLS | Reused the ALB's existing `*.vitanaland.com` ACM cert — no new certificate needed |
+| Autoscaling | Target-tracking, `ECSServiceAverageCPUUtilization` @ 65%, min 1 / max 4 |
+| CloudWatch alarms | `vitana-gateway-awsdr-target-5xx`, `-unhealthy-hosts`, `-cpu-high`, `-memory-high` |
+| Deploy workflow | `.github/workflows/AWS-PROD-DEPLOY-GATEWAY.yml` — `workflow_dispatch`-only, required `reason`, never on push |
+
+No new Secrets Manager entries were needed — the task definition's
+`secrets` block reuses the pre-existing prod-scoped secrets above, plus the
+existing RDS-managed master credential
+(`rds!cluster-eba8a4f2-3caa-4f11-88f0-c3102c3c176a`) for `DB_PASSWORD`. One
+security improvement made over the staging task def: `SUPABASE_JWT_SECRET`,
+`SUPABASE_ANON_KEY`, and `GATEWAY_SERVICE_TOKEN` are wired as Secrets
+Manager references in the prod task def (staging has them as plaintext env
+vars, and `GATEWAY_SERVICE_TOKEN` in staging is literally a placeholder
+string, not a working token — not fixed here since it's out of this VTID's
+gateway-DR scope, but worth a follow-up VTID against staging).
+
+### ALB listener-rule priority — read this before adding another host-header rule
+
+`vitana-alb-prod` has **path-based** rules at priority 10 (`/api/*`,
+`/ws/*` → the staging gateway TG) and 20 (`/community*` → staging
+community TG), evaluated before any higher-numbered rule regardless of
+`Host` header. The DR rule was created at priority 15 first — API calls to
+`dr-gateway.vitanaland.com/api/*` were silently served by the **staging**
+gateway (path-based rule 10 matched before the host-based rule 15 was
+evaluated). Caught by `/api/v1/admin/health` returning `env: staging`
+against `dr-gateway.vitanaland.com`. Fixed by moving the rule to
+**priority 5**. Any future host-header rule added to this ALB must sit
+below (numerically lower priority than) 10, or it will silently lose to
+the path-based staging rules.
+
+## Commands run (chronological, redacted of secret values)
+
+```bash
+# Log group
+aws logs create-log-group --log-group-name /vitana/gateway-awsdr --region eu-central-1
+
+# Task definition — registered from a JSON built by cloning
+# `aws ecs describe-task-definition --task-definition vitana-gateway` (rev 38)
+# and swapping: VITANA_ENV/ENVIRONMENT/ENV -> production, GATEWAY_URL ->
+# https://dr-gateway.vitanaland.com, DB_HOST/DB_READER_HOST -> Aurora prod
+# writer/reader endpoints, REDIS_HOST -> vitana-redis-prod, log group ->
+# /vitana/gateway-awsdr, and secrets -> the vitana/supabase/prod/* +
+# rds!cluster-eba8a4f2... ARNs.
+aws ecs register-task-definition --cli-input-json file://gateway-awsdr-taskdef-register.json --region eu-central-1
+
+# Target group
+aws elbv2 create-target-group --name vitana-tg-gateway-awsdr --protocol HTTP --port 8080 \
+  --vpc-id vpc-05958f035e596fe64 --target-type ip --health-check-protocol HTTP \
+  --health-check-path /alive --health-check-interval-seconds 15 --health-check-timeout-seconds 5 \
+  --healthy-threshold-count 2 --unhealthy-threshold-count 3 --matcher HttpCode=200 --region eu-central-1
+
+# Listener rule (host-header, dr-gateway.vitanaland.com)
+aws elbv2 create-rule \
+  --listener-arn arn:aws:elasticloadbalancing:eu-central-1:472838866351:listener/app/vitana-alb-prod/3d60b7c377e63d95/48eba68d49c39439 \
+  --priority 15 \
+  --conditions Field=host-header,HostHeaderConfig={Values=[dr-gateway.vitanaland.com]} \
+  --actions Type=forward,TargetGroupArn=arn:aws:elasticloadbalancing:eu-central-1:472838866351:targetgroup/vitana-tg-gateway-awsdr/a2b0e810877c12e7 \
+  --region eu-central-1
+# ... then fixed the priority (see "ALB listener-rule priority" above):
+aws elbv2 set-rule-priorities \
+  --rule-priorities RuleArn=<rule-arn>,Priority=5 --region eu-central-1
+
+# ECS service
+aws ecs create-service --cluster Vitana-ECS-Cluster --service-name vitana-gateway-awsdr \
+  --task-definition vitana-gateway-awsdr --desired-count 1 --launch-type FARGATE \
+  --network-configuration "awsvpcConfiguration={subnets=[subnet-0ff45a2051c5e5482,subnet-0c786864a28a5a821],securityGroups=[sg-0fbcf7b59b1f0d685],assignPublicIp=DISABLED}" \
+  --load-balancers "targetGroupArn=arn:...targetgroup/vitana-tg-gateway-awsdr/...,containerName=gateway,containerPort=8080" \
+  --region eu-central-1
+
+# DNS (Cloudflare API, zone 859c786db63e634e0ee36065e8a06e20)
+curl -X POST "https://api.cloudflare.com/client/v4/zones/859c786db63e634e0ee36065e8a06e20/dns_records" \
+  -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H "Content-Type: application/json" \
+  -d '{"type":"CNAME","name":"dr-gateway.vitanaland.com","content":"vitana-alb-prod-1579322953.eu-central-1.elb.amazonaws.com","proxied":true,"ttl":1}'
+
+# Autoscaling
+aws application-autoscaling register-scalable-target --service-namespace ecs \
+  --resource-id service/Vitana-ECS-Cluster/vitana-gateway-awsdr --scalable-dimension ecs:service:DesiredCount \
+  --min-capacity 1 --max-capacity 4 --region eu-central-1
+aws application-autoscaling put-scaling-policy --service-namespace ecs \
+  --resource-id service/Vitana-ECS-Cluster/vitana-gateway-awsdr --scalable-dimension ecs:service:DesiredCount \
+  --policy-name vitana-gateway-awsdr-cpu-target-tracking --policy-type TargetTrackingScaling \
+  --target-tracking-scaling-policy-configuration '{"TargetValue":65.0,"PredefinedMetricSpecification":{"PredefinedMetricType":"ECSServiceAverageCPUUtilization"},"ScaleInCooldown":120,"ScaleOutCooldown":60}' \
+  --region eu-central-1
+
+# Alarms (repeat put-metric-alarm for target-5xx, unhealthy-hosts, cpu-high, memory-high — see workflow/task list for exact params)
+```
+
+## Verification performed
+
+- `GET /alive` → `200 {"status":"ok","service":"gateway",...}`
+- `GET /api/v1/admin/health` → `200 {"ok":true,"env":"production","supabase_host":"inmkhvwdcuyhnxkgfvsb.supabase.co",...}`
+- `GET /api/v1/admin/build-info` → commit matches the running task's image (`bf1f1add2398...`, same proven commit as AWS staging)
+- Live ORB voice session: `POST /api/v1/orb/live/session/start` (test user `a27552a3-0257-4305-8ed0-351a80fd3701`) then `GET /api/v1/orb/live/stream`. First attempt closed with `code=1011 Internal error encountered` after a ~14s stall between transcript fragments (not the previously-fixed `1007` payload-size bug); second attempt completed cleanly — 404 audio chunks, 37 `output_transcript` fragments, ending in `turn_complete`, no error close. Treated as a one-off upstream Gemini Live hiccup, not a deployment defect — logs confirm correct transport (`api_key`/AI Studio), correct budget-trim behavior (no repeat of the fixed 30KB overflow bug), and matching `env=production`/Supabase project.
+- Regression check: AWS staging (`preview-aws-gateway.vitanaland.com`) still reports `env: staging` with its original (unchanged) boot time — confirmed untouched by this build.
+
+## Not completed — requires IAM-admin AWS credentials this session does not have
+
+The session's AWS IAM user (`claude-staging-validation`) has
+`AmazonECS_FullAccess`, `AmazonEC2ContainerRegistryFullAccess`,
+`ElasticLoadBalancingFullAccess`, and `ReadOnlyAccess` — **no IAM write
+permissions at all**. Confirmed directly: both
+`iam:CreateOpenIDConnectProvider` and `iam:CreateRole` returned
+`AccessDenied`. `AWS-PROD-DEPLOY-GATEWAY.yml` is written and ready, but it
+references `secrets.AWS_PROD_ROLE_ARN`, which does not exist yet — the
+workflow cannot be dispatched until an operator with IAM admin rights runs
+the one-time setup below (mirrors `scripts/aws/README.md`'s existing OIDC
+pattern for the S3-mirror role).
+
+### One-time setup (run once, by a human/session with IAM admin rights)
+
+```bash
+# 1. Create the GitHub OIDC provider for this AWS account (skip if
+#    scripts/aws/README.md's provider already exists — check first with
+#    `aws iam list-open-id-connect-providers`).
+aws iam create-open-id-connect-provider \
+  --url "https://token.actions.githubusercontent.com" \
+  --client-id-list "sts.amazonaws.com" \
+  --thumbprint-list "1c58a3a8518e8759bf075b76b750d4f2df264fcd"
+
+# 2. Create the deploy role, trust-scoped to this repo's main branch only
+#    (tighter than the mirror role's `repo:exafyltd/vitana-platform:*` —
+#    this role can deploy production, so it's restricted to workflow runs
+#    triggered against `main`).
+cat > /tmp/trust-policy.json <<'EOF'
+{
+  "Version": "2012-10-17",
+  "Statement": [{
+    "Effect": "Allow",
+    "Principal": { "Federated": "arn:aws:iam::472838866351:oidc-provider/token.actions.githubusercontent.com" },
+    "Action": "sts:AssumeRoleWithWebIdentity",
+    "Condition": {
+      "StringEquals": { "token.actions.githubusercontent.com:aud": "sts.amazonaws.com" },
+      "StringLike": { "token.actions.githubusercontent.com:sub": "repo:exafyltd/vitana-platform:ref:refs/heads/main" }
+    }
+  }]
+}
+EOF
+aws iam create-role --role-name vitana-gateway-awsdr-deploy-role \
+  --assume-role-policy-document file:///tmp/trust-policy.json
+
+# 3. Attach a policy scoped to exactly what the deploy workflow needs:
+#    ECR push/pull on vitana/gateway, and ECS register/describe/update on
+#    the awsdr service + its task definition family, plus PassRole for the
+#    two roles the task definition already uses.
+cat > /tmp/deploy-policy.json <<'EOF'
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    { "Effect": "Allow", "Action": ["ecr:GetAuthorizationToken"], "Resource": "*" },
+    { "Effect": "Allow", "Action": ["ecr:BatchCheckLayerAvailability","ecr:GetDownloadUrlForLayer","ecr:BatchGetImage","ecr:PutImage","ecr:InitiateLayerUpload","ecr:UploadLayerPart","ecr:CompleteLayerUpload","ecr:DescribeRepositories"],
+      "Resource": "arn:aws:ecr:eu-central-1:472838866351:repository/vitana/gateway" },
+    { "Effect": "Allow", "Action": ["ecs:DescribeServices","ecs:UpdateService","ecs:DescribeTaskDefinition","ecs:RegisterTaskDefinition","ecs:ListServices"],
+      "Resource": "*" },
+    { "Effect": "Allow", "Action": "iam:PassRole",
+      "Resource": ["arn:aws:iam::472838866351:role/vitana-ecs-task-execution-role", "arn:aws:iam::472838866351:role/vitana-ecs-task-role"] }
+  ]
+}
+EOF
+aws iam put-role-policy --role-name vitana-gateway-awsdr-deploy-role \
+  --policy-name deploy-permissions --policy-document file:///tmp/deploy-policy.json
+
+# 4. Wire the role ARN into the repo secret.
+gh secret set AWS_PROD_ROLE_ARN --repo exafyltd/vitana-platform \
+  --body "arn:aws:iam::472838866351:role/vitana-gateway-awsdr-deploy-role"
+
+# 5. Prove it: dispatch the workflow once.
+gh workflow run AWS-PROD-DEPLOY-GATEWAY.yml --ref main -f reason="initial OIDC wiring smoke test"
+```
+
+## Natural next steps (not built — out of scope for this VTID)
+
+- Extend the same DR pattern to `oasis-operator`, `oasis-projector`,
+  `worker-runner`, `vitana-verification-engine`, and the frontend
+  (`community-app`) — explicitly deferred per the agreed gateway-only
+  first slice.
+- Fix the `GATEWAY_SERVICE_TOKEN` placeholder-string bug on **AWS
+  staging** (`vitana-gateway` task def) — discovered as a side effect of
+  building this prod task def correctly; not fixed on staging since it's
+  outside this VTID's scope.
+- Investigate/document the other ~27 pre-existing ECS services found
+  during this build (see "Pre-existing state found" above) — separate
+  from gateway DR, flagged for the user's awareness, not investigated
+  further here.
+- CloudWatch dashboard (alarms exist; a consolidated dashboard view does
+  not yet).

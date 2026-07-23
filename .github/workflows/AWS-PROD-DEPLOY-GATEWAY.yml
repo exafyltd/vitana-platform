@@ -1,0 +1,237 @@
+# AWS-PROD-DEPLOY-GATEWAY — build the gateway, push to ECR, and roll the
+# AWS Production (DR) ECS service (VTID-03398).
+#
+# AWS twin of AWS-STAGE-DEPLOY-GATEWAY.yml, but for the parallel/DR
+# production stack (`vitana-gateway-awsdr`), not the staging one
+# (`vitana-gateway`). GCP Cloud Run remains the canonical production —
+# this workflow ships to the AWS DR target only, and NEVER on push.
+#
+# Design choices:
+# - workflow_dispatch ONLY, with a REQUIRED `reason` input. There is no
+#   `on: push` trigger of any kind — mirrors how GCP prod is gated
+#   post-cutover (CLAUDE.md §16: auto = staging, prod = deliberate manual
+#   action with a recorded reason). This is the single most important
+#   property of this file; do not add a push trigger.
+# - The existing `vitana-gateway-awsdr` task definition is PRESERVED: only
+#   the container image and the commit-stamp env vars (GIT_COMMIT_SHA /
+#   COMMIT_SHA / BUILD_INFO_MARKER) are replaced, same pattern as staging.
+# - Smoke gate mirrors AWS-STAGE-DEPLOY-GATEWAY.yml: /api/v1/admin/health
+#   must report env=production AND /api/v1/admin/build-info must report
+#   the deployed commit — otherwise the job fails loudly (CLAUDE.md §15).
+# - OASIS event + software_versions row are emitted best-effort via
+#   Supabase REST when SUPABASE_URL / SUPABASE_SERVICE_ROLE repo secrets
+#   exist, so the Command Hub CLOCK history sees AWS-DR prod deploys.
+#
+# Required repository secrets:
+#   AWS_PROD_ROLE_ARN — GitHub OIDC deploy role (see scripts/aws/README.md
+#   for the federation pattern; a dedicated role/trust-policy for this
+#   workflow still needs to be created by an operator with IAM admin
+#   rights — see docs/AWS-PRODUCTION-BUILD-LOG.md for the exact one-time
+#   setup commands. Deliberately NOT a static-key IAM user.)
+# Optional repository secrets (for OASIS/CLOCK visibility):
+#   SUPABASE_URL / SUPABASE_SERVICE_ROLE
+
+name: AWS Prod Deploy Gateway (ECS, DR)
+
+on:
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: 'Reason for this AWS production (DR) gateway deploy — required'
+        required: true
+      gateway_url:
+        description: 'Public gateway URL for post-deploy verification'
+        required: false
+        default: 'https://dr-gateway.vitanaland.com'
+      aws_region:
+        description: 'AWS region'
+        required: false
+        default: 'eu-central-1'
+      ecr_repository:
+        description: 'ECR repository name for the gateway image'
+        required: false
+        default: 'vitana/gateway'
+      ecs_cluster:
+        description: 'ECS cluster name'
+        required: false
+        default: 'Vitana-ECS-Cluster'
+      ecs_service:
+        description: 'ECS service name'
+        required: false
+        default: 'vitana-gateway-awsdr'
+
+permissions:
+  contents: read
+  id-token: write # required for aws-actions/configure-aws-credentials OIDC
+
+concurrency:
+  group: aws-prod-deploy-gateway
+  cancel-in-progress: false
+
+jobs:
+  build-push-deploy:
+    runs-on: ubuntu-latest
+    env:
+      GATEWAY_URL: ${{ inputs.gateway_url }}
+      TARGET_AWS_REGION: ${{ inputs.aws_region }}
+      ECR_REPOSITORY: ${{ inputs.ecr_repository }}
+      ECS_CLUSTER: ${{ inputs.ecs_cluster }}
+      ECS_SERVICE: ${{ inputs.ecs_service }}
+      DEPLOY_REASON: ${{ inputs.reason }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve commit metadata + refresh BUILD_INFO
+        id: commit
+        run: |
+          SHORT="$(git rev-parse --short=12 HEAD)"
+          {
+            echo "sha=$GITHUB_SHA"
+            echo "short=$SHORT"
+          } >> "$GITHUB_OUTPUT"
+          {
+            echo "$GITHUB_SHA"
+            echo "Build: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          } > services/gateway/BUILD_INFO
+
+      - name: Configure AWS credentials (GitHub OIDC — no static keys)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_PROD_ROLE_ARN }}
+          aws-region: ${{ env.TARGET_AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Preflight — verify ECR repo + ECS service exist
+        run: |
+          set -e
+          if ! aws ecr describe-repositories --repository-names "${{ env.ECR_REPOSITORY }}" >/dev/null 2>&1; then
+            echo "::error::ECR repository '${{ env.ECR_REPOSITORY }}' not found."
+            exit 1
+          fi
+          if ! aws ecs describe-services --cluster "${{ env.ECS_CLUSTER }}" --services "${{ env.ECS_SERVICE }}" \
+               --query 'services[0].status' --output text 2>/dev/null | grep -q ACTIVE; then
+            echo "::error::ECS service '${{ env.ECS_SERVICE }}' not ACTIVE in cluster '${{ env.ECS_CLUSTER }}'. Services:"
+            aws ecs list-services --cluster "${{ env.ECS_CLUSTER }}" --output table
+            exit 1
+          fi
+          # Guardrail: this workflow must only ever touch the AWS-DR prod
+          # service, never the staging one. Refuse to run against
+          # 'vitana-gateway' (staging) even if someone passes it as an input.
+          if [ "${{ env.ECS_SERVICE }}" = "vitana-gateway" ]; then
+            echo "::error::Refusing to deploy — 'vitana-gateway' is the AWS STAGING service. This workflow targets 'vitana-gateway-awsdr' (prod DR) only."
+            exit 1
+          fi
+
+      - name: Build and push image
+        id: build
+        env:
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+        run: |
+          set -e
+          IMAGE="$REGISTRY/${{ env.ECR_REPOSITORY }}:${{ steps.commit.outputs.short }}"
+          docker build -t "$IMAGE" -t "$REGISTRY/${{ env.ECR_REPOSITORY }}:awsdr-latest" services/gateway
+          docker push "$IMAGE"
+          docker push "$REGISTRY/${{ env.ECR_REPOSITORY }}:awsdr-latest"
+          echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
+          echo "Pushed $IMAGE"
+
+      - name: Register task-definition revision + roll the service
+        run: |
+          set -e
+          IMAGE="${{ steps.build.outputs.image }}"
+          SHA="${{ steps.commit.outputs.sha }}"
+          SHORT="${{ steps.commit.outputs.short }}"
+          TD_ARN=$(aws ecs describe-services --cluster "${{ env.ECS_CLUSTER }}" --services "${{ env.ECS_SERVICE }}" \
+            --query 'services[0].taskDefinition' --output text)
+          echo "Current task definition: $TD_ARN"
+          NEW_DEF=$(aws ecs describe-task-definition --task-definition "$TD_ARN" --query taskDefinition \
+            | jq --arg IMG "$IMAGE" --arg SHA "$SHA" --arg SHORT "$SHORT" '
+                .containerDefinitions[0].image = $IMG
+                | .containerDefinitions[0].environment |=
+                    ( [ .[] | select(.name | IN("GIT_COMMIT_SHA","COMMIT_SHA","BUILD_INFO_MARKER") | not) ]
+                      + [ {name:"GIT_COMMIT_SHA", value:$SHA},
+                          {name:"COMMIT_SHA", value:$SHA},
+                          {name:"BUILD_INFO_MARKER", value:$SHORT} ] )
+                | del(.taskDefinitionArn, .revision, .status, .requiresAttributes,
+                      .compatibilities, .registeredAt, .registeredBy, .deregisteredAt)')
+          NEW_ARN=$(aws ecs register-task-definition --cli-input-json "$NEW_DEF" \
+            --query 'taskDefinition.taskDefinitionArn' --output text)
+          echo "Registered $NEW_ARN"
+          aws ecs update-service --cluster "${{ env.ECS_CLUSTER }}" --service "${{ env.ECS_SERVICE }}" \
+            --task-definition "$NEW_ARN" >/dev/null
+          echo "Waiting for service to stabilize (up to ~10 min)…"
+          aws ecs wait services-stable --cluster "${{ env.ECS_CLUSTER }}" --services "${{ env.ECS_SERVICE }}"
+          echo "Service stable on $NEW_ARN"
+
+      - name: Smoke — env=production + deployed commit live
+        run: |
+          set -e
+          URL="${{ env.GATEWAY_URL }}"
+          SHA="${{ steps.commit.outputs.sha }}"
+          for i in 1 2 3 4 5 6; do
+            HEALTH=$(curl -fsS "$URL/api/v1/admin/health" 2>/dev/null || echo '')
+            BUILD=$(curl -fsS "$URL/api/v1/admin/build-info" 2>/dev/null || echo '')
+            ALIVE=$(curl -fsS -o /dev/null -w "%{http_code}" "$URL/alive" 2>/dev/null || echo '')
+            ENV=$(echo "$HEALTH" | jq -r '.env // empty')
+            COMMIT=$(echo "$BUILD" | jq -r '.git_commit // empty')
+            if [ "$ENV" = "production" ] && [ "$COMMIT" = "$SHA" ] && [ "$ALIVE" = "200" ]; then
+              echo "✓ env=production, git_commit=$COMMIT, /alive=200"
+              exit 0
+            fi
+            echo "Attempt $i: env='$ENV' commit='$COMMIT' alive='$ALIVE' (want production/$SHA/200) — retry in 15s"
+            sleep 15
+          done
+          echo "::error::Smoke failed — health/build-info/alive did not report env=production with the deployed commit"
+          exit 1
+
+      - name: Emit OASIS event + software_versions row (best-effort)
+        if: always()
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SVC: ${{ secrets.SUPABASE_SERVICE_ROLE }}
+          SHA: ${{ steps.commit.outputs.sha }}
+          SHORT: ${{ steps.commit.outputs.short }}
+          OUTCOME: ${{ job.status }}
+          REASON: ${{ inputs.reason }}
+        run: |
+          set +e
+          if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_SVC" ]; then
+            echo "::notice::SUPABASE_URL / SUPABASE_SERVICE_ROLE repo secrets not set — skipping OASIS/CLOCK emission (deploy itself unaffected)."
+            exit 0
+          fi
+          STATUS=$([ "$OUTCOME" = "success" ] && echo success || echo error)
+          TOPIC=$([ "$OUTCOME" = "success" ] && echo prod.deploy.completed || echo prod.deploy.failed)
+          curl -fsS -X POST "$SUPABASE_URL/rest/v1/software_versions" \
+            -H "Content-Type: application/json" -H "apikey: $SUPABASE_SVC" \
+            -H "Authorization: Bearer $SUPABASE_SVC" -H "Prefer: return=minimal" \
+            -d "$(jq -nc --arg sha "$SHA" --arg st "$STATUS" \
+              '{service:"vitana-gateway-aws-dr", git_commit:$sha, deploy_type:"normal", initiator:"agent", status:$st, environment:"production"}')" \
+            || echo "::warning::software_versions insert failed; continuing."
+          curl -fsS -X POST "$SUPABASE_URL/rest/v1/oasis_events" \
+            -H "Content-Type: application/json" -H "apikey: $SUPABASE_SVC" \
+            -H "Authorization: Bearer $SUPABASE_SVC" -H "Prefer: return=minimal" \
+            -d "$(jq -nc --arg sha "$SHA" --arg short "$SHORT" --arg st "$STATUS" --arg topic "$TOPIC" --arg reason "$REASON" '{
+              vtid: "VTID-03398",
+              topic: $topic,
+              service: "vitana-gateway-aws-dr",
+              role: "CICD",
+              model: "aws-prod-deploy",
+              status: $st,
+              message: ("AWS-PROD-DEPLOY-GATEWAY: " + $short + " (" + $reason + ")"),
+              metadata: { env: "production", platform: "aws-ecs-dr", git_commit: $sha, workflow: "AWS-PROD-DEPLOY-GATEWAY.yml", reason: $reason }
+            }')" || echo "::warning::oasis_events insert failed; continuing."
+
+      - name: Summary
+        if: success()
+        run: |
+          {
+            echo "## AWS Production (DR) gateway deploy"
+            echo "- Image: \`${{ steps.build.outputs.image }}\`"
+            echo "- Commit: \`${{ steps.commit.outputs.sha }}\`"
+            echo "- Verified live at: ${{ env.GATEWAY_URL }}"
+            echo "- Reason: ${{ env.DEPLOY_REASON }}"
+            echo "- VTID: VTID-03398"
+          } >> "$GITHUB_STEP_SUMMARY"
