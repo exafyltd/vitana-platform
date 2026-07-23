@@ -323,6 +323,7 @@ service without its own VTID.
 | Database | RDS Aurora PostgreSQL `vitana-aurora-prod` (writer/reader), same Supabase project as GCP prod (`inmkhvwdcuyhnxkgfvsb`) |
 | Redis | ElastiCache `vitana-redis-prod` |
 | Deploy workflow | `.github/workflows/AWS-PROD-DEPLOY-GATEWAY.yml` — **`workflow_dispatch`-only, required `reason`, never on push** |
+| Command Hub PUBLISH dual-publish | `AWS_DUAL_PUBLISH_ENABLED=true` (gateway env var, default off) makes the PUBLISH button best-effort dispatch `AWS-PROD-DEPLOY-GATEWAY.yml` alongside the GCP `EXEC-DEPLOY.yml` dispatch — see `services/gateway/src/routes/operator.ts` `POST /publish` step 7b |
 
 **Full build record, exact commands, and pre-existing-state findings:**
 `docs/AWS-PRODUCTION-BUILD-LOG.md`.
@@ -334,7 +335,10 @@ service without its own VTID.
   (§16): AWS staging (`vitana-gateway`) auto-deploys on push; AWS prod
   (`vitana-gateway-awsdr`) is a deliberate manual dispatch with a
   recorded reason, same spirit as the GCP PUBLISH button /
-  `publish-to-prod.sh` escape hatch.
+  `publish-to-prod.sh` escape hatch. The Command Hub PUBLISH button MAY
+  also dispatch it (via `workflow_dispatch`, never push) when
+  `AWS_DUAL_PUBLISH_ENABLED=true` — that is still a deliberate dispatch
+  triggered by an admin's PUBLISH click, not an automatic push trigger.
 - **Never** confuse `vitana-gateway` (AWS staging) with
   `vitana-gateway-awsdr` (AWS DR prod) — same ECS cluster, similarly
   named. The `vitana-alb-prod` ALB's target group named
@@ -585,6 +589,15 @@ NODE_ENV=production|development|test
 # frontend_promote.ok=false with a "token not set" detail (deploy frontend manually).
 FRONTEND_DEPLOY_TOKEN=<PAT with actions:write on exafyltd/vitana-v1>
 FRONTEND_DEPLOY_REPO=exafyltd/vitana-v1
+# AWS dual-publish (VTID-03398): when 'true', the Command Hub PUBLISH button
+# also best-effort dispatches AWS-PROD-DEPLOY-GATEWAY.yml with the same
+# commit, after the GCP EXEC-DEPLOY dispatch. Default OFF — AWS-PROD-DEPLOY-
+# GATEWAY.yml was deliberately built workflow_dispatch-only with a required
+# human-entered reason so AWS prod deploys stay a deliberate action; this
+# flag trades that off for one-click dual-publish. GCP remains canonical
+# regardless of this flag — see §1b. Failure on the AWS leg never fails the
+# publish (response reports aws_promote.ok=false with detail).
+AWS_DUAL_PUBLISH_ENABLED=true|false
 GOOGLE_CLOUD_PROJECT=lovable-vitana-vers1
 GCP_PROJECT=lovable-vitana-vers1
 VERTEX_LOCATION=us-central1
