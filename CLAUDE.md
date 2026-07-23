@@ -328,6 +328,14 @@ service without its own VTID.
 **Full build record, exact commands, and pre-existing-state findings:**
 `docs/AWS-PRODUCTION-BUILD-LOG.md`.
 
+**Full production cutover (GCP→AWS) is a separate, larger action from any
+per-service DR build above — never assume it's authorized by this
+section.** The runbook, go/no-go checklist, DNS repoint sequence, and
+rollback plan live in `docs/AWS-CUTOVER-RUNBOOK.md` (VTID-03412). That
+document does not itself authorize a cutover; it's the prerequisite a
+future execution VTID must reference and satisfy before any
+`gateway.vitanaland.com`/apex DNS record is touched.
+
 ### Hard rules specific to AWS-DR prod
 
 - **Never** deploy to AWS-DR prod on push — `AWS-PROD-DEPLOY-GATEWAY.yml`
@@ -1135,6 +1143,7 @@ Use these PATs with the GitHub REST API (`api.github.com`) for all PR and deploy
 
 | Date | Change | VTID |
 |------|--------|------|
+| 2026-07-23 | Added `docs/AWS-CUTOVER-RUNBOOK.md` — the previously-missing GCP→AWS full production cutover runbook: go/no-go checklist, DNS repoint sequence, rollback/TTL plan, GCP decommission checklist (later phase), and the two open decisions (frontend gateway-URL strategy, orb-agent/autopilot-job AWS parity) that need explicit user sign-off. Documentation/governance only — does not authorize or execute any cutover; a separate execution VTID gated on this runbook's checklist is still required. Added §1b pointer. | VTID-03412 |
 | 2026-07-23 | Added `feature_announcements` table + `/api/v1/admin/feature-announcements` (admin-only, publishes an announcement row read by vitana-v1's News Feed `FeatureAnnouncementCard` and fans out an in-app + push `feature_announcement` notification to every tenant member, locale-grouped via `bulkGetUserLocales` + the gateway i18n catalog per §13b). No VTID existed for this yet; tracked under this BOOTSTRAP tag pending one. Publishing to production is still gated behind the staging-first cutover (§15/§16) — this only ships the mechanism. | BOOTSTRAP-FEATURE-ANNOUNCEMENTS |
 | 2026-07-23 | Stood up AWS Production (DR) for the gateway service only — parallel to canonical GCP prod, not a migration: ECS service `vitana-gateway-awsdr`, dedicated target group + host-header ALB rule (`dr-gateway.vitanaland.com`), autoscaling + CloudWatch alarms, `AWS-PROD-DEPLOY-GATEWAY.yml` (dispatch-only, required reason, never on push). Added §1b governance section + Never-rule exception. GitHub OIDC deploy-role wiring left for an operator with IAM admin rights (session's AWS IAM user has zero IAM write permissions) — see `docs/AWS-PRODUCTION-BUILD-LOG.md`. | VTID-03398 |
 | 2026-07-21 | Public "Business" tab: profile visitors can now see another user's active product recommendations (storefront card, buy-through with commission attributed to the profile owner via the existing VTID-02950 `?rec=`/`rec_id` flow). New public endpoint `GET /api/v1/discover/recommendations/:vitanaId` (`discover-recommendations-public.ts`), auth-required (any logged-in viewer, not owner-only), never returns click/conversion/commission fields. No formal VTID existed for this extension; tracked under this BOOTSTRAP tag pending one. | BOOTSTRAP-PUBLIC-BUSINESS-PROFILE |
