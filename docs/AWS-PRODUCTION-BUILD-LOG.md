@@ -248,3 +248,56 @@ gh workflow run AWS-PROD-DEPLOY-GATEWAY.yml --ref main -f reason="initial OIDC w
   further here.
 - CloudWatch dashboard (alarms exist; a consolidated dashboard view does
   not yet).
+
+---
+
+## Addendum (2026-07-23): VTID-03407 dual-publish + VTID-03408 backend repairs
+
+Two follow-ups after the initial build, in the context of assessing
+whether a full GCP→AWS cutover is achievable by Mon 27 Jul 2026.
+
+### VTID-03407 — Command Hub PUBLISH dual-publish (gateway only)
+
+`services/gateway/src/routes/operator.ts` `POST /publish` gained a
+best-effort step that also dispatches `AWS-PROD-DEPLOY-GATEWAY.yml` with
+the same commit already resolved for the GCP publish, gated behind
+`AWS_DUAL_PUBLISH_ENABLED` (default off). See PR #2925 (merged). GCP
+remains canonical; this is additive redundancy only, gateway-scoped.
+
+### VTID-03408 — mystery-service viability assessment + 3 real fixes
+
+Investigated the 5 named services from the 2026-07-09 `migration-arman`
+bulk-provisioning batch flagged in the original build. Verdicts:
+
+| Service | Verdict | Root cause found |
+|---|---|---|
+| `oasis-operator` | **Dead** | Running an abandoned `main.py.backup-*` stub from Oct/Nov 2025 — that source no longer exists in the repo, no Dockerfile, no AWS deploy pipeline. Not a config fix; needs real application work. |
+| `oasis-projector` | **Fixed** | RDS Proxy (`vitana-rds-proxy-prod`) and Aurora (`vitana-aurora-prod`) share security group `sg-0838b2f2dabe87971` (`vitana-sg-aurora`), which had no self-referencing rule — the proxy could not reach its own backend (`DBProxy Target unavailable due to an internal error` on both reader/writer targets). Fixed by adding an inbound self-reference rule (TCP 5432, `sg-0838b2f2dabe87971` → itself). Confirmed: proxy targets now `AVAILABLE`, `oasis-projector` logs `Database connected` on redeploy. |
+| `worker-runner` | **Fixed** | Task definition's `GATEWAY_URL` was `http://gateway.vitanaland.com` (scheme typo — should be `https://`), causing every orchestrator-registration call to fail with `socket hang up`. Fixed via a new task definition revision (`vitana-worker-runner:6`) with the corrected URL; service was at `desiredCount=0`, restored to 1. Confirmed: `Worker registered successfully`, polling every 5s. |
+| `vitana-verification-engine` | **Fixed** | Same `GATEWAY_URL` scheme typo, causing every heartbeat to fail with `Server disconnected without sending a response`. Fixed via `vitana-vitana-verification-engine:6`. Confirmed: `[agents-registry] Registered vitana-orchestrator`, heartbeats now `200 OK` every 60s. |
+| `community-app` | **Real, staging-only** | Genuinely healthy, actively CI/CD-built (`AWS-STAGE-DEPLOY-FRONTEND.yml` in `exafyltd/vitana-v1`), but bakes `preview-aws-gateway.vitanaland.com` and has no production hostname/workflow. Needs a real AWS-prod frontend deploy pipeline + DNS decision — not built here. |
+
+None of these fixes extend VTID-03398-grade governance (dedicated ALB
+rule, autoscaling, alarms, dispatch-only CI, OIDC) to these services —
+they only repair what was already there so the platform's actual AWS
+readiness could be honestly assessed. **Verdict: a full GCP→AWS cutover
+by Monday remains unrealistic** — `oasis-operator` needs real
+application work from scratch, and `community-app` needs a full
+production deploy pipeline; neither is a same-day fix. `oasis-projector`,
+`worker-runner`, and `verification-engine` are now at least functionally
+correct, which is real progress toward that goal on a longer timeline.
+
+### Commands run
+
+```bash
+# RDS proxy fix
+aws ec2 authorize-security-group-ingress \
+  --group-id sg-0838b2f2dabe87971 --protocol tcp --port 5432 \
+  --source-group sg-0838b2f2dabe87971 --region eu-central-1
+
+# worker-runner / verification-engine: patch GATEWAY_URL http -> https in a
+# cloned task definition (same pattern as the original build), then:
+aws ecs register-task-definition --cli-input-json file://<patched>.json --region eu-central-1
+aws ecs update-service --cluster Vitana-ECS-Cluster --service <service> \
+  --task-definition <family>:<new-revision> --region eu-central-1
+```
