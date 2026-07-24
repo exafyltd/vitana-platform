@@ -49,7 +49,7 @@ CLI + Cloudflare DNS audit performed under this VTID.
 | Database sync | RDS Aurora `vitana-aurora-prod` via DMS task `vitana-supabase-to-aurora` (full-load-and-cdc): 494/495 tables under live CDC from the same Supabase project GCP prod uses. **One table, `autopilot_recommendations`, has its own dedicated CDC task (`vitana-autopilot-cdc`) which was in `FATAL_ERROR` for ~26h as of this audit** — see §5, tracked/being fixed under this same session outside this VTID's scope. |
 | Secrets | `vitana/supabase/prod/*` (4 secrets) current as of 2026-07-14/21; RDS-managed master credential rotates automatically. |
 | Alarms | 47 `vitana-*` CloudWatch alarms, all `OK`/`INSUFFICIENT_DATA`. `community-app-awsdr` and `oasis-operator-awsdr` now have the same 4-alarm set (cpu-high, memory-high, target-5xx, unhealthy-hosts) gateway-awsdr already had — closed 2026-07-24. A `vitana-dms-task-failure` EventBridge rule (source `aws.dms` → SNS topic `vitana-alarms-prod`) was also added the same day so a future DMS task failure isn't silent for 26+ hours again like `vitana-autopilot-cdc` was. **New gap found while wiring this up: the `vitana-alarms-prod` SNS topic has zero subscribers** — no email, Slack, or PagerDuty endpoint is attached, so none of the 47 alarms or the new DMS rule currently notify anyone. All of this alerting infrastructure is presently inert until a real subscriber is added; this needs a decision on where alerts should actually go. |
-| ALB naming | `vitana-tg-gateway-prod` / `vitana-tg-community-prod` are pre-existing naming leftovers that **actually serve AWS staging traffic**, not prod — confirmed live via `/api/v1/admin/health` returning `env:"staging"` through those target groups. A real cutover must not confuse these with the `-awsdr` target groups. |
+| ALB naming | `vitana-tg-gateway-prod` / `vitana-tg-community-prod` **actually serve AWS staging traffic**, not prod — confirmed live via `/api/v1/admin/health` returning `env:"staging"` through those target groups. Both are `ManagedBy=terraform`-tagged (Terraform state not found in this repo) — not a stray hand-created leftover, part of some external IaC. Tagged 2026-07-24 with `ActualEnvironment=staging` to reduce confusion; not renamed (immutable name, rename requires recreation + ALB rule reattachment, risks a traffic blip). A real cutover must not confuse these with the `-awsdr` target groups. |
 | Legacy/mystery services | ~22 of the 29 (now 31) ECS services in `Vitana-ECS-Cluster` from the 2026-07-09 bulk-provisioning event remain unexplained — flagged, not investigated. Out of scope for cutover unless one turns out to be load-bearing. |
 | Cutover/rollback docs | **Did not exist before this VTID.** No DNS-repoint runbook, no rollback/TTL plan, no GCP decommission checklist. |
 | Governance | **No execution VTID exists yet for a full cutover.** Every AWS VTID this week is scoped to one service's DR build. |
@@ -96,10 +96,21 @@ objective — each item has a clear done/not-done state.
       `oasis-operator-awsdr`** — done 2026-07-24, same 4-alarm pattern as
       `gateway-awsdr` (cpu-high, memory-high, target-5xx, unhealthy-hosts).
       *(Same SNS-subscriber caveat as the DMS alerting item above applies.)*
-- [ ] **ALB naming cleanup done or explicitly waived** — `vitana-tg-gateway-prod`
-      / `vitana-tg-community-prod` renamed to reflect that they serve
-      staging, or the cutover sequence explicitly calls out why the
-      confusion is safe to leave as-is.
+- [~] **ALB naming cleanup done or explicitly waived.** *(Partially
+      mitigated 2026-07-24: both target groups tagged
+      `ActualEnvironment=staging` + a `NamingWarning` explaining they
+      actually serve AWS staging traffic despite the `-prod` name — not
+      renamed, since target group names are immutable in AWS and a
+      rename requires recreating the resource + reattaching the ALB rule,
+      which risks a brief traffic blip and wasn't done without asking
+      first. **New finding:** both are tagged `ManagedBy=terraform`,
+      `Environment=prod`, `Phase=5-compute` — this naming is not a random
+      leftover, it's part of some Terraform-managed stack not present in
+      this repo (no matching `.tf` files found under `infra/` or
+      elsewhere in `vitana-platform`). A proper fix likely needs to go
+      through whatever external IaC actually owns these resources, not
+      hand-editing via aws-cli.)* Full rename or an explicit sign-off that
+      the tag-only mitigation is sufficient still needed before cutover.
 - [ ] **`orb-agent` / autopilot-job AWS-parity decision made** (§4.2) —
       either they get an AWS deploy path before cutover, or an explicit,
       documented decision that they stay GCP-only post-cutover (and what
