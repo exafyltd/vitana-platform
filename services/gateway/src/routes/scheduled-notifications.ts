@@ -640,9 +640,9 @@ function pickTipLocale(text: { en: string; de: string; [k: string]: string }, lo
   return text[locale] ?? text.en;
 }
 
+// public-route — called by Cloud Scheduler (no JWT); protected by GCP IAM
+// at the scheduler layer, same pattern as the other entries in this file.
 router.post('/daily-feature-tip', async (req: Request, res: Response) => {
-  // public-route — called by Cloud Scheduler (no JWT); protected by GCP IAM
-  // at the scheduler layer, same pattern as the other entries in this file.
   const tenantId = getTenantId(req);
   if (!tenantId) return res.status(400).json({ ok: false, error: 'tenant_id required' });
 
