@@ -43,6 +43,21 @@ on:
         description: 'Public gateway URL for post-deploy verification'
         required: false
         default: 'https://preview-aws-gateway.vitanaland.com'
+      # BOOTSTRAP-NOVA-SONIC-VOICE: per-dispatch canary overrides. Empty =
+      # fall back to the AWS_STAGE_NOVA_SONIC_* repository variables, so the
+      # push-triggered deploys keep reading the durable vars config.
+      nova_sonic_enabled:
+        description: 'Override NOVA_SONIC_ENABLED for this deploy (true/false; empty = use repo var)'
+        required: false
+        default: ''
+      nova_canary_user_ids:
+        description: 'Override Nova canary user UUID allowlist (comma-separated; empty = use repo var)'
+        required: false
+        default: ''
+      nova_canary_tenant_ids:
+        description: 'Override Nova canary tenant UUID allowlist (comma-separated; empty = use repo var)'
+        required: false
+        default: ''
       aws_region:
         description: 'AWS region'
         required: false
@@ -145,9 +160,9 @@ jobs:
           # is secret; credentials are the ECS task role). Defaults keep Nova
           # disabled with an empty canary. Model + region are FIXED here, not
           # variables — changing them is a code decision, not a knob.
-          NOVA_SONIC_ENABLED: ${{ vars.AWS_STAGE_NOVA_SONIC_ENABLED || 'false' }}
-          NOVA_SONIC_CANARY_USER_IDS: ${{ vars.AWS_STAGE_NOVA_SONIC_CANARY_USER_IDS || '' }}
-          NOVA_SONIC_CANARY_TENANT_IDS: ${{ vars.AWS_STAGE_NOVA_SONIC_CANARY_TENANT_IDS || '' }}
+          NOVA_SONIC_ENABLED: ${{ inputs.nova_sonic_enabled || vars.AWS_STAGE_NOVA_SONIC_ENABLED || 'false' }}
+          NOVA_SONIC_CANARY_USER_IDS: ${{ inputs.nova_canary_user_ids || vars.AWS_STAGE_NOVA_SONIC_CANARY_USER_IDS || '' }}
+          NOVA_SONIC_CANARY_TENANT_IDS: ${{ inputs.nova_canary_tenant_ids || vars.AWS_STAGE_NOVA_SONIC_CANARY_TENANT_IDS || '' }}
         run: |
           set -e
           IMAGE="${{ steps.build.outputs.image }}"
