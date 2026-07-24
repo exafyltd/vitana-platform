@@ -143,6 +143,8 @@ DIRECT_JOBS=(
 TENANT_DIRECT_JOBS=(
   "daily-recompute|0 2 * * *|UTC|/api/v1/scheduler/daily-recompute"
   "daily-pace-notifications|0 * * * *|UTC|/api/v1/scheduled-notifications/daily-pace-notifications"
+  # BOOTSTRAP-DAILY-FEATURE-TIP: automatic once-a-day "Did You Know" card.
+  "daily-feature-tip|0 17 * * *|UTC|/api/v1/scheduled-notifications/daily-feature-tip"
 )
 
 for JOB in "${TENANT_DIRECT_JOBS[@]}"; do

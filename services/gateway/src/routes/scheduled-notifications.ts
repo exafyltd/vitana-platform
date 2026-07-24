@@ -28,6 +28,7 @@ import {
   paceToneKeys,
   type SkipReason,
 } from '../services/daily-pace-service';
+import { FEATURE_TIPS } from '../data/feature-tips';
 
 const router = Router();
 
@@ -623,6 +624,120 @@ router.post('/diary-reminder', async (req: Request, res: Response) => {
 
   console.log(`[Scheduled] daily_diary_reminder → ${dispatched} users`);
   return res.status(200).json({ ok: true, dispatched });
+});
+
+// =============================================================================
+// POST /daily-feature-tip — Daily 17:00 UTC (BOOTSTRAP-DAILY-FEATURE-TIP)
+//
+// Publishes the next "Did You Know" News Feed card in FEATURE_TIPS rotation
+// (services/gateway/src/data/feature-tips.ts), tracked per-tenant in
+// did_you_know_state so the same tip never repeats back-to-back — wraps
+// around once the list is exhausted. Mirrors admin-feature-announcements.ts's
+// publish logic exactly (tenant-wide row + per-user locale-resolved fan-out),
+// just automated instead of admin-triggered.
+// =============================================================================
+function pickTipLocale(text: { en: string; de: string; [k: string]: string }, locale: string): string {
+  return text[locale] ?? text.en;
+}
+
+// public-route — called by Cloud Scheduler (no JWT); protected by GCP IAM
+// at the scheduler layer, same pattern as the other entries in this file.
+router.post('/daily-feature-tip', async (req: Request, res: Response) => {
+  const tenantId = getTenantId(req);
+  if (!tenantId) return res.status(400).json({ ok: false, error: 'tenant_id required' });
+
+  const supa = await getServiceClient();
+  if (!supa) return res.status(503).json({ ok: false, error: 'Supabase not configured' });
+
+  try {
+    // 1. Advance the rotation for this tenant.
+    const { data: state } = await supa
+      .from('did_you_know_state')
+      .select('last_index')
+      .eq('tenant_id', tenantId)
+      .maybeSingle();
+    const lastIndex = (state as { last_index?: number } | null)?.last_index ?? -1;
+    const nextIndex = (lastIndex + 1) % FEATURE_TIPS.length;
+    const tip = FEATURE_TIPS[nextIndex];
+
+    // 2. Publish the tenant-wide "did-you-know-feature" card. NULL
+    //    target_user_ids → every tenant member's feed reads it (RLS-scoped).
+    const { data: inserted, error: insertError } = await supa
+      .from('feature_announcements')
+      .insert({
+        tenant_id: tenantId,
+        variant: 'did-you-know-feature',
+        feature_title: tip.title,
+        description: tip.description,
+        deep_link: tip.deepLink,
+        created_by: 'scheduled:daily-feature-tip',
+        target_user_ids: null,
+        notified_at: new Date().toISOString(),
+      })
+      .select('id')
+      .single();
+
+    if (insertError || !inserted) {
+      console.error('[Scheduled] daily_feature_tip insert error:', insertError?.message);
+      return res.status(500).json({ ok: false, error: insertError?.message || 'INSERT_FAILED' });
+    }
+    const announcementId = inserted.id as string;
+
+    // 3. Fan out to every tenant member, in their own locale. Push lands on
+    //    /home/notif — NOT tip.deepLink (the card's own "Try it now" in-app
+    //    button target) — same reasoning as admin-feature-announcements.ts:
+    //    /home is a vitana-v1 MAXINA_LANDING_ROUTES entry that auto-opens the
+    //    Orb front-door on a fresh mount, which a push-notification tap
+    //    counts as; /home/notif is the identical feed minus that collision.
+    const users = await getActiveUsers(supa, tenantId);
+    const userIds = users.map((u) => u.user_id);
+    const locales = await bulkGetUserLocales(supa, userIds);
+    let dispatched = 0;
+    for (const uid of userIds) {
+      const lc = locales.get(uid) || 'de';
+      notifyUserAsync(
+        uid,
+        tenantId,
+        'feature_announcement',
+        {
+          title: tt('notif.feature_tip.title', lc, { feature: pickTipLocale(tip.title, lc) }),
+          body: pickTipLocale(tip.description, lc),
+          data: { url: '/home/notif', entity_id: announcementId },
+        },
+        supa,
+      );
+      dispatched++;
+    }
+
+    // 4. Advance rotation state for next time.
+    await supa
+      .from('did_you_know_state')
+      .upsert({ tenant_id: tenantId, last_index: nextIndex, updated_at: new Date().toISOString() });
+
+    console.log(`[Scheduled] daily_feature_tip → tip=${tip.key} dispatched=${dispatched} users`);
+
+    // Record the publish as a state transition (a real action, not a poll),
+    // same pattern as /daily-pace-notifications above. Best-effort — never
+    // fail the response if OASIS write fails.
+    try {
+      const { emitOasisEvent } = await import('../services/oasis-event-service');
+      await emitOasisEvent({
+        type: 'notification.daily_feature_tip.dispatched' as any,
+        source: 'gateway',
+        vtid: 'BOOTSTRAP-DAILY-FEATURE-TIP',
+        status: 'info',
+        message: `daily_feature_tip fan-out: tip=${tip.key} dispatched=${dispatched}`,
+        payload: { tenant_id: tenantId, tip: tip.key, announcement_id: announcementId, dispatched },
+      });
+    } catch (oasisErr: any) {
+      console.warn(`[Scheduled] daily_feature_tip OASIS emit failed: ${oasisErr?.message || oasisErr}`);
+    }
+
+    return res.status(200).json({ ok: true, tip: tip.key, announcement_id: announcementId, dispatched });
+  } catch (err: any) {
+    console.error('[Scheduled] daily_feature_tip exception:', err.message);
+    return res.status(500).json({ ok: false, error: 'INTERNAL_ERROR' });
+  }
 });
 
 // =============================================================================
