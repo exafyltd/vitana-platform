@@ -1,0 +1,132 @@
+# AWS-PROD-DEPLOY-AUTOPILOT-EXECUTOR — build the autopilot executor, push
+# to ECR, and register a new ECS task-definition revision (VTID-03415).
+#
+# Unlike every other AWS-PROD-DEPLOY-*.yml workflow, there is no ECS
+# SERVICE to roll here. The autopilot executor is a Cloud-Run-Job
+# equivalent — a standalone Fargate task launched per-execution via
+# `ecs:RunTask` (see services/gateway/src/services/aws-ecs-admin.ts,
+# dispatchExecutorJobAws()), not a long-running service. This workflow's
+# job ends at "register the new revision" — the NEXT dispatched execution
+# automatically picks up the latest revision of the `vitana-autopilot-
+# executor` family (RunTask with no explicit revision suffix resolves to
+# :LATEST).
+#
+# Secrets intentionally deferred (2026-07-24): ANTHROPIC_API_KEY and
+# OPENAI_API_KEY are not yet populated in Secrets Manager pending an AWS
+# sponsorship decision for Anthropic — GITHUB_SAFE_MERGE_TOKEN, SUPABASE_*,
+# and DB_PASSWORD are live. A task definition referencing an empty secret
+# fails at ECS provisioning time (ResourceInitializationError), before the
+# container even starts — so the live task definition omits the two
+# deferred secrets until real values exist. Re-add them (see git history
+# on this file / the VTID-03415 build notes) once populated.
+#
+# workflow_dispatch ONLY, required `reason`, never on push.
+
+name: AWS Prod Deploy Autopilot Executor (ECS Task Def)
+
+on:
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: 'Reason for this AWS autopilot-executor deploy — required'
+        required: true
+      aws_region:
+        description: 'AWS region'
+        required: false
+        default: 'eu-central-1'
+      ecr_repository:
+        description: 'ECR repository name'
+        required: false
+        default: 'vitana/autopilot-executor'
+      task_definition_family:
+        description: 'ECS task definition family'
+        required: false
+        default: 'vitana-autopilot-executor'
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: aws-prod-deploy-autopilot-executor
+  cancel-in-progress: false
+
+jobs:
+  build-push-register:
+    runs-on: ubuntu-latest
+    env:
+      TARGET_AWS_REGION: ${{ inputs.aws_region }}
+      ECR_REPOSITORY: ${{ inputs.ecr_repository }}
+      TASK_FAMILY: ${{ inputs.task_definition_family }}
+      DEPLOY_REASON: ${{ inputs.reason }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve commit metadata
+        id: commit
+        run: echo "short=$(git rev-parse --short=12 HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Configure AWS credentials (GitHub OIDC — no static keys)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_PROD_ROLE_ARN }}
+          aws-region: ${{ env.TARGET_AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Preflight
+        run: |
+          set -e
+          if ! aws ecr describe-repositories --repository-names "${{ env.ECR_REPOSITORY }}" >/dev/null 2>&1; then
+            echo "::error::ECR repository '${{ env.ECR_REPOSITORY }}' not found."
+            exit 1
+          fi
+          if ! aws ecs list-task-definitions --family-prefix "${{ env.TASK_FAMILY }}" \
+               --query 'taskDefinitionArns[0]' --output text 2>/dev/null | grep -q "${{ env.TASK_FAMILY }}"; then
+            echo "::error::Task definition family '${{ env.TASK_FAMILY }}' not found."
+            exit 1
+          fi
+
+      - name: Build container with Dockerfile.job (local docker)
+        id: build
+        env:
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+        run: |
+          set -e
+          IMAGE="$REGISTRY/${{ env.ECR_REPOSITORY }}:${{ steps.commit.outputs.short }}"
+
+          cd services/gateway
+          echo "{\"sha\":\"${{ github.sha }}\",\"deployed_at\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"role\":\"autopilot-executor-aws\"}" > BUILD_INFO
+
+          docker build -f Dockerfile.job -t "$IMAGE" -t "$REGISTRY/${{ env.ECR_REPOSITORY }}:latest" .
+          docker push "$IMAGE"
+          docker push "$REGISTRY/${{ env.ECR_REPOSITORY }}:latest"
+          echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
+
+      - name: Register new task-definition revision (image only — env/secrets carry forward)
+        run: |
+          set -e
+          IMAGE="${{ steps.build.outputs.image }}"
+          CURRENT_ARN=$(aws ecs describe-task-definition --task-definition "${{ env.TASK_FAMILY }}" \
+            --query 'taskDefinition.taskDefinitionArn' --output text)
+          echo "Current: $CURRENT_ARN"
+          NEW_DEF=$(aws ecs describe-task-definition --task-definition "$CURRENT_ARN" --query taskDefinition \
+            | jq --arg IMG "$IMAGE" '
+                .containerDefinitions[0].image = $IMG
+                | del(.taskDefinitionArn, .revision, .status, .requiresAttributes,
+                      .compatibilities, .registeredAt, .registeredBy, .deregisteredAt)')
+          NEW_ARN=$(aws ecs register-task-definition --cli-input-json "$NEW_DEF" --query 'taskDefinition.taskDefinitionArn' --output text)
+          echo "Registered $NEW_ARN — the next RunTask dispatch (dispatchExecutorJobAws) picks this up automatically."
+
+      - name: Summary
+        if: success()
+        run: |
+          {
+            echo "## autopilot-executor (AWS) deploy"
+            echo "- Image: \`${{ steps.build.outputs.image }}\`"
+            echo "- Reason: ${{ env.DEPLOY_REASON }}"
+            echo "- VTID: VTID-03415"
+            echo "- No ECS service to roll — next RunTask dispatch picks up the new revision."
+          } >> "$GITHUB_STEP_SUMMARY"
