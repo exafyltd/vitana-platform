@@ -122,6 +122,9 @@ interface LiveProbeResult {
  * text turn, and measure connect / first-event / first-audio latency. Used
  * identically for Nova and the Vertex baseline so the comparison is fair.
  */
+/** 32ms of 16 kHz / 16-bit / mono PCM silence, base64 — one mic frame. */
+const SILENCE_FRAME_B64 = Buffer.alloc(1024).toString('base64');
+
 async function probeLiveClient(
   client: UpstreamLiveClient,
   connect: () => Promise<void>,
@@ -132,35 +135,55 @@ async function probeLiveClient(
   let connectMs = -1;
   let firstEventMs = -1;
   let firstAudioMs = -1;
+  let transcriptCount = 0;
+  let audioCount = 0;
+  const errorCodes: string[] = [];
+  let upstreamCloseReason: string | undefined;
 
+  let settled = false;
   const done = new Promise<void>((resolve) => {
-    let settled = false;
     const finish = () => { if (!settled) { settled = true; resolve(); } };
     const timer = setTimeout(finish, PROBE_TIMEOUT_MS);
     (timer as NodeJS.Timeout).unref?.();
     client.onTranscript(() => {
+      transcriptCount++;
       if (firstEventMs < 0) firstEventMs = Date.now() - t0;
     });
     client.onAudioOutput(() => {
+      audioCount++;
       if (firstAudioMs < 0) firstAudioMs = Date.now() - t0;
       if (firstEventMs < 0) firstEventMs = Date.now() - t0;
     });
     client.onTurnComplete(() => { clearTimeout(timer); finish(); });
-    client.onError(() => { clearTimeout(timer); finish(); });
-    client.onClose(() => { clearTimeout(timer); finish(); });
+    client.onError((e) => { errorCodes.push(e.code); clearTimeout(timer); finish(); });
+    client.onClose((e) => { upstreamCloseReason = e.reason; clearTimeout(timer); finish(); });
   });
 
   try {
     await connect();
     connectMs = Date.now() - t0;
     client.sendTextTurn('Say OK.');
+    // Stream mic-cadence silence alongside the text turn — production
+    // sessions always have the audio pipe flowing, and Nova's server-side
+    // turn detection expects it. 32ms frames, real-time pace.
+    const silenceTimer = setInterval(() => {
+      if (settled || client.getState() !== 'open') { clearInterval(silenceTimer); return; }
+      client.sendAudioChunk(SILENCE_FRAME_B64);
+    }, 32);
+    (silenceTimer as NodeJS.Timeout).unref?.();
     await done;
+    clearInterval(silenceTimer);
     await client.close(closeReason);
     if (firstEventMs < 0) {
-      return {
-        ok: false,
-        failDetail: `stream opened (connect_ms=${connectMs}) but no model response within ${PROBE_TIMEOUT_MS / 1000}s`,
-      };
+      const elapsed = Date.now() - t0;
+      const diag = [
+        `connect_ms=${connectMs}`,
+        `waited_ms=${elapsed - connectMs}`,
+        errorCodes.length ? `errors=${errorCodes.join('|')}` : 'errors=none',
+        `close_reason=${upstreamCloseReason ?? 'n/a'}`,
+        `transcripts=${transcriptCount} audio_chunks=${audioCount}`,
+      ].join(' ');
+      return { ok: false, failDetail: `stream opened but no model response — ${diag}` };
     }
     return {
       ok: true,

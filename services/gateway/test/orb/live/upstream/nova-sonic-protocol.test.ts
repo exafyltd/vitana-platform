@@ -19,14 +19,19 @@ import {
 } from '../../../../src/orb/live/upstream/nova-sonic-protocol';
 
 describe('input event builders — exact envelopes', () => {
-  it('sessionStart carries inference configuration', () => {
+  it('sessionStart carries inference + turn-detection configuration', () => {
     expect(buildSessionStart({ maxTokens: 2048, topP: 0.8, temperature: 0.5 })).toEqual({
       event: {
         sessionStart: {
           inferenceConfiguration: { maxTokens: 2048, topP: 0.8, temperature: 0.5 },
+          turnDetectionConfiguration: { endpointingSensitivity: 'MEDIUM' },
         },
       },
     });
+    expect(
+      (buildSessionStart({ endpointingSensitivity: 'LOW' }).event.sessionStart as Record<string, any>)
+        .turnDetectionConfiguration.endpointingSensitivity,
+    ).toBe('LOW');
   });
 
   it('promptStart configures 24kHz LPCM output + tools', () => {

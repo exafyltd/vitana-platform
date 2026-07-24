@@ -26,6 +26,8 @@ export interface NovaSessionStartOptions {
   maxTokens?: number;
   topP?: number;
   temperature?: number;
+  /** Server-side VAD sensitivity; AWS-recommended default MEDIUM. */
+  endpointingSensitivity?: 'HIGH' | 'MEDIUM' | 'LOW';
 }
 
 export function buildSessionStart(options: NovaSessionStartOptions = {}): NovaInputEvent {
@@ -36,6 +38,11 @@ export function buildSessionStart(options: NovaSessionStartOptions = {}): NovaIn
           maxTokens: options.maxTokens ?? 1024,
           topP: options.topP ?? 0.9,
           temperature: options.temperature ?? 0.7,
+        },
+        // Documented server-side VAD sensitivity (Nova 2 Sonic input-events
+        // reference); MEDIUM is AWS's recommended conversational default.
+        turnDetectionConfiguration: {
+          endpointingSensitivity: options.endpointingSensitivity ?? 'MEDIUM',
         },
       },
     },
