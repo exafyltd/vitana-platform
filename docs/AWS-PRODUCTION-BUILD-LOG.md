@@ -548,3 +548,34 @@ one record's UPDATE apply kept failing until the task exhausted 9 recovery
 attempts) but the actual fix (`dms:StartReplicationTask` with
 `resume-processing`, falling back to a clean restart if that hits the
 same record again) is still blocked on the same IAM grant.
+
+### ALB target-group tagging (same day, follow-up)
+
+Tagged (not renamed) `vitana-tg-gateway-prod` and `vitana-tg-community-prod`
+to reduce the confusion risk flagged in the pre-existing-state section
+above:
+
+```bash
+aws elbv2 add-tags --resource-arns <tg-arn> \
+  --tags Key=ActualEnvironment,Value=staging \
+         Key=NamingWarning,Value="tag-added-2026-07-24-name-says-prod-but-currently-serves-AWS-staging-traffic-verify-via-admin-health-env-field" \
+         Key=Vtid,Value=VTID-03412 \
+  --region eu-central-1
+```
+
+Renaming was deliberately not attempted — target group names are
+immutable in AWS; a real rename means creating a new target group,
+registering the same targets, and swapping the ALB listener rule to
+point at it, which risks a brief traffic blip on a resource actively
+serving staging traffic. Not worth the risk for a naming-only fix
+without asking first.
+
+**New finding while doing this:** `describe-tags` on both target groups
+showed pre-existing tags `ManagedBy=terraform`, `Environment=prod`,
+`Phase=5-compute` — this is not an ad-hoc leftover, it's part of some
+Terraform-managed stack. `find . -iname "*.tf"` across `vitana-platform`
+only turns up `infra/livekit/*.tf` — nothing matching this ALB/target-group
+setup. Whatever Terraform project actually owns this infrastructure is
+not in this repo. A real fix (rename, or understanding why a
+`Environment=prod`-tagged, Terraform-managed target group serves staging
+traffic) should go through that IaC, not further hand-edits via aws-cli.
