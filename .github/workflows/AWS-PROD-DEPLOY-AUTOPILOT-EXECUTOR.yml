@@ -83,8 +83,8 @@ jobs:
             echo "::error::ECR repository '${{ env.ECR_REPOSITORY }}' not found."
             exit 1
           fi
-          if ! aws ecs list-task-definitions --family-prefix "${{ env.TASK_FAMILY }}" \
-               --query 'taskDefinitionArns[0]' --output text 2>/dev/null | grep -q "${{ env.TASK_FAMILY }}"; then
+          if ! aws ecs describe-task-definition --task-definition "${{ env.TASK_FAMILY }}" \
+               --query 'taskDefinition.taskDefinitionArn' --output text; then
             echo "::error::Task definition family '${{ env.TASK_FAMILY }}' not found."
             exit 1
           fi
