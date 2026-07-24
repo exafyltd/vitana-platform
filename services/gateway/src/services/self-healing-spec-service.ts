@@ -3,33 +3,22 @@
  *
  * Generates fix specifications for the Vitana self-healing system.
  * Takes a Diagnosis and produces a spec following the VTID-01188 template format.
- * Uses Gemini AI with deterministic fallback when AI is unavailable.
+ * Uses Claude Sonnet 4.6 with deterministic fallback when AI is unavailable.
+ * (BOOTSTRAP-GEMINI-TO-CLAUDE: migrated off Gemini 2.5 Pro/Vertex.)
  */
 
 import { createHash } from 'crypto';
-import { VertexAI } from '@google-cloud/vertexai';
-import { GoogleAuth } from 'google-auth-library';
 import { Diagnosis, FailureClass } from '../types/self-healing';
 import { emitOasisEvent } from './oasis-event-service';
 import { runFullQualityCheck } from './spec-quality-agent';
 import { createVtidSpec } from './vtid-spec-service';
 import { getVoiceSpecHint, parseVoiceClassFromEndpoint } from './voice-spec-hints';
+import { callClaudeText, CLAUDE_SONNET_4_6 } from './claude-text-client';
 
-const VERTEX_PROJECT = process.env.GOOGLE_CLOUD_PROJECT || process.env.GCP_PROJECT || 'lovable-vitana-vers1';
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
 
-const SPEC_MODEL_PRIMARY = 'gemini-2.5-pro';
-
-let googleAuth: GoogleAuth | null = null;
-let vertexAI: VertexAI | null = null;
-try {
-  googleAuth = new GoogleAuth({ scopes: ['https://www.googleapis.com/auth/cloud-platform'] });
-  vertexAI = new VertexAI({ project: VERTEX_PROJECT, location: 'us-central1' });
-  console.log(`[SelfHealingSpec] Vertex AI initialized: model=${SPEC_MODEL_PRIMARY}, project=${VERTEX_PROJECT}`);
-} catch (err: any) {
-  console.warn(`[SelfHealingSpec] Failed to init Vertex AI: ${err.message}`);
-}
+const SPEC_MODEL_PRIMARY = CLAUDE_SONNET_4_6;
 
 const REQUIRED_SECTIONS = [
   'Goal',
@@ -168,31 +157,21 @@ ${context}
 Produce the spec in markdown with a title line "# Fix: ${diagnosis.root_cause}" and VTID "${diagnosis.vtid}".
 Include ALL 9 required sections with real, actionable content. Every curl verification step must use the actual endpoint.`;
 
-  if (vertexAI) {
-    try {
-      const model = vertexAI.getGenerativeModel({
-        model: SPEC_MODEL_PRIMARY,
-        generationConfig: {
-          temperature: 0.3,
-          maxOutputTokens: 8192,
-          topP: 0.9,
-        },
-        systemInstruction: { role: 'system', parts: [{ text: SYSTEM_PROMPT }] },
-      });
-
-      const result = await model.generateContent({
-        contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
-      });
-
-      const text = result.response?.candidates?.[0]?.content?.parts?.[0]?.text;
-      if (text && text.length > 200) {
-        console.log(`[SelfHealingSpec] AI spec generated (${text.length} chars) for ${diagnosis.vtid}`);
-        return text;
-      }
-      console.warn(`[SelfHealingSpec] AI returned empty/short response for ${diagnosis.vtid}, using fallback`);
-    } catch (err: any) {
-      console.warn(`[SelfHealingSpec] AI generation failed for ${diagnosis.vtid}: ${err.message}, using fallback`);
+  try {
+    const text = await callClaudeText({
+      model: SPEC_MODEL_PRIMARY,
+      system: SYSTEM_PROMPT,
+      prompt: userPrompt,
+      maxTokens: 8192,
+      temperature: 0.3,
+    });
+    if (text && text.length > 200) {
+      console.log(`[SelfHealingSpec] AI spec generated (${text.length} chars) for ${diagnosis.vtid}`);
+      return text;
     }
+    console.warn(`[SelfHealingSpec] AI returned empty/short response for ${diagnosis.vtid}, using fallback`);
+  } catch (err: any) {
+    console.warn(`[SelfHealingSpec] AI generation failed for ${diagnosis.vtid}: ${err.message}, using fallback`);
   }
 
   return buildDeterministicSpec(diagnosis);

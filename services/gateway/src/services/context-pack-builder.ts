@@ -865,19 +865,37 @@ export async function buildContextPack(
       (async () => {
         try {
           const { getUserTodayEvents, getUserUpcomingEvents, getCalendarGaps, toSummary } = await import('./calendar-service');
-          const { getJourneyStage } = await import('./journey-calendar-mapper');
           const role = input.role || 'community';
           const [today, upcoming, gaps] = await Promise.all([
             getUserTodayEvents(input.lens.user_id, role),
             getUserUpcomingEvents(input.lens.user_id, role, 10),
             getCalendarGaps(input.lens.user_id, role, new Date()),
           ]);
+          // Journey stage — canonical day_in_journey (same source the ORB
+          // greeting and My Journey screen read). The old
+          // journey-calendar-mapper getJourneyStage() call here passed
+          // `input.conversation_start` (the CURRENT conversation's start
+          // time, seconds/minutes old) where it expected the user's
+          // REGISTRATION date, so the day-count always floored to 0 — every
+          // text conversation was told "Journey: Day 0 of 90", regardless of
+          // the user's real tenure.
+          let journeyStage: { wave_name: string; day_number: number; total_days: number } | undefined;
+          try {
+            const SUPABASE_URL = process.env.SUPABASE_URL;
+            const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
+            if (SUPABASE_URL && SUPABASE_SERVICE_ROLE) {
+              const { createClient: createJourneyClient } = await import('@supabase/supabase-js');
+              const { getJourneyStageForPrompt } = await import('./journey/journey-stage-for-prompt');
+              const journeySupabase = createJourneyClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE);
+              journeyStage = (await getJourneyStageForPrompt(journeySupabase, input.lens.user_id)) ?? undefined;
+            }
+          } catch {}
           calendarContext = {
             today_events: today.map(e => ({ id: e.id, title: e.title, start_time: e.start_time, end_time: e.end_time, event_type: e.event_type, status: e.status })),
             upcoming_events: upcoming.map(e => ({ id: e.id, title: e.title, start_time: e.start_time, end_time: e.end_time, event_type: e.event_type, status: e.status })),
             gaps_today: gaps,
             active_role: role,
-            journey_stage: getJourneyStage(new Date(input.conversation_start)) ?? undefined,
+            journey_stage: journeyStage,
             patterns: [],
           };
         } catch (calErr: any) {

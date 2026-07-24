@@ -1285,11 +1285,19 @@ const STAGING_PUBLISH_BAKE_MS = (() => {
  *   5. Allocate a VTID via the canonical allocator (EXEC-DEPLOY gate needs it
  *      in vtid_ledger).
  *   6. Call deployOrchestrator.executeDeploy({ service:'gateway',
- *      environment:'production', source:'api' }) — this dispatches EXEC-DEPLOY.
- *   7. Insert software_versions row with source_revision=<staging revision short
+ *      environment:'production', source:'api' }) — this dispatches EXEC-DEPLOY
+ *      (GCP, canonical production).
+ *   7a. Best-effort: cross-dispatch vitana-v1's DEPLOY.yml to promote the
+ *       frontend alongside gateway (requires FRONTEND_DEPLOY_TOKEN).
+ *   7b. Best-effort, gated by AWS_DUAL_PUBLISH_ENABLED (default off): also
+ *       dispatch AWS-PROD-DEPLOY-GATEWAY.yml (VTID-03398) to ship the same
+ *       commit to AWS Production (DR) — additive DR capacity per CLAUDE.md
+ *       §1b, GCP remains canonical. Failure here never fails the publish.
+ *   8. Insert software_versions row with source_revision=<staging revision short
  *      name>, initiator_id=<admin uuid>, deploy_type='normal'. cloud_run_revision
  *      stays NULL — EXEC-DEPLOY's post-deploy step backfills it.
- *   8. Emit production.publish.requested + production.publish.completed events.
+ *   9. Emit production.publish.requested + production.publish.completed events
+ *      (payload includes frontend_promote + aws_promote outcomes).
  */
 router.post('/publish', requireAdminAuth, async (req: Request, res: Response) => {
   const requestId = randomUUID();
@@ -1489,6 +1497,40 @@ router.post('/publish', requireAdminAuth, async (req: Request, res: Response) =>
       frontendPromote = { ok: false, detail: e instanceof Error ? e.message : 'frontend_dispatch_failed' };
     }
 
+    // Step 7c: AWS Production (DR) dual-publish (VTID-03398) — also ship the
+    // SAME commit to vitana-gateway-awsdr on AWS, alongside the GCP publish
+    // above. Best-effort, same shape as the frontend promote: a failure here
+    // does NOT fail the overall publish (GCP is still canonical; AWS is
+    // additive DR capacity per CLAUDE.md §1b, not the other way around).
+    //
+    // Gated behind AWS_DUAL_PUBLISH_ENABLED (default off) rather than firing
+    // unconditionally: AWS-PROD-DEPLOY-GATEWAY.yml was deliberately built
+    // workflow_dispatch-only with a required human-entered `reason` so AWS
+    // prod deploys stay a deliberate action, not an automatic side effect of
+    // every GCP publish. Flip the env var on only once that tradeoff has
+    // been explicitly accepted.
+    let awsPromote: { ok: boolean; detail?: string; source_commit?: string | null } = {
+      ok: false,
+      detail: 'not_attempted',
+    };
+    if (process.env.AWS_DUAL_PUBLISH_ENABLED === 'true') {
+      try {
+        await triggerWorkflow(
+          'exafyltd/vitana-platform',
+          'AWS-PROD-DEPLOY-GATEWAY.yml',
+          'main',
+          {
+            reason: `dual-publish via Command Hub (${vtid}, gateway ${stagingCommit.slice(0, 7)})`,
+          },
+        );
+        awsPromote = { ok: true, source_commit: stagingCommit };
+      } catch (e) {
+        awsPromote = { ok: false, detail: e instanceof Error ? e.message : 'aws_dispatch_failed' };
+      }
+    } else {
+      awsPromote = { ok: false, detail: 'AWS_DUAL_PUBLISH_ENABLED not set to true — AWS DR NOT promoted.' };
+    }
+
     // Step 8: record the publish row in software_versions. cloud_run_revision
     // stays null — STAGE/EXEC-DEPLOY post-deploy step (P0.7) is responsible
     // for backfilling it once the new prod revision is healthy.
@@ -1534,6 +1576,7 @@ router.post('/publish', requireAdminAuth, async (req: Request, res: Response) =>
         workflow_run_id: deployResult.workflow_run_id,
         workflow_url: deployResult.workflow_url,
         frontend_promote: frontendPromote,
+        aws_promote: awsPromote,
       },
     });
 
@@ -1546,6 +1589,7 @@ router.post('/publish', requireAdminAuth, async (req: Request, res: Response) =>
       workflow_run_id: deployResult.workflow_run_id,
       workflow_url: deployResult.workflow_url,
       frontend_promote: frontendPromote,
+      aws_promote: awsPromote,
     });
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';

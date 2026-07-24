@@ -41,7 +41,7 @@
  * - CSP compliant: No inline scripts/styles
  */
 
-import { Router, Request, Response } from 'express';
+import { Router, Request, Response, NextFunction } from 'express';
 import { randomUUID } from 'crypto';
 import { TextToSpeechClient, protos } from '@google-cloud/text-to-speech';
 import { processWithGemini, setThreadIdentity } from '../services/gemini-operator';
@@ -420,6 +420,14 @@ const ALLOWED_ORIGINS = [
   // prod returned 200 + a session for its own origin.
   'https://preview.vitanaland.com',          // Staging community-app (community-app-staging)
   'https://preview-gateway.vitanaland.com',  // Staging gateway custom domain (command-hub orb)
+  // BOOTSTRAP-AWS-STAGING-VALIDATION: AWS staging origins (ECS stack behind
+  // vitana-alb-prod, Cloudflare-proxied). Same failure mode as the GCP
+  // staging entries above: without these, POST /orb/live/session/start
+  // returns 403 "Origin not allowed" and the orb hangs on "Connecting…" on
+  // preview-aws.* — confirmed in the browser console 2026-07-20 while the
+  // direct-API smoke (no Origin header) passed.
+  'https://preview-aws.vitanaland.com',          // AWS staging community-app
+  'https://preview-aws-gateway.vitanaland.com',  // AWS staging gateway (command-hub orb)
   'http://localhost:8080',
   'http://localhost:8081',  // VTID-01225: Mobile dev server
   'http://localhost:3000',
@@ -847,7 +855,14 @@ export interface GeminiLiveSession {
   lang: string;
   voiceStyle?: string;
   responseModalities: string[];
-  upstreamWs: any | null;  // WebSocket to Vertex Live API
+  upstreamWs: any | null;  // WebSocket to Vertex Live API (or the Nova ws-facade)
+  // BOOTSTRAP-NOVA-SONIC-VOICE: the provider-neutral upstream client when a
+  // non-WebSocket provider (Nova Sonic) carries this session. When set,
+  // `upstreamWs` holds the ws-shaped facade over this client so legacy send
+  // sites keep working; typed events flow via bindUpstreamSessionHandlers.
+  upstreamClient?: UpstreamLiveClient | null;
+  // Which upstream provider carries this session ('vertex' default).
+  upstreamProvider?: 'vertex' | 'livekit' | 'nova_sonic';
   sseResponse: Response | null;
   active: boolean;
   // VTID-02047 voice channel-swap: persona currently driving the voice channel.
@@ -1267,7 +1282,7 @@ function terminateExistingSessionsForUser(userId: string, excludeSessionId?: str
 // Cloud Run does NOT auto-set GOOGLE_CLOUD_PROJECT env var.
 // Fallback to hardcoded project ID for Cloud Run deployments.
 // A2 (orb-live-refactor): VERTEX_PROJECT_ID + VERTEX_LOCATION lifted to orb/live/config.ts.
-import { VERTEX_PROJECT_ID, VERTEX_LOCATION } from '../orb/live/config';
+import { VERTEX_PROJECT_ID, VERTEX_LOCATION, GEMINI_LIVE_USE_API_KEY } from '../orb/live/config';
 // A1 (orb-live-refactor): VERTEX_LIVE_MODEL + VERTEX_TTS_MODEL lifted to
 // orb/live/protocol.ts. Same values, same callers; the constants now live
 // in a shared module so A3/A7/A9 don't have to re-declare them.
@@ -1347,6 +1362,10 @@ import {
 // A8.3b.2 will rename / remove this adapter; for now it remains the active
 // call path so frontends + transparent reconnect see no behavior change.
 import { VertexLiveClient } from '../orb/live/upstream/vertex-live-client';
+// BOOTSTRAP-AWS-STAGING-VALIDATION: alternate upstream for non-GCP compute
+// (AWS) where Vertex OAuth ADC has no metadata server to resolve from. See
+// GEMINI_LIVE_USE_API_KEY (orb/live/config.ts) for the selection switch.
+import { GeminiApiKeyLiveClient } from '../orb/live/upstream/gemini-api-key-live-client';
 // L1 (VTID-02976): provider-selection plumbing for the upstream live client.
 // Pure selector — `connectToLiveAPI` reads env + voice.active_provider, then
 // asks the selector which provider to use, then emits OASIS events for the
@@ -1359,6 +1378,23 @@ import {
 // `ORB_LIVEKIT_CANARY_ENABLED` env + `voice.livekit_canary_enabled`/
 // `voice.livekit_canary_allowlist` system_config rows. NEVER throws.
 import { getLiveKitCanaryConfig } from '../orb/live/upstream/livekit-canary-config';
+// BOOTSTRAP-NOVA-SONIC-VOICE (Task 6): Nova 2 Sonic wiring — config gates,
+// voice mapping, client factory, normalized session binding, and the
+// ws-shaped facade that lets every legacy upstreamWs call site (greeting
+// engine, sync-flow nudges, stall recovery, WS/SSE input handlers) drive
+// the Nova client without learning a second wire protocol.
+import {
+  getNovaSonicConfig,
+  isNovaSonicIdentityAllowed,
+  isNovaSonicLanguageSupported,
+} from '../orb/live/upstream/nova-sonic-config';
+import { resolveNovaSonicVoice } from '../orb/live/voice/nova-sonic-voice';
+import { prewarmNovaSonicBedrock } from '../orb/live/upstream/nova-sonic-live-client';
+import { startNovaSonicKeepWarm } from '../orb/live/upstream/nova-sonic-keepwarm';
+import { createUpstreamClient } from '../orb/live/upstream/upstream-client-factory';
+import { bindUpstreamSessionHandlers } from '../orb/live/session/upstream-message-handler';
+import { createNovaWsFacade } from '../orb/live/upstream/nova-ws-facade';
+import type { UpstreamLiveClient } from '../orb/live/upstream/types';
 // NOTE: `getVoiceConfig` is already imported above (line ~92).
 // A3 (orb-live-refactor): system instruction builder + its private helpers
 // (describeTimeSince, describeRoute, buildTemporalJourneyContextSection,
@@ -1544,6 +1580,24 @@ if (googleAuth && VERTEX_PROJECT_ID) {
     .then(() => console.log('[VTID-01219] ORB Voice access token prewarmed'))
     .catch((err: any) =>
       console.warn('[VTID-01219] ORB Voice access-token prewarm failed (will fetch lazily):', err?.message));
+}
+
+// BOOTSTRAP-NOVA-SONIC-VOICE: same latency treatment for Nova — when Nova is
+// ready on this runtime, build the shared Bedrock HTTP/2 client and resolve
+// the ECS task-role credential chain at boot, so the first canary session
+// skips SDK import + credential + TLS setup on its connect critical path.
+// No-op wherever NOVA_SONIC_ENABLED is unset (all of GCP).
+{
+  const novaBootCfg = getNovaSonicConfig(process.env);
+  if (novaBootCfg.ready) {
+    void prewarmNovaSonicBedrock(novaBootCfg).then((ok) =>
+      console.log(`[BOOTSTRAP-NOVA-SONIC-VOICE] Bedrock prewarm ${ok ? 'complete' : 'failed (lazy fallback on first connect)'}`));
+    // Keep the pooled HTTP/2 session + credentials hot between real
+    // sessions (NodeHttp2Handler drops idle sessions after 8 min, which
+    // would put TLS/H2 setup back on the next user's critical path).
+    const keepWarm = startNovaSonicKeepWarm(novaBootCfg);
+    console.log(`[BOOTSTRAP-NOVA-SONIC-VOICE] Bedrock keep-warm ${keepWarm ? `enabled (every ${novaBootCfg.keepWarmMs}ms)` : 'disabled'}`);
+  }
 }
 
 // VTID-03126 (Phase D.3): LIVE_API_VOICES Record moved out of this file
@@ -6331,11 +6385,16 @@ async function connectToLiveAPI(
   onInterrupted?: () => void
 ): Promise<WebSocket> {
   console.log(`[VTID-01219] connectToLiveAPI called for session ${session.sessionId}`);
-
-  // VTID-01222: Fail fast if project/location missing
-  if (!VERTEX_PROJECT_ID || !VERTEX_LOCATION) {
-    throw new Error('Missing VERTEX_PROJECT_ID or VERTEX_LOCATION');
-  }
+  // BOOTSTRAP-NOVA-SONIC-VOICE (Task 6): provider-specific configuration is
+  // validated AFTER selection — Vertex values are checked only when the
+  // session actually rides Vertex/Gemini, Nova config only for Nova. The
+  // fail-fast checks moved below the selector call.
+  // flow-test-exempt: this touches connectToLiveAPI's transport selection
+  // only (which upstream client + credential to use), not any conversation-
+  // flow decision (greeting, persona routing, turn handling, tool dispatch —
+  // all unchanged and still driven by buildOrbVertexSetupEnvelope below).
+  // The new logic itself (URL/key building, model-id rewrite) has a
+  // dedicated same-PR test suite: test/orb/live/upstream/gemini-api-key-live-client.test.ts.
 
   // L1 (VTID-02976) / L2.1 (VTID-02980): consult the upstream provider
   // selector. The selector is a pure function — it never reads env / DB /
@@ -6355,6 +6414,19 @@ async function connectToLiveAPI(
   try {
     const __voiceCfg = await getVoiceConfig();
     const __canary = await getLiveKitCanaryConfig();
+    // BOOTSTRAP-NOVA-SONIC-VOICE: precompute the Nova gates. Language falls
+    // back to Vertex BEFORE any upstream connection is opened; identity is
+    // matched against the env-scoped canary allowlists (never the shared
+    // system_config row — AWS and GCP staging share that data). The runtime
+    // gate keys off ECS_CONTAINER_METADATA_URI* (present on ECS/Fargate,
+    // absent on Cloud Run, where the HTTP/2 stream cannot be carried).
+    const __novaCfg = getNovaSonicConfig(process.env);
+    const __novaRuntime: 'aws-ecs' | 'gcp-cloud-run' | 'unknown' =
+      process.env.ECS_CONTAINER_METADATA_URI_V4 || process.env.ECS_CONTAINER_METADATA_URI
+        ? 'aws-ecs'
+        : process.env.K_SERVICE
+          ? 'gcp-cloud-run'
+          : 'unknown';
     __upstreamDecision = selectUpstreamProvider({
       envProviderOverride: process.env.ORB_LIVE_PROVIDER,
       systemConfigActiveProvider: __voiceCfg.active_provider,
@@ -6371,6 +6443,15 @@ async function connectToLiveAPI(
       identity: {
         tenantId: session.identity?.tenant_id ?? null,
         userId: session.identity?.user_id ?? null,
+      },
+      nova: {
+        enabled: __novaCfg.ready,
+        identityAllowed: isNovaSonicIdentityAllowed(__novaCfg, {
+          userId: session.identity?.user_id ?? null,
+          tenantId: session.identity?.tenant_id ?? null,
+        }),
+        languageSupported: isNovaSonicLanguageSupported(session.lang),
+        runtime: __novaRuntime === 'aws-ecs' ? 'aws-ecs' : __novaRuntime,
       },
     });
   } catch (e) {
@@ -6461,12 +6542,29 @@ async function connectToLiveAPI(
     } as any).catch(() => { /* best-effort */ });
   }
 
+  // BOOTSTRAP-NOVA-SONIC-VOICE (Task 6): provider-specific fail-fast AFTER
+  // selection. Vertex/Gemini config is required only when the session rides
+  // the Google path; a Nova session validates Nova config instead (its
+  // typed readiness already gated the selector decision above).
+  if (__upstreamDecision.provider !== 'nova_sonic') {
+    // VTID-01222: Fail fast if project/location missing
+    if (!VERTEX_PROJECT_ID || !VERTEX_LOCATION) {
+      throw new Error('Missing VERTEX_PROJECT_ID or VERTEX_LOCATION');
+    }
+    // BOOTSTRAP-AWS-STAGING-VALIDATION: fail fast if the api_key transport is
+    // selected but no key is configured — same shape as the ADC check above.
+    if (GEMINI_LIVE_USE_API_KEY && !GEMINI_API_KEY) {
+      throw new Error('GEMINI_LIVE_TRANSPORT=api_key but GOOGLE_GEMINI_API_KEY is missing');
+    }
+  }
+
   // A8.3b.2 (VTID-02972): the legacy raw-WebSocket scaffolding is gone.
   // `VertexLiveClient.connect()` owns the access-token fetch, the WSS URL
   // construction, the headers attach, and the open-handshake. We only need
   // to log what we're about to ask it to do.
   console.log(`[VTID-01219] Using model: ${VERTEX_LIVE_MODEL}`);
   console.log(`[VTID-01219] Project: ${VERTEX_PROJECT_ID}, Location: ${VERTEX_LOCATION}`);
+  console.log(`[BOOTSTRAP-AWS-STAGING-VALIDATION] Live API transport: ${GEMINI_LIVE_USE_API_KEY ? 'api_key (AI Studio)' : 'vertex (OAuth/ADC)'}`);
 
   // A8.3b.1 (VTID-02971): the WS lifecycle now flows through the A7
   // UpstreamLiveClient boundary via VertexLiveClient. The orb-specific
@@ -6507,7 +6605,13 @@ async function connectToLiveAPI(
   );
 
   return new Promise<WebSocket>(async (resolve, reject) => {
-    const vertex = new VertexLiveClient();
+    // BOOTSTRAP-AWS-STAGING-VALIDATION: both classes implement the same
+    // UpstreamLiveClient surface (see gemini-api-key-live-client.ts header
+    // for why a sibling class rather than a subclass) — every `vertex.*`
+    // call below works unchanged regardless of which one is selected.
+    const vertex: VertexLiveClient | GeminiApiKeyLiveClient = GEMINI_LIVE_USE_API_KEY
+      ? new GeminiApiKeyLiveClient()
+      : new VertexLiveClient();
 
     // VTID-03273 Pillar B — capture the rolling native session-resumption handle.
     // Stored on the session (the durable Conversation), replayed in the next
@@ -6870,6 +6974,24 @@ async function connectToLiveAPI(
                         // VTID-01967: Canonical Vitana ID handle (already resolved
                         // by optionalAuth → resolveVitanaId on session start).
                         session.identity?.vitana_id ?? null,
+                        undefined, // omitGreetingPolicy — unchanged (Vertex/AI Studio still need it)
+                        undefined, // surface — unchanged (route-based heuristic)
+                        // BOOTSTRAP-ORB-INSTRUCTION-BUDGET: drop the redundant
+                        // `## AVAILABLE TOOLS` prose block on BOTH raw-WS
+                        // transports (Vertex and AI Studio). The prose is
+                        // generated from the exact same buildLiveApiTools()
+                        // declarations this envelope already carries
+                        // structurally (renderAvailableToolsSection), so it is
+                        // redundant by construction here; it exists only for
+                        // LiveKit, whose call site does NOT set this flag.
+                        // #2905 dropped it for AI Studio when it blew that
+                        // transport's budget; the Wave-MVA-1 catalog growth
+                        // (+35 tools, PR #2895) then pushed the authenticated
+                        // Vertex instruction to ~49k tokens → Gemini Live
+                        // closed every authenticated session with code 1007
+                        // ("user system instruction has 48787 tokens") —
+                        // prod ORB stuck at "Verbinden…". Always omit here.
+                        true,
                       ))) as string
             }]
           },
@@ -6979,6 +7101,232 @@ async function connectToLiveAPI(
       return setupMessage as unknown as Record<string, unknown>;
     };
 
+    // BOOTSTRAP-NOVA-SONIC-VOICE (Task 6): Nova branch. The shared session
+    // configuration (system instruction, context, tool catalog, persona
+    // overrides) is built by the SAME envelope builder the Vertex path uses
+    // — buildOrbVertexSetupEnvelope awaits the context promise and encodes
+    // buildLiveSystemInstruction + buildLiveApiTools — then decoded into
+    // provider-neutral parts and re-encoded through nova-sonic-protocol.ts
+    // inside the client. Parity by construction, not by duplication.
+    if (__upstreamDecision.provider === 'nova_sonic') {
+      try {
+        const novaCfg = getNovaSonicConfig(process.env);
+        const envelope = (await buildOrbVertexSetupEnvelope()) as { setup?: Record<string, any> };
+        const setup = envelope.setup ?? {};
+        const novaSystemInstruction: string =
+          setup.system_instruction?.parts?.[0]?.text ?? '';
+        const novaTools: Array<Record<string, unknown>> = Array.isArray(setup.tools)
+          ? (setup.tools as Array<Record<string, unknown>>)
+          : [];
+        const novaPersona = ((session as any).activePersona as string) || 'vitana';
+        const novaVoice =
+          resolveNovaSonicVoice({ language: session.lang || 'en', persona: novaPersona }) ?? 'tiffany';
+
+        // Rotation (Bedrock caps a bidirectional stream at 8 minutes): open
+        // the REPLACEMENT stream first (same connect path → same context/
+        // history rebuild + persona voice re-resolution), switch the session
+        // to it, then close the old stream. The browser WS/SSE stays
+        // connected and no greeting replays (greetingSent remains true).
+        let rotateNovaStream: (() => Promise<void>) | null = null;
+
+        const novaClient = createUpstreamClient('nova_sonic', {
+          nova: {
+            config: novaCfg,
+            voiceId: novaVoice,
+            onRotationDue: () => {
+              void rotateNovaStream?.();
+            },
+          },
+        });
+
+        rotateNovaStream = async () => {
+          if (!session.active) return;
+          (session as any)._novaRotationInFlight = true;
+          emitDiag(session, 'nova_rotation_started', { provider: 'nova_sonic' });
+          void emitOasisEvent({
+            type: 'orb.upstream.nova.rotation_started',
+            vtid: 'BOOTSTRAP-NOVA-SONIC-VOICE',
+            payload: { session_id: session.sessionId, provider: 'nova_sonic', reason: 'provider_stream_rotation' } as any,
+          } as any).catch(() => { /* best-effort */ });
+          try {
+            const ok = await attemptTransparentReconnect(
+              session,
+              onAudioResponse,
+              onTextResponse,
+              onError,
+              onTurnComplete,
+              onInterrupted,
+            );
+            if (ok) {
+              // Planned rotation must not consume the failure-reconnect
+              // budget — refund the slot the reconnect helper just took.
+              (session as any)._reconnectCount = Math.max(0, ((session as any)._reconnectCount || 1) - 1);
+              await novaClient.close('provider_stream_rotation');
+              emitDiag(session, 'nova_rotation_succeeded', { provider: 'nova_sonic' });
+              void emitOasisEvent({
+                type: 'orb.upstream.nova.rotation_succeeded',
+                vtid: 'BOOTSTRAP-NOVA-SONIC-VOICE',
+                payload: { session_id: session.sessionId, provider: 'nova_sonic' } as any,
+              } as any).catch(() => { /* best-effort */ });
+            } else {
+              // Replacement failed — keep the old stream until its Bedrock
+              // deadline; its eventual close surfaces ONE typed issue via
+              // the close handler (rotation flag cleared below).
+              emitDiag(session, 'nova_rotation_failed', { provider: 'nova_sonic', code: 'nova_rotation_failed' });
+              void emitOasisEvent({
+                type: 'orb.upstream.nova.rotation_failed',
+                vtid: 'BOOTSTRAP-NOVA-SONIC-VOICE',
+                payload: { session_id: session.sessionId, provider: 'nova_sonic', code: 'nova_rotation_failed' } as any,
+              } as any).catch(() => { /* best-effort */ });
+            }
+          } catch (e) {
+            emitDiag(session, 'nova_rotation_failed', {
+              provider: 'nova_sonic',
+              code: 'nova_rotation_failed',
+              error: (e as Error).message,
+            });
+          } finally {
+            (session as any)._novaRotationInFlight = false;
+          }
+        };
+
+        bindUpstreamSessionHandlers({
+          session,
+          client: novaClient,
+          callbacks: { onAudioResponse, onTextResponse, onError, onTurnComplete, onInterrupted },
+          deps: {
+            clearResponseWatchdog,
+            detectAuthIntent,
+            emitDiag,
+            emitLiveSessionEvent,
+            executeLiveApiTool,
+            isDevSandbox,
+            sendAudioToLiveAPI,
+            sendFunctionResponseToLiveAPI,
+            sendWsMessage,
+            startResponseWatchdog,
+            markVoiceLatency,
+            finalizeVoiceTurnLatency,
+          },
+          // Nova needs no synthetic PCM keepalive — server-side turn
+          // detection keeps its stream alive; rotation handles the 8-min cap.
+          options: { enableSilenceKeepalive: false },
+        });
+
+        // Close policy: diag always; on an unexpected close of an active,
+        // non-rotating session, emit ONE typed connection issue (same dedupe
+        // contract as the Vertex ws close handler).
+        novaClient.onClose((closeEvent) => {
+          emitDiag(session, 'upstream_closed', {
+            provider: 'nova_sonic',
+            reason: closeEvent.reason ?? null,
+            initiated_locally: closeEvent.initiatedLocally,
+          });
+          if (session.upstreamClient === novaClient) {
+            session.upstreamClient = null;
+          }
+          const rotationInFlight = (session as any)._novaRotationInFlight === true;
+          const swapInFlight = (session as any)._personaSwapInFlight === true;
+          if (swapInFlight) {
+            // Persona swap: transparent reconnect through the same connect
+            // path (mirrors the Vertex code-1000 swap handling). The swap
+            // flag is consumed by attemptTransparentReconnect itself.
+            void attemptTransparentReconnect(
+              session,
+              onAudioResponse,
+              onTextResponse,
+              onError,
+              onTurnComplete,
+              onInterrupted,
+            ).then((ok) => {
+              (session as any)._personaSwapInFlight = false;
+              if (!ok) {
+                console.warn('[BOOTSTRAP-NOVA-SONIC-VOICE] persona-swap reconnect failed');
+              }
+            }).catch((e) => {
+              (session as any)._personaSwapInFlight = false;
+              console.warn(`[BOOTSTRAP-NOVA-SONIC-VOICE] persona-swap reconnect failed: ${(e as Error).message}`);
+            });
+            return;
+          }
+          if (
+            session.active &&
+            !closeEvent.initiatedLocally &&
+            !rotationInFlight &&
+            !session.connectionIssueEmitted
+          ) {
+            session.connectionIssueEmitted = true;
+            const lang = session.lang || 'en';
+            const issueEvent = {
+              type: 'connection_issue',
+              reason: 'upstream_disconnected',
+              message: getConnectionIssueMessage(lang),
+              should_close: true,
+            };
+            if (session.sseResponse) {
+              try { session.sseResponse.write(`data: ${JSON.stringify(issueEvent)}\n\n`); } catch (_e) { /* ignore */ }
+            }
+            if (session.clientWs && session.clientWs.readyState === WebSocket.OPEN) {
+              try { session.clientWs.send(JSON.stringify(issueEvent)); } catch (_e) { /* ignore */ }
+            }
+          }
+        });
+
+        session.upstreamClient = novaClient;
+        session.upstreamProvider = 'nova_sonic';
+        const novaConnectStart = Date.now();
+        await novaClient.connect({
+          model: novaCfg.modelId,
+          voiceName: novaVoice,
+          responseModalities: session.responseModalities.includes('audio') ? ['audio'] : ['text'],
+          vadSilenceMs: session.vadSilenceMs,
+          systemInstruction: novaSystemInstruction,
+          tools: novaTools,
+          connectTimeoutMs: novaCfg.connectTimeoutMs,
+        });
+        setupComplete = true;
+        clearTimeout(connectionTimeout);
+        session.establishLatency?.mark('upstream_connected');
+        console.log(
+          `[BOOTSTRAP-NOVA-SONIC-VOICE] Nova stream open for session ${session.sessionId}: ` +
+            `model=${novaCfg.modelId} region=${novaCfg.region} voice=${novaVoice} connect_ms=${Date.now() - novaConnectStart}`,
+        );
+        void emitOasisEvent({
+          type: 'orb.upstream.nova.connect_succeeded',
+          vtid: 'BOOTSTRAP-NOVA-SONIC-VOICE',
+          payload: {
+            session_id: session.sessionId,
+            provider: 'nova_sonic',
+            model: novaCfg.modelId,
+            region: novaCfg.region,
+            voice: novaVoice,
+            connect_ms: Date.now() - novaConnectStart,
+            status: 'success',
+          } as any,
+        } as any).catch(() => { /* best-effort */ });
+
+        // The ws-shaped facade lets every legacy upstreamWs call site
+        // (greeting engine, nudges, input handlers, stop path) drive Nova.
+        resolve(createNovaWsFacade(novaClient) as unknown as WebSocket);
+        return;
+      } catch (err) {
+        clearTimeout(connectionTimeout);
+        session.upstreamClient = null;
+        void emitOasisEvent({
+          type: 'orb.upstream.nova.connect_failed',
+          vtid: 'BOOTSTRAP-NOVA-SONIC-VOICE',
+          payload: {
+            session_id: session.sessionId,
+            provider: 'nova_sonic',
+            error: (err as Error).message,
+            status: 'error',
+          } as any,
+        } as any).catch(() => { /* best-effort */ });
+        reject(err as Error);
+        return;
+      }
+    }
+
     // A8.3b.1 (VTID-02971): open the upstream connection through the A7
     // UpstreamLiveClient boundary. `vertex.connect()` performs the auth
     // header attach, the ws.on('open') handshake, awaits our custom
@@ -6998,7 +7346,11 @@ async function connectToLiveAPI(
         vadSilenceMs: session.vadSilenceMs,
         systemInstruction: 'overridden',
         // A8.3b.2: VertexLiveClient.connect() invokes this directly.
-        getAccessToken,
+        // BOOTSTRAP-AWS-STAGING-VALIDATION: api_key transport reuses this
+        // same provider-neutral credential hook (types.ts documents it as
+        // "Other providers may use it for API keys / JWTs") to hand back
+        // the raw Gemini API key instead of an OAuth token.
+        getAccessToken: GEMINI_LIVE_USE_API_KEY ? async () => GEMINI_API_KEY : getAccessToken,
         connectTimeoutMs: 15000,
         customSetupMessage: buildOrbVertexSetupEnvelope,
       });
@@ -7424,8 +7776,11 @@ async function attemptTransparentReconnect(
   // as a silent UI cue. Uses the _personaSwapInFlight flag so both swap
   // directions (Vitana ↔ specialist) are covered.
   const isPersonaSwap = !!(session as any)._personaSwapInFlight;
+  // BOOTSTRAP-NOVA-SONIC-VOICE: a planned Nova stream rotation is invisible
+  // to the user — no "reconnecting"/"reconnected" cues, no greeting replay.
+  const isNovaRotation = !!(session as any)._novaRotationInFlight;
 
-  if (!isPersonaSwap) {
+  if (!isPersonaSwap && !isNovaRotation) {
     // Notify client that we're reconnecting (informational, not an error)
     // Works for both SSE and WS transports
     const reconnectMsg = { type: 'reconnecting', reconnect_count: reconnectCount + 1, message: 'Extending session...' };
@@ -7461,13 +7816,15 @@ async function attemptTransparentReconnect(
     // Persona-swap path uses a different type so the widget doesn't speak
     // the "Okay, das Netz ist wieder da" recovery line — the new persona
     // greets in their own voice, which is the correct cue.
-    const reconnectedMsg = isPersonaSwap
-      ? { type: 'persona_swap_reconnected', persona: (session as any).activePersona }
-      : { type: 'reconnected', reconnect_count: reconnectCount + 1 };
-    if (session.sseResponse) {
-      try { session.sseResponse.write(`data: ${JSON.stringify(reconnectedMsg)}\n\n`); } catch (e) { /* SSE may be closed */ }
-    } else if (session.clientWs && session.clientWs.readyState === WebSocket.OPEN) {
-      try { sendWsMessage(session.clientWs, reconnectedMsg); } catch (e) { /* WS may be closed */ }
+    if (!isNovaRotation) {
+      const reconnectedMsg = isPersonaSwap
+        ? { type: 'persona_swap_reconnected', persona: (session as any).activePersona }
+        : { type: 'reconnected', reconnect_count: reconnectCount + 1 };
+      if (session.sseResponse) {
+        try { session.sseResponse.write(`data: ${JSON.stringify(reconnectedMsg)}\n\n`); } catch (e) { /* SSE may be closed */ }
+      } else if (session.clientWs && session.clientWs.readyState === WebSocket.OPEN) {
+        try { sendWsMessage(session.clientWs, reconnectedMsg); } catch (e) { /* WS may be closed */ }
+      }
     }
 
     // After a successful persona swap, send a one-shot client_content nudge
@@ -8074,14 +8431,21 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
       voiceWakeBriefReason: _voiceReasonSync,
     });
     if (_syncDecision.directive !== null) {
-      ws.send(
-        JSON.stringify({
-          client_content: {
-            turns: [{ role: 'user', parts: [{ text: _syncDecision.directive }] }],
-            turn_complete: true,
-          },
-        }),
+      const _greetingClientContentMsg = JSON.stringify({
+        client_content: {
+          turns: [{ role: 'user', parts: [{ text: _syncDecision.directive }] }],
+          turn_complete: true,
+        },
+      });
+      // BOOTSTRAP-AWS-STAGING-VALIDATION: diagnosing a code=1007 "Request
+      // contains an invalid argument" close from AI Studio's Live API right
+      // after this exact send (Vertex accepts it fine). Log size + a safe
+      // preview so the real payload is inspectable in CloudWatch instead of
+      // guessed at — remove once the AI-Studio-vs-Vertex divergence is found.
+      console.log(
+        `[BOOTSTRAP-AWS-STAGING-VALIDATION] Sending greeting client_content for session ${session.sessionId}: wakeOpener=${_syncDecision.wakeOpener} bytes=${Buffer.byteLength(_greetingClientContentMsg)} directive_chars=${_syncDecision.directive.length} preview=${JSON.stringify(_syncDecision.directive.slice(0, 200))}`,
       );
+      ws.send(_greetingClientContentMsg);
     }
     session.greetingSent = true;
     session.greetingTurnIndex = session.turn_count;
@@ -9074,7 +9438,6 @@ async function generateMemoryEnhancedSystemInstruction(
   try {
     if (effectiveIdentity.user_id) {
       const { getUserTodayEvents, getUserUpcomingEvents, getCalendarGaps } = await import('../services/calendar-service');
-      const { getJourneyStage } = await import('../services/journey-calendar-mapper');
       const calRole = session.role || 'community';
       const [todayEvents, upcomingEvents, gaps] = await Promise.all([
         getUserTodayEvents(effectiveIdentity.user_id, calRole),
@@ -9112,11 +9475,23 @@ async function generateMemoryEnhancedSystemInstruction(
         }
       }
 
-      // Journey stage
+      // Journey stage \u2014 canonical day_in_journey (same source the ORB
+      // greeting and My Journey screen read). The old journey-calendar-mapper
+      // getJourneyStage() call here passed `new Date()` where it expected
+      // the user's REGISTRATION date, so `Date.now() - Date.now()` always
+      // floored to 0 \u2014 every live session was told "Journey: Day 0 of 90",
+      // regardless of the user's real tenure.
       try {
-        const journeyStage = getJourneyStage(new Date());
-        if (journeyStage) {
-          calLines += `\nJourney: Day ${journeyStage.day_number} of ${journeyStage.total_days} \u2014 "${journeyStage.wave_name}"\n`;
+        const SUPABASE_URL = process.env.SUPABASE_URL;
+        const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
+        if (SUPABASE_URL && SUPABASE_SERVICE_ROLE) {
+          const { createClient: createJourneyClient } = await import('@supabase/supabase-js');
+          const { getJourneyStageForPrompt } = await import('../services/journey/journey-stage-for-prompt');
+          const journeySupabase = createJourneyClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE);
+          const journeyStage = await getJourneyStageForPrompt(journeySupabase, effectiveIdentity.user_id);
+          if (journeyStage) {
+            calLines += `\nJourney: Day ${journeyStage.day_number} of ${journeyStage.total_days} \u2014 "${journeyStage.wave_name}"\n`;
+          }
         }
       } catch {}
 
@@ -11134,8 +11509,18 @@ router.post('/session/finalize', async (req: Request, res: Response) => {
 /**
  * VTID-01039: GET /session/:orb_session_id - Get full transcript + summary
  */
-router.get('/session/:orb_session_id', (req: Request, res: Response) => {
+// public-route: pre-existing anonymous route (no auth wrapper on main before
+// this PR either); the session id itself is the access token, and this PR
+// only adds a passthrough guard for the /session/continuity path below.
+router.get('/session/:orb_session_id', (req: Request, res: Response, next: NextFunction) => {
   const { orb_session_id } = req.params;
+
+  // GET /session/continuity is a separate, more specific route registered
+  // later in this file — without this guard it's unreachable, since Express
+  // matches routes in registration order and this wildcard comes first.
+  if (orb_session_id === 'continuity') {
+    return next();
+  }
 
   if (!orb_session_id) {
     return res.status(400).json({
@@ -13155,7 +13540,7 @@ router.get('/health', async (_req: Request, res: Response) => {
   //
   // We gather the exact same inputs selectUpstreamProvider() reads at session
   // connect time, then derive runtime readiness from the resolved provider.
-  let activeProvider: 'vertex' | 'livekit' = 'vertex';
+  let activeProvider: 'vertex' | 'livekit' | 'nova_sonic' = 'vertex';
   let providerReason = 'default';
   let livekitReady = false;
   try {

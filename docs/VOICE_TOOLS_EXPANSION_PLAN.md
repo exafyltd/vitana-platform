@@ -771,3 +771,220 @@ Goal: a developer can run the platform's whole operational loop by voice — VTI
 ## Review outcome
 
 The four open questions were resolved on 2026-07-12 — see "Approved decisions" at the top of this document.
+
+---
+
+# Marketplace Voice Assistant (Discover) — expansion v3
+
+**APPROVED 2026-07-20 (owner request: complete conversational shopping journey).**
+
+Vitana becomes a **Marketplace Discover Assistant**: understand the need →
+clarify → discover options → explain relevance (concise, never spec-dumps) →
+compare → choose → confirmed add-to-basket → book/order → follow up. Covers
+products, services, practitioners, and health diagnostics (blood tests,
+metabolomics, microbiome, genomics, cardiovascular assessment).
+
+**Wave MVA-1 (this PR)** builds the 35 tools whose backing systems exist today
+(`products`, `services_catalog`, universal cart, shopping-agent `runPropose`,
+`memory_facts`, `memory_items`, `shop_saved_products`, `user_offers_memory`).
+Everything else seeds as `planned` — honest roadmap entries that go live when
+their backends (diagnostic-test catalog, practitioner booking/availability,
+bundles, returns) exist. No tool ever fabricates data for a missing backend.
+
+**Health-domain boundary (hard rule for every A24/A25 tool and any
+health-adjacent recommendation):** the assistant may explain what a test
+measures, why it could be relevant to a stated goal, compare scope/logistics,
+and facilitate ordering — it must NEVER diagnose, prescribe, promise outcomes,
+present a test as medically necessary, hide limitations, or use health context
+without consent. Payment is never taken by voice: cart-staging + screen
+handoff only.
+
+## A17. Marketplace Discover Assistant orchestrators (5) — P0
+
+The user-facing conversational layer that coordinates the atomic tools below.
+
+| # | Tool | Does | R/W |
+|---|---|---|---|
+| 1 | `start_marketplace_discover_assistant` | Start a guided shopping conversation for a product, service, practitioner or diagnostic need; records the goal and returns the first clarifying step | W |
+| 2 | `build_personalized_shopping_guide` | Convert a broad need into a concise recommendation path across products and services, grounded in the shopping agent | R |
+| 3 | `refine_marketplace_recommendations` | Update the current picks from conversational feedback (cheaper, no pills, at home, different brand) | R |
+| 4 | `explain_marketplace_recommendation` | The concise what-it-is / what-for / why-for-you / limits explanation of a current pick | R |
+| 5 | `complete_marketplace_selection` ⚠️ | Confirm the selected option and route it to the basket (two-step confirm; never charges) | W |
+
+## A18. Shopping intent & preferences (8) — P0
+
+| # | Tool | Does | R/W |
+|---|---|---|---|
+| 1 | `capture_shopping_goal` | Record what the user wants to achieve, solve, explore or purchase in the active guide | W |
+| 2 | `clarify_shopping_need` | Return the smallest set of missing criteria (budget, format, urgency, exclusions) still needed | R |
+| 3 | `classify_marketplace_intent` | Determine whether the need maps to a product, service, diagnostic test, practitioner or combination | R |
+| 4 | `extract_purchase_criteria` | Extract budget, location, urgency, format, priorities, exclusions and desired outcome from natural language | R |
+| 5 | `save_marketplace_preferences` ⚠️ | Save reusable shopping preferences (dietary, values, exclusions, budget) with user permission | W |
+| 6 | `get_marketplace_preferences` | Retrieve saved shopping preferences relevant to the current request | R |
+| 7 | `reset_marketplace_preferences` ⚠️ | Remove saved marketplace preferences after confirmation | W |
+| 8 | `exclude_marketplace_brand_or_category` ⚠️ | Persistently exclude a brand or category from future recommendations | W |
+
+## A19. Personalization & transparency (5) — P1
+
+| # | Tool | Does | R/W |
+|---|---|---|---|
+| 1 | `get_marketplace_context` | Return the minimum relevant user context (saved preferences, budget, recent orders) for the current request | R |
+| 2 | `explain_personalization_basis` | Explain in plain language which stored information shaped a recommendation | R |
+| 3 | `dismiss_marketplace_recommendation` | Dismiss a recommended product or service so it is not proposed again | W |
+| 4 | `show_sponsored_status` | State whether an item is sponsored, promoted or commission-bearing | R |
+| 5 | `explain_no_suitable_option` | Explain honestly when no appropriate marketplace option was found | R |
+
+## A20. Unified discovery (8) — P0
+
+| # | Tool | Does | R/W |
+|---|---|---|---|
+| 1 | `discover_marketplace_options` | Unified search across products AND services for one stated need | R |
+| 2 | `search_products_by_need` | Search products by purpose and outcome rather than exact product name | R |
+| 3 | `search_services_by_need` | Search services (wellness, nutrition, therapy, labs) by desired outcome | R |
+| 4 | `search_marketplace_by_values` | Filter products by dietary tags, certifications and value preferences | R |
+| 5 | `search_marketplace_alternatives` | Find alternatives to a product the user dislikes or cannot use | R |
+| 6 | `search_marketplace_by_budget` | Find options within a defined total budget across categories | R |
+| 7 | `search_local_services` | Search services available near the user | R |
+| 8 | `search_marketplace_by_availability` | Search by delivery date or appointment availability | R |
+
+## A21. Guided recommendation (7) — P0
+
+| # | Tool | Does | R/W |
+|---|---|---|---|
+| 1 | `generate_top_marketplace_picks` | Return a small number of best-fit options with short per-pick rationales (never stages the cart silently) | R |
+| 2 | `recommend_marketplace_path` | Recommend whether to start with a product, service, diagnostic or combination for the stated goal | R |
+| 3 | `rerank_marketplace_options` | Re-rank current options when the user changes a priority | R |
+| 4 | `recommend_lower_cost_option` | Find a suitable less expensive alternative to a current pick | R |
+| 5 | `recommend_premium_option` | Find a higher-quality or more comprehensive alternative | R |
+| 6 | `recommend_non_product_alternative` | Suggest a service or non-purchase approach when a product is not the best fit | R |
+| 7 | `recommend_complete_solution` | Build a product-and-service combination that addresses one broader goal | R |
+
+## A22. Concise explanation (6) — P0
+
+| # | Tool | Does | R/W |
+|---|---|---|---|
+| 1 | `explain_why_recommended` | Explain why the assistant selected this option for this user, from the recorded rationale | R |
+| 2 | `summarize_product_for_user` | Personalized short summary: what it is, what for, why it may fit, key limits — never the full spec | R |
+| 3 | `get_key_product_facts` | Only the most important facts: price, form, usage, availability, safety notes | R |
+| 4 | `explain_how_to_use_product` | Practical use instructions (dosage, serving) without overwhelming detail | R |
+| 5 | `explain_relevant_limitations` | Surface only the limitations relevant to this user | R |
+| 6 | `explain_evidence_summary` | Concise description of evidence strength and uncertainty for a product or service claim | R |
+
+## A23. Comparison & shortlist (7) — P1
+
+| # | Tool | Does | R/W |
+|---|---|---|---|
+| 1 | `compare_marketplace_options` | Compare up to three options on the criteria that matter to this user | R |
+| 2 | `highlight_meaningful_differences` | Explain only the differences likely to affect the user's choice | R |
+| 3 | `identify_best_value_option` | Determine the strongest value for the user's needs, not just the lowest price | R |
+| 4 | `answer_product_question` | Answer one focused question about one product | R |
+| 5 | `shortlist_marketplace_options` ⚠️ | Save products to the user's shortlist for later comparison | W |
+| 6 | `view_marketplace_shortlist` | Read the current shortlist aloud | R |
+| 7 | `remove_from_marketplace_shortlist` ⚠️ | Remove an option from the shortlist | W |
+
+## A24. Diagnostics & health services (10) — P0
+
+| # | Tool | Does | R/W |
+|---|---|---|---|
+| 1 | `browse_diagnostic_tests` | Browse diagnostic services by type: blood, metabolomics, microbiome, genomics, hormones, longevity panels | R |
+| 2 | `find_test_by_health_goal` | Find diagnostic categories matching a stated goal without diagnosing | R |
+| 3 | `find_test_by_biomarker` | Search tests containing a named biomarker | R |
+| 4 | `get_test_details` | Biomarker list, sample method, preparation and result timeline for one test | R |
+| 5 | `check_home_collection_availability` | Check whether home sample collection is available for a test | R |
+| 6 | `order_home_test_kit` ⚠️ | Stage an eligible home test kit into the basket after confirmation | W |
+| 7 | `book_lab_appointment` ⚠️ | Book a laboratory or sample-collection appointment | W |
+| 8 | `get_ordered_test_status` | Track kit shipment, sample receipt, processing and result readiness | R |
+| 9 | `prepare_for_diagnostic_service` | Concise preparation checklist (fasting, timing, medication questions for a professional) | R |
+| 10 | `recommend_diagnostic_test` | Recommend suitable diagnostic categories for a stated information need, never a diagnosis | R |
+
+## A25. Practitioner selection (6) — P1
+
+| # | Tool | Does | R/W |
+|---|---|---|---|
+| 1 | `find_practitioner_by_specialty` | Find practitioners by specialty, goal and user preferences | R |
+| 2 | `get_practitioner_credentials` | Relevant qualifications and verification status | R |
+| 3 | `get_practitioner_availability` | Open appointment slots | R |
+| 4 | `get_practitioner_pricing` | Session and package pricing | R |
+| 5 | `compare_practitioners_for_user` | Compare a practitioner shortlist on the user's priorities | R |
+| 6 | `book_practitioner_appointment` ⚠️ | Book an available appointment after confirmation | W |
+
+## A26. Bundles & plans (5) — P2
+
+| # | Tool | Does | R/W |
+|---|---|---|---|
+| 1 | `build_marketplace_solution_plan` | Concise multi-step product and service plan for one goal | R |
+| 2 | `create_diagnostic_and_consultation_bundle` | Pair a diagnostic service with suitable result interpretation | R |
+| 3 | `check_bundle_compatibility` | Check whether bundle components logically work together, without duplication | R |
+| 4 | `add_bundle_to_cart` ⚠️ | Stage all purchasable bundle items into the basket after confirmation | W |
+| 5 | `save_marketplace_plan` | Save a marketplace plan to resume later | W |
+
+## A27. Suitability & compatibility (6) — P1
+
+| # | Tool | Does | R/W |
+|---|---|---|---|
+| 1 | `check_product_suitability` | Check one product against saved preferences, exclusions and dietary needs | R |
+| 2 | `check_dietary_compatibility` | Check vegan, vegetarian, gluten-free or other dietary requirements for a product | R |
+| 3 | `check_cart_duplication` | Detect repeated or overlapping products in the basket | R |
+| 4 | `check_delivery_restrictions` | Check country and shipping limitations for a product | R |
+| 5 | `check_test_overlap` | Identify duplicated biomarkers across diagnostic packages | R |
+| 6 | `check_service_prerequisites` | Identify referrals, preparation or eligibility requirements for a service | R |
+
+## A28. Pricing & value (4) — P2
+
+| # | Tool | Does | R/W |
+|---|---|---|---|
+| 1 | `compare_marketplace_prices` | Compare prices of equivalent options including reference prices | R |
+| 2 | `explain_price_difference` | Explain why two similar options are priced differently | R |
+| 3 | `review_shopping_budget` | Read the monthly shopping budget, current spend and remaining headroom | R |
+| 4 | `estimate_total_ownership_cost` | Show recurring or long-term cost rather than only the initial price | R |
+
+## A29. Cart confirmation & checkout handoff (6) — P0
+
+| # | Tool | Does | R/W |
+|---|---|---|---|
+| 1 | `confirm_marketplace_selection` ⚠️ | Read back the exact selected option (name, price, key terms) and obtain explicit confirmation before any cart action | R |
+| 2 | `add_selected_option_to_cart` ⚠️ | Stage the confirmed option into the universal basket (never charges; screen handoff for payment) | W |
+| 3 | `add_shortlist_item_to_cart` ⚠️ | Stage an item from the shortlist into the basket after confirmation | W |
+| 4 | `review_cart_suitability` | Check duplicates and conflicts with saved preferences before checkout | R |
+| 5 | `explain_cart_item` | Explain why a specific basket item is there (origin, rationale) | R |
+| 6 | `confirm_cart_total` | Read back total price and any recurring charges before the screen handoff | R |
+
+## A30. Post-purchase & follow-up (6) — P2
+
+| # | Tool | Does | R/W |
+|---|---|---|---|
+| 1 | `get_next_order_action` | Tell the user the next required step for an order (delivery, sample, appointment) | R |
+| 2 | `submit_marketplace_review` ⚠️ | Record the user's rating of a purchased product or service after confirmation | W |
+| 3 | `schedule_reorder_reminder` | Schedule an optional reorder reminder | W |
+| 4 | `start_return_request` | Start a return process for an eligible order | W |
+| 5 | `cancel_marketplace_order` ⚠️ | Cancel an eligible order after confirmation | W |
+| 6 | `report_marketplace_issue` | Report an order, product or service problem | W |
+
+## Wave MVA-1 build slice (35 live in this PR)
+
+- **A17 (5/5)** — guide state persisted per-user in `memory_items`
+  (`content_json.type = 'marketplace_guide_state'`); picks grounded in
+  `runPropose()` + `services_catalog`; completion routes through the
+  two-step confirm + universal-cart staging path.
+- **A18 (6/8)** — `capture_shopping_goal`, `clarify_shopping_need`,
+  `classify_marketplace_intent`, `save/get/reset_marketplace_preferences`
+  (`memory_facts` `marketplace_pref_*` keys via `write_fact`).
+- **A19 (2/5)** — `get_marketplace_context`,
+  `dismiss_marketplace_recommendation` (`user_offers_memory.state='dismissed'`).
+- **A20 (5/8)** — unified/need/values/alternatives search over `products` +
+  `services_catalog` (same query family as A1).
+- **A21 (3/7)** — `generate_top_marketplace_picks` (propose-only `runPropose`
+  wrapper), `recommend_marketplace_path`, `recommend_lower_cost_option`.
+- **A22 (3/6)** — `explain_why_recommended`, `summarize_product_for_user`,
+  `get_key_product_facts`.
+- **A23 (4/7)** — compare + shortlist trio (`shop_saved_products`).
+- **A27 (2/6)** — `check_product_suitability`, `check_cart_duplication`.
+- **A28 (1/4)** — `review_shopping_budget` (`user_limitations` cap +
+  monthly spend).
+- **A29 (4/6)** — `confirm_marketplace_selection`,
+  `add_selected_option_to_cart`, `review_cart_suitability`,
+  `explain_cart_item`.
+
+The remaining 54 tools stay `planned` until their backends exist
+(diagnostic-test catalog with biomarker data, practitioner
+booking/availability, bundles, returns/refunds, geo search).

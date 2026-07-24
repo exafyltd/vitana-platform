@@ -11,9 +11,11 @@
     "test:headed": "npx playwright test --headed",
     "report": "npx playwright show-report",
     "sim:doctor": "node mobile-sim/doctor.mjs",
+    "sim:doctor:android": "node mobile-sim/android/doctor.mjs",
     "test:device": "node mobile-sim/run.mjs",
     "test:device:ios": "node mobile-sim/run.mjs --platform ios",
-    "test:device:android": "node mobile-sim/run.mjs --platform android"
+    "test:device:android": "node mobile-sim/android/run.mjs",
+    "test:device:android:sim-use": "node mobile-sim/run.mjs --platform android"
   },
   "devDependencies": {
     "@playwright/test": "^1.52.0",

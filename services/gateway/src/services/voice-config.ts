@@ -25,7 +25,10 @@
 
 import { getSupabase } from '../lib/supabase';
 
-export type V2VProvider = 'vertex' | 'livekit';
+// BOOTSTRAP-NOVA-SONIC-VOICE: `nova_sonic` joins the V2V provider set. The
+// DB default stays `vertex`; a global nova_sonic flip is additionally gated
+// behind NOVA_SONIC_ALLOW_GLOBAL_FLIP + runtime readiness in orb-livekit.ts.
+export type V2VProvider = 'vertex' | 'livekit' | 'nova_sonic';
 
 export interface VoiceConfig {
   active_provider: V2VProvider;
@@ -115,7 +118,8 @@ async function readRows(): Promise<Record<string, unknown>> {
 
 function buildConfig(rows: Record<string, unknown>): VoiceConfig {
   const v2vRaw = rows[KEYS.v2v];
-  const v2v: V2VProvider = v2vRaw === 'livekit' ? 'livekit' : 'vertex';
+  const v2v: V2VProvider =
+    v2vRaw === 'livekit' ? 'livekit' : v2vRaw === 'nova_sonic' ? 'nova_sonic' : 'vertex';
 
   const cfg: VoiceConfig = {
     active_provider: v2v,

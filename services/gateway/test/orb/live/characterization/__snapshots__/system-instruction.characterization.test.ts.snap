@@ -2916,7 +2916,208 @@ Your achieved milestones.
 Spoken summary of a community member's public profile.
 
 ### update_service_offerings
-Replace the service offerings shown on your profile. TWO-STEP confirm."
+Replace the service offerings shown on your profile. TWO-STEP confirm.
+
+### start_marketplace_discover_assistant
+Start a guided marketplace conversation for a product, service,
+practitioner or diagnostic need. CALL WHEN the user asks for shopping
+guidance rather than a specific item: "I want a full shopping guide",
+"help me find something for my energy", "ich brauche eine Einkaufsberatung".
+Then follow the returned next step. Never read long specifications aloud.
+
+### build_personalized_shopping_guide
+Build a concise personalized recommendation set (max 3 options with
+short rationales) for the recorded shopping goal, across products and
+services. Nothing is added to the cart. CALL WHEN the goal (and the most
+important criteria) are known. Present each option in ONE sentence.
+
+### refine_marketplace_recommendations
+Update the current recommendations from conversational feedback.
+CALL WHEN the user reacts to picks: "cheaper", "nothing with pills",
+"I prefer something for home", "etwas Günstigeres bitte".
+
+### explain_marketplace_recommendation
+Explain one current pick: what it is, why it was chosen for this user,
+practical use, and relevant limitations. CALL WHEN the user asks "why
+this one?", "tell me more about the second option", "warum empfiehlst du
+mir das?". Answer concisely — what/why/limits, never the full spec.
+
+### complete_marketplace_selection
+Confirm the chosen option and stage it into the basket (NEVER charges;
+payment stays on screen). ALWAYS call once WITHOUT confirm first — it
+returns a read-back of name and price; after the user says yes, call
+again with confirm:true. CALL WHEN the user picks an option: "take the
+second one", "add it to my basket", "nimm das erste".
+
+### capture_shopping_goal
+Record what the user wants to achieve, solve, explore or purchase.
+CALL WHEN the user states a shopping goal in a guided conversation:
+"I want to improve my sleep", "ich will meine Energie verbessern".
+
+### clarify_shopping_need
+Get the smallest set of still-missing criteria (budget, format,
+exclusions, urgency) for the recorded goal so you ask only the most
+important follow-up question. CALL BEFORE building the guide when the
+request was vague. Ask ONE question at a time, never a questionnaire.
+
+### classify_marketplace_intent
+Determine whether a need maps to a product, service, diagnostic test,
+practitioner or combination, with the suggested next tool. CALL WHEN
+unsure which direction a marketplace request should take.
+
+### save_marketplace_preferences
+Save reusable shopping preferences the user explicitly stated: budget,
+dietary needs, values, exclusions, excluded brands/categories, preferred
+format. CALL ONLY after the user stated the preference or agreed to save
+it: "remember that I'm vegan", "merk dir, dass ich keine Kapseln will".
+
+### get_marketplace_preferences
+Read the user's saved marketplace preferences. CALL WHEN the user asks
+"what do you know about my shopping preferences?" or before explaining
+why a recommendation was personalized.
+
+### reset_marketplace_preferences
+Clear all saved marketplace preferences. ALWAYS call once WITHOUT
+confirm first — it reads back what would be cleared; after the user says
+yes, call again with confirm:true. CALL WHEN the user asks to forget or
+reset their shopping preferences.
+
+### get_marketplace_context
+Get the minimum relevant context for a shopping request: saved
+preferences, shopping budget and spend, recent orders, active goal.
+CALL at the start of a guided shopping conversation, or when the user
+asks "why are you recommending this to me?" — then answer citing their
+stated preferences in plain language, never an algorithm score.
+
+### dismiss_marketplace_recommendation
+Dismiss a recommended product so it is not proposed again. CALL WHEN
+the user rejects a recommendation: "not that one", "don't show me this
+again", "das interessiert mich nicht".
+
+### discover_marketplace_options
+Unified marketplace search across products AND services for one stated
+need. CALL WHEN the user describes a need without saying whether they
+want a product or a service: "something for my back pain", "etwas für
+besseren Schlaf". Mention at most 3 options, one sentence each.
+
+### search_products_by_need
+Search products by PURPOSE rather than product name, filtered against
+saved preferences (exclusions, budget). CALL WHEN the user describes
+what they want to achieve: "something that helps me focus", "etwas
+gegen Müdigkeit".
+
+### search_services_by_need
+Search marketplace services (wellness, nutrition, therapy, labs) by the
+desired outcome. CALL WHEN the user wants help through a service rather
+than a product: "a sleep consultation", "eine Ernährungsberatung".
+
+### search_marketplace_by_values
+Filter products by declared dietary tags and certifications (vegan,
+gluten-free, organic, …). CALL WHEN values/dietary constraints are the
+point of the request: "only vegan options", "nur vegane Produkte".
+Only DECLARED product data counts — say so if nothing declares the tag.
+
+### search_marketplace_alternatives
+Find alternatives to a product the user dislikes or cannot use, in the
+same category. CALL WHEN the user says "what else is there like this",
+"not this brand", "gibt es Alternativen dazu?".
+
+### generate_top_marketplace_picks
+Return up to 3 best-fit product picks with short rationales — WITHOUT
+adding anything to the cart (unlike get_ai_product_picks, which stages
+the cart). CALL WHEN the user wants recommendations to hear first:
+"what would you recommend for ...", "was würdest du mir empfehlen?".
+
+### recommend_marketplace_path
+Recommend whether to start with a product, a service/assessment, a
+practitioner, or a combination for the stated goal. CALL WHEN the user
+is unsure what kind of help they need: "I don't know whether I need
+supplements or a blood test", "ich weiß nicht, was ich brauche".
+
+### recommend_lower_cost_option
+Find a suitable cheaper alternative to a current pick or named product.
+CALL WHEN the user says "too expensive", "something cheaper", "zu teuer,
+gibt es was Günstigeres?". Mention the saving and any trade-off.
+
+### explain_why_recommended
+Explain why an option was recommended, from the RECORDED rationale.
+CALL WHEN the user asks "why are you recommending this?", "warum
+empfiehlst du mir das?". Cite stated preferences and the recorded
+reason in plain language — never an algorithm score. If there is no
+recorded reason, say so honestly.
+
+### summarize_product_for_user
+Personalized SHORT product summary: what it is, what it is for, why it
+may fit this user, one relevant limitation. CALL instead of reading a
+product description aloud. 2–3 spoken sentences maximum.
+
+### get_key_product_facts
+Only the most important product facts: price, dosage/serving, declared
+allergens, safety notes, availability. CALL WHEN the user asks a
+factual detail: "how many servings?", "what's the dosage?", "welche
+Allergene enthält es?". Read only what was asked.
+
+### compare_marketplace_options
+Compare up to 3 options on price, rating, availability, dietary fit —
+speaking only the differences that matter to this user. CALL WHEN the
+user asks to compare: "compare the first two", "was ist der
+Unterschied?". Defaults to the current picks.
+
+### shortlist_marketplace_options
+Save one product (or all current picks) to the user's shortlist for
+later. CALL WHEN the user says "save that one", "put it on my list",
+"merk dir das". Products only — services cannot be shortlisted yet.
+
+### view_marketplace_shortlist
+Read the user's saved shortlist. CALL WHEN the user asks "what's on my
+shortlist?", "zeig mir meine Merkliste".
+
+### remove_from_marketplace_shortlist
+Remove one product from the shortlist. CALL WHEN the user says "remove
+... from my list", "nimm das von meiner Merkliste".
+
+### check_product_suitability
+Check one product against the user's saved preferences (dietary,
+exclusions, brands, budget) using only DECLARED product data. CALL WHEN
+the user asks "is this suitable for me?", "ist das für mich geeignet?".
+Report what could NOT be verified instead of guessing. Never a medical
+judgement.
+
+### check_cart_duplication
+Detect repeated or overlapping products in the basket. CALL before
+checkout or WHEN the user asks "is anything doubled in my basket?",
+"habe ich etwas doppelt im Warenkorb?".
+
+### review_shopping_budget
+Read the monthly shopping budget, spend so far, remaining headroom, and
+whether the current basket would exceed it. CALL WHEN the user asks
+about their budget or before an expensive addition: "how is my shopping
+budget?", "wie steht mein Einkaufsbudget?".
+
+### confirm_marketplace_selection
+Read back the exact selected option (name, price, availability) and ask
+for explicit confirmation BEFORE any cart action. CALL WHEN the user
+picks an option in conversation. On the user's yes, follow with
+add_selected_option_to_cart confirm:true. Never skip this read-back.
+
+### add_selected_option_to_cart
+Stage the confirmed selection into the universal basket. NEVER charges —
+payment is a screen handoff. ALWAYS run the confirm_marketplace_selection
+read-back (or call once without confirm) first; pass confirm:true only
+after the user said yes. CALL WHEN the user confirms adding the chosen
+item: "yes, add it", "ja, in den Warenkorb".
+
+### review_cart_suitability
+Check the whole basket for duplicates, conflicts with saved preferences,
+declared allergens and availability problems before checkout. CALL WHEN
+the user says "check my basket", "is everything in my cart okay?",
+"prüf meinen Warenkorb".
+
+### explain_cart_item
+Explain why a specific basket item is there (added by the user, the
+shopping agent, a reorder — with the recorded rationale). CALL WHEN the
+user asks "why is this in my basket?", "warum ist das in meinem
+Warenkorb?"."
 `;
 
 exports[`A0.1 characterization: buildLiveSystemInstruction renders a stable system instruction for persona "day-180-veteran-reconnect": persona:day-180-veteran-reconnect 1`] = `
@@ -5577,5 +5778,206 @@ Your achieved milestones.
 Spoken summary of a community member's public profile.
 
 ### update_service_offerings
-Replace the service offerings shown on your profile. TWO-STEP confirm."
+Replace the service offerings shown on your profile. TWO-STEP confirm.
+
+### start_marketplace_discover_assistant
+Start a guided marketplace conversation for a product, service,
+practitioner or diagnostic need. CALL WHEN the user asks for shopping
+guidance rather than a specific item: "I want a full shopping guide",
+"help me find something for my energy", "ich brauche eine Einkaufsberatung".
+Then follow the returned next step. Never read long specifications aloud.
+
+### build_personalized_shopping_guide
+Build a concise personalized recommendation set (max 3 options with
+short rationales) for the recorded shopping goal, across products and
+services. Nothing is added to the cart. CALL WHEN the goal (and the most
+important criteria) are known. Present each option in ONE sentence.
+
+### refine_marketplace_recommendations
+Update the current recommendations from conversational feedback.
+CALL WHEN the user reacts to picks: "cheaper", "nothing with pills",
+"I prefer something for home", "etwas Günstigeres bitte".
+
+### explain_marketplace_recommendation
+Explain one current pick: what it is, why it was chosen for this user,
+practical use, and relevant limitations. CALL WHEN the user asks "why
+this one?", "tell me more about the second option", "warum empfiehlst du
+mir das?". Answer concisely — what/why/limits, never the full spec.
+
+### complete_marketplace_selection
+Confirm the chosen option and stage it into the basket (NEVER charges;
+payment stays on screen). ALWAYS call once WITHOUT confirm first — it
+returns a read-back of name and price; after the user says yes, call
+again with confirm:true. CALL WHEN the user picks an option: "take the
+second one", "add it to my basket", "nimm das erste".
+
+### capture_shopping_goal
+Record what the user wants to achieve, solve, explore or purchase.
+CALL WHEN the user states a shopping goal in a guided conversation:
+"I want to improve my sleep", "ich will meine Energie verbessern".
+
+### clarify_shopping_need
+Get the smallest set of still-missing criteria (budget, format,
+exclusions, urgency) for the recorded goal so you ask only the most
+important follow-up question. CALL BEFORE building the guide when the
+request was vague. Ask ONE question at a time, never a questionnaire.
+
+### classify_marketplace_intent
+Determine whether a need maps to a product, service, diagnostic test,
+practitioner or combination, with the suggested next tool. CALL WHEN
+unsure which direction a marketplace request should take.
+
+### save_marketplace_preferences
+Save reusable shopping preferences the user explicitly stated: budget,
+dietary needs, values, exclusions, excluded brands/categories, preferred
+format. CALL ONLY after the user stated the preference or agreed to save
+it: "remember that I'm vegan", "merk dir, dass ich keine Kapseln will".
+
+### get_marketplace_preferences
+Read the user's saved marketplace preferences. CALL WHEN the user asks
+"what do you know about my shopping preferences?" or before explaining
+why a recommendation was personalized.
+
+### reset_marketplace_preferences
+Clear all saved marketplace preferences. ALWAYS call once WITHOUT
+confirm first — it reads back what would be cleared; after the user says
+yes, call again with confirm:true. CALL WHEN the user asks to forget or
+reset their shopping preferences.
+
+### get_marketplace_context
+Get the minimum relevant context for a shopping request: saved
+preferences, shopping budget and spend, recent orders, active goal.
+CALL at the start of a guided shopping conversation, or when the user
+asks "why are you recommending this to me?" — then answer citing their
+stated preferences in plain language, never an algorithm score.
+
+### dismiss_marketplace_recommendation
+Dismiss a recommended product so it is not proposed again. CALL WHEN
+the user rejects a recommendation: "not that one", "don't show me this
+again", "das interessiert mich nicht".
+
+### discover_marketplace_options
+Unified marketplace search across products AND services for one stated
+need. CALL WHEN the user describes a need without saying whether they
+want a product or a service: "something for my back pain", "etwas für
+besseren Schlaf". Mention at most 3 options, one sentence each.
+
+### search_products_by_need
+Search products by PURPOSE rather than product name, filtered against
+saved preferences (exclusions, budget). CALL WHEN the user describes
+what they want to achieve: "something that helps me focus", "etwas
+gegen Müdigkeit".
+
+### search_services_by_need
+Search marketplace services (wellness, nutrition, therapy, labs) by the
+desired outcome. CALL WHEN the user wants help through a service rather
+than a product: "a sleep consultation", "eine Ernährungsberatung".
+
+### search_marketplace_by_values
+Filter products by declared dietary tags and certifications (vegan,
+gluten-free, organic, …). CALL WHEN values/dietary constraints are the
+point of the request: "only vegan options", "nur vegane Produkte".
+Only DECLARED product data counts — say so if nothing declares the tag.
+
+### search_marketplace_alternatives
+Find alternatives to a product the user dislikes or cannot use, in the
+same category. CALL WHEN the user says "what else is there like this",
+"not this brand", "gibt es Alternativen dazu?".
+
+### generate_top_marketplace_picks
+Return up to 3 best-fit product picks with short rationales — WITHOUT
+adding anything to the cart (unlike get_ai_product_picks, which stages
+the cart). CALL WHEN the user wants recommendations to hear first:
+"what would you recommend for ...", "was würdest du mir empfehlen?".
+
+### recommend_marketplace_path
+Recommend whether to start with a product, a service/assessment, a
+practitioner, or a combination for the stated goal. CALL WHEN the user
+is unsure what kind of help they need: "I don't know whether I need
+supplements or a blood test", "ich weiß nicht, was ich brauche".
+
+### recommend_lower_cost_option
+Find a suitable cheaper alternative to a current pick or named product.
+CALL WHEN the user says "too expensive", "something cheaper", "zu teuer,
+gibt es was Günstigeres?". Mention the saving and any trade-off.
+
+### explain_why_recommended
+Explain why an option was recommended, from the RECORDED rationale.
+CALL WHEN the user asks "why are you recommending this?", "warum
+empfiehlst du mir das?". Cite stated preferences and the recorded
+reason in plain language — never an algorithm score. If there is no
+recorded reason, say so honestly.
+
+### summarize_product_for_user
+Personalized SHORT product summary: what it is, what it is for, why it
+may fit this user, one relevant limitation. CALL instead of reading a
+product description aloud. 2–3 spoken sentences maximum.
+
+### get_key_product_facts
+Only the most important product facts: price, dosage/serving, declared
+allergens, safety notes, availability. CALL WHEN the user asks a
+factual detail: "how many servings?", "what's the dosage?", "welche
+Allergene enthält es?". Read only what was asked.
+
+### compare_marketplace_options
+Compare up to 3 options on price, rating, availability, dietary fit —
+speaking only the differences that matter to this user. CALL WHEN the
+user asks to compare: "compare the first two", "was ist der
+Unterschied?". Defaults to the current picks.
+
+### shortlist_marketplace_options
+Save one product (or all current picks) to the user's shortlist for
+later. CALL WHEN the user says "save that one", "put it on my list",
+"merk dir das". Products only — services cannot be shortlisted yet.
+
+### view_marketplace_shortlist
+Read the user's saved shortlist. CALL WHEN the user asks "what's on my
+shortlist?", "zeig mir meine Merkliste".
+
+### remove_from_marketplace_shortlist
+Remove one product from the shortlist. CALL WHEN the user says "remove
+... from my list", "nimm das von meiner Merkliste".
+
+### check_product_suitability
+Check one product against the user's saved preferences (dietary,
+exclusions, brands, budget) using only DECLARED product data. CALL WHEN
+the user asks "is this suitable for me?", "ist das für mich geeignet?".
+Report what could NOT be verified instead of guessing. Never a medical
+judgement.
+
+### check_cart_duplication
+Detect repeated or overlapping products in the basket. CALL before
+checkout or WHEN the user asks "is anything doubled in my basket?",
+"habe ich etwas doppelt im Warenkorb?".
+
+### review_shopping_budget
+Read the monthly shopping budget, spend so far, remaining headroom, and
+whether the current basket would exceed it. CALL WHEN the user asks
+about their budget or before an expensive addition: "how is my shopping
+budget?", "wie steht mein Einkaufsbudget?".
+
+### confirm_marketplace_selection
+Read back the exact selected option (name, price, availability) and ask
+for explicit confirmation BEFORE any cart action. CALL WHEN the user
+picks an option in conversation. On the user's yes, follow with
+add_selected_option_to_cart confirm:true. Never skip this read-back.
+
+### add_selected_option_to_cart
+Stage the confirmed selection into the universal basket. NEVER charges —
+payment is a screen handoff. ALWAYS run the confirm_marketplace_selection
+read-back (or call once without confirm) first; pass confirm:true only
+after the user said yes. CALL WHEN the user confirms adding the chosen
+item: "yes, add it", "ja, in den Warenkorb".
+
+### review_cart_suitability
+Check the whole basket for duplicates, conflicts with saved preferences,
+declared allergens and availability problems before checkout. CALL WHEN
+the user says "check my basket", "is everything in my cart okay?",
+"prüf meinen Warenkorb".
+
+### explain_cart_item
+Explain why a specific basket item is there (added by the user, the
+shopping agent, a reorder — with the recorded rationale). CALL WHEN the
+user asks "why is this in my basket?", "warum ist das in meinem
+Warenkorb?"."
 `;

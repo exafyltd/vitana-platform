@@ -35,6 +35,7 @@
 
 import { getActivePolicy } from './llm-routing-policy-service';
 import { startLLMCall, completeLLMCall, failLLMCall } from './llm-telemetry-service';
+import { invokeBedrock } from '../providers/bedrock';
 import {
   LLM_SAFE_DEFAULTS,
   type LLMRoutingPolicy,
@@ -677,12 +678,47 @@ const claudeSubscriptionAdapter: ProviderAdapter = {
   },
 };
 
+/**
+ * Anthropic Claude via Amazon Bedrock — dormant until BEDROCK_ROLE_ARN is
+ * set on a real deployment (VTID-03403; AWS IAM/model-access provisioning
+ * requires AWS console/CLI access outside this codebase). Vision and tool
+ * calling are not yet supported — see `call()` below.
+ */
+const bedrockAdapter: ProviderAdapter = {
+  isAvailable: () => Boolean(process.env.BEDROCK_ROLE_ARN),
+  async call({ prompt, model, systemPrompt, maxTokens, image, images, tools }): Promise<AdapterResult> {
+    if ((images && images.length > 0) || image || (tools && tools.length > 0)) {
+      return { ok: false, error: 'Bedrock adapter does not support images/tools yet (VTID-03403)' };
+    }
+
+    const result = await invokeBedrock({
+      model,
+      messages: [{ role: 'user', content: prompt }],
+      system: systemPrompt,
+      max_tokens: maxTokens,
+    });
+
+    if (!result.ok) {
+      return { ok: false, error: `Bedrock ${result.error}: ${result.message}` };
+    }
+    return {
+      ok: true,
+      text: result.text,
+      usage: {
+        inputTokens: result.usage?.input_tokens ?? 0,
+        outputTokens: result.usage?.output_tokens ?? 0,
+      },
+    };
+  },
+};
+
 const ADAPTERS: Record<LLMProvider, ProviderAdapter> = {
   anthropic: anthropicAdapter,
   openai: openaiAdapter,
   vertex: vertexAdapter,
   deepseek: deepseekAdapter,
   claude_subscription: claudeSubscriptionAdapter,
+  bedrock: bedrockAdapter,
 };
 
 // =============================================================================

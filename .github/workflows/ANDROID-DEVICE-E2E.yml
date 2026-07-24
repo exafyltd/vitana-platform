@@ -1,0 +1,97 @@
+# ANDROID-DEVICE-E2E — real-device-layer frontend testing on Android, no macOS
+#
+# Unlike MOBILE-DEVICE-E2E.yml (iOS via sim-use, which is a macOS-only Swift
+# binary regardless of which platform it drives), this workflow needs no Mac
+# anywhere: it boots a KVM-backed Android emulator directly on a standard
+# ubuntu-latest runner and drives it with `adb` + `uiautomator` — both plain
+# parts of the Android platform, cross-platform by design. See
+# e2e/mobile-sim/android/ for the driver.
+#
+# Opens the Vitana web app in Chrome on the emulator, logs in through the
+# real form, taps every bottom-nav tab, and captures a screenshot + element
+# dump of every screen state, plus a native `adb shell screenrecord` video.
+#
+# Dispatch-only: the run hits a deployed environment and authenticates as
+# the shared e2e test user.
+name: ANDROID-DEVICE-E2E
+
+on:
+  workflow_dispatch:
+    inputs:
+      url:
+        description: 'Frontend URL to test (use /maxina — the bare domain is the portal-selector, not the app)'
+        required: false
+        default: 'https://preview.vitanaland.com/maxina'
+      flow:
+        description: 'Flow to run'
+        type: choice
+        options: [smoke, observe]
+        default: smoke
+      api-level:
+        description: 'Android API level'
+        required: false
+        default: '33'
+
+jobs:
+  android-emulator:
+    name: Android Emulator (API ${{ inputs.api-level }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Enable KVM (required for the emulator to run at native speed)
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: AVD cache
+        uses: actions/cache@v4
+        id: avd-cache
+        with:
+          path: |
+            ~/.android/avd/*
+            ~/.android/adb*
+          key: avd-${{ inputs.api-level }}-google_apis
+
+      - name: Create AVD snapshot (cache miss only)
+        if: steps.avd-cache.outputs.cache-hit != 'true'
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ inputs.api-level }}
+          target: google_apis
+          arch: x86_64
+          force-avd-creation: false
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-animations: true
+          script: echo "AVD created and snapshotted for reuse."
+
+      - name: Boot emulator and run device flow
+        uses: reactivecircus/android-emulator-runner@v2
+        env:
+          TEST_USER_EMAIL: e2e-test@vitana.dev
+          TEST_USER_PASSWORD: ${{ secrets.TEST_USER_PASSWORD }}
+        with:
+          api-level: ${{ inputs.api-level }}
+          target: google_apis
+          arch: x86_64
+          force-avd-creation: false
+          emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-animations: true
+          script: |
+            cd e2e
+            npm run sim:doctor:android
+            node mobile-sim/android/run.mjs \
+              --url "${{ inputs.url }}" \
+              --flow "${{ inputs.flow }}" \
+              --out mobile-sim/artifacts/run
+
+      - name: Upload artifacts (screenshots + element dumps + summary + video)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-device-e2e
+          path: e2e/mobile-sim/artifacts/
+          if-no-files-found: warn
+          retention-days: 14
