@@ -43,12 +43,12 @@ CLI + Cloudflare DNS audit performed under this VTID.
 | gateway | AWS-DR built (VTID-03398), autoscaled, alarmed, dual-publish wired. Healthy. |
 | community-app | AWS-DR built (VTID-03409). **Bakes the GCP `gateway.vitanaland.com` URL into its static Vite bundle at build time, by design** — it was built as a same-backend hot-standby, not a fully independent stack. Will break if GCP disappears without either repointing `gateway.vitanaland.com` to AWS or rebuilding against `dr-gateway.vitanaland.com`. See open decision §4.1. |
 | oasis-operator | AWS-DR built (VTID-03410) from a 9-month-old dead backup (`main.py.backup-20251101-111126`) with zero prior AWS production traffic history. No burn-in yet. |
-| oasis-projector / worker-runner / verification-engine | Bug-fixed + ECS health-checked + alarmed (VTID-03411). Deliberately **not** autoscaled or made public — `oasis-projector`'s ledger writer has no cross-instance locking (CLAUDE.md: "Never run parallel VTID executions"); `worker-runner`'s N>1 safety is plausible but unreviewed. |
+| oasis-projector / worker-runner / verification-engine | Bug-fixed + ECS health-checked + alarmed (VTID-03411). Deliberately **not** autoscaled or made public — `oasis-projector`'s ledger writer has no cross-instance locking (CLAUDE.md: "Never run parallel VTID executions"). **`worker-runner` has since been reviewed (2026-07-24) and found CONDITIONALLY SAFE for N>1**: its claim mechanism is a genuine server-side compare-and-swap (`SELECT ... FOR UPDATE` + conditional `UPDATE` inside one Postgres transaction, `claim_vtid_task` RPC in `supabase/migrations/20260413000000_fix_claim_accepts_scheduled.sql`), not a client-side read-then-write race, and no other shared mutable state exists between instances. The one real N>1-specific risk: an idle sibling instance will legitimately re-claim a VTID whose 60-minute claim lease expired due to sustained heartbeat failure on the active instance, causing double execution — condition for safety is that heartbeats reliably survive transient network hiccups; recommend alerting on sustained heartbeat failure before actually enabling autoscaling. Autoscaling itself has **not** been enabled — this is a documentation finding only, pending a decision on whether to act on it. |
 | orb-agent | **No AWS deploy path at all.** Named directly in CLAUDE.md §16 IF-THEN rule 24 alongside worker-runner as something needing prod updates. |
 | autopilot job (Cloud Run Job) | **No AWS deploy path at all.** |
 | Database sync | RDS Aurora `vitana-aurora-prod` via DMS task `vitana-supabase-to-aurora` (full-load-and-cdc): 494/495 tables under live CDC from the same Supabase project GCP prod uses. **One table, `autopilot_recommendations`, has its own dedicated CDC task (`vitana-autopilot-cdc`) which was in `FATAL_ERROR` for ~26h as of this audit** — see §5, tracked/being fixed under this same session outside this VTID's scope. |
 | Secrets | `vitana/supabase/prod/*` (4 secrets) current as of 2026-07-14/21; RDS-managed master credential rotates automatically. |
-| Alarms | 39 `vitana-*` CloudWatch alarms, all `OK`. **Gap:** no dedicated alarm set yet for `community-app-awsdr` or `oasis-operator-awsdr` (only gateway has the full 4-alarm set). |
+| Alarms | 47 `vitana-*` CloudWatch alarms, all `OK`/`INSUFFICIENT_DATA`. `community-app-awsdr` and `oasis-operator-awsdr` now have the same 4-alarm set (cpu-high, memory-high, target-5xx, unhealthy-hosts) gateway-awsdr already had — closed 2026-07-24. A `vitana-dms-task-failure` EventBridge rule (source `aws.dms` → SNS topic `vitana-alarms-prod`) was also added the same day so a future DMS task failure isn't silent for 26+ hours again like `vitana-autopilot-cdc` was. **New gap found while wiring this up: the `vitana-alarms-prod` SNS topic has zero subscribers** — no email, Slack, or PagerDuty endpoint is attached, so none of the 47 alarms or the new DMS rule currently notify anyone. All of this alerting infrastructure is presently inert until a real subscriber is added; this needs a decision on where alerts should actually go. |
 | ALB naming | `vitana-tg-gateway-prod` / `vitana-tg-community-prod` are pre-existing naming leftovers that **actually serve AWS staging traffic**, not prod — confirmed live via `/api/v1/admin/health` returning `env:"staging"` through those target groups. A real cutover must not confuse these with the `-awsdr` target groups. |
 | Legacy/mystery services | ~22 of the 29 (now 31) ECS services in `Vitana-ECS-Cluster` from the 2026-07-09 bulk-provisioning event remain unexplained — flagged, not investigated. Out of scope for cutover unless one turns out to be load-bearing. |
 | Cutover/rollback docs | **Did not exist before this VTID.** No DNS-repoint runbook, no rollback/TTL plan, no GCP decommission checklist. |
@@ -70,9 +70,18 @@ objective — each item has a clear done/not-done state.
       `vitana-supabase-to-aurora`) both report `status=running` with no
       failed tasks, verified via `aws dms describe-replication-tasks`,
       not just "was fixed once."
-- [ ] **DMS alerting exists.** A CloudWatch alarm (or equivalent) fires
-      on any DMS task leaving `running` state — the ~26h silent gap this
-      audit found must not be repeatable.
+- [~] **DMS alerting exists.** *(Partially done 2026-07-24: EventBridge
+      rule `vitana-dms-task-failure` created, source `aws.dms` → SNS
+      topic `vitana-alarms-prod`. Still NOT actually alerting anyone —
+      that topic has zero subscribers. Not complete until a real
+      email/Slack/PagerDuty endpoint is subscribed.)* the ~26h silent
+      gap this audit found must not be repeatable.
+- [ ] **`vitana-alarms-prod` SNS topic has a real subscriber.** Found
+      2026-07-24 while wiring the DMS alerting rule: the topic all 47
+      CloudWatch alarms and the new EventBridge rule point at has zero
+      subscriptions. Every alarm in the account is currently silent
+      regardless of state. Needs an explicit decision on where alerts
+      should go (email/Slack/PagerDuty) — cannot be assumed or invented.
 - [ ] **Frontend gateway-URL decision made and implemented** (§4.1) —
       either `gateway.vitanaland.com` DNS is part of the cutover sequence
       itself, or `community-app-awsdr` has been rebuilt against
@@ -83,9 +92,10 @@ objective — each item has a clear done/not-done state.
 - [ ] **`community-app-awsdr` burn-in complete** — same 72h bar, verified
       via the AWS-PROD-DEPLOY-FRONTEND smoke checks passing on at least
       2 consecutive real deploys.
-- [ ] **CloudWatch alarms exist for `community-app-awsdr` and
-      `oasis-operator-awsdr`**, matching the pattern already in place for
-      `gateway-awsdr` (running-count, CPU, memory).
+- [x] **CloudWatch alarms exist for `community-app-awsdr` and
+      `oasis-operator-awsdr`** — done 2026-07-24, same 4-alarm pattern as
+      `gateway-awsdr` (cpu-high, memory-high, target-5xx, unhealthy-hosts).
+      *(Same SNS-subscriber caveat as the DMS alerting item above applies.)*
 - [ ] **ALB naming cleanup done or explicitly waived** — `vitana-tg-gateway-prod`
       / `vitana-tg-community-prod` renamed to reflect that they serve
       staging, or the cutover sequence explicitly calls out why the
@@ -94,9 +104,10 @@ objective — each item has a clear done/not-done state.
       either they get an AWS deploy path before cutover, or an explicit,
       documented decision that they stay GCP-only post-cutover (and what
       that means operationally).
-- [ ] **`worker-runner` N>1 safety reviewed** (or explicitly deferred) —
-      not a hard blocker for a single-instance cutover, but must be a
-      conscious decision, not silence.
+- [x] **`worker-runner` N>1 safety reviewed** — done 2026-07-24, verdict
+      CONDITIONALLY SAFE (see §1 table row for detail + code citations).
+      Autoscaling has **not** been enabled based on this finding — that
+      remains a separate decision, not automatically implied by "reviewed."
 - [ ] **Rollback plan rehearsed** — §3 below has been dry-run at least
       once (e.g., against a non-critical hostname) so the revert sequence
       isn't being executed for the first time under pressure.

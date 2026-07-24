@@ -450,3 +450,101 @@ aws cloudwatch put-metric-alarm --alarm-name <service>-running-count-low \
   --statistic Minimum --period 300 --evaluation-periods 2 --threshold 1 \
   --comparison-operator LessThanThreshold --treat-missing-data breaching --region eu-central-1
 ```
+
+## Addendum (2026-07-24): VTID-03412 cutover runbook + go/no-go checklist progress
+
+`docs/AWS-CUTOVER-RUNBOOK.md` was added under VTID-03412 (see that doc for
+the full go/no-go checklist, DNS repoint sequence, rollback plan, and open
+decisions). While the DMS write-permission grant was pending (blocked on
+`dms:StartReplicationTask` — the `claude-staging-validation` IAM user only
+has DMS read access), the following checklist items were closed out with
+permissions already available (`AmazonECS_FullAccess`,
+`ElasticLoadBalancingFullAccess`, plus incidental CloudWatch/EventBridge
+write access — see below):
+
+### CloudWatch alarms for `community-app-awsdr` / `oasis-operator-awsdr`
+
+Mirrored the existing `gateway-awsdr` 4-alarm set (cpu-high, memory-high,
+target-5xx, unhealthy-hosts) exactly — same thresholds (CPU/memory >90%
+for 3×5min periods, target 5xx >10 in 5×1min periods, any unhealthy host).
+8 new alarms total, all confirmed created via `describe-alarms`.
+
+```bash
+# cpu-high / memory-high (per service)
+aws cloudwatch put-metric-alarm --alarm-name vitana-<service>-cpu-high \
+  --namespace AWS/ECS --metric-name CPUUtilization --statistic Average \
+  --period 300 --evaluation-periods 3 --threshold 90 \
+  --comparison-operator GreaterThanThreshold --treat-missing-data notBreaching \
+  --dimensions Name=ClusterName,Value=Vitana-ECS-Cluster Name=ServiceName,Value=vitana-<service> \
+  --region eu-central-1
+# (memory-high identical, MetricName=MemoryUtilization)
+
+# target-5xx / unhealthy-hosts (per service, needs the service's target group ARN)
+aws cloudwatch put-metric-alarm --alarm-name vitana-<service>-target-5xx \
+  --namespace AWS/ApplicationELB --metric-name HTTPCode_Target_5XX_Count --statistic Sum \
+  --period 60 --evaluation-periods 5 --threshold 10 \
+  --comparison-operator GreaterThanThreshold --treat-missing-data notBreaching \
+  --dimensions Name=TargetGroup,Value=targetgroup/<tg-name>/<id> Name=LoadBalancer,Value=app/vitana-alb-prod/3d60b7c377e63d95 \
+  --region eu-central-1
+# (unhealthy-hosts identical, MetricName=UnHealthyHostCount, Statistic=Maximum, threshold=0)
+```
+
+### DMS failure alerting (`vitana-dms-task-failure` EventBridge rule)
+
+`dms:CreateEventSubscription` (the DMS-native notification mechanism) was
+tested and confirmed blocked by IAM — same wall as `StartReplicationTask`.
+`events:PutRule`/`events:PutTargets` were **not** blocked, so alerting was
+built via EventBridge instead: AWS DMS emits events to the default event
+bus under `source: "aws.dms"` without needing any DMS-side subscription
+API call. Rule pattern deliberately left broad (source-only, no
+`detail-type` filter) since the exact DMS EventBridge detail-type schema
+wasn't confirmed against a live event — better to over-notify than miss a
+future failure the way `vitana-autopilot-cdc`'s ~26h silent gap happened.
+
+```bash
+aws events put-rule --name vitana-dms-task-failure \
+  --event-pattern '{"source":["aws.dms"]}' --state ENABLED --region eu-central-1
+aws events put-targets --rule vitana-dms-task-failure \
+  --targets '[{"Id":"vitana-alarms-sns","Arn":"arn:aws:sns:eu-central-1:472838866351:vitana-alarms-prod"}]' \
+  --region eu-central-1
+```
+
+**Important caveat found while wiring this up, not yet resolved:** the
+`vitana-alarms-prod` SNS topic — the one target for all 47 CloudWatch
+alarms in the account plus this new rule — has **zero subscribers**
+(confirmed via `aws sns list-subscriptions-by-topic`). `sns:Subscribe`/
+`sns:AddPermission` are also blocked for this IAM user. Every alarm in
+the account is currently inert: they'll transition state correctly but
+nothing receives a notification. This needs an explicit decision from
+the user on where alerts should actually go (email/Slack/PagerDuty) —
+not something to invent or guess an endpoint for. Tracked as its own
+go/no-go checklist item in `docs/AWS-CUTOVER-RUNBOOK.md` §2.
+
+### `worker-runner` N>1 safety review
+
+Reviewed the actual claim mechanism end-to-end (not just the service's
+own code): `services/worker-runner/src/services/runner-service.ts`
+`doPoll()` never processes more than one VTID per instance; the claim
+itself goes through the gateway's `POST /api/v1/worker/orchestrator/
+tasks/:vtid/claim` → `claim_vtid_task` RPC (`supabase/migrations/
+20260413000000_fix_claim_accepts_scheduled.sql`), which does
+`SELECT ... FOR UPDATE` + a conditional `UPDATE`, all inside one Postgres
+transaction — a genuine server-side compare-and-swap, not a client-side
+read-then-write race. **Verdict: CONDITIONALLY SAFE for N>1.** The one
+real risk unique to N>1: an idle sibling instance will legitimately
+re-claim a VTID whose 60-minute claim lease expired because the active
+instance's heartbeats failed for that long, causing double execution —
+acceptable if heartbeats reliably survive transient network hiccups.
+
+**Autoscaling was NOT enabled based on this finding** — reviewing safety
+and acting on it are kept as separate decisions; enabling autoscaling
+changes live production behavior and wasn't asked for.
+
+### Still blocked, unchanged
+
+`vitana-autopilot-cdc`'s `FATAL_ERROR` state itself is untouched — root
+cause diagnosed (full load completed cleanly, 17/18 CDC updates applied,
+one record's UPDATE apply kept failing until the task exhausted 9 recovery
+attempts) but the actual fix (`dms:StartReplicationTask` with
+`resume-processing`, falling back to a clean restart if that hits the
+same record again) is still blocked on the same IAM grant.
