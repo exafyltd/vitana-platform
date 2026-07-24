@@ -161,8 +161,11 @@ export async function createDeposit(input: CreateDepositInput): Promise<CreateDe
           },
         ],
         customer_email: input.email ?? undefined,
-        success_url: `${baseUrl}/wallet/deposit/success?deposit_id=${depositId}`,
-        cancel_url: `${baseUrl}/wallet/deposit/canceled?deposit_id=${depositId}`,
+        // Land back on the existing /wallet screen (no dedicated success/cancel
+        // route exists in the SPA) with query params it reads on mount to poll
+        // the deposit to a terminal state and refresh the visible balance.
+        success_url: `${baseUrl}/wallet?depositId=${depositId}&depositResult=success`,
+        cancel_url: `${baseUrl}/wallet?depositId=${depositId}&depositResult=canceled`,
         expires_at: stripeExpiresAt,
         metadata: encodeCheckoutMetadata({
           schema_version: CHECKOUT_METADATA_SCHEMA_VERSION,
