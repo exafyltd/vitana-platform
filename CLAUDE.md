@@ -80,9 +80,13 @@ Claude must **never** do the following:
 ### Architecture & Logic
 
 1. **Never invent new projects, environments, or services.** (Exception:
-   the AWS parallel/DR environment for the `gateway` service, sanctioned
-   under **VTID-03398** — see §1b. GCP remains canonical production; AWS
-   is additive DR capacity for gateway only, not a new canonical target.)
+   the AWS parallel/DR environment, sanctioned under **VTID-03398,
+   VTID-03409, VTID-03410, VTID-03411, VTID-03414, VTID-03415** — see
+   §1b. GCP remains canonical production; AWS is additive DR capacity,
+   not a new canonical target, and not yet a sole-production cutover —
+   see `docs/AWS-CUTOVER-RUNBOOK.md` (VTID-03412) for what still gates
+   that. Extending AWS-DR to a service not already listed in §1b still
+   needs its own new VTID.)
 2. **Never bypass governance gates.**
 3. **Never execute without a VTID.**
 4. **Never deploy without OASIS approval.**
@@ -304,26 +308,46 @@ gcloud run deploy <service> \
 
 ---
 
-## 1b. AWS PRODUCTION (DR) — GATEWAY (VTID-03398)
+## 1b. AWS PRODUCTION (DR) (VTID-03398, VTID-03409, VTID-03410, VTID-03411, VTID-03414, VTID-03415)
 
 GCP (`lovable-vitana-vers1`) remains the **canonical** production for every
-service. AWS hosts a **parallel/DR production for the `gateway` service
-only** — additive capacity, not a migration, and not a general "use AWS
-too" precedent for other services. Do not extend this pattern to another
-service without its own VTID.
+service. AWS hosts **parallel/DR production infrastructure for 7 services**
+plus a RunTask job-dispatch path — additive capacity, not a migration, and
+not yet a sole-production cutover. Extending this pattern to a service not
+listed in the table below still needs its own new VTID.
+
+| Service | VTID | ECS resource / dispatch | Public URL / access | Deploy workflow |
+|---|---|---|---|---|
+| gateway | VTID-03398 | ECS service `vitana-gateway-awsdr`, task def family `vitana-gateway-awsdr`, target group `vitana-tg-gateway-awsdr` | `https://dr-gateway.vitanaland.com` (ALB host rule, priority 5) | `AWS-PROD-DEPLOY-GATEWAY.yml` |
+| community-app (frontend) | VTID-03409 | ECS service `vitana-community-app-awsdr`, target group `vitana-tg-community-awsdr` | `https://dr-app.vitanaland.com` (ALB host rule, priority 6); static SPA build bakes the **canonical GCP prod** gateway URL (`gateway.vitanaland.com`) into `.env.production` — no runtime env var to flip | `AWS-PROD-DEPLOY-FRONTEND.yml` (in `exafyltd/vitana-v1`) — still on static `AWS_STAGING_ACCESS_KEY_ID`/`SECRET` repo secrets, not yet OIDC (follow-up) |
+| oasis-operator | VTID-03410 | ECS service `vitana-oasis-operator-awsdr` (256 CPU/512MB, stateless, no DB dependency), target group `vitana-tg-oasis-op-awsdr` | `https://dr-oasis-operator.vitanaland.com` (ALB host rule, priority 7) | `AWS-PROD-DEPLOY-OASIS-OPERATOR.yml` — first CI/CD path this service has ever had; its source didn't exist in git and was restored from a stale `.backup` snapshot |
+| oasis-projector | VTID-03411 | ECS service `vitana-oasis-projector`, fixed `desiredCount` — **no autoscaling**, the Ledger Writer has no cross-instance locking | No public ALB/DNS — internal DB reconciliation loop; verify via ECS `healthStatus` (`/ready`) | `AWS-PROD-DEPLOY-OASIS-PROJECTOR.yml` |
+| worker-runner | VTID-03411 | ECS service `vitana-worker-runner`, fixed `desiredCount` | No public ALB/DNS — polls outward to gateway; verify via ECS `healthStatus` (`/alive`) | `AWS-PROD-DEPLOY-WORKER-RUNNER.yml` |
+| verification-engine | VTID-03411 | ECS service `vitana-vitana-verification-engine`, fixed `desiredCount` | No public ALB/DNS — self-registers heartbeat outward; verify via ECS `healthStatus` (`/health`) | `AWS-PROD-DEPLOY-VERIFICATION-ENGINE.yml` |
+| orb-agent | VTID-03414 | ECS service + task def family `vitana-orb-agent` — **pre-existing** from the unexplained 2026-07-09 bulk-provisioning event; this VTID added the missing deploy pipeline on top | No public ALB/DNS — outbound to LiveKit Cloud; verify via ECS `healthStatus` (`/alive`) | `AWS-PROD-DEPLOY-ORB-AGENT.yml` |
+| autopilot-executor | VTID-03415 | No ECS service — Cloud-Run-Job equivalent. Task def family `vitana-autopilot-executor`, dispatched per-execution via `ecs:RunTask` from `dispatchExecutorJobAws()` (`services/gateway/src/services/aws-ecs-admin.ts`), selected by `DEV_AUTOPILOT_JOB_CLOUD=aws\|gcp` env var (default `gcp`) | N/A — no long-running service to curl | `AWS-PROD-DEPLOY-AUTOPILOT-EXECUTOR.yml` — build+push+register only, no service to roll; the next RunTask dispatch picks up the new `:LATEST` revision automatically |
+
+Shared infra across all of the above:
 
 | Item | Value |
 |---|---|
 | AWS account / region | `472838866351` / `eu-central-1` |
 | ECS cluster | `Vitana-ECS-Cluster` (shared with AWS staging) |
-| ECS service (AWS-DR prod) | `vitana-gateway-awsdr` — **distinct from** `vitana-gateway` (AWS staging) |
-| Task definition family | `vitana-gateway-awsdr` |
-| Public URL | `https://dr-gateway.vitanaland.com` |
-| Target group | `vitana-tg-gateway-awsdr` (on the existing `vitana-alb-prod` ALB) |
 | Database | RDS Aurora PostgreSQL `vitana-aurora-prod` (writer/reader), same Supabase project as GCP prod (`inmkhvwdcuyhnxkgfvsb`) |
 | Redis | ElastiCache `vitana-redis-prod` |
-| Deploy workflow | `.github/workflows/AWS-PROD-DEPLOY-GATEWAY.yml` — **`workflow_dispatch`-only, required `reason`, never on push** |
-| Command Hub PUBLISH dual-publish | `AWS_DUAL_PUBLISH_ENABLED=true` (gateway env var, default off) makes the PUBLISH button best-effort dispatch `AWS-PROD-DEPLOY-GATEWAY.yml` alongside the GCP `EXEC-DEPLOY.yml` dispatch — see `services/gateway/src/routes/operator.ts` `POST /publish` step 7b |
+| ALB | `vitana-alb-prod` — all host-header rules sit **below** priority 10 (see hard rule below) |
+| Deploy auth | GitHub OIDC federation, `AWS_PROD_ROLE_ARN` (all except community-app's frontend workflow — see its row above) |
+| Deploy trigger | Every `AWS-PROD-DEPLOY-*.yml` is `workflow_dispatch`-only, required `reason`, never on push |
+| Command Hub PUBLISH dual-publish | `AWS_DUAL_PUBLISH_ENABLED=true` (gateway env var, default off) makes the PUBLISH button best-effort dispatch `AWS-PROD-DEPLOY-GATEWAY.yml` alongside the GCP `EXEC-DEPLOY.yml` dispatch — see `services/gateway/src/routes/operator.ts` `POST /publish` step 7b. Not yet extended to the other 7 deploy paths. |
+
+**Secrets intentionally deferred (2026-07-24):** `ANTHROPIC_API_KEY` and
+`OPENAI_API_KEY` are not populated in AWS Secrets Manager pending an AWS
+sponsorship decision for Anthropic — GitHub tokens, Supabase, and DB
+credentials are live. Task definitions that would reference these two
+secrets have them omitted rather than pointed at an empty value (an empty
+secret fails ECS provisioning with `ResourceInitializationError` before
+the container starts) — see `AWS-PROD-DEPLOY-AUTOPILOT-EXECUTOR.yml`'s
+header comment for the concrete example.
 
 **Full build record, exact commands, and pre-existing-state findings:**
 `docs/AWS-PRODUCTION-BUILD-LOG.md`.
@@ -359,13 +383,33 @@ future execution VTID must reference and satisfy before any
   host-header rules regardless of `Host`, and will silently route to
   staging otherwise (see the build log's "ALB listener-rule priority"
   section for how this bit the initial build).
-- **Never** extend AWS-DR to `oasis-operator`, `oasis-projector`,
-  `worker-runner`, `vitana-verification-engine`, or the frontend without
-  a new VTID — gateway-only is the deliberate first slice.
+- **Never** assume a service not listed in the §1b table has AWS-DR
+  infrastructure. As of VTID-03415, gateway, community-app,
+  oasis-operator, oasis-projector, worker-runner, verification-engine,
+  orb-agent, and the autopilot-executor RunTask path are all built out
+  (see the table). Extending to any other service — including the
+  ~17-22 unexplained "mystery services" from the 2026-07-09
+  bulk-provisioning event (see the build log's "Legacy/mystery
+  services" section) — still needs its own new VTID.
+- **Never** assume a running AWS resource is governed just because it
+  exists. `orb-agent`'s ECS service and task definition predated
+  VTID-03414 (part of the same unexplained 2026-07-09 bulk-provisioning
+  event) — VTID-03414 only added the missing `AWS-PROD-DEPLOY-*.yml`
+  deploy pipeline on top of what was already silently running. Check for
+  a matching deploy workflow before trusting that a live service reflects
+  `main`.
+- **Never** autoscale `oasis-projector`, `worker-runner`, or
+  `verification-engine` without a real concurrency-safety review first —
+  `oasis-projector`'s Ledger Writer has no cross-instance locking at all,
+  and CLAUDE.md's own "Never run parallel VTID executions" rule cuts
+  against guessing `worker-runner` is safe at N>1. Fixed `desiredCount`
+  and no public ALB/DNS for all three is deliberate, not an oversight.
 - GitHub OIDC federation (no static AWS keys) is required for the prod
   deploy role, mirroring `scripts/aws/README.md`'s pattern — **never**
   add a static-key IAM user for AWS-DR prod deploys the way AWS staging
   did (`claude-staging-validation`; a known shortcut, not to be repeated).
+  The community-app frontend workflow (VTID-03409) is a documented,
+  temporary exception — see its §1b table row.
 
 ---
 
@@ -1143,9 +1187,14 @@ Use these PATs with the GitHub REST API (`api.github.com`) for all PR and deploy
 
 | Date | Change | VTID |
 |------|--------|------|
+| 2026-07-24 | Built the AWS-DR RunTask dispatch path for the autopilot executor — new `dispatchExecutorJobAws()` in `services/gateway/src/services/aws-ecs-admin.ts` (mirrors `dispatchExecutorJob()`'s return shape via `ecs:RunTask` against task def family `vitana-autopilot-executor`), branched in `dev-autopilot-execute.ts` on a new `DEV_AUTOPILOT_JOB_CLOUD=aws\|gcp` env var (default `gcp`). New `AWS-PROD-DEPLOY-AUTOPILOT-EXECUTOR.yml` (build+push+register only — no ECS service to roll, next RunTask dispatch picks up `:LATEST`). `ANTHROPIC_API_KEY`/`OPENAI_API_KEY` deliberately omitted from the live task definition (deferred pending AWS/Anthropic sponsorship decision). Updated §1b table + Never-rule exception. | VTID-03415 |
+| 2026-07-24 | Added the missing AWS deploy pipeline for `orb-agent` (`AWS-PROD-DEPLOY-ORB-AGENT.yml`) — the ECS service and task def family (`vitana-orb-agent`) already existed from the unexplained 2026-07-09 bulk-provisioning event, but had no CI/CD, so it could silently drift from `main`. No public ALB/DNS (outbound-only to LiveKit Cloud) — verified via ECS-level container `healthCheck` + `aws ecs wait services-stable`. Updated §1b table. | VTID-03414 |
 | 2026-07-23 | Added `docs/AWS-CUTOVER-RUNBOOK.md` — the previously-missing GCP→AWS full production cutover runbook: go/no-go checklist, DNS repoint sequence, rollback/TTL plan, GCP decommission checklist (later phase), and the two open decisions (frontend gateway-URL strategy, orb-agent/autopilot-job AWS parity) that need explicit user sign-off. Documentation/governance only — does not authorize or execute any cutover; a separate execution VTID gated on this runbook's checklist is still required. Added §1b pointer. | VTID-03412 |
+| 2026-07-23 | Hardened the 3 already-fixed AWS-DR backend services (`oasis-projector`, `worker-runner`, `verification-engine`) toward gateway-grade rigor: ECS-level container `healthCheck` on all 3 task definitions (ECS Fargate does not honor a Docker image's own `HEALTHCHECK`), 3 new `AWS-PROD-DEPLOY-*.yml` dispatch-only workflows, 9 CloudWatch alarms, Container Insights enabled cluster-wide. Deliberately **no** autoscaling (oasis-projector's Ledger Writer has no cross-instance locking) and **no** public ALB/DNS (none of the three have external callers). | VTID-03411 |
+| 2026-07-23 | Rebuilt `oasis-operator` for AWS Production (DR) — its source didn't exist in git (an abandoned `main.py.backup-*` stub was the only trace); restored `main.py` from the last known-good snapshot, added `requirements.txt` + `Dockerfile`, and extended its CORS allowlist to the current Vitana gateway hosts. New ECS service `vitana-oasis-operator-awsdr`, target group `vitana-tg-oasis-op-awsdr`, ALB host rule `dr-oasis-operator.vitanaland.com` (priority 7), first-ever CI/CD path `AWS-PROD-DEPLOY-OASIS-OPERATOR.yml`. | VTID-03410 |
+| 2026-07-23 | Built AWS Production (DR) for `community-app` (frontend) — new ECS service `vitana-community-app-awsdr`, target group `vitana-tg-community-awsdr`, ALB host rule `dr-app.vitanaland.com` (priority 6), new dispatch-only `AWS-PROD-DEPLOY-FRONTEND.yml` in `exafyltd/vitana-v1`. Static SPA build bakes the canonical **GCP prod** gateway URL into `.env.production` at build time — no runtime env var to flip post-build. Still on static AWS access-key repo secrets (OIDC is a follow-up). | VTID-03409 |
 | 2026-07-23 | Added `feature_announcements` table + `/api/v1/admin/feature-announcements` (admin-only, publishes an announcement row read by vitana-v1's News Feed `FeatureAnnouncementCard` and fans out an in-app + push `feature_announcement` notification to every tenant member, locale-grouped via `bulkGetUserLocales` + the gateway i18n catalog per §13b). No VTID existed for this yet; tracked under this BOOTSTRAP tag pending one. Publishing to production is still gated behind the staging-first cutover (§15/§16) — this only ships the mechanism. | BOOTSTRAP-FEATURE-ANNOUNCEMENTS |
-| 2026-07-23 | Stood up AWS Production (DR) for the gateway service only — parallel to canonical GCP prod, not a migration: ECS service `vitana-gateway-awsdr`, dedicated target group + host-header ALB rule (`dr-gateway.vitanaland.com`), autoscaling + CloudWatch alarms, `AWS-PROD-DEPLOY-GATEWAY.yml` (dispatch-only, required reason, never on push). Added §1b governance section + Never-rule exception. GitHub OIDC deploy-role wiring left for an operator with IAM admin rights (session's AWS IAM user has zero IAM write permissions) — see `docs/AWS-PRODUCTION-BUILD-LOG.md`. | VTID-03398 |
+| 2026-07-23 | Stood up AWS Production (DR) for the gateway service — parallel to canonical GCP prod, not a migration: ECS service `vitana-gateway-awsdr`, dedicated target group + host-header ALB rule (`dr-gateway.vitanaland.com`), autoscaling + CloudWatch alarms, `AWS-PROD-DEPLOY-GATEWAY.yml` (dispatch-only, required reason, never on push). Added §1b governance section + Never-rule exception. GitHub OIDC deploy-role wiring left for an operator with IAM admin rights (session's AWS IAM user has zero IAM write permissions) — see `docs/AWS-PRODUCTION-BUILD-LOG.md`. Extended the same day to community-app/oasis-operator (VTID-03409/03410) and hardened further (VTID-03411); see those rows above. | VTID-03398 |
 | 2026-07-21 | Public "Business" tab: profile visitors can now see another user's active product recommendations (storefront card, buy-through with commission attributed to the profile owner via the existing VTID-02950 `?rec=`/`rec_id` flow). New public endpoint `GET /api/v1/discover/recommendations/:vitanaId` (`discover-recommendations-public.ts`), auth-required (any logged-in viewer, not owner-only), never returns click/conversion/commission fields. No formal VTID existed for this extension; tracked under this BOOTSTRAP tag pending one. | BOOTSTRAP-PUBLIC-BUSINESS-PROFILE |
 | 2026-07-13 | Integrated lycorp-jp/sim-use device-testing layer: `e2e/mobile-sim/` driver + smoke flow (iOS Simulator / Android), `MOBILE-DEVICE-E2E.yml` macOS-runner workflow, vendored sim-use agent skill + `vitana-mobile-testing` glue skill, `docs/MOBILE_DEVICE_TESTING.md` | BOOTSTRAP-SIM-USE-DEVICE-TESTING |
 | 2026-06-04 | Staging-first cutover (time-gated, effective Mon 8 Jun 2026 10:00 Europe/Berlin): added a `cutover_gate` job to every auto-to-prod workflow (`AUTO-DEPLOY`, `DEPLOY-ORB-AGENT`, `DEPLOY-AUTOPILOT-JOB`, `VTID-02409-BOOTSTRAP`) that freezes the push path post-cutover while leaving manual dispatch open; added manual escape hatch `scripts/deploy/publish-to-prod.sh`; rewrote §15/§16 + IF-THEN CI/CD rules. Before cutover all paths still reach prod; after, auto = staging, prod = PUBLISH button / manual exception. Frontend (`vitana-v1`) gated in parallel. | BOOTSTRAP-STAGING-FIRST-CUTOVER |
