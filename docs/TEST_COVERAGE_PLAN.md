@@ -109,7 +109,7 @@ depends on. Paths are real; use them as the work list.
 
 **P1 — Governance**:
 - `src/controllers/governance-controller.ts`, `src/routes/governance-controls.ts`
-- remaining quarantined suites: `test/llm-router.test.ts`, `test/services/action-executors.test.ts`, `test/routes/health.test.ts`, `test/routes/wearables-waitlist.test.ts`, `test/routes/admin-notification-categories.test.ts`, `test/services/recommendation-engine/analyzers/codebase-analyzer.test.ts`
+- ~~remaining quarantined suites~~ — all un-quarantined and green as of Phase 1 (2026-07-22)
 
 ### 2.2 Sibling services & packages (vitana-platform)
 
@@ -139,7 +139,7 @@ phase at pickup. Order is by risk: tenancy → memory → autopilot → brain/vo
 | Phase | Repo | Deliverable | Target | Status |
 |---|---|---|---|---|
 | **0. Enforcement baseline** | both | CI actually runs all existing tests (this branch: `TEST-SUITE.yml` + `UNIT-TESTS.yml`, Jest ESM fix, Vitest bootstrap) | 2026-07-13 | ✅ this PR |
-| **1. Un-quarantine sweep** | platform | Fix the 11 quarantined gateway suites (memory, admin-autopilot, action-executors, llm-router, cognee, intelligence-e2e, health, wearables, notification-categories, codebase-analyzer, dev-autopilot-synthesis); remove `testPathIgnorePatterns` entries. Also repair `services/oasis-projector/test/ledger-writer.test.ts`: it had unresolved merge-conflict markers committed on `main` (fixed on this branch), and now that it parses, 27/35 tests fail from drift against the current `LedgerWriter` (mocked `Database.getInstance` path no longer populates the ledger store). It is excluded from the `TEST-SUITE.yml` matrix until green — add it back when fixed. | +1 week | ☐ |
+| **1. Un-quarantine sweep** | platform | DONE 2026-07-22: all 11 quarantined gateway suites repaired (45 failing tests fixed — drifted mocks/assertions vs tenant-scoped autopilot tables, memory-broker refactor, Bedrock provider, VTID-01007 format, auth-middleware migration; `wearables-waitlist` had broken import paths and never ran). One genuine src bug found & fixed: `classifyCategory()` in `routes/memory.ts` matched the substring `'pr'`, misclassifying any content containing "pr" ("prefer", "espresso") as dev tasks — now word-boundary matched. `testPathIgnorePatterns` quarantine list removed. `oasis-projector/test/ledger-writer.test.ts` repaired (35/35 green; fixture VTIDs updated to canonical VTID-01007 format) and oasis-projector added to the `TEST-SUITE.yml` matrix. Open observation for the team (documented in that test): an all-error batch emits no `ledger_sync` event and still advances the projection offset (no retry) — by design or not? | 2026-07-22 | ✅ |
 | **2. Tenancy & RBAC (P0)** | platform | Tests for all 6 middleware files, `tenant-admin/*` routes, `admin-tenants`, RBAC orb-tools; assert cross-tenant denial paths | +2 weeks | ☐ |
 | **3. Frontend auth/roles/tenancy (P0)** | vitana-v1 | `AuthProvider`, `ProtectedRoute`, `AdminGuard`, `useRole`, `usePermissions`, `useTenant`, `TenantDetector`, guest-auth, oauthErrors | +2 weeks | ☐ |
 | **4. Memory stack (P0)** | platform | retrieval-router rule table, context-pack-builder, orb-memory-bridge, memory-facts-service (write_fact semantics), social-memory/*, memory routes | +3 weeks | ☐ |
@@ -201,4 +201,5 @@ file's schedule table.
 
 | Date | Change |
 |---|---|
+| 2026-07-22 | Phase 1 complete: all 11 quarantined gateway suites + oasis-projector ledger-writer repaired and un-quarantined; `'pr'` substring memory-classification bug fixed in `routes/memory.ts`; oasis-projector added to TEST-SUITE matrix (BOOTSTRAP-TEST-COVERAGE Phase 1) |
 | 2026-07-13 | Initial inventory, schedule, TEST-SUITE.yml + UNIT-TESTS.yml routines, Jest ESM fix, frontend Vitest bootstrap (BOOTSTRAP-TEST-COVERAGE) |

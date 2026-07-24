@@ -147,7 +147,9 @@ describe('classifyCategory — unit', () => {
   });
 
   it('returns tasks for deploy keyword', () => {
-    expect(classifyCategory('need to deploy the gateway service')).toBe('tasks');
+    // NOTE: avoid the word "service" here — products_services is checked
+    // before tasks, so "service" would win over "deploy".
+    expect(classifyCategory('need to deploy the gateway')).toBe('tasks');
   });
 
   it('returns goals for goal keyword', () => {
@@ -236,7 +238,9 @@ describe('writeMemoryItem — unit', () => {
       data: { id: 'mem-123' },
       error: null,
     });
-    const result = await writeMemoryItem('token', { source: 'orb_text', content: 'test content' });
+    // NOTE: content must not contain any classifier keyword ("test" is a
+    // tasks keyword) so auto-classification lands on 'conversation'.
+    const result = await writeMemoryItem('token', { source: 'orb_text', content: 'hello world' });
     expect(result.ok).toBe(true);
     expect(result.id).toBe('mem-123');
     expect(result.category_key).toBe('conversation');

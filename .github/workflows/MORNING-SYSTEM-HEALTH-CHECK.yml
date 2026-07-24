@@ -1,0 +1,302 @@
+name: Morning System Health Check
+
+# BOOTSTRAP-FAILING-ROUTINES-ANALYSIS — single daily 07:00 CET roll-up of the
+# 15 functions judged most load-bearing for Vitanaland (the platform) and
+# Maxina (the community app). Existing scheduled workflows already cover
+# individual slices (VCAOP-HEALTH, SMOKE-WELCOME-GREETING,
+# ALERT-WELCOME-GREETING-HEALTH, E2E-ORB-MONITOR, SCREEN-LOAD-TIMING, ...) —
+# this does NOT replace them. It (a) gives a human ONE place to read every
+# morning instead of hunting across ~25 cron workflows, and (b) closes the
+# gap that let 4 of those workflows fail on every single run for days
+# without anyone noticing (see check #15 below).
+#
+# Design: every check runs to completion regardless of earlier failures
+# (never `set -e` across the whole job) and appends a PASS/FAIL row to
+# /tmp/morning-report.md. The final step gates the job (fails loudly, per
+# CLAUDE.md "always fail loudly") and posts to chat ONLY when something is
+# red — all-green mornings stay silent, matching the existing convention in
+# scripts/ci/collect-status.py.
+
+on:
+  schedule:
+    # 07:00 CET (winter) / 08:00 CEST (summer, DST drift accepted) — same
+    # fixed-UTC convention CLAUDE.md already uses for CRON-GRADUATION-RECOMMENDER.
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: morning-system-health-check
+  cancel-in-progress: false
+
+env:
+  GATEWAY_URL: https://gateway-q74ibpv6ia-uc.a.run.app
+  STAGING_GATEWAY_URL: https://gateway-staging-q74ibpv6ia-uc.a.run.app
+  COMMUNITY_PROD_URL: https://vitanaland.com
+  COMMUNITY_STAGING_URL: https://preview.vitanaland.com
+  REPORT: /tmp/morning-report.md
+
+jobs:
+  morning-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install psql + jq
+        run: sudo apt-get install -y postgresql-client jq > /dev/null 2>&1
+
+      - name: Init report
+        run: |
+          echo "| # | Check | Result | Detail |" > "$REPORT"
+          echo "|---|-------|--------|--------|" >> "$REPORT"
+
+      # 1 — Gateway PROD /alive
+      - name: '1. Gateway PROD /alive'
+        run: |
+          CODE=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 "$GATEWAY_URL/alive" || echo 000)
+          if [ "$CODE" = "200" ]; then R=PASS; else R=FAIL; fi
+          echo "| 1 | Gateway PROD /alive | $R | HTTP $CODE |" >> "$REPORT"
+
+      # 2 — Gateway PROD /health (core aggregate)
+      - name: '2. Gateway PROD /health'
+        run: |
+          CODE=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 "$GATEWAY_URL/health" || echo 000)
+          if [ "$CODE" = "200" ]; then R=PASS; else R=FAIL; fi
+          echo "| 2 | Gateway PROD /health | $R | HTTP $CODE |" >> "$REPORT"
+
+      # 3 — Gateway STAGING /alive (primary post-cutover deploy target)
+      - name: '3. Gateway STAGING /alive'
+        run: |
+          CODE=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 "$STAGING_GATEWAY_URL/alive" || echo 000)
+          if [ "$CODE" = "200" ]; then R=PASS; else R=FAIL; fi
+          echo "| 3 | Gateway STAGING /alive | $R | HTTP $CODE |" >> "$REPORT"
+
+      # 4 — Deploy-drift: staging build-info commit vs latest main HEAD
+      - name: '4. Staging deploy freshness (build-info vs main HEAD)'
+        run: |
+          set +e
+          BODY=$(curl -sS --max-time 10 "$STAGING_GATEWAY_URL/api/v1/admin/build-info")
+          DEPLOYED=$(echo "$BODY" | jq -r '.commit // .git_commit // .sha // empty' 2>/dev/null)
+          HEAD="${{ github.sha }}"
+          if [ -n "$DEPLOYED" ] && [ "${HEAD:0:${#DEPLOYED}}" = "$DEPLOYED" ]; then
+            R=PASS; D="staging=$DEPLOYED matches main HEAD"
+          elif [ -n "$DEPLOYED" ]; then
+            R=FAIL; D="staging=$DEPLOYED, main HEAD=$HEAD (drift — check STAGE-DEPLOY.yml)"
+          else
+            R=FAIL; D="could not read build-info: $(echo "$BODY" | head -c 200)"
+          fi
+          echo "| 4 | Staging deploy freshness | $R | $D |" >> "$REPORT"
+
+      # 5 — Supabase Postgres reachability
+      - name: '5. Supabase Postgres reachability'
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          set +e
+          OUT=$(psql "$SUPABASE_DB_URL" -t -A -c 'select 1;' 2>&1)
+          if [ "$(echo "$OUT" | tr -d ' \r\n')" = "1" ]; then R=PASS; D="ok"; else R=FAIL; D="$(echo "$OUT" | head -c 200)"; fi
+          echo "| 5 | Supabase Postgres reachability | $R | $D |" >> "$REPORT"
+
+      # 6 — VTID ledger orphaned-claim sanity
+      - name: '6. VTID ledger — no orphaned claims'
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          set +e
+          OUT=$(psql "$SUPABASE_DB_URL" -t -A -c "select count(*) from vtid_ledger where status = 'in_progress' and claimed_by is not null and claimed_until < now();" 2>&1)
+          N=$(echo "$OUT" | tr -d ' \r\n')
+          if [[ "$N" =~ ^[0-9]+$ ]] && [ "$N" -eq 0 ]; then
+            R=PASS; D="0 orphaned claims"
+          elif [[ "$N" =~ ^[0-9]+$ ]]; then
+            R=FAIL; D="$N task(s) stuck in_progress past claimed_until"
+          else
+            R=FAIL; D="query error: $(echo "$OUT" | head -c 200)"
+          fi
+          echo "| 6 | VTID ledger orphaned-claim sanity | $R | $D |" >> "$REPORT"
+
+      # 7 — OASIS events recency (system not silently stalled)
+      - name: '7. OASIS events recency (last 6h)'
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          set +e
+          OUT=$(psql "$SUPABASE_DB_URL" -t -A -c "select count(*) from oasis_events where created_at > now() - interval '6 hours' and type not like 'telemetry.%';" 2>&1)
+          N=$(echo "$OUT" | tr -d ' \r\n')
+          if [[ "$N" =~ ^[0-9]+$ ]] && [ "$N" -gt 0 ]; then
+            R=PASS; D="$N event(s) in last 6h"
+          elif [[ "$N" =~ ^[0-9]+$ ]]; then
+            R=FAIL; D="zero non-telemetry OASIS events in 6h — pipeline may be stalled"
+          else
+            R=FAIL; D="query error: $(echo "$OUT" | head -c 200)"
+          fi
+          echo "| 7 | OASIS events recency | $R | $D |" >> "$REPORT"
+
+      # 8 — Welcome-greeting trigger, structural
+      - name: '8. Welcome-greeting trigger — structural'
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          set +e
+          OUT=$(psql "$SUPABASE_DB_URL" -t -A <<'EOF'
+          SELECT
+            CASE
+              WHEN NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'welcome_chat_on_primary_membership')
+                THEN 'FAIL: trigger missing'
+              WHEN (SELECT tgenabled FROM pg_trigger WHERE tgname = 'welcome_chat_on_primary_membership')::text != 'O'
+                THEN 'FAIL: trigger disabled'
+              ELSE 'PASS'
+            END;
+          EOF
+          )
+          LINE=$(echo "$OUT" | grep -v '^$' | tail -1)
+          if [ "$LINE" = "PASS" ]; then R=PASS; D="trigger present + enabled"; else R=FAIL; D="$LINE"; fi
+          echo "| 8 | Welcome-greeting trigger (structural) | $R | $D |" >> "$REPORT"
+
+      # 9 — Welcome-greeting trigger, behavioral (real traffic)
+      - name: '9. Welcome-greeting trigger — behavioral (24h)'
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          set +e
+          OUT=$(psql "$SUPABASE_DB_URL" -t -A -F '|' <<'EOF'
+          WITH w AS (SELECT now() - interval '24 hours' AS since)
+          SELECT
+            (SELECT COUNT(*) FROM public.app_users WHERE created_at >= (SELECT since FROM w) AND user_id <> '00000000-0000-0000-0000-000000000001'::uuid),
+            (SELECT COUNT(*) FROM public.app_users WHERE created_at >= (SELECT since FROM w) AND COALESCE(welcome_chat_sent, false) = false AND user_id <> '00000000-0000-0000-0000-000000000001'::uuid);
+          EOF
+          )
+          LINE=$(echo "$OUT" | grep -v '^$' | tail -1)
+          SIGNUPS=$(echo "$LINE" | cut -d'|' -f1 | tr -d ' \r')
+          UNFLAGGED=$(echo "$LINE" | cut -d'|' -f2 | tr -d ' \r')
+          if [[ "$SIGNUPS" =~ ^[0-9]+$ ]] && [[ "$UNFLAGGED" =~ ^[0-9]+$ ]] && [ "$UNFLAGGED" -eq 0 ]; then
+            R=PASS; D="$SIGNUPS signups/24h, 0 unflagged"
+          elif [[ "$UNFLAGGED" =~ ^[0-9]+$ ]]; then
+            R=FAIL; D="$UNFLAGGED of $SIGNUPS recent signups never greeted"
+          else
+            R=FAIL; D="query error: $(echo "$OUT" | head -c 200)"
+          fi
+          echo "| 9 | Welcome-greeting trigger (behavioral) | $R | $D |" >> "$REPORT"
+
+      # 10 — ORB Live voice: health + session-start smoke
+      - name: '10. ORB Live voice — health + session start'
+        env:
+          SERVICE_TOKEN: ${{ secrets.GATEWAY_SERVICE_TOKEN }}
+        run: |
+          set +e
+          HCODE=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 "$GATEWAY_URL/api/v1/orb/health" || echo 000)
+          CT=$(curl -sS -o /dev/null -w '%{content_type}' --max-time 10 -X POST "$GATEWAY_URL/api/v1/orb/live/session/start" -H "Authorization: Bearer $SERVICE_TOKEN" -H 'Content-Type: application/json' -d '{}' || echo '')
+          if [ "$HCODE" = "200" ] && [[ "$CT" == application/json* ]]; then
+            R=PASS; D="health=200, session-start returns JSON (route mounted)"
+          else
+            R=FAIL; D="health=$HCODE, session-start content-type='$CT' (html = route missing/deploy drift)"
+          fi
+          echo "| 10 | ORB Live voice | $R | $D |" >> "$REPORT"
+
+      # 11 — Live Rooms (Go Live) health
+      - name: '11. Live Rooms health'
+        run: |
+          CODE=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 "$GATEWAY_URL/api/v1/live/health" || echo 000)
+          if [ "$CODE" = "200" ]; then R=PASS; else R=FAIL; fi
+          echo "| 11 | Live Rooms health | $R | HTTP $CODE |" >> "$REPORT"
+
+      # 12 — Maxina (community app) PROD reachability
+      - name: '12. Maxina PROD reachability'
+        run: |
+          CODE=$(curl -sSL -o /dev/null -w '%{http_code}' --max-time 15 "$COMMUNITY_PROD_URL" || echo 000)
+          if [ "$CODE" = "200" ]; then R=PASS; else R=FAIL; fi
+          echo "| 12 | Maxina PROD reachability | $R | HTTP $CODE |" >> "$REPORT"
+
+      # 13 — Maxina (community app) STAGING reachability
+      - name: '13. Maxina STAGING reachability'
+        run: |
+          CODE=$(curl -sSL -o /dev/null -w '%{http_code}' --max-time 15 "$COMMUNITY_STAGING_URL" || echo 000)
+          if [ "$CODE" = "200" ]; then R=PASS; else R=FAIL; fi
+          echo "| 13 | Maxina STAGING reachability | $R | HTTP $CODE |" >> "$REPORT"
+
+      # 14 — Screen Load Timing spot-check (reuses the e2e spec that already
+      # feeds Command Hub's Overview grid)
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install E2E deps
+        working-directory: e2e
+        run: npm ci
+      - name: Install Playwright chromium
+        working-directory: e2e
+        run: npx playwright install chromium --with-deps
+      - name: '14. Screen Load Timing spot-check'
+        working-directory: e2e
+        env:
+          COMMUNITY_URL: https://vitanaland.com
+          GATEWAY_URL: https://gateway-q74ibpv6ia-uc.a.run.app
+          SCREEN_LOAD_ENV: production
+          SCREEN_LOAD_RUN_ID: morning-health-${{ github.run_id }}
+          TEST_USER_EMAIL: ${{ secrets.TEST_USER_EMAIL }}
+          TEST_USER_PASSWORD: ${{ secrets.TEST_USER_PASSWORD }}
+          SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
+          GATEWAY_SERVICE_TOKEN: ${{ secrets.GATEWAY_SERVICE_TOKEN }}
+        run: |
+          set +e
+          npx playwright test --project=mobile-shared screen-load-timing.spec.ts
+          if [ $? -eq 0 ]; then R=PASS; D="within threshold"; else R=FAIL; D="see e2e/playwright-report"; fi
+          echo "| 14 | Screen Load Timing spot-check | $R | $D |" >> "$REPORT"
+
+      # 15 — Scheduled-workflow self-audit: catches exactly the failure mode
+      # that motivated this workflow (4 crons quietly failing every run for
+      # days with nobody noticing).
+      - name: '15. Scheduled-workflow self-audit'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set +e
+          WATCHLIST=(
+            "MARKETPLACE-SYNC-CRON.yml"
+            "CRON-AUTO-PROMOTER.yml"
+            "CRON-GRADUATION-RECOMMENDER.yml"
+            "DAILY-STATUS-UPDATE.yml"
+            "VCAOP-HEALTH.yml"
+            "ALERT-WELCOME-GREETING-HEALTH.yml"
+            "MORNING-SYSTEM-HEALTH-CHECK.yml"
+          )
+          BAD=""
+          for WF in "${WATCHLIST[@]}"; do
+            CONCLUSION=$(curl -sS --max-time 10 \
+              -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' \
+              "https://api.github.com/repos/${{ github.repository }}/actions/workflows/$WF/runs?branch=main&status=completed&per_page=1" \
+              | jq -r '.workflow_runs[0].conclusion // "unknown"')
+            if [ "$CONCLUSION" = "failure" ]; then
+              BAD="$BAD $WF"
+            fi
+          done
+          if [ -z "$BAD" ]; then
+            R=PASS; D="all ${#WATCHLIST[@]} watched crons green on last run"
+          else
+            R=FAIL; D="latest run failed for:$BAD"
+          fi
+          echo "| 15 | Scheduled-workflow self-audit | $R | $D |" >> "$REPORT"
+
+      - name: Publish + gate
+        if: always()
+        env:
+          WEBHOOK_URL: ${{ secrets.VITANA_CHAT_WEBHOOK }}
+        run: |
+          cat "$REPORT" >> "$GITHUB_STEP_SUMMARY"
+          FAILS=$(grep -c '| FAIL |' "$REPORT" || true)
+          if [ "$FAILS" -gt 0 ]; then
+            echo "::error::$FAILS/15 morning checks FAILED — see step summary"
+            if [ -n "${WEBHOOK_URL:-}" ]; then
+              TEXT="*Morning Health Check: $FAILS/15 FAILED*"
+              while IFS= read -r line; do
+                TEXT="$TEXT
+          $line"
+              done < <(grep '| FAIL |' "$REPORT")
+              curl -sS -X POST "$WEBHOOK_URL" -H 'Content-Type: application/json' \
+                -d "$(jq -n --arg t "$TEXT" '{text:$t}')" > /dev/null || true
+            fi
+            exit 1
+          fi
+          echo "All 15 morning checks passed."

@@ -95,6 +95,11 @@ import {
 import { resolveActiveProviderForCaller } from '../orb/live/upstream/active-provider-resolver';
 import { getLiveKitCanaryConfig } from '../orb/live/upstream/livekit-canary-config';
 import { getLiveKitAgentReadiness } from '../orb/live/upstream/livekit-agent-config';
+// BOOTSTRAP-NOVA-SONIC-VOICE: Nova readiness for the global-flip gate + health.
+import {
+  getNovaSonicConfig,
+  buildNovaSonicHealthPayload,
+} from '../orb/live/upstream/nova-sonic-config';
 // VTID-03052: wake-brief continuation wiring on the LiveKit path.
 // `decideWakeBriefForSession` already runs from Vertex's session-start
 // handler (live-session-controller.ts:730); this slice mirrors the call
@@ -337,7 +342,8 @@ async function mintAgentSessionJwt(identity: SupabaseIdentity): Promise<string |
     .sign(key);
 }
 
-type ProviderName = 'vertex' | 'livekit';
+// BOOTSTRAP-NOVA-SONIC-VOICE: nova_sonic joins the V2V control-plane set.
+type ProviderName = 'vertex' | 'livekit' | 'nova_sonic';
 
 // ---------------------------------------------------------------------------
 // Active-provider flag — read/write helpers
@@ -378,11 +384,11 @@ async function readActiveProvider(): Promise<ActiveProviderState> {
 
   if (cfgRow) {
     const raw = (cfgRow as { value: unknown }).value;
-    if (typeof raw === 'string' && (raw === 'vertex' || raw === 'livekit')) {
+    if (typeof raw === 'string' && (raw === 'vertex' || raw === 'livekit' || raw === 'nova_sonic')) {
       provider = raw;
     } else if (raw && typeof raw === 'object' && 'provider' in (raw as Record<string, unknown>)) {
       const p = (raw as Record<string, unknown>).provider;
-      if (p === 'vertex' || p === 'livekit') provider = p;
+      if (p === 'vertex' || p === 'livekit' || p === 'nova_sonic') provider = p;
     }
     lastFlippedAt = (cfgRow as { updated_at: string | null }).updated_at ?? null;
     flippedBy = (cfgRow as { updated_by: string | null }).updated_by ?? null;
@@ -537,10 +543,10 @@ router.post(
       provider?: string;
       reason?: string;
     };
-    if (provider !== 'vertex' && provider !== 'livekit') {
+    if (provider !== 'vertex' && provider !== 'livekit' && provider !== 'nova_sonic') {
       return res
         .status(400)
-        .json({ ok: false, error: 'provider must be vertex or livekit', vtid: VTID });
+        .json({ ok: false, error: 'provider must be vertex, livekit, or nova_sonic', vtid: VTID });
     }
     if (!req.identity?.exafy_admin) {
       return res.status(403).json({
@@ -548,6 +554,30 @@ router.post(
         error: 'exafy_admin role required for active-provider flip',
         vtid: VTID,
       });
+    }
+    // BOOTSTRAP-NOVA-SONIC-VOICE: a GLOBAL nova_sonic flip is refused unless
+    // explicitly unlocked AND the runtime is actually ready — the canary
+    // rides the per-identity allowlist, never this shared row. 409 with a
+    // typed reason instead of saving unusable configuration.
+    if (provider === 'nova_sonic') {
+      const novaCfg = getNovaSonicConfig(process.env);
+      if (process.env.NOVA_SONIC_ALLOW_GLOBAL_FLIP !== 'true') {
+        return res.status(409).json({
+          ok: false,
+          error: 'nova_global_flip_locked',
+          detail:
+            'Global nova_sonic activation requires NOVA_SONIC_ALLOW_GLOBAL_FLIP=true; use the per-identity canary allowlist instead.',
+          vtid: VTID,
+        });
+      }
+      if (!novaCfg.ready) {
+        return res.status(409).json({
+          ok: false,
+          error: 'nova_not_ready',
+          detail: `Nova Sonic runtime not ready: ${novaCfg.issues.join(',') || 'disabled'}`,
+          vtid: VTID,
+        });
+      }
     }
     const result = await writeActiveProvider(
       provider,
@@ -580,6 +610,18 @@ router.post(
     });
   },
 );
+
+// ---------------------------------------------------------------------------
+// BOOTSTRAP-NOVA-SONIC-VOICE: Nova 2 Sonic health surface — configuration
+// visibility with NO secrets (credential source is the ECS task role; there
+// is no key material to leak and none is read here).
+// ---------------------------------------------------------------------------
+// Configuration health surface, secret-free by construction
+// (buildNovaSonicHealthPayload exposes counts and typed issues only).
+// public-route
+router.get('/orb/nova-sonic/health', async (_req: Request, res: Response) => {
+  return res.json(buildNovaSonicHealthPayload(process.env));
+});
 
 // ---------------------------------------------------------------------------
 // LiveKit token mint

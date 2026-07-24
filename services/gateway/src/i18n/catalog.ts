@@ -50,6 +50,11 @@ export type GatewayI18nKey =
   | 'notif.post_like.body'
   | 'notif.post_comment.title'
   | 'notif.post_comment.body'
+  // Feature-announcement News Feed cards (BOOTSTRAP-FEATURE-ANNOUNCEMENTS) —
+  // title is a generic "New feature: {feature}" template; the body is the
+  // announcement's own per-locale description, not a catalog key (it's
+  // one-off editorial copy authored per announcement, not recurring UI chrome).
+  | 'notif.feature_announcement.title'
   // Daily pace check (claude/daily-pace-notifications)
   | 'notif.daily_pace.on_track.title'
   | 'notif.daily_pace.on_track.body'
@@ -156,6 +161,7 @@ const DE: LocaleCatalog = {
   'notif.post_like.body': '{name} gefällt dein Beitrag.',
   'notif.post_comment.title': 'Neuer Kommentar',
   'notif.post_comment.body': '{name} hat deinen Beitrag kommentiert.',
+  'notif.feature_announcement.title': 'Neues Feature: {feature}',
   // Daily pace check
   'notif.daily_pace.on_track.title': 'Auf Kurs ✨',
   'notif.daily_pace.on_track.body': 'Du bist auf einem guten Weg. Schließ heute noch deinen Tagesplan ab — dein Ziel kommt näher.',
@@ -255,6 +261,7 @@ const EN: LocaleCatalog = {
   'notif.post_like.body': '{name} liked your post.',
   'notif.post_comment.title': 'New comment',
   'notif.post_comment.body': '{name} commented on your post.',
+  'notif.feature_announcement.title': 'New feature: {feature}',
   // Daily pace check
   'notif.daily_pace.on_track.title': 'On track ✨',
   'notif.daily_pace.on_track.body': "You're moving well. Wrap up today's plan — your goal is getting closer.",

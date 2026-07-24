@@ -41,6 +41,22 @@ import {
   evaluateLiveKitDryRun,
 } from '../services/voice-lab/livekit-test-eval';
 import { getCoverage as getLivekitTestCoverage } from '../services/voice-lab/livekit-test-coverage';
+// BOOTSTRAP-NOVA-SONIC-VOICE / DEV-COMHU-0514: Nova Sonic Test Bench —
+// automated suite (offline checks + opt-in live Bedrock probe) and the
+// per-identity provider-decision probe for manual canary verification.
+import {
+  runNovaSonicTestSuite,
+  listNovaTestRuns,
+} from '../services/voice-lab/nova-sonic-test-runner';
+import {
+  getNovaSonicConfig,
+  buildNovaSonicHealthPayload,
+  isNovaSonicIdentityAllowed,
+  isNovaSonicLanguageSupported,
+} from '../orb/live/upstream/nova-sonic-config';
+import { selectUpstreamProvider } from '../orb/live/upstream/upstream-provider-selector';
+import { getLiveKitCanaryConfig } from '../orb/live/upstream/livekit-canary-config';
+import { getVoiceConfig } from '../services/voice-config';
 
 const router = Router();
 
@@ -294,6 +310,125 @@ router.get(
         ok: false,
         error: (err as Error).message ?? String(err),
         vtid: LIVEKIT_TESTS_VTID,
+      });
+    }
+  },
+);
+
+// ---------------------------------------------------------------------------
+// BOOTSTRAP-NOVA-SONIC-VOICE / DEV-COMHU-0514: Nova Sonic Test Bench API.
+// Same auth gate as the LiveKit tests (service token / GCP OIDC / user JWT).
+// ---------------------------------------------------------------------------
+
+const NOVA_TESTS_VTID = 'BOOTSTRAP-NOVA-SONIC-VOICE';
+
+const NovaRunPostSchema = z.object({
+  live: z.boolean().optional(),
+  trigger: z.string().max(64).optional(),
+});
+
+router.post(
+  '/nova/tests/run',
+  livekitTestsAuthGate,
+  async (req: Request, res: Response) => {
+    const parsed = NovaRunPostSchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      return res.status(400).json({
+        ok: false,
+        error: 'invalid request body',
+        issues: parsed.error.issues,
+        vtid: NOVA_TESTS_VTID,
+      });
+    }
+    try {
+      const summary = await runNovaSonicTestSuite({
+        live: parsed.data.live === true,
+        trigger: parsed.data.trigger ?? 'command-hub',
+      });
+      return res.status(200).json({ ok: true, vtid: NOVA_TESTS_VTID, summary });
+    } catch (err) {
+      return res.status(500).json({
+        ok: false,
+        error: (err as Error).message ?? String(err),
+        vtid: NOVA_TESTS_VTID,
+      });
+    }
+  },
+);
+
+router.get(
+  '/nova/tests/runs',
+  livekitTestsAuthGate,
+  async (_req: Request, res: Response) => {
+    return res.status(200).json({ ok: true, vtid: NOVA_TESTS_VTID, runs: listNovaTestRuns() });
+  },
+);
+
+// Per-identity provider-decision probe: answers "would THIS caller's next
+// ORB session ride Nova?" with the exact selector the live session path
+// uses. Manual-canary verification without opening a paid stream.
+router.get(
+  '/nova/decision',
+  optionalAuth,
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const lang = typeof req.query.lang === 'string' && req.query.lang.trim().length > 0
+        ? req.query.lang.trim()
+        : 'en';
+      const novaCfg = getNovaSonicConfig(process.env);
+      const runtime: 'aws-ecs' | 'gcp-cloud-run' | 'unknown' =
+        process.env.ECS_CONTAINER_METADATA_URI_V4 || process.env.ECS_CONTAINER_METADATA_URI
+          ? 'aws-ecs'
+          : process.env.K_SERVICE
+            ? 'gcp-cloud-run'
+            : 'unknown';
+      const voiceCfg = await getVoiceConfig();
+      const lkCanary = await getLiveKitCanaryConfig();
+      const identity = {
+        userId: req.identity?.user_id ?? null,
+        tenantId: req.identity?.tenant_id ?? null,
+      };
+      const decision = selectUpstreamProvider({
+        envProviderOverride: process.env.ORB_LIVE_PROVIDER,
+        systemConfigActiveProvider: voiceCfg.active_provider,
+        livekitCredentials: {
+          url: process.env.LIVEKIT_URL,
+          apiKey: process.env.LIVEKIT_API_KEY,
+          apiSecret: process.env.LIVEKIT_API_SECRET,
+        },
+        canary: {
+          enabled: lkCanary.enabled,
+          allowedTenants: lkCanary.allowedTenants,
+          allowedUsers: lkCanary.allowedUsers,
+        },
+        identity: { tenantId: identity.tenantId, userId: identity.userId },
+        nova: {
+          enabled: novaCfg.ready,
+          identityAllowed: isNovaSonicIdentityAllowed(novaCfg, identity),
+          languageSupported: isNovaSonicLanguageSupported(lang),
+          runtime,
+        },
+      });
+      return res.status(200).json({
+        ok: true,
+        vtid: NOVA_TESTS_VTID,
+        lang,
+        runtime,
+        authenticated: !!req.identity?.user_id,
+        decision: {
+          provider: decision.provider,
+          requested: decision.requested,
+          reason: decision.reason,
+          canary: decision.canary,
+          nova_ready: decision.novaReady ?? false,
+        },
+        health: buildNovaSonicHealthPayload(process.env),
+      });
+    } catch (err) {
+      return res.status(500).json({
+        ok: false,
+        error: (err as Error).message ?? String(err),
+        vtid: NOVA_TESTS_VTID,
       });
     }
   },

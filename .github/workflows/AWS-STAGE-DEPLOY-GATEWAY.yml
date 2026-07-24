@@ -28,6 +28,11 @@
 name: AWS Stage Deploy Gateway (ECS)
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - 'services/gateway/**'
+      - '.github/workflows/AWS-STAGE-DEPLOY-GATEWAY.yml'
   workflow_dispatch:
     inputs:
       reason:
@@ -65,6 +70,16 @@ concurrency:
 jobs:
   build-push-deploy:
     runs-on: ubuntu-latest
+    # On push events the dispatch inputs are empty — resolve every target
+    # here with the staging defaults so auto-deploys and manual dispatches
+    # share one code path.
+    env:
+      GATEWAY_URL: ${{ inputs.gateway_url || 'https://preview-aws-gateway.vitanaland.com' }}
+      TARGET_AWS_REGION: ${{ inputs.aws_region || 'eu-central-1' }}
+      ECR_REPOSITORY: ${{ inputs.ecr_repository || 'vitana/gateway' }}
+      ECS_CLUSTER: ${{ inputs.ecs_cluster || 'Vitana-ECS-Cluster' }}
+      ECS_SERVICE: ${{ inputs.ecs_service || 'vitana-gateway' }}
+      DEPLOY_REASON: ${{ inputs.reason || format('auto-deploy on push to main ({0})', github.event.head_commit.message && 'push' || 'dispatch') }}
     steps:
       - uses: actions/checkout@v4
 
@@ -89,7 +104,7 @@ jobs:
         with:
           aws-access-key-id: ${{ secrets.AWS_STAGING_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_STAGING_SECRET_ACCESS_KEY }}
-          aws-region: ${{ inputs.aws_region }}
+          aws-region: ${{ env.TARGET_AWS_REGION }}
 
       - name: Login to Amazon ECR
         id: ecr
@@ -98,15 +113,15 @@ jobs:
       - name: Preflight — verify ECR repo + ECS service exist
         run: |
           set -e
-          if ! aws ecr describe-repositories --repository-names "${{ inputs.ecr_repository }}" >/dev/null 2>&1; then
-            echo "::error::ECR repository '${{ inputs.ecr_repository }}' not found. Available repositories:"
+          if ! aws ecr describe-repositories --repository-names "${{ env.ECR_REPOSITORY }}" >/dev/null 2>&1; then
+            echo "::error::ECR repository '${{ env.ECR_REPOSITORY }}' not found. Available repositories:"
             aws ecr describe-repositories --query 'repositories[].repositoryName' --output table
             exit 1
           fi
-          if ! aws ecs describe-services --cluster "${{ inputs.ecs_cluster }}" --services "${{ inputs.ecs_service }}" \
+          if ! aws ecs describe-services --cluster "${{ env.ECS_CLUSTER }}" --services "${{ env.ECS_SERVICE }}" \
                --query 'services[0].status' --output text 2>/dev/null | grep -q ACTIVE; then
-            echo "::error::ECS service '${{ inputs.ecs_service }}' not ACTIVE in cluster '${{ inputs.ecs_cluster }}'. Services:"
-            aws ecs list-services --cluster "${{ inputs.ecs_cluster }}" --output table
+            echo "::error::ECS service '${{ env.ECS_SERVICE }}' not ACTIVE in cluster '${{ env.ECS_CLUSTER }}'. Services:"
+            aws ecs list-services --cluster "${{ env.ECS_CLUSTER }}" --output table
             exit 1
           fi
 
@@ -116,48 +131,71 @@ jobs:
           REGISTRY: ${{ steps.ecr.outputs.registry }}
         run: |
           set -e
-          IMAGE="$REGISTRY/${{ inputs.ecr_repository }}:${{ steps.commit.outputs.short }}"
-          docker build -t "$IMAGE" -t "$REGISTRY/${{ inputs.ecr_repository }}:staging-latest" services/gateway
+          IMAGE="$REGISTRY/${{ env.ECR_REPOSITORY }}:${{ steps.commit.outputs.short }}"
+          docker build -t "$IMAGE" -t "$REGISTRY/${{ env.ECR_REPOSITORY }}:staging-latest" services/gateway
           docker push "$IMAGE"
-          docker push "$REGISTRY/${{ inputs.ecr_repository }}:staging-latest"
+          docker push "$REGISTRY/${{ env.ECR_REPOSITORY }}:staging-latest"
           echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
           echo "Pushed $IMAGE"
 
       - name: Register task-definition revision + roll the service
+        env:
+          # BOOTSTRAP-NOVA-SONIC-VOICE: Nova canary configuration comes from
+          # environment-scoped repository VARIABLES (not secrets — nothing here
+          # is secret; credentials are the ECS task role). Defaults keep Nova
+          # disabled with an empty canary. Model + region are FIXED here, not
+          # variables — changing them is a code decision, not a knob.
+          NOVA_SONIC_ENABLED: ${{ vars.AWS_STAGE_NOVA_SONIC_ENABLED || 'false' }}
+          NOVA_SONIC_CANARY_USER_IDS: ${{ vars.AWS_STAGE_NOVA_SONIC_CANARY_USER_IDS || '' }}
+          NOVA_SONIC_CANARY_TENANT_IDS: ${{ vars.AWS_STAGE_NOVA_SONIC_CANARY_TENANT_IDS || '' }}
         run: |
           set -e
           IMAGE="${{ steps.build.outputs.image }}"
           SHA="${{ steps.commit.outputs.sha }}"
           SHORT="${{ steps.commit.outputs.short }}"
-          TD_ARN=$(aws ecs describe-services --cluster "${{ inputs.ecs_cluster }}" --services "${{ inputs.ecs_service }}" \
+          TD_ARN=$(aws ecs describe-services --cluster "${{ env.ECS_CLUSTER }}" --services "${{ env.ECS_SERVICE }}" \
             --query 'services[0].taskDefinition' --output text)
           echo "Current task definition: $TD_ARN"
           # Swap image + re-stamp commit env vars; preserve everything else
           # (env block, secrets, resources). upsert semantics for the three
           # stamp vars so first-run task defs without them still work.
+          # BOOTSTRAP-NOVA-SONIC-VOICE: the five Nova vars are upserted on
+          # EVERY deploy so a canary flip (or rollback to disabled/empty) is
+          # exactly one variable change + one dispatch. Never AWS access keys
+          # here — Nova auth is the task role via the SDK default chain.
           NEW_DEF=$(aws ecs describe-task-definition --task-definition "$TD_ARN" --query taskDefinition \
-            | jq --arg IMG "$IMAGE" --arg SHA "$SHA" --arg SHORT "$SHORT" '
+            | jq --arg IMG "$IMAGE" --arg SHA "$SHA" --arg SHORT "$SHORT" \
+                 --arg NOVA_ENABLED "$NOVA_SONIC_ENABLED" \
+                 --arg NOVA_USERS "$NOVA_SONIC_CANARY_USER_IDS" \
+                 --arg NOVA_TENANTS "$NOVA_SONIC_CANARY_TENANT_IDS" '
                 .containerDefinitions[0].image = $IMG
                 | .containerDefinitions[0].environment |=
-                    ( [ .[] | select(.name | IN("GIT_COMMIT_SHA","COMMIT_SHA","BUILD_INFO_MARKER") | not) ]
+                    ( [ .[] | select(.name | IN("GIT_COMMIT_SHA","COMMIT_SHA","BUILD_INFO_MARKER",
+                                                "NOVA_SONIC_ENABLED","NOVA_SONIC_REGION","NOVA_SONIC_MODEL_ID",
+                                                "NOVA_SONIC_CANARY_USER_IDS","NOVA_SONIC_CANARY_TENANT_IDS") | not) ]
                       + [ {name:"GIT_COMMIT_SHA", value:$SHA},
                           {name:"COMMIT_SHA", value:$SHA},
-                          {name:"BUILD_INFO_MARKER", value:$SHORT} ] )
+                          {name:"BUILD_INFO_MARKER", value:$SHORT},
+                          {name:"NOVA_SONIC_ENABLED", value:$NOVA_ENABLED},
+                          {name:"NOVA_SONIC_REGION", value:"eu-north-1"},
+                          {name:"NOVA_SONIC_MODEL_ID", value:"amazon.nova-2-sonic-v1:0"},
+                          {name:"NOVA_SONIC_CANARY_USER_IDS", value:$NOVA_USERS},
+                          {name:"NOVA_SONIC_CANARY_TENANT_IDS", value:$NOVA_TENANTS} ] )
                 | del(.taskDefinitionArn, .revision, .status, .requiresAttributes,
                       .compatibilities, .registeredAt, .registeredBy, .deregisteredAt)')
           NEW_ARN=$(aws ecs register-task-definition --cli-input-json "$NEW_DEF" \
             --query 'taskDefinition.taskDefinitionArn' --output text)
           echo "Registered $NEW_ARN"
-          aws ecs update-service --cluster "${{ inputs.ecs_cluster }}" --service "${{ inputs.ecs_service }}" \
+          aws ecs update-service --cluster "${{ env.ECS_CLUSTER }}" --service "${{ env.ECS_SERVICE }}" \
             --task-definition "$NEW_ARN" >/dev/null
           echo "Waiting for service to stabilize (up to ~10 min)…"
-          aws ecs wait services-stable --cluster "${{ inputs.ecs_cluster }}" --services "${{ inputs.ecs_service }}"
+          aws ecs wait services-stable --cluster "${{ env.ECS_CLUSTER }}" --services "${{ env.ECS_SERVICE }}"
           echo "Service stable on $NEW_ARN"
 
       - name: Smoke — env=staging + deployed commit live
         run: |
           set -e
-          URL="${{ inputs.gateway_url }}"
+          URL="${{ env.GATEWAY_URL }}"
           SHA="${{ steps.commit.outputs.sha }}"
           for i in 1 2 3 4 5 6; do
             HEALTH=$(curl -fsS "$URL/api/v1/admin/health" 2>/dev/null || echo '')
@@ -173,6 +211,20 @@ jobs:
           done
           echo "::error::Smoke failed — health/build-info did not report env=staging with the deployed commit"
           exit 1
+
+      - name: Smoke — Nova Sonic health surface present
+        run: |
+          set -e
+          URL="${{ env.GATEWAY_URL }}"
+          NOVA=$(curl -fsS "$URL/api/v1/orb/nova-sonic/health")
+          echo "$NOVA" | jq .
+          REGION=$(echo "$NOVA" | jq -r '.region // empty')
+          MODEL=$(echo "$NOVA" | jq -r '.model // empty')
+          if [ "$REGION" != "eu-north-1" ] || [ "$MODEL" != "amazon.nova-2-sonic-v1:0" ]; then
+            echo "::error::Nova health reports region='$REGION' model='$MODEL' — expected eu-north-1 / amazon.nova-2-sonic-v1:0"
+            exit 1
+          fi
+          echo "✓ Nova Sonic health: enabled=$(echo "$NOVA" | jq -r '.enabled') ready=$(echo "$NOVA" | jq -r '.ready') canary_users=$(echo "$NOVA" | jq -r '.canary_user_count')"
 
       - name: Emit OASIS event + software_versions row (best-effort)
         if: always()
@@ -217,6 +269,6 @@ jobs:
             echo "## AWS staging gateway deploy"
             echo "- Image: \`${{ steps.build.outputs.image }}\`"
             echo "- Commit: \`${{ steps.commit.outputs.sha }}\`"
-            echo "- Verified live at: ${{ inputs.gateway_url }}"
-            echo "- Reason: ${{ inputs.reason }}"
+            echo "- Verified live at: ${{ env.GATEWAY_URL }}"
+            echo "- Reason: ${{ env.DEPLOY_REASON }}"
           } >> "$GITHUB_STEP_SUMMARY"

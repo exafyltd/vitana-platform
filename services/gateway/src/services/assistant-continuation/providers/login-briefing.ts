@@ -98,6 +98,19 @@ export interface LoginBriefingInputs {
    * teacher's skipReason gate. Undefined/absent when policy is non-skip.
    */
   skipReason?: string | null;
+  /**
+   * BOOTSTRAP: `BriefingState` values served to this user within the
+   * VTID-03301 rotation window (last 48h), most-recent first. login-briefing
+   * is designed to never fall silent, so on a day with no fresh signal
+   * (no new session, no Index delta, no pillar drop) it is often the ONLY
+   * provider that returns a candidate — the ranker's rotation penalty can't
+   * help then, because there is nothing to rotate TO. When today's state is
+   * in this list AND nothing earned changed since (no weakness rider, no
+   * progress beat), the renderer switches to a short continuity line instead
+   * of re-reciting the full state script verbatim. Optional so existing
+   * callers/tests that omit it get the original (always-full) behavior.
+   */
+  recentlyServedStates?: string[] | null;
 }
 
 export interface LoginBriefingProviderOptions {
@@ -313,6 +326,9 @@ interface RenderArgs {
   salutation: SalutationKind;
   firstName: string | null;
   facts: BriefingFacts;
+  /** True when today's picked state was already served within the rotation
+   *  window — see LoginBriefingInputs.recentlyServedStates. */
+  isFlatRepeat?: boolean;
 }
 
 /** §10 spine — the "Day N of your longevity journey" continuity clause. Empty
@@ -371,16 +387,43 @@ export function renderBriefingLine(args: RenderArgs, rng: () => number = Math.ra
     }
 
     case 'building': {
-      const praise = de
-        ? `Stark — du hast schon ${f.sessionsCompleted} ${f.sessionsCompleted === 1 ? 'Session' : 'Sessions'} geschafft.`
-        : `Strong work — you have already completed ${f.sessionsCompleted} ${f.sessionsCompleted === 1 ? 'session' : 'sessions'}.`;
       // Advice #1: when a pillar slipped, the goal-anchored reversing step IS
       // the single next move — keep the briefing to ONE clear lead.
       const rider = buildWeaknessRider(args.lang, f);
-      if (rider) return [prefix, journeyDay, praise, rider].filter(Boolean).join(' ');
       // Advice #2: visible momentum — show how far through the curriculum the
       // user is as an earned compliment, before the next-session lead.
       const beat = buildProgressBeat(args.lang, f);
+
+      // BOOTSTRAP: 'building' is the flat steady-state — its praise line
+      // ("you've completed N sessions") only changes when the user finishes
+      // a NEW session. Without a rider or a progress beat, re-reciting the
+      // exact same session-count script every session-open (login-briefing
+      // never falls silent, so it's often the only candidate the ranker has)
+      // is the "always the same 'where we left off'" complaint. When this
+      // state was already served within the rotation window and there is
+      // nothing freshly earned to say, switch to a short continuity line.
+      if (args.isFlatRepeat && !rider && !beat) {
+        const short = pickFromPool(
+          de
+            ? [
+                `Session ${f.nextSessionNumber} wartet weiter auf dich, sobald du bereit bist.`,
+                `Ich bin noch bei Session ${f.nextSessionNumber} für dich bereit, sobald es passt.`,
+                `Session ${f.nextSessionNumber} steht weiter offen — wir gehen sie an, wann immer du willst.`,
+              ]
+            : [
+                `Session ${f.nextSessionNumber} is still waiting for you, whenever you're ready.`,
+                `I'm still holding session ${f.nextSessionNumber} for you, whenever it suits you.`,
+                `Session ${f.nextSessionNumber} is still open — we'll get to it whenever you want.`,
+              ],
+          rng,
+        );
+        return [prefix, short].filter(Boolean).join(' ');
+      }
+
+      const praise = de
+        ? `Stark — du hast schon ${f.sessionsCompleted} ${f.sessionsCompleted === 1 ? 'Session' : 'Sessions'} geschafft.`
+        : `Strong work — you have already completed ${f.sessionsCompleted} ${f.sessionsCompleted === 1 ? 'session' : 'sessions'}.`;
+      if (rider) return [prefix, journeyDay, praise, rider].filter(Boolean).join(' ');
       const nudge = buildNudge(args.lang, f);
       return [prefix, journeyDay, praise, beat, nextClause, nudge, lead].filter(Boolean).join(' ');
     }
@@ -447,6 +490,9 @@ function readInputs(ctx: ContinuationDecisionContext): LoginBriefingInputs | nul
     timezone: typeof o.timezone === 'string' && o.timezone.length > 0 ? o.timezone : null,
     greetingPolicy: typeof o.greetingPolicy === 'string' ? o.greetingPolicy : 'fresh_intro',
     skipReason: typeof o.skipReason === 'string' ? o.skipReason : null,
+    recentlyServedStates: Array.isArray(o.recentlyServedStates)
+      ? (o.recentlyServedStates as unknown[]).filter((s): s is string => typeof s === 'string')
+      : null,
   };
 }
 
@@ -681,10 +727,13 @@ export function makeLoginBriefingProvider(
         topicsTotal: totalTopics,
       };
 
+      const state = pickBriefingState(facts);
+      const isFlatRepeat = !!inputs.recentlyServedStates?.includes(state);
+
       const localHour = localHourInTimezone(nowDate, inputs.timezone);
       const salutation = pickSalutationKind(localHour);
       const line = renderBriefingLine(
-        { lang: inputs.lang, salutation, firstName: inputs.firstName, facts },
+        { lang: inputs.lang, salutation, firstName: inputs.firstName, facts, isFlatRepeat },
         rng,
       );
       if (!line) {
@@ -696,7 +745,6 @@ export function makeLoginBriefingProvider(
         };
       }
 
-      const state = pickBriefingState(facts);
       const candidate: AssistantContinuation = {
         id: `login-briefing-${newId()}`,
         surface: 'orb_wake',

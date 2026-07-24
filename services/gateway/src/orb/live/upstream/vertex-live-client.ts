@@ -42,6 +42,8 @@ import type {
   UpstreamConnectionState,
   UpstreamErrorEvent,
   UpstreamLiveClient,
+  UpstreamToolResult,
+  UpstreamUsageEvent,
 } from './types';
 import { AUDIO_OUT_RATE_HZ } from '../protocol';
 
@@ -67,6 +69,18 @@ export interface VertexLiveClientDeps {
    * surface.
    */
   createSocket?: (url: string, headers: Record<string, string>) => VertexWebSocketLike;
+
+  /**
+   * BOOTSTRAP-NOVA-SONIC-VOICE: provider credentials/identity live on the
+   * constructor, not the provider-neutral `UpstreamConnectOptions`. During
+   * migration the (deprecated) options fields are honored as fallback;
+   * these deps take precedence when both are supplied.
+   */
+  projectId?: string;
+  /** Vertex region (e.g. `us-central1`). Precedence over options.location. */
+  location?: string;
+  /** OAuth access-token supplier. Precedence over options.getAccessToken. */
+  getAccessToken?: () => Promise<string>;
 }
 
 const DEFAULT_CONNECT_TIMEOUT_MS = 15_000;
@@ -96,12 +110,20 @@ export class VertexLiveClient implements UpstreamLiveClient {
   private closeEmitted = false;
   private connectTimeout: NodeJS.Timeout | null = null;
   private localCloseRequested = false;
+  private localCloseReason: string | undefined;
+  private usageHandler: ((e: UpstreamUsageEvent) => void) | null = null;
+  private readonly depProjectId: string | undefined;
+  private readonly depLocation: string | undefined;
+  private readonly depGetAccessToken: (() => Promise<string>) | undefined;
 
   constructor(deps: VertexLiveClientDeps = {}) {
     this.createSocket =
       deps.createSocket ??
       ((url, headers) =>
         new WebSocket(url, { headers }) as unknown as VertexWebSocketLike);
+    this.depProjectId = deps.projectId;
+    this.depLocation = deps.location;
+    this.depGetAccessToken = deps.getAccessToken;
   }
 
   getState(): UpstreamConnectionState {
@@ -154,6 +176,13 @@ export class VertexLiveClient implements UpstreamLiveClient {
     this.goAwayHandler = handler;
   }
 
+  onUsage(handler: (event: UpstreamUsageEvent) => void): void {
+    // Vertex Live does not stream usage totals today — the registration is
+    // accepted (contract-compliant) and simply never fires.
+    this.usageHandler = handler;
+    void this.usageHandler;
+  }
+
   onError(handler: (event: UpstreamErrorEvent) => void): void {
     this.errorHandler = handler;
   }
@@ -169,8 +198,23 @@ export class VertexLiveClient implements UpstreamLiveClient {
 
     this.state = 'connecting';
 
-    const accessToken = await options.getAccessToken();
-    const url = buildBidiGenerateContentUrl(options.location);
+    const getAccessToken = this.depGetAccessToken ?? options.getAccessToken;
+    if (!getAccessToken) {
+      this.state = 'error';
+      throw new Error(
+        'vertex_config_missing: no getAccessToken supplied via VertexLiveClientDeps or connect options',
+      );
+    }
+    const location = this.depLocation ?? options.location;
+    if (!location) {
+      this.state = 'error';
+      throw new Error(
+        'vertex_config_missing: no location supplied via VertexLiveClientDeps or connect options',
+      );
+    }
+
+    const accessToken = await getAccessToken();
+    const url = buildBidiGenerateContentUrl(location);
     const ws = this.createSocket(url, {
       Authorization: `Bearer ${accessToken}`,
       'Content-Type': 'application/json',
@@ -208,7 +252,11 @@ export class VertexLiveClient implements UpstreamLiveClient {
           // shaping the system instruction).
           const envelope = options.customSetupMessage
             ? await Promise.resolve(options.customSetupMessage())
-            : buildSetupMessage(options);
+            : buildSetupMessage({
+                ...options,
+                projectId: this.depProjectId ?? options.projectId,
+                location,
+              });
           ws.send(JSON.stringify(envelope));
         } catch (err) {
           if (settled) return;
@@ -303,7 +351,16 @@ export class VertexLiveClient implements UpstreamLiveClient {
             );
             return;
           }
-          reject(new Error(`Live API closed during handshake (code=${code})`));
+          // BOOTSTRAP-AWS-STAGING-VALIDATION: include the close reason text
+          // (when the server sent one) so a handshake failure other than
+          // the 1007/1009 size case above is diagnosable from the rejected
+          // error message alone, instead of just a bare code.
+          const reasonText = reason?.toString?.();
+          reject(
+            new Error(
+              `Live API closed during handshake (code=${code})${reasonText ? `: ${reasonText}` : ''}`,
+            ),
+          );
         }
       });
     });
@@ -360,13 +417,41 @@ export class VertexLiveClient implements UpstreamLiveClient {
     }
   }
 
-  async close(): Promise<void> {
+  sendToolResult(result: UpstreamToolResult): boolean {
+    if (this.state !== 'open' || !this.ws) return false;
+    if (this.ws.readyState !== WebSocket.OPEN) return false;
+
+    // Exact legacy envelope (VTID-01224): Vertex rejects unknown fields
+    // like 'id' in function_responses with WS close 1007 — only 'name' and
+    // 'response' are sent; failures ship as an `Error: …` output string.
+    const outputText = result.success ? result.output : `Error: ${result.error ?? 'tool failed'}`;
+    const message = {
+      tool_response: {
+        function_responses: [
+          {
+            name: result.name,
+            response: { output: outputText },
+          },
+        ],
+      },
+    };
+
+    try {
+      this.ws.send(JSON.stringify(message));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async close(reason?: string): Promise<void> {
     if (this.state === 'closed' || this.state === 'closing') return;
     this.localCloseRequested = true;
+    this.localCloseReason = reason;
     this.state = 'closing';
     this.clearConnectTimeout();
     try {
-      this.ws?.close();
+      this.ws?.close(1000, reason);
     } catch {
       /* ignore */
     }
@@ -374,7 +459,7 @@ export class VertexLiveClient implements UpstreamLiveClient {
     // For mocks that never emit, the caller's test expects the explicit
     // transition path — handle here as well.
     if (!this.closeEmitted) {
-      this.finalizeClose({ initiatedLocally: true });
+      this.finalizeClose({ initiatedLocally: true, reason });
     }
   }
 
@@ -414,11 +499,13 @@ export class VertexLiveClient implements UpstreamLiveClient {
       const inputText = typeof inputTransObj === 'string' ? inputTransObj : inputTransObj?.text;
       const outputText = typeof outputTransObj === 'string' ? outputTransObj : outputTransObj?.text;
 
+      // Gemini/Vertex transcripts are streamed deltas — never final; the
+      // session layer accumulates them (BOOTSTRAP-NOVA-SONIC-VOICE).
       if (inputText) {
-        this.transcriptHandler?.({ direction: 'input', text: inputText });
+        this.transcriptHandler?.({ direction: 'input', text: inputText, isFinal: false });
       }
       if (outputText) {
-        this.transcriptHandler?.({ direction: 'output', text: outputText });
+        this.transcriptHandler?.({ direction: 'output', text: outputText, isFinal: false });
       }
 
       if (serverContent.turn_complete || serverContent.turnComplete) {
@@ -464,7 +551,7 @@ export class VertexLiveClient implements UpstreamLiveClient {
     if (this.closeEmitted) return;
     this.finalizeClose({
       code,
-      reason: reason?.toString?.() || undefined,
+      reason: reason?.toString?.() || this.localCloseReason || undefined,
       initiatedLocally: this.localCloseRequested,
     });
   }
@@ -541,6 +628,13 @@ export function parseDurationMs(d: unknown): number | undefined {
  */
 export function buildSetupMessage(options: UpstreamConnectOptions): Record<string, unknown> {
   const modalities = options.responseModalities.includes('audio') ? ['AUDIO'] : ['TEXT'];
+
+  if (!options.projectId || !options.location) {
+    // Provider identity migrated to constructor deps (BOOTSTRAP-NOVA-SONIC-
+    // VOICE); the default Vertex envelope still needs both to compose the
+    // model path — fail loudly rather than emit a malformed model string.
+    throw new Error('vertex_config_missing: projectId/location required for default setup envelope');
+  }
 
   const setup: Record<string, unknown> = {
     model: `projects/${options.projectId}/locations/${options.location}/publishers/google/models/${options.model}`,
