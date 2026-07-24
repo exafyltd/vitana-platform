@@ -36,6 +36,23 @@ name: AWS Prod Deploy Gateway (ECS, DR)
 on:
   workflow_dispatch:
     inputs:
+      # BOOTSTRAP-NOVA-SONIC-VOICE: optional Nova canary levers. EMPTY inputs
+      # PRESERVE whatever NOVA_SONIC_* values the current task definition
+      # carries — a routine prod deploy never flips Nova state either way.
+      # Providing nova_sonic_enabled replaces the full Nova env block
+      # (enabled + pinned region/model + allowlists) on the new revision.
+      nova_sonic_enabled:
+        description: 'Set NOVA_SONIC_ENABLED (true/false; EMPTY = preserve current task-def state)'
+        required: false
+        default: ''
+      nova_canary_user_ids:
+        description: 'Nova canary user UUID allowlist (comma-separated; used only when nova_sonic_enabled is set)'
+        required: false
+        default: ''
+      nova_canary_tenant_ids:
+        description: 'Nova canary tenant UUID allowlist (comma-separated; used only when nova_sonic_enabled is set)'
+        required: false
+        default: ''
       reason:
         description: 'Reason for this AWS production (DR) gateway deploy — required'
         required: true
@@ -139,6 +156,10 @@ jobs:
           echo "Pushed $IMAGE"
 
       - name: Register task-definition revision + roll the service
+        env:
+          NOVA_ENABLED_INPUT: ${{ inputs.nova_sonic_enabled }}
+          NOVA_USERS_INPUT: ${{ inputs.nova_canary_user_ids }}
+          NOVA_TENANTS_INPUT: ${{ inputs.nova_canary_tenant_ids }}
         run: |
           set -e
           IMAGE="${{ steps.build.outputs.image }}"
@@ -157,6 +178,21 @@ jobs:
                           {name:"BUILD_INFO_MARKER", value:$SHORT} ] )
                 | del(.taskDefinitionArn, .revision, .status, .requiresAttributes,
                       .compatibilities, .registeredAt, .registeredBy, .deregisteredAt)')
+          # BOOTSTRAP-NOVA-SONIC-VOICE: only when explicitly requested, replace
+          # the Nova env block (region/model stay pinned — never inputs).
+          if [ -n "$NOVA_ENABLED_INPUT" ]; then
+            echo "Applying Nova canary env override: enabled=$NOVA_ENABLED_INPUT"
+            NEW_DEF=$(echo "$NEW_DEF" | jq \
+              --arg E "$NOVA_ENABLED_INPUT" --arg U "$NOVA_USERS_INPUT" --arg T "$NOVA_TENANTS_INPUT" '
+                .containerDefinitions[0].environment |=
+                  ( [ .[] | select(.name | IN("NOVA_SONIC_ENABLED","NOVA_SONIC_REGION","NOVA_SONIC_MODEL_ID",
+                                              "NOVA_SONIC_CANARY_USER_IDS","NOVA_SONIC_CANARY_TENANT_IDS") | not) ]
+                    + [ {name:"NOVA_SONIC_ENABLED", value:$E},
+                        {name:"NOVA_SONIC_REGION", value:"eu-north-1"},
+                        {name:"NOVA_SONIC_MODEL_ID", value:"amazon.nova-2-sonic-v1:0"},
+                        {name:"NOVA_SONIC_CANARY_USER_IDS", value:$U},
+                        {name:"NOVA_SONIC_CANARY_TENANT_IDS", value:$T} ] )')
+          fi
           NEW_ARN=$(aws ecs register-task-definition --cli-input-json "$NEW_DEF" \
             --query 'taskDefinition.taskDefinitionArn' --output text)
           echo "Registered $NEW_ARN"
