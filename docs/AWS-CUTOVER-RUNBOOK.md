@@ -2,7 +2,7 @@
 
 **VTID:** VTID-03412
 **Status:** Living document — governance artifact, not an execution authorization.
-**Last updated:** 2026-07-23
+**Last updated:** 2026-07-24
 
 ---
 
@@ -48,7 +48,7 @@ CLI + Cloudflare DNS audit performed under this VTID.
 | autopilot job (Cloud Run Job) | **No AWS deploy path at all.** |
 | Database sync | RDS Aurora `vitana-aurora-prod` via DMS task `vitana-supabase-to-aurora` (full-load-and-cdc): 495/495 tables under live CDC from the same Supabase project GCP prod uses. `autopilot_recommendations`'s dedicated CDC task (`vitana-autopilot-cdc`), which was `FATAL_ERROR` for ~26h, was fixed 2026-07-24 via a clean restart — both tasks confirmed `running`. **Note:** the specific update that was stuck at the time of the original failure did not replicate (the fix restarts CDC capture from "now", not from the stale position) — a one-row historical drift, not an ongoing gap. |
 | Secrets | `vitana/supabase/prod/*` (4 secrets) current as of 2026-07-14/21; RDS-managed master credential rotates automatically. |
-| Alarms | 47 `vitana-*` CloudWatch alarms, all `OK`/`INSUFFICIENT_DATA`. `community-app-awsdr` and `oasis-operator-awsdr` now have the same 4-alarm set (cpu-high, memory-high, target-5xx, unhealthy-hosts) gateway-awsdr already had — closed 2026-07-24. A `vitana-dms-task-failure` EventBridge rule (source `aws.dms` → SNS topic `vitana-alarms-prod`) was also added the same day so a future DMS task failure isn't silent for 26+ hours again like `vitana-autopilot-cdc` was. **New gap found while wiring this up: the `vitana-alarms-prod` SNS topic has zero subscribers** — no email, Slack, or PagerDuty endpoint is attached, so none of the 47 alarms or the new DMS rule currently notify anyone. All of this alerting infrastructure is presently inert until a real subscriber is added; this needs a decision on where alerts should actually go. |
+| Alarms | 47 `vitana-*` CloudWatch alarms, all `OK`/`INSUFFICIENT_DATA`. `community-app-awsdr` and `oasis-operator-awsdr` now have the same 4-alarm set (cpu-high, memory-high, target-5xx, unhealthy-hosts) gateway-awsdr already had — closed 2026-07-24. A `vitana-dms-task-failure` EventBridge rule (source `aws.dms` → SNS topic `vitana-alarms-prod`) was also added the same day so a future DMS task failure isn't silent for 26+ hours again like `vitana-autopilot-cdc` was. **Resolved 2026-07-24: `vitana-alarms-prod` now has a confirmed subscriber** — `j.tadic@exafy.io` (email), confirmed via `aws sns list-subscriptions-by-topic` (`SubscriptionsConfirmed: 1`). All 47 alarms and the DMS-failure rule now notify a real endpoint. User explicitly confirmed single-email alerting is sufficient to close this item — no Slack/PagerDuty channel requested. |
 | ALB naming | `vitana-tg-gateway-prod` / `vitana-tg-community-prod` **actually serve AWS staging traffic**, not prod — confirmed live via `/api/v1/admin/health` returning `env:"staging"` through those target groups. Both are `ManagedBy=terraform`-tagged (Terraform state not found in this repo) — not a stray hand-created leftover, part of some external IaC. Tagged 2026-07-24 with `ActualEnvironment=staging` to reduce confusion; not renamed (immutable name, rename requires recreation + ALB rule reattachment, risks a traffic blip). A real cutover must not confuse these with the `-awsdr` target groups. |
 | Legacy/mystery services | ~22 of the 29 (now 31) ECS services in `Vitana-ECS-Cluster` from the 2026-07-09 bulk-provisioning event remain unexplained — flagged, not investigated. Out of scope for cutover unless one turns out to be load-bearing. |
 | Cutover/rollback docs | **Did not exist before this VTID.** No DNS-repoint runbook, no rollback/TTL plan, no GCP decommission checklist. |
@@ -79,18 +79,17 @@ objective — each item has a clear done/not-done state.
       about *current* health, not a point-in-time fix — re-verify via
       `aws dms describe-replication-tasks` before actually cutting over,
       don't assume this stays true.
-- [~] **DMS alerting exists.** *(Partially done 2026-07-24: EventBridge
-      rule `vitana-dms-task-failure` created, source `aws.dms` → SNS
-      topic `vitana-alarms-prod`. Still NOT actually alerting anyone —
-      that topic has zero subscribers. Not complete until a real
-      email/Slack/PagerDuty endpoint is subscribed.)* the ~26h silent
-      gap this audit found must not be repeatable.
-- [ ] **`vitana-alarms-prod` SNS topic has a real subscriber.** Found
-      2026-07-24 while wiring the DMS alerting rule: the topic all 47
-      CloudWatch alarms and the new EventBridge rule point at has zero
-      subscriptions. Every alarm in the account is currently silent
-      regardless of state. Needs an explicit decision on where alerts
-      should go (email/Slack/PagerDuty) — cannot be assumed or invented.
+- [x] **DMS alerting exists.** EventBridge rule `vitana-dms-task-failure`
+      (source `aws.dms` → SNS topic `vitana-alarms-prod`) created
+      2026-07-24; topic now has a confirmed subscriber (see next item) —
+      the ~26h silent gap this audit found is no longer repeatable.
+- [x] **`vitana-alarms-prod` SNS topic has a real subscriber.** Resolved
+      2026-07-24: `j.tadic@exafy.io` (email) confirmed via
+      `aws sns list-subscriptions-by-topic`
+      (`SubscriptionsConfirmed: 1`) — all 47 CloudWatch alarms and the
+      DMS-failure rule now notify a real endpoint. User explicitly
+      confirmed single-email alerting is sufficient; no Slack/PagerDuty
+      channel requested.
 - [ ] **Frontend gateway-URL decision made and implemented** (§4.1) —
       either `gateway.vitanaland.com` DNS is part of the cutover sequence
       itself, or `community-app-awsdr` has been rebuilt against
@@ -103,8 +102,8 @@ objective — each item has a clear done/not-done state.
       2 consecutive real deploys.
 - [x] **CloudWatch alarms exist for `community-app-awsdr` and
       `oasis-operator-awsdr`** — done 2026-07-24, same 4-alarm pattern as
-      `gateway-awsdr` (cpu-high, memory-high, target-5xx, unhealthy-hosts).
-      *(Same SNS-subscriber caveat as the DMS alerting item above applies.)*
+      `gateway-awsdr` (cpu-high, memory-high, target-5xx, unhealthy-hosts),
+      notifying a confirmed subscriber (see SNS-subscriber item above).
 - [~] **ALB naming cleanup done or explicitly waived.** *(Partially
       mitigated 2026-07-24: both target groups tagged
       `ActualEnvironment=staging` + a `NamingWarning` explaining they
