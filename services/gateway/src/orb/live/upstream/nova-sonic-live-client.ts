@@ -432,7 +432,21 @@ export class NovaSonicLiveClient implements UpstreamLiveClient {
       for await (const item of body) {
         if (this.state !== 'open' && this.state !== 'closing') break;
         const bytes = item?.chunk?.bytes;
-        if (!bytes) continue;
+        if (!bytes) {
+          // Bedrock delivers service errors as NAMED eventstream union
+          // members (validationException, modelStreamErrorException, …) —
+          // never let one pass silently or the session dies with no trace.
+          const exceptionMember = Object.keys(item ?? {}).find((k) =>
+            /exception/i.test(k));
+          if (exceptionMember) {
+            const code = classifyNovaError({ name: exceptionMember.replace(/^./, (c) => c.toUpperCase()) });
+            this.state = 'error';
+            this.emitError({ code, message: `Nova stream exception event (${code}: ${exceptionMember})` });
+            this.finalizeClose({ initiatedLocally: false, reason: code });
+            return;
+          }
+          continue;
+        }
         let decoded: unknown;
         try {
           decoded = JSON.parse(new TextDecoder().decode(bytes));

@@ -37,7 +37,11 @@ class FakeResponseBody implements AsyncIterable<{ chunk?: { bytes?: Uint8Array }
   private done = false;
 
   feed(event: Record<string, unknown>): void {
-    const item = { chunk: { bytes: new TextEncoder().encode(JSON.stringify(event)) } };
+    this.feedRaw({ chunk: { bytes: new TextEncoder().encode(JSON.stringify(event)) } });
+  }
+
+  /** Push a raw stream item (e.g. a named exception union member). */
+  feedRaw(item: { chunk?: { bytes?: Uint8Array } }): void {
     const w = this.waiting.shift();
     if (w) w({ value: item, done: false });
     else this.buffer.push(item);
@@ -376,6 +380,24 @@ describe('shared Bedrock client (latency: HTTP/2 session reuse)', () => {
     await client.connect(baseOptions());
     await client.close('done');
     expect(owned.destroy).toHaveBeenCalled();
+  });
+});
+
+describe('named eventstream exception members', () => {
+  it('a validationException union member becomes a typed error, never a silent skip', async () => {
+    const { client, body } = makeClient();
+    const errors: string[] = [];
+    const closes: Array<string | undefined> = [];
+    client.onError((e) => errors.push(e.code));
+    client.onClose((e) => closes.push(e.reason));
+    await client.connect(baseOptions());
+
+    body.feedRaw({ validationException: { message: 'raw AWS text that must not leak' } } as any);
+    await flush();
+
+    expect(errors).toContain('nova_validation');
+    expect(closes).toEqual(['nova_validation']);
+    expect(client.getState()).toBe('closed');
   });
 });
 
