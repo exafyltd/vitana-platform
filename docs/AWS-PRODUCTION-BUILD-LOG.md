@@ -579,3 +579,55 @@ setup. Whatever Terraform project actually owns this infrastructure is
 not in this repo. A real fix (rename, or understanding why a
 `Environment=prod`-tagged, Terraform-managed target group serves staging
 traffic) should go through that IaC, not further hand-edits via aws-cli.
+
+### `vitana-autopilot-cdc` DMS task fixed (same day, after IAM grant)
+
+The user attached a scoped temporary inline policy
+(`vitana-dms-autopilot-fix-temp`, `dms:StartReplicationTask`/
+`StopReplicationTask` on the specific task ARN only) to
+`claude-staging-validation`, unblocking the fix diagnosed earlier the
+same day (§ above, "Root cause diagnosed").
+
+```bash
+aws dms start-replication-task \
+  --replication-task-arn arn:aws:dms:eu-central-1:472838866351:task:PASTVC7U6BBWJPD4YFTFDRLNCU \
+  --start-replication-task-type resume-processing --region eu-central-1
+```
+
+`resume-processing` reached `running` briefly (~60s) then failed again —
+**a different error than before**: `An internal WAL conversational
+protocol error has occurred`, not the original "Postgres apply or data
+error." Given the task's `RecoveryCheckpoint` dated back to 2026-07-22
+(the task had been dead ~2 days) and this same task had a prior "Slot
+does not exist" failure in its history (see the original diagnosis
+above), the working theory is the checkpoint's LSN position was no
+longer valid against the source's current replication slot state.
+
+Fell back to the documented plan: a clean restart, accepting loss of the
+one specific historical row update in exchange for restored currency.
+
+```bash
+aws dms start-replication-task \
+  --replication-task-arn arn:aws:dms:eu-central-1:472838866351:task:PASTVC7U6BBWJPD4YFTFDRLNCU \
+  --start-replication-task-type start-replication --region eu-central-1
+```
+
+Confirmed stable: `status=running`, zero new failure events, for 5+
+minutes post-restart (`aws dms describe-events --start-time
+<restart-timestamp>` returning only the "started" state-change event, no
+"failed" events). `aws dms describe-table-statistics` showed a fresh
+full-load pass completing cleanly (`TableState: Table completed`) as
+part of the restart. Both `vitana-autopilot-cdc` and
+`vitana-supabase-to-aurora` confirmed `running` with `LastFailureMessage:
+null`.
+
+**Residual gap, accepted not fixed:** the specific UPDATE that was stuck
+at the time of the original 2026-07-22 failure never replicated — CDC
+capture restarted from "now," not from the old position. This is a
+one-row historical drift on a DR replica, not an ongoing sync gap.
+
+Attempted to self-remove `vitana-dms-autopilot-fix-temp` after the fix
+(`iam:DeleteUserPolicy`) — blocked, same as the earlier
+`vitana-awsdr-oidc-setup-temp` self-revoke attempt. Both temporary
+policies are still attached to `claude-staging-validation` pending
+manual removal by an operator with IAM write access.
