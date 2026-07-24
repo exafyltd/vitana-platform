@@ -641,6 +641,8 @@ function pickTipLocale(text: { en: string; de: string; [k: string]: string }, lo
 }
 
 router.post('/daily-feature-tip', async (req: Request, res: Response) => {
+  // public-route — called by Cloud Scheduler (no JWT); protected by GCP IAM
+  // at the scheduler layer, same pattern as the other entries in this file.
   const tenantId = getTenantId(req);
   if (!tenantId) return res.status(400).json({ ok: false, error: 'tenant_id required' });
 
@@ -713,6 +715,24 @@ router.post('/daily-feature-tip', async (req: Request, res: Response) => {
       .upsert({ tenant_id: tenantId, last_index: nextIndex, updated_at: new Date().toISOString() });
 
     console.log(`[Scheduled] daily_feature_tip → tip=${tip.key} dispatched=${dispatched} users`);
+
+    // Record the publish as a state transition (a real action, not a poll),
+    // same pattern as /daily-pace-notifications above. Best-effort — never
+    // fail the response if OASIS write fails.
+    try {
+      const { emitOasisEvent } = await import('../services/oasis-event-service');
+      await emitOasisEvent({
+        type: 'notification.daily_feature_tip.dispatched' as any,
+        source: 'gateway',
+        vtid: 'BOOTSTRAP-DAILY-FEATURE-TIP',
+        status: 'info',
+        message: `daily_feature_tip fan-out: tip=${tip.key} dispatched=${dispatched}`,
+        payload: { tenant_id: tenantId, tip: tip.key, announcement_id: announcementId, dispatched },
+      });
+    } catch (oasisErr: any) {
+      console.warn(`[Scheduled] daily_feature_tip OASIS emit failed: ${oasisErr?.message || oasisErr}`);
+    }
+
     return res.status(200).json({ ok: true, tip: tip.key, announcement_id: announcementId, dispatched });
   } catch (err: any) {
     console.error('[Scheduled] daily_feature_tip exception:', err.message);
