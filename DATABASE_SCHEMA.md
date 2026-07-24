@@ -1358,5 +1358,84 @@ added to claim due rows and transition `active → fired`.
 
 ---
 
+## VTID-02950 — Recommend & Earn (Business tab)
+
+Backs the owner's private "Business" segment (click/conversion/commission
+stats, `discover-recommendations.ts`) and, as of
+BOOTSTRAP-PUBLIC-BUSINESS-PROFILE, a public read-only storefront view for
+profile visitors (`discover-recommendations-public.ts`) — same table, two
+response shapes: the public endpoint drops all stats/earnings columns.
+**Migration:** `supabase/migrations/20260715120000_vtid_02950_recommendation_commissions.sql`
+
+### product_recommendations
+
+**Purpose:** One row per (user, product) a community member has recommended
+from Discover. Tracks clicks/conversions/commission earned for the owner's
+private dashboard; only `status='active'` rows are exposed to other users.
+
+```sql
+CREATE TABLE product_recommendations (
+  id                       UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id                UUID,
+  user_id                  UUID NOT NULL,
+  product_id               UUID NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+  merchant_id              UUID REFERENCES merchants(id) ON DELETE SET NULL,
+  sharing_link_id          UUID REFERENCES sharing_links(id) ON DELETE SET NULL,
+  status                   TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','disabled')),
+  click_count              INT NOT NULL DEFAULT 0,
+  conversion_count         INT NOT NULL DEFAULT 0,
+  commission_earned_minor  BIGINT NOT NULL DEFAULT 0,
+  commission_currency      CHAR(3) NOT NULL DEFAULT 'EUR',
+  created_at               TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at               TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (user_id, product_id)
+);
+```
+
+**Auth model:** RLS on, owner-select-only (`auth.uid() = user_id`) +
+service-role full access. **All gateway routes use the service-role client,
+bypassing RLS** — the route code's response-shaping (dropping stats fields
+for the public endpoint) is the actual privacy boundary, not RLS.
+
+---
+
+## Feature Announcement News Feed Cards (BOOTSTRAP-FEATURE-ANNOUNCEMENTS)
+
+Backs the "Brand New Feature" / "Did You Know" News Feed cards
+(vitana-v1 `src/components/home/FeatureAnnouncementCard.tsx`). One row = one
+admin-published announcement, shown to every member of its tenant until
+deactivated. Written only via the gateway's admin-only endpoint
+(`services/gateway/src/routes/admin-feature-announcements.ts`, mounted at
+`/api/v1/admin/feature-announcements`), which also fans out an
+in-app + push `feature_announcement` notification to every tenant member in
+their own locale.
+
+### feature_announcements
+
+```sql
+CREATE TABLE feature_announcements (
+  id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id      UUID NOT NULL,
+  variant        TEXT NOT NULL CHECK (variant IN ('brand-new-feature', 'did-you-know-feature')),
+  feature_title  JSONB NOT NULL,  -- { "en": "...", "de": "..." }
+  description    JSONB NOT NULL,  -- { "en": "...", "de": "..." }
+  deep_link      TEXT NOT NULL,
+  is_active      BOOLEAN NOT NULL DEFAULT TRUE,
+  target_user_ids UUID[],  -- NULL = whole tenant; set = staged test send to specific users
+  created_by     TEXT,
+  notified_at    TIMESTAMPTZ,
+  created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+```
+
+**Auth model:** RLS on. `SELECT` for any authenticated user whose
+`user_tenants` row matches `tenant_id` AND (`target_user_ids IS NULL` OR
+`auth.uid() = ANY(target_user_ids)`), AND `is_active = true`; `ALL` for
+`service_role` (mirrors `ai_provider_policies`). Frontend reads it directly
+via the Supabase client (same pattern as `profile_posts`/`media_uploads` in
+`useAllNewsFeed.ts`) — no gateway GET route needed for the card itself.
+
+---
+
 **Remember:** This file is the SINGLE SOURCE OF TRUTH for table names.
 When in doubt, CHECK HERE FIRST!

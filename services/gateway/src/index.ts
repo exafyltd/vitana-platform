@@ -1,3 +1,4 @@
+import './lib/gcp-adc-bootstrap'; // must run before any GoogleAuth()/Vertex client is constructed
 import express from 'express';
 import path from 'path';
 import fs from 'fs';
@@ -173,6 +174,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const discoverFeedRouter = require('./routes/discover-feed').default;
   // VTID-02950: Recommend & Earn — user product recommendations + commission stats
   const discoverRecommendationsRouter = require('./routes/discover-recommendations').default;
+  // BOOTSTRAP-PUBLIC-BUSINESS-PROFILE: another user's public recommendations
+  // (Business tab, visitor view) — no owner-only stats, see file header.
+  const discoverRecommendationsPublicRouter = require('./routes/discover-recommendations-public').default;
   // VTID-02000: Maxina admin marketplace routes
   const adminMarketplaceRouter = require('./routes/admin-marketplace').default;
   // VTID-02000: Internal scheduler-authed sync trigger (shared secret, no user JWT)
@@ -328,6 +332,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const autonomyPulseRouter = require('./routes/autonomy-pulse').default;
   // Autonomy Trace — unified timeline of autonomous work-in-flight + history
   const autonomyTraceRouter = require('./routes/autonomy-trace').default;
+  // BOOTSTRAP-AWS-STAGING-VALIDATION: TEMPORARY — AI Studio ListModels debug proxy
+  const debugAiStudioModelsRouter = require('./routes/debug-ai-studio-models').default;
   // VTID-01250: Social Connect (AP-1305/AP-1306)
   const socialConnectRouter = require('./routes/social-connect').default;
   // Intelligent Calendar — Phase 1: Backend Calendar API
@@ -399,6 +405,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const orbToolsSelfcheckRouter = require('./routes/orb-tools-selfcheck').default;
   // Admin: Notification Compose & Tracking
   const adminNotificationsRouter = require('./routes/admin-notifications').default;
+  // Admin: Feature Announcement News Feed cards (BOOTSTRAP-FEATURE-ANNOUNCEMENTS)
+  const adminFeatureAnnouncementsRouter = require('./routes/admin-feature-announcements').default;
   // Admin: Notification Category Management (CRUD + Test)
   const adminNotificationCategoriesRouter = require('./routes/admin-notification-categories').default;
   // User: Notification Category Preferences (toggle categories on/off)
@@ -751,6 +759,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   mountRouterSync(app, '/api/v1/autonomy', autonomyPulseRouter, { owner: 'autonomy-pulse' });
   mountRouterSync(app, '/api/v1/autonomy', autonomyTraceRouter, { owner: 'autonomy-trace' });
 
+  // BOOTSTRAP-AWS-STAGING-VALIDATION: TEMPORARY — remove once AI_STUDIO_LIVE_MODEL is confirmed
+  mountRouterSync(app, '/api/v1', debugAiStudioModelsRouter, { owner: 'debug-ai-studio-models' });
+
   // VTID-01250: Social Connect — OAuth, profile enrichment, auto-share (AP-1305/AP-1306)
   mountRouterSync(app, '/api/v1/social-accounts', socialConnectRouter, { owner: 'social-connect' });
 
@@ -1022,6 +1033,7 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   mountRouterSync(app, '/api/v1/discover', discoverSearchRouter, { owner: 'discover-search' });
   mountRouterSync(app, '/api/v1/discover', discoverFeedRouter, { owner: 'discover-feed' });
   mountRouterSync(app, '/api/v1/discover', discoverRecommendationsRouter, { owner: 'discover-recommendations' });
+  mountRouterSync(app, '/api/v1/discover', discoverRecommendationsPublicRouter, { owner: 'discover-recommendations-public' });
   // Public, auth-less profile lookup for crawler OG previews
   mountRouterSync(app, '/api/v1/public', publicProfileOgRouter, { owner: 'public-profile-og' });
   // VTID-02000: Maxina admin marketplace
@@ -1152,6 +1164,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   // Admin: Notification Compose & Tracking
   mountRouterSync(app, '/api/v1/admin/orb-tools', orbToolsSelfcheckRouter, { owner: 'orb-tools-selfcheck' });
   mountRouterSync(app, '/api/v1/admin/notifications', adminNotificationsRouter, { owner: 'admin-notifications' });
+
+  // Admin: Feature Announcement News Feed cards
+  mountRouterSync(app, '/api/v1/admin/feature-announcements', adminFeatureAnnouncementsRouter, { owner: 'admin-feature-announcements' });
 
   // Admin: Notification Category Management
   mountRouterSync(app, '/api/v1/admin/notification-categories', adminNotificationCategoriesRouter, { owner: 'admin-notification-categories' });

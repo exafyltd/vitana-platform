@@ -1,0 +1,520 @@
+/**
+ * BOOTSTRAP-AWS-STAGING-VALIDATION: Google AI Studio (Gemini API key) Live
+ * API implementation of `UpstreamLiveClient`.
+ *
+ * Sibling to `VertexLiveClient` (vertex-live-client.ts), not a subclass of
+ * it — kept fully self-contained so the existing, production-proven Vertex
+ * path is untouched by this addition.
+ *
+ * Why this exists: `VertexLiveClient` authenticates via OAuth Application
+ * Default Credentials, which resolve for free on Cloud Run (GCP metadata
+ * server) but have nothing to resolve from on non-GCP compute (AWS ECS —
+ * see gcp-adc-bootstrap.ts). The Gemini Live API is also reachable through
+ * Google AI Studio's public endpoint using a plain API key — no ADC, no GCP
+ * service-account credential, no metadata server required. This client
+ * targets that endpoint so AWS can run ORB voice without a GCP credential
+ * at all.
+ *
+ * Wire-protocol parity with VertexLiveClient: same `setup` /
+ * `realtime_input` / `client_content` snake_case envelope shapes and the
+ * same `server_content` / `tool_call` response dispatch — Vertex AI Live
+ * and the AI Studio Live API share the same underlying BidiGenerateContent
+ * proto definitions. The two concrete differences are:
+ *   1. Auth: API key (`?key=`) instead of an OAuth `Authorization: Bearer`.
+ *   2. Model: Vertex and AI Studio have SEPARATE model catalogs. Neither
+ *      Vertex's Live model (gemini-live-2.5-flash-native-audio) nor the
+ *      commonly-referenced gemini-2.0-flash-live-001 exist in this key's AI
+ *      Studio catalog — confirmed via GET /api/v1/debug/ai-studio-models
+ *      (a temporary ListModels proxy, routes/debug-ai-studio-models.ts),
+ *      which showed exactly one bidiGenerateContent-capable model out of
+ *      ~50: gemini-2.5-flash-native-audio-latest. The setup envelope built
+ *      by callers (orb-live.ts's `customSetupMessage`) is Vertex-shaped, so
+ *      this client always overrides `setup.model` to AI_STUDIO_LIVE_MODEL
+ *      after building it, rather than forking the (large) envelope-builder.
+ *
+ * CONFIRMED on AWS staging (2026-07-20): a real ORB session reaches a
+ * genuine WebSocket handshake with Google's AI Studio Live API — the ADC
+ * blocker is gone. Two more model-name guesses failed after that (both
+ * v1alpha and v1beta rejected them); ListModels ground truth resolved it.
+ * AI_STUDIO_LIVE_MODEL = gemini-2.5-flash-native-audio-latest is the fix,
+ * NOT yet re-verified end-to-end (audio/setup_complete) — confirm in
+ * CloudWatch logs before treating AWS ORB voice as fixed.
+ */
+
+import WebSocket from 'ws';
+import type {
+  AudioOutputEvent,
+  GoAwayEvent,
+  InterruptedEvent,
+  SessionResumptionEvent,
+  ToolCallEvent,
+  TranscriptEvent,
+  TurnCompleteEvent,
+  UpstreamCloseEvent,
+  UpstreamConnectOptions,
+  UpstreamConnectionState,
+  UpstreamErrorEvent,
+  UpstreamLiveClient,
+  UpstreamToolResult,
+  UpstreamUsageEvent,
+} from './types';
+import { AUDIO_OUT_RATE_HZ } from '../protocol';
+import { buildSetupMessage, parseDurationMs } from './vertex-live-client';
+import type { VertexWebSocketLike } from './vertex-live-client';
+import { AI_STUDIO_LIVE_MODEL } from '../config';
+
+export interface GeminiApiKeyLiveClientDeps {
+  /** Factory for the underlying socket. Defaults to a real `ws` connection. */
+  createSocket?: (url: string, headers: Record<string, string>) => VertexWebSocketLike;
+
+  /**
+   * BOOTSTRAP-NOVA-SONIC-VOICE: API-key supplier on the constructor (the
+   * provider-credential seam). Takes precedence over the deprecated
+   * `options.getAccessToken` fallback during migration.
+   */
+  getApiKey?: () => Promise<string>;
+}
+
+const DEFAULT_CONNECT_TIMEOUT_MS = 15_000;
+const DEFAULT_INPUT_MIME = 'audio/pcm;rate=16000';
+const DEFAULT_OUTPUT_MIME = `audio/pcm;rate=${AUDIO_OUT_RATE_HZ}`;
+// BOOTSTRAP-AWS-STAGING-VALIDATION: v1beta. ListModels ground truth (see
+// file header) confirmed the same bidiGenerateContent-capable model shows
+// up identically under v1alpha and v1beta for this key — v1beta chosen as
+// AI Studio's documented, non-alpha surface.
+const AI_STUDIO_LIVE_WS_BASE =
+  'wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent';
+
+/** Build the AI Studio Live API WebSocket URL. Exposed for tests. */
+export function buildAiStudioBidiGenerateContentUrl(apiKey: string): string {
+  return `${AI_STUDIO_LIVE_WS_BASE}?key=${encodeURIComponent(apiKey)}`;
+}
+
+/**
+ * Ensure an AI Studio model id carries the required `models/` prefix.
+ * Vertex and AI Studio have separate model catalogs (see file header) —
+ * this does NOT derive the id from a Vertex model string; callers must
+ * pass the actual AI-Studio-catalog model name (AI_STUDIO_LIVE_MODEL).
+ */
+export function toAiStudioModelId(model: string): string {
+  return model.startsWith('models/') ? model : `models/${model}`;
+}
+
+/**
+ * AI Studio (API-key auth) Live API client. See file header for why this
+ * exists and what it shares with `VertexLiveClient`.
+ */
+export class GeminiApiKeyLiveClient implements UpstreamLiveClient {
+  private state: UpstreamConnectionState = 'idle';
+  private ws: VertexWebSocketLike | null = null;
+  private readonly createSocket: NonNullable<GeminiApiKeyLiveClientDeps['createSocket']>;
+
+  private audioOutputHandler: ((e: AudioOutputEvent) => void) | null = null;
+  private transcriptHandler: ((e: TranscriptEvent) => void) | null = null;
+  private toolCallHandler: ((e: ToolCallEvent) => void) | null = null;
+  private turnCompleteHandler: ((e: TurnCompleteEvent) => void) | null = null;
+  private interruptedHandler: ((e: InterruptedEvent) => void) | null = null;
+  private sessionResumptionHandler: ((e: SessionResumptionEvent) => void) | null = null;
+  private goAwayHandler: ((e: GoAwayEvent) => void) | null = null;
+  private errorHandler: ((e: UpstreamErrorEvent) => void) | null = null;
+  private closeHandler: ((e: UpstreamCloseEvent) => void) | null = null;
+
+  private closeEmitted = false;
+  private connectTimeout: NodeJS.Timeout | null = null;
+  private localCloseRequested = false;
+  private localCloseReason: string | undefined;
+  private usageHandler: ((e: UpstreamUsageEvent) => void) | null = null;
+  private readonly depGetApiKey: (() => Promise<string>) | undefined;
+
+  constructor(deps: GeminiApiKeyLiveClientDeps = {}) {
+    this.createSocket =
+      deps.createSocket ??
+      ((url, headers) =>
+        new WebSocket(url, { headers }) as unknown as VertexWebSocketLike);
+    this.depGetApiKey = deps.getApiKey;
+  }
+
+  getState(): UpstreamConnectionState {
+    return this.state;
+  }
+
+  getSocket(): WebSocket | null {
+    return this.ws as unknown as WebSocket | null;
+  }
+
+  onAudioOutput(handler: (event: AudioOutputEvent) => void): void {
+    this.audioOutputHandler = handler;
+  }
+
+  onTranscript(handler: (event: TranscriptEvent) => void): void {
+    this.transcriptHandler = handler;
+  }
+
+  onToolCall(handler: (event: ToolCallEvent) => void): void {
+    this.toolCallHandler = handler;
+  }
+
+  onTurnComplete(handler: (event: TurnCompleteEvent) => void): void {
+    this.turnCompleteHandler = handler;
+  }
+
+  onInterrupted(handler: (event: InterruptedEvent) => void): void {
+    this.interruptedHandler = handler;
+  }
+
+  onSessionResumption(handler: (event: SessionResumptionEvent) => void): void {
+    this.sessionResumptionHandler = handler;
+  }
+
+  onGoAway(handler: (event: GoAwayEvent) => void): void {
+    this.goAwayHandler = handler;
+  }
+
+  onUsage(handler: (event: UpstreamUsageEvent) => void): void {
+    // AI Studio Live does not stream usage totals today — accepted, never fires.
+    this.usageHandler = handler;
+    void this.usageHandler;
+  }
+
+  onError(handler: (event: UpstreamErrorEvent) => void): void {
+    this.errorHandler = handler;
+  }
+
+  onClose(handler: (event: UpstreamCloseEvent) => void): void {
+    this.closeHandler = handler;
+  }
+
+  async connect(options: UpstreamConnectOptions): Promise<void> {
+    if (this.state !== 'idle') {
+      throw new Error(`invalid_state: cannot connect from state '${this.state}'`);
+    }
+
+    this.state = 'connecting';
+
+    // Credential precedence (BOOTSTRAP-NOVA-SONIC-VOICE): constructor dep
+    // first, then the deprecated provider-neutral options hook as a
+    // migration fallback.
+    const getApiKey = this.depGetApiKey ?? options.getAccessToken;
+    if (!getApiKey) {
+      this.state = 'error';
+      throw new Error(
+        'gemini_config_missing: no getApiKey supplied via GeminiApiKeyLiveClientDeps or connect options',
+      );
+    }
+    const apiKey = await getApiKey();
+    const url = buildAiStudioBidiGenerateContentUrl(apiKey);
+    const ws = this.createSocket(url, { 'Content-Type': 'application/json' });
+    this.ws = ws;
+
+    const timeoutMs = options.connectTimeoutMs ?? DEFAULT_CONNECT_TIMEOUT_MS;
+
+    return new Promise<void>((resolve, reject) => {
+      let settled = false;
+
+      this.connectTimeout = setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        this.transitionToError({
+          code: 'timeout',
+          message: `Live API connection timeout after ${timeoutMs}ms`,
+        });
+        try {
+          ws.close();
+        } catch {
+          /* ignore */
+        }
+        reject(new Error('Live API connection timeout'));
+      }, timeoutMs);
+
+      ws.on('open', async () => {
+        try {
+          const envelope = options.customSetupMessage
+            ? await Promise.resolve(options.customSetupMessage())
+            : buildSetupMessage(options);
+          // Always override to AI Studio's own model catalog — the
+          // envelope's model field is Vertex-shaped and Vertex's Live
+          // model is not reachable through this endpoint (see file header).
+          const setup = (envelope as { setup?: Record<string, unknown> }).setup;
+          if (setup) {
+            setup.model = toAiStudioModelId(AI_STUDIO_LIVE_MODEL);
+          }
+          ws.send(JSON.stringify(envelope));
+        } catch (err) {
+          if (settled) return;
+          settled = true;
+          this.clearConnectTimeout();
+          this.transitionToError({
+            code: 'setup_send_failed',
+            message: (err as Error).message,
+            cause: err,
+          });
+          reject(err);
+        }
+      });
+
+      ws.on('message', (data: WebSocket.Data) => {
+        let parsed: any;
+        try {
+          parsed = JSON.parse(data.toString());
+        } catch {
+          this.emitError({ code: 'parse_error', message: 'Non-JSON message from upstream' });
+          return;
+        }
+
+        if (parsed.setup_complete || parsed.setupComplete) {
+          if (!settled) {
+            settled = true;
+            this.clearConnectTimeout();
+            this.state = 'open';
+            resolve();
+          }
+          return;
+        }
+
+        if (this.state === 'open') {
+          this.dispatchServerMessage(parsed);
+        }
+      });
+
+      ws.on('error', (err: Error) => {
+        if (!settled) {
+          settled = true;
+          this.clearConnectTimeout();
+          this.transitionToError({
+            code: 'transport_error',
+            message: err.message,
+            cause: err,
+          });
+          reject(err);
+          return;
+        }
+        this.emitError({
+          code: 'transport_error',
+          message: err.message,
+          cause: err,
+        });
+      });
+
+      ws.on('close', (code: number, reason: Buffer) => {
+        this.handleSocketClose(code, reason);
+        if (!settled) {
+          settled = true;
+          this.clearConnectTimeout();
+          // Include the close reason text (when the server sent one) so a
+          // handshake failure is diagnosable from the rejected error message
+          // alone — this is a NEW, unverified provider integration, so
+          // guessing at causes from a bare close code is not good enough.
+          const reasonText = reason?.toString?.();
+          reject(
+            new Error(
+              `Live API closed during handshake (code=${code})${reasonText ? `: ${reasonText}` : ''}`,
+            ),
+          );
+        }
+      });
+    });
+  }
+
+  sendAudioChunk(audioB64: string, mimeType: string = DEFAULT_INPUT_MIME): boolean {
+    if (this.state !== 'open' || !this.ws) return false;
+    if (this.ws.readyState !== WebSocket.OPEN) return false;
+
+    const message = {
+      realtime_input: {
+        media_chunks: [{ mime_type: mimeType, data: audioB64 }],
+      },
+    };
+
+    try {
+      this.ws.send(JSON.stringify(message));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  sendTextTurn(text: string, turnComplete: boolean = true): boolean {
+    if (this.state !== 'open' || !this.ws) return false;
+    if (this.ws.readyState !== WebSocket.OPEN) return false;
+
+    const message = {
+      client_content: {
+        turns: [{ role: 'user', parts: [{ text }] }],
+        turn_complete: turnComplete,
+      },
+    };
+
+    try {
+      this.ws.send(JSON.stringify(message));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  sendEndOfTurn(): boolean {
+    if (this.state !== 'open' || !this.ws) return false;
+    if (this.ws.readyState !== WebSocket.OPEN) return false;
+
+    const message = { client_content: { turn_complete: true } };
+
+    try {
+      this.ws.send(JSON.stringify(message));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  sendToolResult(result: UpstreamToolResult): boolean {
+    if (this.state !== 'open' || !this.ws) return false;
+    if (this.ws.readyState !== WebSocket.OPEN) return false;
+
+    // Same BidiGenerateContent envelope as VertexLiveClient.sendToolResult
+    // (shared proto definitions) — 'id' rejected, failures as Error output.
+    const outputText = result.success ? result.output : `Error: ${result.error ?? 'tool failed'}`;
+    const message = {
+      tool_response: {
+        function_responses: [
+          {
+            name: result.name,
+            response: { output: outputText },
+          },
+        ],
+      },
+    };
+
+    try {
+      this.ws.send(JSON.stringify(message));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async close(reason?: string): Promise<void> {
+    if (this.state === 'closed' || this.state === 'closing') return;
+    this.localCloseRequested = true;
+    this.localCloseReason = reason;
+    this.state = 'closing';
+    this.clearConnectTimeout();
+    try {
+      this.ws?.close(1000, reason);
+    } catch {
+      /* ignore */
+    }
+    if (!this.closeEmitted) {
+      this.finalizeClose({ initiatedLocally: true, reason });
+    }
+  }
+
+  private dispatchServerMessage(message: any): void {
+    const serverContent = message.server_content || message.serverContent;
+    if (serverContent) {
+      const interrupted =
+        serverContent.interrupted ||
+        serverContent.grounding_metadata?.interrupted ||
+        serverContent.groundingMetadata?.interrupted;
+      if (interrupted) {
+        this.interruptedHandler?.({});
+      }
+
+      const modelTurn = serverContent.model_turn || serverContent.modelTurn;
+      const parts: any[] = modelTurn?.parts || [];
+      for (const part of parts) {
+        const inlineData = part.inline_data || part.inlineData;
+        if (inlineData?.data) {
+          this.audioOutputHandler?.({
+            dataB64: inlineData.data,
+            mimeType: inlineData.mime_type || inlineData.mimeType || DEFAULT_OUTPUT_MIME,
+          });
+        }
+      }
+
+      const inputTransObj = serverContent.input_transcription || serverContent.inputTranscription;
+      const outputTransObj = serverContent.output_transcription || serverContent.outputTranscription;
+
+      const inputText = typeof inputTransObj === 'string' ? inputTransObj : inputTransObj?.text;
+      const outputText = typeof outputTransObj === 'string' ? outputTransObj : outputTransObj?.text;
+
+      // Streamed deltas — never final (BOOTSTRAP-NOVA-SONIC-VOICE).
+      if (inputText) {
+        this.transcriptHandler?.({ direction: 'input', text: inputText, isFinal: false });
+      }
+      if (outputText) {
+        this.transcriptHandler?.({ direction: 'output', text: outputText, isFinal: false });
+      }
+
+      if (serverContent.turn_complete || serverContent.turnComplete) {
+        this.turnCompleteHandler?.({});
+      }
+    }
+
+    const toolCall = message.tool_call || message.toolCall;
+    if (toolCall) {
+      const fnCalls = toolCall.function_calls || toolCall.functionCalls || [];
+      const calls = fnCalls.map((fc: any) => ({
+        name: fc.name,
+        args: fc.args || {},
+        id: fc.id,
+      }));
+      if (calls.length > 0) {
+        this.toolCallHandler?.({ calls });
+      }
+    }
+
+    const resumption =
+      message.session_resumption_update || message.sessionResumptionUpdate;
+    if (resumption) {
+      this.sessionResumptionHandler?.({
+        handle: resumption.new_handle || resumption.newHandle || null,
+        resumable: resumption.resumable === true,
+      });
+    }
+
+    const goAway = message.go_away || message.goAway;
+    if (goAway) {
+      this.goAwayHandler?.({ timeLeftMs: parseDurationMs(goAway.time_left ?? goAway.timeLeft) });
+    }
+  }
+
+  private handleSocketClose(code: number, reason: Buffer): void {
+    if (this.closeEmitted) return;
+    this.finalizeClose({
+      code,
+      reason: reason?.toString?.() || this.localCloseReason || undefined,
+      initiatedLocally: this.localCloseRequested,
+    });
+  }
+
+  private finalizeClose(event: UpstreamCloseEvent): void {
+    this.closeEmitted = true;
+    this.state = 'closed';
+    this.clearConnectTimeout();
+    try {
+      this.closeHandler?.(event);
+    } catch {
+      /* swallow handler exceptions */
+    }
+  }
+
+  private transitionToError(err: UpstreamErrorEvent): void {
+    this.state = 'error';
+    this.emitError(err);
+  }
+
+  private emitError(err: UpstreamErrorEvent): void {
+    try {
+      this.errorHandler?.(err);
+    } catch {
+      /* swallow handler exceptions */
+    }
+  }
+
+  private clearConnectTimeout(): void {
+    if (this.connectTimeout) {
+      clearTimeout(this.connectTimeout);
+      this.connectTimeout = null;
+    }
+  }
+}

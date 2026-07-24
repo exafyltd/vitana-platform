@@ -1,0 +1,145 @@
+# AWS-PROD-DEPLOY-OASIS-PROJECTOR — build oasis-projector, push to ECR,
+# and roll the AWS ECS service (VTID-03411 hardening pass).
+#
+# oasis-projector is an internal-only singleton background worker (the
+# VTID Ledger Writer, VTID-0521) with NO public ALB/DNS endpoint — it has
+# no external callers, so unlike gateway/frontend/oasis-operator this
+# workflow cannot curl-verify a live URL after deploy. Instead it relies
+# on the ECS-level container healthCheck (added in this same pass, hits
+# GET /ready internally, which itself verifies the Aurora DB connection —
+# the exact dependency that was broken and fixed under VTID-03408) and
+# `aws ecs wait services-stable`, which incorporates that health check
+# into its stability determination.
+#
+# Deliberately NOT autoscaled: the ledger writer has no cross-instance
+# locking, so running N>1 replicas risks duplicate event processing.
+# desiredCount stays fixed at 1 — see docs/AWS-PRODUCTION-BUILD-LOG.md.
+#
+# workflow_dispatch ONLY, required `reason`, never on push — same model
+# as every other AWS-DR deploy workflow this session.
+
+name: AWS Prod Deploy Oasis Projector (ECS)
+
+on:
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: 'Reason for this AWS oasis-projector deploy — required'
+        required: true
+      aws_region:
+        description: 'AWS region'
+        required: false
+        default: 'eu-central-1'
+      ecr_repository:
+        description: 'ECR repository name'
+        required: false
+        default: 'vitana/oasis-projector'
+      ecs_cluster:
+        description: 'ECS cluster name'
+        required: false
+        default: 'Vitana-ECS-Cluster'
+      ecs_service:
+        description: 'ECS service name'
+        required: false
+        default: 'vitana-oasis-projector'
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: aws-prod-deploy-oasis-projector
+  cancel-in-progress: false
+
+jobs:
+  build-push-deploy:
+    runs-on: ubuntu-latest
+    env:
+      TARGET_AWS_REGION: ${{ inputs.aws_region }}
+      ECR_REPOSITORY: ${{ inputs.ecr_repository }}
+      ECS_CLUSTER: ${{ inputs.ecs_cluster }}
+      ECS_SERVICE: ${{ inputs.ecs_service }}
+      DEPLOY_REASON: ${{ inputs.reason }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve commit metadata
+        id: commit
+        run: echo "short=$(git rev-parse --short=12 HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Configure AWS credentials (GitHub OIDC — no static keys)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_PROD_ROLE_ARN }}
+          aws-region: ${{ env.TARGET_AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Preflight
+        run: |
+          set -e
+          if ! aws ecr describe-repositories --repository-names "${{ env.ECR_REPOSITORY }}" >/dev/null 2>&1; then
+            echo "::error::ECR repository '${{ env.ECR_REPOSITORY }}' not found."
+            exit 1
+          fi
+          if ! aws ecs describe-services --cluster "${{ env.ECS_CLUSTER }}" --services "${{ env.ECS_SERVICE }}" \
+               --query 'services[0].status' --output text 2>/dev/null | grep -q ACTIVE; then
+            echo "::error::ECS service '${{ env.ECS_SERVICE }}' not ACTIVE."
+            exit 1
+          fi
+
+      - name: Build and push image
+        id: build
+        env:
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+        run: |
+          set -e
+          IMAGE="$REGISTRY/${{ env.ECR_REPOSITORY }}:${{ steps.commit.outputs.short }}"
+          docker build -t "$IMAGE" -t "$REGISTRY/${{ env.ECR_REPOSITORY }}:latest" services/oasis-projector
+          docker push "$IMAGE"
+          docker push "$REGISTRY/${{ env.ECR_REPOSITORY }}:latest"
+          echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
+
+      - name: Register task-definition revision + roll the service (desiredCount stays as-is — no autoscaling)
+        run: |
+          set -e
+          IMAGE="${{ steps.build.outputs.image }}"
+          TD_ARN=$(aws ecs describe-services --cluster "${{ env.ECS_CLUSTER }}" --services "${{ env.ECS_SERVICE }}" \
+            --query 'services[0].taskDefinition' --output text)
+          NEW_DEF=$(aws ecs describe-task-definition --task-definition "$TD_ARN" --query taskDefinition \
+            | jq --arg IMG "$IMAGE" '
+                .containerDefinitions[0].image = $IMG
+                | del(.taskDefinitionArn, .revision, .status, .requiresAttributes,
+                      .compatibilities, .registeredAt, .registeredBy, .deregisteredAt)')
+          NEW_ARN=$(aws ecs register-task-definition --cli-input-json "$NEW_DEF" --query 'taskDefinition.taskDefinitionArn' --output text)
+          echo "Registered $NEW_ARN"
+          aws ecs update-service --cluster "${{ env.ECS_CLUSTER }}" --service "${{ env.ECS_SERVICE }}" --task-definition "$NEW_ARN" >/dev/null
+          aws ecs wait services-stable --cluster "${{ env.ECS_CLUSTER }}" --services "${{ env.ECS_SERVICE }}"
+          echo "Service stable on $NEW_ARN"
+
+      - name: Verify — task health (no public endpoint to curl; internal-only service)
+        run: |
+          set -e
+          for i in 1 2 3 4 5 6; do
+            TASK_ARN=$(aws ecs list-tasks --cluster "${{ env.ECS_CLUSTER }}" --service-name "${{ env.ECS_SERVICE }}" --query "taskArns[0]" --output text)
+            HEALTH=$(aws ecs describe-tasks --cluster "${{ env.ECS_CLUSTER }}" --tasks "$TASK_ARN" --query "tasks[0].healthStatus" --output text)
+            if [ "$HEALTH" = "HEALTHY" ]; then
+              echo "✓ Task healthy (container healthCheck hit /ready, confirming DB connectivity)"
+              exit 0
+            fi
+            echo "Attempt $i: healthStatus='$HEALTH' — retry in 15s"
+            sleep 15
+          done
+          echo "::error::Task did not report HEALTHY after deploy"
+          exit 1
+
+      - name: Summary
+        if: success()
+        run: |
+          {
+            echo "## oasis-projector deploy"
+            echo "- Image: \`${{ steps.build.outputs.image }}\`"
+            echo "- Reason: ${{ env.DEPLOY_REASON }}"
+          } >> "$GITHUB_STEP_SUMMARY"

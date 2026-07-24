@@ -185,7 +185,15 @@ router.get('/feed', async (req: Request, res: Response) => {
     }
   }
 
-  candidateQuery = candidateQuery.order('rating', { ascending: false, nullsFirst: false }).limit(150);
+  // VTID-02000: was .limit(150) — with only 12 of 477 active products carrying
+  // a real rating, `ORDER BY rating DESC NULLS LAST` has no stable tiebreak
+  // among the other 465, so an arbitrary ~138 of them won the old 150-row cut
+  // and any newly-seeded unrated merchant (e.g. DoctorBox's 53 products) could
+  // vanish from ranking entirely, regardless of category_mix/featured_product_ids
+  // boosts — those only rescore candidates already in this slice. Raised well
+  // above current catalog size so every active/in-stock product reaches the
+  // ranker; feed-ranker.ts's own limit + diversity caps still bound the response.
+  candidateQuery = candidateQuery.order('rating', { ascending: false, nullsFirst: false }).limit(1000);
 
   const { data: rows, error } = await candidateQuery;
   if (error) {

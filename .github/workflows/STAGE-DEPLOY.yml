@@ -179,6 +179,32 @@ jobs:
             # no-op'd on preview-gateway.vitanaland.com.
             "OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}"
             "DEEPSEEK_API_KEY=${{ secrets.DEEPSEEK_API_KEY }}"
+            # BOOTSTRAP-GEMINI-TO-CLAUDE: direct Anthropic API key. NOT used
+            # by claude-text-client.ts (Tier A call sites now run through
+            # Bedrock — see AWS_ACCESS_KEY_ID block below); still used by
+            # llm-router.ts's anthropicAdapter, orb/delegation, and the
+            # vision client. Bound as a plain GitHub Actions secret, same
+            # pattern EXEC-DEPLOY.yml uses for prod (no GCP Secret Manager
+            # entry for this key).
+            "ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }}"
+            # BOOTSTRAP-GEMINI-TO-CLAUDE: Bedrock transport for the Tier A
+            # migrated call sites (spec generation, intent classify/extract,
+            # matchmaker, architecture investigator —
+            # services/gateway/src/services/claude-text-client.ts, via
+            # invokeBedrock() in providers/bedrock.ts). Static IAM user
+            # access key (vitana-gateway-bedrock, scoped to bedrock:InvokeModel
+            # on the Claude Sonnet 4.6 inference profile only) — bound as
+            # plain GitHub Actions secrets/env, same no-GCP-Secret-Manager
+            # pattern as OPENAI_API_KEY/DEEPSEEK_API_KEY above.
+            # BEDROCK_ROLE_ARN is only an activation gate today (invokeBedrock()
+            # checks it's non-empty; it does not yet assume the role via STS —
+            # actual auth comes from AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY
+            # via the AWS SDK's default credential chain).
+            "AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }}"
+            "AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }}"
+            "AWS_BEDROCK_REGION=${{ secrets.AWS_BEDROCK_REGION }}"
+            "BEDROCK_MODEL_ID=${{ secrets.BEDROCK_MODEL_ID }}"
+            "BEDROCK_ROLE_ARN=${{ secrets.BEDROCK_ROLE_ARN }}"
           )
 
           # Comma-joined for --set-env-vars (replaces, not merges — we want the

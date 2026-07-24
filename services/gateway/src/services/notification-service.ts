@@ -148,6 +148,7 @@ export const TYPE_META: Record<string, TypeMeta> = {
   complete_your_profile:       { channel: 'inapp',          priority: 'p2', category: 'system' },
   onboarding_step_completed:   { channel: 'inapp',          priority: 'p3', category: 'system' },
   weekly_activity_summary:     { channel: 'push_and_inapp', priority: 'p2', category: 'system' },
+  feature_announcement:        { channel: 'push_and_inapp', priority: 'p2', category: 'system' },
   // Admin Companion (BOOTSTRAP-ADMIN-EE)
   admin_insight_urgent:        { channel: 'push_and_inapp', priority: 'p0', category: 'system' },
   admin_insight_action_needed: { channel: 'inapp',          priority: 'p1', category: 'system' },
