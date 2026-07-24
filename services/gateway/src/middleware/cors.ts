@@ -29,6 +29,13 @@ const ALLOWED_ORIGINS = [
   // above for the GCP staging domains).
   "https://preview-aws.vitanaland.com",                        // AWS staging frontend
   "https://preview-aws-gateway.vitanaland.com",                // AWS staging gateway (Command Hub)
+  // VTID-03398: AWS production (DR) stack. Same reasoning as the AWS
+  // staging entries above — without these, the cors callback errors and
+  // Express answers with an HTML 500 instead of a JSON response, which
+  // breaks login (this exact failure mode already happened twice before:
+  // GCP staging, then AWS staging).
+  "https://dr-app.vitanaland.com",                             // AWS production DR frontend (community-app-awsdr)
+  "https://dr-gateway.vitanaland.com",                         // AWS production DR gateway (Command Hub same-origin POSTs)
 ];
 
 // VTID-01226: Dynamic origin patterns for Lovable-hosted frontends
