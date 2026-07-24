@@ -11,8 +11,6 @@ name: TEST-SUITE
 #   - manual dispatch
 #
 # Scope & exclusions are documented in docs/TEST_COVERAGE_PLAN.md.
-# oasis-projector is intentionally absent until its stale suite is repaired
-# (Phase 1 of the plan).
 
 run-name: 'Test Suite (${{ github.event_name }} on ${{ github.ref_name }})'
 
@@ -76,6 +74,10 @@ jobs:
             test: npx jest --silent
             runner: jest
           - service: worker-runner
+            install: npm ci --no-audit --no-fund
+            test: npx jest --silent
+            runner: jest
+          - service: oasis-projector
             install: npm ci --no-audit --no-fund
             test: npx jest --silent
             runner: jest

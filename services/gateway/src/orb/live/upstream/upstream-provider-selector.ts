@@ -58,7 +58,12 @@
  *     typed `error` field on the decision.
  */
 
-export type UpstreamProviderName = 'vertex' | 'livekit';
+import type { VoiceProviderName } from './provider-name';
+
+// BOOTSTRAP-NOVA-SONIC-VOICE: the selector's provider vocabulary is the
+// canonical VoiceProviderName (adds `nova_sonic` to the historical
+// 'vertex' | 'livekit' pair).
+export type UpstreamProviderName = VoiceProviderName;
 
 export type SelectionReason =
   | 'default'                  // no override anywhere → vertex
@@ -75,7 +80,16 @@ export type SelectionReason =
   | 'canary_selected_livekit'
   // L2.1: canary gate is on, LiveKit was requested, creds are valid, but
   // the calling identity is NOT in the canary allowlist. Pinned to vertex.
-  | 'canary_not_allowlisted';
+  | 'canary_not_allowlisted'
+  // BOOTSTRAP-NOVA-SONIC-VOICE — Nova 2 Sonic selection reasons.
+  | 'env_explicit_nova_sonic'     // ORB_LIVE_PROVIDER=nova_sonic, all gates pass
+  | 'system_config_nova_sonic'    // voice.active_provider=nova_sonic, all gates pass
+  | 'nova_canary_allowlisted'     // enabled allowlisted canary lifts a vertex/default request
+  | 'nova_disabled'               // nova requested but disabled/not-ready → vertex
+  | 'nova_not_allowlisted'        // nova gate on but identity not in allowlist → vertex
+  | 'nova_language_unsupported'   // session language outside en/de/fr/es → vertex
+  | 'nova_runtime_unsupported'    // runtime cannot carry the HTTP/2 stream (GCP) → vertex
+  | 'provider_invalid';           // unknown provider string anywhere → vertex
 
 export interface CanarySelectorConfig {
   /** Master canary switch. False = full L1 pin regardless of allowlist. */
@@ -118,6 +132,26 @@ export interface UpstreamSelectorContext {
     tenantId?: string | null;
     userId?: string | null;
   };
+
+  /**
+   * BOOTSTRAP-NOVA-SONIC-VOICE: precomputed Nova gates (the caller resolves
+   * them from `getNovaSonicConfig` + session language/identity so the
+   * selector stays pure).
+   *
+   *   - `enabled`: config enabled AND ready (typed issues force false).
+   *   - `identityAllowed`: user/tenant on a non-empty canary allowlist.
+   *   - `languageSupported`: session language in the Nova canary set.
+   *   - `runtime`: where the gateway is running. Nova's bidirectional
+   *     stream requires end-to-end HTTP/2, which GCP Cloud Run does not
+   *     carry — anything other than `'aws-ecs'` (when provided) fails the
+   *     runtime gate.
+   */
+  nova?: {
+    enabled: boolean;
+    identityAllowed: boolean;
+    languageSupported: boolean;
+    runtime?: 'aws-ecs' | 'gcp-cloud-run' | 'unknown';
+  };
 }
 
 export interface UpstreamSelectionDecision {
@@ -151,6 +185,13 @@ export interface UpstreamSelectionDecision {
    * Empty/undefined on the happy Vertex path and on `canary_selected_livekit`.
    */
   error?: string;
+
+  /**
+   * BOOTSTRAP-NOVA-SONIC-VOICE: whether every Nova hard gate passes
+   * (enabled + ready + language + identity + runtime). True on the two
+   * explicit Nova reasons and on `nova_canary_allowlisted`.
+   */
+  novaReady?: boolean;
 }
 
 const LIVEKIT_CRED_FIELDS = ['url', 'apiKey', 'apiSecret'] as const;
@@ -160,6 +201,7 @@ function normalizeOverride(raw: string | undefined): UpstreamProviderName | null
   const trimmed = raw.trim().toLowerCase();
   if (trimmed === 'vertex') return 'vertex';
   if (trimmed === 'livekit') return 'livekit';
+  if (trimmed === 'nova_sonic') return 'nova_sonic';
   return null;
 }
 
@@ -200,11 +242,13 @@ export function selectUpstreamProvider(
   const envChoice = normalizeOverride(ctx.envProviderOverride);
   const sysChoice =
     ctx.systemConfigActiveProvider === 'vertex' ||
-    ctx.systemConfigActiveProvider === 'livekit'
+    ctx.systemConfigActiveProvider === 'livekit' ||
+    ctx.systemConfigActiveProvider === 'nova_sonic'
       ? ctx.systemConfigActiveProvider
       : null;
 
-  // Highest-priority signal: env override.
+  // Highest-priority signal: env override. `ORB_LIVE_PROVIDER=vertex` is
+  // the emergency rollback — it beats every canary including Nova's.
   if (envChoice === 'vertex') {
     return {
       provider: 'vertex',
@@ -217,9 +261,38 @@ export function selectUpstreamProvider(
   if (envChoice === 'livekit') {
     return evaluateLiveKitRequest(ctx, 'livekit', 'env_explicit_livekit');
   }
+  if (envChoice === 'nova_sonic') {
+    return evaluateNovaRequest(ctx, 'env_explicit_nova_sonic');
+  }
+  // BOOTSTRAP-NOVA-SONIC-VOICE: a NON-EMPTY unknown provider string is a
+  // validation failure, pinned to the default provider — never a silent
+  // fall-through to whatever the DB row says.
+  if (
+    typeof ctx.envProviderOverride === 'string' &&
+    ctx.envProviderOverride.trim().length > 0 &&
+    envChoice === null
+  ) {
+    return {
+      provider: 'vertex',
+      requested: null,
+      reason: 'provider_invalid',
+      livekitReady: false,
+      canary: false,
+      error: 'Unknown ORB_LIVE_PROVIDER value; pinning to Vertex.',
+    };
+  }
 
   // Fallback: voice.active_provider system_config.
+  if (sysChoice === 'nova_sonic') {
+    return evaluateNovaRequest(ctx, 'system_config_nova_sonic');
+  }
   if (sysChoice === 'vertex') {
+    // BOOTSTRAP-NOVA-SONIC-VOICE: an enabled, allowlisted Nova canary lifts
+    // a vertex DB flag for THIS identity only — the shared system_config
+    // row is not environment-isolated between AWS and GCP staging, so the
+    // canary must not depend on flipping it.
+    const novaCanary = evaluateNovaCanary(ctx);
+    if (novaCanary) return novaCanary;
     return {
       provider: 'vertex',
       requested: 'vertex',
@@ -232,13 +305,103 @@ export function selectUpstreamProvider(
     return evaluateLiveKitRequest(ctx, 'livekit', 'system_config_livekit');
   }
 
-  // Nothing requested → default.
+  // Nothing requested → Nova canary, else default.
+  const novaCanary = evaluateNovaCanary(ctx);
+  if (novaCanary) return novaCanary;
   return {
     provider: 'vertex',
     requested: null,
     reason: 'default',
     livekitReady: false,
     canary: false,
+  };
+}
+
+/**
+ * BOOTSTRAP-NOVA-SONIC-VOICE: Nova gate evaluation for an EXPLICIT request
+ * (env or system_config). Every failed gate degrades to Vertex with a
+ * typed reason — no silent access broadening, no raw config detail.
+ */
+function evaluateNovaRequest(
+  ctx: UpstreamSelectorContext,
+  happyReason: 'env_explicit_nova_sonic' | 'system_config_nova_sonic',
+): UpstreamSelectionDecision {
+  const nova = ctx.nova;
+  if (!nova || nova.enabled !== true) {
+    return {
+      provider: 'vertex',
+      requested: 'nova_sonic',
+      reason: 'nova_disabled',
+      livekitReady: false,
+      canary: false,
+      novaReady: false,
+      error: 'Nova Sonic requested but disabled or not ready; pinning to Vertex.',
+    };
+  }
+  if (nova.runtime !== undefined && nova.runtime !== 'aws-ecs') {
+    return {
+      provider: 'vertex',
+      requested: 'nova_sonic',
+      reason: 'nova_runtime_unsupported',
+      livekitReady: false,
+      canary: false,
+      novaReady: false,
+      error: 'Nova Sonic requires the AWS ECS runtime (HTTP/2 bidirectional stream); pinning to Vertex.',
+    };
+  }
+  if (nova.languageSupported !== true) {
+    return {
+      provider: 'vertex',
+      requested: 'nova_sonic',
+      reason: 'nova_language_unsupported',
+      livekitReady: false,
+      canary: false,
+      novaReady: false,
+      error: 'Session language is outside the Nova canary set; pinning to Vertex.',
+    };
+  }
+  if (nova.identityAllowed !== true) {
+    return {
+      provider: 'vertex',
+      requested: 'nova_sonic',
+      reason: 'nova_not_allowlisted',
+      livekitReady: false,
+      canary: true,
+      novaReady: false,
+      error: 'Session identity is not on the Nova canary allowlist; pinning to Vertex.',
+    };
+  }
+  return {
+    provider: 'nova_sonic',
+    requested: 'nova_sonic',
+    reason: happyReason,
+    livekitReady: false,
+    canary: true,
+    novaReady: true,
+  };
+}
+
+/**
+ * BOOTSTRAP-NOVA-SONIC-VOICE: silent canary check used when the resolved
+ * request is vertex/default. Returns a decision ONLY when every Nova gate
+ * passes; otherwise `null` so the ordinary Vertex reason is preserved
+ * (non-canary users keep their unchanged decision trail).
+ */
+function evaluateNovaCanary(
+  ctx: UpstreamSelectorContext,
+): UpstreamSelectionDecision | null {
+  const nova = ctx.nova;
+  if (!nova || nova.enabled !== true) return null;
+  if (nova.runtime !== undefined && nova.runtime !== 'aws-ecs') return null;
+  if (nova.languageSupported !== true) return null;
+  if (nova.identityAllowed !== true) return null;
+  return {
+    provider: 'nova_sonic',
+    requested: null,
+    reason: 'nova_canary_allowlisted',
+    livekitReady: false,
+    canary: true,
+    novaReady: true,
   };
 }
 

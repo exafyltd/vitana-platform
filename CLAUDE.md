@@ -79,7 +79,10 @@ Claude must **never** do the following:
 
 ### Architecture & Logic
 
-1. **Never invent new projects, environments, or services.**
+1. **Never invent new projects, environments, or services.** (Exception:
+   the AWS parallel/DR environment for the `gateway` service, sanctioned
+   under **VTID-03398** — see §1b. GCP remains canonical production; AWS
+   is additive DR capacity for gateway only, not a new canonical target.)
 2. **Never bypass governance gates.**
 3. **Never execute without a VTID.**
 4. **Never deploy without OASIS approval.**
@@ -298,6 +301,71 @@ gcloud run deploy <service> \
   --region us-central1 \
   --project lovable-vitana-vers1
 ```
+
+---
+
+## 1b. AWS PRODUCTION (DR) — GATEWAY (VTID-03398)
+
+GCP (`lovable-vitana-vers1`) remains the **canonical** production for every
+service. AWS hosts a **parallel/DR production for the `gateway` service
+only** — additive capacity, not a migration, and not a general "use AWS
+too" precedent for other services. Do not extend this pattern to another
+service without its own VTID.
+
+| Item | Value |
+|---|---|
+| AWS account / region | `472838866351` / `eu-central-1` |
+| ECS cluster | `Vitana-ECS-Cluster` (shared with AWS staging) |
+| ECS service (AWS-DR prod) | `vitana-gateway-awsdr` — **distinct from** `vitana-gateway` (AWS staging) |
+| Task definition family | `vitana-gateway-awsdr` |
+| Public URL | `https://dr-gateway.vitanaland.com` |
+| Target group | `vitana-tg-gateway-awsdr` (on the existing `vitana-alb-prod` ALB) |
+| Database | RDS Aurora PostgreSQL `vitana-aurora-prod` (writer/reader), same Supabase project as GCP prod (`inmkhvwdcuyhnxkgfvsb`) |
+| Redis | ElastiCache `vitana-redis-prod` |
+| Deploy workflow | `.github/workflows/AWS-PROD-DEPLOY-GATEWAY.yml` — **`workflow_dispatch`-only, required `reason`, never on push** |
+| Command Hub PUBLISH dual-publish | `AWS_DUAL_PUBLISH_ENABLED=true` (gateway env var, default off) makes the PUBLISH button best-effort dispatch `AWS-PROD-DEPLOY-GATEWAY.yml` alongside the GCP `EXEC-DEPLOY.yml` dispatch — see `services/gateway/src/routes/operator.ts` `POST /publish` step 7b |
+
+**Full build record, exact commands, and pre-existing-state findings:**
+`docs/AWS-PRODUCTION-BUILD-LOG.md`.
+
+**Full production cutover (GCP→AWS) is a separate, larger action from any
+per-service DR build above — never assume it's authorized by this
+section.** The runbook, go/no-go checklist, DNS repoint sequence, and
+rollback plan live in `docs/AWS-CUTOVER-RUNBOOK.md` (VTID-03412). That
+document does not itself authorize a cutover; it's the prerequisite a
+future execution VTID must reference and satisfy before any
+`gateway.vitanaland.com`/apex DNS record is touched.
+
+### Hard rules specific to AWS-DR prod
+
+- **Never** deploy to AWS-DR prod on push — `AWS-PROD-DEPLOY-GATEWAY.yml`
+  has no `on: push` trigger. It mirrors the GCP staging-first model
+  (§16): AWS staging (`vitana-gateway`) auto-deploys on push; AWS prod
+  (`vitana-gateway-awsdr`) is a deliberate manual dispatch with a
+  recorded reason, same spirit as the GCP PUBLISH button /
+  `publish-to-prod.sh` escape hatch. The Command Hub PUBLISH button MAY
+  also dispatch it (via `workflow_dispatch`, never push) when
+  `AWS_DUAL_PUBLISH_ENABLED=true` — that is still a deliberate dispatch
+  triggered by an admin's PUBLISH click, not an automatic push trigger.
+- **Never** confuse `vitana-gateway` (AWS staging) with
+  `vitana-gateway-awsdr` (AWS DR prod) — same ECS cluster, similarly
+  named. The `vitana-alb-prod` ALB's target group named
+  `vitana-tg-gateway-prod` is a **pre-existing naming leftover that
+  actually serves staging traffic**, not AWS-DR prod — verify via
+  `/api/v1/admin/health`'s `env` field before trusting a resource name.
+- **IF** adding another host-header listener rule to `vitana-alb-prod` →
+  **THEN** give it priority < 10 — the ALB's existing path-based rules
+  (`/api/*`, `/ws/*` at priority 10) match before higher-numbered
+  host-header rules regardless of `Host`, and will silently route to
+  staging otherwise (see the build log's "ALB listener-rule priority"
+  section for how this bit the initial build).
+- **Never** extend AWS-DR to `oasis-operator`, `oasis-projector`,
+  `worker-runner`, `vitana-verification-engine`, or the frontend without
+  a new VTID — gateway-only is the deliberate first slice.
+- GitHub OIDC federation (no static AWS keys) is required for the prod
+  deploy role, mirroring `scripts/aws/README.md`'s pattern — **never**
+  add a static-key IAM user for AWS-DR prod deploys the way AWS staging
+  did (`claude-staging-validation`; a known shortcut, not to be repeated).
 
 ---
 
@@ -529,6 +597,15 @@ NODE_ENV=production|development|test
 # frontend_promote.ok=false with a "token not set" detail (deploy frontend manually).
 FRONTEND_DEPLOY_TOKEN=<PAT with actions:write on exafyltd/vitana-v1>
 FRONTEND_DEPLOY_REPO=exafyltd/vitana-v1
+# AWS dual-publish (VTID-03398): when 'true', the Command Hub PUBLISH button
+# also best-effort dispatches AWS-PROD-DEPLOY-GATEWAY.yml with the same
+# commit, after the GCP EXEC-DEPLOY dispatch. Default OFF — AWS-PROD-DEPLOY-
+# GATEWAY.yml was deliberately built workflow_dispatch-only with a required
+# human-entered reason so AWS prod deploys stay a deliberate action; this
+# flag trades that off for one-click dual-publish. GCP remains canonical
+# regardless of this flag — see §1b. Failure on the AWS leg never fails the
+# publish (response reports aws_promote.ok=false with detail).
+AWS_DUAL_PUBLISH_ENABLED=true|false
 GOOGLE_CLOUD_PROJECT=lovable-vitana-vers1
 GCP_PROJECT=lovable-vitana-vers1
 VERTEX_LOCATION=us-central1
@@ -1066,6 +1143,9 @@ Use these PATs with the GitHub REST API (`api.github.com`) for all PR and deploy
 
 | Date | Change | VTID |
 |------|--------|------|
+| 2026-07-23 | Added `docs/AWS-CUTOVER-RUNBOOK.md` — the previously-missing GCP→AWS full production cutover runbook: go/no-go checklist, DNS repoint sequence, rollback/TTL plan, GCP decommission checklist (later phase), and the two open decisions (frontend gateway-URL strategy, orb-agent/autopilot-job AWS parity) that need explicit user sign-off. Documentation/governance only — does not authorize or execute any cutover; a separate execution VTID gated on this runbook's checklist is still required. Added §1b pointer. | VTID-03412 |
+| 2026-07-23 | Added `feature_announcements` table + `/api/v1/admin/feature-announcements` (admin-only, publishes an announcement row read by vitana-v1's News Feed `FeatureAnnouncementCard` and fans out an in-app + push `feature_announcement` notification to every tenant member, locale-grouped via `bulkGetUserLocales` + the gateway i18n catalog per §13b). No VTID existed for this yet; tracked under this BOOTSTRAP tag pending one. Publishing to production is still gated behind the staging-first cutover (§15/§16) — this only ships the mechanism. | BOOTSTRAP-FEATURE-ANNOUNCEMENTS |
+| 2026-07-23 | Stood up AWS Production (DR) for the gateway service only — parallel to canonical GCP prod, not a migration: ECS service `vitana-gateway-awsdr`, dedicated target group + host-header ALB rule (`dr-gateway.vitanaland.com`), autoscaling + CloudWatch alarms, `AWS-PROD-DEPLOY-GATEWAY.yml` (dispatch-only, required reason, never on push). Added §1b governance section + Never-rule exception. GitHub OIDC deploy-role wiring left for an operator with IAM admin rights (session's AWS IAM user has zero IAM write permissions) — see `docs/AWS-PRODUCTION-BUILD-LOG.md`. | VTID-03398 |
 | 2026-07-21 | Public "Business" tab: profile visitors can now see another user's active product recommendations (storefront card, buy-through with commission attributed to the profile owner via the existing VTID-02950 `?rec=`/`rec_id` flow). New public endpoint `GET /api/v1/discover/recommendations/:vitanaId` (`discover-recommendations-public.ts`), auth-required (any logged-in viewer, not owner-only), never returns click/conversion/commission fields. No formal VTID existed for this extension; tracked under this BOOTSTRAP tag pending one. | BOOTSTRAP-PUBLIC-BUSINESS-PROFILE |
 | 2026-07-13 | Integrated lycorp-jp/sim-use device-testing layer: `e2e/mobile-sim/` driver + smoke flow (iOS Simulator / Android), `MOBILE-DEVICE-E2E.yml` macOS-runner workflow, vendored sim-use agent skill + `vitana-mobile-testing` glue skill, `docs/MOBILE_DEVICE_TESTING.md` | BOOTSTRAP-SIM-USE-DEVICE-TESTING |
 | 2026-06-04 | Staging-first cutover (time-gated, effective Mon 8 Jun 2026 10:00 Europe/Berlin): added a `cutover_gate` job to every auto-to-prod workflow (`AUTO-DEPLOY`, `DEPLOY-ORB-AGENT`, `DEPLOY-AUTOPILOT-JOB`, `VTID-02409-BOOTSTRAP`) that freezes the push path post-cutover while leaving manual dispatch open; added manual escape hatch `scripts/deploy/publish-to-prod.sh`; rewrote §15/§16 + IF-THEN CI/CD rules. Before cutover all paths still reach prod; after, auto = staging, prod = PUBLISH button / manual exception. Frontend (`vitana-v1`) gated in parallel. | BOOTSTRAP-STAGING-FIRST-CUTOVER |
