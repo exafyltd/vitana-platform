@@ -18,10 +18,29 @@
 import { Router, Request, Response } from 'express';
 import { emitOasisEvent } from '../services/oasis-event-service';
 import { notifyUserAsync } from '../services/notification-service';
+import { optionalAuth, AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
 
 const router = Router();
 
 const LOG_PREFIX = '[VTID-01180]';
+
+// SECURITY (post-audit hardening): this router had NO auth middleware at
+// all. getUserId() below checked `req.user` (a property nothing in this
+// codebase ever sets — auth-supabase-jwt.ts attaches `req.identity`, not
+// `req.user`) so it always fell through to a bare X-User-ID header or
+// ?user_id= query param, with zero verification. Any caller could read,
+// accept, dismiss, or snooze another user's personalized recommendations by
+// just setting that header. Now requires a verified JWT on every route
+// except /health.
+router.use(optionalAuth);
+const OPEN_PATHS = new Set(['/health']);
+router.use((req: Request, res: Response, next) => {
+  if (OPEN_PATHS.has(req.path)) return next();
+  if (!(req as AuthenticatedRequest).identity?.user_id) {
+    return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
+  }
+  return next();
+});
 
 // =============================================================================
 // Helper: Supabase RPC call
@@ -65,23 +84,7 @@ async function callRpc<T>(
 // Helper: Extract user ID from request
 // =============================================================================
 function getUserId(req: Request): string | null {
-  // Check for user ID in various places:
-  // 1. JWT token (if auth middleware sets it)
-  // 2. X-User-ID header (for service-to-service calls)
-  // 3. Query param (for testing)
-
-  // @ts-ignore - user may be set by auth middleware
-  if (req.user?.id) return req.user.id;
-  // @ts-ignore - user may be set by auth middleware
-  if (req.user?.sub) return req.user.sub;
-
-  const headerUserId = req.get('X-User-ID');
-  if (headerUserId) return headerUserId;
-
-  const queryUserId = req.query.user_id as string;
-  if (queryUserId) return queryUserId;
-
-  return null;
+  return (req as AuthenticatedRequest).identity?.user_id ?? null;
 }
 
 // =============================================================================
