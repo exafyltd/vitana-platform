@@ -46,7 +46,7 @@ CLI + Cloudflare DNS audit performed under this VTID.
 | oasis-projector / worker-runner / verification-engine | Bug-fixed + ECS health-checked + alarmed (VTID-03411). Deliberately **not** autoscaled or made public — `oasis-projector`'s ledger writer has no cross-instance locking (CLAUDE.md: "Never run parallel VTID executions"). **`worker-runner` has since been reviewed (2026-07-24) and found CONDITIONALLY SAFE for N>1**: its claim mechanism is a genuine server-side compare-and-swap (`SELECT ... FOR UPDATE` + conditional `UPDATE` inside one Postgres transaction, `claim_vtid_task` RPC in `supabase/migrations/20260413000000_fix_claim_accepts_scheduled.sql`), not a client-side read-then-write race, and no other shared mutable state exists between instances. The one real N>1-specific risk: an idle sibling instance will legitimately re-claim a VTID whose 60-minute claim lease expired due to sustained heartbeat failure on the active instance, causing double execution — condition for safety is that heartbeats reliably survive transient network hiccups; recommend alerting on sustained heartbeat failure before actually enabling autoscaling. Autoscaling itself has **not** been enabled — this is a documentation finding only, pending a decision on whether to act on it. |
 | orb-agent | **No AWS deploy path at all.** Named directly in CLAUDE.md §16 IF-THEN rule 24 alongside worker-runner as something needing prod updates. |
 | autopilot job (Cloud Run Job) | **No AWS deploy path at all.** |
-| Database sync | RDS Aurora `vitana-aurora-prod` via DMS task `vitana-supabase-to-aurora` (full-load-and-cdc): 494/495 tables under live CDC from the same Supabase project GCP prod uses. **One table, `autopilot_recommendations`, has its own dedicated CDC task (`vitana-autopilot-cdc`) which was in `FATAL_ERROR` for ~26h as of this audit** — see §5, tracked/being fixed under this same session outside this VTID's scope. |
+| Database sync | RDS Aurora `vitana-aurora-prod` via DMS task `vitana-supabase-to-aurora` (full-load-and-cdc): 495/495 tables under live CDC from the same Supabase project GCP prod uses. `autopilot_recommendations`'s dedicated CDC task (`vitana-autopilot-cdc`), which was `FATAL_ERROR` for ~26h, was fixed 2026-07-24 via a clean restart — both tasks confirmed `running`. **Note:** the specific update that was stuck at the time of the original failure did not replicate (the fix restarts CDC capture from "now", not from the stale position) — a one-row historical drift, not an ongoing gap. |
 | Secrets | `vitana/supabase/prod/*` (4 secrets) current as of 2026-07-14/21; RDS-managed master credential rotates automatically. |
 | Alarms | 47 `vitana-*` CloudWatch alarms, all `OK`/`INSUFFICIENT_DATA`. `community-app-awsdr` and `oasis-operator-awsdr` now have the same 4-alarm set (cpu-high, memory-high, target-5xx, unhealthy-hosts) gateway-awsdr already had — closed 2026-07-24. A `vitana-dms-task-failure` EventBridge rule (source `aws.dms` → SNS topic `vitana-alarms-prod`) was also added the same day so a future DMS task failure isn't silent for 26+ hours again like `vitana-autopilot-cdc` was. **New gap found while wiring this up: the `vitana-alarms-prod` SNS topic has zero subscribers** — no email, Slack, or PagerDuty endpoint is attached, so none of the 47 alarms or the new DMS rule currently notify anyone. All of this alerting infrastructure is presently inert until a real subscriber is added; this needs a decision on where alerts should actually go. |
 | ALB naming | `vitana-tg-gateway-prod` / `vitana-tg-community-prod` **actually serve AWS staging traffic**, not prod — confirmed live via `/api/v1/admin/health` returning `env:"staging"` through those target groups. Both are `ManagedBy=terraform`-tagged (Terraform state not found in this repo) — not a stray hand-created leftover, part of some external IaC. Tagged 2026-07-24 with `ActualEnvironment=staging` to reduce confusion; not renamed (immutable name, rename requires recreation + ALB rule reattachment, risks a traffic blip). A real cutover must not confuse these with the `-awsdr` target groups. |
@@ -66,10 +66,19 @@ Every item must be checked before an execution VTID for the actual
 cutover can reach `spec_status=approved`. This list is deliberately
 objective — each item has a clear done/not-done state.
 
-- [ ] **DMS replication healthy.** `vitana-autopilot-cdc` (and
-      `vitana-supabase-to-aurora`) both report `status=running` with no
-      failed tasks, verified via `aws dms describe-replication-tasks`,
-      not just "was fixed once."
+- [x] **DMS replication healthy.** Fixed 2026-07-24. `vitana-autopilot-cdc`
+      was stuck `FATAL_ERROR`; `resume-processing` from its stale checkpoint
+      hit a *different* failure (`An internal WAL conversational protocol
+      error`, likely from the 2-day-old checkpoint's LSN position no
+      longer being valid on the source), so a clean restart
+      (`start-replication-task-type=start-replication`) was used instead —
+      accepts losing the one historical row's update in exchange for
+      restored currency. Confirmed stable `running` for 5+ minutes
+      post-restart with zero new failure events, both `vitana-autopilot-cdc`
+      and `vitana-supabase-to-aurora` `running`. This checklist item is
+      about *current* health, not a point-in-time fix — re-verify via
+      `aws dms describe-replication-tasks` before actually cutting over,
+      don't assume this stays true.
 - [~] **DMS alerting exists.** *(Partially done 2026-07-24: EventBridge
       rule `vitana-dms-task-failure` created, source `aws.dms` → SNS
       topic `vitana-alarms-prod`. Still NOT actually alerting anyone —
