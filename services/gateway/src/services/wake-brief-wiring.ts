@@ -586,6 +586,20 @@ export async function decideWakeBriefForSession(
       }
     } catch { /* best-effort — no penalty on read failure */ }
   }
+
+  // Forward the login-briefing STATES recently served (not just the raw
+  // dedupeKeys) so the provider can tell "this is the same steady-state
+  // recap I already gave within the rotation window" apart from a genuinely
+  // fresh day/state. login-briefing is designed to never fall silent (see
+  // its own docstring), so on days with zero fresh signal it is often the
+  // ONLY provider that returns a candidate — the VTID-03301 rotation
+  // penalty above can't help then, because there is nothing to rotate TO.
+  if (extra[LOGIN_BRIEFING_EXTRA_KEY]) {
+    const recentlyServedStates = storedRecentOpeners
+      .map((k) => /^login-briefing:[^:]+:(.+)$/.exec(k)?.[1])
+      .filter((s): s is string => !!s);
+    (extra[LOGIN_BRIEFING_EXTRA_KEY] as Record<string, unknown>).recentlyServedStates = recentlyServedStates;
+  }
   // Withhold the rotation penalty from the ranker on explicit opens (the tapped
   // candidate must lead), but keep `storedRecentOpeners` so the write below
   // still merges onto the real history instead of wiping it.

@@ -278,7 +278,7 @@
       ],
       "safety_critical": false,
       "owner_vtid": "VTID-03201",
-      "notes": "Read the user's Autopilot queue aloud \u2014 same list as the popup. Session-state-coupled (remembers listed ids)."
+      "notes": "Read the user's Autopilot queue aloud — same list as the popup. Session-state-coupled (remembers listed ids)."
     },
     {
       "name": "activate_autopilot_recommendations",
@@ -320,7 +320,7 @@
       ],
       "safety_critical": false,
       "owner_vtid": null,
-      "notes": "BOOTSTRAP-FIND-MATCH-VOICE: search-first 'find me a match' \u2014 searches the catalog and recommends matches (also posting so the user is discoverable) or posts on confirmation. In the shared ORB registry; LiveKit can dispatch it but does not declare it yet (mirrors view_intent_matches)."
+      "notes": "BOOTSTRAP-FIND-MATCH-VOICE: search-first 'find me a match' — searches the catalog and recommends matches (also posting so the user is discoverable) or posts on confirmation. In the shared ORB registry; LiveKit can dispatch it but does not declare it yet (mirrors view_intent_matches)."
     },
     {
       "name": "list_my_intents",
@@ -398,7 +398,7 @@
       ],
       "safety_critical": true,
       "owner_vtid": null,
-      "notes": "Unified surface-aware navigation tool exposed to the model (VTID-NAV-UNIFIED \u2014 replaces the old navigator_consult + navigate_to_screen dance). Cross-surface routes (vitanaland\u2192/admin or /command-hub) MUST be rejected per feedback_navigator_surface_scoping memory rule. Vertex dispatches via toolName if-chain (not a switch), so the ts-morph extractor cannot see it; LiveKit declares it as @function_tool navigate."
+      "notes": "Unified surface-aware navigation tool exposed to the model (VTID-NAV-UNIFIED — replaces the old navigator_consult + navigate_to_screen dance). Cross-surface routes (vitanaland→/admin or /command-hub) MUST be rejected per feedback_navigator_surface_scoping memory rule. Vertex dispatches via toolName if-chain (not a switch), so the ts-morph extractor cannot see it; LiveKit declares it as @function_tool navigate."
     },
     {
       "name": "get_current_screen",
@@ -408,7 +408,7 @@
       ],
       "safety_critical": false,
       "owner_vtid": "VTID-NAV-TIMEJOURNEY",
-      "notes": "Identity-free read of session.current_route \u2014 safe for anonymous sessions. Vertex dispatches via toolName if-chain (not extracted by ts-morph); LiveKit declares it as @function_tool get_current_screen."
+      "notes": "Identity-free read of session.current_route — safe for anonymous sessions. Vertex dispatches via toolName if-chain (not extracted by ts-morph); LiveKit declares it as @function_tool get_current_screen."
     },
     {
       "name": "navigate_to_screen",
@@ -436,7 +436,7 @@
       ],
       "safety_critical": false,
       "owner_vtid": null,
-      "notes": "Shared dispatcher tool \u2014 implemented on both sides. Declared in BOOTSTRAP-VOICE-TOOL-PARITY parity-scan audit (was undeclared)."
+      "notes": "Shared dispatcher tool — implemented on both sides. Declared in BOOTSTRAP-VOICE-TOOL-PARITY parity-scan audit (was undeclared)."
     },
     {
       "name": "log_water",
@@ -513,7 +513,7 @@
       ],
       "safety_critical": false,
       "owner_vtid": null,
-      "notes": "BOOTSTRAP-SOCIAL-MEMORY: live privacy-filtered Social Context Pack (follows, matches, messages, groups, person intelligence, ranked posts/events). In the shared registry (reachable via /api/v1/orb/tool); LiveKit @function_tool wrapper not yet shipped \u2014 Vertex-only until it is."
+      "notes": "BOOTSTRAP-SOCIAL-MEMORY: live privacy-filtered Social Context Pack (follows, matches, messages, groups, person intelligence, ranked posts/events). In the shared registry (reachable via /api/v1/orb/tool); LiveKit @function_tool wrapper not yet shipped — Vertex-only until it is."
     },
     {
       "name": "view_messages",
@@ -522,7 +522,7 @@
       ],
       "safety_critical": false,
       "owner_vtid": null,
-      "notes": "BOOTSTRAP-SOCIAL-READ-TOOLS: speakable read of the user's own INTERNAL community inbox (unread/all, grouped by sender). Never Google-bound; 'archived' does not exist. In the shared registry; LiveKit @function_tool wrapper not yet shipped \u2014 Vertex-only until it is."
+      "notes": "BOOTSTRAP-SOCIAL-READ-TOOLS: speakable read of the user's own INTERNAL community inbox (unread/all, grouped by sender). Never Google-bound; 'archived' does not exist. In the shared registry; LiveKit @function_tool wrapper not yet shipped — Vertex-only until it is."
     },
     {
       "name": "list_followers",
@@ -531,7 +531,7 @@
       ],
       "safety_critical": false,
       "owner_vtid": null,
-      "notes": "BOOTSTRAP-SOCIAL-READ-TOOLS: who follows the user (count, names, mutuals) \u2014 direct answer, never deflects. In the shared registry; LiveKit @function_tool wrapper not yet shipped \u2014 Vertex-only until it is."
+      "notes": "BOOTSTRAP-SOCIAL-READ-TOOLS: who follows the user (count, names, mutuals) — direct answer, never deflects. In the shared registry; LiveKit @function_tool wrapper not yet shipped — Vertex-only until it is."
     },
     {
       "name": "list_following",
@@ -540,7 +540,7 @@
       ],
       "safety_critical": false,
       "owner_vtid": null,
-      "notes": "BOOTSTRAP-SOCIAL-READ-TOOLS: who the user follows (count and names). In the shared registry; LiveKit @function_tool wrapper not yet shipped \u2014 Vertex-only until it is."
+      "notes": "BOOTSTRAP-SOCIAL-READ-TOOLS: who the user follows (count and names). In the shared registry; LiveKit @function_tool wrapper not yet shipped — Vertex-only until it is."
     },
     {
       "name": "recent_conversations",
@@ -549,7 +549,7 @@
       ],
       "safety_critical": false,
       "owner_vtid": null,
-      "notes": "BOOTSTRAP-SOCIAL-READ-TOOLS: newest-first DM contacts; first entry answers 'who did I last chat with'. In the shared registry; LiveKit @function_tool wrapper not yet shipped \u2014 Vertex-only until it is."
+      "notes": "BOOTSTRAP-SOCIAL-READ-TOOLS: newest-first DM contacts; first entry answers 'who did I last chat with'. In the shared registry; LiveKit @function_tool wrapper not yet shipped — Vertex-only until it is."
     },
     {
       "name": "get_highest_vitana_index",
@@ -689,7 +689,7 @@
       ],
       "safety_critical": true,
       "owner_vtid": "VTID-02761",
-      "notes": "Cancel (soft-delete) a calendar event \u2014 the event stays in history with status 'cancelled'."
+      "notes": "Cancel (soft-delete) a calendar event — the event stays in history with status 'cancelled'."
     },
     {
       "name": "complete_event",
@@ -989,7 +989,7 @@
       ],
       "safety_critical": false,
       "owner_vtid": "VTID-02771",
-      "notes": "Mute a chat conversation. NOTE: chat muting is not supported in Vitana yet \u2014"
+      "notes": "Mute a chat conversation. NOTE: chat muting is not supported in Vitana yet —"
     },
     {
       "name": "archive_conversation",
@@ -999,7 +999,7 @@
       ],
       "safety_critical": true,
       "owner_vtid": "VTID-02771",
-      "notes": "Archive a chat conversation. NOTE: chat archiving does not exist in Vitana \u2014"
+      "notes": "Archive a chat conversation. NOTE: chat archiving does not exist in Vitana —"
     },
     {
       "name": "update_account_visibility",
@@ -1049,7 +1049,7 @@
       ],
       "safety_critical": true,
       "owner_vtid": "VTID-02768",
-      "notes": "File a bug ticket (kind=bug) in the feedback pipeline. No persona swap \u2014"
+      "notes": "File a bug ticket (kind=bug) in the feedback pipeline. No persona swap —"
     },
     {
       "name": "submit_support_ticket",
@@ -1239,7 +1239,7 @@
       ],
       "safety_critical": false,
       "owner_vtid": "VTID-02780",
-      "notes": "Flagship people-match: find the PERFECT person for the user \u2014 workout"
+      "notes": "Flagship people-match: find the PERFECT person for the user — workout"
     },
     {
       "name": "get_emotional_state",
@@ -1329,7 +1329,7 @@
       ],
       "safety_critical": false,
       "owner_vtid": "BOOTSTRAP-VOICE-P0-GAPS",
-      "notes": "MARK notifications as read \u2014 all unread ones, or only those whose title"
+      "notes": "MARK notifications as read — all unread ones, or only those whose title"
     },
     {
       "name": "get_wallet_balance",
@@ -1369,7 +1369,7 @@
       ],
       "safety_critical": false,
       "owner_vtid": "BOOTSTRAP-VOICE-P0-GAPS",
-      "notes": "LIKE a community feed post \u2014 resolves 'the last post from <name>' to that"
+      "notes": "LIKE a community feed post — resolves 'the last post from <name>' to that"
     },
     {
       "name": "comment_on_post",
@@ -1399,7 +1399,7 @@
       ],
       "safety_critical": false,
       "owner_vtid": "VTID-02782",
-      "notes": "DEVELOPER ONLY. Get one VTID task by id \u2014 status, spec status, terminal state, claim."
+      "notes": "DEVELOPER ONLY. Get one VTID task by id — status, spec status, terminal state, claim."
     },
     {
       "name": "dev_list_pending_approvals",
@@ -1429,7 +1429,7 @@
       ],
       "safety_critical": true,
       "owner_vtid": "VTID-02782",
-      "notes": "DEVELOPER ONLY. Approve a queued approval \u2014 merges its PR via the governed pipeline."
+      "notes": "DEVELOPER ONLY. Approve a queued approval — merges its PR via the governed pipeline."
     },
     {
       "name": "dev_reject_pr",
@@ -1745,7 +1745,7 @@
     {
       "name": "ip_geo_cache_ttl_ms",
       "value": 21600000,
-      "description": "6 h \u2014 IP_GEO_CACHE_TTL_MS in orb-live.ts (`// 6 hours`) is canonical; spec previously claimed 1 h (BOOTSTRAP-VOICE-TOOL-PARITY value_mismatch fix). LiveKit's watchdogs.py uses 1 h but does not gate this constant via the spec (implementations: vertex only).",
+      "description": "6 h — IP_GEO_CACHE_TTL_MS in orb-live.ts (`// 6 hours`) is canonical; spec previously claimed 1 h (BOOTSTRAP-VOICE-TOOL-PARITY value_mismatch fix). LiveKit's watchdogs.py uses 1 h but does not gate this constant via the spec (implementations: vertex only).",
       "implementations": [
         "vertex"
       ]
@@ -1793,7 +1793,7 @@
     {
       "name": "greeting_prebuffer_fallback_ms",
       "value": 1500,
-      "description": "DEV-COMHU-0513 \u2014 GREETING_PREBUFFER_FALLBACK_MS in orb-live.ts. When FEATURE_ORB_GREETING_PREBUFFER_ENV is live, the WS greeting prompt is dispatched on connect and its audio held until the client's audio_ready; if that ack never arrives, the held greeting is flushed after this timeout so the user is never left in silence.",
+      "description": "DEV-COMHU-0513 — GREETING_PREBUFFER_FALLBACK_MS in orb-live.ts. When FEATURE_ORB_GREETING_PREBUFFER_ENV is live, the WS greeting prompt is dispatched on connect and its audio held until the client's audio_ready; if that ack never arrives, the held greeting is flushed after this timeout so the user is never left in silence.",
       "implementations": [
         "vertex"
       ]
@@ -1809,7 +1809,7 @@
     {
       "name": "token_refresh_skew_ms",
       "value": 300000,
-      "description": "5 min \u2014 refresh the cached ADC access token this far ahead of expiry so getAccessToken() never blocks the live-connect path",
+      "description": "5 min — refresh the cached ADC access token this far ahead of expiry so getAccessToken() never blocks the live-connect path",
       "implementations": [
         "vertex"
       ]
@@ -1817,7 +1817,7 @@
     {
       "name": "token_default_ttl_ms",
       "value": 3300000,
-      "description": "55 min \u2014 fallback ADC token TTL when the auth client doesn't expose expiry_date",
+      "description": "55 min — fallback ADC token TTL when the auth client doesn't expose expiry_date",
       "implementations": [
         "vertex"
       ]
@@ -1825,7 +1825,7 @@
     {
       "name": "tool_cache_ttl_ms",
       "value": 120000,
-      "description": "2 min \u2014 per-session cache TTL for read-only retrieval tools (search_memory/search_knowledge); repeat lookups skip the blocking function_response round-trip (BOOTSTRAP-ORB-LATENCY-PHASE2)",
+      "description": "2 min — per-session cache TTL for read-only retrieval tools (search_memory/search_knowledge); repeat lookups skip the blocking function_response round-trip (BOOTSTRAP-ORB-LATENCY-PHASE2)",
       "implementations": [
         "vertex"
       ]
@@ -1833,14 +1833,14 @@
     {
       "name": "vertex_bootstrap_cache_ttl_ms",
       "value": 300000,
-      "description": "5 min \u2014 per-identity cache TTL for buildBootstrapContextPack on the Vertex session-start path; filled by /live/session/prewarm so the first tap skips the 400-800ms context build (BOOTSTRAP-ORB-LATENCY-PHASE2)",
+      "description": "5 min — per-identity cache TTL for buildBootstrapContextPack on the Vertex session-start path; filled by /live/session/prewarm so the first tap skips the 400-800ms context build (BOOTSTRAP-ORB-LATENCY-PHASE2)",
       "implementations": [
         "vertex"
       ]
     }
   ],
   "documented_invariants": {
-    "description": "Behaviours required by both implementations but enforced by inline checks rather than named constants. The parity scanner does not statically verify these (yet) \u2014 they live in spec.json so reviewers know the invariant exists, and to anchor future PRs that promote them to named constants.",
+    "description": "Behaviours required by both implementations but enforced by inline checks rather than named constants. The parity scanner does not statically verify these (yet) — they live in spec.json so reviewers know the invariant exists, and to anchor future PRs that promote them to named constants.",
     "items": [
       {
         "name": "vad_silence_ms_range",
@@ -1923,7 +1923,8 @@
     "global_flag_key": "voice.active_provider",
     "values": [
       "vertex",
-      "livekit"
+      "livekit",
+      "nova_sonic"
     ],
     "anti_flap_cooldown_seconds": 3600,
     "implementations": [
@@ -1937,7 +1938,8 @@
       "extract real arg JSON Schemas for each tool from orb-live.ts (this v0.1 has names + flags but not arg schemas)",
       "wire the LiveKit-side codegen target once services/agents/orb-agent/ ships",
       "promote the CI from report-only to merge gate once 30 days of green runs are recorded",
-      "EXTRACTOR GAP (BOOTSTRAP-VOICE-TOOL-PARITY): extract-ts.ts only walks orb-live.ts. The 11 remaining `missing_in_vertex` items are false negatives \u2014 they ARE implemented on the Vertex side, just outside that single file: (a) OASIS topics orb.live.tool.executed (orb/live/session/upstream-message-handler.ts), orb.navigator.requested/dispatched/blocked (services/orb-tools-shared.ts, upstream-message-handler.ts), feedback.ticket.created (services/report-to-specialist-core.ts); (b) watchdogs session_timeout_ms, conversation_timeout_ms, max_connections_per_ip, max_reconnects, max_history_chars, extraction_throttle_ms \u2014 all imported from ../orb/live/config. Fix is to widen the extractor's file set to the orb/live module tree (separate PR \u2014 out of scope for the spec-reconciliation pass). These stay declared as vertex because they are genuinely implemented."
+      "EXTRACTOR GAP (BOOTSTRAP-VOICE-TOOL-PARITY): extract-ts.ts only walks orb-live.ts. The 11 remaining `missing_in_vertex` items are false negatives — they ARE implemented on the Vertex side, just outside that single file: (a) OASIS topics orb.live.tool.executed (orb/live/session/upstream-message-handler.ts), orb.navigator.requested/dispatched/blocked (services/orb-tools-shared.ts, upstream-message-handler.ts), feedback.ticket.created (services/report-to-specialist-core.ts); (b) watchdogs session_timeout_ms, conversation_timeout_ms, max_connections_per_ip, max_reconnects, max_history_chars, extraction_throttle_ms — all imported from ../orb/live/config. Fix is to widen the extractor's file set to the orb/live module tree (separate PR — out of scope for the spec-reconciliation pass). These stay declared as vertex because they are genuinely implemented.",
+      "BOOTSTRAP-NOVA-SONIC-VOICE: 'implementations: [\"vertex\"]' is a legacy label meaning 'the shared TypeScript gateway code path' — nova_sonic tool calls dispatch through the same executeLiveApiTool tree, so the scanner must NOT demand duplicate nova implementations."
     ],
     "owners": "ORB Voice team",
     "related_memory": [
@@ -1947,5 +1949,41 @@
       "memory/agents_registry_shipped.md",
       "memory/project_voice_self_healing_loop.md"
     ]
+  },
+  "nova_sonic": {
+    "provider": "nova_sonic",
+    "model": "amazon.nova-2-sonic-v1:0",
+    "region": "eu-north-1",
+    "transport": "bedrock InvokeModelWithBidirectionalStream (HTTP/2), gateway-side; browser transport unchanged (gateway WS/SSE)",
+    "credential_source": "ecs_task_role (AWS SDK default chain; no static keys, no Bedrock API keys)",
+    "audio": {
+      "input": "audio/pcm;rate=16000 mono 16-bit base64",
+      "output": "audio/pcm;rate=24000 mono 16-bit base64"
+    },
+    "languages": [
+      "en",
+      "de",
+      "fr",
+      "es"
+    ],
+    "stream_rotation": {
+      "bedrock_cap_seconds": 480,
+      "rotate_after_ms": 435000,
+      "contract": "replacement stream opens first with rebuilt prompt/history; browser session uninterrupted; no greeting replay"
+    },
+    "failure_categories": [
+      "nova_access_denied",
+      "nova_model_not_found",
+      "nova_throttled",
+      "nova_validation",
+      "nova_stream_timeout",
+      "nova_stream_error",
+      "nova_protocol_error",
+      "nova_backpressure",
+      "nova_rotation_failed",
+      "nova_not_configured"
+    ],
+    "selection": "per-identity env-scoped canary allowlists (NOVA_SONIC_CANARY_USER_IDS/TENANT_IDS); shared system_config row NOT used for the canary; ORB_LIVE_PROVIDER=vertex is the emergency rollback",
+    "tooling_note": "nova_sonic shares the TypeScript gateway implementation and canonical tool dispatcher with vertex — it is NOT a third tool implementation tree. Existing implementations:[\"vertex\"] entries denote that shared gateway code path (see README)."
   }
 }

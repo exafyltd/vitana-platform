@@ -29,6 +29,34 @@ export const VERTEX_PROJECT_ID =
 export const VERTEX_LOCATION = process.env.VERTEX_AI_LOCATION || 'us-central1';
 
 /**
+ * BOOTSTRAP-AWS-STAGING-VALIDATION: ORB's Live API upstream normally
+ * authenticates to Vertex AI via OAuth Application Default Credentials,
+ * which resolve for free on Cloud Run (GCP metadata server) but have
+ * nothing to resolve from on non-GCP compute (AWS ECS has no metadata
+ * server — see lib/gcp-adc-bootstrap.ts for the same problem on the REST
+ * side). Setting GEMINI_LIVE_TRANSPORT=api_key switches `connectToLiveAPI`
+ * to `GeminiApiKeyLiveClient`, which talks to the Google AI Studio Live API
+ * using a plain Gemini API key (GOOGLE_GEMINI_API_KEY) — no GCP credential
+ * needed at all. Unset (default 'vertex') on GCP, where ADC already works.
+ */
+export const GEMINI_LIVE_USE_API_KEY =
+  (process.env.GEMINI_LIVE_TRANSPORT || 'vertex').toLowerCase() === 'api_key';
+
+/**
+ * BOOTSTRAP-AWS-STAGING-VALIDATION: model id for the api_key (AI Studio)
+ * transport. Neither Vertex's Live model (gemini-live-2.5-flash-native-audio)
+ * nor the commonly-referenced gemini-2.0-flash-live-001 are reachable through
+ * this key's AI Studio catalog (confirmed via GET /api/v1/debug/ai-studio-models,
+ * a temporary ListModels proxy — see routes/debug-ai-studio-models.ts). Of the
+ * ~50 models GOOGLE_GEMINI_API_KEY can see under both v1alpha and v1beta,
+ * exactly one supports bidiGenerateContent: gemini-2.5-flash-native-audio-latest.
+ * Vertex AI and AI Studio Live have separate model catalogs.
+ * Override via env var if Google's catalog changes without a redeploy.
+ */
+export const AI_STUDIO_LIVE_MODEL =
+  process.env.AI_STUDIO_LIVE_MODEL || 'gemini-2.5-flash-native-audio-latest';
+
+/**
  * Live (ORB voice) session timeout. After 30 minutes of inactivity the
  * periodic session sweep purges the entry from `liveSessions`. SSE/WS
  * cleanup handlers handle the happy path; this is the safety net.
