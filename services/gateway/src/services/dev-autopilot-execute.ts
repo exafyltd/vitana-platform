@@ -47,6 +47,9 @@ import {
   isExecutableSourceType,
   executableSourceTypesPostgrestIn,
 } from './autopilot-executable-source-types';
+// VTID-03415: AWS RunTask dispatch path, parallel to the GCP Cloud Run Job
+// dispatch below. Only exercised when DEV_AUTOPILOT_JOB_CLOUD=aws.
+import { dispatchExecutorJobAws } from './aws-ecs-admin';
 
 const LOG_PREFIX = '[dev-autopilot-execute]';
 const EXEC_VTID = 'VTID-DEV-AUTOPILOT';
@@ -103,6 +106,11 @@ const USE_JOB_RUNTIME = (process.env.DEV_AUTOPILOT_USE_JOB || 'false').toLowerCa
 const JOB_NAME = process.env.DEV_AUTOPILOT_JOB_NAME || 'autopilot-executor';
 const JOB_REGION = process.env.DEV_AUTOPILOT_JOB_REGION || 'us-central1';
 const JOB_PROJECT = process.env.GCP_PROJECT_ID || process.env.GOOGLE_CLOUD_PROJECT || 'lovable-vitana-vers1';
+// VTID-03415: which cloud's Job/Task runtime to dispatch to when
+// USE_JOB_RUNTIME is on. Defaults to 'gcp' so this is purely additive —
+// GCP gateway instances never set this var and see zero behavior change.
+// Only the AWS-DR gateway (vitana-gateway-awsdr) should ever set 'aws'.
+const JOB_CLOUD = (process.env.DEV_AUTOPILOT_JOB_CLOUD || 'gcp').toLowerCase();
 
 const GITHUB_OWNER = process.env.DEV_AUTOPILOT_REPO_OWNER || 'exafyltd';
 const GITHUB_REPO = process.env.DEV_AUTOPILOT_REPO_NAME || 'vitana-platform';
@@ -2326,16 +2334,22 @@ export async function backgroundExecutorTick(): Promise<void> {
     // dispatch isn't configured or fails to enqueue.
     if (USE_JOB_RUNTIME) {
       try {
-        const dispatched = await dispatchExecutorJob(exec.id);
+        // VTID-03415: AWS RunTask and GCP Cloud Run Job are the two
+        // interchangeable dispatch targets; JOB_CLOUD picks which one this
+        // gateway instance should use. Both write back via job-entry.ts /
+        // applyExecutionResult, so the caller-side handling is identical.
+        const dispatched = JOB_CLOUD === 'aws'
+          ? await dispatchExecutorJobAws(exec.id)
+          : await dispatchExecutorJob(exec.id);
         if (dispatched.ok) {
-          // The Job calls runExecutionSession + applyExecutionResult on its
-          // own. The gateway's job is done for this exec — return so we
+          // The Job/Task calls runExecutionSession + applyExecutionResult on
+          // its own. The gateway's job is done for this exec — return so we
           // don't double-fire.
           continue;
         }
-        console.warn(`${LOG_PREFIX} Job dispatch failed for ${exec.id}: ${dispatched.error}; falling back to in-process`);
+        console.warn(`${LOG_PREFIX} Job dispatch (${JOB_CLOUD}) failed for ${exec.id}: ${dispatched.error}; falling back to in-process`);
       } catch (err) {
-        console.error(`${LOG_PREFIX} Job dispatch threw for ${exec.id}:`, err);
+        console.error(`${LOG_PREFIX} Job dispatch (${JOB_CLOUD}) threw for ${exec.id}:`, err);
       }
     }
 
