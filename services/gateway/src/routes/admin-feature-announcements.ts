@@ -186,7 +186,12 @@ router.post('/', async (req: AuthenticatedRequest, res: Response) => {
         // yourself" in-app button target (e.g. /home/compose). Tapping the
         // push should show the card first, not skip straight past it into
         // whatever action the card's CTA performs.
-        data: { url: '/home', entity_id: announcementId },
+        //
+        // /home/notif, NOT /home: same feed, but deliberately excluded from
+        // useOrbFrontDoor's MAXINA_LANDING_ROUTES (vitana-v1) — a notification
+        // tap is a full page load there, which otherwise auto-opens the Orb
+        // front-door overlay on top of the card the push is about.
+        data: { url: '/home/notif', entity_id: announcementId },
       };
       notifyUsersAsync(userIds, tenant_id, 'feature_announcement', payload, supabase);
     }

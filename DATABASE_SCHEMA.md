@@ -1237,6 +1237,26 @@ CREATE TABLE feature_announcements (
 via the Supabase client (same pattern as `profile_posts`/`media_uploads` in
 `useAllNewsFeed.ts`) — no gateway GET route needed for the card itself.
 
+### did_you_know_state
+
+```sql
+CREATE TABLE did_you_know_state (
+  tenant_id   UUID PRIMARY KEY,
+  last_index  INTEGER NOT NULL DEFAULT -1,
+  updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+```
+
+One row per tenant, tracking the index of the last `did-you-know-feature`
+tip published (from `services/gateway/src/data/feature-tips.ts`'s curated
+list) by `POST /api/v1/scheduled-notifications/daily-feature-tip`
+(BOOTSTRAP-DAILY-FEATURE-TIP, daily Cloud Scheduler job). Lets the rotation
+advance one tip per day without repeating back-to-back, wrapping to 0 once
+the list is exhausted.
+
+**Auth model:** RLS on, `ALL` for `service_role` only — internal cron
+state, never read by clients.
+
 ---
 
 **Remember:** This file is the SINGLE SOURCE OF TRUTH for table names.
