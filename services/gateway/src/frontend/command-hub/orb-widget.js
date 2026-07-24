@@ -1445,6 +1445,20 @@
       _s.liveError = err.message;
       _setOrbState('error');
       _updateUI();
+      // BOOTSTRAP-ORB-CONNECT-STUCK: this catch used to dead-end here — the
+      // error aura was set but _setStatus() was never called with a new
+      // message, so the "Verbinden..." text from _show() stayed on screen
+      // forever (just re-colored red via _setStatus's liveError fallback),
+      // and nothing retried. Any first-attempt failure (8s timeout, non-ok
+      // response, network error) left the user stuck with no path back
+      // except force-closing the app. Every OTHER disconnect path (SSE
+      // CLOSED, WS onclose) recovers via _announceDisconnect +
+      // _attemptReconnect — route this one through the same machinery so it
+      // gets a real status message and the existing auto-retry /
+      // tap-to-reconnect budget instead of silently hanging.
+      if (_s._userInitiatedStop || !_s.overlayVisible) return;
+      _announceDisconnect('connection');
+      _attemptReconnect();
     }
   }
 
