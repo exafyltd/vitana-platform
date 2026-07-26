@@ -717,3 +717,47 @@ Still blocked on an operator, both recorded as go/no-go checklist items:
    session's IAM user, so nothing is subscribed to `vitana-alarms-prod`
    yet. Until both are done the alerting chain is still end-to-end
    inert, regardless of this VTID's code being live.
+
+### Finding 3: `vitana-orb-agent` is ECS-`HEALTHY` and functionally inert
+
+Scoping the "build orb-agent parity" instruction turned up that an ECS
+service **already exists** — `vitana-orb-agent`, task def rev 10,
+`ACTIVE`, `runningCount=1`, `healthStatus: HEALTHY`. It is one of the
+~22 never-investigated services from the 2026-07-09 bulk-provisioning
+event, and it is a **false-green**: the logs show it never starts its
+actual worker.
+
+```
+{"event": "orb_agent.boot", "livekit_url": "wss://maxina-...livekit.cloud"}
+INFO:src.orb_agent.registry_client:registry_heartbeat.disabled
+  — GATEWAY_SERVICE_TOKEN not set
+{"event": "orb_agent.ready_health_only"}
+```
+
+`orb_agent.ready_health_only` is the tell — `AGENT_ENABLE_WORKER` is
+absent from the AWS task definition, so the LiveKit worker subprocess
+never launches; only the FastAPI health endpoint runs. ECS health
+checks `/alive`, gets a 200, and reports the service healthy.
+
+Config gap vs. `DEPLOY-ORB-AGENT.yml`: missing `AGENT_ENABLE_WORKER`,
+`GATEWAY_SERVICE_TOKEN`, `GOOGLE_CLOUD_PROJECT`, `VERTEX_AI_LOCATION`,
+`ORB_AGENT_TEXT_ONLY`, `AGENT_LOG_LEVEL`; carries an
+`http://gateway.vitanaland.com` scheme bug (same class as VTID-03408's
+worker-runner/verification-engine fixes); and additionally carries
+`DB_HOST`/`DB_READER_HOST`/`REDIS_HOST`/`SUPABASE_*` that GCP's
+deployment doesn't pass at all. The LiveKit secrets *are* real
+(`list-secret-version-ids` shows versions on all three, unlike the
+Google Chat secrets in Finding 2).
+
+**Not fixed in this VTID** — deliberately. Completing it needs a
+decision this session can't make: orb-agent's LLM path is Vertex AI,
+and there is no provision in the task definition for GCP credentials
+from AWS Fargate. Setting `AGENT_ENABLE_WORKER=1` without solving that
+would turn a quietly-inert service into a loudly-failing one, which is
+worse during a cutover window. Recorded in
+`docs/AWS-CUTOVER-RUNBOOK.md` §4.2 with the open question.
+
+**The transferable lesson** (now a go/no-go checklist item): ECS
+`healthStatus: HEALTHY` means the container's health command exited 0
+— nothing more. Every service needs a probe that proves it is doing
+its job before "AWS is healthy" can be claimed at cutover.

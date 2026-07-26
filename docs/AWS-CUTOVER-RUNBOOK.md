@@ -114,6 +114,20 @@ objective — each item has a clear done/not-done state.
           route. `sns:Subscribe` is denied for this session's IAM user.
     *Email alerting is unaffected by both and works today — this item
     is additive, not a regression risk.*
+- [ ] **Every service has a *functional* probe, not just ECS health.**
+      Added 2026-07-26 after `vitana-orb-agent` was found `HEALTHY` on
+      ECS while running health-endpoint-only and doing no actual work
+      (§4.2). `healthStatus: HEALTHY` only means the container's health
+      command exited 0. Before cutover, each service needs one check
+      that proves it's doing its job — e.g. gateway
+      `/api/v1/admin/health` returning `env=production`, worker-runner
+      logging a successful registration, oasis-projector logging
+      `Database connected`, orb-agent registering a LiveKit worker.
+      *(gateway, community-app, oasis-operator, oasis-projector,
+      worker-runner and verification-engine were each functionally
+      verified when built/fixed; orb-agent is the known failure. This
+      item is about re-confirming all of them at cutover time, since
+      "was verified once" is not "is working now.")*
 - [x] **Frontend gateway-URL decision made** (§4.1) — DECIDED
       2026-07-26: **DNS-first**. Hostnames don't change; cutover
       repoints `gateway.vitanaland.com` + apex to AWS. The existing
@@ -149,12 +163,13 @@ objective — each item has a clear done/not-done state.
 - [~] **`orb-agent` / autopilot-job AWS parity** (§4.2) — DECIDED
       2026-07-26: build parity for both. Scoping done; **neither is
       built yet**, and each has a complication:
-    - [ ] **`orb-agent`** — infra straightforward, but the service is a
-          self-declared non-functional skeleton, and its LiveKit
-          self-registration means the deploy must stop the old task
-          *before* the new one starts (a plain rolling update causes
-          split dispatch). Worth confirming it's worth building now
-          given it does nothing yet.
+    - [ ] **`orb-agent`** — ⚠️ an ECS service already exists, reports
+          `HEALTHY`, and is **functionally inert** (health-endpoint-only:
+          `AGENT_ENABLE_WORKER` and `GATEWAY_SERVICE_TOKEN` both absent).
+          Needs config completion, the `http://`→`https://` fix, a
+          decision on reaching Vertex AI from AWS, and a deploy that
+          stops the old task before the new one registers with LiveKit.
+          See §4.2 — this is the clearest example of ECS-green ≠ working.
     - [ ] **autopilot-job** — BLOCKED on an application-design
           decision: it's dispatched by the gateway via the GCP Cloud
           Run Admin API, so AWS parity needs a second dispatch path
@@ -266,10 +281,47 @@ neither has any AWS deploy path today. Options:
 **DECIDED 2026-07-26 — build parity for both.** A scoping pass turned
 up a material complication in each; neither is a pure infra job:
 
-**`orb-agent`** — infra is straightforward (Dockerfile exists at
-`services/agents/orb-agent/Dockerfile`, port 8080, `GET /health`,
-outbound-only so no ALB/target group needed, single Fargate task).
-Two caveats:
+**`orb-agent`** — ⚠️ **an AWS ECS service already exists and is a
+false-green.** `vitana-orb-agent` (task def rev 10) is `ACTIVE`,
+`runningCount=1`, and ECS reports `healthStatus: HEALTHY` — but its
+logs show it is running in **health-endpoint-only mode**, doing none of
+its actual work:
+
+```
+{"event": "orb_agent.ready_health_only", ...}
+INFO:src.orb_agent.registry_client:registry_heartbeat.disabled
+  — GATEWAY_SERVICE_TOKEN not set
+```
+
+Config diff against what `DEPLOY-ORB-AGENT.yml` passes on GCP:
+
+| Needed | Present on AWS? |
+|---|---|
+| `AGENT_ENABLE_WORKER=1` | ❌ **missing — this is why it's health-only** |
+| `GATEWAY_SERVICE_TOKEN` | ❌ missing → can't register with the gateway |
+| `GOOGLE_CLOUD_PROJECT` / `VERTEX_AI_LOCATION` | ❌ missing |
+| `ORB_AGENT_TEXT_ONLY` / `AGENT_LOG_LEVEL` | ❌ missing |
+| `LIVEKIT_URL` / `_API_KEY` / `_API_SECRET` | ✅ present (real values) |
+| `GATEWAY_URL` | ⚠️ `http://` — same scheme bug fixed under VTID-03408 |
+
+It also carries `DB_HOST`/`DB_READER_HOST`/`REDIS_HOST`/`SUPABASE_*`
+that the GCP deployment doesn't pass at all — consistent with the
+2026-07-09 bulk-provisioning template rather than a considered config.
+
+**The generalizable warning for cutover:** `healthStatus: HEALTHY` on
+ECS means *the container's health command returned 0*, not *the service
+is doing its job*. This service would have passed every automated gate
+in the cutover checklist while being functionally inert. Any
+"AWS is healthy, we're ready" claim needs at least one
+service-specific functional probe, not just ECS health.
+
+**Unresolved architectural question:** orb-agent's LLM path is
+Vertex AI (Google). Running it on AWS Fargate needs GCP credentials
+for Vertex, which the task definition has no provision for. Genuine
+cross-cloud parity here is not just env vars — it needs a decision on
+how (or whether) Vertex is reached from AWS.
+
+Other caveats:
 - Its own `README.md` states it is a **skeleton that does not run a
   real conversation yet** — it's the standby alternative to the Vertex
   Live pipeline (`orb-live.ts`), and exactly one of {vertex, livekit}
