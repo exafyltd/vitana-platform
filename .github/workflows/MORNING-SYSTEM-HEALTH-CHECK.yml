@@ -45,6 +45,8 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 200
 
       - name: Install psql + jq
         run: sudo apt-get install -y postgresql-client jq > /dev/null 2>&1
@@ -75,17 +77,24 @@ jobs:
           if [ "$CODE" = "200" ]; then R=PASS; else R=FAIL; fi
           echo "| 3 | Gateway STAGING /alive | $R | HTTP $CODE |" >> "$REPORT"
 
-      # 4 — Deploy-drift: staging build-info commit vs latest main HEAD
-      - name: '4. Staging deploy freshness (build-info vs main HEAD)'
+      # 4 — Deploy-drift: staging build-info commit vs latest main commit that
+      # actually touches services/gateway/** (STAGE-DEPLOY.yml only triggers
+      # on that path — comparing against raw main HEAD false-positives on
+      # every commit that doesn't touch the gateway, e.g. docs/other-service/
+      # workflow-only changes).
+      - name: '4. Staging deploy freshness (build-info vs latest gateway-touching commit)'
         run: |
           set +e
           BODY=$(curl -sS --max-time 10 "$STAGING_GATEWAY_URL/api/v1/admin/build-info")
           DEPLOYED=$(echo "$BODY" | jq -r '.commit // .git_commit // .sha // empty' 2>/dev/null)
-          HEAD="${{ github.sha }}"
-          if [ -n "$DEPLOYED" ] && [ "${HEAD:0:${#DEPLOYED}}" = "$DEPLOYED" ]; then
-            R=PASS; D="staging=$DEPLOYED matches main HEAD"
+          EXPECTED=$(git log -1 --format=%H -- services/gateway/ 2>/dev/null)
+          if [ -z "$EXPECTED" ]; then
+            EXPECTED="${{ github.sha }}"
+          fi
+          if [ -n "$DEPLOYED" ] && [ "${EXPECTED:0:${#DEPLOYED}}" = "$DEPLOYED" ]; then
+            R=PASS; D="staging=$DEPLOYED matches latest gateway-touching commit"
           elif [ -n "$DEPLOYED" ]; then
-            R=FAIL; D="staging=$DEPLOYED, main HEAD=$HEAD (drift — check STAGE-DEPLOY.yml)"
+            R=FAIL; D="staging=$DEPLOYED, latest gateway commit=$EXPECTED (drift — check STAGE-DEPLOY.yml)"
           else
             R=FAIL; D="could not read build-info: $(echo "$BODY" | head -c 200)"
           fi
