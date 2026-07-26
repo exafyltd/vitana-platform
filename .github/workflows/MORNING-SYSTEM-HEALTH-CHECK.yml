@@ -141,7 +141,7 @@ jobs:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
         run: |
           set +e
-          OUT=$(psql "$SUPABASE_DB_URL" -t -A <<'EOF'
+          OUT=$(psql "$SUPABASE_DB_URL" -t -A <<'EOF' 2>&1
           SELECT
             CASE
               WHEN NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'welcome_chat_on_primary_membership')
@@ -162,7 +162,7 @@ jobs:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
         run: |
           set +e
-          OUT=$(psql "$SUPABASE_DB_URL" -t -A -F '|' <<'EOF'
+          OUT=$(psql "$SUPABASE_DB_URL" -t -A -F '|' <<'EOF' 2>&1
           WITH w AS (SELECT now() - interval '24 hours' AS since)
           SELECT
             (SELECT COUNT(*) FROM public.app_users WHERE created_at >= (SELECT since FROM w) AND user_id <> '00000000-0000-0000-0000-000000000001'::uuid),
