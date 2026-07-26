@@ -207,9 +207,24 @@ function formatProbeMetrics(m: LiveProbeMetrics): string {
  * catalog — the minimal health probe passing while real sessions fail means
  * one of those dimensions trips a Bedrock/Nova limit; this finds which.
  */
+/** Request-supplied probe shape for remote bisecting (bounded by the route). */
+export interface NovaPayloadProbeSpec {
+  key: string;
+  /** System-instruction size in KB (filler text). 0/absent = tiny prompt. */
+  text_kb?: number;
+  /** Chunk the instruction into textInput events of this many KB. */
+  chunk_kb?: number;
+  /** Number of small synthetic tools to declare. */
+  dummy_tools?: number;
+  /** Use the REAL buildLiveApiTools('authenticated') catalog. */
+  real_catalog?: boolean;
+  /** Truncate each tool description to this many chars (real catalog only). */
+  truncate_descriptions?: number;
+}
+
 async function probeNovaPayload(
   cfg: ReturnType<typeof getNovaSonicConfig>,
-  shape: { systemInstruction: string; tools?: ReadonlyArray<Record<string, unknown>>; observeMs?: number },
+  shape: { systemInstruction: string; tools?: ReadonlyArray<Record<string, unknown>>; observeMs?: number; chunkBytes?: number },
 ): Promise<{ ok: boolean; detail: string }> {
   const client = new NovaSonicLiveClient({ config: cfg, voiceId: 'tiffany' });
   const errorCodes: string[] = [];
@@ -224,6 +239,7 @@ async function probeNovaPayload(
       responseModalities: ['audio'],
       vadSilenceMs: 2000,
       systemInstruction: shape.systemInstruction,
+      systemInstructionChunkBytes: shape.chunkBytes,
       tools: shape.tools,
       connectTimeoutMs: cfg.connectTimeoutMs,
     });
@@ -267,9 +283,39 @@ const NOVA_ALL_PASS = {
 };
 const PROBE_IDENTITY = { userId: 'probe-user', tenantId: 'probe-tenant' };
 
+function payloadSpecToShape(spec: NovaPayloadProbeSpec): {
+  systemInstruction: string;
+  tools?: ReadonlyArray<Record<string, unknown>>;
+  chunkBytes?: number;
+} {
+  const systemInstruction = spec.text_kb && spec.text_kb > 0
+    ? 'You are a bench probe. Context: ' + 'x'.repeat(spec.text_kb * 1024)
+    : PROBE_SYSTEM_INSTRUCTION;
+  let tools: ReadonlyArray<Record<string, unknown>> | undefined;
+  if (spec.real_catalog) {
+    let catalog = buildLiveApiTools('authenticated') as Array<Record<string, unknown>>;
+    if (spec.truncate_descriptions && spec.truncate_descriptions > 0) {
+      catalog = catalog.map((t) => ({
+        ...t,
+        description: String(t.description ?? '').slice(0, spec.truncate_descriptions),
+      }));
+    }
+    tools = catalog;
+  } else if (spec.dummy_tools && spec.dummy_tools > 0) {
+    tools = buildDummyTools(spec.dummy_tools);
+  }
+  return {
+    systemInstruction,
+    tools,
+    chunkBytes: spec.chunk_kb && spec.chunk_kb > 0 ? spec.chunk_kb * 1024 : undefined,
+  };
+}
+
 export async function runNovaSonicTestSuite(options: {
   live?: boolean;
   trigger?: string;
+  /** Remote bisect: replaces the default payload probes when provided. */
+  payloadProbes?: NovaPayloadProbeSpec[];
 } = {}): Promise<NovaTestRunSummary> {
   const startedAt = Date.now();
   const checks: NovaTestCheck[] = [];
@@ -420,7 +466,14 @@ export async function runNovaSonicTestSuite(options: {
   // Payload-limit bisect — pinpoints why a REAL ORB session (large system
   // instruction + full live tool catalog) can fail while the minimal probe
   // passes. Only runs when the baseline Nova probe produced metrics.
-  const payloadShapes: Array<{ key: string; label: string; shape: Parameters<typeof probeNovaPayload>[1] }> = [
+  const payloadShapes: Array<{ key: string; label: string; shape: Parameters<typeof probeNovaPayload>[1] }> =
+    options.payloadProbes && options.payloadProbes.length > 0
+      ? options.payloadProbes.map((spec) => ({
+          key: spec.key,
+          label: `Payload probe: ${spec.key}`,
+          shape: payloadSpecToShape(spec),
+        }))
+      : [
     {
       key: 'payload_text_32k',
       label: 'Payload: 32KB system instruction, no tools',
@@ -449,6 +502,7 @@ export async function runNovaSonicTestSuite(options: {
     },
   ];
   for (const p of payloadShapes) {
+    // (loop body below runs identically for default and request-supplied shapes)
     checks.push(await runCheck(p.key, p.label, async () => {
       if (!options.live) return { status: 'skip', detail: 'live probe not requested' };
       if (!novaMetrics) return { status: 'skip', detail: 'baseline nova probe did not pass' };

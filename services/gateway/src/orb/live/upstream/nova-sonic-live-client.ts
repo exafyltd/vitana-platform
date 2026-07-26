@@ -368,7 +368,22 @@ export class NovaSonicLiveClient implements UpstreamLiveClient {
     this.queue.push(buildSessionStart());
     this.queue.push(buildPromptStart({ promptName: this.promptName, voiceId: this.deps.voiceId, tools }));
     this.queue.push(buildTextContentStart({ promptName: this.promptName, contentName: systemContentName, role: 'SYSTEM' }));
-    this.queue.push(buildTextInput({ promptName: this.promptName, contentName: systemContentName, content: options.systemInstruction }));
+    // Chunk oversized system instructions into multiple textInput events
+    // within the single SYSTEM block — Nova rejects a single large textInput
+    // with nova_validation, but streams many bounded events fine (same
+    // pattern as audioInput frames).
+    const chunkBytes = options.systemInstructionChunkBytes;
+    if (chunkBytes && chunkBytes > 0 && options.systemInstruction.length > chunkBytes) {
+      for (let i = 0; i < options.systemInstruction.length; i += chunkBytes) {
+        this.queue.push(buildTextInput({
+          promptName: this.promptName,
+          contentName: systemContentName,
+          content: options.systemInstruction.slice(i, i + chunkBytes),
+        }));
+      }
+    } else {
+      this.queue.push(buildTextInput({ promptName: this.promptName, contentName: systemContentName, content: options.systemInstruction }));
+    }
     this.queue.push(buildContentEnd({ promptName: this.promptName, contentName: systemContentName }));
     // Long-lived USER audio block — stays open for the whole stream; Nova's
     // server-side turn detection segments utterances.
