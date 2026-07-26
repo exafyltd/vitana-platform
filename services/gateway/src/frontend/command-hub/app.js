@@ -37759,7 +37759,7 @@ function renderNovaSonicTestView() {
     var manualPanel = document.createElement('div');
     manualPanel.style.cssText = 'padding:12px;background:#0f172a;border-radius:8px;margin-bottom:16px;border:1px solid #334155;';
     manualPanel.innerHTML = '<span style="color:#94a3b8;font-size:11px;letter-spacing:0.05em;">MANUAL PERFORMANCE TEST</span>'
-        + '<p style="color:#94a3b8;font-size:12px;margin:8px 0 12px;">Step 1 — probe which provider YOUR identity would get. Step 2 — if the answer is <code>nova_sonic</code>, open the ORB (mic button) and speak; the live session appears below with turns and audio counters. Compare wake→first-audio feel and barge-in against a Vertex session. Nova sessions emit <code>orb.upstream.nova.connect_succeeded</code> (connect_ms) and <code>orb.live.upstream.usage</code> in OASIS Events.</p>'
+        + '<p style="color:#94a3b8;font-size:12px;margin:8px 0 12px;">Step 1 — probe which provider YOUR identity would get. Step 2 — pick a language and hit <b>Connect &amp; Talk</b> to speak voice-to-voice right here; the live session appears below with turns and audio counters. Compare wake→first-audio feel and barge-in against a Vertex session. Nova sessions emit <code>orb.upstream.nova.connect_succeeded</code> (connect_ms) and <code>orb.live.upstream.usage</code> in OASIS Events.</p>'
         + '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px;">'
         + '<select class="nst-lang" style="padding:8px 10px;background:#1e293b;color:#e5e7eb;border:1px solid #334155;border-radius:4px;">'
         + '<option value="en">English (canary)</option>'
@@ -37769,8 +37769,10 @@ function renderNovaSonicTestView() {
         + '<option value="sr">Srpski (expected fallback → vertex)</option>'
         + '</select>'
         + '<button class="nst-decision-btn" style="padding:8px 16px;background:#2563eb;color:#fff;border:none;border-radius:6px;font-weight:bold;cursor:pointer;">Probe my provider decision</button>'
+        + '<button class="nst-talk-btn" style="padding:8px 18px;background:#f97316;color:#0f172a;border:none;border-radius:6px;font-weight:bold;cursor:pointer;">🎙 Connect &amp; Talk</button>'
         + '<span class="nst-decision-out" style="font-size:13px;color:#94a3b8;"></span>'
         + '</div>'
+        + '<div class="nst-talk-hint" style="display:none;margin-bottom:12px;padding:8px 10px;border-left:3px solid #f97316;background:#1e293b;font-size:12px;color:#e5e7eb;border-radius:4px;"></div>'
         + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">'
         + '<span style="color:#94a3b8;font-size:11px;letter-spacing:0.05em;">LIVE ORB SESSIONS (auto-refresh 5s)</span>'
         + '<span class="nst-sessions-updated" style="color:#64748b;font-size:11px;">--</span>'
@@ -37794,6 +37796,29 @@ function renderNovaSonicTestView() {
                     + ' <span style="color:#64748b;">(' + d.reason + ', runtime=' + data.runtime + ')</span>';
             })
             .catch(function (e) { if (!disposed) out.textContent = 'network error: ' + (e.message || 'unknown'); });
+    });
+
+    // Connect & Talk — open the PRODUCTION ORB voice overlay right here, in
+    // the selected language. This is the real transport (mic in, 24kHz audio
+    // out, barge-in); if this host has Nova enabled and your identity is
+    // canary-allowlisted, the session rides Nova — confirm with the decision
+    // probe, and watch the session appear in the table below.
+    manualPanel.querySelector('.nst-talk-btn').addEventListener('click', function () {
+        var hint = manualPanel.querySelector('.nst-talk-hint');
+        if (!window.VitanaOrb) {
+            hint.style.display = 'block';
+            hint.textContent = 'ORB widget not loaded on this page — refresh and try again.';
+            return;
+        }
+        var lang = manualPanel.querySelector('.nst-lang').value;
+        try { window.VitanaOrb.setLang(lang); } catch (_) { /* keep default */ }
+        hint.style.display = 'block';
+        hint.innerHTML = 'Voice session starting in <b>' + lang + '</b> — speak when the overlay shows '
+            + '<i>Listening</i>. Close the overlay (X) to end. Provider for YOUR identity: use '
+            + '<i>Probe my provider decision</i>; the session appears in the table below within ~5s.';
+        if (window.state && state.orb) { state.orb.overlayVisible = true; }
+        window.VitanaOrb.show();
+        loadSessions();
     });
 
     function loadSessions() {
