@@ -13065,6 +13065,11 @@ router.get('/live/stream', optionalAuth, async (req: AuthenticatedRequest, res: 
       emitLiveSessionEvent('orb.live.connection_failed', {
         session_id: sessionId,
         error: err.message,
+        // BOOTSTRAP-NOVA-SONIC-VOICE: bounded upstream detail attached by the
+        // Nova client's connect catch — operator surface only. Null on Vertex.
+        upstream_diagnostic: (err as { diagnostic?: string })?.diagnostic ?? null,
+        upstream_instruction_chars: (session as any)._novaInstructionChars ?? null,
+        upstream_tool_entry_count: (session as any)._novaToolEntryCount ?? null,
         vertex_project_id: VERTEX_PROJECT_ID || 'EMPTY',
       }, 'error').catch(() => {});
       // VTID-01959: voice self-healing dispatch (mode-gated; off by default).
