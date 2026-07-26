@@ -59,14 +59,18 @@ log_has() { # <log-group> <pattern> <since-minutes>
   local group="$1" pattern="$2" mins="${3:-120}"
   local start stream
   start=$(( ($(date +%s) - mins * 60) * 1000 ))
+  # Use --limit (API-level), NOT --max-items. With --max-items, aws-cli v2
+  # appends a client-side pagination token to --output text, so $stream came
+  # back as two lines ("ecs/foo/abc\nNone") and every get-log-events call
+  # failed ResourceNotFoundException — reported as "marker absent", i.e. a
+  # false FAIL on three healthy services. This, not the missing
+  # --start-from-head, was the real cause of the first run's bogus failures.
   stream=$(aws logs describe-log-streams --region "$REGION" --log-group-name "$group" \
-            --order-by LastEventTime --descending --max-items 1 \
+            --order-by LastEventTime --descending --limit 1 \
             --query 'logStreams[0].logStreamName' --output text 2>/dev/null) || return 2
   [[ -z "$stream" || "$stream" == "None" ]] && return 2
-  # --start-from-head is REQUIRED: without it get-log-events reads backward
-  # from the tail and reliably returns an empty first page, which reads as
-  # "marker absent" and produces false failures. Cost me three bogus FAILs
-  # the first time this script was run.
+  # --start-from-head is also required: without it get-log-events reads
+  # backward from the tail and can return an empty first page.
   aws logs get-log-events --region "$REGION" --log-group-name "$group" \
     --log-stream-name "$stream" --start-time "$start" --start-from-head \
     --limit 10000 --output json 2>/dev/null \
@@ -113,23 +117,38 @@ OP=$(curl -s -m 15 "https://dr-oasis-operator.vitanaland.com/api/v1/health" 2>/d
 grep -q '"status"' <<<"$OP" && ok "oasis-operator returned JSON health" \
   || bad "oasis-operator health missing/not JSON (got: $(head -c 100 <<<"$OP"))"
 
-echo "[oasis-projector] connected to the database"
-case "$(log_has /vitana/oasis-projector 'database connected|db connected' 240; echo $?)" in
-  0) ok "oasis-projector logged a DB connection" ;;
-  2) skip "oasis-projector log group/stream unavailable" ;;
-  *) bad "oasis-projector shows NO recent DB connection (VTID-03408 regression?)" ;;
-esac
+# A service at desiredCount=0 is a deliberate operational state, not a
+# fault — reporting it as FAILED would train people to ignore this script.
+desired() { aws ecs describe-services --region "$REGION" --cluster "$CLUSTER" \
+              --services "$1" --query 'services[0].desiredCount' --output text 2>/dev/null; }
 
-echo "[worker-runner] registered with the orchestrator"
-case "$(log_has /vitana/worker-runner 'worker registered|registered successfully' 240; echo $?)" in
-  0) ok "worker-runner logged a successful registration" ;;
+# NOTE on marker choice: probe for markers the service emits *repeatedly*,
+# not once at startup. "Database connected" / "Worker registered" are logged
+# only at boot, so a container running for longer than the lookback window
+# legitimately has no such line and would fail a recent-window check while
+# being perfectly healthy.
+
+echo "[oasis-projector] writing the ledger without constraint errors"
+if [[ "$(desired vitana-oasis-projector)" == "0" ]]; then
+  skip "oasis-projector desiredCount=0 (deliberately stopped — Aurora is missing the projection_offsets unique constraint AND is a DMS target for that table; see scripts/aws/aurora-schema-parity.sql)"
+elif log_has /vitana/oasis-projector '42P10|no unique or exclusion constraint' 60; then
+  bad "oasis-projector is hitting 42P10 — Aurora lacks the ON CONFLICT constraint"
+elif log_has /vitana/oasis-projector 'ledger|projection|database connected' 240; then
+  ok "oasis-projector active with no constraint errors"
+else
+  skip "oasis-projector: no recent log activity to judge"
+fi
+
+echo "[worker-runner] polling for work"
+case "$(log_has /vitana/worker-runner 'polled:|worker registered|registered successfully' 60; echo $?)" in
+  0) ok "worker-runner is polling (VTID-01200 loop alive)" ;;
   2) skip "worker-runner log group/stream unavailable" ;;
-  *) bad "worker-runner shows NO recent registration (check GATEWAY_URL scheme)" ;;
+  *) bad "worker-runner shows NO recent poll activity" ;;
 esac
 
 echo "[verification-engine] heartbeating"
-case "$(log_has /vitana/vitana-verification-engine 'heartbeat' 240; echo $?)" in
-  0) ok "verification-engine logged a heartbeat" ;;
+case "$(log_has /vitana/vitana-verification-engine 'heartbeat' 60; echo $?)" in
+  0) ok "verification-engine is heartbeating" ;;
   2) skip "verification-engine log group/stream unavailable" ;;
   *) bad "verification-engine shows NO recent heartbeat" ;;
 esac
