@@ -49,6 +49,7 @@ import {
   VERTEX_PROJECT_ID,
 } from '../../orb/live/config';
 import { VERTEX_LIVE_MODEL } from '../../orb/live/protocol';
+import { buildLiveApiTools } from '../../orb/live/tools/live-tool-catalog';
 
 export interface NovaTestCheck {
   key: string;
@@ -197,6 +198,65 @@ async function probeLiveClient(
 
 function formatProbeMetrics(m: LiveProbeMetrics): string {
   return `connect_ms=${m.connect_ms} first_event_ms=${m.first_event_ms} first_audio_ms=${m.first_audio_ms < 0 ? 'n/a' : m.first_audio_ms}`;
+}
+
+/**
+ * Payload-limit bisect: open a Nova stream with a specific envelope shape
+ * (system-instruction size, tool set), observe for async rejection events,
+ * close. A real ORB session sends a large instruction + the full live tool
+ * catalog — the minimal health probe passing while real sessions fail means
+ * one of those dimensions trips a Bedrock/Nova limit; this finds which.
+ */
+async function probeNovaPayload(
+  cfg: ReturnType<typeof getNovaSonicConfig>,
+  shape: { systemInstruction: string; tools?: ReadonlyArray<Record<string, unknown>>; observeMs?: number },
+): Promise<{ ok: boolean; detail: string }> {
+  const client = new NovaSonicLiveClient({ config: cfg, voiceId: 'tiffany' });
+  const errorCodes: string[] = [];
+  let closeReason: string | undefined;
+  client.onError((e) => { errorCodes.push(e.code); });
+  client.onClose((e) => { closeReason = e.reason; });
+  const t0 = Date.now();
+  try {
+    await client.connect({
+      model: cfg.modelId,
+      voiceName: 'tiffany',
+      responseModalities: ['audio'],
+      vadSilenceMs: 2000,
+      systemInstruction: shape.systemInstruction,
+      tools: shape.tools,
+      connectTimeoutMs: cfg.connectTimeoutMs,
+    });
+  } catch (err) {
+    return { ok: false, detail: `connect rejected: ${classifyNovaError(err)}` };
+  }
+  const connectMs = Date.now() - t0;
+  // Async rejections (validation on promptStart/textInput) arrive on the
+  // response stream after connect resolves — observe before declaring pass.
+  await new Promise((resolve) => {
+    const t = setTimeout(resolve, shape.observeMs ?? 3_000);
+    (t as NodeJS.Timeout).unref?.();
+  });
+  await client.close('nova_payload_probe').catch(() => { /* idempotent */ });
+  if (errorCodes.length > 0) {
+    return { ok: false, detail: `stream rejected after connect (${connectMs}ms): ${errorCodes.join('|')} close=${closeReason ?? 'n/a'}` };
+  }
+  return { ok: true, detail: `accepted (connect_ms=${connectMs}, no rejection within ${shape.observeMs ?? 3000}ms)` };
+}
+
+function buildDummyTools(count: number): Array<Record<string, unknown>> {
+  const tools: Array<Record<string, unknown>> = [];
+  for (let i = 0; i < count; i++) {
+    tools.push({
+      name: `bench_dummy_tool_${i}`,
+      description: `Synthetic bench tool #${i} — never called; exists to measure Nova toolConfiguration limits.`,
+      parameters: {
+        type: 'object',
+        properties: { query: { type: 'string', description: 'test parameter' } },
+      },
+    });
+  }
+  return tools;
 }
 
 const NOVA_ALL_PASS = {
@@ -356,6 +416,46 @@ export async function runNovaSonicTestSuite(options: {
     novaMetrics = result.metrics!;
     return { status: 'pass', detail: formatProbeMetrics(result.metrics!), metrics: result.metrics };
   }));
+
+  // Payload-limit bisect — pinpoints why a REAL ORB session (large system
+  // instruction + full live tool catalog) can fail while the minimal probe
+  // passes. Only runs when the baseline Nova probe produced metrics.
+  const payloadShapes: Array<{ key: string; label: string; shape: Parameters<typeof probeNovaPayload>[1] }> = [
+    {
+      key: 'payload_text_32k',
+      label: 'Payload: 32KB system instruction, no tools',
+      shape: { systemInstruction: 'You are a bench probe. Context: ' + 'x'.repeat(32_000) },
+    },
+    {
+      key: 'payload_dummy_tools_100',
+      label: 'Payload: tiny instruction + 100 dummy tools',
+      shape: { systemInstruction: PROBE_SYSTEM_INSTRUCTION, tools: buildDummyTools(100) },
+    },
+    {
+      key: 'payload_real_catalog',
+      label: 'Payload: tiny instruction + REAL live tool catalog',
+      shape: {
+        systemInstruction: PROBE_SYSTEM_INSTRUCTION,
+        tools: buildLiveApiTools('authenticated') as ReadonlyArray<Record<string, unknown>>,
+      },
+    },
+    {
+      key: 'payload_real_catalog_plus_text',
+      label: 'Payload: 32KB instruction + REAL live tool catalog (session-shaped)',
+      shape: {
+        systemInstruction: 'You are a bench probe. Context: ' + 'x'.repeat(32_000),
+        tools: buildLiveApiTools('authenticated') as ReadonlyArray<Record<string, unknown>>,
+      },
+    },
+  ];
+  for (const p of payloadShapes) {
+    checks.push(await runCheck(p.key, p.label, async () => {
+      if (!options.live) return { status: 'skip', detail: 'live probe not requested' };
+      if (!novaMetrics) return { status: 'skip', detail: 'baseline nova probe did not pass' };
+      const result = await probeNovaPayload(cfg, p.shape);
+      return { status: result.ok ? 'pass' : 'fail', detail: result.detail };
+    }));
+  }
 
   checks.push(await runCheck('vertex_baseline_probe', 'Vertex baseline: connect + first-response latency', async () => {
     if (!options.live) {
