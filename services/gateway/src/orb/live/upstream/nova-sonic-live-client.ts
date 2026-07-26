@@ -319,6 +319,8 @@ export class NovaSonicLiveClient implements UpstreamLiveClient {
   private rotationTimer: NodeJS.Timeout | null = null;
   private rotationFired = false;
   private closeEmitted = false;
+  /** Frames actually queued — gates the audio contentEnd on teardown. */
+  private audioFramesSent = 0;
   private errorEmitted = false;
   private localCloseReason: string | undefined;
   private responseLoopDone: Promise<void> | null = null;
@@ -554,6 +556,8 @@ export class NovaSonicLiveClient implements UpstreamLiveClient {
     );
     if (!accepted) {
       this.emitError({ code: 'nova_backpressure', message: 'Nova input queue high-water mark reached; audio chunk dropped' });
+    } else {
+      this.audioFramesSent++;
     }
     return accepted;
   }
@@ -602,8 +606,13 @@ export class NovaSonicLiveClient implements UpstreamLiveClient {
       this.rotationTimer = null;
     }
     // Orderly teardown: close the audio block, end the prompt + session,
-    // then close the input queue so the request stream completes.
-    this.queue.push(buildContentEnd({ promptName: this.promptName, contentName: this.audioContentName }));
+    // then close the input queue so the request stream completes. Nova
+    // rejects a contentEnd for a content block that never received data
+    // ("no content data was received"), so the audio block is only ended
+    // when at least one audioInput frame actually went out.
+    if (this.audioFramesSent > 0) {
+      this.queue.push(buildContentEnd({ promptName: this.promptName, contentName: this.audioContentName }));
+    }
     this.queue.push(buildPromptEnd(this.promptName));
     this.queue.push(buildSessionEnd());
     this.queue.close();
