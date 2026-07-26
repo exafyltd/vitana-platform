@@ -73,6 +73,14 @@ export interface UpstreamConnectOptions {
   vadSilenceMs: number;
   /** System instruction (already-composed prompt text). */
   systemInstruction: string;
+  /**
+   * BOOTSTRAP-NOVA-SONIC-VOICE: when set, providers that support it split
+   * the system instruction into multiple sequential textInput events of at
+   * most this many bytes inside the single SYSTEM content block (audio-frame
+   * style). Nova rejects single oversized textInput events (nova_validation);
+   * chunking preserves the full instruction. Ignored by Vertex/Gemini.
+   */
+  systemInstructionChunkBytes?: number;
   /** Tool function declarations (provider passes through as-is). */
   tools?: ReadonlyArray<Record<string, unknown>>;
   /** Enable input audio transcription stream. Vertex default: true. */

@@ -325,6 +325,16 @@ const NOVA_TESTS_VTID = 'BOOTSTRAP-NOVA-SONIC-VOICE';
 const NovaRunPostSchema = z.object({
   live: z.boolean().optional(),
   trigger: z.string().max(64).optional(),
+  // Remote payload bisect (BOOTSTRAP-NOVA-SONIC-VOICE): bounded probe shapes
+  // so the exact Nova limits can be measured without a redeploy per guess.
+  payload_probes: z.array(z.object({
+    key: z.string().min(1).max(48),
+    text_kb: z.number().int().min(0).max(128).optional(),
+    chunk_kb: z.number().int().min(0).max(64).optional(),
+    dummy_tools: z.number().int().min(0).max(300).optional(),
+    real_catalog: z.boolean().optional(),
+    truncate_descriptions: z.number().int().min(0).max(2000).optional(),
+  })).max(10).optional(),
 });
 
 router.post(
@@ -344,6 +354,7 @@ router.post(
       const summary = await runNovaSonicTestSuite({
         live: parsed.data.live === true,
         trigger: parsed.data.trigger ?? 'command-hub',
+        payloadProbes: parsed.data.payload_probes,
       });
       return res.status(200).json({ ok: true, vtid: NOVA_TESTS_VTID, summary });
     } catch (err) {
