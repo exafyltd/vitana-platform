@@ -7121,6 +7121,10 @@ async function connectToLiveAPI(
         const novaPersona = ((session as any).activePersona as string) || 'vitana';
         const novaVoice =
           resolveNovaSonicVoice({ language: session.lang || 'en', persona: novaPersona }) ?? 'tiffany';
+        // Stashed for the connect_failed OASIS payload — makes a rejected
+        // envelope diagnosable without server-log access.
+        (session as any)._novaInstructionChars = novaSystemInstruction.length;
+        (session as any)._novaToolEntryCount = novaTools.length;
 
         // Rotation (Bedrock caps a bidirectional stream at 8 minutes): open
         // the REPLACEMENT stream first (same connect path → same context/
@@ -7319,6 +7323,11 @@ async function connectToLiveAPI(
             session_id: session.sessionId,
             provider: 'nova_sonic',
             error: (err as Error).message,
+            // Bounded upstream detail (operator surface) + envelope shape so
+            // a failure is diagnosable without CloudWatch access.
+            diagnostic: (err as { diagnostic?: string })?.diagnostic ?? null,
+            instruction_chars: (session as any)._novaInstructionChars ?? null,
+            tool_entry_count: (session as any)._novaToolEntryCount ?? null,
             status: 'error',
           } as any,
         } as any).catch(() => { /* best-effort */ });
