@@ -200,14 +200,36 @@ simultaneously on a first cutover.
 1. Confirm `dr-gateway.vitanaland.com` (`vitana-gateway-awsdr`) is
    healthy and has been serving the dual-publish path successfully for
    the burn-in period.
-2. **Lower the DNS TTL** on the `gateway.vitanaland.com` A record well
-   in advance (recommend ≥24h before the cutover window) so a rollback
-   propagates fast if needed. Cloudflare zone `859c786db63e634e0ee36065e8a06e20`.
-3. During a low-traffic window, repoint `gateway.vitanaland.com` from
-   the GCP anycast IP to the AWS ALB (same target `vitana-alb-prod`
-   already used by `dr-gateway.vitanaland.com`, or a dedicated
-   CNAME — decide at execution-VTID time based on Cloudflare's handling
-   of apex-style A records vs CNAME flattening).
+2. ~~Lower the DNS TTL ≥24h in advance.~~ **Not required — verified
+   2026-07-26.** Every record in Cloudflare zone
+   `859c786db63e634e0ee36065e8a06e20` is already at `ttl=1`
+   (Cloudflare "Automatic" = 300s for DNS-only records; irrelevant for
+   proxied ones, which change at the edge near-instantly). **This
+   removes what was the single longest lead-time prerequisite in this
+   runbook** — no 24h pre-stage is needed, and rollback propagates in
+   ≤5 min worst case.
+
+   Live record state:
+
+   | Record | Type | Proxied? | Currently points to |
+   |---|---|---|---|
+   | `gateway.vitanaland.com` | **A** | **DNS-only** | `34.111.235.0` (GCP) |
+   | `vitanaland.com` (apex) | CNAME | proxied | `community-app-…run.app` (GCP) |
+   | `www.vitanaland.com` | CNAME | proxied | `community-app-…run.app` (GCP) |
+
+3. During a low-traffic window, repoint `gateway.vitanaland.com` to the
+   AWS ALB. **Note the record-type change:** it is currently an **A**
+   record to a GCP anycast IP, but an ALB has no static IP — so this
+   becomes a **CNAME** to
+   `vitana-alb-prod-1579322953.eu-central-1.elb.amazonaws.com` (the
+   same target `dr-gateway.vitanaland.com` already uses). CNAME is
+   valid here because `gateway` is a subdomain, not the apex.
+   Sub-decision at execution time: leave it **DNS-only** (direct TLS to
+   the ALB's existing `*.vitanaland.com` ACM cert — closest to today's
+   behavior) or switch to **proxied** (Cloudflare terminates TLS; also
+   fine, and makes rollback instant). DNS-only is the smaller change.
+   Either way the ALB cert already covers the hostname, so no new
+   certificate is needed.
 4. Immediately verify: `curl https://gateway.vitanaland.com/api/v1/admin/health`
    returns `env:"production"` with a `cloud_run_service` or ECS-equivalent
    field indicating AWS, not GCP — mirrors the existing Deployment
@@ -392,9 +414,16 @@ until AWS has run as sole production for an agreed burn-in period
   lag/failure post-cutover, any `vitana-*` CloudWatch alarm firing within
   the first hour, or a manual call by whoever owns the cutover window.
 - **Mechanism:** revert the DNS record(s) changed in §3 back to their
-  pre-cutover GCP targets. This is why TTL is lowered *before* the
-  cutover window (§3.1 step 2, §3.2 step 2) — a same-TTL-as-normal
-  record can take hours to fully propagate a revert.
+  pre-cutover GCP targets. **Verified 2026-07-26:** every zone record is
+  already at Cloudflare "Automatic" TTL, so a revert propagates in
+  ≤5 min for the DNS-only `gateway` record and near-instantly for the
+  proxied apex/`www` records. No TTL pre-staging is required, and there
+  is no multi-hour propagation tail to plan around.
+  *(Record the exact pre-cutover values before changing anything —
+  `gateway.vitanaland.com` A → `34.111.235.0`; apex and `www` CNAME →
+  `community-app-q74ibpv6ia-uc.a.run.app` — since reverting a
+  type-changed record means restoring an A record, not just editing a
+  CNAME target.)*
 - **GCP must stay warm.** Per §5, GCP services are not touched (scaled
   down or deleted) until well after a successful, un-rolled-back cutover
   — so a rollback is always "repoint DNS back," never "redeploy GCP from
