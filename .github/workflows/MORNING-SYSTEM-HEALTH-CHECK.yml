@@ -107,12 +107,12 @@ jobs:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
         run: |
           set +e
-          OUT=$(psql "$SUPABASE_DB_URL" -t -A -c "select count(*) from vtid_ledger where status = 'in_progress' and claimed_by is not null and claimed_until < now();" 2>&1)
+          OUT=$(psql "$SUPABASE_DB_URL" -t -A -c "select count(*) from vtid_ledger where status = 'in_progress' and claimed_by is not null and claim_expires_at < now();" 2>&1)
           N=$(echo "$OUT" | tr -d ' \r\n')
           if [[ "$N" =~ ^[0-9]+$ ]] && [ "$N" -eq 0 ]; then
             R=PASS; D="0 orphaned claims"
           elif [[ "$N" =~ ^[0-9]+$ ]]; then
-            R=FAIL; D="$N task(s) stuck in_progress past claimed_until"
+            R=FAIL; D="$N task(s) stuck in_progress past claim_expires_at"
           else
             R=FAIL; D="query error: $(echo "$OUT" | head -c 200)"
           fi
@@ -124,7 +124,7 @@ jobs:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
         run: |
           set +e
-          OUT=$(psql "$SUPABASE_DB_URL" -t -A -c "select count(*) from oasis_events where created_at > now() - interval '6 hours' and type not like 'telemetry.%';" 2>&1)
+          OUT=$(psql "$SUPABASE_DB_URL" -t -A -c "select count(*) from oasis_events where created_at > now() - interval '6 hours' and topic not like 'telemetry.%';" 2>&1)
           N=$(echo "$OUT" | tr -d ' \r\n')
           if [[ "$N" =~ ^[0-9]+$ ]] && [ "$N" -gt 0 ]; then
             R=PASS; D="$N event(s) in last 6h"
