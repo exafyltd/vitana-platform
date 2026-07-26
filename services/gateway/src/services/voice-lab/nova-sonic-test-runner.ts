@@ -212,6 +212,9 @@ export interface NovaPayloadProbeSpec {
   key: string;
   /** System-instruction size in KB (filler text). 0/absent = tiny prompt. */
   text_kb?: number;
+  /** Verbatim system-instruction text — takes precedence over text_kb.
+   *  Used to bisect provider content-filter rejections against real text. */
+  system_text?: string;
   /** Chunk the instruction into textInput events of this many KB. */
   chunk_kb?: number;
   /** Number of small synthetic tools to declare. */
@@ -300,9 +303,11 @@ function payloadSpecToShape(spec: NovaPayloadProbeSpec): {
   tools?: ReadonlyArray<Record<string, unknown>>;
   chunkBytes?: number;
 } {
-  const systemInstruction = spec.text_kb && spec.text_kb > 0
-    ? 'You are a bench probe. Context: ' + 'x'.repeat(spec.text_kb * 1024)
-    : PROBE_SYSTEM_INSTRUCTION;
+  const systemInstruction = spec.system_text && spec.system_text.length > 0
+    ? spec.system_text
+    : spec.text_kb && spec.text_kb > 0
+      ? 'You are a bench probe. Context: ' + 'x'.repeat(spec.text_kb * 1024)
+      : PROBE_SYSTEM_INSTRUCTION;
   let tools: ReadonlyArray<Record<string, unknown>> | undefined;
   if (spec.real_catalog) {
     let catalog = buildLiveApiTools('authenticated') as Array<Record<string, unknown>>;

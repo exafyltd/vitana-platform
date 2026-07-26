@@ -11848,6 +11848,10 @@ router.get('/debug/brain-instruction', requireAuthWithTenant, async (req: Authen
       has_social_context: instruction.includes('<social_context>'),
       has_self_check: instruction.includes('MANDATORY SELF-CHECK'),
       social_tool_declared: toolNames.includes('get_social_context'),
+      // BOOTSTRAP-NOVA-SONIC-VOICE: full=1 returns the instruction text
+      // itself (self-or-admin scoped above) so provider content-filter
+      // rejections (Nova RAI) can be bisected against the real text.
+      ...(req.query.full === '1' ? { instruction } : {}),
     });
   } catch (err: any) {
     return res.status(500).json({ ok: false, error: err.message });
