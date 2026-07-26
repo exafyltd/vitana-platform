@@ -48,13 +48,15 @@ const StageConfigSchema = z.object({
 
 // BOOTSTRAP-LLM-ROUTER: extended schema with triage/vision/classifier stages.
 //
-// VTID-03413: `vision` and `classifier` are optional because the live policy
-// row does not contain them — it has exactly the six stages below. Requiring
-// them made the endpoint impossible to use for its main purpose: a
-// read-modify-write of the current policy (GET returns 6 stages, POST
-// rejected the same 6 for "missing" vision/classifier). Marking them optional
-// matches the data rather than inventing routing config for stages that have
-// none today.
+// VTID-03413 NOTE — do not "fix" this by making vision/classifier optional.
+// That was tried and reverted: the `LLMRoutingPolicy` type, `VALID_STAGES`,
+// and `validatePolicy()`'s per-stage loop all require all eight stages, so
+// relaxing only this schema produces a type error and still fails in the
+// service layer. Meanwhile the *live* policy row contains just six stages
+// (no vision, no classifier), which means this endpoint currently cannot
+// round-trip its own current value — a POST of exactly what GET returns is
+// rejected as incomplete. Reconciling six-vs-eight is a real change to a
+// governed subsystem and needs its own VTID, not a drive-by edit here.
 const PolicySchema = z.object({
   planner: StageConfigSchema,
   worker: StageConfigSchema,
@@ -62,8 +64,8 @@ const PolicySchema = z.object({
   operator: StageConfigSchema,
   memory: StageConfigSchema,
   triage: StageConfigSchema,
-  vision: StageConfigSchema.optional(),
-  classifier: StageConfigSchema.optional(),
+  vision: StageConfigSchema,
+  classifier: StageConfigSchema,
 });
 
 const UpdatePolicySchema = z.object({
