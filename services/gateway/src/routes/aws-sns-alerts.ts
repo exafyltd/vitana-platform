@@ -119,9 +119,7 @@ function formatAlertText(messageBody: string): string {
   return `*AWS alert*\n${JSON.stringify(parsed).slice(0, 500)}`;
 }
 
-// public-route — SNS is a third party and cannot present a Vitana JWT; the
-// handler verifies the SNS message signature instead (see verifySnsSignature).
-router.post('/sns', async (req: Request, res: Response) => {
+router.post('/sns', async (req: Request, res: Response) => { // public-route — SNS is a third party and cannot present a Vitana JWT; verifySnsSignature() below is the access control
   // impact-allow-no-oasis: an inbound CloudWatch/EventBridge alert is external
   // telemetry about AWS infrastructure, not a Vitana state transition. CLAUDE.md
   // §6 is explicit that telemetry must NEVER be emitted to OASIS ("Polling ≠
