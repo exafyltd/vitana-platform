@@ -232,11 +232,31 @@ export function buildSessionEnd(): NovaInputEvent {
 // ---------------------------------------------------------------------------
 
 /**
+ * Vertex/Gemini catalog entries that are provider-builtin directives, not
+ * function declarations — Nova has no equivalent, so they are skipped
+ * (silently dropping them is correct: the alternative is failing every
+ * session over a capability Nova simply doesn't offer).
+ */
+const VERTEX_BUILTIN_TOOL_KEYS = new Set([
+  'google_search',
+  'googleSearch',
+  'google_search_retrieval',
+  'googleSearchRetrieval',
+  'url_context',
+  'urlContext',
+  'code_execution',
+  'codeExecution',
+  'retrieval',
+]);
+
+/**
  * Convert the gateway's Gemini-shaped tool declarations into Nova
  * `toolSpec`s. Accepts either a flat `{name, description, parameters}` list
- * or the Vertex `{function_declarations: [...]}` wrapper. Throws on
- * duplicate tool names or malformed entries — a broken catalog must fail
- * BEFORE a paid stream opens, not stall mid-session.
+ * or the Vertex `{function_declarations: [...]}` wrapper. Vertex builtin
+ * directives (e.g. `{ google_search: {} }`) are skipped — they are not
+ * function declarations. Throws on duplicate tool names or malformed
+ * entries — a broken catalog must fail BEFORE a paid stream opens, not
+ * stall mid-session.
  */
 export function convertToolsToNovaSpecs(
   tools: ReadonlyArray<Record<string, unknown>>,
@@ -247,9 +267,13 @@ export function convertToolsToNovaSpecs(
       ?? (entry as { functionDeclarations?: unknown }).functionDeclarations;
     if (Array.isArray(fnDecls)) {
       flat.push(...(fnDecls as Array<Record<string, unknown>>));
-    } else {
-      flat.push(entry);
+      continue;
     }
+    const keys = Object.keys(entry);
+    if (!('name' in entry) && keys.length > 0 && keys.every((k) => VERTEX_BUILTIN_TOOL_KEYS.has(k))) {
+      continue;
+    }
+    flat.push(entry);
   }
 
   const seen = new Set<string>();

@@ -254,10 +254,16 @@ async function probeNovaPayload(
   const connectMs = Date.now() - t0;
   // Async rejections (validation on promptStart/textInput) arrive on the
   // response stream after connect resolves — observe before declaring pass.
+  // Stream silence during the window so the session looks like a real one
+  // (a probe that never sends audio would otherwise manufacture teardown
+  // validation errors unrelated to the payload under test).
+  const silenceTimer = setInterval(() => { client.sendAudioChunk(SILENCE_FRAME_B64); }, 32);
+  (silenceTimer as NodeJS.Timeout).unref?.();
   await new Promise((resolve) => {
     const t = setTimeout(resolve, shape.observeMs ?? 3_000);
     (t as NodeJS.Timeout).unref?.();
   });
+  clearInterval(silenceTimer);
   await client.close('nova_payload_probe').catch(() => { /* idempotent */ });
   if (errorCodes.length > 0) {
     const upstream = diagnostics.length > 0 ? ` upstream="${diagnostics.join(' | ')}"` : '';

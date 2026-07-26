@@ -254,18 +254,29 @@ describe('NovaSonicLiveClient', () => {
     const closes: any[] = [];
     client.onClose((e) => closes.push(e));
     await client.connect(baseOptions());
+    client.sendAudioChunk('AAAA');
     body.end();
     await client.close('persona_swap');
     await client.close('persona_swap');
     const events = await sentEvents();
     const names = events.map(firstEventName);
-    expect(names.slice(-3)).toEqual(['promptEnd', 'sessionEnd'].length === 2
-      ? [names.at(-3)!, 'promptEnd', 'sessionEnd']
-      : names.slice(-3));
-    expect(names).toEqual(expect.arrayContaining(['promptEnd', 'sessionEnd']));
+    // Audio flowed, so teardown ends the audio block before prompt/session.
+    expect(names.slice(-3)).toEqual(['contentEnd', 'promptEnd', 'sessionEnd']);
     expect(closes).toHaveLength(1);
     expect(closes[0]).toEqual(expect.objectContaining({ initiatedLocally: true, reason: 'persona_swap' }));
     expect(client.getState()).toBe('closed');
+  });
+
+  it('close of a session that never sent audio omits the audio contentEnd (Nova rejects ending an empty block)', async () => {
+    const { client, body, sentEvents } = makeClient();
+    await client.connect(baseOptions());
+    body.end();
+    await client.close('done');
+    const events = await sentEvents();
+    const names = events.map(firstEventName);
+    expect(names.slice(-2)).toEqual(['promptEnd', 'sessionEnd']);
+    // The only contentEnd is the system text block's — none for audio.
+    expect(names.filter((n) => n === 'contentEnd')).toHaveLength(1);
   });
 
   it('SDK send failure maps to a typed error + single onClose; no raw AWS text in the thrown error', async () => {

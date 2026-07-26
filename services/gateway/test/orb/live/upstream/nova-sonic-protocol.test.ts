@@ -161,6 +161,17 @@ describe('convertToolsToNovaSpecs', () => {
     expect(specs.map((s) => s.toolSpec.name)).toEqual(['a', 'b']);
   });
 
+  it('skips Vertex builtin directives (google_search etc.) — Nova has no equivalent', () => {
+    const specs = convertToolsToNovaSpecs([
+      { google_search: {} },
+      { function_declarations: [{ name: 'a', description: '', parameters: { type: 'object' } }] },
+      { googleSearch: {} },
+      { url_context: {} },
+      { code_execution: {} },
+    ]);
+    expect(specs.map((s) => s.toolSpec.name)).toEqual(['a']);
+  });
+
   it('rejects duplicate tool names and malformed schemas BEFORE a paid stream', () => {
     expect(() =>
       convertToolsToNovaSpecs([
