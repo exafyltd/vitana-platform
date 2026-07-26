@@ -444,10 +444,13 @@ export class NovaSonicLiveClient implements UpstreamLiveClient {
       this.responseLoopDone = this.runResponseLoop(response.body);
     } catch (err) {
       const code = classifyNovaError(err);
+      const diagnostic = extractNovaDiagnostic(err);
       this.state = 'error';
-      this.emitError({ code, message: `Nova connect failed (${code})`, cause: err, diagnostic: extractNovaDiagnostic(err) });
+      this.emitError({ code, message: `Nova connect failed (${code})`, cause: err, diagnostic });
       this.finalizeClose({ initiatedLocally: false, reason: code });
-      throw new Error(`nova_connect_failed: ${code}`);
+      // The typed message stays generic; the bounded upstream detail rides a
+      // non-message property for operator surfaces (OASIS events, bench).
+      throw Object.assign(new Error(`nova_connect_failed: ${code}`), { diagnostic });
     }
   }
 
