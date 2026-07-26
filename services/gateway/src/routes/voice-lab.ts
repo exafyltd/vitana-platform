@@ -330,6 +330,8 @@ const NovaRunPostSchema = z.object({
   payload_probes: z.array(z.object({
     key: z.string().min(1).max(48),
     text_kb: z.number().int().min(0).max(128).optional(),
+    // Verbatim instruction text for content-filter bisecting (Nova RAI).
+    system_text: z.string().max(65536).optional(),
     chunk_kb: z.number().int().min(0).max(64).optional(),
     dummy_tools: z.number().int().min(0).max(300).optional(),
     real_catalog: z.boolean().optional(),
