@@ -86,14 +86,41 @@ objective — each item has a clear done/not-done state.
 - [x] **`vitana-alarms-prod` SNS topic has a real subscriber.** Resolved
       2026-07-24: `j.tadic@exafy.io` (email) confirmed via
       `aws sns list-subscriptions-by-topic`
-      (`SubscriptionsConfirmed: 1`) — all 47 CloudWatch alarms and the
-      DMS-failure rule now notify a real endpoint. User explicitly
-      confirmed single-email alerting is sufficient; no Slack/PagerDuty
-      channel requested.
-- [ ] **Frontend gateway-URL decision made and implemented** (§4.1) —
-      either `gateway.vitanaland.com` DNS is part of the cutover sequence
-      itself, or `community-app-awsdr` has been rebuilt against
-      `dr-gateway.vitanaland.com` and reverified.
+      (`SubscriptionsConfirmed: 1`).
+- [x] **Every alarm can actually reach that subscriber.** Fixed
+      2026-07-26 — and this was the *other* half of the same gap.
+      Independently of the missing subscriber, **21 of 47 alarms had no
+      `AlarmActions` whatsoever**: they would evaluate and change state
+      while publishing to nothing, so subscribing an endpoint alone
+      would not have made them notify. Affected every alarm created
+      during VTID-03398/03409/03410/03411 (`put-metric-alarm` silently
+      accepts an alarm with no actions). All 47 now target
+      `vitana-alarms-prod` for both `AlarmActions` and `OKActions`;
+      verified `MetricAlarms[?length(AlarmActions)==\`0\`]` → `[]`.
+- [~] **Google Chat as a second alerting channel** (VTID-03413). The
+      user asked for AWS alerts to reuse the Google Chat channel
+      already working for health checks, *in addition to* the email
+      subscriber above. Code is shipped —
+      `POST /api/v1/aws-alerts/sns` bridges SNS → the existing
+      `notifyGChat()` webhook with SNS signature verification — but it
+      is **not yet delivering**, blocked on two operator actions:
+    - [ ] **Chat webhook secret has a value.** Both
+          `vitana/google-chat/webhook-url` and `…-url-2` exist as names
+          with **zero versions** — no value was ever stored. Wiring one
+          into `gateway-awsdr` broke task startup and was rolled back
+          (see build log). Needs the real URL stored as a secret
+          version, then the task-def change re-applied.
+    - [ ] **An HTTPS subscription to the topic** pointing at that
+          route. `sns:Subscribe` is denied for this session's IAM user.
+    *Email alerting is unaffected by both and works today — this item
+    is additive, not a regression risk.*
+- [x] **Frontend gateway-URL decision made** (§4.1) — DECIDED
+      2026-07-26: **DNS-first**. Hostnames don't change; cutover
+      repoints `gateway.vitanaland.com` + apex to AWS. The existing
+      `community-app-awsdr` build already targets
+      `gateway.vitanaland.com`, so **no frontend rebuild is needed** —
+      this stops being a blocker and becomes a property of the DNS
+      sequence in §3.
 - [ ] **`oasis-operator-awsdr` burn-in complete** — minimum 72 hours of
       healthy `ACTIVE`/`HEALTHY` status under real (not synthetic-only)
       traffic via the dual-publish path, zero unplanned restarts.
@@ -119,10 +146,20 @@ objective — each item has a clear done/not-done state.
       through whatever external IaC actually owns these resources, not
       hand-editing via aws-cli.)* Full rename or an explicit sign-off that
       the tag-only mitigation is sufficient still needed before cutover.
-- [ ] **`orb-agent` / autopilot-job AWS-parity decision made** (§4.2) —
-      either they get an AWS deploy path before cutover, or an explicit,
-      documented decision that they stay GCP-only post-cutover (and what
-      that means operationally).
+- [~] **`orb-agent` / autopilot-job AWS parity** (§4.2) — DECIDED
+      2026-07-26: build parity for both. Scoping done; **neither is
+      built yet**, and each has a complication:
+    - [ ] **`orb-agent`** — infra straightforward, but the service is a
+          self-declared non-functional skeleton, and its LiveKit
+          self-registration means the deploy must stop the old task
+          *before* the new one starts (a plain rolling update causes
+          split dispatch). Worth confirming it's worth building now
+          given it does nothing yet.
+    - [ ] **autopilot-job** — BLOCKED on an application-design
+          decision: it's dispatched by the gateway via the GCP Cloud
+          Run Admin API, so AWS parity needs a second dispatch path
+          (`aws ecs run-task`) plus a rule for choosing between them.
+          See §4.2.
 - [x] **`worker-runner` N>1 safety reviewed** — done 2026-07-24, verdict
       CONDITIONALLY SAFE (see §1 table row for detail + code citations).
       Autoscaling has **not** been enabled based on this finding — that
@@ -202,8 +239,16 @@ Two options, mutually exclusive for a given cutover attempt:
   gateway have to be cut over as a coupled pair later anyway if you want
   to retire the `dr-*` naming.
 
-**No default is assumed here — needs an explicit user decision before
-the execution VTID's DNS sequence can be finalized.**
+**DECIDED 2026-07-26 — Option (A), DNS-first.** The user confirmed
+there is no new AWS production URL: `vitanaland.com` and
+`gateway.vitanaland.com` stay exactly as they are, and cutover means
+repointing those same hostnames from GCP to the AWS ALB.
+
+Consequence: `community-app-awsdr`'s existing build — which already
+bakes `https://gateway.vitanaland.com` — becomes correct automatically
+the moment the gateway DNS flips. **No frontend rebuild is required for
+cutover**, which removes what was previously listed as a blocker. The
+`dr-*` hostnames remain as pre-cutover verification endpoints only.
 
 ### 4.2 `orb-agent` / autopilot-job AWS parity
 
@@ -218,7 +263,42 @@ neither has any AWS deploy path today. Options:
   services" — which changes what "decommission GCP" even means in
   §5 below.
 
-**No default is assumed here either.**
+**DECIDED 2026-07-26 — build parity for both.** A scoping pass turned
+up a material complication in each; neither is a pure infra job:
+
+**`orb-agent`** — infra is straightforward (Dockerfile exists at
+`services/agents/orb-agent/Dockerfile`, port 8080, `GET /health`,
+outbound-only so no ALB/target group needed, single Fargate task).
+Two caveats:
+- Its own `README.md` states it is a **skeleton that does not run a
+  real conversation yet** — it's the standby alternative to the Vertex
+  Live pipeline (`orb-live.ts`), and exactly one of {vertex, livekit}
+  is active via `system_config.voice.active_provider`. Building AWS
+  parity ships a correct deployment of a non-functional service.
+- **Deploy-shape gotcha:** every warm instance registers itself with
+  LiveKit Cloud and receives room dispatches at random. GCP's deploy
+  workflow explicitly deletes older revisions for this reason
+  (`DEPLOY-ORB-AGENT.yml` lines ~141-170). A default ECS rolling
+  update would leave old and new tasks both registered and dispatching
+  — the AWS workflow must drain/stop the old task *before* the new one
+  registers, not after.
+
+**autopilot-job** — **not just infra; needs a gateway code change.**
+It is a Cloud Run *Job* (`gcloud run jobs deploy`, name
+`autopilot-executor`, built from `services/gateway/Dockerfile.job`),
+deliberately a job rather than a service because its LLM calls run
+3-5 min and get killed by Cloud Run service container recycling. There
+is **no scheduler** — the gateway dispatches each execution itself via
+the GCP Cloud Run Admin API (`services/gateway/src/services/
+dev-autopilot-execute.ts`, using `cloud-run-admin.ts`). AWS parity
+means the gateway needs a second dispatch path calling
+`aws ecs run-task` against a Fargate task definition.
+
+**Open sub-decision, blocking the autopilot build:** how should the
+gateway choose which backend to dispatch to — an env var, inferred
+from where the gateway instance itself is running (GCP vs AWS-DR), or
+dispatch to both? This is application behavior, not infrastructure,
+and shouldn't be guessed.
 
 ---
 

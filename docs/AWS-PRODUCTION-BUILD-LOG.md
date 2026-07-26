@@ -631,3 +631,89 @@ Attempted to self-remove `vitana-dms-autopilot-fix-temp` after the fix
 `vitana-awsdr-oidc-setup-temp` self-revoke attempt. Both temporary
 policies are still attached to `claude-staging-validation` pending
 manual removal by an operator with IAM write access.
+
+## Addendum (2026-07-26): VTID-03413 AWS alerting → Google Chat
+
+The user directed that AWS alerts should reuse the Google Chat channel
+already working for health checks, rather than a new channel.
+Investigating that surfaced the alerting chain was inert in **two**
+independent places, not one.
+
+### Finding 1: 21 of 47 alarms had no `AlarmActions` at all
+
+The SNS-topic-has-no-subscriber gap recorded in the previous addendum
+was only half the problem. `describe-alarms` showed 26/47 alarms wired
+to `vitana-alarms-prod` and **21 wired to nothing** — including every
+alarm created earlier this same session (all 4 `gateway-awsdr` alarms
+from VTID-03398, all 8 added for `community-app-awsdr`/
+`oasis-operator-awsdr`, and all 9 from the VTID-03411 hardening pass).
+They would evaluate and transition state correctly while notifying
+nobody, forever. This was my own omission across three prior VTIDs:
+`put-metric-alarm` silently accepts an alarm with no actions.
+
+Fixed by re-issuing each alarm's definition with `AlarmActions` +
+`OKActions` → `vitana-alarms-prod` (read each alarm, re-`put` it with
+actions added, preserving all thresholds/dimensions). Verified:
+
+```bash
+aws cloudwatch describe-alarms --alarm-name-prefix vitana- \
+  --query "MetricAlarms[?length(AlarmActions)==\`0\`].AlarmName" \
+  --region eu-central-1
+# → []   (was 21 names)
+```
+
+### Finding 2: the Google Chat webhook secrets are empty shells
+
+`vitana/google-chat/webhook-url` and `vitana/google-chat/webhook-url-2`
+both exist as secret **names** with `list-secret-version-ids` returning
+`"Versions": []` — no value was ever stored in either. Almost certainly
+placeholders from the same 2026-07-09 bulk-provisioning event that
+created the ~22 unexplained ECS services.
+
+**This caused a real (contained) incident.** Wiring
+`GCHAT_COMMANDHUB_WEBHOOK` → that secret and rolling
+`vitana-gateway-awsdr` to the new task-def revision `:3` made every new
+task fail to start:
+
+```
+ResourceInitializationError: unable to pull secrets or registry auth:
+  … failed to fetch secret …vitana/google-chat/webhook-url-rYPXY8 …
+  ResourceNotFoundException: Secrets Manager can't find the specified
+  secret value for staging label: AWSCURRENT.
+```
+
+ECS retried placement in a loop for ~4 minutes. **No request-path
+impact** — ECS correctly kept the healthy `:2` task serving the whole
+time, and `dr-gateway.vitanaland.com/alive` never stopped returning
+200. Rolled back with `update-service --task-definition
+vitana-gateway-awsdr:2`; confirmed `runningCount=1` on `:2` and the
+`:3` deployment `DRAINING`.
+
+**Lesson, worth generalizing:** referencing a Secrets Manager secret
+that exists-by-name but has no version is indistinguishable from a
+correct reference at `register-task-definition` time — it only fails at
+task placement. Before adding any `secrets` entry to a task definition,
+check `list-secret-version-ids`, not just `describe-secret`.
+
+Task-def revision `:3` remains registered but unused. **Do not deploy
+it** until the secret holds a real value.
+
+### What shipped vs. what's still blocked
+
+Shipped (this VTID): the `POST /api/v1/aws-alerts/sns` route
+(SNS-signature-verified, host-allowlisted cert fetch, handles
+CloudWatch-alarm and EventBridge payload shapes), its `express.text()`
+body-parser exception, and the 21 alarm-action fixes. The route
+degrades to a logged no-op when `GCHAT_COMMANDHUB_WEBHOOK` is unset
+(existing `notifyGChat()` behavior), so shipping it while the secret is
+still empty is safe.
+
+Still blocked on an operator, both recorded as go/no-go checklist items:
+
+1. **The actual Chat webhook URL** — needs storing as a version on
+   `vitana/google-chat/webhook-url`, then re-applying the task-def
+   change that was rolled back.
+2. **The SNS subscription itself** — `sns:Subscribe` is denied for this
+   session's IAM user, so nothing is subscribed to `vitana-alarms-prod`
+   yet. Until both are done the alerting chain is still end-to-end
+   inert, regardless of this VTID's code being live.
