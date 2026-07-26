@@ -37805,20 +37805,51 @@ function renderNovaSonicTestView() {
     // probe, and watch the session appear in the table below.
     manualPanel.querySelector('.nst-talk-btn').addEventListener('click', function () {
         var hint = manualPanel.querySelector('.nst-talk-hint');
+        hint.style.display = 'block';
         if (!window.VitanaOrb) {
-            hint.style.display = 'block';
             hint.textContent = 'ORB widget not loaded on this page — refresh and try again.';
             return;
         }
         var lang = manualPanel.querySelector('.nst-lang').value;
-        try { window.VitanaOrb.setLang(lang); } catch (_) { /* keep default */ }
-        hint.style.display = 'block';
-        hint.innerHTML = 'Voice session starting in <b>' + lang + '</b> — speak when the overlay shows '
-            + '<i>Listening</i>. Close the overlay (X) to end. Provider for YOUR identity: use '
-            + '<i>Probe my provider decision</i>; the session appears in the table below within ~5s.';
-        if (window.state && state.orb) { state.orb.overlayVisible = true; }
-        window.VitanaOrb.show();
-        loadSessions();
+        // HARD GATE: this is the NOVA bench — never open the mic on a session
+        // that would silently fall back to Vertex. Run the decision probe for
+        // the signed-in identity first and refuse loudly on any non-Nova
+        // answer, with the typed reason (wrong account on the allowlist,
+        // language fallback, Nova disabled on this host, …).
+        hint.style.borderLeftColor = '#f97316';
+        hint.textContent = 'Checking which provider YOUR identity gets…';
+        fetch('/api/v1/voice-lab/nova/decision?lang=' + encodeURIComponent(lang), { headers: buildContextHeaders() })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                if (disposed) return;
+                if (!data.ok) {
+                    hint.style.borderLeftColor = '#ef4444';
+                    hint.textContent = 'Decision probe failed (' + (data.error || 'unknown') + ') — refusing to start a session blind.';
+                    return;
+                }
+                var d = data.decision;
+                if (d.provider !== 'nova_sonic') {
+                    hint.style.borderLeftColor = '#ef4444';
+                    hint.innerHTML = '<b style="color:#ef4444;">NOT STARTING — your session would ride '
+                        + d.provider + '</b> (reason: <code>' + d.reason + '</code>'
+                        + (data.authenticated ? '' : ', not signed in')
+                        + ', runtime=' + data.runtime + '). '
+                        + 'This bench refuses to open a non-Nova session. Check that THIS login’s user id is on the canary allowlist and that Nova is enabled on this host.';
+                    return;
+                }
+                hint.style.borderLeftColor = '#22c55e';
+                hint.innerHTML = 'Decision: <b style="color:#22c55e;">nova_sonic</b> (' + d.reason + ') — starting Nova voice session in <b>' + lang + '</b>. '
+                    + 'Speak when the overlay shows <i>Listening</i>; close (X) to end. Session appears below within ~5s.';
+                try { window.VitanaOrb.setLang(lang); } catch (_) { /* keep default */ }
+                if (window.state && state.orb) { state.orb.overlayVisible = true; }
+                window.VitanaOrb.show();
+                loadSessions();
+            })
+            .catch(function (e) {
+                if (disposed) return;
+                hint.style.borderLeftColor = '#ef4444';
+                hint.textContent = 'Decision probe network error (' + (e.message || 'unknown') + ') — refusing to start a session blind.';
+            });
     });
 
     function loadSessions() {
