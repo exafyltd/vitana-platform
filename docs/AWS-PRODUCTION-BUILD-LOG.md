@@ -761,3 +761,67 @@ worse during a cutover window. Recorded in
 `healthStatus: HEALTHY` means the container's health command exited 0
 — nothing more. Every service needs a probe that proves it is doing
 its job before "AWS is healthy" can be claimed at cutover.
+
+## Addendum (2026-07-26): functional-probe script + what it immediately found
+
+Added `scripts/aws/verify-aws-production.sh` — asserts on *behaviour*
+rather than liveness, because ECS `healthStatus: HEALTHY` had already
+proven misleading (the orb-agent false-green above). It probes each
+service for evidence it is doing its job, checks both DMS tasks, and
+checks that no alarm is firing *and* that none is action-less.
+
+Running it immediately produced three results worth recording.
+
+### It found a real, currently-broken service: oasis-projector
+
+`oasis-projector` connects to Aurora fine (`Database connected` is
+present) but its ledger-writer loop is failing repeatedly — **40
+occurrences** of:
+
+```
+PostgresError { code: "42P10", message: "there is no unique or exclusion
+constraint matching the ON CONFLICT specification" }
+  on prisma.projectionOffset.upsert()
+```
+
+`prisma/schema.prisma:92` declares `projectorName String @unique @map("projector_name")`
+on `@@map("projection_offsets")`, so the upsert emits
+`ON CONFLICT (projector_name)` — **and Aurora's copy of that table has
+no such unique constraint.**
+
+Likely root cause: the DMS task runs with `TargetTablePrepMode:
+DO_NOTHING` (visible in the task settings), so DMS never created or
+prepared the target schema — it replicates rows into pre-existing
+tables. Whatever created the Aurora schema did not carry over all
+unique constraints. **DMS replicating data is not the same as Aurora
+being schema-equivalent**, and nothing in the earlier "495/495 tables
+under live CDC" check would have caught this: row counts can be
+perfect while constraints are absent.
+
+Scope note, to avoid over-stating it: Supabase is an independent SaaS
+and is **not** affected by turning GCP off, so it remains the primary
+datastore through a cutover. Today the main Aurora writer is
+`oasis-projector`. But a schema-parity audit (constraints/indexes, not
+just tables and row counts) should be run before anything else is
+pointed at Aurora — the codebase has ~126 Prisma `.upsert()` calls,
+every one of which needs its matching unique constraint to exist.
+
+### It found the DMS fix from earlier today did not hold
+
+`vitana-autopilot-cdc` is `failed` again. It was restarted earlier
+today and verified `running` with zero failure events across 5+
+minutes — that verification was accurate at the time but too short to
+call the underlying problem solved. Treat the earlier "fixed" as
+"restarted", not "root-caused": the failure recurs.
+
+### It had a bug of its own, worth writing down
+
+The first run reported three false failures (`oasis-projector` DB
+connection, `worker-runner` registration, `verification-engine`
+heartbeat). All three services were in fact working — the probe helper
+called `aws logs get-log-events` without `--start-from-head`, which
+reads backward from the tail and reliably returns an empty first page.
+Fixed. The lesson generalises: a verification script that has never
+been run against a known-good system cannot distinguish its own bugs
+from real failures, which is why this one was run before being
+committed rather than after.
