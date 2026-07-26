@@ -228,8 +228,12 @@ async function probeNovaPayload(
 ): Promise<{ ok: boolean; detail: string }> {
   const client = new NovaSonicLiveClient({ config: cfg, voiceId: 'tiffany' });
   const errorCodes: string[] = [];
+  const diagnostics: string[] = [];
   let closeReason: string | undefined;
-  client.onError((e) => { errorCodes.push(e.code); });
+  client.onError((e) => {
+    errorCodes.push(e.code);
+    if (e.diagnostic) diagnostics.push(e.diagnostic);
+  });
   client.onClose((e) => { closeReason = e.reason; });
   const t0 = Date.now();
   try {
@@ -244,7 +248,8 @@ async function probeNovaPayload(
       connectTimeoutMs: cfg.connectTimeoutMs,
     });
   } catch (err) {
-    return { ok: false, detail: `connect rejected: ${classifyNovaError(err)}` };
+    const upstream = diagnostics.length > 0 ? ` upstream="${diagnostics.join(' | ')}"` : '';
+    return { ok: false, detail: `connect rejected: ${classifyNovaError(err)}${upstream}` };
   }
   const connectMs = Date.now() - t0;
   // Async rejections (validation on promptStart/textInput) arrive on the
@@ -255,7 +260,8 @@ async function probeNovaPayload(
   });
   await client.close('nova_payload_probe').catch(() => { /* idempotent */ });
   if (errorCodes.length > 0) {
-    return { ok: false, detail: `stream rejected after connect (${connectMs}ms): ${errorCodes.join('|')} close=${closeReason ?? 'n/a'}` };
+    const upstream = diagnostics.length > 0 ? ` upstream="${diagnostics.join(' | ')}"` : '';
+    return { ok: false, detail: `stream rejected after connect (${connectMs}ms): ${errorCodes.join('|')} close=${closeReason ?? 'n/a'}${upstream}` };
   }
   return { ok: true, detail: `accepted (connect_ms=${connectMs}, no rejection within ${shape.observeMs ?? 3000}ms)` };
 }

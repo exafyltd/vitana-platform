@@ -139,6 +139,10 @@ describe('NovaSonicLiveClient', () => {
     expect(events[3].event.textInput.content).toBe('You are Vitana.');
     expect(events[5].event.contentStart.type).toBe('AUDIO');
     expect(events[1].event.promptStart.audioOutputConfiguration.voiceId).toBe('tina');
+    // SYSTEM prompts use the documented non-interactive shape; the
+    // interactive:true form is reserved for cross-modal USER text turns.
+    expect(events[2].event.contentStart.role).toBe('SYSTEM');
+    expect(events[2].event.contentStart.interactive).toBe(false);
   });
 
   it('rejects a broken tool catalog BEFORE opening the stream', async () => {
@@ -387,17 +391,21 @@ describe('named eventstream exception members', () => {
   it('a validationException union member becomes a typed error, never a silent skip', async () => {
     const { client, body } = makeClient();
     const errors: string[] = [];
+    const diagnostics: Array<string | undefined> = [];
     const closes: Array<string | undefined> = [];
-    client.onError((e) => errors.push(e.code));
+    client.onError((e) => { errors.push(e.code); diagnostics.push(e.diagnostic); });
     client.onClose((e) => closes.push(e.reason));
     await client.connect(baseOptions());
 
-    body.feedRaw({ validationException: { message: 'raw AWS text that must not leak' } } as any);
+    body.feedRaw({ validationException: { message: 'ValidationException: prompt exceeds limit' } } as any);
     await flush();
 
     expect(errors).toContain('nova_validation');
     expect(closes).toEqual(['nova_validation']);
     expect(client.getState()).toBe('closed');
+    // The upstream message is preserved on the diagnostic field (operator
+    // surfaces only) — the typed message itself stays generic.
+    expect(diagnostics).toContain('ValidationException: prompt exceeds limit');
   });
 });
 

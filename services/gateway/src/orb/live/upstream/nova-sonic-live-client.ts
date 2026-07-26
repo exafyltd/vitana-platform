@@ -87,6 +87,17 @@ export function classifyNovaError(err: unknown): NovaFailureCode {
 }
 
 /**
+ * Extract a bounded upstream error detail for the `diagnostic` field on
+ * UpstreamErrorEvent — operator/bench surfaces only, never end-user UI.
+ * Truncated so a pathological message can't bloat logs or events.
+ */
+export function extractNovaDiagnostic(err: unknown): string | undefined {
+  const message = (err as { message?: unknown })?.message;
+  if (typeof message !== 'string' || message.trim() === '') return undefined;
+  return message.length > 400 ? `${message.slice(0, 400)}…` : message;
+}
+
+/**
  * Bounded async input queue implementing the AsyncIterable the Bedrock
  * command consumes. Order-preserving. `push` (control/tool events) always
  * enqueues; `pushAudio` refuses beyond the high-water mark so a stalled
@@ -358,7 +369,11 @@ export class NovaSonicLiveClient implements UpstreamLiveClient {
         : [];
     } catch (err) {
       this.state = 'error';
-      this.emitError({ code: 'nova_validation', message: 'Nova tool catalog rejected before stream open' });
+      this.emitError({
+        code: 'nova_validation',
+        message: 'Nova tool catalog rejected before stream open',
+        diagnostic: extractNovaDiagnostic(err),
+      });
       throw err;
     }
 
@@ -367,7 +382,15 @@ export class NovaSonicLiveClient implements UpstreamLiveClient {
     const systemContentName = randomUUID();
     this.queue.push(buildSessionStart());
     this.queue.push(buildPromptStart({ promptName: this.promptName, voiceId: this.deps.voiceId, tools }));
-    this.queue.push(buildTextContentStart({ promptName: this.promptName, contentName: systemContentName, role: 'SYSTEM' }));
+    // interactive:false — the documented shape for SYSTEM prompts (the
+    // interactive:true form is the cross-modal USER text path, which may
+    // carry different validation limits).
+    this.queue.push(buildTextContentStart({
+      promptName: this.promptName,
+      contentName: systemContentName,
+      role: 'SYSTEM',
+      interactive: false,
+    }));
     // Chunk oversized system instructions into multiple textInput events
     // within the single SYSTEM block — Nova rejects a single large textInput
     // with nova_validation, but streams many bounded events fine (same
@@ -420,7 +443,7 @@ export class NovaSonicLiveClient implements UpstreamLiveClient {
     } catch (err) {
       const code = classifyNovaError(err);
       this.state = 'error';
-      this.emitError({ code, message: `Nova connect failed (${code})`, cause: err });
+      this.emitError({ code, message: `Nova connect failed (${code})`, cause: err, diagnostic: extractNovaDiagnostic(err) });
       this.finalizeClose({ initiatedLocally: false, reason: code });
       throw new Error(`nova_connect_failed: ${code}`);
     }
@@ -456,7 +479,11 @@ export class NovaSonicLiveClient implements UpstreamLiveClient {
           if (exceptionMember) {
             const code = classifyNovaError({ name: exceptionMember.replace(/^./, (c) => c.toUpperCase()) });
             this.state = 'error';
-            this.emitError({ code, message: `Nova stream exception event (${code}: ${exceptionMember})` });
+            this.emitError({
+              code,
+              message: `Nova stream exception event (${code}: ${exceptionMember})`,
+              diagnostic: extractNovaDiagnostic((item as Record<string, unknown>)[exceptionMember]),
+            });
             this.finalizeClose({ initiatedLocally: false, reason: code });
             return;
           }
@@ -480,7 +507,7 @@ export class NovaSonicLiveClient implements UpstreamLiveClient {
       if (this.closeEmitted) return;
       const code = classifyNovaError(err);
       this.state = 'error';
-      this.emitError({ code, message: `Nova stream failed (${code})`, cause: err });
+      this.emitError({ code, message: `Nova stream failed (${code})`, cause: err, diagnostic: extractNovaDiagnostic(err) });
       this.finalizeClose({ initiatedLocally: false, reason: code });
     }
   }
