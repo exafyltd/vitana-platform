@@ -44,8 +44,8 @@ CLI + Cloudflare DNS audit performed under this VTID.
 | community-app | AWS-DR built (VTID-03409). **Bakes the GCP `gateway.vitanaland.com` URL into its static Vite bundle at build time, by design** — it was built as a same-backend hot-standby, not a fully independent stack. Will break if GCP disappears without either repointing `gateway.vitanaland.com` to AWS or rebuilding against `dr-gateway.vitanaland.com`. See open decision §4.1. |
 | oasis-operator | AWS-DR built (VTID-03410) from a 9-month-old dead backup (`main.py.backup-20251101-111126`) with zero prior AWS production traffic history. No burn-in yet. |
 | oasis-projector / worker-runner / verification-engine | Bug-fixed + ECS health-checked + alarmed (VTID-03411). Deliberately **not** autoscaled or made public — `oasis-projector`'s ledger writer has no cross-instance locking (CLAUDE.md: "Never run parallel VTID executions"). **`worker-runner` has since been reviewed (2026-07-24) and found CONDITIONALLY SAFE for N>1**: its claim mechanism is a genuine server-side compare-and-swap (`SELECT ... FOR UPDATE` + conditional `UPDATE` inside one Postgres transaction, `claim_vtid_task` RPC in `supabase/migrations/20260413000000_fix_claim_accepts_scheduled.sql`), not a client-side read-then-write race, and no other shared mutable state exists between instances. The one real N>1-specific risk: an idle sibling instance will legitimately re-claim a VTID whose 60-minute claim lease expired due to sustained heartbeat failure on the active instance, causing double execution — condition for safety is that heartbeats reliably survive transient network hiccups; recommend alerting on sustained heartbeat failure before actually enabling autoscaling. Autoscaling itself has **not** been enabled — this is a documentation finding only, pending a decision on whether to act on it. |
-| orb-agent | **No AWS deploy path at all.** Named directly in CLAUDE.md §16 IF-THEN rule 24 alongside worker-runner as something needing prod updates. |
-| autopilot job (Cloud Run Job) | **No AWS deploy path at all.** |
+| orb-agent | Deploy path **now exists** — `AWS-PROD-DEPLOY-ORB-AGENT.yml` (VTID-03414). But the running ECS service `vitana-orb-agent` is a **false-green**: reports `healthStatus: HEALTHY` while running health-endpoint-only, because `AGENT_ENABLE_WORKER` and `GATEWAY_SERVICE_TOKEN` are absent from its task definition. The workflow swaps *image only* and carries env/secrets forward, so **deploying through it will faithfully redeploy a still-inert service**. See §4.2. |
+| autopilot job | Parity **now exists** — `AWS-PROD-DEPLOY-AUTOPILOT-EXECUTOR.yml` plus a real AWS RunTask dispatch path in the gateway (`dev-autopilot-execute.ts`, VTID-03415). `JOB_CLOUD=aws\|gcp` selects the target per gateway instance, with in-process fallback if dispatch fails. This closes what was previously flagged as needing an undecided application-design change. |
 | Database sync | RDS Aurora `vitana-aurora-prod` via DMS task `vitana-supabase-to-aurora` (full-load-and-cdc): 495/495 tables under live CDC from the same Supabase project GCP prod uses. `autopilot_recommendations`'s dedicated CDC task (`vitana-autopilot-cdc`), which was `FATAL_ERROR` for ~26h, was fixed 2026-07-24 via a clean restart — both tasks confirmed `running`. **Note:** the specific update that was stuck at the time of the original failure did not replicate (the fix restarts CDC capture from "now", not from the stale position) — a one-row historical drift, not an ongoing gap. |
 | Secrets | `vitana/supabase/prod/*` (4 secrets) current as of 2026-07-14/21; RDS-managed master credential rotates automatically. |
 | Alarms | 47 `vitana-*` CloudWatch alarms, all `OK`/`INSUFFICIENT_DATA`. `community-app-awsdr` and `oasis-operator-awsdr` now have the same 4-alarm set (cpu-high, memory-high, target-5xx, unhealthy-hosts) gateway-awsdr already had — closed 2026-07-24. A `vitana-dms-task-failure` EventBridge rule (source `aws.dms` → SNS topic `vitana-alarms-prod`) was also added the same day so a future DMS task failure isn't silent for 26+ hours again like `vitana-autopilot-cdc` was. **Resolved 2026-07-24: `vitana-alarms-prod` now has a confirmed subscriber** — `j.tadic@exafy.io` (email), confirmed via `aws sns list-subscriptions-by-topic` (`SubscriptionsConfirmed: 1`). All 47 alarms and the DMS-failure rule now notify a real endpoint. User explicitly confirmed single-email alerting is sufficient to close this item — no Slack/PagerDuty channel requested. |
@@ -278,8 +278,15 @@ neither has any AWS deploy path today. Options:
   services" — which changes what "decommission GCP" even means in
   §5 below.
 
-**DECIDED 2026-07-26 — build parity for both.** A scoping pass turned
-up a material complication in each; neither is a pure infra job:
+**DECIDED 2026-07-26 — build parity for both. Largely DONE already**,
+by parallel work that landed while this section still said "no AWS
+deploy path": `AWS-PROD-DEPLOY-ORB-AGENT.yml` (VTID-03414) and
+`AWS-PROD-DEPLOY-AUTOPILOT-EXECUTOR.yml` + the gateway's AWS RunTask
+dispatch path (VTID-03415, `JOB_CLOUD` env var selects GCP vs AWS).
+
+⚠️ **Deploy pipeline existing ≠ service working.** That distinction is
+the whole point of what follows — for autopilot the parity is real, for
+orb-agent it is not:
 
 **`orb-agent`** — ⚠️ **an AWS ECS service already exists and is a
 false-green.** `vitana-orb-agent` (task def rev 10) is `ACTIVE`,
@@ -335,22 +342,26 @@ Other caveats:
   — the AWS workflow must drain/stop the old task *before* the new one
   registers, not after.
 
-**autopilot-job** — **not just infra; needs a gateway code change.**
-It is a Cloud Run *Job* (`gcloud run jobs deploy`, name
-`autopilot-executor`, built from `services/gateway/Dockerfile.job`),
+**autopilot-job** — ✅ **DONE (VTID-03415).** It is a Cloud Run *Job*
+(`autopilot-executor`, built from `services/gateway/Dockerfile.job`),
 deliberately a job rather than a service because its LLM calls run
 3-5 min and get killed by Cloud Run service container recycling. There
-is **no scheduler** — the gateway dispatches each execution itself via
-the GCP Cloud Run Admin API (`services/gateway/src/services/
-dev-autopilot-execute.ts`, using `cloud-run-admin.ts`). AWS parity
-means the gateway needs a second dispatch path calling
-`aws ecs run-task` against a Fargate task definition.
+is no scheduler — the gateway dispatches each execution itself, so AWS
+parity genuinely required a gateway code change, not just a workflow.
 
-**Open sub-decision, blocking the autopilot build:** how should the
-gateway choose which backend to dispatch to — an env var, inferred
-from where the gateway instance itself is running (GCP vs AWS-DR), or
-dispatch to both? This is application behavior, not infrastructure,
-and shouldn't be guessed.
+That change now exists: `dev-autopilot-execute.ts` has
+`dispatchExecutorJobAws()` alongside the GCP `dispatchExecutorJob()`,
+selected by a **`JOB_CLOUD`** env var (`'aws'` → ECS RunTask, otherwise
+GCP Cloud Run Job), with the existing in-process path as fallback when
+either dispatch fails. Both write results back through the same
+`job-entry.ts` / `applyExecutionResult` route, so caller-side handling
+is identical.
+
+Remaining for cutover: set `JOB_CLOUD=aws` on the AWS gateway task
+definition (it is not set today, so an AWS-hosted gateway would still
+dispatch to GCP), and run the executor once end-to-end on AWS to
+confirm — per the functional-probe rule, the dispatch path existing is
+not evidence it works.
 
 ---
 
