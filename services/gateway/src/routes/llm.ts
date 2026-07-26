@@ -30,13 +30,14 @@ const router = Router();
 
 // BOOTSTRAP-LLM-ROUTER: extended provider list (added deepseek + claude_subscription)
 // and made fallback nullable so a stage can be configured with no fallback.
-const ProviderEnum = z.enum([
-  'anthropic',
-  'vertex',
-  'openai',
-  'deepseek',
-  'claude_subscription',
-] as const);
+//
+// VTID-03413: derived from VALID_PROVIDERS rather than re-listed here. The
+// hand-maintained copy had drifted: VTID-03403 added the 'bedrock' adapter to
+// LLMProvider/VALID_PROVIDERS, but not to this enum — so the API physically
+// could not persist a Bedrock routing policy (400 Invalid request body), even
+// though the adapter, the Command Hub dropdown and the router all supported
+// it. Deriving from the single source of truth prevents the drift recurring.
+const ProviderEnum = z.enum(VALID_PROVIDERS as [LLMProvider, ...LLMProvider[]]);
 
 const StageConfigSchema = z.object({
   primary_provider: ProviderEnum,
@@ -46,6 +47,14 @@ const StageConfigSchema = z.object({
 });
 
 // BOOTSTRAP-LLM-ROUTER: extended schema with triage/vision/classifier stages.
+//
+// VTID-03413: `vision` and `classifier` are optional because the live policy
+// row does not contain them — it has exactly the six stages below. Requiring
+// them made the endpoint impossible to use for its main purpose: a
+// read-modify-write of the current policy (GET returns 6 stages, POST
+// rejected the same 6 for "missing" vision/classifier). Marking them optional
+// matches the data rather than inventing routing config for stages that have
+// none today.
 const PolicySchema = z.object({
   planner: StageConfigSchema,
   worker: StageConfigSchema,
@@ -53,8 +62,8 @@ const PolicySchema = z.object({
   operator: StageConfigSchema,
   memory: StageConfigSchema,
   triage: StageConfigSchema,
-  vision: StageConfigSchema,
-  classifier: StageConfigSchema,
+  vision: StageConfigSchema.optional(),
+  classifier: StageConfigSchema.optional(),
 });
 
 const UpdatePolicySchema = z.object({
