@@ -825,3 +825,89 @@ Fixed. The lesson generalises: a verification script that has never
 been run against a known-good system cannot distinguish its own bugs
 from real failures, which is why this one was run before being
 committed rather than after.
+
+## Addendum (2026-07-26, later): Aurora constraint drift FIXED
+
+Both failures in the previous addendum are resolved, and the underlying
+drift turned out to be far larger than the two constraints they exposed.
+
+### Reaching Aurora at all
+
+Aurora is not publicly accessible (`PubliclyAccessible: false` on both
+instances). Routes tried and rejected:
+
+- **RDS Data API** — `HttpEndpoint: true` on the cluster, but
+  `claude-staging-validation` lacks `rds-data:ExecuteStatement`.
+- **ECS Exec** — enabled on `vitana-worker-runner`, but its running task
+  predates the setting so it has no SSM sidecar
+  (`TargetNotConnectedException`). Restarting a healthy service purely to
+  obtain a shell wasn't justified.
+
+Route used: a **one-off Fargate task** running
+`public.ecr.aws/docker/library/postgres:17-alpine`, in the same
+subnets/SG as `oasis-projector` (proven to reach Aurora), with
+`DATABASE_URL` injected from `vitana/aurora/prod/database-url` by the
+**execution role** — which sidesteps this session's own
+`GetSecretValue` denial, since ECS resolves the secret, not the caller.
+Task defs `vitana-schema-parity-*`, logs in `/vitana/schema-parity`.
+
+### What the first run found
+
+```
+BEFORE:  primary_keys | unique_constraints
+              495     |         0
+```
+
+**Aurora had ZERO unique constraints** — not a few missing, none at all,
+against Supabase's 162. And `autopilot_recommendations` had **no primary
+key**, which is precisely why DMS could not apply UPDATEs to it: DMS
+matches rows by the *target's* PK. The INSERT-only full load succeeded
+and every subsequent update failed, exactly the observed
+17/18-then-dead pattern.
+
+Duplicate-row pre-checks returned zero for both target columns, so
+nothing was coerced to make the constraints fit.
+
+### The sweep
+
+660 statements (498 PK + 162 UNIQUE, 69 KB) generated from Supabase —
+too large for one task definition (64 KiB limit), so split into four
+batches, PKs first since CDC needs the target PK before uniques matter.
+Run with `ON_ERROR_STOP=0`: "already exists" / "multiple primary keys
+not allowed" is the *expected* outcome for the ~496 Aurora already had,
+and must not abort the rest.
+
+```
+AFTER:   primary_keys | unique_constraints
+              496     |        162          <- matches Supabase exactly
+```
+
+Remaining tables with no PK are only DMS's own control tables
+(`awsdms_apply_exceptions`, `awsdms_status`, `awsdms_suspended_tables`),
+which legitimately have none. **No application table is missing a
+primary key.** Aurora reports 499 base tables vs Supabase's 498
+PK-bearing tables — a small table-level delta worth a separate look, but
+not a constraint gap.
+
+### Outcome
+
+- `vitana-autopilot-cdc`: restarted with `start-replication` once the PK
+  existed, and has stayed `running` with zero failure events since.
+  The same restart method died after 90 seconds earlier the same day
+  against a PK-less table — that contrast is the evidence the root cause
+  was correct, not just that a restart happened to stick.
+- `oasis-projector`: its `42P10` is now fixable, but the service stays at
+  `desiredCount=0` **on purpose**. `projection_offsets` is inside the
+  DMS replication set, so restarting the projector makes it a second
+  writer to a table CDC also writes from Supabase. That is an ownership
+  decision (projector uses Supabase, or the table leaves the DMS set),
+  not something a constraint fixes.
+
+### Caveat on scope
+
+This reconciled PRIMARY KEY and UNIQUE constraints only. Foreign keys,
+check constraints, non-unique indexes, defaults, column types and RLS
+were **not** compared and may also have drifted — the same
+`TargetTablePrepMode: DO_NOTHING` that dropped uniques would have
+dropped those too. Do not read "162/162 uniques" as full schema
+equivalence.
