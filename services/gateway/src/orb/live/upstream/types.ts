@@ -268,6 +268,12 @@ export interface UpstreamErrorEvent {
   message: string;
   /** Underlying error object, when known. */
   cause?: unknown;
+  /**
+   * Truncated upstream error detail (e.g. the AWS validationException
+   * message) for OPERATOR/DIAGNOSTIC surfaces only — the voice-lab bench
+   * and server logs. Never forward this to end-user UI.
+   */
+  diagnostic?: string;
 }
 
 /**
