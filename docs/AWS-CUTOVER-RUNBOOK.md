@@ -192,6 +192,40 @@ objective — each item has a clear done/not-done state.
 
 ## 3. DNS Repoint Sequence (for the execution VTID to follow)
 
+> **EXECUTION RECORD — VTID-03419, 2026-07-27 (live):**
+>
+> - **Gateway leg: DONE, verified externally.** ~13:38 UTC:
+>   `gateway.vitanaland.com` A `34.111.235.0` → CNAME
+>   `vitana-alb-prod-1579322953.eu-central-1.elb.amazonaws.com`
+>   (DNS-only). Pre-flight added the REQUIRED ALB host rules at
+>   priority 3 (`gateway.vitanaland.com` → `vitana-tg-gateway-awsdr`)
+>   and 4 (apex+`www` → `vitana-tg-community-awsdr`) — without these,
+>   flipped traffic silently lands on **staging** via the path rules at
+>   priority 10. Verified AWS-served via an external fetch:
+>   `cloud_run_service: null` + `booted_at` matching the ECS task
+>   (both clouds report `env=production`, so that field alone proves
+>   nothing; a sandbox egress proxy also cached the old A record for
+>   30+ min — use an external vantage).
+> - **Frontend version-skew guard:** AWS build was 4 days behind GCP
+>   live; `AWS-PROD-DEPLOY-FRONTEND.yml` (run 30273712730) rebuilt from
+>   `main` @ fc9bc0f → bundle `index-CqFaw389.js`, verified on
+>   `dr-app` **before** touching apex DNS.
+> - **Apex leg: DNS changed 14:14:52Z, BLOCKED at the Cloudflare edge.**
+>   Apex+`www` records verified pointing at the ALB, yet the edge kept
+>   serving the GCP origin 15+ min later. Control experiment: a fresh
+>   proxied record to the same ALB served through Cloudflare in ~20 s
+>   (hit the ALB default rule → staging JSON, as the rule table
+>   predicts). Fresh record = instant, edited records = pinned ⇒ a
+>   zone-level **origin override** (Origin Rule / Page Rule / Worker
+>   route) from the original Cloud Run setup pins apex+`www` to
+>   `community-app-…run.app`. The session's API token is DNS-scoped
+>   (rulesets/pagerules/workers reads all return auth errors), so
+>   removing it needs the dashboard or a `Zone → Rulesets` token.
+> - **User impact during the block: none** — visitors get the same GCP
+>   frontend as before, now calling the AWS-served gateway. Consistent
+>   hybrid state.
+> - Rollback values unchanged (see §6); GCP untouched and serving.
+
 Two independent hostnames need to move; do not repoint both
 simultaneously on a first cutover.
 
