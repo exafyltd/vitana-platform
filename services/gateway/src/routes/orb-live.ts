@@ -1390,6 +1390,7 @@ import {
 } from '../orb/live/upstream/nova-sonic-config';
 import { resolveNovaSonicVoice } from '../orb/live/voice/nova-sonic-voice';
 import { prewarmNovaSonicBedrock } from '../orb/live/upstream/nova-sonic-live-client';
+import { sanitizeInstructionForNova } from '../orb/live/upstream/nova-instruction-sanitizer';
 import { startNovaSonicKeepWarm } from '../orb/live/upstream/nova-sonic-keepwarm';
 import { createUpstreamClient } from '../orb/live/upstream/upstream-client-factory';
 import { bindUpstreamSessionHandlers } from '../orb/live/session/upstream-message-handler';
@@ -7113,8 +7114,14 @@ async function connectToLiveAPI(
         const novaCfg = getNovaSonicConfig(process.env);
         const envelope = (await buildOrbVertexSetupEnvelope()) as { setup?: Record<string, any> };
         const setup = envelope.setup ?? {};
-        const novaSystemInstruction: string =
-          setup.system_instruction?.parts?.[0]?.text ?? '';
+        // Nova's RAI content filter rejects the stream over the IDENTITY
+        // LOCK block's impersonation-denial list (measured via bisect) —
+        // swap it for the Nova-safe equivalent. Vertex is untouched.
+        const { text: novaSystemInstruction, replaced: novaLockReplaced } =
+          sanitizeInstructionForNova(setup.system_instruction?.parts?.[0]?.text ?? '');
+        if (novaLockReplaced) {
+          emitDiag(session, 'nova_instruction_sanitized', { provider: 'nova_sonic', block: 'identity_lock' });
+        }
         const novaTools: Array<Record<string, unknown>> = Array.isArray(setup.tools)
           ? (setup.tools as Array<Record<string, unknown>>)
           : [];
