@@ -20,7 +20,7 @@ set -euo pipefail
 # ── Config ────────────────────────────────────────────────────
 PROJECT="${GCP_PROJECT_ID:-lovable-vitana-vers1}"
 REGION="${GCP_REGION:-us-central1}"
-GATEWAY_URL="${GATEWAY_URL:-https://vitana-gateway-q74ibpv6ia-uc.a.run.app}"
+GATEWAY_URL="${GATEWAY_URL:-https://gateway-q74ibpv6ia-uc.a.run.app}"
 TENANT_ID="${DEFAULT_TENANT_ID:-}"
 DELETE=false
 DRY_RUN=false
