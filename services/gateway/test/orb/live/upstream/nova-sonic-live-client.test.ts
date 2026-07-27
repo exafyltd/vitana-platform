@@ -240,6 +240,21 @@ describe('NovaSonicLiveClient', () => {
     expect(toolResult!.event.toolResult.content).toBe('{"ok":true}');
   });
 
+  it('sendToolResult wraps non-JSON-object outputs — Nova kills the stream on unparseable toolResult content', async () => {
+    const { client, body, sentEvents } = makeClient();
+    await client.connect(baseOptions());
+    body.feed({ event: { toolUse: { toolUseId: 'use-1', toolName: 't', content: '{}' } } });
+    await flush();
+    // Plain text output → wrapped in a JSON object.
+    client.sendToolResult({ callId: 'use-1', name: 't', success: true, output: 'All good, screen is Community.' });
+    // JSON array output → wrapped too (Nova wants an object).
+    client.sendToolResult({ callId: 'use-1', name: 't', success: true, output: '[1,2]' });
+    const events = await sentEvents();
+    const results = events.filter((e) => e.event.toolResult).map((e) => e.event.toolResult.content);
+    expect(JSON.parse(results[0])).toEqual({ result: 'All good, screen is Community.' });
+    expect(JSON.parse(results[1])).toEqual({ result: [1, 2] });
+  });
+
   it('sendToolResult without callId is a typed protocol error (no un-correlatable result)', async () => {
     const { client } = makeClient();
     const errors: any[] = [];
