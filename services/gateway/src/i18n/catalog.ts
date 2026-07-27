@@ -136,7 +136,12 @@ export type GatewayI18nKey =
   | 'notif.marketplace_listing_rejected.title'
   | 'notif.marketplace_listing_rejected.body'
   | 'notif.marketplace_listing_removed.title'
-  | 'notif.marketplace_listing_removed.body';
+  | 'notif.marketplace_listing_removed.body'
+  // BOOTSTRAP-COMMUNITY-MARKETPLACE (Chunk 5): seller-facing "someone wants
+  // to buy/hire" push when a buyer sends the first contact message via the
+  // listing's CTA.
+  | 'notif.listing_interest.title'
+  | 'notif.listing_interest.body';
 
 type LocaleCatalog = Record<GatewayI18nKey, string>;
 
@@ -245,6 +250,8 @@ const DE: LocaleCatalog = {
   'notif.marketplace_listing_rejected.body': '„{title}" konnte nicht veröffentlicht werden: {reason}',
   'notif.marketplace_listing_removed.title': 'Dein Angebot wurde entfernt',
   'notif.marketplace_listing_removed.body': '„{title}" wurde von einem Admin entfernt: {reason}',
+  'notif.listing_interest.title': 'Interesse an deinem Angebot',
+  'notif.listing_interest.body': 'Jemand hat Interesse an „{title}" gezeigt.',
 };
 
 const EN: LocaleCatalog = {
@@ -352,6 +359,8 @@ const EN: LocaleCatalog = {
   'notif.marketplace_listing_rejected.body': '"{title}" could not be published: {reason}',
   'notif.marketplace_listing_removed.title': 'Your listing was removed',
   'notif.marketplace_listing_removed.body': '"{title}" was removed by an admin: {reason}',
+  'notif.listing_interest.title': 'Interest in your listing',
+  'notif.listing_interest.body': 'Someone is interested in "{title}".',
 };
 
 // Draft locales — start as a copy of EN; replace with native strings as they
