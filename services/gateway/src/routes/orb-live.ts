@@ -7334,7 +7334,19 @@ async function connectToLiveAPI(
         // ignoreModelSpeaking: Nova may not emit END_TURN until input audio
         // flows, so silence must continue THROUGH model speech or the flag
         // deadlocks the stream into the 15s idle kill.
-        armUpstreamKeepalive(novaFacade, session, { sendAudioToLiveAPI, ignoreModelSpeaking: true });
+        // silenceIntervalMs 250 + idleThresholdMs 750: Nova's endpointer needs
+        // a CONTINUOUS real-time input stream — one 250ms frame per 250ms tick
+        // is gapless silence, exactly like a live mic streaming ambient quiet.
+        // The Vertex heartbeat cadence (250ms frame / 3s ≈ 8% duty) kept
+        // Bedrock from idle-killing but Nova still never concluded the
+        // greeting turn, so the gateway's own 20s audio-stall watchdog
+        // terminated healthy sessions (staging session live-bc3ac313).
+        armUpstreamKeepalive(novaFacade, session, {
+          sendAudioToLiveAPI,
+          ignoreModelSpeaking: true,
+          silenceIntervalMs: 250,
+          idleThresholdMs: 750,
+        });
         resolve(novaFacade);
         return;
       } catch (err) {

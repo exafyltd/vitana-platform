@@ -52,6 +52,24 @@ export interface KeepaliveDeps {
    * via the lastAudioForwardedTime idle threshold.
    */
   ignoreModelSpeaking?: boolean;
+  /**
+   * Nova: override the silence cadence to REAL-TIME streaming. The Vertex
+   * default (one 250ms frame every 3s, ~8% duty cycle) is an anti-idle
+   * heartbeat — but Nova's endpointer needs a continuous audio-input stream
+   * to conclude turns at all. With sparse input Nova never emits END_TURN
+   * after the greeting, `isModelSpeaking` stays true, and the gateway's own
+   * 20s audio-stall watchdog terminates a healthy session (staging session
+   * live-bc3ac313: 108 greeting chunks → silence → stall_detected →
+   * locally-initiated upstream close). Nova passes 250 so each tick ships
+   * exactly one frame-duration of silence — a gapless real-time stream,
+   * matching how the AWS samples continuously stream mic audio including
+   * ambient silence. Vertex omits it and keeps the 3s heartbeat.
+   */
+  silenceIntervalMs?: number;
+  /** Override the idle threshold before silence kicks in (pairs with
+   * silenceIntervalMs — Nova uses a sub-second threshold so the real-time
+   * stream resumes almost immediately after real audio stops). */
+  idleThresholdMs?: number;
 }
 
 const DEFAULT_PING_INTERVAL_MS = 25_000;
@@ -103,7 +121,7 @@ export function armUpstreamKeepalive(
     if (ws.readyState !== WebSocket.OPEN || !session.active) return;
     if (session.isModelSpeaking && !deps.ignoreModelSpeaking) return;
     const idleMs = Date.now() - (session.lastAudioForwardedTime ?? 0);
-    if (idleMs >= getSilenceIdleThresholdMs()) {
+    if (idleMs >= (deps.idleThresholdMs ?? getSilenceIdleThresholdMs())) {
       try {
         deps.sendAudioToLiveAPI(ws, SILENCE_AUDIO_B64, 'audio/pcm;rate=16000');
         // Don't update lastAudioForwardedTime — silence isn't real audio.
@@ -111,5 +129,5 @@ export function armUpstreamKeepalive(
         /* socket closing — ignore */
       }
     }
-  }, getSilenceKeepaliveIntervalMs());
+  }, deps.silenceIntervalMs ?? getSilenceKeepaliveIntervalMs());
 }
