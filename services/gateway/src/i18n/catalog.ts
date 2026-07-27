@@ -129,7 +129,14 @@ export type GatewayI18nKey =
   // Autopilot recommendation identity (recommendation-identity work) — the
   // "Vitana empfiehlt" header shown on every AI-generated recommendation card
   // so the source is never rendered as a bare "AI" label.
-  | 'recommendation.vitana_label';
+  | 'recommendation.vitana_label'
+  // BOOTSTRAP-COMMUNITY-MARKETPLACE: seller-facing moderation outcome pushes.
+  | 'notif.marketplace_listing_approved.title'
+  | 'notif.marketplace_listing_approved.body'
+  | 'notif.marketplace_listing_rejected.title'
+  | 'notif.marketplace_listing_rejected.body'
+  | 'notif.marketplace_listing_removed.title'
+  | 'notif.marketplace_listing_removed.body';
 
 type LocaleCatalog = Record<GatewayI18nKey, string>;
 
@@ -232,6 +239,12 @@ const DE: LocaleCatalog = {
   'priority.greeting.evening.named': 'Guten Abend, {name}. Bereit, wenn du es bist.',
   'priority.greeting.evening': 'Guten Abend. Bereit, wenn du es bist.',
   'recommendation.vitana_label': 'Vitana empfiehlt',
+  'notif.marketplace_listing_approved.title': 'Dein Angebot ist online',
+  'notif.marketplace_listing_approved.body': '„{title}" wurde geprüft und ist jetzt im Marktplatz sichtbar.',
+  'notif.marketplace_listing_rejected.title': 'Dein Angebot wurde abgelehnt',
+  'notif.marketplace_listing_rejected.body': '„{title}" konnte nicht veröffentlicht werden: {reason}',
+  'notif.marketplace_listing_removed.title': 'Dein Angebot wurde entfernt',
+  'notif.marketplace_listing_removed.body': '„{title}" wurde von einem Admin entfernt: {reason}',
 };
 
 const EN: LocaleCatalog = {
@@ -333,6 +346,12 @@ const EN: LocaleCatalog = {
   'priority.greeting.evening.named': 'Good evening, {name}. Ready when you are.',
   'priority.greeting.evening': 'Good evening. Ready when you are.',
   'recommendation.vitana_label': 'Vitana recommends',
+  'notif.marketplace_listing_approved.title': 'Your listing is live',
+  'notif.marketplace_listing_approved.body': '"{title}" has been reviewed and is now visible in the marketplace.',
+  'notif.marketplace_listing_rejected.title': 'Your listing was rejected',
+  'notif.marketplace_listing_rejected.body': '"{title}" could not be published: {reason}',
+  'notif.marketplace_listing_removed.title': 'Your listing was removed',
+  'notif.marketplace_listing_removed.body': '"{title}" was removed by an admin: {reason}',
 };
 
 // Draft locales — start as a copy of EN; replace with native strings as they
