@@ -935,6 +935,7 @@ export type CicdEventType =
   | 'auto_promote.rejected'         // auto-promoter declined to bump; metadata.reason
   // BOOTSTRAP-COMMUNITY-MARKETPLACE: peer-to-peer classifieds lifecycle events
   | 'community_marketplace.listing.created'
+  | 'community_marketplace.listing.updated'
   | 'community_marketplace.listing.status_changed'
   | 'community_marketplace.listing.auto_escalated';
 

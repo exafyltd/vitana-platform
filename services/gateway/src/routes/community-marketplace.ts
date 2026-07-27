@@ -42,17 +42,6 @@ function identity(req: Request) {
   return (req as AuthenticatedRequest).identity!;
 }
 
-async function emitMarketplaceEvent(
-  status: 'info' | 'success' | 'warning' | 'error',
-  type: CicdEventType,
-  message: string,
-  payload: Record<string, unknown>
-): Promise<void> {
-  try {
-    await emitOasisEvent({ vtid: VTID, type, source: 'gateway', status, message, payload });
-  } catch { /* non-fatal */ }
-}
-
 // ==================== Shared row shaping ====================
 
 const PUBLIC_LISTING_COLUMNS =
@@ -389,11 +378,18 @@ router.post('/listings', async (req: Request, res: Response) => {
   if (error) return res.status(500).json({ ok: false, error: error.message });
 
   await recordStatusHistory(supabase, inserted.id, 'system', userId, null, moderation.initial_status, 'listing_created');
-  await emitMarketplaceEvent('info', 'community_marketplace.listing.created', 'Community listing created', {
-    listing_id: inserted.id,
-    tenant_id: tenantId,
-    seller_user_id: userId,
-    requires_admin_review: moderation.requires_admin_review,
+  await emitOasisEvent({
+    vtid: VTID,
+    type: 'community_marketplace.listing.created',
+    source: 'gateway',
+    status: 'info',
+    message: 'Community listing created',
+    payload: {
+      listing_id: inserted.id,
+      tenant_id: tenantId,
+      seller_user_id: userId,
+      requires_admin_review: moderation.requires_admin_review,
+    },
   });
 
   res.status(201).json({ ok: true, listing: serializeListing(inserted, { isOwner: true }) });
@@ -501,6 +497,15 @@ router.patch('/listings/:id', async (req: Request, res: Response) => {
     await recordStatusHistory(supabase, existing.id, 'system', userId, existing.status, statusOverride, 're_review_after_edit');
   }
 
+  await emitOasisEvent({
+    vtid: VTID,
+    type: 'community_marketplace.listing.updated',
+    source: 'gateway',
+    status: 'info',
+    message: 'Community listing updated',
+    payload: { listing_id: existing.id, seller_user_id: userId, re_review_triggered: Boolean(statusOverride) },
+  });
+
   res.json({ ok: true, listing: serializeListing(updated, { isOwner: true }) });
 });
 
@@ -568,9 +573,19 @@ router.post('/listings/:id/status', async (req: Request, res: Response) => {
     .single();
   if (error) return res.status(500).json({ ok: false, error: error.message });
 
+  // action === 'renew' skips this: it only touches expires_at/renewed_at, not
+  // `status`, and is a routine seller self-service action rather than a
+  // state transition worth the global timeline.
   if (toStatus) {
     await recordStatusHistory(supabase, existing.id, 'seller', userId, existing.status, toStatus, `seller_action:${action}`);
-    await emitMarketplaceEvent('info', 'community_marketplace.listing.status_changed', `Community listing ${action}`, { listing_id: existing.id, action, from_status: existing.status, to_status: toStatus });
+    await emitOasisEvent({
+      vtid: VTID,
+      type: 'community_marketplace.listing.status_changed',
+      source: 'gateway',
+      status: 'info',
+      message: `Community listing ${action}`,
+      payload: { listing_id: existing.id, action, from_status: existing.status, to_status: toStatus },
+    });
   }
 
   res.json({ ok: true, listing: serializeListing(updated, { isOwner: true }) });
@@ -579,6 +594,9 @@ router.post('/listings/:id/status', async (req: Request, res: Response) => {
 // ==================== POST /listings/:id/contact-click ====================
 
 router.post('/listings/:id/contact-click', async (req: Request, res: Response) => {
+  // impact-allow-no-oasis: contact_click_count is an analytics counter (same
+  // category as view_count above) — CLAUDE.md's OASIS taxonomy explicitly
+  // excludes telemetry.* from the event log.
   const supabase = getSupabase();
   if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
 
@@ -658,7 +676,14 @@ router.post('/listings/:id/reports', async (req: Request, res: Response) => {
     if (listing.status === 'active') update.status = 'draft';
     await supabase.from('community_listings').update(update).eq('id', listing.id);
     if (update.status) await recordStatusHistory(supabase, listing.id, 'system', null, listing.status, 'draft', 'auto_escalated_reports');
-    await emitMarketplaceEvent('warning', 'community_marketplace.listing.auto_escalated', 'Community listing auto-escalated after report threshold', { listing_id: listing.id, report_count: count });
+    await emitOasisEvent({
+      vtid: VTID,
+      type: 'community_marketplace.listing.auto_escalated',
+      source: 'gateway',
+      status: 'warning',
+      message: 'Community listing auto-escalated after report threshold',
+      payload: { listing_id: listing.id, report_count: count },
+    });
   }
 
   res.status(201).json({ ok: true, report_id: report.id });
@@ -696,6 +721,9 @@ const CreateBlockSchema = z.object({
 });
 
 router.post('/seller-blocks', async (req: Request, res: Response) => {
+  // impact-allow-no-oasis: a personal, per-viewer visibility preference
+  // (scoped to this feature only, see the table's own doc comment) — not a
+  // platform-wide state transition worth the global OASIS timeline.
   const supabase = getSupabase();
   if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
 
@@ -720,6 +748,8 @@ router.post('/seller-blocks', async (req: Request, res: Response) => {
 });
 
 router.delete('/seller-blocks/:blockedSellerId', async (req: Request, res: Response) => {
+  // impact-allow-no-oasis: reverses the same personal preference as
+  // POST /seller-blocks above — same reasoning applies.
   const supabase = getSupabase();
   if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
 
