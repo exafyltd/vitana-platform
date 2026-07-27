@@ -1343,7 +1343,7 @@ import { classifyUpstreamClose } from '../orb/live/session/upstream-close-classi
 // VTID-03234 (report finding #3): restore the upstream ping + silence
 // keepalive that the VertexLiveClient refactor left unreachable (it lived in
 // the now-dead setup_complete branch of the message handler).
-import { armUpstreamKeepalive } from '../orb/live/session/upstream-keepalive';
+import { armUpstreamKeepalive, clearUpstreamKeepalive } from '../orb/live/session/upstream-keepalive';
 // VTID-03126 (Phase D.3): Live API voice resolver — externalizes the
 // LIVE_API_VOICES Record + adds telemetry on silent fallbacks.
 import { getLiveApiVoice } from '../orb/live/voice/live-api-voice';
@@ -7219,9 +7219,14 @@ async function connectToLiveAPI(
             markVoiceLatency,
             finalizeVoiceTurnLatency,
           },
-          // Nova needs no synthetic PCM keepalive — server-side turn
-          // detection keeps its stream alive; rotation handles the 8-min cap.
-          options: { enableSilenceKeepalive: false },
+          // Nova NEEDS the synthetic PCM keepalive just like Vertex: Bedrock
+          // expects continuous audio-frame cadence and terminates an idle
+          // bidirectional stream after ~15s ("Premature close" — measured on
+          // staging session live-dedf85d5, exactly +15.0s after the last
+          // response event, with the widget's mic gated). The earlier
+          // assumption that server-side turn detection keeps the stream
+          // alive without input was wrong.
+          options: { enableSilenceKeepalive: true },
         });
 
         // Close policy: diag always; on an unexpected close of an active,
@@ -7233,6 +7238,9 @@ async function connectToLiveAPI(
             reason: closeEvent.reason ?? null,
             initiated_locally: closeEvent.initiatedLocally,
           });
+          // Stop feeding silence into a dead stream (mirrors the Vertex ws
+          // close handler's interval cleanup).
+          clearUpstreamKeepalive(session);
           if (session.upstreamClient === novaClient) {
             session.upstreamClient = null;
           }
@@ -7318,7 +7326,13 @@ async function connectToLiveAPI(
 
         // The ws-shaped facade lets every legacy upstreamWs call site
         // (greeting engine, nudges, input handlers, stop path) drive Nova.
-        resolve(createNovaWsFacade(novaClient) as unknown as WebSocket);
+        const novaFacade = createNovaWsFacade(novaClient) as unknown as WebSocket;
+        // Same keepalive the Vertex path arms after connect: Bedrock kills a
+        // bidirectional stream that goes ~15s without audio-frame input, so
+        // quiet pauses (mic gated, user thinking) need synthetic silence.
+        // ping() is a no-op on the facade; the silence leg does the work.
+        armUpstreamKeepalive(novaFacade, session, { sendAudioToLiveAPI });
+        resolve(novaFacade);
         return;
       } catch (err) {
         clearTimeout(connectionTimeout);

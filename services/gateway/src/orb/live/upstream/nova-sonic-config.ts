@@ -29,6 +29,10 @@ const DEFAULT_ROTATION_AFTER_MS = 435_000;
 // Under NodeHttp2Handler's 480s idle sessionTimeout so the pooled HTTP/2
 // session never expires between pings.
 const DEFAULT_KEEPWARM_MS = 240_000;
+// Per-turn output budget. The Nova sample's 1024 starves real ORB turns —
+// the greeting turn alone (16KB wake prompt + tool rounds) exhausted it and
+// ended with no speech (staging session live-dedf85d5).
+const DEFAULT_MAX_TOKENS = 4096;
 
 export type NovaSonicConfigIssue =
   | 'nova_region_invalid'
@@ -37,7 +41,8 @@ export type NovaSonicConfigIssue =
   | 'nova_canary_tenant_ids_invalid'
   | 'nova_connect_timeout_invalid'
   | 'nova_rotation_after_invalid'
-  | 'nova_keepwarm_invalid';
+  | 'nova_keepwarm_invalid'
+  | 'nova_max_tokens_invalid';
 
 export interface NovaSonicConfig {
   enabled: boolean;
@@ -53,6 +58,8 @@ export interface NovaSonicConfig {
    * NodeHttp2Handler drops idle sessions after 8 min). 0 disables.
    */
   keepWarmMs: number;
+  /** sessionStart inferenceConfiguration.maxTokens (per-turn output budget). */
+  maxTokens: number;
   /**
    * Typed configuration problems. Non-empty issues force `ready` false —
    * misconfiguration is never silently corrected into live traffic.
@@ -142,6 +149,9 @@ export function getNovaSonicConfig(env: NodeJS.ProcessEnv): NovaSonicConfig {
   );
   if (keepWarmMs === null) issues.push('nova_keepwarm_invalid');
 
+  const maxTokens = parsePositiveInt(env.NOVA_SONIC_MAX_TOKENS, DEFAULT_MAX_TOKENS);
+  if (maxTokens === null) issues.push('nova_max_tokens_invalid');
+
   return {
     enabled,
     region: NOVA_SONIC_REGION,
@@ -151,6 +161,7 @@ export function getNovaSonicConfig(env: NodeJS.ProcessEnv): NovaSonicConfig {
     connectTimeoutMs: connectTimeoutMs ?? DEFAULT_CONNECT_TIMEOUT_MS,
     rotationAfterMs: rotationAfterMs ?? DEFAULT_ROTATION_AFTER_MS,
     keepWarmMs: keepWarmMs ?? DEFAULT_KEEPWARM_MS,
+    maxTokens: maxTokens ?? DEFAULT_MAX_TOKENS,
     issues,
     ready: enabled && issues.length === 0,
   };
