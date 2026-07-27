@@ -225,6 +225,37 @@ objective — each item has a clear done/not-done state.
 >   frontend as before, now calling the AWS-served gateway. Consistent
 >   hybrid state.
 > - Rollback values unchanged (see §6); GCP untouched and serving.
+>
+> **COMPLETION (2026-07-27, ~15:0x UTC): BOTH LEGS LIVE ON AWS.** The apex
+> "pinned origin" was neither DNS nor an Origin Rule: Cloudflare Worker
+> routes `vitanaland.com/*` + `www.vitanaland.com/*` → Worker
+> **`vitanaland-proxy`** (source in NO repo — dashboard-deployed), a bare
+> reverse proxy hard-coding `https://community-app-q74ibpv6ia-uc.a.run.app`.
+> **The apex never followed DNS, even on GCP.** Fix: user updated the
+> Worker's origin to `https://dr-app.vitanaland.com` (same-zone, no Worker
+> route → no loop; ALB cert valid) and deployed. Flip was instant.
+>
+> **Apex rollback is therefore a Worker edit, not a DNS revert:** set
+> ORIGIN/ORIGIN_HOST back to `community-app-q74ibpv6ia-uc.a.run.app` in
+> the `vitanaland-proxy` Worker and Deploy (~30 s). The DNS records for
+> apex/`www` are currently cosmetic while those Worker routes exist.
+>
+> Post-cutover verification (all through AWS): gateway `env=production`
+> with `cloud_run_service:null` from an external vantage; frontend serving
+> `index-CqFaw389.js` (fresh `main` build); authenticated READ
+> (notifications 200) and WRITE (mark-read 200) as the e2e test user; ORB
+> WebSocket `101` + `connected` session frame via `/api/v1/orb/live/ws`
+> (**probe must force `--http1.1`** — an h2 probe degrades to GET and
+> 404s, which is a probe artifact, not a fault); 60-min alarm watch armed.
+> Known-firing alarm: `vitana-oasis-projector-running-count-low`
+> (deliberate desiredCount=0; DisableAlarmActions denied to this session).
+>
+> Follow-ups this surfaced: `vitanaland-og-proxy` Worker (subpaths
+> `/shorts|profiles|events|products/*`) still hard-codes the **GCP
+> gateway** raw URL for OG-tag fetches — works while GCP lives, must be
+> repointed before any GCP shutdown. `vitanaland-proxy` source should be
+> brought into the repo. Cloudflare rules/workers tokens used today should
+> be revoked.
 
 Two independent hostnames need to move; do not repoint both
 simultaneously on a first cutover.
