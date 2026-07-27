@@ -1813,6 +1813,12 @@ export function handleUpstreamError(
   event: UpstreamClientErrorEvent,
 ): void {
   console.error(`[BOOTSTRAP-NOVA-SONIC-VOICE] Upstream error for session ${ctx.session.sessionId}: code=${event.code} message=${event.message}`);
+  // Persist the bounded upstream detail (e.g. Nova's RAI/stream message) as
+  // a diag event — operator surface only; the user-facing error stays typed.
+  ctx.deps.emitDiag(ctx.session, 'upstream_error', {
+    code: event.code,
+    diagnostic: (event as { diagnostic?: string }).diagnostic ?? null,
+  });
   ctx.callbacks.onError(new Error(`${event.code}: ${event.message}`));
 }
 
