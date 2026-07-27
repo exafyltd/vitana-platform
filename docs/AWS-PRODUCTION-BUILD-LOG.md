@@ -911,3 +911,34 @@ were **not** compared and may also have drifted — the same
 `TargetTablePrepMode: DO_NOTHING` that dropped uniques would have
 dropped those too. Do not read "162/162 uniques" as full schema
 equivalence.
+
+## Addendum (2026-07-27 ~15:30 UTC): concurrent DMS surgery by the migration team — observed state
+
+While the VTID-03419 post-cutover watch ran, a second operator (the
+migration team, evidently acting on the status report) performed DMS
+surgery. Observed read-only, deliberately not touched from this session
+— two operators on one replication stack is how a third incident gets
+made. State as found:
+
+- `vitana-supabase-to-aurora` **stopped** deliberately at 15:02:53Z
+  (`Stop Reason NORMAL`) and **not yet resumed** → all-tables CDC is
+  currently OFF; Aurora drifts from 15:02 onward until someone runs
+  `resume-processing` (checkpoint is fresh; a resume is clean).
+- New one-off task `vitana-reload-39-tables` (full-load, 15:03→15:05):
+  **38/39 tables reloaded successfully** — this is the fix for the
+  ~154k-dropped-applies divergence. 
+- The 1 errored table is — fittingly — `autopilot_recommendations`:
+  the reload TRUNCATEd it then failed to load, leaving it **EMPTY on
+  Aurora (0 rows vs 3,933 in Supabase)**. Schema survived intact
+  (PK + all 162 zone uniques verified post-reload).
+- `vitana-autopilot-cdc` was **deleted**. Combined with the main task's
+  mapping still EXCLUDING this table and the failed reload, the table
+  now has **no sync path at all**.
+
+Needed from whoever owns the surgery (this session's IAM was scoped to
+the now-deleted task's ARN, so it cannot act):
+1. `resume-processing` on `vitana-supabase-to-aurora`.
+2. For `autopilot_recommendations`: remove the exclude rule from the
+   main task's table mapping (the PK that motivated the split now
+   exists) and reload that one table — or re-run the one-off reload
+   for it. Until then it sits empty on Aurora.
