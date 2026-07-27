@@ -586,9 +586,22 @@ export class NovaSonicLiveClient implements UpstreamLiveClient {
       this.emitError({ code: 'nova_protocol_error', message: 'Tool result missing callId — cannot correlate toolUse' });
       return false;
     }
-    const content = result.success
+    const raw = result.success
       ? result.output
       : JSON.stringify({ error: result.error ?? 'tool failed', output: result.output });
+    // Nova requires toolResult.content to parse as a JSON OBJECT — a plain
+    // text (or array/scalar JSON) payload kills the whole stream with
+    // "Tool Response parsing error" (measured live, 2026-07-27). Pass JSON
+    // objects through untouched; wrap everything else.
+    let content: string;
+    try {
+      const parsed: unknown = JSON.parse(raw);
+      content = parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)
+        ? raw
+        : JSON.stringify({ result: parsed });
+    } catch {
+      content = JSON.stringify({ result: raw });
+    }
     for (const event of buildToolResultEvents({
       promptName: this.promptName,
       contentName: randomUUID(),
