@@ -42,6 +42,16 @@ export interface KeepaliveDeps {
   sendAudioToLiveAPI: (ws: WebSocket, audioB64: string, mimeType?: string) => boolean;
   /** Override the 25s ping cadence (tests). */
   pingIntervalMs?: number;
+  /**
+   * Nova: keep feeding silence even while `isModelSpeaking`. Vertex skips
+   * silence during model speech (it glitches Gemini VAD), but Nova expects
+   * a CONTINUOUS audio-input cadence and may not emit END_TURN until input
+   * flows — with the Vertex gate, a greeting whose turn-complete is pending
+   * starves the stream and Bedrock kills it ~15s later ("Premature close",
+   * staging session live-f1135350). Real mic audio still suppresses silence
+   * via the lastAudioForwardedTime idle threshold.
+   */
+  ignoreModelSpeaking?: boolean;
 }
 
 const DEFAULT_PING_INTERVAL_MS = 25_000;
@@ -91,7 +101,7 @@ export function armUpstreamKeepalive(
   }
   session.silenceKeepaliveInterval = setInterval(() => {
     if (ws.readyState !== WebSocket.OPEN || !session.active) return;
-    if (session.isModelSpeaking) return;
+    if (session.isModelSpeaking && !deps.ignoreModelSpeaking) return;
     const idleMs = Date.now() - (session.lastAudioForwardedTime ?? 0);
     if (idleMs >= getSilenceIdleThresholdMs()) {
       try {

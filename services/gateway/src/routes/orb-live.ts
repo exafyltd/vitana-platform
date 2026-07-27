@@ -7331,7 +7331,10 @@ async function connectToLiveAPI(
         // bidirectional stream that goes ~15s without audio-frame input, so
         // quiet pauses (mic gated, user thinking) need synthetic silence.
         // ping() is a no-op on the facade; the silence leg does the work.
-        armUpstreamKeepalive(novaFacade, session, { sendAudioToLiveAPI });
+        // ignoreModelSpeaking: Nova may not emit END_TURN until input audio
+        // flows, so silence must continue THROUGH model speech or the flag
+        // deadlocks the stream into the 15s idle kill.
+        armUpstreamKeepalive(novaFacade, session, { sendAudioToLiveAPI, ignoreModelSpeaking: true });
         resolve(novaFacade);
         return;
       } catch (err) {
