@@ -36,10 +36,20 @@ aws iam simulate-principal-policy --policy-source-arn "$TASK_ROLE_ARN" \
   --query 'EvaluationResults[0].EvalDecision' --output text   # expect: allowed
 ```
 
-## 2. GitHub repository variables (environment-scoped)
+## 2. GitHub repository variables (environment-scoped, optional)
 
 `AWS-STAGE-DEPLOY-GATEWAY.yml` upserts these onto the task definition on
-every deploy (model + region are fixed in the workflow, not variables):
+every deploy (model + region are fixed in the workflow, not variables). These
+repo variables were never actually set (no one with repo admin access has
+configured them), so on every push-triggered deploy the workflow was silently
+falling back to disabled — any unrelated team's merge to `main` reset the
+canary, requiring a manual `workflow_dispatch` re-enable every time.
+
+As of 2026-07-28 the workflow's fallback (used when these variables are
+unset) is the canary enabled with the 4 allowlisted UUIDs below — not
+disabled — so this no longer recurs. Setting the repo variables explicitly
+still overrides the fallback (checked first) if you want durable control
+without editing the workflow, e.g. to disable:
 
 ```text
 AWS_STAGE_NOVA_SONIC_ENABLED=false

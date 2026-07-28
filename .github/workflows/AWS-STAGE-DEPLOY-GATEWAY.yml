@@ -155,13 +155,23 @@ jobs:
 
       - name: Register task-definition revision + roll the service
         env:
-          # BOOTSTRAP-NOVA-SONIC-VOICE: Nova canary configuration comes from
-          # environment-scoped repository VARIABLES (not secrets — nothing here
-          # is secret; credentials are the ECS task role). Defaults keep Nova
-          # disabled with an empty canary. Model + region are FIXED here, not
-          # variables — changing them is a code decision, not a knob.
-          NOVA_SONIC_ENABLED: ${{ inputs.nova_sonic_enabled || vars.AWS_STAGE_NOVA_SONIC_ENABLED || 'false' }}
-          NOVA_SONIC_CANARY_USER_IDS: ${{ inputs.nova_canary_user_ids || vars.AWS_STAGE_NOVA_SONIC_CANARY_USER_IDS || '' }}
+          # BOOTSTRAP-NOVA-SONIC-VOICE: Nova canary configuration prefers
+          # environment-scoped repository VARIABLES when set (not secrets —
+          # nothing here is secret; credentials are the ECS task role), but
+          # the FALLBACK is now the canary hardcoded below (2026-07-28) —
+          # not 'false'/empty. Repo variables were never actually set, so
+          # every push-triggered deploy from an unrelated team's merge (this
+          # workflow has no path filter — ANY push to main runs it) reset
+          # Nova to disabled, over and over, requiring a manual
+          # workflow_dispatch re-enable each time. That is no longer
+          # tolerable operationally. If AWS_STAGE_NOVA_SONIC_ENABLED /
+          # AWS_STAGE_NOVA_SONIC_CANARY_USER_IDS repo variables are ever
+          # set, they still win (checked first) — this only changes what
+          # happens when they are absent. To roll back to fully disabled,
+          # dispatch manually with nova_sonic_enabled=false, or set the
+          # repo variable explicitly to 'false'.
+          NOVA_SONIC_ENABLED: ${{ inputs.nova_sonic_enabled || vars.AWS_STAGE_NOVA_SONIC_ENABLED || 'true' }}
+          NOVA_SONIC_CANARY_USER_IDS: ${{ inputs.nova_canary_user_ids || vars.AWS_STAGE_NOVA_SONIC_CANARY_USER_IDS || 'a27552a3-0257-4305-8ed0-351a80fd3701,c5a4daf9-190a-4a9e-9638-d6b32f85244a,a2c6ba7e-2ad4-48af-8253-9fe34d0f9232,0adc6ff6-acb0-4dca-99d0-295211a40e3e' }}
           NOVA_SONIC_CANARY_TENANT_IDS: ${{ inputs.nova_canary_tenant_ids || vars.AWS_STAGE_NOVA_SONIC_CANARY_TENANT_IDS || '' }}
         run: |
           set -e
