@@ -1387,6 +1387,7 @@ import {
   getNovaSonicConfig,
   isNovaSonicIdentityAllowed,
   isNovaSonicLanguageSupported,
+  NOVA_SONIC_MODEL_ID,
 } from '../orb/live/upstream/nova-sonic-config';
 import { resolveNovaSonicVoice } from '../orb/live/voice/nova-sonic-voice';
 import { prewarmNovaSonicBedrock } from '../orb/live/upstream/nova-sonic-live-client';
@@ -6474,6 +6475,13 @@ async function connectToLiveAPI(
       ` livekit_ready=${__upstreamDecision.livekitReady}` +
       ` canary=${__upstreamDecision.canary}`,
   );
+  // BOOTSTRAP-NOVA-SONIC-VOICE: record the resolved provider as soon as it's
+  // known, for every provider (not just Nova) — this is what the latency
+  // tracker correction sites and per-turn tracker construction read to
+  // attribute voice.latency.measured events correctly instead of assuming
+  // Vertex. (The later `session.upstreamProvider = 'nova_sonic'` deeper in
+  // the Nova branch is now redundant but harmless — left in place.)
+  session.upstreamProvider = __upstreamDecision.provider;
   // OASIS emission — every connect call emits a single `selected` event.
   // When the request was LiveKit but the path degraded (config invalid or
   // pinned_to_vertex_l1 or canary_not_allowlisted), also emit
@@ -9054,12 +9062,19 @@ async function emitOrbSessionEnded(orbSessionId: string, conversationId: string,
 function startVoiceTurnLatency(session: GeminiLiveSession): void {
   if (session.latencyTracker) return; // turn already in flight
   session.latencyTurnIndex = (session.latencyTurnIndex || 0) + 1;
+  // BOOTSTRAP-NOVA-SONIC-VOICE: unlike the turn-0 establishment tracker,
+  // upstream selection has always resolved by the time a per-turn tracker
+  // starts (turn 0 IS the connect), so session.upstreamProvider is trustworthy
+  // here at construction time — no setProvider() correction needed later.
+  const provider = session.upstreamProvider === 'nova_sonic'
+    ? `nova_sonic/${NOVA_SONIC_MODEL_ID}`
+    : `vertex/${GEMINI_MODEL}`;
   const tracker = new LatencyTracker({
     session_id: session.sessionId,
     surface: 'voice',
     actor_id: session.identity?.user_id,
     turn: session.latencyTurnIndex,
-    provider: `vertex/${GEMINI_MODEL}`,
+    provider,
     transport: session.clientWs ? 'websocket' : 'sse',
   });
   session.latencyTracker = tracker;
@@ -12996,6 +13011,14 @@ router.get('/live/stream', optionalAuth, async (req: AuthenticatedRequest, res: 
         // The greeting has no preceding user turn, so the per-turn tracker never
         // fires for it; this is the only place that closes turn 0.
         if (session.establishLatency) {
+          // BOOTSTRAP-NOVA-SONIC-VOICE: the tracker was constructed with a
+          // Vertex default before upstream selection ran (session.upstreamProvider
+          // is only known once connectToLiveAPI resolves) — correct it now so
+          // voice.latency.measured attributes the timeline to the provider that
+          // actually generated this audio.
+          if (session.upstreamProvider === 'nova_sonic') {
+            session.establishLatency.setProvider(`nova_sonic/${NOVA_SONIC_MODEL_ID}`);
+          }
           session.establishLatency.mark('audio_out_first_chunk', { source: 'greeting' });
           void session.establishLatency.finalize('success');
           session.establishLatency = null;
@@ -14394,6 +14417,12 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
       // FIX: Send raw PCM for Web Audio API scheduled playback (eliminates gaps between chunks)
       (audioB64: string) => {
         if (liveSession.establishLatency) {
+          // BOOTSTRAP-NOVA-SONIC-VOICE: see the SSE audio handler's identical
+          // comment — the tracker's Vertex default needs correcting once
+          // upstream selection has actually resolved.
+          if (liveSession.upstreamProvider === 'nova_sonic') {
+            liveSession.establishLatency.setProvider(`nova_sonic/${NOVA_SONIC_MODEL_ID}`);
+          }
           liveSession.establishLatency.mark('audio_out_first_chunk', { source: 'greeting' });
           void liveSession.establishLatency.finalize('success');
           liveSession.establishLatency = null;
