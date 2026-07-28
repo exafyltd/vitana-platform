@@ -275,4 +275,5 @@ until AWS has run as sole production for an agreed burn-in period
 | VTID-03410 | oasis-operator AWS-DR | Prerequisite infra — done, but see §2 burn-in checklist item |
 | VTID-03411 | Backend services hardening | Prerequisite infra — done |
 | VTID-03412 | **This runbook** | Governance artifact — does not execute anything |
-| *(not yet allocated)* | Actual cutover execution | Must reference this runbook, gated on §2 checklist |
+| VTID-03419 | Actual cutover execution (gateway + apex DNS) | Executed 2026-07-27 — see §3's EXECUTION RECORD blocks |
+| VTID-03420 | AWS staging→prod publish path | Post-cutover follow-up: the Command Hub PUBLISH button promotes AWS staging (`vitana-gateway`) → AWS prod (`vitana-gateway-awsdr`) by exact-image promotion when `PUBLISH_TARGET_CLOUD=aws`; `AWS-PROD-DEPLOY-GATEWAY.yml` gained `promote-staging` (default) vs `rebuild-main` modes with an `expected_commit` pin. Closes the gap where the only AWS-prod path was a manual dispatch that rebuilt `main` HEAD — reported live 2026-07-28 (PUBLISH popover showed "Could not load: staging 500" on the ECS-served gateway, and AWS staging/prod had already drifted 0c72cfc vs 53cfb71). |

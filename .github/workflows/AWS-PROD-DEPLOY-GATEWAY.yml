@@ -1,10 +1,23 @@
-# AWS-PROD-DEPLOY-GATEWAY — build the gateway, push to ECR, and roll the
-# AWS Production (DR) ECS service (VTID-03398).
+# AWS-PROD-DEPLOY-GATEWAY — promote the gateway to the AWS Production ECS
+# service `vitana-gateway-awsdr` (VTID-03398, promotion mode VTID-03420).
 #
-# AWS twin of AWS-STAGE-DEPLOY-GATEWAY.yml, but for the parallel/DR
-# production stack (`vitana-gateway-awsdr`), not the staging one
-# (`vitana-gateway`). GCP Cloud Run remains the canonical production —
-# this workflow ships to the AWS DR target only, and NEVER on push.
+# Since the VTID-03419 cutover, `gateway.vitanaland.com` is served by this
+# AWS stack — it is the canonical production for the gateway. This workflow
+# is the ONLY path that updates it, and it NEVER runs on push.
+#
+# Two modes (`deploy_mode` input):
+# - promote-staging (DEFAULT, VTID-03420): ship the EXACT ECR image the AWS
+#   staging service (`vitana-gateway`) is currently running — no rebuild.
+#   Staging and prod share the `vitana/gateway` ECR repo, so promotion is
+#   just re-registering staging's image on the awsdr task definition. The
+#   run verifies staging actually SERVES that commit over HTTP first
+#   (build-info — never ECS status fields), and the optional
+#   `expected_commit` input pins the promotion to the commit an operator
+#   was shown (the Command Hub PUBLISH button always sets it): if staging
+#   moved in between, the run fails before touching the service.
+# - rebuild-main: the original from-source path — build `main` HEAD, push,
+#   roll. Kept as the explicit fallback (e.g. staging is broken and a fix
+#   must ship directly), not the routine path.
 #
 # Design choices:
 # - workflow_dispatch ONLY, with a REQUIRED `reason` input. There is no
@@ -15,6 +28,8 @@
 # - The existing `vitana-gateway-awsdr` task definition is PRESERVED: only
 #   the container image and the commit-stamp env vars (GIT_COMMIT_SHA /
 #   COMMIT_SHA / BUILD_INFO_MARKER) are replaced, same pattern as staging.
+#   In promote mode NOTHING else is taken from the staging task def — env
+#   vars/secrets stay the awsdr ones (the image is env-agnostic).
 # - Smoke gate mirrors AWS-STAGE-DEPLOY-GATEWAY.yml: /api/v1/admin/health
 #   must report env=production AND /api/v1/admin/build-info must report
 #   the deployed commit — otherwise the job fails loudly (CLAUDE.md §15).
@@ -54,12 +69,28 @@ on:
         required: false
         default: ''
       reason:
-        description: 'Reason for this AWS production (DR) gateway deploy — required'
+        description: 'Reason for this AWS production gateway deploy — required'
         required: true
-      gateway_url:
-        description: 'Public gateway URL for post-deploy verification'
+      deploy_mode:
+        description: 'promote-staging = ship the exact image AWS staging runs (default); rebuild-main = build main HEAD from source'
         required: false
-        default: 'https://dr-gateway.vitanaland.com'
+        type: choice
+        options:
+          - promote-staging
+          - rebuild-main
+        default: 'promote-staging'
+      expected_commit:
+        description: 'promote-staging only: full commit SHA the operator expects staging to be serving — run fails if staging moved (set automatically by the Command Hub PUBLISH button)'
+        required: false
+        default: ''
+      staging_url:
+        description: 'AWS staging gateway URL used to verify what staging actually serves before promoting'
+        required: false
+        default: 'https://preview-aws-gateway.vitanaland.com'
+      gateway_url:
+        description: 'Public gateway URL for post-deploy verification (canonical hostname since VTID-03419)'
+        required: false
+        default: 'https://gateway.vitanaland.com'
       aws_region:
         description: 'AWS region'
         required: false
@@ -142,13 +173,76 @@ jobs:
             exit 1
           fi
 
-      - name: Build and push image
+      # VTID-03420: decide WHAT ships. promote-staging resolves the exact
+      # image + commit AWS staging (`vitana-gateway`) is running and verifies
+      # staging actually serves it over HTTP; rebuild-main falls through to
+      # the build step below with this checkout's HEAD.
+      - name: Resolve deploy source (promote-staging vs rebuild-main)
+        id: source
+        env:
+          DEPLOY_MODE: ${{ inputs.deploy_mode || 'promote-staging' }}
+          EXPECTED_COMMIT: ${{ inputs.expected_commit }}
+          STAGING_URL: ${{ inputs.staging_url || 'https://preview-aws-gateway.vitanaland.com' }}
+        run: |
+          set -e
+          if [ "$DEPLOY_MODE" != "promote-staging" ]; then
+            echo "mode=rebuild-main" >> "$GITHUB_OUTPUT"
+            echo "sha=${{ steps.commit.outputs.sha }}" >> "$GITHUB_OUTPUT"
+            echo "short=${{ steps.commit.outputs.short }}" >> "$GITHUB_OUTPUT"
+            echo "image=" >> "$GITHUB_OUTPUT"
+            echo "Mode: rebuild-main — building ${{ steps.commit.outputs.short }} from source."
+            exit 0
+          fi
+
+          # 1) What does ECS say staging runs?
+          STAGING_TD=$(aws ecs describe-services --cluster "${{ env.ECS_CLUSTER }}" --services vitana-gateway \
+            --query 'services[0].taskDefinition' --output text)
+          IMAGE=$(aws ecs describe-task-definition --task-definition "$STAGING_TD" \
+            --query 'taskDefinition.containerDefinitions[0].image' --output text)
+          SHA=$(aws ecs describe-task-definition --task-definition "$STAGING_TD" \
+            --query 'taskDefinition.containerDefinitions[0].environment[?name==`GIT_COMMIT_SHA`].value | [0]' --output text)
+          echo "Staging task def: $STAGING_TD"
+          echo "Staging image:    $IMAGE"
+          echo "Staging commit:   $SHA"
+          case "$IMAGE" in
+            *"/${{ env.ECR_REPOSITORY }}:"*) ;;
+            *) echo "::error::Staging image '$IMAGE' is not from ECR repo '${{ env.ECR_REPOSITORY }}' — refusing to promote an ungoverned image."; exit 1 ;;
+          esac
+          if [ -z "$SHA" ] || [ "$SHA" = "None" ]; then
+            echo "::error::Staging task def has no GIT_COMMIT_SHA env var — cannot pin the promotion. Deploy staging via AWS-STAGE-DEPLOY-GATEWAY first."
+            exit 1
+          fi
+
+          # 2) Does staging actually SERVE that commit? (functional check —
+          # ECS state alone produced false greens during VTID-03419.)
+          LIVE=$(curl -fsS "$STAGING_URL/api/v1/admin/build-info" | jq -r '.git_commit // empty')
+          if [ "$LIVE" != "$SHA" ]; then
+            echo "::error::AWS staging serves commit '$LIVE' but its task def says '$SHA' — staging is mid-deploy or drifted. Retry when stable."
+            exit 1
+          fi
+
+          # 3) Operator pin: fail if staging moved since the PUBLISH click.
+          if [ -n "$EXPECTED_COMMIT" ] && [ "$EXPECTED_COMMIT" != "$SHA" ]; then
+            echo "::error::expected_commit=$EXPECTED_COMMIT but staging is serving $SHA — staging changed between the operator's confirmation and this run. Re-publish from the Command Hub."
+            exit 1
+          fi
+
+          {
+            echo "mode=promote-staging"
+            echo "sha=$SHA"
+            echo "short=$(echo "$SHA" | cut -c1-12)"
+            echo "image=$IMAGE"
+          } >> "$GITHUB_OUTPUT"
+          echo "Mode: promote-staging — shipping $IMAGE ($SHA) with NO rebuild."
+
+      - name: Build and push image (rebuild-main only)
         id: build
+        if: ${{ (inputs.deploy_mode || 'promote-staging') == 'rebuild-main' }}
         env:
           REGISTRY: ${{ steps.ecr.outputs.registry }}
         run: |
           set -e
-          IMAGE="$REGISTRY/${{ env.ECR_REPOSITORY }}:${{ steps.commit.outputs.short }}"
+          IMAGE="$REGISTRY/${{ env.ECR_REPOSITORY }}:${{ steps.source.outputs.short }}"
           docker build -t "$IMAGE" -t "$REGISTRY/${{ env.ECR_REPOSITORY }}:awsdr-latest" services/gateway
           docker push "$IMAGE"
           docker push "$REGISTRY/${{ env.ECR_REPOSITORY }}:awsdr-latest"
@@ -162,9 +256,13 @@ jobs:
           NOVA_TENANTS_INPUT: ${{ inputs.nova_canary_tenant_ids }}
         run: |
           set -e
-          IMAGE="${{ steps.build.outputs.image }}"
-          SHA="${{ steps.commit.outputs.sha }}"
-          SHORT="${{ steps.commit.outputs.short }}"
+          # VTID-03420: promote mode ships staging's image; rebuild mode ships
+          # the image built above.
+          IMAGE="${{ steps.source.outputs.image }}"
+          if [ -z "$IMAGE" ]; then IMAGE="${{ steps.build.outputs.image }}"; fi
+          if [ -z "$IMAGE" ]; then echo "::error::No image resolved from either mode."; exit 1; fi
+          SHA="${{ steps.source.outputs.sha }}"
+          SHORT="${{ steps.source.outputs.short }}"
           TD_ARN=$(aws ecs describe-services --cluster "${{ env.ECS_CLUSTER }}" --services "${{ env.ECS_SERVICE }}" \
             --query 'services[0].taskDefinition' --output text)
           echo "Current task definition: $TD_ARN"
@@ -206,7 +304,7 @@ jobs:
         run: |
           set -e
           URL="${{ env.GATEWAY_URL }}"
-          SHA="${{ steps.commit.outputs.sha }}"
+          SHA="${{ steps.source.outputs.sha }}"
           for i in 1 2 3 4 5 6; do
             HEALTH=$(curl -fsS "$URL/api/v1/admin/health" 2>/dev/null || echo '')
             BUILD=$(curl -fsS "$URL/api/v1/admin/build-info" 2>/dev/null || echo '')
@@ -228,8 +326,8 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SVC: ${{ secrets.SUPABASE_SERVICE_ROLE }}
-          SHA: ${{ steps.commit.outputs.sha }}
-          SHORT: ${{ steps.commit.outputs.short }}
+          SHA: ${{ steps.source.outputs.sha }}
+          SHORT: ${{ steps.source.outputs.short }}
           OUTCOME: ${{ job.status }}
           REASON: ${{ inputs.reason }}
         run: |
@@ -265,8 +363,9 @@ jobs:
         run: |
           {
             echo "## AWS Production (DR) gateway deploy"
-            echo "- Image: \`${{ steps.build.outputs.image }}\`"
-            echo "- Commit: \`${{ steps.commit.outputs.sha }}\`"
+            echo "- Mode: ${{ steps.source.outputs.mode }}"
+            echo "- Image: \`${{ steps.source.outputs.image || steps.build.outputs.image }}\`"
+            echo "- Commit: \`${{ steps.source.outputs.sha }}\`"
             echo "- Verified live at: ${{ env.GATEWAY_URL }}"
             echo "- Reason: ${{ env.DEPLOY_REASON }}"
             echo "- VTID: VTID-03398"
