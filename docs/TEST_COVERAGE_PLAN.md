@@ -140,12 +140,12 @@ phase at pickup. Order is by risk: tenancy → memory → autopilot → brain/vo
 |---|---|---|---|---|
 | **0. Enforcement baseline** | both | CI actually runs all existing tests (this branch: `TEST-SUITE.yml` + `UNIT-TESTS.yml`, Jest ESM fix, Vitest bootstrap) | 2026-07-13 | ✅ this PR |
 | **1. Un-quarantine sweep** | platform | DONE 2026-07-22: all 11 quarantined gateway suites repaired (45 failing tests fixed — drifted mocks/assertions vs tenant-scoped autopilot tables, memory-broker refactor, Bedrock provider, VTID-01007 format, auth-middleware migration; `wearables-waitlist` had broken import paths and never ran). One genuine src bug found & fixed: `classifyCategory()` in `routes/memory.ts` matched the substring `'pr'`, misclassifying any content containing "pr" ("prefer", "espresso") as dev tasks — now word-boundary matched. `testPathIgnorePatterns` quarantine list removed. `oasis-projector/test/ledger-writer.test.ts` repaired (35/35 green; fixture VTIDs updated to canonical VTID-01007 format) and oasis-projector added to the `TEST-SUITE.yml` matrix. Open observation for the team (documented in that test): an all-error batch emits no `ledger_sync` event and still advances the projection offset (no retry) — by design or not? | 2026-07-22 | ✅ |
-| **2. Tenancy & RBAC (P0)** | platform | Tests for all 6 middleware files, `tenant-admin/*` routes, `admin-tenants`, RBAC orb-tools; assert cross-tenant denial paths | +2 weeks | ☐ |
+| **2. Tenancy & RBAC (P0)** | platform | DONE 2026-07-22: 24 new suites / 381 tests. All 6 middleware files (89 tests — cross-tenant denial, fail-closed on missing secrets, exafy bypass, paywall fail-open contract, CORS spoof-blocking, VTID gate, server-timing); all 13 `tenant-admin/*` routes (185 tests, every route with cross-tenant read AND mutation denial asserted through the real `requireTenantAdmin`); `admin-tenants`, `tenant-specialists`, RBAC orb-tools (two-step confirm, operator-only escalation, community-floor protection), `role-aware-context-pack-shadow`, plus `nova-ws-facade` (last untested Nova Sonic file). **Follow-ups surfaced (not fixed — need team decisions):** (a) `oasis_events`-backed endpoints lack DB-level tenant filtering — `overview.ts` `/alerts` returns all tenants' error events, `/activity` filters only client-side, `audit-log.ts` `/access` unfiltered (schema has no tenant_id on oasis_events); (b) `community-admin`/`content-moderation` mutate by bare id without tenant scoping past the middleware; (c) `require-tenant-admin.ts` reads `SUPABASE_SERVICE_ROLE_KEY` while docs/other code use `SUPABASE_SERVICE_ROLE` — envs setting only the latter silently 403 legitimate tenant admins; (d) `tenant-specialists.ts` auth decodes JWT without signature verification (documented VTID-02661 loosening; hardening pending). | 2026-07-22 | ✅ |
 | **3. Frontend auth/roles/tenancy (P0)** | vitana-v1 | `AuthProvider`, `ProtectedRoute`, `AdminGuard`, `useRole`, `usePermissions`, `useTenant`, `TenantDetector`, guest-auth, oauthErrors | +2 weeks | ☐ |
 | **4. Memory stack (P0)** | platform | retrieval-router rule table, context-pack-builder, orb-memory-bridge, memory-facts-service (write_fact semantics), social-memory/*, memory routes | +3 weeks | ☐ |
 | **5. Autopilot (P0)** | platform | controller/event-loop/validator/verification/prompts + dev-autopilot queue & self-heal; governance gates (EXECUTION_DISARMED etc.) asserted | +4 weeks | ☐ |
 | **6. Vitana Brain + awareness engines (P1)** | platform | vitana-brain, d32/d40/d44/d48/d49, health-capacity, awareness-registry/watchdogs + routes | +5 weeks | ☐ |
-| **7. Voice/ORB tools (P1)** | platform | voice-* services, voice-tools/*, orb-live & orb-livekit route contracts | +6 weeks | ☐ |
+| **7. Voice/ORB tools (P1) — Nova-first** | platform | voice-* services, voice-tools/*, orb-live & orb-livekit route contracts. **AWS note (2026-07-22):** the Nova Sonic (AWS Bedrock) voice stack in `src/orb/live/upstream/` already has green suites for 13/15 files (`nova-sonic-live-client`, `-protocol`, `-config`, `-keepwarm`, `nova-instruction-sanitizer`, `active-provider-resolver`, `upstream-provider-selector`, …); `nova-ws-facade.ts` gets a test in Phase 2. Write all new voice tests against the provider-adapter boundary, prioritizing the Nova path; when Vertex is retired, delete `vertex-live-client(.test).ts` and update the `llm-router` vertex-flagship assertion — nothing else in the suite is Vertex-bound. | +6 weeks | ☐ |
 | **8. Frontend domain logic (P1)** | vitana-v1 | wallet (client, exchangeRates, useWallet*), messaging (messageStatus, caches), offline (OfflineProvider, calendarPendingQueue), i18n helpers, orb client libs, autopilot hooks, health calculators (vitanaIndex, goalTrend, planSummaryCalculator) | +6 weeks | ☐ |
 | **9. Sibling services & packages** | platform | mcp-gateway, mcp, vaea, openclaw-bridge, worker-runner depth; pytest in CI for services/agents + packages/llm-router | +7 weeks | ☐ |
 | **10. Edge functions** | vitana-v1 | Deno tests for `_shared/llm-locale.ts` + top 10 critical functions (stripe-webhook, ai-chat, autopilot-profile, search-memories, set_active_tenant, vertex-live…) | +8 weeks | ☐ |
@@ -156,6 +156,22 @@ workflow, no new quarantines, coverage for the touched area ≥80% lines,
 mocked Supabase only via the existing `test/__mocks__` patterns.
 
 ---
+
+## 3b. Infrastructure-migration note (GCP → AWS, 2026-07-22)
+
+The test system in this plan is deliberately **cloud-agnostic**: suites run
+on GitHub Actions runners and mock all I/O, so the GCP→AWS migration does
+not invalidate any of it. Specifically:
+- Bedrock text-LLM adapter (VTID-03403, `eu-central-1`) is asserted in
+  `test/llm-router.test.ts`.
+- The Nova Sonic voice stack (Vertex/Gemini Live replacement for ORB) is
+  already in-tree and 13/15 files are already covered (see Phase 7 note).
+- Only two Vertex-bound test artifacts exist; both are trivial to retire
+  with the provider (Phase 7 note).
+- Out of scope for this plan but flagged: the deploy workflows
+  (`EXEC-DEPLOY` etc.) and CLAUDE.md's ALWAYS-rules still declare GCP
+  canonical — those need their own migration pass when AWS is confirmed
+  as the target.
 
 ## 4. The automation routine (stability guarantee)
 
@@ -201,5 +217,6 @@ file's schedule table.
 
 | Date | Change |
 |---|---|
+| 2026-07-22 | Phase 2 complete: 24 new tenancy/RBAC suites (381 tests) — middleware, all tenant-admin routes with cross-tenant denial, admin-tenants, tenant-specialists, RBAC orb-tools, role-aware shadow, nova-ws-facade; four tenant-isolation/config follow-ups surfaced for team decision (BOOTSTRAP-TEST-COVERAGE Phase 2) |
 | 2026-07-22 | Phase 1 complete: all 11 quarantined gateway suites + oasis-projector ledger-writer repaired and un-quarantined; `'pr'` substring memory-classification bug fixed in `routes/memory.ts`; oasis-projector added to TEST-SUITE matrix (BOOTSTRAP-TEST-COVERAGE Phase 1) |
 | 2026-07-13 | Initial inventory, schedule, TEST-SUITE.yml + UNIT-TESTS.yml routines, Jest ESM fix, frontend Vitest bootstrap (BOOTSTRAP-TEST-COVERAGE) |
