@@ -197,13 +197,15 @@ jobs:
                           {name:"NOVA_SONIC_MODEL_ID", value:"amazon.nova-2-sonic-v1:0"},
                           {name:"NOVA_SONIC_CANARY_USER_IDS", value:$NOVA_USERS},
                           {name:"NOVA_SONIC_CANARY_TENANT_IDS", value:$NOVA_TENANTS},
-                          # BOOTSTRAP-NOVA-SONIC-VOICE: upserted (not a repo
-                          # var) — same fixed staging-only value as the GCP
-                          # twin (STAGE-DEPLOY.yml). Bridges the 5-8s
-                          # model-prefill wall of silence with an instant TTS
-                          # phrase; this is the surface where Nova sessions
-                          # actually run, so it must persist here too.
-                          {name:"FEATURE_ORB_GREETING_TTS_BRIDGE_ENV", value:"staging-only"} ] )
+                          # BOOTSTRAP-NOVA-SONIC-VOICE: DISABLED (2026-07-28)
+                          # — rejected on product grounds (voice mismatch: the
+                          # Cloud TTS bridge phrase is never the same voice as
+                          # Nova Sonic's live voice). See STAGE-DEPLOY.yml's
+                          # matching entry for the full rationale. Explicitly
+                          # upserted to "off" (not just removed) so it can't
+                          # silently drift back to a stale "staging-only"
+                          # value left on the task definition from before.
+                          {name:"FEATURE_ORB_GREETING_TTS_BRIDGE_ENV", value:"off"} ] )
                 | del(.taskDefinitionArn, .revision, .status, .requiresAttributes,
                       .compatibilities, .registeredAt, .registeredBy, .deregisteredAt)')
           NEW_ARN=$(aws ecs register-task-definition --cli-input-json "$NEW_DEF" \
