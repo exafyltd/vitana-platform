@@ -11,7 +11,7 @@
  * than fetching unscoped and relying on something else to filter.
  */
 
-import { makeSupabaseSequence, QueryResult } from './_supabase-mock';
+import { makeSupabaseSequence, QueryResult } from './supabase-mock';
 
 jest.mock('../../../src/lib/supabase', () => ({
   getSupabase: jest.fn(),

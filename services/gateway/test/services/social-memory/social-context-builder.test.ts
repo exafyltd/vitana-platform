@@ -14,7 +14,7 @@
  *     compact-mode limit scaling, and the recommended-actions assembly.
  */
 
-import { makeSupabaseSequence, QueryResult } from './_supabase-mock';
+import { makeSupabaseSequence, QueryResult } from './supabase-mock';
 
 jest.mock('../../../src/lib/supabase', () => ({
   getSupabase: jest.fn(),
