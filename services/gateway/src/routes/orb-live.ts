@@ -7239,7 +7239,20 @@ async function connectToLiveAPI(
           // response event, with the widget's mic gated). The earlier
           // assumption that server-side turn detection keeps the stream
           // alive without input was wrong.
-          options: { enableSilenceKeepalive: true },
+          // ignoreModelSpeaking/silenceIntervalMs/idleThresholdMs: this
+          // loop-guard re-arm path (handleTranscript, triggered when the
+          // loop guard has paused-then-resumed the interval — see its doc
+          // comment) creates its OWN silenceKeepaliveInterval independent of
+          // the connect-time armUpstreamKeepalive() call below. Without
+          // passing the same Nova tuning here, a session that trips the loop
+          // guard mid-conversation and then resumes falls back to Vertex-only
+          // semantics and reproduces the b745775/b27204f END_TURN deadlock.
+          options: {
+            enableSilenceKeepalive: true,
+            ignoreModelSpeaking: true,
+            silenceIntervalMs: 250,
+            idleThresholdMs: 750,
+          },
         });
 
         // Close policy: diag always; on an unexpected close of an active,
