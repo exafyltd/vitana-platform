@@ -1431,12 +1431,30 @@ export interface UpstreamSessionHandlerContext {
   deps: UpstreamMessageHandlerDeps;
   /**
    * Provider-tuning knobs. `enableSilenceKeepalive` re-arms the PCM silence
-   * keepalive from the loop-guard paths (Vertex/Gemini need it; Nova does
-   * not — server turn detection keeps its stream alive without synthetic
-   * PCM).
+   * keepalive from the loop-guard paths — both Vertex AND Nova need it (see
+   * BOOTSTRAP-NOVA-SONIC-VOICE 2e89a41: Bedrock idle-kills a Nova stream
+   * after ~15s with no audio-frame input, same as Vertex's idle close).
+   *
+   * `ignoreModelSpeaking` / `silenceIntervalMs` / `idleThresholdMs` mirror
+   * `KeepaliveDeps` in `upstream-keepalive.ts` (the connect-time arm site)
+   * — the SAME tuning knobs, because this is a SECOND place that can (re-)
+   * create `session.silenceKeepaliveInterval`: the loop guard (below,
+   * `handleTurnComplete`) clears the interval to let a runaway response
+   * loop idle out, and `handleTranscript`'s re-arm below recreates it on
+   * the next user utterance. Nova's connect-time arm
+   * (`armUpstreamKeepalive(novaFacade, session, { ignoreModelSpeaking: true,
+   * silenceIntervalMs: 250, idleThresholdMs: 750 })`, orb-live.ts) is
+   * bypassed by this re-arm path — without passing the same knobs here, a
+   * Nova session that trips the loop guard and then resumes falls back to
+   * Vertex-only re-arm semantics (silence paused during model speech, 3s
+   * heartbeat cadence) and reproduces the exact END_TURN deadlock /
+   * idle-kill that b745775 / b27204f fixed at the connect-time site.
    */
   options?: {
     enableSilenceKeepalive?: boolean;
+    ignoreModelSpeaking?: boolean;
+    silenceIntervalMs?: number;
+    idleThresholdMs?: number;
   };
 }
 
@@ -1563,22 +1581,28 @@ export function handleTranscript(
     session.consecutiveModelTurns = 0;
     session.consecutiveToolCalls = 0;
 
-    // Loop-guard re-arm of the PCM silence keepalive — provider-local:
-    // only providers that need synthetic silence (Vertex/Gemini) get it.
+    // Loop-guard re-arm of the PCM silence keepalive — providers that need
+    // synthetic silence at all get it (both Vertex and Nova; see the
+    // `options` doc comment above). Mirrors `armUpstreamKeepalive`'s tuning
+    // knobs so a Nova session that trips the loop guard and resumes gets
+    // the SAME cadence/ignoreModelSpeaking behavior as its connect-time arm
+    // — not the Vertex defaults, which would reproduce the END_TURN
+    // deadlock / 15s idle-kill (b745775 / b27204f) via this second re-arm
+    // path.
     if (
       ctx.options?.enableSilenceKeepalive
       && !session.silenceKeepaliveInterval
     ) {
       session.silenceKeepaliveInterval = setInterval(() => {
         if (ctx.client.getState() !== 'open' || !session.active) return;
-        if (session.isModelSpeaking) return;
+        if (session.isModelSpeaking && !ctx.options?.ignoreModelSpeaking) return;
         const idleMs = Date.now() - session.lastAudioForwardedTime;
-        if (idleMs >= getSilenceIdleThresholdMs()) {
+        if (idleMs >= (ctx.options?.idleThresholdMs ?? getSilenceIdleThresholdMs())) {
           try {
             ctx.client.sendAudioChunk(SILENCE_AUDIO_B64, 'audio/pcm;rate=16000');
           } catch (_e) { /* client closing */ }
         }
-      }, getSilenceKeepaliveIntervalMs());
+      }, ctx.options?.silenceIntervalMs ?? getSilenceKeepaliveIntervalMs());
     }
 
     ctx.deps.startResponseWatchdog(session, getTurnResponseTimeoutMs(), 'response_timeout');
