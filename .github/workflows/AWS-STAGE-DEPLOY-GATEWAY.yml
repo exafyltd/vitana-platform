@@ -187,7 +187,8 @@ jobs:
                 | .containerDefinitions[0].environment |=
                     ( [ .[] | select(.name | IN("GIT_COMMIT_SHA","COMMIT_SHA","BUILD_INFO_MARKER",
                                                 "NOVA_SONIC_ENABLED","NOVA_SONIC_REGION","NOVA_SONIC_MODEL_ID",
-                                                "NOVA_SONIC_CANARY_USER_IDS","NOVA_SONIC_CANARY_TENANT_IDS") | not) ]
+                                                "NOVA_SONIC_CANARY_USER_IDS","NOVA_SONIC_CANARY_TENANT_IDS",
+                                                "FEATURE_ORB_GREETING_TTS_BRIDGE_ENV") | not) ]
                       + [ {name:"GIT_COMMIT_SHA", value:$SHA},
                           {name:"COMMIT_SHA", value:$SHA},
                           {name:"BUILD_INFO_MARKER", value:$SHORT},
@@ -195,7 +196,14 @@ jobs:
                           {name:"NOVA_SONIC_REGION", value:"eu-north-1"},
                           {name:"NOVA_SONIC_MODEL_ID", value:"amazon.nova-2-sonic-v1:0"},
                           {name:"NOVA_SONIC_CANARY_USER_IDS", value:$NOVA_USERS},
-                          {name:"NOVA_SONIC_CANARY_TENANT_IDS", value:$NOVA_TENANTS} ] )
+                          {name:"NOVA_SONIC_CANARY_TENANT_IDS", value:$NOVA_TENANTS},
+                          # BOOTSTRAP-NOVA-SONIC-VOICE: upserted (not a repo
+                          # var) — same fixed staging-only value as the GCP
+                          # twin (STAGE-DEPLOY.yml). Bridges the 5-8s
+                          # model-prefill wall of silence with an instant TTS
+                          # phrase; this is the surface where Nova sessions
+                          # actually run, so it must persist here too.
+                          {name:"FEATURE_ORB_GREETING_TTS_BRIDGE_ENV", value:"staging-only"} ] )
                 | del(.taskDefinitionArn, .revision, .status, .requiresAttributes,
                       .compatibilities, .registeredAt, .registeredBy, .deregisteredAt)')
           NEW_ARN=$(aws ecs register-task-definition --cli-input-json "$NEW_DEF" \

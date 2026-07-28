@@ -158,6 +158,14 @@ jobs:
             "FEATURE_ORB_FAST_START_ENV=staging-only"
             "FEATURE_ORB_SAFE_FAST_GREETING_ENV=staging-only"
             "ORB_CONTEXT_READY_GATE_TIMEOUT_MS=300"
+            # BOOTSTRAP-NOVA-SONIC-VOICE: the model-prefill bottleneck (full
+            # system instruction + tool catalog, ~9K input tokens) still takes
+            # 5-8s+ to first greeting audio on both Vertex and Nova even with
+            # fast-start above — that's the wall of silence this flag bridges
+            # with an instant TTS phrase (date + motivational line + transition)
+            # written to SSE before the real upstream connects. staging-only;
+            # prod stays off until the experiment window graduates it.
+            "FEATURE_ORB_GREETING_TTS_BRIDGE_ENV=staging-only"
             # NAV continuation / journey-mode experiments — bake into the staging
             # env so they PERSIST across every STAGE-DEPLOY (--set-env-vars
             # REPLACES, so a hand-set gcloud flag is wiped on the next push — the
