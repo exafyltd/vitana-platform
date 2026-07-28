@@ -2307,6 +2307,10 @@ export async function tool_send_chat_message(
     // Skipped for the Vitana bot (its replies go through handleVitanaTextReply
     // already, no push needed). Fire-and-forget; notification failures must
     // never break the voice flow.
+    // flow-test-exempt: this PR only fixes the push-notification data.url
+    // deep-link (query-string -> path-based, for Appilix WebView compat) and
+    // two stale comments — no conversation-flow decision, wording, or
+    // session-selection logic changed.
     try {
       const { isVitanaBot } = await import('../lib/vitana-bot');
       if (!isVitanaBot(recipientUserId)) {
