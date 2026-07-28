@@ -229,7 +229,7 @@ async function probeNovaPayload(
   cfg: ReturnType<typeof getNovaSonicConfig>,
   shape: { systemInstruction: string; tools?: ReadonlyArray<Record<string, unknown>>; observeMs?: number; chunkBytes?: number },
 ): Promise<{ ok: boolean; detail: string }> {
-  const client = new NovaSonicLiveClient({ config: cfg, voiceId: 'tiffany' });
+  const client = new NovaSonicLiveClient({ config: cfg, voiceId: 'tina' });
   const errorCodes: string[] = [];
   const diagnostics: string[] = [];
   let closeReason: string | undefined;
@@ -242,7 +242,7 @@ async function probeNovaPayload(
   try {
     await client.connect({
       model: cfg.modelId,
-      voiceName: 'tiffany',
+      voiceName: 'tina',
       responseModalities: ['audio'],
       vadSilenceMs: 2000,
       systemInstruction: shape.systemInstruction,
@@ -435,10 +435,10 @@ export async function runNovaSonicTestSuite(options: {
     const ok =
       resolveNovaSonicVoice({ language: 'de', persona: 'vitana' }) === 'tina' &&
       resolveNovaSonicVoice({ language: 'de', persona: 'devon' }) === 'lennart' &&
-      resolveNovaSonicVoice({ language: 'en', persona: 'vitana' }) === 'tiffany' &&
+      resolveNovaSonicVoice({ language: 'en', persona: 'vitana' }) === 'tina' &&
       resolveNovaSonicVoice({ language: 'sr', persona: 'vitana' }) === null;
     return ok
-      ? { status: 'pass', detail: 'de→tina/lennart, en→tiffany, sr→null (fallback)' }
+      ? { status: 'pass', detail: 'de→tina/lennart, en→tina/lennart, sr→null (fallback)' }
       : { status: 'fail', detail: 'unexpected voice mapping' };
   }));
 
@@ -461,12 +461,12 @@ export async function runNovaSonicTestSuite(options: {
     }
     // Warm path, mirroring the boot prewarm real sessions benefit from.
     await prewarmNovaSonicBedrock(cfg);
-    const client = new NovaSonicLiveClient({ config: cfg, voiceId: 'tiffany' });
+    const client = new NovaSonicLiveClient({ config: cfg, voiceId: 'tina' });
     const result = await probeLiveClient(
       client,
       () => client.connect({
         model: cfg.modelId,
-        voiceName: 'tiffany',
+        voiceName: 'tina',
         responseModalities: ['audio'],
         vadSilenceMs: 2000,
         systemInstruction: PROBE_SYSTEM_INSTRUCTION,

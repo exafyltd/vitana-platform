@@ -92,7 +92,7 @@ async function main(): Promise<void> {
   const userName = randomUUID();
 
   queue.push(buildSessionStart());
-  queue.push(buildPromptStart({ promptName, voiceId: 'tiffany' }));
+  queue.push(buildPromptStart({ promptName, voiceId: 'tina' }));
   queue.push(buildTextContentStart({ promptName, contentName: sysName, role: 'SYSTEM' }));
   queue.push(buildTextInput({ promptName, contentName: sysName, content: 'You are a health-check probe. Reply with one short sentence.' }));
   queue.push(buildContentEnd({ promptName, contentName: sysName }));
