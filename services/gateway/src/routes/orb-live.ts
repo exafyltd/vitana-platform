@@ -1389,6 +1389,11 @@ import {
   isNovaSonicLanguageSupported,
   NOVA_SONIC_MODEL_ID,
 } from '../orb/live/upstream/nova-sonic-config';
+// BOOTSTRAP-NOVA-SONIC-VOICE: greeting AUDIO bridge — see the module doc in
+// greeting-audio-bridge.ts for why this exists (both Vertex and Nova now
+// take 5-8+s to first greeting audio; this fills the silence).
+import { buildGreetingBridgeText } from '../services/conversation/greeting-audio-bridge';
+import { synthesizeGreetingBridgeAudioPcm, GREETING_BRIDGE_PCM_SAMPLE_RATE_HZ } from '../services/tts/greeting-bridge-tts';
 import { resolveNovaSonicVoice } from '../orb/live/voice/nova-sonic-voice';
 import { prewarmNovaSonicBedrock } from '../orb/live/upstream/nova-sonic-live-client';
 import { sanitizeInstructionForNova } from '../orb/live/upstream/nova-instruction-sanitizer';
@@ -8519,6 +8524,54 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
 }
 
 /**
+ * BOOTSTRAP-NOVA-SONIC-VOICE: greeting AUDIO bridge (SSE transport only —
+ * the SSE session/start path is what both the Nova bench and the majority
+ * of real Connect & Talk traffic use today).
+ *
+ * Synthesizes a short "Good morning! Today is <date>. <motivational line>.
+ * Let me pull up your latest data…" phrase via Cloud TTS (LINEAR16 @ 24kHz —
+ * same wire format as the real greeting audio) and writes it to the SSE
+ * stream BEFORE the real upstream connect is even initiated, so ordering is
+ * trivially correct: this function is awaited to completion, and the caller
+ * only opens the real (slow) upstream connection afterward. Feature-flagged
+ * (default off) and fully best-effort — any failure here (TTS unavailable,
+ * synthesis error, closed connection) is swallowed; it never blocks or
+ * breaks the real greeting path that follows.
+ *
+ * Skipped for anonymous sessions (their intro flow is untouched/different)
+ * and for reconnects (a mid-conversation reconnect doesn't need a fresh
+ * "today is..." — the real reconnect-recovery prompt handles that case).
+ */
+async function sendGreetingAudioBridge(session: GeminiLiveSession): Promise<void> {
+  if (!isFeatureLive('ORB_GREETING_TTS_BRIDGE')) return;
+  if (session.isAnonymous) return;
+  if (session.transcriptTurns.length > 0) return; // reconnect, not a fresh session
+  if (!session.sseResponse) return;
+
+  try {
+    const lang = session.lang || 'en';
+    const timezone = session.clientContext?.timezone || 'UTC';
+    const text = buildGreetingBridgeText({ lang, now: new Date(), timezone });
+    const audioB64 = await synthesizeGreetingBridgeAudioPcm(text, lang);
+    if (!audioB64) {
+      emitDiag(session, 'greeting_bridge_skipped', { reason: 'synthesis_unavailable' });
+      return;
+    }
+    if (!session.sseResponse) return; // client disconnected while we were synthesizing
+    session.sseResponse.write(`data: ${JSON.stringify({
+      type: 'audio',
+      data_b64: audioB64,
+      mime: `audio/pcm;rate=${GREETING_BRIDGE_PCM_SAMPLE_RATE_HZ}`,
+      chunk_number: session.audioOutChunks++,
+      source: 'greeting_bridge',
+    })}\n\n`);
+    emitDiag(session, 'greeting_bridge_sent', { lang, chars: text.length });
+  } catch (err) {
+    console.warn('[GREETING-BRIDGE] Failed (non-fatal, real greeting proceeds normally):', (err as Error).message);
+  }
+}
+
+/**
  * VTID-02020: Contextual recovery prompt for reconnects.
  *
  * After a network disconnect, the orb-widget client tears down the dead SSE
@@ -12985,6 +13038,16 @@ router.get('/live/stream', optionalAuth, async (req: AuthenticatedRequest, res: 
       audio_in_rate: 16000,
     },
   });
+
+  // BOOTSTRAP-NOVA-SONIC-VOICE: greeting AUDIO bridge — synthesize + write a
+  // short filler phrase BEFORE opening the real (slow) upstream connection.
+  // Awaited deliberately: this guarantees the bridge audio is written to the
+  // SSE stream strictly before any real-greeting audio chunk could possibly
+  // arrive, with no extra buffering/sequencing machinery needed. Adds at
+  // most ~0.3-0.8s (TTS synthesis latency) ahead of a connect that otherwise
+  // takes 5-8+s to first audio — a clear net win, and feature-flagged so it
+  // can be disabled instantly if that tradeoff is ever wrong.
+  await sendGreetingAudioBridge(session);
 
   // VTID-01219: Connect to Vertex AI Live API WebSocket IN PARALLEL (non-blocking).
   // The ready event is already sent so the client gets instant visual + audio feedback
