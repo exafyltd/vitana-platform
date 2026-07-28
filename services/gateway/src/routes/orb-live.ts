@@ -7127,7 +7127,7 @@ async function connectToLiveAPI(
           : [];
         const novaPersona = ((session as any).activePersona as string) || 'vitana';
         const novaVoice =
-          resolveNovaSonicVoice({ language: session.lang || 'en', persona: novaPersona }) ?? 'tiffany';
+          resolveNovaSonicVoice({ language: session.lang || 'en', persona: novaPersona }) ?? 'tina';
         // Stashed for the connect_failed OASIS payload — makes a rejected
         // envelope diagnosable without server-log access.
         (session as any)._novaInstructionChars = novaSystemInstruction.length;
