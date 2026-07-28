@@ -64,6 +64,11 @@ import { getDeploymentHistory, getNextSWV, insertSoftwareVersion, SoftwareVersio
 // Phase 0 staging build (P0.4): VTID allocator + Cloud Run Admin + admin auth.
 import { allocateVtid } from '../services/operator-service';
 import { describeService, listRevisions, updateTrafficToRevision, shortRevisionName } from '../services/cloud-run-admin';
+import {
+  describeAwsStagingGateway,
+  describeAwsProdGateway,
+  toRevisionRow,
+} from '../services/aws-gateway-admin';
 // Note: deployOrchestrator + emitOasisEvent are imported mid-file (lines ~590).
 import { requireAdminAuth, AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
 // VTID-0525-B: naturalLanguageService disabled for MVP - using simple command matching
@@ -587,7 +592,7 @@ router.post('/upload', async (req: Request, res: Response) => {
 // Simple command matching for deploy commands using existing CICD infrastructure
 
 import deployOrchestrator from '../services/deploy-orchestrator';
-import { triggerWorkflow } from '../services/github-service';
+import { triggerWorkflow, getWorkflowRuns } from '../services/github-service';
 import { emitOasisEvent } from '../services/oasis-event-service';
 // VTID-0525-B: DeployCommandSchema and TaskCommandSchema unused in MVP
 // import { DeployCommandSchema, TaskCommandSchema } from '../types/operator-command';
@@ -1249,6 +1254,17 @@ router.get('/revisions', requireAdminAuth, async (req: Request, res: Response) =
       return res.status(400).json({ ok: false, error: 'unsupported_service', service });
     }
 
+    // VTID-03420: post-cutover (VTID-03419) the canonical gateway is AWS ECS,
+    // which has no Cloud Run revisions and no GCP credentials. When targeting
+    // AWS, back the two gateway rows with live build-info from the AWS stacks
+    // instead — same row shape, so the publish popover works unchanged.
+    if (PUBLISH_TARGET_CLOUD === 'aws' && (service === 'gateway' || service === 'gateway-staging')) {
+      const summary = service === 'gateway-staging'
+        ? await describeAwsStagingGateway()
+        : await describeAwsProdGateway();
+      return res.status(200).json({ ok: true, service, revisions: [toRevisionRow(summary)] });
+    }
+
     const revisions = await listRevisions(service, limit);
     return res.status(200).json({ ok: true, service, revisions });
   } catch (error) {
@@ -1266,6 +1282,13 @@ const STAGING_PUBLISH_BAKE_MS = (() => {
   const raw = parseInt(process.env.STAGING_PUBLISH_BAKE_SECONDS || '0', 10);
   return Number.isFinite(raw) && raw >= 0 ? raw * 1000 : 0;
 })();
+
+// VTID-03420: which cloud the PUBLISH button promotes. Post-VTID-03419 the
+// canonical gateway hostname is served by AWS ECS, so the AWS stacks set this
+// to 'aws' (task-def env var). Default 'gcp' keeps the pre-cutover behavior
+// byte-identical everywhere the var is not set.
+const PUBLISH_TARGET_CLOUD: 'aws' | 'gcp' =
+  process.env.PUBLISH_TARGET_CLOUD === 'aws' ? 'aws' : 'gcp';
 
 /**
  * POST /publish → /api/v1/operator/publish
@@ -1299,12 +1322,272 @@ const STAGING_PUBLISH_BAKE_MS = (() => {
  *   9. Emit production.publish.requested + production.publish.completed events
  *      (payload includes frontend_promote + aws_promote outcomes).
  */
+/**
+ * VTID-03420: AWS variant of POST /publish — promotes AWS staging
+ * (`vitana-gateway`) to AWS production (`vitana-gateway-awsdr`) by
+ * dispatching AWS-PROD-DEPLOY-GATEWAY.yml in promote-staging mode, pinned
+ * to the exact commit staging serves at click time (expected_commit).
+ *
+ * Mirrors the GCP flow step-for-step (resolve staging → bake guard → VTID
+ * → requested event → dispatch → best-effort secondary legs → SWV row →
+ * completed event) and returns the same response shape, so the Command Hub
+ * popover works unchanged. Runs only when PUBLISH_TARGET_CLOUD=aws.
+ */
+async function publishAwsFlow(
+  req: Request,
+  res: Response,
+  identity: { user_id: string },
+  requestId: string,
+): Promise<Response> {
+  // ECS rolling deploys have no Cloud-Run-style traffic splitting — refuse
+  // canary explicitly rather than silently doing a full rollout.
+  if (req.body?.mode === 'canary') {
+    return res.status(400).json({
+      ok: false,
+      error: 'canary_unsupported_on_aws',
+      detail: 'Canary publish uses Cloud Run traffic splitting; the AWS ECS target only supports full rolling promotion. Re-publish with mode=full.',
+    });
+  }
+
+  // Step 2 (AWS): resolve what AWS staging is actually SERVING (build-info
+  // over HTTP — never ECS status fields; see aws-gateway-admin.ts header).
+  let staging;
+  try {
+    staging = await describeAwsStagingGateway();
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'unknown';
+    await emitOasisEvent({
+      vtid: 'BOOTSTRAP-PUBLISH',
+      type: 'production.publish.failed',
+      source: 'gateway-operator',
+      status: 'error',
+      message: `publish(aws): cannot resolve AWS staging gateway (${msg})`,
+      actor_id: identity.user_id,
+      actor_role: 'admin',
+      surface: 'command-hub',
+      payload: { request_id: requestId, stage: 'describe_staging', platform: 'aws-ecs' },
+    });
+    return res.status(502).json({ ok: false, error: 'staging_unreachable', detail: msg });
+  }
+
+  const stagingCommit = staging.commitSha;
+  if (!stagingCommit) {
+    return res.status(409).json({
+      ok: false,
+      error: 'staging_commit_unknown',
+      detail: `AWS staging build-info reports no git_commit. AWS-STAGE-DEPLOY-GATEWAY stamps GIT_COMMIT_SHA on every deploy — a missing commit means an ungoverned build is serving staging.`,
+    });
+  }
+  const stagingRevShort = staging.marker || stagingCommit.slice(0, 12);
+
+  // Step 4 (AWS): bake-time guard against the serving container's boot time.
+  const ageMs = staging.bootedAt
+    ? Date.now() - Date.parse(staging.bootedAt)
+    : STAGING_PUBLISH_BAKE_MS; // unknown age — same treat-as-old-enough fallback as GCP
+  if (STAGING_PUBLISH_BAKE_MS > 0 && ageMs < STAGING_PUBLISH_BAKE_MS) {
+    const remainingSec = Math.ceil((STAGING_PUBLISH_BAKE_MS - ageMs) / 1000);
+    return res.status(409).json({
+      ok: false,
+      error: 'bake_time_not_met',
+      detail: `AWS staging build ${stagingRevShort} is only ${Math.floor(ageMs / 1000)}s old; needs ${STAGING_PUBLISH_BAKE_MS / 1000}s. Wait ${remainingSec}s, or set STAGING_PUBLISH_BAKE_SECONDS=0 to override.`,
+    });
+  }
+
+  // Step 5: allocate the per-publish VTID (same allocator as the GCP path).
+  const allocation = await allocateVtid('publish.api', 'INFRA', 'GATEWAY');
+  if (!allocation.ok || !allocation.vtid) {
+    return res.status(503).json({
+      ok: false,
+      error: 'vtid_allocation_failed',
+      detail: allocation.message || allocation.error || 'unknown',
+    });
+  }
+  const vtid = allocation.vtid;
+
+  // Step 6: publish-requested event before dispatching.
+  await emitOasisEvent({
+    vtid,
+    type: 'production.publish.requested',
+    source: 'gateway-operator',
+    status: 'info',
+    message: `publish(aws): vitana-gateway ${stagingRevShort} (${stagingCommit.slice(0, 7)}) → vitana-gateway-awsdr`,
+    actor_id: identity.user_id,
+    actor_role: 'admin',
+    surface: 'command-hub',
+    payload: {
+      request_id: requestId,
+      source_revision: stagingRevShort,
+      source_commit: stagingCommit,
+      promote_mode: 'aws-image-promote',
+      platform: 'aws-ecs',
+      staging_age_seconds: Math.floor(ageMs / 1000),
+      confirm_short_sha: typeof req.body?.confirm_short_sha === 'string' ? req.body.confirm_short_sha : null,
+    },
+  });
+
+  // Step 7: dispatch the promotion. promote-staging + expected_commit means
+  // the workflow ships the EXACT ECR image staging runs and fails (before
+  // touching the service) if staging moved between click and run.
+  let workflowUrl: string | null = null;
+  let workflowRunId: number | null = null;
+  try {
+    await triggerWorkflow('exafyltd/vitana-platform', 'AWS-PROD-DEPLOY-GATEWAY.yml', 'main', {
+      reason: `Command Hub PUBLISH (${vtid}): promote AWS staging ${stagingCommit.slice(0, 7)} by ${identity.user_id}`,
+      deploy_mode: 'promote-staging',
+      expected_commit: stagingCommit,
+    });
+    try {
+      const runs = await getWorkflowRuns('exafyltd/vitana-platform', 'AWS-PROD-DEPLOY-GATEWAY.yml');
+      workflowUrl = runs.workflow_runs[0]?.html_url ?? null;
+      workflowRunId = runs.workflow_runs[0]?.id ?? null;
+    } catch {
+      // URL lookup is cosmetic — the dispatch above already succeeded.
+    }
+  } catch (e) {
+    const detail = e instanceof Error ? e.message : 'aws_dispatch_failed';
+    await emitOasisEvent({
+      vtid,
+      type: 'production.publish.failed',
+      source: 'gateway-operator',
+      status: 'error',
+      message: `publish(aws): AWS-PROD-DEPLOY-GATEWAY dispatch failed — ${detail}`,
+      actor_id: identity.user_id,
+      actor_role: 'admin',
+      surface: 'command-hub',
+      payload: { request_id: requestId, source_revision: stagingRevShort, source_commit: stagingCommit, deploy_error: detail },
+    });
+    return res.status(500).json({ ok: false, vtid, error: 'deploy_dispatch_failed', detail });
+  }
+
+  // Step 7b: best-effort FRONTEND promote — AWS twin. Rebuilds vitana-v1
+  // main with the prod gateway URL baked (there is no AWS frontend staging
+  // artifact to promote; mirrors the GCP flow's rebuild-from-commit leg).
+  let frontendPromote: { ok: boolean; detail?: string; source_commit?: string | null } = {
+    ok: false,
+    detail: 'not_attempted',
+  };
+  try {
+    const FRONTEND_REPO = process.env.FRONTEND_DEPLOY_REPO || 'exafyltd/vitana-v1';
+    const FRONTEND_TOKEN = process.env.FRONTEND_DEPLOY_TOKEN;
+    if (!FRONTEND_TOKEN) {
+      frontendPromote = {
+        ok: false,
+        detail: 'FRONTEND_DEPLOY_TOKEN not set — frontend NOT promoted. Dispatch AWS-PROD-DEPLOY-FRONTEND.yml manually, or set the secret to enable one-button-both.',
+      };
+    } else {
+      await triggerWorkflow(
+        FRONTEND_REPO,
+        'AWS-PROD-DEPLOY-FRONTEND.yml',
+        'main',
+        { reason: `publish-both via Command Hub (${vtid}, gateway ${stagingCommit.slice(0, 7)})` },
+        FRONTEND_TOKEN,
+      );
+      frontendPromote = { ok: true, source_commit: null };
+    }
+  } catch (e) {
+    frontendPromote = { ok: false, detail: e instanceof Error ? e.message : 'frontend_dispatch_failed' };
+  }
+
+  // Step 7c: best-effort GCP mirror — exact inverse of the old AWS leg.
+  // GCP Cloud Run is now the standing rollback target (VTID-03419 §8); a
+  // publish can keep it fresh by shipping the same commit through the
+  // governed EXEC-DEPLOY path. Gated (default off) for the same reason
+  // AWS_DUAL_PUBLISH_ENABLED was: cross-cloud prod deploys stay deliberate.
+  let gcpPromote: { ok: boolean; detail?: string; source_commit?: string | null } = {
+    ok: false,
+    detail: 'not_attempted',
+  };
+  if (process.env.GCP_DUAL_PUBLISH_ENABLED === 'true') {
+    try {
+      const gcpResult = await deployOrchestrator.executeDeploy({
+        vtid,
+        service: 'gateway',
+        environment: 'production',
+        source: 'api',
+        canary: false,
+        // No prebuilt GCP image to reuse from here — EXEC-DEPLOY builds this
+        // exact commit from source (its documented fallback path).
+        commitSha: stagingCommit,
+      });
+      gcpPromote = gcpResult.ok
+        ? { ok: true, source_commit: stagingCommit }
+        : { ok: false, detail: gcpResult.error || 'gcp_deploy_failed' };
+    } catch (e) {
+      gcpPromote = { ok: false, detail: e instanceof Error ? e.message : 'gcp_dispatch_failed' };
+    }
+  } else {
+    gcpPromote = { ok: false, detail: 'GCP_DUAL_PUBLISH_ENABLED not set to true — GCP rollback target NOT refreshed.' };
+  }
+
+  // Step 8: record the publish in software_versions (same optimistic model
+  // as the GCP path; the workflow's own best-effort emission records the
+  // deploy outcome under service vitana-gateway-aws-dr).
+  const swvId = await getNextSWV();
+  await insertSoftwareVersion({
+    swv_id: swvId,
+    service: 'gateway',
+    git_commit: stagingCommit,
+    deploy_type: 'normal',
+    initiator: 'user',
+    status: 'success',
+    environment: 'production',
+    cloud_run_revision: null,
+    source_revision: stagingRevShort,
+    initiator_id: identity.user_id,
+  });
+
+  await emitOasisEvent({
+    vtid,
+    type: 'production.publish.completed',
+    source: 'gateway-operator',
+    status: 'success',
+    message: `publish(aws): ${stagingRevShort} promotion dispatched; AWS-PROD-DEPLOY-GATEWAY ${workflowUrl ?? 'dispatched'}`,
+    actor_id: identity.user_id,
+    actor_role: 'admin',
+    surface: 'command-hub',
+    payload: {
+      request_id: requestId,
+      vtid,
+      swv_id: swvId,
+      mode: 'full',
+      source_revision: stagingRevShort,
+      source_commit: stagingCommit,
+      workflow_run_id: workflowRunId,
+      workflow_url: workflowUrl,
+      frontend_promote: frontendPromote,
+      gcp_promote: gcpPromote,
+    },
+  });
+
+  return res.status(200).json({
+    ok: true,
+    vtid,
+    swv_id: swvId,
+    source_revision: stagingRevShort,
+    source_commit: stagingCommit,
+    workflow_run_id: workflowRunId,
+    workflow_url: workflowUrl,
+    frontend_promote: frontendPromote,
+    // Field name kept for popover/event consumers: on the AWS target the
+    // "aws" leg IS the primary promotion.
+    aws_promote: { ok: true, source_commit: stagingCommit },
+    gcp_promote: gcpPromote,
+  });
+}
+
 router.post('/publish', requireAdminAuth, async (req: Request, res: Response) => {
   const requestId = randomUUID();
   const { identity } = req as AuthenticatedRequest;
   if (!identity) return res.status(401).json({ ok: false, error: 'unauthorized' });
 
   try {
+    // VTID-03420: post-cutover the canonical gateway is AWS ECS — promote
+    // AWS staging → AWS prod instead of the GCP pair. Selected per-stack via
+    // task-def env, so GCP-hosted gateways keep the original flow untouched.
+    if (PUBLISH_TARGET_CLOUD === 'aws') {
+      return await publishAwsFlow(req, res, identity, requestId);
+    }
+
     // Step 2: resolve staging service state.
     let stagingSummary;
     try {

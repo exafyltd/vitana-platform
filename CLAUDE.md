@@ -338,7 +338,7 @@ Shared infra across all of the above:
 | ALB | `vitana-alb-prod` — all host-header rules sit **below** priority 10 (see hard rule below) |
 | Deploy auth | GitHub OIDC federation, `AWS_PROD_ROLE_ARN` (all except community-app's frontend workflow — see its row above) |
 | Deploy trigger | Every `AWS-PROD-DEPLOY-*.yml` is `workflow_dispatch`-only, required `reason`, never on push |
-| Command Hub PUBLISH dual-publish | `AWS_DUAL_PUBLISH_ENABLED=true` (gateway env var, default off) makes the PUBLISH button best-effort dispatch `AWS-PROD-DEPLOY-GATEWAY.yml` alongside the GCP `EXEC-DEPLOY.yml` dispatch — see `services/gateway/src/routes/operator.ts` `POST /publish` step 7b. Not yet extended to the other 7 deploy paths. |
+| Command Hub PUBLISH target | `PUBLISH_TARGET_CLOUD=aws` (gateway env var, VTID-03420, default `gcp`) switches the PUBLISH button to promote **AWS staging → AWS prod**: `POST /publish` resolves the commit `vitana-gateway` staging actually serves (HTTP build-info, never ECS status) and dispatches `AWS-PROD-DEPLOY-GATEWAY.yml` in `promote-staging` mode with `expected_commit` pinned — the exact tested ECR image ships, no rebuild. `/operator/revisions` for the two gateway rows is likewise build-info-backed (Cloud Run APIs have no credentials on ECS). `GCP_DUAL_PUBLISH_ENABLED=true` (default off) additionally refreshes the GCP rollback target via EXEC-DEPLOY with the same commit. With the var unset/`gcp`, the original GCP flow is untouched (where `AWS_DUAL_PUBLISH_ENABLED=true` still best-effort dispatches the AWS workflow — legacy leg, rebuilds `main`). |
 
 **Secrets intentionally deferred (2026-07-24):** `ANTHROPIC_API_KEY` and
 `OPENAI_API_KEY` are not populated in AWS Secrets Manager pending an AWS
@@ -650,6 +650,17 @@ FRONTEND_DEPLOY_REPO=exafyltd/vitana-v1
 # regardless of this flag — see §1b. Failure on the AWS leg never fails the
 # publish (response reports aws_promote.ok=false with detail).
 AWS_DUAL_PUBLISH_ENABLED=true|false
+# VTID-03420: which cloud the Command Hub PUBLISH button promotes. 'aws' =
+# promote AWS staging (vitana-gateway) → AWS prod (vitana-gateway-awsdr) by
+# exact-image promotion (AWS-PROD-DEPLOY-GATEWAY.yml promote-staging mode,
+# expected_commit pinned); default 'gcp' = original gateway-staging →
+# gateway Cloud Run flow. Set 'aws' on the AWS task defs post-VTID-03419.
+PUBLISH_TARGET_CLOUD=aws|gcp
+# VTID-03420 (only used when PUBLISH_TARGET_CLOUD=aws): when 'true', PUBLISH
+# also best-effort ships the same commit to GCP Cloud Run via EXEC-DEPLOY so
+# the standing rollback target stays fresh. Default off — mirror image of
+# AWS_DUAL_PUBLISH_ENABLED's deliberate-action tradeoff.
+GCP_DUAL_PUBLISH_ENABLED=true|false
 GOOGLE_CLOUD_PROJECT=lovable-vitana-vers1
 GCP_PROJECT=lovable-vitana-vers1
 VERTEX_LOCATION=us-central1
@@ -1187,6 +1198,7 @@ Use these PATs with the GitHub REST API (`api.github.com`) for all PR and deploy
 
 | Date | Change | VTID |
 |------|--------|------|
+| 2026-07-28 | AWS staging→prod publish path (PUBLISH parity): `AWS-PROD-DEPLOY-GATEWAY.yml` gained `deploy_mode=promote-staging` (new default — ships the EXACT ECR image `vitana-gateway` staging runs, verified over HTTP build-info, pinned via new `expected_commit` input; `rebuild-main` keeps the old from-source path) and its smoke URL default is now canonical `gateway.vitanaland.com`. Gateway: new `PUBLISH_TARGET_CLOUD=aws\|gcp` switch (default `gcp`, zero change until set) makes `POST /operator/publish` promote AWS staging→AWS prod (frontend leg → `AWS-PROD-DEPLOY-FRONTEND.yml`; optional `GCP_DUAL_PUBLISH_ENABLED` refreshes the GCP rollback target; canary → 400 on AWS) and backs `/operator/revisions` for the gateway rows with build-info from the AWS stacks — fixes the Command Hub PUBLISH popover's "Could not load: staging 500" on the ECS-served gateway (no GCP ADC there). New `services/gateway/src/services/aws-gateway-admin.ts` (HTTP-only introspection; `vitana-ecs-task-role` has no `ecs:Describe*`). | VTID-03420 |
 | 2026-07-24 | Added automatic once-a-day "Did You Know" News Feed card: `did_you_know_state` table (per-tenant rotation index) + `POST /api/v1/scheduled-notifications/daily-feature-tip` (advances through a curated `services/gateway/src/data/feature-tips.ts` list, publishes a tenant-wide `did-you-know-feature` announcement, fans out in-app + push in each user's locale) + Cloud Scheduler entry (`scripts/setup-cloud-scheduler.sh`, daily 17:00 UTC). Companion vitana-v1 fix: feature-announcement cards no longer pinned permanently at the News Feed top — now merge chronologically into the post stream so they get pushed down by new posts, per live user report. No VTID existed for this yet; tracked under this BOOTSTRAP tag pending one. Requires someone with `gcloud` access to run the updated `setup-cloud-scheduler.sh` once to actually create the Cloud Scheduler job — code shipping does not create it automatically. | BOOTSTRAP-DAILY-FEATURE-TIP |
 | 2026-07-24 | Built the AWS-DR RunTask dispatch path for the autopilot executor — new `dispatchExecutorJobAws()` in `services/gateway/src/services/aws-ecs-admin.ts` (mirrors `dispatchExecutorJob()`'s return shape via `ecs:RunTask` against task def family `vitana-autopilot-executor`), branched in `dev-autopilot-execute.ts` on a new `DEV_AUTOPILOT_JOB_CLOUD=aws\|gcp` env var (default `gcp`). New `AWS-PROD-DEPLOY-AUTOPILOT-EXECUTOR.yml` (build+push+register only — no ECS service to roll, next RunTask dispatch picks up `:LATEST`). `ANTHROPIC_API_KEY`/`OPENAI_API_KEY` deliberately omitted from the live task definition (deferred pending AWS/Anthropic sponsorship decision). Updated §1b table + Never-rule exception. | VTID-03415 |
 | 2026-07-24 | Added the missing AWS deploy pipeline for `orb-agent` (`AWS-PROD-DEPLOY-ORB-AGENT.yml`) — the ECS service and task def family (`vitana-orb-agent`) already existed from the unexplained 2026-07-09 bulk-provisioning event, but had no CI/CD, so it could silently drift from `main`. No public ALB/DNS (outbound-only to LiveKit Cloud) — verified via ECS-level container `healthCheck` + `aws ecs wait services-stable`. Updated §1b table. | VTID-03414 |
