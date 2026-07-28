@@ -1430,9 +1430,12 @@ async function scheduleReminderFcmPush(
       reminder_id: row.id,
       // Deep-link to the reminder action overlay (Mark done / Snooze /
       // Dismiss) rather than the bare list — the frontend opens
-      // ReminderInterruptOverlay when ?fire=<id> is present, matching the
-      // in-app SSE behaviour on a push click.
-      url: `/reminders?fire=${row.id}`,
+      // ReminderInterruptOverlay when the fire id is present, matching the
+      // in-app SSE behaviour on a push click. Path-based, not query-string —
+      // Appilix's Android in-app browser silently fails to launch
+      // notification URLs containing a query string (see App.tsx's
+      // BOOTSTRAP-NOTIF-MESSENGER-DIAG comment).
+      url: `/reminders/fire/${row.id}`,
       spoken_message: row.spoken_message || '',
     },
   };

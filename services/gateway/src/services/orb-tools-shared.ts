@@ -2303,7 +2303,7 @@ export async function tool_send_chat_message(
 
     // VTID-02966 (Issue #3): push-notify the receiver. Mirrors chat.ts:80-135
     // exactly — same payload shape (title=sender display name, body=trimmed
-    // content with 100-char cap, data.url deep-links to /inbox?thread=...).
+    // content with 100-char cap, data.url deep-links to /inbox/u/<id>).
     // Skipped for the Vitana bot (its replies go through handleVitanaTextReply
     // already, no push needed). Fire-and-forget; notification failures must
     // never break the voice flow.
@@ -2342,7 +2342,11 @@ export async function tool_send_chat_message(
               sender_name: senderName,
               ...(insertedId && { message_id: insertedId }),
               thread_id: id.user_id,
-              url: `/inbox?thread=${id.user_id}&context=global`,
+              // Path-based, not query-string — Appilix's Android in-app
+              // browser silently fails to launch notification URLs
+              // containing a query string (see App.tsx's
+              // BOOTSTRAP-NOTIF-MESSENGER-DIAG comment).
+              url: `/inbox/u/${id.user_id}`,
               source: 'voice',
             },
           },
