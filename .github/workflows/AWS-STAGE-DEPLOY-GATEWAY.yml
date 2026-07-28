@@ -178,6 +178,20 @@ jobs:
           # EVERY deploy so a canary flip (or rollback to disabled/empty) is
           # exactly one variable change + one dispatch. Never AWS access keys
           # here — Nova auth is the task role via the SDK default chain.
+          #
+          # BOOTSTRAP-NOVA-SONIC-VOICE: FEATURE_ORB_GREETING_TTS_BRIDGE_ENV
+          # is upserted to "off" below (2026-07-28, disabled) -- rejected on
+          # product grounds (voice mismatch: the Cloud TTS bridge phrase is
+          # never the same voice as the live upstream). See STAGE-DEPLOY.yml
+          # for the full rationale. Explicitly set to "off" (not removed) so
+          # it cannot silently drift back to a stale "staging-only" value
+          # left on the task definition from before.
+          #
+          # NOTE: comments inside the jq program string below (the single
+          # quoted block starting on the next line) must never contain an
+          # apostrophe -- it is bash single-quoted, so a stray "'" closes
+          # the string early and breaks the whole command (bit us once,
+          # see PR #2978's failed AWS deploy run).
           NEW_DEF=$(aws ecs describe-task-definition --task-definition "$TD_ARN" --query taskDefinition \
             | jq --arg IMG "$IMAGE" --arg SHA "$SHA" --arg SHORT "$SHORT" \
                  --arg NOVA_ENABLED "$NOVA_SONIC_ENABLED" \
@@ -197,14 +211,6 @@ jobs:
                           {name:"NOVA_SONIC_MODEL_ID", value:"amazon.nova-2-sonic-v1:0"},
                           {name:"NOVA_SONIC_CANARY_USER_IDS", value:$NOVA_USERS},
                           {name:"NOVA_SONIC_CANARY_TENANT_IDS", value:$NOVA_TENANTS},
-                          # BOOTSTRAP-NOVA-SONIC-VOICE: DISABLED (2026-07-28)
-                          # — rejected on product grounds (voice mismatch: the
-                          # Cloud TTS bridge phrase is never the same voice as
-                          # Nova Sonic's live voice). See STAGE-DEPLOY.yml's
-                          # matching entry for the full rationale. Explicitly
-                          # upserted to "off" (not just removed) so it can't
-                          # silently drift back to a stale "staging-only"
-                          # value left on the task definition from before.
                           {name:"FEATURE_ORB_GREETING_TTS_BRIDGE_ENV", value:"off"} ] )
                 | del(.taskDefinitionArn, .revision, .status, .requiresAttributes,
                       .compatibilities, .registeredAt, .registeredBy, .deregisteredAt)')
