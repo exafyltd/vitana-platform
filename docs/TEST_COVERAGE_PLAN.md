@@ -145,7 +145,7 @@ phase at pickup. Order is by risk: tenancy → memory → autopilot → brain/vo
 | **4. Memory stack (P0)** | platform | retrieval-router rule table, context-pack-builder, orb-memory-bridge, memory-facts-service (write_fact semantics), social-memory/*, memory routes | +3 weeks | ☐ |
 | **5. Autopilot (P0)** | platform | controller/event-loop/validator/verification/prompts + dev-autopilot queue & self-heal; governance gates (EXECUTION_DISARMED etc.) asserted | +4 weeks | ☐ |
 | **6. Vitana Brain + awareness engines (P1)** | platform | vitana-brain, d32/d40/d44/d48/d49, health-capacity, awareness-registry/watchdogs + routes | +5 weeks | ☐ |
-| **7. Voice/ORB tools (P1)** | platform | voice-* services, voice-tools/*, orb-live & orb-livekit route contracts | +6 weeks | ☐ |
+| **7. Voice/ORB tools (P1) — Nova-first** | platform | voice-* services, voice-tools/*, orb-live & orb-livekit route contracts. **AWS note (2026-07-22):** the Nova Sonic (AWS Bedrock) voice stack in `src/orb/live/upstream/` already has green suites for 13/15 files (`nova-sonic-live-client`, `-protocol`, `-config`, `-keepwarm`, `nova-instruction-sanitizer`, `active-provider-resolver`, `upstream-provider-selector`, …); `nova-ws-facade.ts` gets a test in Phase 2. Write all new voice tests against the provider-adapter boundary, prioritizing the Nova path; when Vertex is retired, delete `vertex-live-client(.test).ts` and update the `llm-router` vertex-flagship assertion — nothing else in the suite is Vertex-bound. | +6 weeks | ☐ |
 | **8. Frontend domain logic (P1)** | vitana-v1 | wallet (client, exchangeRates, useWallet*), messaging (messageStatus, caches), offline (OfflineProvider, calendarPendingQueue), i18n helpers, orb client libs, autopilot hooks, health calculators (vitanaIndex, goalTrend, planSummaryCalculator) | +6 weeks | ☐ |
 | **9. Sibling services & packages** | platform | mcp-gateway, mcp, vaea, openclaw-bridge, worker-runner depth; pytest in CI for services/agents + packages/llm-router | +7 weeks | ☐ |
 | **10. Edge functions** | vitana-v1 | Deno tests for `_shared/llm-locale.ts` + top 10 critical functions (stripe-webhook, ai-chat, autopilot-profile, search-memories, set_active_tenant, vertex-live…) | +8 weeks | ☐ |
@@ -156,6 +156,22 @@ workflow, no new quarantines, coverage for the touched area ≥80% lines,
 mocked Supabase only via the existing `test/__mocks__` patterns.
 
 ---
+
+## 3b. Infrastructure-migration note (GCP → AWS, 2026-07-22)
+
+The test system in this plan is deliberately **cloud-agnostic**: suites run
+on GitHub Actions runners and mock all I/O, so the GCP→AWS migration does
+not invalidate any of it. Specifically:
+- Bedrock text-LLM adapter (VTID-03403, `eu-central-1`) is asserted in
+  `test/llm-router.test.ts`.
+- The Nova Sonic voice stack (Vertex/Gemini Live replacement for ORB) is
+  already in-tree and 13/15 files are already covered (see Phase 7 note).
+- Only two Vertex-bound test artifacts exist; both are trivial to retire
+  with the provider (Phase 7 note).
+- Out of scope for this plan but flagged: the deploy workflows
+  (`EXEC-DEPLOY` etc.) and CLAUDE.md's ALWAYS-rules still declare GCP
+  canonical — those need their own migration pass when AWS is confirmed
+  as the target.
 
 ## 4. The automation routine (stability guarantee)
 
