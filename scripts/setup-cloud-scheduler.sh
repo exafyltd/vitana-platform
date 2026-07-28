@@ -65,6 +65,80 @@ JOBS=(
   "AP-0510|upcoming-events-today|0 8 * * *|Europe/Berlin"
 )
 
+# ──────────────────────────────────────────────────────────────
+# Memory & Intelligence automations (VTID-01250 / BOOTSTRAP-MEMORY-
+# DAILY-LEARNING) — AP-0906 through AP-0913.
+#
+# ROOT CAUSE: these automations were registered in
+# automation-registry.ts with triggerType: 'cron' and real cron
+# expressions, but were NEVER added to this script. A registry
+# cronExpression is just descriptive metadata — it does not create a
+# Cloud Scheduler job by itself. Every execution of these automations,
+# ever, has trigger_type='manual' in automation_runs (confirmed via
+# direct query) — meaning no scheduler has ever invoked them, including
+# AP-0907 (Daily Learning Digest — the "I learned something new about
+# you today" push), which has zero runs in its entire history. That is
+# why users never see daily learning surfaced: nothing has ever run it
+# on a schedule.
+#
+# Schedules below are copied verbatim from automation-registry.ts's
+# triggerConfig.cronExpression comments. UTC (not Europe/Berlin): these
+# are backend batch/analytics jobs over all users' data, not a
+# single-user local-time notification slot — same reasoning as the
+# daily-recompute / daily-pace-notifications jobs further down this
+# file, which are also UTC.
+# ──────────────────────────────────────────────────────────────
+MEMORY_INTELLIGENCE_JOBS=(
+  "AP-0906|memory-routine-pattern-extraction|30 3 * * *|UTC"
+  "AP-0909|memory-relationship-graph-projection|50 3 * * *|UTC"
+  "AP-0908|memory-behavior-preference-inference|40 4 * * *|UTC"
+  "AP-0912|memory-health-correlation-insights|55 4 * * *|UTC"
+  "AP-0911|memory-user-model-synthesis|5 5 * * *|UTC"
+  "AP-0913|memory-own-post-capture|15 * * * *|UTC"
+  "AP-0910|memory-embedding-backfill|25 * * * *|UTC"
+  "AP-0907|memory-daily-learning-digest|10 18 * * *|UTC"
+)
+
+for JOB in "${MEMORY_INTELLIGENCE_JOBS[@]}"; do
+  IFS='|' read -r AP_ID NAME SCHEDULE TIMEZONE <<< "$JOB"
+  JOB_NAME="autopilot-${NAME}"
+  TARGET_URL="${GATEWAY_URL}/api/v1/automations/cron/${AP_ID}"
+
+  if $DELETE; then
+    echo "Deleting: $JOB_NAME"
+    if ! $DRY_RUN; then
+      gcloud scheduler jobs delete "$JOB_NAME" \
+        --project="$PROJECT" \
+        --location="$REGION" \
+        --quiet 2>/dev/null || echo "  (not found, skipping)"
+    fi
+  else
+    echo "Creating: $JOB_NAME → $AP_ID ($SCHEDULE $TIMEZONE)"
+    if ! $DRY_RUN; then
+      gcloud scheduler jobs delete "$JOB_NAME" \
+        --project="$PROJECT" \
+        --location="$REGION" \
+        --quiet 2>/dev/null || true
+
+      gcloud scheduler jobs create http "$JOB_NAME" \
+        --project="$PROJECT" \
+        --location="$REGION" \
+        --schedule="$SCHEDULE" \
+        --time-zone="$TIMEZONE" \
+        --uri="$TARGET_URL" \
+        --http-method=POST \
+        --headers="Content-Type=application/json" \
+        --message-body="{\"tenant_id\":\"$TENANT_ID\"}" \
+        --attempt-deadline=300s \
+        --max-retry-attempts=1 \
+        --description="Autopilot $AP_ID: $NAME"
+    fi
+  fi
+done
+
+echo ""
+echo "Done. ${#MEMORY_INTELLIGENCE_JOBS[@]} memory-intelligence scheduler jobs processed."
+
 for JOB in "${JOBS[@]}"; do
   IFS='|' read -r AP_ID NAME SCHEDULE TIMEZONE <<< "$JOB"
   JOB_NAME="autopilot-${NAME}"
