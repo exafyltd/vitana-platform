@@ -869,7 +869,7 @@ export async function computeSituationalAwareness(
   const startTime = Date.now();
   const computedAt = new Date().toISOString();
 
-  console.log(`${LOG_PREFIX} Computing situational awareness for user ${input.user_id.substring(0, 8)}...`);
+  console.log(`${LOG_PREFIX} Computing situational awareness for user ${(input.user_id || '').substring(0, 8)}...`);
 
   try {
     // Assemble situation vector
@@ -1160,7 +1160,7 @@ export async function overrideSituation(
     clear_constraints?: boolean;
   }
 ): Promise<SituationOverrideResponse> {
-  console.log(`${LOG_PREFIX} Processing situation override for user ${userId.substring(0, 8)}...`);
+  console.log(`${LOG_PREFIX} Processing situation override for user ${(userId || '').substring(0, 8)}...`);
 
   try {
     // Build input with explicit overrides
