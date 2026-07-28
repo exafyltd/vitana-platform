@@ -1412,7 +1412,12 @@ export function buildAwarenessBlock(
 export function buildBrainToolDefinitions(role: string): object[] {
   // Import tool registry (already role-gated)
   const { getGeminiToolDefinitions } = require('./tool-registry');
-  const registryTools = getGeminiToolDefinitions(role);
+  // getGeminiToolDefinitions() returns { functionDeclarations: [...] } (see
+  // its Gemini-API-shaped contract in tool-registry.ts, also consumed this
+  // way by conversation-client.ts and routes/conversation.ts) — not a bare
+  // array. Unwrapping here was missing, so any real call crashed with
+  // "registryTools.map is not a function" / "registryTools is not iterable".
+  const registryTools = getGeminiToolDefinitions(role).functionDeclarations;
 
   // ORB-specific tools that aren't in the registry yet
   const orbTools = [
