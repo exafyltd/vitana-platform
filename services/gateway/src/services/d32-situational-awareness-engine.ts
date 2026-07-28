@@ -184,13 +184,16 @@ function assembleTimeContext(input: SituationalAwarenessInput): TimeContext {
   let localTime: Date;
   try {
     // Create a formatter for the timezone.
-    // hourCycle is pinned to 'h23' explicitly: hour12:false alone doesn't
-    // guarantee a 00-23 range — some ICU builds resolve the default hour
-    // cycle to 'h24', which formats midnight as "24" instead of "00" and
-    // silently corrupts `hour`/`minutes_since_midnight` for any local
+    // hourCycle is pinned to 'h23' and hour12 is OMITTED (not set to false):
+    // per the Intl.DateTimeFormat spec, an explicit hour12 value always wins
+    // over hourCycle and silences it entirely — so `hour12: false` alongside
+    // `hourCycle: 'h23'` makes hourCycle a no-op. hour12:false alone also
+    // doesn't guarantee a 00-23 range: some ICU builds resolve its implied
+    // hour cycle to 'h24', which formats midnight as "24" instead of "00"
+    // and silently corrupts `hour`/`minutes_since_midnight` for any local
     // midnight. This is environment-dependent (varies by Node/ICU version),
-    // which is exactly what made it slip through local runs before failing
-    // in CI.
+    // which is exactly what made a hour12-only fix pass locally but still
+    // fail in CI's runner.
     const formatter = new Intl.DateTimeFormat('en-US', {
       timeZone: timezone,
       year: 'numeric',
@@ -199,7 +202,6 @@ function assembleTimeContext(input: SituationalAwarenessInput): TimeContext {
       hour: '2-digit',
       minute: '2-digit',
       second: '2-digit',
-      hour12: false,
       hourCycle: 'h23'
     });
 
