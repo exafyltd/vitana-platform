@@ -575,16 +575,27 @@
           .then(function (r) { return r.ok ? r.json() : Promise.reject(new Error('staging ' + r.status)); }),
         fetch('/api/v1/operator/revisions?service=gateway&limit=5', { credentials: 'include', headers })
           .then(function (r) { return r.ok ? r.json() : Promise.reject(new Error('prod ' + r.status)); }),
+        // Frontend (community-app) staging revision. Publish promotes BOTH the
+        // gateway and the frontend, so show the latest frontend staging build
+        // here too — otherwise a frontend-only change looks like "not updated".
+        // Tolerant: a failure resolves to null and must not break the gateway
+        // before/after comparison.
+        fetch('/api/v1/operator/revisions?service=community-app-staging&limit=1', { credentials: 'include', headers })
+          .then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; }),
       ])
         .then(function (results) {
           const sRev = results[0] && results[0].revisions && results[0].revisions[0];
           const pRevs = (results[1] && results[1].revisions) || [];
+          const feRev = results[2] && results[2].revisions && results[2].revisions[0];
           if (!sRev) throw new Error('No staging revisions');
           const sf = window.__vitana_state && window.__vitana_state.publishFlow;
           if (!sf) return;
           sf.sourceRevision = sRev.shortName;
           sf.sourceCommit = sRev.commitSha || null;
           sf.sourceDeployedAt = sRev.createdAt || null;
+          sf.feSourceRevision = feRev ? feRev.shortName : null;
+          sf.feSourceCommit = feRev && feRev.commitSha ? feRev.commitSha : null;
+          sf.feSourceDeployedAt = feRev ? feRev.createdAt : null;
           // Detect canary-active: 2+ revisions with non-zero traffic.
           const trafficRevs = pRevs.filter(function (r) { return (r.trafficPercent || 0) > 0; });
           if (trafficRevs.length >= 2) {
@@ -636,17 +647,33 @@
       // Arrow.
       compareBlock.appendChild(el('div', { style: 'color:#666;font-size:14px;line-height:1;text-align:center;margin:6px 0 6px 2px;' }, '↓'));
 
-      // Source from staging.
+      // Source from staging — backend (gateway) + frontend (community-app), so
+      // a frontend-only change is visible here too. Publish promotes BOTH.
       compareBlock.appendChild(el('div', {
         style: 'color:#888;font-size:10px;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:3px;',
       }, 'Source from staging'));
+      const tagStyle = 'margin-left:auto;font-size:9px;text-transform:uppercase;letter-spacing:0.4px;color:#94a3b8;background:rgba(148,163,184,0.12);padding:1px 5px;border-radius:4px;';
       const sourceLine = el('div', { style: 'display:flex;align-items:center;gap:8px;' },
         el('span', { style: 'width:6px;height:6px;border-radius:50%;background:#93c5fd;flex:none;' }),
         el('code', { style: 'color:#fde68a;font-size:12px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;' },
           s.sourceCommit ? s.sourceCommit.slice(0, 7) : s.sourceRevision),
-        el('span', { style: 'color:#888;font-size:11px;' }, s.sourceDeployedAt ? formatTimeAgo(s.sourceDeployedAt) : '')
+        el('span', { style: 'color:#888;font-size:11px;' }, s.sourceDeployedAt ? formatTimeAgo(s.sourceDeployedAt) : ''),
+        el('span', { style: tagStyle }, 'backend')
       );
       compareBlock.appendChild(sourceLine);
+
+      // Frontend (community-app) staging — always show the latest frontend
+      // staging build so a frontend-only deploy isn't mistaken for "not updated".
+      if (s.feSourceCommit || s.feSourceRevision) {
+        const feSourceLine = el('div', { style: 'display:flex;align-items:center;gap:8px;margin-top:4px;' },
+          el('span', { style: 'width:6px;height:6px;border-radius:50%;background:#c4b5fd;flex:none;' }),
+          el('code', { style: 'color:#fde68a;font-size:12px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;' },
+            s.feSourceCommit ? s.feSourceCommit.slice(0, 7) : s.feSourceRevision),
+          el('span', { style: 'color:#888;font-size:11px;' }, s.feSourceDeployedAt ? formatTimeAgo(s.feSourceDeployedAt) : ''),
+          el('span', { style: tagStyle }, 'frontend')
+        );
+        compareBlock.appendChild(feSourceLine);
+      }
 
       // "Same as live" hint if commits match — operator should know the
       // publish would be a no-op.
