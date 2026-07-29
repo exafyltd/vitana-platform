@@ -44,8 +44,8 @@ CLI + Cloudflare DNS audit performed under this VTID.
 | community-app | AWS-DR built (VTID-03409). **Bakes the GCP `gateway.vitanaland.com` URL into its static Vite bundle at build time, by design** — it was built as a same-backend hot-standby, not a fully independent stack. Will break if GCP disappears without either repointing `gateway.vitanaland.com` to AWS or rebuilding against `dr-gateway.vitanaland.com`. See open decision §4.1. |
 | oasis-operator | AWS-DR built (VTID-03410) from a 9-month-old dead backup (`main.py.backup-20251101-111126`) with zero prior AWS production traffic history. No burn-in yet. |
 | oasis-projector / worker-runner / verification-engine | Bug-fixed + ECS health-checked + alarmed (VTID-03411). Deliberately **not** autoscaled or made public — `oasis-projector`'s ledger writer has no cross-instance locking (CLAUDE.md: "Never run parallel VTID executions"). **`worker-runner` has since been reviewed (2026-07-24) and found CONDITIONALLY SAFE for N>1**: its claim mechanism is a genuine server-side compare-and-swap (`SELECT ... FOR UPDATE` + conditional `UPDATE` inside one Postgres transaction, `claim_vtid_task` RPC in `supabase/migrations/20260413000000_fix_claim_accepts_scheduled.sql`), not a client-side read-then-write race, and no other shared mutable state exists between instances. The one real N>1-specific risk: an idle sibling instance will legitimately re-claim a VTID whose 60-minute claim lease expired due to sustained heartbeat failure on the active instance, causing double execution — condition for safety is that heartbeats reliably survive transient network hiccups; recommend alerting on sustained heartbeat failure before actually enabling autoscaling. Autoscaling itself has **not** been enabled — this is a documentation finding only, pending a decision on whether to act on it. |
-| orb-agent | **No AWS deploy path at all.** Named directly in CLAUDE.md §16 IF-THEN rule 24 alongside worker-runner as something needing prod updates. |
-| autopilot job (Cloud Run Job) | **No AWS deploy path at all.** |
+| orb-agent | Deploy path **now exists** — `AWS-PROD-DEPLOY-ORB-AGENT.yml` (VTID-03414). But the running ECS service `vitana-orb-agent` is a **false-green**: reports `healthStatus: HEALTHY` while running health-endpoint-only, because `AGENT_ENABLE_WORKER` and `GATEWAY_SERVICE_TOKEN` are absent from its task definition. The workflow swaps *image only* and carries env/secrets forward, so **deploying through it will faithfully redeploy a still-inert service**. See §4.2. |
+| autopilot job | Parity **now exists** — `AWS-PROD-DEPLOY-AUTOPILOT-EXECUTOR.yml` plus a real AWS RunTask dispatch path in the gateway (`dev-autopilot-execute.ts`, VTID-03415). `JOB_CLOUD=aws\|gcp` selects the target per gateway instance, with in-process fallback if dispatch fails. This closes what was previously flagged as needing an undecided application-design change. |
 | Database sync | RDS Aurora `vitana-aurora-prod` via DMS task `vitana-supabase-to-aurora` (full-load-and-cdc): 495/495 tables under live CDC from the same Supabase project GCP prod uses. `autopilot_recommendations`'s dedicated CDC task (`vitana-autopilot-cdc`), which was `FATAL_ERROR` for ~26h, was fixed 2026-07-24 via a clean restart — both tasks confirmed `running`. **Note:** the specific update that was stuck at the time of the original failure did not replicate (the fix restarts CDC capture from "now", not from the stale position) — a one-row historical drift, not an ongoing gap. |
 | Secrets | `vitana/supabase/prod/*` (4 secrets) current as of 2026-07-14/21; RDS-managed master credential rotates automatically. |
 | Alarms | 47 `vitana-*` CloudWatch alarms, all `OK`/`INSUFFICIENT_DATA`. `community-app-awsdr` and `oasis-operator-awsdr` now have the same 4-alarm set (cpu-high, memory-high, target-5xx, unhealthy-hosts) gateway-awsdr already had — closed 2026-07-24. A `vitana-dms-task-failure` EventBridge rule (source `aws.dms` → SNS topic `vitana-alarms-prod`) was also added the same day so a future DMS task failure isn't silent for 26+ hours again like `vitana-autopilot-cdc` was. **Resolved 2026-07-24: `vitana-alarms-prod` now has a confirmed subscriber** — `j.tadic@exafy.io` (email), confirmed via `aws sns list-subscriptions-by-topic` (`SubscriptionsConfirmed: 1`). All 47 alarms and the DMS-failure rule now notify a real endpoint. User explicitly confirmed single-email alerting is sufficient to close this item — no Slack/PagerDuty channel requested. |
@@ -86,14 +86,55 @@ objective — each item has a clear done/not-done state.
 - [x] **`vitana-alarms-prod` SNS topic has a real subscriber.** Resolved
       2026-07-24: `j.tadic@exafy.io` (email) confirmed via
       `aws sns list-subscriptions-by-topic`
-      (`SubscriptionsConfirmed: 1`) — all 47 CloudWatch alarms and the
-      DMS-failure rule now notify a real endpoint. User explicitly
-      confirmed single-email alerting is sufficient; no Slack/PagerDuty
-      channel requested.
-- [ ] **Frontend gateway-URL decision made and implemented** (§4.1) —
-      either `gateway.vitanaland.com` DNS is part of the cutover sequence
-      itself, or `community-app-awsdr` has been rebuilt against
-      `dr-gateway.vitanaland.com` and reverified.
+      (`SubscriptionsConfirmed: 1`).
+- [x] **Every alarm can actually reach that subscriber.** Fixed
+      2026-07-26 — and this was the *other* half of the same gap.
+      Independently of the missing subscriber, **21 of 47 alarms had no
+      `AlarmActions` whatsoever**: they would evaluate and change state
+      while publishing to nothing, so subscribing an endpoint alone
+      would not have made them notify. Affected every alarm created
+      during VTID-03398/03409/03410/03411 (`put-metric-alarm` silently
+      accepts an alarm with no actions). All 47 now target
+      `vitana-alarms-prod` for both `AlarmActions` and `OKActions`;
+      verified `MetricAlarms[?length(AlarmActions)==\`0\`]` → `[]`.
+- [~] **Google Chat as a second alerting channel** (VTID-03413). The
+      user asked for AWS alerts to reuse the Google Chat channel
+      already working for health checks, *in addition to* the email
+      subscriber above. Code is shipped —
+      `POST /api/v1/aws-alerts/sns` bridges SNS → the existing
+      `notifyGChat()` webhook with SNS signature verification — but it
+      is **not yet delivering**, blocked on two operator actions:
+    - [ ] **Chat webhook secret has a value.** Both
+          `vitana/google-chat/webhook-url` and `…-url-2` exist as names
+          with **zero versions** — no value was ever stored. Wiring one
+          into `gateway-awsdr` broke task startup and was rolled back
+          (see build log). Needs the real URL stored as a secret
+          version, then the task-def change re-applied.
+    - [ ] **An HTTPS subscription to the topic** pointing at that
+          route. `sns:Subscribe` is denied for this session's IAM user.
+    *Email alerting is unaffected by both and works today — this item
+    is additive, not a regression risk.*
+- [ ] **Every service has a *functional* probe, not just ECS health.**
+      Added 2026-07-26 after `vitana-orb-agent` was found `HEALTHY` on
+      ECS while running health-endpoint-only and doing no actual work
+      (§4.2). `healthStatus: HEALTHY` only means the container's health
+      command exited 0. Before cutover, each service needs one check
+      that proves it's doing its job — e.g. gateway
+      `/api/v1/admin/health` returning `env=production`, worker-runner
+      logging a successful registration, oasis-projector logging
+      `Database connected`, orb-agent registering a LiveKit worker.
+      *(gateway, community-app, oasis-operator, oasis-projector,
+      worker-runner and verification-engine were each functionally
+      verified when built/fixed; orb-agent is the known failure. This
+      item is about re-confirming all of them at cutover time, since
+      "was verified once" is not "is working now.")*
+- [x] **Frontend gateway-URL decision made** (§4.1) — DECIDED
+      2026-07-26: **DNS-first**. Hostnames don't change; cutover
+      repoints `gateway.vitanaland.com` + apex to AWS. The existing
+      `community-app-awsdr` build already targets
+      `gateway.vitanaland.com`, so **no frontend rebuild is needed** —
+      this stops being a blocker and becomes a property of the DNS
+      sequence in §3.
 - [ ] **`oasis-operator-awsdr` burn-in complete** — minimum 72 hours of
       healthy `ACTIVE`/`HEALTHY` status under real (not synthetic-only)
       traffic via the dual-publish path, zero unplanned restarts.
@@ -119,10 +160,21 @@ objective — each item has a clear done/not-done state.
       through whatever external IaC actually owns these resources, not
       hand-editing via aws-cli.)* Full rename or an explicit sign-off that
       the tag-only mitigation is sufficient still needed before cutover.
-- [ ] **`orb-agent` / autopilot-job AWS-parity decision made** (§4.2) —
-      either they get an AWS deploy path before cutover, or an explicit,
-      documented decision that they stay GCP-only post-cutover (and what
-      that means operationally).
+- [~] **`orb-agent` / autopilot-job AWS parity** (§4.2) — DECIDED
+      2026-07-26: build parity for both. Scoping done; **neither is
+      built yet**, and each has a complication:
+    - [ ] **`orb-agent`** — ⚠️ an ECS service already exists, reports
+          `HEALTHY`, and is **functionally inert** (health-endpoint-only:
+          `AGENT_ENABLE_WORKER` and `GATEWAY_SERVICE_TOKEN` both absent).
+          Needs config completion, the `http://`→`https://` fix, a
+          decision on reaching Vertex AI from AWS, and a deploy that
+          stops the old task before the new one registers with LiveKit.
+          See §4.2 — this is the clearest example of ECS-green ≠ working.
+    - [ ] **autopilot-job** — BLOCKED on an application-design
+          decision: it's dispatched by the gateway via the GCP Cloud
+          Run Admin API, so AWS parity needs a second dispatch path
+          (`aws ecs run-task`) plus a rule for choosing between them.
+          See §4.2.
 - [x] **`worker-runner` N>1 safety reviewed** — done 2026-07-24, verdict
       CONDITIONALLY SAFE (see §1 table row for detail + code citations).
       Autoscaling has **not** been enabled based on this finding — that
@@ -140,6 +192,71 @@ objective — each item has a clear done/not-done state.
 
 ## 3. DNS Repoint Sequence (for the execution VTID to follow)
 
+> **EXECUTION RECORD — VTID-03419, 2026-07-27 (live):**
+>
+> - **Gateway leg: DONE, verified externally.** ~13:38 UTC:
+>   `gateway.vitanaland.com` A `34.111.235.0` → CNAME
+>   `vitana-alb-prod-1579322953.eu-central-1.elb.amazonaws.com`
+>   (DNS-only). Pre-flight added the REQUIRED ALB host rules at
+>   priority 3 (`gateway.vitanaland.com` → `vitana-tg-gateway-awsdr`)
+>   and 4 (apex+`www` → `vitana-tg-community-awsdr`) — without these,
+>   flipped traffic silently lands on **staging** via the path rules at
+>   priority 10. Verified AWS-served via an external fetch:
+>   `cloud_run_service: null` + `booted_at` matching the ECS task
+>   (both clouds report `env=production`, so that field alone proves
+>   nothing; a sandbox egress proxy also cached the old A record for
+>   30+ min — use an external vantage).
+> - **Frontend version-skew guard:** AWS build was 4 days behind GCP
+>   live; `AWS-PROD-DEPLOY-FRONTEND.yml` (run 30273712730) rebuilt from
+>   `main` @ fc9bc0f → bundle `index-CqFaw389.js`, verified on
+>   `dr-app` **before** touching apex DNS.
+> - **Apex leg: DNS changed 14:14:52Z, BLOCKED at the Cloudflare edge.**
+>   Apex+`www` records verified pointing at the ALB, yet the edge kept
+>   serving the GCP origin 15+ min later. Control experiment: a fresh
+>   proxied record to the same ALB served through Cloudflare in ~20 s
+>   (hit the ALB default rule → staging JSON, as the rule table
+>   predicts). Fresh record = instant, edited records = pinned ⇒ a
+>   zone-level **origin override** (Origin Rule / Page Rule / Worker
+>   route) from the original Cloud Run setup pins apex+`www` to
+>   `community-app-…run.app`. The session's API token is DNS-scoped
+>   (rulesets/pagerules/workers reads all return auth errors), so
+>   removing it needs the dashboard or a `Zone → Rulesets` token.
+> - **User impact during the block: none** — visitors get the same GCP
+>   frontend as before, now calling the AWS-served gateway. Consistent
+>   hybrid state.
+> - Rollback values unchanged (see §6); GCP untouched and serving.
+>
+> **COMPLETION (2026-07-27, ~15:0x UTC): BOTH LEGS LIVE ON AWS.** The apex
+> "pinned origin" was neither DNS nor an Origin Rule: Cloudflare Worker
+> routes `vitanaland.com/*` + `www.vitanaland.com/*` → Worker
+> **`vitanaland-proxy`** (source in NO repo — dashboard-deployed), a bare
+> reverse proxy hard-coding `https://community-app-q74ibpv6ia-uc.a.run.app`.
+> **The apex never followed DNS, even on GCP.** Fix: user updated the
+> Worker's origin to `https://dr-app.vitanaland.com` (same-zone, no Worker
+> route → no loop; ALB cert valid) and deployed. Flip was instant.
+>
+> **Apex rollback is therefore a Worker edit, not a DNS revert:** set
+> ORIGIN/ORIGIN_HOST back to `community-app-q74ibpv6ia-uc.a.run.app` in
+> the `vitanaland-proxy` Worker and Deploy (~30 s). The DNS records for
+> apex/`www` are currently cosmetic while those Worker routes exist.
+>
+> Post-cutover verification (all through AWS): gateway `env=production`
+> with `cloud_run_service:null` from an external vantage; frontend serving
+> `index-CqFaw389.js` (fresh `main` build); authenticated READ
+> (notifications 200) and WRITE (mark-read 200) as the e2e test user; ORB
+> WebSocket `101` + `connected` session frame via `/api/v1/orb/live/ws`
+> (**probe must force `--http1.1`** — an h2 probe degrades to GET and
+> 404s, which is a probe artifact, not a fault); 60-min alarm watch armed.
+> Known-firing alarm: `vitana-oasis-projector-running-count-low`
+> (deliberate desiredCount=0; DisableAlarmActions denied to this session).
+>
+> Follow-ups this surfaced: `vitanaland-og-proxy` Worker (subpaths
+> `/shorts|profiles|events|products/*`) still hard-codes the **GCP
+> gateway** raw URL for OG-tag fetches — works while GCP lives, must be
+> repointed before any GCP shutdown. `vitanaland-proxy` source should be
+> brought into the repo. Cloudflare rules/workers tokens used today should
+> be revoked.
+
 Two independent hostnames need to move; do not repoint both
 simultaneously on a first cutover.
 
@@ -148,14 +265,36 @@ simultaneously on a first cutover.
 1. Confirm `dr-gateway.vitanaland.com` (`vitana-gateway-awsdr`) is
    healthy and has been serving the dual-publish path successfully for
    the burn-in period.
-2. **Lower the DNS TTL** on the `gateway.vitanaland.com` A record well
-   in advance (recommend ≥24h before the cutover window) so a rollback
-   propagates fast if needed. Cloudflare zone `859c786db63e634e0ee36065e8a06e20`.
-3. During a low-traffic window, repoint `gateway.vitanaland.com` from
-   the GCP anycast IP to the AWS ALB (same target `vitana-alb-prod`
-   already used by `dr-gateway.vitanaland.com`, or a dedicated
-   CNAME — decide at execution-VTID time based on Cloudflare's handling
-   of apex-style A records vs CNAME flattening).
+2. ~~Lower the DNS TTL ≥24h in advance.~~ **Not required — verified
+   2026-07-26.** Every record in Cloudflare zone
+   `859c786db63e634e0ee36065e8a06e20` is already at `ttl=1`
+   (Cloudflare "Automatic" = 300s for DNS-only records; irrelevant for
+   proxied ones, which change at the edge near-instantly). **This
+   removes what was the single longest lead-time prerequisite in this
+   runbook** — no 24h pre-stage is needed, and rollback propagates in
+   ≤5 min worst case.
+
+   Live record state:
+
+   | Record | Type | Proxied? | Currently points to |
+   |---|---|---|---|
+   | `gateway.vitanaland.com` | **A** | **DNS-only** | `34.111.235.0` (GCP) |
+   | `vitanaland.com` (apex) | CNAME | proxied | `community-app-…run.app` (GCP) |
+   | `www.vitanaland.com` | CNAME | proxied | `community-app-…run.app` (GCP) |
+
+3. During a low-traffic window, repoint `gateway.vitanaland.com` to the
+   AWS ALB. **Note the record-type change:** it is currently an **A**
+   record to a GCP anycast IP, but an ALB has no static IP — so this
+   becomes a **CNAME** to
+   `vitana-alb-prod-1579322953.eu-central-1.elb.amazonaws.com` (the
+   same target `dr-gateway.vitanaland.com` already uses). CNAME is
+   valid here because `gateway` is a subdomain, not the apex.
+   Sub-decision at execution time: leave it **DNS-only** (direct TLS to
+   the ALB's existing `*.vitanaland.com` ACM cert — closest to today's
+   behavior) or switch to **proxied** (Cloudflare terminates TLS; also
+   fine, and makes rollback instant). DNS-only is the smaller change.
+   Either way the ALB cert already covers the hostname, so no new
+   certificate is needed.
 4. Immediately verify: `curl https://gateway.vitanaland.com/api/v1/admin/health`
    returns `env:"production"` with a `cloud_run_service` or ECS-equivalent
    field indicating AWS, not GCP — mirrors the existing Deployment
@@ -202,8 +341,16 @@ Two options, mutually exclusive for a given cutover attempt:
   gateway have to be cut over as a coupled pair later anyway if you want
   to retire the `dr-*` naming.
 
-**No default is assumed here — needs an explicit user decision before
-the execution VTID's DNS sequence can be finalized.**
+**DECIDED 2026-07-26 — Option (A), DNS-first.** The user confirmed
+there is no new AWS production URL: `vitanaland.com` and
+`gateway.vitanaland.com` stay exactly as they are, and cutover means
+repointing those same hostnames from GCP to the AWS ALB.
+
+Consequence: `community-app-awsdr`'s existing build — which already
+bakes `https://gateway.vitanaland.com` — becomes correct automatically
+the moment the gateway DNS flips. **No frontend rebuild is required for
+cutover**, which removes what was previously listed as a blocker. The
+`dr-*` hostnames remain as pre-cutover verification endpoints only.
 
 ### 4.2 `orb-agent` / autopilot-job AWS parity
 
@@ -218,7 +365,90 @@ neither has any AWS deploy path today. Options:
   services" — which changes what "decommission GCP" even means in
   §5 below.
 
-**No default is assumed here either.**
+**DECIDED 2026-07-26 — build parity for both. Largely DONE already**,
+by parallel work that landed while this section still said "no AWS
+deploy path": `AWS-PROD-DEPLOY-ORB-AGENT.yml` (VTID-03414) and
+`AWS-PROD-DEPLOY-AUTOPILOT-EXECUTOR.yml` + the gateway's AWS RunTask
+dispatch path (VTID-03415, `JOB_CLOUD` env var selects GCP vs AWS).
+
+⚠️ **Deploy pipeline existing ≠ service working.** That distinction is
+the whole point of what follows — for autopilot the parity is real, for
+orb-agent it is not:
+
+**`orb-agent`** — ⚠️ **an AWS ECS service already exists and is a
+false-green.** `vitana-orb-agent` (task def rev 10) is `ACTIVE`,
+`runningCount=1`, and ECS reports `healthStatus: HEALTHY` — but its
+logs show it is running in **health-endpoint-only mode**, doing none of
+its actual work:
+
+```
+{"event": "orb_agent.ready_health_only", ...}
+INFO:src.orb_agent.registry_client:registry_heartbeat.disabled
+  — GATEWAY_SERVICE_TOKEN not set
+```
+
+Config diff against what `DEPLOY-ORB-AGENT.yml` passes on GCP:
+
+| Needed | Present on AWS? |
+|---|---|
+| `AGENT_ENABLE_WORKER=1` | ❌ **missing — this is why it's health-only** |
+| `GATEWAY_SERVICE_TOKEN` | ❌ missing → can't register with the gateway |
+| `GOOGLE_CLOUD_PROJECT` / `VERTEX_AI_LOCATION` | ❌ missing |
+| `ORB_AGENT_TEXT_ONLY` / `AGENT_LOG_LEVEL` | ❌ missing |
+| `LIVEKIT_URL` / `_API_KEY` / `_API_SECRET` | ✅ present (real values) |
+| `GATEWAY_URL` | ⚠️ `http://` — same scheme bug fixed under VTID-03408 |
+
+It also carries `DB_HOST`/`DB_READER_HOST`/`REDIS_HOST`/`SUPABASE_*`
+that the GCP deployment doesn't pass at all — consistent with the
+2026-07-09 bulk-provisioning template rather than a considered config.
+
+**The generalizable warning for cutover:** `healthStatus: HEALTHY` on
+ECS means *the container's health command returned 0*, not *the service
+is doing its job*. This service would have passed every automated gate
+in the cutover checklist while being functionally inert. Any
+"AWS is healthy, we're ready" claim needs at least one
+service-specific functional probe, not just ECS health.
+
+**Unresolved architectural question:** orb-agent's LLM path is
+Vertex AI (Google). Running it on AWS Fargate needs GCP credentials
+for Vertex, which the task definition has no provision for. Genuine
+cross-cloud parity here is not just env vars — it needs a decision on
+how (or whether) Vertex is reached from AWS.
+
+Other caveats:
+- Its own `README.md` states it is a **skeleton that does not run a
+  real conversation yet** — it's the standby alternative to the Vertex
+  Live pipeline (`orb-live.ts`), and exactly one of {vertex, livekit}
+  is active via `system_config.voice.active_provider`. Building AWS
+  parity ships a correct deployment of a non-functional service.
+- **Deploy-shape gotcha:** every warm instance registers itself with
+  LiveKit Cloud and receives room dispatches at random. GCP's deploy
+  workflow explicitly deletes older revisions for this reason
+  (`DEPLOY-ORB-AGENT.yml` lines ~141-170). A default ECS rolling
+  update would leave old and new tasks both registered and dispatching
+  — the AWS workflow must drain/stop the old task *before* the new one
+  registers, not after.
+
+**autopilot-job** — ✅ **DONE (VTID-03415).** It is a Cloud Run *Job*
+(`autopilot-executor`, built from `services/gateway/Dockerfile.job`),
+deliberately a job rather than a service because its LLM calls run
+3-5 min and get killed by Cloud Run service container recycling. There
+is no scheduler — the gateway dispatches each execution itself, so AWS
+parity genuinely required a gateway code change, not just a workflow.
+
+That change now exists: `dev-autopilot-execute.ts` has
+`dispatchExecutorJobAws()` alongside the GCP `dispatchExecutorJob()`,
+selected by a **`JOB_CLOUD`** env var (`'aws'` → ECS RunTask, otherwise
+GCP Cloud Run Job), with the existing in-process path as fallback when
+either dispatch fails. Both write results back through the same
+`job-entry.ts` / `applyExecutionResult` route, so caller-side handling
+is identical.
+
+Remaining for cutover: set `JOB_CLOUD=aws` on the AWS gateway task
+definition (it is not set today, so an AWS-hosted gateway would still
+dispatch to GCP), and run the executor once end-to-end on AWS to
+confirm — per the functional-probe rule, the dispatch path existing is
+not evidence it works.
 
 ---
 
@@ -249,9 +479,16 @@ until AWS has run as sole production for an agreed burn-in period
   lag/failure post-cutover, any `vitana-*` CloudWatch alarm firing within
   the first hour, or a manual call by whoever owns the cutover window.
 - **Mechanism:** revert the DNS record(s) changed in §3 back to their
-  pre-cutover GCP targets. This is why TTL is lowered *before* the
-  cutover window (§3.1 step 2, §3.2 step 2) — a same-TTL-as-normal
-  record can take hours to fully propagate a revert.
+  pre-cutover GCP targets. **Verified 2026-07-26:** every zone record is
+  already at Cloudflare "Automatic" TTL, so a revert propagates in
+  ≤5 min for the DNS-only `gateway` record and near-instantly for the
+  proxied apex/`www` records. No TTL pre-staging is required, and there
+  is no multi-hour propagation tail to plan around.
+  *(Record the exact pre-cutover values before changing anything —
+  `gateway.vitanaland.com` A → `34.111.235.0`; apex and `www` CNAME →
+  `community-app-q74ibpv6ia-uc.a.run.app` — since reverting a
+  type-changed record means restoring an A record, not just editing a
+  CNAME target.)*
 - **GCP must stay warm.** Per §5, GCP services are not touched (scaled
   down or deleted) until well after a successful, un-rolled-back cutover
   — so a rollback is always "repoint DNS back," never "redeploy GCP from

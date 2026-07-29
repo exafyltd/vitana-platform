@@ -30,13 +30,14 @@ const router = Router();
 
 // BOOTSTRAP-LLM-ROUTER: extended provider list (added deepseek + claude_subscription)
 // and made fallback nullable so a stage can be configured with no fallback.
-const ProviderEnum = z.enum([
-  'anthropic',
-  'vertex',
-  'openai',
-  'deepseek',
-  'claude_subscription',
-] as const);
+//
+// VTID-03413: derived from VALID_PROVIDERS rather than re-listed here. The
+// hand-maintained copy had drifted: VTID-03403 added the 'bedrock' adapter to
+// LLMProvider/VALID_PROVIDERS, but not to this enum — so the API physically
+// could not persist a Bedrock routing policy (400 Invalid request body), even
+// though the adapter, the Command Hub dropdown and the router all supported
+// it. Deriving from the single source of truth prevents the drift recurring.
+const ProviderEnum = z.enum(VALID_PROVIDERS as [LLMProvider, ...LLMProvider[]]);
 
 const StageConfigSchema = z.object({
   primary_provider: ProviderEnum,
@@ -46,6 +47,16 @@ const StageConfigSchema = z.object({
 });
 
 // BOOTSTRAP-LLM-ROUTER: extended schema with triage/vision/classifier stages.
+//
+// VTID-03413 NOTE — do not "fix" this by making vision/classifier optional.
+// That was tried and reverted: the `LLMRoutingPolicy` type, `VALID_STAGES`,
+// and `validatePolicy()`'s per-stage loop all require all eight stages, so
+// relaxing only this schema produces a type error and still fails in the
+// service layer. Meanwhile the *live* policy row contains just six stages
+// (no vision, no classifier), which means this endpoint currently cannot
+// round-trip its own current value — a POST of exactly what GET returns is
+// rejected as incomplete. Reconciling six-vs-eight is a real change to a
+// governed subsystem and needs its own VTID, not a drive-by edit here.
 const PolicySchema = z.object({
   planner: StageConfigSchema,
   worker: StageConfigSchema,

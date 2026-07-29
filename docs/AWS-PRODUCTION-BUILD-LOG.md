@@ -631,3 +631,314 @@ Attempted to self-remove `vitana-dms-autopilot-fix-temp` after the fix
 `vitana-awsdr-oidc-setup-temp` self-revoke attempt. Both temporary
 policies are still attached to `claude-staging-validation` pending
 manual removal by an operator with IAM write access.
+
+## Addendum (2026-07-26): VTID-03413 AWS alerting → Google Chat
+
+The user directed that AWS alerts should reuse the Google Chat channel
+already working for health checks, rather than a new channel.
+Investigating that surfaced the alerting chain was inert in **two**
+independent places, not one.
+
+### Finding 1: 21 of 47 alarms had no `AlarmActions` at all
+
+The SNS-topic-has-no-subscriber gap recorded in the previous addendum
+was only half the problem. `describe-alarms` showed 26/47 alarms wired
+to `vitana-alarms-prod` and **21 wired to nothing** — including every
+alarm created earlier this same session (all 4 `gateway-awsdr` alarms
+from VTID-03398, all 8 added for `community-app-awsdr`/
+`oasis-operator-awsdr`, and all 9 from the VTID-03411 hardening pass).
+They would evaluate and transition state correctly while notifying
+nobody, forever. This was my own omission across three prior VTIDs:
+`put-metric-alarm` silently accepts an alarm with no actions.
+
+Fixed by re-issuing each alarm's definition with `AlarmActions` +
+`OKActions` → `vitana-alarms-prod` (read each alarm, re-`put` it with
+actions added, preserving all thresholds/dimensions). Verified:
+
+```bash
+aws cloudwatch describe-alarms --alarm-name-prefix vitana- \
+  --query "MetricAlarms[?length(AlarmActions)==\`0\`].AlarmName" \
+  --region eu-central-1
+# → []   (was 21 names)
+```
+
+### Finding 2: the Google Chat webhook secrets are empty shells
+
+`vitana/google-chat/webhook-url` and `vitana/google-chat/webhook-url-2`
+both exist as secret **names** with `list-secret-version-ids` returning
+`"Versions": []` — no value was ever stored in either. Almost certainly
+placeholders from the same 2026-07-09 bulk-provisioning event that
+created the ~22 unexplained ECS services.
+
+**This caused a real (contained) incident.** Wiring
+`GCHAT_COMMANDHUB_WEBHOOK` → that secret and rolling
+`vitana-gateway-awsdr` to the new task-def revision `:3` made every new
+task fail to start:
+
+```
+ResourceInitializationError: unable to pull secrets or registry auth:
+  … failed to fetch secret …vitana/google-chat/webhook-url-rYPXY8 …
+  ResourceNotFoundException: Secrets Manager can't find the specified
+  secret value for staging label: AWSCURRENT.
+```
+
+ECS retried placement in a loop for ~4 minutes. **No request-path
+impact** — ECS correctly kept the healthy `:2` task serving the whole
+time, and `dr-gateway.vitanaland.com/alive` never stopped returning
+200. Rolled back with `update-service --task-definition
+vitana-gateway-awsdr:2`; confirmed `runningCount=1` on `:2` and the
+`:3` deployment `DRAINING`.
+
+**Lesson, worth generalizing:** referencing a Secrets Manager secret
+that exists-by-name but has no version is indistinguishable from a
+correct reference at `register-task-definition` time — it only fails at
+task placement. Before adding any `secrets` entry to a task definition,
+check `list-secret-version-ids`, not just `describe-secret`.
+
+Task-def revision `:3` remains registered but unused. **Do not deploy
+it** until the secret holds a real value.
+
+### What shipped vs. what's still blocked
+
+Shipped (this VTID): the `POST /api/v1/aws-alerts/sns` route
+(SNS-signature-verified, host-allowlisted cert fetch, handles
+CloudWatch-alarm and EventBridge payload shapes), its `express.text()`
+body-parser exception, and the 21 alarm-action fixes. The route
+degrades to a logged no-op when `GCHAT_COMMANDHUB_WEBHOOK` is unset
+(existing `notifyGChat()` behavior), so shipping it while the secret is
+still empty is safe.
+
+Still blocked on an operator, both recorded as go/no-go checklist items:
+
+1. **The actual Chat webhook URL** — needs storing as a version on
+   `vitana/google-chat/webhook-url`, then re-applying the task-def
+   change that was rolled back.
+2. **The SNS subscription itself** — `sns:Subscribe` is denied for this
+   session's IAM user, so nothing is subscribed to `vitana-alarms-prod`
+   yet. Until both are done the alerting chain is still end-to-end
+   inert, regardless of this VTID's code being live.
+
+### Finding 3: `vitana-orb-agent` is ECS-`HEALTHY` and functionally inert
+
+Scoping the "build orb-agent parity" instruction turned up that an ECS
+service **already exists** — `vitana-orb-agent`, task def rev 10,
+`ACTIVE`, `runningCount=1`, `healthStatus: HEALTHY`. It is one of the
+~22 never-investigated services from the 2026-07-09 bulk-provisioning
+event, and it is a **false-green**: the logs show it never starts its
+actual worker.
+
+```
+{"event": "orb_agent.boot", "livekit_url": "wss://maxina-...livekit.cloud"}
+INFO:src.orb_agent.registry_client:registry_heartbeat.disabled
+  — GATEWAY_SERVICE_TOKEN not set
+{"event": "orb_agent.ready_health_only"}
+```
+
+`orb_agent.ready_health_only` is the tell — `AGENT_ENABLE_WORKER` is
+absent from the AWS task definition, so the LiveKit worker subprocess
+never launches; only the FastAPI health endpoint runs. ECS health
+checks `/alive`, gets a 200, and reports the service healthy.
+
+Config gap vs. `DEPLOY-ORB-AGENT.yml`: missing `AGENT_ENABLE_WORKER`,
+`GATEWAY_SERVICE_TOKEN`, `GOOGLE_CLOUD_PROJECT`, `VERTEX_AI_LOCATION`,
+`ORB_AGENT_TEXT_ONLY`, `AGENT_LOG_LEVEL`; carries an
+`http://gateway.vitanaland.com` scheme bug (same class as VTID-03408's
+worker-runner/verification-engine fixes); and additionally carries
+`DB_HOST`/`DB_READER_HOST`/`REDIS_HOST`/`SUPABASE_*` that GCP's
+deployment doesn't pass at all. The LiveKit secrets *are* real
+(`list-secret-version-ids` shows versions on all three, unlike the
+Google Chat secrets in Finding 2).
+
+**Not fixed in this VTID** — deliberately. Completing it needs a
+decision this session can't make: orb-agent's LLM path is Vertex AI,
+and there is no provision in the task definition for GCP credentials
+from AWS Fargate. Setting `AGENT_ENABLE_WORKER=1` without solving that
+would turn a quietly-inert service into a loudly-failing one, which is
+worse during a cutover window. Recorded in
+`docs/AWS-CUTOVER-RUNBOOK.md` §4.2 with the open question.
+
+**The transferable lesson** (now a go/no-go checklist item): ECS
+`healthStatus: HEALTHY` means the container's health command exited 0
+— nothing more. Every service needs a probe that proves it is doing
+its job before "AWS is healthy" can be claimed at cutover.
+
+## Addendum (2026-07-26): functional-probe script + what it immediately found
+
+Added `scripts/aws/verify-aws-production.sh` — asserts on *behaviour*
+rather than liveness, because ECS `healthStatus: HEALTHY` had already
+proven misleading (the orb-agent false-green above). It probes each
+service for evidence it is doing its job, checks both DMS tasks, and
+checks that no alarm is firing *and* that none is action-less.
+
+Running it immediately produced three results worth recording.
+
+### It found a real, currently-broken service: oasis-projector
+
+`oasis-projector` connects to Aurora fine (`Database connected` is
+present) but its ledger-writer loop is failing repeatedly — **40
+occurrences** of:
+
+```
+PostgresError { code: "42P10", message: "there is no unique or exclusion
+constraint matching the ON CONFLICT specification" }
+  on prisma.projectionOffset.upsert()
+```
+
+`prisma/schema.prisma:92` declares `projectorName String @unique @map("projector_name")`
+on `@@map("projection_offsets")`, so the upsert emits
+`ON CONFLICT (projector_name)` — **and Aurora's copy of that table has
+no such unique constraint.**
+
+Likely root cause: the DMS task runs with `TargetTablePrepMode:
+DO_NOTHING` (visible in the task settings), so DMS never created or
+prepared the target schema — it replicates rows into pre-existing
+tables. Whatever created the Aurora schema did not carry over all
+unique constraints. **DMS replicating data is not the same as Aurora
+being schema-equivalent**, and nothing in the earlier "495/495 tables
+under live CDC" check would have caught this: row counts can be
+perfect while constraints are absent.
+
+Scope note, to avoid over-stating it: Supabase is an independent SaaS
+and is **not** affected by turning GCP off, so it remains the primary
+datastore through a cutover. Today the main Aurora writer is
+`oasis-projector`. But a schema-parity audit (constraints/indexes, not
+just tables and row counts) should be run before anything else is
+pointed at Aurora — the codebase has ~126 Prisma `.upsert()` calls,
+every one of which needs its matching unique constraint to exist.
+
+### It found the DMS fix from earlier today did not hold
+
+`vitana-autopilot-cdc` is `failed` again. It was restarted earlier
+today and verified `running` with zero failure events across 5+
+minutes — that verification was accurate at the time but too short to
+call the underlying problem solved. Treat the earlier "fixed" as
+"restarted", not "root-caused": the failure recurs.
+
+### It had a bug of its own, worth writing down
+
+The first run reported three false failures (`oasis-projector` DB
+connection, `worker-runner` registration, `verification-engine`
+heartbeat). All three services were in fact working — the probe helper
+called `aws logs get-log-events` without `--start-from-head`, which
+reads backward from the tail and reliably returns an empty first page.
+Fixed. The lesson generalises: a verification script that has never
+been run against a known-good system cannot distinguish its own bugs
+from real failures, which is why this one was run before being
+committed rather than after.
+
+## Addendum (2026-07-26, later): Aurora constraint drift FIXED
+
+Both failures in the previous addendum are resolved, and the underlying
+drift turned out to be far larger than the two constraints they exposed.
+
+### Reaching Aurora at all
+
+Aurora is not publicly accessible (`PubliclyAccessible: false` on both
+instances). Routes tried and rejected:
+
+- **RDS Data API** — `HttpEndpoint: true` on the cluster, but
+  `claude-staging-validation` lacks `rds-data:ExecuteStatement`.
+- **ECS Exec** — enabled on `vitana-worker-runner`, but its running task
+  predates the setting so it has no SSM sidecar
+  (`TargetNotConnectedException`). Restarting a healthy service purely to
+  obtain a shell wasn't justified.
+
+Route used: a **one-off Fargate task** running
+`public.ecr.aws/docker/library/postgres:17-alpine`, in the same
+subnets/SG as `oasis-projector` (proven to reach Aurora), with
+`DATABASE_URL` injected from `vitana/aurora/prod/database-url` by the
+**execution role** — which sidesteps this session's own
+`GetSecretValue` denial, since ECS resolves the secret, not the caller.
+Task defs `vitana-schema-parity-*`, logs in `/vitana/schema-parity`.
+
+### What the first run found
+
+```
+BEFORE:  primary_keys | unique_constraints
+              495     |         0
+```
+
+**Aurora had ZERO unique constraints** — not a few missing, none at all,
+against Supabase's 162. And `autopilot_recommendations` had **no primary
+key**, which is precisely why DMS could not apply UPDATEs to it: DMS
+matches rows by the *target's* PK. The INSERT-only full load succeeded
+and every subsequent update failed, exactly the observed
+17/18-then-dead pattern.
+
+Duplicate-row pre-checks returned zero for both target columns, so
+nothing was coerced to make the constraints fit.
+
+### The sweep
+
+660 statements (498 PK + 162 UNIQUE, 69 KB) generated from Supabase —
+too large for one task definition (64 KiB limit), so split into four
+batches, PKs first since CDC needs the target PK before uniques matter.
+Run with `ON_ERROR_STOP=0`: "already exists" / "multiple primary keys
+not allowed" is the *expected* outcome for the ~496 Aurora already had,
+and must not abort the rest.
+
+```
+AFTER:   primary_keys | unique_constraints
+              496     |        162          <- matches Supabase exactly
+```
+
+Remaining tables with no PK are only DMS's own control tables
+(`awsdms_apply_exceptions`, `awsdms_status`, `awsdms_suspended_tables`),
+which legitimately have none. **No application table is missing a
+primary key.** Aurora reports 499 base tables vs Supabase's 498
+PK-bearing tables — a small table-level delta worth a separate look, but
+not a constraint gap.
+
+### Outcome
+
+- `vitana-autopilot-cdc`: restarted with `start-replication` once the PK
+  existed, and has stayed `running` with zero failure events since.
+  The same restart method died after 90 seconds earlier the same day
+  against a PK-less table — that contrast is the evidence the root cause
+  was correct, not just that a restart happened to stick.
+- `oasis-projector`: its `42P10` is now fixable, but the service stays at
+  `desiredCount=0` **on purpose**. `projection_offsets` is inside the
+  DMS replication set, so restarting the projector makes it a second
+  writer to a table CDC also writes from Supabase. That is an ownership
+  decision (projector uses Supabase, or the table leaves the DMS set),
+  not something a constraint fixes.
+
+### Caveat on scope
+
+This reconciled PRIMARY KEY and UNIQUE constraints only. Foreign keys,
+check constraints, non-unique indexes, defaults, column types and RLS
+were **not** compared and may also have drifted — the same
+`TargetTablePrepMode: DO_NOTHING` that dropped uniques would have
+dropped those too. Do not read "162/162 uniques" as full schema
+equivalence.
+
+## Addendum (2026-07-27 ~15:30 UTC): concurrent DMS surgery by the migration team — observed state
+
+While the VTID-03419 post-cutover watch ran, a second operator (the
+migration team, evidently acting on the status report) performed DMS
+surgery. Observed read-only, deliberately not touched from this session
+— two operators on one replication stack is how a third incident gets
+made. State as found:
+
+- `vitana-supabase-to-aurora` **stopped** deliberately at 15:02:53Z
+  (`Stop Reason NORMAL`) and **not yet resumed** → all-tables CDC is
+  currently OFF; Aurora drifts from 15:02 onward until someone runs
+  `resume-processing` (checkpoint is fresh; a resume is clean).
+- New one-off task `vitana-reload-39-tables` (full-load, 15:03→15:05):
+  **38/39 tables reloaded successfully** — this is the fix for the
+  ~154k-dropped-applies divergence. 
+- The 1 errored table is — fittingly — `autopilot_recommendations`:
+  the reload TRUNCATEd it then failed to load, leaving it **EMPTY on
+  Aurora (0 rows vs 3,933 in Supabase)**. Schema survived intact
+  (PK + all 162 zone uniques verified post-reload).
+- `vitana-autopilot-cdc` was **deleted**. Combined with the main task's
+  mapping still EXCLUDING this table and the failed reload, the table
+  now has **no sync path at all**.
+
+Needed from whoever owns the surgery (this session's IAM was scoped to
+the now-deleted task's ARN, so it cannot act):
+1. `resume-processing` on `vitana-supabase-to-aurora`.
+2. For `autopilot_recommendations`: remove the exclude rule from the
+   main task's table mapping (the PK that motivated the split now
+   exists) and reload that one table — or re-run the one-off reload
+   for it. Until then it sits empty on Aurora.
