@@ -218,7 +218,12 @@ describe('bindUpstreamSessionHandlers — normalized session behavior', () => {
     ]);
   });
 
-  it('tool loop guard sends synthetic loop-break results for every call', async () => {
+  it('tool loop guard sends synthetic loop-break results for every call, framed as a benign result (not an error)', async () => {
+    // VTID-TOOLGUARD-FIX: a raw {success:false, error:'...'} shape was
+    // observed live to NOT stop Nova's tool-call loop (it read "error" as
+    // "tool failed, try another") — the guard must use the same
+    // success:true + speak_guidance shape as graceToolResultForModel so the
+    // model treats it as content to read, not a failure to retry past.
     const session = makeSession();
     session.consecutiveToolCalls = 99;
     const { client } = makeContext({ session });
@@ -226,9 +231,44 @@ describe('bindUpstreamSessionHandlers — normalized session behavior', () => {
     await flushPromises();
     expect(client.sentToolResults).toHaveLength(2);
     for (const r of client.sentToolResults) {
-      expect(r.success).toBe(false);
-      expect(r.error).toMatch(/Tool loop guard/);
+      expect(r.success).toBe(true);
+      expect(r.error).toBeUndefined();
+      const parsed = JSON.parse(r.output as string);
+      expect(parsed.ok).toBe(false);
+      expect(parsed.speak_guidance).toMatch(/do not call any tool/i);
     }
+  });
+
+  it('loop guard does NOT emit the hard-ceiling alert just past the soft threshold', async () => {
+    const session = makeSession();
+    // Soft threshold fallback is 5; hard ceiling is +10 = 15. One call past
+    // the soft threshold should still just send guidance, no hard alert.
+    session.consecutiveToolCalls = 6;
+    const { client, deps } = makeContext({ session });
+    client.emitToolCall({ calls: [{ id: 'a', name: 'x', args: {} }] });
+    await flushPromises();
+    expect(client.sentToolResults).toHaveLength(1);
+    const hardCeilingCalls = (deps.emitLiveSessionEvent as jest.Mock).mock.calls.filter(
+      (c) => c[1]?.hard_ceiling_exceeded === true,
+    );
+    expect(hardCeilingCalls).toHaveLength(0);
+  });
+
+  it('loop guard emits a distinct hard-ceiling alert once the model still has not stopped calling tools', async () => {
+    const session = makeSession();
+    // Soft threshold fallback is 5; hard ceiling is +10 = 15.
+    session.consecutiveToolCalls = 16;
+    const { client, deps } = makeContext({ session });
+    client.emitToolCall({ calls: [{ id: 'a', name: 'x', args: {} }] });
+    await flushPromises();
+    // Still gets the graceful guidance — the hard ceiling doesn't drop the
+    // response, it only adds a distinct alert on top.
+    expect(client.sentToolResults).toHaveLength(1);
+    const hardCeilingCalls = (deps.emitLiveSessionEvent as jest.Mock).mock.calls.filter(
+      (c) => c[1]?.hard_ceiling_exceeded === true,
+    );
+    expect(hardCeilingCalls).toHaveLength(1);
+    expect(hardCeilingCalls[0][2]).toBe('error');
   });
 
   it('input transcript accumulates, resets loop counters, arms watchdog', () => {
