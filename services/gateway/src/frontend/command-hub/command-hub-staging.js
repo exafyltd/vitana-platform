@@ -198,16 +198,50 @@
             .then(function (r) { return r.json().then(function (body) { return { status: r.status, body: body }; }); })
             .then(function (payload) {
               if (payload.status >= 200 && payload.status < 300 && payload.body && payload.body.ok) {
-                resultLine.style.color = '#86efac';
                 const url = payload.body.workflow_url;
-                resultLine.innerHTML = '✓ Publish dispatched. VTID ' + (payload.body.vtid || '—') + '. ';
+                const vtid = payload.body.vtid || null;
+                const startedAtMs = Date.now();
+
+                resultLine.style.color = '#9ca3af';
+                resultLine.innerHTML = 'Dispatched (VTID ' + (vtid || '—') + '). Verifying the new build is actually live — this can take a few minutes… ';
                 if (url) {
-                  const a = el('a', { href: url, target: '_blank', style: 'color:#60a5fa;text-decoration:underline;' }, 'Watch EXEC-DEPLOY');
+                  const a = el('a', { href: url, target: '_blank', style: 'color:#60a5fa;text-decoration:underline;' }, 'Watch deploy');
                   resultLine.appendChild(a);
                 }
-                publishBtn.textContent = 'Dispatched';
-                publishBtn.style.background = 'rgba(74,222,128,0.2)';
-                if (typeof opts.onAfterPublish === 'function') opts.onAfterPublish(payload.body);
+                publishBtn.textContent = 'Verifying…';
+                publishBtn.style.background = 'rgba(148,163,184,0.2)';
+
+                // Do NOT report success (or refresh CLOCK) off the dispatch
+                // response alone — /publish returns as soon as the workflow is
+                // KICKED OFF, before the rollout actually lands. Poll the same
+                // way the inline popover does, and only call onAfterPublish
+                // once the commit is confirmed serving. This is the fix for
+                // "PUBLISH said success but Currently Live still showed the
+                // old timestamp until I reopened the popover several times."
+                pollUntilCommitLive(shortSha, vtid, startedAtMs, headers, {
+                  onVerified: function () {
+                    resultLine.style.color = '#86efac';
+                    resultLine.innerHTML = '✓ Published and confirmed live. VTID ' + (vtid || '—') + '. ';
+                    if (url) {
+                      const a2 = el('a', { href: url, target: '_blank', style: 'color:#60a5fa;text-decoration:underline;' }, 'Watch deploy');
+                      resultLine.appendChild(a2);
+                    }
+                    publishBtn.textContent = 'Published';
+                    publishBtn.style.background = 'rgba(74,222,128,0.2)';
+                    if (typeof opts.onAfterPublish === 'function') opts.onAfterPublish(payload.body);
+                  },
+                  onError: function (message) {
+                    resultLine.style.color = '#fca5a5';
+                    resultLine.textContent = 'Dispatched but not confirmed live: ' + message;
+                    publishBtn.disabled = false;
+                    publishBtn.textContent = 'Publish to Production';
+                    publishBtn.style.background = '#16a34a';
+                    // Still refresh CLOCK — even an unconfirmed/failed publish
+                    // may have changed what's actually live; better a fresh
+                    // read than a stale one either way.
+                    if (typeof opts.onAfterPublish === 'function') opts.onAfterPublish(payload.body);
+                  },
+                });
               } else {
                 resultLine.style.color = '#fca5a5';
                 resultLine.textContent = 'Publish refused: ' + ((payload.body && (payload.body.detail || payload.body.error)) || ('HTTP ' + payload.status));
@@ -882,17 +916,29 @@
     setTimeout(tick, 8000);
   }
 
-  function pollUntilFullVerified(sf, headers, opts) {
-    const startSha = (sf.sourceCommit || '').slice(0, 7);
-    if (!startSha) { sf.phase = 'full-verified'; if (typeof renderApp === 'function') renderApp(); return; }
+  /**
+   * Shared verify-loop: polls until `commitSha` is confirmed actually live
+   * (build-info, then this attempt's fresh OASIS events as a fallback), or a
+   * fresh failure/timeout occurs. Exactly one of callbacks.onVerified() /
+   * callbacks.onError(message) fires — never both, never neither.
+   *
+   * Used by BOTH the inline popover (pollUntilFullVerified) and the legacy
+   * PUBLISH-modal card (renderPublishStagingCard) so a "✓ Published" claim
+   * always means the same thing: the promoted commit is confirmed serving,
+   * not merely that the dispatch HTTP call returned 200. Cloud-agnostic —
+   * /admin/build-info reflects whatever backend is actually answering this
+   * request (GCP Cloud Run pre-cutover, AWS ECS post-VTID-03419), so no
+   * PUBLISH_TARGET_CLOUD branching is needed here.
+   */
+  function pollUntilCommitLive(commitSha, vtid, startedAtMs, headers, callbacks) {
+    const startSha = (commitSha || '').slice(0, 7);
+    if (!startSha) { callbacks.onVerified(); return; }
     const startMs = Date.now();
     const tick = function () {
       if (Date.now() - startMs > 8 * 60 * 1000) {
         // Do NOT claim success on timeout — the deploy never confirmed live.
         // Reporting "✓ Published" here is a lie when the deploy actually failed.
-        sf.phase = 'error';
-        sf.message = 'Publish did not confirm within 8 min — do NOT assume it is live. Check the deploy workflow.';
-        if (typeof renderApp === 'function') renderApp();
+        callbacks.onError('Publish did not confirm within 8 min — do NOT assume it is live. Check the deploy workflow.');
         return;
       }
       // 1) Positive confirmation WINS. If the promoted commit is actually live,
@@ -904,18 +950,16 @@
         .then(function (r) { return r.ok ? r.json() : null; })
         .then(function (bi) {
           if (bi && bi.git_commit && bi.git_commit.slice(0, 7) === startSha) {
-            sf.phase = 'full-verified';
-            if (typeof renderApp === 'function') renderApp();
-            if (typeof opts.onAfterPublish === 'function') opts.onAfterPublish(sf);
+            callbacks.onVerified();
             return;
           }
           // 2) Commit is NOT live yet. Inspect THIS attempt's OASIS events —
           //    but publish VTIDs get REUSED, so a stale deploy.<svc>.failed (or
           //    .success) from a previous life of this VTID must be ignored.
           //    Only events at/after this publish started count.
-          if (!sf.vtid) { setTimeout(tick, 6000); return; }
-          var freshFloor = (sf.startedAt || startMs) - 3 * 60 * 1000; // clock-skew buffer
-          fetch('/api/v1/oasis/events?vtid=' + encodeURIComponent(sf.vtid) + '&limit=20', { credentials: 'include', headers })
+          if (!vtid) { setTimeout(tick, 6000); return; }
+          var freshFloor = (startedAtMs || startMs) - 3 * 60 * 1000; // clock-skew buffer
+          fetch('/api/v1/oasis/events?vtid=' + encodeURIComponent(vtid) + '&limit=20', { credentials: 'include', headers })
             .then(function (r) { return r.ok ? r.json() : null; })
             .then(function (body) {
               var evs = ((body && body.data) || []).filter(function (e) {
@@ -931,9 +975,7 @@
                        (t === 'vtid.lifecycle.completed' && e.status === 'success');
               });
               if (succeeded) {
-                sf.phase = 'full-verified';
-                if (typeof renderApp === 'function') renderApp();
-                if (typeof opts.onAfterPublish === 'function') opts.onAfterPublish(sf);
+                callbacks.onVerified();
                 return;
               }
               // Only a FRESH deploy/publish .failed (this attempt) is fatal.
@@ -942,9 +984,7 @@
                 return /\.failed$/.test(t) && /deploy|publish/.test(t);
               });
               if (failed) {
-                sf.phase = 'error';
-                sf.message = 'Deploy failed — production was NOT updated. Open the workflow for the error.';
-                if (typeof renderApp === 'function') renderApp();
+                callbacks.onError('Deploy failed — production was NOT updated. Open the workflow for the error.');
                 return;
               }
               setTimeout(tick, 6000);
@@ -954,6 +994,21 @@
         .catch(function () { setTimeout(tick, 6000); });
     };
     setTimeout(tick, 8000);
+  }
+
+  function pollUntilFullVerified(sf, headers, opts) {
+    pollUntilCommitLive(sf.sourceCommit, sf.vtid, sf.startedAt, headers, {
+      onVerified: function () {
+        sf.phase = 'full-verified';
+        if (typeof renderApp === 'function') renderApp();
+        if (typeof opts.onAfterPublish === 'function') opts.onAfterPublish(sf);
+      },
+      onError: function (message) {
+        sf.phase = 'error';
+        sf.message = message;
+        if (typeof renderApp === 'function') renderApp();
+      },
+    });
   }
 
 

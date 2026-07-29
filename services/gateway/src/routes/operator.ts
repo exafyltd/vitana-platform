@@ -1535,6 +1535,9 @@ async function publishAwsFlow(
     source_revision: stagingRevShort,
     initiator_id: identity.user_id,
   });
+  // See the GCP flow's identical invalidation above — same staleness bug,
+  // same fix, regardless of which cloud PUBLISH_TARGET_CLOUD points at.
+  ACTIVE_REV_CACHE.delete('gateway');
 
   await emitOasisEvent({
     vtid,
@@ -1830,6 +1833,11 @@ router.post('/publish', requireAdminAuth, async (req: Request, res: Response) =>
       source_revision: stagingRevShort,
       initiator_id: identity.user_id,
     });
+    // Publish just changed which revision is active; a stale ACTIVE_REV_CACHE
+    // entry would otherwise show the old "Currently Live" row for up to
+    // ACTIVE_REV_TTL_MS on the next /deployments read (same reason /revert,
+    // /revert-both, /promote, and /abort-canary all invalidate it).
+    ACTIVE_REV_CACHE.delete('gateway');
 
     // Emit different terminal events depending on mode.
     // Canary mode: the deploy DOES NOT promote to 100%; emit .requested only.
