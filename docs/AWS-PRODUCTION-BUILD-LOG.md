@@ -631,3 +631,68 @@ Attempted to self-remove `vitana-dms-autopilot-fix-temp` after the fix
 `vitana-awsdr-oidc-setup-temp` self-revoke attempt. Both temporary
 policies are still attached to `claude-staging-validation` pending
 manual removal by an operator with IAM write access.
+
+---
+
+## Addendum (2026-07-28): VTID-03420 activation — missing GITHUB_SAFE_MERGE_TOKEN on AWS gateway
+
+After merging VTID-03420 (AWS staging→prod publish parity) and setting
+`PUBLISH_TARGET_CLOUD=aws` on `vitana-gateway-awsdr`, the first live
+PUBLISH click from the Command Hub failed:
+
+```
+Failed: GITHUB_SAFE_MERGE_TOKEN environment variable is not set
+```
+
+Root cause: `triggerWorkflow()` (`github-service.ts`) reads
+`process.env.GITHUB_SAFE_MERGE_TOKEN` when no per-call token override is
+given, and the new `publishAwsFlow()` path dispatches
+`AWS-PROD-DEPLOY-GATEWAY.yml` without one. This is not a regression in
+the new code — it's the **first** code path where the AWS-hosted gateway
+container itself calls the GitHub API (every prior AWS workflow dispatch
+in this build was done manually via the session's own PAT, or from the
+GCP gateway, which has this var set). The AWS gateway task definition
+had never needed a GitHub token before.
+
+Found an existing, already-populated secret —
+`vitana/github/token` (created 2026-07-16, `LastAccessedDate` present —
+confirmed non-empty via `list-secret-version-ids` per the diagnostic
+this document already established after the earlier empty-Google-Chat-
+secret incident, since `claude-staging-validation` cannot
+`GetSecretValue` on `vitana/*` directly) — and bound it:
+
+- `vitana-gateway-awsdr:9` — added `GITHUB_SAFE_MERGE_TOKEN` as a
+  `secrets` entry (`valueFrom` the full secret ARN), preserving all 6
+  existing secrets and all 29 env vars. Rolled the service; watched the
+  deployment via `describe-services` events end-to-end (new task started
+  → registered in target group → old task drained/stopped → single
+  deployment COMPLETED, zero `failedTasks`, no
+  `ResourceInitializationError`). Post-rollout `/alive` (200),
+  `/api/v1/admin/health` (`env=production`), and `/api/v1/admin/build-info`
+  (still `b1ce82c`) all re-verified.
+
+**Full VTID-03420 activation sequence, end to end:**
+1. Waited for AWS staging (`vitana-gateway`) to auto-deploy the merged
+   PR and converge (staging briefly served two commits mid-rollout —
+   normal ECS rolling-deploy behavior, confirmed by polling until 6/6
+   consecutive reads agreed).
+2. Dispatched `AWS-PROD-DEPLOY-GATEWAY.yml` with
+   `deploy_mode=promote-staging`, `expected_commit` pinned to the merge
+   commit — succeeded, simultaneously closing the pre-existing
+   staging/prod drift (`0c72cfc`/`53cfb71`) and shipping the new publish
+   code itself to prod.
+3. Registered `vitana-gateway-awsdr:8` adding `PUBLISH_TARGET_CLOUD=aws`
+   (one env var, verified 28→29, all secrets preserved) — rolled clean.
+4. First live PUBLISH click surfaced the missing-token gap above;
+   registered `:9` adding the token secret — rolled clean, verified.
+
+**Confirmed durable** (2026-07-29 safety-net check-in): by the next day
+`vitana-gateway-awsdr` had progressed to task-def revision **14** — i.e.
+at least one successful PUBLISH click landed after `:9` shipped, and the
+promotion path has been used routinely since without falling back to
+manual dispatch. Revision 14 carries forward both `PUBLISH_TARGET_CLOUD=aws`
+and the `GITHUB_SAFE_MERGE_TOKEN` secret binding, service stable
+(rollout `COMPLETED`, 1/1, zero failed tasks). Prod (`a8e770c…`, itself
+already 2 merges past the `b1ce82c` this addendum started from) trails
+staging (`0b9191c…`) by 3 further merges — the expected shape of
+staging-ahead-of-prod, not drift.
