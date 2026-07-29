@@ -155,14 +155,32 @@ jobs:
 
       - name: Register task-definition revision + roll the service
         env:
-          # BOOTSTRAP-NOVA-SONIC-VOICE: Nova canary configuration comes from
-          # environment-scoped repository VARIABLES (not secrets — nothing here
-          # is secret; credentials are the ECS task role). Defaults keep Nova
-          # disabled with an empty canary. Model + region are FIXED here, not
-          # variables — changing them is a code decision, not a knob.
-          NOVA_SONIC_ENABLED: ${{ inputs.nova_sonic_enabled || vars.AWS_STAGE_NOVA_SONIC_ENABLED || 'false' }}
-          NOVA_SONIC_CANARY_USER_IDS: ${{ inputs.nova_canary_user_ids || vars.AWS_STAGE_NOVA_SONIC_CANARY_USER_IDS || '' }}
-          NOVA_SONIC_CANARY_TENANT_IDS: ${{ inputs.nova_canary_tenant_ids || vars.AWS_STAGE_NOVA_SONIC_CANARY_TENANT_IDS || '' }}
+          # BOOTSTRAP-NOVA-SONIC-VOICE: Nova canary configuration prefers
+          # environment-scoped repository VARIABLES when set (not secrets —
+          # nothing here is secret; credentials are the ECS task role), but
+          # the FALLBACK is now the canary hardcoded below (2026-07-28) —
+          # not 'false'/empty. Repo variables were never actually set, so
+          # every push-triggered deploy from an unrelated team's merge (this
+          # workflow has no path filter — ANY push to main runs it) reset
+          # Nova to disabled, over and over, requiring a manual
+          # workflow_dispatch re-enable each time. That is no longer
+          # tolerable operationally. If AWS_STAGE_NOVA_SONIC_ENABLED /
+          # AWS_STAGE_NOVA_SONIC_CANARY_USER_IDS repo variables are ever
+          # set, they still win (checked first) — this only changes what
+          # happens when they are absent. To roll back to fully disabled,
+          # dispatch manually with nova_sonic_enabled=false, or set the
+          # repo variable explicitly to 'false'.
+          #
+          # BOOTSTRAP-NOVA-SONIC-VOICE (2026-07-29): expanded from the
+          # 4-user canary to the internal "vitana" dev tenant
+          # (00000000-0000-0000-0000-000000000001, DEV_IDENTITY.TENANT_ID)
+          # for the runbook's next step (docs/NOVA-SONIC-CANARY-RUNBOOK.md
+          # §6: "one internal tenant -> observe one working day"). The 4
+          # individual canary users stay allowlisted too (harmless overlap
+          # -- both checks are independent `.has()` lookups).
+          NOVA_SONIC_ENABLED: ${{ inputs.nova_sonic_enabled || vars.AWS_STAGE_NOVA_SONIC_ENABLED || 'true' }}
+          NOVA_SONIC_CANARY_USER_IDS: ${{ inputs.nova_canary_user_ids || vars.AWS_STAGE_NOVA_SONIC_CANARY_USER_IDS || 'a27552a3-0257-4305-8ed0-351a80fd3701,c5a4daf9-190a-4a9e-9638-d6b32f85244a,a2c6ba7e-2ad4-48af-8253-9fe34d0f9232,0adc6ff6-acb0-4dca-99d0-295211a40e3e' }}
+          NOVA_SONIC_CANARY_TENANT_IDS: ${{ inputs.nova_canary_tenant_ids || vars.AWS_STAGE_NOVA_SONIC_CANARY_TENANT_IDS || '00000000-0000-0000-0000-000000000001' }}
         run: |
           set -e
           IMAGE="${{ steps.build.outputs.image }}"
@@ -178,6 +196,20 @@ jobs:
           # EVERY deploy so a canary flip (or rollback to disabled/empty) is
           # exactly one variable change + one dispatch. Never AWS access keys
           # here — Nova auth is the task role via the SDK default chain.
+          #
+          # BOOTSTRAP-NOVA-SONIC-VOICE: FEATURE_ORB_GREETING_TTS_BRIDGE_ENV
+          # is upserted to "off" below (2026-07-28, disabled) -- rejected on
+          # product grounds (voice mismatch: the Cloud TTS bridge phrase is
+          # never the same voice as the live upstream). See STAGE-DEPLOY.yml
+          # for the full rationale. Explicitly set to "off" (not removed) so
+          # it cannot silently drift back to a stale "staging-only" value
+          # left on the task definition from before.
+          #
+          # NOTE: comments inside the jq program string below (the single
+          # quoted block starting on the next line) must never contain an
+          # apostrophe -- it is bash single-quoted, so a stray "'" closes
+          # the string early and breaks the whole command (bit us once,
+          # see PR #2978's failed AWS deploy run).
           NEW_DEF=$(aws ecs describe-task-definition --task-definition "$TD_ARN" --query taskDefinition \
             | jq --arg IMG "$IMAGE" --arg SHA "$SHA" --arg SHORT "$SHORT" \
                  --arg NOVA_ENABLED "$NOVA_SONIC_ENABLED" \
@@ -187,7 +219,8 @@ jobs:
                 | .containerDefinitions[0].environment |=
                     ( [ .[] | select(.name | IN("GIT_COMMIT_SHA","COMMIT_SHA","BUILD_INFO_MARKER",
                                                 "NOVA_SONIC_ENABLED","NOVA_SONIC_REGION","NOVA_SONIC_MODEL_ID",
-                                                "NOVA_SONIC_CANARY_USER_IDS","NOVA_SONIC_CANARY_TENANT_IDS") | not) ]
+                                                "NOVA_SONIC_CANARY_USER_IDS","NOVA_SONIC_CANARY_TENANT_IDS",
+                                                "FEATURE_ORB_GREETING_TTS_BRIDGE_ENV") | not) ]
                       + [ {name:"GIT_COMMIT_SHA", value:$SHA},
                           {name:"COMMIT_SHA", value:$SHA},
                           {name:"BUILD_INFO_MARKER", value:$SHORT},
@@ -195,7 +228,8 @@ jobs:
                           {name:"NOVA_SONIC_REGION", value:"eu-north-1"},
                           {name:"NOVA_SONIC_MODEL_ID", value:"amazon.nova-2-sonic-v1:0"},
                           {name:"NOVA_SONIC_CANARY_USER_IDS", value:$NOVA_USERS},
-                          {name:"NOVA_SONIC_CANARY_TENANT_IDS", value:$NOVA_TENANTS} ] )
+                          {name:"NOVA_SONIC_CANARY_TENANT_IDS", value:$NOVA_TENANTS},
+                          {name:"FEATURE_ORB_GREETING_TTS_BRIDGE_ENV", value:"off"} ] )
                 | del(.taskDefinitionArn, .revision, .status, .requiresAttributes,
                       .compatibilities, .registeredAt, .registeredBy, .deregisteredAt)')
           NEW_ARN=$(aws ecs register-task-definition --cli-input-json "$NEW_DEF" \

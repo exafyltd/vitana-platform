@@ -5788,6 +5788,24 @@ function renderHeader() {
     publishBtn.className = 'header-pill header-pill--neutral';
     publishBtn.textContent = 'PUBLISH';
     publishBtn.onclick = async () => {
+        // window.VitanaStaging.env starts null and is filled in asynchronously
+        // by refreshEnv() (command-hub-staging.js). A click that lands before
+        // that first resolution used to silently fall through to the legacy
+        // modal below even on the PRODUCTION Command Hub — which does not
+        // poll for the deploy actually landing, so PUBLISH would report
+        // "dispatched" immediately while CLOCK kept showing the old revision.
+        // Resolve env first (refreshEnv() is TTL-cached, so this is a no-op
+        // fetch on every click after the first) so the branch below is never
+        // taken on stale/unknown env.
+        if (window.VitanaStaging && typeof window.VitanaStaging.refreshEnv === 'function' && !window.VitanaStaging.env) {
+            publishBtn.disabled = true;
+            publishBtn.textContent = 'PUBLISH';
+            try {
+                await window.VitanaStaging.refreshEnv();
+            } finally {
+                publishBtn.disabled = false;
+            }
+        }
         const isProdCH = window.VitanaStaging && window.VitanaStaging.env === 'production';
         if (isProdCH) {
             state.publishFlow = {

@@ -2,7 +2,9 @@
 
 **VTID:** VTID-03412
 **Status:** Living document — governance artifact, not an execution authorization.
-**Last updated:** 2026-07-24
+**Last updated:** 2026-07-29 (§1 DNS row + §3 EXECUTION RECORD corrected to
+reflect VTID-03419's completed gateway+frontend cutover — the file had
+drifted out of sync with reality after that execution)
 
 ---
 
@@ -39,7 +41,7 @@ CLI + Cloudflare DNS audit performed under this VTID.
 
 | Area | State |
 |---|---|
-| DNS | **Unmoved.** `gateway.vitanaland.com` and the `vitanaland.com` apex both resolve live to GCP today. Only `dr-*` hostnames (`dr-gateway`, `dr-app`, `dr-oasis-operator`) point at AWS. |
+| DNS | **Moved for 2 hostnames.** As of **VTID-03419** (executed 2026-07-27), `gateway.vitanaland.com` and the `vitanaland.com` apex (+`www`) both resolve live to AWS (`vitana-alb-prod`) — see §3's EXECUTION RECORD blocks for the exact sequence. This was a deliberately narrow cutover of these two hostnames only; it did **not** touch Aurora-dependent services, `oasis-projector`, `orb-agent`, `autopilot-cdc`, or decommission GCP (GCP remains fully running as the standing rollback target — see VTID-03419's own out-of-scope list, mirrored in §3). Everything else in this table (oasis-operator burn-in, mystery services, DB sync divergence, full GCP decommission) is still open and still gated on this runbook's §2 checklist + a separate, larger execution VTID. |
 | gateway | AWS-DR built (VTID-03398), autoscaled, alarmed, dual-publish wired. Healthy. |
 | community-app | AWS-DR built (VTID-03409). **Bakes the GCP `gateway.vitanaland.com` URL into its static Vite bundle at build time, by design** — it was built as a same-backend hot-standby, not a fully independent stack. Will break if GCP disappears without either repointing `gateway.vitanaland.com` to AWS or rebuilding against `dr-gateway.vitanaland.com`. See open decision §4.1. |
 | oasis-operator | AWS-DR built (VTID-03410) from a 9-month-old dead backup (`main.py.backup-20251101-111126`) with zero prior AWS production traffic history. No burn-in yet. |
@@ -52,11 +54,14 @@ CLI + Cloudflare DNS audit performed under this VTID.
 | ALB naming | `vitana-tg-gateway-prod` / `vitana-tg-community-prod` **actually serve AWS staging traffic**, not prod — confirmed live via `/api/v1/admin/health` returning `env:"staging"` through those target groups. Both are `ManagedBy=terraform`-tagged (Terraform state not found in this repo) — not a stray hand-created leftover, part of some external IaC. Tagged 2026-07-24 with `ActualEnvironment=staging` to reduce confusion; not renamed (immutable name, rename requires recreation + ALB rule reattachment, risks a traffic blip). A real cutover must not confuse these with the `-awsdr` target groups. |
 | Legacy/mystery services | ~22 of the 29 (now 31) ECS services in `Vitana-ECS-Cluster` from the 2026-07-09 bulk-provisioning event remain unexplained — flagged, not investigated. Out of scope for cutover unless one turns out to be load-bearing. |
 | Cutover/rollback docs | **Did not exist before this VTID.** No DNS-repoint runbook, no rollback/TTL plan, no GCP decommission checklist. |
-| Governance | **No execution VTID exists yet for a full cutover.** Every AWS VTID this week is scoped to one service's DR build. |
+| Governance | **No execution VTID exists yet for the *full* cutover** (all services, GCP decommission). VTID-03419 executed a narrower, explicitly-scoped DNS repoint for gateway + frontend only, gated by its own approved spec — see §3 EXECUTION RECORD. Every other AWS VTID remains scoped to one service's DR build, not traffic movement. |
 
-**Bottom line:** AWS is a real, growing, increasingly-verified hot standby.
-It is not yet a safe sole-production target. The gaps below are concrete
-and closeable, not hypothetical.
+**Bottom line:** Gateway + frontend are live on AWS today (VTID-03419) —
+that part is no longer hypothetical, it's the current production
+architecture for those two hostnames. Everything else — Aurora as a
+valid failover target, oasis-projector/orb-agent/autopilot parity, the
+mystery services, and GCP decommission — is still open, still concrete,
+and still closeable, not hypothetical either.
 
 ---
 
@@ -164,6 +169,32 @@ simultaneously on a first cutover.
    parallel for at least one full traffic cycle (recommend 1h minimum)
    before considering the gateway leg done.
 
+> **EXECUTION RECORD (VTID-03419, 2026-07-27):**
+> - Pre-flight: added ALB host-header rules on `vitana-alb-prod` at
+>   priority 3 (`gateway.vitanaland.com` → `vitana-tg-gateway-awsdr`) —
+>   below the existing path-based `/api/*`/`/ws/*` rules at priority 10,
+>   which otherwise match first regardless of `Host` and would have
+>   silently routed to AWS **staging**.
+> - Pre-change value captured: `gateway.vitanaland.com` was an **A**
+>   record → `34.111.235.0` (GCP anycast), DNS-only, Cloudflare zone
+>   `859c786db63e634e0ee36065e8a06e20`.
+> - Changed to a **CNAME** (record-type change — an ALB has no static
+>   IP) → `vitana-alb-prod-1579322953.eu-central-1.elb.amazonaws.com`,
+>   DNS-only (not proxied). Automatic TTL, so this was live within
+>   minutes.
+> - Verified functionally, not by status field: `/api/v1/admin/health`
+>   returning `env:"production"` was not sufficient on its own (both
+>   clouds report `production`) — confirmed via external vantage
+>   (`cloud_run_service:null` + boot timestamp matching the ECS task,
+>   i.e. absence of Cloud-Run-specific fields rather than presence of
+>   AWS-specific ones), an authenticated read **and** write, and a
+>   forced-HTTP/1.1 WebSocket handshake (HTTP/2 strips the `Upgrade`
+>   header, which degrades to a false-failing plain GET).
+> - Gateway leg confirmed live ~13:38Z. 60-minute post-cutover alarm
+>   watch: clean, zero new `vitana-*` alarms.
+> - Rollback (never invoked): revert to the A record above — must be
+>   recreated as an **A** record, not a CNAME edit of the same name.
+
 ### 3.2 `vitanaland.com` apex (frontend)
 
 1. **Must happen after §3.1**, and only once the frontend's
@@ -178,6 +209,34 @@ simultaneously on a first cutover.
    pattern from `AWS-PROD-DEPLOY-FRONTEND.yml`).
 5. Manually load the app, sign in, and exercise one read + one write
    path before declaring this leg done.
+
+> **EXECUTION RECORD (VTID-03419, 2026-07-27):**
+> - Version-skew guard caught a real problem before the flip: the AWS
+>   frontend build was 4 days stale (`index-C0lN9CoO` vs GCP's live
+>   `index-C7igpqcB`). Rebuilt from `main@fc9bc0f9` first
+>   (`index-CqFaw389`) rather than flip apex traffic to a stale build.
+> - Pre-change value captured: apex + `www` were CNAME →
+>   `community-app-q74ibpv6ia-uc.a.run.app`, **proxied** (orange-cloud)
+>   through Cloudflare.
+> - Changed to CNAME → the same `vitana-alb-prod` ALB, kept **proxied**.
+> - **Found mid-cutover, not anticipated by this runbook:** a
+>   Cloudflare Worker (`vitanaland-proxy`, dashboard-managed, not in any
+>   repo) has route rules on `vitanaland.com/*` + `www.vitanaland.com/*`
+>   that override DNS entirely — Worker routes match before the DNS
+>   record is ever consulted. Its origin was hard-coded to the GCP
+>   Cloud Run URL, so the DNS change alone had **no effect**; apex
+>   traffic stayed on GCP until the Worker's own `ORIGIN` constant was
+>   patched to `https://dr-app.vitanaland.com`. This is the actual
+>   reason the apex leg does not complete atomically with the DNS
+>   change — record that anywhere else in the org that assumes a
+>   Cloudflare DNS edit alone controls `vitanaland.com/*` traffic.
+> - Verified: authenticated read + write, both viewports, plus the same
+>   external-vantage fingerprint check used for the gateway leg.
+> - Rollback (never invoked): apex leg — CNAME back to
+>   `community-app-q74ibpv6ia-uc.a.run.app`; **or**, since the Worker is
+>   what actually controls routing, reverting the Worker's `ORIGIN`
+>   constant back to the Cloud Run URL is the effective/faster rollback
+>   regardless of what DNS says.
 
 ---
 
@@ -275,4 +334,5 @@ until AWS has run as sole production for an agreed burn-in period
 | VTID-03410 | oasis-operator AWS-DR | Prerequisite infra — done, but see §2 burn-in checklist item |
 | VTID-03411 | Backend services hardening | Prerequisite infra — done |
 | VTID-03412 | **This runbook** | Governance artifact — does not execute anything |
-| *(not yet allocated)* | Actual cutover execution | Must reference this runbook, gated on §2 checklist |
+| VTID-03419 | Actual cutover execution (gateway + apex DNS) | Executed 2026-07-27 — see §3's EXECUTION RECORD blocks |
+| VTID-03420 | AWS staging→prod publish path | Post-cutover follow-up: the Command Hub PUBLISH button promotes AWS staging (`vitana-gateway`) → AWS prod (`vitana-gateway-awsdr`) by exact-image promotion when `PUBLISH_TARGET_CLOUD=aws`; `AWS-PROD-DEPLOY-GATEWAY.yml` gained `promote-staging` (default) vs `rebuild-main` modes with an `expected_commit` pin. Closes the gap where the only AWS-prod path was a manual dispatch that rebuilt `main` HEAD — reported live 2026-07-28 (PUBLISH popover showed "Could not load: staging 500" on the ECS-served gateway, and AWS staging/prod had already drifted 0c72cfc vs 53cfb71). |

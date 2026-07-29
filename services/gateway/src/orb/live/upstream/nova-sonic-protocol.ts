@@ -349,6 +349,13 @@ export class NovaOutputNormalizer {
     name: string;
     argsJson: string;
   } | null = null;
+  /**
+   * Dedupe guard for turnComplete: a turn's end can be signalled by BOTH the
+   * final ASSISTANT `contentEnd` (stopReason END_TURN) and a later
+   * `completionEnd` — emit exactly one turnComplete per turn. Reset when the
+   * next content block starts (new generation activity).
+   */
+  private turnCompleteEmitted = false;
 
   normalize(raw: unknown): NovaNormalizedEvent[] {
     const eventObj = (raw as { event?: Record<string, unknown> })?.event;
@@ -378,6 +385,9 @@ export class NovaOutputNormalizer {
         }
       }
       if (contentId) this.contentMeta.set(contentId, meta);
+      // New content block = new generation activity → the next END_TURN /
+      // completionEnd is a fresh turn boundary again.
+      this.turnCompleteEmitted = false;
       out.push({ kind: 'ignored', eventName: 'contentStart' });
     }
 
@@ -442,6 +452,23 @@ export class NovaOutputNormalizer {
         this.pendingToolUse = null;
       } else if (stopReason === 'INTERRUPTED') {
         out.push({ kind: 'interrupted' });
+      } else if (stopReason === 'END_TURN') {
+        // Nova signals end-of-turn on the FINAL output content block's
+        // contentEnd — completionEnd may not arrive until much later (or at
+        // teardown). Waiting only for completionEnd left isModelSpeaking
+        // stuck true after the greeting finished, so the gateway's 20s
+        // audio-stall watchdog killed healthy sessions (staging session
+        // live-3650deea: 1695 greeting chunks → stall_detected → local
+        // terminate). Scope to ASSISTANT blocks: USER (ASR) content blocks
+        // also carry END_TURN and must NOT complete the model's turn.
+        const ceId = (contentEnd.contentId as string) ?? (contentEnd.contentName as string) ?? '';
+        const ceMeta = this.contentMeta.get(ceId);
+        if (ceMeta?.role === 'ASSISTANT' && !this.turnCompleteEmitted) {
+          this.turnCompleteEmitted = true;
+          out.push({ kind: 'turnComplete' });
+        } else {
+          out.push({ kind: 'ignored', eventName: 'contentEnd' });
+        }
       } else {
         out.push({ kind: 'ignored', eventName: 'contentEnd' });
       }
@@ -450,7 +477,8 @@ export class NovaOutputNormalizer {
     const completionEnd = eventObj.completionEnd as Record<string, unknown> | undefined;
     if (completionEnd) {
       const stopReason = completionEnd.stopReason as string | undefined;
-      if (!stopReason || stopReason === 'END_TURN') {
+      if ((!stopReason || stopReason === 'END_TURN') && !this.turnCompleteEmitted) {
+        this.turnCompleteEmitted = true;
         out.push({ kind: 'turnComplete' });
       } else {
         out.push({ kind: 'ignored', eventName: 'completionEnd' });

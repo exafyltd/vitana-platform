@@ -234,7 +234,10 @@ export async function notifyMutualInterest(matchId: string): Promise<void> {
         match_id: matchId,
         intent_id: dictator.intent_id,
         counterparty_vitana_id: match.vitana_id_b,
-        url: `/inbox?thread=${counterparty.user_id}`,
+        // Path-based, not query-string — Appilix's Android in-app browser
+        // silently fails to launch notification URLs containing a query
+        // string (see App.tsx's BOOTSTRAP-NOTIF-MESSENGER-DIAG comment).
+        url: `/inbox/u/${counterparty.user_id}`,
       }),
     },
     supabase,
@@ -252,7 +255,8 @@ export async function notifyMutualInterest(matchId: string): Promise<void> {
         match_id: matchId,
         intent_id: counterparty.intent_id,
         counterparty_vitana_id: match.vitana_id_a,
-        url: `/inbox?thread=${dictator.user_id}`,
+        // Path-based, not query-string — see the notification above.
+        url: `/inbox/u/${dictator.user_id}`,
       }),
     },
     supabase,

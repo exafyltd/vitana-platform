@@ -141,7 +141,21 @@ export type GatewayI18nKey =
   // to buy/hire" push when a buyer sends the first contact message via the
   // listing's CTA.
   | 'notif.listing_interest.title'
-  | 'notif.listing_interest.body';
+  | 'notif.listing_interest.body'
+  // BOOTSTRAP-NOVA-SONIC-VOICE: greeting AUDIO bridge — a short, near-instant
+  // TTS phrase spoken while the real (context-heavy) upstream greeting is
+  // still being generated, so the user hears Vitana immediately instead of
+  // silence. {date} is locale-formatted by the caller; {line} is one of a
+  // small rotating motivational-line pool below.
+  | 'orb.greeting_bridge.morning'
+  | 'orb.greeting_bridge.afternoon'
+  | 'orb.greeting_bridge.evening'
+  | 'orb.greeting_bridge.transition'
+  | 'orb.greeting_bridge.line_1'
+  | 'orb.greeting_bridge.line_2'
+  | 'orb.greeting_bridge.line_3'
+  | 'orb.greeting_bridge.line_4'
+  | 'orb.greeting_bridge.line_5';
 
 type LocaleCatalog = Record<GatewayI18nKey, string>;
 
@@ -252,6 +266,15 @@ const DE: LocaleCatalog = {
   'notif.marketplace_listing_removed.body': '„{title}" wurde von einem Admin entfernt: {reason}',
   'notif.listing_interest.title': 'Interesse an deinem Angebot',
   'notif.listing_interest.body': 'Jemand hat Interesse an „{title}" gezeigt.',
+  'orb.greeting_bridge.morning': 'Guten Morgen! Heute ist der {date}. {line}',
+  'orb.greeting_bridge.afternoon': 'Guten Tag! Heute ist der {date}. {line}',
+  'orb.greeting_bridge.evening': 'Guten Abend! Heute ist der {date}. {line}',
+  'orb.greeting_bridge.transition': 'Lass mich kurz deine aktuellen Daten anschauen …',
+  'orb.greeting_bridge.line_1': 'Ein neuer Tag, eine neue Chance, an dir zu arbeiten.',
+  'orb.greeting_bridge.line_2': 'Kleine Schritte summieren sich zu großen Veränderungen.',
+  'orb.greeting_bridge.line_3': 'Dein zukünftiges Ich dankt dir für das, was du heute tust.',
+  'orb.greeting_bridge.line_4': 'Konstanz schlägt Perfektion — mach einfach weiter.',
+  'orb.greeting_bridge.line_5': 'Jeder Tag ist eine neue Gelegenheit, dich besser zu fühlen.',
 };
 
 const EN: LocaleCatalog = {
@@ -361,6 +384,15 @@ const EN: LocaleCatalog = {
   'notif.marketplace_listing_removed.body': '"{title}" was removed by an admin: {reason}',
   'notif.listing_interest.title': 'Interest in your listing',
   'notif.listing_interest.body': 'Someone is interested in "{title}".',
+  'orb.greeting_bridge.morning': 'Good morning! Today is {date}. {line}',
+  'orb.greeting_bridge.afternoon': 'Good afternoon! Today is {date}. {line}',
+  'orb.greeting_bridge.evening': 'Good evening! Today is {date}. {line}',
+  'orb.greeting_bridge.transition': "Let me pull up your latest data…",
+  'orb.greeting_bridge.line_1': "A new day, a new chance to invest in yourself.",
+  'orb.greeting_bridge.line_2': "Small steps add up to big changes.",
+  'orb.greeting_bridge.line_3': "Your future self will thank you for what you do today.",
+  'orb.greeting_bridge.line_4': "Consistency beats perfection — just keep going.",
+  'orb.greeting_bridge.line_5': "Every day is a new chance to feel a little better.",
 };
 
 // Draft locales — start as a copy of EN; replace with native strings as they

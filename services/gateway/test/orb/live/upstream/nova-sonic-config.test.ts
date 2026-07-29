@@ -25,9 +25,22 @@ describe('getNovaSonicConfig', () => {
         connectTimeoutMs: 15000,
         rotationAfterMs: 435000,
         keepWarmMs: 240000,
+        maxTokens: 4096,
         issues: [],
       }),
     );
+  });
+
+  it('maxTokens is env-tunable and invalid values are a typed issue', () => {
+    expect(
+      getNovaSonicConfig({ NOVA_SONIC_MAX_TOKENS: '8192' } as NodeJS.ProcessEnv).maxTokens,
+    ).toBe(8192);
+    const bad = getNovaSonicConfig({
+      NOVA_SONIC_ENABLED: 'true',
+      NOVA_SONIC_MAX_TOKENS: '0',
+    } as NodeJS.ProcessEnv);
+    expect(bad.issues).toContain('nova_max_tokens_invalid');
+    expect(bad.ready).toBe(false);
   });
 
   it('is ready when enabled with a clean environment', () => {

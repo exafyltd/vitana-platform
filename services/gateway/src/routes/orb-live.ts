@@ -1343,7 +1343,7 @@ import { classifyUpstreamClose } from '../orb/live/session/upstream-close-classi
 // VTID-03234 (report finding #3): restore the upstream ping + silence
 // keepalive that the VertexLiveClient refactor left unreachable (it lived in
 // the now-dead setup_complete branch of the message handler).
-import { armUpstreamKeepalive } from '../orb/live/session/upstream-keepalive';
+import { armUpstreamKeepalive, clearUpstreamKeepalive } from '../orb/live/session/upstream-keepalive';
 // VTID-03126 (Phase D.3): Live API voice resolver — externalizes the
 // LIVE_API_VOICES Record + adds telemetry on silent fallbacks.
 import { getLiveApiVoice } from '../orb/live/voice/live-api-voice';
@@ -1387,7 +1387,13 @@ import {
   getNovaSonicConfig,
   isNovaSonicIdentityAllowed,
   isNovaSonicLanguageSupported,
+  NOVA_SONIC_MODEL_ID,
 } from '../orb/live/upstream/nova-sonic-config';
+// BOOTSTRAP-NOVA-SONIC-VOICE: greeting AUDIO bridge — see the module doc in
+// greeting-audio-bridge.ts for why this exists (both Vertex and Nova now
+// take 5-8+s to first greeting audio; this fills the silence).
+import { buildGreetingBridgeText } from '../services/conversation/greeting-audio-bridge';
+import { synthesizeGreetingBridgeAudioPcm, GREETING_BRIDGE_PCM_SAMPLE_RATE_HZ } from '../services/tts/greeting-bridge-tts';
 import { resolveNovaSonicVoice } from '../orb/live/voice/nova-sonic-voice';
 import { prewarmNovaSonicBedrock } from '../orb/live/upstream/nova-sonic-live-client';
 import { sanitizeInstructionForNova } from '../orb/live/upstream/nova-instruction-sanitizer';
@@ -6474,6 +6480,13 @@ async function connectToLiveAPI(
       ` livekit_ready=${__upstreamDecision.livekitReady}` +
       ` canary=${__upstreamDecision.canary}`,
   );
+  // BOOTSTRAP-NOVA-SONIC-VOICE: record the resolved provider as soon as it's
+  // known, for every provider (not just Nova) — this is what the latency
+  // tracker correction sites and per-turn tracker construction read to
+  // attribute voice.latency.measured events correctly instead of assuming
+  // Vertex. (The later `session.upstreamProvider = 'nova_sonic'` deeper in
+  // the Nova branch is now redundant but harmless — left in place.)
+  session.upstreamProvider = __upstreamDecision.provider;
   // OASIS emission — every connect call emits a single `selected` event.
   // When the request was LiveKit but the path degraded (config invalid or
   // pinned_to_vertex_l1 or canary_not_allowlisted), also emit
@@ -7127,7 +7140,7 @@ async function connectToLiveAPI(
           : [];
         const novaPersona = ((session as any).activePersona as string) || 'vitana';
         const novaVoice =
-          resolveNovaSonicVoice({ language: session.lang || 'en', persona: novaPersona }) ?? 'tiffany';
+          resolveNovaSonicVoice({ language: session.lang || 'en', persona: novaPersona }) ?? 'tina';
         // Stashed for the connect_failed OASIS payload — makes a rejected
         // envelope diagnosable without server-log access.
         (session as any)._novaInstructionChars = novaSystemInstruction.length;
@@ -7219,9 +7232,27 @@ async function connectToLiveAPI(
             markVoiceLatency,
             finalizeVoiceTurnLatency,
           },
-          // Nova needs no synthetic PCM keepalive — server-side turn
-          // detection keeps its stream alive; rotation handles the 8-min cap.
-          options: { enableSilenceKeepalive: false },
+          // Nova NEEDS the synthetic PCM keepalive just like Vertex: Bedrock
+          // expects continuous audio-frame cadence and terminates an idle
+          // bidirectional stream after ~15s ("Premature close" — measured on
+          // staging session live-dedf85d5, exactly +15.0s after the last
+          // response event, with the widget's mic gated). The earlier
+          // assumption that server-side turn detection keeps the stream
+          // alive without input was wrong.
+          // ignoreModelSpeaking/silenceIntervalMs/idleThresholdMs: this
+          // loop-guard re-arm path (handleTranscript, triggered when the
+          // loop guard has paused-then-resumed the interval — see its doc
+          // comment) creates its OWN silenceKeepaliveInterval independent of
+          // the connect-time armUpstreamKeepalive() call below. Without
+          // passing the same Nova tuning here, a session that trips the loop
+          // guard mid-conversation and then resumes falls back to Vertex-only
+          // semantics and reproduces the b745775/b27204f END_TURN deadlock.
+          options: {
+            enableSilenceKeepalive: true,
+            ignoreModelSpeaking: true,
+            silenceIntervalMs: 250,
+            idleThresholdMs: 750,
+          },
         });
 
         // Close policy: diag always; on an unexpected close of an active,
@@ -7233,6 +7264,9 @@ async function connectToLiveAPI(
             reason: closeEvent.reason ?? null,
             initiated_locally: closeEvent.initiatedLocally,
           });
+          // Stop feeding silence into a dead stream (mirrors the Vertex ws
+          // close handler's interval cleanup).
+          clearUpstreamKeepalive(session);
           if (session.upstreamClient === novaClient) {
             session.upstreamClient = null;
           }
@@ -7318,7 +7352,28 @@ async function connectToLiveAPI(
 
         // The ws-shaped facade lets every legacy upstreamWs call site
         // (greeting engine, nudges, input handlers, stop path) drive Nova.
-        resolve(createNovaWsFacade(novaClient) as unknown as WebSocket);
+        const novaFacade = createNovaWsFacade(novaClient) as unknown as WebSocket;
+        // Same keepalive the Vertex path arms after connect: Bedrock kills a
+        // bidirectional stream that goes ~15s without audio-frame input, so
+        // quiet pauses (mic gated, user thinking) need synthetic silence.
+        // ping() is a no-op on the facade; the silence leg does the work.
+        // ignoreModelSpeaking: Nova may not emit END_TURN until input audio
+        // flows, so silence must continue THROUGH model speech or the flag
+        // deadlocks the stream into the 15s idle kill.
+        // silenceIntervalMs 250 + idleThresholdMs 750: Nova's endpointer needs
+        // a CONTINUOUS real-time input stream — one 250ms frame per 250ms tick
+        // is gapless silence, exactly like a live mic streaming ambient quiet.
+        // The Vertex heartbeat cadence (250ms frame / 3s ≈ 8% duty) kept
+        // Bedrock from idle-killing but Nova still never concluded the
+        // greeting turn, so the gateway's own 20s audio-stall watchdog
+        // terminated healthy sessions (staging session live-bc3ac313).
+        armUpstreamKeepalive(novaFacade, session, {
+          sendAudioToLiveAPI,
+          ignoreModelSpeaking: true,
+          silenceIntervalMs: 250,
+          idleThresholdMs: 750,
+        });
+        resolve(novaFacade);
         return;
       } catch (err) {
         clearTimeout(connectionTimeout);
@@ -8385,6 +8440,23 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
   }
 
   const _wb = (session as any).wakeBriefDecision || null;
+  // BOOTSTRAP-NOVA-GREETING-CADENCE: `decideOpening`'s `wakeCadenceSkip` input
+  // was never populated at this call site — the rich B1 greeting-policy engine
+  // (greeting-policy.ts, `decideGreetingPolicyWithEvidence`) computes a skip
+  // verdict elsewhere but nothing forwarded it here, so `wakeCadenceSkip` was
+  // always `undefined` and rung 8 (override_v2) fired the wake-brief's
+  // selected line unconditionally on every fresh `session_id` — including a
+  // brand-new session opened seconds after the user's last one (observed live:
+  // every ORB re-open replayed a full proactive opener, "starts from scratch
+  // every time"). `_reconnectCount` only tracks transport-level reconnects
+  // WITHIN one session object, so a genuinely new session (the user closing
+  // and reopening ORB) always read isReconnect=false too. Close the gap with
+  // the same 'reconnect' bucket (<120s since last session, per
+  // temporal-bucket.ts) `decideGreetingPolicyWithEvidence` already treats as a
+  // forced skip — this was pre-existing on Vertex too, but Nova's slower
+  // per-connection setup and less stable mobile transport made re-opens (and
+  // thus the bug) far more frequent, which is why it surfaced now.
+  const _cadenceBucketPre = describeTimeSince(session.lastSessionInfo).bucket;
   const _openDecision = decideOpening({
     isAnonymous: !!session.isAnonymous,
     hasResumptionHandle: !!session.resumptionHandle,
@@ -8392,6 +8464,7 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
     wakeSelectedLine: _wb?.selectedContinuation?.userFacingLine ?? null,
     wakeSelectedKind: _wb?.selectedContinuation?.kind ?? null,
     lastOpenerLine: (session as any)._lastOpenerLine ?? null,
+    wakeCadenceSkip: _cadenceBucketPre === 'reconnect',
   });
   console.log(formatOpeningDecisionLog(session.sessionId, _openDecision));
   (session as any)._openingDecision = _openDecision;
@@ -8478,6 +8551,54 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
       startResponseWatchdog(session, getGreetingResponseTimeoutMs(), 'greeting_timeout');
     }
     return true;
+  }
+}
+
+/**
+ * BOOTSTRAP-NOVA-SONIC-VOICE: greeting AUDIO bridge (SSE transport only —
+ * the SSE session/start path is what both the Nova bench and the majority
+ * of real Connect & Talk traffic use today).
+ *
+ * Synthesizes a short "Good morning! Today is <date>. <motivational line>.
+ * Let me pull up your latest data…" phrase via Cloud TTS (LINEAR16 @ 24kHz —
+ * same wire format as the real greeting audio) and writes it to the SSE
+ * stream BEFORE the real upstream connect is even initiated, so ordering is
+ * trivially correct: this function is awaited to completion, and the caller
+ * only opens the real (slow) upstream connection afterward. Feature-flagged
+ * (default off) and fully best-effort — any failure here (TTS unavailable,
+ * synthesis error, closed connection) is swallowed; it never blocks or
+ * breaks the real greeting path that follows.
+ *
+ * Skipped for anonymous sessions (their intro flow is untouched/different)
+ * and for reconnects (a mid-conversation reconnect doesn't need a fresh
+ * "today is..." — the real reconnect-recovery prompt handles that case).
+ */
+async function sendGreetingAudioBridge(session: GeminiLiveSession): Promise<void> {
+  if (!isFeatureLive('ORB_GREETING_TTS_BRIDGE')) return;
+  if (session.isAnonymous) return;
+  if (session.transcriptTurns.length > 0) return; // reconnect, not a fresh session
+  if (!session.sseResponse) return;
+
+  try {
+    const lang = session.lang || 'en';
+    const timezone = session.clientContext?.timezone || 'UTC';
+    const text = buildGreetingBridgeText({ lang, now: new Date(), timezone });
+    const audioB64 = await synthesizeGreetingBridgeAudioPcm(text, lang);
+    if (!audioB64) {
+      emitDiag(session, 'greeting_bridge_skipped', { reason: 'synthesis_unavailable' });
+      return;
+    }
+    if (!session.sseResponse) return; // client disconnected while we were synthesizing
+    session.sseResponse.write(`data: ${JSON.stringify({
+      type: 'audio',
+      data_b64: audioB64,
+      mime: `audio/pcm;rate=${GREETING_BRIDGE_PCM_SAMPLE_RATE_HZ}`,
+      chunk_number: session.audioOutChunks++,
+      source: 'greeting_bridge',
+    })}\n\n`);
+    emitDiag(session, 'greeting_bridge_sent', { lang, chars: text.length });
+  } catch (err) {
+    console.warn('[GREETING-BRIDGE] Failed (non-fatal, real greeting proceeds normally):', (err as Error).message);
   }
 }
 
@@ -9025,12 +9146,19 @@ async function emitOrbSessionEnded(orbSessionId: string, conversationId: string,
 function startVoiceTurnLatency(session: GeminiLiveSession): void {
   if (session.latencyTracker) return; // turn already in flight
   session.latencyTurnIndex = (session.latencyTurnIndex || 0) + 1;
+  // BOOTSTRAP-NOVA-SONIC-VOICE: unlike the turn-0 establishment tracker,
+  // upstream selection has always resolved by the time a per-turn tracker
+  // starts (turn 0 IS the connect), so session.upstreamProvider is trustworthy
+  // here at construction time — no setProvider() correction needed later.
+  const provider = session.upstreamProvider === 'nova_sonic'
+    ? `nova_sonic/${NOVA_SONIC_MODEL_ID}`
+    : `vertex/${GEMINI_MODEL}`;
   const tracker = new LatencyTracker({
     session_id: session.sessionId,
     surface: 'voice',
     actor_id: session.identity?.user_id,
     turn: session.latencyTurnIndex,
-    provider: `vertex/${GEMINI_MODEL}`,
+    provider,
     transport: session.clientWs ? 'websocket' : 'sse',
   });
   session.latencyTracker = tracker;
@@ -12942,6 +13070,16 @@ router.get('/live/stream', optionalAuth, async (req: AuthenticatedRequest, res: 
     },
   });
 
+  // BOOTSTRAP-NOVA-SONIC-VOICE: greeting AUDIO bridge — synthesize + write a
+  // short filler phrase BEFORE opening the real (slow) upstream connection.
+  // Awaited deliberately: this guarantees the bridge audio is written to the
+  // SSE stream strictly before any real-greeting audio chunk could possibly
+  // arrive, with no extra buffering/sequencing machinery needed. Adds at
+  // most ~0.3-0.8s (TTS synthesis latency) ahead of a connect that otherwise
+  // takes 5-8+s to first audio — a clear net win, and feature-flagged so it
+  // can be disabled instantly if that tradeoff is ever wrong.
+  await sendGreetingAudioBridge(session);
+
   // VTID-01219: Connect to Vertex AI Live API WebSocket IN PARALLEL (non-blocking).
   // The ready event is already sent so the client gets instant visual + audio feedback
   // (chime) while this connection establishes in the background.
@@ -12967,6 +13105,14 @@ router.get('/live/stream', optionalAuth, async (req: AuthenticatedRequest, res: 
         // The greeting has no preceding user turn, so the per-turn tracker never
         // fires for it; this is the only place that closes turn 0.
         if (session.establishLatency) {
+          // BOOTSTRAP-NOVA-SONIC-VOICE: the tracker was constructed with a
+          // Vertex default before upstream selection ran (session.upstreamProvider
+          // is only known once connectToLiveAPI resolves) — correct it now so
+          // voice.latency.measured attributes the timeline to the provider that
+          // actually generated this audio.
+          if (session.upstreamProvider === 'nova_sonic') {
+            session.establishLatency.setProvider(`nova_sonic/${NOVA_SONIC_MODEL_ID}`);
+          }
           session.establishLatency.mark('audio_out_first_chunk', { source: 'greeting' });
           void session.establishLatency.finalize('success');
           session.establishLatency = null;
@@ -14365,6 +14511,12 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
       // FIX: Send raw PCM for Web Audio API scheduled playback (eliminates gaps between chunks)
       (audioB64: string) => {
         if (liveSession.establishLatency) {
+          // BOOTSTRAP-NOVA-SONIC-VOICE: see the SSE audio handler's identical
+          // comment — the tracker's Vertex default needs correcting once
+          // upstream selection has actually resolved.
+          if (liveSession.upstreamProvider === 'nova_sonic') {
+            liveSession.establishLatency.setProvider(`nova_sonic/${NOVA_SONIC_MODEL_ID}`);
+          }
           liveSession.establishLatency.mark('audio_out_first_chunk', { source: 'greeting' });
           void liveSession.establishLatency.finalize('success');
           liveSession.establishLatency = null;

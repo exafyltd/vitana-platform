@@ -67,6 +67,45 @@ describe('armUpstreamKeepalive', () => {
     expect(send).not.toHaveBeenCalled();
   });
 
+  it('ignoreModelSpeaking feeds silence THROUGH model speech (Nova END_TURN deadlock)', () => {
+    const ws = makeWs();
+    const send = jest.fn(() => true);
+    const session = makeSession({ lastAudioForwardedTime: Date.now() - 10_000, isModelSpeaking: true });
+    armUpstreamKeepalive(ws, session, { sendAudioToLiveAPI: send, ignoreModelSpeaking: true });
+    jest.advanceTimersByTime(3_000);
+    expect(send).toHaveBeenCalled();
+  });
+
+  it('silenceIntervalMs/idleThresholdMs overrides give Nova a real-time gapless cadence', () => {
+    const ws = makeWs();
+    const send = jest.fn(() => true);
+    const session = makeSession({ lastAudioForwardedTime: Date.now() - 1_000, isModelSpeaking: true });
+    armUpstreamKeepalive(ws, session, {
+      sendAudioToLiveAPI: send,
+      ignoreModelSpeaking: true,
+      silenceIntervalMs: 250,
+      idleThresholdMs: 750,
+    });
+    // 1s of ticks at 250ms → 4 frames of 250ms silence = gapless real time.
+    jest.advanceTimersByTime(1_000);
+    expect(send).toHaveBeenCalledTimes(4);
+  });
+
+  it('idleThresholdMs override suppresses silence while real audio is fresh', () => {
+    const ws = makeWs();
+    const send = jest.fn(() => true);
+    const session = makeSession({ lastAudioForwardedTime: Date.now(), isModelSpeaking: false });
+    armUpstreamKeepalive(ws, session, {
+      sendAudioToLiveAPI: send,
+      silenceIntervalMs: 250,
+      idleThresholdMs: 750,
+    });
+    jest.advanceTimersByTime(500); // idle only 500ms < 750ms threshold
+    expect(send).not.toHaveBeenCalled();
+    jest.advanceTimersByTime(500); // now idle ≥ 750ms
+    expect(send).toHaveBeenCalled();
+  });
+
   it('does NOT ping or feed silence once the socket is closed', () => {
     const ws = makeWs(3 /* CLOSED */);
     const send = jest.fn(() => true);

@@ -17,8 +17,17 @@
 (function (window) {
   'use strict';
 
-  var _WIDGET_VERSION = '2026-06-01-devcomhu0503b-persist-continuity-on-disconnect';
+  var _WIDGET_VERSION = '2026-07-28-nova-voice-speed';
   console.log('[VTOrb] Widget version: ' + _WIDGET_VERSION);
+
+  // BOOTSTRAP-NOVA-SONIC-VOICE: user live-test feedback 2026-07-28 — the
+  // model's natural speaking pace reads as "too slow" in playback. Applied
+  // uniformly to every streamed PCM chunk (all providers — Vertex, Nova),
+  // not a provider-specific TTS parameter (neither exposes one over the
+  // live bidirectional stream). +5% speed carries a proportional pitch
+  // rise via AudioBufferSourceNode.playbackRate — the same trick podcast
+  // apps use at 1.05x, imperceptible as "chipmunk" at this magnitude.
+  var _AUDIO_PLAYBACK_RATE = 1.05;
 
   // Prevent double-load
   if (window.VitanaOrb && window.VitanaOrb._loaded) return;
@@ -1067,6 +1076,7 @@
 
         var src = ctx.createBufferSource();
         src.buffer = buf;
+        src.playbackRate.value = _AUDIO_PLAYBACK_RATE;
         src.connect(ctx.destination);
 
         var now = ctx.currentTime;
@@ -1106,7 +1116,11 @@
           };
         })(src);
 
-        _s.lastScheduledEnd += buf.duration;
+        // buf.duration is the UNPLAYED-rate duration; at playbackRate>1 the
+        // chunk actually finishes sooner, so scheduling by buf.duration
+        // would leave audible gaps between chunks. Divide by the rate to
+        // keep back-to-back chunks gapless.
+        _s.lastScheduledEnd += buf.duration / _AUDIO_PLAYBACK_RATE;
         _s.audioPlaying = true;
         isFirstChunk = false;
       } catch (e) {

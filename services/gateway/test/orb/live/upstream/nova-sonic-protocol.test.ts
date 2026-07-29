@@ -264,6 +264,31 @@ describe('NovaOutputNormalizer', () => {
     ]);
   });
 
+  it('ASSISTANT contentEnd END_TURN → turnComplete without waiting for completionEnd', () => {
+    const n = new NovaOutputNormalizer();
+    n.normalize({ event: { contentStart: { contentId: 'a1', type: 'AUDIO', role: 'ASSISTANT' } } });
+    expect(
+      n.normalize({ event: { contentEnd: { contentId: 'a1', type: 'AUDIO', stopReason: 'END_TURN' } } }),
+    ).toEqual([{ kind: 'turnComplete' }]);
+    // A trailing completionEnd for the SAME turn is deduped — one turnComplete per turn.
+    expect(n.normalize({ event: { completionEnd: { stopReason: 'END_TURN' } } })).toEqual([
+      { kind: 'ignored', eventName: 'completionEnd' },
+    ]);
+    // Next turn's content resets the guard: its END_TURN fires again.
+    n.normalize({ event: { contentStart: { contentId: 'a2', type: 'AUDIO', role: 'ASSISTANT' } } });
+    expect(
+      n.normalize({ event: { contentEnd: { contentId: 'a2', type: 'AUDIO', stopReason: 'END_TURN' } } }),
+    ).toEqual([{ kind: 'turnComplete' }]);
+  });
+
+  it('USER (ASR) contentEnd END_TURN does NOT complete the model turn', () => {
+    const n = new NovaOutputNormalizer();
+    n.normalize({ event: { contentStart: { contentId: 'u1', type: 'TEXT', role: 'USER' } } });
+    expect(
+      n.normalize({ event: { contentEnd: { contentId: 'u1', type: 'TEXT', stopReason: 'END_TURN' } } }),
+    ).toEqual([{ kind: 'ignored', eventName: 'contentEnd' }]);
+  });
+
   it('usageEvent.details.total → usage totals', () => {
     const n = new NovaOutputNormalizer();
     expect(

@@ -135,13 +135,8 @@ router.post('/send', requireAuth, requireTenant, async (req: Request, res: Respo
     }
 
     // Fire-and-forget push notification to the receiver (not for Vitana bot)
-    // BOOTSTRAP-NOTIF-CATEGORIES: Use /inbox?thread=<sender_id> so the Messages
-    // page deep-links into the conversation. The legacy `/messages/<id>` URL
-    // was redirected to `/inbox` by App.tsx, stripping the thread parameter.
-    // `&context=global` ensures the Messages page selects the global chat
-    // context on mount so the thread auto-opens regardless of the recipient's
-    // current context preference (otherwise a `tenant`-context user lands on
-    // /inbox without the thread being selected).
+    // BOOTSTRAP-NOTIF-CATEGORIES: Use /inbox/u/<sender_id> so the Messages
+    // page deep-links into the conversation (see the path-based url below).
     // Notification body: prefer text; for attachment-only messages show
     // "📎 <filename>" so the push isn't an empty bubble.
     const firstAttachmentName: string | null = attachments.length > 0
