@@ -1006,6 +1006,17 @@ router.post('/deployments', async (req: Request, res: Response) => {
       });
     }
 
+    // This fires when the workflow's post-deploy step confirms the rollout
+    // actually landed — unlike the /publish-time invalidation (which runs
+    // the instant the workflow is dispatched, while prod still serves the
+    // old revision), this is the point where /deployments is guaranteed to
+    // return the NEW active revision if read right now. Without this, a
+    // /deployments read during the rollout window can repopulate
+    // ACTIVE_REV_CACHE with the still-old revision and hold it there for
+    // the full TTL, so even the confirmed post-publish refresh can show
+    // stale data.
+    ACTIVE_REV_CACHE.delete(service);
+
     console.log(`[Operator] Deployment recorded: ${swv_id} for ${service}`);
 
     return res.status(201).json({

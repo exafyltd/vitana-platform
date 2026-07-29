@@ -218,7 +218,17 @@
                 // once the commit is confirmed serving. This is the fix for
                 // "PUBLISH said success but Currently Live still showed the
                 // old timestamp until I reopened the popover several times."
-                pollUntilCommitLive(shortSha, vtid, startedAtMs, headers, {
+                //
+                // Poll for payload.body.source_commit — the commit the SERVER
+                // actually resolved and published — not the card's shortSha.
+                // If gateway-staging advanced between this card loading and
+                // the click, /publish ships whatever staging is running NOW;
+                // confirm_short_sha is recorded but not enforced server-side.
+                // Polling the stale shortSha would wait 8 minutes for a
+                // commit that was never the one deployed, then falsely report
+                // "not confirmed" on a publish that actually succeeded.
+                const confirmedCommit = payload.body.source_commit || shortSha;
+                pollUntilCommitLive(confirmedCommit, vtid, startedAtMs, headers, {
                   onVerified: function () {
                     resultLine.style.color = '#86efac';
                     resultLine.innerHTML = '✓ Published and confirmed live. VTID ' + (vtid || '—') + '. ';
