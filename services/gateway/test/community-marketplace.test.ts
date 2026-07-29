@@ -190,8 +190,22 @@ describe('POST /listings', () => {
     expect(r.body.ok).toBe(false);
   });
 
+  it('403 when the seller is suspended (BOOTSTRAP-COMMUNITY-MARKETPLACE Chunk 7)', async () => {
+    tableHandlers.community_listing_categories = () => ({ data: ACTIVE_CATEGORY, error: null });
+    tableHandlers.community_marketplace_seller_suspensions = () => ({ data: { seller_user_id: 'seller-1' }, error: null });
+
+    const r = await request(makeApp())
+      .post('/api/v1/community-marketplace/listings')
+      .set('Authorization', 'Bearer seller-1')
+      .send(VALID_LISTING_BODY);
+
+    expect(r.status).toBe(403);
+    expect(r.body.error).toBe('seller_suspended');
+  });
+
   it('400 when the category is prohibited', async () => {
     tableHandlers.community_listing_categories = () => ({ data: PROHIBITED_CATEGORY, error: null });
+    tableHandlers.community_marketplace_seller_suspensions = () => ({ data: null, error: null });
     tableHandlers.profiles = () => ({ data: { verification_status: 'verified' }, error: null });
 
     const r = await request(makeApp())
@@ -205,6 +219,7 @@ describe('POST /listings', () => {
 
   it('201 happy path — creates an active listing and emits an OASIS event', async () => {
     tableHandlers.community_listing_categories = () => ({ data: ACTIVE_CATEGORY, error: null });
+    tableHandlers.community_marketplace_seller_suspensions = () => ({ data: null, error: null });
     tableHandlers.profiles = () => ({ data: { verification_status: 'verified' }, error: null });
     tableHandlers.community_listings = ({ op }: any) =>
       op === 'insert'

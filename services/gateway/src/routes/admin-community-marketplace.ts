@@ -98,6 +98,8 @@ router.get('/listings', async (req: Request, res: Response) => {
 // ==================== PATCH /listings/:id ====================
 
 router.patch('/listings/:id', async (req: Request, res: Response) => {
+  // impact-allow-no-oasis: emitAdminActivity() below wraps emitOasisEvent —
+  // the static impact-scan can't see through the indirection.
   const supabase = getSupabase();
   if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
 
@@ -159,6 +161,8 @@ const NOTIFY_ACTION: Record<string, 'notif.marketplace_listing_approved' | 'noti
 };
 
 router.post('/listings/bulk-action', async (req: Request, res: Response) => {
+  // impact-allow-no-oasis: emitAdminActivity() below wraps emitOasisEvent —
+  // the static impact-scan can't see through the indirection.
   const supabase = getSupabase();
   if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
 
@@ -239,6 +243,8 @@ router.post('/listings/bulk-action', async (req: Request, res: Response) => {
 // ==================== Seller suspension ====================
 
 router.post('/sellers/:userId/suspend', async (req: Request, res: Response) => {
+  // impact-allow-no-oasis: emitAdminActivity() below wraps emitOasisEvent —
+  // the static impact-scan can't see through the indirection.
   const supabase = getSupabase();
   if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
 
@@ -278,6 +284,8 @@ router.post('/sellers/:userId/suspend', async (req: Request, res: Response) => {
 });
 
 router.delete('/sellers/:userId/suspend', async (req: Request, res: Response) => {
+  // impact-allow-no-oasis: emitAdminActivity() below wraps emitOasisEvent —
+  // the static impact-scan can't see through the indirection.
   const supabase = getSupabase();
   if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
 
@@ -334,6 +342,8 @@ router.get('/reports', async (req: Request, res: Response) => {
 });
 
 router.patch('/reports/:id', async (req: Request, res: Response) => {
+  // impact-allow-no-oasis: emitAdminActivity() below wraps emitOasisEvent —
+  // the static impact-scan can't see through the indirection.
   const supabase = getSupabase();
   if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
 
@@ -378,6 +388,8 @@ router.get('/categories', async (req: Request, res: Response) => {
 });
 
 router.patch('/categories/:key', async (req: Request, res: Response) => {
+  // impact-allow-no-oasis: emitAdminActivity() below wraps emitOasisEvent —
+  // the static impact-scan can't see through the indirection.
   const supabase = getSupabase();
   if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
 
