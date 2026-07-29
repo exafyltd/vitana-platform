@@ -181,6 +181,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const adminMarketplaceRouter = require('./routes/admin-marketplace').default;
   // BOOTSTRAP-COMMUNITY-MARKETPLACE: peer-to-peer classifieds (seller + buyer API)
   const communityMarketplaceRouter = require('./routes/community-marketplace').default;
+  // BOOTSTRAP-COMMUNITY-MARKETPLACE (Chunk 7): admin review queue (listings/reports/seller suspensions/categories)
+  const adminCommunityMarketplaceRouter = require('./routes/admin-community-marketplace').default;
   // VTID-02000: Internal scheduler-authed sync trigger (shared secret, no user JWT)
   const internalMarketplaceSyncRouter = require('./routes/internal-marketplace-sync').default;
   // VTID-02000: User limitations CRUD + impact counter
@@ -1042,6 +1044,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   mountRouterSync(app, '/api/v1/admin/marketplace', adminMarketplaceRouter, { owner: 'admin-marketplace' });
   // BOOTSTRAP-COMMUNITY-MARKETPLACE: peer-to-peer classifieds (seller + buyer API)
   mountRouterSync(app, '/api/v1/community-marketplace', communityMarketplaceRouter, { owner: 'community-marketplace' });
+  // BOOTSTRAP-COMMUNITY-MARKETPLACE (Chunk 7): admin review queue
+  mountRouterSync(app, '/api/v1/admin/community-marketplace', adminCommunityMarketplaceRouter, { owner: 'admin-community-marketplace' });
   // BOOTSTRAP-CMDHUB-I18N-OPS: i18n operations (locale status + workflow dispatch)
   mountRouterSync(app, '/api/v1/admin/i18n-ops', adminI18nOpsRouter, { owner: 'admin-i18n-ops' });
   mountRouterSync(app, '/api/v1/internal/marketplace', internalMarketplaceSyncRouter, { owner: 'marketplace-sync' });

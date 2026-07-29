@@ -98,7 +98,7 @@ function serializeListing(row: any, opts: { isOwner: boolean; seller?: any }) {
   return base;
 }
 
-async function recordStatusHistory(
+export async function recordStatusHistory(
   supabase: ReturnType<typeof getSupabase>,
   listingId: string,
   actorType: 'seller' | 'admin' | 'system',
@@ -332,6 +332,17 @@ router.post('/listings', async (req: Request, res: Response) => {
 
   const userId = identity(req).user_id;
   const tenantId = identity(req).tenant_id!;
+
+  // BOOTSTRAP-COMMUNITY-MARKETPLACE (Chunk 7): a seller suspended by an admin
+  // (see admin-community-marketplace.ts POST /sellers/:userId/suspend) can't
+  // create new listings — checked here rather than via RLS since this route
+  // uses the service-role client throughout.
+  const { data: suspension } = await supabase
+    .from('community_marketplace_seller_suspensions')
+    .select('seller_user_id')
+    .eq('seller_user_id', userId)
+    .maybeSingle();
+  if (suspension) return res.status(403).json({ ok: false, error: 'seller_suspended' });
 
   const { data: profile } = await supabase.from('profiles').select('verification_status').eq('user_id', userId).maybeSingle();
 

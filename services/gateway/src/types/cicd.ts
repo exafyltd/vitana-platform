@@ -937,7 +937,13 @@ export type CicdEventType =
   | 'community_marketplace.listing.created'
   | 'community_marketplace.listing.updated'
   | 'community_marketplace.listing.status_changed'
-  | 'community_marketplace.listing.auto_escalated';
+  | 'community_marketplace.listing.auto_escalated'
+  // BOOTSTRAP-COMMUNITY-MARKETPLACE (Chunk 7): admin review-queue decisions
+  | 'community_marketplace.admin.listing_reviewed'
+  | 'community_marketplace.admin.report_resolved'
+  | 'community_marketplace.admin.seller_suspended'
+  | 'community_marketplace.admin.seller_unsuspended'
+  | 'community_marketplace.admin.category_updated';
 
 export interface CicdOasisEvent {
   vtid: string;
