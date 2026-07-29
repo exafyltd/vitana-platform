@@ -2864,6 +2864,20 @@ export async function tool_navigate_to_screen(
   const screenIdArg = String(args.screen_id ?? args.target ?? '').trim();
   if (!screenIdArg) return { ok: false, error: 'screen_id (or legacy target) is required' };
 
+  // VTID-NAV-IDENTIFIER-ALIAS: the navigate_to_screen tool schema
+  // (live-tool-catalog.ts) tells the model to send `vitana_id` for
+  // PROFILE.PUBLIC / PROFILE.WITH_MATCH, but both the NAV_ENTITY_RESOLVE
+  // gate below and the generic ":identifier" param-substitution only ever
+  // read `args.identifier` — a key the schema never defines, so the model
+  // never sends it. Confirmed live in production (oasis_events,
+  // 2026-04-10 through 2026-06-22): every PROFILE.PUBLIC navigate_to_screen
+  // call carrying a vitana_id failed with "missing required parameter(s)
+  // identifier", 100% of the time, for months. Alias it here once so both
+  // downstream readers see it.
+  if (args.identifier === undefined && typeof args.vitana_id === 'string' && args.vitana_id.trim()) {
+    args.identifier = args.vitana_id.trim().replace(/^@/, '');
+  }
+
   // Identity facts (with args fallback for the LiveKit Python wrapper that
   // sends them in the body alongside current_route).
   const isAnon = (typeof args.is_anonymous === 'boolean' ? args.is_anonymous : id.is_anonymous)
