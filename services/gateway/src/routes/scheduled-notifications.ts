@@ -18,7 +18,7 @@
  */
 
 import { Router, Request, Response } from 'express';
-import { notifyUserAsync, sendPushToUser, sendAppilixPush, TYPE_META } from '../services/notification-service';
+import { notifyUser, notifyUserAsync, sendPushToUser, sendAppilixPush, TYPE_META } from '../services/notification-service';
 import { generatePersonalRecommendations } from '../services/recommendation-engine';
 import { LangCode, resolveLanguage } from '../services/recommendation-engine/analyzers/community-user-analyzer';
 import { tt, type GatewayI18nKey } from '../i18n/catalog';
@@ -672,7 +672,6 @@ router.post('/daily-feature-tip', async (req: Request, res: Response) => {
         deep_link: tip.deepLink,
         created_by: 'scheduled:daily-feature-tip',
         target_user_ids: null,
-        notified_at: new Date().toISOString(),
       })
       .select('id')
       .single();
@@ -689,30 +688,48 @@ router.post('/daily-feature-tip', async (req: Request, res: Response) => {
     //    /home is a vitana-v1 MAXINA_LANDING_ROUTES entry that auto-opens the
     //    Orb front-door on a fresh mount, which a push-notification tap
     //    counts as; /home/notif is the identical feed minus that collision.
+    // Awaited (via notifyUser, not the fire-and-forget notifyUserAsync) so
+    // the HTTP response isn't sent until every dispatch has actually
+    // finished. Confirmed live: with fire-and-forget, Cloud Run returned the
+    // response and froze/recycled the container before all ~181 background
+    // promises finished writing their row — only 33 of 181 members actually
+    // got notified for one day's run (card still showed for everyone via
+    // the direct RLS read, just the notification silently never arrived for
+    // most people). Promise.allSettled so one bad user can't block the rest.
     const users = await getActiveUsers(supa, tenantId);
     const userIds = users.map((u) => u.user_id);
     const locales = await bulkGetUserLocales(supa, userIds);
-    let dispatched = 0;
-    for (const uid of userIds) {
-      const lc = locales.get(uid) || 'de';
-      notifyUserAsync(
-        uid,
-        tenantId,
-        'feature_announcement',
-        {
-          title: tt('notif.feature_tip.title', lc, { feature: pickTipLocale(tip.title, lc) }),
-          body: pickTipLocale(tip.description, lc),
-          data: { url: '/home/notif', entity_id: announcementId },
-        },
-        supa,
-      );
-      dispatched++;
+    const results = await Promise.allSettled(
+      userIds.map((uid) => {
+        const lc = locales.get(uid) || 'de';
+        return notifyUser(
+          uid,
+          tenantId,
+          'feature_announcement',
+          {
+            title: tt('notif.feature_tip.title', lc, { feature: pickTipLocale(tip.title, lc) }),
+            body: pickTipLocale(tip.description, lc),
+            data: { url: '/home/notif', entity_id: announcementId },
+          },
+          supa,
+        );
+      }),
+    );
+    const dispatched = results.filter((r) => r.status === 'fulfilled').length;
+    const failed = results.length - dispatched;
+    if (failed > 0) {
+      console.warn(`[Scheduled] daily_feature_tip: ${failed}/${results.length} notifyUser calls rejected`);
     }
 
-    // 4. Advance rotation state for next time.
+    // 4. Advance rotation state for next time, and record when dispatch
+    //    actually finished (not when the row was first inserted).
     await supa
       .from('did_you_know_state')
       .upsert({ tenant_id: tenantId, last_index: nextIndex, updated_at: new Date().toISOString() });
+    await supa
+      .from('feature_announcements')
+      .update({ notified_at: new Date().toISOString() })
+      .eq('id', announcementId);
 
     console.log(`[Scheduled] daily_feature_tip → tip=${tip.key} dispatched=${dispatched} users`);
 

@@ -13,12 +13,14 @@ import express from 'express';
 import request from 'supertest';
 
 let mockSupabase: any;
-const notifyUserAsyncMock = jest.fn();
+const notifyUserMock = jest.fn();
 const bulkGetUserLocalesMock = jest.fn();
 let upsertedState: any = null;
+let updatedAnnouncement: any = null;
 
 jest.mock('../src/services/notification-service', () => ({
-  notifyUserAsync: (...args: any[]) => notifyUserAsyncMock(...args),
+  notifyUser: (...args: any[]) => notifyUserMock(...args),
+  notifyUserAsync: jest.fn(),
   sendPushToUser: jest.fn(),
   sendAppilixPush: jest.fn(),
   TYPE_META: {},
@@ -59,6 +61,7 @@ function makeFakeSupabase(opts: {
   members: Array<{ user_id: string }>;
 }) {
   upsertedState = null;
+  updatedAnnouncement = null;
   return {
     from: (table: string) => {
       if (table === 'did_you_know_state') {
@@ -78,6 +81,11 @@ function makeFakeSupabase(opts: {
         chain.insert = () => chain;
         chain.select = () => chain;
         chain.single = () => Promise.resolve(opts.insertResult);
+        chain.update = (row: any) => {
+          updatedAnnouncement = row;
+          return chain;
+        };
+        chain.eq = () => Promise.resolve({ data: null, error: null });
         return chain;
       }
       if (table === 'user_tenants') {
@@ -94,7 +102,8 @@ function makeFakeSupabase(opts: {
 }
 
 beforeEach(() => {
-  notifyUserAsyncMock.mockClear();
+  notifyUserMock.mockReset();
+  notifyUserMock.mockResolvedValue({ pushed: 1, inapp: true });
   bulkGetUserLocalesMock.mockReset();
   bulkGetUserLocalesMock.mockResolvedValue(new Map([['u1', 'de'], ['u2', 'en']]));
 });
@@ -125,7 +134,27 @@ describe('POST /daily-feature-tip', () => {
     expect(r.status).toBe(200);
     expect(r.body).toMatchObject({ ok: true, tip: 'tip-b', announcement_id: 'ann-1', dispatched: 2 });
     expect(upsertedState).toMatchObject({ tenant_id: 'tenant-1', last_index: 1 });
-    expect(notifyUserAsyncMock).toHaveBeenCalledTimes(2);
+    expect(notifyUserMock).toHaveBeenCalledTimes(2);
+    expect(updatedAnnouncement).toHaveProperty('notified_at');
+  });
+
+  it('still counts successful dispatches when some users reject (Promise.allSettled)', async () => {
+    mockSupabase = makeFakeSupabase({
+      lastIndex: 0,
+      insertResult: { data: { id: 'ann-1' }, error: null },
+      members: [{ user_id: 'u1' }, { user_id: 'u2' }],
+    });
+    notifyUserMock.mockReset();
+    notifyUserMock
+      .mockResolvedValueOnce({ pushed: 1, inapp: true })
+      .mockRejectedValueOnce(new Error('boom'));
+
+    const r = await request(makeApp())
+      .post('/api/v1/scheduled-notifications/daily-feature-tip')
+      .send({ tenant_id: 'tenant-1' });
+
+    expect(r.status).toBe(200);
+    expect(r.body).toMatchObject({ ok: true, dispatched: 1 });
   });
 
   it('wraps around to index 0 once the tip list is exhausted', async () => {
