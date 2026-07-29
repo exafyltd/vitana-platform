@@ -1095,6 +1095,14 @@ export interface GeminiLiveSession {
   // forwarding so Gemini doesn't start a new turn while the widget is closing.
   // Once true, the session is effectively in "closing for navigation" mode.
   navigationDispatched?: boolean;
+  // BOOTSTRAP-NOVA-SONIC-VOICE-NAV-FIX: set true when handleNavigateToScreen
+  // already wrote the orb_directive to the transport at tool-call time
+  // (VTID-NAV-FAST), instead of waiting for turn_complete to flush
+  // pendingNavigation. pendingNavigation stays populated either way (other
+  // turn_complete bookkeeping — forced fact extraction, memory bridge order
+  // — still reads it), but the turn_complete dispatch blocks must skip
+  // re-sending the same directive a second time when this is true.
+  navigationDirectiveSentImmediately?: boolean;
   // VTID-NAV: Current page URL the user is on when the orb session opened.
   // Used by navigator_consult to exclude the current screen from recommendations.
   current_route?: string;
@@ -2881,10 +2889,49 @@ export async function handleNavigateToScreen(
     };
   }
 
-  // Vertex-only: set pendingNavigation + eagerly update current_route so
-  // turn_complete + get_current_screen see the fresh destination.
+  // BOOTSTRAP-NOVA-SONIC-VOICE-NAV-FIX: dispatch the orb_directive
+  // IMMEDIATELY, on the same tick the tool result is decided, instead of
+  // queuing pendingNavigation and waiting for the turn_complete handler to
+  // flush it. That deferred design was fine under Gemini (whose forced
+  // function-response continuation reaches turn_complete in tens to a few
+  // thousand ms — see historical drain_wait_ms of 19-2489ms in
+  // orb.navigator.dispatched telemetry), but Nova Sonic can take many
+  // seconds to close out the turn (observed live 2026-07-29, session
+  // live-cadd6787...: drain_wait_ms=9968 — Nova chained a SECOND tool call,
+  // end_teaching_session, before ever emitting END_TURN). A ~10s stall
+  // after asking Vitana to navigate reads as "navigation is broken" even
+  // though the tool call itself succeeded in 6ms. Mirrors the pattern
+  // handleNavigate() (the free-text `navigate` tool) already uses.
   if (result.directive && result.screen_id && result.route && result.title) {
     const reason = String(args.reason || 'navigate_to_screen tool call');
+    const directiveJson = JSON.stringify(result.directive);
+    if (session.sseResponse) {
+      try { session.sseResponse.write(`data: ${directiveJson}\n\n`); } catch (_e) { /* SSE closed */ }
+    }
+    if ((session as any).clientWs && (session as any).clientWs.readyState === 1 /* WebSocket.OPEN */) {
+      try { sendWsMessage((session as any).clientWs, result.directive); } catch (_e) { /* WS closed */ }
+    }
+    console.log(`[VTID-NAV-FAST] Immediate orb_directive dispatched: ${result.screen_id} (${result.route})`);
+    emitOasisEvent({
+      vtid: 'VTID-NAV-01',
+      type: 'orb.navigator.dispatched',
+      source: 'orb-live-ws',
+      status: 'info',
+      message: `dispatched navigate to ${result.screen_id}`,
+      payload: {
+        session_id: session.sessionId,
+        screen_id: result.screen_id,
+        route: result.route,
+        decision_source: 'direct',
+        drain_wait_ms: 0,
+      },
+    }).catch(() => {});
+
+    // pendingNavigation is still populated (unchanged from before this fix)
+    // so the turn_complete handler's forced-fact-extraction and memory
+    // bookkeeping keep working; navigationDirectiveSentImmediately tells
+    // that handler the directive was already flushed here, so it must
+    // skip re-sending it when the turn eventually completes.
     session.pendingNavigation = {
       screen_id: result.screen_id,
       route: result.route,
@@ -2894,6 +2941,7 @@ export async function handleNavigateToScreen(
       requested_at: Date.now(),
     };
     session.navigationDispatched = true;
+    session.navigationDirectiveSentImmediately = true;
 
     const isOverlay = result.entry_kind === 'overlay';
     if (!isOverlay) {

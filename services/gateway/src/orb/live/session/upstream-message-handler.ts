@@ -866,36 +866,49 @@ export function createUpstreamLiveMessageHandler(
             // committed before the widget tears down the session.
             if (session.pendingNavigation) {
               const nav = session.pendingNavigation;
-              const directive = {
-                type: 'orb_directive',
-                directive: 'navigate',
-                screen_id: nav.screen_id,
-                route: nav.route,
-                title: nav.title,
-                reason: nav.reason,
-                vtid: 'VTID-NAV-01',
-              };
-              if (session.sseResponse) {
-                writeSseEvent(session.sseResponse, directive);
-              }
-              if ((session as any).clientWs && (session as any).clientWs.readyState === WebSocket.OPEN) {
-                try { ctx.deps.sendWsMessage((session as any).clientWs, directive); } catch (_e) { /* WS closed */ }
-              }
-              console.log(`[VTID-NAV-01] orb_directive dispatched: navigate to ${nav.screen_id} (${nav.route}) — session=${session.sessionId}`);
-              emitOasisEvent({
-                vtid: 'VTID-NAV-01',
-                type: 'orb.navigator.dispatched',
-                source: 'orb-live-ws',
-                status: 'info',
-                message: `dispatched navigate to ${nav.screen_id}`,
-                payload: {
-                  session_id: session.sessionId,
+              // BOOTSTRAP-NOVA-SONIC-VOICE-NAV-FIX: navigate_to_screen now
+              // flushes the orb_directive immediately at tool-call time
+              // (VTID-NAV-FAST) instead of waiting for turn_complete — Nova
+              // Sonic can take many seconds (observed 9968ms live,
+              // 2026-07-29) to close out a turn, which made the redirect
+              // feel broken even though the tool call itself succeeded in
+              // single-digit ms. Skip the duplicate send here; the pending
+              // state still exists so the extraction-force/memory-order
+              // logic above this block keeps working unchanged.
+              if (!session.navigationDirectiveSentImmediately) {
+                const directive = {
+                  type: 'orb_directive',
+                  directive: 'navigate',
                   screen_id: nav.screen_id,
                   route: nav.route,
-                  decision_source: nav.decision_source,
-                  drain_wait_ms: Date.now() - nav.requested_at,
-                },
-              }).catch(() => {});
+                  title: nav.title,
+                  reason: nav.reason,
+                  vtid: 'VTID-NAV-01',
+                };
+                if (session.sseResponse) {
+                  writeSseEvent(session.sseResponse, directive);
+                }
+                if ((session as any).clientWs && (session as any).clientWs.readyState === WebSocket.OPEN) {
+                  try { ctx.deps.sendWsMessage((session as any).clientWs, directive); } catch (_e) { /* WS closed */ }
+                }
+                console.log(`[VTID-NAV-01] orb_directive dispatched: navigate to ${nav.screen_id} (${nav.route}) — session=${session.sessionId}`);
+                emitOasisEvent({
+                  vtid: 'VTID-NAV-01',
+                  type: 'orb.navigator.dispatched',
+                  source: 'orb-live-ws',
+                  status: 'info',
+                  message: `dispatched navigate to ${nav.screen_id}`,
+                  payload: {
+                    session_id: session.sessionId,
+                    screen_id: nav.screen_id,
+                    route: nav.route,
+                    decision_source: nav.decision_source,
+                    drain_wait_ms: Date.now() - nav.requested_at,
+                  },
+                }).catch(() => {});
+              } else {
+                console.log(`[VTID-NAV-FAST] turn_complete for session ${session.sessionId}: navigate to ${nav.screen_id} already dispatched immediately at tool-call time — skipping duplicate send.`);
+              }
               // Clear pending so we don't re-dispatch on subsequent turns.
               // navigationDispatched stays TRUE so input audio stays gated until
               // the widget closes the connection.
@@ -2349,36 +2362,46 @@ export function handleTurnComplete(
   // VTID-NAV: dispatch pending navigation AFTER memory/bridge/extraction.
   if (session.pendingNavigation) {
     const nav = session.pendingNavigation;
-    const directive = {
-      type: 'orb_directive',
-      directive: 'navigate',
-      screen_id: nav.screen_id,
-      route: nav.route,
-      title: nav.title,
-      reason: nav.reason,
-      vtid: 'VTID-NAV-01',
-    };
-    if (session.sseResponse) {
-      writeSseEvent(session.sseResponse, directive);
-    }
-    if ((session as any).clientWs && (session as any).clientWs.readyState === WebSocket.OPEN) {
-      try { ctx.deps.sendWsMessage((session as any).clientWs, directive); } catch (_e) { /* WS closed */ }
-    }
-    console.log(`[VTID-NAV-01] orb_directive dispatched: navigate to ${nav.screen_id} (${nav.route}) — session=${session.sessionId}`);
-    emitOasisEvent({
-      vtid: 'VTID-NAV-01',
-      type: 'orb.navigator.dispatched',
-      source: 'orb-live-ws',
-      status: 'info',
-      message: `dispatched navigate to ${nav.screen_id}`,
-      payload: {
-        session_id: session.sessionId,
+    // BOOTSTRAP-NOVA-SONIC-VOICE-NAV-FIX: see the raw handler's mirror of
+    // this block for the full rationale — navigate_to_screen already
+    // flushed the directive immediately at tool-call time when this flag
+    // is set, so skip the duplicate send (this is the path Nova sessions
+    // actually take: bindUpstreamSessionHandlers routes Nova through this
+    // handler, not the raw one above).
+    if (!session.navigationDirectiveSentImmediately) {
+      const directive = {
+        type: 'orb_directive',
+        directive: 'navigate',
         screen_id: nav.screen_id,
         route: nav.route,
-        decision_source: nav.decision_source,
-        drain_wait_ms: Date.now() - nav.requested_at,
-      },
-    }).catch(() => {});
+        title: nav.title,
+        reason: nav.reason,
+        vtid: 'VTID-NAV-01',
+      };
+      if (session.sseResponse) {
+        writeSseEvent(session.sseResponse, directive);
+      }
+      if ((session as any).clientWs && (session as any).clientWs.readyState === WebSocket.OPEN) {
+        try { ctx.deps.sendWsMessage((session as any).clientWs, directive); } catch (_e) { /* WS closed */ }
+      }
+      console.log(`[VTID-NAV-01] orb_directive dispatched: navigate to ${nav.screen_id} (${nav.route}) — session=${session.sessionId}`);
+      emitOasisEvent({
+        vtid: 'VTID-NAV-01',
+        type: 'orb.navigator.dispatched',
+        source: 'orb-live-ws',
+        status: 'info',
+        message: `dispatched navigate to ${nav.screen_id}`,
+        payload: {
+          session_id: session.sessionId,
+          screen_id: nav.screen_id,
+          route: nav.route,
+          decision_source: nav.decision_source,
+          drain_wait_ms: Date.now() - nav.requested_at,
+        },
+      }).catch(() => {});
+    } else {
+      console.log(`[VTID-NAV-FAST] turn_complete for session ${session.sessionId}: navigate to ${nav.screen_id} already dispatched immediately at tool-call time — skipping duplicate send.`);
+    }
     session.pendingNavigation = undefined;
   } else {
     console.log(`[VTID-NAV-DIAG] turn_complete for session ${session.sessionId}: NO pendingNavigation (navigationDispatched=${!!session.navigationDispatched}, consecutiveToolCalls=${session.consecutiveToolCalls}) — widget will transition to listening`);
