@@ -84,4 +84,23 @@ describe('ORB-CONVERSATION-LATENCY: server-driven auto-greet on upstream connect
     expect(src).not.toMatch(/on\(['"]request_welcome['"]/);
     expect(src).not.toMatch(/case\s+['"]request_welcome['"]/);
   });
+
+  it('BOOTSTRAP-NOVA-GREETING-CADENCE: the real decideOpening() call wires wakeCadenceSkip from a fresh-open reconnect-bucket check', () => {
+    // Regression lock for a live incident: `decideOpening`'s `wakeCadenceSkip`
+    // input (proven correct in isolation by opening-contract.test.ts) was never
+    // populated at THIS call site, so a brand-new session_id opened seconds
+    // after the user's last one always fell through to the wake-brief's
+    // selected line (override_v2) instead of staying quiet. `_reconnectCount`
+    // only covers transport-level reconnects within one session object, so it
+    // can't catch "the user closed and reopened ORB" — the bucket check can.
+    const idxDecide = src.indexOf('const _openDecision = decideOpening({');
+    expect(idxDecide).toBeGreaterThan(-1);
+    const callBody = src.slice(idxDecide, idxDecide + 500);
+    expect(callBody).toMatch(/wakeCadenceSkip:\s*_cadenceBucketPre\s*===\s*'reconnect'/);
+    // The bucket must be computed BEFORE the decideOpening call, not after —
+    // otherwise the variable wouldn't exist to reference.
+    const idxBucket = src.indexOf('const _cadenceBucketPre = describeTimeSince(');
+    expect(idxBucket).toBeGreaterThan(-1);
+    expect(idxBucket).toBeLessThan(idxDecide);
+  });
 });
