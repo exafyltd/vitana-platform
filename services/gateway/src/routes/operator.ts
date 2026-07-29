@@ -1006,6 +1006,17 @@ router.post('/deployments', async (req: Request, res: Response) => {
       });
     }
 
+    // This fires when the workflow's post-deploy step confirms the rollout
+    // actually landed — unlike the /publish-time invalidation (which runs
+    // the instant the workflow is dispatched, while prod still serves the
+    // old revision), this is the point where /deployments is guaranteed to
+    // return the NEW active revision if read right now. Without this, a
+    // /deployments read during the rollout window can repopulate
+    // ACTIVE_REV_CACHE with the still-old revision and hold it there for
+    // the full TTL, so even the confirmed post-publish refresh can show
+    // stale data.
+    ACTIVE_REV_CACHE.delete(service);
+
     console.log(`[Operator] Deployment recorded: ${swv_id} for ${service}`);
 
     return res.status(201).json({
@@ -1535,6 +1546,9 @@ async function publishAwsFlow(
     source_revision: stagingRevShort,
     initiator_id: identity.user_id,
   });
+  // See the GCP flow's identical invalidation above — same staleness bug,
+  // same fix, regardless of which cloud PUBLISH_TARGET_CLOUD points at.
+  ACTIVE_REV_CACHE.delete('gateway');
 
   await emitOasisEvent({
     vtid,
@@ -1830,6 +1844,11 @@ router.post('/publish', requireAdminAuth, async (req: Request, res: Response) =>
       source_revision: stagingRevShort,
       initiator_id: identity.user_id,
     });
+    // Publish just changed which revision is active; a stale ACTIVE_REV_CACHE
+    // entry would otherwise show the old "Currently Live" row for up to
+    // ACTIVE_REV_TTL_MS on the next /deployments read (same reason /revert,
+    // /revert-both, /promote, and /abort-canary all invalidate it).
+    ACTIVE_REV_CACHE.delete('gateway');
 
     // Emit different terminal events depending on mode.
     // Canary mode: the deploy DOES NOT promote to 100%; emit .requested only.
