@@ -170,9 +170,17 @@ jobs:
           # happens when they are absent. To roll back to fully disabled,
           # dispatch manually with nova_sonic_enabled=false, or set the
           # repo variable explicitly to 'false'.
+          #
+          # BOOTSTRAP-NOVA-SONIC-VOICE (2026-07-29): expanded from the
+          # 4-user canary to the internal "vitana" dev tenant
+          # (00000000-0000-0000-0000-000000000001, DEV_IDENTITY.TENANT_ID)
+          # for the runbook's next step (docs/NOVA-SONIC-CANARY-RUNBOOK.md
+          # §6: "one internal tenant -> observe one working day"). The 4
+          # individual canary users stay allowlisted too (harmless overlap
+          # -- both checks are independent `.has()` lookups).
           NOVA_SONIC_ENABLED: ${{ inputs.nova_sonic_enabled || vars.AWS_STAGE_NOVA_SONIC_ENABLED || 'true' }}
           NOVA_SONIC_CANARY_USER_IDS: ${{ inputs.nova_canary_user_ids || vars.AWS_STAGE_NOVA_SONIC_CANARY_USER_IDS || 'a27552a3-0257-4305-8ed0-351a80fd3701,c5a4daf9-190a-4a9e-9638-d6b32f85244a,a2c6ba7e-2ad4-48af-8253-9fe34d0f9232,0adc6ff6-acb0-4dca-99d0-295211a40e3e' }}
-          NOVA_SONIC_CANARY_TENANT_IDS: ${{ inputs.nova_canary_tenant_ids || vars.AWS_STAGE_NOVA_SONIC_CANARY_TENANT_IDS || '' }}
+          NOVA_SONIC_CANARY_TENANT_IDS: ${{ inputs.nova_canary_tenant_ids || vars.AWS_STAGE_NOVA_SONIC_CANARY_TENANT_IDS || '00000000-0000-0000-0000-000000000001' }}
         run: |
           set -e
           IMAGE="${{ steps.build.outputs.image }}"
