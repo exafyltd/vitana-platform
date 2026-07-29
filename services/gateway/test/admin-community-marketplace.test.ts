@@ -59,10 +59,11 @@ function makeFakeSupabase() {
       let op = 'select';
       let opArgs: any[] = [];
       const chain: any = {};
-      for (const m of ['eq', 'neq', 'in', 'order', 'range']) {
+      for (const m of ['eq', 'neq', 'in', 'ilike', 'order', 'range']) {
         chain[m] = (...args: any[]) => chain;
       }
       chain.select = (...args: any[]) => { if (op === 'select') opArgs = args; return chain; };
+      chain.insert = (...args: any[]) => { op = 'insert'; opArgs = args; return chain; };
       chain.update = (...args: any[]) => { op = 'update'; opArgs = args; return chain; };
       chain.upsert = (...args: any[]) => { op = 'upsert'; opArgs = args; return chain; };
       chain.delete = (...args: any[]) => { op = 'delete'; opArgs = args; return chain; };
