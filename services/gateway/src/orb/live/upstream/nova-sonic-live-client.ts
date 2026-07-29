@@ -270,6 +270,81 @@ export async function warmNovaSonicConnection(config: NovaSonicConfig): Promise<
   }
 }
 
+/** Minimal system instruction for the model-execution warm probe — no tools,
+ *  no persona, no user context. Small enough to add negligible processing
+ *  time of its own, while still exercising the real inference path. */
+const MODEL_WARM_SYSTEM_INSTRUCTION =
+  'You are a connection health probe. When you receive any input, respond ' +
+  'with exactly one short word and then stop. Do not ask questions.';
+const MODEL_WARM_PROMPT = 'Say one short word to confirm you are working.';
+const MODEL_WARM_TIMEOUT_MS = 8_000;
+
+/**
+ * BOOTSTRAP-NOVA-SONIC-VOICE (latency): real (tiny) model-execution warm-up.
+ *
+ * `warmNovaSonicConnection` above keeps the TRANSPORT hot (DNS/TCP/TLS/HTTP2
+ * + credentials) via a request Bedrock rejects before inference — it never
+ * touches the model executor. Live production data showed Nova's
+ * audio_out_first_chunk swinging 2.5s-9.9s (vs. Vertex's tighter 3.3-5.6s
+ * band) — the same cold/warm split found in earlier isolated testing, now
+ * on real customer traffic: a session that lands right after another is
+ * consistently fast, one after any idle gap pays a much larger tax.
+ *
+ * This opens a real, minimal `NovaSonicLiveClient` session (no tools, a
+ * one-line system instruction, a one-line forced turn), waits for the FIRST
+ * genuine model output (audio, transcript, or turn-complete — whichever
+ * arrives first proves the executor actually ran), then closes immediately.
+ * The tiny real inference cost is the point: it is what keeps the model
+ * executor itself hot between real user sessions, the way
+ * `warmNovaSonicConnection` keeps the pipe hot. Runs fully isolated from
+ * `liveSessions` / OASIS session bookkeeping / quota meters — it is
+ * infrastructure health, never a user-visible session — and, per the
+ * keep-warm telemetry discipline (CLAUDE.md: "Never mark polling or
+ * heartbeats as OASIS events"), emits nothing but a console line.
+ *
+ * Returns latency ms (connect start → first genuine output) on success,
+ * null on any failure (transport, timeout, or model error) — same contract
+ * shape as `warmNovaSonicConnection` so the keep-warm loop can treat both
+ * uniformly.
+ */
+export async function warmNovaSonicModelExecution(config: NovaSonicConfig): Promise<number | null> {
+  const t0 = Date.now();
+  const client = new NovaSonicLiveClient({ config, voiceId: 'tina' });
+  let settled = false;
+  return new Promise<number | null>((resolve) => {
+    const finish = (result: number | null) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      void client.close('model_warm_probe_done').catch(() => { /* best-effort */ });
+      resolve(result);
+    };
+    const timer = setTimeout(() => finish(null), MODEL_WARM_TIMEOUT_MS);
+    (timer as NodeJS.Timeout).unref?.();
+
+    client.onAudioOutput(() => finish(Date.now() - t0));
+    client.onTranscript((e) => { if (e.direction === 'output') finish(Date.now() - t0); });
+    client.onTurnComplete(() => finish(Date.now() - t0));
+    client.onError(() => finish(null));
+    client.onClose(() => finish(null));
+
+    client
+      .connect({
+        model: config.modelId,
+        voiceName: 'tina',
+        responseModalities: ['audio'],
+        vadSilenceMs: 750,
+        systemInstruction: MODEL_WARM_SYSTEM_INSTRUCTION,
+        tools: [],
+        connectTimeoutMs: config.connectTimeoutMs,
+      })
+      .then(() => {
+        client.sendTextTurn(MODEL_WARM_PROMPT, true);
+      })
+      .catch(() => finish(null));
+  });
+}
+
 /**
  * Boot-time prewarm: build the shared client, resolve the credential chain
  * (ECS task-role fetch), and establish the TLS/HTTP/2 path — all off the

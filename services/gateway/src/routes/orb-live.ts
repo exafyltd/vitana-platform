@@ -1397,7 +1397,7 @@ import { synthesizeGreetingBridgeAudioPcm, GREETING_BRIDGE_PCM_SAMPLE_RATE_HZ } 
 import { resolveNovaSonicVoice } from '../orb/live/voice/nova-sonic-voice';
 import { prewarmNovaSonicBedrock } from '../orb/live/upstream/nova-sonic-live-client';
 import { sanitizeInstructionForNova } from '../orb/live/upstream/nova-instruction-sanitizer';
-import { startNovaSonicKeepWarm } from '../orb/live/upstream/nova-sonic-keepwarm';
+import { startNovaSonicKeepWarm, startNovaSonicModelWarm } from '../orb/live/upstream/nova-sonic-keepwarm';
 import { createUpstreamClient } from '../orb/live/upstream/upstream-client-factory';
 import { bindUpstreamSessionHandlers } from '../orb/live/session/upstream-message-handler';
 import { createNovaWsFacade } from '../orb/live/upstream/nova-ws-facade';
@@ -1604,6 +1604,12 @@ if (googleAuth && VERTEX_PROJECT_ID) {
     // would put TLS/H2 setup back on the next user's critical path).
     const keepWarm = startNovaSonicKeepWarm(novaBootCfg);
     console.log(`[BOOTSTRAP-NOVA-SONIC-VOICE] Bedrock keep-warm ${keepWarm ? `enabled (every ${novaBootCfg.keepWarmMs}ms)` : 'disabled'}`);
+    // Latency fix: the transport ping above never touches the model
+    // executor. This second loop performs a real, tiny inference round-trip
+    // on a shorter cadence to keep Bedrock's Nova model executor itself
+    // warm — see warmNovaSonicModelExecution's doc comment for why.
+    const modelWarm = startNovaSonicModelWarm(novaBootCfg);
+    console.log(`[BOOTSTRAP-NOVA-SONIC-VOICE] Bedrock model-execution warm-up ${modelWarm ? `enabled (every ${novaBootCfg.modelWarmMs}ms)` : 'disabled'}`);
   }
 }
 

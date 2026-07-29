@@ -29,6 +29,15 @@ const DEFAULT_ROTATION_AFTER_MS = 435_000;
 // Under NodeHttp2Handler's 480s idle sessionTimeout so the pooled HTTP/2
 // session never expires between pings.
 const DEFAULT_KEEPWARM_MS = 240_000;
+// BOOTSTRAP-NOVA-SONIC-VOICE (latency): the transport-only keep-warm ping
+// above rides a marker model ID Bedrock rejects before any inference — it
+// keeps DNS/TCP/TLS/HTTP2 hot but never touches the model-execution path.
+// Real production data (2026-07-29) showed audio_out_first_chunk ranging
+// 2.5s-9.9s for Nova vs. Vertex's tighter 3.3-5.6s band — the same
+// "cold vs. warm" split observed earlier in isolated latency testing, this
+// time on live customer traffic. A real (tiny) inference round-trip on a
+// shorter cadence keeps the model executor itself warm, not just the pipe.
+const DEFAULT_MODEL_WARM_MS = 90_000;
 // Per-turn output budget. The Nova sample's 1024 starves real ORB turns —
 // the greeting turn alone (16KB wake prompt + tool rounds) exhausted it and
 // ended with no speech (staging session live-dedf85d5).
@@ -42,6 +51,7 @@ export type NovaSonicConfigIssue =
   | 'nova_connect_timeout_invalid'
   | 'nova_rotation_after_invalid'
   | 'nova_keepwarm_invalid'
+  | 'nova_model_warm_invalid'
   | 'nova_max_tokens_invalid';
 
 export interface NovaSonicConfig {
@@ -58,6 +68,12 @@ export interface NovaSonicConfig {
    * NodeHttp2Handler drops idle sessions after 8 min). 0 disables.
    */
   keepWarmMs: number;
+  /**
+   * Interval for the real (tiny) model-execution warm-up: a genuine minimal
+   * inference round-trip (not the zero-cost 4xx marker ping) that keeps
+   * Bedrock's model executor itself hot, not just the transport. 0 disables.
+   */
+  modelWarmMs: number;
   /** sessionStart inferenceConfiguration.maxTokens (per-turn output budget). */
   maxTokens: number;
   /**
@@ -149,6 +165,12 @@ export function getNovaSonicConfig(env: NodeJS.ProcessEnv): NovaSonicConfig {
   );
   if (keepWarmMs === null) issues.push('nova_keepwarm_invalid');
 
+  const modelWarmMs = parseNonNegativeInt(
+    env.NOVA_SONIC_MODEL_WARM_MS,
+    DEFAULT_MODEL_WARM_MS,
+  );
+  if (modelWarmMs === null) issues.push('nova_model_warm_invalid');
+
   const maxTokens = parsePositiveInt(env.NOVA_SONIC_MAX_TOKENS, DEFAULT_MAX_TOKENS);
   if (maxTokens === null) issues.push('nova_max_tokens_invalid');
 
@@ -161,6 +183,7 @@ export function getNovaSonicConfig(env: NodeJS.ProcessEnv): NovaSonicConfig {
     connectTimeoutMs: connectTimeoutMs ?? DEFAULT_CONNECT_TIMEOUT_MS,
     rotationAfterMs: rotationAfterMs ?? DEFAULT_ROTATION_AFTER_MS,
     keepWarmMs: keepWarmMs ?? DEFAULT_KEEPWARM_MS,
+    modelWarmMs: modelWarmMs ?? DEFAULT_MODEL_WARM_MS,
     maxTokens: maxTokens ?? DEFAULT_MAX_TOKENS,
     issues,
     ready: enabled && issues.length === 0,

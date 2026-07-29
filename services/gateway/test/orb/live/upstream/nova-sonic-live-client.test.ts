@@ -8,6 +8,7 @@ import {
   NovaInputQueue,
   classifyNovaError,
   warmNovaSonicConnection,
+  warmNovaSonicModelExecution,
   __setSharedBedrockClientForTests,
   type NovaBedrockLike,
 } from '../../../../src/orb/live/upstream/nova-sonic-live-client';
@@ -460,5 +461,80 @@ describe('warmNovaSonicConnection (zero-cost connection warm)', () => {
     };
     __setSharedBedrockClientForTests(shared);
     expect(await warmNovaSonicConnection(config)).toBeNull();
+  });
+});
+
+describe('warmNovaSonicModelExecution (BOOTSTRAP-NOVA-SONIC-VOICE latency: real model-execution warm-up)', () => {
+  afterEach(() => {
+    __setSharedBedrockClientForTests(null);
+  });
+
+  it('a real audio output means the model executor ran — returns latency, closes the probe session', async () => {
+    const body = new FakeResponseBody();
+    const closeSpy = jest.fn();
+    const shared: NovaBedrockLike = {
+      send: jest.fn(async () => ({ body })),
+      // NovaSonicLiveClient.close() only needs `send` per NovaBedrockLike;
+      // nothing else to inject — the probe's own client.close() drains its
+      // queue locally without another `send` call.
+    };
+    __setSharedBedrockClientForTests(shared);
+
+    const resultPromise = warmNovaSonicModelExecution(config);
+    // Let connect()'s internal send() resolve and the probe's sendTextTurn
+    // land, then simulate the model actually responding.
+    await flush();
+    body.feed({ event: { audioOutput: { content: 'QUJD' } } });
+
+    const ms = await resultPromise;
+    expect(typeof ms).toBe('number');
+    expect(shared.send).toHaveBeenCalledTimes(1);
+  });
+
+  it('a turn-complete with no audio still proves the executor ran — returns latency', async () => {
+    const body = new FakeResponseBody();
+    const shared: NovaBedrockLike = { send: jest.fn(async () => ({ body })) };
+    __setSharedBedrockClientForTests(shared);
+
+    const resultPromise = warmNovaSonicModelExecution(config);
+    await flush();
+    body.feed({ event: { completionEnd: { stopReason: 'END_TURN' } } });
+
+    expect(typeof (await resultPromise)).toBe('number');
+  });
+
+  it('a transport-level failure returns null, never throws', async () => {
+    const shared: NovaBedrockLike = {
+      send: jest.fn(async () => {
+        throw Object.assign(new Error('socket hang up'), { name: 'ModelStreamErrorException' });
+      }),
+    };
+    __setSharedBedrockClientForTests(shared);
+    expect(await warmNovaSonicModelExecution(config)).toBeNull();
+  });
+
+  it('a model error (e.g. validation) after connect returns null, never throws', async () => {
+    const body = new FakeResponseBody();
+    const shared: NovaBedrockLike = { send: jest.fn(async () => ({ body })) };
+    __setSharedBedrockClientForTests(shared);
+
+    const resultPromise = warmNovaSonicModelExecution(config);
+    await flush();
+    body.feedRaw({ validationException: { message: 'ValidationException: probe rejected' } } as any);
+
+    expect(await resultPromise).toBeNull();
+  });
+
+  it('never resolves before a real signal arrives, and times out to null if the model never responds', async () => {
+    jest.useFakeTimers();
+    const body = new FakeResponseBody();
+    const shared: NovaBedrockLike = { send: jest.fn(async () => ({ body })) };
+    __setSharedBedrockClientForTests(shared);
+
+    const resultPromise = warmNovaSonicModelExecution(config);
+    await jest.advanceTimersByTimeAsync(7_999);
+    await jest.advanceTimersByTimeAsync(1);
+    expect(await resultPromise).toBeNull();
+    jest.useRealTimers();
   });
 });

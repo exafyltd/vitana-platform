@@ -25,6 +25,7 @@ describe('getNovaSonicConfig', () => {
         connectTimeoutMs: 15000,
         rotationAfterMs: 435000,
         keepWarmMs: 240000,
+        modelWarmMs: 90000,
         maxTokens: 4096,
         issues: [],
       }),
@@ -86,6 +87,7 @@ describe('getNovaSonicConfig', () => {
       NOVA_SONIC_CONNECT_TIMEOUT_MS: 'soon',
       NOVA_SONIC_ROTATION_AFTER_MS: '-5',
       NOVA_SONIC_KEEPWARM_MS: 'often',
+      NOVA_SONIC_MODEL_WARM_MS: 'soon',
     } as NodeJS.ProcessEnv);
     expect(cfg.ready).toBe(false);
     expect(cfg.issues).toEqual(
@@ -93,6 +95,7 @@ describe('getNovaSonicConfig', () => {
         'nova_connect_timeout_invalid',
         'nova_rotation_after_invalid',
         'nova_keepwarm_invalid',
+        'nova_model_warm_invalid',
       ]),
     );
   });
@@ -105,6 +108,19 @@ describe('getNovaSonicConfig', () => {
     expect(cfg.keepWarmMs).toBe(0);
     expect(cfg.ready).toBe(true);
     expect(cfg.issues).toEqual([]);
+  });
+
+  it('model-execution warm-up is env-tunable and accepts 0 as an explicit disable', () => {
+    expect(
+      getNovaSonicConfig({ NOVA_SONIC_MODEL_WARM_MS: '30000' } as NodeJS.ProcessEnv).modelWarmMs,
+    ).toBe(30000);
+    const disabled = getNovaSonicConfig({
+      NOVA_SONIC_ENABLED: 'true',
+      NOVA_SONIC_MODEL_WARM_MS: '0',
+    } as NodeJS.ProcessEnv);
+    expect(disabled.modelWarmMs).toBe(0);
+    expect(disabled.ready).toBe(true);
+    expect(disabled.issues).toEqual([]);
   });
 });
 
