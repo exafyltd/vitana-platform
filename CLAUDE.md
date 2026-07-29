@@ -82,11 +82,15 @@ Claude must **never** do the following:
 1. **Never invent new projects, environments, or services.** (Exception:
    the AWS parallel/DR environment, sanctioned under **VTID-03398,
    VTID-03409, VTID-03410, VTID-03411, VTID-03414, VTID-03415** — see
-   §1b. GCP remains canonical production; AWS is additive DR capacity,
-   not a new canonical target, and not yet a sole-production cutover —
-   see `docs/AWS-CUTOVER-RUNBOOK.md` (VTID-03412) for what still gates
-   that. Extending AWS-DR to a service not already listed in §1b still
-   needs its own new VTID.)
+   §1b. GCP remains canonical production for every service **except
+   gateway and community-app** — those two were cut over to AWS as
+   sole production under **VTID-03419** (2026-07-27; DNS execution
+   record in `docs/AWS-CUTOVER-RUNBOOK.md` §3). Everything else (Aurora
+   as a failover target, oasis-projector, orb-agent, autopilot-cdc, and
+   full GCP decommission) remains additive DR only — not yet a
+   sole-production cutover, and still gated on that runbook's §2
+   checklist plus its own separate execution VTID. Extending AWS-DR to
+   a service not already listed in §1b still needs its own new VTID.)
 2. **Never bypass governance gates.**
 3. **Never execute without a VTID.**
 4. **Never deploy without OASIS approval.**
@@ -311,15 +315,20 @@ gcloud run deploy <service> \
 ## 1b. AWS PRODUCTION (DR) (VTID-03398, VTID-03409, VTID-03410, VTID-03411, VTID-03414, VTID-03415)
 
 GCP (`lovable-vitana-vers1`) remains the **canonical** production for every
-service. AWS hosts **parallel/DR production infrastructure for 7 services**
-plus a RunTask job-dispatch path — additive capacity, not a migration, and
-not yet a sole-production cutover. Extending this pattern to a service not
-listed in the table below still needs its own new VTID.
+service **except gateway and community-app**. Those two were cut over to
+AWS as **sole production** under **VTID-03419** (2026-07-27) — see
+`docs/AWS-CUTOVER-RUNBOOK.md` §3 for the DNS execution record. For every
+other service in the table below, AWS remains **parallel/DR production
+infrastructure** — additive capacity, not a migration, not yet a
+sole-production cutover, gated on `docs/AWS-CUTOVER-RUNBOOK.md`
+(VTID-03412) §2's checklist and its own separate execution VTID.
+Extending this pattern to a service not listed in the table below still
+needs its own new VTID.
 
 | Service | VTID | ECS resource / dispatch | Public URL / access | Deploy workflow |
 |---|---|---|---|---|
 | gateway | VTID-03398 | ECS service `vitana-gateway-awsdr`, task def family `vitana-gateway-awsdr`, target group `vitana-tg-gateway-awsdr` | `https://dr-gateway.vitanaland.com` (ALB host rule, priority 5) | `AWS-PROD-DEPLOY-GATEWAY.yml` |
-| community-app (frontend) | VTID-03409 | ECS service `vitana-community-app-awsdr`, target group `vitana-tg-community-awsdr` | `https://dr-app.vitanaland.com` (ALB host rule, priority 6); static SPA build bakes the **canonical GCP prod** gateway URL (`gateway.vitanaland.com`) into `.env.production` — no runtime env var to flip | `AWS-PROD-DEPLOY-FRONTEND.yml` (in `exafyltd/vitana-v1`) — still on static `AWS_STAGING_ACCESS_KEY_ID`/`SECRET` repo secrets, not yet OIDC (follow-up) |
+| community-app (frontend) | VTID-03409, cut over to sole production VTID-03419 | ECS service `vitana-community-app-awsdr` (now serving `vitanaland.com` apex + `www`, not just the `dr-app` DR hostname), target group `vitana-tg-community-awsdr` | `https://dr-app.vitanaland.com` (ALB host rule, priority 6) **and** `https://vitanaland.com` (apex/`www`, since VTID-03419 — routed via a Cloudflare Worker whose origin was repointed at cutover time, not by DNS alone, see runbook §3.2); static SPA build bakes the canonical gateway URL (`gateway.vitanaland.com`, itself AWS since VTID-03419) into `.env.production` — no runtime env var to flip | `AWS-PROD-DEPLOY-FRONTEND.yml` (in `exafyltd/vitana-v1`) — still on static `AWS_STAGING_ACCESS_KEY_ID`/`SECRET` repo secrets, not yet OIDC (follow-up) |
 | oasis-operator | VTID-03410 | ECS service `vitana-oasis-operator-awsdr` (256 CPU/512MB, stateless, no DB dependency), target group `vitana-tg-oasis-op-awsdr` | `https://dr-oasis-operator.vitanaland.com` (ALB host rule, priority 7) | `AWS-PROD-DEPLOY-OASIS-OPERATOR.yml` — first CI/CD path this service has ever had; its source didn't exist in git and was restored from a stale `.backup` snapshot |
 | oasis-projector | VTID-03411 | ECS service `vitana-oasis-projector`, fixed `desiredCount` — **no autoscaling**, the Ledger Writer has no cross-instance locking | No public ALB/DNS — internal DB reconciliation loop; verify via ECS `healthStatus` (`/ready`) | `AWS-PROD-DEPLOY-OASIS-PROJECTOR.yml` |
 | worker-runner | VTID-03411 | ECS service `vitana-worker-runner`, fixed `desiredCount` | No public ALB/DNS — polls outward to gateway; verify via ECS `healthStatus` (`/alive`) | `AWS-PROD-DEPLOY-WORKER-RUNNER.yml` |
@@ -1198,6 +1207,8 @@ Use these PATs with the GitHub REST API (`api.github.com`) for all PR and deploy
 
 | Date | Change | VTID |
 |------|--------|------|
+| 2026-07-29 | **Governance correction, not new work:** `docs/AWS-CUTOVER-RUNBOOK.md` §1's DNS row still said "Unmoved" and §3's "EXECUTION RECORD" citation pointed at content that was never actually written, and this file's §1b/Never-rule-1 prose still said "not yet a sole-production cutover" with no VTID-03419 changelog row at all — despite VTID-03419 (below) having genuinely executed 2 days earlier. The infrastructure change was real and independently verifiable (DNS resolution, live production traffic, working PUBLISH deploys against it); the paper trail describing it was not committed. Root cause: the doc-update step in VTID-03419's own spec (§5) was apparently never pushed before that session's context was summarized. Found via a second Claude session's independent skepticism of a status claim — see its investigation for the discovery. Fixed: runbook §1/§3 now match reality (with real EXECUTION RECORD blocks — ALB rule priorities, exact DNS record changes, the Cloudflare Worker origin override that actually gated the apex leg, verification method, rollback path), this file's §1b/Never-rule-1 updated, VTID-03419 changelog row added below. | (governance fix, no VTID) |
+| 2026-07-27 | **GCP → AWS production cutover for gateway + frontend (VTID-03419).** Repointed `gateway.vitanaland.com` (A→CNAME, `34.111.235.0` → `vitana-alb-prod`) and the `vitanaland.com` apex/`www` (CNAME → the same ALB) to AWS — these two hostnames are now **sole production on AWS**, not DR. Deliberately narrow: excluded Aurora-dependent services (DMS showed ~154k silently-dropped row applies — Aurora is not a valid failover target), `oasis-projector` (dual-writer risk against a DMS-managed table), `orb-agent`/ORB voice (hard Google-Cloud-service dependency, unrelated to hosting), and any GCP decommission — GCP stays fully running as the standing rollback target. Pre-flight added ALB host-header rules at priority 3/4 (below the pre-existing path rules at priority 10, which would otherwise route to AWS staging regardless of `Host`). Caught and fixed a live blocker mid-cutover: a Cloudflare Worker (`vitanaland-proxy`, dashboard-managed) had route rules on `vitanaland.com/*` that override DNS entirely with a hard-coded GCP origin — DNS alone did not move apex traffic; the Worker's origin had to be patched too. Verified via authenticated read+write, a forced-HTTP/1.1 WebSocket handshake, and external-vantage fingerprinting (both clouds report `env:"production"`, so status fields alone don't distinguish them) — 60-minute post-cutover alarm watch clean. Full execution record: `docs/AWS-CUTOVER-RUNBOOK.md` §3. | VTID-03419 |
 | 2026-07-28 | AWS staging→prod publish path (PUBLISH parity): `AWS-PROD-DEPLOY-GATEWAY.yml` gained `deploy_mode=promote-staging` (new default — ships the EXACT ECR image `vitana-gateway` staging runs, verified over HTTP build-info, pinned via new `expected_commit` input; `rebuild-main` keeps the old from-source path) and its smoke URL default is now canonical `gateway.vitanaland.com`. Gateway: new `PUBLISH_TARGET_CLOUD=aws\|gcp` switch (default `gcp`, zero change until set) makes `POST /operator/publish` promote AWS staging→AWS prod (frontend leg → `AWS-PROD-DEPLOY-FRONTEND.yml`; optional `GCP_DUAL_PUBLISH_ENABLED` refreshes the GCP rollback target; canary → 400 on AWS) and backs `/operator/revisions` for the gateway rows with build-info from the AWS stacks — fixes the Command Hub PUBLISH popover's "Could not load: staging 500" on the ECS-served gateway (no GCP ADC there). New `services/gateway/src/services/aws-gateway-admin.ts` (HTTP-only introspection; `vitana-ecs-task-role` has no `ecs:Describe*`). | VTID-03420 |
 | 2026-07-24 | Added automatic once-a-day "Did You Know" News Feed card: `did_you_know_state` table (per-tenant rotation index) + `POST /api/v1/scheduled-notifications/daily-feature-tip` (advances through a curated `services/gateway/src/data/feature-tips.ts` list, publishes a tenant-wide `did-you-know-feature` announcement, fans out in-app + push in each user's locale) + Cloud Scheduler entry (`scripts/setup-cloud-scheduler.sh`, daily 17:00 UTC). Companion vitana-v1 fix: feature-announcement cards no longer pinned permanently at the News Feed top — now merge chronologically into the post stream so they get pushed down by new posts, per live user report. No VTID existed for this yet; tracked under this BOOTSTRAP tag pending one. Requires someone with `gcloud` access to run the updated `setup-cloud-scheduler.sh` once to actually create the Cloud Scheduler job — code shipping does not create it automatically. | BOOTSTRAP-DAILY-FEATURE-TIP |
 | 2026-07-24 | Built the AWS-DR RunTask dispatch path for the autopilot executor — new `dispatchExecutorJobAws()` in `services/gateway/src/services/aws-ecs-admin.ts` (mirrors `dispatchExecutorJob()`'s return shape via `ecs:RunTask` against task def family `vitana-autopilot-executor`), branched in `dev-autopilot-execute.ts` on a new `DEV_AUTOPILOT_JOB_CLOUD=aws\|gcp` env var (default `gcp`). New `AWS-PROD-DEPLOY-AUTOPILOT-EXECUTOR.yml` (build+push+register only — no ECS service to roll, next RunTask dispatch picks up `:LATEST`). `ANTHROPIC_API_KEY`/`OPENAI_API_KEY` deliberately omitted from the live task definition (deferred pending AWS/Anthropic sponsorship decision). Updated §1b table + Never-rule exception. | VTID-03415 |
