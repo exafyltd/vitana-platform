@@ -8440,6 +8440,23 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
   }
 
   const _wb = (session as any).wakeBriefDecision || null;
+  // BOOTSTRAP-NOVA-GREETING-CADENCE: `decideOpening`'s `wakeCadenceSkip` input
+  // was never populated at this call site — the rich B1 greeting-policy engine
+  // (greeting-policy.ts, `decideGreetingPolicyWithEvidence`) computes a skip
+  // verdict elsewhere but nothing forwarded it here, so `wakeCadenceSkip` was
+  // always `undefined` and rung 8 (override_v2) fired the wake-brief's
+  // selected line unconditionally on every fresh `session_id` — including a
+  // brand-new session opened seconds after the user's last one (observed live:
+  // every ORB re-open replayed a full proactive opener, "starts from scratch
+  // every time"). `_reconnectCount` only tracks transport-level reconnects
+  // WITHIN one session object, so a genuinely new session (the user closing
+  // and reopening ORB) always read isReconnect=false too. Close the gap with
+  // the same 'reconnect' bucket (<120s since last session, per
+  // temporal-bucket.ts) `decideGreetingPolicyWithEvidence` already treats as a
+  // forced skip — this was pre-existing on Vertex too, but Nova's slower
+  // per-connection setup and less stable mobile transport made re-opens (and
+  // thus the bug) far more frequent, which is why it surfaced now.
+  const _cadenceBucketPre = describeTimeSince(session.lastSessionInfo).bucket;
   const _openDecision = decideOpening({
     isAnonymous: !!session.isAnonymous,
     hasResumptionHandle: !!session.resumptionHandle,
@@ -8447,6 +8464,7 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
     wakeSelectedLine: _wb?.selectedContinuation?.userFacingLine ?? null,
     wakeSelectedKind: _wb?.selectedContinuation?.kind ?? null,
     lastOpenerLine: (session as any)._lastOpenerLine ?? null,
+    wakeCadenceSkip: _cadenceBucketPre === 'reconnect',
   });
   console.log(formatOpeningDecisionLog(session.sessionId, _openDecision));
   (session as any)._openingDecision = _openDecision;
