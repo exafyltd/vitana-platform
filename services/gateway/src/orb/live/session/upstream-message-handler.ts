@@ -50,6 +50,7 @@ import {
   getSilenceIdleThresholdMs,
   getSilenceKeepaliveIntervalMs,
   SILENCE_AUDIO_B64,
+  LOOP_GUARD_HARD_CEILING_EXTRA_CALLS,
 } from '../../upstream/constants';
 import { emitOasisEvent } from '../../../services/oasis-event-service';
 import { handleIdentityIntent } from '../../../services/identity-intent-handler';
@@ -1673,14 +1674,54 @@ export function handleToolCall(
       tools: toolNames,
       function_call_count: event.calls.length,
     }, 'warning').catch(() => { });
+
+    // VTID-TOOLGUARD-FIX: the guard previously sent {success:false, error:
+    // '...'} — a shape observed live (2026-07-28, session live-be473671...)
+    // to NOT stop the loop: Nova read it as "this tool failed" and kept
+    // trying other tools from its catalog (16 -> 35+ consecutive calls,
+    // never recovering). VTID-03245's graceToolResultForModel already
+    // established why: models don't reliably follow directives buried in
+    // an `error` field, only in a benign-looking `result`/speak_guidance
+    // payload (see tool-failure-grace.ts). Reuse that exact shape here
+    // instead of inventing a second, unproven one.
+    const loopGuardGuidance = JSON.stringify({
+      ok: false,
+      available: false,
+      tool: 'loop_guard',
+      speak_guidance:
+        'No more tool calls are needed right now. In ONE short, warm sentence, ' +
+        'answer the user directly using only the information you already have ' +
+        'from earlier tool results. Do NOT call any tool in this turn.',
+    });
     for (const fc of event.calls) {
       ctx.client.sendToolResult({
         callId: fc.id || randomUUID(),
         name: fc.name,
-        success: false,
-        output: '',
-        error: 'Tool loop guard: too many consecutive tool calls. Respond to the user now with the information already gathered from earlier tool results. Do not call any more tools in this turn.',
+        success: true,
+        output: loopGuardGuidance,
       });
+    }
+
+    // VTID-TOOLGUARD-FIX: hard ceiling as a backstop in case the reworded
+    // guidance above still doesn't land — well above the normal threshold
+    // (getMaxConsecutiveToolCalls(), observed as 15) so it only fires for a
+    // genuinely runaway session, not a legitimate burst of tool use. Past
+    // this point we stop feeding the model anything further (even the
+    // graceful guidance) and just let its next turn_complete/silence
+    // handling take over, rather than paying for and re-triggering an
+    // unbounded stream of Bedrock/Vertex calls that have already proven not
+    // to break the loop.
+    const hardCeiling = getMaxConsecutiveToolCalls() + LOOP_GUARD_HARD_CEILING_EXTRA_CALLS;
+    if (session.consecutiveToolCalls > hardCeiling && !(session as any)._toolLoopGuardExhaustedEmitted) {
+      (session as any)._toolLoopGuardExhaustedEmitted = true;
+      console.error(`[VTID-TOOLGUARD] Tool call loop STILL not broken for session ${session.sessionId} after ${session.consecutiveToolCalls} consecutive calls (hard ceiling: ${hardCeiling}) — the model is not responding to loop-break guidance.`);
+      ctx.deps.emitLiveSessionEvent('orb.live.tool_loop_guard_activated', {
+        session_id: session.sessionId,
+        consecutive: session.consecutiveToolCalls,
+        tools: toolNames,
+        function_call_count: event.calls.length,
+        hard_ceiling_exceeded: true,
+      }, 'error').catch(() => { });
     }
     return;
   }
