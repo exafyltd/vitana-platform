@@ -2220,7 +2220,13 @@ Send the canonical id when known: COMM.FIND_PARTNER, HEALTH.VITANA_INDEX, DISCOV
 Overlays (entry_kind=overlay): they open as a popup/drawer on the current screen instead of navigating. Examples: OVERLAY.CALENDAR, LIFE_COMPASS.OVERLAY, OVERLAY.VITANA_INDEX, OVERLAY.PROFILE_PREVIEW, OVERLAY.MEETUP_DRAWER, OVERLAY.EVENT_DRAWER, OVERLAY.WALLET_POPUP, OVERLAY.MASTER_ACTION. Same tool, same call site — the catalog tells the gateway which to render.
 
 ── PARAMETERIZED ROUTES ──
-If the catalog entry has \`:param\` placeholders, also send the param: \`match_id\` for INTENTS.MATCH_DETAIL; \`vitana_id\` (+ optional \`intent_id\`) for PROFILE.PUBLIC / PROFILE.WITH_MATCH; \`meetup_id\` / \`event_id\` for OVERLAY.MEETUP_DRAWER / OVERLAY.EVENT_DRAWER; \`user_id\` for OVERLAY.PROFILE_PREVIEW; \`id\` for DISCOVER.PRODUCT_DETAIL / DISCOVER.PROVIDER_PROFILE / NEWS.DETAIL; \`groupId\` for COMM.GROUP_DETAIL; \`roomId\` for COMM.LIVE_ROOM_VIEWER.",
+If the catalog entry has \`:param\` placeholders, also send the param: \`match_id\` for INTENTS.MATCH_DETAIL; \`vitana_id\` (+ optional \`intent_id\`) for PROFILE.PUBLIC / PROFILE.WITH_MATCH; \`meetup_id\` / \`event_id\` for OVERLAY.MEETUP_DRAWER / OVERLAY.EVENT_DRAWER; \`user_id\` for OVERLAY.PROFILE_PREVIEW; \`id\` for DISCOVER.PRODUCT_DETAIL / DISCOVER.PROVIDER_PROFILE / NEWS.DETAIL; \`groupId\` for COMM.GROUP_DETAIL; \`roomId\` for COMM.LIVE_ROOM_VIEWER. NEVER invent/guess a value for any of these params — if you do not already know the real id from context, use the corresponding LIST/overview screen instead (see below) or ask the user which one they mean.
+
+── "MY MATCHES" — do not confuse the list with a single detail ──
+INTENTS.MATCH_DETAIL is a SINGLE match's detail page — it requires a real \`match_id\` you already have from context (e.g. the user just discussed that specific match). For "show me my matches" / "My Matches" / any general request to see their matches, use COMM.FIND_PARTNER_MATCHES (mobile) or COMM.MATCHES (desktop) instead — those need no parameter. Calling INTENTS.MATCH_DETAIL without a real match_id always fails.
+
+── CONFIRMING A DESTINATION YOU JUST OFFERED ──
+If you just offered to take the user somewhere by name (e.g. you asked "Should I take you to Connected Apps?" or "Soll ich dich zu den verbundenen Apps bringen?") and the user simply confirms without repeating the destination ("yes", "ja", "mach das", "do it", "gerne", "klar", "sure"), call this tool with the SAME screen_id you already resolved for that offer. A bare confirmation carries no screen information on its own — do not treat it as a new, unresolvable request and do not ask again; reuse the screen_id from your own last offer.",
         "name": "navigate_to_screen",
         "parameters": {
           "properties": {
@@ -14956,7 +14962,13 @@ Send the canonical id when known: COMM.FIND_PARTNER, HEALTH.VITANA_INDEX, DISCOV
 Overlays (entry_kind=overlay): they open as a popup/drawer on the current screen instead of navigating. Examples: OVERLAY.CALENDAR, LIFE_COMPASS.OVERLAY, OVERLAY.VITANA_INDEX, OVERLAY.PROFILE_PREVIEW, OVERLAY.MEETUP_DRAWER, OVERLAY.EVENT_DRAWER, OVERLAY.WALLET_POPUP, OVERLAY.MASTER_ACTION. Same tool, same call site — the catalog tells the gateway which to render.
 
 ── PARAMETERIZED ROUTES ──
-If the catalog entry has \`:param\` placeholders, also send the param: \`match_id\` for INTENTS.MATCH_DETAIL; \`vitana_id\` (+ optional \`intent_id\`) for PROFILE.PUBLIC / PROFILE.WITH_MATCH; \`meetup_id\` / \`event_id\` for OVERLAY.MEETUP_DRAWER / OVERLAY.EVENT_DRAWER; \`user_id\` for OVERLAY.PROFILE_PREVIEW; \`id\` for DISCOVER.PRODUCT_DETAIL / DISCOVER.PROVIDER_PROFILE / NEWS.DETAIL; \`groupId\` for COMM.GROUP_DETAIL; \`roomId\` for COMM.LIVE_ROOM_VIEWER.",
+If the catalog entry has \`:param\` placeholders, also send the param: \`match_id\` for INTENTS.MATCH_DETAIL; \`vitana_id\` (+ optional \`intent_id\`) for PROFILE.PUBLIC / PROFILE.WITH_MATCH; \`meetup_id\` / \`event_id\` for OVERLAY.MEETUP_DRAWER / OVERLAY.EVENT_DRAWER; \`user_id\` for OVERLAY.PROFILE_PREVIEW; \`id\` for DISCOVER.PRODUCT_DETAIL / DISCOVER.PROVIDER_PROFILE / NEWS.DETAIL; \`groupId\` for COMM.GROUP_DETAIL; \`roomId\` for COMM.LIVE_ROOM_VIEWER. NEVER invent/guess a value for any of these params — if you do not already know the real id from context, use the corresponding LIST/overview screen instead (see below) or ask the user which one they mean.
+
+── "MY MATCHES" — do not confuse the list with a single detail ──
+INTENTS.MATCH_DETAIL is a SINGLE match's detail page — it requires a real \`match_id\` you already have from context (e.g. the user just discussed that specific match). For "show me my matches" / "My Matches" / any general request to see their matches, use COMM.FIND_PARTNER_MATCHES (mobile) or COMM.MATCHES (desktop) instead — those need no parameter. Calling INTENTS.MATCH_DETAIL without a real match_id always fails.
+
+── CONFIRMING A DESTINATION YOU JUST OFFERED ──
+If you just offered to take the user somewhere by name (e.g. you asked "Should I take you to Connected Apps?" or "Soll ich dich zu den verbundenen Apps bringen?") and the user simply confirms without repeating the destination ("yes", "ja", "mach das", "do it", "gerne", "klar", "sure"), call this tool with the SAME screen_id you already resolved for that offer. A bare confirmation carries no screen information on its own — do not treat it as a new, unresolvable request and do not ask again; reuse the screen_id from your own last offer.",
         "name": "navigate_to_screen",
         "parameters": {
           "properties": {
