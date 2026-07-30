@@ -2760,21 +2760,91 @@ export async function tool_respond_to_match(
   // The previous shared stub naively wrote `state = response` with no owner
   // resolution and no notification — every voice response that should have
   // unlocked mutual_interest stayed stuck in *_responded_by_X state.
-  const matchId = String(args.match_id ?? '').trim();
+  let matchId = String(args.match_id ?? '').trim();
   const response = String(args.response ?? '').trim() as 'express_interest' | 'decline';
   const confirmed = args.confirmed === true;
 
-  if (!matchId || !['express_interest', 'decline'].includes(response)) {
+  if (!['express_interest', 'decline'].includes(response)) {
     return {
       ok: false,
       error: 'match_id and response (express_interest|decline) required',
     };
   }
+
+  // VTID-VOICE-RESPOND-MATCH-ID: view_intent_matches's speech summary never
+  // speaks match_id (formatMatchesForSpeech only reads score/tier/kind), and
+  // unlike its sibling dispute_match this tool had no fallback — so a voice
+  // "yes I'm interested" always failed with match_id required. Mirror
+  // dispute_match's auto-detect: look up the user's own open (not yet
+  // resolved-by-them) matches and only auto-pick when unambiguous.
+  if (!matchId) {
+    if (!id.user_id) return { ok: false, error: 'authentication required' };
+    const { data: myIntents, error: intErr } = await sb
+      .from('user_intents')
+      .select('intent_id')
+      .eq('requester_user_id', id.user_id)
+      .order('created_at', { ascending: false })
+      .limit(50);
+    if (intErr) return { ok: false, error: `respond_to_match: ${intErr.message}` };
+    const intentIds = ((myIntents as Array<{ intent_id: string }> | null) ?? []).map((r) => r.intent_id);
+    if (intentIds.length === 0) {
+      return {
+        ok: true,
+        result: { found: false },
+        text: 'The user has no posts, so there is no match to respond to yet.',
+      };
+    }
+    const intentIdSet = new Set(intentIds);
+    const list = intentIds.join(',');
+    const { data: matches, error: mErr } = await sb
+      .from('intent_matches')
+      .select('match_id, intent_a_id, intent_b_id, state, kind_pairing, score, created_at')
+      .or(`intent_a_id.in.(${list}),intent_b_id.in.(${list})`)
+      .order('created_at', { ascending: false })
+      .limit(10);
+    if (mErr) return { ok: false, error: `respond_to_match: ${mErr.message}` };
+    type MatchRow = {
+      match_id: string;
+      intent_a_id: string;
+      intent_b_id: string;
+      state: string | null;
+      kind_pairing: string | null;
+      score: number | null;
+    };
+    const rows = (matches as MatchRow[] | null) ?? [];
+    const pending = rows.filter((r) => {
+      if (r.state === 'mutual_interest' || r.state === 'declined') return false;
+      const isA = intentIdSet.has(r.intent_a_id);
+      if (isA && r.state === 'responded_by_a') return false;
+      if (!isA && r.state === 'responded_by_b') return false;
+      return true;
+    });
+    if (pending.length === 0) {
+      return {
+        ok: true,
+        result: { found: false },
+        text: 'The user has no matches currently waiting on their response.',
+      };
+    }
+    if (pending.length > 1) {
+      const opts = pending
+        .slice(0, 3)
+        .map((r, i) => `${i + 1}) a ${String(r.kind_pairing ?? 'match').replace(/_/g, ' ')}`);
+      return {
+        ok: true,
+        result: { ambiguous: true, candidates: pending.slice(0, 3).map((r) => r.match_id) },
+        text: `The user has several matches waiting on a response: ${opts.join('; ')}. Ask which one they mean (or open My Matches with view_intent_matches), then call respond_to_match again with match_id.`,
+      };
+    }
+    matchId = pending[0].match_id;
+  }
+
   if (!confirmed) {
     const payload = {
       ok: true,
       stage: 'awaiting_confirmation',
-      instructions: `Confirm with the user before calling respond_to_match again with confirmed=true.`,
+      match_id: matchId,
+      instructions: `Confirm with the user before calling respond_to_match again with match_id="${matchId}" and confirmed=true.`,
     };
     return { ok: true, result: payload, text: JSON.stringify(payload) };
   }
