@@ -1171,6 +1171,12 @@ describe('A8.2-complete: handleLiveStreamSend', () => {
       expect.stringContaining('"type":"interrupted"'),
     );
     expect(res.json).toHaveBeenCalledWith({ ok: true, was_speaking: true });
+    // VTID-VOICE-NOVA-BARGEIN: Nova's sendEndOfTurn() never reaches Bedrock,
+    // so the superseded generation can keep streaming audio after this
+    // interrupt. suppressCurrentTurnAudio (the same flag the greeting-reemit
+    // fix uses) must be set here so handleAudioOutput drops that zombie
+    // audio instead of forwarding it to the client.
+    expect((session as any).suppressCurrentTurnAudio).toBe(true);
   });
 
   it('falls back to body.session_id when query is empty', async () => {
