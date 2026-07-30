@@ -28,7 +28,7 @@ describe('getNovaSonicConfig', () => {
         modelWarmMs: 90000,
         maxTokens: 4096,
         instructionChunkBytes: 4000,
-        endpointingSensitivity: 'MEDIUM',
+        endpointingSensitivity: 'HIGH',
         issues: [],
       }),
     );
@@ -149,12 +149,22 @@ describe('getNovaSonicConfig', () => {
     expect(bad.issues).toContain('nova_instruction_chunk_invalid');
   });
 
-  it('endpointing sensitivity is env-tunable (case-insensitive)', () => {
+  it('defaults to HIGH — the ~1.75s MEDIUM pre-inference wait cannot fit a 2-3s target', () => {
+    // Regression guard for BOOTSTRAP-ORB-LATENCY-P0. MEDIUM was never a
+    // deliberate choice: it was nova-sonic-protocol's fallback leaking through
+    // because nothing wired this setting, while the session was separately
+    // asking for a 600ms window via vadSilenceMs that Nova ignores outright.
+    expect(getNovaSonicConfig({} as NodeJS.ProcessEnv).endpointingSensitivity).toBe('HIGH');
+  });
+
+  it('endpointing sensitivity is env-tunable (case-insensitive), incl. away from the default', () => {
+    // Lowercase input + a value that differs from the default, so this proves
+    // the env var is actually read rather than coincidentally matching it.
     expect(
       getNovaSonicConfig({
-        NOVA_SONIC_ENDPOINTING_SENSITIVITY: 'high',
+        NOVA_SONIC_ENDPOINTING_SENSITIVITY: 'medium',
       } as NodeJS.ProcessEnv).endpointingSensitivity,
-    ).toBe('HIGH');
+    ).toBe('MEDIUM');
     const cfg = getNovaSonicConfig({
       NOVA_SONIC_ENABLED: 'true',
       NOVA_SONIC_ENDPOINTING_SENSITIVITY: 'LOW',
@@ -171,7 +181,8 @@ describe('getNovaSonicConfig', () => {
     } as NodeJS.ProcessEnv);
     expect(bad.ready).toBe(false);
     expect(bad.issues).toContain('nova_endpointing_sensitivity_invalid');
-    expect(bad.endpointingSensitivity).toBe('MEDIUM');
+    // Falls back to the safe DEFAULT, never to an operator's invalid value.
+    expect(bad.endpointingSensitivity).toBe('HIGH');
   });
 });
 
