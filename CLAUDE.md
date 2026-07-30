@@ -1228,3 +1228,85 @@ Use these PATs with the GitHub REST API (`api.github.com`) for all PR and deploy
 | 2026-02-03 | Added Memory & Intelligence Architecture section | VTID-01225 |
 | 2026-01-21 | Added ALWAYS/NEVER/IF-THEN core rules | VTID-01200 |
 | 2026-01-21 | Initial creation with technical reference | VTID-01200 |
+
+---
+
+## Mandatory Codebase Intelligence Workflow
+
+Before planning, modifying, debugging, reviewing, or generating code, always query both RepoWise and Graphify. Do not begin implementation from assumptions or broad grep searches.
+
+### 1. Verify index freshness
+
+1. Determine the current repository and Git `HEAD`.
+2. Select the correct RepoWise MCP server. Never use an index belonging to another repository or an older checkout.
+3. Confirm RepoWise's indexed commit matches `HEAD`.
+4. Check for `graphify-out/graph.json`.
+5. If either index is missing or stale, update it before implementation:
+   - `repowise update`
+   - `graphify --update`
+
+Report any indexing failure clearly. Do not silently continue with stale information.
+
+### 2. Read the codebase before execution
+
+Use RepoWise for precise code and health information:
+
+1. Call `get_overview` once to understand architecture, layers, entry points, and key modules.
+2. Use `search_codebase` to locate relevant concepts, symbols, and paths.
+3. Use `get_context` for compact file and module context.
+4. Use `get_symbol` only when full implementation bodies are required.
+5. Use `get_why` when architectural decisions or historical rationale matter.
+6. Call `get_risk` before changing shared, central, or high-risk files.
+
+Use Graphify for relationships and system-wide reasoning:
+
+1. Run `graphify query "<task-specific question>" --budget 1500`.
+2. Use `graphify path "<source>" "<target>"` to trace dependencies or data flow.
+3. Use `graphify explain "<component>"` for unfamiliar systems.
+4. Pay particular attention to god nodes, community boundaries, dependency paths, and surprising cross-module connections.
+
+### 3. Produce a pre-execution code map
+
+Before editing, establish:
+
+- Relevant entry points and execution flow.
+- Files, symbols, modules, and tests involved.
+- Upstream and downstream dependencies.
+- Existing patterns that should be followed.
+- Architectural constraints and recorded decisions.
+- Health hotspots, complexity, missing tests, and change risk.
+- The smallest safe implementation scope.
+
+Do not start execution until this map is sufficient to explain what will change, why, and what may be affected.
+
+### 4. Minimize token and search waste
+
+- Treat RepoWise and Graphify as the primary navigation layer.
+- Do not recursively read directories or perform broad grep searches when an indexed query can answer the question.
+- Retrieve compact context first and expand only the exact files or symbols required.
+- Do not repeatedly call `get_overview` during the same task unless the index changes.
+- Reuse already retrieved results instead of requesting identical context again.
+- Raw file reads are allowed only for targeted implementation details, verification, or when an index result is missing, stale, ambiguous, or approximate.
+- Source code and tests remain the final authority; never invent a relationship that the indexes or source do not support.
+
+### 5. Validate after implementation
+
+After changing code:
+
+1. Run the relevant tests, linting, type checks, and build.
+2. Re-query change risk for the affected files when appropriate.
+3. Update both indexes:
+   - `repowise update`
+   - `graphify --update`
+4. Confirm the indexes now match the final Git state.
+5. Summarize changed behavior, affected dependencies, risks, and verification evidence.
+
+A task is not complete until the implementation is verified and both indexes are current.
+
+For Graphify's built-in Claude integration, also run once per repository:
+
+```
+graphify claude install
+```
+
+This workflow improves Claude's navigation speed, token efficiency, and change accuracy. It does not automatically improve application runtime performance—that requires acting on the health and performance findings uncovered by the indexes.
