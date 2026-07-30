@@ -38,6 +38,10 @@ import type { GeminiLiveSession } from '../../../routes/orb-live';
 import type { LatencyPhase } from '../latency-tracker';
 import type { MemoryIdentity } from '../../../services/orb-memory-bridge';
 import { writeSseEvent } from '../transport/sse-handler';
+// BOOTSTRAP-ORB-TOOL-CARRYOVER: keep an unconsumed tool result alive across a
+// stall-recovery reconnect so the rebuilt session continues instead of
+// resuming with no memory of what it was doing.
+import { recordPendingToolResult, clearPendingToolResults } from './pending-tool-results';
 // VTID-03245: never surface a raw tool failure to the model as a spoken
 // "system issues" — reshape failures into a graceful pivot (offer-integrity).
 import { graceToolResultForModel } from './tool-failure-grace';
@@ -354,6 +358,18 @@ export function createUpstreamLiveMessageHandler(
             }
             (session as any).suppressCurrentTurnAudio = false;
             (session as any).currentTurnAudioChunksDropped = 0;
+
+            // BOOTSTRAP-ORB-TOOL-CARRYOVER: a completed turn means the model
+            // consumed whatever tool results were outstanding, so they are no
+            // longer unfinished work. Clearing here (rather than at tool-send
+            // time) is the whole point: in the production stall the turn never
+            // completed, which is exactly when the carry-over must survive.
+            const clearedPending = clearPendingToolResults(session);
+            if (clearedPending > 0) {
+              console.log(
+                `[BOOTSTRAP-ORB-TOOL-CARRYOVER] Turn complete for ${session.sessionId} — cleared ${clearedPending} consumed tool result(s).`,
+              );
+            }
 
             // VTID-ANON-SIGNUP-INTENT + VTID-ANON-NUDGE: Detect signup intent and enforce turn limits.
             // CRITICAL: No client_content injections — those cause double responses.
@@ -1407,6 +1423,16 @@ export function createUpstreamLiveMessageHandler(
                 if (!sent) {
                   console.error(`[VTID-01224] function_response NOT sent for ${toolName} — WebSocket no longer open. Session ${session.sessionId} may be stalled.`);
                 }
+                // BOOTSTRAP-ORB-TOOL-CARRYOVER: remember this result until the
+                // model actually completes a turn with it. If the turn stalls
+                // and the stall watchdog forces a reconnect, this is what lets
+                // the rebuilt session continue instead of coming back amnesiac.
+                // Gated on `sent` on purpose — a result that never reached the
+                // model is not unfinished work, and replaying it would make her
+                // narrate something the user never triggered.
+                if (sent) {
+                  recordPendingToolResult(session, toolName, modelFacingResult.result);
+                }
 
                 // Emit OASIS event for tool execution
                 emitOasisEvent({
@@ -1883,6 +1909,11 @@ export function handleToolCall(
         });
         if (!sent) {
           console.error(`[VTID-01224] tool result NOT sent for ${toolName} — upstream client no longer open. Session ${session.sessionId} may be stalled.`);
+        }
+        // BOOTSTRAP-ORB-TOOL-CARRYOVER: same contract as the Vertex send site —
+        // record only what actually reached the model, clear at turn_complete.
+        if (sent) {
+          recordPendingToolResult(session, toolName, modelFacingResult.result ?? '');
         }
 
         emitOasisEvent({
