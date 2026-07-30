@@ -55,19 +55,52 @@ describe('orb-widget barge-in pre-roll', () => {
     expect(source).toMatch(/PRE_ROLL_MAX_FRAMES\s*=\s*\d+/);
   });
 
-  it('flushes the buffered speech upstream when barge-in is confirmed', () => {
+  it('flushes the buffered speech GATED ON the interrupt acknowledgement', () => {
     const capture = extractFunctionBody(source, 'async function _startAudioCapture()');
-    // The flush must actually send, via the same transport-agnostic path as
-    // live audio (_sendAudio picks WS vs HTTP internally).
+    // Codex review on #3006: on the DEFAULT sse transport, _sendInterrupt and
+    // _sendAudio are independent fetches with no ordering guarantee. A buffered
+    // frame arriving before the interrupt is processed hits
+    // live-session-controller.ts:2270 and is returned as
+    // {dropped:true, reason:'model_speaking'} — the exact audio this fix
+    // preserves, discarded server-side. So the flush MUST be gated on the
+    // interrupt's promise, not fired alongside it.
+    expect(capture).toMatch(/var\s+_interruptAck\s*=\s*_sendInterrupt\(\)/);
     expect(capture).toMatch(
-      /for\s*\(\s*var\s+p\s*=\s*0;[\s\S]{0,120}_sendAudio\(\s*preRollFrames\[p\]\s*\)/,
+      /_flushPreRollOrdered\(\s*preRollFrames\s*,\s*_interruptAck\s*\)/,
     );
-    // And the flush is inside the confirmed-interrupt branch, i.e. it happens
-    // together with _sendInterrupt rather than on every frame.
-    const interruptIdx = capture.indexOf('_sendInterrupt()');
-    const flushIdx = capture.indexOf('_sendAudio(preRollFrames[p])');
-    expect(interruptIdx).toBeGreaterThanOrEqual(0);
-    expect(flushIdx).toBeGreaterThan(interruptIdx);
+    // Ordering: the ack must be captured before the flush consumes it.
+    const ackIdx = capture.indexOf('_sendInterrupt()');
+    const flushIdx = capture.indexOf('_flushPreRollOrdered(');
+    expect(ackIdx).toBeGreaterThanOrEqual(0);
+    expect(flushIdx).toBeGreaterThan(ackIdx);
+  });
+
+  it('serializes the HTTP flush and prevents live frames overtaking it', () => {
+    // The gate exists, chains rather than races, and is released when drained
+    // so steady-state sending is not permanently serialized.
+    expect(source).toMatch(/var\s+_httpSendChain\s*=\s*null/);
+    expect(source).toMatch(
+      /if\s*\(\s*!_s\.ws\s*&&\s*_httpSendChain\s*\)[\s\S]{0,200}_httpSendChain\s*=\s*_httpSendChain\.then/,
+    );
+    const flush = extractFunctionBody(source, 'function _flushPreRollOrdered(');
+    // HTTP path chains each frame onto the previous.
+    expect(flush).toMatch(/chain\s*=\s*chain\.then\(/);
+    // WS path deliberately bypasses the gate — a socket is already ordered.
+    expect(flush).toMatch(/if\s*\(\s*_s\.ws\s*\)[\s\S]{0,300}_sendAudioNow\(/);
+    // Gate is released, and guarded against an older burst tearing down a
+    // newer barge-in's chain.
+    expect(flush).toMatch(/_httpSendChain\s*===\s*mine[\s\S]{0,40}_httpSendChain\s*=\s*null/);
+  });
+
+  it('interrupt and audio sends are awaitable, and never wedge on failure', () => {
+    const interrupt = extractFunctionBody(source, 'function _sendInterrupt()');
+    // Returned so the flush can gate on it...
+    expect(interrupt).toMatch(/return\s+fetch\(/);
+    // ...and resolves even when the interrupt POST fails, otherwise a dropped
+    // interrupt would deadlock the queue and lose the audio anyway.
+    expect(interrupt).toMatch(/\.then\(\s*function\s*\(\s*\)\s*\{\s*\}\s*,\s*function\s*\(\s*\)\s*\{\s*\}\s*\)/);
+    const sendNow = extractFunctionBody(source, 'function _sendAudioNow(');
+    expect(sendNow).toMatch(/return\s+fetch\(/);
   });
 
   it('resets the buffer once the model is no longer speaking', () => {

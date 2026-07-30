@@ -2260,7 +2260,7 @@
             _s.audioPlaying = false;
             clearTimeout(_s.audioEndGraceTimer);
             _s.interruptPending = true;
-            _sendInterrupt();
+            var _interruptAck = _sendInterrupt();
 
             // BOOTSTRAP-ORB-BARGEIN: flush the buffered speech upstream. THIS
             // is the audio that used to be thrown away. It goes out ahead of
@@ -2269,9 +2269,7 @@
             // since sendEndOfTurn() is a documented no-op for Nova and never
             // stopped it. audioPlaying is now false, so the next frame onward
             // flows through the normal live path below.
-            for (var p = 0; p < preRollFrames.length; p++) {
-              _sendAudio(preRollFrames[p]);
-            }
+            _flushPreRollOrdered(preRollFrames, _interruptAck);
             preRollFrames = [];
           }
         } else {
@@ -2333,8 +2331,76 @@
     return btoa(String.fromCharCode.apply(null, u8));
   }
 
+  /**
+   * BOOTSTRAP-ORB-BARGEIN (Codex review on #3006): ordered-send gate for the
+   * HTTP/SSE transport.
+   *
+   * On the DEFAULT transport (transport:'sse', orb-widget.js:154) every frame
+   * is its own fire-and-forget `fetch`, and so is the interrupt. There is no
+   * ordering guarantee between them. That breaks the pre-roll flush two ways:
+   *
+   *  1. If a buffered frame reaches the gateway BEFORE the interrupt is
+   *     processed, `session.isModelSpeaking` is still true and
+   *     live-session-controller.ts:2270 returns
+   *     `{dropped:true, reason:'model_speaking'}` — the exact audio this fix
+   *     exists to preserve, silently discarded server-side.
+   *  2. The burst of parallel POSTs has no mutual ordering, so surviving
+   *     frames can arrive scrambled, and live frames (fired immediately once
+   *     playback stops) can overtake the buffered ones entirely.
+   *
+   * While this is non-null, audio sends chain onto it instead of racing. It is
+   * armed at barge-in with the interrupt's own promise, so nothing is sent
+   * until the gateway has acknowledged the interrupt and ungated the mic, and
+   * it is cleared once drained so steady-state sending returns to parallel
+   * fire-and-forget (no added latency outside the barge-in window).
+   *
+   * The WS transport does not need this — a socket is ordered by definition.
+   */
+  var _httpSendChain = null;
+
   function _sendAudio(b64) {
-    if (!_s.sessionId || !_s.active) return;
+    if (!_s.sessionId || !_s.active) return Promise.resolve();
+    // Ordered window (HTTP only): append rather than race.
+    if (!_s.ws && _httpSendChain) {
+      _httpSendChain = _httpSendChain.then(function () {
+        return _sendAudioNow(b64);
+      });
+      return _httpSendChain;
+    }
+    return _sendAudioNow(b64);
+  }
+
+  /**
+   * BOOTSTRAP-ORB-BARGEIN: arm the ordered window. Buffered frames are sent
+   * strictly after `gate` resolves (the interrupt round-trip) and strictly in
+   * order; live frames captured meanwhile chain behind them via _sendAudio.
+   */
+  function _flushPreRollOrdered(frames, gate) {
+    if (!frames.length) return;
+    if (_s.ws) {
+      // Socket preserves order and the gateway's WS interrupt handler runs
+      // before subsequent frames — send directly.
+      for (var i = 0; i < frames.length; i++) _sendAudioNow(frames[i]);
+      return;
+    }
+    var chain = gate || Promise.resolve();
+    frames.forEach(function (f) {
+      chain = chain.then(function () { return _sendAudioNow(f); });
+    });
+    _httpSendChain = chain;
+    // Release the ordered window once this burst has drained, so normal
+    // parallel sending resumes. Guarded so a later barge-in that re-arms the
+    // chain isn't torn down by an older burst finishing.
+    var mine = chain;
+    chain.then(function () {
+      if (_httpSendChain === mine) _httpSendChain = null;
+    }, function () {
+      if (_httpSendChain === mine) _httpSendChain = null;
+    });
+  }
+
+  function _sendAudioNow(b64) {
+    if (!_s.sessionId || !_s.active) return Promise.resolve();
     // BOOTSTRAP-ORB-LATENCY-PHASE3: WS transport — one frame on the open
     // socket instead of a full HTTP request per 64ms chunk.
     if (_s.ws) {
@@ -2344,11 +2410,14 @@
           _s._audioSendFailCount = 0;
         } catch (e) { _registerAudioSendFailure(); }
       }
-      return; // never fall through to HTTP while WS transport owns the session
+      // never fall through to HTTP while WS transport owns the session
+      return Promise.resolve();
     }
     var headers = { 'Content-Type': 'application/json' };
     if (_cfg.token) headers['Authorization'] = 'Bearer ' + _cfg.token;
-    fetch(_cfg.gw + '/api/v1/orb/live/stream/send?session_id=' + _s.sessionId, {
+    // BOOTSTRAP-ORB-BARGEIN: the promise is RETURNED so the ordered-send gate
+    // can chain on it. Steady-state callers still ignore it (fire-and-forget).
+    return fetch(_cfg.gw + '/api/v1/orb/live/stream/send?session_id=' + _s.sessionId, {
       method: 'POST', headers: headers,
       body: JSON.stringify({ type: 'audio', data_b64: b64, mime: 'audio/pcm;rate=16000' })
     }).then(function (r) {
@@ -2449,18 +2518,22 @@
   }
 
   function _sendInterrupt() {
-    if (!_s.sessionId || !_s.active) return;
+    if (!_s.sessionId || !_s.active) return Promise.resolve();
     // BOOTSTRAP-ORB-LATENCY-PHASE3: WS transport branch.
     if (_s.ws) {
       try { if (_s.ws.readyState === 1) _s.ws.send(JSON.stringify({ type: 'interrupt' })); } catch (e) { /* noop */ }
-      return;
+      return Promise.resolve();
     }
     var headers = { 'Content-Type': 'application/json' };
     if (_cfg.token) headers['Authorization'] = 'Bearer ' + _cfg.token;
-    fetch(_cfg.gw + '/api/v1/orb/live/stream/send?session_id=' + _s.sessionId, {
+    // BOOTSTRAP-ORB-BARGEIN: RETURNED and resolved-on-settle so the pre-roll
+    // flush can wait for the gateway to actually ungate the mic
+    // (live-session-controller sets isModelSpeaking=false in this handler).
+    // Resolves even on failure — a dropped interrupt must not wedge the queue.
+    return fetch(_cfg.gw + '/api/v1/orb/live/stream/send?session_id=' + _s.sessionId, {
       method: 'POST', headers: headers,
       body: JSON.stringify({ type: 'interrupt' })
-    }).catch(function () {});
+    }).then(function () {}, function () {});
   }
 
   // ============================================================
