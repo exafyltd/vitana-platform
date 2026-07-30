@@ -144,7 +144,11 @@ interface LiveProbeResult {
 /** 32ms of 16 kHz / 16-bit / mono PCM silence, base64 — one mic frame. */
 const SILENCE_FRAME_B64 = Buffer.alloc(1024).toString('base64');
 
-async function probeLiveClient(
+// Exported for tests only — the second-turn failure paths (stream closes /
+// errors / times out after turn 1, or sendTextTurn refuses because the
+// stream is not open) cannot be reached through runNovaSonicTestSuite
+// without opening a real paid Bedrock stream.
+export async function probeLiveClient(
   client: UpstreamLiveClient,
   connect: () => Promise<void>,
   closeReason: string,
@@ -168,6 +172,7 @@ async function probeLiveClient(
   let secondTurnMs = -1;
   let secondTurnFirstAudioMs = -1;
   let firstTurnSettled = false;
+  let secondTurnSendFailed = false;
   let allSettled = false;
 
   const done = new Promise<void>((resolve) => {
@@ -197,9 +202,11 @@ async function probeLiveClient(
         // real multi-turn conversation exactly.
         turnPhase = 'second';
         secondTurnStart = Date.now();
-        try {
-          client.sendTextTurn(secondTurnText);
-        } catch {
+        // sendTextTurn returns false (never throws) when the stream is not
+        // open — ignoring the return value would hang until the timeout and
+        // then report a false pass, defeating the point of this probe.
+        if (!client.sendTextTurn(secondTurnText)) {
+          secondTurnSendFailed = true;
           clearTimeout(timer);
           finishAll();
         }
@@ -241,6 +248,26 @@ async function probeLiveClient(
     }
     if (secondTurnText && !firstTurnSettled) {
       return { ok: false, failDetail: 'first turn never completed — second turn was never sent' };
+    }
+    // A requested second turn that never completed MUST fail. Otherwise the
+    // probe built specifically to catch broken/slow follow-up turns reports
+    // a pass with second_turn_ms=-1 and the comparison checks downstream
+    // silently proceed on a turn that never happened.
+    if (secondTurnText && secondTurnMs < 0) {
+      const reason = secondTurnSendFailed
+        ? 'stream was not open when the second turn was submitted'
+        : errorCodes.length
+          ? `errors=${errorCodes.join('|')}`
+          : upstreamCloseReason
+            ? `stream closed (${upstreamCloseReason})`
+            : `no turn_complete within ${PROBE_TIMEOUT_MS * 2}ms`;
+      return {
+        ok: false,
+        failDetail:
+          `second turn did not complete — ${reason}` +
+          ` (first turn ok: first_event_ms=${firstEventMs}` +
+          `, second_turn_first_audio_ms=${secondTurnFirstAudioMs < 0 ? 'n/a' : secondTurnFirstAudioMs})`,
+      };
     }
     return {
       ok: true,
