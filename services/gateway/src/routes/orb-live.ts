@@ -7380,6 +7380,14 @@ async function connectToLiveAPI(
           responseModalities: session.responseModalities.includes('audio') ? ['audio'] : ['text'],
           vadSilenceMs: session.vadSilenceMs,
           systemInstruction: novaSystemInstruction,
+          // VTID-VOICE-NOVA-ROTATION: without this, a rotation's rebuilt
+          // instruction (fresh-connect size + up to ~4000 chars of
+          // conversation-history fallback, since Nova has no native
+          // resumption) risked tripping Bedrock's nova_validation rejection
+          // on the single oversized textInput — silently abandoning the
+          // rotation and riding the old stream to its 8-minute hard
+          // disconnect. See nova-sonic-config.ts's instructionChunkBytes doc.
+          systemInstructionChunkBytes: novaCfg.instructionChunkBytes || undefined,
           tools: novaTools,
           connectTimeoutMs: novaCfg.connectTimeoutMs,
         });
@@ -15029,6 +15037,16 @@ function handleWsInterruptMessage(clientSession: WsClientSession): void {
 
   // 1. Ungate mic audio so subsequent frames reach Gemini
   liveSession.isModelSpeaking = false;
+
+  // VTID-VOICE-NOVA-BARGEIN: Nova's sendEndOfTurn() is a documented no-op —
+  // Bedrock has no cancel-generation event, so the in-flight response keeps
+  // streaming audioOutput chunks after this interrupt (Vertex's turn_complete
+  // actually stops Gemini; Nova's does not). Reuse the same
+  // suppressCurrentTurnAudio flag the greeting-reemit fix already uses so any
+  // further chunks from the superseded generation are dropped instead of
+  // played over the user. Auto-clears on the next handleTurnComplete. Harmless
+  // no-op for Vertex, which already stops generating on its own.
+  (liveSession as any).suppressCurrentTurnAudio = true;
 
   // 2. Tell Gemini to stop generating by sending client_content.turn_complete
   if (liveSession.upstreamWs && liveSession.upstreamWs.readyState === WebSocket.OPEN) {

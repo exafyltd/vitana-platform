@@ -42,6 +42,18 @@ const DEFAULT_MODEL_WARM_MS = 90_000;
 // the greeting turn alone (16KB wake prompt + tool rounds) exhausted it and
 // ended with no speech (staging session live-dedf85d5).
 const DEFAULT_MAX_TOKENS = 4096;
+// Nova rejects a single oversized SYSTEM textInput with nova_validation but
+// streams many bounded events fine (nova-sonic-live-client.ts's chunking
+// comment). Production never set this, so a Nova rotation — whose rebuilt
+// instruction is LARGER than a fresh connect's (it appends up to ~4000 chars
+// of conversation-history fallback, since Nova has no native session
+// resumption) — could silently trip the same nova_validation rejection the
+// staging bisect harness (nova-sonic-test-runner.ts) was built to find,
+// abandon the rotation (no retry), and ride the old stream to its 8-minute
+// hard cap before disconnecting the user into a brand-new session. 4000
+// bytes keeps each chunk far under the ~32KB range the bisect harness
+// specifically probes as a failure zone.
+const DEFAULT_INSTRUCTION_CHUNK_BYTES = 4_000;
 
 export type NovaSonicConfigIssue =
   | 'nova_region_invalid'
@@ -52,7 +64,8 @@ export type NovaSonicConfigIssue =
   | 'nova_rotation_after_invalid'
   | 'nova_keepwarm_invalid'
   | 'nova_model_warm_invalid'
-  | 'nova_max_tokens_invalid';
+  | 'nova_max_tokens_invalid'
+  | 'nova_instruction_chunk_invalid';
 
 export interface NovaSonicConfig {
   enabled: boolean;
@@ -76,6 +89,14 @@ export interface NovaSonicConfig {
   modelWarmMs: number;
   /** sessionStart inferenceConfiguration.maxTokens (per-turn output budget). */
   maxTokens: number;
+  /**
+   * Split an oversized SYSTEM textInput into chunks of this many bytes
+   * (passed as `systemInstructionChunkBytes` to `NovaSonicLiveClient.connect`)
+   * instead of sending it as one event, which Nova can reject with
+   * `nova_validation`. 0 disables chunking (sends the whole instruction in a
+   * single event, the pre-fix behavior).
+   */
+  instructionChunkBytes: number;
   /**
    * Typed configuration problems. Non-empty issues force `ready` false —
    * misconfiguration is never silently corrected into live traffic.
@@ -174,6 +195,12 @@ export function getNovaSonicConfig(env: NodeJS.ProcessEnv): NovaSonicConfig {
   const maxTokens = parsePositiveInt(env.NOVA_SONIC_MAX_TOKENS, DEFAULT_MAX_TOKENS);
   if (maxTokens === null) issues.push('nova_max_tokens_invalid');
 
+  const instructionChunkBytes = parseNonNegativeInt(
+    env.NOVA_SONIC_INSTRUCTION_CHUNK_BYTES,
+    DEFAULT_INSTRUCTION_CHUNK_BYTES,
+  );
+  if (instructionChunkBytes === null) issues.push('nova_instruction_chunk_invalid');
+
   return {
     enabled,
     region: NOVA_SONIC_REGION,
@@ -185,6 +212,7 @@ export function getNovaSonicConfig(env: NodeJS.ProcessEnv): NovaSonicConfig {
     keepWarmMs: keepWarmMs ?? DEFAULT_KEEPWARM_MS,
     modelWarmMs: modelWarmMs ?? DEFAULT_MODEL_WARM_MS,
     maxTokens: maxTokens ?? DEFAULT_MAX_TOKENS,
+    instructionChunkBytes: instructionChunkBytes ?? DEFAULT_INSTRUCTION_CHUNK_BYTES,
     issues,
     ready: enabled && issues.length === 0,
   };

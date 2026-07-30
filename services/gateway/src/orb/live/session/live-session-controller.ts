@@ -2417,6 +2417,13 @@ export async function handleLiveStreamSend(
       // Ungate mic audio
       session.isModelSpeaking = false;
 
+      // VTID-VOICE-NOVA-BARGEIN: see orb-live.ts's handleWsInterruptMessage —
+      // Nova's sendEndOfTurn() never reaches Bedrock, so the superseded
+      // generation keeps streaming audio after this interrupt. Suppress it
+      // via the same flag the greeting-reemit fix uses (auto-clears on the
+      // next turn_complete); no-op for Vertex, which already stops itself.
+      (session as any).suppressCurrentTurnAudio = true;
+
       // Tell Gemini to stop generating
       if (session.upstreamWs && session.upstreamWs.readyState === WebSocketPkg.OPEN) {
         deps.sendEndOfTurn(session.upstreamWs);
