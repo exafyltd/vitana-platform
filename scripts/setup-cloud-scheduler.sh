@@ -87,16 +87,33 @@ JOBS=(
 # single-user local-time notification slot — same reasoning as the
 # daily-recompute / daily-pace-notifications jobs further down this
 # file, which are also UTC.
+#
+# UPDATE (PR #2969 code review, chatgpt-codex-connector): AP-0907 and
+# AP-0911 were flagged and fixed before their jobs were ever created —
+#   - AP-0907 (Daily Learning Digest): was daily 18:10 UTC. A fixed UTC
+#     fire sends this user-facing "evening" push at the wrong local hour
+#     for anyone not near UTC (~2am for UTC+8). Now hourly; the handler
+#     itself resolves each user's real timezone and only notifies during
+#     their own local evening hour (mirrors daily-pace-notifications'
+#     per-user local-hour gate) — the UTC cron cadence is unchanged in
+#     spirit (still "backend sweep, not a notification slot"), the
+#     handler is what makes the delivery timezone-correct now.
+#   - AP-0911 (User Model Synthesis): was daily 5:05 UTC processing up to
+#     100 users serially through an LLM call each — a large eligible pool
+#     could exceed the 300s scheduler attempt-deadline and never
+#     complete (nor retry successfully). Now hourly with a smaller batch
+#     + a hard per-run time budget, so it always returns before the
+#     deadline; anything left over is picked up next hour.
 # ──────────────────────────────────────────────────────────────
 MEMORY_INTELLIGENCE_JOBS=(
   "AP-0906|memory-routine-pattern-extraction|30 3 * * *|UTC"
   "AP-0909|memory-relationship-graph-projection|50 3 * * *|UTC"
   "AP-0908|memory-behavior-preference-inference|40 4 * * *|UTC"
   "AP-0912|memory-health-correlation-insights|55 4 * * *|UTC"
-  "AP-0911|memory-user-model-synthesis|5 5 * * *|UTC"
+  "AP-0911|memory-user-model-synthesis|35 * * * *|UTC"
   "AP-0913|memory-own-post-capture|15 * * * *|UTC"
   "AP-0910|memory-embedding-backfill|25 * * * *|UTC"
-  "AP-0907|memory-daily-learning-digest|10 18 * * *|UTC"
+  "AP-0907|memory-daily-learning-digest|10 * * * *|UTC"
 )
 
 for JOB in "${MEMORY_INTELLIGENCE_JOBS[@]}"; do
