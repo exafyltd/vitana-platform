@@ -28,6 +28,7 @@ describe('getNovaSonicConfig', () => {
         modelWarmMs: 90000,
         maxTokens: 4096,
         instructionChunkBytes: 4000,
+        endpointingSensitivity: 'MEDIUM',
         issues: [],
       }),
     );
@@ -146,6 +147,31 @@ describe('getNovaSonicConfig', () => {
     } as NodeJS.ProcessEnv);
     expect(bad.ready).toBe(false);
     expect(bad.issues).toContain('nova_instruction_chunk_invalid');
+  });
+
+  it('endpointing sensitivity is env-tunable (case-insensitive)', () => {
+    expect(
+      getNovaSonicConfig({
+        NOVA_SONIC_ENDPOINTING_SENSITIVITY: 'high',
+      } as NodeJS.ProcessEnv).endpointingSensitivity,
+    ).toBe('HIGH');
+    const cfg = getNovaSonicConfig({
+      NOVA_SONIC_ENABLED: 'true',
+      NOVA_SONIC_ENDPOINTING_SENSITIVITY: 'LOW',
+    } as NodeJS.ProcessEnv);
+    expect(cfg.endpointingSensitivity).toBe('LOW');
+    expect(cfg.ready).toBe(true);
+    expect(cfg.issues).toEqual([]);
+  });
+
+  it('an invalid endpointing sensitivity fails readiness with a typed issue and keeps the safe default', () => {
+    const bad = getNovaSonicConfig({
+      NOVA_SONIC_ENABLED: 'true',
+      NOVA_SONIC_ENDPOINTING_SENSITIVITY: 'EXTREME',
+    } as NodeJS.ProcessEnv);
+    expect(bad.ready).toBe(false);
+    expect(bad.issues).toContain('nova_endpointing_sensitivity_invalid');
+    expect(bad.endpointingSensitivity).toBe('MEDIUM');
   });
 });
 

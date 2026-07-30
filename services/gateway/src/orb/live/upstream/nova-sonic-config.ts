@@ -54,6 +54,23 @@ const DEFAULT_MAX_TOKENS = 4096;
 // bytes keeps each chunk far under the ~32KB range the bisect harness
 // specifically probes as a failure zone.
 const DEFAULT_INSTRUCTION_CHUNK_BYTES = 4_000;
+// PER-TURN LATENCY (Nova voice-provider follow-up): Nova's server-side VAD
+// decides "the user is done speaking" — that decision gates EVERY turn's
+// time-to-first-response, not just the first. Unlike Vertex's numeric
+// `silence_duration_ms` (orb-live.ts `session.vadSilenceMs`, DB-tunable via
+// VOICE_VAD_SILENCE_DURATION_MS), Nova only exposes a coarse HIGH/MEDIUM/LOW
+// `turnDetectionConfiguration.endpointingSensitivity` enum — no numeric ms.
+// This was previously hardcoded in nova-sonic-protocol.ts's `buildSessionStart`
+// default with no way to change it short of a code deploy; `connect()` never
+// even read `options.vadSilenceMs` to inform it. AWS's own guidance: HIGH
+// concludes a turn on a shorter pause (lower latency, higher risk of cutting
+// off a user who pauses mid-sentence); LOW waits longer (safer, slower).
+// MEDIUM stays the default here — flipping it is a latency/accuracy product
+// trade-off that needs explicit sign-off, not a default this file should
+// silently change. Making it configurable (this env var) lets that
+// experiment happen via a staging env flip instead of a code change.
+const DEFAULT_ENDPOINTING_SENSITIVITY = 'MEDIUM' as const;
+const VALID_ENDPOINTING_SENSITIVITIES = new Set(['HIGH', 'MEDIUM', 'LOW']);
 
 export type NovaSonicConfigIssue =
   | 'nova_region_invalid'
@@ -65,7 +82,8 @@ export type NovaSonicConfigIssue =
   | 'nova_keepwarm_invalid'
   | 'nova_model_warm_invalid'
   | 'nova_max_tokens_invalid'
-  | 'nova_instruction_chunk_invalid';
+  | 'nova_instruction_chunk_invalid'
+  | 'nova_endpointing_sensitivity_invalid';
 
 export interface NovaSonicConfig {
   enabled: boolean;
@@ -97,6 +115,15 @@ export interface NovaSonicConfig {
    * single event, the pre-fix behavior).
    */
   instructionChunkBytes: number;
+  /**
+   * Server-side turn-detection sensitivity (`sessionStart.
+   * turnDetectionConfiguration.endpointingSensitivity`). Gates how long Nova
+   * waits after the user stops speaking before it decides the turn is over
+   * and starts generating — a PER-TURN latency cost paid on every turn, not
+   * just session establishment. 'MEDIUM' (AWS's recommended default) unless
+   * overridden. See the DEFAULT_ENDPOINTING_SENSITIVITY doc comment above.
+   */
+  endpointingSensitivity: 'HIGH' | 'MEDIUM' | 'LOW';
   /**
    * Typed configuration problems. Non-empty issues force `ready` false —
    * misconfiguration is never silently corrected into live traffic.
@@ -201,6 +228,17 @@ export function getNovaSonicConfig(env: NodeJS.ProcessEnv): NovaSonicConfig {
   );
   if (instructionChunkBytes === null) issues.push('nova_instruction_chunk_invalid');
 
+  let endpointingSensitivity: 'HIGH' | 'MEDIUM' | 'LOW' = DEFAULT_ENDPOINTING_SENSITIVITY;
+  const rawSensitivity = env.NOVA_SONIC_ENDPOINTING_SENSITIVITY;
+  if (rawSensitivity !== undefined && rawSensitivity.trim() !== '') {
+    const normalized = rawSensitivity.trim().toUpperCase();
+    if (VALID_ENDPOINTING_SENSITIVITIES.has(normalized)) {
+      endpointingSensitivity = normalized as 'HIGH' | 'MEDIUM' | 'LOW';
+    } else {
+      issues.push('nova_endpointing_sensitivity_invalid');
+    }
+  }
+
   return {
     enabled,
     region: NOVA_SONIC_REGION,
@@ -213,6 +251,7 @@ export function getNovaSonicConfig(env: NodeJS.ProcessEnv): NovaSonicConfig {
     modelWarmMs: modelWarmMs ?? DEFAULT_MODEL_WARM_MS,
     maxTokens: maxTokens ?? DEFAULT_MAX_TOKENS,
     instructionChunkBytes: instructionChunkBytes ?? DEFAULT_INSTRUCTION_CHUNK_BYTES,
+    endpointingSensitivity,
     issues,
     ready: enabled && issues.length === 0,
   };

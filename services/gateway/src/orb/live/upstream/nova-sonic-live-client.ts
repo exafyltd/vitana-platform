@@ -457,7 +457,10 @@ export class NovaSonicLiveClient implements UpstreamLiveClient {
     // Queue the full initialization sequence BEFORE opening the stream so
     // the request body replays it in order the moment Bedrock connects.
     const systemContentName = randomUUID();
-    this.queue.push(buildSessionStart({ maxTokens: this.deps.config.maxTokens }));
+    this.queue.push(buildSessionStart({
+      maxTokens: this.deps.config.maxTokens,
+      endpointingSensitivity: this.deps.config.endpointingSensitivity,
+    }));
     this.queue.push(buildPromptStart({ promptName: this.promptName, voiceId: this.deps.voiceId, tools }));
     // interactive:false — the documented shape for SYSTEM prompts (the
     // interactive:true form is the cross-modal USER text path, which may
