@@ -2195,6 +2195,35 @@
     var vadConfirm = 6;
     var vadInterruptSent = false;
 
+    // BOOTSTRAP-ORB-BARGEIN: pre-roll ring buffer (L-09 / C-09).
+    //
+    // THE BUG: while Vitana was speaking, this handler dropped every mic frame
+    // on the floor (`return; // Don't send audio while model speaking`) and
+    // only reacted after vadConfirm=6 frames — so the FIRST ~384ms of the
+    // user's interruption was destroyed, never sent upstream, and Nova never
+    // heard the beginning of what they said. Combined with the synthetic
+    // silence the gateway streams during playback, Nova literally could not
+    // hear the user, so its native barge-in never fired either.
+    //
+    // WHY NOT "just always forward the mic" (the audit's first suggestion):
+    // this file carries MEASURED evidence against that — see the vadThreshold
+    // comment above. Echo through AEC lands at 0.01-0.04 RMS, and a previous
+    // 0.015 threshold "triggered on echo, causing constant interruptions".
+    // Forwarding every frame during playback would feed that echo straight to
+    // Nova's server-side VAD and risk it interrupting ITSELF continuously —
+    // a worse regression than the bug being fixed. Validating that needs a
+    // real echo test on device, which is a separate piece of work.
+    //
+    // THE FIX that is safe today: keep the energy gate (so echo is still not
+    // forwarded), but stop DESTROYING the audio. Every frame captured during
+    // playback goes into this ring buffer; the moment VAD confirms real
+    // speech, the buffer is flushed upstream ahead of the live stream. The
+    // user's opening words arrive intact instead of being swallowed.
+    var preRollFrames = [];
+    // 8 frames ≈ 512ms at 1024 samples/16kHz — covers vadConfirm (6 frames
+    // ≈ 384ms) plus margin, and bounds memory to ~16KB of Int16 PCM.
+    var PRE_ROLL_MAX_FRAMES = 8;
+
     processor.onaudioprocess = function (e) {
       if (!_s.active) return;
       if (_s.voiceState === 'MUTED') return;
@@ -2212,6 +2241,11 @@
       // even though more audio is coming. The grace timer covers these gaps.
       var modelPlaying = _s.audioPlaying;
       if (modelPlaying) {
+        // BOOTSTRAP-ORB-BARGEIN: capture, don't discard. Encoding happens here
+        // so the flush below can replay the exact frames the user spoke.
+        preRollFrames.push(_encodeFrame(input));
+        if (preRollFrames.length > PRE_ROLL_MAX_FRAMES) preRollFrames.shift();
+
         if (rms > vadThreshold) {
           vadFrames++;
           if (vadFrames >= vadConfirm && !vadInterruptSent) {
@@ -2226,15 +2260,29 @@
             _s.audioPlaying = false;
             clearTimeout(_s.audioEndGraceTimer);
             _s.interruptPending = true;
-            _sendInterrupt();
+            var _interruptAck = _sendInterrupt();
+
+            // BOOTSTRAP-ORB-BARGEIN: flush the buffered speech upstream. THIS
+            // is the audio that used to be thrown away. It goes out ahead of
+            // the live stream so Nova receives the interruption from its first
+            // syllable — which is also what lets Nova's own barge-in engage,
+            // since sendEndOfTurn() is a documented no-op for Nova and never
+            // stopped it. audioPlaying is now false, so the next frame onward
+            // flows through the normal live path below.
+            _flushPreRollOrdered(preRollFrames, _interruptAck);
+            preRollFrames = [];
           }
         } else {
           vadFrames = 0;
         }
-        return; // Don't send audio while model speaking
+        // Still gated while Vitana speaks — deliberate, see the PRE_ROLL
+        // comment: forwarding sub-threshold frames would feed AEC echo to
+        // Nova's VAD. The difference is the audio is now buffered, not lost.
+        return;
       } else {
         vadFrames = 0;
         vadInterruptSent = false;
+        preRollFrames = [];
         // Record real user speech so the listening-idle nudge timer can
         // defer itself instead of beeping over the user mid-sentence.
         if (rms > vadThreshold) {
@@ -2255,15 +2303,7 @@
       // BOOTSTRAP-ORB-LATENCY-PHASE1: 500→200ms (see above).
       if (_s.lastAudioEndTime > 0 && (Date.now() - _s.lastAudioEndTime) < 200) return;
 
-      // Convert Float32 → Int16 PCM → base64
-      var pcm = new Int16Array(input.length);
-      for (var n = 0; n < input.length; n++) {
-        var s = Math.max(-1, Math.min(1, input[n]));
-        pcm[n] = s < 0 ? s * 0x8000 : s * 0x7FFF;
-      }
-      var u8 = new Uint8Array(pcm.buffer);
-      var b64 = btoa(String.fromCharCode.apply(null, u8));
-      _sendAudio(b64);
+      _sendAudio(_encodeFrame(input));
     };
 
     source.connect(processor);
@@ -2271,8 +2311,96 @@
     _s.captureProcessor = processor;
   }
 
+  /**
+   * Float32 mic frame → Int16 PCM → base64, the wire format the gateway
+   * expects (audio/pcm;rate=16000).
+   *
+   * BOOTSTRAP-ORB-BARGEIN: extracted from the capture handler so the barge-in
+   * pre-roll buffer stores already-encoded frames and can replay them
+   * byte-identically. Encoding at capture time also means the buffer holds a
+   * stable copy — `e.inputBuffer` is reused by the Web Audio graph, so
+   * retaining the raw Float32Array would alias into the next callback's data.
+   */
+  function _encodeFrame(input) {
+    var pcm = new Int16Array(input.length);
+    for (var n = 0; n < input.length; n++) {
+      var s = Math.max(-1, Math.min(1, input[n]));
+      pcm[n] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+    }
+    var u8 = new Uint8Array(pcm.buffer);
+    return btoa(String.fromCharCode.apply(null, u8));
+  }
+
+  /**
+   * BOOTSTRAP-ORB-BARGEIN (Codex review on #3006): ordered-send gate for the
+   * HTTP/SSE transport.
+   *
+   * On the DEFAULT transport (transport:'sse', orb-widget.js:154) every frame
+   * is its own fire-and-forget `fetch`, and so is the interrupt. There is no
+   * ordering guarantee between them. That breaks the pre-roll flush two ways:
+   *
+   *  1. If a buffered frame reaches the gateway BEFORE the interrupt is
+   *     processed, `session.isModelSpeaking` is still true and
+   *     live-session-controller.ts:2270 returns
+   *     `{dropped:true, reason:'model_speaking'}` — the exact audio this fix
+   *     exists to preserve, silently discarded server-side.
+   *  2. The burst of parallel POSTs has no mutual ordering, so surviving
+   *     frames can arrive scrambled, and live frames (fired immediately once
+   *     playback stops) can overtake the buffered ones entirely.
+   *
+   * While this is non-null, audio sends chain onto it instead of racing. It is
+   * armed at barge-in with the interrupt's own promise, so nothing is sent
+   * until the gateway has acknowledged the interrupt and ungated the mic, and
+   * it is cleared once drained so steady-state sending returns to parallel
+   * fire-and-forget (no added latency outside the barge-in window).
+   *
+   * The WS transport does not need this — a socket is ordered by definition.
+   */
+  var _httpSendChain = null;
+
   function _sendAudio(b64) {
-    if (!_s.sessionId || !_s.active) return;
+    if (!_s.sessionId || !_s.active) return Promise.resolve();
+    // Ordered window (HTTP only): append rather than race.
+    if (!_s.ws && _httpSendChain) {
+      _httpSendChain = _httpSendChain.then(function () {
+        return _sendAudioNow(b64);
+      });
+      return _httpSendChain;
+    }
+    return _sendAudioNow(b64);
+  }
+
+  /**
+   * BOOTSTRAP-ORB-BARGEIN: arm the ordered window. Buffered frames are sent
+   * strictly after `gate` resolves (the interrupt round-trip) and strictly in
+   * order; live frames captured meanwhile chain behind them via _sendAudio.
+   */
+  function _flushPreRollOrdered(frames, gate) {
+    if (!frames.length) return;
+    if (_s.ws) {
+      // Socket preserves order and the gateway's WS interrupt handler runs
+      // before subsequent frames — send directly.
+      for (var i = 0; i < frames.length; i++) _sendAudioNow(frames[i]);
+      return;
+    }
+    var chain = gate || Promise.resolve();
+    frames.forEach(function (f) {
+      chain = chain.then(function () { return _sendAudioNow(f); });
+    });
+    _httpSendChain = chain;
+    // Release the ordered window once this burst has drained, so normal
+    // parallel sending resumes. Guarded so a later barge-in that re-arms the
+    // chain isn't torn down by an older burst finishing.
+    var mine = chain;
+    chain.then(function () {
+      if (_httpSendChain === mine) _httpSendChain = null;
+    }, function () {
+      if (_httpSendChain === mine) _httpSendChain = null;
+    });
+  }
+
+  function _sendAudioNow(b64) {
+    if (!_s.sessionId || !_s.active) return Promise.resolve();
     // BOOTSTRAP-ORB-LATENCY-PHASE3: WS transport — one frame on the open
     // socket instead of a full HTTP request per 64ms chunk.
     if (_s.ws) {
@@ -2282,11 +2410,14 @@
           _s._audioSendFailCount = 0;
         } catch (e) { _registerAudioSendFailure(); }
       }
-      return; // never fall through to HTTP while WS transport owns the session
+      // never fall through to HTTP while WS transport owns the session
+      return Promise.resolve();
     }
     var headers = { 'Content-Type': 'application/json' };
     if (_cfg.token) headers['Authorization'] = 'Bearer ' + _cfg.token;
-    fetch(_cfg.gw + '/api/v1/orb/live/stream/send?session_id=' + _s.sessionId, {
+    // BOOTSTRAP-ORB-BARGEIN: the promise is RETURNED so the ordered-send gate
+    // can chain on it. Steady-state callers still ignore it (fire-and-forget).
+    return fetch(_cfg.gw + '/api/v1/orb/live/stream/send?session_id=' + _s.sessionId, {
       method: 'POST', headers: headers,
       body: JSON.stringify({ type: 'audio', data_b64: b64, mime: 'audio/pcm;rate=16000' })
     }).then(function (r) {
@@ -2387,18 +2518,22 @@
   }
 
   function _sendInterrupt() {
-    if (!_s.sessionId || !_s.active) return;
+    if (!_s.sessionId || !_s.active) return Promise.resolve();
     // BOOTSTRAP-ORB-LATENCY-PHASE3: WS transport branch.
     if (_s.ws) {
       try { if (_s.ws.readyState === 1) _s.ws.send(JSON.stringify({ type: 'interrupt' })); } catch (e) { /* noop */ }
-      return;
+      return Promise.resolve();
     }
     var headers = { 'Content-Type': 'application/json' };
     if (_cfg.token) headers['Authorization'] = 'Bearer ' + _cfg.token;
-    fetch(_cfg.gw + '/api/v1/orb/live/stream/send?session_id=' + _s.sessionId, {
+    // BOOTSTRAP-ORB-BARGEIN: RETURNED and resolved-on-settle so the pre-roll
+    // flush can wait for the gateway to actually ungate the mic
+    // (live-session-controller sets isModelSpeaking=false in this handler).
+    // Resolves even on failure — a dropped interrupt must not wedge the queue.
+    return fetch(_cfg.gw + '/api/v1/orb/live/stream/send?session_id=' + _s.sessionId, {
       method: 'POST', headers: headers,
       body: JSON.stringify({ type: 'interrupt' })
-    }).catch(function () {});
+    }).then(function () {}, function () {});
   }
 
   // ============================================================
