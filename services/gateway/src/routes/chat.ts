@@ -17,7 +17,7 @@ import {
   AuthenticatedRequest,
 } from '../middleware/auth-supabase-jwt';
 import { createClient } from '@supabase/supabase-js';
-import { notifyUserAsync } from '../services/notification-service';
+import { notifyUser } from '../services/notification-service';
 import { VITANA_BOT_USER_ID, isVitanaBot } from '../lib/vitana-bot';
 import { processConversationTurn } from '../services/conversation-client';
 
@@ -149,29 +149,40 @@ router.post('/send', requireAuth, requireTenant, async (req: Request, res: Respo
       }
     }
 
-    notifyUserAsync(
-      receiver_id,
-      identity.tenant_id!,
-      'new_chat_message',
-      {
-        title: senderName,
-        body: notifBody.length > 100 ? notifBody.slice(0, 97) + '...' : notifBody,
-        data: {
-          type: 'new_chat_message',
-          sender_id: identity.user_id,
-          sender_name: senderName,
-          message_id: data.id,
-          thread_id: identity.user_id,
-          // Path-based deep-link — query-string form (?recipient=…&context=global)
-          // silently fails in Appilix's Android in-app browser when launched from
-          // a notification tap (confirmed via BOOTSTRAP-NOTIF-MESSENGER-DIAG:
-          // diagnostic beacon never fired, no Cloud Run hit recorded). Path form
-          // launches cleanly because the URL has no special characters.
-          url: `/inbox/u/${identity.user_id}`,
+    // Awaited (not fire-and-forget) so the HTTP response below isn't sent
+    // until the push dispatch has actually finished — Cloud Run only
+    // guarantees CPU while a request is in flight, so a fire-and-forget
+    // promise here can get frozen/killed the instant res.status(201) flushes
+    // (same failure mode confirmed live and fixed for daily-feature-tip, see
+    // scheduled-notifications.ts BOOTSTRAP-DAILY-FEATURE-TIP). try/catch so a
+    // push failure never turns a successfully-sent chat message into a 500.
+    try {
+      await notifyUser(
+        receiver_id,
+        identity.tenant_id!,
+        'new_chat_message',
+        {
+          title: senderName,
+          body: notifBody.length > 100 ? notifBody.slice(0, 97) + '...' : notifBody,
+          data: {
+            type: 'new_chat_message',
+            sender_id: identity.user_id,
+            sender_name: senderName,
+            message_id: data.id,
+            thread_id: identity.user_id,
+            // Path-based deep-link — query-string form (?recipient=…&context=global)
+            // silently fails in Appilix's Android in-app browser when launched from
+            // a notification tap (confirmed via BOOTSTRAP-NOTIF-MESSENGER-DIAG:
+            // diagnostic beacon never fired, no Cloud Run hit recorded). Path form
+            // launches cleanly because the URL has no special characters.
+            url: `/inbox/u/${identity.user_id}`,
+          },
         },
-      },
-      supabase,
-    );
+        supabase,
+      );
+    } catch (err: any) {
+      console.error('[Chat] Push notification dispatch failed:', err?.message || err);
+    }
   }
 
   return res.status(201).json({ ok: true, data });
