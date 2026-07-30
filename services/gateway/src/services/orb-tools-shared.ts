@@ -1785,18 +1785,25 @@ export async function tool_resolve_recipient(
     (candidates.length > 1 &&
       Number(candidates[1].score) / Math.max(top_confidence, 0.0001) > 0.85);
 
+  // VTID-VOICE-STATUS-CONTRACT: live-system-instruction.ts's HARD RULE
+  // (message-send truthfulness, ~line 636) tells the model it must read
+  // resolve_recipient's STATUS and that only "resolved" or an explicit pick
+  // from "ambiguous" gives it a real UUID — but until now no branch ever
+  // emitted a "STATUS:" prefix, so the model had no reliable way to follow
+  // that instruction. This was a real, previously-undetected contributor to
+  // "send a message" flows silently never completing.
   let text: string;
   if (candidates.length === 0) {
-    text = `No one named "${spoken}" is in the community right now — they may not have a Vitana account yet.`;
+    text = `STATUS: not_found. No one named "${spoken}" is in the community right now — they may not have a Vitana account yet.`;
   } else if (ambiguous) {
     const names = candidates
       .slice(0, 3)
       .map((c) => c.display_name || c.vitana_id || c.user_id)
       .join(', ');
-    text = `Found ${candidates.length} possible matches: ${names}. Which one did you mean?`;
+    text = `STATUS: ambiguous. Found ${candidates.length} possible matches: ${names}. Which one did you mean?`;
   } else {
     const top = candidates[0];
-    text = `Best match: ${top.display_name || top.vitana_id || top.user_id} (confidence ${(top_confidence * 100).toFixed(0)}%).`;
+    text = `STATUS: resolved. Best match: ${top.display_name || top.vitana_id || top.user_id} (confidence ${(top_confidence * 100).toFixed(0)}%).`;
   }
 
   return {
@@ -2267,7 +2274,10 @@ export async function tool_send_chat_message(
       return {
         ok: true,
         result: { rate_limited: true, reason: quota.reason },
-        text: `Couldn't send (${quota.reason ?? 'rate-limited'}). Try again in a bit.`,
+        // VTID-VOICE-STATUS-CONTRACT: matches the "STATUS: rate_limited"
+        // value the message-send-truthfulness HARD RULE names — see the
+        // resolve_recipient STATUS comment above for the full rationale.
+        text: `STATUS: rate_limited. Couldn't send (${quota.reason ?? 'rate-limited'}). Try again in a bit.`,
       };
     }
 
@@ -2392,7 +2402,14 @@ export async function tool_send_chat_message(
         remaining: quota.remaining,
         next_actions: nextActions,
       },
-      text: `Sent to ${recipDisplay}.`,
+      // VTID-VOICE-STATUS-CONTRACT (root cause of a live "tried several
+      // times and nothing worked" report): live-system-instruction.ts's
+      // HARD RULE forbids the model from EVER saying a message was sent
+      // unless this text begins with "STATUS: sent" — a marker this
+      // function never emitted. The insert above genuinely succeeded, but
+      // the model had no truthful way to say so, so it could never
+      // confirm a send even when one had just gone through.
+      text: `STATUS: sent. Sent to ${recipDisplay}.`,
     };
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : 'send_chat_message error';
