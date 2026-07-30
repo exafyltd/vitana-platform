@@ -863,7 +863,54 @@ describe('buildClientContext', () => {
   // that was awaited here, every cold voice session paid up to 9 SECONDS
   // before the live session was even created (live-session-controller awaits
   // buildClientContext). These tests fail loudly if the await ever returns.
-  it('NEVER awaits the geo network call — returns immediately on a cold cache', async () => {
+  // Codex review on PR #3004: vitana-v1 (the main MOBILE widget, "where most
+  // testers are") does NOT yet send client_timezone — verified, the string
+  // appears nowhere in that repo. So geo-IP is still its ONLY timezone source
+  // and a strictly-cache-only geo would resurrect the VTID-03250/03251
+  // hallucinated-local-time defect. Geo may block ONLY in that exact case, and
+  // only briefly.
+  it('when the client sends NO timezone and geo is cold, waits briefly rather than losing the timezone', async () => {
+    let resolveGeo: ((v: any) => void) | undefined;
+    mockFetch.mockImplementation((url: string) => {
+      if (String(url).includes('ipapi.co')) {
+        return new Promise((resolve) => {
+          resolveGeo = resolve;
+          // Land well inside the 600ms ceiling.
+          const t = setTimeout(
+            () => resolve({
+              ok: true,
+              status: 200,
+              json: async () => ({ city: 'Cologne', country_name: 'Germany', timezone: 'Europe/Berlin' }),
+            }),
+            40,
+          );
+          (t as unknown as NodeJS.Timeout).unref?.();
+        });
+      }
+      return Promise.resolve({ ok: true, status: 200, json: async () => ({}) });
+    });
+    // No x-client-timezone, no body timezone → geo is the only source.
+    const ctx = await buildClientContext(makeReq({ 'user-agent': 'curl/8.0' }, {}, '198.51.100.90'));
+    expect(ctx.timezone).toBe('Europe/Berlin');
+    void resolveGeo;
+  });
+
+  it('that timezone fallback is hard-capped — a hung provider costs <1.5s, not 9s', async () => {
+    mockFetch.mockImplementation(
+      () => new Promise((resolve) => {
+        const t = setTimeout(() => resolve({ ok: true, status: 200, json: async () => ({}) }), 30_000);
+        (t as unknown as NodeJS.Timeout).unref?.();
+      }),
+    );
+    const started = Date.now();
+    const ctx = await buildClientContext(makeReq({ 'user-agent': 'curl/8.0' }, {}, '198.51.100.91'));
+    const elapsed = Date.now() - started;
+    // GEO_TIMEZONE_FALLBACK_MS is 600; generous ceiling for CI jitter.
+    expect(elapsed).toBeLessThan(1500);
+    expect(ctx.timezone).toBeUndefined();
+  });
+
+  it('NEVER awaits the geo network call when the client supplied a timezone', async () => {
     // Every provider hangs far longer than any acceptable session start.
     mockFetch.mockImplementation(
       () => new Promise((resolve) => {
@@ -874,7 +921,11 @@ describe('buildClientContext', () => {
         (t as unknown as NodeJS.Timeout).unref?.();
       }),
     );
-    const req = makeReq({ 'user-agent': 'curl/8.0' }, {}, '198.51.100.77');
+    const req = makeReq(
+      { 'user-agent': 'curl/8.0', 'x-client-timezone': 'Europe/Berlin' },
+      {},
+      '198.51.100.77',
+    );
     const started = Date.now();
     const ctx = await buildClientContext(req);
     const elapsed = Date.now() - started;
@@ -882,7 +933,8 @@ describe('buildClientContext', () => {
     // precise number. Pre-fix this was ~9000ms (or 30000ms here).
     expect(elapsed).toBeLessThan(500);
     expect(ctx.ip).toBe('198.51.100.77');
-    // Session still starts, just without the enrichment fields.
+    expect(ctx.timezone).toBe('Europe/Berlin');
+    // Session still starts, just without the city/country enrichment.
     expect(ctx.city).toBeUndefined();
   });
 
@@ -1023,8 +1075,11 @@ describe('buildClientContext', () => {
     });
     const ip = '198.51.100.42';
 
+    // Client supplies its timezone, so geo is pure enrichment and must not
+    // block at all (the fallback wait below is only for timezone-less clients).
+    const hdrs = { 'x-client-timezone': 'Europe/Berlin' };
     // First session: starts cold, unblocked, without enrichment.
-    const first = await buildClientContext(makeReq({}, {}, ip));
+    const first = await buildClientContext(makeReq(hdrs, {}, ip));
     expect(first.city).toBeUndefined();
 
     // Background refresh lands.
@@ -1034,7 +1089,7 @@ describe('buildClientContext', () => {
     await new Promise((r) => setTimeout(r, 50));
 
     // Next session for the same IP is enriched from cache — still no blocking.
-    const second = await buildClientContext(makeReq({}, {}, ip));
+    const second = await buildClientContext(makeReq(hdrs, {}, ip));
     expect(second.city).toBe('Cologne');
     expect(second.country).toBe('Germany');
     expect(second.timezone).toBe('Europe/Berlin');
