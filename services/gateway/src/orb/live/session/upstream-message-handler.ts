@@ -65,6 +65,24 @@ import { getSupabase } from '../../../lib/supabase';
 import { VITANA_BOT_USER_ID } from '../../../lib/vitana-bot';
 
 /**
+ * BOOTSTRAP-NOVA-IDLE-KEEPALIVE: is this session on Amazon Nova Sonic?
+ *
+ * Exported for tests. Nova's Bedrock bidirectional stream terminates itself if
+ * it receives no audio/interactive content for ~295s ("Timed out waiting for
+ * audio bytes or interactive content"), so the synthetic PCM keepalive is a
+ * TRANSPORT REQUIREMENT there — unlike Vertex, where letting the stream idle is
+ * merely a way to end a runaway response loop. Anything that stops the
+ * keepalive must therefore check the provider first.
+ *
+ * Defaults to NOT-Nova when the field is absent, matching the `?? 'vertex'`
+ * fallback used elsewhere in this file, so the conservative existing behaviour
+ * is preserved for any session whose provider was never stamped.
+ */
+export function isNovaProvider(session: GeminiLiveSession): boolean {
+  return (session as any).upstreamProvider === 'nova_sonic';
+}
+
+/**
  * orb-live.ts-local helpers the handler body invokes. Future slices may
  * lift these out individually; until then, the deps-bag is the seam.
  */
@@ -397,12 +415,32 @@ export function createUpstreamLiveMessageHandler(
 
             // VTID-LOOPGUARD: If the model has responded too many times without user input,
             // pause the silence keepalive so Vertex's idle timeout stops the loop naturally.
-            if (session.consecutiveModelTurns > getMaxConsecutiveModelTurns() && !isGreetingTurn) {
+            //
+            // BOOTSTRAP-NOVA-IDLE-KEEPALIVE: this must NEVER run for Nova. The
+            // mechanism deliberately weaponises the provider's idle timeout to
+            // break a runaway loop — defensible on Vertex, fatal on Bedrock.
+            // Nova's idle deadline does not "idle the loop out", it TERMINATES
+            // THE STREAM ("Timed out waiting for audio bytes or interactive
+            // content ... less than 295 seconds"), killing the user's whole
+            // conversation. And the only re-arm site is inside the
+            // input_transcription handler below, so a user who then stays quiet
+            // never gets the keepalive back and the session dies deterministically
+            // ~295s after the last input. Stream rotation cannot save it either:
+            // rotationAfterMs defaults to 435_000, which is well past 295s.
+            //
+            // For Nova the PCM keepalive is TRANSPORT LIVENESS, not a
+            // conversation lever (audit C-30: keepalive and conversation
+            // semantics must not be conflated). Loop-breaking for Nova is
+            // handled by the tool/loop guards that act on the model rather than
+            // by starving the transport.
+            if (!isNovaProvider(session) && session.consecutiveModelTurns > getMaxConsecutiveModelTurns() && !isGreetingTurn) {
               console.warn(`[VTID-LOOPGUARD] Response loop detected for session ${session.sessionId}: ${session.consecutiveModelTurns} consecutive model turns without user speech — pausing silence keepalive`);
               if (session.silenceKeepaliveInterval) {
                 clearInterval(session.silenceKeepaliveInterval);
                 session.silenceKeepaliveInterval = undefined;
               }
+            } else if (isNovaProvider(session) && session.consecutiveModelTurns > getMaxConsecutiveModelTurns() && !isGreetingTurn) {
+              console.warn(`[VTID-LOOPGUARD] Response loop detected for session ${session.sessionId}: ${session.consecutiveModelTurns} consecutive model turns without user speech — keepalive PRESERVED (nova_sonic: starving the transport would terminate the Bedrock stream at its ~295s idle deadline)`);
             }
 
             // VTID-CHAT-BRIDGE: Capture transcript text at turn scope for chat_messages bridge (below)
@@ -2020,12 +2058,18 @@ export function handleTurnComplete(
   }
 
   // Loop guard: pause the silence keepalive so the provider idles the loop out.
-  if (session.consecutiveModelTurns > getMaxConsecutiveModelTurns() && !isGreetingTurn) {
+  // BOOTSTRAP-NOVA-IDLE-KEEPALIVE: never for Nova — see the identical guard in
+  // the raw-Gemini handler above for the full reasoning. Starving Bedrock of
+  // audio frames terminates the stream at its ~295s idle deadline instead of
+  // merely ending the loop.
+  if (!isNovaProvider(session) && session.consecutiveModelTurns > getMaxConsecutiveModelTurns() && !isGreetingTurn) {
     console.warn(`[VTID-LOOPGUARD] Response loop detected for session ${session.sessionId}: ${session.consecutiveModelTurns} consecutive model turns without user speech — pausing silence keepalive`);
     if (session.silenceKeepaliveInterval) {
       clearInterval(session.silenceKeepaliveInterval);
       session.silenceKeepaliveInterval = undefined;
     }
+  } else if (isNovaProvider(session) && session.consecutiveModelTurns > getMaxConsecutiveModelTurns() && !isGreetingTurn) {
+    console.warn(`[VTID-LOOPGUARD] Response loop detected for session ${session.sessionId}: ${session.consecutiveModelTurns} consecutive model turns without user speech — keepalive PRESERVED (nova_sonic: starving the transport would terminate the Bedrock stream at its ~295s idle deadline)`);
   }
 
   let chatBridgeUserText = '';
