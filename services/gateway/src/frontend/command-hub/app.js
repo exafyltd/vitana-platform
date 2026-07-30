@@ -36713,6 +36713,58 @@ function renderTestingQuickRunButtons(type, buttons) {
 
 // ─── Testing & QA: Tab Render Functions ────────────────────────────────
 
+// BOOTSTRAP-TEST-COVERAGE: static phase summary, see docs/TEST_COVERAGE_PLAN.md
+// for the full narrative (bugs found, follow-ups surfaced per phase). Update
+// this array when a new phase completes.
+var GATEWAY_COVERAGE_PHASES = [
+    { phase: '1', name: 'Un-quarantine sweep', suites: 11, tests: null, bugs: 1, status: 'done' },
+    { phase: '2', name: 'Tenancy & RBAC', suites: 24, tests: 381, bugs: 0, status: 'done' },
+    { phase: '3', name: 'Memory & intelligence stack', suites: 22, tests: 625, bugs: 2, status: 'done' },
+    { phase: '5', name: 'Autopilot subsystem', suites: 16, tests: 676, bugs: 1, status: 'done' },
+    { phase: '6', name: 'Vitana Brain + awareness engines', suites: 15, tests: 689, bugs: 3, status: 'done' },
+    { phase: '7', name: 'Voice/ORB tools (Nova-prioritized)', suites: 26, tests: 765, bugs: 2, status: 'done' },
+    { phase: '8', name: 'Frontend domain logic (vitana-v1)', suites: null, tests: null, bugs: 0, status: 'pending' },
+    { phase: '9', name: 'Sibling services & packages', suites: null, tests: null, bugs: 0, status: 'pending' },
+    { phase: '10', name: 'Edge functions (vitana-v1)', suites: null, tests: null, bugs: 0, status: 'pending' },
+    { phase: '11', name: 'Coverage ratchet (make CI checks required)', suites: null, tests: null, bugs: 0, status: 'pending' },
+];
+
+function renderGatewayCoveragePhasesTable() {
+    var wrap = document.createElement('div');
+    wrap.style.marginBottom = '1.5rem';
+
+    var titleRow = document.createElement('div');
+    titleRow.style.cssText = 'display:flex;align-items:center;gap:0.75rem;margin-bottom:0.5rem;';
+    titleRow.innerHTML = '<h3 style="margin:0;">Coverage Bootstrap — Phase Structure</h3>' +
+        '<span class="status-badge status-active" style="font-size:0.75rem;">593 suites / 11,716 tests (gateway)</span>';
+    wrap.appendChild(titleRow);
+
+    var subtitle = document.createElement('p');
+    subtitle.className = 'section-subtitle';
+    subtitle.style.marginTop = 0;
+    subtitle.textContent = 'BOOTSTRAP-TEST-COVERAGE — full narrative (bugs found, findings surfaced per phase) in docs/TEST_COVERAGE_PLAN.md.';
+    wrap.appendChild(subtitle);
+
+    var table = document.createElement('table');
+    table.className = 'list-table';
+    table.innerHTML = '<thead><tr><th>Phase</th><th>Scope</th><th>Suites</th><th>Tests</th><th>Bugs Found</th><th>Status</th></tr></thead>';
+    var tbody = document.createElement('tbody');
+    GATEWAY_COVERAGE_PHASES.forEach(function (p) {
+        var row = document.createElement('tr');
+        row.innerHTML =
+            '<td style="font-weight:600;">' + escapeHtml(p.phase) + '</td>' +
+            '<td>' + escapeHtml(p.name) + '</td>' +
+            '<td style="text-align:center;">' + (p.suites == null ? '—' : p.suites) + '</td>' +
+            '<td style="text-align:center;">' + (p.tests == null ? '—' : p.tests) + '</td>' +
+            '<td style="text-align:center;' + (p.bugs > 0 ? 'color:#f59e0b;font-weight:600;' : '') + '">' + p.bugs + '</td>' +
+            '<td><span class="status-badge status-' + (p.status === 'done' ? 'active' : 'pending') + '">' + (p.status === 'done' ? 'Done' : 'Pending') + '</span></td>';
+        tbody.appendChild(row);
+    });
+    table.appendChild(tbody);
+    wrap.appendChild(table);
+    return wrap;
+}
+
 function renderTestingUnitView() {
     var container = document.createElement('div');
     container.style.padding = '1.5rem';
@@ -36727,6 +36779,12 @@ function renderTestingUnitView() {
         '<li><strong>Coverage:</strong> c8/istanbul</li>' +
         '<li><strong>CI:</strong> Runs automatically on Cloud Build</li></ul>';
     container.appendChild(info);
+
+    // BOOTSTRAP-TEST-COVERAGE: phase-by-phase breakdown of the gateway unit
+    // test coverage bootstrap project (docs/TEST_COVERAGE_PLAN.md). Static
+    // summary — updated as new phases land — so testers/reviewers can see
+    // what's covered without reading the full plan doc.
+    container.appendChild(renderGatewayCoveragePhasesTable());
 
     // Quick run buttons
     container.appendChild(renderTestingQuickRunButtons('unit', [

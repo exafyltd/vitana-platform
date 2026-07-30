@@ -8,6 +8,13 @@ import githubService from '../services/github-service';
 const GITHUB_REPO = 'exafyltd/vitana-platform';
 const ORB_MONITOR_WORKFLOW = 'E2E-ORB-MONITOR.yml';
 const E2E_TEST_WORKFLOW = 'E2E-TEST-RUN.yml';
+// BOOTSTRAP-TEST-COVERAGE: the Command Hub's "Unit Tests" panel already had a
+// "Gateway Tests (Jest)" quick-run button wired to project id 'gateway-jest',
+// but /run's project validation only recognized E2E_SUITES entries — the
+// button silently 400'd. This is the real CI workflow (593 suites / ~11.7k
+// tests) that TEST-SUITE.yml runs on every push/PR.
+const GATEWAY_UNIT_WORKFLOW = 'TEST-SUITE.yml';
+const GATEWAY_UNIT_PROJECT = 'gateway-jest';
 
 const router = Router();
 
@@ -96,6 +103,37 @@ router.post('/run', async (req: Request, res: Response) => {
   const { projects = [], type = 'e2e', community_url } = req.body;
   if (!Array.isArray(projects) || projects.length === 0) {
     return res.status(400).json({ ok: false, error: 'projects array is required' });
+  }
+
+  // BOOTSTRAP-TEST-COVERAGE: gateway-jest dispatches the real TEST-SUITE.yml
+  // CI workflow (not the Playwright E2E runner below) and tracks completion
+  // by polling GitHub Actions, since workflow_dispatch returns no run id.
+  if (projects.includes(GATEWAY_UNIT_PROJECT)) {
+    const supabase = getSupabase();
+    if (!supabase) return res.status(503).json({ ok: false, error: 'Supabase not configured' });
+
+    const dispatchedAt = new Date();
+    try {
+      await githubService.triggerWorkflow(GITHUB_REPO, GATEWAY_UNIT_WORKFLOW, 'main');
+    } catch (err: any) {
+      return res.status(500).json({ ok: false, error: 'GitHub dispatch failed: ' + (err.message || 'Unknown') });
+    }
+
+    const { data: run, error: insertErr } = await supabase
+      .from('test_runs')
+      .insert({ type: 'unit', status: 'running', projects: [GATEWAY_UNIT_PROJECT], triggered_by: 'manual' })
+      .select()
+      .single();
+
+    if (insertErr || !run) {
+      return res.status(500).json({ ok: false, error: insertErr?.message || 'Failed to create run' });
+    }
+
+    res.json({ ok: true, run_id: run.id, status: 'running', via: 'github-actions' });
+    pollGatewayUnitRunCompletion(run.id, dispatchedAt, supabase).catch(err => {
+      console.error('[Testing] gateway-jest poll failed:', err);
+    });
+    return;
   }
 
   // Validate projects exist
@@ -413,6 +451,54 @@ async function executePlaywrightRun(
       })
       .eq('id', runId);
   }
+}
+
+// ─── gateway-jest completion poller (BOOTSTRAP-TEST-COVERAGE) ─────────────
+// workflow_dispatch returns no run id, so we find the run we just kicked off
+// by matching the first TEST-SUITE.yml run created after our dispatch call,
+// then poll until GitHub reports it complete. Bounded to ~15 minutes (the
+// observed full run is ~9-10 min); gives up (leaves status='running') past
+// that rather than polling forever.
+export async function pollGatewayUnitRunCompletion(
+  runRowId: string,
+  dispatchedAt: Date,
+  supabase: NonNullable<ReturnType<typeof getSupabase>>,
+) {
+  const deadline = Date.now() + 15 * 60 * 1000;
+  let ghRunId: number | null = null;
+
+  while (Date.now() < deadline) {
+    await new Promise(r => setTimeout(r, 20_000));
+    try {
+      const data = await githubService.getWorkflowRuns(GITHUB_REPO, GATEWAY_UNIT_WORKFLOW);
+      if (!ghRunId) {
+        const match = (data.workflow_runs || []).find(r => new Date(r.created_at) >= dispatchedAt);
+        if (match) ghRunId = match.id;
+        else continue;
+      }
+      const run = (data.workflow_runs || []).find(r => r.id === ghRunId);
+      if (run && run.status === 'completed') {
+        await supabase
+          .from('test_runs')
+          .update({
+            status: run.conclusion === 'success' ? 'passed' : 'failed',
+            duration_ms: Date.now() - dispatchedAt.getTime(),
+            finished_at: new Date().toISOString(),
+            error_message: run.conclusion !== 'success' ? `GitHub Actions run concluded: ${run.conclusion}. See ${run.html_url}` : null,
+          })
+          .eq('id', runRowId);
+        return;
+      }
+    } catch (err) {
+      console.error('[Testing] gateway-jest poll iteration failed:', err);
+    }
+  }
+
+  // Timed out — leave the row as 'running' but note we stopped watching it.
+  await supabase
+    .from('test_runs')
+    .update({ error_message: 'Stopped polling after 15 minutes; check GitHub Actions directly for final status.' })
+    .eq('id', runRowId);
 }
 
 // ─── ORB Monitor — GitHub Actions workflow status ────────────────────────
