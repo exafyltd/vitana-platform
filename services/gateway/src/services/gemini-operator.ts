@@ -492,12 +492,14 @@ Returns checklist items with pass/fail status based on OASIS evidence.`,
       name: 'send_chat_message',
       description: `Send a direct chat message to another community member on the user's behalf. Use this when the user asks to send/write a message to a person (e.g. "send Maria a message saying ...", "schick Mariia eine Nachricht: ...").
 
-FLOW:
-1. Read back the recipient and the exact message text and ask the user to confirm ("Soll ich die Nachricht senden?").
-2. ONLY after the user confirms (e.g. "yes, send it" / "ja, versende es") call this tool.
-3. Pass recipient_label as the name the user used (full name preferred) and body as the EXACT message text the user dictated.
+CONFIRMATION CONTRACT (mandatory — the server enforces this — a call without confirmed=true never delivers the message):
+1. Call send_chat_message(recipient_label, body) WITHOUT confirmed=true. It returns a preview ("Ready to send to X: ...") — nothing is sent yet.
+2. Read the recipient AND message body back to the user verbatim ("Soll ich die Nachricht an <name> senden: '<body>'?").
+3. Wait for explicit confirmation (e.g. "yes, send it" / "ja, versende es").
+4. Call send_chat_message again with the SAME arguments PLUS confirmed: true to actually deliver it.
 
-NEVER claim a message was sent unless this tool returned ok. If it returns an error, tell the user honestly and offer to try again — do NOT silently switch to a different action.`,
+NEVER call this tool with confirmed=true before the user has confirmed the read-back. NEVER describe these steps to the user in prose — just follow them silently and call the tool.
+NEVER claim a message was sent unless a call with confirmed=true returned ok. If it returns an error, tell the user honestly and offer to try again — do NOT silently switch to a different action.`,
       parameters: {
         type: 'object',
         properties: {
@@ -512,9 +514,13 @@ NEVER claim a message was sent unless this tool returned ok. If it returns an er
           body: {
             type: 'string',
             description: 'The message text to send, exactly as the user dictated it.'
+          },
+          confirmed: {
+            type: 'boolean',
+            description: 'Pass true ONLY after the user explicitly confirmed the read-back of both recipient and message. Omit or false for the preview call.'
           }
         },
-        required: ['body']
+        required: ['recipient_label', 'body']
       }
     },
     // ===== VTID-DEV-ASSIST: Developer Assistant Tools =====
@@ -3037,7 +3043,7 @@ async function callVertexWithTools(
     model: VERTEX_MODEL,
     generationConfig: {
       temperature: 0.7,
-      maxOutputTokens: 1024,
+      maxOutputTokens: 4096,
       topP: 0.95,
       topK: 40
     },
@@ -3138,7 +3144,7 @@ async function sendToolResultsToVertex(
     model: VERTEX_MODEL,
     generationConfig: {
       temperature: 0.7,
-      maxOutputTokens: 1024,
+      maxOutputTokens: 4096,
     },
     systemInstruction: {
       role: 'system',
@@ -3507,7 +3513,7 @@ async function callGeminiWithTools(
     },
     generationConfig: {
       temperature: 0.7,
-      maxOutputTokens: 1024
+      maxOutputTokens: 4096
     }
   };
 
@@ -3635,7 +3641,7 @@ CRITICAL — Sharing links:
     },
     generationConfig: {
       temperature: 0.7,
-      maxOutputTokens: 1024
+      maxOutputTokens: 4096
     }
   };
 
