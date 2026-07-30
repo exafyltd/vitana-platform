@@ -62,14 +62,24 @@ const DEFAULT_INSTRUCTION_CHUNK_BYTES = 4_000;
 // `turnDetectionConfiguration.endpointingSensitivity` enum — no numeric ms.
 // This was previously hardcoded in nova-sonic-protocol.ts's `buildSessionStart`
 // default with no way to change it short of a code deploy; `connect()` never
-// even read `options.vadSilenceMs` to inform it. AWS's own guidance: HIGH
-// concludes a turn on a shorter pause (lower latency, higher risk of cutting
-// off a user who pauses mid-sentence); LOW waits longer (safer, slower).
-// MEDIUM stays the default here — flipping it is a latency/accuracy product
-// trade-off that needs explicit sign-off, not a default this file should
-// silently change. Making it configurable (this env var) lets that
-// experiment happen via a staging env flip instead of a code change.
-const DEFAULT_ENDPOINTING_SENSITIVITY = 'MEDIUM' as const;
+// even read `options.vadSilenceMs` to inform it. AWS's documented waits:
+// HIGH ≈1.5s, MEDIUM ≈1.75s, LOW ≈2s.
+//
+// DEFAULT IS NOW **HIGH** (BOOTSTRAP-ORB-LATENCY-P0). Two reasons this is a
+// correction, not a preference:
+//   1. The session already asks for a 600ms silence window
+//      (`vadSilenceMs`, VOICE_VAD_SILENCE_DURATION_MS). Nova ignores that
+//      value entirely, so the operator-configured intent was "end the turn
+//      quickly" while Nova actually waited 1.75s on every single turn. HIGH
+//      is the closest Nova can get to what was already configured — MEDIUM
+//      was never a deliberate choice, it was the protocol default leaking
+//      through because nothing wired the setting.
+//   2. A ≥1.75s pre-inference wait cannot fit inside a 2-3s end-to-end
+//      target once model generation and playback are added.
+// LOW/MEDIUM remain available via NOVA_SONIC_ENDPOINTING_SENSITIVITY for
+// thoughtful/clinical/hesitant-speech flows or an accessibility preference,
+// and rollback is an env flip with no redeploy.
+const DEFAULT_ENDPOINTING_SENSITIVITY = 'HIGH' as const;
 const VALID_ENDPOINTING_SENSITIVITIES = new Set(['HIGH', 'MEDIUM', 'LOW']);
 
 export type NovaSonicConfigIssue =

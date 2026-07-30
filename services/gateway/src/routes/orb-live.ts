@@ -9356,6 +9356,55 @@ function isPrivateIP(ip: string): boolean {
     ip.startsWith('fc') || ip.startsWith('fd') || ip.startsWith('fe80');
 }
 
+/**
+ * In-flight geo refreshes, keyed by IP, so N concurrent cold sessions from the
+ * same IP trigger ONE background lookup instead of N.
+ */
+const ipGeoInFlight = new Map<string, Promise<void>>();
+
+/**
+ * NON-BLOCKING geo resolution — the session-start hot path (BOOTSTRAP-ORB-LATENCY-P0).
+ *
+ * THE FIX: `geolocateIP` walks three providers SEQUENTIALLY, each with a 3s
+ * `AbortSignal.timeout` — up to **9 seconds** on a cold cache with upstreams
+ * rate-limiting (429 from ipapi.co / ip-api.com is the *common* case, per
+ * VTID-03251's own comments below). That await sat in `buildClientContext`,
+ * which `live-session-controller.ts` awaits before the live session is even
+ * created — so every cold voice session paid it before Nova/Vertex connection
+ * work began. It was the single largest contributor to "ORB takes 8-10s".
+ *
+ * City/country are enrichment, never a precondition for speech:
+ *   - The browser sends its own IANA timezone, and VTID-03250 already made
+ *     that WIN over geo-IP for time resolution — so the one field that
+ *     actually affects correctness does not need this call at all.
+ *   - city/country only decorate context; a session that starts without them
+ *     is strictly better than one that starts 9 seconds late.
+ *
+ * So: return whatever is cached (fresh OR stale — stale beats blocking, same
+ * reasoning VTID-03251 used for its fallback) and kick the refresh into the
+ * background for the *next* session. Never await the network here.
+ */
+function geolocateIPNonBlocking(ip: string): { city?: string; country?: string; timezone?: string } {
+  if (isPrivateIP(ip)) return {};
+  const cached = ipGeoCache.get(ip);
+  const isFresh = cached && Date.now() - cached.ts < IP_GEO_CACHE_TTL_MS;
+  if (!isFresh && !ipGeoInFlight.has(ip)) {
+    // Warm the cache for subsequent sessions. Deliberately un-awaited; a
+    // failure here can never affect the session that triggered it.
+    const refresh = geolocateIP(ip)
+      .catch(() => { /* geolocateIP already logs; never surface to the session */ })
+      .finally(() => { ipGeoInFlight.delete(ip); });
+    ipGeoInFlight.set(ip, refresh as Promise<void>);
+  }
+  if (cached?.data) {
+    const ageMin = Math.round((Date.now() - cached.ts) / 60000);
+    console.log(`[VTID-CONTEXT] geo cache ${isFresh ? 'hit' : `stale(${ageMin}m)`}: ${ip} → ${cached.data.city}, ${cached.data.country}`);
+    return cached.data;
+  }
+  console.log(`[VTID-CONTEXT] geo cold for ${ip} — starting session without it (refresh queued)`);
+  return {};
+}
+
 async function geolocateIP(ip: string): Promise<{ city?: string; country?: string; timezone?: string }> {
   if (isPrivateIP(ip)) {
     console.log(`[VTID-CONTEXT] Skipping geo lookup for private/local IP: ${ip}`);
@@ -9493,11 +9542,12 @@ export async function buildClientContext(req: Request): Promise<ClientContext> {
   const referrer = req.get('referer') || req.get('referrer') || undefined;
   const acceptLang = req.get('accept-language')?.split(',')[0]?.trim();
 
-  // Run geo lookup in parallel with UA parsing (geo is async, UA is sync)
-  const [geo, uaParsed] = await Promise.all([
-    geolocateIP(ip),
-    Promise.resolve(parseUserAgent(ua)),
-  ]);
+  // BOOTSTRAP-ORB-LATENCY-P0: geo is cache-or-nothing and NEVER awaited on the
+  // network. Previously this Promise.all awaited up to 9s of sequential
+  // provider calls before the live session could even be created. Both of
+  // these are now synchronous.
+  const geo = geolocateIPNonBlocking(ip);
+  const uaParsed = parseUserAgent(ua);
 
   // VTID-03250: prefer the browser's own IANA timezone (sent in the
   // session-start body / x-client-timezone header) over geo-IP, which
