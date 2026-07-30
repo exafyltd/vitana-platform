@@ -2156,6 +2156,9 @@ export function buildLiveApiTools(
             '',
             '── "MY MATCHES" — do not confuse the list with a single detail ──',
             'INTENTS.MATCH_DETAIL is a SINGLE match\'s detail page — it requires a real `match_id` you already have from context (e.g. the user just discussed that specific match). For "show me my matches" / "My Matches" / any general request to see their matches, use COMM.FIND_PARTNER_MATCHES (mobile) or COMM.MATCHES (desktop) instead — those need no parameter. Calling INTENTS.MATCH_DETAIL without a real match_id always fails.',
+            '',
+            '── CONFIRMING A DESTINATION YOU JUST OFFERED ──',
+            'If you just offered to take the user somewhere by name (e.g. you asked "Should I take you to Connected Apps?" or "Soll ich dich zu den verbundenen Apps bringen?") and the user simply confirms without repeating the destination ("yes", "ja", "mach das", "do it", "gerne", "klar", "sure"), call this tool with the SAME screen_id you already resolved for that offer. A bare confirmation carries no screen information on its own — do not treat it as a new, unresolvable request and do not ask again; reuse the screen_id from your own last offer.',
           ].join('\n'),
           parameters: {
             type: 'object',
