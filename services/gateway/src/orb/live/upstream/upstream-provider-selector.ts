@@ -89,6 +89,14 @@ export type SelectionReason =
   | 'nova_not_allowlisted'        // nova gate on but identity not in allowlist → vertex
   | 'nova_language_unsupported'   // session language outside en/de/fr/es → vertex
   | 'nova_runtime_unsupported'    // runtime cannot carry the HTTP/2 stream (GCP) → vertex
+  // BOOTSTRAP-NOVA-IDLE-ROTATION: a mid-session pin applied by the CALLER,
+  // never returned by selectUpstreamProvider() itself (which is stateless and
+  // has no notion of a session's rotation history). Set when a planned Nova
+  // rotation — wall-clock cap or idle fail-safe — exhausted its attempts, so
+  // the session finishes on Vertex instead of dying on a stream Nova cannot
+  // replace. Lives in this union so the override is a typed, greppable
+  // decision rather than a cast.
+  | 'nova_rotation_exhausted_fallback'
   | 'provider_invalid';           // unknown provider string anywhere → vertex
 
 export interface CanarySelectorConfig {

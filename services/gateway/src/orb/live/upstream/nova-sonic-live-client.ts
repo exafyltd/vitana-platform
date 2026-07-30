@@ -38,6 +38,7 @@ import type {
   UpstreamUsageEvent,
 } from './types';
 import type { NovaSonicConfig } from './nova-sonic-config';
+import { NOVA_IDLE_WATCHDOG_TICK_MS } from './nova-sonic-config';
 import {
   buildAudioContentStart,
   buildAudioInput,
@@ -190,6 +191,15 @@ export interface NovaSonicLiveClientDeps {
   createCommand?: (input: { modelId: string; body: AsyncIterable<unknown> }) => unknown;
   /** Rotation callback — fired ONCE at config.rotationAfterMs. */
   onRotationDue?: () => void;
+  /**
+   * BOOTSTRAP-NOVA-IDLE-ROTATION: fail-safe rotation callback, fired when
+   * no input has been ACCEPTED for config.idleRotationAfterMs — i.e. the
+   * session is drifting toward Bedrock's ~295s idle kill. Unlike
+   * onRotationDue this can fire more than once per stream (a session may go
+   * idle, rotate, converse, and go idle again), but never twice without
+   * fresh input in between.
+   */
+  onIdleDeadlineApproaching?: (info: { msSinceLastInput: number }) => void;
   /** Audio queue high-water mark override. */
   audioHighWaterMark?: number;
 }
@@ -393,6 +403,17 @@ export class NovaSonicLiveClient implements UpstreamLiveClient {
   private normalizer = new NovaOutputNormalizer();
   private rotationTimer: NodeJS.Timeout | null = null;
   private rotationFired = false;
+  /** Idle-deadline fail-safe (BOOTSTRAP-NOVA-IDLE-ROTATION). */
+  private idleWatchdog: NodeJS.Timeout | null = null;
+  /**
+   * Wall-clock of the last input Bedrock actually ACCEPTED. A refused frame
+   * (backpressure) is deliberately NOT stamped — it never reached Bedrock,
+   * so it never reset Bedrock's idle clock, and pretending otherwise would
+   * make this watchdog blind in exactly the situation it exists for.
+   */
+  private lastInputAcceptedAt = 0;
+  /** Set when the idle callback fires; cleared by the next accepted input. */
+  private idleRotationSignalled = false;
   private closeEmitted = false;
   /** Frames actually queued — gates the audio contentEnd on teardown. */
   private audioFramesSent = 0;
@@ -518,7 +539,13 @@ export class NovaSonicLiveClient implements UpstreamLiveClient {
       }
 
       this.state = 'open';
+      // The init sequence above (sessionStart → promptStart → system block →
+      // audioContentStart) is real accepted input, so the idle clock starts
+      // here rather than at zero — otherwise a stream would look 240s idle
+      // the instant it opened.
+      this.markInputAccepted();
       this.armRotationTimer();
+      this.armIdleWatchdog();
       this.responseLoopDone = this.runResponseLoop(response.body);
     } catch (err) {
       const code = classifyNovaError(err);
@@ -544,6 +571,61 @@ export class NovaSonicLiveClient implements UpstreamLiveClient {
     }, this.deps.config.rotationAfterMs);
     // Never keep the process alive for a rotation timer.
     this.rotationTimer.unref?.();
+  }
+
+  /**
+   * BOOTSTRAP-NOVA-IDLE-ROTATION: sample the elapsed-since-last-accepted-input
+   * clock and signal when it approaches Bedrock's ~295s idle deadline.
+   *
+   * Sampling rather than a one-shot `setTimeout` because the deadline is
+   * measured from a MOVING timestamp — every accepted frame pushes it out.
+   * Re-arming a one-shot on every audio frame would mean tearing down and
+   * rebuilding a timer 4x/second for the entire session.
+   */
+  private armIdleWatchdog(): void {
+    const limit = this.deps.config.idleRotationAfterMs;
+    if (!limit || limit <= 0) return; // explicitly disabled
+    this.idleWatchdog = setInterval(() => {
+      if (this.state !== 'open') return;
+      // One signal per idle episode. Without this the callback would re-fire
+      // every tick for as long as the session stayed quiet, stacking
+      // rotation attempts on top of each other.
+      if (this.idleRotationSignalled) return;
+      const msSinceLastInput = Date.now() - this.lastInputAcceptedAt;
+      if (msSinceLastInput < limit) return;
+      this.idleRotationSignalled = true;
+      try {
+        this.deps.onIdleDeadlineApproaching?.({ msSinceLastInput });
+      } catch {
+        /* fail-safe callback must never destabilize the stream */
+      }
+    }, NOVA_IDLE_WATCHDOG_TICK_MS);
+    this.idleWatchdog.unref?.();
+  }
+
+  private clearIdleWatchdog(): void {
+    if (this.idleWatchdog) {
+      clearInterval(this.idleWatchdog);
+      this.idleWatchdog = null;
+    }
+  }
+
+  /**
+   * Stamp the idle clock. Call ONLY where Bedrock genuinely accepted input —
+   * a dropped/refused event must not reset it.
+   */
+  private markInputAccepted(): void {
+    this.lastInputAcceptedAt = Date.now();
+    this.idleRotationSignalled = false;
+  }
+
+  /**
+   * Milliseconds since the last accepted input, for telemetry and tests.
+   * Returns 0 before the stream opens.
+   */
+  getMsSinceLastAcceptedInput(): number {
+    if (!this.lastInputAcceptedAt) return 0;
+    return Date.now() - this.lastInputAcceptedAt;
   }
 
   private async runResponseLoop(
@@ -636,9 +718,14 @@ export class NovaSonicLiveClient implements UpstreamLiveClient {
       buildAudioInput({ promptName: this.promptName, contentName: this.audioContentName, dataB64: audioB64 }),
     );
     if (!accepted) {
+      // Deliberately no markInputAccepted() here — a refused frame never
+      // reached Bedrock, so Bedrock's idle clock did not move. Stamping it
+      // would hide sustained backpressure from the idle watchdog, which is
+      // one of the ways frames can silently stop flowing.
       this.emitError({ code: 'nova_backpressure', message: 'Nova input queue high-water mark reached; audio chunk dropped' });
     } else {
       this.audioFramesSent++;
+      this.markInputAccepted();
     }
     return accepted;
   }
@@ -649,6 +736,7 @@ export class NovaSonicLiveClient implements UpstreamLiveClient {
     this.queue.push(buildTextContentStart({ promptName: this.promptName, contentName, role: 'USER' }));
     this.queue.push(buildTextInput({ promptName: this.promptName, contentName, content: text }));
     this.queue.push(buildContentEnd({ promptName: this.promptName, contentName }));
+    this.markInputAccepted();
     return true;
   }
 
@@ -688,6 +776,11 @@ export class NovaSonicLiveClient implements UpstreamLiveClient {
     })) {
       this.queue.push(event);
     }
+    // Bedrock's idle message names "audio bytes or interactive content" —
+    // a tool result is interactive content, so it resets the idle clock. This
+    // matters for long tool round-trips, where a slow tool is the only thing
+    // keeping the session from looking idle.
+    this.markInputAccepted();
     return true;
   }
 
@@ -699,6 +792,7 @@ export class NovaSonicLiveClient implements UpstreamLiveClient {
       clearTimeout(this.rotationTimer);
       this.rotationTimer = null;
     }
+    this.clearIdleWatchdog();
     // Orderly teardown: close the audio block, end the prompt + session,
     // then close the input queue so the request stream completes. Nova
     // rejects a contentEnd for a content block that never received data
@@ -740,6 +834,7 @@ export class NovaSonicLiveClient implements UpstreamLiveClient {
       clearTimeout(this.rotationTimer);
       this.rotationTimer = null;
     }
+    this.clearIdleWatchdog();
     try {
       this.closeHandler?.(event);
     } catch {

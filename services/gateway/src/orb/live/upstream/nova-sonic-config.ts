@@ -26,6 +26,35 @@ export type NovaSonicLanguage = (typeof NOVA_SONIC_SUPPORTED_LANGUAGES)[number];
 const DEFAULT_CONNECT_TIMEOUT_MS = 15_000;
 /** 7m15s — rotate 45s before Bedrock's 8-minute bidirectional stream cap. */
 const DEFAULT_ROTATION_AFTER_MS = 435_000;
+// BOOTSTRAP-NOVA-IDLE-ROTATION: Bedrock enforces TWO independent deadlines,
+// and `rotationAfterMs` above only covers the first:
+//
+//   1. Stream cap  — ~8 min of WALL CLOCK since connect, regardless of
+//                    traffic. `rotationAfterMs` (435s) covers this.
+//   2. Idle timeout — ~295s since the last ACCEPTED INPUT. Bedrock's own
+//                    words: "Timed out waiting for audio bytes or
+//                    interactive content … less than 295 seconds".
+//
+// These run on different clocks, so a 435s wall-clock timer CANNOT protect
+// the 295s idle deadline — a session that stops feeding frames dies at ~295s
+// with the rotation timer still 140s away. That is exactly the production
+// P0: a healthy 10-turn session terminated ~292s after its last input.
+//
+// The silence keepalive normally makes idle unreachable (it feeds a frame
+// every 250ms), so in a healthy session this watchdog never fires. It exists
+// because the keepalive stopping is precisely the failure that killed
+// production once already — VTID-LOOPGUARD used to clear it deliberately.
+// This is the backstop for "the frames stopped for a reason nobody predicted".
+//
+// 240s leaves ~55s of headroom to open, validate, and swap to a replacement
+// stream before Bedrock would kill the old one.
+const DEFAULT_IDLE_ROTATION_AFTER_MS = 240_000;
+/**
+ * How often the idle watchdog samples the elapsed-since-last-input clock.
+ * Sampling, not a one-shot timer, because the deadline is relative to a
+ * moving timestamp. 5s bounds the overshoot well inside the 55s headroom.
+ */
+export const NOVA_IDLE_WATCHDOG_TICK_MS = 5_000;
 // Under NodeHttp2Handler's 480s idle sessionTimeout so the pooled HTTP/2
 // session never expires between pings.
 const DEFAULT_KEEPWARM_MS = 240_000;
@@ -89,6 +118,7 @@ export type NovaSonicConfigIssue =
   | 'nova_canary_tenant_ids_invalid'
   | 'nova_connect_timeout_invalid'
   | 'nova_rotation_after_invalid'
+  | 'nova_idle_rotation_after_invalid'
   | 'nova_keepwarm_invalid'
   | 'nova_model_warm_invalid'
   | 'nova_max_tokens_invalid'
@@ -103,6 +133,14 @@ export interface NovaSonicConfig {
   canaryTenantIds: ReadonlySet<string>;
   connectTimeoutMs: number;
   rotationAfterMs: number;
+  /**
+   * Fail-safe: rotate the stream once this long has passed since the last
+   * ACCEPTED input, to stay ahead of Bedrock's ~295s idle deadline. Distinct
+   * clock from `rotationAfterMs` (wall-clock since connect) — see the
+   * DEFAULT_IDLE_ROTATION_AFTER_MS comment for why one cannot cover the
+   * other. 0 disables the watchdog.
+   */
+  idleRotationAfterMs: number;
   /**
    * Interval for the Bedrock connection keep-warm ping (latency: keeps the
    * pooled HTTP/2 session + resolved credentials hot between real sessions;
@@ -217,6 +255,14 @@ export function getNovaSonicConfig(env: NodeJS.ProcessEnv): NovaSonicConfig {
   );
   if (rotationAfterMs === null) issues.push('nova_rotation_after_invalid');
 
+  // Non-negative (not positive) so 0 is a legitimate "disable the watchdog"
+  // value, matching keepWarmMs/modelWarmMs.
+  const idleRotationAfterMs = parseNonNegativeInt(
+    env.NOVA_SONIC_IDLE_ROTATION_AFTER_MS,
+    DEFAULT_IDLE_ROTATION_AFTER_MS,
+  );
+  if (idleRotationAfterMs === null) issues.push('nova_idle_rotation_after_invalid');
+
   const keepWarmMs = parseNonNegativeInt(
     env.NOVA_SONIC_KEEPWARM_MS,
     DEFAULT_KEEPWARM_MS,
@@ -257,6 +303,7 @@ export function getNovaSonicConfig(env: NodeJS.ProcessEnv): NovaSonicConfig {
     canaryTenantIds: canaryTenantIds ?? new Set(),
     connectTimeoutMs: connectTimeoutMs ?? DEFAULT_CONNECT_TIMEOUT_MS,
     rotationAfterMs: rotationAfterMs ?? DEFAULT_ROTATION_AFTER_MS,
+    idleRotationAfterMs: idleRotationAfterMs ?? DEFAULT_IDLE_ROTATION_AFTER_MS,
     keepWarmMs: keepWarmMs ?? DEFAULT_KEEPWARM_MS,
     modelWarmMs: modelWarmMs ?? DEFAULT_MODEL_WARM_MS,
     maxTokens: maxTokens ?? DEFAULT_MAX_TOKENS,
