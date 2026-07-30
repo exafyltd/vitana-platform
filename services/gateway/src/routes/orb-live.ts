@@ -6527,6 +6527,23 @@ async function connectToLiveAPI(
       canary: false,
     };
   }
+  // BOOTSTRAP-NOVA-IDLE-ROTATION: a session that already exhausted its Nova
+  // rotation attempts is pinned to Vertex for the remainder of its life. This
+  // has to be applied AFTER the selector (which is stateless and would happily
+  // hand back Nova again) and BEFORE `session.upstreamProvider` is recorded,
+  // so latency attribution and the connect branch below both see the pin.
+  // Loud, never silent — CLAUDE.md "Never allow silent model fallback".
+  if ((session as any)._novaFallbackToVertex && __upstreamDecision.provider === 'nova_sonic') {
+    console.warn(
+      `[BOOTSTRAP-NOVA-IDLE-ROTATION] Session ${session.sessionId} is pinned to Vertex after exhausting ` +
+        `Nova rotation attempts — overriding selector decision '${__upstreamDecision.provider}'.`,
+    );
+    __upstreamDecision = {
+      ...__upstreamDecision,
+      provider: 'vertex',
+      reason: 'nova_rotation_exhausted_fallback',
+    };
+  }
   console.log(
     `[VTID-02976] upstream provider selected: provider=${__upstreamDecision.provider}` +
       ` requested=${__upstreamDecision.requested ?? 'none'}` +
@@ -7205,28 +7222,66 @@ async function connectToLiveAPI(
         // history rebuild + persona voice re-resolution), switch the session
         // to it, then close the old stream. The browser WS/SSE stays
         // connected and no greeting replays (greetingSent remains true).
-        let rotateNovaStream: (() => Promise<void>) | null = null;
+        let rotateNovaStream: ((reason: NovaRotationReason) => Promise<void>) | null = null;
 
         const novaClient = createUpstreamClient('nova_sonic', {
           nova: {
             config: novaCfg,
             voiceId: novaVoice,
             onRotationDue: () => {
-              void rotateNovaStream?.();
+              void rotateNovaStream?.('provider_stream_rotation');
+            },
+            // BOOTSTRAP-NOVA-IDLE-ROTATION: the fail-safe. Fires only when
+            // input has genuinely stopped reaching Bedrock for ~240s, which
+            // in a healthy session never happens (the 250ms silence keepalive
+            // keeps the clock pinned). Same open-before-close swap as the
+            // wall-clock rotation — the only difference is why it ran.
+            onIdleDeadlineApproaching: ({ msSinceLastInput }) => {
+              console.warn(
+                `[BOOTSTRAP-NOVA-IDLE-ROTATION] Session ${session.sessionId} has accepted no input for ` +
+                  `${Math.round(msSinceLastInput / 1000)}s — approaching Bedrock's ~295s idle deadline. ` +
+                  `Rotating pre-emptively. If this fires in production the silence keepalive has stopped ` +
+                  `feeding frames; that is the real bug to chase, this is only the backstop.`,
+              );
+              emitDiag(session, 'nova_idle_deadline_approaching', {
+                provider: 'nova_sonic',
+                ms_since_last_input: msSinceLastInput,
+              });
+              void emitOasisEvent({
+                type: 'orb.upstream.nova.idle_deadline_approaching',
+                vtid: 'BOOTSTRAP-NOVA-IDLE-ROTATION',
+                payload: {
+                  session_id: session.sessionId,
+                  provider: 'nova_sonic',
+                  ms_since_last_input: msSinceLastInput,
+                } as any,
+              } as any).catch(() => { /* best-effort */ });
+              void rotateNovaStream?.('idle_deadline_failsafe');
             },
           },
         });
 
-        rotateNovaStream = async () => {
+        rotateNovaStream = async (reason: NovaRotationReason) => {
           if (!session.active) return;
+          // A wall-clock rotation and an idle fail-safe can in principle come
+          // due together; running two swaps concurrently would race two
+          // replacement streams onto one session.
+          if ((session as any)._novaRotationInFlight) {
+            emitDiag(session, 'nova_rotation_skipped', { provider: 'nova_sonic', reason, code: 'already_in_flight' });
+            return;
+          }
           (session as any)._novaRotationInFlight = true;
-          emitDiag(session, 'nova_rotation_started', { provider: 'nova_sonic' });
+          emitDiag(session, 'nova_rotation_started', { provider: 'nova_sonic', reason });
           void emitOasisEvent({
             type: 'orb.upstream.nova.rotation_started',
             vtid: 'BOOTSTRAP-NOVA-SONIC-VOICE',
-            payload: { session_id: session.sessionId, provider: 'nova_sonic', reason: 'provider_stream_rotation' } as any,
+            payload: { session_id: session.sessionId, provider: 'nova_sonic', reason } as any,
           } as any).catch(() => { /* best-effort */ });
-          try {
+
+          // One planned-rotation attempt. Returns true when the replacement
+          // stream is open and the session has been switched onto it.
+          const attemptSwap = async (attempt: number): Promise<boolean> => {
+            const before = ((session as any)._reconnectCount as number) || 0;
             const ok = await attemptTransparentReconnect(
               session,
               onAudioResponse,
@@ -7235,34 +7290,138 @@ async function connectToLiveAPI(
               onTurnComplete,
               onInterrupted,
             );
-            if (ok) {
-              // Planned rotation must not consume the failure-reconnect
-              // budget — refund the slot the reconnect helper just took.
-              (session as any)._reconnectCount = Math.max(0, ((session as any)._reconnectCount || 1) - 1);
-              await novaClient.close('provider_stream_rotation');
-              emitDiag(session, 'nova_rotation_succeeded', { provider: 'nova_sonic' });
+            // A PLANNED rotation must never consume the unplanned-failure
+            // reconnect budget — refund the slot whether or not the attempt
+            // succeeded. Rotation retries are bounded separately below, so
+            // refunding on failure cannot spin.
+            //
+            // Refund only what was actually SPENT: attemptTransparentReconnect
+            // returns false WITHOUT incrementing when it is already at
+            // MAX_RECONNECTS, so an unconditional decrement would erode the
+            // counter on every failed attempt and quietly hand the session
+            // more reconnect budget than the cap allows.
+            const after = ((session as any)._reconnectCount as number) || 0;
+            if (after > before) {
+              (session as any)._reconnectCount = Math.max(0, after - 1);
+            }
+            if (!ok) {
+              emitDiag(session, 'nova_rotation_attempt_failed', {
+                provider: 'nova_sonic',
+                reason,
+                attempt,
+                code: 'nova_rotation_failed',
+              });
+            }
+            return ok;
+          };
+
+          try {
+            let swapped = false;
+            for (let attempt = 1; attempt <= NOVA_ROTATION_MAX_ATTEMPTS && !swapped; attempt++) {
+              if (!session.active) break;
+              try {
+                swapped = await attemptSwap(attempt);
+              } catch (e) {
+                emitDiag(session, 'nova_rotation_attempt_failed', {
+                  provider: 'nova_sonic',
+                  reason,
+                  attempt,
+                  code: 'nova_rotation_failed',
+                  error: (e as Error).message,
+                });
+              }
+              if (!swapped && attempt < NOVA_ROTATION_MAX_ATTEMPTS) {
+                await new Promise((r) => setTimeout(r, NOVA_ROTATION_RETRY_BACKOFF_MS * attempt));
+              }
+            }
+
+            if (swapped) {
+              await novaClient.close(reason);
+              emitDiag(session, 'nova_rotation_succeeded', { provider: 'nova_sonic', reason });
               void emitOasisEvent({
                 type: 'orb.upstream.nova.rotation_succeeded',
                 vtid: 'BOOTSTRAP-NOVA-SONIC-VOICE',
-                payload: { session_id: session.sessionId, provider: 'nova_sonic' } as any,
+                payload: { session_id: session.sessionId, provider: 'nova_sonic', reason } as any,
               } as any).catch(() => { /* best-effort */ });
-            } else {
-              // Replacement failed — keep the old stream until its Bedrock
-              // deadline; its eventual close surfaces ONE typed issue via
-              // the close handler (rotation flag cleared below).
-              emitDiag(session, 'nova_rotation_failed', { provider: 'nova_sonic', code: 'nova_rotation_failed' });
-              void emitOasisEvent({
-                type: 'orb.upstream.nova.rotation_failed',
-                vtid: 'BOOTSTRAP-NOVA-SONIC-VOICE',
-                payload: { session_id: session.sessionId, provider: 'nova_sonic', code: 'nova_rotation_failed' } as any,
-              } as any).catch(() => { /* best-effort */ });
+              return;
             }
-          } catch (e) {
+
+            // Every Nova replacement attempt failed. For a wall-clock rotation
+            // the old stream still has ~45s; for the idle fail-safe it has
+            // ~55s — either way, riding it to the deadline drops the user.
+            // Fall back to Vertex, which has no equivalent idle-kill, rather
+            // than let the conversation die on a provider that cannot hold it.
+            // NEVER silent (CLAUDE.md "Never allow silent model fallback").
             emitDiag(session, 'nova_rotation_failed', {
               provider: 'nova_sonic',
+              reason,
               code: 'nova_rotation_failed',
-              error: (e as Error).message,
+              attempts: NOVA_ROTATION_MAX_ATTEMPTS,
             });
+            void emitOasisEvent({
+              type: 'orb.upstream.nova.rotation_failed',
+              vtid: 'BOOTSTRAP-NOVA-SONIC-VOICE',
+              payload: {
+                session_id: session.sessionId,
+                provider: 'nova_sonic',
+                reason,
+                code: 'nova_rotation_failed',
+                attempts: NOVA_ROTATION_MAX_ATTEMPTS,
+              } as any,
+            } as any).catch(() => { /* best-effort */ });
+
+            if (!session.active) return;
+            console.warn(
+              `[BOOTSTRAP-NOVA-IDLE-ROTATION] Nova rotation failed ${NOVA_ROTATION_MAX_ATTEMPTS}x for session ` +
+                `${session.sessionId} (reason=${reason}) — falling back to Vertex for the rest of this session.`,
+            );
+            // Pinned for the REST of the session, not just this attempt: if
+            // Nova could not give us a stream three times in a row, bouncing
+            // the next rotation back onto it would just repeat this.
+            (session as any)._novaFallbackToVertex = true;
+            emitDiag(session, 'nova_fallback_to_vertex', { provider: 'nova_sonic', reason });
+            void emitOasisEvent({
+              type: 'orb.upstream.nova.fallback_to_vertex',
+              vtid: 'BOOTSTRAP-NOVA-IDLE-ROTATION',
+              payload: { session_id: session.sessionId, from: 'nova_sonic', to: 'vertex', reason } as any,
+            } as any).catch(() => { /* best-effort */ });
+
+            let fellBack = false;
+            try {
+              fellBack = await attemptTransparentReconnect(
+                session,
+                onAudioResponse,
+                onTextResponse,
+                onError,
+                onTurnComplete,
+                onInterrupted,
+              );
+            } catch (e) {
+              emitDiag(session, 'nova_fallback_failed', {
+                provider: 'vertex',
+                reason,
+                error: (e as Error).message,
+              });
+            }
+            if (fellBack) {
+              await novaClient.close(`${reason}_vertex_fallback`);
+              emitDiag(session, 'nova_fallback_succeeded', { provider: 'vertex', reason });
+              void emitOasisEvent({
+                type: 'orb.upstream.nova.fallback_succeeded',
+                vtid: 'BOOTSTRAP-NOVA-IDLE-ROTATION',
+                payload: { session_id: session.sessionId, from: 'nova_sonic', to: 'vertex', reason } as any,
+              } as any).catch(() => { /* best-effort */ });
+            } else {
+              // Nothing left to try — keep the old Nova stream so the user
+              // gets whatever time remains before its deadline rather than
+              // being cut off now. Its close handler surfaces the typed issue.
+              emitDiag(session, 'nova_fallback_failed', { provider: 'vertex', reason, code: 'nova_fallback_failed' });
+              void emitOasisEvent({
+                type: 'orb.upstream.nova.fallback_failed',
+                vtid: 'BOOTSTRAP-NOVA-IDLE-ROTATION',
+                payload: { session_id: session.sessionId, from: 'nova_sonic', to: 'vertex', reason } as any,
+              } as any).catch(() => { /* best-effort */ });
+            }
           } finally {
             (session as any)._novaRotationInFlight = false;
           }
@@ -7824,6 +7983,12 @@ async function connectToLiveAPI(
  */
 // A2 (orb-live-refactor): MAX_RECONNECTS lifted to orb/live/config.ts.
 import { MAX_RECONNECTS } from '../orb/live/config';
+// BOOTSTRAP-NOVA-IDLE-ROTATION: planned-rotation retry budget + reason type.
+import {
+  NOVA_ROTATION_MAX_ATTEMPTS,
+  NOVA_ROTATION_RETRY_BACKOFF_MS,
+  type NovaRotationReason,
+} from '../orb/live/config';
 
 // VTID-03273 Pillar B — how long before the server's GoAway deadline we
 // proactively rotate the connection. Small enough to overlap the warning

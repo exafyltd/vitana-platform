@@ -82,6 +82,28 @@ export const MAX_CONNECTIONS_PER_IP = 5;
 export const MAX_RECONNECTS = 10;
 
 /**
+ * BOOTSTRAP-NOVA-IDLE-ROTATION: attempts allowed for a PLANNED Nova stream
+ * rotation (wall-clock cap or idle fail-safe) before giving up on Nova and
+ * falling back to Vertex for the rest of the session.
+ *
+ * Deliberately small and deliberately separate from MAX_RECONNECTS: a planned
+ * rotation refunds the reconnect budget on every attempt (success or failure)
+ * so a fail-safe can never eat the budget a genuine mid-call disconnect needs.
+ * This counter is what bounds the retry loop instead.
+ */
+export const NOVA_ROTATION_MAX_ATTEMPTS = 3;
+
+/**
+ * Linear backoff base between planned-rotation attempts (attempt N waits
+ * N × this). Total worst case ≈ 3s, comfortably inside the ~55s of headroom
+ * the 240s idle fail-safe leaves before Bedrock's ~295s kill.
+ */
+export const NOVA_ROTATION_RETRY_BACKOFF_MS = 1_000;
+
+/** Why a Nova stream rotation ran — carried into diag + OASIS payloads. */
+export type NovaRotationReason = 'provider_stream_rotation' | 'idle_deadline_failsafe';
+
+/**
  * Languages the Live API officially supports. New languages must land
  * here AND in the voice + greeting lookup tables.
  *
