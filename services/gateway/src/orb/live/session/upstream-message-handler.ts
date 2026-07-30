@@ -440,7 +440,24 @@ export function createUpstreamLiveMessageHandler(
                 session.silenceKeepaliveInterval = undefined;
               }
             } else if (isNovaProvider(session) && session.consecutiveModelTurns > getMaxConsecutiveModelTurns() && !isGreetingTurn) {
-              console.warn(`[VTID-LOOPGUARD] Response loop detected for session ${session.sessionId}: ${session.consecutiveModelTurns} consecutive model turns without user speech — keepalive PRESERVED (nova_sonic: starving the transport would terminate the Bedrock stream at its ~295s idle deadline)`);
+              // Codex review on #3007: preserving the keepalive removed the ONLY
+              // brake on a response-only runaway loop (the hard ceiling in
+              // handleToolCall covers tool loops, not this). Log-only would have
+              // traded a disconnect for an unbounded loop. So take a Nova-safe
+              // action instead of starving the transport: stop forwarding the
+              // runaway turn's audio. Reuses the proven VTID-03143 flag, which
+              // auto-clears at turn_complete — and since this guard re-evaluates
+              // on every turn past the limit, it re-arms per turn for as long as
+              // the loop continues.
+              //
+              // HONEST LIMIT: this stops the user hearing the loop and stops the
+              // audio bandwidth. It does NOT stop Bedrock inference cost, because
+              // Nova has no working mid-turn stop (sendEndOfTurn() is a no-op).
+              // Cost containment needs the transparent-rotation fail-safe from the
+              // disconnect report (item 3) — replacing the stream is what actually
+              // ends a runaway generation. Tracked separately.
+              (session as any).suppressCurrentTurnAudio = true;
+              console.warn(`[VTID-LOOPGUARD] Response loop detected for session ${session.sessionId}: ${session.consecutiveModelTurns} consecutive model turns without user speech — keepalive PRESERVED and turn audio SUPPRESSED (nova_sonic: starving the transport would terminate the Bedrock stream at its ~295s idle deadline; suppression stops the runaway reaching the user but not Bedrock inference cost)`);
             }
 
             // VTID-CHAT-BRIDGE: Capture transcript text at turn scope for chat_messages bridge (below)
@@ -2069,7 +2086,12 @@ export function handleTurnComplete(
       session.silenceKeepaliveInterval = undefined;
     }
   } else if (isNovaProvider(session) && session.consecutiveModelTurns > getMaxConsecutiveModelTurns() && !isGreetingTurn) {
-    console.warn(`[VTID-LOOPGUARD] Response loop detected for session ${session.sessionId}: ${session.consecutiveModelTurns} consecutive model turns without user speech — keepalive PRESERVED (nova_sonic: starving the transport would terminate the Bedrock stream at its ~295s idle deadline)`);
+    // Codex review on #3007 — see the identical branch in the raw-Gemini handler
+    // above for the full reasoning. Nova-safe loop brake: suppress the runaway
+    // turn's audio rather than starving the Bedrock transport. Stops the user
+    // hearing it; does NOT stop inference cost (needs rotation, report item 3).
+    (session as any).suppressCurrentTurnAudio = true;
+    console.warn(`[VTID-LOOPGUARD] Response loop detected for session ${session.sessionId}: ${session.consecutiveModelTurns} consecutive model turns without user speech — keepalive PRESERVED and turn audio SUPPRESSED (nova_sonic: starving the transport would terminate the Bedrock stream at its ~295s idle deadline; suppression stops the runaway reaching the user but not Bedrock inference cost)`);
   }
 
   let chatBridgeUserText = '';

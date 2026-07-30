@@ -76,7 +76,32 @@ describe('loop guard never starves the Nova transport', () => {
   it('keeps a Nova-specific log so a suppressed loop-break is still visible', () => {
     // Silently doing nothing would make a real runaway loop invisible. The
     // guard still fires, it just no longer kills the transport.
-    expect(source).toMatch(/keepalive PRESERVED \(nova_sonic/);
+    expect(source).toMatch(/keepalive PRESERVED/);
+  });
+
+  it('still BRAKES a Nova runaway loop instead of only logging', () => {
+    // Codex review on #3007: preserving the keepalive removed the only brake on
+    // a response-only runaway loop (handleToolCall's ceiling covers tool loops
+    // only). Log-only would trade a disconnect for an unbounded loop. Each Nova
+    // branch must take a real action — suppressing the runaway turn's audio.
+    const novaBranches = source
+      .split('\n')
+      .map((l, i) => ({ l, i }))
+      .filter(({ l }) => l.includes('isNovaProvider(session) && session.consecutiveModelTurns'));
+    expect(novaBranches.length).toBeGreaterThanOrEqual(2);
+
+    const lines = source.split('\n');
+    for (const { i } of novaBranches) {
+      // Within the branch body, an actual brake must be applied.
+      const body = lines.slice(i, i + 25).join('\n');
+      expect(body).toMatch(/suppressCurrentTurnAudio\s*=\s*true/);
+    }
+  });
+
+  it('is honest in-code that suppression does not stop inference cost', () => {
+    // Nova has no working mid-turn stop (sendEndOfTurn is a no-op), so the next
+    // reader must not assume cost is contained by this.
+    expect(source).toMatch(/not\s+Bedrock inference cost|does NOT stop Bedrock inference cost/);
   });
 
   it('documents why this is fatal for Nova specifically', () => {
