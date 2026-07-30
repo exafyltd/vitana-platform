@@ -2195,6 +2195,35 @@
     var vadConfirm = 6;
     var vadInterruptSent = false;
 
+    // BOOTSTRAP-ORB-BARGEIN: pre-roll ring buffer (L-09 / C-09).
+    //
+    // THE BUG: while Vitana was speaking, this handler dropped every mic frame
+    // on the floor (`return; // Don't send audio while model speaking`) and
+    // only reacted after vadConfirm=6 frames — so the FIRST ~384ms of the
+    // user's interruption was destroyed, never sent upstream, and Nova never
+    // heard the beginning of what they said. Combined with the synthetic
+    // silence the gateway streams during playback, Nova literally could not
+    // hear the user, so its native barge-in never fired either.
+    //
+    // WHY NOT "just always forward the mic" (the audit's first suggestion):
+    // this file carries MEASURED evidence against that — see the vadThreshold
+    // comment above. Echo through AEC lands at 0.01-0.04 RMS, and a previous
+    // 0.015 threshold "triggered on echo, causing constant interruptions".
+    // Forwarding every frame during playback would feed that echo straight to
+    // Nova's server-side VAD and risk it interrupting ITSELF continuously —
+    // a worse regression than the bug being fixed. Validating that needs a
+    // real echo test on device, which is a separate piece of work.
+    //
+    // THE FIX that is safe today: keep the energy gate (so echo is still not
+    // forwarded), but stop DESTROYING the audio. Every frame captured during
+    // playback goes into this ring buffer; the moment VAD confirms real
+    // speech, the buffer is flushed upstream ahead of the live stream. The
+    // user's opening words arrive intact instead of being swallowed.
+    var preRollFrames = [];
+    // 8 frames ≈ 512ms at 1024 samples/16kHz — covers vadConfirm (6 frames
+    // ≈ 384ms) plus margin, and bounds memory to ~16KB of Int16 PCM.
+    var PRE_ROLL_MAX_FRAMES = 8;
+
     processor.onaudioprocess = function (e) {
       if (!_s.active) return;
       if (_s.voiceState === 'MUTED') return;
@@ -2212,6 +2241,11 @@
       // even though more audio is coming. The grace timer covers these gaps.
       var modelPlaying = _s.audioPlaying;
       if (modelPlaying) {
+        // BOOTSTRAP-ORB-BARGEIN: capture, don't discard. Encoding happens here
+        // so the flush below can replay the exact frames the user spoke.
+        preRollFrames.push(_encodeFrame(input));
+        if (preRollFrames.length > PRE_ROLL_MAX_FRAMES) preRollFrames.shift();
+
         if (rms > vadThreshold) {
           vadFrames++;
           if (vadFrames >= vadConfirm && !vadInterruptSent) {
@@ -2227,14 +2261,30 @@
             clearTimeout(_s.audioEndGraceTimer);
             _s.interruptPending = true;
             _sendInterrupt();
+
+            // BOOTSTRAP-ORB-BARGEIN: flush the buffered speech upstream. THIS
+            // is the audio that used to be thrown away. It goes out ahead of
+            // the live stream so Nova receives the interruption from its first
+            // syllable — which is also what lets Nova's own barge-in engage,
+            // since sendEndOfTurn() is a documented no-op for Nova and never
+            // stopped it. audioPlaying is now false, so the next frame onward
+            // flows through the normal live path below.
+            for (var p = 0; p < preRollFrames.length; p++) {
+              _sendAudio(preRollFrames[p]);
+            }
+            preRollFrames = [];
           }
         } else {
           vadFrames = 0;
         }
-        return; // Don't send audio while model speaking
+        // Still gated while Vitana speaks — deliberate, see the PRE_ROLL
+        // comment: forwarding sub-threshold frames would feed AEC echo to
+        // Nova's VAD. The difference is the audio is now buffered, not lost.
+        return;
       } else {
         vadFrames = 0;
         vadInterruptSent = false;
+        preRollFrames = [];
         // Record real user speech so the listening-idle nudge timer can
         // defer itself instead of beeping over the user mid-sentence.
         if (rms > vadThreshold) {
@@ -2255,20 +2305,32 @@
       // BOOTSTRAP-ORB-LATENCY-PHASE1: 500→200ms (see above).
       if (_s.lastAudioEndTime > 0 && (Date.now() - _s.lastAudioEndTime) < 200) return;
 
-      // Convert Float32 → Int16 PCM → base64
-      var pcm = new Int16Array(input.length);
-      for (var n = 0; n < input.length; n++) {
-        var s = Math.max(-1, Math.min(1, input[n]));
-        pcm[n] = s < 0 ? s * 0x8000 : s * 0x7FFF;
-      }
-      var u8 = new Uint8Array(pcm.buffer);
-      var b64 = btoa(String.fromCharCode.apply(null, u8));
-      _sendAudio(b64);
+      _sendAudio(_encodeFrame(input));
     };
 
     source.connect(processor);
     processor.connect(ctx.destination);
     _s.captureProcessor = processor;
+  }
+
+  /**
+   * Float32 mic frame → Int16 PCM → base64, the wire format the gateway
+   * expects (audio/pcm;rate=16000).
+   *
+   * BOOTSTRAP-ORB-BARGEIN: extracted from the capture handler so the barge-in
+   * pre-roll buffer stores already-encoded frames and can replay them
+   * byte-identically. Encoding at capture time also means the buffer holds a
+   * stable copy — `e.inputBuffer` is reused by the Web Audio graph, so
+   * retaining the raw Float32Array would alias into the next callback's data.
+   */
+  function _encodeFrame(input) {
+    var pcm = new Int16Array(input.length);
+    for (var n = 0; n < input.length; n++) {
+      var s = Math.max(-1, Math.min(1, input[n]));
+      pcm[n] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+    }
+    var u8 = new Uint8Array(pcm.buffer);
+    return btoa(String.fromCharCode.apply(null, u8));
   }
 
   function _sendAudio(b64) {
