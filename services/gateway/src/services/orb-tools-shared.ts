@@ -1785,18 +1785,25 @@ export async function tool_resolve_recipient(
     (candidates.length > 1 &&
       Number(candidates[1].score) / Math.max(top_confidence, 0.0001) > 0.85);
 
+  // VTID-VOICE-STATUS-CONTRACT: live-system-instruction.ts's HARD RULE
+  // (message-send truthfulness, ~line 636) tells the model it must read
+  // resolve_recipient's STATUS and that only "resolved" or an explicit pick
+  // from "ambiguous" gives it a real UUID — but until now no branch ever
+  // emitted a "STATUS:" prefix, so the model had no reliable way to follow
+  // that instruction. This was a real, previously-undetected contributor to
+  // "send a message" flows silently never completing.
   let text: string;
   if (candidates.length === 0) {
-    text = `No one named "${spoken}" is in the community right now — they may not have a Vitana account yet.`;
+    text = `STATUS: not_found. No one named "${spoken}" is in the community right now — they may not have a Vitana account yet.`;
   } else if (ambiguous) {
     const names = candidates
       .slice(0, 3)
       .map((c) => c.display_name || c.vitana_id || c.user_id)
       .join(', ');
-    text = `Found ${candidates.length} possible matches: ${names}. Which one did you mean?`;
+    text = `STATUS: ambiguous. Found ${candidates.length} possible matches: ${names}. Which one did you mean?`;
   } else {
     const top = candidates[0];
-    text = `Best match: ${top.display_name || top.vitana_id || top.user_id} (confidence ${(top_confidence * 100).toFixed(0)}%).`;
+    text = `STATUS: resolved. Best match: ${top.display_name || top.vitana_id || top.user_id} (confidence ${(top_confidence * 100).toFixed(0)}%).`;
   }
 
   return {
@@ -2267,7 +2274,10 @@ export async function tool_send_chat_message(
       return {
         ok: true,
         result: { rate_limited: true, reason: quota.reason },
-        text: `Couldn't send (${quota.reason ?? 'rate-limited'}). Try again in a bit.`,
+        // VTID-VOICE-STATUS-CONTRACT: matches the "STATUS: rate_limited"
+        // value the message-send-truthfulness HARD RULE names — see the
+        // resolve_recipient STATUS comment above for the full rationale.
+        text: `STATUS: rate_limited. Couldn't send (${quota.reason ?? 'rate-limited'}). Try again in a bit.`,
       };
     }
 
@@ -2392,7 +2402,14 @@ export async function tool_send_chat_message(
         remaining: quota.remaining,
         next_actions: nextActions,
       },
-      text: `Sent to ${recipDisplay}.`,
+      // VTID-VOICE-STATUS-CONTRACT (root cause of a live "tried several
+      // times and nothing worked" report): live-system-instruction.ts's
+      // HARD RULE forbids the model from EVER saying a message was sent
+      // unless this text begins with "STATUS: sent" — a marker this
+      // function never emitted. The insert above genuinely succeeded, but
+      // the model had no truthful way to say so, so it could never
+      // confirm a send even when one had just gone through.
+      text: `STATUS: sent. Sent to ${recipDisplay}.`,
     };
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : 'send_chat_message error';
@@ -2760,21 +2777,91 @@ export async function tool_respond_to_match(
   // The previous shared stub naively wrote `state = response` with no owner
   // resolution and no notification — every voice response that should have
   // unlocked mutual_interest stayed stuck in *_responded_by_X state.
-  const matchId = String(args.match_id ?? '').trim();
+  let matchId = String(args.match_id ?? '').trim();
   const response = String(args.response ?? '').trim() as 'express_interest' | 'decline';
   const confirmed = args.confirmed === true;
 
-  if (!matchId || !['express_interest', 'decline'].includes(response)) {
+  if (!['express_interest', 'decline'].includes(response)) {
     return {
       ok: false,
       error: 'match_id and response (express_interest|decline) required',
     };
   }
+
+  // VTID-VOICE-RESPOND-MATCH-ID: view_intent_matches's speech summary never
+  // speaks match_id (formatMatchesForSpeech only reads score/tier/kind), and
+  // unlike its sibling dispute_match this tool had no fallback — so a voice
+  // "yes I'm interested" always failed with match_id required. Mirror
+  // dispute_match's auto-detect: look up the user's own open (not yet
+  // resolved-by-them) matches and only auto-pick when unambiguous.
+  if (!matchId) {
+    if (!id.user_id) return { ok: false, error: 'authentication required' };
+    const { data: myIntents, error: intErr } = await sb
+      .from('user_intents')
+      .select('intent_id')
+      .eq('requester_user_id', id.user_id)
+      .order('created_at', { ascending: false })
+      .limit(50);
+    if (intErr) return { ok: false, error: `respond_to_match: ${intErr.message}` };
+    const intentIds = ((myIntents as Array<{ intent_id: string }> | null) ?? []).map((r) => r.intent_id);
+    if (intentIds.length === 0) {
+      return {
+        ok: true,
+        result: { found: false },
+        text: 'The user has no posts, so there is no match to respond to yet.',
+      };
+    }
+    const intentIdSet = new Set(intentIds);
+    const list = intentIds.join(',');
+    const { data: matches, error: mErr } = await sb
+      .from('intent_matches')
+      .select('match_id, intent_a_id, intent_b_id, state, kind_pairing, score, created_at')
+      .or(`intent_a_id.in.(${list}),intent_b_id.in.(${list})`)
+      .order('created_at', { ascending: false })
+      .limit(10);
+    if (mErr) return { ok: false, error: `respond_to_match: ${mErr.message}` };
+    type MatchRow = {
+      match_id: string;
+      intent_a_id: string;
+      intent_b_id: string;
+      state: string | null;
+      kind_pairing: string | null;
+      score: number | null;
+    };
+    const rows = (matches as MatchRow[] | null) ?? [];
+    const pending = rows.filter((r) => {
+      if (r.state === 'mutual_interest' || r.state === 'declined') return false;
+      const isA = intentIdSet.has(r.intent_a_id);
+      if (isA && r.state === 'responded_by_a') return false;
+      if (!isA && r.state === 'responded_by_b') return false;
+      return true;
+    });
+    if (pending.length === 0) {
+      return {
+        ok: true,
+        result: { found: false },
+        text: 'The user has no matches currently waiting on their response.',
+      };
+    }
+    if (pending.length > 1) {
+      const opts = pending
+        .slice(0, 3)
+        .map((r, i) => `${i + 1}) a ${String(r.kind_pairing ?? 'match').replace(/_/g, ' ')}`);
+      return {
+        ok: true,
+        result: { ambiguous: true, candidates: pending.slice(0, 3).map((r) => r.match_id) },
+        text: `The user has several matches waiting on a response: ${opts.join('; ')}. Ask which one they mean (or open My Matches with view_intent_matches), then call respond_to_match again with match_id.`,
+      };
+    }
+    matchId = pending[0].match_id;
+  }
+
   if (!confirmed) {
     const payload = {
       ok: true,
       stage: 'awaiting_confirmation',
-      instructions: `Confirm with the user before calling respond_to_match again with confirmed=true.`,
+      match_id: matchId,
+      instructions: `Confirm with the user before calling respond_to_match again with match_id="${matchId}" and confirmed=true.`,
     };
     return { ok: true, result: payload, text: JSON.stringify(payload) };
   }
@@ -2863,6 +2950,20 @@ export async function tool_navigate_to_screen(
 ): Promise<OrbToolResult> {
   const screenIdArg = String(args.screen_id ?? args.target ?? '').trim();
   if (!screenIdArg) return { ok: false, error: 'screen_id (or legacy target) is required' };
+
+  // VTID-NAV-IDENTIFIER-ALIAS: the navigate_to_screen tool schema
+  // (live-tool-catalog.ts) tells the model to send `vitana_id` for
+  // PROFILE.PUBLIC / PROFILE.WITH_MATCH, but both the NAV_ENTITY_RESOLVE
+  // gate below and the generic ":identifier" param-substitution only ever
+  // read `args.identifier` — a key the schema never defines, so the model
+  // never sends it. Confirmed live in production (oasis_events,
+  // 2026-04-10 through 2026-06-22): every PROFILE.PUBLIC navigate_to_screen
+  // call carrying a vitana_id failed with "missing required parameter(s)
+  // identifier", 100% of the time, for months. Alias it here once so both
+  // downstream readers see it.
+  if (args.identifier === undefined && typeof args.vitana_id === 'string' && args.vitana_id.trim()) {
+    args.identifier = args.vitana_id.trim().replace(/^@/, '');
+  }
 
   // Identity facts (with args fallback for the LiveKit Python wrapper that
   // sends them in the body alongside current_route).

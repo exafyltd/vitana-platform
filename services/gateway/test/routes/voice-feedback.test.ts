@@ -4,22 +4,52 @@
  *   POST /submit                       — any bearer token + valid Supabase user
  *   GET  /reports                      — any bearer token + valid Supabase user
  *   GET  /reports/:id                  — any bearer token + valid Supabase user
- *   POST /reports/:id/approve          — "Admin" per comment, but the code only
- *   POST /reports/:id/reject             checks for *presence* of a bearer token
- *                                         (getBearerToken) — it never verifies the
- *                                         token or checks exafy_admin. Documented
- *                                         as a finding in the coverage report;
- *                                         tests assert the ACTUAL behavior.
+ *   POST /reports/:id/approve          — gated by requireAdminAuth (real JWT
+ *   POST /reports/:id/reject             verification + exafy_admin claim
+ *                                         check). Previously these two routes
+ *                                         only checked for *presence* of a
+ *                                         bearer token — a real authz bypass,
+ *                                         fixed to use the codebase's
+ *                                         canonical admin middleware.
  *   GET  /health                       — no auth
  *
- * No requireAuth/requireAuthWithTenant middleware is used anywhere in this
- * file — auth is entirely bespoke (getBearerToken + per-request Supabase
- * clients). There is no tenant scoping in the route code itself (relies on
- * Supabase RLS via the user's own JWT for /submit, /reports, /reports/:id;
- * approve/reject use the service-role client with no tenant filter at all).
+ * /submit, /reports, /reports/:id remain on the bespoke getBearerToken +
+ * per-request Supabase client pattern (RLS-scoped via the user's own JWT) —
+ * a separate, lower-severity observation, not part of this fix.
  */
 import request from 'supertest';
 import express from 'express';
+
+jest.mock('../../src/middleware/auth-supabase-jwt', () => ({
+  requireAdminAuth: jest.fn((req: any, res: any, next: any) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({
+        ok: false,
+        error: 'UNAUTHENTICATED',
+        message: 'Missing or invalid Authorization header. Expected: Bearer <token>',
+      });
+    }
+    if (authHeader.slice(7) === 'non-admin-tok') {
+      return res.status(403).json({
+        ok: false,
+        error: 'FORBIDDEN',
+        message: 'This endpoint requires exafy_admin privileges',
+      });
+    }
+    req.identity = {
+      user_id: 'admin-1',
+      email: 'admin@test.com',
+      tenant_id: null,
+      exafy_admin: true,
+      role: 'admin',
+      aud: null,
+      exp: null,
+      iat: null,
+    };
+    next();
+  }),
+}));
 
 // ---------------------------------------------------------------------------
 // Mocks
@@ -302,6 +332,14 @@ describe('POST /api/v1/voice-feedback/reports/:id/approve', () => {
     expect(res.status).toBe(401);
   });
 
+  it('returns 403 when the caller is not exafy_admin', async () => {
+    const res = await request(app)
+      .post('/api/v1/voice-feedback/reports/r1/approve')
+      .set('Authorization', 'Bearer non-admin-tok');
+    expect(res.status).toBe(403);
+    expect(res.body.error).toBe('FORBIDDEN');
+  });
+
   it('returns 503 when the service-role client is unavailable', async () => {
     delete process.env.SUPABASE_SERVICE_ROLE;
     const res = await request(app)
@@ -414,6 +452,15 @@ describe('POST /api/v1/voice-feedback/reports/:id/reject', () => {
   it('returns 401 without a bearer token', async () => {
     const res = await request(app).post('/api/v1/voice-feedback/reports/r1/reject').send({ reason: 'dup' });
     expect(res.status).toBe(401);
+  });
+
+  it('returns 403 when the caller is not exafy_admin', async () => {
+    const res = await request(app)
+      .post('/api/v1/voice-feedback/reports/r1/reject')
+      .set('Authorization', 'Bearer non-admin-tok')
+      .send({ reason: 'dup' });
+    expect(res.status).toBe(403);
+    expect(res.body.error).toBe('FORBIDDEN');
   });
 
   it('returns 400 when reason is missing', async () => {

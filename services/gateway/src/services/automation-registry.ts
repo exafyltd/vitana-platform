@@ -794,9 +794,18 @@ const MEMORY_INTEL: AutomationDefinition[] = [
     // shared felt-learning detector; the greeting ledger (6th signal) wins
     // for users who opened a session, this catches the rest. Evening slot so
     // the day's conversations have been extracted.
+    //
+    // Hourly (not a single daily 18:10 UTC fire): a fixed UTC time sends the
+    // push at the wrong local hour for anyone not near UTC (e.g. ~2am for
+    // UTC+8) — flagged in PR #2969 review. runDailyLearningDigest now
+    // resolves each user's real timezone and only notifies during their own
+    // local 18:xx hour (mirrors daily-pace-service.ts's getUserTimezone/
+    // userLocalHour pattern), so the hourly sweep is what actually delivers
+    // "evening" correctly across timezones — same reasoning as
+    // daily-pace-notifications.
     id: 'AP-0907', name: 'Daily Learning Digest', domain: 'memory-intelligence',
     status: 'IMPLEMENTED', priority: 'P2', triggerType: 'cron',
-    triggerConfig: { cronExpression: '10 18 * * *' }, // daily 18:10
+    triggerConfig: { cronExpression: '10 * * * *' }, // hourly at :10
     targetRoles: [...MEMBER_ROLES],
     handler: 'runDailyLearningDigest',
   },
@@ -831,13 +840,25 @@ const MEMORY_INTEL: AutomationDefinition[] = [
     handler: 'runMemoryEmbeddingBackfill',
   },
   {
-    // Nightly narrative profile synthesis — one LLM pass per active user
-    // connecting facts/routines/goal/Index into a compact "who is this
-    // person" paragraph for the ORB bootstrap. After all nightly writers
-    // (AP-0906 3:30, AP-0909 3:50, AP-0908 4:40) so it reads fresh inputs.
+    // Narrative profile synthesis — one LLM pass per active user connecting
+    // facts/routines/goal/Index into a compact "who is this person"
+    // paragraph for the ORB bootstrap.
+    //
+    // Hourly with a small per-run batch + time budget (not a single daily
+    // 5:05am fire processing up to 100 users): flagged in PR #2969 review —
+    // a synchronous HTTP cron request serially running up to 100 LLM calls
+    // cannot reliably finish inside Cloud Scheduler's --attempt-deadline=
+    // 300s, so a large eligible pool made this job silently never complete
+    // (and never retry successfully, since the retry hits the same wall).
+    // runUserModelSynthesis now caps itself to a safe batch (25 users) and
+    // aborts early on a 4-minute time budget; unprocessed users are picked
+    // up on the next hourly pass — mirrors AP-0910's proven hourly small-
+    // batch backlog-draining pattern. synthesizeUserModel's own inputs-hash
+    // skip makes already-synthesized users a cheap no-op, so the batch
+    // naturally rotates to whoever's stale.
     id: 'AP-0911', name: 'User Model Synthesis', domain: 'memory-intelligence',
     status: 'IMPLEMENTED', priority: 'P1', triggerType: 'cron',
-    triggerConfig: { cronExpression: '5 5 * * *' }, // daily 5:05am
+    triggerConfig: { cronExpression: '35 * * * *' }, // hourly at :35
     targetRoles: [...MEMBER_ROLES],
     handler: 'runUserModelSynthesis',
   },

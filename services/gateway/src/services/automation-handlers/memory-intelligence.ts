@@ -16,6 +16,7 @@ import {
   readLearningSurfacedAt,
 } from '../conversation/new-facts-detector';
 import { SIGNAL_GREETING_FACTS, parseFacts } from '../conversation/greeting-facts-ledger';
+import { getUserTimezone, userLocalHour } from '../daily-pace-service';
 
 // ── AP-0901: Memory-Informed Matching ───────────────────────
 // On a positive match reaction, look up the user's most recent self-facts
@@ -219,11 +220,19 @@ async function runRoutinePatternExtraction(ctx: AutomationContext) {
 // a deep link into the Memory Garden. Silent when nothing new — no filler.
 const LEARNING_DIGEST_WINDOW_MS = 24 * 3600 * 1000;
 const LEARNING_DIGEST_MAX_USERS_PER_RUN = 500;
+// BOOTSTRAP-MEMORY-DAILY-LEARNING (PR #2969 review): this automation now
+// runs hourly (registry cron '10 * * * *') instead of once daily at a fixed
+// 18:10 UTC — a fixed UTC fire delivered this "evening" push at the wrong
+// local time for anyone not near UTC (e.g. ~2am for UTC+8). Each user is
+// only notified during their OWN local evening hour, resolved the same way
+// daily-pace-service.ts already does for daily-pace-notifications.
+const LEARNING_DIGEST_LOCAL_HOUR = 18;
 
 async function runDailyLearningDigest(ctx: AutomationContext) {
   const { supabase, tenantId } = ctx;
   const nowMs = Date.now();
-  const nowIso = new Date(nowMs).toISOString();
+  const nowUtc = new Date(nowMs);
+  const nowIso = nowUtc.toISOString();
   const today = nowIso.slice(0, 10);
   const sinceIso = new Date(nowMs - LEARNING_DIGEST_WINDOW_MS).toISOString();
 
@@ -250,6 +259,14 @@ async function runDailyLearningDigest(ctx: AutomationContext) {
   let usersAffected = 0;
   for (const userId of userIds) {
     try {
+      // Local-evening gate: only fire during this user's own local 18:xx
+      // hour. The hourly cron sweeps every UTC hour, so every timezone
+      // (including fractional offsets like Asia/Kathmandu) gets exactly
+      // one matching tick per day — same reasoning daily-pace-service.ts
+      // documents for its 19:xx gate.
+      const tz = await getUserTimezone(supabase, userId, tenantId);
+      if (userLocalHour(nowUtc, tz) !== LEARNING_DIGEST_LOCAL_HOUR) continue;
+
       // Guard 1: greeting already surfaced learning in a session today (3e wins).
       const { data: ledgerRow } = await supabase
         .from('user_assistant_state')
@@ -663,14 +680,30 @@ async function runMemoryEmbeddingBackfill(ctx: AutomationContext) {
 }
 
 // ── AP-0911: User Model Synthesis ───────────────────────────
-// Nightly narrative profile per active user (see user-model-synthesis.ts):
-// one LLM pass connects facts + routines + goal + Vitana Index into a
-// compact "who is this person" paragraph the ORB bootstrap injects at zero
-// latency cost. Skips users with <3 facts and unchanged inputs.
-const SYNTHESIS_MAX_USERS_PER_RUN = 100;
+// Narrative profile per active user (see user-model-synthesis.ts): one LLM
+// pass connects facts + routines + goal + Vitana Index into a compact "who
+// is this person" paragraph the ORB bootstrap injects at zero latency cost.
+// Skips users with <3 facts and unchanged inputs.
+//
+// BOOTSTRAP-MEMORY-DAILY-LEARNING (PR #2969 review): previously ran once
+// daily processing up to 100 users serially through an LLM call each, inside
+// a single synchronous HTTP cron request. Cloud Scheduler's
+// --attempt-deadline=300s (and the gateway's own request wall) can cut that
+// connection before executeAutomation ever records completion — and since
+// the job only ran once a day, a large eligible pool meant it could
+// silently never finish (the retry hits the identical wall). Now hourly
+// (registry cron '35 * * * *') with a smaller per-run batch AND a hard time
+// budget that aborts the loop with whatever's done so far — unprocessed
+// users simply get picked up on the next hourly pass. synthesizeUserModel's
+// own inputs-hash skip makes already-synthesized, unchanged users a cheap
+// no-op, so the batch naturally rotates to whoever is actually stale —
+// mirrors AP-0910's proven hourly small-batch backlog-draining pattern.
+const SYNTHESIS_MAX_USERS_PER_RUN = 25;
+const SYNTHESIS_TIME_BUDGET_MS = 4 * 60 * 1000; // 4 min — safely under the 300s Cloud Scheduler deadline
 
 async function runUserModelSynthesis(ctx: AutomationContext) {
   const { supabase, tenantId } = ctx;
+  const runStartMs = Date.now();
 
   const { data: factRows, error } = await supabase
     .from('memory_facts')
@@ -694,7 +727,15 @@ async function runUserModelSynthesis(ctx: AutomationContext) {
 
   const { synthesizeUserModel } = await import('../user-model-synthesis');
   let written = 0;
+  let processed = 0;
   for (const userId of userIds) {
+    if (Date.now() - runStartMs > SYNTHESIS_TIME_BUDGET_MS) {
+      ctx.log(
+        `time budget exceeded after ${processed}/${userIds.length} users — remaining picked up next hourly run`,
+      );
+      break;
+    }
+    processed++;
     try {
       const result = await synthesizeUserModel(supabase, tenantId, userId);
       if (result.written) written++;
@@ -705,6 +746,7 @@ async function runUserModelSynthesis(ctx: AutomationContext) {
 
   await ctx.emitEvent('autopilot.memory.profiles_synthesized', {
     users_scanned: userIds.length,
+    users_processed: processed,
     narratives_written: written,
   });
   return { usersAffected: written, actionsTaken: written };

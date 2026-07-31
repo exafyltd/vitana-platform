@@ -1751,6 +1751,14 @@
       ]
     },
     {
+      "name": "geo_timezone_fallback_ms",
+      "value": 600,
+      "description": "600 ms — GEO_TIMEZONE_FALLBACK_MS in orb-live.ts (BOOTSTRAP-ORB-LATENCY-P0). Geo-IP no longer blocks session start (it previously cost up to 9 s: three providers walked sequentially at a 3 s timeout each). The ONE remaining case where it may still block is when the client sent no IANA timezone AND nothing is cached, because geo-IP is then the only source of the user's local time — losing it resurrects the VTID-03250/03251 hallucinated-local-time defect. Capped at this value. Self-deleting once vitana-v1 ships docs/patches/vitana-v1/VTID-03250-send-browser-timezone.md.",
+      "implementations": [
+        "vertex"
+      ]
+    },
+    {
       "name": "max_connections_per_ip",
       "value": 5,
       "description": "DoS guard",

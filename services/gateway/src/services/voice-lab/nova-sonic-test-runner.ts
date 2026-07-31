@@ -110,6 +110,18 @@ interface LiveProbeMetrics extends Record<string, number> {
   connect_ms: number;
   first_event_ms: number;
   first_audio_ms: number;
+  /**
+   * BOOTSTRAP-NOVA-SONIC-VOICE (per-turn latency follow-up): time from
+   * sending the SECOND text turn to its turn_complete. -1 when no second
+   * turn was requested. This is the number actually missing from
+   * production observability — voice.latency.measured has never captured
+   * a turn>0 sample in 25 days of history (100% of captured events are the
+   * single-turn CI smoke probe below), even though real users report 7-10s
+   * on turn 2+. This field exists to close that gap without waiting on
+   * real user traffic to happen to emit it.
+   */
+  second_turn_ms: number;
+  second_turn_first_audio_ms: number;
 }
 
 interface LiveProbeResult {
@@ -122,15 +134,26 @@ interface LiveProbeResult {
  * Provider-neutral live probe: register handlers, connect, send one short
  * text turn, and measure connect / first-event / first-audio latency. Used
  * identically for Nova and the Vertex baseline so the comparison is fair.
+ *
+ * When `secondTurnText` is supplied, a SECOND turn is sent immediately after
+ * the first turn_complete and timed separately (second_turn_ms /
+ * second_turn_first_audio_ms) — this is turn 2 exactly as a real
+ * conversation would produce it (same stream, same session, no reconnect),
+ * which is the metric actually missing from production telemetry.
  */
 /** 32ms of 16 kHz / 16-bit / mono PCM silence, base64 — one mic frame. */
 const SILENCE_FRAME_B64 = Buffer.alloc(1024).toString('base64');
 
-async function probeLiveClient(
+// Exported for tests only — the second-turn failure paths (stream closes /
+// errors / times out after turn 1, or sendTextTurn refuses because the
+// stream is not open) cannot be reached through runNovaSonicTestSuite
+// without opening a real paid Bedrock stream.
+export async function probeLiveClient(
   client: UpstreamLiveClient,
   connect: () => Promise<void>,
   closeReason: string,
   classifyFailure: (err: unknown) => string,
+  secondTurnText?: string,
 ): Promise<LiveProbeResult> {
   const t0 = Date.now();
   let connectMs = -1;
@@ -141,23 +164,60 @@ async function probeLiveClient(
   const errorCodes: string[] = [];
   let upstreamCloseReason: string | undefined;
 
-  let settled = false;
+  // Second-turn state. turnPhase gates which counters onAudioOutput/
+  // onTurnComplete update, so the first turn's handlers don't also
+  // (mis)attribute the second turn's events.
+  let turnPhase: 'first' | 'second' = 'first';
+  let secondTurnStart = -1;
+  let secondTurnMs = -1;
+  let secondTurnFirstAudioMs = -1;
+  let firstTurnSettled = false;
+  let secondTurnSendFailed = false;
+  let allSettled = false;
+
   const done = new Promise<void>((resolve) => {
-    const finish = () => { if (!settled) { settled = true; resolve(); } };
-    const timer = setTimeout(finish, PROBE_TIMEOUT_MS);
+    const finishAll = () => { if (!allSettled) { allSettled = true; resolve(); } };
+    const timer = setTimeout(finishAll, secondTurnText ? PROBE_TIMEOUT_MS * 2 : PROBE_TIMEOUT_MS);
     (timer as NodeJS.Timeout).unref?.();
+
     client.onTranscript(() => {
       transcriptCount++;
-      if (firstEventMs < 0) firstEventMs = Date.now() - t0;
+      if (turnPhase === 'first' && firstEventMs < 0) firstEventMs = Date.now() - t0;
     });
     client.onAudioOutput(() => {
       audioCount++;
-      if (firstAudioMs < 0) firstAudioMs = Date.now() - t0;
-      if (firstEventMs < 0) firstEventMs = Date.now() - t0;
+      if (turnPhase === 'first') {
+        if (firstAudioMs < 0) firstAudioMs = Date.now() - t0;
+        if (firstEventMs < 0) firstEventMs = Date.now() - t0;
+      } else if (secondTurnFirstAudioMs < 0) {
+        secondTurnFirstAudioMs = Date.now() - secondTurnStart;
+      }
     });
-    client.onTurnComplete(() => { clearTimeout(timer); finish(); });
-    client.onError((e) => { errorCodes.push(e.code); clearTimeout(timer); finish(); });
-    client.onClose((e) => { upstreamCloseReason = e.reason; clearTimeout(timer); finish(); });
+    client.onTurnComplete(() => {
+      if (turnPhase === 'first') {
+        firstTurnSettled = true;
+        if (!secondTurnText) { clearTimeout(timer); finishAll(); return; }
+        // Fire the second turn from inside the completion handler so it
+        // rides the SAME open stream/session — no reconnect, matching a
+        // real multi-turn conversation exactly.
+        turnPhase = 'second';
+        secondTurnStart = Date.now();
+        // sendTextTurn returns false (never throws) when the stream is not
+        // open — ignoring the return value would hang until the timeout and
+        // then report a false pass, defeating the point of this probe.
+        if (!client.sendTextTurn(secondTurnText)) {
+          secondTurnSendFailed = true;
+          clearTimeout(timer);
+          finishAll();
+        }
+        return;
+      }
+      secondTurnMs = Date.now() - secondTurnStart;
+      clearTimeout(timer);
+      finishAll();
+    });
+    client.onError((e) => { errorCodes.push(e.code); clearTimeout(timer); finishAll(); });
+    client.onClose((e) => { upstreamCloseReason = e.reason; clearTimeout(timer); finishAll(); });
   });
 
   try {
@@ -168,7 +228,7 @@ async function probeLiveClient(
     // sessions always have the audio pipe flowing, and Nova's server-side
     // turn detection expects it. 32ms frames, real-time pace.
     const silenceTimer = setInterval(() => {
-      if (settled || client.getState() !== 'open') { clearInterval(silenceTimer); return; }
+      if (allSettled || client.getState() !== 'open') { clearInterval(silenceTimer); return; }
       client.sendAudioChunk(SILENCE_FRAME_B64);
     }, 32);
     (silenceTimer as NodeJS.Timeout).unref?.();
@@ -186,9 +246,38 @@ async function probeLiveClient(
       ].join(' ');
       return { ok: false, failDetail: `stream opened but no model response — ${diag}` };
     }
+    if (secondTurnText && !firstTurnSettled) {
+      return { ok: false, failDetail: 'first turn never completed — second turn was never sent' };
+    }
+    // A requested second turn that never completed MUST fail. Otherwise the
+    // probe built specifically to catch broken/slow follow-up turns reports
+    // a pass with second_turn_ms=-1 and the comparison checks downstream
+    // silently proceed on a turn that never happened.
+    if (secondTurnText && secondTurnMs < 0) {
+      const reason = secondTurnSendFailed
+        ? 'stream was not open when the second turn was submitted'
+        : errorCodes.length
+          ? `errors=${errorCodes.join('|')}`
+          : upstreamCloseReason
+            ? `stream closed (${upstreamCloseReason})`
+            : `no turn_complete within ${PROBE_TIMEOUT_MS * 2}ms`;
+      return {
+        ok: false,
+        failDetail:
+          `second turn did not complete — ${reason}` +
+          ` (first turn ok: first_event_ms=${firstEventMs}` +
+          `, second_turn_first_audio_ms=${secondTurnFirstAudioMs < 0 ? 'n/a' : secondTurnFirstAudioMs})`,
+      };
+    }
     return {
       ok: true,
-      metrics: { connect_ms: connectMs, first_event_ms: firstEventMs, first_audio_ms: firstAudioMs },
+      metrics: {
+        connect_ms: connectMs,
+        first_event_ms: firstEventMs,
+        first_audio_ms: firstAudioMs,
+        second_turn_ms: secondTurnMs,
+        second_turn_first_audio_ms: secondTurnFirstAudioMs,
+      },
     };
   } catch (err) {
     await client.close(`${closeReason}_failed`).catch(() => { /* idempotent */ });
@@ -197,7 +286,9 @@ async function probeLiveClient(
 }
 
 function formatProbeMetrics(m: LiveProbeMetrics): string {
-  return `connect_ms=${m.connect_ms} first_event_ms=${m.first_event_ms} first_audio_ms=${m.first_audio_ms < 0 ? 'n/a' : m.first_audio_ms}`;
+  const base = `connect_ms=${m.connect_ms} first_event_ms=${m.first_event_ms} first_audio_ms=${m.first_audio_ms < 0 ? 'n/a' : m.first_audio_ms}`;
+  if (m.second_turn_ms < 0) return base;
+  return `${base} second_turn_ms=${m.second_turn_ms} second_turn_first_audio_ms=${m.second_turn_first_audio_ms < 0 ? 'n/a' : m.second_turn_first_audio_ms}`;
 }
 
 /**
@@ -474,6 +565,7 @@ export async function runNovaSonicTestSuite(options: {
       }),
       'nova_test_probe',
       (err) => classifyNovaError(err),
+      'What is the capital of France?',
     );
     if (!result.ok) return { status: 'fail', detail: result.failDetail ?? 'nova_stream_error' };
     novaMetrics = result.metrics!;
@@ -579,6 +671,7 @@ export async function runNovaSonicTestSuite(options: {
       }),
       'nova_bench_vertex_baseline',
       (err) => `vertex_probe_failed: ${((err as Error)?.message ?? 'unknown').slice(0, 120)}`,
+      'What is the capital of France?',
     );
     if (!result.ok) return { status: 'fail', detail: result.failDetail ?? 'vertex_probe_failed' };
     vertexMetrics = result.metrics!;

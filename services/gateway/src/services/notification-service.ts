@@ -283,25 +283,49 @@ export async function sendPushToUser(
   return sent;
 }
 
-// ── Appilix Native Push (Maxina Android app) ────────────────
+// ── Appilix Native Push (Maxina iOS + Android apps) ──────────
 
 /**
- * Send push notification via the Appilix Push Notification API.
- * This delivers a native Android notification branded as "Maxina"
- * (not a Chrome browser notification).
+ * MAXINA is registered as TWO SEPARATE Appilix apps (confirmed on the
+ * Appilix dashboard: one card tagged "iOS", one tagged "Android" — same
+ * https://vitanaland.com source, but each has its OWN app_key/api_key and
+ * its own pool of registered devices/user_identity mappings). A push call
+ * with one platform's credentials only reaches devices registered under
+ * THAT app — sending only Android credentials silently no-ops for every
+ * iOS user (this is exactly what happened: Android delivery worked after
+ * APPILIX_APP_KEY/APPILIX_API_KEY were wired up, iOS stayed silent).
+ * sendAppilixPush() therefore fans out across every configured platform's
+ * credentials and succeeds if ANY of them delivers. Appilix returns HTTP
+ * 200 with status:false ("No devices...") for the platform a given user
+ * isn't on — that's an expected, harmless outcome of trying the other
+ * platform, not a real failure.
+ */
+function getAppilixCredentialSets(): Array<{ platform: string; appKey: string; apiKey: string }> {
+  const sets: Array<{ platform: string; appKey: string; apiKey: string }> = [];
+  if (process.env.APPILIX_APP_KEY && process.env.APPILIX_API_KEY) {
+    sets.push({ platform: 'android', appKey: process.env.APPILIX_APP_KEY, apiKey: process.env.APPILIX_API_KEY });
+  }
+  if (process.env.APPILIX_IOS_APP_KEY && process.env.APPILIX_IOS_API_KEY) {
+    sets.push({ platform: 'ios', appKey: process.env.APPILIX_IOS_APP_KEY, apiKey: process.env.APPILIX_IOS_API_KEY });
+  }
+  return sets;
+}
+
+/**
+ * Send push notification via the Appilix Push Notification API for ONE
+ * platform's credentials. This delivers a native notification branded as
+ * "Maxina" (not a Chrome browser notification).
  *
- * Requires APPILIX_APP_KEY and APPILIX_API_KEY env vars.
  * User identity is mapped via window.appilix_push_notification_user_identity
  * in the Appilix Custom JS (set to the Supabase user ID).
  */
-export async function sendAppilixPush(
+async function sendAppilixPushWithCredentials(
   userId: string,
-  payload: NotificationPayload
+  payload: NotificationPayload,
+  platform: string,
+  appKey: string,
+  apiKey: string
 ): Promise<boolean> {
-  const appKey = process.env.APPILIX_APP_KEY;
-  const apiKey = process.env.APPILIX_API_KEY;
-  if (!appKey || !apiKey) return false;
-
   try {
     // Appilix API does NOT decode open_link_url (confirmed by their support),
     // so that field must be sent raw. However, notification_title and
@@ -326,7 +350,7 @@ export async function sendAppilixPush(
     }
 
     console.log(
-      `[Appilix] push user=${userId.slice(0, 8)}… ` +
+      `[Appilix] push(${platform}) user=${userId.slice(0, 8)}… ` +
       `title=${JSON.stringify(payload.title)} ` +
       `body_len=${payload.body.length} ` +
       `open_link_url=${JSON.stringify(resolvedOpenLink ?? null)}`
@@ -341,12 +365,13 @@ export async function sendAppilixPush(
     const text = await res.text().catch(() => '');
 
     if (!res.ok) {
-      console.warn(`[Notifications] Appilix push failed (${res.status}):`, text);
+      console.warn(`[Notifications] Appilix(${platform}) push failed (${res.status}):`, text);
       return false;
     }
 
     // Appilix returns HTTP 200 with { status: false, message: "No devices..." }
-    // when delivery fails (e.g. no device registered for that user_identity).
+    // when delivery fails (e.g. no device registered for that user_identity —
+    // expected/harmless when this user isn't on this platform's app).
     // Parse the JSON body and treat status:false as failure so the log
     // accurately reflects what Appilix did.
     let parsed: { status?: boolean | string; message?: string } | null = null;
@@ -354,17 +379,35 @@ export async function sendAppilixPush(
     const ok = parsed?.status === true || parsed?.status === 'true';
     if (!ok) {
       console.warn(
-        `[Notifications] Appilix push DROPPED for user=${userId.slice(0, 8)}…: ` +
+        `[Notifications] Appilix(${platform}) push DROPPED for user=${userId.slice(0, 8)}…: ` +
         `${parsed?.message || text}`
       );
       return false;
     }
-    console.log(`[Notifications] Appilix push sent for user=${userId.slice(0, 8)}…`);
+    console.log(`[Notifications] Appilix(${platform}) push sent for user=${userId.slice(0, 8)}…`);
     return true;
   } catch (err: any) {
-    console.error('[Notifications] Appilix push error:', err.message || err);
+    console.error(`[Notifications] Appilix(${platform}) push error:`, err.message || err);
     return false;
   }
+}
+
+/**
+ * Public entry point — fans out across every configured Appilix platform
+ * (Android, iOS). Returns true if ANY platform's push actually delivered.
+ * A platform with no configured credentials is skipped, not attempted.
+ */
+export async function sendAppilixPush(
+  userId: string,
+  payload: NotificationPayload
+): Promise<boolean> {
+  const credentialSets = getAppilixCredentialSets();
+  if (credentialSets.length === 0) return false;
+
+  const results = await Promise.all(
+    credentialSets.map((c) => sendAppilixPushWithCredentials(userId, payload, c.platform, c.appKey, c.apiKey))
+  );
+  return results.some((sent) => sent === true);
 }
 
 // ── Dynamic Category Preference Check ────────────────────────

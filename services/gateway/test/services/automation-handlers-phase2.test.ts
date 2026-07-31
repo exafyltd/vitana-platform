@@ -53,6 +53,21 @@ jest.mock('../../src/services/orb-memory-bridge', () => ({
 import { writeMemoryItemWithIdentity } from '../../src/services/orb-memory-bridge';
 const mockedWriteMemoryItem = writeMemoryItemWithIdentity as jest.MockedFunction<typeof writeMemoryItemWithIdentity>;
 
+// AP-0907 resolves each user's own local hour (BOOTSTRAP-MEMORY-DAILY-LEARNING
+// hourly + per-user gating fix) via daily-pace-service's real getUserTimezone,
+// which itself queries app_users/user_preferences/memory_facts — mocking the
+// whole module keeps the existing queued-response fixtures below hermetic.
+// Only memory-intelligence.ts and scheduled-notifications.ts import from this
+// module (confirmed via grep), so this mock can't affect other handlers
+// registered/tested in this shared file.
+jest.mock('../../src/services/daily-pace-service', () => ({
+  getUserTimezone: jest.fn(async () => 'UTC'),
+  userLocalHour: jest.fn(() => 18), // matches LEARNING_DIGEST_LOCAL_HOUR
+}));
+import { getUserTimezone, userLocalHour } from '../../src/services/daily-pace-service';
+const mockedGetUserTimezone = getUserTimezone as jest.MockedFunction<typeof getUserTimezone>;
+const mockedUserLocalHour = userLocalHour as jest.MockedFunction<typeof userLocalHour>;
+
 registerPersonalizationEnginesHandlers();
 registerMemoryIntelligenceHandlers();
 registerEventMeetupInitiativeHandlers();
@@ -425,6 +440,32 @@ describe('runDailyLearningDigest (AP-0907)', () => {
     expect(notify).not.toHaveBeenCalled();
     expect(result).toEqual({ usersAffected: 0, actionsTaken: 0 });
   });
+
+  it('skips a user outside their own local evening hour (hourly cron, per-user gate)', async () => {
+    // The cron now sweeps every UTC hour, so most ticks will hit a user
+    // whose local time is NOT 18:xx yet — the gate must silently skip them
+    // rather than notifying at the wrong local hour (the exact bug this
+    // fix addresses: a fixed 18:10 UTC fire landing at ~2am for UTC+8).
+    mockedUserLocalHour.mockReturnValueOnce(2);
+    const supabase = makeFakeSupabase({
+      memory_facts: [
+        { data: [{ user_id: 'u1' }], error: null },
+        { data: [{ fact_key: 'user_favorite_tea', fact_value: 'Earl Grey' }], error: null },
+      ],
+      user_assistant_state: [
+        { data: null, error: null },
+        { data: null, error: null },
+        { data: null, error: null },
+      ],
+      app_users: [{ data: [], error: null }],
+    });
+    const { ctx, notify } = makeCtx(supabase);
+    const handler = getHandler('runDailyLearningDigest')!;
+    const result = await handler(ctx);
+    expect(mockedGetUserTimezone).toHaveBeenCalledWith(supabase, 'u1', 't-1');
+    expect(notify).not.toHaveBeenCalled();
+    expect(result).toEqual({ usersAffected: 0, actionsTaken: 0 });
+  });
 });
 
 describe('runBehaviorPreferenceInference (AP-0908)', () => {
@@ -526,6 +567,60 @@ describe('runUserModelSynthesis (AP-0911)', () => {
     expect(mockedSynthesize).toHaveBeenCalledTimes(1);
     expect(mockedSynthesize).toHaveBeenCalledWith(supabase, 't-1', 'u1');
     expect(result).toEqual({ usersAffected: 1, actionsTaken: 1 });
+  });
+
+  it('caps a single run at 25 users, picking the highest fact-counts first', async () => {
+    // 30 eligible users (3 facts each) — the fix's hourly-small-batch
+    // redesign must slice to the top 25 by fact count, not attempt all 30
+    // in one synchronous HTTP request.
+    const factRows: Array<{ user_id: string }> = [];
+    for (let i = 0; i < 30; i++) {
+      const userId = `u${String(i).padStart(2, '0')}`;
+      const factCount = 3 + (30 - i); // strictly descending so order is deterministic
+      for (let f = 0; f < factCount; f++) factRows.push({ user_id: userId });
+    }
+    const supabase = makeFakeSupabase({ memory_facts: [{ data: factRows, error: null }] });
+    mockedSynthesize.mockReset();
+    mockedSynthesize.mockResolvedValue({ ok: true, written: true });
+    const { ctx } = makeCtx(supabase);
+    const handler = getHandler('runUserModelSynthesis')!;
+    const result = await handler(ctx);
+    expect(mockedSynthesize).toHaveBeenCalledTimes(25);
+    // Highest fact-count users are u00..u24 (descending counts) — the
+    // lowest-count stragglers u25..u29 must NOT be in this run.
+    expect(mockedSynthesize).toHaveBeenCalledWith(supabase, 't-1', 'u00');
+    expect(mockedSynthesize).not.toHaveBeenCalledWith(supabase, 't-1', 'u25');
+    expect(result).toEqual({ usersAffected: 25, actionsTaken: 25 });
+  });
+
+  it('stops early once the time budget is exceeded, leaving the rest for the next hourly run', async () => {
+    const factRows: Array<{ user_id: string }> = [];
+    for (let i = 0; i < 5; i++) {
+      const userId = `u${i}`;
+      for (let f = 0; f < 3; f++) factRows.push({ user_id: userId });
+    }
+    const supabase = makeFakeSupabase({ memory_facts: [{ data: factRows, error: null }] });
+    mockedSynthesize.mockReset();
+    // Simulate the 3rd synthesis call taking long enough to blow the budget:
+    // after it resolves, Date.now() has advanced past SYNTHESIS_TIME_BUDGET_MS
+    // (4 min), so the loop must abort before a 4th call.
+    let calls = 0;
+    const realDateNow = Date.now;
+    const startMs = realDateNow();
+    jest.spyOn(Date, 'now').mockImplementation(() => {
+      return calls >= 2 ? startMs + 5 * 60 * 1000 : startMs;
+    });
+    mockedSynthesize.mockImplementation(async () => {
+      calls++;
+      return { ok: true, written: true };
+    });
+    const { ctx } = makeCtx(supabase);
+    const handler = getHandler('runUserModelSynthesis')!;
+    const result = await handler(ctx);
+    (Date.now as jest.Mock).mockRestore();
+    expect(mockedSynthesize).toHaveBeenCalledTimes(2);
+    expect(result).toEqual({ usersAffected: 2, actionsTaken: 2 });
+    expect(ctx.log).toHaveBeenCalledWith(expect.stringContaining('time budget exceeded'));
   });
 });
 

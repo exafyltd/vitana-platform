@@ -1095,6 +1095,14 @@ export interface GeminiLiveSession {
   // forwarding so Gemini doesn't start a new turn while the widget is closing.
   // Once true, the session is effectively in "closing for navigation" mode.
   navigationDispatched?: boolean;
+  // BOOTSTRAP-NOVA-SONIC-VOICE-NAV-FIX: set true when handleNavigateToScreen
+  // already wrote the orb_directive to the transport at tool-call time
+  // (VTID-NAV-FAST), instead of waiting for turn_complete to flush
+  // pendingNavigation. pendingNavigation stays populated either way (other
+  // turn_complete bookkeeping — forced fact extraction, memory bridge order
+  // — still reads it), but the turn_complete dispatch blocks must skip
+  // re-sending the same directive a second time when this is true.
+  navigationDirectiveSentImmediately?: boolean;
   // VTID-NAV: Current page URL the user is on when the orb session opened.
   // Used by navigator_consult to exclude the current screen from recommendations.
   current_route?: string;
@@ -1397,7 +1405,7 @@ import { synthesizeGreetingBridgeAudioPcm, GREETING_BRIDGE_PCM_SAMPLE_RATE_HZ } 
 import { resolveNovaSonicVoice } from '../orb/live/voice/nova-sonic-voice';
 import { prewarmNovaSonicBedrock } from '../orb/live/upstream/nova-sonic-live-client';
 import { sanitizeInstructionForNova } from '../orb/live/upstream/nova-instruction-sanitizer';
-import { startNovaSonicKeepWarm } from '../orb/live/upstream/nova-sonic-keepwarm';
+import { startNovaSonicKeepWarm, startNovaSonicModelWarm } from '../orb/live/upstream/nova-sonic-keepwarm';
 import { createUpstreamClient } from '../orb/live/upstream/upstream-client-factory';
 import { bindUpstreamSessionHandlers } from '../orb/live/session/upstream-message-handler';
 import { createNovaWsFacade } from '../orb/live/upstream/nova-ws-facade';
@@ -1604,6 +1612,12 @@ if (googleAuth && VERTEX_PROJECT_ID) {
     // would put TLS/H2 setup back on the next user's critical path).
     const keepWarm = startNovaSonicKeepWarm(novaBootCfg);
     console.log(`[BOOTSTRAP-NOVA-SONIC-VOICE] Bedrock keep-warm ${keepWarm ? `enabled (every ${novaBootCfg.keepWarmMs}ms)` : 'disabled'}`);
+    // Latency fix: the transport ping above never touches the model
+    // executor. This second loop performs a real, tiny inference round-trip
+    // on a shorter cadence to keep Bedrock's Nova model executor itself
+    // warm — see warmNovaSonicModelExecution's doc comment for why.
+    const modelWarm = startNovaSonicModelWarm(novaBootCfg);
+    console.log(`[BOOTSTRAP-NOVA-SONIC-VOICE] Bedrock model-execution warm-up ${modelWarm ? `enabled (every ${novaBootCfg.modelWarmMs}ms)` : 'disabled'}`);
   }
 }
 
@@ -2875,10 +2889,49 @@ export async function handleNavigateToScreen(
     };
   }
 
-  // Vertex-only: set pendingNavigation + eagerly update current_route so
-  // turn_complete + get_current_screen see the fresh destination.
+  // BOOTSTRAP-NOVA-SONIC-VOICE-NAV-FIX: dispatch the orb_directive
+  // IMMEDIATELY, on the same tick the tool result is decided, instead of
+  // queuing pendingNavigation and waiting for the turn_complete handler to
+  // flush it. That deferred design was fine under Gemini (whose forced
+  // function-response continuation reaches turn_complete in tens to a few
+  // thousand ms — see historical drain_wait_ms of 19-2489ms in
+  // orb.navigator.dispatched telemetry), but Nova Sonic can take many
+  // seconds to close out the turn (observed live 2026-07-29, session
+  // live-cadd6787...: drain_wait_ms=9968 — Nova chained a SECOND tool call,
+  // end_teaching_session, before ever emitting END_TURN). A ~10s stall
+  // after asking Vitana to navigate reads as "navigation is broken" even
+  // though the tool call itself succeeded in 6ms. Mirrors the pattern
+  // handleNavigate() (the free-text `navigate` tool) already uses.
   if (result.directive && result.screen_id && result.route && result.title) {
     const reason = String(args.reason || 'navigate_to_screen tool call');
+    const directiveJson = JSON.stringify(result.directive);
+    if (session.sseResponse) {
+      try { session.sseResponse.write(`data: ${directiveJson}\n\n`); } catch (_e) { /* SSE closed */ }
+    }
+    if ((session as any).clientWs && (session as any).clientWs.readyState === 1 /* WebSocket.OPEN */) {
+      try { sendWsMessage((session as any).clientWs, result.directive); } catch (_e) { /* WS closed */ }
+    }
+    console.log(`[VTID-NAV-FAST] Immediate orb_directive dispatched: ${result.screen_id} (${result.route})`);
+    emitOasisEvent({
+      vtid: 'VTID-NAV-01',
+      type: 'orb.navigator.dispatched',
+      source: 'orb-live-ws',
+      status: 'info',
+      message: `dispatched navigate to ${result.screen_id}`,
+      payload: {
+        session_id: session.sessionId,
+        screen_id: result.screen_id,
+        route: result.route,
+        decision_source: 'direct',
+        drain_wait_ms: 0,
+      },
+    }).catch(() => {});
+
+    // pendingNavigation is still populated (unchanged from before this fix)
+    // so the turn_complete handler's forced-fact-extraction and memory
+    // bookkeeping keep working; navigationDirectiveSentImmediately tells
+    // that handler the directive was already flushed here, so it must
+    // skip re-sending it when the turn eventually completes.
     session.pendingNavigation = {
       screen_id: result.screen_id,
       route: result.route,
@@ -2888,6 +2941,7 @@ export async function handleNavigateToScreen(
       requested_at: Date.now(),
     };
     session.navigationDispatched = true;
+    session.navigationDirectiveSentImmediately = true;
 
     const isOverlay = result.entry_kind === 'overlay';
     if (!isOverlay) {
@@ -6473,6 +6527,23 @@ async function connectToLiveAPI(
       canary: false,
     };
   }
+  // BOOTSTRAP-NOVA-IDLE-ROTATION: a session that already exhausted its Nova
+  // rotation attempts is pinned to Vertex for the remainder of its life. This
+  // has to be applied AFTER the selector (which is stateless and would happily
+  // hand back Nova again) and BEFORE `session.upstreamProvider` is recorded,
+  // so latency attribution and the connect branch below both see the pin.
+  // Loud, never silent — CLAUDE.md "Never allow silent model fallback".
+  if ((session as any)._novaFallbackToVertex && __upstreamDecision.provider === 'nova_sonic') {
+    console.warn(
+      `[BOOTSTRAP-NOVA-IDLE-ROTATION] Session ${session.sessionId} is pinned to Vertex after exhausting ` +
+        `Nova rotation attempts — overriding selector decision '${__upstreamDecision.provider}'.`,
+    );
+    __upstreamDecision = {
+      ...__upstreamDecision,
+      provider: 'vertex',
+      reason: 'nova_rotation_exhausted_fallback',
+    };
+  }
   console.log(
     `[VTID-02976] upstream provider selected: provider=${__upstreamDecision.provider}` +
       ` requested=${__upstreamDecision.requested ?? 'none'}` +
@@ -7151,28 +7222,66 @@ async function connectToLiveAPI(
         // history rebuild + persona voice re-resolution), switch the session
         // to it, then close the old stream. The browser WS/SSE stays
         // connected and no greeting replays (greetingSent remains true).
-        let rotateNovaStream: (() => Promise<void>) | null = null;
+        let rotateNovaStream: ((reason: NovaRotationReason) => Promise<void>) | null = null;
 
         const novaClient = createUpstreamClient('nova_sonic', {
           nova: {
             config: novaCfg,
             voiceId: novaVoice,
             onRotationDue: () => {
-              void rotateNovaStream?.();
+              void rotateNovaStream?.('provider_stream_rotation');
+            },
+            // BOOTSTRAP-NOVA-IDLE-ROTATION: the fail-safe. Fires only when
+            // input has genuinely stopped reaching Bedrock for ~240s, which
+            // in a healthy session never happens (the 250ms silence keepalive
+            // keeps the clock pinned). Same open-before-close swap as the
+            // wall-clock rotation — the only difference is why it ran.
+            onIdleDeadlineApproaching: ({ msSinceLastInput }) => {
+              console.warn(
+                `[BOOTSTRAP-NOVA-IDLE-ROTATION] Session ${session.sessionId} has accepted no input for ` +
+                  `${Math.round(msSinceLastInput / 1000)}s — approaching Bedrock's ~295s idle deadline. ` +
+                  `Rotating pre-emptively. If this fires in production the silence keepalive has stopped ` +
+                  `feeding frames; that is the real bug to chase, this is only the backstop.`,
+              );
+              emitDiag(session, 'nova_idle_deadline_approaching', {
+                provider: 'nova_sonic',
+                ms_since_last_input: msSinceLastInput,
+              });
+              void emitOasisEvent({
+                type: 'orb.upstream.nova.idle_deadline_approaching',
+                vtid: 'BOOTSTRAP-NOVA-IDLE-ROTATION',
+                payload: {
+                  session_id: session.sessionId,
+                  provider: 'nova_sonic',
+                  ms_since_last_input: msSinceLastInput,
+                } as any,
+              } as any).catch(() => { /* best-effort */ });
+              void rotateNovaStream?.('idle_deadline_failsafe');
             },
           },
         });
 
-        rotateNovaStream = async () => {
+        rotateNovaStream = async (reason: NovaRotationReason) => {
           if (!session.active) return;
+          // A wall-clock rotation and an idle fail-safe can in principle come
+          // due together; running two swaps concurrently would race two
+          // replacement streams onto one session.
+          if ((session as any)._novaRotationInFlight) {
+            emitDiag(session, 'nova_rotation_skipped', { provider: 'nova_sonic', reason, code: 'already_in_flight' });
+            return;
+          }
           (session as any)._novaRotationInFlight = true;
-          emitDiag(session, 'nova_rotation_started', { provider: 'nova_sonic' });
+          emitDiag(session, 'nova_rotation_started', { provider: 'nova_sonic', reason });
           void emitOasisEvent({
             type: 'orb.upstream.nova.rotation_started',
             vtid: 'BOOTSTRAP-NOVA-SONIC-VOICE',
-            payload: { session_id: session.sessionId, provider: 'nova_sonic', reason: 'provider_stream_rotation' } as any,
+            payload: { session_id: session.sessionId, provider: 'nova_sonic', reason } as any,
           } as any).catch(() => { /* best-effort */ });
-          try {
+
+          // One planned-rotation attempt. Returns true when the replacement
+          // stream is open and the session has been switched onto it.
+          const attemptSwap = async (attempt: number): Promise<boolean> => {
+            const before = ((session as any)._reconnectCount as number) || 0;
             const ok = await attemptTransparentReconnect(
               session,
               onAudioResponse,
@@ -7181,34 +7290,138 @@ async function connectToLiveAPI(
               onTurnComplete,
               onInterrupted,
             );
-            if (ok) {
-              // Planned rotation must not consume the failure-reconnect
-              // budget — refund the slot the reconnect helper just took.
-              (session as any)._reconnectCount = Math.max(0, ((session as any)._reconnectCount || 1) - 1);
-              await novaClient.close('provider_stream_rotation');
-              emitDiag(session, 'nova_rotation_succeeded', { provider: 'nova_sonic' });
+            // A PLANNED rotation must never consume the unplanned-failure
+            // reconnect budget — refund the slot whether or not the attempt
+            // succeeded. Rotation retries are bounded separately below, so
+            // refunding on failure cannot spin.
+            //
+            // Refund only what was actually SPENT: attemptTransparentReconnect
+            // returns false WITHOUT incrementing when it is already at
+            // MAX_RECONNECTS, so an unconditional decrement would erode the
+            // counter on every failed attempt and quietly hand the session
+            // more reconnect budget than the cap allows.
+            const after = ((session as any)._reconnectCount as number) || 0;
+            if (after > before) {
+              (session as any)._reconnectCount = Math.max(0, after - 1);
+            }
+            if (!ok) {
+              emitDiag(session, 'nova_rotation_attempt_failed', {
+                provider: 'nova_sonic',
+                reason,
+                attempt,
+                code: 'nova_rotation_failed',
+              });
+            }
+            return ok;
+          };
+
+          try {
+            let swapped = false;
+            for (let attempt = 1; attempt <= NOVA_ROTATION_MAX_ATTEMPTS && !swapped; attempt++) {
+              if (!session.active) break;
+              try {
+                swapped = await attemptSwap(attempt);
+              } catch (e) {
+                emitDiag(session, 'nova_rotation_attempt_failed', {
+                  provider: 'nova_sonic',
+                  reason,
+                  attempt,
+                  code: 'nova_rotation_failed',
+                  error: (e as Error).message,
+                });
+              }
+              if (!swapped && attempt < NOVA_ROTATION_MAX_ATTEMPTS) {
+                await new Promise((r) => setTimeout(r, NOVA_ROTATION_RETRY_BACKOFF_MS * attempt));
+              }
+            }
+
+            if (swapped) {
+              await novaClient.close(reason);
+              emitDiag(session, 'nova_rotation_succeeded', { provider: 'nova_sonic', reason });
               void emitOasisEvent({
                 type: 'orb.upstream.nova.rotation_succeeded',
                 vtid: 'BOOTSTRAP-NOVA-SONIC-VOICE',
-                payload: { session_id: session.sessionId, provider: 'nova_sonic' } as any,
+                payload: { session_id: session.sessionId, provider: 'nova_sonic', reason } as any,
               } as any).catch(() => { /* best-effort */ });
-            } else {
-              // Replacement failed — keep the old stream until its Bedrock
-              // deadline; its eventual close surfaces ONE typed issue via
-              // the close handler (rotation flag cleared below).
-              emitDiag(session, 'nova_rotation_failed', { provider: 'nova_sonic', code: 'nova_rotation_failed' });
-              void emitOasisEvent({
-                type: 'orb.upstream.nova.rotation_failed',
-                vtid: 'BOOTSTRAP-NOVA-SONIC-VOICE',
-                payload: { session_id: session.sessionId, provider: 'nova_sonic', code: 'nova_rotation_failed' } as any,
-              } as any).catch(() => { /* best-effort */ });
+              return;
             }
-          } catch (e) {
+
+            // Every Nova replacement attempt failed. For a wall-clock rotation
+            // the old stream still has ~45s; for the idle fail-safe it has
+            // ~55s — either way, riding it to the deadline drops the user.
+            // Fall back to Vertex, which has no equivalent idle-kill, rather
+            // than let the conversation die on a provider that cannot hold it.
+            // NEVER silent (CLAUDE.md "Never allow silent model fallback").
             emitDiag(session, 'nova_rotation_failed', {
               provider: 'nova_sonic',
+              reason,
               code: 'nova_rotation_failed',
-              error: (e as Error).message,
+              attempts: NOVA_ROTATION_MAX_ATTEMPTS,
             });
+            void emitOasisEvent({
+              type: 'orb.upstream.nova.rotation_failed',
+              vtid: 'BOOTSTRAP-NOVA-SONIC-VOICE',
+              payload: {
+                session_id: session.sessionId,
+                provider: 'nova_sonic',
+                reason,
+                code: 'nova_rotation_failed',
+                attempts: NOVA_ROTATION_MAX_ATTEMPTS,
+              } as any,
+            } as any).catch(() => { /* best-effort */ });
+
+            if (!session.active) return;
+            console.warn(
+              `[BOOTSTRAP-NOVA-IDLE-ROTATION] Nova rotation failed ${NOVA_ROTATION_MAX_ATTEMPTS}x for session ` +
+                `${session.sessionId} (reason=${reason}) — falling back to Vertex for the rest of this session.`,
+            );
+            // Pinned for the REST of the session, not just this attempt: if
+            // Nova could not give us a stream three times in a row, bouncing
+            // the next rotation back onto it would just repeat this.
+            (session as any)._novaFallbackToVertex = true;
+            emitDiag(session, 'nova_fallback_to_vertex', { provider: 'nova_sonic', reason });
+            void emitOasisEvent({
+              type: 'orb.upstream.nova.fallback_to_vertex',
+              vtid: 'BOOTSTRAP-NOVA-IDLE-ROTATION',
+              payload: { session_id: session.sessionId, from: 'nova_sonic', to: 'vertex', reason } as any,
+            } as any).catch(() => { /* best-effort */ });
+
+            let fellBack = false;
+            try {
+              fellBack = await attemptTransparentReconnect(
+                session,
+                onAudioResponse,
+                onTextResponse,
+                onError,
+                onTurnComplete,
+                onInterrupted,
+              );
+            } catch (e) {
+              emitDiag(session, 'nova_fallback_failed', {
+                provider: 'vertex',
+                reason,
+                error: (e as Error).message,
+              });
+            }
+            if (fellBack) {
+              await novaClient.close(`${reason}_vertex_fallback`);
+              emitDiag(session, 'nova_fallback_succeeded', { provider: 'vertex', reason });
+              void emitOasisEvent({
+                type: 'orb.upstream.nova.fallback_succeeded',
+                vtid: 'BOOTSTRAP-NOVA-IDLE-ROTATION',
+                payload: { session_id: session.sessionId, from: 'nova_sonic', to: 'vertex', reason } as any,
+              } as any).catch(() => { /* best-effort */ });
+            } else {
+              // Nothing left to try — keep the old Nova stream so the user
+              // gets whatever time remains before its deadline rather than
+              // being cut off now. Its close handler surfaces the typed issue.
+              emitDiag(session, 'nova_fallback_failed', { provider: 'vertex', reason, code: 'nova_fallback_failed' });
+              void emitOasisEvent({
+                type: 'orb.upstream.nova.fallback_failed',
+                vtid: 'BOOTSTRAP-NOVA-IDLE-ROTATION',
+                payload: { session_id: session.sessionId, from: 'nova_sonic', to: 'vertex', reason } as any,
+              } as any).catch(() => { /* best-effort */ });
+            }
           } finally {
             (session as any)._novaRotationInFlight = false;
           }
@@ -7326,6 +7539,14 @@ async function connectToLiveAPI(
           responseModalities: session.responseModalities.includes('audio') ? ['audio'] : ['text'],
           vadSilenceMs: session.vadSilenceMs,
           systemInstruction: novaSystemInstruction,
+          // VTID-VOICE-NOVA-ROTATION: without this, a rotation's rebuilt
+          // instruction (fresh-connect size + up to ~4000 chars of
+          // conversation-history fallback, since Nova has no native
+          // resumption) risked tripping Bedrock's nova_validation rejection
+          // on the single oversized textInput — silently abandoning the
+          // rotation and riding the old stream to its 8-minute hard
+          // disconnect. See nova-sonic-config.ts's instructionChunkBytes doc.
+          systemInstructionChunkBytes: novaCfg.instructionChunkBytes || undefined,
           tools: novaTools,
           connectTimeoutMs: novaCfg.connectTimeoutMs,
         });
@@ -7762,6 +7983,12 @@ async function connectToLiveAPI(
  */
 // A2 (orb-live-refactor): MAX_RECONNECTS lifted to orb/live/config.ts.
 import { MAX_RECONNECTS } from '../orb/live/config';
+// BOOTSTRAP-NOVA-IDLE-ROTATION: planned-rotation retry budget + reason type.
+import {
+  NOVA_ROTATION_MAX_ATTEMPTS,
+  NOVA_ROTATION_RETRY_BACKOFF_MS,
+  type NovaRotationReason,
+} from '../orb/live/config';
 
 // VTID-03273 Pillar B — how long before the server's GoAway deadline we
 // proactively rotate the connection. Small enough to overlap the warning
@@ -9294,6 +9521,98 @@ function isPrivateIP(ip: string): boolean {
     ip.startsWith('fc') || ip.startsWith('fd') || ip.startsWith('fe80');
 }
 
+/**
+ * In-flight geo refreshes, keyed by IP, so N concurrent cold sessions from the
+ * same IP trigger ONE background lookup instead of N.
+ */
+const ipGeoInFlight = new Map<string, Promise<void>>();
+
+/**
+ * NON-BLOCKING geo resolution — the session-start hot path (BOOTSTRAP-ORB-LATENCY-P0).
+ *
+ * THE FIX: `geolocateIP` walks three providers SEQUENTIALLY, each with a 3s
+ * `AbortSignal.timeout` — up to **9 seconds** on a cold cache with upstreams
+ * rate-limiting (429 from ipapi.co / ip-api.com is the *common* case, per
+ * VTID-03251's own comments below). That await sat in `buildClientContext`,
+ * which `live-session-controller.ts` awaits before the live session is even
+ * created — so every cold voice session paid it before Nova/Vertex connection
+ * work began. It was the single largest contributor to "ORB takes 8-10s".
+ *
+ * City/country are enrichment, never a precondition for speech:
+ *   - The browser sends its own IANA timezone, and VTID-03250 already made
+ *     that WIN over geo-IP for time resolution — so the one field that
+ *     actually affects correctness does not need this call at all.
+ *   - city/country only decorate context; a session that starts without them
+ *     is strictly better than one that starts 9 seconds late.
+ *
+ * So: return whatever is cached (fresh OR stale — stale beats blocking, same
+ * reasoning VTID-03251 used for its fallback) and kick the refresh into the
+ * background for the *next* session. Never await the network here.
+ */
+function geolocateIPNonBlocking(ip: string): { city?: string; country?: string; timezone?: string } {
+  if (isPrivateIP(ip)) return {};
+  const cached = ipGeoCache.get(ip);
+  const isFresh = cached && Date.now() - cached.ts < IP_GEO_CACHE_TTL_MS;
+  if (!isFresh && !ipGeoInFlight.has(ip)) {
+    // Warm the cache for subsequent sessions. Deliberately un-awaited; a
+    // failure here can never affect the session that triggered it.
+    const refresh = geolocateIP(ip)
+      .catch(() => { /* geolocateIP already logs; never surface to the session */ })
+      .finally(() => { ipGeoInFlight.delete(ip); });
+    ipGeoInFlight.set(ip, refresh as Promise<void>);
+  }
+  if (cached?.data) {
+    const ageMin = Math.round((Date.now() - cached.ts) / 60000);
+    console.log(`[VTID-CONTEXT] geo cache ${isFresh ? 'hit' : `stale(${ageMin}m)`}: ${ip} → ${cached.data.city}, ${cached.data.country}`);
+    return cached.data;
+  }
+  console.log(`[VTID-CONTEXT] geo cold for ${ip} — starting session without it (refresh queued)`);
+  return {};
+}
+
+/**
+ * Hard ceiling on the ONE case where geo is still allowed to block: the client
+ * sent no IANA timezone and nothing is cached, so geo-IP is the only source of
+ * the user's local time. Small enough to stay inside the latency budget, and
+ * ~15x tighter than the 9s worst case this change replaced.
+ */
+const GEO_TIMEZONE_FALLBACK_MS = 600;
+
+/**
+ * Codex review (PR #3004): `buildClientContext` cannot go strictly cache-only
+ * yet. VTID-03250 made the gateway PREFER a browser-supplied timezone, but the
+ * client half of that — actually sending `client_timezone` — is still an
+ * undeployed patch for the separate vitana-v1 repo
+ * (`docs/patches/vitana-v1/VTID-03250-send-browser-timezone.md`, which calls
+ * itself "the piece that fixes mobile, where most testers are"). Verified: the
+ * string appears nowhere in vitana-v1's source. So for the main mobile widget,
+ * geo-IP is STILL the only timezone source, and returning `{}` on a cold cache
+ * would resurrect the exact defect VTID-03250/03251 fixed — a hallucinated
+ * local time ("8:30 PM" at 15:44). The cache is process-local too, so "the next
+ * session will be warm" is not guaranteed across Cloud Run/ECS instances.
+ *
+ * So: geo blocks ONLY when it is the sole possible source of timezone, and even
+ * then for at most {@link GEO_TIMEZONE_FALLBACK_MS}. Once vitana-v1 ships the
+ * client patch this path stops being reached in practice, and it can be deleted.
+ */
+async function awaitGeoForTimezone(ip: string): Promise<{ city?: string; country?: string; timezone?: string }> {
+  const inFlight = ipGeoInFlight.get(ip);
+  if (!inFlight) return {};
+  let timer: NodeJS.Timeout | undefined;
+  await Promise.race([
+    inFlight,
+    new Promise<void>((resolve) => {
+      timer = setTimeout(resolve, GEO_TIMEZONE_FALLBACK_MS);
+      (timer as NodeJS.Timeout).unref?.();
+    }),
+  ]);
+  if (timer) clearTimeout(timer);
+  const cached = ipGeoCache.get(ip);
+  if (cached?.data) return cached.data;
+  console.warn(`[VTID-CONTEXT] no client timezone and geo did not resolve within ${GEO_TIMEZONE_FALLBACK_MS}ms for ${ip}`);
+  return {};
+}
+
 async function geolocateIP(ip: string): Promise<{ city?: string; country?: string; timezone?: string }> {
   if (isPrivateIP(ip)) {
     console.log(`[VTID-CONTEXT] Skipping geo lookup for private/local IP: ${ip}`);
@@ -9431,11 +9750,12 @@ export async function buildClientContext(req: Request): Promise<ClientContext> {
   const referrer = req.get('referer') || req.get('referrer') || undefined;
   const acceptLang = req.get('accept-language')?.split(',')[0]?.trim();
 
-  // Run geo lookup in parallel with UA parsing (geo is async, UA is sync)
-  const [geo, uaParsed] = await Promise.all([
-    geolocateIP(ip),
-    Promise.resolve(parseUserAgent(ua)),
-  ]);
+  // BOOTSTRAP-ORB-LATENCY-P0: geo is cache-or-nothing and NEVER awaited on the
+  // network. Previously this Promise.all awaited up to 9s of sequential
+  // provider calls before the live session could even be created. Both of
+  // these are now synchronous.
+  let geo = geolocateIPNonBlocking(ip);
+  const uaParsed = parseUserAgent(ua);
 
   // VTID-03250: prefer the browser's own IANA timezone (sent in the
   // session-start body / x-client-timezone header) over geo-IP, which
@@ -9445,6 +9765,14 @@ export async function buildClientContext(req: Request): Promise<ClientContext> {
     (req.body && (req.body.client_timezone || req.body.client_context?.timezone)) ||
     req.get('x-client-timezone') ||
     null;
+
+  // The single remaining case where geo may block, capped hard — see
+  // awaitGeoForTimezone. Clients that DO send their timezone (command-hub
+  // widget today; vitana-v1 once its patch ships) never reach this.
+  if (!clientTimezone && !geo.timezone && !isPrivateIP(ip)) {
+    geo = await awaitGeoForTimezone(ip);
+  }
+
   const resolvedTimezone = resolveSessionTimezone({
     clientTimezone,
     geoTimezone: geo.timezone ?? null,
@@ -14975,6 +15303,16 @@ function handleWsInterruptMessage(clientSession: WsClientSession): void {
 
   // 1. Ungate mic audio so subsequent frames reach Gemini
   liveSession.isModelSpeaking = false;
+
+  // VTID-VOICE-NOVA-BARGEIN: Nova's sendEndOfTurn() is a documented no-op —
+  // Bedrock has no cancel-generation event, so the in-flight response keeps
+  // streaming audioOutput chunks after this interrupt (Vertex's turn_complete
+  // actually stops Gemini; Nova's does not). Reuse the same
+  // suppressCurrentTurnAudio flag the greeting-reemit fix already uses so any
+  // further chunks from the superseded generation are dropped instead of
+  // played over the user. Auto-clears on the next handleTurnComplete. Harmless
+  // no-op for Vertex, which already stops generating on its own.
+  (liveSession as any).suppressCurrentTurnAudio = true;
 
   // 2. Tell Gemini to stop generating by sending client_content.turn_complete
   if (liveSession.upstreamWs && liveSession.upstreamWs.readyState === WebSocket.OPEN) {
