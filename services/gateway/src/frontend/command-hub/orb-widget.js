@@ -17,7 +17,7 @@
 (function (window) {
   'use strict';
 
-  var _WIDGET_VERSION = '2026-07-28-nova-voice-speed';
+  var _WIDGET_VERSION = '2026-07-31-warm-thinking-status';
   console.log('[VTOrb] Widget version: ' + _WIDGET_VERSION);
 
   // BOOTSTRAP-NOVA-SONIC-VOICE: user live-test feedback 2026-07-28 — the
@@ -1701,7 +1701,7 @@
       case 'ready':
         _setOrbState('thinking');
         _s.voiceState = 'THINKING';
-        _setStatus(_cfg.lang.startsWith('de') ? 'Denkt nach...' : 'Thinking...');
+        _setStatus(_cfg.lang.startsWith('de') ? _THINKING_OPENER.de : _THINKING_OPENER.en);
         // Stuck guard: 15s timeout
         clearTimeout(_s.stuckGuardTimer);
         _s.stuckGuardTimer = setTimeout(function () {
@@ -1723,7 +1723,7 @@
         // Server signals model is processing (user speech detected or tool call running).
         // 300ms delay — just enough to skip if audio arrives almost immediately.
         // Previous 1.5s was too long: combined with Vertex VAD silence detection (~2s),
-        // total delay was ~4-5s before user saw "Thinking..." — felt broken.
+        // total delay was ~4-5s before user saw the opening status line — felt broken.
         _s.thinkingStartTime = Date.now();
         if (_s.voiceState === 'LISTENING' || _s.voiceState === 'IDLE') {
           clearTimeout(_s.thinkingDelayTimer);
@@ -1731,7 +1731,7 @@
             if (_s.voiceState === 'LISTENING' || _s.voiceState === 'IDLE') {
               _setOrbState('thinking');
               _s.voiceState = 'THINKING';
-              _setStatus(_cfg.lang.startsWith('de') ? 'Denkt nach...' : 'Thinking...');
+              _setStatus(_cfg.lang.startsWith('de') ? _THINKING_OPENER.de : _THINKING_OPENER.en);
               _updateUI();
               _startThinkingProgress();
             }
@@ -2572,23 +2572,59 @@
   // ============================================================
 
   // Thinking progress: reassure user during long processing (memory search, slow network).
-  // Shows elapsed time and rotating messages so user knows it's still working.
+  // Warm, casual copy (VTID-03449) instead of technical wording; no visible elapsed-time
+  // counter — that drew attention to the wait instead of reassuring the user.
+  //
+  // _THINKING_OPENER is shown immediately (see the 'ready'/'thinking' SSE handlers below);
+  // _THINKING_PRIMARY[1..] is the ordered ambient rotation. Two of its slots get randomly
+  // swapped for an _THINKING_ALTERNATES pick per session, so the exact sequence a user sees
+  // varies across interactions while the overall pacing/narrative stays the same. All
+  // entries are distinct, so consecutive repeats can't happen.
+  var _THINKING_OPENER = { en: 'Let me think…', de: 'Lass mich kurz überlegen…' };
+  var _THINKING_PRIMARY = [
+    { en: 'Checking what I remember…', de: 'Ich schau nach, was ich weiß…' },
+    { en: 'Connecting the dots…', de: 'Ich verbinde die Punkte…' },
+    { en: 'Putting it all together…', de: 'Ich füg alles zusammen…' },
+    { en: 'Just making sure I get it right…', de: 'Ich will sichergehen, dass es passt…' },
+    { en: 'Almost ready ✨', de: 'Gleich fertig ✨' },
+    { en: 'Still with you…', de: 'Bin noch dabei…' },
+    { en: 'Got it — here we go!', de: 'Alles klar, es geht los!' }
+  ];
+  var _THINKING_ALTERNATES = [
+    { en: 'On it…', de: 'Bin dran…' },
+    { en: 'Give me a tiny moment…', de: 'Gib mir einen kleinen Moment…' },
+    { en: 'Let me look into that…', de: 'Ich schau mir das an…' },
+    { en: 'Doing a little detective work…', de: 'Ich spiel kurz Detektiv…' },
+    { en: 'Looking in the right places…', de: 'Ich schau an den richtigen Stellen…' },
+    { en: 'Still working my magic…', de: 'Ich zaubere noch…' },
+    { en: 'One more moment…', de: 'Noch ein Moment…' },
+    { en: 'Nearly there…', de: 'Fast geschafft…' }
+  ];
+
+  function _shuffled(arr) {
+    var out = arr.slice();
+    for (var i = out.length - 1; i > 0; i--) {
+      var j = Math.floor(Math.random() * (i + 1));
+      var tmp = out[i]; out[i] = out[j]; out[j] = tmp;
+    }
+    return out;
+  }
+
+  // Builds this session's 7-item rotation queue: the fixed primary order with
+  // 2 random slots swapped for 2 random alternates.
+  function _buildThinkingQueue() {
+    var queue = _THINKING_PRIMARY.slice();
+    var picks = _shuffled(_THINKING_ALTERNATES).slice(0, 2);
+    var slots = _shuffled([0, 1, 2, 3, 4, 5, 6]);
+    queue[slots[0]] = picks[0];
+    queue[slots[1]] = picks[1];
+    return queue;
+  }
+
   function _startThinkingProgress() {
     clearInterval(_s.thinkingProgressTimer);
-    var messages_en = [
-      'Searching memory...',
-      'Still working on it...',
-      'Processing your request...',
-      'Almost there...',
-      'Taking a bit longer than usual...'
-    ];
-    var messages_de = [
-      'Durchsuche Erinnerungen...',
-      'Arbeite noch daran...',
-      'Verarbeite deine Anfrage...',
-      'Fast fertig...',
-      'Dauert etwas länger als üblich...'
-    ];
+    var isDe = _cfg.lang.startsWith('de');
+    var queue = _buildThinkingQueue();
     var msgIndex = 0;
     _s.thinkingProgressTimer = setInterval(function () {
       if (_s.voiceState !== 'THINKING') {
@@ -2597,12 +2633,10 @@
         return;
       }
       var elapsed = Math.floor((Date.now() - _s.thinkingStartTime) / 1000);
-      var msgs = _cfg.lang.startsWith('de') ? messages_de : messages_en;
-      // Cycle through messages every 5 seconds
-      if (elapsed >= 5) msgIndex = Math.min(Math.floor((elapsed - 5) / 5) + 1, msgs.length - 1);
-      var text = msgs[msgIndex];
-      if (elapsed >= 10) text += ' (' + elapsed + 's)';
-      _setStatus(text);
+      // Cycle through messages every 4 seconds
+      msgIndex = Math.min(Math.floor(elapsed / 4), queue.length - 1);
+      var msg = queue[msgIndex];
+      _setStatus(isDe ? msg.de : msg.en);
     }, 3000);
   }
 
