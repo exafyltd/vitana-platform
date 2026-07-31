@@ -27,6 +27,13 @@ import {
   writeSteps,
 } from '../services/watcher/watcher-observer';
 import { SOURCE_SESSION, observedTopics } from '../services/watcher/normalizers';
+import {
+  buildReminders,
+  remindersEnabled,
+  renderRemindersBlock,
+} from '../services/watcher/reminder';
+import { recordFeedback, recordShown } from '../services/watcher/feedback';
+import type { LessonStage } from '../services/watcher/lesson-types';
 import type {
   SessionStepInput,
   StepOutcome,
@@ -276,6 +283,107 @@ router.post('/session-step', requireSessionToken, async (req: Request, res: Resp
     ok: true,
     data: { written: result.written, deduplicated: result.written === 0 },
   });
+});
+
+// =============================================================================
+// GET /remind — VTID-03462 (Phase 3)
+// =============================================================================
+
+const VALID_STAGES = [
+  'planning', 'execute', 'validate', 'ci', 'merge', 'deploy', 'verify', 'any',
+] as const;
+
+/**
+ * Returns the ranked, budgeted reminder block for a context.
+ *
+ * Admin-gated like the rest: the reminder text quotes governance rules and
+ * summarizes prior failures, which is internal engineering information.
+ * In-process callers (the planner, the executor, the worker-runner bridge)
+ * use buildReminders() directly and never traverse this route.
+ */
+router.get('/remind', requireAdminAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const stage = String(req.query.stage || '') as LessonStage;
+  if (!VALID_STAGES.includes(stage as typeof VALID_STAGES[number])) {
+    return res.status(400).json({
+      ok: false,
+      error: 'INVALID_STAGE',
+      detail: `stage must be one of: ${VALID_STAGES.join(', ')}`,
+    });
+  }
+
+  const touched = typeof req.query.touched_paths === 'string' && req.query.touched_paths
+    ? req.query.touched_paths.split(',').map((s) => s.trim()).filter(Boolean)
+    : undefined;
+
+  const bundle = await buildReminders({
+    stage,
+    vtid: typeof req.query.vtid === 'string' ? req.query.vtid : null,
+    scanner: typeof req.query.scanner === 'string' ? req.query.scanner : undefined,
+    service: typeof req.query.service === 'string' ? req.query.service : undefined,
+    step: typeof req.query.step === 'string' ? req.query.step : undefined,
+    actor: typeof req.query.actor === 'string' ? req.query.actor : undefined,
+    touched_paths: touched,
+  });
+
+  // Only count a reminder as "shown" when the caller asked for the injectable
+  // block. A Command Hub operator browsing what the Watcher knows must not
+  // move the auto-mute denominator — that would let idle inspection silently
+  // retire lessons nobody ever injected.
+  if (String(req.query.record_shown) === 'true') {
+    await recordShown(bundle.reminders.map((r) => r.reminder_id));
+  }
+
+  return res.status(200).json({
+    ok: true,
+    data: {
+      enabled_resolved: remindersEnabled(),
+      stage,
+      ...bundle,
+      block: renderRemindersBlock(bundle),
+    },
+  });
+});
+
+// =============================================================================
+// POST /feedback — VTID-03462 (Phase 3)
+// =============================================================================
+
+/**
+ * Closes the loop. Admin-gated for the same reason as /remind; the in-process
+ * callers use recordFeedback() directly.
+ */
+router.post('/feedback', requireAdminAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const body = (req.body || {}) as Record<string, unknown>;
+  const reminderId = typeof body.reminder_id === 'string' ? body.reminder_id.trim() : '';
+  if (!reminderId) {
+    return res.status(400).json({ ok: false, error: 'MISSING_REMINDER_ID' });
+  }
+  const outcome = body.outcome;
+  if (outcome !== 'success' && outcome !== 'failure' && outcome !== 'unknown') {
+    return res.status(400).json({
+      ok: false,
+      error: 'INVALID_OUTCOME',
+      detail: 'outcome must be success | failure | unknown',
+    });
+  }
+
+  const result = await recordFeedback({
+    reminder_id: reminderId,
+    work_unit_id: typeof body.work_unit_id === 'string' ? body.work_unit_id : null,
+    vtid: typeof body.vtid === 'string' ? body.vtid : null,
+    stage: typeof body.stage === 'string' ? body.stage : null,
+    outcome,
+    repeated_mistake: !!body.repeated_mistake,
+    note: typeof body.note === 'string' ? body.note : null,
+  });
+
+  if (!result.ok) {
+    const status = result.error === 'INVALID_REMINDER_ID' ? 400 : 503;
+    return res.status(status).json({ ok: false, error: result.error });
+  }
+  // `muted` is surfaced rather than applied silently — a lesson disappearing
+  // from future prompts should be observable at the moment it happens.
+  return res.status(200).json({ ok: true, data: { muted: !!result.muted } });
 });
 
 export default router;

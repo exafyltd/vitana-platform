@@ -51,6 +51,9 @@ import {
 // dispatch below. Only exercised when DEV_AUTOPILOT_JOB_CLOUD=aws.
 import { dispatchExecutorJobAws } from './aws-ecs-admin';
 
+import { buildReminders, remindersEnabled, renderRemindersBlock } from './watcher/reminder';
+import { recordShown } from './watcher/feedback';
+
 const LOG_PREFIX = '[dev-autopilot-execute]';
 const EXEC_VTID = 'VTID-DEV-AUTOPILOT';
 
@@ -1142,6 +1145,11 @@ function buildExecutionPrompt(
   fileCtx: FileCtx[],
   branch: string,
   lessons?: ExecutionLesson[],
+  /**
+   * VTID-03462: pre-rendered Watcher reminder block. Passed in rather than
+   * fetched here so this builder stays pure and synchronous.
+   */
+  watcherRemindersBlock?: string,
 ): string {
   const lines: string[] = [];
   // VTID-02692: LOCKED file list at the very top. The executor LLM (Gemini
@@ -1213,6 +1221,13 @@ function buildExecutionPrompt(
     }
     lines.push(``);
   }
+
+  // VTID-03462 (Watcher Phase 3): authored governance rules + cross-stage
+  // lessons, ranked and hard-budgeted. Distinct from the scanner-scoped
+  // validation history above. Empty string when the flag is off, so the
+  // prompt is byte-identical to before.
+  if (watcherRemindersBlock) lines.push(watcherRemindersBlock);
+
   if (fileCtx.length > 0) {
     lines.push(
       `## Current state of each file the plan touches`,
@@ -1466,7 +1481,22 @@ export async function runExecutionSession(
   // sequence in a single long-lived process, sidestepping the Cloud Run
   // recycle-mid-flight problem that kept stranding executions.
   const ownsPr = isWorkerQueueEnabled() && isWorkerOwnsPrEnabled();
-  const prompt = buildExecutionPrompt(exec.finding_id, exec.plan_version, plan.plan_markdown, fileCtx, branch, lessons);
+  // VTID-03462: flag-gated + best-effort. A Watcher fault must never be able
+  // to stall an execution, so every failure path resolves to ''.
+  let watcherBlock = '';
+  if (remindersEnabled()) {
+    try {
+      const bundle = await buildReminders({
+        stage: 'execute',
+        scanner: findingScanner || undefined,
+      });
+      watcherBlock = renderRemindersBlock(bundle);
+      await recordShown(bundle.reminders.map((r) => r.reminder_id));
+    } catch {
+      watcherBlock = '';
+    }
+  }
+  const prompt = buildExecutionPrompt(exec.finding_id, exec.plan_version, plan.plan_markdown, fileCtx, branch, lessons, watcherBlock);
   const startedAt = Date.now();
   // Widen the inline type so both call shapes satisfy the union we destructure
   // below (worker-queue path may carry pr_url/pr_number/branch from the

@@ -42,6 +42,9 @@ import {
 } from './dev-autopilot-schema-context';
 import { applyScannerOverrides } from './dev-autopilot-safety';
 
+import { buildReminders, remindersEnabled, renderRemindersBlock } from './watcher/reminder';
+import { recordShown } from './watcher/feedback';
+
 const LOG_PREFIX = '[dev-autopilot-planning]';
 const PLAN_VTID = 'VTID-DEV-AUTOPILOT';
 
@@ -374,6 +377,13 @@ export function buildPlanningPrompt(
   scope?: { allow?: string[]; deny?: string[] },
   lessons?: PromptLesson[],
   schemaBlock?: string,
+  /**
+   * VTID-03462: pre-rendered Watcher reminder block. Passed in rather than
+   * fetched here so this function stays pure and synchronous — its callers
+   * already own the async context, and a prompt builder that reaches out to
+   * the database is untestable.
+   */
+  watcherRemindersBlock?: string,
 ): string {
   const snap = finding.spec_snapshot || {};
   const lines: string[] = [];
@@ -473,6 +483,14 @@ export function buildPlanningPrompt(
   // this scanner so Claude doesn't repeat known traps.
   const lessonsBlock = formatLessonsBlock(lessons || []);
   if (lessonsBlock) lines.push(lessonsBlock);
+
+  // VTID-03462 (Watcher Phase 3): authored governance rules + cross-stage
+  // lessons, ranked and hard-budgeted (<=6 items / <=800 tokens). Distinct
+  // from the block above, which is scanner-scoped validation history only.
+  //
+  // Ships dark behind WATCHER_REMINDERS_ENABLED. Off, this is a no-op and
+  // the prompt is byte-identical to before.
+  if (watcherRemindersBlock) lines.push(watcherRemindersBlock);
 
   if (previousPlan && feedbackNote) {
     lines.push(
@@ -860,7 +878,23 @@ async function runPlanningSession(
     }
   }
 
-  const prompt = buildPlanningPrompt(finding, previousPlan, feedbackNote, scope, lessons, schemaBlock) + fileSection;
+  // VTID-03462 (Watcher Phase 3). Best-effort and flag-gated: with
+  // WATCHER_REMINDERS_ENABLED unset this resolves to '' and the prompt is
+  // byte-identical to before. A Watcher fault must never block planning.
+  let watcherBlock = '';
+  if (remindersEnabled()) {
+    try {
+      const bundle = await buildReminders({
+        stage: 'planning',
+        scanner: (finding.spec_snapshot as { scanner?: string } | null)?.scanner,
+      });
+      watcherBlock = renderRemindersBlock(bundle);
+      await recordShown(bundle.reminders.map((r) => r.reminder_id));
+    } catch {
+      watcherBlock = '';
+    }
+  }
+  const prompt = buildPlanningPrompt(finding, previousPlan, feedbackNote, scope, lessons, schemaBlock, watcherBlock) + fileSection;
 
   // Route through the local worker queue when enabled, so the LLM call draws
   // on the Claude subscription instead of the pay-per-token API key. Falls

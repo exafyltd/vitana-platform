@@ -1407,6 +1407,44 @@ Migrated into `watcher_lessons` and dropped by
 `supabase/migrations/20260731180000_VTID_03461_watcher_lessons_rules.sql`.
 Do not reference it. See `watcher_lessons` above.
 
+### watcher_reminder_feedback
+
+```sql
+CREATE TABLE watcher_reminder_feedback (
+  id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  reminder_id      TEXT NOT NULL,   -- 'rule:<rule_key>' | 'lesson:<uuid>'
+  kind             TEXT NOT NULL,   -- rule | lesson
+  work_unit_id     TEXT,
+  vtid             TEXT,
+  stage            TEXT,
+  outcome          TEXT NOT NULL,   -- success | failure | unknown
+  repeated_mistake BOOLEAN NOT NULL DEFAULT FALSE,
+  note             TEXT,
+  created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+```
+
+**VTID-03462 (Watcher Phase 3)** — the relevance signal that keeps
+`watcher_lessons` from becoming noise. Without it the lesson store only ever
+grows, the injected block fills with things that never mattered, and the
+worker learns to skim past it — at which point the tokens are still spent and
+the one reminder that would have helped is lost in the pile.
+
+`reminder_id` is deliberately **not** a foreign key: a lesson can be deleted
+or a rule renamed, and losing the historical feedback would erase the evidence
+for why something was muted.
+
+Phase 3 also adds three counters to `watcher_lessons`: `shown_count`,
+`helped_count`, `ignored_count`. `shown_count` is the denominator auto-mute
+needs — without it, "never helped" and "never actually injected" look
+identical, and a lesson would be muted for never having had the chance.
+
+**Rules are never auto-muted.** "Nobody violated this rule recently" is
+evidence the rule is working, not evidence it should be retired. Only learned
+lessons decay.
+
+**Auth model:** RLS on, no policies — service_role only.
+
 ---
 
 **Remember:** This file is the SINGLE SOURCE OF TRUTH for table names.
