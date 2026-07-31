@@ -12,12 +12,35 @@
  *
  * If you ever want to attach sensitive fields, gate them behind requireAdminAuth
  * — never weaken the public response.
+ *
+ * `/feature-flags` (added below) follows that rule: it is admin-gated, and the
+ * two public responses above are unchanged.
  */
 
 import { Router, Request, Response } from 'express';
 import { VITANA_ENV, supabaseHost, cloudRunRevision, cloudRunService } from '../env';
+import { featureFlagSetting, isFeatureLive } from '../services/feature-flags';
+import { requireAdminAuth } from '../middleware/auth-supabase-jwt';
+import type { AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
 
 const router = Router();
+
+/**
+ * Every feature flag the gateway actually reads. Keep in sync with the
+ * `isFeatureLive('...')` call sites — the inventory endpoint below is only
+ * useful for drift detection if it is exhaustive.
+ */
+const KNOWN_FEATURE_FLAGS = [
+  'AUTOPILOT_CALENDAR_PREP',
+  'BOOTSTRAP_CONTEXT_RANKED_RETRIEVAL',
+  'FINETUNED_GREETING',
+  'ORB_BRAIN_CACHE',
+  'ORB_FAST_START',
+  'ORB_GREETING_PREBUFFER',
+  'ORB_GREETING_TTS_BRIDGE',
+  'ORB_SAFE_FAST_GREETING',
+  'VOICE_RANKING_SHADOW',
+] as const;
 
 const BOOT_TIME = new Date().toISOString();
 const BUILD_COMMIT =
@@ -52,5 +75,52 @@ router.get('/build-info', (_req: Request, res: Response) => {
     marker: process.env.BUILD_INFO_MARKER || null,
   });
 });
+
+/**
+ * GET /api/v1/admin/feature-flags — admin-gated feature-flag inventory.
+ *
+ * Exists because a flag can be *present* on a task definition and still be
+ * dead: `isFeatureLive` maps 'staging-only' → `isStaging`, so a value copied
+ * from a staging task def evaluates to OFF in production. That is exactly how
+ * `FEATURE_ORB_FAST_START_ENV` was lost in the VTID-03419 GCP→AWS cutover —
+ * the ORB wake path silently fell back to the legacy inline mode, pushing cold
+ * authenticated session/start past the orb widget's 8s abort budget, so the
+ * first connect after login hung on "Verbinden..." forever.
+ *
+ * `setting` is what the env var says; `live` is what the code actually does.
+ * Diff this endpoint across two stacks to find drift — compare `live`, never
+ * merely whether the variable exists. `misconfigured_for_env` flags the
+ * specific staging-only-in-prod trap above.
+ *
+ * Admin-gated rather than public: the flag inventory reveals which
+ * experiments are running, which is more than /health's environment identity.
+ */
+router.get(
+  '/feature-flags',
+  requireAdminAuth,
+  (_req: AuthenticatedRequest, res: Response) => {
+    const flags = KNOWN_FEATURE_FLAGS.map((name) => {
+      const setting = featureFlagSetting(name);
+      return {
+        name,
+        env_var: `FEATURE_${name}_ENV`,
+        // Whether the variable is set at all — distinguishes "explicitly off"
+        // from "never configured on this stack" (the drift signature).
+        env_var_present: process.env[`FEATURE_${name}_ENV`] !== undefined,
+        setting,
+        live: isFeatureLive(name),
+        misconfigured_for_env: setting === 'staging-only' && VITANA_ENV === 'production',
+      };
+    });
+
+    return res.status(200).json({
+      ok: true,
+      env: VITANA_ENV,
+      cloud_run_service: cloudRunService(),
+      git_commit: BUILD_COMMIT,
+      flags,
+    });
+  },
+);
 
 export default router;
