@@ -1458,7 +1458,38 @@
       _s.sessionId = null;
       _s.liveError = err.message;
       _setOrbState('error');
+
+      // BOOTSTRAP-ORB-FASTSTART-DRIFT: this used to end here — state flipped to
+      // 'error' (red aura) but the status text was never touched, so the label
+      // _show() set stayed on screen and the orb read "Verbinden..." FOREVER
+      // while nothing was in flight. Nothing retried either, so a start that
+      // merely ran slow became permanently dead: the user's only recovery was
+      // to close the overlay and reopen it (which worked, because the second
+      // attempt hit warm caches).
+      //
+      // That is precisely how a server-side regression surfaced as an
+      // "endlessly connecting" orb: cold authenticated session/start exceeded
+      // the 8s abort above, and every symptom the user saw after that was this
+      // handler lying about what was happening.
+      //
+      // Two fixes, both required: say something true, then actually recover.
+      _setStatus(
+        _cfg.lang.startsWith('de')
+          ? 'Verbindung fehlgeschlagen. Neuer Versuch...'
+          : "Couldn't connect. Retrying...",
+      );
       _updateUI();
+
+      // Hand to the existing recovery loop — it owns the retry budget, the
+      // offline check, and the eventual tap-to-reconnect fallback. Skipped
+      // when the user is deliberately leaving (X / overlay hidden), mirroring
+      // _announceDisconnect's guards, and when a reconnect is already in
+      // flight — _attemptReconnect's own _isReconnecting guard would drop the
+      // call anyway, but this keeps the intent explicit at the call site
+      // rather than resting on that ordering.
+      if (!_s._userInitiatedStop && _s.overlayVisible && !_s._isReconnecting) {
+        _attemptReconnect();
+      }
     }
   }
 

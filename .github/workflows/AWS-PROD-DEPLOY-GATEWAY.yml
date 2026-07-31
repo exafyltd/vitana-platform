@@ -276,6 +276,34 @@ jobs:
                           {name:"BUILD_INFO_MARKER", value:$SHORT} ] )
                 | del(.taskDefinitionArn, .revision, .status, .requiresAttributes,
                       .compatibilities, .registeredAt, .registeredBy, .deregisteredAt)')
+          # BOOTSTRAP-ORB-FASTSTART-DRIFT: pin the production feature flags that
+          # MUST be live on this stack, every deploy, unconditionally.
+          #
+          # Why this exists: the task def is otherwise carried forward verbatim
+          # (that is deliberate — see the header), so a flag that was never
+          # copied across the VTID-03419 GCP→AWS cutover stays missing forever.
+          # `FEATURE_ORB_FAST_START_ENV` was exactly that. Worse, the value is
+          # not a boolean: `isFeatureLive` maps 'staging-only' → `isStaging`, so
+          # even copying staging's value verbatim leaves the flag DEAD in prod.
+          # It must be the literal 'staging+prod' here.
+          #
+          # Consequence when it is missing: `shouldDeferWakeWork()` returns
+          # false, the ORB wake-brief/journey assembly runs INLINE on the
+          # session/start response, and a cold authenticated start measured
+          # 9.5s against the orb widget's 8s fetch abort — the first connect
+          # after login hung on "Verbinden..." with no retry. Anonymous
+          # sessions were unaffected (they skip wake-brief), which is why
+          # logged-out ORB looked healthy throughout.
+          #
+          # Only flags with MEASURED evidence for this stack belong here. Do not
+          # add one speculatively — a wrongly-enabled flag is a new outage, not
+          # a fix. Verify first via GET /api/v1/admin/feature-flags (admin) on
+          # both stacks and compare `live`, not merely whether the var is set.
+          NEW_DEF=$(echo "$NEW_DEF" | jq '
+            .containerDefinitions[0].environment |=
+              ( [ .[] | select(.name != "FEATURE_ORB_FAST_START_ENV") ]
+                + [ {name:"FEATURE_ORB_FAST_START_ENV", value:"staging+prod"} ] )')
+
           # BOOTSTRAP-NOVA-SONIC-VOICE: only when explicitly requested, replace
           # the Nova env block (region/model stay pinned — never inputs).
           if [ -n "$NOVA_ENABLED_INPUT" ]; then
