@@ -30,6 +30,13 @@ const AUTH_NAMES = [
   // requireExafyAdmin: admin-role gate (middleware/auth-supabase-jwt) used by the
   // admin routes (notifications, orb-tools selfcheck). It IS auth.
   'requireExafyAdmin',
+  // requireAdminAuth: the module's own documented "requireAuth + requireExafyAdmin"
+  // convenience combinator (middleware/auth-supabase-jwt) — strictly STRONGER than
+  // either name already on this list, yet it was absent, so every route using it
+  // was reported as unauthenticated. 48 call sites across 8+ route files
+  // (admin-health, admin-intent-engine, admin-navigator, admin-users-lookup,
+  // awareness-config, media-hub, operator, orb-livekit). It IS auth.
+  'requireAdminAuth',
 ];
 const ROUTE_PREFIX_RE = /^\s*router\.(get|post|put|patch|delete)\s*\(/;
 
