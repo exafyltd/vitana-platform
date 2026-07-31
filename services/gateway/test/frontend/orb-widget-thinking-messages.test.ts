@@ -4,9 +4,20 @@ import * as path from 'path';
 // VTID-03449 — replaced the rotating "thinking" status text (Thinking...,
 // Searching memory..., Processing your request... (10s), Still working on
 // it..., Almost there... (19s)) with warmer, non-technical copy and removed
-// the visible elapsed-time counter. Static checks mirror the style of the
-// other orb-widget-*.test.ts files (the widget runs in the browser; we
-// assert on its source so CI catches accidental regressions).
+// the visible elapsed-time counter.
+//
+// VTID-03451 follow-up — the first cut still showed the exact same 1-2 lines
+// on almost every turn: a single fixed opener shown immediately, plus a
+// narrative-ordered rotation whose 2nd slot only had a ~29% chance of being
+// swapped. Since most real turns resolve before the old 4s-to-first-rotation
+// delay, users saw "Let me think... / Checking what I remember..." nearly
+// every time. Fixed by merging every line into one pool, shuffling it fresh
+// per turn, and guarding against the first-shown line repeating back-to-back
+// across turns.
+//
+// Static checks mirror the style of the other orb-widget-*.test.ts files
+// (the widget runs in the browser; we assert on its source so CI catches
+// accidental regressions).
 
 const WIDGET_PATH = path.resolve(
   __dirname,
@@ -29,7 +40,7 @@ function extractFunctionBody(source: string, signature: string): string {
   throw new Error(`unclosed function body: ${signature}`);
 }
 
-describe('orb-widget thinking-status messages (VTID-03449)', () => {
+describe('orb-widget thinking-status messages (VTID-03449, VTID-03451)', () => {
   const source = fs.readFileSync(WIDGET_PATH, 'utf8');
 
   it('removes the old technical message arrays and the visible elapsed-time counter', () => {
@@ -41,27 +52,35 @@ describe('orb-widget thinking-status messages (VTID-03449)', () => {
     expect(source).not.toMatch(/\(' \+ elapsed \+ 's\)/);
   });
 
-  it('defines a single opener plus a 7-item primary sequence and an 8-item alternates pool', () => {
-    const openerMatch = source.match(/var _THINKING_OPENER = \{[^}]*\};/);
-    expect(openerMatch).not.toBeNull();
-    expect(openerMatch![0]).toMatch(/en:\s*'Let me think…'/);
+  it('no longer has a single fixed opener — removes _THINKING_OPENER entirely', () => {
+    expect(source).not.toMatch(/_THINKING_OPENER\b/);
+    expect(source).not.toMatch(/'Thinking\.\.\.'/);
+    expect(source).not.toMatch(/'Denkt nach\.\.\.'/);
+  });
+
+  it('defines a 6-item quick pool, 7-item primary sequence, and 8-item alternates pool merged into one 21-item pool', () => {
+    const quickMatch = source.match(/var _THINKING_QUICK = (\[[\s\S]*?\n  \]);/);
+    expect(quickMatch).not.toBeNull();
+    expect((quickMatch![1].match(/\{ en:/g) || []).length).toBe(6);
 
     const primaryMatch = source.match(/var _THINKING_PRIMARY = (\[[\s\S]*?\n  \]);/);
     expect(primaryMatch).not.toBeNull();
-    const primaryCount = (primaryMatch![1].match(/\{ en:/g) || []).length;
-    expect(primaryCount).toBe(7);
+    expect((primaryMatch![1].match(/\{ en:/g) || []).length).toBe(7);
 
     const altMatch = source.match(/var _THINKING_ALTERNATES = (\[[\s\S]*?\n  \]);/);
     expect(altMatch).not.toBeNull();
-    const altCount = (altMatch![1].match(/\{ en:/g) || []).length;
-    expect(altCount).toBe(8);
+    expect((altMatch![1].match(/\{ en:/g) || []).length).toBe(8);
+
+    expect(source).toMatch(
+      /var _THINKING_ALL = _THINKING_QUICK\.concat\(_THINKING_PRIMARY, _THINKING_ALTERNATES\);/,
+    );
   });
 
-  it('every message pair has both an en and de value, short and without forbidden technical wording', () => {
+  it('every message pair has both an en and de value, without forbidden technical wording or formal German register', () => {
     const forbidden = /\b(processing|request|retrieving|query|system)\b/i;
     const pairs = source.match(/\{ en: '[^']*', de: '[^']*' \}/g) || [];
-    // opener(1) + primary(7) + alternates(8) = 16 pairs
-    expect(pairs.length).toBeGreaterThanOrEqual(15);
+    // quick(6) + primary(7) + alternates(8) = 21 pairs
+    expect(pairs.length).toBe(21);
     for (const pair of pairs) {
       expect(pair).toMatch(/en: '/);
       expect(pair).toMatch(/de: '/);
@@ -70,22 +89,26 @@ describe('orb-widget thinking-status messages (VTID-03449)', () => {
     }
   });
 
-  it('_buildThinkingQueue swaps 2 random alternates into a 7-slot copy of the primary sequence', () => {
+  it('_buildThinkingQueue fully shuffles the merged pool and guards against repeating the previous first line', () => {
     const body = extractFunctionBody(source, 'function _buildThinkingQueue()');
-    expect(body).toMatch(/_THINKING_PRIMARY\.slice\(\)/);
-    expect(body).toMatch(/_shuffled\(_THINKING_ALTERNATES\)\.slice\(0, 2\)/);
+    expect(body).toMatch(/_shuffled\(_THINKING_ALL\)/);
+    expect(body).toMatch(/queue\[0\]\.en === _s\.lastThinkingFirstMsg/);
+    expect(body).toMatch(/_s\.lastThinkingFirstMsg = queue\[0\]\.en;/);
     expect(body).toMatch(/return queue;/);
   });
 
-  it('_shuffled performs an in-place Fisher-Yates shuffle on a copy, not the original array', () => {
+  it('_shuffled performs a Fisher-Yates shuffle on a copy, not the original array', () => {
     const body = extractFunctionBody(source, 'function _shuffled(arr)');
     expect(body).toMatch(/arr\.slice\(\)/);
     expect(body).toMatch(/Math\.random\(\)/);
   });
 
-  it('_startThinkingProgress rotates every 4 seconds through the per-session queue with no counter suffix', () => {
+  it('_startThinkingProgress shows the first message immediately, then rotates every 4 seconds with no counter suffix', () => {
     const body = extractFunctionBody(source, 'function _startThinkingProgress()');
     expect(body).toMatch(/_buildThinkingQueue\(\)/);
+    // shows queue[0] right away — this is what most turns actually display,
+    // since they resolve before the first interval tick
+    expect(body).toMatch(/_setStatus\(isDe \? queue\[0\]\.de : queue\[0\]\.en\)/);
     expect(body).toMatch(/Math\.floor\(elapsed \/ 4\)/);
     expect(body).toMatch(/queue\.length - 1/);
     expect(body).not.toMatch(/elapsed \+ 's'/);
@@ -94,12 +117,8 @@ describe('orb-widget thinking-status messages (VTID-03449)', () => {
     expect(body).toMatch(/clearInterval\(_s\.thinkingProgressTimer\)/);
   });
 
-  it('shows _THINKING_OPENER (not a hardcoded "Thinking...") on both the ready and thinking SSE handlers', () => {
-    expect(source).not.toMatch(/'Thinking\.\.\.'/);
-    expect(source).not.toMatch(/'Denkt nach\.\.\.'/);
-    expect(
-      source.match(/_setStatus\(_cfg\.lang\.startsWith\('de'\) \? _THINKING_OPENER\.de : _THINKING_OPENER\.en\)/g)
-        ?.length ?? 0,
-    ).toBeGreaterThanOrEqual(2);
+  it('the ready and thinking SSE handlers pick from the shared pool instead of a hardcoded opener', () => {
+    expect(source).toMatch(/var readyMsg = _buildThinkingQueue\(\)\[0\];/);
+    expect(source).toMatch(/_startThinkingProgress\(\); \/\/ also sets the first status line immediately/);
   });
 });
