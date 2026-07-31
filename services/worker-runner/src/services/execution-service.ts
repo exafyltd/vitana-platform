@@ -389,7 +389,7 @@ export async function executeTask(
     // and returns null on any failure, so a Watcher outage costs this
     // execution nothing but the reminders themselves.
     const watcherBundle = await fetchWatcherReminders(
-      { gatewayUrl: process.env.GATEWAY_URL || '', workerId: process.env.WORKER_ID || 'worker-runner' } as RunnerConfig,
+      config,
       { stage: 'execute', vtid: task.vtid, domain },
     );
     if (watcherBundle && watcherBundle.reminders.length > 0) {
