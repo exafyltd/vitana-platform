@@ -252,6 +252,66 @@ router.get('/my/listings', async (req: Request, res: Response) => {
   });
 });
 
+// ==================== GET /listings/by-seller/:vitanaId (profile Business tab, Chunk 8) ====================
+// Storefront view of another seller's active listings, surfaced on that
+// user's profile "Business" tab alongside their Recommend & Earn products
+// (see discover-recommendations-public.ts for the equivalent recommendations
+// endpoint). Stays inside this router (auth+tenant-required, no guest
+// fallback) rather than a separate public router, since every caller here is
+// already required to be an authenticated tenant member.
+
+router.get('/listings/by-seller/:vitanaId', async (req: Request, res: Response) => {
+  const supabase = getSupabase();
+  if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
+
+  const rawVid = String(req.params.vitanaId || '').replace(/^@/, '').toLowerCase().trim();
+  if (!rawVid) return res.status(400).json({ ok: false, error: 'vitana_id_required' });
+
+  const { data: subject, error: subjectErr } = await supabase
+    .from('profiles')
+    .select('user_id')
+    .eq('vitana_id', rawVid)
+    .maybeSingle();
+  if (subjectErr) return res.status(500).json({ ok: false, error: subjectErr.message });
+  if (!subject) return res.status(404).json({ ok: false, error: 'profile_not_found' });
+
+  // Same visibility gate as the recommendations equivalent — a hidden/
+  // deactivated profile's listings can't leak via this side-channel.
+  const { data: gcp, error: gcpErr } = await supabase
+    .from('global_community_profiles')
+    .select('is_visible')
+    .eq('user_id', subject.user_id)
+    .maybeSingle();
+  if (gcpErr) return res.status(500).json({ ok: false, error: gcpErr.message });
+  if (!gcp?.is_visible) return res.status(404).json({ ok: false, error: 'profile_not_found' });
+
+  const tenantId = identity(req).tenant_id!;
+  const viewerId = identity(req).user_id;
+
+  // If the viewer has blocked this seller, return an empty list rather than
+  // a 403/404 — same silent-exclusion posture as GET /listings, so visiting
+  // the profile directly can't be used to confirm a block exists.
+  const { data: block } = await supabase
+    .from('community_listing_seller_blocks')
+    .select('id')
+    .eq('viewer_user_id', viewerId)
+    .eq('blocked_seller_id', subject.user_id)
+    .maybeSingle();
+  if (block) return res.json({ ok: true, listings: [] });
+
+  const { data, error } = await supabase
+    .from('community_listings')
+    .select(PUBLIC_LISTING_COLUMNS)
+    .eq('tenant_id', tenantId)
+    .eq('seller_user_id', subject.user_id)
+    .eq('status', 'active')
+    .order('created_at', { ascending: false })
+    .range(0, 19);
+  if (error) return res.status(500).json({ ok: false, error: error.message });
+
+  res.json({ ok: true, listings: (data ?? []).map((row: any) => serializeListing(row, { isOwner: false })) });
+});
+
 // ==================== GET /listings/:id ====================
 
 router.get('/listings/:id', async (req: Request, res: Response) => {

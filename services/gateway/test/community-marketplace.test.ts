@@ -179,6 +179,63 @@ describe('GET /listings/:id', () => {
   });
 });
 
+describe('GET /listings/by-seller/:vitanaId (Chunk 8 — profile Business tab)', () => {
+  it('404 when the vitana_id does not resolve to a profile', async () => {
+    tableHandlers.profiles = () => ({ data: null, error: null });
+
+    const r = await request(makeApp())
+      .get('/api/v1/community-marketplace/listings/by-seller/nobody')
+      .set('Authorization', 'Bearer buyer-1');
+
+    expect(r.status).toBe(404);
+    expect(r.body.error).toBe('profile_not_found');
+  });
+
+  it('404 when the profile is not visible', async () => {
+    tableHandlers.profiles = () => ({ data: { user_id: 'seller-1' }, error: null });
+    tableHandlers.global_community_profiles = () => ({ data: { is_visible: false }, error: null });
+
+    const r = await request(makeApp())
+      .get('/api/v1/community-marketplace/listings/by-seller/seller-one')
+      .set('Authorization', 'Bearer buyer-1');
+
+    expect(r.status).toBe(404);
+    expect(r.body.error).toBe('profile_not_found');
+  });
+
+  it('200 with an empty list when the viewer has blocked this seller', async () => {
+    tableHandlers.profiles = () => ({ data: { user_id: 'seller-1' }, error: null });
+    tableHandlers.global_community_profiles = () => ({ data: { is_visible: true }, error: null });
+    tableHandlers.community_listing_seller_blocks = () => ({ data: { id: 'block-1' }, error: null });
+
+    const r = await request(makeApp())
+      .get('/api/v1/community-marketplace/listings/by-seller/seller-one')
+      .set('Authorization', 'Bearer buyer-1');
+
+    expect(r.status).toBe(200);
+    expect(r.body).toMatchObject({ ok: true, listings: [] });
+  });
+
+  it('200 with the seller’s active listings, no owner-only fields', async () => {
+    tableHandlers.profiles = () => ({ data: { user_id: 'seller-1' }, error: null });
+    tableHandlers.global_community_profiles = () => ({ data: { is_visible: true }, error: null });
+    tableHandlers.community_listing_seller_blocks = () => ({ data: null, error: null });
+    tableHandlers.community_listings = () => ({
+      data: [{ id: 'listing-1', seller_user_id: 'seller-1', status: 'active', images: [], requires_admin_review: true }],
+      error: null,
+    });
+
+    const r = await request(makeApp())
+      .get('/api/v1/community-marketplace/listings/by-seller/seller-one')
+      .set('Authorization', 'Bearer buyer-1');
+
+    expect(r.status).toBe(200);
+    expect(r.body.listings).toHaveLength(1);
+    expect(r.body.listings[0]).toMatchObject({ id: 'listing-1', seller_user_id: 'seller-1' });
+    expect(r.body.listings[0]).not.toHaveProperty('requires_admin_review');
+  });
+});
+
 describe('POST /listings', () => {
   it('400 on validation error', async () => {
     const r = await request(makeApp())
