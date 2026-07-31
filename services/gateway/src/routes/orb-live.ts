@@ -6028,6 +6028,41 @@ function sendFunctionResponseToLiveAPI(
   }
 }
 
+// Hard contract for tool-bound flows the LLM keeps skipping. Empirically
+// Gemini Live sometimes answers "I can't find that user" without ever
+// calling resolve_recipient — especially when the spoken phrase contains
+// a hint like "I think it's maria6". This block makes the binding
+// explicit at the system-instruction level (tool description alone wasn't
+// enough). Same pattern for navigation.
+//
+// BOOTSTRAP-ORB-MESSAGING-CONTRACT-TRIM-FIX: this used to be baked onto the
+// tail of the bootstrap/memory instruction string (generateMemoryEnhanced-
+// SystemInstruction's baseInstructionNoMemory/baseInstructionWithMemory).
+// That made it the LAST thing appended to the bootstrap text — which is
+// exactly the content both capBootstrapContext() (Phase A trailing-content
+// cap) and the R0 aggregate byte-budget guard's 'bootstrap' drop-priority
+// (instruction-budget.ts DROP_ORDER, dropped FIRST) trim away first for
+// heavy-context users (many memory facts, social context, calendar, journey
+// data). A "NON-NEGOTIABLE" contract that silently vanishes under budget
+// pressure is worse than none — the model then has no explicit instruction
+// to call resolve_recipient/send_chat_message and improvises an unrelated
+// answer instead (observed: user asked to message someone, got a reply
+// about unrelated holiday content, no tool call in the logs at all).
+// Fixed by moving it into the PRESERVED scaffold tail — appended together
+// with buildNavigatorPolicySection() below, which decomposeInstructionSections
+// (instruction-budget.ts) always classifies as 'scaffold' and never trims.
+export const MESSAGING_CONTRACT = `
+
+## MESSAGING & SHARING CONTRACT (NON-NEGOTIABLE)
+
+If the user mentions sending a message, sharing a link, texting, inviting, or telling someone something, you MUST:
+1. Call resolve_recipient(spoken_name) BEFORE saying anything about whether the recipient exists. The ONLY way to honestly say "I can't find that user" is to receive an empty candidates array from resolve_recipient. Do not infer absence from your own context — you do not have the user's contact list.
+2. If the spoken phrase contains a name AND a Vitana ID hint ("Maria, I think it's maria6"), pass the Vitana ID hint as spoken_name first; if that returns 0 candidates, retry with the name.
+3. After resolve_recipient returns, follow the readback contract from the tool description (read back, await explicit confirmation, then send_chat_message).
+4. AFTER send_chat_message returns ok:true (VTID-02969): briefly acknowledge ("Sent to @<vid>.") AND in the SAME turn offer the next action — but ONLY from the tool result's next_actions array. Read next_actions[0].label verbatim as the suggestion. If the array is empty, briefly acknowledge and let the user lead — do NOT invent a next action from your own knowledge. Example with next_actions: "Sent to @dragan_red. Next: <next_actions[0].label>. Want me to do that?" Example with empty array: "Sent to @dragan_red." When the user accepts, call activate_recommendation with next_actions[0].id.
+
+If the user asks to be shown a screen, list, or detail page, call navigate_to_screen — never claim a page doesn't exist without trying. The frontend handles routing; you handle the call.`;
+
 /**
  * VTID-NAV-01: Vitana Navigator policy section appended to every system
  * instruction. Teaches the model when to call navigator_consult,
@@ -10055,24 +10090,6 @@ async function generateMemoryEnhancedSystemInstruction(
   // Load text_chat personality config
   const textChatConfig = getPersonalityConfigSync('text_chat') as Record<string, any>;
 
-  // Hard contract for tool-bound flows the LLM keeps skipping. Empirically
-  // Gemini Live sometimes answers "I can't find that user" without ever
-  // calling resolve_recipient — especially when the spoken phrase contains
-  // a hint like "I think it's maria6". This block makes the binding
-  // explicit at the system-instruction level (tool description alone wasn't
-  // enough). Same pattern for navigation.
-  const MESSAGING_CONTRACT = `
-
-## MESSAGING & SHARING CONTRACT (NON-NEGOTIABLE)
-
-If the user mentions sending a message, sharing a link, texting, inviting, or telling someone something, you MUST:
-1. Call resolve_recipient(spoken_name) BEFORE saying anything about whether the recipient exists. The ONLY way to honestly say "I can't find that user" is to receive an empty candidates array from resolve_recipient. Do not infer absence from your own context — you do not have the user's contact list.
-2. If the spoken phrase contains a name AND a Vitana ID hint ("Maria, I think it's maria6"), pass the Vitana ID hint as spoken_name first; if that returns 0 candidates, retry with the name.
-3. After resolve_recipient returns, follow the readback contract from the tool description (read back, await explicit confirmation, then send_chat_message).
-4. AFTER send_chat_message returns ok:true (VTID-02969): briefly acknowledge ("Sent to @<vid>.") AND in the SAME turn offer the next action — but ONLY from the tool result's next_actions array. Read next_actions[0].label verbatim as the suggestion. If the array is empty, briefly acknowledge and let the user lead — do NOT invent a next action from your own knowledge. Example with next_actions: "Sent to @dragan_red. Next: <next_actions[0].label>. Want me to do that?" Example with empty array: "Sent to @dragan_red." When the user accepts, call activate_recommendation with next_actions[0].id.
-
-If the user asks to be shown a screen, list, or detail page, call navigate_to_screen — never claim a page doesn't exist without trying. The frontend handles routing; you handle the call.`;
-
   // Base instruction WITHOUT memory claims (used when memory is unavailable)
   // VTID-01225-READ-FIX: Always append memory_facts if available
   const baseInstructionNoMemory = `${textChatConfig.base_identity_no_memory || 'You are VITANA ORB, a voice-first multimodal assistant.'}
@@ -10084,7 +10101,7 @@ Context:
 - selectedId: ${session.selectedId || 'none'}
 
 Operating mode:
-${textChatConfig.operating_mode || '- Voice conversation is primary.\n- Always listening while ORB overlay is open.\n- Read-only: do not mutate system state.\n- Be concise, contextual, and helpful.'}${memoryFactsSection ? `\n- You have PERSISTENT MEMORY - you remember users across sessions.${memoryFactsSection}` : ''}${calendarSection}${MESSAGING_CONTRACT}`;
+${textChatConfig.operating_mode || '- Voice conversation is primary.\n- Always listening while ORB overlay is open.\n- Read-only: do not mutate system state.\n- Be concise, contextual, and helpful.'}${memoryFactsSection ? `\n- You have PERSISTENT MEMORY - you remember users across sessions.${memoryFactsSection}` : ''}${calendarSection}`;
 
   // Base instruction WITH memory claims (used when memory IS available)
   const baseInstructionWithMemory = `${textChatConfig.base_identity_with_memory || 'You are VITANA ORB, a voice-first multimodal assistant with persistent memory.'}
@@ -10098,7 +10115,7 @@ Context:
 Operating mode:
 ${textChatConfig.operating_mode || '- Voice conversation is primary.\n- Always listening while ORB overlay is open.\n- Read-only: do not mutate system state.\n- Be concise, contextual, and helpful.'}
 - You have PERSISTENT MEMORY - you remember users across sessions.
-- NEVER claim you cannot remember or that your memory resets.${memoryFactsSection}${calendarSection}${MESSAGING_CONTRACT}`;
+- NEVER claim you cannot remember or that your memory resets.${memoryFactsSection}${calendarSection}`;
 
   // VTID-01153: Try memory-indexer first (Mem0 OSS)
   // VTID-01186: Use effective identity for memory lookups
