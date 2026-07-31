@@ -328,6 +328,25 @@ function buildGoalsSection(goals: ActiveGoal[], skip: boolean): string {
   return s;
 }
 
+// VTID-03458: cheap EN+DE keyword classifier (same style as
+// detectSocialIntent in social-memory-prompts.ts) deciding whether THIS
+// turn's message is actually about the user's Life Compass goals/progress.
+// Text-chat has no separate directive-heavy Life Compass block the way ORB
+// voice does (see skip_goal_section doc above), so buildGoalsSection was
+// the only place goal content could surface there — and it was being
+// included on every single community-role turn regardless of what the user
+// asked, which is how "message Maria" got a nutrition-index question
+// glued onto the front of the reply. This does not remove goal-awareness
+// from text chat — it only gates it to turns that are plausibly relevant,
+// per the existing "retrieve memory selectively" rule.
+const GOAL_RELEVANCE_PATTERN =
+  /\b(goal|target|progress|habit|routine|improve|tip|advice|recommend|coach|index|pillar|nutrition|exercise|sleep|stress|wellness|health|longevity|life compass|ziel|fortschritt|gewohnheit|routine|verbesse\w*|tipp\w*|vorschlag|vorschläge|empfehlung|coaching|index|säule\w*|ernährung|bewegung|sport|schlaf|stress|gesundheit|langlebigkeit|lebenskompass)\b/i;
+
+function isGoalRelevant(message: string | undefined | null): boolean {
+  if (!message) return false;
+  return GOAL_RELEVANCE_PATTERN.test(message);
+}
+
 function buildPreferencesSection(preferences: PreferenceEntry[]): string {
   if (preferences.length === 0) return '';
   let s = `<user_preferences>\n`;
@@ -643,7 +662,9 @@ export async function buildAssistantMemoryContext(
     preferences,
     social_block: socialBlock,
     do_not_repeat: doNotRepeat,
-    skip_goal_section: input.skip_goal_section || !communityRole,
+    // VTID-03458: only surface goal content on turns it's actually relevant
+    // to — explicit caller opt-out and the dev/admin gate still win outright.
+    skip_goal_section: input.skip_goal_section || !communityRole || !isGoalRelevant(input.message),
     user_timezone: input.user_timezone,
     // Cold start only on community surfaces — dev/admin consoles must never
     // get get-to-know-you prompts.

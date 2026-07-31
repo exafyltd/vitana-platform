@@ -23,6 +23,11 @@ import { processConversationTurn } from '../services/conversation-client';
 
 const router = Router();
 
+// VTID-03459: per-user in-flight guard for the fire-and-forget Vitana text
+// reply (see the /send handler below). Module-level because this route file
+// is a singleton Express router — safe within one instance, not distributed.
+const vitanaReplyInFlight = new Set<string>();
+
 function getSupabase() {
   return createClient(
     process.env.SUPABASE_URL!,
@@ -105,13 +110,30 @@ router.post('/send', requireAuth, requireTenant, async (req: Request, res: Respo
   // conversation intelligence layer and write it back to chat_messages.
   // Skip the bot reply when the message is just an attachment with no text —
   // there's no prompt to reply to.
+  //
+  // VTID-03459: handleVitanaTextReply is fire-and-forget with no idempotency
+  // key, so a client-side double-send (fast double-tap/Enter before the
+  // client's own re-entrancy state re-renders — see MessageInput.tsx) fires
+  // two independent, non-deterministic LLM turns that each write their own
+  // reply, landing as two near-duplicate/truncated bot bubbles. Guard here
+  // per-user so only one Vitana turn runs at a time; this is in-process only
+  // (not distributed across Cloud Run instances) but covers the observed
+  // failure mode, which is always same-client rapid double-fire hitting the
+  // same instance.
   if (isVitanaBot(receiver_id) && trimmedContent.length > 0) {
-    handleVitanaTextReply(
-      identity.user_id,
-      identity.tenant_id!,
-      trimmedContent,
-      supabase,
-    ).catch(err => console.warn('[Chat] Vitana text reply failed:', err.message));
+    if (vitanaReplyInFlight.has(identity.user_id)) {
+      console.warn(`[Chat] Dropping duplicate Vitana text reply request for user ${identity.user_id} (one already in flight)`);
+    } else {
+      vitanaReplyInFlight.add(identity.user_id);
+      handleVitanaTextReply(
+        identity.user_id,
+        identity.tenant_id!,
+        trimmedContent,
+        supabase,
+      )
+        .catch(err => console.warn('[Chat] Vitana text reply failed:', err.message))
+        .finally(() => vitanaReplyInFlight.delete(identity.user_id));
+    }
   } else if (!isVitanaBot(receiver_id)) {
     // BOOTSTRAP-NOTIF-CATEGORIES: Resolve the sender's display name so that the
     // push notification looks like a classic chat notification ("John Doe" as
