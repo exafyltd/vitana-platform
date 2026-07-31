@@ -17,7 +17,7 @@
 (function (window) {
   'use strict';
 
-  var _WIDGET_VERSION = '2026-07-31-warm-thinking-status';
+  var _WIDGET_VERSION = '2026-07-31-thinking-repetition-fix';
   console.log('[VTOrb] Widget version: ' + _WIDGET_VERSION);
 
   // BOOTSTRAP-NOVA-SONIC-VOICE: user live-test feedback 2026-07-28 — the
@@ -1701,7 +1701,8 @@
       case 'ready':
         _setOrbState('thinking');
         _s.voiceState = 'THINKING';
-        _setStatus(_cfg.lang.startsWith('de') ? _THINKING_OPENER.de : _THINKING_OPENER.en);
+        var readyMsg = _buildThinkingQueue()[0];
+        _setStatus(_cfg.lang.startsWith('de') ? readyMsg.de : readyMsg.en);
         // Stuck guard: 15s timeout
         clearTimeout(_s.stuckGuardTimer);
         _s.stuckGuardTimer = setTimeout(function () {
@@ -1731,9 +1732,8 @@
             if (_s.voiceState === 'LISTENING' || _s.voiceState === 'IDLE') {
               _setOrbState('thinking');
               _s.voiceState = 'THINKING';
-              _setStatus(_cfg.lang.startsWith('de') ? _THINKING_OPENER.de : _THINKING_OPENER.en);
               _updateUI();
-              _startThinkingProgress();
+              _startThinkingProgress(); // also sets the first status line immediately
             }
           }, 300);
         } else if (_s.voiceState === 'MUTED') {
@@ -2575,12 +2575,20 @@
   // Warm, casual copy (VTID-03449) instead of technical wording; no visible elapsed-time
   // counter — that drew attention to the wait instead of reassuring the user.
   //
-  // _THINKING_OPENER is shown immediately (see the 'ready'/'thinking' SSE handlers below);
-  // _THINKING_PRIMARY[1..] is the ordered ambient rotation. Two of its slots get randomly
-  // swapped for an _THINKING_ALTERNATES pick per session, so the exact sequence a user sees
-  // varies across interactions while the overall pacing/narrative stays the same. All
-  // entries are distinct, so consecutive repeats can't happen.
-  var _THINKING_OPENER = { en: 'Let me think…', de: 'Lass mich kurz überlegen…' };
+  // VTID-03451 fix: a single fixed opener shown immediately on every turn (plus a
+  // narrative-ordered rotation that mostly kept the same 2nd message) made most real
+  // turns — which resolve well under the old 4s-to-first-rotation delay — show the
+  // exact same 1-2 lines every single time ("Let me think... / Checking what I
+  // remember..."). All lines now live in one pool, freshly shuffled per turn, with a
+  // guard against repeating the previous turn's opening line back-to-back.
+  var _THINKING_QUICK = [
+    { en: 'Let me think…', de: 'Lass mich kurz überlegen…' },
+    { en: 'Mmm, let me see…', de: 'Mmm, lass mich schauen…' },
+    { en: 'One sec…', de: 'Eine Sekunde…' },
+    { en: 'Alright, hang on…', de: 'Alles klar, einen Moment…' },
+    { en: 'Let’s see…', de: 'Mal sehen…' },
+    { en: 'Give me a beat…', de: 'Kurz einen Moment…' }
+  ];
   var _THINKING_PRIMARY = [
     { en: 'Checking what I remember…', de: 'Ich schau nach, was ich weiß…' },
     { en: 'Connecting the dots…', de: 'Ich verbinde die Punkte…' },
@@ -2600,6 +2608,7 @@
     { en: 'One more moment…', de: 'Noch ein Moment…' },
     { en: 'Nearly there…', de: 'Fast geschafft…' }
   ];
+  var _THINKING_ALL = _THINKING_QUICK.concat(_THINKING_PRIMARY, _THINKING_ALTERNATES);
 
   function _shuffled(arr) {
     var out = arr.slice();
@@ -2610,14 +2619,14 @@
     return out;
   }
 
-  // Builds this session's 7-item rotation queue: the fixed primary order with
-  // 2 random slots swapped for 2 random alternates.
+  // Builds this turn's rotation queue: every message shuffled fresh, with the
+  // first slot swapped away if it repeats the previous turn's opening line.
   function _buildThinkingQueue() {
-    var queue = _THINKING_PRIMARY.slice();
-    var picks = _shuffled(_THINKING_ALTERNATES).slice(0, 2);
-    var slots = _shuffled([0, 1, 2, 3, 4, 5, 6]);
-    queue[slots[0]] = picks[0];
-    queue[slots[1]] = picks[1];
+    var queue = _shuffled(_THINKING_ALL);
+    if (queue.length > 1 && queue[0].en === _s.lastThinkingFirstMsg) {
+      var tmp = queue[0]; queue[0] = queue[1]; queue[1] = tmp;
+    }
+    _s.lastThinkingFirstMsg = queue[0].en;
     return queue;
   }
 
@@ -2625,6 +2634,9 @@
     clearInterval(_s.thinkingProgressTimer);
     var isDe = _cfg.lang.startsWith('de');
     var queue = _buildThinkingQueue();
+    // Show the first message immediately — most turns resolve before the first
+    // rotation tick, so this (not the interval) is what users actually see.
+    _setStatus(isDe ? queue[0].de : queue[0].en);
     var msgIndex = 0;
     _s.thinkingProgressTimer = setInterval(function () {
       if (_s.voiceState !== 'THINKING') {
