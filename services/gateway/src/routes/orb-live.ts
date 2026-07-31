@@ -7172,6 +7172,43 @@ async function connectToLiveAPI(
       const hasNavigateTool = toolNames.includes('navigate_to_screen');
       console.log(`[VTID-NAV-DIAG] Session ${session.sessionId}: mode=${toolMode} isAnonymous=${session.isAnonymous} hasIdentity=${!!session.identity} toolCount=${toolNames.length} hasNavigateTool=${hasNavigateTool} toolNames=[${toolNames.join(',')}]`);
 
+      // BOOTSTRAP-ORB-TOOL-CARRYOVER: if the previous upstream died while the
+      // model was acting on a tool result, carry that result into the rebuilt
+      // session so it continues instead of coming back with no memory of it.
+      //
+      // Injected here — at the single point BOTH the Vertex path and the Nova
+      // path read the envelope from — and injected REGARDLESS of
+      // `session.resumptionHandle`. That is deliberate and is the opposite of
+      // the `reconnectHistory` rule above: a resumption handle is a periodic
+      // CHECKPOINT, and in the production trace it was issued 8s BEFORE the
+      // tool call, so native resume rewinds to a point where the tool call
+      // never happened. A handle cannot restore something newer than itself.
+      try {
+        const pendingTools = getPendingToolResults(session);
+        if (pendingTools.length > 0) {
+          const resumeBlock = buildPendingToolResumeBlock(pendingTools);
+          const parts = (setupMessage.setup as any)?.system_instruction?.parts;
+          if (resumeBlock && Array.isArray(parts) && parts[0]) {
+            parts[0].text = `${parts[0].text ?? ''}${resumeBlock}`;
+            console.log(
+              `[BOOTSTRAP-ORB-TOOL-CARRYOVER] Session ${session.sessionId}: carried ${pendingTools.length} unconsumed tool result(s) ` +
+                `into the rebuilt instruction (${pendingTools.map((p) => p.toolName).join(',')}) — ` +
+                `has_resumption_handle=${!!session.resumptionHandle}.`,
+            );
+            emitDiag(session, 'pending_tool_results_carried', {
+              count: pendingTools.length,
+              tools: pendingTools.map((p) => p.toolName),
+              has_resumption_handle: !!session.resumptionHandle,
+            });
+          }
+        }
+      } catch (e) {
+        // Never let the carry-over break the handshake — a session that
+        // reconnects without its tool context is degraded; one that fails to
+        // reconnect at all is dead.
+        console.warn(`[BOOTSTRAP-ORB-TOOL-CARRYOVER] carry_error: ${(e as Error)?.message ?? String(e)}`);
+      }
+
       const setupPreview = JSON.stringify(setupMessage).substring(0, 800);
       console.log(`[VTID-01219] Sending setup message:`, setupPreview);
       console.log(`[VTID-01224] Setup includes: tools=${session.identity ? 3 : 0}, contextChars=${session.contextInstruction?.length || 0}`);
@@ -7989,6 +8026,11 @@ import {
   NOVA_ROTATION_RETRY_BACKOFF_MS,
   type NovaRotationReason,
 } from '../orb/live/config';
+// BOOTSTRAP-ORB-TOOL-CARRYOVER: unconsumed tool results survive a reconnect.
+import {
+  getPendingToolResults,
+  buildPendingToolResumeBlock,
+} from '../orb/live/session/pending-tool-results';
 
 // VTID-03273 Pillar B — how long before the server's GoAway deadline we
 // proactively rotate the connection. Small enough to overlap the warning
