@@ -293,7 +293,7 @@ describe('POST /api/v1/watcher/session-step — auth', () => {
 describe('POST /api/v1/watcher/session-step — validation and write', () => {
   beforeEach(() => {
     process.env.WATCHER_SESSION_TOKEN = 'secret-token';
-    mockWriteSteps.mockResolvedValue(1);
+    mockWriteSteps.mockResolvedValue({ ok: true, written: 1 });
   });
 
   const auth = (r: request.Test) => r.set('Authorization', 'Bearer secret-token');
@@ -369,7 +369,7 @@ describe('POST /api/v1/watcher/session-step — validation and write', () => {
   it('reports a deduplicated retry as success, not failure', async () => {
     // A hook that fires twice is normal. Surfacing that as an error would
     // train callers to retry harder, which is exactly backwards.
-    mockWriteSteps.mockResolvedValue(0);
+    mockWriteSteps.mockResolvedValue({ ok: true, written: 0 });
     const res = await auth(request(buildApp()).post('/api/v1/watcher/session-step'))
       .send({ session_id: 's1', step: 'doc_updated' });
     expect(res.status).toBe(200);

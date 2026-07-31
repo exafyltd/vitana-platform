@@ -107,6 +107,14 @@ const TOPIC_RULES: Record<string, TopicRule> = {
   'vtid.spec.approved': { step: 'planned', outcome: 'success', actor: 'human' },
 
   // --- execution: dev autopilot --------------------------------------------
+  // pr_opened is emitted at dev-autopilot-execute.ts:2483 on the SUCCESS path,
+  // where the row is written straight to status='ci'. The execution-row poll
+  // can therefore only ever produce a 'ci' step, so without this topic a
+  // successful autopilot timeline never contains pr_opened at all. It did not
+  // appear in the 45-day topic census used to build this list — a reminder
+  // that "absent from the census" means "did not fire recently", NOT "does
+  // not exist". The emitting code is the authority, not the sample.
+  'dev_autopilot.execution.pr_opened': { step: 'pr_opened', outcome: 'success', actor: 'autopilot' },
   'dev_autopilot.execution.ci_passed': { step: 'ci', outcome: 'success', actor: 'ci' },
   'dev_autopilot.execution.ci_failed': { step: 'ci', outcome: 'failure', actor: 'ci' },
   'dev_autopilot.execution.pr_merged': { step: 'merged', outcome: 'success', actor: 'autopilot' },
@@ -215,15 +223,50 @@ export function normalizeOasisEvent(row: OasisEventRow): WatcherStep | null {
     actor = 'worker-runner';
   }
 
-  // A VTID is the best work_unit we have; without one the event still
-  // happened and is worth keeping, keyed by its own id. Dropping it would
-  // hide exactly the ungoverned work the Watcher exists to notice.
   const vtid = row.vtid && row.vtid.trim() ? row.vtid.trim() : null;
 
+  // ---------------------------------------------------------------------
+  // Work-unit identity. Getting this wrong silently destroys the timeline.
+  // ---------------------------------------------------------------------
+  // Naively "prefer the VTID" does NOT work for dev-autopilot. Every one of
+  // its emitters passes the CONSTANT `WATCHER_VTID = 'VTID-DEV-AUTOPILOT'`
+  // (dev-autopilot-watcher.ts:30) in the vtid column, and puts the real
+  // execution UUID in the payload — which emitOasisEvent stores as the
+  // `metadata` column. Keying on vtid would collapse every autopilot
+  // execution that has ever run into ONE work unit named
+  // 'VTID-DEV-AUTOPILOT', while /timeline?work_unit_id=<execution uuid>
+  // would show only the mutable execution-row snapshots and none of the
+  // real transitions. That is the exact case the timeline exists to serve.
+  //
+  // So: an execution id in the metadata always wins, because it identifies
+  // a genuine unit of work. The VTID is retained separately either way, so
+  // a VTID-wide query still finds these rows.
+  const execId = readExecutionId(row.metadata);
+  const isPlaceholderVtid = vtid === PLACEHOLDER_VTID;
+
+  let work_unit_kind: WatcherStep['work_unit_kind'];
+  let work_unit_id: string;
+  if (execId) {
+    work_unit_kind = 'execution';
+    work_unit_id = execId;
+  } else if (vtid && !isPlaceholderVtid) {
+    work_unit_kind = 'vtid';
+    work_unit_id = vtid;
+  } else {
+    // No execution id and no meaningful VTID. Keep the event anyway, keyed
+    // by its own id — dropping it would hide exactly the ungoverned work
+    // the Watcher exists to notice.
+    work_unit_kind = 'execution';
+    work_unit_id = row.id;
+  }
+
   return {
-    work_unit_kind: vtid ? 'vtid' : 'execution',
-    work_unit_id: vtid || row.id,
-    vtid,
+    work_unit_kind,
+    work_unit_id,
+    // Deliberately keeps the placeholder out of the vtid column: writing
+    // 'VTID-DEV-AUTOPILOT' onto thousands of rows would make the vtid index
+    // useless and imply a governed task that does not exist in the ledger.
+    vtid: isPlaceholderVtid ? null : vtid,
     step,
     outcome,
     actor,
@@ -234,11 +277,26 @@ export function normalizeOasisEvent(row: OasisEventRow): WatcherStep | null {
       message: row.message ?? null,
       service: row.service ?? null,
       emitter: row.source ?? null,
+      ...(execId ? { execution_id: execId } : {}),
+      ...(isPlaceholderVtid ? { emitter_vtid: vtid } : {}),
     },
     source: SOURCE_OASIS,
     source_ref: row.id,
     observed_at: row.created_at,
   };
+}
+
+/** The constant dev-autopilot stamps on every event it emits. */
+export const PLACEHOLDER_VTID = 'VTID-DEV-AUTOPILOT';
+
+/** Pull an execution UUID out of an event's metadata, if it carries one. */
+export function readExecutionId(metadata: Record<string, unknown> | null): string | null {
+  if (!metadata || typeof metadata !== 'object') return null;
+  for (const key of ['execution_id', 'executionId']) {
+    const v = metadata[key];
+    if (typeof v === 'string' && v.trim()) return v.trim();
+  }
+  return null;
 }
 
 /**

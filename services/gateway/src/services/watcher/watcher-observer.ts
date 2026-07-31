@@ -40,6 +40,7 @@ import {
   SOURCE_OASIS,
   normalizeExecution,
   normalizeOasisEvent,
+  observedTopics,
   type ExecutionRow,
   type OasisEventRow,
 } from './normalizers';
@@ -62,8 +63,16 @@ export const OBSERVER_TICK_MS = 60_000;
  */
 export const OVERLAP_MS = 5 * 60_000;
 
-/** Rows per source per tick. Bounds the blast radius of a long backlog. */
+/** Rows per page. */
 const SCAN_LIMIT = 500;
+
+/**
+ * Pages drained per source per tick (so up to SCAN_LIMIT * this rows).
+ * Bounds one tick's work while still guaranteeing forward progress through a
+ * dense window — a single-page scan would sit inside the same busy interval
+ * every tick and never reach newer events.
+ */
+const MAX_PAGES_PER_TICK = 10;
 
 /**
  * How far back a cold start reaches. Deliberately short: the point of Phase 1
@@ -129,30 +138,66 @@ async function writeCursor(
  * rescan free: a step already recorded is skipped, not rewritten, so
  * observed_at keeps the value it had when first seen rather than drifting
  * forward on every rescan.
+ *
+ * Returns {ok, written} rather than a bare count. A bare count cannot
+ * distinguish "wrote nothing because every row was a duplicate" (the normal,
+ * healthy case on every overlap rescan) from "wrote nothing because the
+ * write FAILED" — and the caller advances its cursor on that value. Conflate
+ * them and a transient DB error silently drops every event in the batch the
+ * moment it ages out of the overlap window, while /health cheerfully reports
+ * no error. That is precisely the silent degradation this module's header
+ * promises not to do.
  */
-export async function writeSteps(steps: WatcherStep[]): Promise<number> {
-  if (steps.length === 0) return 0;
+export async function writeSteps(
+  steps: WatcherStep[],
+): Promise<{ ok: boolean; written: number; error?: string }> {
+  if (steps.length === 0) return { ok: true, written: 0 };
   const sb = getSupabase();
-  if (!sb) return 0;
+  if (!sb) return { ok: false, written: 0, error: 'supabase unavailable' };
 
-  const { error, count } = await sb
-    .from('watcher_steps')
-    .upsert(steps, {
-      onConflict: 'source,source_ref,step',
-      ignoreDuplicates: true,
-      count: 'exact',
-    });
+  try {
+    const { error, count } = await sb
+      .from('watcher_steps')
+      .upsert(steps, {
+        onConflict: 'source,source_ref,step',
+        ignoreDuplicates: true,
+        count: 'exact',
+      });
 
-  if (error) {
-    console.error(`${LOG_PREFIX} write failed:`, error.message);
-    return 0;
+    if (error) {
+      console.error(`${LOG_PREFIX} write failed:`, error.message);
+      return { ok: false, written: 0, error: error.message };
+    }
+    return { ok: true, written: count ?? 0 };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(`${LOG_PREFIX} write threw:`, message);
+    return { ok: false, written: 0, error: message };
   }
-  return count ?? 0;
 }
 
 // =============================================================================
 // Source scans
 // =============================================================================
+
+/**
+ * PostgREST filter restricting the scan to development topics.
+ *
+ * Pushing the allowlist into the QUERY, not just the normalizer, is what
+ * keeps this scan viable. oasis_events is dominated by user-facing product
+ * runtime — autopilot.health.stuck_task alone logged 2,692 rows in 45 days
+ * and vtid.live.* another ~1,400, against roughly 50 real development rows.
+ * Selecting unfiltered and discarding in JS means a busy five-minute window
+ * can exceed SCAN_LIMIT on noise alone, which starves the scan of the very
+ * events it exists to read.
+ */
+function oasisTopicFilter(): string {
+  const exact = observedTopics().join(',');
+  // The worker-stage family is a regex in the normalizer; `like` is its
+  // PostgREST equivalent. Anchored to `vtid.stage.worker_` so it cannot
+  // pull in vtid.stage.matches.* and the other product stages.
+  return `topic.in.(${exact}),topic.like.vtid.stage.worker_*`;
+}
 
 async function scanOasisEvents(): Promise<SourceTickResult> {
   const cursor = await readCursor(SOURCE_OASIS);
@@ -163,32 +208,63 @@ async function scanOasisEvents(): Promise<SourceTickResult> {
     return { source: SOURCE_OASIS, scanned: 0, written: 0, cursor_at: cursor, error: 'supabase unavailable' };
   }
 
-  const { data, error } = await sb
-    .from('oasis_events')
-    .select('id, topic, vtid, status, message, service, source, metadata, created_at')
-    .gte('created_at', from)
-    .order('created_at', { ascending: true })
-    .limit(SCAN_LIMIT);
+  let scanned = 0;
+  let written = 0;
+  // Highest timestamp actually READ this tick. The cursor may only ever move
+  // forward to this value — see the write-back below.
+  let maxSeen = cursor;
 
-  if (error) {
-    await writeCursor(SOURCE_OASIS, cursor, 0, error.message);
-    return { source: SOURCE_OASIS, scanned: 0, written: 0, cursor_at: cursor, error: error.message };
+  for (let page = 0; page < MAX_PAGES_PER_TICK; page++) {
+    const { data, error } = await sb
+      .from('oasis_events')
+      .select('id, topic, vtid, status, message, service, source, metadata, created_at')
+      .gte('created_at', from)
+      .or(oasisTopicFilter())
+      .order('created_at', { ascending: true })
+      .order('id', { ascending: true })
+      .range(page * SCAN_LIMIT, (page + 1) * SCAN_LIMIT - 1);
+
+    if (error) {
+      // Leave the cursor where it was: re-reading is free, losing events is not.
+      await writeCursor(SOURCE_OASIS, cursor, written, error.message);
+      return { source: SOURCE_OASIS, scanned, written, cursor_at: cursor, error: error.message };
+    }
+
+    const rows = (data || []) as OasisEventRow[];
+    if (rows.length === 0) break;
+    scanned += rows.length;
+
+    const steps = rows
+      .map(normalizeOasisEvent)
+      .filter((s): s is WatcherStep => s !== null);
+
+    const w = await writeSteps(steps);
+    if (!w.ok) {
+      // The batch did NOT persist. Advancing past it would put a permanent
+      // hole in the timeline as soon as these rows age out of the overlap.
+      await writeCursor(SOURCE_OASIS, cursor, written, w.error || 'write failed');
+      return { source: SOURCE_OASIS, scanned, written, cursor_at: cursor, error: w.error || 'write failed' };
+    }
+    written += w.written;
+
+    const lastTs = rows[rows.length - 1].created_at;
+    if (lastTs > maxSeen) maxSeen = lastTs;
+
+    // Partial page → the window is drained; nothing left to paginate.
+    if (rows.length < SCAN_LIMIT) break;
+    // Full page → keep draining. Paging (rather than stopping at one page)
+    // is what guarantees forward progress when a window is dense: stopping
+    // early would leave the cursor inside the same window every tick and the
+    // scan would never reach newer events.
   }
 
-  const rows = (data || []) as OasisEventRow[];
-  const steps = rows
-    .map(normalizeOasisEvent)
-    .filter((s): s is WatcherStep => s !== null);
-
-  const written = await writeSteps(steps);
-
-  // Advance only as far as we actually read. Jumping the cursor to "now"
-  // when the scan hit SCAN_LIMIT would skip the unread remainder of the
-  // backlog outright — the cursor must never outrun the data.
-  const next = rows.length > 0 ? rows[rows.length - 1].created_at : cursor;
+  // Never regress. An ascending scan that fills its page returns rows whose
+  // last timestamp can be OLDER than the current cursor, and writing that
+  // back would walk the cursor backwards into the same dense window forever.
+  const next = maxSeen > cursor ? maxSeen : cursor;
   await writeCursor(SOURCE_OASIS, next, written);
 
-  return { source: SOURCE_OASIS, scanned: rows.length, written, cursor_at: next };
+  return { source: SOURCE_OASIS, scanned, written, cursor_at: next };
 }
 
 async function scanExecutions(): Promise<SourceTickResult> {
@@ -221,11 +297,24 @@ async function scanExecutions(): Promise<SourceTickResult> {
     .map(normalizeExecution)
     .filter((s): s is WatcherStep => s !== null);
 
-  const written = await writeSteps(steps);
-  const next = rows.length > 0 ? rows[rows.length - 1].updated_at : cursor;
-  await writeCursor(SOURCE_EXECUTIONS, next, written);
+  const w = await writeSteps(steps);
+  if (!w.ok) {
+    // Same rule as the events scan: a failed write must not advance the
+    // cursor, or the rows are lost the moment they leave the overlap window.
+    await writeCursor(SOURCE_EXECUTIONS, cursor, 0, w.error || 'write failed');
+    return {
+      source: SOURCE_EXECUTIONS, scanned: rows.length, written: 0,
+      cursor_at: cursor, error: w.error || 'write failed',
+    };
+  }
 
-  return { source: SOURCE_EXECUTIONS, scanned: rows.length, written, cursor_at: next };
+  // Never regress (see the events scan for why). This source is far lower
+  // volume, but the same invariant has to hold or the two sources drift.
+  const lastTs = rows.length > 0 ? rows[rows.length - 1].updated_at : cursor;
+  const next = lastTs > cursor ? lastTs : cursor;
+  await writeCursor(SOURCE_EXECUTIONS, next, w.written);
+
+  return { source: SOURCE_EXECUTIONS, scanned: rows.length, written: w.written, cursor_at: next };
 }
 
 // =============================================================================

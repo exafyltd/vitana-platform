@@ -224,7 +224,8 @@ async function loadConfig(s: SupaConfig): Promise<ConfigRow | null> {
 }
 
 /**
- * Upsert worker validation failures into dev_autopilot_prompt_learnings.
+ * Upsert worker validation failures into watcher_lessons (VTID-03461;
+ * was dev_autopilot_prompt_learnings, migrated and dropped).
  * Scoped by the finding's scanner so retrieval can target lessons from the
  * same scanner class (e.g. only pull missing-tests lessons for missing-tests
  * findings).
@@ -257,21 +258,30 @@ async function persistAttemptFailures(
         : f.stage === 'parse' || f.stage === 'apply'
           ? 'parse_error'
           : 'validation_other';
+    // VTID-03461: writes watcher_lessons; dev_autopilot_prompt_learnings was
+    // migrated into it and dropped. stage='execute' preserves the old table's
+    // implicit meaning — every row it held was a pre-PR validation failure.
+    // The old flat `scanner` column becomes scope.scanner.
     const body = {
+      stage: 'execute',
       pattern_type,
       pattern_key: f.pattern_key.slice(0, 200),
       example_message: (f.example_message || '').slice(0, 500),
-      scanner,
-      finding_id: ctx.finding_id,
-      execution_id: ctx.execution_id || null,
+      // `lesson` is required (NOT NULL) and is what actually gets injected.
+      // Without a distilled sentence the best available text is the
+      // signature itself — still better prompt material than nothing.
+      lesson: `A previous attempt failed pre-PR validation: ${pattern_type} — ${f.pattern_key}`.slice(0, 500),
+      scope: scanner ? { scanner } : {},
+      source_finding_id: ctx.finding_id,
+      source_execution_id: ctx.execution_id || null,
       last_seen_at: now,
     };
-    // PostgREST upsert: merge-duplicates against the UNIQUE
-    // (pattern_type, pattern_key, scanner) index. frequency stays at the
-    // default (1) on conflict; the aggregator counts by rows, not by the
-    // column, so an undercount of duplicates is acceptable.
+    // PostgREST upsert against the UNIQUE (stage, pattern_type, pattern_key)
+    // index. As before, frequency stays at its default on conflict — the
+    // aggregator counts rows, not the column, so an undercount of duplicates
+    // is acceptable here.
     await supa(s,
-      `/rest/v1/dev_autopilot_prompt_learnings?on_conflict=pattern_type,pattern_key,scanner`,
+      `/rest/v1/watcher_lessons?on_conflict=stage,pattern_type,pattern_key`,
       {
         method: 'POST',
         headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
@@ -293,14 +303,26 @@ async function loadExecutionLessons(
 ): Promise<ExecutionLesson[]> {
   const since = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString();
   try {
-    const r = await supa<ExecutionLesson[]>(
+    // VTID-03461: reads watcher_lessons (see the write path above). Still
+    // best-effort — the Phase 2 migration's deploy-order safety argument
+    // relies on this returning [] rather than throwing when the table is
+    // momentarily absent on either side of the cutover.
+    const r = await supa<Array<ExecutionLesson & { lesson?: string }>>(
       s,
-      `/rest/v1/dev_autopilot_prompt_learnings?scanner=eq.${encodeURIComponent(scanner)}`
+      `/rest/v1/watcher_lessons?scope->>scanner=eq.${encodeURIComponent(scanner)}`
+      + `&stage=in.(execute,any)`
+      + `&status=eq.active`
       + `&last_seen_at=gte.${since}`
       + `&order=last_seen_at.desc&limit=5`
-      + `&select=pattern_type,pattern_key,example_message,mitigation_note`,
+      + `&select=pattern_type,pattern_key,example_message,mitigation_note,lesson`,
     );
-    return r.ok && Array.isArray(r.data) ? r.data : [];
+    if (!r.ok || !Array.isArray(r.data)) return [];
+    // Prefer the distilled imperative sentence over the raw signature; the
+    // existing formatter already favours mitigation_note when set.
+    return r.data.map((l) => ({
+      ...l,
+      mitigation_note: l.mitigation_note || l.lesson || null,
+    }));
   } catch {
     return [];
   }
@@ -1472,7 +1494,7 @@ export async function runExecutionSession(
 
   // Prompt-gap feedback loop: the worker reports per-attempt validation
   // failures via output_payload.attempt_failures. Upsert each into
-  // dev_autopilot_prompt_learnings so future plan/execute prompts can
+  // watcher_lessons (VTID-03461) so future plan/execute prompts can
   // reference them. Best-effort — a learnings-persist failure must not
   // block the execution outcome. Runs even on LLM failure so we capture
   // exhausted-validation cases too.

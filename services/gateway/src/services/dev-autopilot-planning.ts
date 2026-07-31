@@ -309,14 +309,33 @@ export async function loadRecentLessons(
   if (!scanner) return [];
   const since = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString();
   try {
-    const r = await supaRequest<PromptLesson[]>(
+    // VTID-03461: reads watcher_lessons; dev_autopilot_prompt_learnings was
+    // migrated into it and dropped. Two behaviour changes worth knowing:
+    //   * stage=in.(planning,any) — the old table had no stage axis, so every
+    //     row was implicitly execute-time. Planning now gets planning-scoped
+    //     lessons instead of execution ones.
+    //   * scope->>scanner replaces the flat `scanner` column.
+    // Still best-effort: a 404 during the migration/deploy window returns []
+    // and the prompt just carries no lessons block. The migration's
+    // deploy-order safety argument depends on that staying true.
+    const r = await supaRequest<Array<PromptLesson & { lesson?: string }>>(
       supa,
-      `/rest/v1/dev_autopilot_prompt_learnings?scanner=eq.${encodeURIComponent(scanner)}`
+      `/rest/v1/watcher_lessons?scope->>scanner=eq.${encodeURIComponent(scanner)}`
+      + `&stage=in.(planning,any)`
+      + `&status=eq.active`
       + `&last_seen_at=gte.${since}`
       + `&order=last_seen_at.desc&limit=${limit}`
-      + `&select=pattern_type,pattern_key,example_message,mitigation_note,last_seen_at`,
+      + `&select=pattern_type,pattern_key,example_message,mitigation_note,last_seen_at,lesson`,
     );
-    return r.ok && Array.isArray(r.data) ? r.data : [];
+    if (!r.ok || !Array.isArray(r.data)) return [];
+    // `lesson` is the distilled imperative text and is strictly better prompt
+    // material than "pattern_type: pattern_key". Surface it through the
+    // existing mitigation_note slot, which formatLessonsBlock already prefers,
+    // rather than reshaping the formatter and its callers.
+    return r.data.map((l) => ({
+      ...l,
+      mitigation_note: l.mitigation_note || l.lesson || null,
+    }));
   } catch {
     return [];
   }

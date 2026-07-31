@@ -17,6 +17,8 @@ import {
   observedTopics,
   type ExecutionRow,
   type OasisEventRow,
+  PLACEHOLDER_VTID,
+  readExecutionId,
 } from '../src/services/watcher/normalizers';
 
 function oasisRow(overrides: Partial<OasisEventRow> = {}): OasisEventRow {
@@ -273,5 +275,100 @@ describe('observedTopics', () => {
       expect(t).not.toMatch(/^autopilot\.(recommendation|heartbeat|health|intent|automation)\./);
       expect(t).not.toMatch(/^vtid\.(live|daily_recompute)\./);
     }
+  });
+});
+
+// =============================================================================
+// VTID-03461 — regressions found in Codex review of PR #3024
+// =============================================================================
+
+describe('work-unit identity for dev-autopilot events (review finding P1)', () => {
+  /**
+   * Every dev-autopilot emitter passes the CONSTANT
+   * WATCHER_VTID = 'VTID-DEV-AUTOPILOT' (dev-autopilot-watcher.ts:30) as the
+   * event's vtid, and puts the real execution UUID in the payload — stored
+   * as the `metadata` column. Keying the work unit on vtid collapsed EVERY
+   * autopilot execution ever run into one shared unit, which is precisely
+   * the case /timeline exists to serve.
+   */
+  it('keys on metadata.execution_id, not the placeholder VTID', () => {
+    const a = normalizeOasisEvent(oasisRow({
+      id: 'e1', topic: 'dev_autopilot.execution.ci_passed',
+      vtid: 'VTID-DEV-AUTOPILOT', metadata: { execution_id: 'exec-AAA' },
+    }));
+    const b = normalizeOasisEvent(oasisRow({
+      id: 'e2', topic: 'dev_autopilot.execution.pr_merged',
+      vtid: 'VTID-DEV-AUTOPILOT', metadata: { execution_id: 'exec-BBB' },
+    }));
+    expect(a!.work_unit_id).toBe('exec-AAA');
+    expect(b!.work_unit_id).toBe('exec-BBB');
+    // The whole point: two different executions must NOT share a work unit.
+    expect(a!.work_unit_id).not.toBe(b!.work_unit_id);
+    expect(a!.work_unit_kind).toBe('execution');
+  });
+
+  it('does not write the placeholder into the vtid column', () => {
+    // Stamping 'VTID-DEV-AUTOPILOT' on thousands of rows would make the vtid
+    // index useless and imply a governed ledger task that does not exist.
+    const s = normalizeOasisEvent(oasisRow({
+      vtid: 'VTID-DEV-AUTOPILOT', metadata: { execution_id: 'exec-1' },
+    }));
+    expect(s!.vtid).toBeNull();
+    expect(s!.evidence).toMatchObject({ emitter_vtid: 'VTID-DEV-AUTOPILOT' });
+  });
+
+  it('still groups by real VTID when the event carries one', () => {
+    const s = normalizeOasisEvent(oasisRow({ vtid: 'VTID-01234', metadata: {} }));
+    expect(s!.work_unit_kind).toBe('vtid');
+    expect(s!.work_unit_id).toBe('VTID-01234');
+    expect(s!.vtid).toBe('VTID-01234');
+  });
+
+  it('prefers the execution id over a real VTID', () => {
+    // An execution is the finer-grained unit of work; the VTID is retained
+    // separately so a VTID-wide query still finds the row.
+    const s = normalizeOasisEvent(oasisRow({
+      vtid: 'VTID-01234', metadata: { execution_id: 'exec-9' },
+    }));
+    expect(s!.work_unit_id).toBe('exec-9');
+    expect(s!.vtid).toBe('VTID-01234');
+  });
+
+  it('falls back to the event id when there is neither', () => {
+    const s = normalizeOasisEvent(oasisRow({ id: 'evt-x', vtid: null, metadata: null }));
+    expect(s!.work_unit_id).toBe('evt-x');
+    expect(s!.vtid).toBeNull();
+  });
+
+  it('accepts executionId as well as execution_id', () => {
+    const s = normalizeOasisEvent(oasisRow({ metadata: { executionId: 'exec-camel' } }));
+    expect(s!.work_unit_id).toBe('exec-camel');
+  });
+
+  it('ignores a non-string or blank execution id', () => {
+    expect(normalizeOasisEvent(oasisRow({ vtid: 'VTID-1', metadata: { execution_id: 42 } }))!.work_unit_id).toBe('VTID-1');
+    expect(normalizeOasisEvent(oasisRow({ vtid: 'VTID-1', metadata: { execution_id: '  ' } }))!.work_unit_id).toBe('VTID-1');
+  });
+});
+
+describe('pr_opened topic (review finding P2)', () => {
+  /**
+   * Emitted at dev-autopilot-execute.ts:2483 on the SUCCESS path, where the
+   * row goes straight to status='ci' — so the execution-row poll can only
+   * ever yield a 'ci' step and pr_opened would never appear at all.
+   *
+   * It was missing because it did not show up in the 45-day topic census.
+   * "Absent from the census" means "did not fire recently", NOT "does not
+   * exist" — the emitting code is the authority, not the sample.
+   */
+  it('is observed and maps to the pr_opened step', () => {
+    const s = normalizeOasisEvent(oasisRow({ topic: 'dev_autopilot.execution.pr_opened' }));
+    expect(s).not.toBeNull();
+    expect(s!.step).toBe('pr_opened');
+    expect(s!.outcome).toBe('success');
+  });
+
+  it('is on the observed-topics list', () => {
+    expect(observedTopics()).toContain('dev_autopilot.execution.pr_opened');
   });
 });

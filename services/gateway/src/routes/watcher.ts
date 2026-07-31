@@ -243,7 +243,7 @@ router.post('/session-step', requireSessionToken, async (req: Request, res: Resp
 
   const ref = typeof body.ref === 'string' && body.ref.trim() ? body.ref.trim() : body.step;
 
-  const written = await writeSteps([
+  const result = await writeSteps([
     {
       work_unit_kind: 'session',
       work_unit_id: sessionId,
@@ -258,9 +258,24 @@ router.post('/session-step', requireSessionToken, async (req: Request, res: Resp
     },
   ]);
 
-  // written === 0 means the step was already recorded (a retried hook), which
-  // is a success from the caller's point of view, not an error.
-  return res.status(200).json({ ok: true, data: { written, deduplicated: written === 0 } });
+  // A failed write must surface as a failure. Reporting 200 here would tell a
+  // session hook its step was recorded when it was not, and the hook would
+  // never retry — the same conflation of "wrote nothing" with "write failed"
+  // that the observer's cursor logic has to avoid.
+  if (!result.ok) {
+    return res.status(503).json({
+      ok: false,
+      error: 'WRITE_FAILED',
+      detail: result.error || 'watcher_steps write failed',
+    });
+  }
+
+  // written === 0 with ok === true means the step was already recorded (a
+  // retried hook). That IS a success from the caller's point of view.
+  return res.status(200).json({
+    ok: true,
+    data: { written: result.written, deduplicated: result.written === 0 },
+  });
 });
 
 export default router;

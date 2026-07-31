@@ -1322,6 +1322,91 @@ every tick but writes zero is the signature of a broken normalizer, and
 
 **Auth model:** RLS on, service_role only.
 
+### watcher_lessons
+
+```sql
+CREATE TABLE watcher_lessons (
+  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  stage             TEXT NOT NULL,  -- planning|execute|validate|ci|merge|deploy|verify|any
+  pattern_type      TEXT NOT NULL,  -- tsc_error|jest_failure|parse_error|out_of_scope|validation_other|ci_failure|deploy_failure|verification_failure|governance_violation|review_rejection
+  pattern_key       TEXT NOT NULL,  -- normalized signature, e.g. TS2307:cannot-find-module
+  scope             JSONB NOT NULL DEFAULT '{}'::jsonb,  -- {scanner?,service?,repo?,path_glob?}
+  lesson            TEXT NOT NULL,  -- the imperative text that gets injected
+  example_message   TEXT,
+  mitigation_note   TEXT,           -- human-authored upgrade; preferred over `lesson`
+  evidence_step_ids UUID[] NOT NULL DEFAULT '{}',
+  source_finding_id UUID,
+  source_execution_id UUID,
+  frequency         INTEGER NOT NULL DEFAULT 1,
+  confidence        REAL NOT NULL DEFAULT 0.5,
+  status            TEXT NOT NULL DEFAULT 'active',  -- active|muted|graduated
+  first_seen_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  last_seen_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (stage, pattern_type, pattern_key)
+);
+```
+
+**VTID-03461 (Watcher Phase 2)** — learned engineering memory, distilled from
+`watcher_steps` failures. Plan: `docs/WATCHER-AGENT-PLAN.md`.
+
+⚠️ **This table SUPERSEDES `dev_autopilot_prompt_learnings`, which its
+migration DROPS.** The old rows are migrated in first (as `stage='execute'`,
+`scope={scanner}`). Two learning stores feeding the same prompts is how they
+drift apart — one gets written, the other gets read, and nobody notices.
+
+Two things the old table could not do, and the reason for the new shape:
+- **`stage`** — every old row was implicitly execute-time, so nothing learned
+  at CI/deploy/verify had anywhere to live.
+- **`scope` jsonb** (replacing a flat `scanner` column) — the worker-runner
+  has no scanner, so it was structurally unable to read the old table at all.
+
+Read/written via `services/gateway/src/services/watcher/lessons-store.ts`
+(plus the repointed `dev-autopilot-planning.ts` / `dev-autopilot-execute.ts`
+call sites). **Every read is best-effort and returns `[]` on error** — the
+migration's deploy-order safety argument depends on that; if a lessons read
+ever becomes fatal, a deploy window where the table is momentarily absent
+would take planning and execution down with it.
+
+**Auth model:** RLS on, no policies — service_role only.
+
+### watcher_rules
+
+```sql
+CREATE TABLE watcher_rules (
+  rule_key    TEXT PRIMARY KEY,
+  source_ref  TEXT NOT NULL,   -- e.g. 'CLAUDE.md §16' — so a reminder can cite authority
+  stage       TEXT NOT NULL,
+  trigger     JSONB NOT NULL DEFAULT '{}'::jsonb,  -- {steps[],touches[],services[],actors[]}
+  reminder    TEXT NOT NULL,
+  severity    TEXT NOT NULL DEFAULT 'warn',  -- info|warn|block_candidate
+  enabled     BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+```
+
+**VTID-03461** — AUTHORED governance invariants, seeded from `CLAUDE.md`
+(~25 rules). Kept separate from `watcher_lessons` on purpose: a learned lesson
+with `frequency=1` is a guess, while "never dispatch EXEC-DEPLOY to prod
+post-cutover" is canon. They rank differently and age differently — rules are
+never auto-derived and never auto-muted.
+
+`severity='block_candidate'` does **not** block in v1. It marks a rule as a
+candidate should gating ever be enabled; a blocking watcher that is wrong once
+gets disabled forever.
+
+Adding a rule is an INSERT, not a code change (the seed migration uses
+`ON CONFLICT (rule_key) DO UPDATE`, so re-running is idempotent and a later
+migration can correct a rule's text).
+
+**Auth model:** RLS on, no policies — service_role only.
+
+### dev_autopilot_prompt_learnings — ❌ DROPPED (VTID-03461)
+
+Migrated into `watcher_lessons` and dropped by
+`supabase/migrations/20260731180000_VTID_03461_watcher_lessons_rules.sql`.
+Do not reference it. See `watcher_lessons` above.
+
 ---
 
 **Remember:** This file is the SINGLE SOURCE OF TRUTH for table names.
