@@ -3732,6 +3732,44 @@ export async function tool_navigate(
     const ask =
       consultResult.suggested_question ||
       `Would you like to go to ${consultResult.primary.title} or ${consultResult.alternative.title}?`;
+
+    // VTID-03446: this branch used to tell the model "call navigate again
+    // with their answer" — re-running the ENTIRE free-text disambiguation
+    // pipeline from scratch instead of jumping straight to the screen it
+    // had already identified. That reopened the door to a fresh ambiguous
+    // result one level deeper (e.g. a sub-route within the very screen just
+    // offered), which is how "pick an option -> get suboptions -> get
+    // sub-suboptions" happened — especially on Nova Sonic, whose weaker
+    // instruction-following made it more likely to actually walk the
+    // reopened branch instead of just redirecting. Aligned with the
+    // VTID-02781 ambiguous branch above: ask ONCE, then the only legal next
+    // move is navigate_to_screen(screen_id) — never a fresh navigate() call.
+    // Bind the top candidate as pending_cta (same mechanism the VTID-02781
+    // branch uses) so a bare "yes"/"the first one" resolves deterministically
+    // without the model having to re-derive anything.
+    if (process.env.NAV_CONTINUATION_BIND === 'true' && sb && id.user_id) {
+      try {
+        const { writeOrbSessionState } = await import('./orb/orb-session-state');
+        await writeOrbSessionState(
+          sb,
+          id.user_id,
+          'pending_cta',
+          {
+            tool: 'navigate_to_screen',
+            payload: {
+              screen_id: consultResult.primary.screen_id,
+              route: consultResult.primary.route,
+              title: consultResult.primary.title,
+            },
+            offered_at: new Date().toISOString(),
+          },
+          5,
+        );
+      } catch (e) {
+        console.error('[NAV-CONTINUATION-BIND] pending_cta write failed:', e instanceof Error ? e.message : e);
+      }
+    }
+
     return {
       ok: true,
       result: {
@@ -3752,8 +3790,10 @@ export async function tool_navigate(
       },
       text:
         `NAVIGATING_TO: null (waiting for user choice)\nGUIDANCE: ${consultResult.explanation}\n` +
-        `ASK_USER: ${ask}\n` +
-        'Ask the user to choose, then call navigate again with their answer.',
+        `ASK_USER: ${ask}\n\n` +
+        'Ask the either/or question naturally. WAIT for the user to pick.\n' +
+        'Then call navigate_to_screen with the chosen screen_id directly —\n' +
+        'do not call navigate again unless the user rephrases their request.',
     };
   }
 
