@@ -17,7 +17,12 @@
  *   reads from an in-memory cache + hardcoded defaults.
  */
 
-import { buildLiveSystemInstruction } from '../../../../src/routes/orb-live';
+import { buildLiveSystemInstruction, MESSAGING_CONTRACT } from '../../../../src/routes/orb-live';
+import {
+  decomposeInstructionSections,
+  enforceInstructionBudget,
+  INSTRUCTION_MARKERS,
+} from '../../../../src/orb/live/instruction/instruction-budget';
 import { ALL_PERSONAS } from './personas';
 
 describe('A0.1 characterization: buildLiveSystemInstruction', () => {
@@ -139,6 +144,87 @@ describe('A0.1 characterization: buildLiveSystemInstruction', () => {
       expect(community).toContain('report_to_specialist');
       expect(community).toContain('switch_persona');
       expect(community).toContain('You ARE the instruction manual');
+    });
+  });
+
+  // BOOTSTRAP-ORB-MESSAGING-CONTRACT-TRIM-FIX: regression coverage for a
+  // production bug where MESSAGING_CONTRACT ("## MESSAGING & SHARING
+  // CONTRACT (NON-NEGOTIABLE)" — the instruction telling the model it MUST
+  // call resolve_recipient before claiming a recipient doesn't exist) was
+  // baked onto the tail of bootstrapContext. For heavy-context users that
+  // made it the first thing dropped by the aggregate instruction byte-budget
+  // guard (instruction-budget.ts DROP_ORDER: bootstrap first), silently
+  // deleting the model's only instruction to call the messaging tools —
+  // confirmed against a real production session where the model never
+  // called resolve_recipient/send_chat_message at all. Fixed by moving
+  // MESSAGING_CONTRACT out of bootstrapContext and appending it after the
+  // navigator section, inside the scaffold tail decomposeInstructionSections
+  // always preserves.
+  describe('MESSAGING_CONTRACT placement (BOOTSTRAP-ORB-MESSAGING-CONTRACT-TRIM-FIX)', () => {
+    const baseArgs = ['en', 'conversational', '', 'community', '', '', false, null] as const;
+
+    it('is present in the rendered instruction', () => {
+      const instruction = buildLiveSystemInstruction(...baseArgs, '/', [], undefined, '@x');
+      expect(instruction).toContain('## MESSAGING & SHARING CONTRACT (NON-NEGOTIABLE)');
+      expect(instruction).toContain('Call resolve_recipient(spoken_name)');
+    });
+
+    it('is positioned AFTER the navigator marker, not inside bootstrapContext', () => {
+      // The regression: MESSAGING_CONTRACT used to be concatenated onto
+      // bootstrapContext, so it appeared BEFORE the navigator marker. It
+      // must now appear strictly after — that's what makes it part of the
+      // preserved scaffold tail instead of the trimmable bootstrap region.
+      const instruction = buildLiveSystemInstruction(
+        'en', 'conversational', 'some heavy bootstrap context', 'community', '', '', false, null,
+        '/', [], undefined, '@x',
+      );
+      const navIdx = instruction.indexOf(INSTRUCTION_MARKERS.NAVIGATOR_PREFIX);
+      const contractIdx = instruction.indexOf('## MESSAGING & SHARING CONTRACT (NON-NEGOTIABLE)');
+      expect(navIdx).toBeGreaterThan(-1);
+      expect(contractIdx).toBeGreaterThan(navIdx);
+    });
+
+    it('decomposeInstructionSections classifies it as scaffold (preserved), not bootstrap (trimmed first)', () => {
+      const instruction = buildLiveSystemInstruction(
+        'en', 'conversational', 'some bootstrap context', 'community', '', '', false, null,
+        '/', [], undefined, '@x',
+      );
+      const sections = decomposeInstructionSections(instruction);
+      const bootstrapText = sections.filter((s) => s.kind === 'bootstrap').map((s) => s.text).join('');
+      const scaffoldText = sections.filter((s) => s.kind === 'scaffold').map((s) => s.text).join('');
+      expect(bootstrapText).not.toContain('MESSAGING & SHARING CONTRACT');
+      expect(scaffoldText).toContain('MESSAGING & SHARING CONTRACT');
+    });
+
+    it('survives enforceInstructionBudget even when a heavy bootstrapContext forces trimming (the actual production bug)', () => {
+      // Simulate a heavy-context user: a bootstrap block large enough that
+      // dropping it is necessary to fit the aggregate budget. Pre-fix, this
+      // scenario silently deleted MESSAGING_CONTRACT along with it.
+      //
+      // NOTE: deliberately NOT using a literal "## USER CONTEXT PROFILE"
+      // header here — that string is separately matched by the unrelated
+      // BOOTSTRAP-HISTORY-AWARE-TIMELINE activity-awareness override (see
+      // buildLiveSystemInstruction's own `bootstrapContext.match(/## USER
+      // CONTEXT PROFILE.../)` re-extraction), which re-appends whatever it
+      // captures, UNCAPPED, later in the instruction — a real, pre-existing
+      // behavior unrelated to this fix that would otherwise pollute this
+      // test's assertions about the (separate) byte-budget trimming path.
+      const heavyBootstrap = '\n\n## SOME HEAVY MEMORY BLOCK\n' + 'b'.repeat(20_000);
+      const instruction = buildLiveSystemInstruction(
+        'en', 'conversational', heavyBootstrap, 'community', '', '', false, null,
+        '/', [], undefined, '@x',
+      );
+      const sections = decomposeInstructionSections(instruction);
+      const budget = 5_000; // small enough to force dropping the bootstrap section
+      const result = enforceInstructionBudget(sections, budget);
+
+      expect(result.trimmedSections).toContain('bootstrap');
+      // The heavy bootstrap body is gone...
+      expect(result.text).not.toContain('b'.repeat(20_000));
+      // ...but MESSAGING_CONTRACT survives regardless, because it lives in
+      // the preserved scaffold tail, not the trimmed bootstrap region.
+      expect(result.text).toContain('## MESSAGING & SHARING CONTRACT (NON-NEGOTIABLE)');
+      expect(result.text).toContain(MESSAGING_CONTRACT.trim().split('\n')[0]); // sanity: same source constant
     });
   });
 });
