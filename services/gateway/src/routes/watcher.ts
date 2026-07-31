@@ -15,7 +15,7 @@
  * of "memory you cannot trust" the whole Watcher is built to avoid.
  */
 
-import { Router, Request, Response } from 'express';
+import { Router, Request, Response, NextFunction } from 'express';
 import { getSupabase } from '../lib/supabase';
 import { requireAdminAuth } from '../middleware/auth-supabase-jwt';
 import type { AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
@@ -166,11 +166,7 @@ router.get('/health', requireAdminAuth, async (req: AuthenticatedRequest, res: R
 // POST /session-step
 // =============================================================================
 
-function sessionTokenValid(req: Request): boolean {
-  const expected = process.env.WATCHER_SESSION_TOKEN;
-  if (!expected) return false;
-  const header = req.headers.authorization || '';
-  const presented = header.startsWith('Bearer ') ? header.slice(7).trim() : '';
+function tokenMatches(expected: string, presented: string): boolean {
   if (!presented || presented.length !== expected.length) return false;
   // Constant-time-ish compare. Length is already leaked by the check above,
   // which is acceptable for a deployment-scoped shared secret.
@@ -181,18 +177,42 @@ function sessionTokenValid(req: Request): boolean {
   return diff === 0;
 }
 
-router.post('/session-step', async (req: Request, res: Response) => {
-  if (!process.env.WATCHER_SESSION_TOKEN) {
-    return res.status(503).json({
+/**
+ * Auth for the session-ingest path. Deliberately real middleware rather than
+ * an inline check inside the handler: the auth posture of a write endpoint
+ * should be legible at the route declaration, to a human reader and to the
+ * repo's own route scanners alike. An inline check reads as "no auth" from
+ * the outside, which is the wrong signal for a path that writes history.
+ */
+export function requireSessionToken(req: Request, res: Response, next: NextFunction): void {
+  const expected = process.env.WATCHER_SESSION_TOKEN;
+  if (!expected) {
+    res.status(503).json({
       ok: false,
       error: 'SESSION_INGEST_DISABLED',
       detail: 'WATCHER_SESSION_TOKEN is not set; session ingestion is closed by default.',
     });
+    return;
   }
-  if (!sessionTokenValid(req)) {
-    return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
+  const header = req.headers.authorization || '';
+  const presented = header.startsWith('Bearer ') ? header.slice(7).trim() : '';
+  if (!tokenMatches(expected, presented)) {
+    res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
+    return;
   }
+  next();
+}
 
+router.post('/session-step', requireSessionToken, async (req: Request, res: Response) => {
+  // impact-allow-no-oasis: recording an observation is not a state
+  // transition. CLAUDE.md §6 reserves OASIS for transitions and decisions,
+  // and this handler is the push twin of the observer's poll — the observer
+  // emits nothing for exactly the same reason. Emitting here would also be
+  // self-referential: the observer scans oasis_events, so a watcher-authored
+  // event would be re-observed as a development step, and the timeline would
+  // start recording its own act of recording. Phase 3 emits precisely one
+  // event type (vtid.decision.watcher.reminded) because raising a reminder
+  // IS a decision.
   const body = (req.body || {}) as SessionStepInput;
 
   const sessionId = typeof body.session_id === 'string' ? body.session_id.trim() : '';
