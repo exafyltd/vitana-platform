@@ -1257,6 +1257,71 @@ the list is exhausted.
 **Auth model:** RLS on, `ALL` for `service_role` only — internal cron
 state, never read by clients.
 
+### watcher_steps
+
+```sql
+CREATE TABLE watcher_steps (
+  id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  work_unit_kind TEXT NOT NULL,  -- vtid | execution | pr | session
+  work_unit_id   TEXT NOT NULL,
+  vtid           TEXT,           -- denormalized; NULL for ungoverned work
+  step           TEXT NOT NULL,  -- allocated|planned|queued|running|validated|pr_opened|ci|merged|deploying|verified|completed|failed|reverted|escalated|doc_updated|terminalized
+  outcome        TEXT NOT NULL DEFAULT 'unknown',  -- success | failure | skipped | unknown
+  actor          TEXT NOT NULL,  -- autopilot | worker-runner | claude-session | human | ci | unknown
+  evidence       JSONB NOT NULL DEFAULT '{}'::jsonb,
+  source         TEXT NOT NULL,  -- oasis_events | dev_autopilot_executions | session_api
+  source_ref     TEXT NOT NULL,
+  observed_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (source, source_ref, step)
+);
+```
+
+**VTID-03460 (Watcher Phase 1)** — normalized development-lifecycle timeline.
+Plan: `docs/WATCHER-AGENT-PLAN.md` (VTID-03454). One row per observed step,
+written by `services/gateway/src/services/watcher/watcher-observer.ts`.
+
+The `UNIQUE (source, source_ref, step)` constraint is load-bearing, not
+cosmetic: the observer deliberately rescans a 5-minute overlap window behind
+its cursor every tick (rows can commit with a `created_at` slightly behind
+one already read, and a strict `> cursor` scan would step over them and lose
+the step forever). The constraint is what makes that replay free — upserts
+use `ignoreDuplicates`, so a re-read is a no-op rather than a duplicate.
+
+**The observer emits ZERO OASIS events.** Its scan is a poll, and CLAUDE.md
+§6 is explicit that polling ≠ progress. Only Phase 3's "a reminder was
+raised" is a decision worth an event.
+
+**Sources:** `oasis_events` (allowlisted development topics only — see
+`services/gateway/src/services/watcher/normalizers.ts` for why an allowlist
+and not a prefix match), `dev_autopilot_executions` (status anchor/backstop),
+and `session_api` (push ingestion from Claude Code sessions).
+
+**Auth model:** RLS on, no policies — service_role only, same posture as
+`dev_autopilot_prompt_learnings`. Read via admin-gated
+`GET /api/v1/watcher/timeline`.
+
+### watcher_observer_state
+
+```sql
+CREATE TABLE watcher_observer_state (
+  source       TEXT PRIMARY KEY,
+  cursor_at    TIMESTAMPTZ NOT NULL,
+  last_run_at  TIMESTAMPTZ,
+  last_error   TEXT,
+  last_written INTEGER NOT NULL DEFAULT 0,
+  updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+```
+
+**VTID-03460** — one row per observer source, holding its scan cursor.
+`last_error` and `last_written` exist so a degraded observer is *visible*
+rather than silent (CLAUDE.md ALWAYS rule 10): a source that scans rows
+every tick but writes zero is the signature of a broken normalizer, and
+`GET /api/v1/watcher/health` surfaces exactly that.
+
+**Auth model:** RLS on, service_role only.
+
 ---
 
 **Remember:** This file is the SINGLE SOURCE OF TRUTH for table names.
