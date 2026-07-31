@@ -79,13 +79,12 @@ jobs:
           force-avd-creation: false
           emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           disable-animations: true
-          script: |
-            cd e2e
-            npm run sim:doctor:android
-            node mobile-sim/android/run.mjs \
-              --url "${{ inputs.url }}" \
-              --flow "${{ inputs.flow }}" \
-              --out mobile-sim/artifacts/run
+          # reactivecircus/android-emulator-runner runs each line of `script`
+          # as its OWN separate shell invocation — a `cd` on one line does
+          # NOT persist to the next (confirmed: the first live run failed
+          # with "Missing script" because `npm run` executed from the repo
+          # root, not e2e/). Chain everything with && on one logical line.
+          script: cd e2e && npm run sim:doctor:android && node mobile-sim/android/run.mjs --url "${{ inputs.url }}" --flow "${{ inputs.flow }}" --out mobile-sim/artifacts/run
 
       - name: Upload artifacts (screenshots + element dumps + summary + video)
         if: always()
