@@ -87,6 +87,55 @@ export function isNovaProvider(session: GeminiLiveSession): boolean {
 }
 
 /**
+ * BOOTSTRAP-CHAT-BRIDGE-RELIABILITY: write one voice-transcript turn into
+ * chat_messages so it shows up in the user's "Vitana" Inbox thread. This is
+ * the ONLY path that makes a voice conversation visible in chat history —
+ * previously a failed insert here was fire-and-forget with just a
+ * console.warn, so a transient DB/network blip silently and permanently
+ * dropped that turn from the user's history with no trace anywhere
+ * (reported as "I had several conversations with Vitana and none show up").
+ * Retries once, and emits a durable OASIS event on final failure so lost
+ * history is visible in telemetry instead of only a Cloud Run log line.
+ */
+export async function bridgeVoiceTranscript(
+  bridgeSupabase: NonNullable<ReturnType<typeof getSupabase>>,
+  row: {
+    tenant_id: string;
+    sender_id: string;
+    receiver_id: string;
+    content: string;
+    message_type: string;
+    metadata: Record<string, unknown>;
+    created_at: string;
+    read_at?: string;
+  },
+  direction: 'user_to_vitana' | 'vitana_to_user',
+  sessionId: string,
+): Promise<void> {
+  const MAX_ATTEMPTS = 2;
+  let lastError: string | undefined;
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    const { error } = await bridgeSupabase.from('chat_messages').insert(row);
+    if (!error) return;
+    lastError = error.message;
+    console.warn(`[VTID-CHAT-BRIDGE] ${direction} transcript write attempt ${attempt}/${MAX_ATTEMPTS} failed for session ${sessionId}: ${error.message}`);
+  }
+  emitOasisEvent({
+    vtid: 'BOOTSTRAP-CHAT-BRIDGE-RELIABILITY',
+    type: 'orb.chat_bridge.write_failed' as any,
+    source: 'orb-live-upstream-message-handler',
+    status: 'error',
+    message: `Voice transcript (${direction}) failed to bridge into chat_messages after ${MAX_ATTEMPTS} attempts — this turn will not appear in the user's Inbox`,
+    payload: {
+      orb_session_id: sessionId,
+      tenant_id: row.tenant_id,
+      direction,
+      error: lastError,
+    },
+  }).catch(() => { /* best-effort telemetry only, never let this throw into the voice pipeline */ });
+}
+
+/**
  * orb-live.ts-local helpers the handler body invokes. Future slices may
  * lift these out individually; until then, the deps-bag is the seam.
  */
@@ -873,7 +922,7 @@ export function createUpstreamLiveMessageHandler(
 
                 // User speech → chat_messages (sender=user, receiver=Vitana)
                 if (chatBridgeUserText.length > 0) {
-                  bridgeSupabase.from('chat_messages').insert({
+                  void bridgeVoiceTranscript(bridgeSupabase, {
                     tenant_id: bridgeTenantId,
                     sender_id: bridgeUserId,
                     receiver_id: VITANA_BOT_USER_ID,
@@ -881,15 +930,13 @@ export function createUpstreamLiveMessageHandler(
                     message_type: 'voice_transcript',
                     metadata: { ...bridgeMeta, direction: 'user_to_vitana' },
                     created_at: userMsgTime.toISOString(),
-                  }).then(({ error }) => {
-                    if (error) console.warn(`[VTID-CHAT-BRIDGE] User transcript write failed: ${error.message}`);
-                  });
+                  }, 'user_to_vitana', session.sessionId);
                 }
 
                 // Vitana speech → chat_messages (sender=Vitana, receiver=user)
                 // Pre-set read_at since user already heard this during the voice session
                 if (chatBridgeAssistantText.length > 0) {
-                  bridgeSupabase.from('chat_messages').insert({
+                  void bridgeVoiceTranscript(bridgeSupabase, {
                     tenant_id: bridgeTenantId,
                     sender_id: VITANA_BOT_USER_ID,
                     receiver_id: bridgeUserId,
@@ -898,9 +945,7 @@ export function createUpstreamLiveMessageHandler(
                     metadata: { ...bridgeMeta, direction: 'vitana_to_user', is_greeting: isGreetingTurn },
                     read_at: assistantMsgTime.toISOString(),
                     created_at: assistantMsgTime.toISOString(),
-                  }).then(({ error }) => {
-                    if (error) console.warn(`[VTID-CHAT-BRIDGE] Vitana transcript write failed: ${error.message}`);
-                  });
+                  }, 'vitana_to_user', session.sessionId);
                 }
               }
             }
@@ -2408,7 +2453,7 @@ export function handleTurnComplete(
       const assistantMsgTime = new Date(userMsgTime.getTime() + 1);
 
       if (chatBridgeUserText.length > 0) {
-        bridgeSupabase.from('chat_messages').insert({
+        void bridgeVoiceTranscript(bridgeSupabase, {
           tenant_id: bridgeTenantId,
           sender_id: bridgeUserId,
           receiver_id: VITANA_BOT_USER_ID,
@@ -2416,13 +2461,11 @@ export function handleTurnComplete(
           message_type: 'voice_transcript',
           metadata: { ...bridgeMeta, direction: 'user_to_vitana' },
           created_at: userMsgTime.toISOString(),
-        }).then(({ error }) => {
-          if (error) console.warn(`[VTID-CHAT-BRIDGE] User transcript write failed: ${error.message}`);
-        });
+        }, 'user_to_vitana', session.sessionId);
       }
 
       if (chatBridgeAssistantText.length > 0) {
-        bridgeSupabase.from('chat_messages').insert({
+        void bridgeVoiceTranscript(bridgeSupabase, {
           tenant_id: bridgeTenantId,
           sender_id: VITANA_BOT_USER_ID,
           receiver_id: bridgeUserId,
@@ -2431,9 +2474,7 @@ export function handleTurnComplete(
           metadata: { ...bridgeMeta, direction: 'vitana_to_user', is_greeting: isGreetingTurn },
           read_at: assistantMsgTime.toISOString(),
           created_at: assistantMsgTime.toISOString(),
-        }).then(({ error }) => {
-          if (error) console.warn(`[VTID-CHAT-BRIDGE] Vitana transcript write failed: ${error.message}`);
-        });
+        }, 'vitana_to_user', session.sessionId);
       }
     }
   }
