@@ -33,6 +33,7 @@ import {
   renderRemindersBlock,
 } from '../services/watcher/reminder';
 import { recordFeedback, recordShown } from '../services/watcher/feedback';
+import { emitOasisEvent } from '../services/oasis-event-service';
 import type { LessonStage } from '../services/watcher/lesson-types';
 import type {
   SessionStepInput,
@@ -41,6 +42,13 @@ import type {
 } from '../services/watcher/types';
 
 const router = Router();
+
+/**
+ * VTID stamped on the one event this module emits (an auto-mute decision)
+ * when the caller supplied no VTID of its own. Mirrors dev-autopilot's
+ * WATCHER_VTID convention for machine-originated lifecycle events.
+ */
+const WATCHER_VTID = 'VTID-WATCHER';
 
 const VALID_STEPS: readonly WatcherStepName[] = [
   'allocated', 'planned', 'queued', 'running', 'validated', 'pr_opened',
@@ -381,6 +389,35 @@ router.post('/feedback', requireAdminAuth, async (req: AuthenticatedRequest, res
     const status = result.error === 'INVALID_REMINDER_ID' ? 400 : 503;
     return res.status(status).json({ ok: false, error: result.error });
   }
+
+  // impact-allow-no-oasis (for the ordinary path only — see below).
+  //
+  // Recording feedback is an observation, not a state transition, and gets no
+  // event: it is the push twin of the observer's poll, which emits nothing
+  // for the same reason (CLAUDE.md §6 — polling is not progress).
+  //
+  // An auto-MUTE is different, and this is the distinction worth drawing.
+  // Muting a lesson changes what every subsequent planner/executor/worker
+  // prompt sees, permanently and without a human in the loop. That is a
+  // decision, and §6 reserves `vtid.decision.*` for exactly that. It is also
+  // the one Watcher outcome someone would want to audit after the fact —
+  // "why did the system stop reminding us about X?" needs an answer.
+  if (result.muted) {
+    await emitOasisEvent({
+      vtid: (typeof body.vtid === 'string' && body.vtid) || WATCHER_VTID,
+      type: 'vtid.decision.watcher.lesson_muted',
+      source: 'watcher',
+      status: 'info',
+      message: `Watcher auto-muted reminder ${reminderId} after repeated non-correlation`,
+      payload: {
+        reminder_id: reminderId,
+        stage: typeof body.stage === 'string' ? body.stage : null,
+        work_unit_id: typeof body.work_unit_id === 'string' ? body.work_unit_id : null,
+        repeated_mistake: !!body.repeated_mistake,
+      },
+    });
+  }
+
   // `muted` is surfaced rather than applied silently — a lesson disappearing
   // from future prompts should be observable at the moment it happens.
   return res.status(200).json({ ok: true, data: { muted: !!result.muted } });
