@@ -44,7 +44,7 @@ import {
 // the route handler too); the instruction builder calls it back across the
 // boundary. The function is pure (lang → string), so the round-trip is
 // safe.
-import { buildNavigatorPolicySection } from '../../../routes/orb-live';
+import { buildNavigatorPolicySection, MESSAGING_CONTRACT } from '../../../routes/orb-live';
 import { buildJourneyModesSection } from './journey-modes-prompt';
 import {
   BRAIN_OPENER_V2_START,
@@ -788,7 +788,19 @@ ${trimmedHistory}
   // VTID-NAV-01: Append the Vitana Navigator policy section so the model knows
   // when to consult the navigator, when to navigate directly, and when to
   // simply answer in voice without any tool call.
-  instruction += buildNavigatorPolicySection(lang);
+  //
+  // BOOTSTRAP-ORB-MESSAGING-CONTRACT-TRIM-FIX: MESSAGING_CONTRACT rides here,
+  // AFTER the navigator section, so it lands inside the scaffold tail that
+  // decomposeInstructionSections() (instruction-budget.ts) treats as
+  // PRESERVED — everything from the `=== VITANA NAVIGATOR —` marker to the
+  // end of the instruction is never trimmed by the aggregate budget guard.
+  // It used to be baked onto the tail of the bootstrap/memory context string
+  // instead, which made it the first thing both capBootstrapContext() and
+  // the R0 budget guard's 'bootstrap' drop-priority stripped for
+  // heavy-context users — silently deleting the "you MUST call
+  // resolve_recipient" contract and leaving the model to improvise instead
+  // of calling the messaging tools.
+  instruction += buildNavigatorPolicySection(lang) + MESSAGING_CONTRACT;
 
   // NAV_GUIDED_JOURNEY — teach Vitana the DECLARATIVE distinction between the
   // two views of "My Journey" (Guided/Einführung vs Full App/Vollversion) so it
