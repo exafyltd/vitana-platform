@@ -17,7 +17,7 @@
 (function (window) {
   'use strict';
 
-  var _WIDGET_VERSION = '2026-07-31-thinking-repetition-fix';
+  var _WIDGET_VERSION = '2026-07-31-thinking-tone-fix';
   console.log('[VTOrb] Widget version: ' + _WIDGET_VERSION);
 
   // BOOTSTRAP-NOVA-SONIC-VOICE: user live-test feedback 2026-07-28 — the
@@ -2583,7 +2583,7 @@
   // guard against repeating the previous turn's opening line back-to-back.
   var _THINKING_QUICK = [
     { en: 'Let me think…', de: 'Lass mich kurz überlegen…' },
-    { en: 'Mmm, let me see…', de: 'Mmm, lass mich schauen…' },
+    { en: 'Let me take a look…', de: 'Lass mich das kurz prüfen…' },
     { en: 'One sec…', de: 'Eine Sekunde…' },
     { en: 'Alright, hang on…', de: 'Alles klar, einen Moment…' },
     { en: 'Let’s see…', de: 'Mal sehen…' },
