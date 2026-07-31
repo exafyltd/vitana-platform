@@ -311,7 +311,10 @@ export function cleanupWsSession(sessionId: string): void {
 
     if (clientSession.liveSession.upstreamWs) {
       try {
-        clientSession.liveSession.upstreamWs.close();
+        // Nova item 6: name the reason. A bare close() lands in the
+        // catch-all 'local_close' bucket, which made 42 of 46 prod Nova
+        // sessions indistinguishable in telemetry.
+        clientSession.liveSession.upstreamWs.close(1000, 'ws_session_cleanup');
       } catch (e) {
         // Ignore
       }
@@ -2003,7 +2006,8 @@ export async function handleLiveSessionStop(
   // Close upstream WebSocket if exists
   if (session.upstreamWs) {
     try {
-      session.upstreamWs.close();
+      // Nova item 6: explicit user-initiated stop (POST /session/stop).
+      session.upstreamWs.close(1000, 'user_stop');
     } catch (e) {
       // Ignore close errors
     }
@@ -2310,9 +2314,13 @@ export async function handleLiveStreamSend(
           session.lastAudioForwardedTime = Date.now();
           // VTID-FORWARDING-WATCHDOG + VTID-01984 (R5) sliding logic
           if (!session.isModelSpeaking) {
-            if (session.vertexHasShownLife) {
+            // Nova item 5: skip the watchdog only when the model has actually
+            // responded on THIS turn. The old check used a session-wide flag
+            // that the user's own transcription could set, so a stalled turn
+            // read as alive and recovery never armed.
+            if (session.modelRespondedThisTurn) {
               if (session.audioInChunks % 200 === 0) {
-                deps.emitDiag(session, 'watchdog_skipped', { reason: 'vertex_alive' });
+                deps.emitDiag(session, 'watchdog_skipped', { reason: 'model_responded_this_turn' });
               }
             } else {
               const canSlide = !session.responseWatchdogTimer
