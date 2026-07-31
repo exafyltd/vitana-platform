@@ -7251,6 +7251,21 @@ async function connectToLiveAPI(
     if (__upstreamDecision.provider === 'nova_sonic') {
       try {
         const novaCfg = getNovaSonicConfig(process.env);
+        // L-02: kick Bedrock transport preparation NOW — credential-chain
+        // resolution, SDK module load, and the pooled DNS/TCP/TLS/HTTP2 path
+        // — concurrently with context assembly below. None of that work
+        // depends on the system instruction, but it used to sit behind the
+        // envelope await purely because connect() is called after it.
+        //
+        // Deliberately NOT awaited: on a warm process this is a memoized
+        // no-op (boot prewarm + the keep-warm loop already populated the
+        // shared client), so awaiting could only ever add latency. The value
+        // is on the cold path — first session after a fresh task, or when
+        // boot prewarm failed — where connect() would otherwise pay the full
+        // credential/TLS cost serially after context assembly. connect()
+        // still resolves the client itself, so correctness does not depend
+        // on this finishing, or finishing first.
+        void prewarmNovaSonicBedrock(novaCfg).catch(() => false);
         const envelope = (await buildOrbVertexSetupEnvelope()) as { setup?: Record<string, any> };
         const setup = envelope.setup ?? {};
         // Nova's RAI content filter rejects the stream over the IDENTITY

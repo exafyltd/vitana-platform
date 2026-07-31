@@ -227,11 +227,34 @@ async function buildBedrockClient(config: NovaSonicConfig): Promise<NovaBedrockL
  */
 let sharedBedrockClient: NovaBedrockLike | null = null;
 
+/**
+ * L-02: promise-memoized, not just value-memoized.
+ *
+ * The old `if (!sharedBedrockClient) sharedBedrockClient = await build(...)`
+ * shape races: two callers arriving before the first build resolves both see
+ * null and both build a client, the second overwriting the first. That was
+ * harmless while the only caller was serial, but the session path now kicks
+ * transport preparation CONCURRENTLY with context assembly, which makes the
+ * race the normal case rather than a rarity. Memoizing the in-flight promise
+ * collapses concurrent callers onto one build; a failed build clears the
+ * memo so the next attempt can retry rather than caching the failure.
+ */
+let sharedBedrockClientPromise: Promise<NovaBedrockLike> | null = null;
+
 async function defaultBedrockFactory(config: NovaSonicConfig): Promise<NovaBedrockLike> {
-  if (!sharedBedrockClient) {
-    sharedBedrockClient = await buildBedrockClient(config);
+  if (sharedBedrockClient) return sharedBedrockClient;
+  if (!sharedBedrockClientPromise) {
+    sharedBedrockClientPromise = buildBedrockClient(config)
+      .then((client) => {
+        sharedBedrockClient = client;
+        return client;
+      })
+      .catch((err) => {
+        sharedBedrockClientPromise = null;
+        throw err;
+      });
   }
-  return sharedBedrockClient;
+  return sharedBedrockClientPromise;
 }
 
 /**
@@ -388,6 +411,9 @@ export async function prewarmNovaSonicBedrock(config: NovaSonicConfig): Promise<
 /** Test seam: inject/clear the shared client without touching real AWS SDKs. */
 export function __setSharedBedrockClientForTests(client: NovaBedrockLike | null): void {
   sharedBedrockClient = client;
+  // Must clear the in-flight memo too — otherwise a test that injects null to
+  // force a rebuild would still be served the previously memoized promise.
+  sharedBedrockClientPromise = null;
 }
 
 export class NovaSonicLiveClient implements UpstreamLiveClient {
