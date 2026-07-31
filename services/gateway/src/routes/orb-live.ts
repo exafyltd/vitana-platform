@@ -2634,6 +2634,19 @@ async function handleNavigate(
   session: GeminiLiveSession,
   args: Record<string, unknown>
 ): Promise<{ success: boolean; result: string; error?: string }> {
+  // VTID-03446: same-turn re-entry guard. A redirect directive has already
+  // been dispatched this session — the ORB overlay is on its way out. If
+  // the model (observed on Nova Sonic, which can chain a second tool call
+  // before ever emitting END_TURN — see the BOOTSTRAP-NOVA-SONIC-VOICE-NAV-FIX
+  // comment on handleNavigateToScreen below) tries to re-open the Navigator
+  // anyway, short-circuit instead of re-running consultNavigator and risking
+  // a second, deeper disambiguation question stacked on top of the first.
+  if (session.navigationDispatched) {
+    return {
+      success: true,
+      result: 'NAVIGATING_TO: (already in progress)\nA redirect is already underway from earlier in this turn. Do NOT ask another question or call navigate/navigate_to_screen again — just finish your sentence and stop.',
+    };
+  }
   // PR 1.B-4: lifted to services/orb-tools-shared.ts:tool_navigate. Both
   // pipelines now run the same consultNavigator + decision logic + directive
   // payload construction + OASIS emit chain. Vertex post-processes the
@@ -2824,6 +2837,13 @@ export async function handleNavigateToScreen(
   session: GeminiLiveSession,
   args: Record<string, unknown>
 ): Promise<{ success: boolean; result: string; error?: string }> {
+  // VTID-03446: same-turn re-entry guard — mirrors handleNavigate() above.
+  if (session.navigationDispatched) {
+    return {
+      success: true,
+      result: 'NAVIGATING_TO: (already in progress)\nA redirect is already underway from earlier in this turn. Do NOT ask another question or call navigate/navigate_to_screen again — just finish your sentence and stop.',
+    };
+  }
   // PR 1.B-5: lifted to services/orb-tools-shared.ts:tool_navigate_to_screen.
   // The shared module now enforces all 7 gates (anonymous, viewport,
   // mobile_route override, already-there dedup, OASIS error_kind events,
@@ -7077,6 +7097,18 @@ async function connectToLiveAPI(
                         // ("user system instruction has 48787 tokens") —
                         // prod ORB stuck at "Verbinden…". Always omit here.
                         true,
+                        // VTID-03447: resolved spoken first name, when the
+                        // greeting-facts prefetch (live-session-controller.ts,
+                        // resolveSpokenFirstName) has already populated it on
+                        // the session. Gives this shared Vertex/Nova Sonic WS
+                        // path the same "AUTHORITATIVE USER NAME" structural
+                        // header orb-livekit.ts already has via VTID-03014 —
+                        // without it Nova Sonic falls back to greeting by the
+                        // Vitana ID handle (e.g. "Dragan3") instead of the
+                        // user's actual first name. Best-effort: null when
+                        // not yet resolved (feature flag off, or still
+                        // in-flight) — the header simply doesn't render.
+                        (session as any).greetingFirstName ?? null,
                       ))) as string
             }]
           },

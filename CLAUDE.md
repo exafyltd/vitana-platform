@@ -20,6 +20,21 @@ Claude must **always** do the following:
 
 1. **Always treat OASIS as the single source of truth** for task state, lifecycle, and governance.
 2. **Always verify VTID existence** before execution, deployment, or automation.
+2b. **Always self-allocate the VTID.** Every new task — a bug report, a
+    feature ask, a "fix this," a doc change, anything that results in a
+    commit — gets its own VTID, allocated by Claude itself from the ledger
+    (`POST /api/v1/vtid/allocate`, or directly via the `allocate_global_vtid`
+    Supabase RPC when the gateway endpoint isn't reachable from the session)
+    at the START of the work, BEFORE touching any code. This is standing,
+    permanent governance — yesterday, today, and always. **Never ask the
+    user whether a VTID is needed, never ask them to supply one, and never
+    wait for confirmation before allocating.** Set `spec_status='approved'`
+    and `status='in_progress'` on the freshly allocated row when the user
+    has directly instructed the work in conversation — that instruction
+    IS the approval (see IF-THEN rule "task moved to in_progress manually
+    → explicit consent"). Multiple distinct fixes in one conversation get
+    multiple distinct VTIDs, not one VTID shared across unrelated changes.
+    (VTID-03448)
 3. **Always check memory first** before proposing changes, fixes, or new systems.
 4. **Always respect existing governance rules** over new ideas or optimizations.
 5. **Always require `spec_status=approved`** before execution.
@@ -148,8 +163,14 @@ Claude must apply the following **conditional logic**:
 
 ### VTID & Execution
 
-1. **IF** VTID does not exist → **THEN STOP.**
-2. **IF** `spec_status ≠ approved` → **THEN DO NOT EXECUTE.**
+1. **IF** VTID does not exist → **THEN self-allocate one immediately (see
+   Part 1 rule 2b / §4.1) and continue. THEN STOP only applies to VTIDs
+   that fail to allocate (allocator disabled, DB error) — never to the
+   mere absence of one, and never as a prompt to ask the user for one.**
+2. **IF** `spec_status ≠ approved` → **THEN DO NOT EXECUTE**, unless the
+   user has directly instructed the work in this conversation, in which
+   case set `spec_status='approved'` yourself when self-allocating (rule
+   2b) and proceed.
 3. **IF** `is_terminal=true` → **THEN DO NOT MODIFY TASK.**
 4. **IF** task is `scheduled` → **THEN treat as standby only.**
 5. **IF** task is moved to `in_progress` manually → **THEN treat as explicit consent.**
@@ -532,6 +553,36 @@ one of these adapters**, alongside `anthropic`, `openai`, `vertex`,
 ---
 
 ## 4. VTID SYSTEM
+
+### 4.1 Self-Service Allocation (STANDING RULE — VTID-03448)
+
+**This question is permanently settled. Do not re-ask the user "should this
+have a VTID" or "do you have a VTID for this" ever again.** Every task gets
+one, Claude allocates it itself, first step, no exceptions.
+
+Procedure, in order of preference:
+
+1. **Gateway API** (preferred when the gateway is reachable from the
+   session): `POST /api/v1/vtid/allocate` with `{ source, layer, module }`
+   (see §11 for URL resolution). Returns `{ vtid, num, id }`.
+2. **Direct Supabase RPC** (when the gateway isn't reachable, e.g. a
+   Claude Code session without a live gateway endpoint): call
+   `allocate_global_vtid(p_source, p_layer, p_module)` via the Supabase
+   MCP/CLI against the `VITANA` project. Returns the same shape.
+3. Either path atomically mints the next `VTID-XXXXX` and creates the
+   ledger shell row in one transaction — allocated and registered can
+   never split.
+4. Immediately follow up with an `UPDATE vtid_ledger` (or the equivalent
+   gateway PATCH) to set a real `title`/`summary`/`description` (never
+   leave the "Allocated - Pending Title" placeholder), and set
+   `status='in_progress'` + `spec_status='approved'` when the user has
+   directly instructed the work in the current conversation.
+5. **If the allocator itself is disabled** (`VTID_ALLOCATOR_ENABLED`
+   false and no DB override) — that's the one real stop condition. Tell
+   the user allocation is blocked and why; do not fabricate a VTID
+   number and do not silently proceed without one.
+6. One VTID per distinct piece of work. Two unrelated fixes requested in
+   the same message get two VTIDs, not one shared across both.
 
 ### VTID Format
 - Pattern: `VTID-XXXXX` (5 digits, zero-padded)
@@ -1216,6 +1267,9 @@ Use these PATs with the GitHub REST API (`api.github.com`) for all PR and deploy
 
 | Date | Change | VTID |
 |------|--------|------|
+| 2026-07-31 | Codified self-service VTID allocation as standing governance (Part 1 rule 2b, §4.1): Claude allocates a VTID itself via `POST /api/v1/vtid/allocate` (or the `allocate_global_vtid` Supabase RPC directly) at the start of every new task, sets `spec_status='approved'`/`status='in_progress'` when the user has directly instructed the work, and never asks the user whether/for a VTID again. One VTID per distinct piece of work. | VTID-03448 |
+| 2026-07-31 | Fixed ORB Navigator "options within options" loop reported on Nova Sonic: `tool_navigate()`'s legacy `confirmation_needed` branch (`services/gateway/src/services/orb-tools-shared.ts`) told the model to call `navigate()` again with free text after a clarifying question, re-running full disambiguation from scratch and occasionally landing on a *different*, deeper ambiguous match — the mechanism behind "pick an option → get suboptions → get sub-suboptions." Aligned it with the existing VTID-02781 contract (ask once, then `navigate_to_screen(screen_id)` directly, never a second `navigate()` call), extended `NAV_CONTINUATION_BIND` pending_cta binding to this branch, added a same-turn re-entry guard in `handleNavigate`/`handleNavigateToScreen` (`orb-live.ts`) so a model that chains a second navigation tool call mid-turn (observed live on Nova Sonic — see VTID-03447's sibling comment) gets a short-circuit instead of a fresh consult, and clarified the `navigate` tool's own description (`live-tool-catalog.ts`) to distinguish "confirming an already-resolved either/or" (→ `navigate_to_screen`) from "confirming a destination offered from general knowledge with no screen_id yet" (→ `navigate` with the offered text) — the two cases the tool description previously conflated. | VTID-03446 |
+| 2026-07-31 | Fixed ORB greeting users by their Vitana ID handle (e.g. "Dragan3") instead of their first name, reported on Nova Sonic. `buildLiveSystemInstruction()` (`services/gateway/src/orb/live/instruction/live-system-instruction.ts`), shared by the Vertex AND Nova Sonic raw-WS transports, pins a loud, structural `=== AUTHORITATIVE USER VITANA ID ===` header near the top of the prompt but never gave the user's real name equivalent prominence — it only ever appeared buried inside memory-fact bullet lists deep in `bootstrapContext`. Gemini reliably infers "use the name fact for address" anyway; Nova Sonic does not, and falls back to the one loud, explicit identifier available — the handle. `orb-livekit.ts` already solved this exact failure mode under VTID-03014 (its own comment describes the identical symptom: "Hi @e2etest33!" instead of "Hi Dragan!"), but that fix was never ported to the shared WS path. Added a parallel `=== AUTHORITATIVE USER NAME ===` header, wired from `session.greetingFirstName` (already resolved via `resolveSpokenFirstName()` in `live-session-controller.ts` for the spoken-opener path, but never previously threaded into the system instruction itself). | VTID-03447 |
 | 2026-07-31 | **Full GCP-cutoff prep: investigated 3 open items from the readiness checklist, found the missing `exafyltd/vitana-infra` repo.** Documentation/investigation only — no infrastructure changed, no VTID authorizes a full cutover yet (none exists). Findings: (1) The `vitana-tg-gateway-prod`/`vitana-tg-community-prod` naming "mystery" is resolved — the owning Terraform lives in `exafyltd/vitana-infra` (TMC migration team's handover, not previously attached to this repo's sessions), whose own README already documents the naming drift as deliberate. (2) That discovery surfaced a bigger, more urgent risk: `vitana-infra`'s README says **"DO NOT terraform apply YET"** — its checked-in state is stale vs. live infra (would revert ECS↔ALB attachments, the gateway health check, and live task-def secrets if applied), and `phase8-data-prod` (Aurora prod) has never been reconciled against live state at all. Added as a new blocker to §1b's hard rules and the cutover runbook §1. (3) The ~22 "unexplained" ECS services are mostly identified — `vitana-infra/terraform/phase4-ecs/variables.tf` defines all 28 intended services from the TMC handover plan; cross-checked against this repo's `services/` tree, 6 have real source (marked non-deployable/in-process here, worth confirming AWS doesn't run them standalone instead) and ~14 have no corresponding source anywhere (likely TMC-internal tooling). (4) The Aurora DMS ~154k row-drop finding from VTID-03419 (2026-07-27) was never reflected back into the runbook's §2 checklist, which still showed "DMS replication healthy [x]" from an earlier, unrelated one-row fix — reopened that checklist item; it remains unresolved and requires live DMS access this session didn't have (`aws sts get-caller-identity` failed with `InvalidClientTokenId` on the AWS credentials present). Updated `docs/AWS-CUTOVER-RUNBOOK.md` §1/§2 and this file's §1b accordingly. | (investigation, no VTID) |
 | 2026-07-31 | **Config drift from the VTID-03419 cutover took ORB voice down for every logged-in user — no code change involved.** `FEATURE_ORB_FAST_START_ENV` was never carried onto the `vitana-gateway-awsdr` task def, so `shouldDeferWakeWork()` fell back to the legacy inline path and the ORB wake-brief/journey assembly ran ON the `session/start` response. Measured on the *same commit* (`cb66c144`): AWS prod 5.19s / `context_status:ready` vs GCP prod (still-running rollback target) 2.08s / `context_status:pending`. Identity→session.start p50 went 0.17s (≤07-26) → 3.2s (07-28+), p95 past 9s, starting 07-27 — the cutover date. Cold authenticated starts then exceeded the orb widget's **8s** fetch abort, and the widget's `_sessionStart` catch set the error aura but never updated the status text or retried, so the overlay showed "Verbinden..." forever; anonymous sessions were unaffected (they skip wake-brief), which is why logged-out ORB looked healthy. **Beware the shape of this bug:** `isFeatureLive` maps `'staging-only'` → `isStaging`, so copying staging's value verbatim still leaves a flag DEAD in prod — "the var is set" does not mean "the feature is on". Fixes: `AWS-PROD-DEPLOY-GATEWAY.yml` now pins `FEATURE_ORB_FAST_START_ENV=staging+prod` unconditionally on every prod deploy; the widget's failed-start path now states the real failure and hands off to `_attemptReconnect()`; new admin-gated `GET /api/v1/admin/feature-flags` reports each flag's **resolved** `live` value (plus `env_var_present` and a `misconfigured_for_env` marker for the staging-only-in-prod trap) so two stacks can be diffed instead of guessed. Only ORB_FAST_START had measured evidence and was changed — the other 8 flags are reported, not flipped. | BOOTSTRAP-ORB-FASTSTART-DRIFT |
 | 2026-07-29 | **Governance correction, not new work:** `docs/AWS-CUTOVER-RUNBOOK.md` §1's DNS row still said "Unmoved" and §3's "EXECUTION RECORD" citation pointed at content that was never actually written, and this file's §1b/Never-rule-1 prose still said "not yet a sole-production cutover" with no VTID-03419 changelog row at all — despite VTID-03419 (below) having genuinely executed 2 days earlier. The infrastructure change was real and independently verifiable (DNS resolution, live production traffic, working PUBLISH deploys against it); the paper trail describing it was not committed. Root cause: the doc-update step in VTID-03419's own spec (§5) was apparently never pushed before that session's context was summarized. Found via a second Claude session's independent skepticism of a status claim — see its investigation for the discovery. Fixed: runbook §1/§3 now match reality (with real EXECUTION RECORD blocks — ALB rule priorities, exact DNS record changes, the Cloudflare Worker origin override that actually gated the apex leg, verification method, rollback path), this file's §1b/Never-rule-1 updated, VTID-03419 changelog row added below. | (governance fix, no VTID) |

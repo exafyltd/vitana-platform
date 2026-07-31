@@ -52,17 +52,31 @@ WHEN NOT TO CALL:
 - Pure small talk with no screen destination ("how are you", "thank you")
 - Quick factual questions ("what is longevity?")
 
-CONFIRMING A DESTINATION YOU JUST OFFERED: If you just offered to take
-the user somewhere by name (e.g. you asked "Should I take you to
-Connected Apps?" or "Soll ich dich zu den verbundenen Apps bringen?")
-and the user simply confirms without repeating the destination ("yes",
-"ja", "mach das", "do it", "gerne", "klar", "sure") — pass THE
-DESTINATION YOU OFFERED as the question, NOT the bare confirmation
-word. A confirmation carries no screen information on its own; the
-backend can only resolve the right screen from your own last offer.
-Example: you said "Soll ich dich zu den verbundenen Apps bringen?"
-and the user replies "Ja, mach das" — call navigate with
-question: "verbundene Apps", not question: "Ja, mach das".
+CONFIRMING A DESTINATION YOU JUST OFFERED — READ THIS CAREFULLY, it
+has TWO different cases and using the wrong one causes a bad loop:
+
+  CASE A — you already called navigate() or navigate_to_screen for
+  this and got back CANDIDATES / an ALTERNATIVE with real screen_ids
+  (an either/or question, e.g. "Do you mean Chat or Notifications?"):
+  the screen_id is ALREADY KNOWN. When the user answers, call
+  navigate_to_screen DIRECTLY with that screen_id — do NOT call
+  navigate() again. Re-running navigate() with free text throws away
+  the resolved screen_id and can match something else entirely (e.g.
+  a sub-page one level deeper), which is exactly how "pick an option,
+  then get more options" loops happen. One clarifying question, then
+  navigate_to_screen — never a second navigate() call for the same ask.
+
+  CASE B — you offered a destination from your OWN knowledge, without
+  ever having called navigate()/navigate_to_screen for it (so there is
+  no screen_id yet) — e.g. you said "Should I take you to Connected
+  Apps?" or "Soll ich dich zu den verbundenen Apps bringen?" out of
+  general conversation. If the user simply confirms ("yes", "ja",
+  "mach das", "do it", "gerne", "klar", "sure") without repeating the
+  destination, pass THE DESTINATION YOU OFFERED as the question (a
+  bare confirmation carries no screen information on its own).
+  Example: you said "Soll ich dich zu den verbundenen Apps bringen?"
+  and the user replies "Ja, mach das" — call navigate with
+  question: "verbundene Apps", not question: "Ja, mach das".
 
 WHAT YOU GET BACK:
 - GUIDANCE: a short explanation you should speak naturally to the user,
@@ -153,17 +167,31 @@ WHEN NOT TO CALL:
 - Pure small talk with no screen destination ("how are you", "thank you")
 - Quick factual questions ("what is longevity?")
 
-CONFIRMING A DESTINATION YOU JUST OFFERED: If you just offered to take
-the user somewhere by name (e.g. you asked "Should I take you to
-Connected Apps?" or "Soll ich dich zu den verbundenen Apps bringen?")
-and the user simply confirms without repeating the destination ("yes",
-"ja", "mach das", "do it", "gerne", "klar", "sure") — pass THE
-DESTINATION YOU OFFERED as the question, NOT the bare confirmation
-word. A confirmation carries no screen information on its own; the
-backend can only resolve the right screen from your own last offer.
-Example: you said "Soll ich dich zu den verbundenen Apps bringen?"
-and the user replies "Ja, mach das" — call navigate with
-question: "verbundene Apps", not question: "Ja, mach das".
+CONFIRMING A DESTINATION YOU JUST OFFERED — READ THIS CAREFULLY, it
+has TWO different cases and using the wrong one causes a bad loop:
+
+  CASE A — you already called navigate() or navigate_to_screen for
+  this and got back CANDIDATES / an ALTERNATIVE with real screen_ids
+  (an either/or question, e.g. "Do you mean Chat or Notifications?"):
+  the screen_id is ALREADY KNOWN. When the user answers, call
+  navigate_to_screen DIRECTLY with that screen_id — do NOT call
+  navigate() again. Re-running navigate() with free text throws away
+  the resolved screen_id and can match something else entirely (e.g.
+  a sub-page one level deeper), which is exactly how "pick an option,
+  then get more options" loops happen. One clarifying question, then
+  navigate_to_screen — never a second navigate() call for the same ask.
+
+  CASE B — you offered a destination from your OWN knowledge, without
+  ever having called navigate()/navigate_to_screen for it (so there is
+  no screen_id yet) — e.g. you said "Should I take you to Connected
+  Apps?" or "Soll ich dich zu den verbundenen Apps bringen?" out of
+  general conversation. If the user simply confirms ("yes", "ja",
+  "mach das", "do it", "gerne", "klar", "sure") without repeating the
+  destination, pass THE DESTINATION YOU OFFERED as the question (a
+  bare confirmation carries no screen information on its own).
+  Example: you said "Soll ich dich zu den verbundenen Apps bringen?"
+  and the user replies "Ja, mach das" — call navigate with
+  question: "verbundene Apps", not question: "Ja, mach das".
 
 WHAT YOU GET BACK:
 - GUIDANCE: a short explanation you should speak naturally to the user,
@@ -12895,17 +12923,31 @@ WHEN NOT TO CALL:
 - Pure small talk with no screen destination ("how are you", "thank you")
 - Quick factual questions ("what is longevity?")
 
-CONFIRMING A DESTINATION YOU JUST OFFERED: If you just offered to take
-the user somewhere by name (e.g. you asked "Should I take you to
-Connected Apps?" or "Soll ich dich zu den verbundenen Apps bringen?")
-and the user simply confirms without repeating the destination ("yes",
-"ja", "mach das", "do it", "gerne", "klar", "sure") — pass THE
-DESTINATION YOU OFFERED as the question, NOT the bare confirmation
-word. A confirmation carries no screen information on its own; the
-backend can only resolve the right screen from your own last offer.
-Example: you said "Soll ich dich zu den verbundenen Apps bringen?"
-and the user replies "Ja, mach das" — call navigate with
-question: "verbundene Apps", not question: "Ja, mach das".
+CONFIRMING A DESTINATION YOU JUST OFFERED — READ THIS CAREFULLY, it
+has TWO different cases and using the wrong one causes a bad loop:
+
+  CASE A — you already called navigate() or navigate_to_screen for
+  this and got back CANDIDATES / an ALTERNATIVE with real screen_ids
+  (an either/or question, e.g. "Do you mean Chat or Notifications?"):
+  the screen_id is ALREADY KNOWN. When the user answers, call
+  navigate_to_screen DIRECTLY with that screen_id — do NOT call
+  navigate() again. Re-running navigate() with free text throws away
+  the resolved screen_id and can match something else entirely (e.g.
+  a sub-page one level deeper), which is exactly how "pick an option,
+  then get more options" loops happen. One clarifying question, then
+  navigate_to_screen — never a second navigate() call for the same ask.
+
+  CASE B — you offered a destination from your OWN knowledge, without
+  ever having called navigate()/navigate_to_screen for it (so there is
+  no screen_id yet) — e.g. you said "Should I take you to Connected
+  Apps?" or "Soll ich dich zu den verbundenen Apps bringen?" out of
+  general conversation. If the user simply confirms ("yes", "ja",
+  "mach das", "do it", "gerne", "klar", "sure") without repeating the
+  destination, pass THE DESTINATION YOU OFFERED as the question (a
+  bare confirmation carries no screen information on its own).
+  Example: you said "Soll ich dich zu den verbundenen Apps bringen?"
+  and the user replies "Ja, mach das" — call navigate with
+  question: "verbundene Apps", not question: "Ja, mach das".
 
 WHAT YOU GET BACK:
 - GUIDANCE: a short explanation you should speak naturally to the user,
