@@ -407,6 +407,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const adminNotificationsRouter = require('./routes/admin-notifications').default;
   // Admin: Feature Announcement News Feed cards (BOOTSTRAP-FEATURE-ANNOUNCEMENTS)
   const adminFeatureAnnouncementsRouter = require('./routes/admin-feature-announcements').default;
+  // VTID-03460 (Watcher Phase 1): development-lifecycle timeline. Read-only
+  // observability — nothing consumes it yet (see docs/WATCHER-AGENT-PLAN.md).
+  const watcherRouter = require('./routes/watcher').default;
   // Admin: Notification Category Management (CRUD + Test)
   const adminNotificationCategoriesRouter = require('./routes/admin-notification-categories').default;
   // User: Notification Category Preferences (toggle categories on/off)
@@ -1138,6 +1141,10 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   // env-identity probes used by the STAGE-DEPLOY smoke and isolation checks.
   mountRouterSync(app, '/api/v1/admin', adminHealthRouter, { owner: 'admin-health' });
 
+  // VTID-03460 (Watcher Phase 1): /timeline + /health are admin-gated;
+  // /session-step is gated on WATCHER_SESSION_TOKEN and closed when unset.
+  mountRouterSync(app, '/api/v1/watcher', watcherRouter, { owner: 'watcher' });
+
   // VTID-01973: Vitana Intent Engine (P2-A) — gated by FEATURE_INTENT_ENGINE_A.
   if (intentsRouter) mountRouterSync(app, '/api/v1/intents', intentsRouter, { owner: 'intents' });
   mountRouterSync(app, '/api/v1/cover-images', coverImagesRouter, { owner: 'cover-images' });
@@ -1681,6 +1688,17 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
         }
       } catch (error) {
         console.warn('⚠️ Dev Autopilot watchers initialization failed (non-fatal):', error);
+      }
+
+      // VTID-03460 (Watcher Phase 1): lifecycle observer. Read-only — it
+      // writes watcher_steps and nothing else, and deliberately emits ZERO
+      // OASIS events (its scan is a poll; CLAUDE.md §6: polling ≠ progress).
+      // Disabled with WATCHER_OBSERVER_ENABLED=false.
+      try {
+        const { startObserver } = require('./services/watcher/watcher-observer');
+        startObserver();
+      } catch (error) {
+        console.warn('⚠️ Watcher observer initialization failed (non-fatal):', error);
       }
 
       // AI Personality: Pre-warm config cache from Supabase

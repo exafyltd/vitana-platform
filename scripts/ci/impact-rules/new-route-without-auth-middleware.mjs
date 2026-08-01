@@ -37,6 +37,14 @@ const AUTH_NAMES = [
   // (admin-health, admin-intent-engine, admin-navigator, admin-users-lookup,
   // awareness-config, media-hub, operator, orb-livekit). It IS auth.
   'requireAdminAuth',
+  // requireSessionToken (routes/watcher.ts, VTID-03460): shared-bearer-secret gate
+  // on POST /api/v1/watcher/session-step. Its caller is a Claude Code session hook,
+  // not a logged-in human, so no JWT middleware on this list can apply. Same shape
+  // as requireScanToken above (already accepted here): compares the presented
+  // Bearer against a deployment-scoped secret and 401s on mismatch — and 503s when
+  // the secret is unset, so the endpoint is CLOSED by default rather than open.
+  // It IS auth.
+  'requireSessionToken',
 ];
 const ROUTE_PREFIX_RE = /^\s*router\.(get|post|put|patch|delete)\s*\(/;
 
