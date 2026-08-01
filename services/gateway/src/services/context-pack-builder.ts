@@ -555,7 +555,8 @@ async function fetchKnowledgeHits(
 // =============================================================================
 
 /**
- * VTID-03472: Fetch web search hits via Vertex AI Google Search grounding.
+ * VTID-03472: Fetch web search hits via Claude's native web_search tool
+ * (direct Anthropic API).
  *
  * Perplexity was the originally-approved provider (see fetchWebHitsPerplexity
  * below) but PERPLEXITY_API_KEY has never been configured in staging or prod
@@ -571,12 +572,18 @@ async function fetchKnowledgeHits(
  * function tool, and it was always returning empty. Reported live: "check
  * the internet for news about Mariia Maksina" on Nova → no results.
  *
- * Fix: use Vertex AI's own Google Search grounding via a plain (non-live)
- * generateContent call instead of Perplexity — GOOGLE_CLOUD_PROJECT/ADC is
- * already configured and working (the same credentials the LLM router's
- * vertex adapter uses), so this needs no new secret. Falls back to
- * Perplexity if that key is ever configured later; the sentence-splitting
- * formatter is shared so output shape is unchanged either way.
+ * IMPORTANT: an earlier version of this fix used Vertex AI (Gemini) grounding
+ * — WRONG. ORB voice moved off Vertex to Nova Sonic 5 days before this fix
+ * (2026-07-27), and GCP itself is being turned off entirely (2026-08-03,
+ * this coming Monday) — a Vertex dependency would have silently regressed
+ * back to this exact bug within days. Every LLM call on this platform now
+ * targets Anthropic. Claude's web_search is a genuine server-side tool (runs
+ * on Anthropic's infrastructure, not Bedrock's — Bedrock's tool-use
+ * framework does NOT relay to Anthropic's hosted search endpoint, confirmed
+ * against AWS docs before writing this), so it needs ANTHROPIC_API_KEY (the
+ * same env var llm-router.ts's `anthropic` adapter already reads), not
+ * Bedrock credentials. Falls back to Perplexity if that's ever configured;
+ * falls back further to empty (never GCP) if neither is available.
  */
 async function fetchWebHits(
   query: string,
@@ -584,92 +591,78 @@ async function fetchWebHits(
 ): Promise<{ hits: WebHit[]; latency_ms: number }> {
   const startTime = Date.now();
 
-  const projectId = process.env.GOOGLE_CLOUD_PROJECT;
-  if (projectId) {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (apiKey) {
     try {
-      const { VertexAI } = await import('@google-cloud/vertexai');
-      const location = process.env.VERTEX_LOCATION || 'us-central1';
-      const vertex = new VertexAI({ project: projectId, location });
-      const model = vertex.getGenerativeModel(
+      const Anthropic = (await import('@anthropic-ai/sdk')).default;
+      const client = new Anthropic({ apiKey });
+      const msg = await client.messages.create(
         {
-          model: process.env.WEB_SEARCH_GROUNDING_MODEL || 'gemini-2.5-flash',
-          // Gemini 2.x+ requires the `googleSearch` tool — `googleSearchRetrieval`
-          // is the Gemini 1.5-era legacy tool and is rejected for 2.x models.
-          // `as any`: this SDK's types (@google-cloud/vertexai 1.9.2) predate
-          // the 2.x tool but the request is a plain JSON pass-through
-          // (functions/generate_content.js forwards `tools` verbatim), so the
-          // untyped field still reaches the wire correctly.
-          tools: [{ googleSearch: {} } as any],
+          model: process.env.WEB_SEARCH_GROUNDING_MODEL || 'claude-haiku-4-5-20251001',
+          max_tokens: 1024,
+          messages: [{ role: 'user', content: query }],
+          tools: [{ type: 'web_search_20260209', name: 'web_search', max_uses: 3 }],
         },
         // Bound below orb-live.ts's 3000ms TOOL_TIMEOUT_MS for search_web —
-        // without this, a slow/stalled Vertex call outlives the voice-tool
-        // deadline: the model gets a timeout error instead of a result (or
-        // the Perplexity fallback), while the un-aborted request keeps
-        // running. Same budget as fetchWithTimeout()'s FETCH_TIMEOUT_MS.
+        // without this, a slow/stalled call outlives the voice-tool deadline:
+        // the model gets a timeout error instead of a result (or the
+        // Perplexity fallback), while the un-aborted request keeps running.
+        // Same budget as fetchWithTimeout()'s FETCH_TIMEOUT_MS.
         { timeout: CONTEXT_PACK_CONFIG.FETCH_TIMEOUT_MS },
       );
-      const result = await model.generateContent({
-        contents: [{ role: 'user', parts: [{ text: query }] }],
-      });
-      const candidate = result.response?.candidates?.[0];
-      const parts = (candidate?.content?.parts || []) as Array<{ text?: string; thought?: boolean }>;
-      const text = parts.filter((p) => !p.thought).map((p) => p.text || '').join('');
-      const grounding = candidate?.groundingMetadata;
-      if (text.trim()) {
-        // groundingChunks is a source table, not sentence-aligned — align
-        // via groundingSupports (text span -> chunk indices) so each hit's
-        // citation is the source actually backing that claim, not just the
-        // i-th chunk for the i-th sentence.
-        const supportHits = hitsFromGroundingSupports(grounding, limit);
-        const hits = supportHits.length > 0
-          ? supportHits
-          : splitIntoWebHits(text, (grounding?.groundingChunks || []).map((c) => c.web?.uri).filter((u): u is string => !!u), limit);
-        console.log(`[VTID-03472] Vertex grounding returned ${hits.length} web hits for: ${query.substring(0, 50)}`);
+      const hits = hitsFromClaudeCitations(msg.content, limit);
+      if (hits.length > 0) {
+        console.log(`[VTID-03472] Claude web_search returned ${hits.length} web hits for: ${query.substring(0, 50)}`);
         return { hits, latency_ms: Date.now() - startTime };
       }
-      console.warn('[VTID-03472] Vertex grounding returned no text — falling back to Perplexity');
+      console.warn('[VTID-03472] Claude web_search returned no citations — falling back to Perplexity');
     } catch (error: any) {
-      console.error(`[VTID-03472] Vertex grounding error: ${error.message} — falling back to Perplexity`);
+      console.error(`[VTID-03472] Claude web_search error: ${error.message} — falling back to Perplexity`);
     }
   } else {
-    console.warn('[VTID-03472] GOOGLE_CLOUD_PROJECT not configured — falling back to Perplexity');
+    console.warn('[VTID-03472] ANTHROPIC_API_KEY not configured — falling back to Perplexity');
   }
 
   return fetchWebHitsPerplexity(query, limit, startTime);
 }
 
-interface VertexGroundingChunk { web?: { uri?: string; title?: string } }
-interface VertexGroundingSupport { segment?: { text?: string }; groundingChunkIndices?: number[] }
-interface VertexGroundingMetadata {
-  groundingChunks?: VertexGroundingChunk[];
-  groundingSupports?: VertexGroundingSupport[];
+interface ClaudeWebSearchCitation {
+  type: string;
+  cited_text?: string;
+  title?: string | null;
+  url?: string;
+}
+interface ClaudeContentBlock {
+  type: string;
+  citations?: ClaudeWebSearchCitation[] | null;
 }
 
 /**
- * Builds one WebHit per grounding support — each is a text span Gemini
- * actually attributed to specific source chunk(s), so the citation is
- * correct for that claim (unlike zipping citations[i] to sentence i).
- * Returns [] when the response carries no groundingSupports (e.g. a very
- * short answer), letting the caller fall back to splitIntoWebHits.
+ * Builds one WebHit per web-search citation Claude actually attached to its
+ * answer — cited_text/title/url come straight off the citation, so (unlike
+ * the old positional sentence-zip) each hit's source is the one that
+ * genuinely backs that claim, with zero extra parsing/alignment needed.
+ * Returns [] when the response carries no web_search_result_location
+ * citations (tool not invoked, or search found nothing) — matches the
+ * governance requirement that web search results must carry real citations.
  */
-function hitsFromGroundingSupports(grounding: VertexGroundingMetadata | undefined, limit: number): WebHit[] {
-  const chunks = grounding?.groundingChunks || [];
-  const supports = grounding?.groundingSupports || [];
+function hitsFromClaudeCitations(content: ClaudeContentBlock[], limit: number): WebHit[] {
   const hits: WebHit[] = [];
-  for (let i = 0; i < supports.length && hits.length < limit; i++) {
-    const text = supports[i].segment?.text?.trim();
-    if (!text || text.length <= 20) continue;
-    const chunkIdx = supports[i].groundingChunkIndices?.[0];
-    const chunk = typeof chunkIdx === 'number' ? chunks[chunkIdx] : undefined;
-    const url = chunk?.web?.uri;
-    hits.push({
-      id: `web-${hits.length}`,
-      title: chunk?.web?.title || text.substring(0, 80) + (text.length > 80 ? '...' : ''),
-      snippet: text.substring(0, CONTEXT_PACK_CONFIG.MAX_CONTENT_LENGTH),
-      url: url || 'https://google.com/search',
-      citation: url || '[Google Search]',
-      relevance_score: 1 - hits.length * 0.1,
-    });
+  for (const block of content) {
+    if (block.type !== 'text' || !block.citations) continue;
+    for (const c of block.citations) {
+      if (c.type !== 'web_search_result_location' || !c.cited_text) continue;
+      hits.push({
+        id: `web-${hits.length}`,
+        title: c.title || c.cited_text.substring(0, 80) + (c.cited_text.length > 80 ? '...' : ''),
+        snippet: c.cited_text.substring(0, CONTEXT_PACK_CONFIG.MAX_CONTENT_LENGTH),
+        url: c.url || 'https://www.google.com/search',
+        citation: c.url || '[Claude web search]',
+        relevance_score: 1 - hits.length * 0.1,
+      });
+      if (hits.length >= limit) break;
+    }
+    if (hits.length >= limit) break;
   }
   return hits.slice(0, CONTEXT_PACK_CONFIG.MAX_WEB_HITS);
 }
@@ -812,17 +805,18 @@ async function checkToolHealth(): Promise<ToolHealthStatus[]> {
     last_checked: now,
   });
 
-  // Web Search — Vertex AI Google Search grounding (primary, VTID-03472) or
-  // Perplexity (fallback). Available if EITHER backend is configured.
+  // Web Search — Claude web_search tool via direct Anthropic API (primary,
+  // VTID-03472) or Perplexity (fallback). Available if EITHER is configured.
+  // Never GCP/Vertex — decommissioned 2026-08-03.
   const PERPLEXITY_API_KEY = process.env.PERPLEXITY_API_KEY;
-  const hasVertex = !!process.env.GOOGLE_CLOUD_PROJECT;
+  const hasAnthropic = !!process.env.ANTHROPIC_API_KEY;
   tools.push({
     name: 'web_search',
-    available: hasVertex || !!PERPLEXITY_API_KEY,
+    available: hasAnthropic || !!PERPLEXITY_API_KEY,
     last_checked: now,
-    error: hasVertex || PERPLEXITY_API_KEY
+    error: hasAnthropic || PERPLEXITY_API_KEY
       ? undefined
-      : 'Neither GOOGLE_CLOUD_PROJECT nor PERPLEXITY_API_KEY configured',
+      : 'Neither ANTHROPIC_API_KEY nor PERPLEXITY_API_KEY configured',
   });
 
   return tools;
