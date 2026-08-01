@@ -3,7 +3,12 @@
     "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
   },
   "permissions": {
-    "allow": ["Bash(*)", "Edit", "Write", "Skill"]
+    "allow": [
+      "Bash(*)",
+      "Edit",
+      "Write",
+      "Skill"
+    ]
   },
   "hooks": {
     "PostToolUse": [
@@ -12,9 +17,33 @@
         "hooks": [
           {
             "type": "command",
-            "command": "jq -r '.tool_input.file_path // .tool_response.filePath // \"\"' | { read -r f; case \"$f\" in */services/gateway/src/*) cd /home/user/vitana-platform/services/gateway && ERRORS=$(npx tsc --noEmit 2>&1 | grep 'error TS' | head -5); if [ -n \"$ERRORS\" ]; then echo \"$ERRORS\" >&2; echo '{\"decision\":\"block\",\"reason\":\"TypeScript build errors found — deploy will fail. Fix before committing.\"}'; exit 1; fi ;; esac; }",
+            "command": "jq -r '.tool_input.file_path // .tool_response.filePath // \"\"' | { read -r f; case \"$f\" in */services/gateway/src/*) cd /home/user/vitana-platform/services/gateway && ERRORS=$(npx tsc --noEmit 2>&1 | grep 'error TS' | head -5); if [ -n \"$ERRORS\" ]; then echo \"$ERRORS\" >&2; echo '{\"decision\":\"block\",\"reason\":\"TypeScript build errors found \u2014 deploy will fail. Fix before committing.\"}'; exit 1; fi ;; esac; }",
             "timeout": 60,
             "statusMessage": "Checking TypeScript build..."
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-/home/user/vitana-platform}/scripts/watcher/session-hook.sh\" start",
+            "timeout": 10,
+            "statusMessage": "Watcher: recording session start..."
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-/home/user/vitana-platform}/scripts/watcher/session-hook.sh\" stop",
+            "timeout": 10,
+            "statusMessage": "Watcher: reconciling session end..."
           }
         ]
       }
