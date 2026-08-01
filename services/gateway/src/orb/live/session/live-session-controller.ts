@@ -979,6 +979,32 @@ export async function handleLiveSessionStart(
         }
 
         console.log(`[BOOTSTRAP-ORB-CRITICAL-PATH] Context ready for ${sessionId} in ${Date.now() - contextBuildStart}ms (role=${resolvedRole}, chars=${finalContext.length})`);
+
+        // VTID-03471: `orb.live.context.bootstrap[.skipped]` used to be emitted
+        // ONLY by the WS fork this VTID deleted — so the SSE transport never
+        // produced them at all, and deleting the fork would have removed the
+        // topic from OASIS entirely (caught by the voice-pipeline parity
+        // scanner). Emitting here covers BOTH transports, which is what the
+        // topic was always supposed to mean.
+        emitOasisEvent({
+          vtid: 'VTID-01224',
+          type: (bootstrapResult.skippedReason
+            ? 'orb.live.context.bootstrap.skipped'
+            : 'orb.live.context.bootstrap') as any,
+          source: transportLabel === 'ws' ? 'orb-live-ws' : 'orb-live-sse',
+          status: bootstrapResult.skippedReason ? 'warning' : 'info',
+          message: bootstrapResult.skippedReason
+            ? `Context bootstrap skipped: ${bootstrapResult.skippedReason}`
+            : `Context bootstrap complete: ${bootstrapResult.latencyMs}ms`,
+          payload: {
+            session_id: sessionId,
+            tenant_id: bootstrapIdentity.tenant_id,
+            user_id: bootstrapIdentity.user_id,
+            latency_ms: bootstrapResult.latencyMs,
+            reason: bootstrapResult.skippedReason || null,
+            transport: transportLabel,
+          },
+        }).catch(() => { });
       })
       .catch((err) => {
         console.warn(`[BOOTSTRAP-ORB-CRITICAL-PATH] Context build rejected for ${sessionId}, proceeding with empty context:`, err?.message || err);

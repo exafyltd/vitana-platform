@@ -13191,6 +13191,10 @@ router.post('/live/session/start', optionalAuth, async (req: AuthenticatedReques
  * browser sessions too, and a kill switch that only reaches logged-in users
  * is not a kill switch. Never emits OASIS (config read, not a transition).
  */
+// public-route — deliberately unauthenticated: a transport kill switch that
+// only reaches logged-in users is not a kill switch (anonymous ORB sessions
+// are browser sessions too). Returns one boolean-ish string, reads no user
+// data, and mutates nothing.
 router.get('/live/transport', (_req: Request, res: Response) => {
   // impact-allow-no-oasis — static config read on page load; no state change.
   return res.status(200).json({
