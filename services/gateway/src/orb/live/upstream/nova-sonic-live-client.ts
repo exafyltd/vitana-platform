@@ -227,11 +227,34 @@ async function buildBedrockClient(config: NovaSonicConfig): Promise<NovaBedrockL
  */
 let sharedBedrockClient: NovaBedrockLike | null = null;
 
+/**
+ * L-02: promise-memoized, not just value-memoized.
+ *
+ * The old `if (!sharedBedrockClient) sharedBedrockClient = await build(...)`
+ * shape races: two callers arriving before the first build resolves both see
+ * null and both build a client, the second overwriting the first. That was
+ * harmless while the only caller was serial, but the session path now kicks
+ * transport preparation CONCURRENTLY with context assembly, which makes the
+ * race the normal case rather than a rarity. Memoizing the in-flight promise
+ * collapses concurrent callers onto one build; a failed build clears the
+ * memo so the next attempt can retry rather than caching the failure.
+ */
+let sharedBedrockClientPromise: Promise<NovaBedrockLike> | null = null;
+
 async function defaultBedrockFactory(config: NovaSonicConfig): Promise<NovaBedrockLike> {
-  if (!sharedBedrockClient) {
-    sharedBedrockClient = await buildBedrockClient(config);
+  if (sharedBedrockClient) return sharedBedrockClient;
+  if (!sharedBedrockClientPromise) {
+    sharedBedrockClientPromise = buildBedrockClient(config)
+      .then((client) => {
+        sharedBedrockClient = client;
+        return client;
+      })
+      .catch((err) => {
+        sharedBedrockClientPromise = null;
+        throw err;
+      });
   }
-  return sharedBedrockClient;
+  return sharedBedrockClientPromise;
 }
 
 /**
@@ -388,6 +411,9 @@ export async function prewarmNovaSonicBedrock(config: NovaSonicConfig): Promise<
 /** Test seam: inject/clear the shared client without touching real AWS SDKs. */
 export function __setSharedBedrockClientForTests(client: NovaBedrockLike | null): void {
   sharedBedrockClient = client;
+  // Must clear the in-flight memo too — otherwise a test that injects null to
+  // force a rebuild would still be served the previously memoized promise.
+  sharedBedrockClientPromise = null;
 }
 
 export class NovaSonicLiveClient implements UpstreamLiveClient {
@@ -786,7 +812,11 @@ export class NovaSonicLiveClient implements UpstreamLiveClient {
 
   async close(reason?: string): Promise<void> {
     if (this.state === 'closed' || this.state === 'closing') return;
-    this.localCloseReason = reason ?? 'local_close';
+    // Nova item 6: every caller should name its reason. The fallback is
+    // deliberately NOT the old catch-all 'local_close' — if this label shows
+    // up in telemetry it means a close path was added without a reason, and
+    // that should be visible rather than blending into the historical bucket.
+    this.localCloseReason = reason ?? 'local_close_unspecified';
     this.state = 'closing';
     if (this.rotationTimer) {
       clearTimeout(this.rotationTimer);
@@ -814,7 +844,11 @@ export class NovaSonicLiveClient implements UpstreamLiveClient {
     }
     if (!this.closeEmitted) {
       this.state = 'closed';
-      this.finalizeClose({ initiatedLocally: true, reason });
+      // Use the normalized reason, not the raw arg — a bare close() must
+      // report the same label here as it does on the response-loop path
+      // (which reads localCloseReason), otherwise the same event shows up
+      // as two different reasons depending on which path won the race.
+      this.finalizeClose({ initiatedLocally: true, reason: this.localCloseReason });
     }
     try {
       // Never destroy the shared client — its pooled HTTP/2 sessions are
@@ -829,6 +863,16 @@ export class NovaSonicLiveClient implements UpstreamLiveClient {
     if (this.closeEmitted) return;
     this.closeEmitted = true;
     this.state = 'closed';
+    // Nova item 6: one structured line per disconnect. 72h of prod showed 42
+    // of 46 Nova sessions labelled only 'local_close', which made the cause
+    // unreadable. These fields are the ones that were actually missing when
+    // trying to tell a user stop from a transport loss from a rotation swap.
+    console.log(
+      `[BOOTSTRAP-NOVA-SONIC-VOICE] nova_close reason=${event.reason ?? 'unknown'} ` +
+        `initiated_locally=${event.initiatedLocally} rotation_fired=${this.rotationFired} ` +
+        `ms_since_last_input=${this.lastInputAcceptedAt ? Date.now() - this.lastInputAcceptedAt : -1} ` +
+        `commit=${process.env.GIT_COMMIT_SHA?.slice(0, 12) ?? 'unknown'}`,
+    );
     this.queue.close();
     if (this.rotationTimer) {
       clearTimeout(this.rotationTimer);
