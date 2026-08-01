@@ -161,6 +161,12 @@ describe('fetchWebHits — Claude web_search (VTID-03472)', () => {
     // slow call fails gracefully instead of outliving the tool call.
     expect(call.requestOptions.timeout).toBeLessThan(3000);
     expect(call.requestOptions.timeout).toBeGreaterThan(0);
+    // VTID-03472 follow-up: verified live on staging that without an
+    // explicit instruction, Claude (esp. Haiku) sometimes answers directly
+    // and skips invoking web_search entirely, returning zero hits for a
+    // clearly time-sensitive query. This call exists ONLY to search, so it
+    // must not leave that judgment call to the model.
+    expect(call.system).toEqual(expect.stringContaining('MUST invoke the web_search tool'));
   });
 
   it('returns real web_hits from Claude web_search citations', async () => {

@@ -600,6 +600,12 @@ async function fetchWebHits(
         {
           model: process.env.WEB_SEARCH_GROUNDING_MODEL || 'claude-haiku-4-5-20251001',
           max_tokens: 1024,
+          // Claude decides for itself whether a query needs the web_search
+          // tool — without an explicit instruction it can (and, verified
+          // live on staging, does) just answer directly and skip searching
+          // entirely, especially on Haiku. This call exists ONLY to search,
+          // so remove that judgment call rather than leave it to chance.
+          system: 'You are a web search assistant. For every query, you MUST invoke the web_search tool at least once before responding — never answer from your own knowledge alone, even if you are confident. After searching, give a concise, factual summary of what you found.',
           messages: [{ role: 'user', content: query }],
           tools: [{ type: 'web_search_20260209', name: 'web_search', max_uses: 3 }],
         },
