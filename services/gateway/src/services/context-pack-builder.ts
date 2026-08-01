@@ -596,26 +596,39 @@ async function fetchWebHits(
     try {
       const Anthropic = (await import('@anthropic-ai/sdk')).default;
       const client = new Anthropic({ apiKey });
-      const msg = await client.messages.create(
-        {
-          model: process.env.WEB_SEARCH_GROUNDING_MODEL || 'claude-haiku-4-5-20251001',
-          max_tokens: 1024,
-          // Claude decides for itself whether a query needs the web_search
-          // tool — without an explicit instruction it can (and, verified
-          // live on staging, does) just answer directly and skip searching
-          // entirely, especially on Haiku. This call exists ONLY to search,
-          // so remove that judgment call rather than leave it to chance.
-          system: 'You are a web search assistant. For every query, you MUST invoke the web_search tool at least once before responding — never answer from your own knowledge alone, even if you are confident. After searching, give a concise, factual summary of what you found.',
-          messages: [{ role: 'user', content: query }],
-          tools: [{ type: 'web_search_20260209', name: 'web_search', max_uses: 3 }],
-        },
-        // Bound below orb-live.ts's 3000ms TOOL_TIMEOUT_MS for search_web —
-        // without this, a slow/stalled call outlives the voice-tool deadline:
-        // the model gets a timeout error instead of a result (or the
-        // Perplexity fallback), while the un-aborted request keeps running.
-        // Same budget as fetchWithTimeout()'s FETCH_TIMEOUT_MS.
-        { timeout: CONTEXT_PACK_CONFIG.FETCH_TIMEOUT_MS },
-      );
+      const baseRequest = {
+        model: process.env.WEB_SEARCH_GROUNDING_MODEL || 'claude-haiku-4-5-20251001',
+        max_tokens: 1024,
+        // Belt-and-braces with tool_choice below: keep the instruction too,
+        // since it still shapes how Claude phrases the post-search summary.
+        system: 'You are a web search assistant. For every query, you MUST invoke the web_search tool at least once before responding — never answer from your own knowledge alone, even if you are confident. After searching, give a concise, factual summary of what you found.',
+        messages: [{ role: 'user' as const, content: query }],
+        tools: [{ type: 'web_search_20260209' as const, name: 'web_search' as const, max_uses: 3 }],
+      };
+      // Bound below orb-live.ts's 3000ms TOOL_TIMEOUT_MS for search_web —
+      // without this, a slow/stalled call outlives the voice-tool deadline:
+      // the model gets a timeout error instead of a result (or the
+      // Perplexity fallback), while the un-aborted request keeps running.
+      // Same budget as fetchWithTimeout()'s FETCH_TIMEOUT_MS.
+      const requestOptions = { timeout: CONTEXT_PACK_CONFIG.FETCH_TIMEOUT_MS };
+
+      let msg;
+      try {
+        // VTID-03472 follow-up #2: the system-prompt instruction alone was
+        // verified live on staging to still be insufficient — Haiku
+        // sometimes answers directly and skips web_search anyway. Force it
+        // structurally: tool_choice:'any' prefills the assistant turn so it
+        // MUST open with a tool call (the only tool offered is web_search).
+        // Anthropic's docs don't explicitly confirm or rule out tool_choice
+        // for server-side tools, so this is guarded by a fallback retry.
+        msg = await client.messages.create(
+          { ...baseRequest, tool_choice: { type: 'any' } },
+          requestOptions,
+        );
+      } catch (forcedError: any) {
+        console.warn(`[VTID-03472] tool_choice:any rejected by API (${forcedError.message}) — retrying without it`);
+        msg = await client.messages.create(baseRequest, requestOptions);
+      }
       const hits = hitsFromClaudeCitations(msg.content, limit);
       if (hits.length > 0) {
         console.log(`[VTID-03472] Claude web_search returned ${hits.length} web hits for: ${query.substring(0, 50)}`);

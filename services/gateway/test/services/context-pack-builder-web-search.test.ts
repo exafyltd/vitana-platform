@@ -27,7 +27,7 @@ process.env.SUPABASE_SERVICE_ROLE = 'test-service-role';
 delete process.env.PERPLEXITY_API_KEY;
 process.env.ANTHROPIC_API_KEY = 'test-anthropic-key';
 
-let claudeBehavior: 'cited' | 'no_citations' | 'throw' = 'cited';
+let claudeBehavior: 'cited' | 'no_citations' | 'throw' | 'reject_tool_choice' = 'cited';
 const messagesCreateCalls: any[] = [];
 
 jest.mock('@anthropic-ai/sdk', () => {
@@ -39,6 +39,9 @@ jest.mock('@anthropic-ai/sdk', () => {
           messagesCreateCalls.push({ ...body, requestOptions });
           if (claudeBehavior === 'throw') {
             throw new Error('Claude web_search mock failure');
+          }
+          if (claudeBehavior === 'reject_tool_choice' && body.tool_choice) {
+            throw new Error('tool_choice: any is not supported with server tools');
           }
           if (claudeBehavior === 'no_citations') {
             return { content: [{ type: 'text', text: 'No results found.', citations: null }] };
@@ -152,7 +155,7 @@ beforeEach(() => {
 });
 
 describe('fetchWebHits — Claude web_search (VTID-03472)', () => {
-  it('calls the Anthropic SDK with the web_search tool and a bounded timeout — never Vertex/GCP', async () => {
+  it('calls the Anthropic SDK with the web_search tool, tool_choice:any, and a bounded timeout — never Vertex/GCP', async () => {
     await buildContextPack(webOnlyInput('news about Mariia Maksina'));
     expect(messagesCreateCalls.length).toBeGreaterThan(0);
     const call = messagesCreateCalls[messagesCreateCalls.length - 1];
@@ -167,6 +170,9 @@ describe('fetchWebHits — Claude web_search (VTID-03472)', () => {
     // clearly time-sensitive query. This call exists ONLY to search, so it
     // must not leave that judgment call to the model.
     expect(call.system).toEqual(expect.stringContaining('MUST invoke the web_search tool'));
+    // VTID-03472 follow-up #2: the system prompt alone was ALSO verified
+    // live to be insufficient — force it structurally instead.
+    expect(call.tool_choice).toEqual({ type: 'any' });
   });
 
   it('returns real web_hits from Claude web_search citations', async () => {
@@ -188,6 +194,18 @@ describe('fetchWebHits — Claude web_search (VTID-03472)', () => {
     claudeBehavior = 'throw';
     const pack = await buildContextPack(webOnlyInput('news about Mariia Maksina'));
     expect(pack.web_hits).toEqual([]);
+  });
+
+  it('retries without tool_choice if the API rejects tool_choice:any on a server tool, and still returns hits', async () => {
+    claudeBehavior = 'reject_tool_choice';
+    const pack = await buildContextPack(webOnlyInput('news about Mariia Maksina'));
+    // First call (with tool_choice) throws per the mock; second call (retry,
+    // no tool_choice) succeeds — proves the retry path recovers instead of
+    // silently degrading to the broken Perplexity fallback.
+    expect(messagesCreateCalls.length).toBe(2);
+    expect(messagesCreateCalls[0].tool_choice).toEqual({ type: 'any' });
+    expect(messagesCreateCalls[1].tool_choice).toBeUndefined();
+    expect(pack.web_hits.length).toBe(2);
   });
 
   it('never imports @google-cloud/vertexai — Vertex/GCP is fully removed', async () => {
