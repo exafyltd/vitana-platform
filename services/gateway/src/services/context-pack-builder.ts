@@ -555,13 +555,28 @@ async function fetchKnowledgeHits(
 // =============================================================================
 
 /**
- * Fetch web search hits via Perplexity API
+ * VTID-03472: Fetch web search hits via Vertex AI Google Search grounding.
  *
- * GOVERNANCE REQUIREMENT (per Vitana standards):
- * - Web search MUST use Perplexity as the approved provider
- * - Must follow Ask/Research schemas with recency filters
- * - Must include citations in response
- * - Validator must verify citations are present
+ * Perplexity was the originally-approved provider (see fetchWebHitsPerplexity
+ * below) but PERPLEXITY_API_KEY has never been configured in staging or prod
+ * (confirmed via GET /api/v1/conversation/health → features.web_search:false
+ * on both, 2026-08-01) — every search_web call has silently returned zero
+ * hits since this path was built. This was masked for a long time because
+ * Vertex Live sessions ALSO get Google Search as a native BidiGenerateContent
+ * grounding directive ({ google_search: {} }, see live-tool-catalog.ts) —
+ * the model prefers that builtin over calling the search_web function tool,
+ * so the broken Perplexity path rarely fired. Nova Sonic sessions have no
+ * such native grounding (convertToolsToNovaSpecs strips Vertex builtins —
+ * nova-sonic-protocol.ts), so on Nova the ONLY web-search path IS this
+ * function tool, and it was always returning empty. Reported live: "check
+ * the internet for news about Mariia Maksina" on Nova → no results.
+ *
+ * Fix: use Vertex AI's own Google Search grounding via a plain (non-live)
+ * generateContent call instead of Perplexity — GOOGLE_CLOUD_PROJECT/ADC is
+ * already configured and working (the same credentials the LLM router's
+ * vertex adapter uses), so this needs no new secret. Falls back to
+ * Perplexity if that key is ever configured later; the sentence-splitting
+ * formatter is shared so output shape is unchanged either way.
  */
 async function fetchWebHits(
   query: string,
@@ -569,6 +584,128 @@ async function fetchWebHits(
 ): Promise<{ hits: WebHit[]; latency_ms: number }> {
   const startTime = Date.now();
 
+  const projectId = process.env.GOOGLE_CLOUD_PROJECT;
+  if (projectId) {
+    try {
+      const { VertexAI } = await import('@google-cloud/vertexai');
+      const location = process.env.VERTEX_LOCATION || 'us-central1';
+      const vertex = new VertexAI({ project: projectId, location });
+      const model = vertex.getGenerativeModel(
+        {
+          model: process.env.WEB_SEARCH_GROUNDING_MODEL || 'gemini-2.5-flash',
+          // Gemini 2.x+ requires the `googleSearch` tool — `googleSearchRetrieval`
+          // is the Gemini 1.5-era legacy tool and is rejected for 2.x models.
+          // `as any`: this SDK's types (@google-cloud/vertexai 1.9.2) predate
+          // the 2.x tool but the request is a plain JSON pass-through
+          // (functions/generate_content.js forwards `tools` verbatim), so the
+          // untyped field still reaches the wire correctly.
+          tools: [{ googleSearch: {} } as any],
+        },
+        // Bound below orb-live.ts's 3000ms TOOL_TIMEOUT_MS for search_web —
+        // without this, a slow/stalled Vertex call outlives the voice-tool
+        // deadline: the model gets a timeout error instead of a result (or
+        // the Perplexity fallback), while the un-aborted request keeps
+        // running. Same budget as fetchWithTimeout()'s FETCH_TIMEOUT_MS.
+        { timeout: CONTEXT_PACK_CONFIG.FETCH_TIMEOUT_MS },
+      );
+      const result = await model.generateContent({
+        contents: [{ role: 'user', parts: [{ text: query }] }],
+      });
+      const candidate = result.response?.candidates?.[0];
+      const parts = (candidate?.content?.parts || []) as Array<{ text?: string; thought?: boolean }>;
+      const text = parts.filter((p) => !p.thought).map((p) => p.text || '').join('');
+      const grounding = candidate?.groundingMetadata;
+      if (text.trim()) {
+        // groundingChunks is a source table, not sentence-aligned — align
+        // via groundingSupports (text span -> chunk indices) so each hit's
+        // citation is the source actually backing that claim, not just the
+        // i-th chunk for the i-th sentence.
+        const supportHits = hitsFromGroundingSupports(grounding, limit);
+        const hits = supportHits.length > 0
+          ? supportHits
+          : splitIntoWebHits(text, (grounding?.groundingChunks || []).map((c) => c.web?.uri).filter((u): u is string => !!u), limit);
+        console.log(`[VTID-03472] Vertex grounding returned ${hits.length} web hits for: ${query.substring(0, 50)}`);
+        return { hits, latency_ms: Date.now() - startTime };
+      }
+      console.warn('[VTID-03472] Vertex grounding returned no text — falling back to Perplexity');
+    } catch (error: any) {
+      console.error(`[VTID-03472] Vertex grounding error: ${error.message} — falling back to Perplexity`);
+    }
+  } else {
+    console.warn('[VTID-03472] GOOGLE_CLOUD_PROJECT not configured — falling back to Perplexity');
+  }
+
+  return fetchWebHitsPerplexity(query, limit, startTime);
+}
+
+interface VertexGroundingChunk { web?: { uri?: string; title?: string } }
+interface VertexGroundingSupport { segment?: { text?: string }; groundingChunkIndices?: number[] }
+interface VertexGroundingMetadata {
+  groundingChunks?: VertexGroundingChunk[];
+  groundingSupports?: VertexGroundingSupport[];
+}
+
+/**
+ * Builds one WebHit per grounding support — each is a text span Gemini
+ * actually attributed to specific source chunk(s), so the citation is
+ * correct for that claim (unlike zipping citations[i] to sentence i).
+ * Returns [] when the response carries no groundingSupports (e.g. a very
+ * short answer), letting the caller fall back to splitIntoWebHits.
+ */
+function hitsFromGroundingSupports(grounding: VertexGroundingMetadata | undefined, limit: number): WebHit[] {
+  const chunks = grounding?.groundingChunks || [];
+  const supports = grounding?.groundingSupports || [];
+  const hits: WebHit[] = [];
+  for (let i = 0; i < supports.length && hits.length < limit; i++) {
+    const text = supports[i].segment?.text?.trim();
+    if (!text || text.length <= 20) continue;
+    const chunkIdx = supports[i].groundingChunkIndices?.[0];
+    const chunk = typeof chunkIdx === 'number' ? chunks[chunkIdx] : undefined;
+    const url = chunk?.web?.uri;
+    hits.push({
+      id: `web-${hits.length}`,
+      title: chunk?.web?.title || text.substring(0, 80) + (text.length > 80 ? '...' : ''),
+      snippet: text.substring(0, CONTEXT_PACK_CONFIG.MAX_CONTENT_LENGTH),
+      url: url || 'https://google.com/search',
+      citation: url || '[Google Search]',
+      relevance_score: 1 - hits.length * 0.1,
+    });
+  }
+  return hits.slice(0, CONTEXT_PACK_CONFIG.MAX_WEB_HITS);
+}
+
+/** Shared sentence-splitting formatter — same shape Perplexity always used. */
+function splitIntoWebHits(content: string, citations: string[], limit: number): WebHit[] {
+  const hits: WebHit[] = [];
+  const sentences = content.split(/\.\s+/).filter((s) => s.trim().length > 20);
+  for (let i = 0; i < Math.min(sentences.length, limit); i++) {
+    const sentence = sentences[i].trim();
+    if (sentence) {
+      hits.push({
+        id: `web-${i}`,
+        title: sentence.substring(0, 80) + (sentence.length > 80 ? '...' : ''),
+        snippet: sentence.substring(0, CONTEXT_PACK_CONFIG.MAX_CONTENT_LENGTH),
+        url: citations[i] || citations[0] || 'https://google.com/search',
+        citation: citations[i] || citations[0] || '[Google Search]',
+        relevance_score: 1 - i * 0.1,
+      });
+    }
+  }
+  return hits.slice(0, CONTEXT_PACK_CONFIG.MAX_WEB_HITS);
+}
+
+/**
+ * Fallback web search hits via Perplexity API — the originally-approved
+ * provider (per Vitana standards: must follow Ask/Research schemas with
+ * recency filters, must include citations). Kept as a fallback for when
+ * PERPLEXITY_API_KEY is configured; see fetchWebHits above for why Vertex
+ * grounding is now primary.
+ */
+async function fetchWebHitsPerplexity(
+  query: string,
+  limit: number,
+  startTime: number
+): Promise<{ hits: WebHit[]; latency_ms: number }> {
   const PERPLEXITY_API_KEY = process.env.PERPLEXITY_API_KEY;
   if (!PERPLEXITY_API_KEY) {
     console.warn('[VTID-01216] PERPLEXITY_API_KEY not configured - web search disabled');
@@ -615,31 +752,11 @@ async function fetchWebHits(
 
     const content = data.choices[0]?.message?.content || '';
     const citations = data.citations || [];
-
-    // Parse response into web hits
-    const hits: WebHit[] = [];
-    const sentences = content.split(/\.\s+/).filter(s => s.trim().length > 20);
-
-    for (let i = 0; i < Math.min(sentences.length, limit); i++) {
-      const sentence = sentences[i].trim();
-      if (sentence) {
-        hits.push({
-          id: `web-${i}`,
-          title: sentence.substring(0, 80) + (sentence.length > 80 ? '...' : ''),
-          snippet: sentence.substring(0, CONTEXT_PACK_CONFIG.MAX_CONTENT_LENGTH),
-          url: citations[i] || citations[0] || 'https://perplexity.ai',
-          citation: citations[i] || citations[0] || '[Perplexity AI]',
-          relevance_score: 1 - (i * 0.1),
-        });
-      }
-    }
+    const hits = splitIntoWebHits(content, citations, limit);
 
     console.log(`[VTID-01216] Perplexity returned ${hits.length} web hits for: ${query.substring(0, 50)}`);
 
-    return {
-      hits: hits.slice(0, CONTEXT_PACK_CONFIG.MAX_WEB_HITS),
-      latency_ms: Date.now() - startTime,
-    };
+    return { hits, latency_ms: Date.now() - startTime };
   } catch (error: any) {
     console.error(`[VTID-01216] Perplexity API error: ${error.message}`);
     return { hits: [], latency_ms: Date.now() - startTime };
@@ -695,13 +812,17 @@ async function checkToolHealth(): Promise<ToolHealthStatus[]> {
     last_checked: now,
   });
 
-  // Web Search via Perplexity
+  // Web Search — Vertex AI Google Search grounding (primary, VTID-03472) or
+  // Perplexity (fallback). Available if EITHER backend is configured.
   const PERPLEXITY_API_KEY = process.env.PERPLEXITY_API_KEY;
+  const hasVertex = !!process.env.GOOGLE_CLOUD_PROJECT;
   tools.push({
     name: 'web_search',
-    available: !!PERPLEXITY_API_KEY,
+    available: hasVertex || !!PERPLEXITY_API_KEY,
     last_checked: now,
-    error: PERPLEXITY_API_KEY ? undefined : 'PERPLEXITY_API_KEY not configured',
+    error: hasVertex || PERPLEXITY_API_KEY
+      ? undefined
+      : 'Neither GOOGLE_CLOUD_PROJECT nor PERPLEXITY_API_KEY configured',
   });
 
   return tools;
