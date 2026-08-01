@@ -23,6 +23,21 @@ import { processConversationTurn } from '../services/conversation-client';
 
 const router = Router();
 
+// VTID-03459: per-user in-flight guard for the fire-and-forget Vitana text
+// reply (see the /send handler below). Module-level because this route file
+// is a singleton Express router — safe within one instance, not distributed.
+//
+// Maps user_id -> the timestamp the in-flight call started. A plain Set
+// with no expiry was tried first and found live-testing to be unsafe: a
+// stuck handleVitanaTextReply() call (observed live on gateway-staging —
+// memory-orchestrator retrieval can take 30s+ under load, and the turn can
+// stall well past that with no error/telemetry) would hold the guard open
+// forever, permanently blocking that user from ever getting a reply again
+// on this instance. VITANA_REPLY_STALE_MS bounds how long a guard entry is
+// honored before a fresh request is allowed through again.
+const vitanaReplyInFlight = new Map<string, number>();
+const VITANA_REPLY_STALE_MS = 90_000;
+
 function getSupabase() {
   return createClient(
     process.env.SUPABASE_URL!,
@@ -105,13 +120,39 @@ router.post('/send', requireAuth, requireTenant, async (req: Request, res: Respo
   // conversation intelligence layer and write it back to chat_messages.
   // Skip the bot reply when the message is just an attachment with no text —
   // there's no prompt to reply to.
+  //
+  // VTID-03459: handleVitanaTextReply is fire-and-forget with no idempotency
+  // key, so a client-side double-send (fast double-tap/Enter before the
+  // client's own re-entrancy state re-renders — see MessageInput.tsx) fires
+  // two independent, non-deterministic LLM turns that each write their own
+  // reply, landing as two near-duplicate/truncated bot bubbles. Guard here
+  // per-user so only one Vitana turn runs at a time; this is in-process only
+  // (not distributed across Cloud Run instances) but covers the observed
+  // failure mode, which is always same-client rapid double-fire hitting the
+  // same instance.
   if (isVitanaBot(receiver_id) && trimmedContent.length > 0) {
-    handleVitanaTextReply(
-      identity.user_id,
-      identity.tenant_id!,
-      trimmedContent,
-      supabase,
-    ).catch(err => console.warn('[Chat] Vitana text reply failed:', err.message));
+    const now = Date.now();
+    const inFlightSince = vitanaReplyInFlight.get(identity.user_id);
+    if (inFlightSince !== undefined && now - inFlightSince < VITANA_REPLY_STALE_MS) {
+      console.warn(`[Chat] Dropping duplicate Vitana text reply request for user ${identity.user_id} (one already in flight)`);
+    } else {
+      vitanaReplyInFlight.set(identity.user_id, now);
+      handleVitanaTextReply(
+        identity.user_id,
+        identity.tenant_id!,
+        trimmedContent,
+        supabase,
+      )
+        .catch(err => console.warn('[Chat] Vitana text reply failed:', err.message))
+        .finally(() => {
+          // Only clear the entry this call itself set — a very-late-finishing
+          // stale call must not clobber a fresher in-flight entry that the
+          // staleness window let through in the meantime.
+          if (vitanaReplyInFlight.get(identity.user_id) === now) {
+            vitanaReplyInFlight.delete(identity.user_id);
+          }
+        });
+    }
   } else if (!isVitanaBot(receiver_id)) {
     // BOOTSTRAP-NOTIF-CATEGORIES: Resolve the sender's display name so that the
     // push notification looks like a classic chat notification ("John Doe" as

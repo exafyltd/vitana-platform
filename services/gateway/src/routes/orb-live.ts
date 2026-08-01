@@ -1054,14 +1054,29 @@ export interface GeminiLiveSession {
   // safe when the reason is 'forwarding_no_ack' — a model-response watchdog
   // must not be reset by user audio or we'd suppress legitimate stalls.
   responseWatchdogReason?: string;
-  // VTID-01984 (R5): true once Vertex has shown ANY sign of life on this
-  // session — first input_transcription, first model_start_speaking, or
-  // first audio_out chunk. The audio-forwarding paths skip the
-  // forwarding_no_ack watchdog entirely once this is true, because the
-  // upstream WS is demonstrably healthy and a 15-45 s "no ack" window is
-  // simply Vertex computing a response, not a stall. Native WS error /
-  // close handlers still catch real connection failures.
-  vertexHasShownLife?: boolean;
+  // Nova item 5 — liveness is TWO properties, and the old session-wide
+  // `vertexHasShownLife` conflated them, which is why a stalled turn read as
+  // "alive" and skipped recovery.
+  //
+  //   transportHasShownLife — the upstream socket works. An
+  //   input_transcription proves this (the provider received our audio and
+  //   answered), so it is a legitimate setter. Session-wide and never reset:
+  //   once a socket has carried traffic, it was real.
+  //
+  //   modelRespondedThisTurn — the model has produced output for THIS turn.
+  //   ONLY model output (audio out / output transcription) may set it, and it
+  //   resets at turn_complete and whenever a tool result is delivered (at
+  //   which point the model owes a response again). This is the property the
+  //   forwarding watchdog actually needs.
+  //
+  // In the live-3577c2fa trace the user's speech was transcribed at
+  // 15:05:35-38, a tool call fired at 15:05:40, then silence — a per-turn
+  // flag set by transcription would STILL have read "alive". Hence the split
+  // rather than merely resetting the old flag per turn. Named
+  // provider-neutrally because Nova sessions inherited the Vertex-era flag
+  // and reported `reason=vertex_alive` on a Nova session.
+  transportHasShownLife?: boolean;
+  modelRespondedThisTurn?: boolean;
   // VTID-LOOPGUARD: Consecutive model turns without user speech.
   // Detects response loops where model keeps elaborating without being asked.
   consecutiveModelTurns: number;
@@ -1156,7 +1171,9 @@ setInterval(() => {
   let purged = 0;
   for (const [sid, s] of liveSessions) {
     if (now - s.createdAt.getTime() > MAX_SESSION_AGE_MS) {
-      if (s.upstreamWs) { try { s.upstreamWs.close(); } catch (_) { /* ignore */ } }
+      // Nova item 6: this is the abandoned-session sweep, not a user action —
+      // distinguish it from user_stop / client_disconnect in telemetry.
+      if (s.upstreamWs) { try { s.upstreamWs.close(1000, 'zombie_sweep_max_age'); } catch (_) { /* ignore */ } }
       // BOOTSTRAP-ORB-1007-AUDIT: emit session.stop so abandoned sessions
       // (client closed tab / mobile killed app mid-conversation) show up in
       // OASIS instead of just disappearing. Prior behaviour left a silent
@@ -1214,7 +1231,8 @@ function terminateExistingSessionsForUser(userId: string, excludeSessionId?: str
 
     // Close upstream WebSocket
     if (existingSession.upstreamWs) {
-      try { existingSession.upstreamWs.close(); } catch (_e) { /* ignore */ }
+      // Nova item 6: replaced because the same user started a newer session.
+      try { existingSession.upstreamWs.close(1000, 'superseded_by_new_session'); } catch (_e) { /* ignore */ }
       existingSession.upstreamWs = null;
     }
 
@@ -6028,6 +6046,41 @@ function sendFunctionResponseToLiveAPI(
   }
 }
 
+// Hard contract for tool-bound flows the LLM keeps skipping. Empirically
+// Gemini Live sometimes answers "I can't find that user" without ever
+// calling resolve_recipient — especially when the spoken phrase contains
+// a hint like "I think it's maria6". This block makes the binding
+// explicit at the system-instruction level (tool description alone wasn't
+// enough). Same pattern for navigation.
+//
+// BOOTSTRAP-ORB-MESSAGING-CONTRACT-TRIM-FIX: this used to be baked onto the
+// tail of the bootstrap/memory instruction string (generateMemoryEnhanced-
+// SystemInstruction's baseInstructionNoMemory/baseInstructionWithMemory).
+// That made it the LAST thing appended to the bootstrap text — which is
+// exactly the content both capBootstrapContext() (Phase A trailing-content
+// cap) and the R0 aggregate byte-budget guard's 'bootstrap' drop-priority
+// (instruction-budget.ts DROP_ORDER, dropped FIRST) trim away first for
+// heavy-context users (many memory facts, social context, calendar, journey
+// data). A "NON-NEGOTIABLE" contract that silently vanishes under budget
+// pressure is worse than none — the model then has no explicit instruction
+// to call resolve_recipient/send_chat_message and improvises an unrelated
+// answer instead (observed: user asked to message someone, got a reply
+// about unrelated holiday content, no tool call in the logs at all).
+// Fixed by moving it into the PRESERVED scaffold tail — appended together
+// with buildNavigatorPolicySection() below, which decomposeInstructionSections
+// (instruction-budget.ts) always classifies as 'scaffold' and never trims.
+export const MESSAGING_CONTRACT = `
+
+## MESSAGING & SHARING CONTRACT (NON-NEGOTIABLE)
+
+If the user mentions sending a message, sharing a link, texting, inviting, or telling someone something, you MUST:
+1. Call resolve_recipient(spoken_name) BEFORE saying anything about whether the recipient exists. The ONLY way to honestly say "I can't find that user" is to receive an empty candidates array from resolve_recipient. Do not infer absence from your own context — you do not have the user's contact list.
+2. If the spoken phrase contains a name AND a Vitana ID hint ("Maria, I think it's maria6"), pass the Vitana ID hint as spoken_name first; if that returns 0 candidates, retry with the name.
+3. After resolve_recipient returns, follow the readback contract from the tool description (read back, await explicit confirmation, then send_chat_message).
+4. AFTER send_chat_message returns ok:true (VTID-02969): briefly acknowledge ("Sent to @<vid>.") AND in the SAME turn offer the next action — but ONLY from the tool result's next_actions array. Read next_actions[0].label verbatim as the suggestion. If the array is empty, briefly acknowledge and let the user lead — do NOT invent a next action from your own knowledge. Example with next_actions: "Sent to @dragan_red. Next: <next_actions[0].label>. Want me to do that?" Example with empty array: "Sent to @dragan_red." When the user accepts, call activate_recommendation with next_actions[0].id.
+
+If the user asks to be shown a screen, list, or detail page, call navigate_to_screen — never claim a page doesn't exist without trying. The frontend handles routing; you handle the call.`;
+
 /**
  * VTID-NAV-01: Vitana Navigator policy section appended to every system
  * instruction. Teaches the model when to call navigator_consult,
@@ -7265,6 +7318,21 @@ async function connectToLiveAPI(
     if (__upstreamDecision.provider === 'nova_sonic') {
       try {
         const novaCfg = getNovaSonicConfig(process.env);
+        // L-02: kick Bedrock transport preparation NOW — credential-chain
+        // resolution, SDK module load, and the pooled DNS/TCP/TLS/HTTP2 path
+        // — concurrently with context assembly below. None of that work
+        // depends on the system instruction, but it used to sit behind the
+        // envelope await purely because connect() is called after it.
+        //
+        // Deliberately NOT awaited: on a warm process this is a memoized
+        // no-op (boot prewarm + the keep-warm loop already populated the
+        // shared client), so awaiting could only ever add latency. The value
+        // is on the cold path — first session after a fresh task, or when
+        // boot prewarm failed — where connect() would otherwise pay the full
+        // credential/TLS cost serially after context assembly. connect()
+        // still resolves the client itself, so correctness does not depend
+        // on this finishing, or finishing first.
+        void prewarmNovaSonicBedrock(novaCfg).catch(() => false);
         const envelope = (await buildOrbVertexSetupEnvelope()) as { setup?: Record<string, any> };
         const setup = envelope.setup ?? {};
         // Nova's RAI content filter rejects the stream over the IDENTITY
@@ -10055,24 +10123,6 @@ async function generateMemoryEnhancedSystemInstruction(
   // Load text_chat personality config
   const textChatConfig = getPersonalityConfigSync('text_chat') as Record<string, any>;
 
-  // Hard contract for tool-bound flows the LLM keeps skipping. Empirically
-  // Gemini Live sometimes answers "I can't find that user" without ever
-  // calling resolve_recipient — especially when the spoken phrase contains
-  // a hint like "I think it's maria6". This block makes the binding
-  // explicit at the system-instruction level (tool description alone wasn't
-  // enough). Same pattern for navigation.
-  const MESSAGING_CONTRACT = `
-
-## MESSAGING & SHARING CONTRACT (NON-NEGOTIABLE)
-
-If the user mentions sending a message, sharing a link, texting, inviting, or telling someone something, you MUST:
-1. Call resolve_recipient(spoken_name) BEFORE saying anything about whether the recipient exists. The ONLY way to honestly say "I can't find that user" is to receive an empty candidates array from resolve_recipient. Do not infer absence from your own context — you do not have the user's contact list.
-2. If the spoken phrase contains a name AND a Vitana ID hint ("Maria, I think it's maria6"), pass the Vitana ID hint as spoken_name first; if that returns 0 candidates, retry with the name.
-3. After resolve_recipient returns, follow the readback contract from the tool description (read back, await explicit confirmation, then send_chat_message).
-4. AFTER send_chat_message returns ok:true (VTID-02969): briefly acknowledge ("Sent to @<vid>.") AND in the SAME turn offer the next action — but ONLY from the tool result's next_actions array. Read next_actions[0].label verbatim as the suggestion. If the array is empty, briefly acknowledge and let the user lead — do NOT invent a next action from your own knowledge. Example with next_actions: "Sent to @dragan_red. Next: <next_actions[0].label>. Want me to do that?" Example with empty array: "Sent to @dragan_red." When the user accepts, call activate_recommendation with next_actions[0].id.
-
-If the user asks to be shown a screen, list, or detail page, call navigate_to_screen — never claim a page doesn't exist without trying. The frontend handles routing; you handle the call.`;
-
   // Base instruction WITHOUT memory claims (used when memory is unavailable)
   // VTID-01225-READ-FIX: Always append memory_facts if available
   const baseInstructionNoMemory = `${textChatConfig.base_identity_no_memory || 'You are VITANA ORB, a voice-first multimodal assistant.'}
@@ -10084,7 +10134,7 @@ Context:
 - selectedId: ${session.selectedId || 'none'}
 
 Operating mode:
-${textChatConfig.operating_mode || '- Voice conversation is primary.\n- Always listening while ORB overlay is open.\n- Read-only: do not mutate system state.\n- Be concise, contextual, and helpful.'}${memoryFactsSection ? `\n- You have PERSISTENT MEMORY - you remember users across sessions.${memoryFactsSection}` : ''}${calendarSection}${MESSAGING_CONTRACT}`;
+${textChatConfig.operating_mode || '- Voice conversation is primary.\n- Always listening while ORB overlay is open.\n- Read-only: do not mutate system state.\n- Be concise, contextual, and helpful.'}${memoryFactsSection ? `\n- You have PERSISTENT MEMORY - you remember users across sessions.${memoryFactsSection}` : ''}${calendarSection}`;
 
   // Base instruction WITH memory claims (used when memory IS available)
   const baseInstructionWithMemory = `${textChatConfig.base_identity_with_memory || 'You are VITANA ORB, a voice-first multimodal assistant with persistent memory.'}
@@ -10098,7 +10148,7 @@ Context:
 Operating mode:
 ${textChatConfig.operating_mode || '- Voice conversation is primary.\n- Always listening while ORB overlay is open.\n- Read-only: do not mutate system state.\n- Be concise, contextual, and helpful.'}
 - You have PERSISTENT MEMORY - you remember users across sessions.
-- NEVER claim you cannot remember or that your memory resets.${memoryFactsSection}${calendarSection}${MESSAGING_CONTRACT}`;
+- NEVER claim you cannot remember or that your memory resets.${memoryFactsSection}${calendarSection}`;
 
   // VTID-01153: Try memory-indexer first (Mem0 OSS)
   // VTID-01186: Use effective identity for memory lookups
@@ -13697,7 +13747,9 @@ router.get('/live/stream', optionalAuth, async (req: AuthenticatedRequest, res: 
     // VTID-01219: Close upstream WebSocket on client disconnect
     if (session.upstreamWs) {
       try {
-        session.upstreamWs.close();
+        // Nova item 6: the client's transport went away (tab closed, app
+        // backgrounded, mobile network lost) — not a deliberate stop.
+        session.upstreamWs.close(1000, 'client_disconnect');
       } catch (e) {
         // Ignore
       }
@@ -15246,12 +15298,13 @@ async function handleWsAudioMessage(clientSession: WsClientSession, message: WsC
       // WS and SSE transports stay in lockstep until Phase 3 collapses
       // them onto one adapter.
       if (!liveSession.isModelSpeaking) {
-        // VTID-01984 (R5): mirror of SSE-path gate — once Vertex has shown
-        // life, skip arming the forwarding_no_ack watchdog. Healthy WS does
-        // not need a 15-45 s heuristic to detect Vertex's compute window.
-        if (liveSession.vertexHasShownLife) {
+        // Nova item 5: mirror of the SSE-path gate — skip arming the
+        // forwarding_no_ack watchdog only while the model has already
+        // responded on THIS turn. Transport liveness (the user's own
+        // transcription) must not suppress recovery.
+        if (liveSession.modelRespondedThisTurn) {
           if (liveSession.audioInChunks % 200 === 0) {
-            emitDiag(liveSession, 'watchdog_skipped', { reason: 'vertex_alive' });
+            emitDiag(liveSession, 'watchdog_skipped', { reason: 'model_responded_this_turn' });
           }
         } else {
           const canSlide = !liveSession.responseWatchdogTimer
@@ -15438,7 +15491,8 @@ function handleWsStopSession(clientSession: WsClientSession): void {
     // Close upstream WebSocket
     if (liveSession.upstreamWs) {
       try {
-        liveSession.upstreamWs.close();
+        // Nova item 6: explicit stop_session control frame from the client.
+        liveSession.upstreamWs.close(1000, 'user_stop');
       } catch (e) {
         // Ignore
       }

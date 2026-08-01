@@ -87,6 +87,55 @@ export function isNovaProvider(session: GeminiLiveSession): boolean {
 }
 
 /**
+ * BOOTSTRAP-CHAT-BRIDGE-RELIABILITY: write one voice-transcript turn into
+ * chat_messages so it shows up in the user's "Vitana" Inbox thread. This is
+ * the ONLY path that makes a voice conversation visible in chat history —
+ * previously a failed insert here was fire-and-forget with just a
+ * console.warn, so a transient DB/network blip silently and permanently
+ * dropped that turn from the user's history with no trace anywhere
+ * (reported as "I had several conversations with Vitana and none show up").
+ * Retries once, and emits a durable OASIS event on final failure so lost
+ * history is visible in telemetry instead of only a Cloud Run log line.
+ */
+export async function bridgeVoiceTranscript(
+  bridgeSupabase: NonNullable<ReturnType<typeof getSupabase>>,
+  row: {
+    tenant_id: string;
+    sender_id: string;
+    receiver_id: string;
+    content: string;
+    message_type: string;
+    metadata: Record<string, unknown>;
+    created_at: string;
+    read_at?: string;
+  },
+  direction: 'user_to_vitana' | 'vitana_to_user',
+  sessionId: string,
+): Promise<void> {
+  const MAX_ATTEMPTS = 2;
+  let lastError: string | undefined;
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    const { error } = await bridgeSupabase.from('chat_messages').insert(row);
+    if (!error) return;
+    lastError = error.message;
+    console.warn(`[VTID-CHAT-BRIDGE] ${direction} transcript write attempt ${attempt}/${MAX_ATTEMPTS} failed for session ${sessionId}: ${error.message}`);
+  }
+  emitOasisEvent({
+    vtid: 'BOOTSTRAP-CHAT-BRIDGE-RELIABILITY',
+    type: 'orb.chat_bridge.write_failed' as any,
+    source: 'orb-live-upstream-message-handler',
+    status: 'error',
+    message: `Voice transcript (${direction}) failed to bridge into chat_messages after ${MAX_ATTEMPTS} attempts — this turn will not appear in the user's Inbox`,
+    payload: {
+      orb_session_id: sessionId,
+      tenant_id: row.tenant_id,
+      direction,
+      error: lastError,
+    },
+  }).catch(() => { /* best-effort telemetry only, never let this throw into the voice pipeline */ });
+}
+
+/**
  * orb-live.ts-local helpers the handler body invokes. Future slices may
  * lift these out individually; until then, the deps-bag is the seam.
  */
@@ -810,7 +859,9 @@ export function createUpstreamLiveMessageHandler(
                       if (driftCount >= 2 && session.upstreamWs) {
                         console.warn(`[VTID-02670] Forcing hard reconnect to re-anchor persona ${activePersonaForCheck}`);
                         (session as any)._personaSwapInFlight = true;
-                        try { session.upstreamWs.close(); } catch { /* ignore */ }
+                        // Nova item 6: deliberate reconnect to re-anchor the
+                        // persona, not a failure or a user stop.
+                        try { session.upstreamWs.close(1000, 'persona_drift_reanchor'); } catch { /* ignore */ }
                       }
                     }
                   }
@@ -873,7 +924,7 @@ export function createUpstreamLiveMessageHandler(
 
                 // User speech → chat_messages (sender=user, receiver=Vitana)
                 if (chatBridgeUserText.length > 0) {
-                  bridgeSupabase.from('chat_messages').insert({
+                  void bridgeVoiceTranscript(bridgeSupabase, {
                     tenant_id: bridgeTenantId,
                     sender_id: bridgeUserId,
                     receiver_id: VITANA_BOT_USER_ID,
@@ -881,15 +932,13 @@ export function createUpstreamLiveMessageHandler(
                     message_type: 'voice_transcript',
                     metadata: { ...bridgeMeta, direction: 'user_to_vitana' },
                     created_at: userMsgTime.toISOString(),
-                  }).then(({ error }) => {
-                    if (error) console.warn(`[VTID-CHAT-BRIDGE] User transcript write failed: ${error.message}`);
-                  });
+                  }, 'user_to_vitana', session.sessionId);
                 }
 
                 // Vitana speech → chat_messages (sender=Vitana, receiver=user)
                 // Pre-set read_at since user already heard this during the voice session
                 if (chatBridgeAssistantText.length > 0) {
-                  bridgeSupabase.from('chat_messages').insert({
+                  void bridgeVoiceTranscript(bridgeSupabase, {
                     tenant_id: bridgeTenantId,
                     sender_id: VITANA_BOT_USER_ID,
                     receiver_id: bridgeUserId,
@@ -898,9 +947,7 @@ export function createUpstreamLiveMessageHandler(
                     metadata: { ...bridgeMeta, direction: 'vitana_to_user', is_greeting: isGreetingTurn },
                     read_at: assistantMsgTime.toISOString(),
                     created_at: assistantMsgTime.toISOString(),
-                  }).then(({ error }) => {
-                    if (error) console.warn(`[VTID-CHAT-BRIDGE] Vitana transcript write failed: ${error.message}`);
-                  });
+                  }, 'vitana_to_user', session.sessionId);
                 }
               }
             }
@@ -1035,11 +1082,10 @@ export function createUpstreamLiveMessageHandler(
                   session.isModelSpeaking = true;
                   // VTID-TOOLGUARD: Model produced audio — reset tool call counter
                   session.consecutiveToolCalls = 0;
-                  // VTID-01984 (R5): Vertex has spoken — upstream WS is healthy.
-                  // Once true, the audio-forwarding paths skip arming the
-                  // forwarding_no_ack watchdog so we never kill a healthy
-                  // session in the middle of Vertex computing a follow-up turn.
-                  session.vertexHasShownLife = true;
+                  // Nova item 5: model output — proves BOTH transport liveness
+                  // and that the model has responded on this turn.
+                  session.transportHasShownLife = true;
+                  session.modelRespondedThisTurn = true;
                   console.log(`[VTID-VOICE-INIT] Model started speaking for session ${session.sessionId} — mic audio gated`);
                   // Phase 1 W2: first TTS chunk forwarded to the client.
                   ctx.deps.markVoiceLatency(session, 'audio_out_first_chunk');
@@ -1199,12 +1245,12 @@ export function createUpstreamLiveMessageHandler(
               console.log(`[VTID-VOICE-INIT] Filtering greeting prompt from input transcription: "${inputTranscription.substring(0, 60)}..."`);
             } else {
               console.log(`[VTID-01219] Input transcription: ${inputTranscription}`);
-              // VTID-01984 (R5): Vertex's VAD fired and produced a transcription —
-              // upstream WS is demonstrably healthy. Mark life signal so subsequent
-              // user-audio chunks don't arm the forwarding_no_ack watchdog (which
-              // was destroying healthy sessions when first-turn inference exceeded
-              // 15 s). Real WS failures are still caught by native handlers.
-              session.vertexHasShownLife = true;
+              // Nova item 5: this is the USER's speech coming back as a
+              // transcription. It proves the socket works — it does NOT prove
+              // the model owes/produced anything. Transport liveness only;
+              // setting response liveness here is exactly the bug that let a
+              // stalled turn read as "alive" and skip recovery.
+              session.transportHasShownLife = true;
               // Phase 1 W2: first STT fragment of the turn = transcript_ready.
               // inputTranscriptBuffer is still empty until the append below, so
               // an empty buffer marks the leading fragment exactly once per turn.
@@ -1588,7 +1634,9 @@ export function handleAudioOutput(
   if (!session.isModelSpeaking) {
     session.isModelSpeaking = true;
     session.consecutiveToolCalls = 0;
-    session.vertexHasShownLife = true;
+    // Nova item 5: model output — transport AND response liveness.
+    session.transportHasShownLife = true;
+    session.modelRespondedThisTurn = true;
     console.log(`[VTID-VOICE-INIT] Model started speaking for session ${session.sessionId} — mic audio gated`);
     ctx.deps.markVoiceLatency(session, 'audio_out_first_chunk');
     ctx.deps.emitDiag(session, 'model_start_speaking');
@@ -1664,7 +1712,9 @@ export function handleTranscript(
       console.log(`[VTID-VOICE-INIT] Filtering greeting prompt from input transcription: "${inputTranscription.substring(0, 60)}..."`);
       return;
     }
-    session.vertexHasShownLife = true;
+    // Nova item 5: user speech — transport liveness only (see the paired
+    // site above; this is the same signal on the normalized event path).
+    session.transportHasShownLife = true;
     if (!session.inputTranscriptBuffer) {
       ctx.deps.markVoiceLatency(session, 'transcript_ready', { chars: inputTranscription.length });
     }
@@ -1715,6 +1765,11 @@ export function handleTranscript(
   }
 
   // Output (assistant) transcript.
+  // Nova item 5: model output — a text-only turn (no audio) still means the
+  // model responded, so response liveness must be set here too, not only on
+  // the audio path.
+  session.transportHasShownLife = true;
+  session.modelRespondedThisTurn = true;
   const outputTranscription = event.text;
   if (session.navigationDispatched) {
     console.log(`[VTID-NAV-HOTFIX] Dropping post-nav output transcription: "${outputTranscription.substring(0, 60)}..."`);
@@ -1819,6 +1874,9 @@ export function handleToolCall(
         output: loopGuardGuidance,
       });
     }
+    // Nova item 5: the model has been handed results (here, guidance telling
+    // it to answer) — it owes output again, so response liveness resets.
+    session.modelRespondedThisTurn = false;
 
     // VTID-TOOLGUARD-FIX: hard ceiling as a backstop in case the reworded
     // guidance above still doesn't land — well above the normal threshold
@@ -1909,6 +1967,12 @@ export function handleToolCall(
         });
         if (!sent) {
           console.error(`[VTID-01224] tool result NOT sent for ${toolName} — upstream client no longer open. Session ${session.sessionId} may be stalled.`);
+        } else {
+          // Nova item 5: result delivered — the model owes a response for this
+          // turn again. This is the exact live-3577c2fa shape: tool call at
+          // 15:05:40, result delivered, then silence. Without this reset the
+          // turn still reads "alive" from the pre-tool-call model audio.
+          session.modelRespondedThisTurn = false;
         }
         // BOOTSTRAP-ORB-TOOL-CARRYOVER: same contract as the Vertex send site —
         // record only what actually reached the model, clear at turn_complete.
@@ -1947,6 +2011,9 @@ export function handleToolCall(
           output: '',
           error: err.message,
         });
+        // Nova item 5: a failed tool result is still a result — the model owes
+        // a response to it, so response liveness resets here too.
+        session.modelRespondedThisTurn = false;
       });
   }
 }
@@ -2007,6 +2074,10 @@ export function handleTurnComplete(
 
   ctx.deps.clearResponseWatchdog(session);
   session.isModelSpeaking = false;
+  // Nova item 5: the turn is over — the model no longer owes output. The
+  // next turn must re-earn response liveness, otherwise a stall on turn N+1
+  // inherits turn N's "alive" and skips the watchdog.
+  session.modelRespondedThisTurn = false;
   session.turnCompleteAt = Date.now();
   console.log(`[VTID-VOICE-INIT] Model stopped speaking for session ${session.sessionId} — mic audio ungated (cooldown ${getPostTurnCooldownMs()}ms)`);
   ctx.deps.emitDiag(session, 'turn_complete');
@@ -2408,7 +2479,7 @@ export function handleTurnComplete(
       const assistantMsgTime = new Date(userMsgTime.getTime() + 1);
 
       if (chatBridgeUserText.length > 0) {
-        bridgeSupabase.from('chat_messages').insert({
+        void bridgeVoiceTranscript(bridgeSupabase, {
           tenant_id: bridgeTenantId,
           sender_id: bridgeUserId,
           receiver_id: VITANA_BOT_USER_ID,
@@ -2416,13 +2487,11 @@ export function handleTurnComplete(
           message_type: 'voice_transcript',
           metadata: { ...bridgeMeta, direction: 'user_to_vitana' },
           created_at: userMsgTime.toISOString(),
-        }).then(({ error }) => {
-          if (error) console.warn(`[VTID-CHAT-BRIDGE] User transcript write failed: ${error.message}`);
-        });
+        }, 'user_to_vitana', session.sessionId);
       }
 
       if (chatBridgeAssistantText.length > 0) {
-        bridgeSupabase.from('chat_messages').insert({
+        void bridgeVoiceTranscript(bridgeSupabase, {
           tenant_id: bridgeTenantId,
           sender_id: VITANA_BOT_USER_ID,
           receiver_id: bridgeUserId,
@@ -2431,9 +2500,7 @@ export function handleTurnComplete(
           metadata: { ...bridgeMeta, direction: 'vitana_to_user', is_greeting: isGreetingTurn },
           read_at: assistantMsgTime.toISOString(),
           created_at: assistantMsgTime.toISOString(),
-        }).then(({ error }) => {
-          if (error) console.warn(`[VTID-CHAT-BRIDGE] Vitana transcript write failed: ${error.message}`);
-        });
+        }, 'vitana_to_user', session.sessionId);
       }
     }
   }
