@@ -215,14 +215,14 @@ router.post('/send', requireAuth, requireTenant, async (req: Request, res: Respo
 // client-side change required; the response body is a same-turn convenience,
 // not the only way the reply reaches the UI.
 
-// impact-allow-no-oasis: this handler is a thin HTTP wrapper around
-// handleVitanaTextReply() -> processConversationTurn()/processBrainTurn(),
-// which already emit the real state-transition events for this turn
-// (conversation.turn.received, conversation.model.called,
-// conversation.turn.completed, brain.turn.received/processed) — see
-// conversation-client.ts and vitana-brain.ts. Emitting a second event here
-// would duplicate that telemetry, not add signal.
 router.post('/vitana-reply', requireAuth, requireTenant, async (req: Request, res: Response) => {
+  // impact-allow-no-oasis: this handler is a thin HTTP wrapper around
+  // handleVitanaTextReply() -> processConversationTurn()/processBrainTurn(),
+  // which already emit the real state-transition events for this turn
+  // (conversation.turn.received, conversation.model.called,
+  // conversation.turn.completed, brain.turn.received/processed) — see
+  // conversation-client.ts and vitana-brain.ts. Emitting a second event here
+  // would duplicate that telemetry, not add signal.
   const { identity } = req as AuthenticatedRequest;
   if (!identity) return res.status(401).json({ ok: false, error: 'unauthorized' });
   if (!identity.tenant_id) return res.status(400).json({ ok: false, error: 'tenant_required' });
