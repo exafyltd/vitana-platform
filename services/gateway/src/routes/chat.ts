@@ -2,7 +2,8 @@
  * Chat Messages API Routes — User-to-user direct messaging
  *
  * Endpoints:
- *   POST   /send               — Send a message to another user
+ *   POST   /send               — Send a message to another user (never triggers a Vitana reply)
+ *   POST   /vitana-reply       — Generate + await a Vitana bot reply (VTID-03470)
  *   GET    /conversation/:peer — Get messages between current user and peer (paginated)
  *   GET    /conversations      — List recent conversations (latest message per peer)
  *   POST   /read               — Mark messages from a peer as read
@@ -23,18 +24,17 @@ import { processConversationTurn } from '../services/conversation-client';
 
 const router = Router();
 
-// VTID-03459: per-user in-flight guard for the fire-and-forget Vitana text
-// reply (see the /send handler below). Module-level because this route file
-// is a singleton Express router — safe within one instance, not distributed.
+// VTID-03459/VTID-03470: per-user in-flight guard for POST /vitana-reply
+// (see below). Module-level because this route file is a singleton Express
+// router — safe within one instance, not distributed.
 //
 // Maps user_id -> the timestamp the in-flight call started. A plain Set
 // with no expiry was tried first and found live-testing to be unsafe: a
-// stuck handleVitanaTextReply() call (observed live on gateway-staging —
-// memory-orchestrator retrieval can take 30s+ under load, and the turn can
-// stall well past that with no error/telemetry) would hold the guard open
-// forever, permanently blocking that user from ever getting a reply again
-// on this instance. VITANA_REPLY_STALE_MS bounds how long a guard entry is
-// honored before a fresh request is allowed through again.
+// slow handleVitanaTextReply() call (memory-orchestrator retrieval can take
+// 30s+ under load) would hold the guard open for its full duration, and a
+// naive guard blocks a legitimate retry after a client-side timeout.
+// VITANA_REPLY_STALE_MS bounds how long a guard entry is honored before a
+// fresh request is allowed through again.
 const vitanaReplyInFlight = new Map<string, number>();
 const VITANA_REPLY_STALE_MS = 90_000;
 
@@ -116,44 +116,20 @@ router.post('/send', requireAuth, requireTenant, async (req: Request, res: Respo
     return res.status(500).json({ ok: false, error: error.message });
   }
 
-  // VTID-CHAT-BRIDGE: If receiver is Vitana, generate a reply via the unified
-  // conversation intelligence layer and write it back to chat_messages.
-  // Skip the bot reply when the message is just an attachment with no text —
-  // there's no prompt to reply to.
-  //
-  // VTID-03459: handleVitanaTextReply is fire-and-forget with no idempotency
-  // key, so a client-side double-send (fast double-tap/Enter before the
-  // client's own re-entrancy state re-renders — see MessageInput.tsx) fires
-  // two independent, non-deterministic LLM turns that each write their own
-  // reply, landing as two near-duplicate/truncated bot bubbles. Guard here
-  // per-user so only one Vitana turn runs at a time; this is in-process only
-  // (not distributed across Cloud Run instances) but covers the observed
-  // failure mode, which is always same-client rapid double-fire hitting the
-  // same instance.
-  if (isVitanaBot(receiver_id) && trimmedContent.length > 0) {
-    const now = Date.now();
-    const inFlightSince = vitanaReplyInFlight.get(identity.user_id);
-    if (inFlightSince !== undefined && now - inFlightSince < VITANA_REPLY_STALE_MS) {
-      console.warn(`[Chat] Dropping duplicate Vitana text reply request for user ${identity.user_id} (one already in flight)`);
-    } else {
-      vitanaReplyInFlight.set(identity.user_id, now);
-      handleVitanaTextReply(
-        identity.user_id,
-        identity.tenant_id!,
-        trimmedContent,
-        supabase,
-      )
-        .catch(err => console.warn('[Chat] Vitana text reply failed:', err.message))
-        .finally(() => {
-          // Only clear the entry this call itself set — a very-late-finishing
-          // stale call must not clobber a fresher in-flight entry that the
-          // staleness window let through in the meantime.
-          if (vitanaReplyInFlight.get(identity.user_id) === now) {
-            vitanaReplyInFlight.delete(identity.user_id);
-          }
-        });
-    }
-  } else if (!isVitanaBot(receiver_id)) {
+  // VTID-03470: /send no longer triggers the Vitana bot reply itself — it
+  // only ever inserts a message, for any receiver, bot or human. Generating
+  // the bot's reply used to happen here fire-and-forget, which silently lost
+  // replies under GCP Cloud Run's CPU throttling: a background promise is
+  // only guaranteed CPU while a request is in flight, and once /send
+  // responded, Cloud Run could freeze the promise before it finished writing
+  // the reply (confirmed live — the LLM call completed successfully per its
+  // own telemetry, but the chat_messages insert never happened). Callers
+  // that want a Vitana reply now explicitly call POST /vitana-reply (below)
+  // right after a successful send to the bot, and await it — that keeps the
+  // request (and therefore the CPU) alive for the reply's full duration,
+  // deterministically completing or surfacing an explicit error instead of
+  // silently vanishing. See vitana-v1's useGlobalMessages.ts for the caller.
+  if (!isVitanaBot(receiver_id)) {
     // BOOTSTRAP-NOTIF-CATEGORIES: Resolve the sender's display name so that the
     // push notification looks like a classic chat notification ("John Doe" as
     // the title, message body as the preview) rather than a generic "New message".
@@ -227,6 +203,60 @@ router.post('/send', requireAuth, requireTenant, async (req: Request, res: Respo
   }
 
   return res.status(201).json({ ok: true, data });
+});
+
+// ── POST /vitana-reply — Explicitly generate + await a Vitana bot reply ──
+// VTID-03470: see the comment in /send above. This is AWAITED end-to-end by
+// the caller, so the request (and Cloud Run's CPU allocation for it) stays
+// alive for the reply's full duration — completion is deterministic, not a
+// race against the platform freezing a background promise. The reply is
+// still written to chat_messages exactly as before, so the existing
+// Supabase Realtime subscription in the frontend renders it with no other
+// client-side change required; the response body is a same-turn convenience,
+// not the only way the reply reaches the UI.
+
+router.post('/vitana-reply', requireAuth, requireTenant, async (req: Request, res: Response) => {
+  const { identity } = req as AuthenticatedRequest;
+  if (!identity) return res.status(401).json({ ok: false, error: 'unauthorized' });
+  if (!identity.tenant_id) return res.status(400).json({ ok: false, error: 'tenant_required' });
+
+  const { content } = req.body as { content?: unknown };
+  const trimmedContent = typeof content === 'string' ? content.trim() : '';
+  if (trimmedContent.length === 0) {
+    return res.status(400).json({ ok: false, error: 'content is required' });
+  }
+
+  // Same per-user in-flight guard used previously on /send (VTID-03459),
+  // now protecting this endpoint instead: a client-side double-invocation
+  // (e.g. a retry after a slow-but-still-running first call) gets a clear
+  // 409 rather than spawning a second concurrent LLM turn for the same user.
+  const now = Date.now();
+  const inFlightSince = vitanaReplyInFlight.get(identity.user_id);
+  if (inFlightSince !== undefined && now - inFlightSince < VITANA_REPLY_STALE_MS) {
+    return res.status(409).json({ ok: false, error: 'reply_in_progress' });
+  }
+  vitanaReplyInFlight.set(identity.user_id, now);
+
+  const supabase = getSupabase();
+  try {
+    const result = await handleVitanaTextReply(
+      identity.user_id,
+      identity.tenant_id,
+      trimmedContent,
+      supabase,
+    );
+    if (!result.ok) {
+      return res.status(502).json({ ok: false, error: result.error || 'vitana_reply_failed' });
+    }
+    return res.status(200).json({ ok: true, reply: result.reply });
+  } finally {
+    // Only clear the entry this call itself set — a very-late-finishing call
+    // must not clobber a fresher in-flight entry the staleness window let
+    // through in the meantime.
+    if (vitanaReplyInFlight.get(identity.user_id) === now) {
+      vitanaReplyInFlight.delete(identity.user_id);
+    }
+  }
 });
 
 // ── GET /conversation/:peerId — Messages between me and peer ─
@@ -417,7 +447,7 @@ async function handleVitanaTextReply(
   tenantId: string,
   userContent: string,
   supabase: ReturnType<typeof getSupabase>,
-): Promise<void> {
+): Promise<{ ok: boolean; reply?: string; error?: string }> {
   const startTime = Date.now();
 
   try {
@@ -452,8 +482,9 @@ async function handleVitanaTextReply(
     }
 
     if (!result.ok || !result.reply) {
-      console.warn(`[Chat] Vitana reply failed: ${result.error || 'empty reply'}`);
-      return;
+      const error = result.error || 'empty reply';
+      console.warn(`[Chat] Vitana reply failed: ${error}`);
+      return { ok: false, error };
     }
 
     // Write Vitana's reply to chat_messages
@@ -477,11 +508,14 @@ async function handleVitanaTextReply(
 
     if (error) {
       console.warn(`[Chat] Vitana reply write failed: ${error.message}`);
-    } else {
-      console.log(`[Chat] Vitana text reply written (${Date.now() - startTime}ms)`);
+      return { ok: false, error: error.message };
     }
+
+    console.log(`[Chat] Vitana text reply written (${Date.now() - startTime}ms)`);
+    return { ok: true, reply: result.reply };
   } catch (err: any) {
     console.error(`[Chat] Vitana text reply error: ${err.message}`);
+    return { ok: false, error: err.message };
   }
 }
 
