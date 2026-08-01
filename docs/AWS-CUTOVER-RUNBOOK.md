@@ -30,6 +30,18 @@ per-service DR build, and requires:
    this runbook and is itself gated on spec_status=approved, and
 3. Explicit user sign-off before any change to `gateway.vitanaland.com`
    or the `vitanaland.com` apex DNS records — those are live,
+
+> **Draft spec for that execution VTID:**
+> `docs/vtids/VTID-PENDING-GCP-FULL-CUTOVER-SPEC.md` (drafted 2026-07-31,
+> at user request, investigation/documentation only). It is a draft, not
+> an allocated VTID — no ledger row exists and `spec_status` is not
+> `approved`. It exists so review and allocation can happen quickly once
+> someone with sign-off authority decides to proceed. Its preconditions
+> mirror this runbook's §2 checklist plus what the 2026-07-31 investigation
+> found (the `exafyltd/vitana-infra` reconciliation gap, the reopened DMS
+> item, and several GCP-only dependencies — Cloud Scheduler, the fine-tune
+> pipeline, ORB voice's Vertex/TTS dependencies — not previously tracked
+> anywhere in this runbook).
    customer-facing production hostnames.
 
 ---
@@ -48,11 +60,11 @@ CLI + Cloudflare DNS audit performed under this VTID.
 | oasis-projector / worker-runner / verification-engine | Bug-fixed + ECS health-checked + alarmed (VTID-03411). Deliberately **not** autoscaled or made public — `oasis-projector`'s ledger writer has no cross-instance locking (CLAUDE.md: "Never run parallel VTID executions"). **`worker-runner` has since been reviewed (2026-07-24) and found CONDITIONALLY SAFE for N>1**: its claim mechanism is a genuine server-side compare-and-swap (`SELECT ... FOR UPDATE` + conditional `UPDATE` inside one Postgres transaction, `claim_vtid_task` RPC in `supabase/migrations/20260413000000_fix_claim_accepts_scheduled.sql`), not a client-side read-then-write race, and no other shared mutable state exists between instances. The one real N>1-specific risk: an idle sibling instance will legitimately re-claim a VTID whose 60-minute claim lease expired due to sustained heartbeat failure on the active instance, causing double execution — condition for safety is that heartbeats reliably survive transient network hiccups; recommend alerting on sustained heartbeat failure before actually enabling autoscaling. Autoscaling itself has **not** been enabled — this is a documentation finding only, pending a decision on whether to act on it. |
 | orb-agent | **No AWS deploy path at all.** Named directly in CLAUDE.md §16 IF-THEN rule 24 alongside worker-runner as something needing prod updates. |
 | autopilot job (Cloud Run Job) | **No AWS deploy path at all.** |
-| Database sync | RDS Aurora `vitana-aurora-prod` via DMS task `vitana-supabase-to-aurora` (full-load-and-cdc): 495/495 tables under live CDC from the same Supabase project GCP prod uses. `autopilot_recommendations`'s dedicated CDC task (`vitana-autopilot-cdc`), which was `FATAL_ERROR` for ~26h, was fixed 2026-07-24 via a clean restart — both tasks confirmed `running`. **Note:** the specific update that was stuck at the time of the original failure did not replicate (the fix restarts CDC capture from "now", not from the stale position) — a one-row historical drift, not an ongoing gap. |
+| Database sync | RDS Aurora `vitana-aurora-prod` via DMS task `vitana-supabase-to-aurora` (full-load-and-cdc): 495/495 tables under live CDC from the same Supabase project GCP prod uses. `autopilot_recommendations`'s dedicated CDC task (`vitana-autopilot-cdc`), which was `FATAL_ERROR` for ~26h, was fixed 2026-07-24 via a clean restart — both tasks confirmed `running`. **Note:** the specific update that was stuck at the time of the original failure did not replicate (the fix restarts CDC capture from "now", not from the stale position) — a one-row historical drift, not an ongoing gap. **Superseding finding (2026-07-27, VTID-03419): `vitana-supabase-to-aurora` was separately measured silently dropping ~154k row applies** — a much larger, distinct problem from the one-row gap above, and the explicit reason Aurora-dependent services stayed excluded from that cutover. Not yet root-caused as of 2026-07-31 — see the reopened §2 checklist item. Aurora is **not** a valid source of truth for any service beyond DR until this is resolved. |
 | Secrets | `vitana/supabase/prod/*` (4 secrets) current as of 2026-07-14/21; RDS-managed master credential rotates automatically. |
 | Alarms | 47 `vitana-*` CloudWatch alarms, all `OK`/`INSUFFICIENT_DATA`. `community-app-awsdr` and `oasis-operator-awsdr` now have the same 4-alarm set (cpu-high, memory-high, target-5xx, unhealthy-hosts) gateway-awsdr already had — closed 2026-07-24. A `vitana-dms-task-failure` EventBridge rule (source `aws.dms` → SNS topic `vitana-alarms-prod`) was also added the same day so a future DMS task failure isn't silent for 26+ hours again like `vitana-autopilot-cdc` was. **Resolved 2026-07-24: `vitana-alarms-prod` now has a confirmed subscriber** — `j.tadic@exafy.io` (email), confirmed via `aws sns list-subscriptions-by-topic` (`SubscriptionsConfirmed: 1`). All 47 alarms and the DMS-failure rule now notify a real endpoint. User explicitly confirmed single-email alerting is sufficient to close this item — no Slack/PagerDuty channel requested. |
-| ALB naming | `vitana-tg-gateway-prod` / `vitana-tg-community-prod` **actually serve AWS staging traffic**, not prod — confirmed live via `/api/v1/admin/health` returning `env:"staging"` through those target groups. Both are `ManagedBy=terraform`-tagged (Terraform state not found in this repo) — not a stray hand-created leftover, part of some external IaC. Tagged 2026-07-24 with `ActualEnvironment=staging` to reduce confusion; not renamed (immutable name, rename requires recreation + ALB rule reattachment, risks a traffic blip). A real cutover must not confuse these with the `-awsdr` target groups. |
-| Legacy/mystery services | ~22 of the 29 (now 31) ECS services in `Vitana-ECS-Cluster` from the 2026-07-09 bulk-provisioning event remain unexplained — flagged, not investigated. Out of scope for cutover unless one turns out to be load-bearing. |
+| ALB naming | `vitana-tg-gateway-prod` / `vitana-tg-community-prod` **actually serve AWS staging traffic**, not prod — confirmed live via `/api/v1/admin/health` returning `env:"staging"` through those target groups. **Resolved 2026-07-31: the owning Terraform state was found** — `exafyltd/vitana-infra` (private repo, TMC migration team's handover, not previously cross-referenced from this repo). `terraform/phase5-compute/alb.tf` creates the ALB + both target groups; that repo's own README documents the naming drift as deliberate (`phase5` applied with `environment="prod"`, `phase4-ecs` with `"staging"`, staging wired to the "prod"-named TGs as a 2026-07-16/17 outage fix; renaming would recreate the ALB/TGs so it stays until a planned window). **New finding, more urgent than the naming itself: that repo's README says "DO NOT terraform apply YET"** — the checked-in state is stale vs. live infra and applying it would revert the ECS↔ALB attachments, the gateway health-check path, and live task-def env vars (`SUPABASE_JWT_SECRET` included). `phase8-data-prod` (Aurora prod) additionally shows "11 add, no state" as of the last recorded plan (2026-07-20) — never reconciled against live Aurora at all. Anyone touching AWS infra for cutover work must reconcile `vitana-infra`'s state first, the same way phase4/phase5 already were — this is a live landmine, not a paperwork gap. |
+| Legacy/mystery services | ~22 of the 29 (now 31) ECS services in `Vitana-ECS-Cluster` from the 2026-07-09 bulk-provisioning event remain unexplained — flagged, not investigated. Out of scope for cutover unless one turns out to be load-bearing. **Partially resolved 2026-07-31**: `vitana-infra/terraform/phase4-ecs/variables.tf` defines all 28 intended services — this is the TMC handover's planned architecture, not an unowned event. Cross-checked against this repo's `services/` tree: 6 (`conductor`, `validator-core`, `mcp-gateway`, `cognee-extractor`, `memory-indexer`, `orb-agent`) have real source here but are marked "non-deployable, in-process" in CLAUDE.md §2 — worth confirming whether AWS actually runs them as independent services (a real behavioral difference, not just naming). The other ~14 (`worker-core`, `planner-core`, `crewai-prompt-synth`, `qa-agent`, `auth-proxy`, `cloudshell-relay`, `dev-console-ui`, etc.) have no corresponding source anywhere in this repo — likely TMC-internal tooling or unbuilt placeholders. Still needs live AWS confirmation of which have actual running tasks (`desiredCount > 0`) before ruling out load-bearing risk entirely — this session had no live AWS credentials to check. |
 | Cutover/rollback docs | **Did not exist before this VTID.** No DNS-repoint runbook, no rollback/TTL plan, no GCP decommission checklist. |
 | Governance | **No execution VTID exists yet for the *full* cutover** (all services, GCP decommission). VTID-03419 executed a narrower, explicitly-scoped DNS repoint for gateway + frontend only, gated by its own approved spec — see §3 EXECUTION RECORD. Every other AWS VTID remains scoped to one service's DR build, not traffic movement. |
 
@@ -71,7 +83,21 @@ Every item must be checked before an execution VTID for the actual
 cutover can reach `spec_status=approved`. This list is deliberately
 objective — each item has a clear done/not-done state.
 
-- [x] **DMS replication healthy.** Fixed 2026-07-24. `vitana-autopilot-cdc`
+- [ ] **DMS replication healthy — REOPENED 2026-07-31.** Was marked `[x]`
+      fixed 2026-07-24 (see original note below), but VTID-03419's own
+      changelog entry (2026-07-27, 3 days later) found `vitana-supabase-to-aurora`
+      silently dropping **~154k row applies** — the explicit, stated reason
+      every Aurora-dependent service was excluded from that cutover. That is
+      a categorically different, much larger problem than the one-row gap
+      the 2026-07-24 fix addressed, and it was never reflected back into
+      this checklist. **This item is not done; treat it as blocking until
+      root-caused.** No IaC covers the DMS task (not part of
+      `exafyltd/vitana-infra` — it was set up out-of-band via console/CLI),
+      and requires live DMS access to diagnose: run
+      `aws dms describe-table-statistics --replication-task-arn <arn>` for
+      per-table applied/failed counts, and check CloudWatch DMS metrics /
+      task logs for the actual failure pattern behind the 154k figure.
+      *Original 2026-07-24 note, now superseded by the above:* `vitana-autopilot-cdc`
       was stuck `FATAL_ERROR`; `resume-processing` from its stale checkpoint
       hit a *different* failure (`An internal WAL conversational protocol
       error`, likely from the 2-day-old checkpoint's LSN position no
