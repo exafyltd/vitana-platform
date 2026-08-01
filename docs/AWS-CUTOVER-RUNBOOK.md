@@ -30,6 +30,18 @@ per-service DR build, and requires:
    this runbook and is itself gated on spec_status=approved, and
 3. Explicit user sign-off before any change to `gateway.vitanaland.com`
    or the `vitanaland.com` apex DNS records — those are live,
+
+> **Draft spec for that execution VTID:**
+> `docs/vtids/VTID-PENDING-GCP-FULL-CUTOVER-SPEC.md` (drafted 2026-07-31,
+> at user request, investigation/documentation only). It is a draft, not
+> an allocated VTID — no ledger row exists and `spec_status` is not
+> `approved`. It exists so review and allocation can happen quickly once
+> someone with sign-off authority decides to proceed. Its preconditions
+> mirror this runbook's §2 checklist plus what the 2026-07-31 investigation
+> found (the `exafyltd/vitana-infra` reconciliation gap, the reopened DMS
+> item, and several GCP-only dependencies — Cloud Scheduler, the fine-tune
+> pipeline, ORB voice's Vertex/TTS dependencies — not previously tracked
+> anywhere in this runbook).
    customer-facing production hostnames.
 
 ---
