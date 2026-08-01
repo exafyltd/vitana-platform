@@ -135,6 +135,13 @@ export interface GovernanceEvaluation {
 
 // ==================== OASIS Events ====================
 export type CicdEventType =
+  // VTID-03462 (Watcher Phase 3): the ONLY event the Watcher emits.
+  // Its observer scans on a timer and deliberately emits nothing — polling is
+  // not progress (CLAUDE.md §6). An auto-mute is different: it permanently
+  // changes what every future planner/executor/worker prompt sees, with no
+  // human in the loop, and "why did the system stop reminding us about X?"
+  // needs an auditable answer.
+  | 'vtid.decision.watcher.lesson_muted'
   | 'cicd.github.create_pr.requested'
   | 'cicd.github.create_pr.succeeded'
   | 'cicd.github.create_pr.failed'

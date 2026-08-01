@@ -555,7 +555,7 @@ async function fetchKnowledgeHits(
 // =============================================================================
 
 /**
- * VTID-03462: Fetch web search hits via Vertex AI Google Search grounding.
+ * VTID-03472: Fetch web search hits via Vertex AI Google Search grounding.
  *
  * Perplexity was the originally-approved provider (see fetchWebHitsPerplexity
  * below) but PERPLEXITY_API_KEY has never been configured in staging or prod
@@ -606,15 +606,15 @@ async function fetchWebHits(
         .filter((u): u is string => !!u);
       if (text.trim()) {
         const hits = splitIntoWebHits(text, citations, limit);
-        console.log(`[VTID-03462] Vertex grounding returned ${hits.length} web hits for: ${query.substring(0, 50)}`);
+        console.log(`[VTID-03472] Vertex grounding returned ${hits.length} web hits for: ${query.substring(0, 50)}`);
         return { hits, latency_ms: Date.now() - startTime };
       }
-      console.warn('[VTID-03462] Vertex grounding returned no text — falling back to Perplexity');
+      console.warn('[VTID-03472] Vertex grounding returned no text — falling back to Perplexity');
     } catch (error: any) {
-      console.error(`[VTID-03462] Vertex grounding error: ${error.message} — falling back to Perplexity`);
+      console.error(`[VTID-03472] Vertex grounding error: ${error.message} — falling back to Perplexity`);
     }
   } else {
-    console.warn('[VTID-03462] GOOGLE_CLOUD_PROJECT not configured — falling back to Perplexity');
+    console.warn('[VTID-03472] GOOGLE_CLOUD_PROJECT not configured — falling back to Perplexity');
   }
 
   return fetchWebHitsPerplexity(query, limit, startTime);

@@ -1,5 +1,5 @@
 /**
- * VTID-03462: regression coverage for fetchWebHits()'s Vertex AI grounding
+ * VTID-03472: regression coverage for fetchWebHits()'s Vertex AI grounding
  * path — the fix for "check the internet for news about X" returning
  * nothing on Nova Sonic (and silently on Vertex too, masked by Vertex's
  * native google_search grounding covering for it).
@@ -127,7 +127,7 @@ beforeEach(() => {
   mockFetch.mockClear();
 });
 
-describe('fetchWebHits — Vertex AI grounding (VTID-03462)', () => {
+describe('fetchWebHits — Vertex AI grounding (VTID-03472)', () => {
   it('returns real web_hits from grounded text + citations when Vertex succeeds', async () => {
     const pack = await buildContextPack(webOnlyInput('news about Mariia Maksina'));
     expect(pack.web_hits.length).toBeGreaterThan(0);

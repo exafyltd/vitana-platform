@@ -51,6 +51,9 @@ import {
 // dispatch below. Only exercised when DEV_AUTOPILOT_JOB_CLOUD=aws.
 import { dispatchExecutorJobAws } from './aws-ecs-admin';
 
+import { buildReminders, remindersEnabled, renderRemindersBlock } from './watcher/reminder';
+import { recordShown } from './watcher/feedback';
+
 const LOG_PREFIX = '[dev-autopilot-execute]';
 const EXEC_VTID = 'VTID-DEV-AUTOPILOT';
 
@@ -224,7 +227,8 @@ async function loadConfig(s: SupaConfig): Promise<ConfigRow | null> {
 }
 
 /**
- * Upsert worker validation failures into dev_autopilot_prompt_learnings.
+ * Upsert worker validation failures into watcher_lessons (VTID-03461;
+ * was dev_autopilot_prompt_learnings, migrated and dropped).
  * Scoped by the finding's scanner so retrieval can target lessons from the
  * same scanner class (e.g. only pull missing-tests lessons for missing-tests
  * findings).
@@ -257,21 +261,30 @@ async function persistAttemptFailures(
         : f.stage === 'parse' || f.stage === 'apply'
           ? 'parse_error'
           : 'validation_other';
+    // VTID-03461: writes watcher_lessons; dev_autopilot_prompt_learnings was
+    // migrated into it and dropped. stage='execute' preserves the old table's
+    // implicit meaning — every row it held was a pre-PR validation failure.
+    // The old flat `scanner` column becomes scope.scanner.
     const body = {
+      stage: 'execute',
       pattern_type,
       pattern_key: f.pattern_key.slice(0, 200),
       example_message: (f.example_message || '').slice(0, 500),
-      scanner,
-      finding_id: ctx.finding_id,
-      execution_id: ctx.execution_id || null,
+      // `lesson` is required (NOT NULL) and is what actually gets injected.
+      // Without a distilled sentence the best available text is the
+      // signature itself — still better prompt material than nothing.
+      lesson: `A previous attempt failed pre-PR validation: ${pattern_type} — ${f.pattern_key}`.slice(0, 500),
+      scope: scanner ? { scanner } : {},
+      source_finding_id: ctx.finding_id,
+      source_execution_id: ctx.execution_id || null,
       last_seen_at: now,
     };
-    // PostgREST upsert: merge-duplicates against the UNIQUE
-    // (pattern_type, pattern_key, scanner) index. frequency stays at the
-    // default (1) on conflict; the aggregator counts by rows, not by the
-    // column, so an undercount of duplicates is acceptable.
+    // PostgREST upsert against the UNIQUE (stage, pattern_type, pattern_key)
+    // index. As before, frequency stays at its default on conflict — the
+    // aggregator counts rows, not the column, so an undercount of duplicates
+    // is acceptable here.
     await supa(s,
-      `/rest/v1/dev_autopilot_prompt_learnings?on_conflict=pattern_type,pattern_key,scanner`,
+      `/rest/v1/watcher_lessons?on_conflict=stage,pattern_type,pattern_key`,
       {
         method: 'POST',
         headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
@@ -293,14 +306,26 @@ async function loadExecutionLessons(
 ): Promise<ExecutionLesson[]> {
   const since = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString();
   try {
-    const r = await supa<ExecutionLesson[]>(
+    // VTID-03461: reads watcher_lessons (see the write path above). Still
+    // best-effort — the Phase 2 migration's deploy-order safety argument
+    // relies on this returning [] rather than throwing when the table is
+    // momentarily absent on either side of the cutover.
+    const r = await supa<Array<ExecutionLesson & { lesson?: string }>>(
       s,
-      `/rest/v1/dev_autopilot_prompt_learnings?scanner=eq.${encodeURIComponent(scanner)}`
+      `/rest/v1/watcher_lessons?scope->>scanner=eq.${encodeURIComponent(scanner)}`
+      + `&stage=in.(execute,any)`
+      + `&status=eq.active`
       + `&last_seen_at=gte.${since}`
       + `&order=last_seen_at.desc&limit=5`
-      + `&select=pattern_type,pattern_key,example_message,mitigation_note`,
+      + `&select=pattern_type,pattern_key,example_message,mitigation_note,lesson`,
     );
-    return r.ok && Array.isArray(r.data) ? r.data : [];
+    if (!r.ok || !Array.isArray(r.data)) return [];
+    // Prefer the distilled imperative sentence over the raw signature; the
+    // existing formatter already favours mitigation_note when set.
+    return r.data.map((l) => ({
+      ...l,
+      mitigation_note: l.mitigation_note || l.lesson || null,
+    }));
   } catch {
     return [];
   }
@@ -1120,6 +1145,11 @@ function buildExecutionPrompt(
   fileCtx: FileCtx[],
   branch: string,
   lessons?: ExecutionLesson[],
+  /**
+   * VTID-03462: pre-rendered Watcher reminder block. Passed in rather than
+   * fetched here so this builder stays pure and synchronous.
+   */
+  watcherRemindersBlock?: string,
 ): string {
   const lines: string[] = [];
   // VTID-02692: LOCKED file list at the very top. The executor LLM (Gemini
@@ -1191,6 +1221,13 @@ function buildExecutionPrompt(
     }
     lines.push(``);
   }
+
+  // VTID-03462 (Watcher Phase 3): authored governance rules + cross-stage
+  // lessons, ranked and hard-budgeted. Distinct from the scanner-scoped
+  // validation history above. Empty string when the flag is off, so the
+  // prompt is byte-identical to before.
+  if (watcherRemindersBlock) lines.push(watcherRemindersBlock);
+
   if (fileCtx.length > 0) {
     lines.push(
       `## Current state of each file the plan touches`,
@@ -1444,7 +1481,22 @@ export async function runExecutionSession(
   // sequence in a single long-lived process, sidestepping the Cloud Run
   // recycle-mid-flight problem that kept stranding executions.
   const ownsPr = isWorkerQueueEnabled() && isWorkerOwnsPrEnabled();
-  const prompt = buildExecutionPrompt(exec.finding_id, exec.plan_version, plan.plan_markdown, fileCtx, branch, lessons);
+  // VTID-03462: flag-gated + best-effort. A Watcher fault must never be able
+  // to stall an execution, so every failure path resolves to ''.
+  let watcherBlock = '';
+  if (remindersEnabled()) {
+    try {
+      const bundle = await buildReminders({
+        stage: 'execute',
+        scanner: findingScanner || undefined,
+      });
+      watcherBlock = renderRemindersBlock(bundle);
+      await recordShown(bundle.reminders.map((r) => r.reminder_id));
+    } catch {
+      watcherBlock = '';
+    }
+  }
+  const prompt = buildExecutionPrompt(exec.finding_id, exec.plan_version, plan.plan_markdown, fileCtx, branch, lessons, watcherBlock);
   const startedAt = Date.now();
   // Widen the inline type so both call shapes satisfy the union we destructure
   // below (worker-queue path may carry pr_url/pr_number/branch from the
@@ -1472,7 +1524,7 @@ export async function runExecutionSession(
 
   // Prompt-gap feedback loop: the worker reports per-attempt validation
   // failures via output_payload.attempt_failures. Upsert each into
-  // dev_autopilot_prompt_learnings so future plan/execute prompts can
+  // watcher_lessons (VTID-03461) so future plan/execute prompts can
   // reference them. Best-effort — a learnings-persist failure must not
   // block the execution outcome. Runs even on LLM failure so we capture
   // exhausted-validation cases too.
