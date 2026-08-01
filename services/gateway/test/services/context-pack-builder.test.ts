@@ -23,6 +23,10 @@ process.env.NODE_ENV = 'test';
 process.env.SUPABASE_URL = 'http://localhost:54321';
 process.env.SUPABASE_SERVICE_ROLE = 'test-service-role';
 delete process.env.PERPLEXITY_API_KEY;
+// VTID-03462: fetchWebHits() now tries Vertex AI grounding first when
+// GOOGLE_CLOUD_PROJECT is set — delete it so these tests stay deterministic
+// (no live network call) regardless of the runner's ambient environment.
+delete process.env.GOOGLE_CLOUD_PROJECT;
 
 function restResponse(body: unknown, status = 200) {
   return {
