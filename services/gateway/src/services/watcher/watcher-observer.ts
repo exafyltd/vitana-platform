@@ -156,19 +156,34 @@ export async function writeSteps(
   if (!sb) return { ok: false, written: 0, error: 'supabase unavailable' };
 
   try {
-    const { error, count } = await sb
+    // `.select('id')` rather than `count: 'exact'` — VTID-03473.
+    //
+    // With ignoreDuplicates the upsert becomes ON CONFLICT DO NOTHING, and
+    // PostgREST returns no exact count for that, so `count` came back null and
+    // `count ?? 0` reported 0 on every successful write. Measured in
+    // production: 536 rows genuinely written, last_written stuck at 0.
+    //
+    // That is not cosmetic. last_written exists so that "this source scans
+    // every tick and writes nothing" is VISIBLE — the signature of a broken
+    // normalizer. Hard-zero means the health field reads identically whether
+    // the normalizer works perfectly or is completely dead, so the one
+    // diagnostic built to catch that failure was blind to it.
+    //
+    // Returning the inserted ids gives a true count: rows skipped by the
+    // conflict clause are simply absent from the response.
+    const { data, error } = await sb
       .from('watcher_steps')
       .upsert(steps, {
         onConflict: 'source,source_ref,step',
         ignoreDuplicates: true,
-        count: 'exact',
-      });
+      })
+      .select('id');
 
     if (error) {
       console.error(`${LOG_PREFIX} write failed:`, error.message);
       return { ok: false, written: 0, error: error.message };
     }
-    return { ok: true, written: count ?? 0 };
+    return { ok: true, written: Array.isArray(data) ? data.length : 0 };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.error(`${LOG_PREFIX} write threw:`, message);

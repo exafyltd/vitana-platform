@@ -42,6 +42,8 @@ function fakeSupabase(opts: {
   execRows?: Array<Record<string, unknown>>;
   stepWriteError?: string;
   eventQueryError?: string;
+  /** Simulate ON CONFLICT DO NOTHING skipping rows: fewer ids than rows in. */
+  insertedIds?: unknown[];
 }) {
   const rec: Recorded = { cursorWrites: [], stepWrites: [], queries: [] };
   const eventPages = opts.eventPages ?? [[]];
@@ -67,11 +69,16 @@ function fakeSupabase(opts: {
 
     if (table === 'watcher_steps') {
       return {
-        upsert: async (rows: unknown[]) => {
+        upsert: (rows: unknown[]) => {
           rec.stepWrites.push(rows);
-          return opts.stepWriteError
-            ? { error: { message: opts.stepWriteError }, count: null }
-            : { error: null, count: rows.length };
+          // Mirrors the real client: upsert(...).select('id') resolves to the
+          // INSERTED rows. Rows skipped by ON CONFLICT DO NOTHING are simply
+          // absent, which is what makes the count truthful.
+          return {
+            select: async () => (opts.stepWriteError
+              ? { data: null, error: { message: opts.stepWriteError } }
+              : { data: (opts.insertedIds ?? rows).map((_, i) => ({ id: `s${i}` })), error: null }),
+          };
         },
       };
     }
@@ -287,5 +294,43 @@ describe('scan shape', () => {
     await observerTick();
 
     expect(rec.queries.filter((x) => x.table === 'oasis_events').length).toBe(1);
+  });
+});
+
+describe('written count is truthful (VTID-03473)', () => {
+  /**
+   * Regression. writeSteps used `count: 'exact'`, but ignoreDuplicates makes
+   * the upsert ON CONFLICT DO NOTHING and PostgREST returns no exact count
+   * for that — so `count ?? 0` reported 0 on every successful write.
+   * Production had 536 rows with last_written stuck at 0.
+   *
+   * last_written is the field that makes "scans every tick, writes nothing"
+   * visible. A hard zero makes it read the same whether the normalizer works
+   * or is dead, blinding the one diagnostic built to catch that.
+   */
+  it('reports the number of rows actually inserted', async () => {
+    mockGetSupabase.mockReturnValue(fakeSupabase({}).client);
+    const r = await writeSteps([{ a: 1 } as never, { b: 2 } as never, { c: 3 } as never]);
+    expect(r.ok).toBe(true);
+    expect(r.written).toBe(3);
+  });
+
+  it('counts only inserts, not rows skipped by the conflict clause', async () => {
+    // 3 rows in, 1 new: an overlap rescan where 2 were already recorded.
+    mockGetSupabase.mockReturnValue(fakeSupabase({ insertedIds: [1] }).client);
+    const r = await writeSteps([{ a: 1 } as never, { b: 2 } as never, { c: 3 } as never]);
+    expect(r.written).toBe(1);
+  });
+
+  it('surfaces a non-zero written count on the cursor row', async () => {
+    // The end-to-end point: health must be able to show progress.
+    const { client, rec } = fakeSupabase({
+      cursorAt: '2026-07-30T10:00:00.000Z',
+      eventPages: [[evt('e1', '2026-07-30T10:05:00.000Z')]],
+    });
+    mockGetSupabase.mockReturnValue(client);
+    await observerTick();
+    const c = rec.cursorWrites.find((x) => x.source === 'oasis_events')!;
+    expect(c.last_written).toBe(1);
   });
 });
