@@ -198,6 +198,17 @@
     greetingComplete: false,  // True after first turn_complete — mic opens only after this
     _audioReadySignaled: false, // DEV-COMHU-0504: audio-ready ack posted once per session
 
+    // VTID-03469: page-level audio unlock state. _gestureUnlockInstalled guards
+    // the one-time listener install; _audioUnlockedByGesture records that the
+    // playback context has been STARTED from a real user gesture at least once
+    // (iOS only permits later programmatic resume() after that has happened);
+    // _audioBlocked is true while chunks are being dropped because the context
+    // never unlocked, so the UI stops claiming Vitana is speaking.
+    _gestureUnlockInstalled: false,
+    _audioUnlockedByGesture: false,
+    _audioBlocked: false,
+    _audioBlockedTapHandler: null,
+
     // UI state
     voiceState: 'IDLE', // IDLE | LISTENING | THINKING | SPEAKING | MUTED
     preMuteState: null, // Remembers state before mute so we can restore correctly
@@ -568,6 +579,144 @@
     if (!src) return;
     try { src.stop(0); src.disconnect(); } catch (e) { /* ignore */ }
     _s._ctxKeepAliveSrc = null;
+  }
+
+  // ============================================================
+  // 4a-bis. PAGE-LEVEL FIRST-GESTURE AUDIO UNLOCK (VTID-03469)
+  // ============================================================
+  //
+  // Until this existed, the ONLY place the playback AudioContext was unlocked
+  // was inside _sessionStart(), which works only when _sessionStart is reached
+  // synchronously from a real user gesture (the FAB tap path:
+  // click → _show() → _sessionStart(), no await in between).
+  //
+  // The host does NOT always get there from a tap. vitana-v1's voice-first
+  // front door (useOrbFrontDoor) calls VitanaOrb.show() from a React useEffect
+  // right after login — zero user activation. On iPhone (Safari / WKWebView /
+  // Appilix) that context is created suspended, resume() outside a gesture is
+  // refused, _processQueue burns its 3s retry budget and DROPS the greeting,
+  // and yet the overlay still reads "Vitana spricht..." because the SPEAKING
+  // state is set when an audio_out message ARRIVES, not when it plays. Net
+  // effect reported from the field: "after login the orb shows Vitana talking
+  // but there is no speech; close it, start a new session, and audio works" —
+  // the second session works precisely because that one came from a tap.
+  //
+  // Fix: arm the context on the FIRST user interaction anywhere on the page,
+  // long before the front door fires. A password login is itself a tap in this
+  // same document, so by the time the overlay auto-opens the context has
+  // already been started once and later resume() calls are permitted.
+  //
+  // Note _preloadAlertClips() (called from init()) already creates
+  // _s.playbackCtx outside any gesture, so the context usually EXISTS and is
+  // merely suspended — the 1-sample silent buffer + resume() below is what
+  // actually starts it. Re-running on every gesture is deliberate and cheap:
+  // it also re-arms the context after an iOS auto-suspend.
+  var _GESTURE_EVENTS = ['pointerdown', 'touchend', 'mousedown', 'keydown'];
+
+  function _unlockPlaybackCtxFromGesture() {
+    try {
+      if (!_s.playbackCtx || _s.playbackCtx.state === 'closed') {
+        _s.playbackCtx = new (window.AudioContext || window.webkitAudioContext)();
+      }
+      var ctx = _s.playbackCtx;
+      // A 1-sample silent buffer is the canonical WebKit unlock: starting a
+      // BufferSource inside the gesture is what flips the context out of the
+      // "never started" state. resume() alone is not reliable on iOS.
+      var buf = ctx.createBuffer(1, 1, 22050);
+      var src = ctx.createBufferSource();
+      src.buffer = buf;
+      src.connect(ctx.destination);
+      src.start(0);
+      if (ctx.state === 'suspended' && ctx.resume) {
+        ctx.resume().then(function () {
+          if (!_s._audioUnlockedByGesture) {
+            _s._audioUnlockedByGesture = true;
+            console.log('[VTOrb] playback AudioContext unlocked by user gesture');
+          }
+        }).catch(function (e) {
+          console.warn('[VTOrb] gesture unlock resume rejected:', e && e.message);
+        });
+      } else if (ctx.state === 'running') {
+        _s._audioUnlockedByGesture = true;
+      }
+    } catch (e) {
+      console.warn('[VTOrb] gesture unlock failed:', e && e.message);
+    }
+  }
+
+  // Installed once at script load — NOT at init() — so a tap on the login
+  // screen counts even though init() only runs once auth has resolved.
+  // Listeners stay attached for the lifetime of the page (capture phase,
+  // passive where allowed) so every gesture re-arms the context; the handler
+  // is a no-op-cheap resume once the context is already running.
+  function _installGestureAudioUnlock() {
+    if (_s._gestureUnlockInstalled) return;
+    _s._gestureUnlockInstalled = true;
+    var handler = function () {
+      // Already running and previously gesture-started → nothing to do.
+      if (_s._audioUnlockedByGesture && _s.playbackCtx && _s.playbackCtx.state === 'running') return;
+      _unlockPlaybackCtxFromGesture();
+    };
+    _GESTURE_EVENTS.forEach(function (evt) {
+      try {
+        document.addEventListener(evt, handler, { capture: true, passive: true });
+      } catch (e) {
+        // Older WebViews without options-object support.
+        document.addEventListener(evt, handler, true);
+      }
+    });
+  }
+
+  // VTID-03469: the context never unlocked and we are throwing chunks away.
+  // Replace the false "Vitana spricht..." with the truth plus the single
+  // gesture that repairs it. Any tap re-enters _unlockPlaybackCtxFromGesture
+  // via the page-level listener above; this extra one-shot handler exists to
+  // drain the pipeline and restore the UI in the same turn.
+  function _announceAudioBlocked() {
+    if (_s._audioBlocked) return;
+    _s._audioBlocked = true;
+    var de = _cfg.lang && _cfg.lang.startsWith('de');
+    _setOrbState('paused');
+    _setStatus(de ? 'Tippe, um Vitana zu hören' : 'Tap anywhere to hear Vitana');
+    _updateUI();
+    var onTap = function () {
+      _unlockPlaybackCtxFromGesture();
+      // Give the resume() promise a tick, then re-enter the pipeline.
+      setTimeout(function () {
+        _clearAudioBlocked();
+        _signalAudioReady();
+        _processQueue();
+      }, 0);
+    };
+    _s._audioBlockedTapHandler = onTap;
+    try {
+      document.addEventListener('pointerdown', onTap, { capture: true, passive: true, once: true });
+    } catch (e) {
+      document.addEventListener('pointerdown', onTap, true);
+    }
+  }
+
+  function _clearAudioBlocked(skipUi) {
+    if (!_s._audioBlocked) return;
+    _s._audioBlocked = false;
+    var h = _s._audioBlockedTapHandler;
+    if (h) {
+      try { document.removeEventListener('pointerdown', h, true); } catch (e) { /* ignore */ }
+      _s._audioBlockedTapHandler = null;
+    }
+    if (skipUi) return; // teardown path — _show() will paint the next state
+    // voiceState was never changed by _announceAudioBlocked (only the visual
+    // state was), so it still describes where the session actually is.
+    var st = (_s.voiceState || 'LISTENING').toLowerCase();
+    if (st === 'muted') return; // mute owns the display
+    _setOrbState(st === 'speaking' ? 'speaking' : 'listening');
+    var de = _cfg.lang && _cfg.lang.startsWith('de');
+    if (st === 'speaking') {
+      _setStatus(de ? 'Vitana spricht...' : 'Vitana speaking...');
+    } else {
+      _setStatus(de ? 'Ich höre zu...' : 'Listening...');
+    }
+    _updateUI();
   }
 
   // ============================================================
@@ -1032,10 +1181,17 @@
         _s._resumeRetryStartedAt = 0;
         // Drop queued audio rather than leaving UI in a stuck state.
         _s.audioQueue.length = 0;
+        // VTID-03469: dropping chunks used to be entirely invisible — the
+        // overlay carried on showing "Vitana spricht..." (set on audio_out
+        // ARRIVAL, see the audio case in the message handler) while nothing
+        // was rendered. Say what actually happened and give the user the one
+        // gesture that fixes it.
+        _announceAudioBlocked();
         return;
       }
       ctx.resume().then(function () {
         _s._resumeRetryStartedAt = 0;
+        _clearAudioBlocked();
         // DEV-COMHU-0504: ctx just reached 'running' → pipeline now ready.
         _signalAudioReady();
         // Re-enter on next tick so any pending chunks drain.
@@ -1613,6 +1769,9 @@
     // VTID-02710: stop the iOS ctx keep-alive (if it was still running because
     // the session ended before any audio arrived) before closing the ctx.
     _stopCtxKeepAlive();
+    // VTID-03469: drop the tap-to-unblock listener with the session. skipUi
+    // because the overlay is being torn down — _show() paints the next state.
+    _clearAudioBlocked(true);
 
     // Stop playback
     if (_s.playbackCtx) { _s.playbackCtx.close().catch(function () {}); _s.playbackCtx = null; }
@@ -1875,10 +2034,16 @@
               _s.preMuteState = 'LISTENING';
               _afterBeepStartMic();
             } else {
-              _setOrbState('listening');
               _s.voiceState = 'LISTENING';
-              _setStatus(_cfg.lang.startsWith('de') ? 'Ich höre zu...' : 'Listening...');
-              _playReadyBeep();
+              // VTID-03469: while audio is blocked the overlay is showing the
+              // tap-to-hear prompt. Overwriting it with "Listening..." here
+              // would hide the only instruction that repairs playback, and the
+              // beep below would be inaudible anyway — keep the prompt up.
+              if (!_s._audioBlocked) {
+                _setOrbState('listening');
+                _setStatus(_cfg.lang.startsWith('de') ? 'Ich höre zu...' : 'Listening...');
+                _playReadyBeep();
+              }
               _updateUI();
               // The beep is 200ms; defer mic-arm by 250ms so the audio-session
               // switch happens after the speaker has finished rendering it.
@@ -3707,6 +3872,13 @@
       _updateUI();
     }
   };
+
+  // VTID-03469: arm the audio unlock at SCRIPT LOAD, not in init(). The host
+  // only calls init() once auth has resolved, which on the login flow is after
+  // the user has already tapped — and the auto-opening front door then starts a
+  // session with no gesture of its own. Installing here means the login tap
+  // itself starts the playback context.
+  _installGestureAudioUnlock();
 
 })(window);
 
