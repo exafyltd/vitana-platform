@@ -23,43 +23,55 @@ process.env.SUPABASE_SERVICE_ROLE = 'test-service-role';
 delete process.env.PERPLEXITY_API_KEY;
 process.env.GOOGLE_CLOUD_PROJECT = 'test-project';
 
-let vertexBehavior: 'grounded' | 'no_text' | 'throw' = 'grounded';
+let vertexBehavior: 'grounded' | 'grounded_no_supports' | 'no_text' | 'throw' = 'grounded';
+const getGenerativeModelCalls: any[] = [];
 
 jest.mock('@google-cloud/vertexai', () => ({
   VertexAI: jest.fn().mockImplementation(() => ({
-    getGenerativeModel: jest.fn().mockReturnValue({
-      generateContent: jest.fn().mockImplementation(async () => {
-        if (vertexBehavior === 'throw') {
-          throw new Error('Vertex grounding mock failure');
-        }
-        if (vertexBehavior === 'no_text') {
-          return { response: { candidates: [{ content: { parts: [] } }] } };
-        }
-        return {
-          response: {
-            candidates: [
-              {
-                content: {
-                  parts: [
+    getGenerativeModel: jest.fn().mockImplementation((modelParams: any, requestOptions: any) => {
+      getGenerativeModelCalls.push({ ...modelParams, requestOptions });
+      return {
+        generateContent: jest.fn().mockImplementation(async () => {
+          if (vertexBehavior === 'throw') {
+            throw new Error('Vertex grounding mock failure');
+          }
+          if (vertexBehavior === 'no_text') {
+            return { response: { candidates: [{ content: { parts: [] } }] } };
+          }
+          const text =
+            'Mariia Maksina is featured in a recent Vitana longevity community spotlight. ' +
+            'She discussed her wellness routine in an interview published this week.';
+          const groundingChunks = [
+            { web: { uri: 'https://example.com/mariia-maksina-spotlight', title: 'Spotlight' } },
+            { web: { uri: 'https://example.com/mariia-maksina-interview', title: 'Interview' } },
+          ];
+          const groundingMetadata =
+            vertexBehavior === 'grounded_no_supports'
+              ? { groundingChunks }
+              : {
+                  groundingChunks,
+                  // Real Gemini shape: each support maps a TEXT SPAN to the
+                  // chunk(s) that back it — this is what lets citations be
+                  // attributed to the right source per claim, not just
+                  // zipped by sentence position.
+                  groundingSupports: [
                     {
-                      text:
-                        'Mariia Maksina is featured in a recent Vitana longevity community spotlight. ' +
-                        'She discussed her wellness routine in an interview published this week. ' +
-                        'The community praised her insights on healthy aging practices.',
+                      segment: { text: 'Mariia Maksina is featured in a recent Vitana longevity community spotlight' },
+                      groundingChunkIndices: [0],
+                    },
+                    {
+                      segment: { text: 'She discussed her wellness routine in an interview published this week' },
+                      groundingChunkIndices: [1],
                     },
                   ],
-                },
-                groundingMetadata: {
-                  groundingChunks: [
-                    { web: { uri: 'https://example.com/mariia-maksina-spotlight', title: 'Spotlight' } },
-                    { web: { uri: 'https://example.com/mariia-maksina-interview', title: 'Interview' } },
-                  ],
-                },
-              },
-            ],
-          },
-        };
-      }),
+                };
+          return {
+            response: {
+              candidates: [{ content: { parts: [{ text }] }, groundingMetadata }],
+            },
+          };
+        }),
+      };
     }),
   })),
 }));
@@ -125,15 +137,47 @@ function webOnlyInput(query: string): BuildContextPackInput {
 beforeEach(() => {
   vertexBehavior = 'grounded';
   mockFetch.mockClear();
+  getGenerativeModelCalls.length = 0;
 });
 
 describe('fetchWebHits — Vertex AI grounding (VTID-03472)', () => {
+  it('calls the SDK with the Gemini 2.x googleSearch tool (NOT the legacy googleSearchRetrieval) and a bounded timeout', async () => {
+    await buildContextPack(webOnlyInput('news about Mariia Maksina'));
+    expect(getGenerativeModelCalls.length).toBeGreaterThan(0);
+    const call = getGenerativeModelCalls[getGenerativeModelCalls.length - 1];
+    expect(call.tools).toEqual([{ googleSearch: {} }]);
+    expect(call.tools[0].googleSearchRetrieval).toBeUndefined();
+    // Must stay below orb-live.ts's 3000ms search_web TOOL_TIMEOUT_MS so a
+    // slow Vertex call fails gracefully instead of outliving the tool call.
+    expect(call.requestOptions.timeout).toBeLessThan(3000);
+    expect(call.requestOptions.timeout).toBeGreaterThan(0);
+  });
+
   it('returns real web_hits from grounded text + citations when Vertex succeeds', async () => {
     const pack = await buildContextPack(webOnlyInput('news about Mariia Maksina'));
     expect(pack.web_hits.length).toBeGreaterThan(0);
     expect(pack.web_hits[0].url).toMatch(/^https:\/\/example\.com/);
     expect(pack.web_hits[0].snippet.length).toBeGreaterThan(0);
     expect(pack.retrieval_trace.hit_counts.web_search).toBe(pack.web_hits.length);
+  });
+
+  it('attributes each hit to the source its groundingSupport actually cites, not just position', async () => {
+    const pack = await buildContextPack(webOnlyInput('news about Mariia Maksina'));
+    // Support 0 cites chunk 0 (spotlight), support 1 cites chunk 1 (interview)
+    // — this must survive even though the naive per-sentence zip would have
+    // produced the same order here (the point is it's now driven by the
+    // actual citation mapping, verified by the mismatched-count case below).
+    expect(pack.web_hits[0].url).toBe('https://example.com/mariia-maksina-spotlight');
+    expect(pack.web_hits[1].url).toBe('https://example.com/mariia-maksina-interview');
+  });
+
+  it('falls back to the naive sentence-splitter when the response has no groundingSupports', async () => {
+    vertexBehavior = 'grounded_no_supports';
+    const pack = await buildContextPack(webOnlyInput('news about Mariia Maksina'));
+    // Still gets real hits with real citations — just positionally zipped
+    // instead of support-aligned, matching the pre-existing Perplexity shape.
+    expect(pack.web_hits.length).toBeGreaterThan(0);
+    expect(pack.web_hits[0].url).toMatch(/^https:\/\/example\.com/);
   });
 
   it('falls back to empty (not a throw) when Vertex returns no text', async () => {
