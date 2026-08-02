@@ -280,6 +280,13 @@ export function cleanupWsSession(sessionId: string): void {
   if (clientSession.liveSession) {
     // VTID-01230: Deduplicated extraction on WebSocket disconnect
     const ls = clientSession.liveSession;
+    // VTID-03471: the live session is keyed in `liveSessions`
+    // by ITS OWN id, which since the WS path started sharing
+    // `handleLiveSessionStart` is no longer the same string as the
+    // `ws-<uuid>` client-socket id this function is called with. Deleting by
+    // the socket id would leave the live session in the map forever (and
+    // scope extraction/buffer teardown to a key nothing else uses).
+    const liveSessionKey = ls.sessionId || sessionId;
     if (ls.identity && ls.identity.tenant_id && ls.transcriptTurns.length > 0) {
       const fullTranscript = ls.transcriptTurns
         .map((t) => `${t.role === 'user' ? 'User' : 'Assistant'}: ${t.text}`)
@@ -288,11 +295,11 @@ export function cleanupWsSession(sessionId: string): void {
         conversationText: fullTranscript,
         tenant_id: ls.identity.tenant_id,
         user_id: ls.identity.user_id,
-        session_id: sessionId,
+        session_id: liveSessionKey,
         force: true,
       });
-      destroySessionBuffer(sessionId);
-      clearExtractionState(sessionId);
+      destroySessionBuffer(liveSessionKey);
+      clearExtractionState(liveSessionKey);
     }
 
     clientSession.liveSession.active = false;
@@ -320,7 +327,7 @@ export function cleanupWsSession(sessionId: string): void {
       }
     }
 
-    liveSessions.delete(sessionId);
+    liveSessions.delete(liveSessionKey);
   }
 
   // Close client WebSocket if open
@@ -601,6 +608,11 @@ export async function handleLiveSessionStart(
   }
 
   const body = req.body as LiveSessionStartRequest;
+  // VTID-03471: which transport this start came in on. The
+  // HTTP route never sets it (stays 'sse'); the WS adapter
+  // (ws-start-adapter.ts) sets `transport:'ws'` so session telemetry can
+  // separate the two without a second event type.
+  const transportLabel: 'sse' | 'ws' = (body as any).transport === 'ws' ? 'ws' : 'sse';
   const clientRequestedLang = body.lang;
   console.log(`[LANG-PREF] Client requested lang: '${clientRequestedLang || 'NONE'}' (from POST body.lang)`);
   const voiceStyle = body.voice_style || 'friendly, calm, empathetic';
@@ -967,6 +979,32 @@ export async function handleLiveSessionStart(
         }
 
         console.log(`[BOOTSTRAP-ORB-CRITICAL-PATH] Context ready for ${sessionId} in ${Date.now() - contextBuildStart}ms (role=${resolvedRole}, chars=${finalContext.length})`);
+
+        // VTID-03471: `orb.live.context.bootstrap[.skipped]` used to be emitted
+        // ONLY by the WS fork this VTID deleted — so the SSE transport never
+        // produced them at all, and deleting the fork would have removed the
+        // topic from OASIS entirely (caught by the voice-pipeline parity
+        // scanner). Emitting here covers BOTH transports, which is what the
+        // topic was always supposed to mean.
+        emitOasisEvent({
+          vtid: 'VTID-01224',
+          type: (bootstrapResult.skippedReason
+            ? 'orb.live.context.bootstrap.skipped'
+            : 'orb.live.context.bootstrap') as any,
+          source: transportLabel === 'ws' ? 'orb-live-ws' : 'orb-live-sse',
+          status: bootstrapResult.skippedReason ? 'warning' : 'info',
+          message: bootstrapResult.skippedReason
+            ? `Context bootstrap skipped: ${bootstrapResult.skippedReason}`
+            : `Context bootstrap complete: ${bootstrapResult.latencyMs}ms`,
+          payload: {
+            session_id: sessionId,
+            tenant_id: bootstrapIdentity.tenant_id,
+            user_id: bootstrapIdentity.user_id,
+            latency_ms: bootstrapResult.latencyMs,
+            reason: bootstrapResult.skippedReason || null,
+            transport: transportLabel,
+          },
+        }).catch(() => { });
       })
       .catch((err) => {
         console.warn(`[BOOTSTRAP-ORB-CRITICAL-PATH] Context build rejected for ${sessionId}, proceeding with empty context:`, err?.message || err);
@@ -1358,7 +1396,9 @@ export async function handleLiveSessionStart(
       tenantId: orbIdentity?.tenant_id ?? null,
       userId: orbIdentity?.user_id ?? null,
       surface: 'orb_wake',
-      transport: 'sse',
+      // wake-timeline's own transport vocabulary ('websocket'), not the
+      // session-event one ('ws').
+      transport: transportLabel === 'ws' ? 'websocket' : 'sse',
     });
     defaultWakeTimelineRecorder.recordEvent({
       sessionId,
@@ -1884,7 +1924,7 @@ export async function handleLiveSessionStart(
     active_role: sseActiveRole || null,
     user_agent: req.headers['user-agent'] || null,
     origin: req.headers['origin'] || req.headers['referer'] || null,
-    transport: 'sse',
+    transport: transportLabel,
     lang,
     modalities: responseModalities,
     voice: deps.getVoiceForLang(lang),

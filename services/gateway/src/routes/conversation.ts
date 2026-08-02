@@ -1174,10 +1174,10 @@ router.get('/tools', (_req: Request, res: Response) => {
 // =============================================================================
 
 router.get('/health', (_req: Request, res: Response) => {
-  // VTID-03472: web_search's primary backend is Vertex AI Google Search
-  // grounding (GOOGLE_CLOUD_PROJECT), with Perplexity as a fallback — report
-  // available when EITHER is configured, not Perplexity alone.
-  const hasVertex = !!process.env.GOOGLE_CLOUD_PROJECT;
+  // VTID-03472: web_search's primary backend is Claude's web_search tool via
+  // direct Anthropic API (ANTHROPIC_API_KEY), with Perplexity as a fallback —
+  // report available when EITHER is configured. Never GCP/Vertex.
+  const hasAnthropic = !!process.env.ANTHROPIC_API_KEY;
   const PERPLEXITY_API_KEY = process.env.PERPLEXITY_API_KEY;
 
   res.status(200).json({
@@ -1189,7 +1189,7 @@ router.get('/health', (_req: Request, res: Response) => {
     features: {
       memory_garden: true,
       knowledge_hub: true,
-      web_search: hasVertex || !!PERPLEXITY_API_KEY,
+      web_search: hasAnthropic || !!PERPLEXITY_API_KEY,
       streaming: true,
     },
   });
