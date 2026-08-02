@@ -116,6 +116,200 @@ CREATE TABLE personalization_audit (
 
 ---
 
+### Wallet System (USD / Credits / VTNA) — added 2026-07-17
+
+**This is the live, production system backing the wallet UI** (`useWallet.ts`
+in `vitana-v1` → `user_wallets` + RPCs below). It predates and is entirely
+separate from the newer EUR/USD Stripe deposit tables (`wallet_accounts`,
+`wallet_deposits`, `wallet_ledger_entries`) added for real fiat deposits —
+those exist but currently hold no data and are not yet wired into the
+existing wallet UI.
+
+**Known dead code:** the `wallet_transactions`/`wallet_balances` "Credits
+ledger" described in earlier automations-engine migrations
+(`20260318000000_vtid_01250_autopilot_automations_engine.sql`) never
+actually took effect — `CREATE TABLE IF NOT EXISTS wallet_transactions`
+silently no-op'd because a table of that name already existed (below) with
+a completely different, incompatible column set, which means that
+migration's later statements referencing `tenant_id`/`type` columns broke
+and `wallet_balances` was never created. `credit_wallet_for_earning()` /
+`debit_wallet_for_spend()` / `update_wallet_balance()` exist as functions
+but will error if called (`wallet_balances` doesn't exist). Do not build on
+this path without fixing or removing it first.
+
+```sql
+CREATE TABLE public.user_wallets (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL,
+  currency_type TEXT NOT NULL,      -- 'USD' | 'VTNA' | 'CREDITS'
+  balance NUMERIC(15,2) NOT NULL DEFAULT 0.00,   -- was 1000.00 until VTID wallet-reset
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(user_id, currency_type)
+);
+
+CREATE TABLE public.wallet_transactions (   -- old (2025-09) schema; still the live one
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  from_user_id UUID, to_user_id UUID,       -- reference auth.users.id, NOT profiles.id
+  transaction_type TEXT NOT NULL,   -- 'transfer' | 'exchange' | 'reward' | 'purchase'
+  from_currency TEXT, to_currency TEXT,
+  amount NUMERIC(15,2) NOT NULL,
+  exchange_rate NUMERIC(10,4),
+  fees NUMERIC(15,2) DEFAULT 0.00,
+  status TEXT DEFAULT 'pending',
+  metadata JSONB,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+-- from_user_id/to_user_id → profiles.user_id via wallet_transactions_from_user_id_fkey
+-- / _to_user_id_fkey (added 2026-07-21, NOT VALID — see change log). profiles.id is a
+-- separate surrogate PK; profiles.user_id is the actual auth.users.id link (UNIQUE).
+
+CREATE TABLE public.exchange_rates (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  from_currency TEXT NOT NULL, to_currency TEXT NOT NULL,
+  rate NUMERIC(10,6) NOT NULL,
+  trend TEXT, change_24h NUMERIC(5,2) DEFAULT 0.00,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  is_active BOOLEAN DEFAULT true    -- current canonical rate: only is_active=true rows count
+);
+
+CREATE TABLE public.wallet_balance_resets (   -- added VTID wallet-reset, 2026-07-17
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL,
+  source_table TEXT NOT NULL,       -- 'user_wallets' | 'wallet_accounts'
+  currency_type TEXT NOT NULL,
+  previous_balance NUMERIC NOT NULL,
+  reset_at TIMESTAMPTZ DEFAULT NOW(),
+  reason TEXT NOT NULL
+);
+```
+
+**Canonical exchange rate** (the only `is_active=true` rows in
+`exchange_rates`, matching `vitana-v1`'s `src/lib/exchangeRates.ts`):
+**1 USD = 100 CREDITS = 100 VTNA**, VTNA:CREDITS at 1:1 parity.
+
+**RPCs** (`get_user_balance`, `update_user_balance`, `initialize_user_wallet`,
+`process_wallet_exchange`, `process_wallet_transfer`,
+`process_wallet_exchange_and_send`) are `SECURITY DEFINER` and
+`GRANT EXECUTE`'d to `authenticated`. **Security fix (2026-07-17,
+`20260717120000_harden_wallet_rpc_ownership_and_rate_lookup.sql`):** none of
+them previously checked that the caller (`auth.uid()`) owned the
+`user_id`/`from_user_id` parameter being debited/credited — any authenticated
+user could fabricate balance for themselves or drain another user's wallet by
+calling the RPC directly. All four now raise if `auth.uid()` is set and
+doesn't match the account being debited (`auth.uid() IS NULL` — i.e.
+service-role/backend calls — still passes through). `process_wallet_exchange`
+and `process_wallet_exchange_and_send` also no longer trust a client-supplied
+exchange rate; they look it up from `exchange_rates` (`is_active=true`)
+server-side.
+
+**Real-world-launch reset (2026-07-17,
+`20260717120100_reset_all_user_wallet_balances_to_zero.sql`):** every
+existing user's `user_wallets.balance` (209 users × USD/CREDITS/VTNA) was
+zeroed; pre-reset values were archived into `wallet_balance_resets` first.
+`initialize_user_wallet()`/`get_user_balance()` and the `user_wallets.balance`
+column default were changed from seeding/falling back to `1000.00` to `0.00`,
+so new signups start at zero. `wallet_accounts` (EUR/USD Stripe wallet) had
+no non-zero rows to reset (185 users, all already 0 — no real deposits made
+yet).
+
+**Deposit bridge (2026-07-20,
+`20260720090000_bridge_credit_deposit_into_legacy_user_wallets.sql`):** the
+real Stripe deposit flow (`wallet.ts` → `deposit-service.ts` → webhook →
+`credit_deposit`) credited `wallet_accounts`, a table the wallet UI never
+reads. `credit_deposit` now also mirrors USD deposits into `user_wallets`,
+atomically, in the same row-locked transaction as the `wallet_accounts`
+credit. Also fixed `createDeposit`'s Stripe `success_url`/`cancel_url`,
+which pointed at `/wallet/deposit/success` and `/wallet/deposit/canceled` —
+routes that never existed in the `vitana-v1` SPA — to redirect to the
+existing `/wallet` route with query params instead. Paired with a
+`vitana-v1` change wiring `AddFundsPopup` to this real flow in place of a
+direct fake balance write.
+
+**Atomicity + transaction logging (2026-07-20,
+`20260720190000_fix_wallet_rpc_atomicity_and_transaction_logging.sql`):**
+`update_user_balance`, `process_wallet_exchange`, `process_wallet_transfer`,
+and `process_wallet_exchange_and_send` all had the same TOCTOU race —
+`SELECT balance`, check sufficiency in application code, `THEN UPDATE` — a
+double-tap or retried request could double-spend. Rewritten as a single
+atomic `UPDATE ... WHERE balance >= amount RETURNING balance` in all four.
+`update_user_balance` also gained optional `p_transaction_type`/
+`p_description` params so it can log to `wallet_transactions` like the
+other three already did (it previously never did, so Withdraw/Stake/Spend
+left zero history). CHECK constraint extended with `'withdrawal'`/`'stake'`
+to cover those two actions. Note: adding the two new trailing params to
+`update_user_balance` via `CREATE OR REPLACE` created a second overload
+instead of replacing the original (Postgres allows same-name functions with
+different signatures to coexist); the migration explicitly `DROP`s the
+stale 4-arg overload afterward so only the atomic, logging-capable version
+can be called.
+
+**VTNA/Credits merge (2026-07-20, BOOTSTRAP-VTNA-CREDITS-MERGE,
+`20260720200000_fold_vtna_balance_into_credits.sql`):** VTNA (marketed in the
+UI as a stakeable, appreciating "token" with governance voting and passive
+staking-APY rewards) and CREDITS already had fixed 1:1 parity and identical
+closed-loop/non-withdrawable semantics — VTNA's investment-flavored framing
+had already caused an Apple App Store rejection under guideline 3.1.5(iii)
+(looked like a crypto exchange); the existing workaround only hid the
+stake/exchange/withdraw UI on iOS, leaving it live on web/Android. Merged
+the two into a single user-facing currency, "VTNA Credits" (`vitana-v1`):
+removed the dedicated Buy-VTNA-Tokens and Stake-VTNA-Tokens popups and all
+staking-APY/governance/appreciation copy; removed VTNA as a selectable
+currency from every send/request/exchange/booking-payment picker; the
+separate VTNA balance card/tile is gone, folded into one "VTNA Credits"
+balance. **No `currency_type` schema change** — `CREDITS` remains the
+canonical DB value (relabeled "VTNA Credits" only in UI copy); `VTNA` stays
+a valid historical value on existing `wallet_transactions` rows and in the
+`currency_type`/`ExchangeRate` TypeScript unions for backward-compat
+display, it is simply never written by any live code path going forward.
+This migration defensively folds any nonzero `user_wallets` VTNA balance
+into CREDITS before the frontend permanently stops writing to VTNA;
+verified no-op at authoring time (all 212 users had VTNA balance = 0.00,
+consistent with the 2026-07-17 reset). `exchange_rates`' VTNA-related rows
+are left in place (harmless, unread) rather than deleted, since nothing
+queries them anymore.
+
+Also fixed in the same PR (found during this work, unrelated to the
+merge): `WalletMasterActionPopup.tsx`'s "quick actions" menu called
+`updateBalance()` directly with hardcoded amounts and no real payment or
+withdrawal behind them — tapping "Buy Credits"/"Buy Tokens"/"Claim Rewards"
+fabricated free balance, and "Withdraw & Cash Out" silently destroyed real
+USD balance with a fake "submitted for processing" toast and no actual
+withdrawal. Removed; the real, working equivalents (Stripe-backed
+`BuyCreditsPopup`, transaction-logged `WithdrawPopup`) are wired directly on
+the Wallet balance cards and unaffected.
+
+**Not in scope for this pass (flagged, not fixed):** a handful of "wallet
+intelligence" dashboard widgets (staking-optimization/APY/governance/
+tokenomics cards on `pages/wallet/Balance.tsx`'s Tokens tab and elsewhere)
+still show fabricated mock data with similar investment-flavored framing;
+this pass only removed the copy/mock-data directly tied to the two deleted
+VTNA popups and two intelligence-card snippets that explicitly referenced
+"VTNA conversion rates." A full sweep of fabricated wallet dashboard
+widgets is separate, larger, not-yet-approved work.
+
+**Missing `wallet_transactions` FK constraints (2026-07-21,
+`20260721180000_add_wallet_transactions_profile_fkeys.sql`):** found while
+verifying the VTNA/Credits merge deploy on AWS staging — the Wallet's
+"Recent Activity" transaction list has never actually worked. `useWallet.ts`'s
+`fetchTransactions` embeds sender/recipient profile info via named
+PostgREST hints (`profiles!wallet_transactions_from_user_id_fkey` /
+`_to_user_id_fkey`), but `wallet_transactions.from_user_id`/`to_user_id` had
+**zero** foreign key constraints at all — every call 400'd with "Could not
+find a relationship." Pre-existing bug, unrelated to the merge itself.
+Added both named FK constraints, targeting `profiles.user_id` (the actual
+`auth.users.id` link — `profiles.id` is a separate surrogate PK). Added
+`NOT VALID` since 7-11 of 85 existing rows have a user_id with no matching
+profile (stale test/reset-era data); PostgREST recognizes `NOT VALID` FKs
+for relationship embedding immediately, and the constraint still fully
+enforces on every new INSERT/UPDATE going forward — only the historical
+rows are exempted from the initial validation scan. Verified end-to-end via
+a direct PostgREST request against the live project: `200 OK` with real
+`from_profile`/`to_profile` data resolved.
+
+---
+
 ## ⚠️ DEPRECATED / DO NOT USE
 
 ### VtidLedger (PascalCase)
@@ -393,6 +587,8 @@ CREATE TABLE my_new_table (
 
 | Date | Change | Author | VTID |
 |------|--------|--------|------|
+| 2026-07-21 | Added missing `wallet_transactions_from_user_id_fkey`/`_to_user_id_fkey` (NOT VALID, targeting `profiles.user_id`) — the Wallet's "Recent Activity" transaction list had never worked; every `fetchTransactions` PostgREST embed 400'd for lack of any FK on `from_user_id`/`to_user_id`. Found while verifying the VTNA/Credits merge deploy on AWS staging; unrelated pre-existing bug. Verified with a direct PostgREST request (200 OK, real profile data resolved). | Claude | — |
+| 2026-07-20 | Merged VTNA and Credits into one "VTNA Credits" currency; stripped staking-APY/governance/appreciation copy (previous cause of an Apple 3.1.5(iii) rejection) from the two dedicated VTNA popups and every send/request/exchange/booking currency picker in vitana-v1; defensive DB migration folding any nonzero VTNA balance into CREDITS (no-op, verified). Also fixed an unrelated bug found in the same pass: `WalletMasterActionPopup`'s quick-action menu fabricated free balance and silently destroyed real USD balance via a fake withdrawal. | Claude | BOOTSTRAP-VTNA-CREDITS-MERGE |
 | 2025-11-11 | Initial schema documentation | Claude | DEV-COMMU-0055 |
 | 2025-11-11 | Fixed vtid_ledger vs VtidLedger mismatch | Claude | DEV-COMMU-0055 |
 | 2025-12-31 | Added personalization_audit table for cross-domain personalization | Claude | VTID-01096 |
@@ -414,6 +610,8 @@ CREATE TABLE my_new_table (
 | 2026-05-21 | Seeded 21 ranker policy rows in `decision_policy` under `ranker.pillar_weighter.*` — 10 weights/dampeners, 3 balance thresholds, 6 journey-mode decay curve points, 2 misc (compass decay, pillar score cap). Phase C.2 of decision-contract refactor. Values byte-identical to `DEFAULT_RANKER_CONFIG` + inline literals in `index-pillar-weighter.ts`. Consumers land in Phase C.3 / C.5+. | Claude | VTID-03131 |
 | 2026-06-01 | Added `seed_community_onboarding_autopilot(uuid)` function + `seed_onboarding_autopilot_on_primary_membership` AFTER INSERT trigger on `user_tenants` (WHEN `is_primary=true`). Seeds the day0 community onboarding Autopilot bundle (8 `onboarding_*` rows in `autopilot_recommendations`) on signup — bypass-proof, since vitana-v1 authenticates directly via Supabase Auth and never hit the gateway `/auth/login` first-login hook (same root cause + trigger pattern as VTID-03089 welcome chat). Mirrors `STAGE_TEMPLATES.day0` in `community-user-analyzer.ts` (drift-guarded by `autopilot-onboarding-seed-bundle.test.ts`); fingerprints match the TS generator so the cron/lazy-gen dedupe against the seed. Idempotent + fail-soft. Includes a 7-day backfill of recent zero-rec community members. | Claude | BOOTSTRAP-ONBOARDING-AUTOPILOT-SEED |
 | 2026-06-07 | Added Video Shop (Vitanaland) backend slice: `shop_videos`, `shop_video_anchors` (single-primary index), `shop_saved_products`, `shop_video_events` (non-OASIS funnel sink). Threaded `source_video_id`/`source_creator_id` attribution onto `universal_cart_items` + `product_orders` and widened the `source_surface` CHECK to admit `video_shop`. New surface over `products` + Universal Cart — no second commerce system; no wallet buy-now in V1. | Claude | VTID-03237 |
+| 2026-07-17 | Documented the live wallet system (`user_wallets`, `wallet_transactions`, `exchange_rates` — previously undocumented). Fixed a critical vuln: `update_user_balance`/`process_wallet_exchange`/`process_wallet_transfer`/`process_wallet_exchange_and_send` let any authenticated user debit/credit an arbitrary `user_id`; added `auth.uid()` ownership checks and made the exchange RPCs read the server-side `exchange_rates` row instead of trusting a client-supplied rate. Real-world-launch reset: zeroed all 209 users' USD/CREDITS/VTNA balances (archived pre-reset values in new `wallet_balance_resets` table); changed `initialize_user_wallet()`/`get_user_balance()`/`user_wallets.balance` default from seeding `1000.00` to `0.00`. Flagged the `wallet_transactions`/`wallet_balances` "Credits ledger" from VTID-01250 as dead code — it never took effect due to a table-name collision. | Claude | BOOTSTRAP-WALLET-RESET |
+| 2026-07-20 | Bridged the real Stripe deposit flow (`credit_deposit`) to also credit the legacy `user_wallets` balance the wallet UI reads, and fixed its Stripe success/cancel redirect URLs, which pointed at SPA routes that never existed. Separately, fixed a TOCTOU race shared by all four wallet-mutating RPCs (`update_user_balance`/`process_wallet_exchange`/`process_wallet_transfer`/`process_wallet_exchange_and_send`) by replacing SELECT-then-UPDATE with a single atomic `UPDATE ... WHERE balance >= amount`; gave `update_user_balance` the ability to log to `wallet_transactions` (added `'withdrawal'`/`'stake'` to the type CHECK) so Withdraw/Stake/Spend actions stop leaving zero transaction history. | Claude | BOOTSTRAP-WALLET-RESET |
 
 ---
 
