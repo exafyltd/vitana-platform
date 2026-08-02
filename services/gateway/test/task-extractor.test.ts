@@ -10,6 +10,20 @@
 
 import request from 'supertest';
 
+// SECURITY (post-audit hardening): routes/autopilot.ts now requires a
+// GATEWAY_SERVICE_TOKEN bearer on every request (bar /health,
+// /pipeline/health) — see requireServiceToken in that file. This test
+// exercises the real router through the full app; the extra header is a
+// no-op for this file's other route (/api/v1/operator/chat).
+process.env.GATEWAY_SERVICE_TOKEN = 'test-service-token';
+function authedRequest(app: any) {
+  const agent = request(app);
+  return {
+    get: (path: string) => agent.get(path).set('Authorization', 'Bearer test-service-token'),
+    post: (path: string) => agent.post(path).set('Authorization', 'Bearer test-service-token'),
+  };
+}
+
 // Create a chainable mock that supports Supabase's fluent API
 const createChainableMock = () => {
   let defaultData: any = { data: [], error: null };
@@ -149,7 +163,7 @@ describe('Task Extractor - VTID-0532', () => {
 
   describe('Task Detection - POST /api/v1/operator/chat', () => {
     it('should NOT create task for regular chat message', async () => {
-      const response = await request(app)
+      const response = await authedRequest(app)
         .post('/api/v1/operator/chat')
         .send({
           message: 'Hello, assistant!',
@@ -163,7 +177,7 @@ describe('Task Extractor - VTID-0532', () => {
     it('should return ok:true and threadId for /task command', async () => {
       // Tests that the endpoint works with /task - actual task creation
       // depends on Supabase mocking which is handled by setup-tests
-      const response = await request(app)
+      const response = await authedRequest(app)
         .post('/api/v1/operator/chat')
         .send({
           message: '/task Add a Governance History tab to the Command Hub',
@@ -180,7 +194,7 @@ describe('Task Extractor - VTID-0532', () => {
     });
 
     it('should return ok:true for mode:task without /task prefix', async () => {
-      const response = await request(app)
+      const response = await authedRequest(app)
         .post('/api/v1/operator/chat')
         .send({
           message: 'Implement dark mode for the dashboard',
@@ -193,7 +207,7 @@ describe('Task Extractor - VTID-0532', () => {
     });
 
     it('should handle /task with case-insensitivity', async () => {
-      const response = await request(app)
+      const response = await authedRequest(app)
         .post('/api/v1/operator/chat')
         .send({
           message: '/TASK Fix the login bug',
@@ -204,7 +218,7 @@ describe('Task Extractor - VTID-0532', () => {
     });
 
     it('should handle /task with leading spaces', async () => {
-      const response = await request(app)
+      const response = await authedRequest(app)
         .post('/api/v1/operator/chat')
         .send({
           message: '  /task Fix the login bug',
@@ -216,7 +230,7 @@ describe('Task Extractor - VTID-0532', () => {
 
     it('should handle empty task description gracefully', async () => {
       // When just "/task" is sent without description
-      const response = await request(app)
+      const response = await authedRequest(app)
         .post('/api/v1/operator/chat')
         .send({
           message: '/task ',
@@ -228,7 +242,7 @@ describe('Task Extractor - VTID-0532', () => {
     });
 
     it('should preserve existing response fields', async () => {
-      const response = await request(app)
+      const response = await authedRequest(app)
         .post('/api/v1/operator/chat')
         .send({
           message: '/task Test task',
@@ -247,7 +261,7 @@ describe('Task Extractor - VTID-0532', () => {
     });
 
     it('should reject empty message', async () => {
-      const response = await request(app)
+      const response = await authedRequest(app)
         .post('/api/v1/operator/chat')
         .send({
           message: '',
@@ -259,7 +273,7 @@ describe('Task Extractor - VTID-0532', () => {
     });
 
     it('should reject invalid mode value', async () => {
-      const response = await request(app)
+      const response = await authedRequest(app)
         .post('/api/v1/operator/chat')
         .send({
           message: 'Test',
@@ -274,7 +288,7 @@ describe('Task Extractor - VTID-0532', () => {
 
   describe('GET /api/v1/autopilot/tasks/pending-plan', () => {
     it('should return ok: true with data array', async () => {
-      const response = await request(app)
+      const response = await authedRequest(app)
         .get('/api/v1/autopilot/tasks/pending-plan')
         .expect(200);
 
@@ -284,7 +298,7 @@ describe('Task Extractor - VTID-0532', () => {
     });
 
     it('should return empty array when no pending tasks', async () => {
-      const response = await request(app)
+      const response = await authedRequest(app)
         .get('/api/v1/autopilot/tasks/pending-plan')
         .expect(200);
 
@@ -296,7 +310,7 @@ describe('Task Extractor - VTID-0532', () => {
 
   describe('GET /api/v1/autopilot/health', () => {
     it('should return healthy status', async () => {
-      const response = await request(app)
+      const response = await authedRequest(app)
         .get('/api/v1/autopilot/health')
         .expect(200);
 

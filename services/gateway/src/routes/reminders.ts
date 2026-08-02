@@ -32,14 +32,23 @@ import { getReminderChimePcmB64 } from '../services/reminder-chime';
 const router = Router();
 const LOG_PREFIX = '[Reminders]';
 
-// Resolve user_id from (in order):
-//   1. req.identity (populated by optionalAuth from Bearer JWT) — frontend path
-//   2. X-User-ID / X-Vitana-User header — service-role / testing
-//   3. ?user_id= query param — EventSource SSE (no header support)
+// SECURITY (post-audit hardening): user_id now comes ONLY from the verified
+// JWT (req.identity), except on /stream. Every other route used to also
+// accept a bare X-User-ID/X-Vitana-User header or ?user_id= query param with
+// no verification — any caller could read/write another user's reminders by
+// just setting that header. /stream keeps the query-param fallback because
+// browser EventSource cannot send custom headers (see its own doc comment
+// below); requireVerifiedIdentity (below) does not gate /stream, so it is
+// the one remaining, previously-documented residual risk (read-only
+// reminder-fire events for a guessed user_id) — a signed short-TTL stream
+// token is the correct fix but needs a coordinated frontend change.
 function getUserId(req: Request): string | null {
   const ident = (req as AuthenticatedRequest).identity;
   if (ident?.user_id) return ident.user_id;
-  return req.get('X-User-ID') || req.get('X-Vitana-User') || (req.query.user_id as string) || null;
+  if (req.path === '/stream') {
+    return req.get('X-User-ID') || req.get('X-Vitana-User') || (req.query.user_id as string) || null;
+  }
+  return null;
 }
 
 function getTenantId(req: Request): string {
@@ -53,11 +62,21 @@ function getTenantId(req: Request): string {
   );
 }
 
-// Apply optionalAuth to every route on this router. It populates req.identity
-// when a valid Bearer token is present (the frontend's communityFetch path)
-// but does NOT 401 when absent — that lets X-User-ID + service-role-key paths
-// keep working for tests and for the SSE stream's query-param auth.
+// Apply optionalAuth to every route on this router — it populates
+// req.identity when a valid Bearer token is present.
 router.use(optionalAuth);
+
+// SECURITY (post-audit hardening): require a verified identity on every
+// route except /stream (EventSource can't send an Authorization header —
+// see the doc comment on that route) and the health/debug endpoints.
+const OPEN_PATHS = new Set(['/stream', '/_health/check', '/_format-time-debug']);
+router.use((req: Request, res: Response, next) => {
+  if (OPEN_PATHS.has(req.path)) return next();
+  if (!(req as AuthenticatedRequest).identity?.user_id) {
+    return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
+  }
+  return next();
+});
 
 function getUserTz(req: Request): string {
   return (

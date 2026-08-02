@@ -30,6 +30,7 @@ import { derivePillarImpact } from '../services/recommendation-engine/pillar-imp
 import { evaluateRecAlignment } from '../services/recommendation-engine/alignment-evaluator';
 import { tt, GATEWAY_DEFAULT_LOCALE, type GatewayLocale } from '../i18n/catalog';
 import { getUserLocale } from '../i18n/server-locale';
+import { optionalAuth, AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
 
 /**
  * Recommendation-identity work: resolve the requesting user's locale for the
@@ -139,6 +140,24 @@ function annotateWithPillarImpact<T extends { contribution_vector?: unknown }>(
 const router = Router();
 
 const LOG_PREFIX = '[VTID-01180]';
+
+// SECURITY (post-audit hardening): this router had NO auth middleware at
+// all. getUserId() below checked `req.user` (a property nothing in this
+// codebase ever sets — auth-supabase-jwt.ts attaches `req.identity`, not
+// `req.user`) so it always fell through to a bare X-User-ID/X-Vitana-User
+// header or ?user_id= query param, with zero verification. Any caller could
+// read, activate, reject, snooze, or complete another user's autopilot
+// recommendations by just setting that header. Now requires a verified JWT
+// on every route except /health.
+router.use(optionalAuth);
+const OPEN_PATHS = new Set(['/health']);
+router.use((req: Request, res: Response, next) => {
+  if (OPEN_PATHS.has(req.path)) return next();
+  if (!(req as AuthenticatedRequest).identity?.user_id) {
+    return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
+  }
+  return next();
+});
 
 /**
  * Build the full community recommendation rows for an API response body
@@ -310,18 +329,7 @@ async function callRpc<T>(
 // Helper: Extract user ID from request
 // =============================================================================
 function getUserId(req: Request): string | null {
-  // @ts-ignore - user may be set by auth middleware
-  if (req.user?.id) return req.user.id;
-  // @ts-ignore - user may be set by auth middleware
-  if (req.user?.sub) return req.user.sub;
-
-  const headerUserId = req.get('X-User-ID') || req.get('X-Vitana-User');
-  if (headerUserId) return headerUserId;
-
-  const queryUserId = req.query.user_id as string;
-  if (queryUserId) return queryUserId;
-
-  return null;
+  return (req as AuthenticatedRequest).identity?.user_id ?? null;
 }
 
 // =============================================================================
