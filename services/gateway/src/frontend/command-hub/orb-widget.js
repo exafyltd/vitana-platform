@@ -145,13 +145,19 @@
     // The host uses this to auto-close the overlay after the guided-topic
     // teaching turn so the underlying drawer's next-step buttons are usable.
     onTurnComplete: null,
-    // BOOTSTRAP-ORB-LATENCY-PHASE3: transport selector. 'sse' (default,
-    // production path: POST-per-chunk up / SSE down) or 'ws' (single
-    // bidirectional WebSocket to /api/v1/orb/live/ws — one connection,
-    // binary-framed JSON both ways, no per-chunk HTTP overhead, no
-    // cross-instance 404 class). Opt-in via init({transport:'ws'}) or
-    // localStorage 'vtorb.transport'='ws' for staging verification.
-    transport: 'sse'
+    // VTID-03471 (L-04/L-05): transport selector. 'ws' (DEFAULT since
+    // VTID-03471: single bidirectional WebSocket to /api/v1/orb/live/ws —
+    // one connection, JSON both ways, no per-chunk HTTP overhead, no
+    // cross-instance 404 class) or 'sse' (the legacy path: SSE down +
+    // one authenticated POST per 64ms audio chunk, ~15.6 requests/sec).
+    //
+    // Resolution order, highest first (see _useWsTransport):
+    //   1. localStorage 'vtorb.transport' — 'ws'/'sse', a developer override
+    //   2. the per-tab fallback latch — set when a WS start actually failed
+    //   3. the server's answer from GET /api/v1/orb/live/transport
+    //      (FEATURE_ORB_WS_TRANSPORT_ENV) — the operator kill switch
+    //   4. this compiled default
+    transport: 'ws'
   };
 
   var _s = {
@@ -837,15 +843,63 @@
     });
   }
 
-  // BOOTSTRAP-ORB-LATENCY-PHASE3: true when the WS transport is selected
-  // (init option, or the localStorage override used for staging testing).
+  // VTID-03471: the server's answer from GET /live/transport, or null until
+  // it arrives (or if it never does — the fetch is best-effort and the
+  // compiled default covers its absence).
+  var _serverTransport = null;
+
+  // VTID-03471: per-tab latch. Set when a WS session start FAILED and we fell
+  // back to SSE, so the rest of the tab's sessions don't each pay the 8s WS
+  // start budget before failing the same way. Deliberately sessionStorage
+  // (not localStorage): a network that blocks WebSocket upgrades is a
+  // property of where the user is right now, not a permanent verdict on
+  // their browser.
+  var _WS_FALLBACK_KEY = 'vtorb.wsFallback';
+
+  function _wsFallbackLatched() {
+    try {
+      return !!(window.sessionStorage && sessionStorage.getItem(_WS_FALLBACK_KEY));
+    } catch (e) { return _s._wsFallbackLatched === true; }
+  }
+
+  function _latchWsFallback(reason) {
+    _s._wsFallbackLatched = true;
+    try {
+      if (window.sessionStorage) sessionStorage.setItem(_WS_FALLBACK_KEY, reason || '1');
+    } catch (e) { /* storage blocked — the in-memory flag still holds for this page */ }
+    console.warn('[VTOrb] WS transport unavailable (' + reason + ') — falling back to SSE for this tab');
+  }
+
+  // VTID-03471: true when the WS transport should be used for the NEXT start.
+  // See the `transport` config comment for the resolution order.
   function _useWsTransport() {
     try {
       var o = window.localStorage && localStorage.getItem('vtorb.transport');
-      if (o === 'ws') return true;
+      if (o === 'ws') return true;   // developer override wins over everything
       if (o === 'sse') return false;
-    } catch (e) { /* storage blocked — fall through to config */ }
+    } catch (e) { /* storage blocked — fall through */ }
+    if (_wsFallbackLatched()) return false;
+    if (_serverTransport === 'ws') return true;
+    if (_serverTransport === 'sse') return false;
     return _cfg.transport === 'ws';
+  }
+
+  // VTID-03471: ask the gateway which transport it wants. Best-effort and
+  // non-blocking — if it fails or is slow, the compiled default stands and
+  // the user's first tap is not delayed by it.
+  function _fetchServerTransport() {
+    try {
+      fetch(_cfg.gw + '/api/v1/orb/live/transport', { method: 'GET' })
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (j) {
+          if (!j) return;
+          if (j.transport === 'ws' || j.transport === 'sse') {
+            _serverTransport = j.transport;
+            console.log('[VTOrb] Server transport preference: ' + _serverTransport);
+          }
+        })
+        .catch(function () { /* best-effort — compiled default stands */ });
+    } catch (e) { /* no fetch — compiled default stands */ }
   }
 
   // BOOTSTRAP-ORB-LATENCY-PHASE3: tear down the WS transport (idempotent).
@@ -1478,14 +1532,31 @@
           + ', conversation_id=' + (startPayload.conversation_id || '<new>'));
       }
 
-      // BOOTSTRAP-ORB-LATENCY-PHASE3: WebSocket transport branch. One
-      // bidirectional connection replaces POST /session/start + EventSource +
-      // a POST per 64ms audio chunk. Opt-in (default stays SSE) — see
-      // _useWsTransport(). Same start payload, same downstream message
-      // shapes, same _handleMessage.
+      // VTID-03471 (L-04/L-05): WebSocket transport branch — now the DEFAULT.
+      // One bidirectional connection replaces POST /session/start +
+      // EventSource + a POST per 64ms audio chunk. Same start payload, same
+      // downstream message shapes, same _handleMessage.
+      //
+      // If the WS start fails for a TRANSPORT reason (blocked upgrade,
+      // captive portal, corporate proxy that eats 101s, socket closed before
+      // the handshake completed), fall through to the SSE path rather than
+      // failing the session: an environment where WebSockets don't work is
+      // exactly where the legacy transport still does. The latch stops the
+      // rest of this tab's sessions from re-paying the 8s WS start budget.
+      //
+      // A server-side REJECTION (401 AUTH_TOKEN_INVALID and friends) is NOT a
+      // transport failure — SSE would be rejected identically — so those are
+      // rethrown for the caller's error handling instead of retried.
       if (_useWsTransport()) {
-        await _sessionStartWs(startPayload);
-        return;
+        try {
+          await _sessionStartWs(startPayload);
+          return;
+        } catch (wsErr) {
+          if (wsErr && wsErr.__vtOrbServerRejected) throw wsErr;
+          if (_s._userInitiatedStop || !_s.overlayVisible) throw wsErr;
+          _latchWsFallback((wsErr && wsErr.message) || 'ws_start_failed');
+          // fall through to the SSE path below, same startPayload
+        }
       }
 
       // VTID-01987: explicit 8s timeout. On Android WebView a fetch over a
@@ -1684,6 +1755,21 @@
         if (msg.type === 'connected') {
           if (_s._userInitiatedStop || !_s.overlayVisible) return bail('overlay closed during connect');
           try { w.send(JSON.stringify(Object.assign({ type: 'start' }, startPayload))); } catch (e) { /* onclose covers */ }
+          return;
+        }
+        // VTID-03471: the gateway rejected the start (bad/expired JWT, origin
+        // not allowed, quota). Distinguish it from a transport failure: SSE
+        // would be rejected the same way, so the caller must NOT retry there.
+        if (msg.type === 'error' && !settled) {
+          clearTimeout(startTimer);
+          settled = true;
+          _s.ws = null;
+          try { w.close(); } catch (e) { /* noop */ }
+          var rejErr = new Error(msg.code || msg.message || 'WS session start rejected');
+          rejErr.__vtOrbServerRejected = true;
+          rejErr.code = msg.code || null;
+          rejErr.status = msg.status || null;
+          reject(rejErr);
           return;
         }
         if (msg.type === 'session_started' && !settled) {
@@ -3688,6 +3774,10 @@
       // orb tap skips the 400-800ms context build on the
       // click-to-first-audio path. Anonymous = server-side no-op.
       _prewarmBootstrap();
+      // VTID-03471: resolve the server's transport preference (kill switch)
+      // in parallel with the prewarm. Unauthenticated, so anonymous sessions
+      // get it too.
+      _fetchServerTransport();
       console.log('[VTOrb] Initialized — gateway: ' + _cfg.gw + ', lang: ' + _cfg.lang + ', showFab: ' + _cfg.showFab + ', hasToken: ' + !!_cfg.token + ', forceAnonymous: ' + _cfg.forceAnonymous);
     },
 
