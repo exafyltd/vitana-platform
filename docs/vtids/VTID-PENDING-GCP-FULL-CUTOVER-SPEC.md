@@ -69,6 +69,25 @@ a sustained trial period.
 - `exafyltd/vitana-infra` reconciled so its checked-in Terraform state
   matches live infra (it currently does not — see Non-Goals and
   Preconditions).
+- **Decided 2026-08-01, at explicit user request — the AI/voice provider
+  question is no longer "migrate or accept an exception," it's a
+  concrete build:**
+  - ORB voice: promote **Amazon Nova Sonic** out of canary for all
+    active languages/tenants (replaces Vertex Live entirely — no GCP
+    fallback retained).
+  - TTS: replace Google Cloud TTS with **Amazon Polly** across all 4
+    call sites.
+  - Non-voice text AI (recommendations, fact extraction, session
+    summaries): default to **Claude via the Bedrock adapter**.
+  - Vision + forced tool-calling features (e.g. Shorts auto-metadata,
+    `anthropic-vision-client.ts`): **extend the Bedrock adapter**
+    (`services/gateway/src/providers/bedrock.ts`) to support `images`
+    and `tools`/`forceTool` before migrating these specific stages —
+    real engineering, not a config flip.
+  - Cover-image generation (`cover-image-outpaint.ts`, Vertex Imagen):
+    Claude has no image-generation capability at all, so this needed
+    its own answer — replace with **Amazon Titan Image Generator via
+    Bedrock** (a new, separate adapter from the Claude one).
 
 ### Non-goals (explicit exclusions)
 - **GCP resource deletion or decommission.** GCP stays running, dormant,
@@ -81,11 +100,13 @@ a sustained trial period.
   this VTID (see below), not something this VTID does by running `apply`.
 - **Extending AWS-DR to any service not already named in scope above**
   without its own new VTID, per `CLAUDE.md`'s standing rule.
-- **Changing AI provider defaults (Vertex → Bedrock) without separately
-  validated parity** — vision and tool-calling are not yet supported by
-  the Bedrock adapter (`CLAUDE.md` §2b). This VTID requires that gap
-  closed or an accepted, written exception per affected feature — it does
-  not itself do the provider-parity engineering.
+- **Flipping AI/voice provider defaults before their replacement is built
+  and validated at parity.** Decided 2026-08-01: Nova Sonic (voice),
+  Polly (TTS), Bedrock/Claude (text AI), Bedrock/Titan Image Generator
+  (cover-image generation), with the Bedrock adapter's vision/tool-calling
+  gap closed first for the features that need it. This VTID's precondition
+  4 tracks that build; this VTID itself does not flip any routing default
+  until each replacement is validated.
 - **Autoscaling `oasis-projector`, `worker-runner`, or
   `verification-engine`** beyond what's already running, absent the
   concurrency-safety review `CLAUDE.md`'s hard rules already require.
@@ -107,22 +128,40 @@ Checklist, plus what this investigation (2026-07-31) added to it:
    real cross-instance locking in the Ledger Writer, or get an explicit,
    written risk-acceptance from the user to keep it single-instance
    permanently.
-3. **ORB voice AWS path validated at parity.** Nova Sonic (AWS-native,
-   `services/gateway/src/orb/live/upstream/nova-sonic-config.ts`) is real
-   but canary-only, gated to 4 languages and an identity allowlist. Either
-   promote it for all active languages/tenants, or validate the Vertex
-   Live API-key fallback (`GEMINI_LIVE_TRANSPORT=api_key`) at full parity
-   with the ADC-based path it would replace.
-4. **Google Cloud TTS migrated.** Wired independently into 4 files
-   (`orb-live.ts`, `reminder-tts.ts`, `greeting-bridge-tts.ts`,
-   `voice-config.ts`) regardless of which voice-LLM path wins — needs its
-   own migration to an AWS-reachable provider (e.g. Polly, or the
-   ElevenLabs path orb-agent's LiveKit route already integrates).
-5. **Non-voice AI default provider decision.** 18 files default to Vertex
-   for recommendations, fact extraction, cover-image generation, and
-   session summaries. Each needs either a validated Bedrock (or other
-   non-GCP) path, or an explicit written exception if it stays on Vertex
-   for this trial.
+3. **ORB voice: Nova Sonic promoted out of canary.** Decided 2026-08-01 —
+   Amazon Nova Sonic (AWS-native, `services/gateway/src/orb/live/upstream/
+   nova-sonic-config.ts`) replaces Vertex Live entirely, not just as a
+   fallback. Currently canary-only, gated to 4 languages and an identity
+   allowlist. Must be validated at parity and promoted for every active
+   language/tenant — no GCP voice-LLM path retained after this closes.
+4. **TTS: Google Cloud TTS replaced with Amazon Polly.** Decided
+   2026-08-01. Wired independently into 4 files (`orb-live.ts`,
+   `reminder-tts.ts`, `greeting-bridge-tts.ts`, `voice-config.ts`) —
+   all 4 call sites need to move to Polly, validated for voice quality
+   and latency parity before cutover.
+5. **Non-voice AI: default to Claude via the Bedrock adapter.** Decided
+   2026-08-01. Of the 18 files currently defaulting to Vertex
+   (recommendations, fact extraction, session summaries, cover-image
+   generation), split into three tracks:
+   - Plain-text stages → Bedrock/Claude directly, no adapter changes needed.
+   - Vision + forced tool-calling stages (e.g. `anthropic-vision-client.ts`'s
+     Shorts auto-metadata) → blocked on precondition 5a below.
+   - Cover-image generation (`cover-image-outpaint.ts`, currently Vertex
+     Imagen) → blocked on precondition 5b below; Claude cannot do this,
+     it needs a different Bedrock model entirely.
+5a. **Extend the Bedrock adapter for vision + tool-calling.**
+    `services/gateway/src/providers/bedrock.ts` currently errors on
+    `images`/`tools`/`forceTool` (`CLAUDE.md` §2b). This is real
+    engineering — add real support, verify against at least the Shorts
+    auto-metadata use case, before migrating any vision/tool-calling
+    stage off its current provider.
+5b. **Build a Bedrock Titan Image Generator adapter for cover-image
+    outpainting.** Separate from the Claude/Bedrock text adapter — a new
+    adapter class for Amazon Titan Image Generator, wired into
+    `cover-image-outpaint.ts` in place of the Vertex Imagen call. Validate
+    output quality against the existing Imagen outpaint results before
+    cutover; the code's existing letterbox-blur fallback remains the
+    safety net if Titan's output quality doesn't hold up.
 6. **AWS equivalent for Cloud Scheduler.** Autopilot cron automations and
    the daily feature-tip job currently only exist as `gcloud scheduler
    jobs create` — no EventBridge Scheduler equivalent exists yet. Without
@@ -226,7 +265,7 @@ intent:
     - "GCP resource deletion or decommission (runbook §5, separate VTID, separate gate)"
     - "terraform apply against exafyltd/vitana-infra's current stale state"
     - "Extending AWS-DR to services not already named in CLAUDE.md §1b without their own new VTID"
-    - "Changing default AI provider without validated parity or a written exception per feature"
+    - "Flipping any AI/voice provider default before its replacement (Nova Sonic, Polly, Bedrock/Claude, Bedrock/Titan Image Generator) is built and validated at parity"
     - "Autoscaling oasis-projector/worker-runner/verification-engine beyond current desiredCount"
 
 surfaces:
@@ -253,8 +292,10 @@ surfaces:
     - "AWS ECS / ALB / Aurora / ElastiCache (472838866351/eu-central-1)"
     - "GCP Cloud Run / Cloud Scheduler / Vertex AI (lovable-vitana-vers1) — dormant target, not decommissioned"
     - "exafyltd/vitana-infra (Terraform)"
-    - "Amazon Bedrock (Claude via Bedrock adapter)"
-    - "Amazon Nova Sonic (ORB voice)"
+    - "Amazon Bedrock (Claude, text AI + vision/tools once adapter is extended)"
+    - "Amazon Bedrock (Titan Image Generator, cover-image generation)"
+    - "Amazon Nova Sonic (ORB voice, promoted out of canary)"
+    - "Amazon Polly (TTS, replaces Google Cloud TTS)"
 
 memory:
   reads:
@@ -296,11 +337,15 @@ acceptance:
   - type: "manual_verification"
     description: "oasis-projector concurrency-safety redesigned, or explicit written risk-acceptance recorded"
   - type: "test"
-    description: "ORB voice AWS-native path (Nova Sonic or Vertex Live API-key fallback) validated at parity for every active language/tenant"
+    description: "Amazon Nova Sonic validated at parity and promoted out of canary for every active language/tenant, replacing Vertex Live entirely"
   - type: "condition"
-    description: "Google Cloud TTS replaced with an AWS-reachable provider across all 4 call sites, or written exception recorded"
-  - type: "manual_verification"
-    description: "Non-voice AI default provider decision recorded per affected feature (Bedrock migration or written exception)"
+    description: "Amazon Polly replaces Google Cloud TTS across all 4 call sites (orb-live.ts, reminder-tts.ts, greeting-bridge-tts.ts, voice-config.ts)"
+  - type: "condition"
+    description: "Plain-text AI stages (recommendations, fact extraction, session summaries) default to Claude via the Bedrock adapter"
+  - type: "test"
+    description: "Bedrock adapter extended to support images/tools/forceTool, verified against the Shorts auto-metadata (anthropic-vision-client.ts) use case"
+  - type: "test"
+    description: "Bedrock Titan Image Generator adapter built and wired into cover-image-outpaint.ts, output quality validated against existing Imagen outpaint results"
   - type: "condition"
     description: "AWS EventBridge Scheduler equivalents exist for every current GCP Cloud Scheduler job"
   - type: "condition"
@@ -324,10 +369,12 @@ acceptance:
 1. Review this draft against the current state of each precondition —
    several may have moved since 2026-07-31.
 2. Where a precondition can't reasonably close before the desired trial
-   start, decide explicitly: delay the cutover, narrow its scope (e.g.
-   defer ORB voice / AI provider migration to a follow-up VTID and keep
-   those two functions on GCP as a named exception), or accept the risk
-   in writing.
+   start, decide explicitly: delay the cutover, or accept the risk in
+   writing. The AI/voice provider path (precondition 3–5b) no longer has
+   a "stay on GCP" branch — Nova Sonic, Polly, Bedrock/Claude, and
+   Bedrock/Titan Image Generator were decided 2026-08-01 as the concrete
+   replacements; what remains open is *when* each is built and validated,
+   not *whether*.
 3. Once ready, allocate the real VTID (`POST /api/v1/vtid/allocate` or
    the `allocate_global_vtid` RPC), replace every `VTID-XXXXX` placeholder
    above with the issued number, and only then move `spec_status` toward
