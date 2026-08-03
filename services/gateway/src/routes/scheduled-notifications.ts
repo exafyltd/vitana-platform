@@ -18,7 +18,7 @@
  */
 
 import { Router, Request, Response } from 'express';
-import { notifyUser, notifyUserAsync, sendPushToUser, sendAppilixPush, TYPE_META } from '../services/notification-service';
+import { notifyUser, notifyUserAsync, sendPushToUser, sendAppilixPush, isSignedOutOnAllKnownDevices, TYPE_META } from '../services/notification-service';
 import { generatePersonalRecommendations } from '../services/recommendation-engine';
 import { LangCode, resolveLanguage } from '../services/recommendation-engine/analyzers/community-user-analyzer';
 import { tt, type GatewayI18nKey } from '../i18n/catalog';
@@ -1150,16 +1150,25 @@ router.post('/push-dispatch', async (req: Request, res: Response) => {
           ? Object.fromEntries(Object.entries(notif.data).map(([k, v]) => [k, String(v)]))
           : undefined,
       };
+      //
+      // VTID-03481: mirror notifyUser()'s Appilix suppression too. This cron is
+      // the path that delivers the trigger-written community fan-out — the one
+      // that produced "Neuer Beitrag" and "New post" on the SAME phone a minute
+      // apart, because two accounts had been signed in on it and Appilix still
+      // had both identities mapped to the device.
       let sent = 0;
       let appilixSent = false;
+      const appilixSuppressed = await isSignedOutOnAllKnownDevices(notif.user_id, supa);
       if (hasDeepLink) {
-        appilixSent = await sendAppilixPush(notif.user_id, pushPayload);
+        appilixSent = appilixSuppressed
+          ? false
+          : await sendAppilixPush(notif.user_id, pushPayload);
         if (!appilixSent) {
           sent = await sendPushToUser(notif.user_id, notif.tenant_id, pushPayload, supa);
         }
       } else {
         sent = await sendPushToUser(notif.user_id, notif.tenant_id, pushPayload, supa);
-        if (sent === 0) {
+        if (sent === 0 && !appilixSuppressed) {
           appilixSent = await sendAppilixPush(notif.user_id, pushPayload);
         }
       }
@@ -1467,17 +1476,23 @@ async function scheduleReminderFcmPush(
     // notification. Only fire Appilix when there's no native token, or as a
     // last resort when FCM reached zero devices (e.g. web-only token that
     // opens the browser, not the app).
+    //
+    // VTID-03481: only count devices this user still OWNS, and skip Appilix
+    // altogether once they are signed out on every known device — otherwise a
+    // reminder for the account that left a shared phone still buzzes it.
     let appilixSent = false;
+    const appilixSuppressed = await isSignedOutOnAllKnownDevices(row.user_id, supa);
     const { count: nativeMobileCount } = await supa
       .from('user_device_tokens')
       .select('*', { count: 'exact', head: true })
       .eq('user_id', row.user_id)
       .eq('tenant_id', row.tenant_id)
+      .is('revoked_at', null)
       .like('device_label', 'Appilix %');
-    if (!nativeMobileCount) {
+    if (!nativeMobileCount && !appilixSuppressed) {
       appilixSent = await sendAppilixPush(row.user_id, payload);
     }
-    if (fcmSent === 0 && !appilixSent) {
+    if (fcmSent === 0 && !appilixSent && !appilixSuppressed) {
       appilixSent = await sendAppilixPush(row.user_id, payload);
     }
     console.log(`[reminders-tick] FCM push for ${row.id}: fcm=${fcmSent} appilix=${appilixSent} nativeTokens=${nativeMobileCount || 0}`);

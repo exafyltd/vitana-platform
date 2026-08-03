@@ -255,7 +255,13 @@ export async function sendPushToUser(
     .from('user_device_tokens')
     .select('fcm_token')
     .eq('user_id', userId)
-    .eq('tenant_id', tenantId);
+    .eq('tenant_id', tenantId)
+    // Only devices this user still OWNS (VTID-03481). A revoked row means the
+    // device was taken over by another account, or the user signed out on it —
+    // pushing there would buzz a phone that now belongs to someone else, which
+    // is how one device ended up receiving the same post notification once per
+    // account that had ever signed in on it.
+    .is('revoked_at', null);
 
   if (!tokens?.length) return 0;
 
@@ -265,13 +271,47 @@ export async function sendPushToUser(
     if (ok) {
       sent++;
     } else {
+      // FCM rejected the token as unregistered/invalid — it is dead for every
+      // owner, so revoke it outright rather than scoping to this user.
       await supabase
         .from('user_device_tokens')
-        .delete()
-        .eq('fcm_token', fcm_token);
+        .update({ revoked_at: new Date().toISOString(), revoked_reason: 'fcm_invalid' })
+        .eq('fcm_token', fcm_token)
+        .is('revoked_at', null);
     }
   }
   return sent;
+}
+
+/**
+ * True when this user has device tokens on record but every one of them has
+ * been revoked — i.e. they are signed out on every device we know about.
+ *
+ * VTID-03481. Appilix push targets by user_identity, NOT by device token, and
+ * Appilix's own identity→device registry keeps stale mappings that we have no
+ * API to purge. So after two accounts have been used on one phone, an Appilix
+ * push addressed to the account that is no longer signed in STILL lands on that
+ * phone — in that account's language. Fixing the token table alone therefore
+ * would not have stopped the duplicate lock-screen notifications; this gate is
+ * what actually suppresses the second copy.
+ *
+ * Deliberately returns false when the user has NO rows at all: that is the
+ * legitimate legacy case (an iOS Appilix shell whose bridge never captured an
+ * FCM token) which depends on the user_identity fallback and must keep working.
+ */
+export async function isSignedOutOnAllKnownDevices(
+  userId: string,
+  supabase: SupabaseClient<any, any, any>
+): Promise<boolean> {
+  const { data, error } = await supabase
+    .from('user_device_tokens')
+    .select('revoked_at')
+    .eq('user_id', userId);
+
+  // On a query error, fail OPEN (deliver). A missed notification is worse than
+  // a duplicate one, and the token takeover already removes most duplicates.
+  if (error || !data?.length) return false;
+  return data.every((row: { revoked_at: string | null }) => row.revoked_at !== null);
 }
 
 // ── Appilix Native Push (Maxina iOS + Android apps) ──────────
@@ -637,18 +677,25 @@ export async function notifyUser(
   let pushed = 0;
   let appilixSent = false;
   if (shouldSendPush) {
+    // VTID-03481: skip Appilix entirely for a user who is signed out on every
+    // device we know about. Appilix targets by user_identity and retains stale
+    // identity→device mappings we can't purge, so without this the account that
+    // LEFT a shared phone keeps pushing to it — the second, wrong-language copy
+    // of every notification.
+    const appilixSuppressed = await isSignedOutOnAllKnownDevices(userId, supabase);
+
     if (payload.data?.url) {
       // Notifications with deep-link URLs must go through Appilix first.
       // Appilix honors open_link_url on tap; FCM-delivered notifications
       // crash the Appilix WebView ("Something went wrong") because FCM
       // doesn't pass the URL to Appilix's native tap handler.
-      appilixSent = await sendAppilixPush(userId, payload);
+      appilixSent = appilixSuppressed ? false : await sendAppilixPush(userId, payload);
       if (!appilixSent) {
         pushed = await sendPushToUser(userId, tenantId, payload, supabase);
       }
     } else {
       pushed = await sendPushToUser(userId, tenantId, payload, supabase);
-      if (pushed === 0) {
+      if (pushed === 0 && !appilixSuppressed) {
         appilixSent = await sendAppilixPush(userId, payload);
       }
     }
