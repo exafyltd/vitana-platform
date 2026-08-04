@@ -1,5 +1,5 @@
 # CLAUDE.md - Vitana Platform Development Guide
-**CANONICAL REFERENCE - Last Updated: 2026-01-21**
+**CANONICAL REFERENCE - Last Updated: 2026-07-28**
 
 This file contains critical information for AI assistants working on the Vitana platform.
 **READ THIS BEFORE MAKING ANY CHANGES.**
@@ -62,29 +62,29 @@ Claude must **always** do the following:
 
 ### Database & Memory
 
-21. **Always use Supabase as the persistent data store.**
-22. **Always enforce tenant isolation (RLS).**
-23. **Always use snake_case table names.**
-24. **Always update `DATABASE_SCHEMA.md` when schema changes.**
-25. **Always route DB mutations through Gateway APIs.**
-26. **Always treat `memory_items` as canonical infinite memory.**
-27. **Always use pgvector for semantic memory.**
-28. **Always scope memory by tenant + role.**
-29. **Always retrieve memory selectively (relevance-based).**
-30. **Always log memory debug snapshots in dev.**
+24. **Always use Supabase as the persistent data store.**
+25. **Always enforce tenant isolation (RLS).**
+26. **Always use snake_case table names.**
+27. **Always update `DATABASE_SCHEMA.md` when schema changes.**
+28. **Always route DB mutations through Gateway APIs.**
+29. **Always treat `memory_items` as canonical infinite memory.**
+30. **Always use pgvector for semantic memory.**
+31. **Always scope memory by tenant + role.**
+32. **Always retrieve memory selectively (relevance-based).**
+33. **Always log memory debug snapshots in dev.**
 
 ### Frontend & UX
 
-31. **Always preserve sidebar structure and order.**
-32. **Always keep exactly 10 sidebar items.**
-33. **Always keep Start Stream in the sidebar utility zone.**
-34. **Always treat Start Stream as private AI + screen share.**
-35. **Always treat ORB as voice-first, multimodal.**
-36. **Always comply with CSP (no inline scripts/styles).**
-37. **Always bundle JS locally.**
-38. **Always respect fixed layout regions.**
-39. **Always use Markdown specs (no Figma).**
-40. **Always maintain WCAG 2.2 AA compliance.**
+34. **Always preserve sidebar structure and order.**
+35. **Always keep exactly 10 sidebar items.**
+36. **Always keep Start Stream in the sidebar utility zone.**
+37. **Always treat Start Stream as private AI + screen share.**
+38. **Always treat ORB as voice-first, multimodal.**
+39. **Always comply with CSP (no inline scripts/styles).**
+40. **Always bundle JS locally.**
+41. **Always respect fixed layout regions.**
+42. **Always use Markdown specs (no Figma).**
+43. **Always maintain WCAG 2.2 AA compliance.**
 
 ---
 
@@ -203,7 +203,7 @@ Claude must apply the following **conditional logic**:
 
 **Core principle: screenshot what you changed, interact with it, verify it works — before reporting done.**
 
-26. **AFTER finishing any UI change** (button, layout, page, modal, form, nav) → run this protocol BEFORE telling the user it's done:
+21. **AFTER finishing any UI change** (button, layout, page, modal, form, nav) → run this protocol BEFORE telling the user it's done:
 
     **Step 1 — Identify what to verify:**
     Look at your own diff. What pages/components did you change? Those are the ONLY pages you need to screenshot. Not 20 pages — just the ones you touched.
@@ -238,10 +238,10 @@ Claude must apply the following **conditional logic**:
     - If the screenshot shows problems → fix them, redeploy, re-screenshot.
     - If the screenshot looks correct → report completion WITH the screenshot evidence.
 
-27. **NEVER** report a UI change as "done" without having taken and visually inspected a screenshot of the specific thing you changed.
-28. **NEVER** screenshot 20 pages when you changed 1 button. Verify what you changed, not the entire app.
-29. **IF** Playwright deps are missing on WSL2 → set `LD_LIBRARY_PATH="/tmp/chromium-libs/usr/lib/x86_64-linux-gnu:$LD_LIBRARY_PATH"` or install via `apt download` + `dpkg-deb -x`.
-30. **IF** you cannot run Playwright at all → use `curl` to fetch the page HTML and verify the changed element exists in the DOM. This is a fallback, not the standard.
+22. **NEVER** report a UI change as "done" without having taken and visually inspected a screenshot of the specific thing you changed.
+23. **NEVER** screenshot 20 pages when you changed 1 button. Verify what you changed, not the entire app.
+24. **IF** Playwright deps are missing on WSL2 → set `LD_LIBRARY_PATH="/tmp/chromium-libs/usr/lib/x86_64-linux-gnu:$LD_LIBRARY_PATH"` or install via `apt download` + `dpkg-deb -x`.
+25. **IF** you cannot run Playwright at all → use `curl` to fetch the page HTML and verify the changed element exists in the DOM. This is a fallback, not the standard.
 
 **Test user UUID:** `a27552a3-0257-4305-8ed0-351a80fd3701`
 Use this user when an authenticated user is needed for testing (e.g., Playwright screenshots, API calls, profile checks).
@@ -274,35 +274,35 @@ await page.reload();
 > lives in each deploy workflow's `cutover_gate` job; manual dispatch is never
 > frozen. No redeploy is needed to flip it — it is purely time-based.
 
-21. **IF** you push/merge to `main` **on/after the cutover** → **THEN it deploys to STAGING (gateway via `STAGE-DEPLOY.yml` → `gateway-staging`). It does NOT touch production. Verify on `preview-gateway.vitanaland.com`, not prod.**
-22. **IF** you need code on PRODUCTION (post-cutover) → **THEN do NOT push and expect prod to update. Either click PUBLISH in the Command Hub (promotes the tested staging build) or run `scripts/deploy/publish-to-prod.sh --service <svc> --vtid <id> --reason "<why>"` (the explicit exception).**
-23. **IF** you are tempted to manually dispatch `EXEC-DEPLOY.yml` to prod "to be safe" post-cutover → **THEN STOP. That is the old auto-to-prod habit. Auto = staging. Prod = PUBLISH button or escape-hatch/manual dispatch only, with a recorded reason.**
-24. **IF** `worker-runner` / `vitana-orb-agent` / the autopilot job needs a prod update post-cutover → **THEN use the escape-hatch script or the workflow's manual `workflow_dispatch`. These have no staging twin yet, so they are freeze-only on the auto path until one exists.**
-25. **IF** making frontend CSS/JS changes (Command Hub) → **THEN bump the `?v=` cache-busting parameter in index.html. Post-cutover the change auto-deploys to STAGING; it reaches prod only when PUBLISH is clicked.**
+26. **IF** you push/merge to `main` **on/after the cutover** → **THEN it deploys to STAGING (gateway via `STAGE-DEPLOY.yml` → `gateway-staging`). It does NOT touch production. Verify on `preview-gateway.vitanaland.com`, not prod.**
+27. **IF** you need code on PRODUCTION (post-cutover) → **THEN do NOT push and expect prod to update. Either click PUBLISH in the Command Hub (promotes the tested staging build) or run `scripts/deploy/publish-to-prod.sh --service <svc> --vtid <id> --reason "<why>"` (the explicit exception).**
+28. **IF** you are tempted to manually dispatch `EXEC-DEPLOY.yml` to prod "to be safe" post-cutover → **THEN STOP. That is the old auto-to-prod habit. Auto = staging. Prod = PUBLISH button or escape-hatch/manual dispatch only, with a recorded reason.**
+29. **IF** `worker-runner` / `vitana-orb-agent` / the autopilot job needs a prod update post-cutover → **THEN use the escape-hatch script or the workflow's manual `workflow_dispatch`. These have no staging twin yet, so they are freeze-only on the auto path until one exists.**
+30. **IF** making frontend CSS/JS changes (Command Hub) → **THEN bump the `?v=` cache-busting parameter in index.html. Post-cutover the change auto-deploys to STAGING; it reaches prod only when PUBLISH is clicked.**
 
 ### Memory
 
-16. **IF** memory exists → **THEN retrieve, don't recreate.**
-17. **IF** memory is irrelevant → **THEN do not inject.**
-18. **IF** tenant context is missing → **THEN do not proceed.**
-19. **IF** memory write fails → **THEN emit error event.**
-20. **IF** memory schema changes → **THEN migrate + document.**
+31. **IF** memory exists → **THEN retrieve, don't recreate.**
+32. **IF** memory is irrelevant → **THEN do not inject.**
+33. **IF** tenant context is missing → **THEN do not proceed.**
+34. **IF** memory write fails → **THEN emit error event.**
+35. **IF** memory schema changes → **THEN migrate + document.**
 
 ### Frontend & UX
 
-21. **IF** change touches sidebar → **THEN it is forbidden.**
-22. **IF** JS must run → **THEN it must be external.**
-23. **IF** UI spec conflicts with canon → **THEN canon wins.**
-24. **IF** accessibility fails → **THEN block release.**
-25. **IF** screen is not in inventory → **THEN do not add it.**
+36. **IF** change touches sidebar → **THEN it is forbidden.**
+37. **IF** JS must run → **THEN it must be external.**
+38. **IF** UI spec conflicts with canon → **THEN canon wins.**
+39. **IF** accessibility fails → **THEN block release.**
+40. **IF** screen is not in inventory → **THEN do not add it.**
 
 ### AI & Autonomy
 
-26. **IF** planner is needed → **THEN use Gemini Pro.**
-27. **IF** worker is needed → **THEN use Gemini Flash.**
-28. **IF** validation is needed → **THEN use Claude.**
-29. **IF** model fallback occurs → **THEN log explicitly.**
-30. **IF** TTS is used → **THEN specify model_name explicitly.**
+41. **IF** planner is needed → **THEN use Gemini Pro.**
+42. **IF** worker is needed → **THEN use Gemini Flash.**
+43. **IF** validation is needed → **THEN use Claude.**
+44. **IF** model fallback occurs → **THEN log explicitly.**
+45. **IF** TTS is used → **THEN specify model_name explicitly.**
 
 ---
 
@@ -742,10 +742,18 @@ OPENAI_API_KEY=xxx
 
 ## 9. CI/CD WORKFLOWS
 
+The repo has 80+ workflows under `.github/workflows/`; this table is not
+exhaustive — it's the small set of deploy-governance workflows referenced
+elsewhere in this doc (§15/§16/§1b). For anything else, check the directory
+directly.
+
 ### Key Workflows
 | File | Purpose |
 |------|---------|
-| `EXEC-DEPLOY.yml` | Canonical deployment (VTID governance) |
+| `EXEC-DEPLOY.yml` | Canonical governed prod deploy (VTID governance); driven by PUBLISH / escape-hatch, never on push |
+| `STAGE-DEPLOY.yml` | Auto-deploys gateway to staging on push to `main` |
+| `AUTO-DEPLOY.yml` | Legacy auto-deploy path; `cutover_gate`-frozen from prod post-cutover (see §16) |
+| `AWS-PROD-DEPLOY-*.yml` | Dispatch-only AWS-DR prod deploys, one per service (see §1b) |
 | `MCP-GATEWAY-CI.yml` | MCP Gateway CI |
 
 ### Deployment Requirements
@@ -892,8 +900,6 @@ must use `bulkGetUserLocales` to batch-fetch in one query.
 - **Internal state identifiers** (currency codes, tab IDs, status enums) —
   these are not user-visible.
 - **Debug/telemetry logs** — never translated.
-
----
 
 ---
 
