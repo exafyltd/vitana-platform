@@ -146,20 +146,21 @@ router.get(
  * Admin-gated, matching /feature-flags: failure reasons can echo database
  * error text, which is more than /health's environment identity.
  */
-router.get(
-  '/orb-session-state-health',
-  requireAdminAuth,
-  (_req: AuthenticatedRequest, res: Response) => {
-    const health = getOrbSessionStateHealth();
-    return res.status(health.ok ? 200 : 503).json({
-      ok: health.ok,
-      env: VITANA_ENV,
-      cloud_run_service: cloudRunService(),
-      cloud_run_revision: cloudRunRevision(),
-      git_commit: BUILD_COMMIT,
-      orb_session_state: health,
-    });
-  },
-);
+// Kept on one line through `requireAdminAuth` on purpose: the impact-scan rule
+// `new-route-without-auth-middleware` matches the added `router.<verb>(` line and
+// looks for an auth name on that same line, so the split-argument style used by
+// /feature-flags above reads as unauthenticated to it. The gate is real either
+// way; this just lets the scanner see it.
+router.get('/orb-session-state-health', requireAdminAuth, (_req: AuthenticatedRequest, res: Response) => {
+  const health = getOrbSessionStateHealth();
+  return res.status(health.ok ? 200 : 503).json({
+    ok: health.ok,
+    env: VITANA_ENV,
+    cloud_run_service: cloudRunService(),
+    cloud_run_revision: cloudRunRevision(),
+    git_commit: BUILD_COMMIT,
+    orb_session_state: health,
+  });
+});
 
 export default router;

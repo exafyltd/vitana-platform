@@ -44,25 +44,39 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Install psql
-        run: sudo apt-get install -y postgresql-client > /dev/null 2>&1
-
-      - name: Snapshot live public tables
+      # NOTE: deliberately NOT psql. GitHub Actions cannot reach the Supabase
+      # pooler — the project has a network allow-list and runner IPs are not on
+      # it ("FATAL: (EADDRNOTALLOWED) address not in tenant allow_list").
+      # ALERT-WELCOME-GREETING-HEALTH.yml has failed every scheduled run for
+      # 6+ days on exactly this. PostgREST is a separate edge service and is not
+      # subject to that allow-list, so we go over HTTPS instead.
+      - name: Snapshot live public tables (via PostgREST RPC)
         env:
-          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
         run: |
           set -euo pipefail
-          psql "$SUPABASE_DB_URL" -t -A > live-tables.txt <<'EOF'
-          SELECT table_name FROM information_schema.tables
-           WHERE table_schema = 'public' AND table_type = 'BASE TABLE'
-           ORDER BY table_name;
-          EOF
+          if [ -z "${SUPABASE_URL:-}" ] || [ -z "${SUPABASE_SERVICE_ROLE:-}" ]; then
+            echo "::error::SUPABASE_URL / SUPABASE_SERVICE_ROLE secrets are not set on this repo."
+            exit 1
+          fi
+          HTTP=$(curl -sS -o rpc.json -w '%{http_code}' \
+            -X POST "${SUPABASE_URL%/}/rest/v1/rpc/ci_schema_inventory" \
+            -H "apikey: $SUPABASE_SERVICE_ROLE" \
+            -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE" \
+            -H 'Content-Type: application/json' -d '{}')
+          if [ "$HTTP" != "200" ]; then
+            echo "::error::ci_schema_inventory RPC returned HTTP $HTTP. If 404, the function is missing — apply supabase/migrations/20260804080000_vtid_03486_ci_health_rpcs.sql."
+            head -c 500 rpc.json || true
+            exit 1
+          fi
+          jq -r '.[].table_name' rpc.json > live-tables.txt
           COUNT=$(grep -c . live-tables.txt || true)
           echo "Live public tables: $COUNT"
           # An empty list would make every declared table look missing. Fail loudly
           # on a broken connection rather than emitting a wall of false positives.
           if [ "$COUNT" -lt "50" ]; then
-            echo "::error::Only $COUNT tables returned — the database connection or query is wrong, not the schema. Refusing to evaluate drift against a bad snapshot."
+            echo "::error::Only $COUNT tables returned — the connection or RPC is wrong, not the schema. Refusing to evaluate drift against a bad snapshot."
             exit 1
           fi
 
