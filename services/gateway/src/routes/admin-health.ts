@@ -22,6 +22,7 @@ import { VITANA_ENV, supabaseHost, cloudRunRevision, cloudRunService } from '../
 import { featureFlagSetting, isFeatureLive } from '../services/feature-flags';
 import { requireAdminAuth } from '../middleware/auth-supabase-jwt';
 import type { AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
+import { getOrbSessionStateHealth } from '../services/orb/orb-session-state';
 
 const router = Router();
 
@@ -120,6 +121,43 @@ router.get(
       cloud_run_service: cloudRunService(),
       git_commit: BUILD_COMMIT,
       flags,
+    });
+  },
+);
+
+/**
+ * GET /api/v1/admin/orb-session-state-health — VTID-03485.
+ *
+ * Exists because `orb_session_state` did not exist in production for ~2 months
+ * (VTID-03480) and nothing noticed. Every helper in `orb-session-state.ts`
+ * fails soft by design, so the outage surfaced only as `ok:false` inside a
+ * telemetry payload nobody was alerting on — four ORB features (audio-ready
+ * handshake, close/reopen continuity, pending autopilot CTA, opener rotation)
+ * were inert the whole time.
+ *
+ * `ok:false` here means writes/reads are failing *persistently*, not that one
+ * blipped. `schema_missing:true` is the specific VTID-03480 signature — the
+ * relation itself is unreachable, which in this codebase has meant an authored
+ * but never-applied migration.
+ *
+ * Returns HTTP 503 when unhealthy so an uptime check or `curl -f` alarms
+ * without having to parse the body.
+ *
+ * Admin-gated, matching /feature-flags: failure reasons can echo database
+ * error text, which is more than /health's environment identity.
+ */
+router.get(
+  '/orb-session-state-health',
+  requireAdminAuth,
+  (_req: AuthenticatedRequest, res: Response) => {
+    const health = getOrbSessionStateHealth();
+    return res.status(health.ok ? 200 : 503).json({
+      ok: health.ok,
+      env: VITANA_ENV,
+      cloud_run_service: cloudRunService(),
+      cloud_run_revision: cloudRunRevision(),
+      git_commit: BUILD_COMMIT,
+      orb_session_state: health,
     });
   },
 );

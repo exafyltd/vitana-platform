@@ -1,0 +1,70 @@
+name: Migration Drift Check
+
+# VTID-03486. Follow-up to VTID-03480, where a migration file
+# (20260606000000_DEV_COMHU_0503_orb_session_state.sql) was authored, committed,
+# reviewed, and never applied — the table did not exist in production for ~2
+# months and nothing in CI or at runtime said so.
+#
+# NOTE ON WHAT THIS CHECKS. The literal ask was "every file in
+# supabase/migrations/ has a matching applied version". That is not implementable
+# here: measured 2026-08-04, the repo's 377 distinct file versions and the 330
+# rows in supabase_migrations.schema_migrations overlap by *2*, because
+# migrations reach this database by several routes that each record a fresh
+# timestamp rather than the file's own version. A version-match check would
+# report ~375 false failures on its first run and be switched off within a day.
+#
+# So this checks the property that actually matters and that actually catches the
+# VTID-03480 bug: if a migration declares CREATE TABLE x, then x must exist.
+# See scripts/ci/check-migration-drift.cjs for the full rationale.
+#
+# Pre-existing drift (103 tables as of 2026-08-04) is recorded in
+# scripts/ci/migration-drift-baseline.json; this job fails only on drift that is
+# NEW relative to that baseline.
+
+on:
+  pull_request:
+    paths:
+      - 'supabase/migrations/**'
+      - 'scripts/ci/check-migration-drift.cjs'
+      - 'scripts/ci/migration-drift-baseline.json'
+  schedule:
+    - cron: '40 7 * * *'   # 09:40 CET daily — catches drift introduced elsewhere
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  drift:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install psql
+        run: sudo apt-get install -y postgresql-client > /dev/null 2>&1
+
+      - name: Snapshot live public tables
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          set -euo pipefail
+          psql "$SUPABASE_DB_URL" -t -A > live-tables.txt <<'EOF'
+          SELECT table_name FROM information_schema.tables
+           WHERE table_schema = 'public' AND table_type = 'BASE TABLE'
+           ORDER BY table_name;
+          EOF
+          COUNT=$(grep -c . live-tables.txt || true)
+          echo "Live public tables: $COUNT"
+          # An empty list would make every declared table look missing. Fail loudly
+          # on a broken connection rather than emitting a wall of false positives.
+          if [ "$COUNT" -lt "50" ]; then
+            echo "::error::Only $COUNT tables returned — the database connection or query is wrong, not the schema. Refusing to evaluate drift against a bad snapshot."
+            exit 1
+          fi
+
+      - name: Check for new migration drift
+        run: node scripts/ci/check-migration-drift.cjs --live live-tables.txt
