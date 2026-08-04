@@ -100,24 +100,40 @@ jobs:
           fi
           echo "| 4 | Staging deploy freshness | $R | $D |" >> "$REPORT"
 
-      # 5 — Supabase Postgres reachability
-      - name: '5. Supabase Postgres reachability'
+      # 5 — Supabase reachability. Uses the PostgREST HTTPS API, not psql/the
+      # pooler — Supabase's own docs state Network Restrictions "applies to
+      # connections to Postgres and the database pooler; it doesn't currently
+      # apply to APIs offered over HTTPS (e.g., PostgREST, Storage, and Auth)"
+      # (https://supabase.com/docs/guides/platform/network-restrictions). The
+      # pooler's IP allowlist has been rejecting this runner's (rotating)
+      # egress IP; REST sidesteps that entirely instead of needing the
+      # allowlist relaxed. Checks 6/7/9 below use the same approach; check 8
+      # still needs psql because it reads pg_trigger, a system catalog
+      # PostgREST doesn't expose.
+      - name: '5. Supabase reachability (REST)'
         env:
-          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
         run: |
           set +e
-          OUT=$(psql "$SUPABASE_DB_URL" -t -A -c 'select 1;' 2>&1)
-          if [ "$(echo "$OUT" | tr -d ' \r\n')" = "1" ]; then R=PASS; D="ok"; else R=FAIL; D="$(echo "$OUT" | head -c 200)"; fi
-          echo "| 5 | Supabase Postgres reachability | $R | $D |" >> "$REPORT"
+          CODE=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 \
+            -H "apikey: $SUPABASE_SERVICE_ROLE" -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE" \
+            "$SUPABASE_URL/rest/v1/oasis_events?select=id&limit=1" || echo 000)
+          if [ "$CODE" = "200" ]; then R=PASS; D="ok (REST, HTTP 200)"; else R=FAIL; D="REST HTTP $CODE"; fi
+          echo "| 5 | Supabase reachability | $R | $D |" >> "$REPORT"
 
-      # 6 — VTID ledger orphaned-claim sanity
+      # 6 — VTID ledger orphaned-claim sanity (REST, see check 5's comment)
       - name: '6. VTID ledger — no orphaned claims'
         env:
-          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
         run: |
           set +e
-          OUT=$(psql "$SUPABASE_DB_URL" -t -A -c "select count(*) from vtid_ledger where status = 'in_progress' and claimed_by is not null and claim_expires_at < now();" 2>&1)
-          N=$(echo "$OUT" | tr -d ' \r\n')
+          NOW=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          OUT=$(curl -sS --max-time 10 \
+            -H "apikey: $SUPABASE_SERVICE_ROLE" -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE" \
+            "$SUPABASE_URL/rest/v1/vtid_ledger?select=vtid&status=eq.in_progress&claimed_by=not.is.null&claim_expires_at=lt.$NOW")
+          N=$(echo "$OUT" | jq 'length' 2>/dev/null)
           if [[ "$N" =~ ^[0-9]+$ ]] && [ "$N" -eq 0 ]; then
             R=PASS; D="0 orphaned claims"
           elif [[ "$N" =~ ^[0-9]+$ ]]; then
@@ -127,14 +143,19 @@ jobs:
           fi
           echo "| 6 | VTID ledger orphaned-claim sanity | $R | $D |" >> "$REPORT"
 
-      # 7 — OASIS events recency (system not silently stalled)
+      # 7 — OASIS events recency (system not silently stalled) (REST, see
+      # check 5's comment). PostgREST like/not.like use '*' for SQL '%'.
       - name: '7. OASIS events recency (last 6h)'
         env:
-          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
         run: |
           set +e
-          OUT=$(psql "$SUPABASE_DB_URL" -t -A -c "select count(*) from oasis_events where created_at > now() - interval '6 hours' and topic not like 'telemetry.%';" 2>&1)
-          N=$(echo "$OUT" | tr -d ' \r\n')
+          SINCE=$(date -u -d '-6 hours' +"%Y-%m-%dT%H:%M:%SZ")
+          OUT=$(curl -sS --max-time 10 \
+            -H "apikey: $SUPABASE_SERVICE_ROLE" -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE" \
+            "$SUPABASE_URL/rest/v1/oasis_events?select=id&created_at=gt.$SINCE&topic=not.like.telemetry.*")
+          N=$(echo "$OUT" | jq 'length' 2>/dev/null)
           if [[ "$N" =~ ^[0-9]+$ ]] && [ "$N" -gt 0 ]; then
             R=PASS; D="$N event(s) in last 6h"
           elif [[ "$N" =~ ^[0-9]+$ ]]; then
@@ -144,7 +165,10 @@ jobs:
           fi
           echo "| 7 | OASIS events recency | $R | $D |" >> "$REPORT"
 
-      # 8 — Welcome-greeting trigger, structural
+      # 8 — Welcome-greeting trigger, structural. Still needs psql/the pooler
+      # (unlike 5/6/7/9) — pg_trigger is a system catalog and PostgREST only
+      # exposes tables/views in the 'public' schema, so this one check stays
+      # blocked until the Supabase Dashboard network restriction is relaxed.
       - name: '8. Welcome-greeting trigger — structural'
         env:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
@@ -165,28 +189,29 @@ jobs:
           if [ "$LINE" = "PASS" ]; then R=PASS; D="trigger present + enabled"; else R=FAIL; D="$LINE"; fi
           echo "| 8 | Welcome-greeting trigger (structural) | $R | $D |" >> "$REPORT"
 
-      # 9 — Welcome-greeting trigger, behavioral (real traffic)
+      # 9 — Welcome-greeting trigger, behavioral (real traffic) (REST, see
+      # check 5's comment)
       - name: '9. Welcome-greeting trigger — behavioral (24h)'
         env:
-          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
         run: |
           set +e
-          OUT=$(psql "$SUPABASE_DB_URL" -t -A -F '|' <<'EOF' 2>&1
-          WITH w AS (SELECT now() - interval '24 hours' AS since)
-          SELECT
-            (SELECT COUNT(*) FROM public.app_users WHERE created_at >= (SELECT since FROM w) AND user_id <> '00000000-0000-0000-0000-000000000001'::uuid),
-            (SELECT COUNT(*) FROM public.app_users WHERE created_at >= (SELECT since FROM w) AND COALESCE(welcome_chat_sent, false) = false AND user_id <> '00000000-0000-0000-0000-000000000001'::uuid);
-          EOF
-          )
-          LINE=$(echo "$OUT" | grep -v '^$' | tail -1)
-          SIGNUPS=$(echo "$LINE" | cut -d'|' -f1 | tr -d ' \r')
-          UNFLAGGED=$(echo "$LINE" | cut -d'|' -f2 | tr -d ' \r')
+          SINCE=$(date -u -d '-24 hours' +"%Y-%m-%dT%H:%M:%SZ")
+          SIGNUPS_OUT=$(curl -sS --max-time 10 \
+            -H "apikey: $SUPABASE_SERVICE_ROLE" -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE" \
+            "$SUPABASE_URL/rest/v1/app_users?select=user_id&created_at=gte.$SINCE&user_id=neq.00000000-0000-0000-0000-000000000001")
+          SIGNUPS=$(echo "$SIGNUPS_OUT" | jq 'length' 2>/dev/null)
+          UNFLAGGED_OUT=$(curl -sS --max-time 10 \
+            -H "apikey: $SUPABASE_SERVICE_ROLE" -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE" \
+            "$SUPABASE_URL/rest/v1/app_users?select=user_id&created_at=gte.$SINCE&user_id=neq.00000000-0000-0000-0000-000000000001&or=(welcome_chat_sent.is.null,welcome_chat_sent.eq.false)")
+          UNFLAGGED=$(echo "$UNFLAGGED_OUT" | jq 'length' 2>/dev/null)
           if [[ "$SIGNUPS" =~ ^[0-9]+$ ]] && [[ "$UNFLAGGED" =~ ^[0-9]+$ ]] && [ "$UNFLAGGED" -eq 0 ]; then
             R=PASS; D="$SIGNUPS signups/24h, 0 unflagged"
           elif [[ "$UNFLAGGED" =~ ^[0-9]+$ ]]; then
             R=FAIL; D="$UNFLAGGED of $SIGNUPS recent signups never greeted"
           else
-            R=FAIL; D="query error: $(echo "$OUT" | head -c 200)"
+            R=FAIL; D="query error: $(echo "$SIGNUPS_OUT $UNFLAGGED_OUT" | head -c 200)"
           fi
           echo "| 9 | Welcome-greeting trigger (behavioral) | $R | $D |" >> "$REPORT"
 
