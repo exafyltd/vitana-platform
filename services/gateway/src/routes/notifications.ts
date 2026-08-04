@@ -94,6 +94,34 @@ router.post('/token', requireAuth, requireTenant, async (req: Request, res: Resp
     return res.status(500).json({ ok: false, error: error.message });
   }
 
+  // ── Prune this user's own stale tokens (VTID-03487) ───────────────────────
+  // Separate duplicate source from the cross-account one above: FCM rotates a
+  // token periodically and the client registers the NEW one, but the old row
+  // was never retired — so one account accumulated a token per rotation and
+  // sendPushToUser, which loops over every token it finds, delivered one push
+  // per stale row. Same language, so it reads as a plain double notification
+  // rather than the two-language pair. Found in production at up to EIGHT
+  // active tokens on a single account.
+  //
+  // The client re-registers on every app start (see pushNotifications.ts's
+  // refresh monitor), so a row untouched for 30 days belongs to an app that
+  // has not opened in a month — that is a dead token, not a second device.
+  // Scoped to the registering user and never touching the row just written,
+  // so the blast radius is one account and it self-heals as people open the
+  // app. Best-effort: a failure here must not fail the registration.
+  const staleCutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+  const { error: pruneError } = await supabase
+    .from('user_device_tokens')
+    .update({ revoked_at: new Date().toISOString(), revoked_reason: 'stale' })
+    .eq('user_id', identity.user_id)
+    .neq('fcm_token', fcm_token)
+    .lt('updated_at', staleCutoff)
+    .is('revoked_at', null);
+
+  if (pruneError) {
+    console.warn('[Notifications] Stale token prune failed:', pruneError.message);
+  }
+
   res.json({ ok: true });
 });
 
