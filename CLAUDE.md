@@ -505,15 +505,90 @@ one of these adapters**, alongside `anthropic`, `openai`, `vertex`,
 - **Not selected by default anywhere.** Adding the adapter does not change
   any stage's routing — Bedrock only runs when an operator explicitly points
   a stage at `'bedrock'`.
-- **Not yet supported:** vision (`image`/`images`) and tool calling
-  (`tools`/`forceTool`) — the adapter returns an explicit error for these
-  rather than silently dropping them or mis-serializing the request.
+- **Vision and tool calling ARE supported (VTID-03496).** `image`/`images`
+  become Anthropic content blocks and `tools`/`forceTool` become `tools` +
+  `tool_choice`, built identically to `anthropicAdapter` — Bedrock speaks the
+  same Messages API wire shape (`anthropic_version: 'bedrock-2023-05-31'`), so
+  there is deliberately only one serializer shape to reason about. A `tool_use`
+  response block surfaces as `AdapterResult.toolCall`. This is what makes
+  `anthropic-vision-client.ts` (Shorts auto-metadata — images + a forced
+  `emit_short_metadata` call) routable to Bedrock. Text-only calls still send a
+  plain string `content`, byte-identical to the VTID-03403 behaviour.
+- **Two latent bugs fixed in the same VTID, worth knowing about:**
+  (1) `tools` was declared on `BedrockInvokeRequest` but never serialized into
+  the request body — a caller passing tools got a plain completion, no tool
+  call and no error. (2) Response text was read from `content[0].text`, which
+  is **empty whenever a forced `tool_use` block comes first** — i.e. it would
+  have failed on every vision call. Both are covered by tests.
+- `BEDROCK_ROLE_ARN`/region are now read **at call time**, not module load, so
+  setting the var on a task definition takes effect without a process restart.
 - **Implementation:** `services/gateway/src/providers/bedrock.ts`
   (`invokeBedrock()`) does the actual `BedrockRuntimeClient.send()` call;
   `bedrockAdapter` in `llm-router.ts` adapts it to the router's
   `ProviderAdapter` interface. Provider/model/latency logging comes for
   free via the router's existing `startLLMCall`/`completeLLMCall`/
   `failLLMCall` telemetry — no Bedrock-specific logging code needed.
+
+---
+
+## 2c. TTS — AMAZON POLLY PROVIDER (VTID-03495)
+
+Build 1 of the 4 provider replacements that must exist before any GCP
+shutdown is possible (Polly → Titan image gen → Bedrock vision/tool-calling →
+Nova Sonic promotion).
+
+All Google Cloud TTS synthesis now routes through one seam,
+`services/gateway/src/services/tts/tts-provider.ts`, selected by
+**`TTS_PROVIDER=google|polly`, default `google`** — same deliberate-opt-in
+shape as `BEDROCK_ROLE_ARN` (§2b) and `DEV_AUTOPILOT_JOB_CLOUD` (§1b).
+**Deploying this code changes nothing.** An unrecognised value logs and falls
+back to `google` rather than failing closed and taking voice down.
+
+| Call site | File | Format | Behaviour |
+|---|---|---|---|
+| ORB greeting bridge | `services/tts/greeting-bridge-tts.ts` | PCM | Polly-first when configured |
+| Reminder pre-render | `services/reminder-tts.ts` | MP3 | Polly-first when configured |
+| ORB `/tts` route | `routes/orb-live.ts` (~L13920) | MP3 | Polly-first when configured |
+| Admin voice preview | `routes/voice-config.ts` | MP3 | **Explicit `provider:'polly'` body param only** — deliberately ignores `TTS_PROVIDER` so a preview never lies about what it played |
+| Cloud TTS debug route | `routes/orb-live.ts` (~L12676) | MP3 | **Google only, on purpose** — it is a Cloud-TTS diagnostic |
+
+### Three hard facts about Polly that bit this build
+
+1. **Polly has no Serbian voice, in any engine.** `sr` is a live locale here
+   (§13b lists DE/EN/ES/SR). `resolvePollyVoice('sr')` returns **null** and the
+   caller falls back to Google — it does **not** substitute English. Fluent
+   audio in the wrong language is worse than no audio, because nothing
+   downstream can detect it. **This is an unresolved coverage gap for a full
+   GCP shutdown**: with GCP gone, Serbian users get no TTS at all.
+2. **Polly PCM is 8kHz/16kHz only — it cannot do the 24kHz** the greeting
+   bridge used. `synthesizeGreetingBridgeAudioPcm()` therefore returns
+   `{ audioB64, sampleRateHz }` instead of a bare string, and `orb-live.ts`
+   builds `audio/pcm;rate=` from that value. Hardcoding 24kHz under Polly
+   plays 16kHz samples 1.5× fast — obvious to a listener, invisible to any
+   test that only asserts bytes came back.
+3. **Polly has no `speakingRate` field.** Rate becomes SSML
+   `<prosody rate="N%">`, which forces `TextType:'ssml'` and XML-escaping. At
+   rate 1.0 plain text is sent, avoiding the escaping surface entirely.
+
+Also note Polly's Russian is **standard-engine only** (no neural voice) — a
+quality step down from `ru-RU-Wavenet-A`.
+
+### Fallback is never silent
+
+`TTS_PROVIDER=polly` + an unservable request → falls back to Google **with a
+`[TTS] FALLBACK polly→google` log line**, per "Never allow silent model
+fallback". Set **`TTS_POLLY_STRICT=true`** to disable the fallback — use it in
+a GCP-shutdown rehearsal to prove no hidden Google dependency remains; with it
+on, an unservable request returns null instead of quietly reaching back to GCP.
+
+### Before flipping `TTS_PROVIDER=polly`
+
+The voice/engine table and the Serbian gap were derived from Polly's
+documented voice list and **not verified against the live API** — the session
+that built this had no working AWS credentials. Confirm against
+`aws polly describe-voices` first, and note Polly needs IAM `polly:SynthesizeSpeech`
+on the gateway task role (`AWS_POLLY_REGION`, else `AWS_REGION`, else
+`eu-central-1`).
 
 ---
 
@@ -1267,6 +1342,8 @@ Use these PATs with the GitHub REST API (`api.github.com`) for all PR and deploy
 
 | Date | Change | VTID |
 |------|--------|------|
+| 2026-08-05 | **Bedrock adapter: vision + forced tool-calling — build 2 of the 4 that gate a GCP shutdown.** Removes the blanket `images/tools not supported` rejection in `bedrockAdapter` (§2b). Bedrock speaks the same Anthropic Messages API wire shape, so images become content blocks and `tools`/`forceTool` become `tools` + `tool_choice`, mirrored line-for-line from `anthropicAdapter` so the two stay diffable; `tool_use` responses surface as `AdapterResult.toolCall`. This is the piece `anthropic-vision-client.ts` (Shorts auto-metadata) needed — images **and** a forced `emit_short_metadata` call, the exact combination previously rejected. **Two latent bugs found and fixed while building, both silent:** (1) `tools` was on `BedrockInvokeRequest` but never serialized into the body — passing tools produced a plain completion with no tool call and no error; (2) text was read from `content[0].text`, which is **empty when a forced `tool_use` block is first**, so it would have returned empty text on every vision call. Also moved `BEDROCK_ROLE_ARN`/region reads from module-load to call-time, so setting the var on a task def no longer needs a process restart (and can be tested). Text-only calls still send a plain string `content`, byte-identical to VTID-03403. Still dormant until `BEDROCK_ROLE_ARN` is set and an operator points a stage at `'bedrock'` — deploying this changes no routing. 9 new tests; full suite 619/619 suites, 12089 passed. | VTID-03496 |
+| 2026-08-05 | **Amazon Polly TTS provider — build 1 of the 4 that gate a GCP shutdown.** New `services/tts/polly.ts` + `services/tts/tts-provider.ts` seam; all 4 Google Cloud TTS synthesis call sites route through it, selected by `TTS_PROVIDER=google\|polly` (**default `google` — deploying this flips nothing**). See §2c. Three Polly divergences that are NOT cosmetic: (1) **Polly has no Serbian voice in any engine** — `sr` is a live locale (§13b), so `resolvePollyVoice('sr')` returns null and falls back to Google rather than substituting English; with GCP gone, Serbian TTS has no provider at all, an unresolved shutdown blocker. (2) **Polly PCM is 8k/16k only, not 24k** — `synthesizeGreetingBridgeAudioPcm()` now returns `{audioB64, sampleRateHz}` and the `audio/pcm;rate=` mime is built from it; assuming 24kHz would play Polly audio 1.5× fast, audible to a user but invisible to a bytes-came-back test. (3) **No `speakingRate` field** — rate becomes SSML `<prosody>`, forcing XML-escaping (plain text kept at rate 1.0). Polly Russian is standard-engine only. Fallback polly→google is always logged; `TTS_POLLY_STRICT=true` disables it for shutdown rehearsals. The admin voice-preview route takes an explicit `provider:'polly'` param and deliberately ignores `TTS_PROVIDER` so previews can't lie; the Cloud-TTS debug route stays Google-only by design. **Voice table and the Serbian gap were derived from Polly's documented voice list, not verified against the live API** — the building session had no AWS credentials; confirm via `describe-voices` before flipping. 18 new tests. | VTID-03495 |
 | 2026-08-05 | **Messenger history was never deleted — three independent caps made most of it unreachable, and one of them dropped whole conversations at random.** Reported as "the chat history is more or less completely gone." Nothing had been removed: `chat_messages` held 39,593 rows going back to 2026-02-27. (1) **The inbox itself was lossy.** `get_recent_conversations()` ends its `DISTINCT ON` pass with `ORDER BY peer_id, created_at DESC` — `DISTINCT ON` forces the ORDER BY to lead with the distinct key — and then applied `LIMIT p_limit` to *that*. So "the 50 most recent conversations" was really "50 conversations sorted by a random UUID": for the member with 199 conversations, only **7 of their 20 most-recently-active chats** were returned at all. Fixed by wrapping the `DISTINCT ON` result in an outer `ORDER BY created_at DESC LIMIT` (migration `20260805120000`), and raising the gateway's cap 50 → 250 (198 of 220 users have more than 50 conversations). (2) **Thread scrollback was dead code.** `ConversationView` renders `useHybridMessages`' React Query array, but its scroll-to-top handler drove `usePaginatedMessages` — a completely separate state array that was never rendered, and whose `fetchInitialMessages` was gated behind `shouldUsePagination` (`messages.length > 50` on that same always-empty array). Circular, so `hasOlder` was permanently `false` and scrolling up did nothing: every thread was frozen at its newest 50 messages, putting **15,444 of 39,593 messages (39%) permanently out of reach**. Replaced with real paging through the gateway's already-existing `before` cursor, accumulated per-thread OUTSIDE the query cache — realtime invalidation refetches that cache on every incoming message and would otherwise discard scrollback mid-conversation. (3) **Group threads and both DB fallbacks paged the wrong end.** `fetchLegacyMessages` and the `chat_messages` fallbacks used `.order('created_at', {ascending: true}).limit(100)`, which returns the OLDEST 100 rows — a busy group chat showed its first-ever 100 messages and never the recent ones. Now fetched newest-first and reversed for render. **Lesson worth keeping:** a `LIMIT` after `DISTINCT ON` is not "top N", it is "N arbitrary rows" — and dead pagination is invisible precisely because the first page always looks right. | VTID-03493 |
 | 2026-08-03 | **`orb_session_state` never existed in production — four ORB features were silently dead for ~2 months.** Investigating a live report of ORB voice failing on mobile, every session was found to emit `orb.session.audio_ready.acked` with `ok:false`. That `ok` is not the client's readiness — it is the return of `writeOrbSessionState()`, and the write was failing because `relation "orb_session_state" does not exist`. Migration `20260606000000_DEV_COMHU_0503_orb_session_state.sql` was authored but never applied (its own header: "Not executed from the sandbox"); the applied-migrations list jumps `20260605…` → `20260609…`. Because every helper in `orb-session-state.ts` fails soft by design (reads → `null`, writes → `{ok:false}`, never throws), nothing surfaced: the **audio-ready handshake** (greeting fell back to a blind 3s timer and could be spoken before the client could play it — the silent-ORB symptom), **close/reopen continuity**, the **pending autopilot CTA**, and **wake-brief opener rotation** were all inert. Applied the migration to prod; `audio_ready.acked` flipped `ok:false` → `ok:true` on the next live session with **no redeploy**, confirming the code had always been calling it correctly. Session telemetry that made this findable: 29 sessions ended `expired_ttl` at ~32 min with `turn_count:0` and `audio_in_chunks:0` while `audio_out` climbed normally — the model spoke, the user never heard it, so nobody ever replied. **Lesson worth keeping:** a fail-soft table with no health check is undetectable — `ok:false` in a payload nobody alerts on is not detection. Documented in `DATABASE_SCHEMA.md`. | VTID-03480 |
 | 2026-08-01 | **Decided (not yet built) the concrete AI/voice provider replacements for the GCP full-cutover draft spec**, at explicit user request. `docs/vtids/VTID-PENDING-GCP-FULL-CUTOVER-SPEC.md` preconditions 3–5b updated: ORB voice → Amazon Nova Sonic (promoted out of canary, replacing Vertex Live entirely, no GCP fallback retained); TTS → Amazon Polly (replacing Google Cloud TTS across all 4 call sites); non-voice text AI → Claude via the existing Bedrock adapter. Two gaps surfaced while confirming these are actually buildable: (1) `cover-image-outpaint.ts` calls Vertex **Imagen** for image *generation*, which Claude cannot do at all — decided to build a separate Bedrock Titan Image Generator adapter for this one feature, with the code's existing letterbox-blur fallback as the safety net if output quality doesn't hold up; (2) at least one feature (`anthropic-vision-client.ts`'s Shorts auto-metadata) needs vision + forced tool-calling, which the Bedrock adapter doesn't support yet (CLAUDE.md §2b) — decided to extend the adapter rather than carve out a permanent exception. This removes the "or accept a written exception" branch the draft spec previously had for AI/voice providers — decided 2026-08-01, so the only open question is now build sequencing, not the target. Documentation only; no code changed yet. | (draft spec update, no VTID) |
