@@ -517,6 +517,67 @@ one of these adapters**, alongside `anthropic`, `openai`, `vertex`,
 
 ---
 
+## 2c. TTS — AMAZON POLLY PROVIDER (VTID-03495)
+
+Build 1 of the 4 provider replacements that must exist before any GCP
+shutdown is possible (Polly → Titan image gen → Bedrock vision/tool-calling →
+Nova Sonic promotion).
+
+All Google Cloud TTS synthesis now routes through one seam,
+`services/gateway/src/services/tts/tts-provider.ts`, selected by
+**`TTS_PROVIDER=google|polly`, default `google`** — same deliberate-opt-in
+shape as `BEDROCK_ROLE_ARN` (§2b) and `DEV_AUTOPILOT_JOB_CLOUD` (§1b).
+**Deploying this code changes nothing.** An unrecognised value logs and falls
+back to `google` rather than failing closed and taking voice down.
+
+| Call site | File | Format | Behaviour |
+|---|---|---|---|
+| ORB greeting bridge | `services/tts/greeting-bridge-tts.ts` | PCM | Polly-first when configured |
+| Reminder pre-render | `services/reminder-tts.ts` | MP3 | Polly-first when configured |
+| ORB `/tts` route | `routes/orb-live.ts` (~L13920) | MP3 | Polly-first when configured |
+| Admin voice preview | `routes/voice-config.ts` | MP3 | **Explicit `provider:'polly'` body param only** — deliberately ignores `TTS_PROVIDER` so a preview never lies about what it played |
+| Cloud TTS debug route | `routes/orb-live.ts` (~L12676) | MP3 | **Google only, on purpose** — it is a Cloud-TTS diagnostic |
+
+### Three hard facts about Polly that bit this build
+
+1. **Polly has no Serbian voice, in any engine.** `sr` is a live locale here
+   (§13b lists DE/EN/ES/SR). `resolvePollyVoice('sr')` returns **null** and the
+   caller falls back to Google — it does **not** substitute English. Fluent
+   audio in the wrong language is worse than no audio, because nothing
+   downstream can detect it. **This is an unresolved coverage gap for a full
+   GCP shutdown**: with GCP gone, Serbian users get no TTS at all.
+2. **Polly PCM is 8kHz/16kHz only — it cannot do the 24kHz** the greeting
+   bridge used. `synthesizeGreetingBridgeAudioPcm()` therefore returns
+   `{ audioB64, sampleRateHz }` instead of a bare string, and `orb-live.ts`
+   builds `audio/pcm;rate=` from that value. Hardcoding 24kHz under Polly
+   plays 16kHz samples 1.5× fast — obvious to a listener, invisible to any
+   test that only asserts bytes came back.
+3. **Polly has no `speakingRate` field.** Rate becomes SSML
+   `<prosody rate="N%">`, which forces `TextType:'ssml'` and XML-escaping. At
+   rate 1.0 plain text is sent, avoiding the escaping surface entirely.
+
+Also note Polly's Russian is **standard-engine only** (no neural voice) — a
+quality step down from `ru-RU-Wavenet-A`.
+
+### Fallback is never silent
+
+`TTS_PROVIDER=polly` + an unservable request → falls back to Google **with a
+`[TTS] FALLBACK polly→google` log line**, per "Never allow silent model
+fallback". Set **`TTS_POLLY_STRICT=true`** to disable the fallback — use it in
+a GCP-shutdown rehearsal to prove no hidden Google dependency remains; with it
+on, an unservable request returns null instead of quietly reaching back to GCP.
+
+### Before flipping `TTS_PROVIDER=polly`
+
+The voice/engine table and the Serbian gap were derived from Polly's
+documented voice list and **not verified against the live API** — the session
+that built this had no working AWS credentials. Confirm against
+`aws polly describe-voices` first, and note Polly needs IAM `polly:SynthesizeSpeech`
+on the gateway task role (`AWS_POLLY_REGION`, else `AWS_REGION`, else
+`eu-central-1`).
+
+---
+
 ## 3. DATABASE (SUPABASE)
 
 ### Critical Rules
@@ -1267,6 +1328,7 @@ Use these PATs with the GitHub REST API (`api.github.com`) for all PR and deploy
 
 | Date | Change | VTID |
 |------|--------|------|
+| 2026-08-05 | **Amazon Polly TTS provider — build 1 of the 4 that gate a GCP shutdown.** New `services/tts/polly.ts` + `services/tts/tts-provider.ts` seam; all 4 Google Cloud TTS synthesis call sites route through it, selected by `TTS_PROVIDER=google\|polly` (**default `google` — deploying this flips nothing**). See §2c. Three Polly divergences that are NOT cosmetic: (1) **Polly has no Serbian voice in any engine** — `sr` is a live locale (§13b), so `resolvePollyVoice('sr')` returns null and falls back to Google rather than substituting English; with GCP gone, Serbian TTS has no provider at all, an unresolved shutdown blocker. (2) **Polly PCM is 8k/16k only, not 24k** — `synthesizeGreetingBridgeAudioPcm()` now returns `{audioB64, sampleRateHz}` and the `audio/pcm;rate=` mime is built from it; assuming 24kHz would play Polly audio 1.5× fast, audible to a user but invisible to a bytes-came-back test. (3) **No `speakingRate` field** — rate becomes SSML `<prosody>`, forcing XML-escaping (plain text kept at rate 1.0). Polly Russian is standard-engine only. Fallback polly→google is always logged; `TTS_POLLY_STRICT=true` disables it for shutdown rehearsals. The admin voice-preview route takes an explicit `provider:'polly'` param and deliberately ignores `TTS_PROVIDER` so previews can't lie; the Cloud-TTS debug route stays Google-only by design. **Voice table and the Serbian gap were derived from Polly's documented voice list, not verified against the live API** — the building session had no AWS credentials; confirm via `describe-voices` before flipping. 18 new tests. | VTID-03495 |
 | 2026-08-03 | **`orb_session_state` never existed in production — four ORB features were silently dead for ~2 months.** Investigating a live report of ORB voice failing on mobile, every session was found to emit `orb.session.audio_ready.acked` with `ok:false`. That `ok` is not the client's readiness — it is the return of `writeOrbSessionState()`, and the write was failing because `relation "orb_session_state" does not exist`. Migration `20260606000000_DEV_COMHU_0503_orb_session_state.sql` was authored but never applied (its own header: "Not executed from the sandbox"); the applied-migrations list jumps `20260605…` → `20260609…`. Because every helper in `orb-session-state.ts` fails soft by design (reads → `null`, writes → `{ok:false}`, never throws), nothing surfaced: the **audio-ready handshake** (greeting fell back to a blind 3s timer and could be spoken before the client could play it — the silent-ORB symptom), **close/reopen continuity**, the **pending autopilot CTA**, and **wake-brief opener rotation** were all inert. Applied the migration to prod; `audio_ready.acked` flipped `ok:false` → `ok:true` on the next live session with **no redeploy**, confirming the code had always been calling it correctly. Session telemetry that made this findable: 29 sessions ended `expired_ttl` at ~32 min with `turn_count:0` and `audio_in_chunks:0` while `audio_out` climbed normally — the model spoke, the user never heard it, so nobody ever replied. **Lesson worth keeping:** a fail-soft table with no health check is undetectable — `ok:false` in a payload nobody alerts on is not detection. Documented in `DATABASE_SCHEMA.md`. | VTID-03480 |
 | 2026-08-01 | **Decided (not yet built) the concrete AI/voice provider replacements for the GCP full-cutover draft spec**, at explicit user request. `docs/vtids/VTID-PENDING-GCP-FULL-CUTOVER-SPEC.md` preconditions 3–5b updated: ORB voice → Amazon Nova Sonic (promoted out of canary, replacing Vertex Live entirely, no GCP fallback retained); TTS → Amazon Polly (replacing Google Cloud TTS across all 4 call sites); non-voice text AI → Claude via the existing Bedrock adapter. Two gaps surfaced while confirming these are actually buildable: (1) `cover-image-outpaint.ts` calls Vertex **Imagen** for image *generation*, which Claude cannot do at all — decided to build a separate Bedrock Titan Image Generator adapter for this one feature, with the code's existing letterbox-blur fallback as the safety net if output quality doesn't hold up; (2) at least one feature (`anthropic-vision-client.ts`'s Shorts auto-metadata) needs vision + forced tool-calling, which the Bedrock adapter doesn't support yet (CLAUDE.md §2b) — decided to extend the adapter rather than carve out a permanent exception. This removes the "or accept a written exception" branch the draft spec previously had for AI/voice providers — decided 2026-08-01, so the only open question is now build sequencing, not the target. Documentation only; no code changed yet. | (draft spec update, no VTID) |
 | 2026-08-01 | **ORB voice: WebSocket is now the browser's default transport, and the WS session start stopped being a second implementation.** The widget's default flips from SSE-down + one authenticated POST per 64ms audio chunk (~15.6 req/s while the user speaks) to the single bidirectional socket at `/api/v1/orb/live/ws`. The blocker was not the flip — it was that the WS `start` frame ran a fork of session start dating to VTID-01222, which had never received wake-brief selection (VTID-03079/03101), journey guidance (VTID-03300), guided-topic narration (VTID-03290), fast-start wake deferral, the voice quota gate (VTID-03107), the `AUTH_TOKEN_INVALID` re-auth signal, or reconnect continuity (VTID-02020's `transcript_history`/`reconnect_stage`/`conversation_id`). Six features added to the HTTP path over ~7 months, silently absent from the WS one — flipping the default first would have regressed the opener for every logged-in session. New `orb/live/session/ws-start-adapter.ts` runs the WS start through the same `handleLiveSessionStart` the HTTP path uses (it touches only `req.identity`/`req.headers`/`req.get()`/`req.body`/`res.status().json()`), deleting ~290 lines of fork. **Consequence to know:** the live session id and the `ws-<uuid>` socket id are now different strings — `wsClientSessions` is keyed by the socket, `liveSessions` by the live id, and `cleanupWsSession` was leaking the live session by deleting under the wrong key. Safety on the flip: automatic one-shot fallback to SSE when a WS start fails for a *transport* reason (latched per tab in sessionStorage, not localStorage — a network that blocks upgrades is where the user is, not a verdict on their browser), server rejections deliberately NOT retried on SSE, and a new unauthenticated `GET /api/v1/orb/live/transport` backed by `FEATURE_ORB_WS_TRANSPORT_ENV` so the default can be revoked without redeploying a static asset. | VTID-03471 |
