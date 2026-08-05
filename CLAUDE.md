@@ -657,6 +657,58 @@ on the Titan model for the gateway task role.
 
 ---
 
+## 2e. ORB VOICE — NOVA SONIC GLOBAL PROMOTION (VTID-03501)
+
+Build 4 of the 4 provider replacements gating a GCP shutdown. Adds a global
+(non-canary) Nova activation path behind **`NOVA_SONIC_GLOBAL_ENABLED`,
+default `false`**, requiring the exact string `'true'`.
+
+`isNovaSonicIdentityAllowed()` short-circuits to true when it is set. The
+allowlist semantics are deliberately **untouched** — "empty allowlist allows
+NOBODY" still holds — so turning global off again restores exactly the prior
+canary population with no allowlist edits.
+
+Promotion widens **who** gets Nova, never **what** it runs on: the
+`enabled`, language (`en/de/fr/es`) and `aws-ecs` runtime gates all still bite.
+
+A promoted session reports `reason: 'nova_global_enabled'` and **`canary:
+false`**, and `/api/v1/orb/nova-sonic/health` gained `global_enabled`. Without
+those, every canary-scoped dashboard would keep reading "4 users" while Nova
+served the entire user base.
+
+### ⛔ DO NOT SET `NOVA_SONIC_GLOBAL_ENABLED=true` YET
+
+Nova currently fails **10.2% of sessions** (6 of 59, measured 2026-07-29 →
+2026-08-05, spread evenly — a steady baseline, not a spike). All six carry the
+identical diagnostic:
+
+```
+code: nova_stream_error
+diagnostic: "Premature close"
+```
+
+The bidirectional HTTP/2 stream dies at open with `audio_in = 0`,
+`audio_out = 0`, `turn_count = 0` and `greeting_sent = true`. **The user opens
+ORB and gets silence with no indication anything failed** — the same invisible
+class as the VTID-03480 `orb_session_state` bug. `audio_out = 0` is perfectly
+correlated with this reason and appears under no other close reason.
+
+Related signal: Nova's own `nova_validation` error reads *"Timed out waiting
+for audio bytes or interactive content... gaps... less than 295 seconds"*, so
+Nova enforces a hard inactivity deadline on the stream. Note the HTTP/1.1
+workaround used for Bedrock (§2b) is **not available here** —
+`InvokeModelWithBidirectionalStream` requires HTTP/2.
+
+**There is no runtime fallback to Vertex for this case.** The
+`_novaFallbackToVertex` pin + `attemptTransparentReconnect()` machinery exists
+(used by `nova_rotation_exhausted_fallback`) and is the right vehicle, but is
+**not yet wired to the premature-close-at-open path**. That work is the
+required companion to this flag and is deliberately NOT in VTID-03501 — see
+the changelog row. Flipping global on before it lands takes a 10% silent
+dead-open from a handful of canary users to every voice user.
+
+---
+
 ## 3. DATABASE (SUPABASE)
 
 ### Critical Rules
@@ -1407,6 +1459,7 @@ Use these PATs with the GitHub REST API (`api.github.com`) for all PR and deploy
 
 | Date | Change | VTID |
 |------|--------|------|
+| 2026-08-05 | **Nova Sonic global promotion path — build 4 of 4, shipped OFF and deliberately INCOMPLETE.** New `NOVA_SONIC_GLOBAL_ENABLED` (default false, exact-string `'true'`) promotes Nova out of the canary allowlists onto every session; allowlist semantics untouched so switching off restores the exact prior population. Promotion widens who, never what — `enabled`/language/`aws-ecs` gates all still apply. New selector reason `nova_global_enabled` with **`canary: false`**, plus `global_enabled` on the health payload, because otherwise every canary-scoped dashboard would keep reporting "4 users" while Nova served everyone. See §2e. **Root-caused the failure that gates actually using it:** Nova fails **10.2% of sessions** (6/59, 2026-07-29→08-05, a steady baseline not a spike), all six with the identical diagnostic `"Premature close"` — the HTTP/2 bidi stream dying at open with zero audio in/out and `greeting_sent=true`, i.e. the user opens ORB and hears silence with no error. `audio_out=0` is perfectly correlated with this reason and appears under no other. Nova's own `nova_validation` text confirms a hard ~295s stream inactivity deadline; the HTTP/1.1 workaround from §2b is unavailable because `InvokeModelWithBidirectionalStream` requires HTTP/2. **The runtime Vertex fallback for this case is NOT in this VTID** — `_novaFallbackToVertex` + `attemptTransparentReconnect()` already exist (used by `nova_rotation_exhausted_fallback`) and are the right vehicle, but wiring them to the premature-close-at-open path is a separate change that deserves its own careful review rather than being appended to this one. **Do not set the flag until that lands.** Also corrected: an earlier claim in this session that `nova_stream_error` carried no error detail was wrong — the diagnostic is and was persisted on `orb.live.diag` `stage=upstream_error`; a telemetry VTID opened for it (VTID-03499) was cancelled without any code. 11 new tests; full suite 621/621 suites, 12116 passed. | VTID-03501 |
 | 2026-08-05 | **Amazon Titan Image Generator — build 3 of the 4 that gate a GCP shutdown**, and the only one Claude cannot cover at all (Imagen generates images; no Anthropic model does). New `providers/titan-image.ts` behind `IMAGE_PROVIDER=vertex\|bedrock` (**default `vertex` — deploying this flips nothing**), see §2d. **Found a second Imagen consumer the cutover changelog had missed:** `intent-cover-service.ts` does plain text-to-image alongside `cover-image-outpaint.ts`'s outpainting — a Titan build covering only outpainting would have left AI cover generation silently broken on shutdown. Both are now wired (`TEXT_IMAGE` / `OUTPAINTING`). Three Titan constraints handled explicitly: (1) **Titan accepts only fixed width/height pairs and 1600x900 is not one** — `nearestTitanSize()` maps to 1280x720 and weights **aspect above area**, because satisfying 16:9 with a square would letterbox the subject invisibly; the outpaint path upscales back. (2) **Mask polarity is inverted vs Imagen and is UNVERIFIED** — white=generate for Imagen, black=generate for Titan; backwards means the *subject* is regenerated and the margins kept, a plausible-looking but totally wrong image. Env-overridable via `TITAN_OUTPAINT_MASK_POLARITY` so it can be corrected without a redeploy; mask resized with `kernel:'nearest'` to stay two-tone. (3) **Titan isn't offered in every region** — `AWS_TITAN_IMAGE_REGION` is its own var rather than inheriting eu-central-1. Also: Titan reports content-policy blocks in an `error` field **on a 200**, not by throwing. **Correction to the draft spec:** it cited an "existing letterbox-blur fallback" as Titan's safety net — that is the *frontend's* old behaviour; `routes/cover-images.ts` just returns an error, so there is no server-side safety net. `scripts/images/verify-titan-image.ts` checks region/model, the size mapping, and detects inverted mask polarity via a deterministic red-subject probe. 16 new tests; full suite 620/620 suites, 12105 passed. | VTID-03497 |
 | 2026-08-05 | **Bedrock adapter: vision + forced tool-calling — build 2 of the 4 that gate a GCP shutdown.** Removes the blanket `images/tools not supported` rejection in `bedrockAdapter` (§2b). Bedrock speaks the same Anthropic Messages API wire shape, so images become content blocks and `tools`/`forceTool` become `tools` + `tool_choice`, mirrored line-for-line from `anthropicAdapter` so the two stay diffable; `tool_use` responses surface as `AdapterResult.toolCall`. This is the piece `anthropic-vision-client.ts` (Shorts auto-metadata) needed — images **and** a forced `emit_short_metadata` call, the exact combination previously rejected. **Two latent bugs found and fixed while building, both silent:** (1) `tools` was on `BedrockInvokeRequest` but never serialized into the body — passing tools produced a plain completion with no tool call and no error; (2) text was read from `content[0].text`, which is **empty when a forced `tool_use` block is first**, so it would have returned empty text on every vision call. Also moved `BEDROCK_ROLE_ARN`/region reads from module-load to call-time, so setting the var on a task def no longer needs a process restart (and can be tested). Text-only calls still send a plain string `content`, byte-identical to VTID-03403. Still dormant until `BEDROCK_ROLE_ARN` is set and an operator points a stage at `'bedrock'` — deploying this changes no routing. 9 new tests; full suite 619/619 suites, 12089 passed. | VTID-03496 |
 | 2026-08-05 | **Amazon Polly TTS provider — build 1 of the 4 that gate a GCP shutdown.** New `services/tts/polly.ts` + `services/tts/tts-provider.ts` seam; all 4 Google Cloud TTS synthesis call sites route through it, selected by `TTS_PROVIDER=google\|polly` (**default `google` — deploying this flips nothing**). See §2c. Three Polly divergences that are NOT cosmetic: (1) **Polly has no Serbian voice in any engine** — `sr` is a live locale (§13b), so `resolvePollyVoice('sr')` returns null and falls back to Google rather than substituting English; with GCP gone, Serbian TTS has no provider at all, an unresolved shutdown blocker. (2) **Polly PCM is 8k/16k only, not 24k** — `synthesizeGreetingBridgeAudioPcm()` now returns `{audioB64, sampleRateHz}` and the `audio/pcm;rate=` mime is built from it; assuming 24kHz would play Polly audio 1.5× fast, audible to a user but invisible to a bytes-came-back test. (3) **No `speakingRate` field** — rate becomes SSML `<prosody>`, forcing XML-escaping (plain text kept at rate 1.0). Polly Russian is standard-engine only. Fallback polly→google is always logged; `TTS_POLLY_STRICT=true` disables it for shutdown rehearsals. The admin voice-preview route takes an explicit `provider:'polly'` param and deliberately ignores `TTS_PROVIDER` so previews can't lie; the Cloud-TTS debug route stays Google-only by design. **Voice table and the Serbian gap were derived from Polly's documented voice list, not verified against the live API** — the building session had no AWS credentials; confirm via `describe-voices` before flipping. 18 new tests. | VTID-03495 |

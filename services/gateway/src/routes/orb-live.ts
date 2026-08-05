@@ -6590,6 +6590,8 @@ async function connectToLiveAPI(
         }),
         languageSupported: isNovaSonicLanguageSupported(session.lang),
         runtime: __novaRuntime === 'aws-ecs' ? 'aws-ecs' : __novaRuntime,
+        // VTID-03501: labels the decision as global-promotion vs canary.
+        globalEnabled: __novaCfg.globalEnabled === true,
       },
     });
   } catch (e) {
