@@ -42,6 +42,18 @@ per-service DR build, and requires:
 > item, and several GCP-only dependencies — Cloud Scheduler, the fine-tune
 > pipeline, ORB voice's Vertex/TTS dependencies — not previously tracked
 > anywhere in this runbook).
+>
+> **Readiness-testing pass, 2026-08-03:**
+> `docs/AWS-CUTOVER-READINESS-FINDINGS-2026-08-03.md`. Explains the DMS
+> 154k-vs-809 discrepancy (§2's reopened item — arithmetic resolved, item
+> still open, and it establishes that row-count reconciliation is the
+> wrong go/no-go test for this database) and establishes empirically that
+> **Nova Sonic has been live in production ORB voice continuously since
+> 2026-07-27**, at 15–33% of sessions, with an error-rate regression in
+> the 48h to 2026-08-03. That pass had **no working AWS credentials**
+> (`AWS_ACCESS_KEY_ID` was the literal placeholder `proxy-injected`), so
+> the ECS inventory, ALB/alarm/target-group checks, `terraform plan`, and
+> the Nova canary allowlist itself all remain unrun and unverified.
    customer-facing production hostnames.
 
 ---
@@ -97,6 +109,29 @@ objective — each item has a clear done/not-done state.
       `aws dms describe-table-statistics --replication-task-arn <arn>` for
       per-table applied/failed counts, and check CloudWatch DMS metrics /
       task logs for the actual failure pattern behind the 154k figure.
+      **Update 2026-08-03 — the 154k vs 809 arithmetic is explained; the
+      item stays open.** See `docs/AWS-CUTOVER-READINESS-FINDINGS-2026-08-03.md`
+      §1. Short version: 154k is a *cumulative lifetime change-event*
+      counter and 809 is a *point-in-time row-count delta* — a flow and a
+      stock, not two readings of one quantity, so they were never in
+      conflict and the 809-row fix was never going to move the 154k.
+      Measured on the live source DB, the platform is dominated by tiny
+      high-churn state tables (`autopilot_loop_state`: **1 row, 60,464
+      lifetime updates**; `admin_insights`: 393 rows / 295,168 updates;
+      `thread_presence`: 45 / 185,775) — six such tables exceed 154k on
+      their own, and dropping *every* apply to them would show a row-count
+      difference of **zero**. The user's 809 is corroborated exactly
+      against the source (5 `watcher_*` tables = 618 rows; 618 + 191 = 809).
+      **Two reasons this does not close the item:** (a) confirming the
+      drops actually sit on those high-churn tables still needs
+      `describe-table-statistics` — if they sit on low-churn business
+      tables instead, the explanation collapses and this is a real gap;
+      (b) more importantly, **row-count reconciliation is the wrong test
+      for this database** — `admin_insights` could hold entirely stale
+      content in all 393 rows and still "match". The go/no-go check must be
+      content-based (per-row checksum, or at minimum per-table
+      `max(updated_at)` skew), not `count(*)`. That generalizes the
+      vector-column concern to every low-row/high-update table.
       *Original 2026-07-24 note, now superseded by the above:* `vitana-autopilot-cdc`
       was stuck `FATAL_ERROR`; `resume-processing` from its stale checkpoint
       hit a *different* failure (`An internal WAL conversational protocol
