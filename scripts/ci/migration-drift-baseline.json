@@ -1,5 +1,5 @@
 {
-  "_comment": "VTID-03486. Tables declared by supabase/migrations/**.sql that do NOT exist in production. This is pre-existing drift recorded so the CI check can fail only on NEW drift. It is a backlog to shrink, not an amnesty — every entry is a migration whose SQL never reached the database.",
+  "_comment": "VTID-03486. Tables declared by supabase/migrations/**.sql that do NOT exist in production. This is pre-existing drift recorded so the CI check can fail only on NEW drift. It is a backlog to shrink, not an amnesty \u2014 every entry is a migration whose SQL never reached the database.",
   "generated_at": "2026-08-04",
   "count": 103,
   "known_missing_tables": [
@@ -106,5 +106,6 @@
     "voice_clock_items",
     "vtid_specs",
     "wallet_balances"
-  ]
+  ],
+  "_finding_2026_08_05": "TESTED: these are NOT simply un-run migrations. 20251231100000_vtid_01092_services_products_memory.sql fails to apply against production (column \"user_id\" does not exist) because it declares relationship_edges, which exists with a completely different, later schema. CREATE TABLE IF NOT EXISTS masks the divergence. Triage each entry individually - apply / rewrite / delete the CREATE. Do NOT bulk-apply. See docs/SUPABASE-TO-AURORA-MIGRATION-PLAN.md Phase 2."
 }
