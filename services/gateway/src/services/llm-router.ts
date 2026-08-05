@@ -35,7 +35,7 @@
 
 import { getActivePolicy } from './llm-routing-policy-service';
 import { startLLMCall, completeLLMCall, failLLMCall } from './llm-telemetry-service';
-import { invokeBedrock } from '../providers/bedrock';
+import { invokeBedrock, type BedrockContentBlock } from '../providers/bedrock';
 import {
   LLM_SAFE_DEFAULTS,
   type LLMRoutingPolicy,
@@ -686,16 +686,51 @@ const claudeSubscriptionAdapter: ProviderAdapter = {
  */
 const bedrockAdapter: ProviderAdapter = {
   isAvailable: () => Boolean(process.env.BEDROCK_ROLE_ARN),
-  async call({ prompt, model, systemPrompt, maxTokens, image, images, tools }): Promise<AdapterResult> {
-    if ((images && images.length > 0) || image || (tools && tools.length > 0)) {
-      return { ok: false, error: 'Bedrock adapter does not support images/tools yet (VTID-03403)' };
-    }
+  async call({ prompt, model, systemPrompt, maxTokens, image, images, tools, forceTool }): Promise<AdapterResult> {
+    // VTID-03496: images and tools are now supported. Bedrock speaks the same
+    // Anthropic Messages API shape as `anthropicAdapter` above, so the content
+    // blocks, tool schema key (`input_schema`) and `tool_choice` are built
+    // identically — deliberately mirrored so the two stay easy to diff.
+    const allImages: LLMRouterImage[] = [];
+    if (images && images.length > 0) allImages.push(...images);
+    if (image) allImages.push(image);
+
+    // Text-only stays a plain string: it is the overwhelmingly common path and
+    // keeps the request byte-identical to what shipped under VTID-03403.
+    const content: BedrockContentBlock[] | string =
+      allImages.length > 0
+        ? [
+            ...allImages.map(
+              (img): BedrockContentBlock => ({
+                type: 'image',
+                source: { type: 'base64', media_type: img.mimeType, data: img.base64 },
+              }),
+            ),
+            { type: 'text', text: prompt },
+          ]
+        : prompt;
+
+    const bedrockTools =
+      tools && tools.length > 0
+        ? tools.map((t) => ({
+            name: t.name,
+            description: t.description,
+            input_schema: t.inputSchema,
+          }))
+        : undefined;
+
+    const toolChoice =
+      bedrockTools && typeof forceTool === 'number' && tools && tools[forceTool]
+        ? ({ type: 'tool', name: tools[forceTool].name } as const)
+        : undefined;
 
     const result = await invokeBedrock({
       model,
-      messages: [{ role: 'user', content: prompt }],
+      messages: [{ role: 'user', content }],
       system: systemPrompt,
       max_tokens: maxTokens,
+      tools: bedrockTools,
+      tool_choice: toolChoice,
     });
 
     if (!result.ok) {
@@ -704,6 +739,7 @@ const bedrockAdapter: ProviderAdapter = {
     return {
       ok: true,
       text: result.text,
+      toolCall: result.toolCall,
       usage: {
         inputTokens: result.usage?.input_tokens ?? 0,
         outputTokens: result.usage?.output_tokens ?? 0,
