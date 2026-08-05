@@ -7,6 +7,21 @@ name: Alert — Welcome Greeting Production Health
 # This is the second layer on top of SMOKE-WELCOME-GREETING.yml: smoke test
 # proves the trigger CODE works on synthetic data; this alert proves the
 # trigger is firing on REAL traffic.
+#
+# VTID-03492 — TRANSPORT CHANGED, deliberately NOT psql.
+# This workflow had failed EVERY scheduled run since at least 2026-07-29 with:
+#
+#   psql: error: ... FATAL: (EADDRNOTALLOWED)
+#   address not in tenant allow_list: {52, 225, 29, 98}
+#
+# The Supabase project has a network allow-list and GitHub runner IPs are not
+# on it (they differ per run, so allow-listing them is not practical). It was
+# not flaky — it was structurally unable to connect, and had been silently
+# dead for weeks while sitting on the "known chronic failure, don't chase" list.
+#
+# PostgREST is a separate edge service, NOT subject to the DB allow-list, so
+# the query now runs as an RPC over HTTPS with secrets that already exist.
+# See supabase/migrations/20260804100000_vtid_03492_ci_health_rpcs_v2.sql.
 
 on:
   schedule:
@@ -20,47 +35,35 @@ jobs:
   health:
     runs-on: ubuntu-latest
     steps:
-      - name: Install psql
-        run: sudo apt-get install -y postgresql-client > /dev/null 2>&1
-
       - name: Compare last-24h signups vs greetings
         env:
-          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
         run: |
           set -euo pipefail
-          OUTPUT=$(psql "$SUPABASE_DB_URL" -t -A -F '|' <<'EOF'
-          WITH time_window AS (SELECT now() - interval '24 hours' AS since),
-          stats AS (
-            SELECT
-              (SELECT COUNT(*) FROM public.app_users u
-                WHERE u.created_at >= (SELECT since FROM time_window)
-                  AND u.user_id <> '00000000-0000-0000-0000-000000000001'::uuid
-              ) AS signups_24h,
-              (SELECT COUNT(DISTINCT sender_id) FROM public.chat_messages
-                WHERE created_at >= (SELECT since FROM time_window)
-                  AND metadata->>'source' = 'welcome_chat'
-                  AND metadata->>'trigger' = 'db_trigger_on_membership'
-              ) AS unique_senders_24h,
-              (SELECT COUNT(*) FROM public.app_users u
-                WHERE u.created_at >= (SELECT since FROM time_window)
-                  AND COALESCE(u.welcome_chat_sent, false) = false
-                  AND u.user_id <> '00000000-0000-0000-0000-000000000001'::uuid
-              ) AS unflagged_recent_users
-          )
-          SELECT signups_24h, unique_senders_24h, unflagged_recent_users FROM stats;
-          EOF
-          )
+          if [ -z "${SUPABASE_URL:-}" ] || [ -z "${SUPABASE_SERVICE_ROLE:-}" ]; then
+            echo "::error::SUPABASE_URL / SUPABASE_SERVICE_ROLE secrets are not set on this repo."
+            exit 1
+          fi
+          HTTP=$(curl -sS -o health.json -w '%{http_code}' \
+            -X POST "${SUPABASE_URL%/}/rest/v1/rpc/ci_welcome_greeting_health" \
+            -H "apikey: $SUPABASE_SERVICE_ROLE" \
+            -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE" \
+            -H 'Content-Type: application/json' -d '{}')
+          if [ "$HTTP" != "200" ]; then
+            echo "::error::ci_welcome_greeting_health RPC returned HTTP $HTTP. If 404, apply supabase/migrations/20260804100000_vtid_03492_ci_health_rpcs_v2.sql."
+            head -c 500 health.json || true
+            exit 1
+          fi
+          cat health.json; echo
 
-          # Parse "signups|senders|unflagged".
-          LINE=$(echo "$OUTPUT" | grep -v '^$' | tail -1)
-          SIGNUPS=$(echo "$LINE" | cut -d'|' -f1 | tr -d ' \r')
-          SENDERS=$(echo "$LINE" | cut -d'|' -f2 | tr -d ' \r')
-          UNFLAGGED=$(echo "$LINE" | cut -d'|' -f3 | tr -d ' \r')
-
+          SIGNUPS=$(jq -r '.signups_24h' health.json)
+          SENDERS=$(jq -r '.greeted_senders_24h' health.json)
+          UNFLAGGED=$(jq -r '.unflagged_24h' health.json)
           echo "Last 24h: $SIGNUPS signups, $SENDERS distinct trigger-fired senders, $UNFLAGGED unflagged recent users"
 
           if ! [[ "$SIGNUPS" =~ ^[0-9]+$ ]] || ! [[ "$SENDERS" =~ ^[0-9]+$ ]] || ! [[ "$UNFLAGGED" =~ ^[0-9]+$ ]]; then
-            echo "::error::Could not parse health output. Raw: $OUTPUT"
+            echo "::error::Could not parse health output."
             exit 1
           fi
 

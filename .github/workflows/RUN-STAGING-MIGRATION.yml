@@ -76,26 +76,33 @@ jobs:
       # GUARD 3: Secret must exist AND must contain the staging project_ref,
       # AND must NOT contain the prod project_ref. This is the hard prod-block.
       # ---------------------------------------------------------------
-      - name: Verify STAGING_SUPABASE_DB_URL targets staging (HARD GUARD)
+      # VTID-03492: this guard MUST validate the same secret the apply step
+      # actually uses. That is now STAGING_SUPABASE_URL (the Management API
+      # derives the project ref from it), not STAGING_SUPABASE_DB_URL — psql
+      # cannot reach the database from GitHub Actions at all. Validating the
+      # old secret here would have left the one that really selects the target
+      # project completely unchecked, which is exactly the prod-block this
+      # guard exists to provide.
+      - name: Verify STAGING_SUPABASE_URL targets staging (HARD GUARD)
         env:
-          STAGING_DB_URL: ${{ secrets.STAGING_SUPABASE_DB_URL }}
+          STAGING_URL: ${{ secrets.STAGING_SUPABASE_URL }}
         run: |
           set -euo pipefail
-          if [ -z "${STAGING_DB_URL:-}" ]; then
-            echo "::error::STAGING_SUPABASE_DB_URL secret is empty or missing."
-            echo "::error::Set it with: gh secret set STAGING_SUPABASE_DB_URL --repo exafyltd/vitana-platform"
+          if [ -z "${STAGING_URL:-}" ]; then
+            echo "::error::STAGING_SUPABASE_URL secret is empty or missing."
+            echo "::error::Set it with: gh secret set STAGING_SUPABASE_URL --repo exafyltd/vitana-platform"
             exit 1
           fi
-          if ! printf '%s' "$STAGING_DB_URL" | grep -q "$STAGING_PROJECT_REF"; then
-            echo "::error::STAGING_SUPABASE_DB_URL does not contain staging project_ref ($STAGING_PROJECT_REF)."
+          if ! printf '%s' "$STAGING_URL" | grep -q "$STAGING_PROJECT_REF"; then
+            echo "::error::STAGING_SUPABASE_URL does not contain staging project_ref ($STAGING_PROJECT_REF)."
             echo "::error::Refusing to run — secret may be misconfigured."
             exit 1
           fi
-          if printf '%s' "$STAGING_DB_URL" | grep -q "$PROD_PROJECT_REF"; then
-            echo "::error::STAGING_SUPABASE_DB_URL contains PROD project_ref ($PROD_PROJECT_REF). HARD STOP."
+          if printf '%s' "$STAGING_URL" | grep -q "$PROD_PROJECT_REF"; then
+            echo "::error::STAGING_SUPABASE_URL contains PROD project_ref ($PROD_PROJECT_REF). HARD STOP."
             exit 1
           fi
-          echo "STAGING_SUPABASE_DB_URL targets $STAGING_PROJECT_REF — OK."
+          echo "STAGING_SUPABASE_URL targets $STAGING_PROJECT_REF — OK."
 
       # ---------------------------------------------------------------
       # GUARD 4: WIF auth — same pattern as EXEC-DEPLOY.yml. Used so the
@@ -110,12 +117,6 @@ jobs:
           project_id: lovable-vitana-vers1
       - uses: google-github-actions/setup-gcloud@v2
 
-      - name: Install psql
-        run: |
-          set -euo pipefail
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq postgresql-client
-
       # ---------------------------------------------------------------
       # Apply the migration. Wrap in BEGIN/COMMIT via psql -1 so a failure
       # rolls back cleanly (each migration file is expected to be a single
@@ -124,26 +125,31 @@ jobs:
       - name: Apply migration to STAGING
         id: apply
         env:
-          STAGING_DB_URL: ${{ secrets.STAGING_SUPABASE_DB_URL }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
         run: |
           set -euo pipefail
           F="${{ inputs.migration_file }}"
           echo "Applying $F to project_ref=$STAGING_PROJECT_REF"
-          # -v ON_ERROR_STOP=1 stops on first SQL error; -1 wraps in a tx.
-          psql "$STAGING_DB_URL" \
-            -v ON_ERROR_STOP=1 \
-            -1 \
-            -f "$F" \
+          # VTID-03492: was psql (-v ON_ERROR_STOP=1 -1). That transport cannot
+          # connect from GitHub Actions — Supabase network allow-list, runner IPs
+          # not on it. The script preserves both properties: it fails the step on
+          # any SQL error, and --single-transaction reproduces psql -1 (skipping
+          # the wrap when the file already manages its own transaction).
+          scripts/ci/apply-sql-via-management-api.sh \
+            --file "$F" \
+            --single-transaction \
             | tee migration_output.log
           echo "applied=true" >> "$GITHUB_OUTPUT"
 
       - name: Reload PostgREST schema cache
         if: success()
         env:
-          STAGING_DB_URL: ${{ secrets.STAGING_SUPABASE_DB_URL }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
         run: |
           set -euo pipefail
-          psql "$STAGING_DB_URL" -c "NOTIFY pgrst, 'reload schema';"
+          scripts/ci/apply-sql-via-management-api.sh --sql "NOTIFY pgrst, 'reload schema';"
           echo "Schema cache reload signal sent."
 
       # ---------------------------------------------------------------
@@ -202,7 +208,7 @@ jobs:
             echo "- **Migration file:** \`${{ inputs.migration_file }}\`"
             echo "- **Actor:** @${{ github.actor }}"
             echo ""
-            echo "### psql output (tail)"
+            echo "### SQL output (tail)"
             echo '```'
             tail -n 50 migration_output.log 2>/dev/null || echo '(no output captured)'
             echo '```'
@@ -220,10 +226,10 @@ jobs:
             echo "- **Migration file:** \`${{ inputs.migration_file }}\`"
             echo "- **Actor:** @${{ github.actor }}"
             echo ""
-            echo "The migration was wrapped in a single transaction (psql -1) and rolled back on error."
+            echo "The migration was wrapped in a single transaction and rolled back on error."
             echo ""
-            echo "### psql output (tail)"
+            echo "### SQL output (tail)"
             echo '```'
-            tail -n 80 migration_output.log 2>/dev/null || echo '(no output captured — failure may have occurred before psql ran)'
+            tail -n 80 migration_output.log 2>/dev/null || echo '(no output captured — failure may have occurred before the SQL ran)'
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
