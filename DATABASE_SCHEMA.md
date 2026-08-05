@@ -157,6 +157,49 @@ was applied on 2026-08-03. The only outward symptom was
 - `orb.session.audio_ready.acked` — `payload.ok` is the write result, NOT the client's readiness
 - `orb.session.continuity.persisted`
 
+### notification_test_actors
+**Purpose:** Accounts whose actions must never notify a real community member (VTID-03506)
+**Used by:**
+- `_notif_is_test_actor(UUID)` — the predicate; registry match **OR** email pattern
+- `trg_suppress_test_actor_notifications` — BEFORE INSERT sink guard on `user_notifications`
+- `notify_community_on_public_post()` / `notify_community_on_public_video()` — source-side early return
+- Defined in `exafyltd/vitana-v1` migration `20260805160000_vtid_03506_suppress_test_actor_notifications.sql`
+
+**Schema:**
+```sql
+CREATE TABLE notification_test_actors (
+  user_id    UUID PRIMARY KEY,          -- no FK: auth.users is a different schema
+  reason     TEXT NOT NULL DEFAULT '',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+-- RLS enabled, zero policies: service_role only.
+```
+
+**Seeded with:** `a27552a3-0257-4305-8ed0-351a80fd3701` (`e2e-test@vitana.dev`).
+The predicate ALSO matches `e2e-%@%` and `%@vitanatest.exafy.io` on
+`auth.users.email`, because e2e accounts get minted ad hoc — an unregistered one
+created tomorrow would otherwise reach every member.
+
+**⚠️ Why it exists (VTID-03506):** on 2026-08-05 the shared E2E account created 5
+public `profile_posts` on **production** while reproducing a feed bug.
+`trg_notify_community_post` fans out to the whole tenant, so that became **960
+notifications and 600 pushes** to 192 real members in six minutes. Deleting the
+posts recalled nothing.
+
+**The guard fails OPEN by design.** Any error resolving the actor (malformed key,
+cast failure) returns `NEW` and the notification is delivered — suppressing test
+noise is worth strictly less than one real member's notification going missing.
+
+**It is a seatbelt, not a permission slip.** It stops *notifications*; it does not
+keep test posts, comments, likes or chat messages out of the real feed. Writing to
+production as a test account is forbidden outright — see CLAUDE.md rules 31/32.
+
+**Registering a new test account:**
+```sql
+INSERT INTO notification_test_actors (user_id, reason)
+VALUES ('<uuid>', '<who/what this account is>') ON CONFLICT DO NOTHING;
+```
+
 ---
 
 ## ⚠️ DEPRECATED / DO NOT USE
