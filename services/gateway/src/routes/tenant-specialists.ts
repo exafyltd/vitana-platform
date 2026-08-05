@@ -21,6 +21,8 @@
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { createClient } from '@supabase/supabase-js';
+import * as tenantRepo from '../services/specialists/tenant-specialists-repository';
+import { RepositoryError } from '../services/specialists/tenant-specialists-repository';
 import { clearTenantPersonaCache } from '../services/persona-registry';
 
 const router = Router();
@@ -73,32 +75,18 @@ async function ensureTenantAdmin(req: Request, _res: Response, _tenantId: string
 }
 
 async function resolvePersonaId(key: string): Promise<string | null> {
-  const supabase = getServiceClient();
-  const { data } = await supabase
-    .from('agent_personas')
-    .select('id')
-    .eq('key', key)
-    .maybeSingle();
-  return data?.id ?? null;
+  return tenantRepo.resolvePersonaId(key);
 }
 
-async function writeTenantAudit(
-  actorUserId: string,
-  tenantId: string,
-  personaId: string | null,
-  action: string,
-  before: unknown,
-  after: unknown,
-) {
-  const supabase = getServiceClient();
-  await supabase.from('agent_audit_log').insert({
-    actor_user_id: actorUserId,
-    tenant_id: tenantId,
-    persona_id: personaId,
-    action,
-    before_state: before ?? null,
-    after_state: after ?? null,
-  });
+const writeTenantAudit = tenantRepo.writeTenantAudit;
+
+/** Translate a repository failure into the 502 these routes already returned. */
+function handleRepoError(err: unknown, res: Response): void {
+  if (err instanceof RepositoryError) {
+    res.status(502).json({ ok: false, error: err.message });
+    return;
+  }
+  throw err;
 }
 
 // ---------------------------------------------------------------------------
@@ -111,47 +99,27 @@ router.get('/:tenantId/specialists/:key/overrides', async (req: Request, res: Re
   const tenantId = req.params.tenantId;
   if (!(await ensureTenantAdmin(req, res, tenantId))) return;
 
-  const supabase = getServiceClient();
-  const { data: persona } = await supabase
-    .from('agent_personas')
-    .select('id, key, display_name, role, voice_id, status, handles_kinds, handoff_keywords, greeting_templates')
-    .eq('key', req.params.key)
-    .maybeSingle();
-  if (!persona) return res.status(404).json({ ok: false, error: 'PERSONA_NOT_FOUND' });
+  try {
+    const persona = await tenantRepo.getOverlayPersona(req.params.key);
+    if (!persona) return res.status(404).json({ ok: false, error: 'PERSONA_NOT_FOUND' });
+    const personaId = persona.id as string;
 
-  const { data: overlay } = await supabase
-    .from('agent_personas_tenant_overrides')
-    .select('*')
-    .eq('tenant_id', tenantId)
-    .eq('persona_id', persona.id)
-    .maybeSingle();
+    const [overlay, kbBindings, keywords, connections] = await Promise.all([
+      tenantRepo.getOverlay(tenantId, personaId),
+      tenantRepo.listKbBindings(tenantId, personaId),
+      tenantRepo.listKeywords(tenantId, personaId),
+      tenantRepo.listTenantConnections(tenantId, personaId),
+    ]);
 
-  const { data: kbBindings } = await supabase
-    .from('agent_kb_bindings_tenant')
-    .select('*')
-    .eq('tenant_id', tenantId)
-    .eq('persona_id', persona.id);
-
-  const { data: keywords } = await supabase
-    .from('agent_routing_keywords_tenant')
-    .select('*')
-    .eq('tenant_id', tenantId)
-    .eq('persona_id', persona.id);
-
-  const { data: connections } = await supabase
-    .from('agent_third_party_connections')
-    .select('id, provider, status, last_check_at, created_at')
-    .eq('tenant_id', tenantId)
-    .eq('persona_id', persona.id);
-
-  return res.json({
-    ok: true,
-    persona,
-    overlay: overlay ?? { enabled: true, intake_schema_extras: {}, custom_greeting_templates: {}, notes: null },
-    kb_bindings: kbBindings ?? [],
-    routing_keywords: keywords ?? [],
-    connections: connections ?? [],
-  });
+    return res.json({
+      ok: true,
+      persona,
+      overlay: overlay ?? { enabled: true, intake_schema_extras: {}, custom_greeting_templates: {}, notes: null },
+      kb_bindings: kbBindings,
+      routing_keywords: keywords,
+      connections,
+    });
+  } catch (e) { return handleRepoError(e, res); }
 });
 
 // ---------------------------------------------------------------------------
@@ -175,42 +143,29 @@ router.put('/:tenantId/specialists/:key/overrides', async (req: Request, res: Re
   const personaId = await resolvePersonaId(req.params.key);
   if (!personaId) return res.status(404).json({ ok: false, error: 'PERSONA_NOT_FOUND' });
 
-  const supabase = getServiceClient();
-  const { data: existing } = await supabase
-    .from('agent_personas_tenant_overrides')
-    .select('*')
-    .eq('tenant_id', tenantId)
-    .eq('persona_id', personaId)
-    .maybeSingle();
+  try {
+    const existing = await tenantRepo.getOverlay(tenantId, personaId);
 
-  const patch = {
-    tenant_id: tenantId,
-    persona_id: personaId,
-    enabled: v.data.enabled ?? existing?.enabled ?? true,
-    intake_schema_extras: v.data.intake_schema_extras ?? existing?.intake_schema_extras ?? {},
-    custom_greeting_templates: v.data.custom_greeting_templates ?? existing?.custom_greeting_templates ?? {},
-    notes: v.data.notes !== undefined ? v.data.notes : existing?.notes ?? null,
-    updated_by: userId,
-    updated_at: new Date().toISOString(),
-  };
+    const upserted = await tenantRepo.upsertOverlay(tenantId, personaId, {
+      enabled: v.data.enabled ?? existing?.enabled ?? true,
+      intake_schema_extras: v.data.intake_schema_extras ?? existing?.intake_schema_extras ?? {},
+      custom_greeting_templates: v.data.custom_greeting_templates ?? existing?.custom_greeting_templates ?? {},
+      notes: v.data.notes !== undefined ? v.data.notes : existing?.notes ?? null,
+      updated_by: userId,
+      updated_at: new Date().toISOString(),
+    });
 
-  const { data: upserted, error } = await supabase
-    .from('agent_personas_tenant_overrides')
-    .upsert(patch, { onConflict: 'tenant_id,persona_id' })
-    .select('*')
-    .single();
-  if (error || !upserted) return res.status(502).json({ ok: false, error: error?.message });
+    // Audit — distinguish enable vs disable vs intake_extras change.
+    let action = 'tenant_intake_extras_change';
+    if (v.data.enabled === true && existing?.enabled === false) action = 'tenant_persona_enable';
+    else if (v.data.enabled === false && existing?.enabled !== false) action = 'tenant_persona_disable';
+    await writeTenantAudit(userId, tenantId, personaId, action, existing, upserted);
 
-  // Audit — distinguish enable vs disable vs intake_extras change.
-  let action = 'tenant_intake_extras_change';
-  if (v.data.enabled === true && existing?.enabled === false) action = 'tenant_persona_enable';
-  else if (v.data.enabled === false && existing?.enabled !== false) action = 'tenant_persona_disable';
-  await writeTenantAudit(userId, tenantId, personaId, action, existing, upserted);
+    // Invalidate tenant cache so the next runtime call sees the new overlay.
+    clearTenantPersonaCache(tenantId);
 
-  // Invalidate tenant cache so the next runtime call sees the new overlay.
-  clearTenantPersonaCache(tenantId);
-
-  return res.json({ ok: true, overlay: upserted });
+    return res.json({ ok: true, overlay: upserted });
+  } catch (e) { return handleRepoError(e, res); }
 });
 
 // ---------------------------------------------------------------------------
@@ -231,37 +186,18 @@ router.put('/:tenantId/specialists/:key/kb-bindings', async (req: Request, res: 
   const personaId = await resolvePersonaId(req.params.key);
   if (!personaId) return res.status(404).json({ ok: false, error: 'PERSONA_NOT_FOUND' });
 
-  const supabase = getServiceClient();
-  const { data: before } = await supabase
-    .from('agent_kb_bindings_tenant')
-    .select('kb_scope, enabled')
-    .eq('tenant_id', tenantId)
-    .eq('persona_id', personaId);
+  try {
+    const before = await tenantRepo.listKbBindings(tenantId, personaId, 'kb_scope, enabled');
+    await tenantRepo.replaceKbBindings(tenantId, personaId, v.data.scopes, userId);
 
-  await supabase.from('agent_kb_bindings_tenant')
-    .delete()
-    .eq('tenant_id', tenantId)
-    .eq('persona_id', personaId);
-
-  if (v.data.scopes.length > 0) {
-    await supabase.from('agent_kb_bindings_tenant').insert(
-      v.data.scopes.map(scope => ({
-        tenant_id: tenantId,
-        persona_id: personaId,
-        kb_scope: scope,
-        enabled: true,
-        bound_by: userId,
-      }))
+    await writeTenantAudit(
+      userId, tenantId, personaId, 'tenant_kb_bind',
+      before,
+      v.data.scopes.map(s => ({ kb_scope: s, enabled: true })),
     );
-  }
-
-  await writeTenantAudit(
-    userId, tenantId, personaId, 'tenant_kb_bind',
-    before ?? [],
-    v.data.scopes.map(s => ({ kb_scope: s, enabled: true })),
-  );
-  clearTenantPersonaCache(tenantId);
-  return res.json({ ok: true, bindings: v.data.scopes });
+    clearTenantPersonaCache(tenantId);
+    return res.json({ ok: true, bindings: v.data.scopes });
+  } catch (e) { return handleRepoError(e, res); }
 });
 
 // ---------------------------------------------------------------------------
@@ -285,38 +221,18 @@ router.put('/:tenantId/specialists/:key/keywords', async (req: Request, res: Res
   const personaId = await resolvePersonaId(req.params.key);
   if (!personaId) return res.status(404).json({ ok: false, error: 'PERSONA_NOT_FOUND' });
 
-  const supabase = getServiceClient();
-  const { data: before } = await supabase
-    .from('agent_routing_keywords_tenant')
-    .select('keyword, weight, enabled')
-    .eq('tenant_id', tenantId)
-    .eq('persona_id', personaId);
+  try {
+    const before = await tenantRepo.listKeywords(tenantId, personaId, 'keyword, weight, enabled');
+    await tenantRepo.replaceKeywords(tenantId, personaId, v.data.keywords, userId);
 
-  await supabase.from('agent_routing_keywords_tenant')
-    .delete()
-    .eq('tenant_id', tenantId)
-    .eq('persona_id', personaId);
-
-  if (v.data.keywords.length > 0) {
-    await supabase.from('agent_routing_keywords_tenant').insert(
-      v.data.keywords.map(k => ({
-        tenant_id: tenantId,
-        persona_id: personaId,
-        keyword: k.keyword.trim().toLowerCase(),
-        weight: k.weight ?? 1.0,
-        enabled: true,
-        added_by: userId,
-      }))
+    await writeTenantAudit(
+      userId, tenantId, personaId, 'tenant_keyword_add',
+      before,
+      v.data.keywords,
     );
-  }
-
-  await writeTenantAudit(
-    userId, tenantId, personaId, 'tenant_keyword_add',
-    before ?? [],
-    v.data.keywords,
-  );
-  // No cache to clear — pick_specialist_for_text_tenant reads SQL each call.
-  return res.json({ ok: true, keywords: v.data.keywords });
+    // No cache to clear — pick_specialist_for_text_tenant reads SQL each call.
+    return res.json({ ok: true, keywords: v.data.keywords });
+  } catch (e) { return handleRepoError(e, res); }
 });
 
 // ---------------------------------------------------------------------------
@@ -333,27 +249,19 @@ router.get('/:tenantId/specialists/:key/connections', async (req: Request, res: 
   const personaId = await resolvePersonaId(req.params.key);
   if (!personaId) return res.status(404).json({ ok: false, error: 'PERSONA_NOT_FOUND' });
 
-  const supabase = getServiceClient();
+  try {
+    const [tenantConns, platformConns] = await Promise.all([
+      tenantRepo.listTenantConnections(tenantId, personaId),
+      // Platform defaults are the tenant_id IS NULL rows — read-only for tenants.
+      tenantRepo.listPlatformDefaultConnections(personaId),
+    ]);
 
-  // Tenant-scoped connections: tenant_id = X
-  const { data: tenantConns } = await supabase
-    .from('agent_third_party_connections')
-    .select('id, provider, status, last_check_at, created_at')
-    .eq('tenant_id', tenantId)
-    .eq('persona_id', personaId);
-
-  // Platform default connections (tenant_id IS NULL) shown as read-only
-  const { data: platformConns } = await supabase
-    .from('agent_third_party_connections')
-    .select('id, provider, status, last_check_at, created_at')
-    .is('tenant_id', null)
-    .eq('persona_id', personaId);
-
-  return res.json({
-    ok: true,
-    tenant_connections: tenantConns ?? [],
-    platform_defaults: platformConns ?? [],
-  });
+    return res.json({
+      ok: true,
+      tenant_connections: tenantConns,
+      platform_defaults: platformConns,
+    });
+  } catch (e) { return handleRepoError(e, res); }
 });
 
 router.post('/:tenantId/specialists/:key/connections', async (req: Request, res: Response) => {
@@ -366,24 +274,14 @@ router.post('/:tenantId/specialists/:key/connections', async (req: Request, res:
   const personaId = await resolvePersonaId(req.params.key);
   if (!personaId) return res.status(404).json({ ok: false, error: 'PERSONA_NOT_FOUND' });
 
-  const supabase = getServiceClient();
-  const { data, error } = await supabase
-    .from('agent_third_party_connections')
-    .insert({
-      tenant_id: tenantId,
-      persona_id: personaId,
-      provider: v.data.provider,
-      status: 'draft',
-      created_by: userId,
-    })
-    .select('*')
-    .single();
-  if (error || !data) return res.status(502).json({ ok: false, error: error?.message });
+  try {
+    const created = await tenantRepo.createConnection(tenantId, personaId, v.data.provider, userId);
 
-  await writeTenantAudit(userId, tenantId, personaId, 'tenant_connection_add', null, {
-    connection_id: data.id, provider: v.data.provider,
-  });
-  return res.status(201).json({ ok: true, connection: data });
+    await writeTenantAudit(userId, tenantId, personaId, 'tenant_connection_add', null, {
+      connection_id: created.id, provider: v.data.provider,
+    });
+    return res.status(201).json({ ok: true, connection: created });
+  } catch (e) { return handleRepoError(e, res); }
 });
 
 router.delete('/:tenantId/specialists/:key/connections/:connectionId', async (req: Request, res: Response) => {
@@ -391,22 +289,15 @@ router.delete('/:tenantId/specialists/:key/connections/:connectionId', async (re
   const userId = await ensureTenantAdmin(req, res, tenantId);
   if (!userId) return;
 
-  const supabase = getServiceClient();
-  const { data: existing } = await supabase
-    .from('agent_third_party_connections')
-    .select('*')
-    .eq('id', req.params.connectionId)
-    .eq('tenant_id', tenantId)
-    .maybeSingle();
-  if (!existing) return res.status(404).json({ ok: false, error: 'NOT_FOUND' });
+  try {
+    const existing = await tenantRepo.getConnectionForTenant(tenantId, req.params.connectionId);
+    if (!existing) return res.status(404).json({ ok: false, error: 'NOT_FOUND' });
 
-  await supabase.from('agent_third_party_connections')
-    .delete()
-    .eq('id', req.params.connectionId)
-    .eq('tenant_id', tenantId);
+    await tenantRepo.deleteConnectionForTenant(tenantId, req.params.connectionId);
 
-  await writeTenantAudit(userId, tenantId, existing.persona_id, 'tenant_connection_remove', existing, null);
-  return res.json({ ok: true });
+    await writeTenantAudit(userId, tenantId, (existing.persona_id as string) ?? null, 'tenant_connection_remove', existing, null);
+    return res.json({ ok: true });
+  } catch (e) { return handleRepoError(e, res); }
 });
 
 // ---------------------------------------------------------------------------
@@ -417,15 +308,10 @@ router.get('/:tenantId/audit', async (req: Request, res: Response) => {
   const tenantId = req.params.tenantId;
   if (!(await ensureTenantAdmin(req, res, tenantId))) return;
   const limit = Math.min(parseInt(String(req.query.limit ?? '100'), 10) || 100, 500);
-  const supabase = getServiceClient();
-  const { data, error } = await supabase
-    .from('agent_audit_log')
-    .select('id, actor_user_id, persona_id, action, before_state, after_state, ts')
-    .eq('tenant_id', tenantId)
-    .order('ts', { ascending: false })
-    .limit(limit);
-  if (error) return res.status(502).json({ ok: false, error: error.message });
-  return res.json({ ok: true, audit: data ?? [] });
+  try {
+    const audit = await tenantRepo.listTenantAudit(tenantId, limit);
+    return res.json({ ok: true, audit });
+  } catch (e) { return handleRepoError(e, res); }
 });
 
 // ---------------------------------------------------------------------------
