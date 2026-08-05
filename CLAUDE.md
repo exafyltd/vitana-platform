@@ -592,6 +592,71 @@ on the gateway task role (`AWS_POLLY_REGION`, else `AWS_REGION`, else
 
 ---
 
+## 2d. IMAGE GENERATION — AMAZON TITAN (VTID-03497)
+
+Build 3 of the 4 provider replacements gating a GCP shutdown, and the only
+one Claude cannot cover at all: Vertex **Imagen** generates images and no
+Anthropic model does, so this is a separate Bedrock adapter
+(`services/gateway/src/providers/titan-image.ts`), not an llm-router provider.
+
+Selected by **`IMAGE_PROVIDER=vertex|bedrock`, default `vertex`** — same
+deliberate-opt-in shape as `TTS_PROVIDER` (§2c). **Deploying this changes
+nothing.** Gated additionally on `BEDROCK_ROLE_ARN` (shared with §2b).
+
+**There are TWO Imagen consumers, not one.** The cutover changelog previously
+listed only the outpaint path; a Titan build covering just that would have
+left AI cover generation silently broken on a GCP shutdown:
+
+| Consumer | Imagen call | Titan taskType |
+|---|---|---|
+| `services/cover-image-outpaint.ts` | `EDIT_MODE_OUTPAINT` (capability model) | `OUTPAINTING` |
+| `services/intent-cover-service.ts` | text-to-image (`imagen-3.0-fast-generate-001`) | `TEXT_IMAGE` |
+
+### Three Titan constraints that are not cosmetic
+
+1. **Titan accepts only a fixed set of width/height pairs — 1600x900 is not
+   one of them.** `nearestTitanSize()` maps the cover canvas to **1280x720**
+   (largest supported 16:9) and the outpaint path upscales the result back to
+   1600x900. The mapping weights **aspect ratio above area** deliberately:
+   satisfying a 16:9 request with 1024x1024 would letterbox or crop the
+   subject — visually wrong, and invisible to a test that only asserts the
+   call succeeded.
+2. **Outpaint mask polarity is INVERTED vs Imagen, and is UNVERIFIED.**
+   Imagen: white = generate, black = keep. Titan is documented the other way
+   round, so `cover-image-outpaint.ts` negates its Imagen-convention mask
+   before sending. Get this backwards and the **subject** is regenerated while
+   the margins are preserved — a plausible-looking image that is completely
+   wrong. Because no AWS credentials were available to confirm it, the polarity
+   is env-overridable via **`TITAN_OUTPAINT_MASK_POLARITY=black-generates|white-generates`**
+   (default `black-generates`). **If outpaint output looks wrong, flip this first.**
+   The mask is resized with `kernel:'nearest'` so it stays strictly two-tone —
+   a bilinear resize yields grey edge pixels and a non-deterministic seam.
+3. **Titan is not offered in every region**, and the rest of Vitana's AWS
+   estate is `eu-central-1`. `AWS_TITAN_IMAGE_REGION` is its own var
+   (→ `AWS_BEDROCK_REGION` → `AWS_REGION` → `us-east-1`) rather than
+   inheriting blindly; a wrong region fails with an opaque model-not-found.
+
+### Also worth knowing
+
+- Titan reports content-policy blocks in an `error` field **on a 200 response**
+  — it does not throw. Treating that as success returns empty bytes; the
+  adapter maps it to `error:'blocked'` → `unsafe_prompt`.
+- **There is no server-side letterbox-blur fallback.** The cutover draft spec
+  cited one as Titan's safety net; that behaviour is the *frontend's*, and
+  `routes/cover-images.ts` simply returns an error when outpaint fails. Plan
+  accordingly — a Titan quality regression surfaces as a failed request, not a
+  degraded image.
+
+### Before flipping `IMAGE_PROVIDER=bedrock`
+
+Run `scripts/images/verify-titan-image.ts`. It checks model availability in
+the configured region, the 16:9 size mapping, and — most importantly — renders
+a deterministic red-subject probe that detects inverted mask polarity
+automatically rather than leaving it to eyeballing. Needs `bedrock:InvokeModel`
+on the Titan model for the gateway task role.
+
+---
+
 ## 3. DATABASE (SUPABASE)
 
 ### Critical Rules
@@ -1342,6 +1407,7 @@ Use these PATs with the GitHub REST API (`api.github.com`) for all PR and deploy
 
 | Date | Change | VTID |
 |------|--------|------|
+| 2026-08-05 | **Amazon Titan Image Generator — build 3 of the 4 that gate a GCP shutdown**, and the only one Claude cannot cover at all (Imagen generates images; no Anthropic model does). New `providers/titan-image.ts` behind `IMAGE_PROVIDER=vertex\|bedrock` (**default `vertex` — deploying this flips nothing**), see §2d. **Found a second Imagen consumer the cutover changelog had missed:** `intent-cover-service.ts` does plain text-to-image alongside `cover-image-outpaint.ts`'s outpainting — a Titan build covering only outpainting would have left AI cover generation silently broken on shutdown. Both are now wired (`TEXT_IMAGE` / `OUTPAINTING`). Three Titan constraints handled explicitly: (1) **Titan accepts only fixed width/height pairs and 1600x900 is not one** — `nearestTitanSize()` maps to 1280x720 and weights **aspect above area**, because satisfying 16:9 with a square would letterbox the subject invisibly; the outpaint path upscales back. (2) **Mask polarity is inverted vs Imagen and is UNVERIFIED** — white=generate for Imagen, black=generate for Titan; backwards means the *subject* is regenerated and the margins kept, a plausible-looking but totally wrong image. Env-overridable via `TITAN_OUTPAINT_MASK_POLARITY` so it can be corrected without a redeploy; mask resized with `kernel:'nearest'` to stay two-tone. (3) **Titan isn't offered in every region** — `AWS_TITAN_IMAGE_REGION` is its own var rather than inheriting eu-central-1. Also: Titan reports content-policy blocks in an `error` field **on a 200**, not by throwing. **Correction to the draft spec:** it cited an "existing letterbox-blur fallback" as Titan's safety net — that is the *frontend's* old behaviour; `routes/cover-images.ts` just returns an error, so there is no server-side safety net. `scripts/images/verify-titan-image.ts` checks region/model, the size mapping, and detects inverted mask polarity via a deterministic red-subject probe. 16 new tests; full suite 620/620 suites, 12105 passed. | VTID-03497 |
 | 2026-08-05 | **Bedrock adapter: vision + forced tool-calling — build 2 of the 4 that gate a GCP shutdown.** Removes the blanket `images/tools not supported` rejection in `bedrockAdapter` (§2b). Bedrock speaks the same Anthropic Messages API wire shape, so images become content blocks and `tools`/`forceTool` become `tools` + `tool_choice`, mirrored line-for-line from `anthropicAdapter` so the two stay diffable; `tool_use` responses surface as `AdapterResult.toolCall`. This is the piece `anthropic-vision-client.ts` (Shorts auto-metadata) needed — images **and** a forced `emit_short_metadata` call, the exact combination previously rejected. **Two latent bugs found and fixed while building, both silent:** (1) `tools` was on `BedrockInvokeRequest` but never serialized into the body — passing tools produced a plain completion with no tool call and no error; (2) text was read from `content[0].text`, which is **empty when a forced `tool_use` block is first**, so it would have returned empty text on every vision call. Also moved `BEDROCK_ROLE_ARN`/region reads from module-load to call-time, so setting the var on a task def no longer needs a process restart (and can be tested). Text-only calls still send a plain string `content`, byte-identical to VTID-03403. Still dormant until `BEDROCK_ROLE_ARN` is set and an operator points a stage at `'bedrock'` — deploying this changes no routing. 9 new tests; full suite 619/619 suites, 12089 passed. | VTID-03496 |
 | 2026-08-05 | **Amazon Polly TTS provider — build 1 of the 4 that gate a GCP shutdown.** New `services/tts/polly.ts` + `services/tts/tts-provider.ts` seam; all 4 Google Cloud TTS synthesis call sites route through it, selected by `TTS_PROVIDER=google\|polly` (**default `google` — deploying this flips nothing**). See §2c. Three Polly divergences that are NOT cosmetic: (1) **Polly has no Serbian voice in any engine** — `sr` is a live locale (§13b), so `resolvePollyVoice('sr')` returns null and falls back to Google rather than substituting English; with GCP gone, Serbian TTS has no provider at all, an unresolved shutdown blocker. (2) **Polly PCM is 8k/16k only, not 24k** — `synthesizeGreetingBridgeAudioPcm()` now returns `{audioB64, sampleRateHz}` and the `audio/pcm;rate=` mime is built from it; assuming 24kHz would play Polly audio 1.5× fast, audible to a user but invisible to a bytes-came-back test. (3) **No `speakingRate` field** — rate becomes SSML `<prosody>`, forcing XML-escaping (plain text kept at rate 1.0). Polly Russian is standard-engine only. Fallback polly→google is always logged; `TTS_POLLY_STRICT=true` disables it for shutdown rehearsals. The admin voice-preview route takes an explicit `provider:'polly'` param and deliberately ignores `TTS_PROVIDER` so previews can't lie; the Cloud-TTS debug route stays Google-only by design. **Voice table and the Serbian gap were derived from Polly's documented voice list, not verified against the live API** — the building session had no AWS credentials; confirm via `describe-voices` before flipping. 18 new tests. | VTID-03495 |
 | 2026-08-05 | **Messenger history was never deleted — three independent caps made most of it unreachable, and one of them dropped whole conversations at random.** Reported as "the chat history is more or less completely gone." Nothing had been removed: `chat_messages` held 39,593 rows going back to 2026-02-27. (1) **The inbox itself was lossy.** `get_recent_conversations()` ends its `DISTINCT ON` pass with `ORDER BY peer_id, created_at DESC` — `DISTINCT ON` forces the ORDER BY to lead with the distinct key — and then applied `LIMIT p_limit` to *that*. So "the 50 most recent conversations" was really "50 conversations sorted by a random UUID": for the member with 199 conversations, only **7 of their 20 most-recently-active chats** were returned at all. Fixed by wrapping the `DISTINCT ON` result in an outer `ORDER BY created_at DESC LIMIT` (migration `20260805120000`), and raising the gateway's cap 50 → 250 (198 of 220 users have more than 50 conversations). (2) **Thread scrollback was dead code.** `ConversationView` renders `useHybridMessages`' React Query array, but its scroll-to-top handler drove `usePaginatedMessages` — a completely separate state array that was never rendered, and whose `fetchInitialMessages` was gated behind `shouldUsePagination` (`messages.length > 50` on that same always-empty array). Circular, so `hasOlder` was permanently `false` and scrolling up did nothing: every thread was frozen at its newest 50 messages, putting **15,444 of 39,593 messages (39%) permanently out of reach**. Replaced with real paging through the gateway's already-existing `before` cursor, accumulated per-thread OUTSIDE the query cache — realtime invalidation refetches that cache on every incoming message and would otherwise discard scrollback mid-conversation. (3) **Group threads and both DB fallbacks paged the wrong end.** `fetchLegacyMessages` and the `chat_messages` fallbacks used `.order('created_at', {ascending: true}).limit(100)`, which returns the OLDEST 100 rows — a busy group chat showed its first-ever 100 messages and never the recent ones. Now fetched newest-first and reversed for render. **Lesson worth keeping:** a `LIMIT` after `DISTINCT ON` is not "top N", it is "N arbitrary rows" — and dead pagination is invisible precisely because the first page always looks right. | VTID-03493 |
