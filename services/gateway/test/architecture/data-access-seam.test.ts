@@ -26,6 +26,7 @@ const GATEWAY_SRC = join(__dirname, '..', '..', 'src');
 /** Files fully migrated behind a repository. These must stay at zero. */
 const SEALED_FILES = [
   'routes/specialists-admin.ts',
+  'routes/tenant-specialists.ts',
 ];
 
 /**
@@ -38,14 +39,9 @@ const SEALED_FILES = [
  * that someone added a direct query to a file that was being migrated out.
  */
 const CAPPED_FILES: Array<{ file: string; maxCallSites: number; note: string }> = [
-  {
-    file: 'routes/tenant-specialists.ts',
-    maxCallSites: 24,
-    note:
-      'Tenant specialist CONFIG (overlay, KB, keywords, connections, audit) is ' +
-      'migrated to tenant-specialists-repository. The remaining calls are the ' +
-      'customer feedback/ticket lifecycle — a different bounded context, next slice.',
-  },
+  // Empty right now — tenant-specialists.ts graduated to SEALED once its
+  // feedback-ticket half also moved behind a repository. The machinery stays:
+  // the next large file will land here first and graduate the same way.
 ];
 
 /** Count `.from('table')` occurrences — the unit the migration is measured in. */
@@ -86,25 +82,34 @@ describe('data-access seam (VTID-03498)', () => {
   });
 
   describe('partially-migrated files may only shrink', () => {
-    it.each(CAPPED_FILES.map((c) => [c.file, c.maxCallSites, c.note] as const))(
-      '%s has at most %i supabase call sites',
-      (rel, max) => {
-        const path = join(GATEWAY_SRC, rel);
-        expect(existsSync(path)).toBe(true);
-        const actual = countCallSites(readFileSync(path, 'utf8'));
+    // `it.each([])` throws, so the empty case needs its own branch. Empty is a
+    // legitimate state: it means every file currently under migration has
+    // graduated to SEALED.
+    if (CAPPED_FILES.length === 0) {
+      it('no files are mid-migration right now', () => {
+        expect(CAPPED_FILES).toEqual([]);
+      });
+    } else {
+      it.each(CAPPED_FILES.map((c) => [c.file, c.maxCallSites] as const))(
+        '%s has at most %i supabase call sites',
+        (rel, max) => {
+          const path = join(GATEWAY_SRC, rel);
+          expect(existsSync(path)).toBe(true);
+          const actual = countCallSites(readFileSync(path, 'utf8'));
 
-        // Going UP means a direct query was added to a file mid-migration.
-        expect(actual).toBeLessThanOrEqual(max);
+          // Going UP means a direct query was added to a file mid-migration.
+          expect(actual).toBeLessThanOrEqual(max);
 
-        // Going DOWN is good — but the cap must be lowered to lock the gain in,
-        // otherwise the ratchet silently loosens.
-        if (actual < max) {
-          throw new Error(
-            `${rel} is now at ${actual} call sites (cap ${max}). ` +
-              `Lower maxCallSites to ${actual} in data-access-seam.test.ts to lock in the progress.`,
-          );
-        }
-      },
-    );
+          // Going DOWN is good — but the cap must be lowered to lock the gain
+          // in, otherwise the ratchet silently loosens.
+          if (actual < max) {
+            throw new Error(
+              `${rel} is now at ${actual} call sites (cap ${max}). ` +
+                `Lower maxCallSites to ${actual} in data-access-seam.test.ts to lock in the progress.`,
+            );
+          }
+        },
+      );
+    }
   });
 });
