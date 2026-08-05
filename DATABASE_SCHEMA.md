@@ -1490,5 +1490,41 @@ lessons decay.
 
 ---
 
+## Direct Messages — `chat_messages` + `get_recent_conversations()` (VTID-03493)
+
+Direct (1:1) messages live in **`chat_messages`**, keyed by
+`sender_id`/`receiver_id` — there is no thread row for a DM. The inbox is
+derived by collapsing those messages to one entry per peer.
+
+`get_recent_conversations(p_user_id, p_tenant_id, p_limit)` does that
+collapse server-side. It returns one row per peer — the newest message of
+each conversation — plus a computed `peer_id`, ordered **newest
+conversation first**.
+
+**The trap this function was built on.** `DISTINCT ON` requires the query's
+`ORDER BY` to lead with the distinct key. The original body therefore ended
+with `ORDER BY peer_id, created_at DESC` and applied `LIMIT p_limit` to
+*that* — meaning "the N most recent conversations" was really "N
+conversations sorted by a random UUID". With the gateway passing 50, a
+member with 199 conversations got an arbitrary 50, of which only 7 of their
+20 most-recently-active chats survived. Users experienced this as their chat
+history disappearing.
+
+If you ever edit this function, **keep the outer query**: the `DISTINCT ON`
+pass picks the newest message per peer, and a wrapping `SELECT … ORDER BY
+created_at DESC LIMIT p_limit` does the recency selection. Collapsing those
+two back into one statement silently reintroduces the bug — the function
+still returns rows, still looks correct in isolation, and only misbehaves
+once a user has more conversations than the limit.
+
+Related caps to keep in sync:
+
+| Surface | Limit | Notes |
+|---|---|---|
+| `GET /conversations` (gateway) | `?limit`, default **250**, max 500 | Inbox list |
+| `GET /conversation/:peerId` (gateway) | `?limit` default 50, max 100, `?before` ISO cursor | One page of thread history; `before` drives scrollback |
+
+---
+
 **Remember:** This file is the SINGLE SOURCE OF TRUTH for table names.
 When in doubt, CHECK HERE FIRST!
