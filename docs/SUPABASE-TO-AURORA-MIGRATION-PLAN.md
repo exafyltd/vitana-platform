@@ -74,6 +74,42 @@ not a code task.
 
 ---
 
+### Decision recorded 2026-08-04
+
+User selected **Option B — full platform replacement**. Driver: **AWS
+consolidation + removing the Supabase dependency**. Options A and C below are
+retained for the record of what was considered and rejected.
+
+### New finding: the code already queries tables that do not exist
+
+Running `scripts/ci/aurora-migration-inventory.cjs` and cross-referencing
+against the live schema surfaced **~85 relation names the code queries that are
+not base tables in production**. Some are false positives (storage buckets
+caught by the `.from()` pattern, views, local variables — see the script
+header), but spot-checks confirm the largest are real:
+
+| table | call sites | files | in drift baseline |
+|---|---|---|---|
+| `autopilot_logs` | **64** | 27 | yes |
+| `services_catalog` | 15 | 9 | yes |
+| `appointments` | 8 | 2 | no |
+| `matches_daily` | 8 | 6 | yes |
+| `risk_mitigations` | 7 | 1 | no |
+| `products_catalog` | 6 | 4 | yes |
+| `d44_predictive_signals` | 4 | 2 | no |
+
+`autopilot_logs` is the standout: 64 call sites across 27 files, against a table
+that does not exist. Every one of those calls is failing or dead today.
+
+Two consequences for this migration:
+1. **Do not port dead call sites.** Auditing these is cheaper before the rewrite
+   than after, and shrinks the 2,480-call-site surface.
+2. Several are *not* in the VTID-03486 drift baseline (`appointments`,
+   `risk_mitigations`, `d44_predictive_signals`), meaning no migration file
+   declares them at all — the code references tables that were never authored.
+   That is a different defect class from "migration never applied" and needs its
+   own triage.
+
 ## Phase 1 — Decide the target architecture
 
 Three genuinely different end-states. This is the decision that shapes
@@ -148,6 +184,51 @@ Only meaningful after Phases 0–2.
 3. `vector` version match, or plan embedding reindex.
 4. Data: DMS for bulk + a verified cutover delta.
 5. Reconciliation gates from Phase 0 re-run against the final copy.
+
+## Phase 3b — Option B work breakdown (the chosen path)
+
+Sequenced so each step is independently shippable and reversible. The ordering
+matters: the seam comes first, or 2,480 call sites get rewritten twice.
+
+**B1 — Data-access seam (do this first, and it is safe to start now).**
+Introduce a repository layer so route code stops calling `supabase.from()`
+directly. Initially it just wraps supabase-js — no behaviour change, fully
+shippable against the current stack. This converts the later swap from "rewrite
+2,480 call sites under a deadline" into "change one adapter". Start with the
+15 heaviest files (45, 45, 39, 38, 35… call sites); they are listed by
+`aurora-migration-inventory.cjs`.
+
+**B2 — Kill the dead call sites.** Audit the ~85 non-existent relations from the
+inventory. Every one removed is work not carried into the migration.
+
+**B3 — RPC parity.** 204 distinct RPCs, 582 public functions. These are plain
+PL/pgSQL and mostly port to Aurora as-is, *except* any that reference
+`auth.uid()`/`auth.jwt()` — those depend on GoTrue and must be re-expressed
+against the new identity source. Inventory them before assuming they port.
+
+**B4 — Identity (the hard one).** 199 users, 194 frontend auth call sites, and
+**557 RLS policies referencing `auth.uid()`**. Requirements: migrate credentials
+without forcing a password reset (GoTrue stores bcrypt in `auth.users` —
+Cognito supports bcrypt import; verify before committing), issue a JWT whose
+claims satisfy the existing policies, and keep `auth.uid()` resolvable — most
+cheaply by providing a compatible `auth.uid()` function in Aurora reading from a
+session GUC set per connection. That last trick is what makes 557 policies port
+unchanged; without it they must each be rewritten.
+
+**B5 — Realtime.** 79 subscriptions. Assess how many are genuinely live-critical
+vs. polling that could be simplified before rebuilding them.
+
+**B6 — Storage.** 23 call sites → S3. Smallest workstream.
+
+**B7 — Edge functions.** 74 Deno functions → Lambda/ECS. Independent of the DB
+work and can proceed in parallel.
+
+**B8 — Cutover + rollback.** Per Phase 4 below.
+
+**Honest sizing:** B1 and B2 are days. B4 is the schedule risk — credential
+migration and 557 policies are not a same-day task, and getting identity wrong
+locks out every user or, worse, silently breaks tenant isolation. B3/B5/B7 are
+parallelisable across people.
 
 ## Phase 4 — Application cutover
 
