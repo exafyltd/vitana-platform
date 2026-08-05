@@ -299,10 +299,27 @@ jobs:
           # add one speculatively — a wrongly-enabled flag is a new outage, not
           # a fix. Verify first via GET /api/v1/admin/feature-flags (admin) on
           # both stacks and compare `live`, not merely whether the var is set.
+          #
+          # VTID-03504 adds FEATURE_ORB_BRAIN_CACHE_ENV on the same reasoning
+          # and with the same kind of evidence. `vitana_brain_orb_enabled` is
+          # TRUE in system_controls, so every ORB session builds its context
+          # through `buildBrainSystemInstructionCached` — which, with this flag
+          # off, was a passthrough: no TTL cache AND (until VTID-03504) no
+          # concurrent-build de-dupe. `warmBrainCache()` (the prewarm endpoint's
+          # whole purpose) was likewise a no-op, so /live/session/prewarm warmed
+          # only the legacy path the brain path never reads. Measured on prod
+          # 2026-08-05: orb.live.context.bootstrap ran a 2.0s p50 all day, then
+          # 17.4s p50 / 119.7s max between 14:14 and 14:22 UTC as one user's
+          # reconnects stacked builds on each other — and it degraded two
+          # uninvolved users on the same task. Turning this on restores the
+          # 5-min TTL reuse so a retry lands on a warm entry instead of paying
+          # a fresh ~4.4s build. Staleness contract is identical to the legacy
+          # VERTEX_BOOTSTRAP_CACHE that is already live here.
           NEW_DEF=$(echo "$NEW_DEF" | jq '
             .containerDefinitions[0].environment |=
-              ( [ .[] | select(.name != "FEATURE_ORB_FAST_START_ENV") ]
-                + [ {name:"FEATURE_ORB_FAST_START_ENV", value:"staging+prod"} ] )')
+              ( [ .[] | select(.name | IN("FEATURE_ORB_FAST_START_ENV","FEATURE_ORB_BRAIN_CACHE_ENV") | not) ]
+                + [ {name:"FEATURE_ORB_FAST_START_ENV", value:"staging+prod"},
+                    {name:"FEATURE_ORB_BRAIN_CACHE_ENV", value:"staging+prod"} ] )')
 
           # BOOTSTRAP-NOVA-SONIC-VOICE: only when explicitly requested, replace
           # the Nova env block (region/model stay pinned — never inputs).
