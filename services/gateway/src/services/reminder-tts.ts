@@ -11,6 +11,8 @@ import textToSpeech from '@google-cloud/text-to-speech';
 import { protos } from '@google-cloud/text-to-speech';
 // VTID-02857: speakingRate read from system_config['tts.speaking_rate']
 import { getVoiceConfig } from './voice-config';
+// VTID-03495: Polly seam. No-ops unless TTS_PROVIDER=polly.
+import { tryPollySynthesis } from './tts/tts-provider';
 
 let ttsClient: InstanceType<typeof textToSpeech.TextToSpeechClient> | null = null;
 try {
@@ -44,6 +46,23 @@ export async function synthesizeReminderTts(
   text: string,
   lang: string,
 ): Promise<{ audio_b64: string | null; voice: string | null; lang: string }> {
+  // VTID-03495: Polly first when configured. Reminders are pre-rendered at
+  // insert time (not on the fire-time critical path), so a provider miss here
+  // costs latency on a background job, never a user-visible delay.
+  {
+    const __vcPolly = await getVoiceConfig();
+    const polly = await tryPollySynthesis({
+      text,
+      lang,
+      format: 'mp3',
+      speakingRate: __vcPolly.tts.speaking_rate,
+      callSite: 'reminder-tts',
+    });
+    if (polly) {
+      return { audio_b64: polly.audioB64, voice: polly.voice, lang: normalizeLang(lang) };
+    }
+  }
+
   if (!ttsClient) {
     try {
       ttsClient = new textToSpeech.TextToSpeechClient();
