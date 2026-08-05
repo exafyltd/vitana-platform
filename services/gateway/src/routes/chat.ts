@@ -336,6 +336,11 @@ router.get('/conversations', requireAuth, requireTenant, async (req: Request, re
       .select('*')
       .eq('tenant_id', identity.tenant_id)
       .or(`sender_id.eq.${identity.user_id},receiver_id.eq.${identity.user_id}`)
+      // DM rows only — mirrors the RPC. Group messages share this table with
+      // receiver_id NULL + group_id set, and would dedup to a peer_id of
+      // `undefined`, producing an inbox entry with no peer.
+      .not('receiver_id', 'is', null)
+      .is('group_id', null)
       .order('created_at', { ascending: false })
       .limit(Math.min(limit * 8, 2000));
 

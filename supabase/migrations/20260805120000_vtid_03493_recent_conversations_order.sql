@@ -67,6 +67,14 @@ AS $function$
     FROM chat_messages m
     WHERE m.tenant_id = p_tenant_id
       AND (m.sender_id = p_user_id OR m.receiver_id = p_user_id)
+      -- DM rows only. Group messages live in this same table with
+      -- receiver_id NULL and group_id set; without this filter a user's own
+      -- most recent group message is admitted (it matches on sender_id), and
+      -- `peer_id` for it computes to NULL — an inbox entry that identifies no
+      -- DM peer. It was previously buried by the peer_id sort; now that rows
+      -- are ordered by recency it can surface at the very top.
+      AND m.receiver_id IS NOT NULL
+      AND m.group_id IS NULL
     ORDER BY
       CASE WHEN m.sender_id = p_user_id THEN m.receiver_id ELSE m.sender_id END,
       m.created_at DESC
