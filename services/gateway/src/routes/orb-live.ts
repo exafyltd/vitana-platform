@@ -1422,6 +1422,38 @@ import {
 // take 5-8+s to first greeting audio; this fills the silence).
 import { buildGreetingBridgeText } from '../services/conversation/greeting-audio-bridge';
 import { synthesizeGreetingBridgeAudioPcm, GREETING_BRIDGE_PCM_SAMPLE_RATE_HZ } from '../services/tts/greeting-bridge-tts';
+
+/**
+ * VTID-03502: should a closed Nova stream fall back to Vertex?
+ *
+ * True only for the measured premature-close-at-open failure: the stream
+ * closed on its own before ANY audio was produced. `audioOutChunks === 0` is
+ * the discriminator because it is perfectly correlated with
+ * `nova_stream_error` across the canary window (6/6) and appears under no
+ * other close reason (local_close 0/35, client_disconnect 0/13, user_stop
+ * 0/3, nova_validation 0/1) — a mid-conversation drop always has audio out.
+ *
+ * Exported as a pure predicate so this decision is testable on its own rather
+ * than only through the Nova connect closure it is used in.
+ */
+export function shouldFallbackToVertexOnNovaClose(args: {
+  sessionActive: boolean;
+  /** We closed the stream ourselves (shutdown, swap, rotation) — not a failure. */
+  initiatedLocally: boolean;
+  /** A planned rotation owns its own reconnect; do not race it. */
+  rotationInFlight: boolean;
+  audioOutChunks: number;
+  /** Guard against a Vertex-side failure bouncing back and looping. */
+  alreadyFellBack: boolean;
+}): boolean {
+  return (
+    args.sessionActive &&
+    !args.initiatedLocally &&
+    !args.rotationInFlight &&
+    args.audioOutChunks === 0 &&
+    !args.alreadyFellBack
+  );
+}
 // VTID-03495: Polly seam for the /tts route. No-ops unless TTS_PROVIDER=polly.
 import { tryPollySynthesis } from '../services/tts/tts-provider';
 import { resolveNovaSonicVoice } from '../orb/live/voice/nova-sonic-voice';
@@ -7614,6 +7646,30 @@ async function connectToLiveAPI(
         // Close policy: diag always; on an unexpected close of an active,
         // non-rotating session, emit ONE typed connection issue (same dedupe
         // contract as the Vertex ws close handler).
+        /**
+         * VTID-03502: emit the localized connection_issue frame to whichever
+         * client transport this session uses. Extracted so the premature-close
+         * fallback can reach the same user-visible outcome when its Vertex
+         * reconnect ALSO fails — the one thing worse than a failed fallback is
+         * a failed fallback that says nothing.
+         */
+        const emitConnectionIssue = (s: typeof session, reason: string): void => {
+          if (s.connectionIssueEmitted) return;
+          s.connectionIssueEmitted = true;
+          const issueEvent = {
+            type: 'connection_issue',
+            reason,
+            message: getConnectionIssueMessage(s.lang || 'en'),
+            should_close: true,
+          };
+          if (s.sseResponse) {
+            try { s.sseResponse.write(`data: ${JSON.stringify(issueEvent)}\n\n`); } catch (_e) { /* ignore */ }
+          }
+          if (s.clientWs && s.clientWs.readyState === WebSocket.OPEN) {
+            try { s.clientWs.send(JSON.stringify(issueEvent)); } catch (_e) { /* ignore */ }
+          }
+        };
+
         novaClient.onClose((closeEvent) => {
           emitDiag(session, 'upstream_closed', {
             provider: 'nova_sonic',
@@ -7650,6 +7706,79 @@ async function connectToLiveAPI(
             });
             return;
           }
+          // VTID-03502: premature-close-at-open fallback.
+          //
+          // Measured 2026-07-29 → 08-05: 10.2% of Nova sessions (6/59) die
+          // exactly here with diagnostic "Premature close" — the bidirectional
+          // HTTP/2 stream closing before ANY audio moves. audio_out === 0 is
+          // perfectly correlated with that failure and appears under no other
+          // close reason (local_close 0/35, client_disconnect 0/13,
+          // user_stop 0/3, nova_validation 0/1), which is what makes it a safe
+          // discriminator rather than a heuristic.
+          //
+          // Without this branch the code below emits connection_issue with
+          // should_close:true and the user is simply left in silence — they
+          // cannot tell the session failed. Instead, pin the session to Vertex
+          // and reconnect transparently, reusing the exact machinery
+          // nova_rotation_exhausted_fallback already uses.
+          //
+          // Guarded on !_novaFallbackToVertex so a Vertex-side failure can
+          // never bounce back here and loop.
+          const novaDiedBeforeAnyAudio = shouldFallbackToVertexOnNovaClose({
+            sessionActive: session.active,
+            initiatedLocally: closeEvent.initiatedLocally === true,
+            rotationInFlight,
+            audioOutChunks: session.audioOutChunks,
+            alreadyFellBack: (session as any)._novaFallbackToVertex === true,
+          });
+
+          if (novaDiedBeforeAnyAudio) {
+            console.warn(
+              `[VTID-03502] Nova stream for session ${session.sessionId} closed before any audio ` +
+                `(reason=${closeEvent.reason ?? 'unknown'}, audio_out=0) — pinning to Vertex and reconnecting.`,
+            );
+            (session as any)._novaFallbackToVertex = true;
+            emitDiag(session, 'nova_premature_close_fallback', {
+              provider: 'nova_sonic',
+              reason: closeEvent.reason ?? null,
+              audio_out: 0,
+            });
+            void emitOasisEvent({
+              type: 'orb.upstream.nova.premature_close_fallback',
+              vtid: 'VTID-03502',
+              payload: {
+                session_id: session.sessionId,
+                from: 'nova_sonic',
+                to: 'vertex',
+                reason: closeEvent.reason ?? null,
+                status: 'warning',
+              } as any,
+            } as any).catch(() => { /* best-effort */ });
+
+            void attemptTransparentReconnect(
+              session,
+              onAudioResponse,
+              onTextResponse,
+              onError,
+              onTurnComplete,
+              onInterrupted,
+            ).then((ok) => {
+              if (!ok) {
+                // Reconnect failed too — fall through to the normal
+                // connection_issue path rather than leaving the user in
+                // silence with no signal at all.
+                console.warn(
+                  `[VTID-03502] Vertex fallback reconnect failed for session ${session.sessionId}.`,
+                );
+                emitConnectionIssue(session, 'upstream_disconnected');
+              }
+            }).catch((e) => {
+              console.warn(`[VTID-03502] Vertex fallback reconnect threw: ${(e as Error).message}`);
+              emitConnectionIssue(session, 'upstream_disconnected');
+            });
+            return;
+          }
+
           if (
             session.active &&
             !closeEvent.initiatedLocally &&
