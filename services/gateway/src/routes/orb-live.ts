@@ -1422,6 +1422,8 @@ import {
 // take 5-8+s to first greeting audio; this fills the silence).
 import { buildGreetingBridgeText } from '../services/conversation/greeting-audio-bridge';
 import { synthesizeGreetingBridgeAudioPcm, GREETING_BRIDGE_PCM_SAMPLE_RATE_HZ } from '../services/tts/greeting-bridge-tts';
+// VTID-03495: Polly seam for the /tts route. No-ops unless TTS_PROVIDER=polly.
+import { tryPollySynthesis } from '../services/tts/tts-provider';
 import { resolveNovaSonicVoice } from '../orb/live/voice/nova-sonic-voice';
 import { prewarmNovaSonicBedrock } from '../orb/live/upstream/nova-sonic-live-client';
 import { sanitizeInstructionForNova } from '../orb/live/upstream/nova-instruction-sanitizer';
@@ -8954,16 +8956,19 @@ async function sendGreetingAudioBridge(session: GeminiLiveSession): Promise<void
     const lang = session.lang || 'en';
     const timezone = session.clientContext?.timezone || 'UTC';
     const text = buildGreetingBridgeText({ lang, now: new Date(), timezone });
-    const audioB64 = await synthesizeGreetingBridgeAudioPcm(text, lang);
-    if (!audioB64) {
+    const bridgeAudio = await synthesizeGreetingBridgeAudioPcm(text, lang);
+    if (!bridgeAudio) {
       emitDiag(session, 'greeting_bridge_skipped', { reason: 'synthesis_unavailable' });
       return;
     }
     if (!session.sseResponse) return; // client disconnected while we were synthesizing
     session.sseResponse.write(`data: ${JSON.stringify({
       type: 'audio',
-      data_b64: audioB64,
-      mime: `audio/pcm;rate=${GREETING_BRIDGE_PCM_SAMPLE_RATE_HZ}`,
+      data_b64: bridgeAudio.audioB64,
+      // VTID-03495: rate comes from the synthesis result, not a constant —
+      // Polly PCM is 16kHz, Cloud TTS 24kHz. Hardcoding either plays the
+      // other at the wrong speed.
+      mime: `audio/pcm;rate=${bridgeAudio.sampleRateHz}`,
       chunk_number: session.audioOutChunks++,
       source: 'greeting_bridge',
     })}\n\n`);
@@ -13907,6 +13912,41 @@ router.post('/tts', optionalAuth, async (req: AuthenticatedRequest, res: Respons
     voice_type: voiceType,
     text_length: text.length
   });
+
+  // VTID-03495: Polly first when configured. This MUST sit above the
+  // `!ttsClient` guard below — in a GCP-free environment the Cloud TTS client
+  // constructor fails and ttsClient stays null, so a Polly attempt placed
+  // after the guard would never run and this route would 503 despite Polly
+  // being available and healthy.
+  {
+    const __vcPolly = await getVoiceConfig();
+    const polly = await tryPollySynthesis({
+      text,
+      lang,
+      format: 'mp3',
+      speakingRate: __vcPolly.tts.speaking_rate,
+      callSite: 'orb-live-tts',
+    });
+    if (polly) {
+      await emitTtsEvent('vtid.tts.success', {
+        lang,
+        voice: polly.voice,
+        voice_type: 'Polly',
+        text_length: text.length,
+        audio_bytes: polly.audioB64.length,
+        mime_type: 'audio/mp3',
+        provider: 'polly',
+      });
+      return res.status(200).json({
+        ok: true,
+        audio_b64: polly.audioB64,
+        mime: 'audio/mp3',
+        voice: polly.voice,
+        voice_type: 'Polly',
+        lang,
+      });
+    }
+  }
 
   // Check if TTS client is available
   if (!ttsClient) {

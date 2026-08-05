@@ -505,15 +505,155 @@ one of these adapters**, alongside `anthropic`, `openai`, `vertex`,
 - **Not selected by default anywhere.** Adding the adapter does not change
   any stage's routing — Bedrock only runs when an operator explicitly points
   a stage at `'bedrock'`.
-- **Not yet supported:** vision (`image`/`images`) and tool calling
-  (`tools`/`forceTool`) — the adapter returns an explicit error for these
-  rather than silently dropping them or mis-serializing the request.
+- **Vision and tool calling ARE supported (VTID-03496).** `image`/`images`
+  become Anthropic content blocks and `tools`/`forceTool` become `tools` +
+  `tool_choice`, built identically to `anthropicAdapter` — Bedrock speaks the
+  same Messages API wire shape (`anthropic_version: 'bedrock-2023-05-31'`), so
+  there is deliberately only one serializer shape to reason about. A `tool_use`
+  response block surfaces as `AdapterResult.toolCall`. This is what makes
+  `anthropic-vision-client.ts` (Shorts auto-metadata — images + a forced
+  `emit_short_metadata` call) routable to Bedrock. Text-only calls still send a
+  plain string `content`, byte-identical to the VTID-03403 behaviour.
+- **Two latent bugs fixed in the same VTID, worth knowing about:**
+  (1) `tools` was declared on `BedrockInvokeRequest` but never serialized into
+  the request body — a caller passing tools got a plain completion, no tool
+  call and no error. (2) Response text was read from `content[0].text`, which
+  is **empty whenever a forced `tool_use` block comes first** — i.e. it would
+  have failed on every vision call. Both are covered by tests.
+- `BEDROCK_ROLE_ARN`/region are now read **at call time**, not module load, so
+  setting the var on a task definition takes effect without a process restart.
 - **Implementation:** `services/gateway/src/providers/bedrock.ts`
   (`invokeBedrock()`) does the actual `BedrockRuntimeClient.send()` call;
   `bedrockAdapter` in `llm-router.ts` adapts it to the router's
   `ProviderAdapter` interface. Provider/model/latency logging comes for
   free via the router's existing `startLLMCall`/`completeLLMCall`/
   `failLLMCall` telemetry — no Bedrock-specific logging code needed.
+
+---
+
+## 2c. TTS — AMAZON POLLY PROVIDER (VTID-03495)
+
+Build 1 of the 4 provider replacements that must exist before any GCP
+shutdown is possible (Polly → Titan image gen → Bedrock vision/tool-calling →
+Nova Sonic promotion).
+
+All Google Cloud TTS synthesis now routes through one seam,
+`services/gateway/src/services/tts/tts-provider.ts`, selected by
+**`TTS_PROVIDER=google|polly`, default `google`** — same deliberate-opt-in
+shape as `BEDROCK_ROLE_ARN` (§2b) and `DEV_AUTOPILOT_JOB_CLOUD` (§1b).
+**Deploying this code changes nothing.** An unrecognised value logs and falls
+back to `google` rather than failing closed and taking voice down.
+
+| Call site | File | Format | Behaviour |
+|---|---|---|---|
+| ORB greeting bridge | `services/tts/greeting-bridge-tts.ts` | PCM | Polly-first when configured |
+| Reminder pre-render | `services/reminder-tts.ts` | MP3 | Polly-first when configured |
+| ORB `/tts` route | `routes/orb-live.ts` (~L13920) | MP3 | Polly-first when configured |
+| Admin voice preview | `routes/voice-config.ts` | MP3 | **Explicit `provider:'polly'` body param only** — deliberately ignores `TTS_PROVIDER` so a preview never lies about what it played |
+| Cloud TTS debug route | `routes/orb-live.ts` (~L12676) | MP3 | **Google only, on purpose** — it is a Cloud-TTS diagnostic |
+
+### Three hard facts about Polly that bit this build
+
+1. **Polly has no Serbian voice, in any engine.** `sr` is a live locale here
+   (§13b lists DE/EN/ES/SR). `resolvePollyVoice('sr')` returns **null** and the
+   caller falls back to Google — it does **not** substitute English. Fluent
+   audio in the wrong language is worse than no audio, because nothing
+   downstream can detect it. **This is an unresolved coverage gap for a full
+   GCP shutdown**: with GCP gone, Serbian users get no TTS at all.
+2. **Polly PCM is 8kHz/16kHz only — it cannot do the 24kHz** the greeting
+   bridge used. `synthesizeGreetingBridgeAudioPcm()` therefore returns
+   `{ audioB64, sampleRateHz }` instead of a bare string, and `orb-live.ts`
+   builds `audio/pcm;rate=` from that value. Hardcoding 24kHz under Polly
+   plays 16kHz samples 1.5× fast — obvious to a listener, invisible to any
+   test that only asserts bytes came back.
+3. **Polly has no `speakingRate` field.** Rate becomes SSML
+   `<prosody rate="N%">`, which forces `TextType:'ssml'` and XML-escaping. At
+   rate 1.0 plain text is sent, avoiding the escaping surface entirely.
+
+Also note Polly's Russian is **standard-engine only** (no neural voice) — a
+quality step down from `ru-RU-Wavenet-A`.
+
+### Fallback is never silent
+
+`TTS_PROVIDER=polly` + an unservable request → falls back to Google **with a
+`[TTS] FALLBACK polly→google` log line**, per "Never allow silent model
+fallback". Set **`TTS_POLLY_STRICT=true`** to disable the fallback — use it in
+a GCP-shutdown rehearsal to prove no hidden Google dependency remains; with it
+on, an unservable request returns null instead of quietly reaching back to GCP.
+
+### Before flipping `TTS_PROVIDER=polly`
+
+The voice/engine table and the Serbian gap were derived from Polly's
+documented voice list and **not verified against the live API** — the session
+that built this had no working AWS credentials. Confirm against
+`aws polly describe-voices` first, and note Polly needs IAM `polly:SynthesizeSpeech`
+on the gateway task role (`AWS_POLLY_REGION`, else `AWS_REGION`, else
+`eu-central-1`).
+
+---
+
+## 2d. IMAGE GENERATION — AMAZON TITAN (VTID-03497)
+
+Build 3 of the 4 provider replacements gating a GCP shutdown, and the only
+one Claude cannot cover at all: Vertex **Imagen** generates images and no
+Anthropic model does, so this is a separate Bedrock adapter
+(`services/gateway/src/providers/titan-image.ts`), not an llm-router provider.
+
+Selected by **`IMAGE_PROVIDER=vertex|bedrock`, default `vertex`** — same
+deliberate-opt-in shape as `TTS_PROVIDER` (§2c). **Deploying this changes
+nothing.** Gated additionally on `BEDROCK_ROLE_ARN` (shared with §2b).
+
+**There are TWO Imagen consumers, not one.** The cutover changelog previously
+listed only the outpaint path; a Titan build covering just that would have
+left AI cover generation silently broken on a GCP shutdown:
+
+| Consumer | Imagen call | Titan taskType |
+|---|---|---|
+| `services/cover-image-outpaint.ts` | `EDIT_MODE_OUTPAINT` (capability model) | `OUTPAINTING` |
+| `services/intent-cover-service.ts` | text-to-image (`imagen-3.0-fast-generate-001`) | `TEXT_IMAGE` |
+
+### Three Titan constraints that are not cosmetic
+
+1. **Titan accepts only a fixed set of width/height pairs — 1600x900 is not
+   one of them.** `nearestTitanSize()` maps the cover canvas to **1280x720**
+   (largest supported 16:9) and the outpaint path upscales the result back to
+   1600x900. The mapping weights **aspect ratio above area** deliberately:
+   satisfying a 16:9 request with 1024x1024 would letterbox or crop the
+   subject — visually wrong, and invisible to a test that only asserts the
+   call succeeded.
+2. **Outpaint mask polarity is INVERTED vs Imagen, and is UNVERIFIED.**
+   Imagen: white = generate, black = keep. Titan is documented the other way
+   round, so `cover-image-outpaint.ts` negates its Imagen-convention mask
+   before sending. Get this backwards and the **subject** is regenerated while
+   the margins are preserved — a plausible-looking image that is completely
+   wrong. Because no AWS credentials were available to confirm it, the polarity
+   is env-overridable via **`TITAN_OUTPAINT_MASK_POLARITY=black-generates|white-generates`**
+   (default `black-generates`). **If outpaint output looks wrong, flip this first.**
+   The mask is resized with `kernel:'nearest'` so it stays strictly two-tone —
+   a bilinear resize yields grey edge pixels and a non-deterministic seam.
+3. **Titan is not offered in every region**, and the rest of Vitana's AWS
+   estate is `eu-central-1`. `AWS_TITAN_IMAGE_REGION` is its own var
+   (→ `AWS_BEDROCK_REGION` → `AWS_REGION` → `us-east-1`) rather than
+   inheriting blindly; a wrong region fails with an opaque model-not-found.
+
+### Also worth knowing
+
+- Titan reports content-policy blocks in an `error` field **on a 200 response**
+  — it does not throw. Treating that as success returns empty bytes; the
+  adapter maps it to `error:'blocked'` → `unsafe_prompt`.
+- **There is no server-side letterbox-blur fallback.** The cutover draft spec
+  cited one as Titan's safety net; that behaviour is the *frontend's*, and
+  `routes/cover-images.ts` simply returns an error when outpaint fails. Plan
+  accordingly — a Titan quality regression surfaces as a failed request, not a
+  degraded image.
+
+### Before flipping `IMAGE_PROVIDER=bedrock`
+
+Run `scripts/images/verify-titan-image.ts`. It checks model availability in
+the configured region, the 16:9 size mapping, and — most importantly — renders
+a deterministic red-subject probe that detects inverted mask polarity
+automatically rather than leaving it to eyeballing. Needs `bedrock:InvokeModel`
+on the Titan model for the gateway task role.
 
 ---
 
@@ -1267,6 +1407,9 @@ Use these PATs with the GitHub REST API (`api.github.com`) for all PR and deploy
 
 | Date | Change | VTID |
 |------|--------|------|
+| 2026-08-05 | **Amazon Titan Image Generator — build 3 of the 4 that gate a GCP shutdown**, and the only one Claude cannot cover at all (Imagen generates images; no Anthropic model does). New `providers/titan-image.ts` behind `IMAGE_PROVIDER=vertex\|bedrock` (**default `vertex` — deploying this flips nothing**), see §2d. **Found a second Imagen consumer the cutover changelog had missed:** `intent-cover-service.ts` does plain text-to-image alongside `cover-image-outpaint.ts`'s outpainting — a Titan build covering only outpainting would have left AI cover generation silently broken on shutdown. Both are now wired (`TEXT_IMAGE` / `OUTPAINTING`). Three Titan constraints handled explicitly: (1) **Titan accepts only fixed width/height pairs and 1600x900 is not one** — `nearestTitanSize()` maps to 1280x720 and weights **aspect above area**, because satisfying 16:9 with a square would letterbox the subject invisibly; the outpaint path upscales back. (2) **Mask polarity is inverted vs Imagen and is UNVERIFIED** — white=generate for Imagen, black=generate for Titan; backwards means the *subject* is regenerated and the margins kept, a plausible-looking but totally wrong image. Env-overridable via `TITAN_OUTPAINT_MASK_POLARITY` so it can be corrected without a redeploy; mask resized with `kernel:'nearest'` to stay two-tone. (3) **Titan isn't offered in every region** — `AWS_TITAN_IMAGE_REGION` is its own var rather than inheriting eu-central-1. Also: Titan reports content-policy blocks in an `error` field **on a 200**, not by throwing. **Correction to the draft spec:** it cited an "existing letterbox-blur fallback" as Titan's safety net — that is the *frontend's* old behaviour; `routes/cover-images.ts` just returns an error, so there is no server-side safety net. `scripts/images/verify-titan-image.ts` checks region/model, the size mapping, and detects inverted mask polarity via a deterministic red-subject probe. 16 new tests; full suite 620/620 suites, 12105 passed. | VTID-03497 |
+| 2026-08-05 | **Bedrock adapter: vision + forced tool-calling — build 2 of the 4 that gate a GCP shutdown.** Removes the blanket `images/tools not supported` rejection in `bedrockAdapter` (§2b). Bedrock speaks the same Anthropic Messages API wire shape, so images become content blocks and `tools`/`forceTool` become `tools` + `tool_choice`, mirrored line-for-line from `anthropicAdapter` so the two stay diffable; `tool_use` responses surface as `AdapterResult.toolCall`. This is the piece `anthropic-vision-client.ts` (Shorts auto-metadata) needed — images **and** a forced `emit_short_metadata` call, the exact combination previously rejected. **Two latent bugs found and fixed while building, both silent:** (1) `tools` was on `BedrockInvokeRequest` but never serialized into the body — passing tools produced a plain completion with no tool call and no error; (2) text was read from `content[0].text`, which is **empty when a forced `tool_use` block is first**, so it would have returned empty text on every vision call. Also moved `BEDROCK_ROLE_ARN`/region reads from module-load to call-time, so setting the var on a task def no longer needs a process restart (and can be tested). Text-only calls still send a plain string `content`, byte-identical to VTID-03403. Still dormant until `BEDROCK_ROLE_ARN` is set and an operator points a stage at `'bedrock'` — deploying this changes no routing. 9 new tests; full suite 619/619 suites, 12089 passed. | VTID-03496 |
+| 2026-08-05 | **Amazon Polly TTS provider — build 1 of the 4 that gate a GCP shutdown.** New `services/tts/polly.ts` + `services/tts/tts-provider.ts` seam; all 4 Google Cloud TTS synthesis call sites route through it, selected by `TTS_PROVIDER=google\|polly` (**default `google` — deploying this flips nothing**). See §2c. Three Polly divergences that are NOT cosmetic: (1) **Polly has no Serbian voice in any engine** — `sr` is a live locale (§13b), so `resolvePollyVoice('sr')` returns null and falls back to Google rather than substituting English; with GCP gone, Serbian TTS has no provider at all, an unresolved shutdown blocker. (2) **Polly PCM is 8k/16k only, not 24k** — `synthesizeGreetingBridgeAudioPcm()` now returns `{audioB64, sampleRateHz}` and the `audio/pcm;rate=` mime is built from it; assuming 24kHz would play Polly audio 1.5× fast, audible to a user but invisible to a bytes-came-back test. (3) **No `speakingRate` field** — rate becomes SSML `<prosody>`, forcing XML-escaping (plain text kept at rate 1.0). Polly Russian is standard-engine only. Fallback polly→google is always logged; `TTS_POLLY_STRICT=true` disables it for shutdown rehearsals. The admin voice-preview route takes an explicit `provider:'polly'` param and deliberately ignores `TTS_PROVIDER` so previews can't lie; the Cloud-TTS debug route stays Google-only by design. **Voice table and the Serbian gap were derived from Polly's documented voice list, not verified against the live API** — the building session had no AWS credentials; confirm via `describe-voices` before flipping. 18 new tests. | VTID-03495 |
 | 2026-08-04 | **Finished the job the row below started: `psql` from GitHub Actions is now gone from this repo entirely.** VTID-03485/03486 found that the Supabase network allow-list makes `psql "$SUPABASE_DB_URL"` unusable from Actions and converted two workflows; the other six were left broken. All six are now migrated, and they split into two classes that need genuinely different answers. **(a) Read-only health checks** (`ALERT-WELCOME-GREETING-HEALTH`, `SMOKE-WELCOME-GREETING`, `MORNING-SYSTEM-HEALTH-CHECK`) → PostgREST RPCs, same pattern as VTID-03486: two new `service_role`-only SECURITY DEFINER functions (`ci_welcome_greeting_health`, `ci_system_health`) in migration `20260804100000`. The morning check's five separate psql steps collapse into one step with two RPC calls, same five report rows. **(b) Migration runners** (`RUN-MIGRATION`, `RUN-STAGING-MIGRATION`, `VTID-02409-BOOTSTRAP`) apply migration FILES — arbitrary DDL, which **PostgREST fundamentally cannot do**. The tempting shortcut, an RPC that `EXECUTE`s caller-supplied SQL, is a remote-DDL-execution endpoint on production and was deliberately NOT built. These use the **Supabase Management API** (`api.supabase.com`, a control-plane service not subject to the DB allow-list) via new `scripts/ci/apply-sql-via-management-api.sh`. **This requires a `SUPABASE_ACCESS_TOKEN` repo secret that does not exist yet — until someone adds it, those three fail immediately with an actionable message rather than silently.** The other five work today on existing secrets. Two traps worth keeping: (1) the script's `--single-transaction` (replacing `psql -1`) **skips wrapping when the file already contains its own `BEGIN`** — a nested `BEGIN` is only a warning, but the file's own `COMMIT` would then close the outer transaction early and the rest would run unprotected, silently losing the atomicity the flag exists to give. (2) `RUN-STAGING-MIGRATION`'s HARD GUARD (the prod-block that refuses to run if the target isn't staging) validated `STAGING_SUPABASE_DB_URL`; switching the apply step to `STAGING_SUPABASE_URL` would have left the secret that *actually* selects the target project unchecked — the guard was retargeted, not just carried over. **Strong suspicion worth investigating separately: a dead `RUN-MIGRATION` is a very plausible cause of VTID-03486's 103 declared-but-absent tables** — the canonical way to apply a migration in CI could not connect, so migrations were applied by hand, which also explains why recorded versions never match file versions. Also noted: CLAUDE.md §3's `vtid_ledger` table lists `claimed_until`, but the real column is `claim_expires_at` (+ `claim_started_at`). | VTID-03492 |
 | 2026-08-04 | **The two VTID-03480 follow-ups: make a fail-soft failure loud, and catch never-applied migrations.** (1) `orb-session-state.ts` now tracks read/write/clear outcomes in-process. Instrumentation sits inside the three helpers rather than at the ~25 call sites, so nothing has to opt in and nothing can bypass it. Loudness is rationed deliberately: three consecutive failures before an op counts degraded (one blip is not news), a single grep-able `ORB_SESSION_STATE_UNHEALTHY` line on the healthy→unhealthy transition rather than per failure (§6's "repetition ≠ signal"), and re-log at most every 15 min. A missing relation is treated as conclusive on the *first* occurrence — that is the VTID-03480 signature, not a transient. One real behaviour change: a read that errors is now distinguished from a read that finds no row; both still return `null` to the caller (fail-soft contract intact), but only the latter counts as healthy — the old code could not tell "first session for this user" from "table is gone". New admin-gated `GET /api/v1/admin/orb-session-state-health` returns 503 when unhealthy so an uptime check alarms without parsing the body, plus `ALERT-ORB-SESSION-STATE-HEALTH.yml` (daily) which asserts the relation exists, that writes land when there was real traffic, and that no ack reports `ok:false`. (2) `MIGRATION-DRIFT-CHECK.yml` + `scripts/ci/check-migration-drift.cjs`. **The literal ask — "every migration file has a matching applied version" — turned out to be unimplementable here, and the reason matters:** the repo's 377 distinct file-version prefixes and the 330 rows in `supabase_migrations.schema_migrations` **overlap by 2**. Migrations reach this database by several routes (dashboard SQL editor, MCP `apply_migration`, direct psql) and most record a *fresh* timestamp instead of the file's own version — applying the VTID-03480 migration (file `20260606000000…`) on 08-03 was recorded as version `20260803202122`. Version bookkeeping is simply not a record of what ran, so that check would have been red on day one with ~375 false positives and switched off within a day. The check instead asserts the property that actually caught VTID-03480: if a migration declares `CREATE TABLE x`, then `x` must exist. **This immediately found that VTID-03480 was not a one-off — 103 tables are declared by migrations and absent from production**, including three this very file documents as canonical (`products_catalog` and `services_catalog` in §3's Core Tables, `relationship_signals` in §14's relationship-graph diagram). None are dropped by a later migration; their SQL simply never ran. Recorded in `scripts/ci/migration-drift-baseline.json` so CI fails only on **new** drift — a visible backlog to shrink, not an amnesty. (3) **Every `psql`-from-GitHub-Actions health check in this repo is dead and has been for at least 6 days.** Both new workflows were first built on the established `psql "$SUPABASE_DB_URL"` pattern; the drift job failed on its first CI run with `FATAL: (EADDRNOTALLOWED) address not in tenant allow_list` — the Supabase project has a **network allow-list and GitHub runner IPs are not on it** (they differ per run, so allow-listing them is not practical). `ALERT-WELCOME-GREETING-HEALTH.yml` has failed *every* scheduled run since at least 07-29 with the identical error, and the other workflows on the session's "known-chronic failures, don't chase" list are the same 8 files that reference `SUPABASE_DB_URL` — they are not flaky, they are structurally unable to connect. Shipping this follow-up on that transport would have produced a detector that cannot run: the exact failure mode VTID-03480 is about. Both workflows now go over **PostgREST/HTTPS** (a separate edge service, not subject to the DB allow-list) using the `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE` secrets that already exist, via two `service_role`-only SECURITY DEFINER RPCs (`ci_schema_inventory`, `ci_orb_session_state_health`) in migration `20260804080000`. **The remaining 6 psql workflows are still broken and were left alone — that needs its own VTID.** One subtlety worth keeping: `ci_schema_inventory` must match on `relkind IN ('r','p')`, not `'r'` alone — `'p'` is a partitioned parent (`memory_audit_log` is one, and a migration declares it), and filtering to `'r'` reported it as missing. Caught by a 509-vs-510 count mismatch against `information_schema`. | VTID-03485, VTID-03486 |
 | 2026-08-03 | **`orb_session_state` never existed in production — four ORB features were silently dead for ~2 months.** Investigating a live report of ORB voice failing on mobile, every session was found to emit `orb.session.audio_ready.acked` with `ok:false`. That `ok` is not the client's readiness — it is the return of `writeOrbSessionState()`, and the write was failing because `relation "orb_session_state" does not exist`. Migration `20260606000000_DEV_COMHU_0503_orb_session_state.sql` was authored but never applied (its own header: "Not executed from the sandbox"); the applied-migrations list jumps `20260605…` → `20260609…`. Because every helper in `orb-session-state.ts` fails soft by design (reads → `null`, writes → `{ok:false}`, never throws), nothing surfaced: the **audio-ready handshake** (greeting fell back to a blind 3s timer and could be spoken before the client could play it — the silent-ORB symptom), **close/reopen continuity**, the **pending autopilot CTA**, and **wake-brief opener rotation** were all inert. Applied the migration to prod; `audio_ready.acked` flipped `ok:false` → `ok:true` on the next live session with **no redeploy**, confirming the code had always been calling it correctly. Session telemetry that made this findable: 29 sessions ended `expired_ttl` at ~32 min with `turn_count:0` and `audio_in_chunks:0` while `audio_out` climbed normally — the model spoke, the user never heard it, so nobody ever replied. **Lesson worth keeping:** a fail-soft table with no health check is undetectable — `ok:false` in a payload nobody alerts on is not detection. Documented in `DATABASE_SCHEMA.md`. | VTID-03480 |
