@@ -2353,6 +2353,45 @@ const VERTEX_BOOTSTRAP_CACHE = new Map<string, { at: number; value: {
 const VERTEX_BOOTSTRAP_CACHE_TTL_MS = 5 * 60_000;
 const VERTEX_BOOTSTRAP_CACHE_MAX_ENTRIES = 500;
 
+// VTID-03504: in-flight de-dupe for the legacy bootstrap, mirroring the fix in
+// `vitana-brain-cache.ts`. VERTEX_BOOTSTRAP_CACHE is a read-through cache that
+// is only WRITTEN once the work finishes, so N concurrent starts for the same
+// user all miss, all run the full fetch, and all compete — a textbook cache
+// stampede. The ORB's own reconnect loop generates exactly that traffic shape.
+// Keyed identically to the cache (tenant|user) so the two agree on identity.
+const VERTEX_BOOTSTRAP_INFLIGHT = new Map<string, Promise<{
+  contextPack?: ContextPack;
+  contextInstruction?: string;
+  latencyMs: number;
+  skippedReason?: string;
+}>>();
+
+// VTID-03504: upper bound on a single caller's wait. The underlying build is
+// NOT cancelled on timeout — it runs to completion and populates the cache, so
+// the retry that follows lands on a warm entry instead of starting a third
+// copy. What is bounded is how long a caller sits on it: an unbounded await
+// here is what let a degraded bootstrap hold the greeting for ~120s while the
+// widget's 8s budget had long since expired and fired another reconnect.
+const BOOTSTRAP_CALLER_TIMEOUT_MS = Number(process.env.ORB_BOOTSTRAP_CALLER_TIMEOUT_MS || 6000);
+
+/** VTID-03504: the "no memory available" shape, used as a fail-soft fallback. */
+function emptyMemoryContext(
+  userId: string,
+  tenantId: string,
+  error: string,
+): Awaited<ReturnType<typeof fetchMemoryContextWithIdentity>> {
+  return {
+    ok: false,
+    user_id: userId,
+    tenant_id: tenantId,
+    items: [],
+    summary: '',
+    formatted_context: '',
+    fetched_at: new Date().toISOString(),
+    error,
+  };
+}
+
 function storeVertexBootstrapCache(key: string, value: {
   contextPack?: ContextPack;
   contextInstruction?: string;
@@ -2393,6 +2432,51 @@ export async function buildBootstrapContextPack(
     return { ...cached.value, latencyMs: Date.now() - startTime };
   }
 
+  // VTID-03504: join an identical build already running for this user rather
+  // than starting a second one.
+  let work = VERTEX_BOOTSTRAP_INFLIGHT.get(bootstrapCacheKey);
+  if (work) {
+    console.log(`[VTID-03504] Bootstrap JOIN in-flight for session ${sessionId} (key ${bootstrapCacheKey})`);
+  } else {
+    work = buildBootstrapContextPackUncached(identity, sessionId, bootstrapCacheKey);
+    VERTEX_BOOTSTRAP_INFLIGHT.set(bootstrapCacheKey, work);
+    // Release the slot on settle, guarded on identity so a newer build that
+    // has already claimed the key is never evicted by an older one finishing.
+    const release = () => {
+      if (VERTEX_BOOTSTRAP_INFLIGHT.get(bootstrapCacheKey) === work) {
+        VERTEX_BOOTSTRAP_INFLIGHT.delete(bootstrapCacheKey);
+      }
+    };
+    work.then(release, release);
+  }
+
+  // Bound the caller's wait, not the build (see BOOTSTRAP_CALLER_TIMEOUT_MS).
+  // Degrading to "no memory preamble" is a real loss of personalization, and
+  // it is still strictly better than the alternative this replaces: a session
+  // that never greets at all because the client gave up first.
+  return withBootstrapTimeout(
+    work,
+    { latencyMs: Date.now() - startTime, skippedReason: 'bootstrap_timeout' },
+    `bootstrap(${sessionId})`,
+    BOOTSTRAP_CALLER_TIMEOUT_MS,
+  );
+}
+
+async function buildBootstrapContextPackUncached(
+  identity: SupabaseIdentity,
+  sessionId: string,
+  bootstrapCacheKey: string
+): Promise<{
+  contextPack?: ContextPack;
+  contextInstruction?: string;
+  latencyMs: number;
+  skippedReason?: string;
+}> {
+  const startTime = Date.now();
+  // The exported wrapper already rejected a missing tenant/user; restate it
+  // here so this function narrows the same way on its own.
+  const userId = identity.user_id as string;
+  const tenantId = identity.tenant_id as string;
   try {
     // VTID-01224: identity-scoped memory fetch so each user gets their own memory.
     // VTID-RECENT-TURNS: fetch the 3 most recent raw user utterances in parallel
@@ -2400,18 +2484,42 @@ export async function buildBootstrapContextPack(
     // hallucinating from aggregated facts.
     // BOOTSTRAP-HISTORY-AWARE-TIMELINE: also fetch the User Context Profile
     // (recent activity, routines, preferences) so the voice ORB is history-aware.
+    // VTID-03504: the profiler leg has capped its own stages since
+    // BOOTSTRAP-ORB-CONNECT-HANG, but these two had no bound at all — so the
+    // build's worst case was "however long Supabase takes", which under load
+    // was measured at 120s. Both fail soft to an empty result, which the
+    // formatting below already handles (it is the same shape a user with no
+    // memory items produces).
     const profilerEnabled = process.env.PROFILER_IN_ORB_INSTRUCTION !== 'false';
     const [memoryContext, recentTurns, profileResult] = await Promise.all([
-      fetchMemoryContextWithIdentity(
-        { user_id: identity.user_id, tenant_id: identity.tenant_id },
-        LIVE_CONTEXT_CONFIG.MAX_MEMORY_ITEMS
+      withBootstrapTimeout(
+        // The inner .catch keeps the ORIGINAL failure message on `error`,
+        // which becomes the caller-visible `skippedReason` below. Letting
+        // withBootstrapTimeout's own catch swallow it would report every
+        // memory failure as a bare 'timeout' and lose the cause — a
+        // regression this repo's tests correctly refuse ("never silence
+        // errors"). Only a genuine timeout says so.
+        fetchMemoryContextWithIdentity(
+          { user_id: userId, tenant_id: tenantId },
+          LIVE_CONTEXT_CONFIG.MAX_MEMORY_ITEMS
+        ).catch((err: any) => emptyMemoryContext(userId, tenantId, `error: ${err?.message || err}`)),
+        emptyMemoryContext(userId, tenantId, `error: bootstrap.fetchMemoryContext timed out after ${WS_BOOTSTRAP_STAGE_TIMEOUT_MS}ms`),
+        'bootstrap.fetchMemoryContext',
       ),
-      fetchRecentOrbUserTurns(
-        { user_id: identity.user_id, tenant_id: identity.tenant_id },
-        3
+      // Recent turns are one optional block of the preamble, so a failure here
+      // degrades to "no recent-turns block" rather than failing the whole
+      // bootstrap — matching how the profiler leg has always behaved. The
+      // cause is still logged by withBootstrapTimeout.
+      withBootstrapTimeout(
+        fetchRecentOrbUserTurns(
+          { user_id: userId, tenant_id: tenantId },
+          3
+        ),
+        [] as Awaited<ReturnType<typeof fetchRecentOrbUserTurns>>,
+        'bootstrap.fetchRecentTurns',
       ),
       profilerEnabled
-        ? getUserContextSummary(identity.user_id, { tenantId: identity.tenant_id })
+        ? getUserContextSummary(userId, { tenantId })
             .catch((err: any) => {
               console.warn(`[UserContextProfiler] voice bootstrap fetch failed: ${err?.message || err}`);
               return { summary: '', version: 0, cached: false, warnings: [] };

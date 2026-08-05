@@ -606,6 +606,64 @@ describe('buildBootstrapContextPack', () => {
     expect(mockFetchMemoryContextWithIdentity).toHaveBeenCalledTimes(1); // no second fetch
     expect(second.contextInstruction).toBe(first.contextInstruction);
   });
+
+  // VTID-03504 — the cache above only helps AFTER a build finishes. Concurrent
+  // starts (an ORB reconnect loop) all miss it and used to each run a full
+  // build; on prod that compounded to a 119.7s bootstrap.
+  it('collapses concurrent builds for the same identity into ONE fetch (no stampede)', async () => {
+    let release!: (v: unknown) => void;
+    mockFetchMemoryContextWithIdentity.mockImplementation(
+      () => new Promise((r) => { release = r as (v: unknown) => void; }),
+    );
+    mockFetchRecentOrbUserTurns.mockResolvedValue([]);
+    mockFormatRecentTurnsBlock.mockReturnValue('');
+    mockGetUserContextSummary.mockResolvedValue({ summary: '', version: 0, cached: false, warnings: [] });
+
+    const id = identity('u-stampede', 't-stampede');
+    const inflight = Array.from({ length: 8 }, (_, i) =>
+      buildBootstrapContextPack(id, `session-storm-${i}`),
+    );
+    // Let the 8 calls reach the fetch before any of them can settle.
+    await Promise.resolve();
+    expect(mockFetchMemoryContextWithIdentity).toHaveBeenCalledTimes(1);
+
+    release({ ok: true, items: [{ id: '1' }], formatted_context: 'Shared build.' });
+    const results = await Promise.all(inflight);
+    expect(mockFetchMemoryContextWithIdentity).toHaveBeenCalledTimes(1);
+    expect(results.every((r) => r.contextInstruction?.includes('Shared build.'))).toBe(true);
+  });
+
+  it('does not collapse concurrent builds for DIFFERENT identities', async () => {
+    mockFetchMemoryContextWithIdentity.mockResolvedValue({
+      ok: true, items: [{ id: '1' }], formatted_context: 'Per-user.',
+    });
+    mockFetchRecentOrbUserTurns.mockResolvedValue([]);
+    mockFormatRecentTurnsBlock.mockReturnValue('');
+    mockGetUserContextSummary.mockResolvedValue({ summary: '', version: 0, cached: false, warnings: [] });
+
+    await Promise.all([
+      buildBootstrapContextPack(identity('u-a', 't-shared'), 'session-a'),
+      buildBootstrapContextPack(identity('u-b', 't-shared'), 'session-b'),
+    ]);
+    expect(mockFetchMemoryContextWithIdentity).toHaveBeenCalledTimes(2);
+  });
+
+  it('releases the in-flight slot after a failed build so the next call retries', async () => {
+    mockFetchMemoryContextWithIdentity.mockRejectedValueOnce(new Error('supabase down'));
+    mockFetchRecentOrbUserTurns.mockResolvedValue([]);
+    mockFormatRecentTurnsBlock.mockReturnValue('');
+    mockGetUserContextSummary.mockResolvedValue({ summary: '', version: 0, cached: false, warnings: [] });
+
+    const id = identity('u-retry', 't-retry');
+    const failed = await buildBootstrapContextPack(id, 'session-fail');
+    expect(failed.skippedReason).toContain('supabase down');
+
+    mockFetchMemoryContextWithIdentity.mockResolvedValueOnce({
+      ok: true, items: [{ id: '1' }], formatted_context: 'Recovered.',
+    });
+    const retried = await buildBootstrapContextPack(id, 'session-retry');
+    expect(retried.contextInstruction).toContain('Recovered.');
+  });
 });
 
 // =============================================================================

@@ -1,0 +1,117 @@
+name: Alert — ORB Context Bootstrap Latency
+
+# VTID-03504.
+#
+# WHY THIS EXISTS: on 2026-08-05 a user's ORB sat on "Verbinden..." and then
+# looped "Verbindung wird wiederhergestellt...". Server-side,
+# `orb.live.context.bootstrap` had run a 2.0s p50 all day and then went to a
+# 17.4s p50 / 119.7s max between 14:14 and 14:22 UTC — one user's reconnects
+# stacking context builds on each other until the builds starved each other,
+# which also degraded two uninvolved users on the same gateway task. Nothing
+# alarmed. The incident was found only because someone photographed a phone.
+#
+# The fix (single-flight de-dupe + TTL reuse + bounded caller waits) removes
+# the amplification. This workflow is the part that makes a recurrence
+# *noticed* — VTID-03480's standing lesson: a degradation nobody alerts on is
+# not detected, it is merely recorded.
+#
+# TRANSPORT: PostgREST over HTTPS, deliberately NOT `psql "$SUPABASE_DB_URL"`.
+# GitHub runner IPs are not on the Supabase project's network allow-list, so
+# every psql-based check in this repo is structurally unable to connect
+# (VTID-03485/03492). This one reads `oasis_events` directly — no RPC and no
+# migration needed, because the events table is already exposed to
+# `service_role` through PostgREST.
+#
+# Thresholds are deliberately loose. Healthy is ~2s; the client's own start
+# budget is 8s. Alerting at a 6s p50 catches real degradation with room to
+# spare, and the max-latency check catches the tail that actually breaks a
+# session even when the median still looks fine.
+
+on:
+  schedule:
+    - cron: '35 * * * *'   # hourly, staggered off the daily health alerts
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  # p50 over the window above which the ORB is considered degraded (ms).
+  P50_THRESHOLD_MS: '6000'
+  # Any single bootstrap above this is past the widget's 8s start budget (ms).
+  MAX_THRESHOLD_MS: '12000'
+  # Lookback window.
+  WINDOW_MINUTES: '90'
+
+jobs:
+  latency:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fetch recent ORB context-bootstrap latencies
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
+        run: |
+          set -euo pipefail
+          if [ -z "${SUPABASE_URL:-}" ] || [ -z "${SUPABASE_SERVICE_ROLE:-}" ]; then
+            echo "::error::SUPABASE_URL / SUPABASE_SERVICE_ROLE secrets are not set on this repo."
+            exit 1
+          fi
+          SINCE=$(date -u -d "-${WINDOW_MINUTES} minutes" +%Y-%m-%dT%H:%M:%SZ)
+          echo "Window start (UTC): $SINCE"
+          HTTP=$(curl -sS -o events.json -w '%{http_code}' -G \
+            "${SUPABASE_URL%/}/rest/v1/oasis_events" \
+            --data-urlencode 'select=created_at,metadata' \
+            --data-urlencode 'topic=eq.orb.live.context.bootstrap' \
+            --data-urlencode "created_at=gte.$SINCE" \
+            --data-urlencode 'order=created_at.desc' \
+            --data-urlencode 'limit=1000' \
+            -H "apikey: $SUPABASE_SERVICE_ROLE" \
+            -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE")
+          if [ "$HTTP" != "200" ]; then
+            echo "::error::oasis_events query returned HTTP $HTTP"
+            head -c 500 events.json || true
+            exit 1
+          fi
+
+      - name: Evaluate
+        run: |
+          set -euo pipefail
+          node -e '
+            const fs = require("fs");
+            const rows = JSON.parse(fs.readFileSync("events.json", "utf8"));
+            const lat = rows
+              .map((r) => Number(r?.metadata?.latency_ms))
+              .filter((n) => Number.isFinite(n))
+              .sort((a, b) => a - b);
+
+            // No traffic is not health, but it is also not a failure — the ORB
+            // is simply idle (this is common at night). Say so and pass, rather
+            // than alarming on an empty window every off-hours run.
+            if (lat.length === 0) {
+              console.log(`No orb.live.context.bootstrap events in the last ${process.env.WINDOW_MINUTES}m — ORB idle, nothing to assess.`);
+              process.exit(0);
+            }
+
+            const pct = (p) => lat[Math.min(lat.length - 1, Math.floor(lat.length * p))];
+            const p50 = pct(0.5), p95 = pct(0.95), max = lat[lat.length - 1];
+            const p50Limit = Number(process.env.P50_THRESHOLD_MS);
+            const maxLimit = Number(process.env.MAX_THRESHOLD_MS);
+            const overMax = lat.filter((n) => n > maxLimit).length;
+
+            console.log(`n=${lat.length}  p50=${p50}ms  p95=${p95}ms  max=${max}ms  over-${maxLimit}ms=${overMax}`);
+
+            const problems = [];
+            if (p50 > p50Limit) problems.push(`p50 ${p50}ms exceeds ${p50Limit}ms`);
+            // A single slow build can be an unlucky cold start. A repeated one
+            // is the stampede signature — that is what VTID-03504 fixed, so
+            // require more than one before calling it.
+            if (overMax > 1) problems.push(`${overMax} builds exceeded ${maxLimit}ms (widget start budget is 8000ms)`);
+
+            if (problems.length) {
+              console.log("::error::ORB context bootstrap is degraded — " + problems.join("; "));
+              console.log("Check: is FEATURE_ORB_BRAIN_CACHE_ENV still staging+prod on the gateway task def (GET /api/v1/admin/feature-flags), and are single-flight JOINs appearing in the logs ([ORB-BRAIN-CACHE] JOIN / [VTID-03504] Bootstrap JOIN)? See VTID-03504.");
+              process.exit(1);
+            }
+            console.log("ORB context bootstrap latency healthy.");
+          '
