@@ -255,7 +255,78 @@ user with read access to `dms:Describe*`, `ecs:Describe*`/`List*`,
 item. The GitHub MCP connection also needs to be up in order to attach
 `exafyltd/vitana-infra`.
 
-## 6. Governance note (recorded, not re-litigated)
+## 6. GCP spend — where the money actually goes (added 2026-08-05)
+
+Investigated because "shut down GCP to save cost" was raised as an urgent
+action. **Conclusion: the cost is idle always-on Cloud Run standby, not AI, and
+it can be removed without shutting anything down.**
+
+### Measured: AI spend is negligible
+
+Every LLM call logs `cost_estimate_usd` (`oasis_events`, topic
+`llm.call.completed`):
+
+| Window | Vertex AI spend |
+|---|---:|
+| Last 30 days | **$5.42** |
+| Last 90 days | **$15.72** |
+| All-time (logging since 2026-01-23) | **$19.95** |
+
+~$0.18/day, and 94% is `dev-autopilot-planning` on `gemini-3.1-pro-preview` —
+internal tooling, not user traffic. **The entire AI/voice provider-replacement
+programme (Nova Sonic, Polly, Bedrock, Titan) targets roughly $5/month of
+spend.** Cost is not a valid argument for accelerating it.
+
+Caveat: this covers the text LLM router path only. Vertex **Live** (ORB voice)
+does not emit `llm.call.completed`; `orb.live.upstream.usage` exists but is
+Nova-only, so the legacy Vertex Live voice path is **unmeasured** — it is not
+included above and is not known to be zero.
+
+### Estimated: always-on Cloud Run standby
+
+Services pinned `min-instances>=1`, billing 24/7 regardless of traffic:
+
+| Service | Config | Est. $/mo | Load-bearing? |
+|---|---|---:|---|
+| `orb-agent` | 2 vCPU / 4 GiB, min=1 | ~$150 | **YES** — the livekit-agents worker connects *outbound* to LiveKit Cloud; at min=0 it deregisters and receives no job dispatches at all. Do not change. |
+| `gateway` (GCP) | min=1, max=1 | ~$70–150 | **NO** — zero production traffic since 2026-07-27. Addressed by VTID-03491. |
+| `gateway-staging` | 1 vCPU / 1 GiB, min=1 | ~$69 | **YES** — BOOTSTRAP-ORB-STAGING-WARM: cold `/orb/live/session/start` measured ~9.4s vs the widget's 8s abort. |
+| `worker-runner` | min=1 | ~$65 | **YES** — VTID-01206, constant polling for the canonical pipeline. |
+| Memorystore | `PROVISION-MEMORYSTORE.yml`, min=2 | ~$35–70 | Not assessed. |
+
+Basis: us-central1 always-allocated CPU at $0.000024/vCPU-s and
+$0.0000025/GiB-s → ~$62/mo per always-on vCPU, ~$6.50/mo per GiB. **These are
+estimates derived from deploy config plus public list pricing, not billing
+data** — no GCP billing access was available. `gateway` and `worker-runner`
+CPU/memory are not pinned in config, so those rows carry the widest error bars.
+The authoritative figure is GCP Console → Billing → Reports, grouped by service.
+
+### Action taken
+
+Only `gateway` had a warm instance with no justification behind it, so only
+`gateway` was changed (VTID-03491). The other three are each load-bearing for a
+documented, previously-diagnosed reason and were deliberately left alone.
+
+**This is a config change — it takes effect on the next GCP gateway deploy and
+does not retroactively resize the running service.** To realise the saving
+immediately, an operator with `gcloud` access must run:
+
+```
+gcloud run services update gateway --min-instances=0 \
+  --region=us-central1 --project=lovable-vitana-vers1
+```
+
+### Bottom line on the shutdown question
+
+Scaling the unjustified standby to zero captures most of the saving while GCP
+stays fully intact and re-activatable. A full GCP shutdown saves perhaps
+another $100–200/month beyond that, and costs: ORB voice for the ~70–85% of
+sessions still on the Vertex path, all TTS (5 Google Cloud TTS call sites, no
+Polly), all cover-image generation (Vertex Imagen, no Titan adapter), five
+GCP-canonical services, and the only rollback from a cutover whose data layer
+is still unverified (§1). That is a poor trade at this price point.
+
+## 7. Governance note (recorded, not re-litigated)
 
 `vtid_ledger` shows VTID-03398 and VTID-03420 as `status=rejected` /
 `terminal_outcome=failed`. Per the prior session's tracing this is a false
