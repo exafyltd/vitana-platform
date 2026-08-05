@@ -141,6 +141,26 @@ jobs:
 
       - name: CSP Governance Gate (scan changed files)
         run: |
+          # VTID-03505 — DO NOT un-indent the `python3 - <<PY` heredoc below.
+          #
+          # A `run: |` block scalar ends at the first line indented less than
+          # the block, so a heredoc body written at column 0 (which is what
+          # bash normally wants) silently TERMINATES the YAML scalar. GitHub
+          # then fails to parse the whole workflow:
+          #
+          #   could not find expected ':'  ... line 160, column 1
+          #
+          # That is a *startup* failure, not a step failure: the run completes
+          # in the same second it starts with ZERO jobs and a bare red X, and
+          # nothing in the Actions UI says why. This file sat broken that way
+          # for at least 30 consecutive runs on every branch including main,
+          # so PR governance was silently unenforced the entire time.
+          #
+          # Indentation is safe: YAML strips the block's common indentation
+          # before bash ever sees the script, so the `PY` terminator still
+          # arrives at column 0 and the heredoc works. `<<PY` is deliberately
+          # UNQUOTED so bash expands $p and $f into the Python source.
+          #
           # Scan only changed files for forbidden patterns
           PATTERNS=(
             "<script(?![^>]*\\bsrc=)"
@@ -156,13 +176,13 @@ jobs:
             [ -f "$f" ] || continue
             for p in "${PATTERNS[@]}"; do
               if python3 - <<PY
-import re,sys
-p=re.compile(r'''$p''', re.IGNORECASE)
-data=open("$f","rb").read()
-try: s=data.decode("utf-8", errors="ignore")
-except: s=str(data)
-sys.exit(0 if not p.search(s) else 1)
-PY
+          import re,sys
+          p=re.compile(r'''$p''', re.IGNORECASE)
+          data=open("$f","rb").read()
+          try: s=data.decode("utf-8", errors="ignore")
+          except: s=str(data)
+          sys.exit(0 if not p.search(s) else 1)
+          PY
               then : ; else
                 echo "REJECTED: CSP pattern hit in $f :: /$p/"
                 FAIL=1
