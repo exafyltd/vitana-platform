@@ -205,6 +205,35 @@ jobs:
           # it cannot silently drift back to a stale "staging-only" value
           # left on the task definition from before.
           #
+          # VTID-03513: resolve the FULL secret ARNs before rewriting the task
+          # definition. ECS `valueFrom` requires the complete ARN INCLUDING the
+          # six-character random suffix Secrets Manager appends
+          # (…jwt-secret-AbCdEf). A name-only ARN is accepted by the CLI's
+          # --secret-id but NOT by ECS, which reports it as
+          # ResourceNotFoundException — indistinguishable at a glance from a
+          # secret that genuinely does not exist. Constructing these by string
+          # concatenation is therefore wrong; they must be looked up.
+          #
+          # `describe-secret` also fails the job loudly if a secret is missing,
+          # which is strictly better than registering a task def that cannot
+          # start and discovering it 10 minutes later via a stabilise timeout.
+          for pair in \
+            "SEC_JWT:vitana/supabase/prod/jwt-secret" \
+            "SEC_ANON:vitana/supabase/prod/anon-key" \
+            "SEC_GEMINI:vitana/gateway/staging/google-gemini-api-key" \
+            "SEC_OPENAI:vitana/gateway/staging/openai-api-key" \
+            "SEC_DEEPSEEK:vitana/gateway/staging/deepseek-api-key" ; do
+            VAR="${pair%%:*}"; NAME="${pair#*:}"
+            ARN=$(aws secretsmanager describe-secret --secret-id "$NAME" --query ARN --output text 2>/dev/null || true)
+            if [ -z "$ARN" ] || [ "$ARN" = "None" ]; then
+              echo "::error::Secret '$NAME' not found in Secrets Manager (region ${{ env.TARGET_AWS_REGION }}). Refusing to register a task definition that cannot start."
+              exit 1
+            fi
+            printf -v "$VAR" '%s' "$ARN"
+            export "$VAR"
+            echo "  resolved $NAME"
+          done
+
           # VTID-03513: the `secrets` block is now UPSERTED here, not cloned
           # blindly from the previous task definition.
           #
@@ -245,7 +274,9 @@ jobs:
                  --arg NOVA_ENABLED "$NOVA_SONIC_ENABLED" \
                  --arg NOVA_USERS "$NOVA_SONIC_CANARY_USER_IDS" \
                  --arg NOVA_TENANTS "$NOVA_SONIC_CANARY_TENANT_IDS" \
-                 --arg ASM "arn:aws:secretsmanager:${{ env.TARGET_AWS_REGION }}:472838866351:secret:" '
+                 --arg SEC_JWT "$SEC_JWT" --arg SEC_ANON "$SEC_ANON" \
+                 --arg SEC_GEMINI "$SEC_GEMINI" --arg SEC_OPENAI "$SEC_OPENAI" \
+                 --arg SEC_DEEPSEEK "$SEC_DEEPSEEK" '
                 .containerDefinitions[0].image = $IMG
                 | .containerDefinitions[0].environment |=
                     ( [ .[] | select(.name | IN("GIT_COMMIT_SHA","COMMIT_SHA","BUILD_INFO_MARKER",
@@ -265,12 +296,12 @@ jobs:
                     ( [ .[] | select(.name | IN("SUPABASE_JWT_SECRET","SUPABASE_ANON_KEY",
                                                 "GOOGLE_GEMINI_API_KEY","GEMINI_API_KEY",
                                                 "OPENAI_API_KEY","DEEPSEEK_API_KEY") | not) ]
-                      + [ {name:"SUPABASE_JWT_SECRET",   valueFrom:($ASM + "vitana/supabase/prod/jwt-secret")},
-                          {name:"SUPABASE_ANON_KEY",     valueFrom:($ASM + "vitana/supabase/prod/anon-key")},
-                          {name:"GOOGLE_GEMINI_API_KEY", valueFrom:($ASM + "vitana/gateway/staging/google-gemini-api-key")},
-                          {name:"GEMINI_API_KEY",        valueFrom:($ASM + "vitana/gateway/staging/google-gemini-api-key")},
-                          {name:"OPENAI_API_KEY",        valueFrom:($ASM + "vitana/gateway/staging/openai-api-key")},
-                          {name:"DEEPSEEK_API_KEY",      valueFrom:($ASM + "vitana/gateway/staging/deepseek-api-key")} ] )
+                      + [ {name:"SUPABASE_JWT_SECRET",   valueFrom:$SEC_JWT},
+                          {name:"SUPABASE_ANON_KEY",     valueFrom:$SEC_ANON},
+                          {name:"GOOGLE_GEMINI_API_KEY", valueFrom:$SEC_GEMINI},
+                          {name:"GEMINI_API_KEY",        valueFrom:$SEC_GEMINI},
+                          {name:"OPENAI_API_KEY",        valueFrom:$SEC_OPENAI},
+                          {name:"DEEPSEEK_API_KEY",      valueFrom:$SEC_DEEPSEEK} ] )
                 | del(.taskDefinitionArn, .revision, .status, .requiresAttributes,
                       .compatibilities, .registeredAt, .registeredBy, .deregisteredAt)')
           NEW_ARN=$(aws ecs register-task-definition --cli-input-json "$NEW_DEF" \
