@@ -42,10 +42,29 @@ on:
         description: 'Guided Journey curriculum version'
         required: false
         default: 'v2'
+  repository_dispatch:
+    # NO LANGUAGE LEFT BEHIND, for content that does not live in git.
+    #
+    # The curriculum (254 topics) and the Navigator catalog are edited in the
+    # admin UI and published to the database, so no push event ever fires and
+    # git-based propagation is blind to them.
+    #
+    # NOT YET WIRED FROM THE GATEWAY. This trigger exists and works; nothing
+    # currently posts to it. Until the checklist-publish path does, the
+    # scheduled run below is the only automatic mechanism, so "edit one session
+    # -> every language follows" is next-morning rather than immediate. Wiring
+    # it is a one-call change at the publish site:
+    #   POST /repos/exafyltd/vitana-platform/dispatches
+    #   { "event_type": "db-i18n-source-changed" }
+    # with a PAT carrying actions:write. Recorded here rather than claimed as
+    # done, because a propagation guarantee that only half exists is worse than
+    # one that is honestly scoped.
+    types: [db-i18n-source-changed]
   schedule:
-    # Daily parity check. Catches the case this VTID exists for: German source
-    # content is edited, every translation silently becomes stale, and coverage
-    # keeps reporting 100% because the rows are all still there.
+    # Safety net behind the dispatch above, and the only mechanism for content
+    # changed by a route that forgets to fire it. Auto-propagates: a scheduled
+    # run that merely REPORTS drift leaves the languages behind until a human
+    # notices, which is the failure this whole system exists to remove.
     - cron: '0 5 * * *'
 
 permissions:
@@ -75,11 +94,28 @@ jobs:
         working-directory: services/gateway
         run: npm ci --no-audit --no-fund
 
-      # Scheduled runs are a read-only gate: report drift, never translate and
-      # never write. A cron job that quietly spends money on LLM calls and
-      # mutates production content is not a health check.
-      - name: Parity check (scheduled)
-        if: github.event_name == 'schedule'
+      # Automatic propagation for DB-backed content.
+      #
+      # This DOES spend on LLM calls and DOES write to the database, which is a
+      # deliberate reversal of the original read-only-cron stance. The reason:
+      # a check that only reports drift makes "no language left behind" depend
+      # on someone reading a cron log. Only units whose source_sha actually
+      # moved are translated, so a no-change run costs nothing and a one-topic
+      # edit costs one topic — the incremental bill is bounded by the edit, not
+      # by the catalog size, and that holds at 20+ languages.
+      - name: Propagate to every language (scheduled / dispatched)
+        if: github.event_name == 'schedule' || github.event_name == 'repository_dispatch'
+        working-directory: services/gateway
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
+          GOOGLE_GEMINI_API_KEY: ${{ secrets.GOOGLE_GEMINI_API_KEY }}
+        run: npm run i18n:db:seed -- --all --apply
+
+      # Runs after the propagation above, so it asserts the END state. Red here
+      # means at least one language is still behind and the run must be re-run.
+      - name: Verify no language is left behind
+        if: github.event_name == 'schedule' || github.event_name == 'repository_dispatch'
         working-directory: services/gateway
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
@@ -119,7 +155,7 @@ jobs:
       # the same locale then drains only the remainder, because the source-hash
       # stamps mark everything already done as current.
       - name: Commit artifacts
-        if: always() && github.event_name == 'workflow_dispatch'
+        if: always() && github.event_name != 'pull_request'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
