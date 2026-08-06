@@ -87,7 +87,16 @@ describe('Nova item 6: close-reason taxonomy', () => {
 
     expect(controller).toContain("'ws_session_cleanup'");
     expect(controller).toContain("'user_stop'");
-    expect(orbLive).toContain("'zombie_sweep_max_age'");
+    // VTID-03510: the zombie sweep used to have exactly one cause
+    // ('zombie_sweep_max_age' — 30-minute age). It now distinguishes three,
+    // and the upstream close code carries whichever fired via
+    // `zombie_sweep_${closeReason}`. The taxonomy this test guards therefore
+    // got FINER, not coarser, so assert all three by name rather than
+    // loosening the check to a prefix match.
+    expect(orbLive).toContain('`zombie_sweep_${closeReason}`');
+    expect(orbLive).toContain("'expired_ttl'");
+    expect(orbLive).toContain("'idle_no_engagement'");
+    expect(orbLive).toContain("'idle_timeout'");
     expect(orbLive).toContain("'superseded_by_new_session'");
     expect(orbLive).toContain("'client_disconnect'");
     expect(orbLive).toContain("'user_stop'");

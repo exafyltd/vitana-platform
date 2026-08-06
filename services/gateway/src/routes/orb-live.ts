@@ -1166,16 +1166,85 @@ export type { ClientContext } from '../orb/live/types';
 
 // VTID-SESSION-LEAK-FIX: Periodic sweep to purge zombie sessions.
 // Safety net in case SSE/WS close handlers miss cleanup (e.g. abrupt process kill).
-// Runs every 5 minutes, removes sessions older than 30 minutes.
+//
+// VTID-03510 — REAP ON IDLE, NOT ON AGE.
+// ---------------------------------------
+// The original sweep keyed purely off `createdAt`: anything older than 30 min
+// was killed, regardless of whether anyone was talking. Since `liveSessions`
+// owns the UPSTREAM Gemini Live WebSocket, and Gemini Live bills per second of
+// open stream, an abandoned session kept billing for the full 30 min (plus up
+// to one 5-min sweep interval).
+//
+// Measured 2026-08-06 over 7 days, from `vtid.live.session.stop`:
+//
+//   close reason                 sessions  avg turns  avg mins  % of billed mins
+//   expired_ttl                       132        0.0      32.4             97.5%
+//   superseded_by_new_session          60        0.1       1.6              2.3%
+//   (normal close)                     33        1.3       0.4              0.3%
+//
+// i.e. **97.5% of all billed Live minutes were sessions nobody ever spoke to**,
+// held open for half an hour each. Real conversation was 12 minutes a WEEK.
+//
+// `lastActivity` already existed on the session and is bumped on every inbound
+// audio chunk and tool call — the sweep simply never read it. There is even an
+// idle-based sweep already, but it runs over `wsClientSessions` (the client
+// socket map), not `liveSessions` (the upstream stream). That gap is the bug.
+//
+// Deliberately NOT keyed on audio-OUT: a model monologuing to a user who left
+// must still be reaped. That is exactly the VTID-03480 signature (model speaks,
+// user never hears it), and keeping the stream alive for it burns money while
+// hiding the fault. The distinct `idle_no_engagement` reason below keeps that
+// case *more* visible, not less — it separates "user walked away" from the old
+// undifferentiated `expired_ttl` bucket.
+const MAX_SESSION_AGE_MS = 30 * 60 * 1000;
+/** No inbound audio and no turns ever — user opened ORB and walked away. */
+const IDLE_NO_ENGAGEMENT_MS = Number(process.env.ORB_IDLE_NO_ENGAGEMENT_MS || 5 * 60 * 1000);
+/** Had a real conversation, then went quiet. More generous — they may be thinking. */
+const IDLE_AFTER_ENGAGEMENT_MS = Number(process.env.ORB_IDLE_AFTER_ENGAGEMENT_MS || 10 * 60 * 1000);
+
+/**
+ * VTID-03510: decide whether an idle live session should be reaped, and why.
+ *
+ * Extracted as a pure function (same rationale as VTID-03502's
+ * `shouldFallbackToVertexOnNovaClose`) because both directions are expensive:
+ * too aggressive cuts off a user mid-thought, too lax keeps paying for silence.
+ * Returning the REASON rather than a boolean is what keeps the saving
+ * measurable afterwards — collapsing these back into `expired_ttl` would make
+ * the fix invisible in exactly the telemetry that revealed the problem.
+ *
+ * @returns the close reason, or null to keep the session alive.
+ */
+export function classifyIdleSession(args: {
+  ageMs: number;
+  idleMs: number;
+  turnCount: number;
+  audioInChunks: number;
+}): 'expired_ttl' | 'idle_no_engagement' | 'idle_timeout' | null {
+  // Absolute backstop first, and it keeps its original reason string so any
+  // existing dashboard filtering on `expired_ttl` still means what it did.
+  if (args.ageMs > MAX_SESSION_AGE_MS) return 'expired_ttl';
+  const engaged = args.turnCount > 0 || args.audioInChunks > 0;
+  if (!engaged && args.idleMs > IDLE_NO_ENGAGEMENT_MS) return 'idle_no_engagement';
+  if (engaged && args.idleMs > IDLE_AFTER_ENGAGEMENT_MS) return 'idle_timeout';
+  return null;
+}
+
+// Sweep every 60s, not every 5 min: a 5-minute idle budget checked on a
+// 5-minute interval yields up to 10 minutes of actual billed idle.
 setInterval(() => {
-  const MAX_SESSION_AGE_MS = 30 * 60 * 1000;
   const now = Date.now();
   let purged = 0;
   for (const [sid, s] of liveSessions) {
-    if (now - s.createdAt.getTime() > MAX_SESSION_AGE_MS) {
+    const closeReason = classifyIdleSession({
+      ageMs: now - s.createdAt.getTime(),
+      idleMs: now - s.lastActivity.getTime(),
+      turnCount: s.turn_count,
+      audioInChunks: s.audioInChunks,
+    });
+    if (closeReason) {
       // Nova item 6: this is the abandoned-session sweep, not a user action —
       // distinguish it from user_stop / client_disconnect in telemetry.
-      if (s.upstreamWs) { try { s.upstreamWs.close(1000, 'zombie_sweep_max_age'); } catch (_) { /* ignore */ } }
+      if (s.upstreamWs) { try { s.upstreamWs.close(1000, `zombie_sweep_${closeReason}`); } catch (_) { /* ignore */ } }
       // BOOTSTRAP-ORB-1007-AUDIT: emit session.stop so abandoned sessions
       // (client closed tab / mobile killed app mid-conversation) show up in
       // OASIS instead of just disappearing. Prior behaviour left a silent
@@ -1185,7 +1254,12 @@ setInterval(() => {
         user_id: s.identity?.user_id || null,
         tenant_id: s.identity?.tenant_id || null,
         transport: s.clientWs ? 'websocket' : 'sse',
-        reason: 'expired_ttl',
+        reason: closeReason,
+        // VTID-03510: idle_ms makes the saving auditable — it is the billed
+        // silence this sweep stopped paying for. Without it the only way to
+        // tell a 5-minute reap from a 32-minute one is duration_ms, which
+        // also includes the useful part of the session.
+        idle_ms: now - s.lastActivity.getTime(),
         audio_in_chunks: s.audioInChunks,
         audio_out_chunks: s.audioOutChunks,
         duration_ms: Date.now() - s.createdAt.getTime(),
@@ -1211,8 +1285,8 @@ setInterval(() => {
       purged++;
     }
   }
-  if (purged > 0) console.log(`[VTID-SESSION-TTL] Purged ${purged} expired sessions (remaining: ${liveSessions.size})`);
-}, 5 * 60 * 1000);
+  if (purged > 0) console.log(`[VTID-03510] Reaped ${purged} idle/expired live sessions (remaining: ${liveSessions.size})`);
+}, 60 * 1000);
 
 // =============================================================================
 // VTID-SESSION-LIMIT: Enforce single active ORB session per user
