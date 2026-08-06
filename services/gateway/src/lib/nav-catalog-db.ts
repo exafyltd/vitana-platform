@@ -30,6 +30,7 @@
 import type { NavCatalogEntry, LangCode, NavCategory } from './navigation-catalog';
 import { NAVIGATION_CATALOG, getContent, resolveEffectiveRoles } from './navigation-catalog';
 import { getSupabase } from './supabase';
+import { notifyDbI18nSourceChanged } from '../services/db-i18n/notify-source-changed';
 
 // =============================================================================
 // Types (shape of the rows coming back from Supabase)
@@ -372,6 +373,20 @@ export function invalidateNavCatalogCache(): void {
   refreshNavCatalogCache().catch(err => {
     console.warn(`[VTID-NAV-02] background refresh after invalidate failed: ${err?.message}`);
   });
+
+  // VTID-03522: the same event, propagated one step further out. This function
+  // already means "catalog content changed, push it downstream" — it pushes to
+  // the in-process cache; the other languages need the identical signal, and
+  // nav_catalog_i18n has no push event of its own to hang it on.
+  //
+  // Hooked HERE rather than at the four admin write handlers on purpose. Those
+  // four each already remember to call this; a fifth write path added later
+  // would have to remember two things instead of one, and the one it forgot
+  // would fail silently — a locale simply never updating looks identical to a
+  // locale with nothing to update. That is the exact failure this whole system
+  // exists to remove, so the notification rides the call that cannot be
+  // forgotten without also visibly breaking the admin UI's own freshness.
+  void notifyDbI18nSourceChanged('nav-catalog', 'admin-write');
 }
 
 /**

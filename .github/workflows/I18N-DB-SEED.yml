@@ -49,16 +49,18 @@ on:
     # admin UI and published to the database, so no push event ever fires and
     # git-based propagation is blind to them.
     #
-    # NOT YET WIRED FROM THE GATEWAY. This trigger exists and works; nothing
-    # currently posts to it. Until the checklist-publish path does, the
-    # scheduled run below is the only automatic mechanism, so "edit one session
-    # -> every language follows" is next-morning rather than immediate. Wiring
-    # it is a one-call change at the publish site:
-    #   POST /repos/exafyltd/vitana-platform/dispatches
-    #   { "event_type": "db-i18n-source-changed" }
-    # with a PAT carrying actions:write. Recorded here rather than claimed as
-    # done, because a propagation guarantee that only half exists is worse than
-    # one that is honestly scoped.
+    # WIRED FROM THE GATEWAY (VTID-03522) —
+    # services/gateway/src/services/db-i18n/notify-source-changed.ts, called
+    # from publishChecklist()/rollbackChecklist() and from
+    # invalidateNavCatalogCache() (the choke point all four nav_catalog admin
+    # writes already pass through).
+    #
+    # The emitter coalesces bursts into one dispatch per 30s window and is
+    # fire-and-forget: it can never fail the publish that triggered it. When it
+    # DOES fail — GitHub outage, unset GITHUB_SAFE_MERGE_TOKEN — it logs
+    # DB_I18N_DISPATCH_FAILED and the change is picked up by the scheduled run
+    # below instead. So the guarantee degrades from immediate to next-morning,
+    # never to silence. Disable with DB_I18N_AUTO_PROPAGATE=off.
     types: [db-i18n-source-changed]
   schedule:
     # Safety net behind the dispatch above, and the only mechanism for content
