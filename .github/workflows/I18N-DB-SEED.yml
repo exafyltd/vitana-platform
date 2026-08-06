@@ -1,4 +1,5 @@
-name: i18n DB content seed
+name: I18N-DB-SEED
+run-name: 'Seed DB content i18n [VTID: VTID-03515] locale=${{ inputs.locale || ''scheduled-check'' }} (${{ github.ref_name }})'
 
 # VTID-03515 — bring a language to full parity on DB-backed user-visible content
 # (`nav_catalog_i18n`, `journey_checklist_translations`).

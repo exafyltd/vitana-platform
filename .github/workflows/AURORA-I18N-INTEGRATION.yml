@@ -1,4 +1,5 @@
-name: aurora db-i18n integration
+name: AURORA-I18N-INTEGRATION
+run-name: 'Aurora db-i18n SQL against real Postgres [VTID: VTID-03517] (${{ github.ref_name }})'
 
 # VTID-03517 — runs the Aurora adapter's SQL against a real PostgreSQL.
 #
