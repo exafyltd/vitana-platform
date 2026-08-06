@@ -34,3 +34,4 @@ Thumbs.db
 .test-venv/
 
 __pycache__/
+mgmt-response.json
