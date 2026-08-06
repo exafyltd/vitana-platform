@@ -1,1 +1,1 @@
-{"message":"Failed to run sql query: ERROR:  42P01: relation \"definitely_not_a_table_xyz\" does not exist\nLINE 1: select * from definitely_not_a_table_xyz;\n                      ^\n"}
+[]

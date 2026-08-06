@@ -21,7 +21,36 @@ unappliability with **100% accuracy**: all 8 flagged migrations failed.
 
 ---
 
-## A — APPLY THESE (clean + code actually queries them)
+## APPLIED 2026-08-05 (VTID-03514)
+
+All 15 group-A migrations were applied to production, each dry-run immediately
+beforehand (state changes as earlier ones land) and each wrapped in a single
+transaction.
+
+**Baseline: 103 → 61 missing tables. 42 recovered. Live public tables: 510 → 554.**
+
+Safety check performed before applying: every `DELETE FROM` in the group is
+*inside a function body* (idempotency logic on the migration's own new tables),
+and every `ALTER … DROP` is `DROP CONSTRAINT IF EXISTS` on its own new
+`shop_*` tables. The group is purely additive to production.
+
+The 64 `autopilot_logs` call sites across 27 files are now backed by a real
+table for the first time.
+
+### What remains — and it is not homogeneous
+
+| disposition | migrations | tables | action |
+|---|---|---|---|
+| `VERIFY` | 16 | 35 | apply cleanly, but no code references them — decide apply vs delete the `CREATE` |
+| `INSPECT` | 8 | 22 | **cannot apply** — `CREATE TABLE IF NOT EXISTS` masks a diverged existing table |
+| `APPLY` | 2 | 4 | clean + code-referenced, but failed dry-run earlier for unrelated reasons — recheck |
+
+Do not bulk-apply the remainder. The `INSPECT` group in particular needs each
+migration's schema reconciled against what production actually has.
+
+---
+
+## A — APPLY THESE (as analysed, before the apply) (clean + code actually queries them)
 
 Highest value: live code references these tables today, so every query against
 them is currently failing or dead.
