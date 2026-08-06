@@ -52,6 +52,11 @@
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';
+import {
+  assertAuroraWritesAllowed,
+  withAuroraClient,
+  AURORA_DB_I18N_SCHEMA,
+} from './aurora-client';
 
 export class DbI18nRepositoryError extends Error {
   constructor(
@@ -76,25 +81,32 @@ export function resolveDbI18nTarget(env: NodeJS.ProcessEnv = process.env): DbI18
 }
 
 /**
- * Why `aurora` cannot serve a write yet. Exported so the seeding CLI can print
- * the reason instead of a stack trace, and so a test can assert the wording
- * still names the real blocker rather than a generic "not implemented".
+ * What Aurora still needs before it can be the target, as of VTID-03517.
+ *
+ * The gateway now HAS a Postgres driver and this adapter is fully implemented,
+ * so the old "cannot execute at all" blocker is gone. What remains is the part
+ * that is not a code problem: Aurora is still the DMS replication target of
+ * Supabase and the migration plan's Phase 0 gate is open. Reads and
+ * reconciliation are safe now; writes are gated by `AURORA_I18N_WRITES`.
+ *
+ * Exported so the CLI can print it, and so a test can assert the wording keeps
+ * naming the real remaining risk rather than decaying into "not implemented".
  */
-export const AURORA_TARGET_BLOCKER = [
-  'DB_I18N_TARGET=aurora is wired but cannot execute yet.',
+export const AURORA_READINESS_NOTE = [
+  'Aurora is implemented and reachable, but is NOT yet a safe write target.',
   '',
-  '  1. The gateway has no PostgreSQL driver (no `pg` in services/gateway/package.json).',
-  '     It speaks HTTP to PostgREST; Aurora does not implement that protocol.',
-  '  2. Aurora is the DMS replication TARGET of Supabase. A direct write is the',
-  '     dual-writer hazard rejected as "Option C" in',
-  '     docs/SUPABASE-TO-AURORA-MIGRATION-PLAN.md.',
-  '  3. That plan\'s Phase 0 gate is open: ~154,000 silently-dropped DMS row',
-  '     applies (VTID-03419) are still unreconciled.',
+  '  - Aurora is the DMS replication TARGET of Supabase. Writing to it while',
+  '    replication is running makes the gateway a second writer over replicated',
+  '    rows — the "Option C" hazard in docs/SUPABASE-TO-AURORA-MIGRATION-PLAN.md,',
+  '    and the reason oasis-projector was excluded from the VTID-03419 cutover.',
+  '  - That plan\'s Phase 0 gate is open: ~154,000 silently-dropped DMS row',
+  '    applies are still unreconciled, so Aurora holds a partial copy of',
+  '    unknown quality.',
   '',
-  'Unblocking is Phase 0 + B1 of that plan, not a change to this file.',
-  'Until then the pipeline still produces and validates the translation',
-  'artifacts; only the apply step is blocked. Re-run apply with',
-  'DB_I18N_TARGET=supabase to land content on the database production reads.',
+  'READS and `--verify` reconciliation need no flag and are useful today —',
+  'reconciling these two tables is a concrete slice of the Phase 0 exit',
+  'criteria. WRITES require AURORA_I18N_WRITES=enabled, which should only be',
+  'set once DMS for these tables is stopped or Aurora has been promoted.',
 ].join('\n');
 
 // -----------------------------------------------------------------------------
@@ -175,6 +187,41 @@ function chunked<T>(rows: T[], size = CHUNK): T[][] {
   const out: T[][] = [];
   for (let i = 0; i < rows.length; i += size) out.push(rows.slice(i, i + size));
   return out;
+}
+
+interface SnapshotTopic {
+  topicId: string;
+  displayLabel?: string;
+  shortDescription?: string;
+  explanation?: {
+    whatItIs?: string;
+    userBenefit?: string;
+    whenToUse?: string;
+    tryThis?: string;
+  };
+}
+
+/**
+ * Published-snapshot JSON → source units. Shared by both adapters on purpose:
+ * the snapshot is the same JSONB either way, and two copies of this mapping
+ * would drift into two different `source_sha` values for identical content —
+ * which the audit would then report as an entire locale being stale.
+ */
+function snapshotToSourceUnits(snapshot: unknown[], versionId: string): SourceUnit[] {
+  return (snapshot as SnapshotTopic[])
+    .filter((t) => t && typeof t.topicId === 'string')
+    .map((t) => ({
+      key: t.topicId,
+      fields: {
+        display_label: t.displayLabel ?? '',
+        short_description: t.shortDescription ?? '',
+        explanation_what_it_is: t.explanation?.whatItIs ?? '',
+        explanation_user_benefit: t.explanation?.userBenefit ?? '',
+        explanation_when_to_use: t.explanation?.whenToUse ?? '',
+        explanation_try_this: t.explanation?.tryThis ?? '',
+      },
+      meta: { source_version_id: versionId },
+    }));
 }
 
 class SupabaseDbI18nRepository implements DbI18nRepository {
@@ -295,70 +342,205 @@ class SupabaseDbI18nRepository implements DbI18nRepository {
     if (error) throw new DbI18nRepositoryError(error.message, 'checklistSource');
     const row = data as { id: string; snapshot: unknown } | null;
     if (!row || !Array.isArray(row.snapshot)) return [];
-
-    type Snap = {
-      topicId: string;
-      displayLabel?: string;
-      shortDescription?: string;
-      explanation?: {
-        whatItIs?: string;
-        userBenefit?: string;
-        whenToUse?: string;
-        tryThis?: string;
-      };
-    };
-
-    return (row.snapshot as Snap[])
-      .filter((t) => t && typeof t.topicId === 'string')
-      .map((t) => ({
-        key: t.topicId,
-        fields: {
-          display_label: t.displayLabel ?? '',
-          short_description: t.shortDescription ?? '',
-          explanation_what_it_is: t.explanation?.whatItIs ?? '',
-          explanation_user_benefit: t.explanation?.userBenefit ?? '',
-          explanation_when_to_use: t.explanation?.whenToUse ?? '',
-          explanation_try_this: t.explanation?.tryThis ?? '',
-        },
-        meta: { source_version_id: row.id },
-      }));
+    return snapshotToSourceUnits(row.snapshot, row.id);
   }
 }
 
 /**
- * The Aurora seat. Every method fails with the same explicit blocker text.
+ * VTID-03517 — the real Aurora implementation, over a genuine Postgres
+ * connection (see `aurora-client.ts` for why that is notable).
  *
- * This class exists rather than a `throw` at the factory so the shape of the
- * eventual implementation is fixed now: whoever lands Phase 0 + a Postgres
- * driver replaces the bodies here and touches nothing else in the pipeline.
+ * Reads and reconciliation work as soon as `AURORA_DATABASE_URL` is set.
+ * WRITES are gated separately on `AURORA_I18N_WRITES=enabled`, because
+ * reaching Aurora is not permission to write to it while DMS is still
+ * replicating these tables into it — see `assertAuroraWritesAllowed`.
  */
 class AuroraDbI18nRepository implements DbI18nRepository {
   readonly target = 'aurora' as const;
 
-  private fail(operation: string): never {
-    throw new DbI18nRepositoryError(AURORA_TARGET_BLOCKER, operation);
+  constructor(private readonly env: NodeJS.ProcessEnv) {}
+
+  private async query<R>(
+    operation: string,
+    sql: string,
+    params: unknown[] = [],
+  ): Promise<R[]> {
+    try {
+      return await withAuroraClient(
+        async (c) => (await c.query(sql, params as never[])).rows as R[],
+        this.env,
+      );
+    } catch (err) {
+      throw new DbI18nRepositoryError(
+        err instanceof Error ? err.message : String(err),
+        operation,
+      );
+    }
+  }
+
+  /** Create the two content tables + registry if Aurora does not have them. */
+  async ensureSchema(): Promise<void> {
+    assertAuroraWritesAllowed('create schema', this.env);
+    await this.query('ensureSchema', AURORA_DB_I18N_SCHEMA);
   }
 
   async listSupportedLocales(): Promise<SupportedLocaleRow[]> {
-    this.fail('listSupportedLocales');
+    return this.query<SupportedLocaleRow>(
+      'listSupportedLocales',
+      `SELECT code, english_name, informal_hint, status
+         FROM public.supported_locales ORDER BY code`,
+    );
   }
-  async upsertNavCatalogI18n(): Promise<number> {
-    this.fail('upsertNavCatalogI18n');
+
+  /**
+   * One statement per batch via `unnest`, not one per row. 291 nav entries x 8
+   * locales is 2,328 round trips otherwise, and a partially-applied locale is
+   * exactly the half-written state the pipeline is built to avoid.
+   */
+  async upsertNavCatalogI18n(rows: NavCatalogI18nRow[]): Promise<number> {
+    assertAuroraWritesAllowed('upsert nav_catalog_i18n', this.env);
+    let written = 0;
+    for (const batch of chunked(rows)) {
+      await this.query(
+        'upsertNavCatalogI18n',
+        `INSERT INTO public.nav_catalog_i18n
+           (catalog_id, lang, title, description, when_to_visit, source_sha, updated_at)
+         SELECT t.*, now() FROM unnest(
+           $1::uuid[], $2::text[], $3::text[], $4::text[], $5::text[], $6::text[]
+         ) AS t(catalog_id, lang, title, description, when_to_visit, source_sha)
+         ON CONFLICT (catalog_id, lang) DO UPDATE SET
+           title         = EXCLUDED.title,
+           description   = EXCLUDED.description,
+           when_to_visit = EXCLUDED.when_to_visit,
+           source_sha    = EXCLUDED.source_sha,
+           updated_at    = now()`,
+        [
+          batch.map((r) => r.catalog_id),
+          batch.map((r) => r.lang),
+          batch.map((r) => r.title),
+          batch.map((r) => r.description),
+          batch.map((r) => r.when_to_visit),
+          batch.map((r) => r.source_sha ?? null),
+        ],
+      );
+      written += batch.length;
+    }
+    return written;
   }
-  async upsertChecklistTranslations(): Promise<number> {
-    this.fail('upsertChecklistTranslations');
+
+  async upsertChecklistTranslations(rows: ChecklistTranslationRow[]): Promise<number> {
+    assertAuroraWritesAllowed('upsert journey_checklist_translations', this.env);
+    let written = 0;
+    for (const batch of chunked(rows)) {
+      await this.query(
+        'upsertChecklistTranslations',
+        `INSERT INTO public.journey_checklist_translations
+           (topic_id, locale, display_label, short_description,
+            explanation_what_it_is, explanation_user_benefit,
+            explanation_when_to_use, explanation_try_this,
+            source_version_id, source_sha, updated_at)
+         SELECT t.*, now() FROM unnest(
+           $1::text[], $2::text[], $3::text[], $4::text[], $5::text[],
+           $6::text[], $7::text[], $8::text[], $9::uuid[], $10::text[]
+         ) AS t(topic_id, locale, display_label, short_description,
+                explanation_what_it_is, explanation_user_benefit,
+                explanation_when_to_use, explanation_try_this,
+                source_version_id, source_sha)
+         ON CONFLICT (topic_id, locale) DO UPDATE SET
+           display_label            = EXCLUDED.display_label,
+           short_description        = EXCLUDED.short_description,
+           explanation_what_it_is   = EXCLUDED.explanation_what_it_is,
+           explanation_user_benefit = EXCLUDED.explanation_user_benefit,
+           explanation_when_to_use  = EXCLUDED.explanation_when_to_use,
+           explanation_try_this     = EXCLUDED.explanation_try_this,
+           source_version_id        = EXCLUDED.source_version_id,
+           source_sha               = EXCLUDED.source_sha,
+           updated_at               = now()`,
+        [
+          batch.map((r) => r.topic_id),
+          batch.map((r) => r.locale),
+          batch.map((r) => r.display_label),
+          batch.map((r) => r.short_description),
+          batch.map((r) => r.explanation_what_it_is),
+          batch.map((r) => r.explanation_user_benefit),
+          batch.map((r) => r.explanation_when_to_use),
+          batch.map((r) => r.explanation_try_this),
+          batch.map((r) => r.source_version_id ?? null),
+          batch.map((r) => r.source_sha ?? null),
+        ],
+      );
+      written += batch.length;
+    }
+    return written;
   }
-  async navCatalogCoverage(): Promise<CoverageEntry[]> {
-    this.fail('navCatalogCoverage');
+
+  async navCatalogCoverage(lang: string): Promise<CoverageEntry[]> {
+    const rows = await this.query<{ catalog_id: string; source_sha: string | null }>(
+      'navCatalogCoverage',
+      `SELECT catalog_id::text AS catalog_id, source_sha
+         FROM public.nav_catalog_i18n WHERE lang = $1`,
+      [lang],
+    );
+    return rows.map((r) => ({ key: r.catalog_id, source_sha: r.source_sha ?? null }));
   }
-  async checklistCoverage(): Promise<CoverageEntry[]> {
-    this.fail('checklistCoverage');
+
+  async checklistCoverage(locale: string): Promise<CoverageEntry[]> {
+    const rows = await this.query<{ topic_id: string; source_sha: string | null }>(
+      'checklistCoverage',
+      `SELECT topic_id, source_sha
+         FROM public.journey_checklist_translations WHERE locale = $1`,
+      [locale],
+    );
+    return rows.map((r) => ({ key: r.topic_id, source_sha: r.source_sha ?? null }));
   }
+
   async navCatalogSource(): Promise<SourceUnit[]> {
-    this.fail('navCatalogSource');
+    // COALESCE picks German, falling back to English only where no German row
+    // exists — same rule as the Supabase adapter, expressed as a join so it is
+    // one query rather than two plus a merge.
+    const rows = await this.query<{
+      catalog_id: string;
+      screen_id: string;
+      source_lang: string;
+      title: string;
+      description: string;
+      when_to_visit: string;
+    }>(
+      'navCatalogSource',
+      `SELECT c.id::text        AS catalog_id,
+              c.screen_id,
+              COALESCE(de.lang, en.lang)                   AS source_lang,
+              COALESCE(de.title, en.title, '')             AS title,
+              COALESCE(de.description, en.description, '') AS description,
+              COALESCE(de.when_to_visit, en.when_to_visit, '') AS when_to_visit
+         FROM public.nav_catalog c
+         LEFT JOIN public.nav_catalog_i18n de ON de.catalog_id = c.id AND de.lang = 'de'
+         LEFT JOIN public.nav_catalog_i18n en ON en.catalog_id = c.id AND en.lang = 'en'
+        WHERE c.is_active AND (de.catalog_id IS NOT NULL OR en.catalog_id IS NOT NULL)`,
+    );
+    return rows.map((r) => ({
+      key: r.catalog_id,
+      fields: {
+        title: r.title,
+        description: r.description,
+        when_to_visit: r.when_to_visit,
+      },
+      meta: { screen_id: r.screen_id, source_lang: r.source_lang },
+    }));
   }
-  async checklistSource(): Promise<SourceUnit[]> {
-    this.fail('checklistSource');
+
+  async checklistSource(curriculumVersion: string): Promise<SourceUnit[]> {
+    const rows = await this.query<{ id: string; snapshot: unknown }>(
+      'checklistSource',
+      `SELECT id::text AS id, snapshot
+         FROM public.journey_checklist_versions
+        WHERE curriculum_version = $1 AND is_current
+        LIMIT 1`,
+      [curriculumVersion],
+    );
+    const row = rows[0];
+    if (!row || !Array.isArray(row.snapshot)) return [];
+    return snapshotToSourceUnits(row.snapshot, row.id);
   }
 }
 
@@ -375,7 +557,7 @@ export function createDbI18nRepository(
   env: NodeJS.ProcessEnv = process.env,
 ): DbI18nRepository {
   const target = resolveDbI18nTarget(env);
-  if (target === 'aurora') return new AuroraDbI18nRepository();
+  if (target === 'aurora') return new AuroraDbI18nRepository(env);
   if (!client) {
     throw new DbI18nRepositoryError(
       'DB_I18N_TARGET=supabase but no Supabase client was supplied (check SUPABASE_URL + SUPABASE_SERVICE_ROLE).',

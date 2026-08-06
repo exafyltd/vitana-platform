@@ -131,29 +131,87 @@ hyphen is a word boundary. Length and idiom belong to the LLM audit pass.
 
 ---
 
-## The Aurora target
+## The Aurora target (VTID-03517)
 
 `DB_I18N_TARGET=supabase|aurora`, default `supabase`. All reads and writes go
 through `services/db-i18n/db-i18n-repository.ts`, following the B1 seam pattern
 from VTID-03498 — at cutover only that adapter changes, not the pipeline.
 
-**`aurora` is wired but cannot execute yet, and it throws rather than falling
-back.** Three independent reasons:
+The Aurora adapter is **fully implemented** over a real PostgreSQL connection.
+That is more notable than it sounds: `SUPABASE-TO-AURORA-MIGRATION-PLAN.md` §0
+records that the gateway had **no Postgres driver at all** — it speaks HTTP to
+PostgREST, so there was no connection to repoint. `aurora-client.ts` is that
+missing piece, scoped to these two surfaces rather than the whole 2,480-call-site
+estate, per that plan's own B1 sequencing.
 
-1. The gateway has **no PostgreSQL driver** in its dependency tree. It speaks
-   HTTP to PostgREST and never opens a Postgres connection. There is no
-   connection string to swap — see `SUPABASE-TO-AURORA-MIGRATION-PLAN.md` §0.
-2. Aurora is the **DMS replication target** of Supabase. Writing to it directly
-   is the dual-writer hazard that plan records as "Option C — the one to argue
-   against", and is why `oasis-projector` was excluded from VTID-03419.
-3. That plan's **Phase 0 gate is open**: ~154,000 silently-dropped DMS row
-   applies are still unreconciled, so Aurora holds a partial copy of unknown
-   quality.
+### Two flags, not one
 
-A quiet fallback would mean an operator who set `DB_I18N_TARGET=aurora` believes
-the seed landed in Aurora when it landed in Supabase — the same invisible-failure
-shape as VTID-03480's `ok:false`. Unblocking is Phase 0 + B1 of the migration
-plan, not a change to this pipeline.
+| Variable | Gates | Default |
+|---|---|---|
+| `AURORA_DATABASE_URL` | connectivity (writer endpoint) | unset → reads throw with a clear message |
+| `AURORA_I18N_WRITES` | **writes only** | unset → writes refused, reads still work |
+
+**Reaching Aurora is not permission to write to it.** These two tables are DMS
+replication targets from Supabase; a second writer over replicated rows is the
+"Option C" hazard that plan argues against, and the reason `oasis-projector` was
+excluded from VTID-03419. On top of that, Phase 0 is open — ~154,000
+silently-dropped DMS row applies, unreconciled — so Aurora holds a partial copy
+of unknown quality. Set `AURORA_I18N_WRITES=enabled` only once DMS for these
+tables is stopped, or Aurora has been promoted.
+
+Nothing falls back silently. An operator who sets `DB_I18N_TARGET=aurora` and
+gets a success must be able to trust that Aurora was written — the alternative
+is VTID-03480's `ok:false` shape.
+
+### `--verify` is a slice of the Phase 0 gate
+
+```bash
+npm run i18n:db:verify     # read-only on both sides, needs no write flag
+```
+
+Phase 0 requires "full row-count + checksum reconciliation, Supabase vs Aurora,
+per table" and "a re-runnable reconciliation job, not a one-time manual check".
+For these two tables this is that job: `source_sha` supplies the content
+checksum, so a row present on both sides but differing is reported as a
+mismatch rather than counted as present. Exits non-zero on any divergence.
+
+Both-NULL counts as agreement — two unstamped legacy rows are equally
+unverifiable, and flagging them would bury the real mismatches.
+
+### TLS
+
+`AURORA_CA_BUNDLE_PATH` → verify against the RDS CA bundle. This is the
+intended production setup. With nothing set, verification still happens against
+the system store, which **fails** for RDS — deliberately, because a specific
+certificate error tells an operator to install the bundle, whereas a silent
+downgrade tells them nothing. `AURORA_SSL_INSECURE=true` skips verification and
+warns on every pool construction.
+
+`sslmode=disable` is honoured **for loopback hosts only**. A local PostgreSQL
+has no TLS, and refusing that outright would make an adapter whose entire
+substance is SQL untestable against a real server — which means untested.
+Pointing it at a remote host with `sslmode=disable` throws.
+
+### Schema
+
+```bash
+DB_I18N_TARGET=aurora npm run i18n:db:seed -- --ensure-schema
+```
+
+Creates `supported_locales` and both content tables if absent. It deliberately
+does **not** create `nav_catalog` or `journey_checklist_versions` — those are
+platform tables owned by the wider migration, and a stub would produce an empty
+catalog that looks real.
+
+### Testing
+
+`test/db-i18n/aurora-integration.test.ts` runs the adapter's SQL against a real
+PostgreSQL and is **not mocked**. A mocked `pg` client confirms strings reached
+a fake; it cannot tell you the statement parses, that the `ON CONFLICT` target
+matches the primary key, or that array binding lines the columns up correctly —
+which is every mistake worth catching here. CI runs it against a `postgres:16`
+service container (`AURORA-I18N-INTEGRATION.yml`), with an explicit check that
+the suite did not skip, because a skipped suite is green.
 
 ---
 

@@ -19,13 +19,14 @@
     "nav:check": "tsx scripts/sync-nav-catalog-from-manifest.ts --check",
     "i18n:db:seed": "tsx src/scripts/seed-db-i18n.ts",
     "i18n:db:check": "tsx src/scripts/seed-db-i18n.ts --all-ga --check",
-    "smoke:orb-widget": "node ./scripts/orb-widget-stop-regression.mjs && node ./scripts/orb-widget-audio-playback-regression.mjs && node ./scripts/orb-widget-speaking-watchdog-regression.mjs && node ./scripts/orb-widget-greeting-unlock-regression.mjs && node ./scripts/orb-widget-no-startup-tts-regression.mjs && node ./scripts/orb-anon-wake-skip-regression.mjs"
+    "smoke:orb-widget": "node ./scripts/orb-widget-stop-regression.mjs && node ./scripts/orb-widget-audio-playback-regression.mjs && node ./scripts/orb-widget-speaking-watchdog-regression.mjs && node ./scripts/orb-widget-greeting-unlock-regression.mjs && node ./scripts/orb-widget-no-startup-tts-regression.mjs && node ./scripts/orb-anon-wake-skip-regression.mjs",
+    "i18n:db:verify": "tsx src/scripts/seed-db-i18n.ts --verify"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.90.0",
     "@aws-sdk/client-bedrock-runtime": "^3.1091.0",
-    "@aws-sdk/client-polly": "^3.1091.0",
     "@aws-sdk/client-ecs": "^3.1094.0",
+    "@aws-sdk/client-polly": "^3.1091.0",
     "@google-cloud/text-to-speech": "^5.5.0",
     "@google-cloud/vertexai": "^1.9.2",
     "@google/generative-ai": "^0.24.1",
@@ -48,6 +49,7 @@
     "marked": "^12.0.2",
     "node-fetch": "^3.3.2",
     "openai": "^6.34.0",
+    "pg": "^8.22.0",
     "rss-parser": "^3.13.0",
     "sanitize-html": "^2.17.3",
     "sharp": "^0.34.5",
@@ -63,6 +65,7 @@
     "@types/jest": "^29.5.11",
     "@types/js-yaml": "^4.0.9",
     "@types/node": "^20.10.5",
+    "@types/pg": "^8.20.4",
     "@types/sanitize-html": "^2.16.1",
     "@types/supertest": "^6.0.2",
     "@types/ws": "^8.5.12",

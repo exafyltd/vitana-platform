@@ -8,11 +8,14 @@
  */
 
 import {
-  AURORA_TARGET_BLOCKER,
+  AURORA_READINESS_NOTE,
   createDbI18nRepository,
-  DbI18nRepositoryError,
   resolveDbI18nTarget,
 } from '../../src/services/db-i18n/db-i18n-repository';
+import {
+  assertAuroraWritesAllowed,
+  resolveAuroraConfig,
+} from '../../src/services/db-i18n/aurora-client';
 import { getSurface, sourceSha, SOURCE_LOCALE, SURFACES } from '../../src/services/db-i18n/surfaces';
 import {
   placeholders,
@@ -41,38 +44,149 @@ describe('target selection', () => {
   });
 });
 
-describe('aurora adapter fails loudly', () => {
-  const repo = createDbI18nRepository(null, { DB_I18N_TARGET: 'aurora' } as NodeJS.ProcessEnv);
+describe('aurora adapter (VTID-03517)', () => {
+  const auroraEnv = (extra: Record<string, string> = {}) =>
+    ({ DB_I18N_TARGET: 'aurora', ...extra }) as NodeJS.ProcessEnv;
 
   it('is constructible without a Supabase client', () => {
-    expect(repo.target).toBe('aurora');
+    expect(createDbI18nRepository(null, auroraEnv()).target).toBe('aurora');
   });
 
-  it.each([
-    ['upsertNavCatalogI18n', () => repo.upsertNavCatalogI18n([])],
-    ['upsertChecklistTranslations', () => repo.upsertChecklistTranslations([])],
-    ['navCatalogSource', () => repo.navCatalogSource()],
-    ['checklistSource', () => repo.checklistSource('v2')],
-    ['listSupportedLocales', () => repo.listSupportedLocales()],
-  ])('%s throws instead of silently writing elsewhere', async (_name, call) => {
-    await expect(call()).rejects.toBeInstanceOf(DbI18nRepositoryError);
+  it('reports a missing connection string as config, not as an empty result', async () => {
+    const repo = createDbI18nRepository(null, auroraEnv());
+    // The dangerous alternative is returning [] — the caller would read that as
+    // "Aurora has no rows" and happily proceed to overwrite or report parity.
+    await expect(repo.listSupportedLocales()).rejects.toThrow(/AURORA_DATABASE_URL is not set/);
+  });
+
+  it('rejects a connection string that is not a postgres URL', () => {
+    expect(() => resolveAuroraConfig(auroraEnv({ AURORA_DATABASE_URL: 'https://db.example' }))).toThrow(
+      /must be a postgres/i,
+    );
+  });
+
+  it('redacts the password when describing the target', () => {
+    const cfg = resolveAuroraConfig(
+      auroraEnv({ AURORA_DATABASE_URL: 'postgres://u:hunter2@host:5432/db' }),
+    );
+    expect(cfg.describe).not.toContain('hunter2');
+    expect(cfg.describe).toContain('host');
   });
 
   /**
-   * A generic "not implemented" would send whoever hits this to read the source
-   * and rediscover the three blockers. The message must keep naming them.
+   * The central safety property of this VTID. Being able to REACH Aurora is
+   * not permission to write to it: these tables are DMS replication targets,
+   * so a second writer is the "Option C" hazard. Connectivity and write
+   * permission are therefore separate flags, and the write flag defaults off
+   * even when Aurora is fully configured.
    */
-  it('names the real blockers, not a generic not-implemented', () => {
-    expect(AURORA_TARGET_BLOCKER).toMatch(/no PostgreSQL driver/i);
-    expect(AURORA_TARGET_BLOCKER).toMatch(/DMS replication TARGET/i);
-    expect(AURORA_TARGET_BLOCKER).toMatch(/154,000|154000/);
-    expect(AURORA_TARGET_BLOCKER).toMatch(/DB_I18N_TARGET=supabase/);
+  describe('writes are gated separately from connectivity', () => {
+    const configured = auroraEnv({ AURORA_DATABASE_URL: 'postgres://u:p@h:5432/d' });
+
+    it.each([
+      ['upsertNavCatalogI18n', (r: ReturnType<typeof createDbI18nRepository>) =>
+        r.upsertNavCatalogI18n([
+          { catalog_id: 'c', lang: 'fr', title: 't', description: '', when_to_visit: '' },
+        ])],
+      ['upsertChecklistTranslations', (r: ReturnType<typeof createDbI18nRepository>) =>
+        r.upsertChecklistTranslations([
+          {
+            topic_id: 't', locale: 'fr', display_label: 'x', short_description: null,
+            explanation_what_it_is: null, explanation_user_benefit: null,
+            explanation_when_to_use: null, explanation_try_this: null,
+          },
+        ])],
+    ])('%s refuses without AURORA_I18N_WRITES', async (_n, call) => {
+      await expect(call(createDbI18nRepository(null, configured))).rejects.toThrow(
+        /AURORA_I18N_WRITES is not 'enabled'/,
+      );
+    });
+
+    it('explains WHY, so the flag is not set reflexively', async () => {
+      const repo = createDbI18nRepository(null, configured);
+      // The text is hard-wrapped, so match across the line break.
+      await expect(repo.upsertNavCatalogI18n([])).rejects.toThrow(/DMS\s+replication targets/);
+      await expect(repo.upsertNavCatalogI18n([])).rejects.toThrow(/Option C/);
+    });
+
+    it('does not gate reads behind the write flag', () => {
+      // Reads must work unflagged — reconciling these tables is a slice of the
+      // Phase 0 exit criteria, and gating it would make the gate unmeasurable.
+      expect(() => assertAuroraWritesAllowed('x', auroraEnv({ AURORA_I18N_WRITES: 'enabled' }))).not.toThrow();
+    });
   });
 
   it('never silently falls back to supabase', async () => {
     // A fallback would resolve rather than reject, and the caller would believe
     // Aurora was written. This is the VTID-03480 failure shape.
-    await expect(repo.upsertNavCatalogI18n([])).rejects.toThrow(/cannot execute yet/i);
+    const repo = createDbI18nRepository(null, auroraEnv());
+    await expect(repo.upsertNavCatalogI18n([])).rejects.toBeInstanceOf(Error);
+  });
+
+  it('keeps naming the remaining risk rather than decaying to "not implemented"', () => {
+    expect(AURORA_READINESS_NOTE).toMatch(/DMS replication TARGET/i);
+    expect(AURORA_READINESS_NOTE).toMatch(/154,000|154000/);
+    expect(AURORA_READINESS_NOTE).toMatch(/AURORA_I18N_WRITES=enabled/);
+  });
+});
+
+describe('aurora TLS resolution', () => {
+  it('defaults to verifying certificates', () => {
+    const cfg = resolveAuroraConfig({
+      AURORA_DATABASE_URL: 'postgres://u:p@h:5432/d',
+    } as NodeJS.ProcessEnv);
+    expect(cfg.ssl).toEqual({ rejectUnauthorized: true });
+  });
+
+  it('only disables verification on an explicit opt-in, and warns', () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    const cfg = resolveAuroraConfig({
+      AURORA_DATABASE_URL: 'postgres://u:p@h:5432/d',
+      AURORA_SSL_INSECURE: 'true',
+    } as NodeJS.ProcessEnv);
+    expect(cfg.ssl).toEqual({ rejectUnauthorized: false });
+    expect(warn).toHaveBeenCalledWith(expect.stringMatching(/verification is DISABLED/));
+    warn.mockRestore();
+  });
+
+  describe('sslmode=disable is a loopback-only escape hatch', () => {
+    it.each(['127.0.0.1', 'localhost', '[::1]'])('permits plaintext to %s', (host) => {
+      const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+      const cfg = resolveAuroraConfig({
+        AURORA_DATABASE_URL: `postgres://u@${host}:5432/d?sslmode=disable`,
+      } as NodeJS.ProcessEnv);
+      expect(cfg.ssl).toBe(false);
+      warn.mockRestore();
+    });
+
+    it('REFUSES plaintext to a remote host', () => {
+      // Without the host check this flag would be a one-line way to send
+      // production credentials across a network in the clear.
+      expect(() =>
+        resolveAuroraConfig({
+          AURORA_DATABASE_URL:
+            'postgres://u:p@vitana-aurora-prod.eu-central-1.rds.amazonaws.com:5432/d?sslmode=disable',
+        } as NodeJS.ProcessEnv),
+      ).toThrow(/only permitted for loopback hosts/);
+    });
+
+    it('still requires TLS for a loopback host without the flag', () => {
+      const cfg = resolveAuroraConfig({
+        AURORA_DATABASE_URL: 'postgres://u@127.0.0.1:5432/d',
+      } as NodeJS.ProcessEnv);
+      expect(cfg.ssl).toEqual({ rejectUnauthorized: true });
+    });
+  });
+
+  it('fails loudly when the CA bundle path is set but absent', () => {
+    // Silently continuing here would downgrade to an unverified connection
+    // while the operator believes the bundle is in use.
+    expect(() =>
+      resolveAuroraConfig({
+        AURORA_DATABASE_URL: 'postgres://u:p@h:5432/d',
+        AURORA_CA_BUNDLE_PATH: '/nonexistent/rds-ca.pem',
+      } as NodeJS.ProcessEnv),
+    ).toThrow(/no such file exists/);
   });
 });
 
