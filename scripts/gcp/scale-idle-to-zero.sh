@@ -146,27 +146,49 @@ cat <<'EOF'
 ==============================================================
 
 WORKER-RUNNER (~$65/mo, min-instances=1)
-  Not changed, and NOT because it is cheap. `worker_registry` shows TWO
-  worker-runners heartbeating within seconds of each other, but the registry
-  records no cloud attribution, so it cannot be determined from the database
-  alone whether the second poller is the AWS ECS `vitana-worker-runner`
-  (VTID-03411) or a second GCP revision.
+  Not changed, and NOT because it is cheap. `worker_registry` records no cloud
+  attribution, so the database cannot NAME the cloud a worker runs in. But the
+  registration/heartbeat timeline is strongly suggestive, and it is worth
+  writing down so the next person starts from evidence rather than zero:
 
-  That distinction decides the outcome:
-    - if the other poller is AWS, scaling GCP to zero is free and safe;
-    - if both are GCP, scaling to zero stops the canonical autopilot pipeline
-      dead (VTID-01206 pinned min-instances=1 precisely to keep polling alive),
-      and it would fail SILENTLY — the pipeline simply stops claiming work.
+    lineage A   ...57315c98 -> f62bfb1d -> 0dcf922a -> 447859c2  (alive)
+                rolling replacement. Each successor registers within ~30s of
+                its predecessor's final heartbeat; lifespans 2-8 days. That is
+                what Cloud Run revision churn on deploy looks like.
 
-  Resolve it first with:
-      gcloud run services describe worker-runner --region=us-central1 \
-        --project=lovable-vitana-vers1 --format='value(status.traffic)'
+    lineage B   a1846580 (alive)
+                registered 2026-07-23 22:41, still heartbeating 13 days later,
+                never replaced. That is what a fixed-desiredCount ECS service
+                looks like.
+
+  VTID-03411 built the AWS ECS `vitana-worker-runner` on 2026-07-23. A second,
+  non-churning lineage appearing that same evening and running continuously
+  since is a strong match for it.
+
+  So the LIKELY answer is: lineage B = AWS, lineage A = GCP, and scaling GCP to
+  zero is safe because AWS keeps polling. It was still not acted on here,
+  because the evidence is circumstantial (no cloud field exists) and the
+  failure mode is asymmetric: if BOTH are GCP, scaling to zero stops the
+  canonical autopilot pipeline dead — VTID-01206 pinned min-instances=1
+  precisely to keep polling alive — and it fails SILENTLY, with the pipeline
+  simply ceasing to claim work. A $65/mo saving does not justify guessing at
+  that.
+
+  ONE command settles it:
       aws ecs describe-services --cluster Vitana-ECS-Cluster \
         --services vitana-worker-runner --region eu-central-1 \
-        --query 'services[0].runningCount'
-  If AWS shows runningCount>=1 and is genuinely claiming tasks, GCP's can go to
-  zero. Two simultaneous pollers is itself worth a look — CLAUDE.md's "Never run
-  parallel VTID executions" rule cuts against it.
+        --query 'services[0].{running:runningCount,desired:desiredCount}'
+  runningCount >= 1 confirms lineage B is AWS. Then GCP's can go to zero:
+      gcloud run services update worker-runner --min-instances=0 \
+        --region=us-central1 --project=lovable-vitana-vers1
+  Afterwards, confirm a1846580 (or its successor) is STILL heartbeating and
+  still claiming work — a poller that is registered but idle is not cover.
+
+  Separately: two simultaneous pollers is itself worth a look. CLAUDE.md's
+  "Never run parallel VTID executions" rule cuts against it, and this session
+  observed a worker claim VTID-03500 and fail it in ~1s on a missing
+  ANTHROPIC_API_KEY — consistent with an AWS-side worker whose secrets are
+  deliberately unpopulated (see CLAUDE.md §1b "Secrets intentionally deferred").
 
 SERVERLESS VPC CONNECTOR (~$15-70/mo, min-instances=2)
   Created by PROVISION-MEMORYSTORE.yml. Two instances is the platform MINIMUM
