@@ -17,6 +17,8 @@
     "validate:dev-frontend-spec": "node ./scripts/validate-dev-frontend-spec.mjs",
     "nav:sync": "tsx scripts/sync-nav-catalog-from-manifest.ts",
     "nav:check": "tsx scripts/sync-nav-catalog-from-manifest.ts --check",
+    "i18n:db:seed": "tsx src/scripts/seed-db-i18n.ts",
+    "i18n:db:check": "tsx src/scripts/seed-db-i18n.ts --all-ga --check",
     "smoke:orb-widget": "node ./scripts/orb-widget-stop-regression.mjs && node ./scripts/orb-widget-audio-playback-regression.mjs && node ./scripts/orb-widget-speaking-watchdog-regression.mjs && node ./scripts/orb-widget-greeting-unlock-regression.mjs && node ./scripts/orb-widget-no-startup-tts-regression.mjs && node ./scripts/orb-anon-wake-skip-regression.mjs"
   },
   "dependencies": {
