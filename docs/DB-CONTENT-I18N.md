@@ -157,6 +157,29 @@ plan, not a change to this pipeline.
 
 ---
 
+## Migration verification
+
+The migration was applied against a throwaway PostgreSQL 16 carrying the
+pre-migration schema plus a deliberately awkward fixture: a `nl` row in
+`nav_catalog_i18n` that is **not** in the release list, standing in for whatever
+undocumented locale production may hold.
+
+| # | Property | Result |
+|---|---|---|
+| 0 | Pre-migration, an `fr` checklist row is rejected | `violates check constraint …_locale_check` — the blocker is real, not theoretical |
+| 1 | Legacy `nl` is back-filled as `status='legacy'` | present; the FK validates instead of aborting |
+| 2 | `fr`/`pt`/`ru`/`pl` checklist rows insert | `INSERT 0 4` |
+| 3 | An unregistered locale is still rejected | `violates foreign key constraint` — the constraint tightened, it did not vanish |
+| 4 | `nav_catalog_i18n` accepts a new locale + `source_sha` | `INSERT 0 1` |
+| 5 | Legacy rows left `NULL`, not stamped "current" | `en`/`es` → `<NULL>` |
+| 6 | Re-applying the migration twice more | clean both times (migrations are applied by hand here — see VTID-03492) |
+| 7 | Adding Italian: **one INSERT**, then both surfaces accept `it` | no DDL, no code change |
+
+Row 7 is the whole point: it is the acceptance test for "adding a language is
+automated".
+
+---
+
 ## Known gap
 
 `supported_locales` and `vitana-v1/src/contexts/LanguageContext.tsx`'s
