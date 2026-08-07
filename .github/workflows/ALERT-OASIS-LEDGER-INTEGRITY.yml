@@ -1,0 +1,105 @@
+name: Alert — OASIS Ledger Integrity
+
+# VTID-03516. The ledger spent six days asserting that almost all recent work
+# had failed, and nothing noticed.
+#
+# 24 of the last 80 VTIDs carried status='rejected' / terminal_outcome='failed'
+# for work that was merged and verified in production — including VTID-03480,
+# whose fix was watched flipping `ok:false` -> `ok:true` on live sessions.
+# CLAUDE.md rule 1 is "always treat OASIS as the single source of truth"; that
+# rule is worth nothing if no check ever asks whether the source of truth is
+# telling the truth.
+#
+# WHAT IT CATCHES
+# ---------------
+# The autonomous execution plane terminalizing work that was never its own.
+# The worker-runner's claimable-task feed used to select on the exact tuple
+# CLAUDE.md §4.1 tells every Claude Code session to write onto its own VTID
+# (in_progress + spec_status=approved + not terminal + unclaimed), so it
+# claimed session work, failed instantly on a missing ANTHROPIC_API_KEY, and
+# recorded a false failure. The fix is the ownership allowlist in
+# services/gateway/src/routes/worker-orchestrator.ts
+# (`isAutonomousExecutionTask`); this workflow is the assertion that the fix
+# is still holding.
+#
+# It deliberately does NOT alert on terminal_outcome='failed' in general. Real
+# failures exist and must stay quiet, or this gets muted within a week. It
+# fires only on the fingerprint of a false verdict: claimed by a worker-runner,
+# terminalized failed, but not autonomous-plane work.
+#
+# TRANSPORT: PostgREST over HTTPS, deliberately NOT `psql "$SUPABASE_DB_URL"`.
+# The Supabase project has a network allow-list and GitHub runner IPs are not
+# on it, so every psql-based check in this repo is structurally unable to
+# connect (VTID-03485/03486/03492). Backed by
+# supabase/migrations/20260806160000_vtid_03516_ledger_integrity_check.sql.
+
+on:
+  schedule:
+    - cron: '40 7 * * *'   # 09:40 CET daily, staggered off the other two alerts
+  workflow_dispatch:
+    inputs:
+      lookback_days:
+        description: 'Days of ledger history to assert over'
+        required: false
+        default: '7'
+
+permissions:
+  contents: read
+
+jobs:
+  integrity:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Assert the ledger records no false failures
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
+          LOOKBACK_DAYS: ${{ github.event.inputs.lookback_days || '7' }}
+        run: |
+          set -euo pipefail
+          if [ -z "${SUPABASE_URL:-}" ] || [ -z "${SUPABASE_SERVICE_ROLE:-}" ]; then
+            echo "::error::SUPABASE_URL / SUPABASE_SERVICE_ROLE secrets are not set on this repo."
+            exit 1
+          fi
+
+          HTTP=$(curl -sS -o findings.json -w '%{http_code}' \
+            -X POST "${SUPABASE_URL%/}/rest/v1/rpc/ci_ledger_integrity_check" \
+            -H "apikey: $SUPABASE_SERVICE_ROLE" \
+            -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE" \
+            -H 'Content-Type: application/json' \
+            -d "{\"p_lookback_days\": ${LOOKBACK_DAYS}}")
+
+          if [ "$HTTP" != "200" ]; then
+            echo "::error::ci_ledger_integrity_check RPC returned HTTP $HTTP. If 404, the function is missing — apply supabase/migrations/20260806160000_vtid_03516_ledger_integrity_check.sql."
+            head -c 500 findings.json || true
+            exit 1
+          fi
+
+          COUNT=$(jq 'length' findings.json)
+          echo "Lookback: ${LOOKBACK_DAYS}d — false-failure findings: $COUNT"
+
+          if [ "$COUNT" = "0" ]; then
+            echo "OK — no VTID was terminalized 'failed' by the autonomous plane without owning it."
+            exit 0
+          fi
+
+          echo "---"
+          jq -r '.[] | "  \(.vtid)  source=\(.ledger_source)  \(.seconds_to_terminal)s to terminal  anthropic_key_failure=\(.anthropic_key_failure)  \(.title)"' findings.json
+
+          {
+            echo "### OASIS ledger integrity: $COUNT false failure(s)"
+            echo
+            echo "These VTIDs were claimed by a worker-runner and terminalized"
+            echo "\`failed\`, but are not autonomous-plane work. The ledger is"
+            echo "recording failures for work that may well have shipped."
+            echo
+            echo '| VTID | source | secs to terminal | ANTHROPIC_API_KEY failure |'
+            echo '|---|---|---|---|'
+            jq -r '.[] | "| \(.vtid) | \(.ledger_source) | \(.seconds_to_terminal) | \(.anthropic_key_failure) |"' findings.json
+            echo
+            echo "Check \`isAutonomousExecutionTask()\` in"
+            echo "\`services/gateway/src/routes/worker-orchestrator.ts\` is deployed and holding."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          echo "::error::$COUNT VTID(s) terminalized 'failed' by the autonomous plane without owning the work. OASIS is recording false failures."
+          exit 1

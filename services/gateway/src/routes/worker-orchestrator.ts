@@ -1059,6 +1059,49 @@ workerOrchestratorRouter.get('/api/v1/worker/orchestrator/workers', async (_req:
 });
 
 /**
+ * VTID-03516: Is this ledger row work the AUTONOMOUS execution plane owns?
+ *
+ * This is an ALLOWLIST, and it must stay one. The eligibility tuple below
+ * (in_progress + spec_status=approved + not terminal + unclaimed) is exactly
+ * what CLAUDE.md §4.1 instructs every Claude Code session to write onto its
+ * OWN VTID at the start of in-session work. Before this gate existed, the
+ * worker-runner read that as "autonomous work, come execute it", claimed the
+ * VTID out from under the session that was actively doing the work, failed
+ * instantly (no ANTHROPIC_API_KEY on the AWS task defs — CLAUDE.md §1b,
+ * deliberately deferred), and terminalized it `rejected`/`failed`. 24 of the
+ * last 80 VTIDs were marked failed for work that shipped and was verified in
+ * production.
+ *
+ * Do NOT "fix" that by populating the key. The missing key is what made this
+ * loud enough to find. With a working key the worker-runner would instead
+ * have started autonomously editing code for a VTID a human-driven session
+ * was concurrently working — silent, concurrent, conflicting writes, against
+ * CLAUDE.md's own "Never run parallel VTID executions". The eligibility
+ * predicate is the bug; the credential is not.
+ *
+ * A denylist of session-ish `metadata.source` values cannot work here:
+ * `source` is free text and sessions write ad-hoc labels ('orb-voice',
+ * 'aws-sns-gchat-alerts', 'news-feed-newest-first'), so most session-owned
+ * VTIDs carry no 'claude' marker at all. Hence opt-in.
+ */
+export function isAutonomousExecutionTask(task: { metadata?: any }): boolean {
+  const meta = task?.metadata;
+  if (!meta || typeof meta !== 'object') return false;
+
+  // Forward-looking explicit opt-in. New autonomous producers should set this
+  // rather than relying on their source string being recognised here.
+  if (meta.autonomous_execution === true) return true;
+
+  // Established autonomous producer. `metadata.source === 'self-healing'` is
+  // already the discriminator the rest of the pipeline keys on — worker-runner
+  // (execution-service.ts `isSelfHealing`), vtid-terminalize's success gate,
+  // autopilot-controller's PR-J gate, and self-healing-reconciler all read it.
+  if (meta.source === 'self-healing') return true;
+
+  return false;
+}
+
+/**
  * GET /api/v1/worker/orchestrator/tasks/pending
  *
  * VTID-01201 + VTID-01202: Get claimable tasks from vtid_ledger
@@ -1118,10 +1161,21 @@ workerOrchestratorRouter.get('/api/v1/worker/orchestrator/tasks/pending', async 
     //   - claimed_by IS NULL (unclaimed)
     //   - OR claimed_by = worker_id (requesting worker's own claimed task)
     //   - OR claim_expires_at < now (expired claim)
+    // VTID-03516: count what the autonomous-ownership gate withheld, so the
+    // gate is visible in logs rather than silently shrinking the queue.
+    let withheldNonAutonomous = 0;
+
     const claimableTasks = (queryResult.data || [])
       .filter(task => {
         // is_terminal must be false or null
         if (task.is_terminal === true) return false;
+
+        // VTID-03516: only the autonomous plane's own work is claimable.
+        // See isAutonomousExecutionTask() above for why this is an allowlist.
+        if (!isAutonomousExecutionTask(task)) {
+          withheldNonAutonomous++;
+          return false;
+        }
 
         // Claim inclusion check
         const isUnclaimed = task.claimed_by === null || task.claimed_by === undefined;
@@ -1148,7 +1202,10 @@ workerOrchestratorRouter.get('/api/v1/worker/orchestrator/tasks/pending', async 
       }));
 
     // Telemetry only — no OASIS event (polling ≠ progress)
-    console.log(`${LOG_VTID} Pending tasks query: ${claimableTasks.length} eligible tasks found (worker_id=${workerId || 'none'})`);
+    console.log(
+      `${LOG_VTID} Pending tasks query: ${claimableTasks.length} eligible tasks found ` +
+      `(worker_id=${workerId || 'none'}, withheld_non_autonomous=${withheldNonAutonomous})`
+    );
 
     return res.status(200).json({
       ok: true,
@@ -1194,6 +1251,41 @@ workerOrchestratorRouter.post('/api/v1/worker/orchestrator/tasks/:vtid/claim', a
     }
 
     console.log(`${LOG_PREFIX} Worker ${worker_id} claiming task ${vtid}`);
+
+    // VTID-03516: defence in depth. The pending-tasks feed already withholds
+    // non-autonomous work, but a worker can call claim with any VTID it likes
+    // (a stale queue entry, a hand-rolled curl, a future second poller). The
+    // ownership check therefore has to live on the authoritative write path
+    // too, not only on the read that suggested it.
+    const ownershipRow = await supabaseRequest<any[]>(
+      `/rest/v1/vtid_ledger?vtid=eq.${encodeURIComponent(vtid)}&select=vtid,metadata&limit=1`
+    );
+    const ledgerRow = ownershipRow.ok ? ownershipRow.data?.[0] : undefined;
+    if (ledgerRow && !isAutonomousExecutionTask(ledgerRow)) {
+      console.warn(
+        `[VTID-03516] Claim REFUSED: ${vtid} is not autonomous-plane work ` +
+        `(metadata.source=${JSON.stringify(ledgerRow.metadata?.source ?? null)}), worker=${worker_id}`
+      );
+      await emitOasisEvent({
+        vtid,
+        type: 'vtid.decision.claim_refused_not_autonomous' as any,
+        source: 'worker-orchestrator',
+        status: 'warning',
+        message: `Claim refused: ${vtid} is session-owned work, not autonomous-plane work`,
+        payload: {
+          worker_id,
+          ledger_source: ledgerRow.metadata?.source ?? null,
+          governance_vtid: 'VTID-03516',
+        },
+      });
+      return res.status(409).json({
+        ok: false,
+        claimed: false,
+        error: 'VTID is not autonomous-plane work',
+        error_code: 'NOT_AUTONOMOUS_TASK',
+        vtid: 'VTID-03516',
+      });
+    }
 
     const result = await callRpc<any>('claim_vtid_task', {
       p_vtid: vtid,
