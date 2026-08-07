@@ -12,14 +12,22 @@
  *
  * ORDERING — READ THIS FIRST
  * --------------------------
- * Run this only AFTER the ownership gate is live on the gateway that the
- * worker-runner polls (currently AWS prod, `vitana-gateway-awsdr`). Rows this
- * script sets back to a non-terminal state before then would simply be
- * re-claimed and re-swept, and the re-sweep would overwrite `updated_at` —
- * the timestamps that identify the writer. Rows left terminal are not
- * re-claimable, so the success path below is safe either way; the script still
- * refuses to run without --i-have-deployed-the-gate so the ordering is a
- * deliberate decision rather than an accident.
+ * This script is safe to run before the ownership gate is deployed, and the
+ * reason is worth stating precisely rather than guessing at: **every path it
+ * takes leaves `is_terminal = true`.** A terminal row is not claimable, so no
+ * row it touches can be re-swept, and no `updated_at` it writes can be
+ * clobbered by a re-sweep.
+ *
+ * An earlier revision of this file refused to run without
+ * `--i-have-deployed-the-gate`, on the assumption that corrected rows might be
+ * returned to a claimable state. They never are. That guard was protecting
+ * against something the code does not do, and a guard that asserts a falsehood
+ * is worse than no guard — it invites someone to pass the flag untruthfully.
+ *
+ * What IS still true, and what the script now warns about instead: until the
+ * gate is live on the gateway the worker-runner polls (AWS prod,
+ * `vitana-gateway-awsdr`), NEW VTIDs keep being falsely terminalized. Repairing
+ * the backlog does not stop the bleeding.
  *
  * WHY IT DOES NOT JUST FLIP ALL 25 TO success
  * -------------------------------------------
@@ -38,8 +46,8 @@
  *     exafyltd/vitana-v1, some was investigation with no commit at all.
  *
  * USAGE
- *   node scripts/oasis/correct-false-terminalizations.cjs                 # dry run
- *   node scripts/oasis/correct-false-terminalizations.cjs --apply --i-have-deployed-the-gate
+ *   node scripts/oasis/correct-false-terminalizations.cjs           # dry run
+ *   node scripts/oasis/correct-false-terminalizations.cjs --apply
  *
  * ENV: SUPABASE_URL, SUPABASE_SERVICE_ROLE
  */
@@ -47,7 +55,6 @@
 const { execSync } = require('node:child_process');
 
 const APPLY = process.argv.includes('--apply');
-const GATE_CONFIRMED = process.argv.includes('--i-have-deployed-the-gate');
 const LOOKBACK_DAYS = Number(
   (process.argv.find((a) => a.startsWith('--lookback-days=')) || '').split('=')[1] || 30,
 );
@@ -61,14 +68,6 @@ function die(msg) {
 }
 
 if (!SUPABASE_URL || !SERVICE_ROLE) die('SUPABASE_URL and SUPABASE_SERVICE_ROLE must be set.');
-if (APPLY && !GATE_CONFIRMED) {
-  die(
-    'Refusing to --apply without --i-have-deployed-the-gate.\n' +
-      'The ownership gate (isAutonomousExecutionTask) must be live on the gateway the\n' +
-      'worker-runner polls first, or corrected rows get re-swept and the forensic\n' +
-      'timestamps are lost. See the header of this file.',
-  );
-}
 
 const headers = {
   apikey: SERVICE_ROLE,
@@ -117,6 +116,20 @@ async function main() {
   console.log(`${findings.length} false verdict(s) over ${LOOKBACK_DAYS}d`);
   console.log(`  ${shipped.length} with merged commits on origin/main -> completed/success`);
   console.log(`  ${disputed.length} without -> verdict voided, flagged for human adjudication`);
+
+  // Repairing the backlog does not stop the cause. Say so loudly rather than
+  // letting a clean run read as "the problem is handled".
+  const recent = findings.filter(
+    (f) => Date.parse(f.created_at) > Date.now() - 24 * 3600 * 1000,
+  ).length;
+  if (recent > 0) {
+    console.log(
+      `\n  WARNING: ${recent} of these were created in the last 24h. New false verdicts are\n` +
+        '  still being written — the ownership gate is not live on the gateway the\n' +
+        '  worker-runner polls (AWS prod, vitana-gateway-awsdr). Repairing rows is not a fix.',
+    );
+  }
+
   console.log(APPLY ? '\nAPPLYING\n' : '\nDRY RUN (pass --apply to write)\n');
 
   const stamp = new Date().toISOString();

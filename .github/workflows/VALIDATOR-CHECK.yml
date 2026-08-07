@@ -156,13 +156,13 @@ jobs:
             [ -f "$f" ] || continue
             for p in "${PATTERNS[@]}"; do
               if python3 - <<PY
-import re,sys
-p=re.compile(r'''$p''', re.IGNORECASE)
-data=open("$f","rb").read()
-try: s=data.decode("utf-8", errors="ignore")
-except: s=str(data)
-sys.exit(0 if not p.search(s) else 1)
-PY
+          import re,sys
+          p=re.compile(r'''$p''', re.IGNORECASE)
+          data=open("$f","rb").read()
+          try: s=data.decode("utf-8", errors="ignore")
+          except: s=str(data)
+          sys.exit(0 if not p.search(s) else 1)
+          PY
               then : ; else
                 echo "REJECTED: CSP pattern hit in $f :: /$p/"
                 FAIL=1
