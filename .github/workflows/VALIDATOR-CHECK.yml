@@ -4,6 +4,25 @@ run-name: 'Validator Check [${{ github.head_ref || github.ref_name }}]'
 on:
   pull_request:
     types: [opened, edited, synchronize, reopened, ready_for_review]
+    # VTID-03525: scope the trigger to the surface this gate can actually judge.
+    #
+    # The workflow demands a VALIDATION_PROFILE and accepts exactly two —
+    # `command_hub_frontend` and `gateway_backend` — whose path-ownership guards
+    # admit only the trees below. It previously ran on EVERY pull request, so a
+    # PR touching .github/, scripts/, supabase/migrations/, another service, or
+    # docs/ outside docs/validation/ could not pass it under any profile: no
+    # VALIDATION_PROFILE -> exit 11, and any profile -> path-ownership violation.
+    #
+    # That never surfaced because the file was unparseable YAML and the workflow
+    # never started (see this VTID). Fixing the parse without scoping the trigger
+    # would put an unactionable red X on most PRs in this repo — which is how a
+    # governance gate gets muted a second time. Keep this list in step with the
+    # profile guards in the "Enforce Path Ownership Guard" step.
+    paths:
+      - 'services/gateway/src/**'
+      - 'services/gateway/dist/**'
+      - 'services/gateway/openapi/**'
+      - 'docs/validation/**'
 
 jobs:
   validate-pr:
