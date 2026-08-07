@@ -6,8 +6,34 @@ name: DEPLOY-ORB-AGENT
 #   - manual dispatch (operator-driven during ramp)
 #   - main pushes that touch services/agents/orb-agent/** (auto-deploy once stable)
 #
-# Cloud Run config: min-instances=0 (scale-to-zero standby), max=10, 2 vCPU/4 GiB.
-# When LiveKit is the standby provider, no instances run, ~zero compute cost.
+# Cloud Run config: max=10, 2 vCPU/4 GiB. The warm floor is controlled by the
+# `warm_worker` dispatch input (VTID-03508) and defaults to OFF — see below.
+#
+# VTID-03508 — WHY THE DEFAULT IS OFF, AND WHAT IT COSTS YOU
+# ----------------------------------------------------------
+# This service used to deploy with `--min-instances=1 --no-cpu-throttling`
+# unconditionally: 2 vCPU + 4 GiB of always-allocated CPU, billed 24/7, ~$150/mo
+# — the single largest standby line item in the GCP project.
+#
+# It bought nothing measurable. As of 2026-08-06:
+#   - `voice.livekit_canary_allowlist` contains exactly ONE user.
+#   - ZERO LiveKit room-join / agent-dispatch events in the last 90 days
+#     (`oasis_events`; the only `orb.livekit.*` topics still firing are
+#     `next_action.*`, which is gateway-side suggestion logic, not this agent).
+#   - All real ORB voice traffic goes through the WS/Vertex/Nova upstream path,
+#     which does not involve this service at all.
+#
+# THIS IS NOT A LATENCY TRADE-OFF — IT TURNS THE LIVEKIT VOICE PATH OFF.
+# The livekit-agents worker connects OUTBOUND to LiveKit Cloud and must stay
+# resident to receive dispatches. At min-instances=0 there is no resident
+# worker, so it deregisters and LiveKit routes no jobs to it: the path is dead,
+# not slow. `--no-cpu-throttling` is likewise required, not a tuning knob — a
+# throttled instance gets no CPU between requests and the worker's persistent
+# outbound session starves. So the two settings move together, and there is no
+# middle setting that is both cheap and functional.
+#
+# TO TURN LIVEKIT VOICE BACK ON: dispatch this workflow with warm_worker=true.
+# No code change, no PR. Cost resumes at ~$150/mo while it is on.
 #
 # This workflow does NOT replace EXEC-DEPLOY for the gateway — the gateway and
 # the orb-agent deploy independently. Smoke test 5/5 in EXEC-DEPLOY verifies
@@ -24,6 +50,11 @@ on:
         options:
           - dev-sandbox
           - prod
+      warm_worker:
+        description: "Keep a resident LiveKit worker (min-instances=1, always-allocated CPU). ~$150/mo. Required for the LiveKit voice path to function at all — see header."
+        required: false
+        default: false
+        type: boolean
   push:
     branches:
       - main
@@ -120,17 +151,28 @@ jobs:
           else
             echo "::warning::DEEPGRAM_API_KEY GH secret not set — orb-agent will run with the 2-instance Google-only STT chain (no cross-provider fallback)."
           fi
+          # VTID-03508: the warm floor and CPU allocation move together — a
+          # resident LiveKit worker needs BOTH, and neither is useful alone.
+          # Default (warm_worker unset/false, and every push-triggered run):
+          # scale to zero, throttled CPU, ~zero standby cost, LiveKit path off.
+          if [ "${{ inputs.warm_worker }}" = "true" ]; then
+            echo "warm_worker=true — deploying a RESIDENT worker (~\$150/mo). LiveKit voice path ACTIVE."
+            SCALE_ARGS=(--min-instances=1 --no-cpu-throttling)
+          else
+            echo "::warning::warm_worker not set — deploying scale-to-zero. The LiveKit voice path will be INACTIVE (the worker cannot stay registered with LiveKit Cloud). Re-dispatch with warm_worker=true to restore it. See VTID-03508."
+            SCALE_ARGS=(--min-instances=0 --cpu-throttling)
+          fi
+
           gcloud run deploy "$SERVICE_NAME" \
             --image="$IMAGE" \
             --region="$GCP_REGION" \
             --project="$GCP_PROJECT_ID" \
-            --min-instances=1 \
+            "${SCALE_ARGS[@]}" \
             --max-instances=10 \
             --cpu=2 \
             --memory=4Gi \
             --timeout=3600 \
             --concurrency=25 \
-            --no-cpu-throttling \
             --port=8080 \
             --ingress=all \
             --allow-unauthenticated \
@@ -141,6 +183,12 @@ jobs:
       - name: Delete prior revisions (force only-latest worker connects to LiveKit)
         run: |
           set -euxo pipefail
+          # VTID-03508: this step matters only when warm_worker=true. At
+          # min-instances=0 no revision holds a resident container, so none can
+          # register with LiveKit and there is nothing to disambiguate. Kept
+          # unconditional because it is harmless when there is nothing to
+          # delete, and must not be forgotten when the warm floor is restored.
+          #
           # CRITICAL FIX: the orb-agent's livekit-agents worker connects
           # OUTBOUND to LiveKit Cloud. With --min-instances=1, every Cloud
           # Run revision keeps a warm container alive — and every warm
