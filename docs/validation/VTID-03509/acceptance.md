@@ -16,7 +16,14 @@ will still flag** `.github/workflows/AURORA-I18N-INTEGRATION.yml`,
 `.github/workflows/I18N-DB-SEED.yml`, `.github/workflows/VALIDATOR-CHECK.yml`,
 `CLAUDE.md`, `docs/DB-CONTENT-I18N.md`, and
 `supabase/migrations/20260806090000_VTID_03515_db_i18n_locale_registry.sql` —
-none of those paths are covered by either existing profile. This is the same
+none of those paths are covered by either existing profile. **Confirmed by the
+actual CI run on this evidence pack's own commit:** the gate rejects earlier
+than that, at its universal `deny_common` lockfile check — VTID-03517 added
+the `pg`/`@types/pg` dependencies to `services/gateway/package.json`, which
+regenerated `package-lock.json` and `pnpm-lock.yaml`, and those two files are
+denied for every profile, unconditionally (exit 20, "REJECTED: lockfile/.env
+change not allowed"), before the path-ownership step for the other files even
+runs. This is the same
 limitation `gov/validator-rules.yaml` has always had for data/CI-domain
 changes (see VTID-03237's split into a `gateway_backend` PR + a separate data
 PR, and VTID-03505/#3050's note that widening the profiles is its own
