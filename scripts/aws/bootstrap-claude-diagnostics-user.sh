@@ -98,7 +98,7 @@ cat > /tmp/claude-diag-policy.json <<'JSON'
       "Resource": "*"
     },
     {
-      "Sid": "SecretNamesOnly_NoValues",
+      "Sid": "SecretNamesOnlyNoValues",
       "Effect": "Allow",
       "Action": ["secretsmanager:ListSecrets", "secretsmanager:DescribeSecret"],
       "Resource": "*"
