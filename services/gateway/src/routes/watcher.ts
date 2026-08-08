@@ -248,6 +248,31 @@ router.post('/distil-backfill', requireAdminAuth, async (req: AuthenticatedReque
     limit: Number.isFinite(rawLimit) ? rawLimit : undefined,
   });
 
+  // This one DOES get an OASIS event, unlike /session-step.
+  //
+  // The distinction is the one CLAUDE.md section 6 draws. A session step is an
+  // observation — the observer's own scan is a poll, and "polling is not
+  // progress". A backfill is an operator DECISION that materially changes the
+  // memory every later prompt draws on, and it is not reconstructible from
+  // the lesson rows afterwards (an upserted lesson looks the same whether it
+  // came from a live tick or a backfill). If nobody records that someone ran
+  // it, a later reader cannot explain why frequencies jumped.
+  await emitOasisEvent({
+    vtid: WATCHER_VTID,
+    type: 'vtid.decision.watcher.backfill',
+    source: 'watcher',
+    status: result.ok ? 'info' : 'error',
+    message: result.ok
+      ? `Watcher distilled ${result.lessons} lesson(s) from ${result.scanned} historical failure step(s) since ${parsed.toISOString()}`
+      : `Watcher backfill failed: ${result.error}`,
+    payload: {
+      since: parsed.toISOString(),
+      scanned: result.scanned,
+      lessons: result.lessons,
+      error: result.error ?? null,
+    },
+  });
+
   return res.status(result.ok ? 200 : 500).json({
     ok: result.ok,
     data: { scanned: result.scanned, lessons: result.lessons },
