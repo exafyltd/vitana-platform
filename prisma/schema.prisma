@@ -410,15 +410,15 @@ model PartnerTenant {
 }
 
 model IntegrationManifest {
-  id             String   @id @default(cuid())
-  partnerTenantId String  @map("partner_tenant_id")
-  connectorId    String   @map("connector_id") // kebab-case slug
-  providerId     String   @map("provider_id") // policy-engine provider row that gates every call
-  connectionType String   @map("connection_type") // mcp|openapi|oauth_api|rest|graphql|webhook|platform_install|scim|edi_sftp|browser|manual
-  riskLevel      String   @map("risk_level")
-  status         String   @default("discovered") // CONNECTION_STATES
-  createdAt      DateTime @default(now()) @map("created_at")
-  updatedAt      DateTime @updatedAt @map("updated_at")
+  id              String   @id @default(cuid())
+  partnerTenantId String   @map("partner_tenant_id")
+  connectorId     String   @map("connector_id") // kebab-case slug
+  providerId      String   @map("provider_id") // policy-engine provider row that gates every call
+  connectionType  String   @map("connection_type") // mcp|openapi|oauth_api|rest|graphql|webhook|platform_install|scim|edi_sftp|browser|manual
+  riskLevel       String   @map("risk_level")
+  status          String   @default("discovered") // CONNECTION_STATES
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
 
   partnerTenant PartnerTenant        @relation(fields: [partnerTenantId], references: [id], onDelete: Cascade)
   versions      IntegrationVersion[]
@@ -477,17 +477,17 @@ model SchemaSource {
 }
 
 model SchemaMapping {
-  id             String   @id @default(cuid())
-  versionId      String   @map("version_id")
-  sourceSchema   String   @map("source_schema")
-  sourceField    String   @map("source_field")
-  canonicalEntity String  @map("canonical_entity")
-  canonicalField String   @map("canonical_field")
-  transform      String?
-  confidence     Float
-  decidedBy      String   @map("decided_by") // ai|human
-  sensitive      Boolean  @default(false)
-  createdAt      DateTime @default(now()) @map("created_at")
+  id              String   @id @default(cuid())
+  versionId       String   @map("version_id")
+  sourceSchema    String   @map("source_schema")
+  sourceField     String   @map("source_field")
+  canonicalEntity String   @map("canonical_entity")
+  canonicalField  String   @map("canonical_field")
+  transform       String?
+  confidence      Float
+  decidedBy       String   @map("decided_by") // ai|human
+  sensitive       Boolean  @default(false)
+  createdAt       DateTime @default(now()) @map("created_at")
 
   version   IntegrationVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
   decisions MappingDecision[]
