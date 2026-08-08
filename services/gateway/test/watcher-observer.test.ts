@@ -29,6 +29,8 @@ interface Recorded {
   cursorWrites: Array<Record<string, unknown>>;
   stepWrites: unknown[][];
   queries: Array<{ table: string; or?: string; range?: [number, number] }>;
+  lessonInserts: Array<Record<string, unknown>>;
+  lessonUpdates: Array<Record<string, unknown>>;
 }
 
 /**
@@ -44,8 +46,12 @@ function fakeSupabase(opts: {
   eventQueryError?: string;
   /** Simulate ON CONFLICT DO NOTHING skipping rows: fewer ids than rows in. */
   insertedIds?: unknown[];
+  /** Pre-existing watcher_lessons row, to exercise the recurrence path. */
+  existingLesson?: Record<string, unknown> | null;
 }) {
-  const rec: Recorded = { cursorWrites: [], stepWrites: [], queries: [] };
+  const rec: Recorded = {
+    cursorWrites: [], stepWrites: [], queries: [], lessonInserts: [], lessonUpdates: [],
+  };
   const eventPages = opts.eventPages ?? [[]];
 
   const from = (table: string) => {
@@ -75,11 +81,50 @@ function fakeSupabase(opts: {
           // INSERTED rows. Rows skipped by ON CONFLICT DO NOTHING are simply
           // absent, which is what makes the count truthful.
           return {
-            select: async () => (opts.stepWriteError
-              ? { data: null, error: { message: opts.stepWriteError } }
-              : { data: (opts.insertedIds ?? rows).map((_, i) => ({ id: `s${i}` })), error: null }),
+            select: async () => {
+              if (opts.stepWriteError) {
+                return { data: null, error: { message: opts.stepWriteError } };
+              }
+              // The real client returns the full inserted ROW, not just the
+              // id — distillation runs on it, so the fake must too.
+              const kept = opts.insertedIds ?? rows;
+              return {
+                data: kept.map((_, i) => ({
+                  ...(rows[i] as Record<string, unknown>),
+                  id: `s${i}`,
+                })),
+                error: null,
+              };
+            },
           };
         },
+      };
+    }
+
+    if (table === 'watcher_lessons') {
+      return {
+        select: () => ({
+          eq: () => ({
+            eq: () => ({
+              eq: () => ({
+                maybeSingle: async () => ({
+                  data: opts.existingLesson ?? null,
+                  error: null,
+                }),
+              }),
+            }),
+          }),
+        }),
+        insert: async (row: Record<string, unknown>) => {
+          rec.lessonInserts.push(row);
+          return { error: null };
+        },
+        update: (row: Record<string, unknown>) => ({
+          eq: async () => {
+            rec.lessonUpdates.push(row);
+            return { error: null };
+          },
+        }),
       };
     }
 
@@ -132,7 +177,7 @@ afterEach(() => {
 describe('writeSteps contract', () => {
   it('reports ok with written=0 for an empty batch', async () => {
     mockGetSupabase.mockReturnValue(fakeSupabase({}).client);
-    expect(await writeSteps([])).toEqual({ ok: true, written: 0 });
+    expect(await writeSteps([])).toEqual({ ok: true, written: 0, inserted: [] });
   });
 
   it('distinguishes a FAILED write from a duplicate-only write', async () => {
@@ -332,5 +377,134 @@ describe('written count is truthful (VTID-03473)', () => {
     await observerTick();
     const c = rec.cursorWrites.find((x) => x.source === 'oasis_events')!;
     expect(c.last_written).toBe(1);
+  });
+});
+
+/**
+ * VTID-03531 — the distiller has to actually be CALLED.
+ *
+ * Phase 2 shipped distilBatch() and upsertLesson() fully unit-tested, and
+ * nothing invoked either of them. The observer ran for three days, recorded
+ * 591 steps including a large number of failures, and watcher_lessons stayed
+ * at exactly 0 rows. Every unit test passed the whole time, because a unit
+ * test of a pure function cannot notice that no caller exists.
+ *
+ * These tests assert the WIRING, which is the part that was missing.
+ */
+describe('distillation is wired into the tick (VTID-03531)', () => {
+  /** A failed CI event — the shape the distiller is supposed to learn from. */
+  function failedEvt(id: string, created_at: string, message: string) {
+    return {
+      id,
+      topic: 'dev_autopilot.execution.ci_failed',
+      vtid: 'VTID-01',
+      status: 'error',
+      message,
+      service: 'gateway',
+      source: null,
+      metadata: {},
+      created_at,
+    };
+  }
+
+  it('writes a lesson when a tick records a new failure', async () => {
+    const { client, rec } = fakeSupabase({
+      cursorAt: '2026-08-01T00:00:00.000Z',
+      eventPages: [[failedEvt('e1', '2026-08-01T01:00:00.000Z', 'error TS2307: cannot find module')]],
+    });
+    mockGetSupabase.mockReturnValue(client);
+
+    await observerTick();
+
+    expect(rec.lessonInserts).toHaveLength(1);
+    expect(rec.lessonInserts[0].pattern_key).toBe('TS2307:cannot-find-module');
+    // The lesson must cite the step it came from, or there is no way back to
+    // the evidence when a human asks "why am I being told this?".
+    expect(rec.lessonInserts[0].evidence_step_ids).toEqual(['s0']);
+  });
+
+  it('does NOT re-distil rows the overlap rescan skipped', async () => {
+    // insertedIds: [] models ON CONFLICT DO NOTHING skipping every row — the
+    // normal case on every rescan. Distilling those again would inflate
+    // frequency once per tick forever and fabricate a recurrence that never
+    // happened.
+    const { client, rec } = fakeSupabase({
+      cursorAt: '2026-08-01T00:00:00.000Z',
+      eventPages: [[failedEvt('e1', '2026-08-01T01:00:00.000Z', 'error TS2307: cannot find module')]],
+      insertedIds: [],
+    });
+    mockGetSupabase.mockReturnValue(client);
+
+    await observerTick();
+
+    expect(rec.lessonInserts).toHaveLength(0);
+    expect(rec.lessonUpdates).toHaveLength(0);
+  });
+
+  it('bumps frequency instead of re-inserting when the pattern recurs', async () => {
+    const { client, rec } = fakeSupabase({
+      cursorAt: '2026-08-01T00:00:00.000Z',
+      eventPages: [[failedEvt('e2', '2026-08-01T01:00:00.000Z', 'error TS2307: cannot find module')]],
+      existingLesson: { id: 'L1', frequency: 1, evidence_step_ids: ['old'] },
+    });
+    mockGetSupabase.mockReturnValue(client);
+
+    await observerTick();
+
+    expect(rec.lessonInserts).toHaveLength(0);
+    expect(rec.lessonUpdates).toHaveLength(1);
+    // frequency 1 -> 2 is the specific transition that matters: loadLessons
+    // withholds frequency-1 lessons as singletons, so a lesson that never
+    // increments is a lesson that can never be injected.
+    expect(rec.lessonUpdates[0].frequency).toBe(2);
+    expect(rec.lessonUpdates[0].evidence_step_ids).toEqual(['old', 's0']);
+  });
+
+  it('does not distil successful steps', async () => {
+    const { client, rec } = fakeSupabase({
+      cursorAt: '2026-08-01T00:00:00.000Z',
+      eventPages: [[evt('e3', '2026-08-01T01:00:00.000Z')]],
+    });
+    mockGetSupabase.mockReturnValue(client);
+
+    await observerTick();
+
+    // "This worked once" is not a lesson — injecting it builds a prompt that
+    // argues for cargo-culting.
+    expect(rec.lessonInserts).toHaveLength(0);
+  });
+
+  it('merges one tick\'s repeats into a single recurrence, not one per row', async () => {
+    const { client, rec } = fakeSupabase({
+      cursorAt: '2026-08-01T00:00:00.000Z',
+      eventPages: [[
+        failedEvt('e4', '2026-08-01T01:00:00.000Z', 'error TS2307: cannot find module a'),
+        failedEvt('e5', '2026-08-01T01:00:01.000Z', 'error TS2307: cannot find module b'),
+      ]],
+    });
+    mockGetSupabase.mockReturnValue(client);
+
+    await observerTick();
+
+    expect(rec.lessonInserts).toHaveLength(1);
+    expect(rec.lessonInserts[0].evidence_step_ids).toEqual(['s0', 's1']);
+  });
+
+  it('a distillation failure never fails the tick', async () => {
+    const { client } = fakeSupabase({
+      cursorAt: '2026-08-01T00:00:00.000Z',
+      eventPages: [[failedEvt('e6', '2026-08-01T01:00:00.000Z', 'boom')]],
+    });
+    // Nothing downstream may stall on the Watcher — the observer's whole
+    // degradation posture depends on this.
+    const broken = {
+      from: (t: string) => (t === 'watcher_lessons'
+        ? { select: () => { throw new Error('lessons table gone'); } }
+        : client.from(t)),
+    };
+    mockGetSupabase.mockReturnValue(broken);
+
+    const results = await observerTick();
+    expect(results.find((r) => r.source === 'oasis_events')?.error).toBeUndefined();
   });
 });

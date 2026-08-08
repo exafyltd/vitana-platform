@@ -149,6 +149,22 @@ router.get('/health', requireAdminAuth, async (req: AuthenticatedRequest, res: R
     else sources = data || [];
   }
 
+  // Learned-memory counts. Reported because "the observer is healthy" and
+  // "the Watcher is learning" are independent facts, and for the system's
+  // first three days they diverged completely: 591 steps recorded against 0
+  // lessons, because the distiller had no call site (VTID-03531). Cursor
+  // health alone could never have shown that — a reader has to be able to see
+  // that steps are going in AND lessons are coming out.
+  let lessons: { total: number; injectable: number } | null = null;
+  if (sb) {
+    const [all, mature] = await Promise.all([
+      sb.from('watcher_lessons').select('id', { count: 'exact', head: true }),
+      sb.from('watcher_lessons').select('id', { count: 'exact', head: true })
+        .eq('status', 'active').gt('frequency', 1),
+    ]);
+    lessons = { total: all.count ?? 0, injectable: mature.count ?? 0 };
+  }
+
   // Optional forced scan, so an operator can prove the observer works
   // without waiting out a tick interval.
   let forced: unknown = null;
@@ -170,6 +186,7 @@ router.get('/health', requireAdminAuth, async (req: AuthenticatedRequest, res: R
       supabase_available: !!sb,
       state_error: stateError,
       sources,
+      lessons,
       observed_topic_count: observedTopics().length,
       session_ingest_configured: !!process.env.WATCHER_SESSION_TOKEN,
       forced_tick: forced,

@@ -144,6 +144,22 @@ jobs:
             # gateway-staging — every intents/board call 404'd, so Find a
             # Partner / matches could not load on preview.vitanaland.com.
             "FEATURE_INTENT_ENGINE_A=true"
+            # VTID-03531 (Watcher Phase 3): turn reminder injection on, STAGING
+            # ONLY. Same --set-env-vars-REPLACES reason as every other flag in
+            # this list — a hand-set gcloud flag is wiped on the next deploy.
+            #
+            # Advisory by design: buildReminders() is wrapped in try/catch at
+            # both call sites (dev-autopilot-planning.ts,
+            # dev-autopilot-execute.ts) and a fault yields an empty string, so
+            # the worst case is the prompt it was already producing. It blocks
+            # nothing.
+            #
+            # NOT pinned in AWS-PROD-DEPLOY-GATEWAY.yml on purpose. That
+            # workflow's flag block is reserved for flags with MEASURED
+            # evidence for the prod stack, and says so — this is a feature
+            # activation, not an outage fix, so it graduates to prod through
+            # PUBLISH after staging shows real reminders being served.
+            "WATCHER_REMINDERS_ENABLED=true"
             # DEV-COMHU-0513 (ORB first-greeting latency): bake the fast-greeting
             # stack into the staging env so it PERSISTS across every STAGE-DEPLOY
             # (--set-env-vars REPLACES, so hand-set gcloud flags were wiped on the

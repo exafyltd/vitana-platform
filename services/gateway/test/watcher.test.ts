@@ -48,14 +48,19 @@ function buildApp() {
 }
 
 /** Minimal chainable stand-in for the supabase query builder. */
-function stubSupabase(result: { data?: unknown; error?: { message: string } | null }) {
+function stubSupabase(result: {
+  data?: unknown;
+  error?: { message: string } | null;
+  /** For head+count queries, e.g. /health's watcher_lessons totals. */
+  count?: number;
+}) {
   const chain: Record<string, unknown> = {};
-  for (const m of ['select', 'eq', 'order', 'limit']) {
+  for (const m of ['select', 'eq', 'gt', 'order', 'limit']) {
     chain[m] = jest.fn(() => chain);
   }
   // Awaiting the chain resolves to the result.
   (chain as { then: unknown }).then = (resolve: (v: unknown) => void) =>
-    resolve({ data: result.data ?? [], error: result.error ?? null });
+    resolve({ data: result.data ?? [], error: result.error ?? null, count: result.count ?? 0 });
   return { from: jest.fn(() => chain), __chain: chain };
 }
 
@@ -202,6 +207,24 @@ describe('GET /api/v1/watcher/health', () => {
     mockGetSupabase.mockReturnValue(stubSupabase({ data: sources }));
     const res = await request(buildApp()).get('/api/v1/watcher/health');
     expect(res.body.data.sources).toEqual(sources);
+  });
+
+  it('reports learned-lesson counts alongside cursor health (VTID-03531)', async () => {
+    // "The observer is healthy" and "the Watcher is learning" are independent
+    // facts, and for three days they diverged completely — 591 steps recorded
+    // against 0 lessons, because the distiller had no call site. Cursor state
+    // alone could not show that, so /health has to report both.
+    mockGetSupabase.mockReturnValue(stubSupabase({ data: [], count: 7 }));
+    const res = await request(buildApp()).get('/api/v1/watcher/health');
+    expect(res.body.data.lessons).toEqual({ total: 7, injectable: 7 });
+  });
+
+  it('reports zeroed lesson counts rather than omitting them when nothing is learned', async () => {
+    mockGetSupabase.mockReturnValue(stubSupabase({ data: [], count: 0 }));
+    const res = await request(buildApp()).get('/api/v1/watcher/health');
+    // An absent field reads as "not measured"; an explicit 0 reads as
+    // "measured, and it is zero" — which is the alarming case.
+    expect(res.body.data.lessons).toEqual({ total: 0, injectable: 0 });
   });
 
   it('reports state_error instead of failing when the cursor table errors', async () => {
