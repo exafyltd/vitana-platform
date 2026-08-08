@@ -314,6 +314,71 @@ export async function isSignedOutOnAllKnownDevices(
   return data.every((row: { revoked_at: string | null }) => row.revoked_at !== null);
 }
 
+/**
+ * A phone this user no longer owns must stop buzzing, even while the user is
+ * still signed in somewhere else. (VTID-03507)
+ *
+ * `isSignedOutOnAllKnownDevices` above only suppresses Appilix for a user who
+ * is signed out on EVERY device. That misses the common real case and left the
+ * duplicate in place: someone hands the phone over (or signs a second account
+ * into it) but stays signed in on their laptop. Their phone claim is revoked,
+ * their desktop claim is live, so "signed out everywhere" is false — and
+ * Appilix, which addresses devices by `user_identity` and keeps stale
+ * identity→device mappings we cannot purge, keeps delivering that account's
+ * copy to the phone. Two accounts, two languages, one lock screen.
+ *
+ * Observed exactly this way: one Android token held live by the current owner
+ * (de) and revoked for the previous owner (en), who still had a live Windows
+ * desktop claim — and whose English copy still arrived on the phone.
+ *
+ * Suppress when BOTH hold:
+ *   1. the user has no live claim on any NATIVE (app-shell) device — a live
+ *      desktop/web claim is irrelevant here, Appilix cannot reach a browser; and
+ *   2. one of their revoked native claims is now held live by a DIFFERENT
+ *      account — i.e. that phone demonstrably belongs to someone else now.
+ *
+ * Both conditions together keep this narrow: a user who still has the app on
+ * their own phone is never suppressed, and neither is one whose claim lapsed
+ * without anyone else taking the device over. Fails OPEN on any query error.
+ */
+export async function hasLostDeviceToAnotherAccount(
+  userId: string,
+  supabase: SupabaseClient<any, any, any>
+): Promise<boolean> {
+  const { data, error } = await supabase
+    .from('user_device_tokens')
+    .select('fcm_token, device_label, revoked_at')
+    .eq('user_id', userId);
+  if (error || !data?.length) return false;
+
+  type Row = { fcm_token: string; device_label: string | null; revoked_at: string | null };
+  const rows = data as Row[];
+
+  // Native app-shell devices are the only ones Appilix can reach. The frontend's
+  // registerAppilixDevice() prefixes the label with "Appilix "; the wrapper's own
+  // WebView UA also carries an "App<NN>" build token (App9/App10/App95/App96…).
+  // Plain browser UAs match neither — note "AppleWebKit" has no digits after
+  // "App", so it cannot false-positive here.
+  const isNative = (label: string | null) => /appilix|\bApp\d+\b/i.test(label || '');
+
+  if (rows.some((r) => r.revoked_at === null && isNative(r.device_label))) return false;
+
+  const lostNativeTokens = rows
+    .filter((r) => r.revoked_at !== null && isNative(r.device_label))
+    .map((r) => r.fcm_token);
+  if (!lostNativeTokens.length) return false;
+
+  const { data: heldByOthers, error: othersErr } = await supabase
+    .from('user_device_tokens')
+    .select('fcm_token')
+    .in('fcm_token', lostNativeTokens)
+    .neq('user_id', userId)
+    .is('revoked_at', null)
+    .limit(1);
+  if (othersErr) return false;
+  return !!heldByOthers?.length;
+}
+
 // ── Appilix Native Push (Maxina iOS + Android apps) ──────────
 
 /**
@@ -682,7 +747,11 @@ export async function notifyUser(
     // identity→device mappings we can't purge, so without this the account that
     // LEFT a shared phone keeps pushing to it — the second, wrong-language copy
     // of every notification.
-    const appilixSuppressed = await isSignedOutOnAllKnownDevices(userId, supabase);
+    // VTID-03507 widens this: signed out EVERYWHERE, or still signed in
+    // elsewhere but no longer the owner of the phone Appilix would reach.
+    const appilixSuppressed =
+      (await isSignedOutOnAllKnownDevices(userId, supabase)) ||
+      (await hasLostDeviceToAnotherAccount(userId, supabase));
 
     if (payload.data?.url) {
       // Notifications with deep-link URLs must go through Appilix first.
