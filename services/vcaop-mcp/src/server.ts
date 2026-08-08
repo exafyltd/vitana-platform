@@ -8,14 +8,18 @@
  */
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { ZodRawShape } from 'zod';
-import { AuthContext, ToolError } from './types';
+import { AuthContext, ToolDeclaration, ToolError } from './types';
 import { hasScopes } from './auth/scopes';
 import { READ_TOOLS } from './tools/registry';
+import { WRITE_TOOLS } from './tools/write-tools';
 import { MeshReadBackend } from './backend/read-backend';
+import { MeshWriteBackend } from './backend/write-backend';
 import { AuditSink, assertAuditSafe } from './audit/audit-sink';
 
 export interface ServerDeps {
   backend: MeshReadBackend;
+  /** Phase 6: when absent, no write tool exists on the surface at all. */
+  writeBackend?: MeshWriteBackend;
   audit: AuditSink;
   now?: () => number;
 }
@@ -47,7 +51,29 @@ export function buildMcpServerForAuth(deps: ServerDeps, ctx: AuthContext): McpSe
     handler: (args: Record<string, unknown>) => Promise<unknown>,
   ) => void;
 
-  for (const tool of READ_TOOLS) {
+  interface RegistrableTool {
+    decl: ToolDeclaration;
+    inputShape: ZodRawShape;
+    run: (args: Record<string, unknown>) => Promise<unknown>;
+  }
+
+  const tools: RegistrableTool[] = [
+    ...READ_TOOLS.map((t) => ({
+      decl: t.decl,
+      inputShape: t.inputShape,
+      run: (args: Record<string, unknown>) => t.handler(deps.backend, ctx, args),
+    })),
+    // Write tools exist ONLY when a write backend is configured.
+    ...(deps.writeBackend
+      ? WRITE_TOOLS.map((t) => ({
+          decl: t.decl,
+          inputShape: t.inputShape,
+          run: (args: Record<string, unknown>) => t.handler(deps.writeBackend!, ctx, args),
+        }))
+      : []),
+  ];
+
+  for (const tool of tools) {
     if (!hasScopes(ctx.scopes, tool.decl.requiredScopes)) continue; // scope-filtered discovery
 
     registerTool(
@@ -93,9 +119,18 @@ export function buildMcpServerForAuth(deps: ServerDeps, ctx: AuthContext): McpSe
             `Missing required scope(s): ${tool.decl.requiredScopes.join(', ')}`,
           );
         }
+        // Central confirmation gate (Phase 6): consequential tools refuse to
+        // run without the client's attestation of explicit user confirmation.
+        if (tool.decl.confirmationRequired && args.user_confirmation !== true) {
+          await emit('denied', 'confirmation_required');
+          return stableError(
+            'confirmation_required',
+            `${tool.decl.name} requires explicit user confirmation: show the user the exact action and set user_confirmation=true only after they approve.`,
+          );
+        }
 
         try {
-          const result = await tool.handler(deps.backend, ctx, args);
+          const result = await tool.run(args);
           await emit('success', 'ok');
           return {
             content: [{ type: 'text' as const, text: JSON.stringify(result) }],

@@ -50,6 +50,7 @@ export type McpErrorCode =
   | 'forbidden_scope'
   | 'forbidden_tenant'
   | 'not_found'
+  | 'confirmation_required'
   | 'rate_limited'
   | 'backend_unavailable'
   | 'internal';
