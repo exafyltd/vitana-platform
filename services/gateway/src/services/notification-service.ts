@@ -149,6 +149,15 @@ export const TYPE_META: Record<string, TypeMeta> = {
   onboarding_step_completed:   { channel: 'inapp',          priority: 'p3', category: 'system' },
   weekly_activity_summary:     { channel: 'push_and_inapp', priority: 'p2', category: 'system' },
   feature_announcement:        { channel: 'push_and_inapp', priority: 'p2', category: 'system' },
+  // BOOTSTRAP-COMMUNITY-MARKETPLACE: seller-facing moderation outcomes
+  marketplace_listing_approved: { channel: 'push_and_inapp', priority: 'p2', category: 'system' },
+  marketplace_listing_rejected: { channel: 'push_and_inapp', priority: 'p1', category: 'system' },
+  marketplace_listing_removed:  { channel: 'push_and_inapp', priority: 'p1', category: 'system' },
+  // BOOTSTRAP-COMMUNITY-MARKETPLACE (Chunk 5): buyer's first contact message
+  // on a listing — category 'chat' (not 'system') so it respects the same
+  // chat notification preference as new_chat_message, since it IS a chat
+  // message, just with listing-specific copy instead of the generic sender-name title.
+  listing_interest:            { channel: 'push_and_inapp', priority: 'p1', category: 'chat' },
   // Admin Companion (BOOTSTRAP-ADMIN-EE)
   admin_insight_urgent:        { channel: 'push_and_inapp', priority: 'p0', category: 'system' },
   admin_insight_action_needed: { channel: 'inapp',          priority: 'p1', category: 'system' },

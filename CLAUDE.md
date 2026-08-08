@@ -1140,6 +1140,48 @@ must use `bulkGetUserLocales` to batch-fetch in one query.
 
 ---
 
+## 13c. VITANALAND COMMERCE — LONG-TERM VISION (self-service merchant onboarding)
+
+**This is a standing product-direction framework, not a specific technical
+spec.** Record it here because Discover/Commerce work will keep recurring
+across sessions and VTIDs, and every future round should be evaluated
+against this end goal, not just against the immediate ticket.
+
+**The ultimate goal:** any business — one that already exists today, or one
+that launches in the future — should be able to connect itself to Vitana's
+Discover marketplace the same way DoctorBox, Awin (MISSHA), Amazon.ae, and
+Admitad (AliExpress/Bodylab24) were connected, but **without needing a
+human to hand-write a SQL migration for it.** Today's onboarding path
+(confirmed via every merchant integration to date) is manual: a person
+gathers catalog data, negotiates/accepts an affiliate relationship, and an
+engineer seeds `merchants`/`products` rows by hand. That is the *current*
+mechanism, not the *target* one.
+
+**The target:** a self-service space/platform where a business owner can
+plug their own storefront into Discover directly — modeled on how Shopify
+itself works and feels for merchants (low-friction onboarding, an
+app-store-like connection flow, clear ongoing control over their own
+catalog/pricing/availability) — rather than requiring bespoke engineering
+per merchant. This should eventually cover:
+
+- **Existing businesses** with their own storefront/catalog wanting
+  distribution through Vitana's audience.
+- **Future/new businesses** that don't have an existing sales channel yet
+  and want to launch and promote through Vitana as one of their channels.
+
+**Why this matters for near-term decisions:** when doing incremental
+Discover/Commerce work (a new merchant seed, a new sync provider, a new
+attribution mechanism, a new commission flow), prefer designs that move
+toward self-service plug-in-ability over designs that only solve the
+one-merchant-in-front-of-us problem — e.g. prefer schema/config choices a
+future onboarding UI could drive, over ones only an engineer running a
+migration could drive. This doesn't mean over-engineering every single
+merchant integration now; it means noticing when a shortcut is quietly
+adding to the pile of hand-seeded, engineer-only onboarding debt, and
+flagging that tradeoff explicitly rather than silently repeating it.
+
+---
+
 ---
 
 ## 14. MEMORY & INTELLIGENCE ARCHITECTURE (VTID-01225)
@@ -1540,6 +1582,7 @@ Use these PATs with the GitHub REST API (`api.github.com`) for all PR and deploy
 | 2026-07-29 | **Governance correction, not new work:** `docs/AWS-CUTOVER-RUNBOOK.md` §1's DNS row still said "Unmoved" and §3's "EXECUTION RECORD" citation pointed at content that was never actually written, and this file's §1b/Never-rule-1 prose still said "not yet a sole-production cutover" with no VTID-03419 changelog row at all — despite VTID-03419 (below) having genuinely executed 2 days earlier. The infrastructure change was real and independently verifiable (DNS resolution, live production traffic, working PUBLISH deploys against it); the paper trail describing it was not committed. Root cause: the doc-update step in VTID-03419's own spec (§5) was apparently never pushed before that session's context was summarized. Found via a second Claude session's independent skepticism of a status claim — see its investigation for the discovery. Fixed: runbook §1/§3 now match reality (with real EXECUTION RECORD blocks — ALB rule priorities, exact DNS record changes, the Cloudflare Worker origin override that actually gated the apex leg, verification method, rollback path), this file's §1b/Never-rule-1 updated, VTID-03419 changelog row added below. | (governance fix, no VTID) |
 | 2026-07-27 | **GCP → AWS production cutover for gateway + frontend (VTID-03419).** Repointed `gateway.vitanaland.com` (A→CNAME, `34.111.235.0` → `vitana-alb-prod`) and the `vitanaland.com` apex/`www` (CNAME → the same ALB) to AWS — these two hostnames are now **sole production on AWS**, not DR. Deliberately narrow: excluded Aurora-dependent services (DMS showed ~154k silently-dropped row applies — Aurora is not a valid failover target), `oasis-projector` (dual-writer risk against a DMS-managed table), `orb-agent`/ORB voice (hard Google-Cloud-service dependency, unrelated to hosting), and any GCP decommission — GCP stays fully running as the standing rollback target. Pre-flight added ALB host-header rules at priority 3/4 (below the pre-existing path rules at priority 10, which would otherwise route to AWS staging regardless of `Host`). Caught and fixed a live blocker mid-cutover: a Cloudflare Worker (`vitanaland-proxy`, dashboard-managed) had route rules on `vitanaland.com/*` that override DNS entirely with a hard-coded GCP origin — DNS alone did not move apex traffic; the Worker's origin had to be patched too. Verified via authenticated read+write, a forced-HTTP/1.1 WebSocket handshake, and external-vantage fingerprinting (both clouds report `env:"production"`, so status fields alone don't distinguish them) — 60-minute post-cutover alarm watch clean. Full execution record: `docs/AWS-CUTOVER-RUNBOOK.md` §3. | VTID-03419 |
 | 2026-07-28 | AWS staging→prod publish path (PUBLISH parity): `AWS-PROD-DEPLOY-GATEWAY.yml` gained `deploy_mode=promote-staging` (new default — ships the EXACT ECR image `vitana-gateway` staging runs, verified over HTTP build-info, pinned via new `expected_commit` input; `rebuild-main` keeps the old from-source path) and its smoke URL default is now canonical `gateway.vitanaland.com`. Gateway: new `PUBLISH_TARGET_CLOUD=aws\|gcp` switch (default `gcp`, zero change until set) makes `POST /operator/publish` promote AWS staging→AWS prod (frontend leg → `AWS-PROD-DEPLOY-FRONTEND.yml`; optional `GCP_DUAL_PUBLISH_ENABLED` refreshes the GCP rollback target; canary → 400 on AWS) and backs `/operator/revisions` for the gateway rows with build-info from the AWS stacks — fixes the Command Hub PUBLISH popover's "Could not load: staging 500" on the ECS-served gateway (no GCP ADC there). New `services/gateway/src/services/aws-gateway-admin.ts` (HTTP-only introspection; `vitana-ecs-task-role` has no `ecs:Describe*`). | VTID-03420 |
+| 2026-07-23 | Added §13c: Vitanaland Commerce long-term vision — self-service merchant onboarding (any existing or future business connects to Discover directly, Shopify-like ease, not hand-written migrations per merchant) as a standing framework for evaluating future Discover/Commerce work. Recorded per explicit request during the DoctorBox per-product-deep-link/new-products round (VTID-02000). | BOOTSTRAP-COMMERCE-VISION |
 | 2026-07-24 | Added automatic once-a-day "Did You Know" News Feed card: `did_you_know_state` table (per-tenant rotation index) + `POST /api/v1/scheduled-notifications/daily-feature-tip` (advances through a curated `services/gateway/src/data/feature-tips.ts` list, publishes a tenant-wide `did-you-know-feature` announcement, fans out in-app + push in each user's locale) + Cloud Scheduler entry (`scripts/setup-cloud-scheduler.sh`, daily 17:00 UTC). Companion vitana-v1 fix: feature-announcement cards no longer pinned permanently at the News Feed top — now merge chronologically into the post stream so they get pushed down by new posts, per live user report. No VTID existed for this yet; tracked under this BOOTSTRAP tag pending one. Requires someone with `gcloud` access to run the updated `setup-cloud-scheduler.sh` once to actually create the Cloud Scheduler job — code shipping does not create it automatically. | BOOTSTRAP-DAILY-FEATURE-TIP |
 | 2026-07-24 | Built the AWS-DR RunTask dispatch path for the autopilot executor — new `dispatchExecutorJobAws()` in `services/gateway/src/services/aws-ecs-admin.ts` (mirrors `dispatchExecutorJob()`'s return shape via `ecs:RunTask` against task def family `vitana-autopilot-executor`), branched in `dev-autopilot-execute.ts` on a new `DEV_AUTOPILOT_JOB_CLOUD=aws\|gcp` env var (default `gcp`). New `AWS-PROD-DEPLOY-AUTOPILOT-EXECUTOR.yml` (build+push+register only — no ECS service to roll, next RunTask dispatch picks up `:LATEST`). `ANTHROPIC_API_KEY`/`OPENAI_API_KEY` deliberately omitted from the live task definition (deferred pending AWS/Anthropic sponsorship decision). Updated §1b table + Never-rule exception. | VTID-03415 |
 | 2026-07-24 | Added the missing AWS deploy pipeline for `orb-agent` (`AWS-PROD-DEPLOY-ORB-AGENT.yml`) — the ECS service and task def family (`vitana-orb-agent`) already existed from the unexplained 2026-07-09 bulk-provisioning event, but had no CI/CD, so it could silently drift from `main`. No public ALB/DNS (outbound-only to LiveKit Cloud) — verified via ECS-level container `healthCheck` + `aws ecs wait services-stable`. Updated §1b table. | VTID-03414 |

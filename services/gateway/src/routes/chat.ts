@@ -21,6 +21,8 @@ import { createClient } from '@supabase/supabase-js';
 import { notifyUser } from '../services/notification-service';
 import { VITANA_BOT_USER_ID, isVitanaBot } from '../lib/vitana-bot';
 import { processConversationTurn } from '../services/conversation-client';
+import { tt } from '../i18n/catalog';
+import { getUserLocale } from '../i18n/server-locale';
 
 const router = Router();
 
@@ -166,6 +168,47 @@ router.post('/send', requireAuth, requireTenant, async (req: Request, res: Respo
       }
     }
 
+    // BOOTSTRAP-COMMUNITY-MARKETPLACE (Chunk 5): "Message seller"/"Contact
+    // provider" CTAs send the first message through this same endpoint with
+    // content_data.cta_source='community_marketplace' — swap the generic
+    // "<sender name>: <text>" push for listing-specific copy so the seller
+    // sees "Someone is interested in <listing>" instead of an anonymous chat
+    // preview. Still writes a normal chat_messages row above; only the push
+    // notification's type/copy differs.
+    const listingTitle = typeof (metadata as any).listing_title === 'string'
+      ? (metadata as any).listing_title.slice(0, 120)
+      : null;
+    const isListingInterest = (metadata as any).cta_source === 'community_marketplace' && !!listingTitle;
+
+    let notifType = 'new_chat_message';
+    let notifTitle = senderName;
+    let notifBodyFinal = notifBody.length > 100 ? notifBody.slice(0, 97) + '...' : notifBody;
+    const notifData: Record<string, string> = {
+      type: 'new_chat_message',
+      sender_id: identity.user_id,
+      sender_name: senderName,
+      message_id: data.id,
+      thread_id: identity.user_id,
+      // Path-based deep-link — query-string form (?recipient=…&context=global)
+      // silently fails in Appilix's Android in-app browser when launched from
+      // a notification tap (confirmed via BOOTSTRAP-NOTIF-MESSENGER-DIAG:
+      // diagnostic beacon never fired, no Cloud Run hit recorded). Path form
+      // launches cleanly because the URL has no special characters.
+      url: `/inbox/u/${identity.user_id}`,
+    };
+
+    if (isListingInterest) {
+      const receiverLocale = await getUserLocale(supabase, receiver_id);
+      notifType = 'listing_interest';
+      notifTitle = tt('notif.listing_interest.title', receiverLocale);
+      notifBodyFinal = tt('notif.listing_interest.body', receiverLocale, { title: listingTitle! });
+      notifData.type = 'listing_interest';
+      notifData.listing_title = listingTitle!;
+      if (typeof (metadata as any).listing_id === 'string') {
+        notifData.listing_id = (metadata as any).listing_id;
+      }
+    }
+
     // Awaited (not fire-and-forget) so the HTTP response below isn't sent
     // until the push dispatch has actually finished — Cloud Run only
     // guarantees CPU while a request is in flight, so a fire-and-forget
@@ -177,24 +220,8 @@ router.post('/send', requireAuth, requireTenant, async (req: Request, res: Respo
       await notifyUser(
         receiver_id,
         identity.tenant_id!,
-        'new_chat_message',
-        {
-          title: senderName,
-          body: notifBody.length > 100 ? notifBody.slice(0, 97) + '...' : notifBody,
-          data: {
-            type: 'new_chat_message',
-            sender_id: identity.user_id,
-            sender_name: senderName,
-            message_id: data.id,
-            thread_id: identity.user_id,
-            // Path-based deep-link — query-string form (?recipient=…&context=global)
-            // silently fails in Appilix's Android in-app browser when launched from
-            // a notification tap (confirmed via BOOTSTRAP-NOTIF-MESSENGER-DIAG:
-            // diagnostic beacon never fired, no Cloud Run hit recorded). Path form
-            // launches cleanly because the URL has no special characters.
-            url: `/inbox/u/${identity.user_id}`,
-          },
-        },
+        notifType,
+        { title: notifTitle, body: notifBodyFinal, data: notifData },
         supabase,
       );
     } catch (err: any) {
