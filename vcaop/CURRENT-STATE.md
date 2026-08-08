@@ -11,6 +11,45 @@
 
 ## Current position
 
+- **AI COMMERCE MESH — Phases 6+7 built (2026-08-08, VTID-03540 / VTID-03541)
+  — the program's build phases are COMPLETE (0-7), all dev/sandbox-only:**
+  - **Phase 6 (VTID-03540):** (a) `src/settlement/` deterministic VTNA
+    ledger — versioned fee config, integer minor units only, idempotent by
+    instruction id, balance validation, escrow lock/release, reversal as
+    compensating entries (history append-only), receipts, reconcile()
+    re-deriving balances; **constructor refuses any non-sandbox config**
+    (BLK-010 is a legal decision, not a code path); no LLM ever computes or
+    executes a transfer. (b) `vcaop-mcp` Phase 6 WRITE tools (create_cart,
+    add_cart_item, create_checkout_session, confirm_order, cancel_order,
+    request_refund, create/activate_business_connection,
+    request/approve/revoke_data_grant, settle_vtna) behind new per-family
+    write scopes; every write requires an idempotency_key (dup key returns
+    the ORIGINAL result — proven no double effect); consequential tools
+    refuse without `user_confirmation:true` (central `confirmation_required`
+    gate; revoke_data_grant deliberately friction-free); **settle_vtna has NO
+    amount parameter** — the ledger computes amounts from the reference;
+    write tools exist ONLY when a write backend is configured (Phase 1
+    read-only config unchanged). DB: `settlement_instruction` +
+    `connector_usage_record` (migration 0003, PG16-verified).
+  - **Phase 7 (VTID-03541) — BUILT DORMANT, delivery gated on BLK-009:**
+    `src/health/` is library+tests only, exported with a ⛔ note, mounted on
+    NO route and exposed as NO MCP tool until the independent privacy/consent
+    review passes. Purpose-bound ConsentRegistry (one grantee, one purpose,
+    explicit claims, validity window; only the data subject approves/revokes;
+    denials receipted too; receipts immutable), AttestationService (derived
+    claims only — `raw_data_disclosed` hardwired false, no field for raw
+    values; consent gate runs BEFORE any metric read; **ai_inferred
+    provenance refused** — no insurance action on unverifiable inference;
+    revocation cascades: attestations deleted, access refused), QuoteExchange
+    (insurer must match grantee; compare is a pure sort; only the data
+    subject selects; reward = the amount from the APPROVED GRANT settled via
+    the deterministic ledger). DB: consent/health tables (migration 0004,
+    PG16-verified incl. the consent_receipt RESTRICT append-only guarantee)
+    — do NOT apply live until BLK-009 passes; service_role-only + dedicated
+    RLS at that point. **Suites: vcaop 45/45 suites 269/269 tests; vcaop-mcp
+    6/6 suites 38/38 tests.** Runtime wiring (gateway mounting, Prisma repos,
+    dev deploy) remains BLK-001; open human gates: BLK-006 (mcp DNS),
+    BLK-007 (OAuth AS), BLK-009 (privacy review), BLK-010 (VTNA legal).
 - **AI COMMERCE MESH — Phase 5 built (2026-08-08, VTID-03538):** AI-assisted
   mapping + drift healing in `src/factory/`. (1) **Transform registry**
   (`transforms.ts`): named deterministic transforms (cents_to_decimal,

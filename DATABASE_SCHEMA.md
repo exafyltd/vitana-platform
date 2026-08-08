@@ -1531,5 +1531,33 @@ as the factory tables above (vcaop BLK-001, VTID-03486 drift discipline).
 
 ---
 
+## Commerce Mesh — settlement + consent/health tables (VTID-03540 / VTID-03541, 2026-08-08)
+
+Two additive reversible migrations, both verified up→down→up on ephemeral
+Postgres 16; **neither applied to any live database** (BLK-001 + the gates
+below).
+
+`20260808_vcaop_mesh_settlement_0003` (VTID-03540 — sandbox instruments only
+until the BLK-010 legal/regulatory review):
+
+| Table | Purpose |
+|-------|---------|
+| `settlement_instruction` | VTNA settlement instructions; id is caller-supplied — the idempotency anchor; amounts computed by the deterministic ledger, never by an LLM |
+| `connector_usage_record` | Per-tenant/connector usage metering (tool calls, outcomes, latency) |
+
+`20260808_vcaop_mesh_health_0004` (VTID-03541 — **DORMANT layer, BLK-009**:
+authored for the independent privacy review to examine; do NOT apply live
+until it passes; at live-apply time these tables get service_role-only +
+dedicated RLS and are never joined into general query paths):
+
+| Table | Purpose |
+|-------|---------|
+| `consent_grant` | Purpose-bound grants (one grantee, one purpose, explicit claims, validity window, reward, retention/revocation status) |
+| `consent_receipt` | Append-only receipts (granted/revoked/attestation_issued/access_denied) — FK is RESTRICT so history survives its grant; detail is metadata only, never metric values |
+| `health_data_attestation` | Derived claims only (met/confidence); `raw_data_disclosed` defaults false; `deleted_at` marks the revocation cascade |
+| `insurance_quote` | Insurer quotes citing attestations under a grant |
+
+---
+
 **Remember:** This file is the SINGLE SOURCE OF TRUTH for table names.
 When in doubt, CHECK HERE FIRST!

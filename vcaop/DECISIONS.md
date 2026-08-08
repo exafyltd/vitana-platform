@@ -119,3 +119,26 @@
   a mapped field, auth, an action, a sensitive field, or a field becoming
   required is material → human approval. Only clearly-additive benign change
   is auto-repairable, and even that must pass full sandbox certification.
+
+## 2026-08-08 — Commerce Mesh Phases 6+7 (VTID-03540 / VTID-03541), Tier-A decisions
+
+- **settle_vtna has no amount parameter, by schema.** The deterministic ledger
+  computes amounts from the reference; an amount an AI client "knows" is not
+  part of the contract, so there is nothing to validate away (ADR-005).
+- **The ledger refuses non-sandbox config at construction** — going live is a
+  legal decision (BLK-010) recorded by a human changing the config, never a
+  code path that happens to be reachable.
+- **Reversal is a compensating entry, escrow release is single-shot, history
+  is append-only** — a ledger whose past can be edited is not a ledger.
+- **Confirmation is enforced centrally in the server wrapper**, not per-tool:
+  a tool author cannot forget it, and revocation (user-protective) is
+  deliberately exempt — protective actions never get a confirmation dance.
+- **Phase 7 is BUILT DORMANT:** library + tests only, exported behind a ⛔
+  note, mounted on no route, exposed as no MCP tool. Delivery is gated on the
+  independent privacy/consent review (BLK-009) examining these real controls.
+- **Attestations are structurally raw-free:** the type has no field for
+  metric values; `raw_data_disclosed` is hardwired false; the consent gate
+  runs before any metric read; `ai_inferred` provenance is refused by type.
+- **consent_receipt's FK is RESTRICT, not CASCADE** — receipts must survive
+  their grant; deleting consent history to delete a grant is the exact
+  failure an immutable receipt exists to prevent.
