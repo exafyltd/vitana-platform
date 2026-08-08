@@ -1,9 +1,9 @@
 /**
- * VTID-DANCE-D12: Matchmaker agent (Gemini 2.5 Pro).
+ * VTID-DANCE-D12: Matchmaker agent (Claude Sonnet 4.6).
  *
  * Layer 2 over the SQL matcher. Takes the top-K candidates from
- * compute_intent_matches() + the requester's full context, asks Gemini
- * 2.5 Pro to re-rank and explain, and returns a richer match list.
+ * compute_intent_matches() + the requester's full context, asks Claude
+ * Sonnet 4.6 to re-rank and explain, and returns a richer match list.
  *
  * Density-aware:
  *  - solo  (pool < 5)  → simpler prompt, focus on presentation + fallbacks
@@ -13,31 +13,18 @@
  * Sensitive kinds (`partner_seek`, paid services) get extended thinking on
  * by default. Other kinds use the default reasoning budget.
  *
- * During the credit window (now → 2026-07-01) every model selection
- * favours quality: 2.5 Pro for matchmaker, embeddings via gemini-embedding-001.
+ * BOOTSTRAP-GEMINI-TO-CLAUDE: migrated off Gemini 2.5 Pro/Vertex to Claude
+ * Sonnet 4.6 via the direct Anthropic API — see claude-text-client.ts.
  *
- * Falls back gracefully to SQL ranking if Gemini fails.
+ * Falls back gracefully to SQL ranking if Claude fails.
  */
 
-import { VertexAI } from '@google-cloud/vertexai';
 import { getSupabase } from '../lib/supabase';
 import { withGeminiLog } from './gemini-call-log';
+import { callClaudeText, CLAUDE_SONNET_4_6 } from './claude-text-client';
 import type { MatchRow } from './intent-matcher';
 
-const VERTEX_PROJECT =
-  process.env.GOOGLE_CLOUD_PROJECT || process.env.GCP_PROJECT || 'lovable-vitana-vers1';
-const VERTEX_LOCATION = process.env.VERTEX_LOCATION || 'us-central1';
-const PRIMARY_MODEL = 'gemini-2.5-pro';
-const FALLBACK_MODEL = 'gemini-2.0-flash';
-
-let vertexAI: VertexAI | null = null;
-try {
-  if (VERTEX_PROJECT && VERTEX_LOCATION) {
-    vertexAI = new VertexAI({ project: VERTEX_PROJECT, location: VERTEX_LOCATION });
-  }
-} catch {
-  vertexAI = null;
-}
+const PRIMARY_MODEL = CLAUDE_SONNET_4_6;
 
 export interface MatchmakerCandidateOut {
   match_id: string | null;            // null when this came purely from profile fallback
@@ -101,8 +88,6 @@ interface ProfileFallbackCandidate {
   city: string | null;
   dance_preferences: Record<string, any> | null;
 }
-
-const SENSITIVE_KINDS = new Set(['partner_seek']);
 
 /**
  * D12 async wrapper: kick off matchmaker as fire-and-forget. The synchronous
@@ -282,14 +267,13 @@ export async function runMatchmakerForIntent(intentId: string): Promise<Matchmak
     sqlCandidates, profileFallback,
   });
 
-  const isSensitive = SENSITIVE_KINDS.has(source.intent_kind);
-  const model = isSensitive || mode === 'growth' ? PRIMARY_MODEL : PRIMARY_MODEL; // always Pro during credit window
+  const model = PRIMARY_MODEL;
 
   const agentResponse = await callAgent({
     prompt, model, source, requester, intentId,
   });
 
-  // If Gemini failed, fall back to a deterministic shape from SQL only.
+  // If Claude failed, fall back to a deterministic shape from SQL only.
   if (!agentResponse) {
     return buildSqlOnlyResult({ source, mode, poolSize, sqlCandidates });
   }
@@ -598,7 +582,6 @@ async function callAgent(args: {
   voice_readback: string;
   reasoning_summary: string;
 } | null> {
-  if (!vertexAI) return null;
   const { prompt, model, source, requester, intentId } = args;
 
   try {
@@ -611,20 +594,14 @@ async function callAgent(args: {
         intent_id: intentId,
       },
       async () => {
-        const genModel = vertexAI!.getGenerativeModel({
+        const raw = await callClaudeText({
           model,
-          generationConfig: {
-            temperature: 0.2,
-            maxOutputTokens: 4096,
-            topP: 0.9,
-            responseMimeType: 'application/json',
-          },
+          system: 'Return ONLY valid JSON matching the schema described in the prompt — no markdown, no prose.',
+          prompt,
+          maxTokens: 4096,
+          temperature: 0.2,
         });
-        const resp = await genModel.generateContent({
-          contents: [{ role: 'user', parts: [{ text: prompt }] }],
-        });
-        const part = resp.response?.candidates?.[0]?.content?.parts?.find((p: any) => 'text' in p);
-        const raw = part ? (part as any).text : '';
+        if (!raw) throw new Error('empty Claude response');
         return raw;
       }
     );

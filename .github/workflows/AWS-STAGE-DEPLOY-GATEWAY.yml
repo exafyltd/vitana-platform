@@ -28,6 +28,11 @@
 name: AWS Stage Deploy Gateway (ECS)
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - 'services/gateway/**'
+      - '.github/workflows/AWS-STAGE-DEPLOY-GATEWAY.yml'
   workflow_dispatch:
     inputs:
       reason:
@@ -38,6 +43,21 @@ on:
         description: 'Public gateway URL for post-deploy verification'
         required: false
         default: 'https://preview-aws-gateway.vitanaland.com'
+      # BOOTSTRAP-NOVA-SONIC-VOICE: per-dispatch canary overrides. Empty =
+      # fall back to the AWS_STAGE_NOVA_SONIC_* repository variables, so the
+      # push-triggered deploys keep reading the durable vars config.
+      nova_sonic_enabled:
+        description: 'Override NOVA_SONIC_ENABLED for this deploy (true/false; empty = use repo var)'
+        required: false
+        default: ''
+      nova_canary_user_ids:
+        description: 'Override Nova canary user UUID allowlist (comma-separated; empty = use repo var)'
+        required: false
+        default: ''
+      nova_canary_tenant_ids:
+        description: 'Override Nova canary tenant UUID allowlist (comma-separated; empty = use repo var)'
+        required: false
+        default: ''
       aws_region:
         description: 'AWS region'
         required: false
@@ -65,6 +85,16 @@ concurrency:
 jobs:
   build-push-deploy:
     runs-on: ubuntu-latest
+    # On push events the dispatch inputs are empty — resolve every target
+    # here with the staging defaults so auto-deploys and manual dispatches
+    # share one code path.
+    env:
+      GATEWAY_URL: ${{ inputs.gateway_url || 'https://preview-aws-gateway.vitanaland.com' }}
+      TARGET_AWS_REGION: ${{ inputs.aws_region || 'eu-central-1' }}
+      ECR_REPOSITORY: ${{ inputs.ecr_repository || 'vitana/gateway' }}
+      ECS_CLUSTER: ${{ inputs.ecs_cluster || 'Vitana-ECS-Cluster' }}
+      ECS_SERVICE: ${{ inputs.ecs_service || 'vitana-gateway' }}
+      DEPLOY_REASON: ${{ inputs.reason || format('auto-deploy on push to main ({0})', github.event.head_commit.message && 'push' || 'dispatch') }}
     steps:
       - uses: actions/checkout@v4
 
@@ -89,7 +119,7 @@ jobs:
         with:
           aws-access-key-id: ${{ secrets.AWS_STAGING_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_STAGING_SECRET_ACCESS_KEY }}
-          aws-region: ${{ inputs.aws_region }}
+          aws-region: ${{ env.TARGET_AWS_REGION }}
 
       - name: Login to Amazon ECR
         id: ecr
@@ -98,15 +128,15 @@ jobs:
       - name: Preflight — verify ECR repo + ECS service exist
         run: |
           set -e
-          if ! aws ecr describe-repositories --repository-names "${{ inputs.ecr_repository }}" >/dev/null 2>&1; then
-            echo "::error::ECR repository '${{ inputs.ecr_repository }}' not found. Available repositories:"
+          if ! aws ecr describe-repositories --repository-names "${{ env.ECR_REPOSITORY }}" >/dev/null 2>&1; then
+            echo "::error::ECR repository '${{ env.ECR_REPOSITORY }}' not found. Available repositories:"
             aws ecr describe-repositories --query 'repositories[].repositoryName' --output table
             exit 1
           fi
-          if ! aws ecs describe-services --cluster "${{ inputs.ecs_cluster }}" --services "${{ inputs.ecs_service }}" \
+          if ! aws ecs describe-services --cluster "${{ env.ECS_CLUSTER }}" --services "${{ env.ECS_SERVICE }}" \
                --query 'services[0].status' --output text 2>/dev/null | grep -q ACTIVE; then
-            echo "::error::ECS service '${{ inputs.ecs_service }}' not ACTIVE in cluster '${{ inputs.ecs_cluster }}'. Services:"
-            aws ecs list-services --cluster "${{ inputs.ecs_cluster }}" --output table
+            echo "::error::ECS service '${{ env.ECS_SERVICE }}' not ACTIVE in cluster '${{ env.ECS_CLUSTER }}'. Services:"
+            aws ecs list-services --cluster "${{ env.ECS_CLUSTER }}" --output table
             exit 1
           fi
 
@@ -116,48 +146,177 @@ jobs:
           REGISTRY: ${{ steps.ecr.outputs.registry }}
         run: |
           set -e
-          IMAGE="$REGISTRY/${{ inputs.ecr_repository }}:${{ steps.commit.outputs.short }}"
-          docker build -t "$IMAGE" -t "$REGISTRY/${{ inputs.ecr_repository }}:staging-latest" services/gateway
+          IMAGE="$REGISTRY/${{ env.ECR_REPOSITORY }}:${{ steps.commit.outputs.short }}"
+          docker build -t "$IMAGE" -t "$REGISTRY/${{ env.ECR_REPOSITORY }}:staging-latest" services/gateway
           docker push "$IMAGE"
-          docker push "$REGISTRY/${{ inputs.ecr_repository }}:staging-latest"
+          docker push "$REGISTRY/${{ env.ECR_REPOSITORY }}:staging-latest"
           echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
           echo "Pushed $IMAGE"
 
       - name: Register task-definition revision + roll the service
+        env:
+          # BOOTSTRAP-NOVA-SONIC-VOICE: Nova canary configuration prefers
+          # environment-scoped repository VARIABLES when set (not secrets —
+          # nothing here is secret; credentials are the ECS task role), but
+          # the FALLBACK is now the canary hardcoded below (2026-07-28) —
+          # not 'false'/empty. Repo variables were never actually set, so
+          # every push-triggered deploy from an unrelated team's merge (this
+          # workflow has no path filter — ANY push to main runs it) reset
+          # Nova to disabled, over and over, requiring a manual
+          # workflow_dispatch re-enable each time. That is no longer
+          # tolerable operationally. If AWS_STAGE_NOVA_SONIC_ENABLED /
+          # AWS_STAGE_NOVA_SONIC_CANARY_USER_IDS repo variables are ever
+          # set, they still win (checked first) — this only changes what
+          # happens when they are absent. To roll back to fully disabled,
+          # dispatch manually with nova_sonic_enabled=false, or set the
+          # repo variable explicitly to 'false'.
+          #
+          # BOOTSTRAP-NOVA-SONIC-VOICE (2026-07-29): expanded from the
+          # 4-user canary to the internal "vitana" dev tenant
+          # (00000000-0000-0000-0000-000000000001, DEV_IDENTITY.TENANT_ID)
+          # for the runbook's next step (docs/NOVA-SONIC-CANARY-RUNBOOK.md
+          # §6: "one internal tenant -> observe one working day"). The 4
+          # individual canary users stay allowlisted too (harmless overlap
+          # -- both checks are independent `.has()` lookups).
+          NOVA_SONIC_ENABLED: ${{ inputs.nova_sonic_enabled || vars.AWS_STAGE_NOVA_SONIC_ENABLED || 'true' }}
+          NOVA_SONIC_CANARY_USER_IDS: ${{ inputs.nova_canary_user_ids || vars.AWS_STAGE_NOVA_SONIC_CANARY_USER_IDS || 'a27552a3-0257-4305-8ed0-351a80fd3701,c5a4daf9-190a-4a9e-9638-d6b32f85244a,a2c6ba7e-2ad4-48af-8253-9fe34d0f9232,0adc6ff6-acb0-4dca-99d0-295211a40e3e' }}
+          NOVA_SONIC_CANARY_TENANT_IDS: ${{ inputs.nova_canary_tenant_ids || vars.AWS_STAGE_NOVA_SONIC_CANARY_TENANT_IDS || '00000000-0000-0000-0000-000000000001' }}
         run: |
           set -e
           IMAGE="${{ steps.build.outputs.image }}"
           SHA="${{ steps.commit.outputs.sha }}"
           SHORT="${{ steps.commit.outputs.short }}"
-          TD_ARN=$(aws ecs describe-services --cluster "${{ inputs.ecs_cluster }}" --services "${{ inputs.ecs_service }}" \
+          TD_ARN=$(aws ecs describe-services --cluster "${{ env.ECS_CLUSTER }}" --services "${{ env.ECS_SERVICE }}" \
             --query 'services[0].taskDefinition' --output text)
           echo "Current task definition: $TD_ARN"
           # Swap image + re-stamp commit env vars; preserve everything else
           # (env block, secrets, resources). upsert semantics for the three
           # stamp vars so first-run task defs without them still work.
+          # BOOTSTRAP-NOVA-SONIC-VOICE: the five Nova vars are upserted on
+          # EVERY deploy so a canary flip (or rollback to disabled/empty) is
+          # exactly one variable change + one dispatch. Never AWS access keys
+          # here — Nova auth is the task role via the SDK default chain.
+          #
+          # BOOTSTRAP-NOVA-SONIC-VOICE: FEATURE_ORB_GREETING_TTS_BRIDGE_ENV
+          # is upserted to "off" below (2026-07-28, disabled) -- rejected on
+          # product grounds (voice mismatch: the Cloud TTS bridge phrase is
+          # never the same voice as the live upstream). See STAGE-DEPLOY.yml
+          # for the full rationale. Explicitly set to "off" (not removed) so
+          # it cannot silently drift back to a stale "staging-only" value
+          # left on the task definition from before.
+          #
+          # VTID-03513: resolve the FULL secret ARNs before rewriting the task
+          # definition. ECS `valueFrom` requires the complete ARN INCLUDING the
+          # six-character random suffix Secrets Manager appends
+          # (…jwt-secret-AbCdEf). A name-only ARN is accepted by the CLI's
+          # --secret-id but NOT by ECS, which reports it as
+          # ResourceNotFoundException — indistinguishable at a glance from a
+          # secret that genuinely does not exist. Constructing these by string
+          # concatenation is therefore wrong; they must be looked up.
+          #
+          # `describe-secret` also fails the job loudly if a secret is missing,
+          # which is strictly better than registering a task def that cannot
+          # start and discovering it 10 minutes later via a stabilise timeout.
+          for pair in \
+            "SEC_JWT:vitana/supabase/prod/jwt-secret" \
+            "SEC_ANON:vitana/supabase/prod/anon-key" \
+            "SEC_GEMINI:vitana/gateway/staging/google-gemini-api-key" \
+            "SEC_OPENAI:vitana/gateway/staging/openai-api-key" \
+            "SEC_DEEPSEEK:vitana/gateway/staging/deepseek-api-key" ; do
+            VAR="${pair%%:*}"; NAME="${pair#*:}"
+            ARN=$(aws secretsmanager describe-secret --secret-id "$NAME" --query ARN --output text 2>/dev/null || true)
+            if [ -z "$ARN" ] || [ "$ARN" = "None" ]; then
+              echo "::error::Secret '$NAME' not found in Secrets Manager (region ${{ env.TARGET_AWS_REGION }}). Refusing to register a task definition that cannot start."
+              exit 1
+            fi
+            printf -v "$VAR" '%s' "$ARN"
+            export "$VAR"
+            echo "  resolved $NAME"
+          done
+
+          # VTID-03513: the `secrets` block is now UPSERTED here, not cloned
+          # blindly from the previous task definition.
+          #
+          # WHY. This deploy mutates the previous task def in place, so whatever
+          # `secrets` it carried got copied forward on every run — including a
+          # wrong one. Between 2026-08-02 and 2026-08-06 six entries pointed at
+          # `vitana/gateway/prod/*`, a namespace that does not exist in Secrets
+          # Manager (the real ones are `vitana/supabase/prod/*` and
+          # `vitana/gateway/staging/*`). ECS cannot start a task whose secret it
+          # cannot fetch, so every deploy died with
+          #   ResourceInitializationError: ... ResourceNotFoundException
+          # then `aws ecs wait services-stable` timed out after 10 min and the
+          # job failed. NINE consecutive deploys failed that way and AWS staging
+          # served 503 for four days. Nothing alarmed, because the workflow
+          # failing red *is* the only signal and nobody was reading it.
+          #
+          # The reference was invisible in code review: task-def secret wiring
+          # lived ONLY in live AWS state, never in this repo. Pinning it here
+          # makes it reviewable, and makes a bad hand-edit self-correcting on the
+          # next deploy instead of permanent.
+          #
+          # SUPABASE_JWT_SECRET / SUPABASE_ANON_KEY deliberately point at
+          # `vitana/supabase/prod/*` — the same secrets prod uses — because AWS
+          # staging talks to the PROD Supabase project (see SUPABASE_URL and
+          # SUPABASE_SERVICE_ROLE, which already do). A JWT secret from a
+          # different project would fail to validate those tokens: the deploy
+          # would go green and every login would break. Verified 2026-08-06 that
+          # `vitana/gateway/staging/supabase-jwt-secret` holds an identical
+          # value (sha256 match), so this is consistent either way.
+          #
+          # NOTE: comments inside the jq program string below (the single
+          # quoted block starting on the next line) must never contain an
+          # apostrophe -- it is bash single-quoted, so a stray "'" closes
+          # the string early and breaks the whole command (bit us once,
+          # see PR #2978's failed AWS deploy run).
           NEW_DEF=$(aws ecs describe-task-definition --task-definition "$TD_ARN" --query taskDefinition \
-            | jq --arg IMG "$IMAGE" --arg SHA "$SHA" --arg SHORT "$SHORT" '
+            | jq --arg IMG "$IMAGE" --arg SHA "$SHA" --arg SHORT "$SHORT" \
+                 --arg NOVA_ENABLED "$NOVA_SONIC_ENABLED" \
+                 --arg NOVA_USERS "$NOVA_SONIC_CANARY_USER_IDS" \
+                 --arg NOVA_TENANTS "$NOVA_SONIC_CANARY_TENANT_IDS" \
+                 --arg SEC_JWT "$SEC_JWT" --arg SEC_ANON "$SEC_ANON" \
+                 --arg SEC_GEMINI "$SEC_GEMINI" --arg SEC_OPENAI "$SEC_OPENAI" \
+                 --arg SEC_DEEPSEEK "$SEC_DEEPSEEK" '
                 .containerDefinitions[0].image = $IMG
                 | .containerDefinitions[0].environment |=
-                    ( [ .[] | select(.name | IN("GIT_COMMIT_SHA","COMMIT_SHA","BUILD_INFO_MARKER") | not) ]
+                    ( [ .[] | select(.name | IN("GIT_COMMIT_SHA","COMMIT_SHA","BUILD_INFO_MARKER",
+                                                "NOVA_SONIC_ENABLED","NOVA_SONIC_REGION","NOVA_SONIC_MODEL_ID",
+                                                "NOVA_SONIC_CANARY_USER_IDS","NOVA_SONIC_CANARY_TENANT_IDS",
+                                                "FEATURE_ORB_GREETING_TTS_BRIDGE_ENV") | not) ]
                       + [ {name:"GIT_COMMIT_SHA", value:$SHA},
                           {name:"COMMIT_SHA", value:$SHA},
-                          {name:"BUILD_INFO_MARKER", value:$SHORT} ] )
+                          {name:"BUILD_INFO_MARKER", value:$SHORT},
+                          {name:"NOVA_SONIC_ENABLED", value:$NOVA_ENABLED},
+                          {name:"NOVA_SONIC_REGION", value:"eu-north-1"},
+                          {name:"NOVA_SONIC_MODEL_ID", value:"amazon.nova-2-sonic-v1:0"},
+                          {name:"NOVA_SONIC_CANARY_USER_IDS", value:$NOVA_USERS},
+                          {name:"NOVA_SONIC_CANARY_TENANT_IDS", value:$NOVA_TENANTS},
+                          {name:"FEATURE_ORB_GREETING_TTS_BRIDGE_ENV", value:"off"} ] )
+                | .containerDefinitions[0].secrets |=
+                    ( [ .[] | select(.name | IN("SUPABASE_JWT_SECRET","SUPABASE_ANON_KEY",
+                                                "GOOGLE_GEMINI_API_KEY","GEMINI_API_KEY",
+                                                "OPENAI_API_KEY","DEEPSEEK_API_KEY") | not) ]
+                      + [ {name:"SUPABASE_JWT_SECRET",   valueFrom:$SEC_JWT},
+                          {name:"SUPABASE_ANON_KEY",     valueFrom:$SEC_ANON},
+                          {name:"GOOGLE_GEMINI_API_KEY", valueFrom:$SEC_GEMINI},
+                          {name:"GEMINI_API_KEY",        valueFrom:$SEC_GEMINI},
+                          {name:"OPENAI_API_KEY",        valueFrom:$SEC_OPENAI},
+                          {name:"DEEPSEEK_API_KEY",      valueFrom:$SEC_DEEPSEEK} ] )
                 | del(.taskDefinitionArn, .revision, .status, .requiresAttributes,
                       .compatibilities, .registeredAt, .registeredBy, .deregisteredAt)')
           NEW_ARN=$(aws ecs register-task-definition --cli-input-json "$NEW_DEF" \
             --query 'taskDefinition.taskDefinitionArn' --output text)
           echo "Registered $NEW_ARN"
-          aws ecs update-service --cluster "${{ inputs.ecs_cluster }}" --service "${{ inputs.ecs_service }}" \
+          aws ecs update-service --cluster "${{ env.ECS_CLUSTER }}" --service "${{ env.ECS_SERVICE }}" \
             --task-definition "$NEW_ARN" >/dev/null
           echo "Waiting for service to stabilize (up to ~10 min)…"
-          aws ecs wait services-stable --cluster "${{ inputs.ecs_cluster }}" --services "${{ inputs.ecs_service }}"
+          aws ecs wait services-stable --cluster "${{ env.ECS_CLUSTER }}" --services "${{ env.ECS_SERVICE }}"
           echo "Service stable on $NEW_ARN"
 
       - name: Smoke — env=staging + deployed commit live
         run: |
           set -e
-          URL="${{ inputs.gateway_url }}"
+          URL="${{ env.GATEWAY_URL }}"
           SHA="${{ steps.commit.outputs.sha }}"
           for i in 1 2 3 4 5 6; do
             HEALTH=$(curl -fsS "$URL/api/v1/admin/health" 2>/dev/null || echo '')
@@ -173,6 +332,20 @@ jobs:
           done
           echo "::error::Smoke failed — health/build-info did not report env=staging with the deployed commit"
           exit 1
+
+      - name: Smoke — Nova Sonic health surface present
+        run: |
+          set -e
+          URL="${{ env.GATEWAY_URL }}"
+          NOVA=$(curl -fsS "$URL/api/v1/orb/nova-sonic/health")
+          echo "$NOVA" | jq .
+          REGION=$(echo "$NOVA" | jq -r '.region // empty')
+          MODEL=$(echo "$NOVA" | jq -r '.model // empty')
+          if [ "$REGION" != "eu-north-1" ] || [ "$MODEL" != "amazon.nova-2-sonic-v1:0" ]; then
+            echo "::error::Nova health reports region='$REGION' model='$MODEL' — expected eu-north-1 / amazon.nova-2-sonic-v1:0"
+            exit 1
+          fi
+          echo "✓ Nova Sonic health: enabled=$(echo "$NOVA" | jq -r '.enabled') ready=$(echo "$NOVA" | jq -r '.ready') canary_users=$(echo "$NOVA" | jq -r '.canary_user_count')"
 
       - name: Emit OASIS event + software_versions row (best-effort)
         if: always()
@@ -217,6 +390,6 @@ jobs:
             echo "## AWS staging gateway deploy"
             echo "- Image: \`${{ steps.build.outputs.image }}\`"
             echo "- Commit: \`${{ steps.commit.outputs.sha }}\`"
-            echo "- Verified live at: ${{ inputs.gateway_url }}"
-            echo "- Reason: ${{ inputs.reason }}"
+            echo "- Verified live at: ${{ env.GATEWAY_URL }}"
+            echo "- Reason: ${{ env.DEPLOY_REASON }}"
           } >> "$GITHUB_STEP_SUMMARY"

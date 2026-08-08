@@ -525,7 +525,7 @@ describe('VTID-02966 — receiver guard + push notification parity', () => {
           sender_name: 'Test Sender',
           message_id: 'msg-uuid-42',
           thread_id: SENDER_UUID,
-          url: `/inbox?thread=${SENDER_UUID}&context=global`,
+          url: `/inbox/u/${SENDER_UUID}`,
           source: 'voice',
         },
       });

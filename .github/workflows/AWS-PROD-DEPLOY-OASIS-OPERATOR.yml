@@ -1,0 +1,169 @@
+# AWS-PROD-DEPLOY-OASIS-OPERATOR — build oasis-operator from
+# services/oasis-operator/, push to ECR, and roll the AWS Production (DR)
+# ECS service (VTID-03410).
+#
+# No AWS (or reliably-used GCP) deploy pipeline for this service existed
+# before this VTID — real source didn't exist in git history at all until
+# now; see docs/AWS-PRODUCTION-BUILD-LOG.md for the investigation that
+# found only abandoned local .backup files. This workflow is the first
+# governed CI/CD path for oasis-operator on any platform.
+#
+# Design choices mirror AWS-PROD-DEPLOY-GATEWAY.yml (VTID-03398):
+# - workflow_dispatch ONLY, required `reason`, never on push.
+# - Preflight refuses to run against anything other than the `-awsdr`
+#   service name, so a bad input can't accidentally target something else.
+# - Post-deploy smoke gate on /api/v1/health (JSON, not HTML 404) before
+#   declaring success — CLAUDE.md §15.
+#
+# Required repository secrets:
+#   AWS_PROD_ROLE_ARN — the same GitHub OIDC deploy role built for
+#   VTID-03398 (services/gateway/src -> gateway image). Reused here
+#   rather than minting a second role, since its policy is already scoped
+#   to this repo/branch and only needs an additional ECR repository ARN
+#   to cover oasis-operator's image (see docs/AWS-PRODUCTION-BUILD-LOG.md
+#   addendum for the exact IAM policy update needed by an operator with
+#   IAM admin rights).
+
+name: AWS Prod Deploy Oasis Operator (ECS, DR)
+
+on:
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: 'Reason for this AWS production (DR) oasis-operator deploy — required'
+        required: true
+      service_url:
+        description: 'Public service URL for post-deploy verification'
+        required: false
+        default: 'https://dr-oasis-operator.vitanaland.com'
+      aws_region:
+        description: 'AWS region'
+        required: false
+        default: 'eu-central-1'
+      ecr_repository:
+        description: 'ECR repository name for the oasis-operator image'
+        required: false
+        default: 'vitana/oasis-operator'
+      ecs_cluster:
+        description: 'ECS cluster name'
+        required: false
+        default: 'Vitana-ECS-Cluster'
+      ecs_service:
+        description: 'ECS service name'
+        required: false
+        default: 'vitana-oasis-operator-awsdr'
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: aws-prod-deploy-oasis-operator
+  cancel-in-progress: false
+
+jobs:
+  build-push-deploy:
+    runs-on: ubuntu-latest
+    env:
+      SERVICE_URL: ${{ inputs.service_url }}
+      TARGET_AWS_REGION: ${{ inputs.aws_region }}
+      ECR_REPOSITORY: ${{ inputs.ecr_repository }}
+      ECS_CLUSTER: ${{ inputs.ecs_cluster }}
+      ECS_SERVICE: ${{ inputs.ecs_service }}
+      DEPLOY_REASON: ${{ inputs.reason }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve commit metadata
+        id: commit
+        run: |
+          echo "short=$(git rev-parse --short=12 HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Configure AWS credentials (GitHub OIDC — no static keys)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_PROD_ROLE_ARN }}
+          aws-region: ${{ env.TARGET_AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Preflight — verify ECR repo + ECS service exist, and target is AWS-DR only
+        run: |
+          set -e
+          if [ "${{ env.ECS_SERVICE }}" != "vitana-oasis-operator-awsdr" ]; then
+            echo "::error::Refusing to deploy — this workflow targets 'vitana-oasis-operator-awsdr' only."
+            exit 1
+          fi
+          if ! aws ecr describe-repositories --repository-names "${{ env.ECR_REPOSITORY }}" >/dev/null 2>&1; then
+            echo "::error::ECR repository '${{ env.ECR_REPOSITORY }}' not found."
+            exit 1
+          fi
+          if ! aws ecs describe-services --cluster "${{ env.ECS_CLUSTER }}" --services "${{ env.ECS_SERVICE }}" \
+               --query 'services[0].status' --output text 2>/dev/null | grep -q ACTIVE; then
+            echo "::error::ECS service '${{ env.ECS_SERVICE }}' not ACTIVE in cluster '${{ env.ECS_CLUSTER }}'."
+            exit 1
+          fi
+
+      - name: Build and push image
+        id: build
+        env:
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+        run: |
+          set -e
+          IMAGE="$REGISTRY/${{ env.ECR_REPOSITORY }}:awsdr-${{ steps.commit.outputs.short }}"
+          docker build -t "$IMAGE" -t "$REGISTRY/${{ env.ECR_REPOSITORY }}:awsdr-latest" services/oasis-operator
+          docker push "$IMAGE"
+          docker push "$REGISTRY/${{ env.ECR_REPOSITORY }}:awsdr-latest"
+          echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
+          echo "Pushed $IMAGE"
+
+      - name: Register task-definition revision + roll the service
+        run: |
+          set -e
+          IMAGE="${{ steps.build.outputs.image }}"
+          TD_ARN=$(aws ecs describe-services --cluster "${{ env.ECS_CLUSTER }}" --services "${{ env.ECS_SERVICE }}" \
+            --query 'services[0].taskDefinition' --output text)
+          echo "Current task definition: $TD_ARN"
+          NEW_DEF=$(aws ecs describe-task-definition --task-definition "$TD_ARN" --query taskDefinition \
+            | jq --arg IMG "$IMAGE" '
+                .containerDefinitions[0].image = $IMG
+                | del(.taskDefinitionArn, .revision, .status, .requiresAttributes,
+                      .compatibilities, .registeredAt, .registeredBy, .deregisteredAt)')
+          NEW_ARN=$(aws ecs register-task-definition --cli-input-json "$NEW_DEF" \
+            --query 'taskDefinition.taskDefinitionArn' --output text)
+          echo "Registered $NEW_ARN"
+          aws ecs update-service --cluster "${{ env.ECS_CLUSTER }}" --service "${{ env.ECS_SERVICE }}" \
+            --task-definition "$NEW_ARN" --desired-count 1 >/dev/null
+          echo "Waiting for service to stabilize (up to ~10 min)…"
+          aws ecs wait services-stable --cluster "${{ env.ECS_CLUSTER }}" --services "${{ env.ECS_SERVICE }}"
+          echo "Service stable on $NEW_ARN"
+
+      - name: Smoke — /api/v1/health responds JSON
+        run: |
+          set -e
+          URL="${{ env.SERVICE_URL }}"
+          for i in 1 2 3 4 5 6; do
+            RESP=$(curl -fsS "$URL/api/v1/health" 2>/dev/null || echo '')
+            STATUS=$(echo "$RESP" | jq -r '.status // empty' 2>/dev/null)
+            if [ "$STATUS" = "healthy" ]; then
+              echo "✓ $URL/api/v1/health -> healthy"
+              exit 0
+            fi
+            echo "Attempt $i: status='$STATUS' — retry in 15s"
+            sleep 15
+          done
+          echo "::error::Smoke failed — /api/v1/health did not report healthy"
+          exit 1
+
+      - name: Summary
+        if: success()
+        run: |
+          {
+            echo "## AWS Production (DR) oasis-operator deploy"
+            echo "- Image: \`${{ steps.build.outputs.image }}\`"
+            echo "- Verified live at: ${{ env.SERVICE_URL }}"
+            echo "- Reason: ${{ env.DEPLOY_REASON }}"
+            echo "- VTID: VTID-03410"
+          } >> "$GITHUB_STEP_SUMMARY"

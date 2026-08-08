@@ -312,7 +312,7 @@ describe('A7 characterization: VertexLiveClient', () => {
       socket.fireMessage({
         server_content: { input_transcription: { text: 'hello vitana' } },
       });
-      expect(events).toEqual([{ direction: 'input', text: 'hello vitana' }]);
+      expect(events).toEqual([{ direction: 'input', text: 'hello vitana', isFinal: false }]);
     });
 
     it('emits onTranscript with direction="output" for output_transcription', async () => {
@@ -325,7 +325,7 @@ describe('A7 characterization: VertexLiveClient', () => {
       socket.fireMessage({
         server_content: { output_transcription: { text: 'hi dragan' } },
       });
-      expect(events).toEqual([{ direction: 'output', text: 'hi dragan' }]);
+      expect(events).toEqual([{ direction: 'output', text: 'hi dragan', isFinal: false }]);
     });
 
     it('accepts transcription as a bare string (legacy shape)', async () => {
@@ -338,7 +338,7 @@ describe('A7 characterization: VertexLiveClient', () => {
       socket.fireMessage({
         server_content: { input_transcription: 'just words' },
       });
-      expect(events).toEqual([{ direction: 'input', text: 'just words' }]);
+      expect(events).toEqual([{ direction: 'input', text: 'just words', isFinal: false }]);
     });
 
     it('emits onTurnComplete for server_content.turn_complete=true', async () => {
@@ -765,5 +765,120 @@ describe('A8.3b.1: customSetupMessage override + getSocket() accessor', () => {
       socket.fireMessage({ go_away: { time_left: { seconds: 4 } } });
       expect(events).toEqual([{ timeLeftMs: 7000 }, { timeLeftMs: 4000 }]);
     });
+  });
+});
+
+// BOOTSTRAP-NOVA-SONIC-VOICE — Task 1 contract additions.
+describe('9. Provider-neutral contract additions (BOOTSTRAP-NOVA-SONIC-VOICE)', () => {
+  it('sendToolResult sends the exact legacy Vertex tool_response envelope (no id field)', async () => {
+    const socket = new MockSocket();
+    const client = new VertexLiveClient({ createSocket: () => socket });
+    await connectClient(client, socket);
+
+    const sent = client.sendToolResult({
+      callId: 'call-1',
+      name: 'get_current_screen',
+      success: true,
+      output: '{"screen":"journey"}',
+    });
+    expect(sent).toBe(true);
+    expect(JSON.parse(socket.sent.at(-1)!)).toEqual({
+      tool_response: {
+        function_responses: [
+          {
+            name: 'get_current_screen',
+            response: { output: '{"screen":"journey"}' },
+          },
+        ],
+      },
+    });
+  });
+
+  it('sendToolResult serializes failures as an Error output string', async () => {
+    const socket = new MockSocket();
+    const client = new VertexLiveClient({ createSocket: () => socket });
+    await connectClient(client, socket);
+
+    client.sendToolResult({
+      name: 'create_task',
+      success: false,
+      output: '',
+      error: 'db unavailable',
+    });
+    expect(JSON.parse(socket.sent.at(-1)!)).toEqual({
+      tool_response: {
+        function_responses: [
+          { name: 'create_task', response: { output: 'Error: db unavailable' } },
+        ],
+      },
+    });
+  });
+
+  it('sendToolResult returns false when not open', () => {
+    const client = new VertexLiveClient({ createSocket: () => new MockSocket() });
+    expect(
+      client.sendToolResult({ name: 'x', success: true, output: '{}' }),
+    ).toBe(false);
+  });
+
+  it('onUsage registration is accepted and never fires for Vertex', async () => {
+    const socket = new MockSocket();
+    const client = new VertexLiveClient({ createSocket: () => socket });
+    const usageEvents: unknown[] = [];
+    client.onUsage((e) => usageEvents.push(e));
+    await connectClient(client, socket);
+    socket.fireMessage({ server_content: { turn_complete: true } });
+    expect(usageEvents).toEqual([]);
+  });
+
+  it('close(reason) surfaces the reason on the final close event', async () => {
+    const socket = new MockSocket();
+    const client = new VertexLiveClient({ createSocket: () => socket });
+    const closes: Array<{ reason?: string; initiatedLocally: boolean }> = [];
+    client.onClose((e) => closes.push(e));
+    await connectClient(client, socket);
+    await client.close('persona_swap');
+    expect(closes).toHaveLength(1);
+    expect(closes[0].initiatedLocally).toBe(true);
+    expect(closes[0].reason).toBe('persona_swap');
+  });
+
+  it('transcript deltas are marked isFinal: false', async () => {
+    const socket = new MockSocket();
+    const client = new VertexLiveClient({ createSocket: () => socket });
+    const transcripts: Array<{ direction: string; text: string; isFinal: boolean }> = [];
+    client.onTranscript((e) => transcripts.push(e));
+    await connectClient(client, socket);
+    socket.fireMessage({ server_content: { input_transcription: { text: 'hallo' } } });
+    socket.fireMessage({ server_content: { output_transcription: { text: 'welt' } } });
+    expect(transcripts).toEqual([
+      { direction: 'input', text: 'hallo', isFinal: false },
+      { direction: 'output', text: 'welt', isFinal: false },
+    ]);
+  });
+
+  it('credentials from constructor deps take precedence over connect options', async () => {
+    const socket = new MockSocket();
+    let capturedUrl = '';
+    const client = new VertexLiveClient({
+      createSocket: (url) => {
+        capturedUrl = url;
+        return socket;
+      },
+      location: 'europe-west4',
+      projectId: 'deps-project',
+      getAccessToken: async () => 'deps-token',
+    });
+    await connectClient(client, socket);
+    expect(capturedUrl).toContain('europe-west4-aiplatform.googleapis.com');
+    const sent = JSON.parse(socket.sent[0]);
+    expect(sent.setup.model).toContain('projects/deps-project/locations/europe-west4/');
+  });
+
+  it('connect rejects with a typed error when no credential supplier exists anywhere', async () => {
+    const client = new VertexLiveClient({ createSocket: () => new MockSocket() });
+    const options = baseOptions();
+    delete (options as Record<string, unknown>).getAccessToken;
+    await expect(client.connect(options)).rejects.toThrow(/vertex_config_missing/);
   });
 });

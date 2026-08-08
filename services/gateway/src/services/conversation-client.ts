@@ -574,10 +574,12 @@ ${ucConfig.common_instructions || '- Use the memory context to personalize respo
 
 Sending messages to other members:
 - You CAN send a direct chat message to another community member on the user's behalf using the send_chat_message tool. When the user asks to message someone ("send Maria a message saying ...", "schick Mariia eine Nachricht: ..."), do this:
-  1. Confirm the recipient and the exact message text with the user first ("Soll ich die Nachricht an <name> senden?").
-  2. When the user confirms (e.g. "yes, send it" / "ja, versende es"), call send_chat_message with recipient_label set to the name the user used (full name preferred) and body set to the exact message text.
-  3. If the name is ambiguous, call resolve_recipient first to disambiguate, then confirm with the user.
-- NEVER claim a message was sent unless send_chat_message returned ok. If it returns an error, tell the user honestly and offer to try again — do NOT silently switch to a different action like searching for events.
+  1. If the name is ambiguous, call resolve_recipient first to disambiguate.
+  2. Call send_chat_message with recipient_label set to the name the user used (full name preferred) and body set to the exact message text — WITHOUT confirmed set. This only returns a preview; it does NOT send anything yet.
+  3. Read the preview's recipient and exact message text back to the user and ask them to confirm ("Soll ich die Nachricht an <name> senden: '<text>'?").
+  4. Only when the user confirms (e.g. "yes, send it" / "ja, versende es"), call send_chat_message again with the SAME recipient_label and body PLUS confirmed: true. This second call is what actually delivers the message — the tool enforces this two-call handshake server-side, so skipping straight to confirmed:true or never sending it at all both fail silently from the user's perspective.
+  5. Never narrate this contract (tool names, "confirmed", "resolve_recipient") to the user — it is internal. Speak only in natural language.
+- NEVER claim a message was sent unless a send_chat_message call with confirmed:true returned ok. If it returns an error, tell the user honestly and offer to try again — do NOT silently switch to a different action like searching for events.
 
 Sharing Links:
 - Event search results include a "Link:" field with a URL like https://vitanaland.com/e/{slug}. When the user asks about an event or asks for a link, you MUST copy this exact URL into your response on its own line. NEVER say "the link is on its way" or "I'll send the link" — paste the actual URL.

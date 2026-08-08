@@ -25,6 +25,18 @@ jest.mock('../src/services/oasis-event-service', () => ({
   emitOasisEvent: mockEmitOasisEvent,
 }));
 
+// VTID-02632 Phase 8: extractAsync() is gated behind the runtime flag
+// `cognee_extraction_enabled` (strict opt-in, default OFF for the Cognee
+// deprecation phase). Enable it here so the persistence pipeline under test
+// actually runs.
+jest.mock('../src/services/system-controls-service', () => ({
+  getSystemControl: jest.fn().mockResolvedValue({
+    key: 'cognee_extraction_enabled',
+    enabled: true,
+    expires_at: null,
+  }),
+}));
+
 // Mock global fetch
 const mockFetch = jest.fn();
 global.fetch = mockFetch as any;

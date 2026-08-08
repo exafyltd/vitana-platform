@@ -42,6 +42,34 @@ export interface KeepaliveDeps {
   sendAudioToLiveAPI: (ws: WebSocket, audioB64: string, mimeType?: string) => boolean;
   /** Override the 25s ping cadence (tests). */
   pingIntervalMs?: number;
+  /**
+   * Nova: keep feeding silence even while `isModelSpeaking`. Vertex skips
+   * silence during model speech (it glitches Gemini VAD), but Nova expects
+   * a CONTINUOUS audio-input cadence and may not emit END_TURN until input
+   * flows — with the Vertex gate, a greeting whose turn-complete is pending
+   * starves the stream and Bedrock kills it ~15s later ("Premature close",
+   * staging session live-f1135350). Real mic audio still suppresses silence
+   * via the lastAudioForwardedTime idle threshold.
+   */
+  ignoreModelSpeaking?: boolean;
+  /**
+   * Nova: override the silence cadence to REAL-TIME streaming. The Vertex
+   * default (one 250ms frame every 3s, ~8% duty cycle) is an anti-idle
+   * heartbeat — but Nova's endpointer needs a continuous audio-input stream
+   * to conclude turns at all. With sparse input Nova never emits END_TURN
+   * after the greeting, `isModelSpeaking` stays true, and the gateway's own
+   * 20s audio-stall watchdog terminates a healthy session (staging session
+   * live-bc3ac313: 108 greeting chunks → silence → stall_detected →
+   * locally-initiated upstream close). Nova passes 250 so each tick ships
+   * exactly one frame-duration of silence — a gapless real-time stream,
+   * matching how the AWS samples continuously stream mic audio including
+   * ambient silence. Vertex omits it and keeps the 3s heartbeat.
+   */
+  silenceIntervalMs?: number;
+  /** Override the idle threshold before silence kicks in (pairs with
+   * silenceIntervalMs — Nova uses a sub-second threshold so the real-time
+   * stream resumes almost immediately after real audio stops). */
+  idleThresholdMs?: number;
 }
 
 const DEFAULT_PING_INTERVAL_MS = 25_000;
@@ -91,9 +119,9 @@ export function armUpstreamKeepalive(
   }
   session.silenceKeepaliveInterval = setInterval(() => {
     if (ws.readyState !== WebSocket.OPEN || !session.active) return;
-    if (session.isModelSpeaking) return;
+    if (session.isModelSpeaking && !deps.ignoreModelSpeaking) return;
     const idleMs = Date.now() - (session.lastAudioForwardedTime ?? 0);
-    if (idleMs >= getSilenceIdleThresholdMs()) {
+    if (idleMs >= (deps.idleThresholdMs ?? getSilenceIdleThresholdMs())) {
       try {
         deps.sendAudioToLiveAPI(ws, SILENCE_AUDIO_B64, 'audio/pcm;rate=16000');
         // Don't update lastAudioForwardedTime — silence isn't real audio.
@@ -101,5 +129,5 @@ export function armUpstreamKeepalive(
         /* socket closing — ignore */
       }
     }
-  }, getSilenceKeepaliveIntervalMs());
+  }, deps.silenceIntervalMs ?? getSilenceKeepaliveIntervalMs());
 }

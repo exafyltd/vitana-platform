@@ -31,15 +31,27 @@ export const meta = {
 const MUTATION_METHODS = new Set(['post', 'put', 'patch', 'delete']);
 
 function extractHandlerBody(src, callStart) {
-  // Walk forward from `router.METHOD(` to the matching `)`, then find the
-  // last `=>` or `function()` marker before it, capture the body between
-  // the opening `{` and its matching `}`.
+  // Walk forward from `router.METHOD(` to the matching `)`, skipping over
+  // string/template literals and `//`/`/* */` comments so bracket-like
+  // characters and quote marks inside them (e.g. an apostrophe in "can't")
+  // don't desync the depth count, then find the handler function's own
+  // `=>`/`function()` marker to isolate its body.
   const openParen = src.indexOf('(', callStart);
   if (openParen < 0) return null;
   let depth = 1;
   let i = openParen + 1;
   while (i < src.length && depth > 0) {
     const c = src[i];
+    if (c === '/' && src[i + 1] === '/') {
+      const nl = src.indexOf('\n', i);
+      i = nl < 0 ? src.length : nl;
+      continue;
+    }
+    if (c === '/' && src[i + 1] === '*') {
+      const end = src.indexOf('*/', i + 2);
+      i = end < 0 ? src.length : end + 2;
+      continue;
+    }
     if (c === '(' || c === '[' || c === '{') depth++;
     else if (c === ')' || c === ']' || c === '}') depth--;
     else if (c === '"' || c === "'" || c === '`') {
@@ -50,12 +62,13 @@ function extractHandlerBody(src, callStart) {
     i++;
   }
   const callEnd = i;
-  // Extract the argument region, find the LAST handler function.
+  // Extract the argument region and find the handler function's own marker —
+  // the FIRST `=>`/`function`, since the body itself may contain later arrow
+  // functions (e.g. `.map((r) => r.id)`) that must not be mistaken for it.
   const args = src.slice(openParen + 1, callEnd);
-  // The handler is the last arg — find the last `=>` and grab until the end.
-  const arrow = args.lastIndexOf('=>');
+  const arrow = args.indexOf('=>');
   if (arrow >= 0) return args.slice(arrow + 2);
-  const fnKeyword = args.lastIndexOf('function');
+  const fnKeyword = args.indexOf('function');
   if (fnKeyword >= 0) return args.slice(fnKeyword);
   return args;
 }

@@ -600,13 +600,18 @@ export function classifyCategory(content: string): CategoryKey {
   // Tasks keywords (dev/work-related)
   const tasksKeywords = [
     'task', 'vtid', 'spec', 'deploy', 'gateway', 'oasis', 'bug', 'fix',
-    'implement', 'feature', 'ticket', 'issue', 'pr', 'pull request',
+    'implement', 'feature', 'ticket', 'issue', 'pull request',
     'merge', 'commit', 'code', 'test', 'debug', 'review'
   ];
   for (const keyword of tasksKeywords) {
     if (lowerContent.includes(keyword)) {
       return 'tasks';
     }
+  }
+  // 'pr' must match as a whole word only — as a substring it would misroute
+  // common words like "prefer", "price", or "espresso" into tasks.
+  if (/\bpr\b/.test(lowerContent)) {
+    return 'tasks';
   }
 
   // Goals keywords

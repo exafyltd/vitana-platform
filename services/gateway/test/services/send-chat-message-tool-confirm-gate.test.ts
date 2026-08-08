@@ -208,6 +208,13 @@ describe('send_chat_message tool — server-enforced confirm gate', () => {
     }
     expect(inserts).toHaveLength(1);
     expect(inserts[0].row.content).toBe('Ready to go?');
+    // VTID-VOICE-STATUS-CONTRACT: live-system-instruction.ts's message-send
+    // truthfulness HARD RULE forbids the model from ever claiming a message
+    // was sent unless the tool's text begins with "STATUS: sent" — this was
+    // never emitted before, so a genuinely successful send could never be
+    // truthfully confirmed (root cause of a live "tried several times and
+    // nothing worked" report). Pin that the marker is now present.
+    expect(sent.text).toMatch(/^STATUS: sent\b/);
   });
 
   test('recipient resolution failures (receiver not found) still fire on the unconfirmed preview call', async () => {

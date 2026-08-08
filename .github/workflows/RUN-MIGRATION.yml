@@ -23,26 +23,34 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # VTID-03492: was `psql -v ON_ERROR_STOP=1 -f ... "$SUPABASE_DB_URL"`.
+      # That transport is dead from GitHub Actions — the Supabase project has a
+      # network allow-list and runner IPs are not on it, so this workflow could
+      # not apply anything. (This is a strong candidate for WHY 103 migration
+      # files declare tables that do not exist in production — see VTID-03486.)
+      #
+      # Now applied over the Supabase Management API, which accepts arbitrary
+      # SQL over HTTPS. The VTID-03174 hardening is preserved inside the
+      # script: it requires a 2xx AND no error payload before returning 0, so a
+      # rolled-back migration still fails the step rather than reporting green.
+      #
+      # Requires the SUPABASE_ACCESS_TOKEN repo secret (see the script header).
       - name: Apply migration
         env:
-          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           MIGRATION_FILE: ${{ inputs.migration_file }}
         run: |
           set -euo pipefail
-          sudo apt-get install -y postgresql-client > /dev/null 2>&1
-          echo "Applying migration: ${MIGRATION_FILE}"
-          # `-v ON_ERROR_STOP=1` makes psql abort + exit nonzero on the first
-          # SQL error. `set -euo pipefail` makes the bash step abort + fail
-          # the GitHub Actions step on that nonzero exit. The "successfully"
-          # marker is only emitted if both psql and bash returned 0.
-          psql -v ON_ERROR_STOP=1 -f "${MIGRATION_FILE}" "${SUPABASE_DB_URL}"
+          scripts/ci/apply-sql-via-management-api.sh --file "${MIGRATION_FILE}"
           echo "Migration applied successfully"
 
       - name: Reload PostgREST schema cache
         env:
-          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
         run: |
           set -euo pipefail
           echo "Reloading PostgREST schema cache..."
-          psql -v ON_ERROR_STOP=1 -c "NOTIFY pgrst, 'reload schema';" "${SUPABASE_DB_URL}"
+          scripts/ci/apply-sql-via-management-api.sh --sql "NOTIFY pgrst, 'reload schema';"
           echo "Schema cache reload signal sent"

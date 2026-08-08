@@ -22,135 +22,204 @@ process.env.PERPLEXITY_API_KEY = 'test-perplexity-key';
 // Track all fetch calls to verify correct tables are queried
 const fetchCalls: Array<{ url: string; method: string; body?: string }> = [];
 
+/**
+ * Build a Response-like object that satisfies both raw-fetch callers and
+ * supabase-js (postgrest-js reads status/statusText/headers/text()).
+ */
+function restResponse(body: unknown, status = 200) {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    statusText: status === 200 ? 'OK' : String(status),
+    headers: new Headers(),
+    json: async () => body,
+    text: async () => JSON.stringify(body),
+  };
+}
+
+// Structured facts as stored in memory_facts (REST list + get_current_facts RPC)
+const FACT_ROWS = [
+  {
+    id: 'fact-1',
+    fact_key: 'user_name',
+    fact_value: 'Dragan Alexander',
+    fact_value_type: 'text',
+    entity: 'self',
+    provenance_confidence: 0.95,
+    provenance_source: 'assistant_inferred',
+    extracted_at: new Date().toISOString(),
+  },
+  {
+    id: 'fact-2',
+    fact_key: 'fiancee_name',
+    fact_value: 'Mariia Maksina',
+    fact_value_type: 'text',
+    entity: 'disclosed',
+    provenance_confidence: 0.92,
+    provenance_source: 'assistant_inferred',
+    extracted_at: new Date().toISOString(),
+  },
+  {
+    id: 'fact-3',
+    fact_key: 'work_location',
+    fact_value: 'Exafy, Santa Monica',
+    fact_value_type: 'text',
+    entity: 'self',
+    provenance_confidence: 0.88,
+    provenance_source: 'assistant_inferred',
+    extracted_at: new Date().toISOString(),
+  },
+];
+
+// Legacy episodic rows in memory_items — the memory-broker's EPISODIC block
+// falls back to these when mem_episodes is empty (VTID-03156 ladder step 4).
+const MEMORY_ITEM_ROWS = [
+  {
+    id: 'mem-1',
+    category_key: 'personal',
+    content: 'User: My name is Dragan\nAssistant: Nice to meet you, Dragan!',
+    importance: 90,
+    occurred_at: new Date().toISOString(),
+    source: 'orb_text',
+  },
+  {
+    id: 'mem-2',
+    category_key: 'relationships',
+    content: 'User mentioned fiancée Mariia Maksina',
+    importance: 85,
+    occurred_at: new Date().toISOString(),
+    source: 'cognee_extraction',
+  },
+];
+
+// Relationship graph in the AP-0909 shape the broker's NETWORK block reads:
+// edges are user-centric (source_id = user), targets resolve via
+// relationship_nodes (display column is `title`).
+const RELATIONSHIP_EDGE_ROWS = [
+  {
+    source_type: 'person',
+    source_id: 'test-user',
+    target_type: 'person',
+    target_id: 'node-2',
+    edge_type: 'fiancée',
+    strength: 95,
+    last_interaction_at: new Date().toISOString(),
+  },
+  {
+    source_type: 'person',
+    source_id: 'test-user',
+    target_type: 'person',
+    target_id: 'node-3',
+    edge_type: 'works_at',
+    strength: 60,
+    last_interaction_at: new Date().toISOString(),
+  },
+];
+
+const RELATIONSHIP_NODE_ROWS = [
+  { id: 'node-2', title: 'Mariia Maksina', node_type: 'person' },
+  { id: 'node-3', title: 'Exafy', node_type: 'organization' },
+];
+
 // Mock global fetch
 const mockFetch = jest.fn().mockImplementation(async (url: string, options?: RequestInit) => {
   const method = options?.method || 'GET';
   fetchCalls.push({ url, method, body: options?.body as string });
 
-  // Mock responses based on URL
+  // ---- system_controls: enable ONLY the memory broker (VTID-02026 gate).
+  // Everything else (tier0 redis, cognee, …) stays off so the test exercises
+  // the canonical broker read path without side quests.
+  if (url.includes('/rest/v1/system_controls')) {
+    const keyMatch = url.match(/key=eq\.([^&]+)/);
+    const key = keyMatch ? decodeURIComponent(keyMatch[1]) : '';
+    return restResponse([
+      { key, enabled: key === 'memory_broker_enabled', scope: {}, reason: 'test', expires_at: null },
+    ]);
+  }
+
+  // ---- RPCs (check before plain table names — URLs overlap) ----
+  if (url.includes('/rpc/get_current_facts')) {
+    return restResponse(FACT_ROWS);
+  }
+  if (url.includes('/rpc/memory_facts_semantic_search')) {
+    return restResponse([]);
+  }
+  if (url.includes('/rpc/mem_episodes_semantic_search') || url.includes('/rpc/memory_semantic_search')) {
+    return restResponse([]);
+  }
+  if (url.includes('/rpc/write_fact')) {
+    return restResponse('fact-new-id');
+  }
+  if (url.includes('/rest/v1/rpc/')) {
+    return restResponse([]);
+  }
+
+  // ---- Tables ----
+  if (url.includes('/rest/v1/mem_episodes')) {
+    // Empty → broker EPISODIC ladder falls through to legacy memory_items.
+    return restResponse([]);
+  }
+
   if (url.includes('/rest/v1/memory_items')) {
     if (method === 'GET') {
-      return {
-        ok: true,
-        json: async () => [
-          {
-            id: 'mem-1',
-            category_key: 'personal',
-            content: 'User: My name is Dragan\nAssistant: Nice to meet you, Dragan!',
-            importance: 90,
-            occurred_at: new Date().toISOString(),
-            source: 'orb_text',
-          },
-          {
-            id: 'mem-2',
-            category_key: 'relationships',
-            content: 'User mentioned fiancée Mariia Maksina',
-            importance: 85,
-            occurred_at: new Date().toISOString(),
-            source: 'cognee_extraction',
-          },
-        ],
-      };
+      return restResponse(MEMORY_ITEM_ROWS);
     }
-    // POST (write)
-    return { ok: true, json: async () => ({ id: 'new-mem-id' }), text: async () => '' };
+    return restResponse({ id: 'new-mem-id' }, 201);
   }
 
   if (url.includes('/rest/v1/memory_facts')) {
     if (method === 'GET') {
-      return {
-        ok: true,
-        json: async () => [
-          {
-            id: 'fact-1',
-            fact_key: 'user_name',
-            fact_value: 'Dragan Alexander',
-            entity: 'self',
-            provenance_confidence: 0.95,
-            provenance_source: 'assistant_inferred',
-          },
-          {
-            id: 'fact-2',
-            fact_key: 'fiancee_name',
-            fact_value: 'Mariia Maksina',
-            entity: 'disclosed',
-            provenance_confidence: 0.92,
-            provenance_source: 'assistant_inferred',
-          },
-          {
-            id: 'fact-3',
-            fact_key: 'work_location',
-            fact_value: 'Exafy, Santa Monica',
-            entity: 'self',
-            provenance_confidence: 0.88,
-            provenance_source: 'assistant_inferred',
-          },
-        ],
-      };
+      return restResponse(FACT_ROWS);
     }
+  }
+
+  if (url.includes('/rest/v1/memory_diary_entries')) {
+    return restResponse([]);
   }
 
   if (url.includes('/rest/v1/relationship_nodes')) {
     if (method === 'GET') {
-      return {
-        ok: true,
-        json: async () => [
-          { id: 'node-1', title: 'Dragan Alexander', node_type: 'person', domain: 'personal', metadata: {} },
-          { id: 'node-2', title: 'Mariia Maksina', node_type: 'person', domain: 'personal', metadata: {} },
-          { id: 'node-3', title: 'Exafy', node_type: 'organization', domain: 'work', metadata: {} },
-        ],
-      };
+      return restResponse(RELATIONSHIP_NODE_ROWS);
     }
-    // POST (write)
-    return { ok: true, json: async () => [{ id: 'new-node-id' }], text: async () => '' };
+    return restResponse([{ id: 'new-node-id' }], 201);
   }
 
   if (url.includes('/rest/v1/relationship_edges')) {
     if (method === 'GET') {
-      return {
-        ok: true,
-        json: async () => [
-          { from_node_id: 'node-1', to_node_id: 'node-2', relationship_type: 'fiancée', strength: 0.95 },
-          { from_node_id: 'node-1', to_node_id: 'node-3', relationship_type: 'works_at', strength: 0.90 },
-        ],
-      };
+      return restResponse(RELATIONSHIP_EDGE_ROWS);
     }
-    // POST (write)
-    return { ok: true, json: async () => ({ id: 'new-edge-id' }), text: async () => '' };
+    return restResponse({ id: 'new-edge-id' }, 201);
   }
 
   if (url.includes('/rest/v1/relationship_signals')) {
-    return { ok: true, json: async () => ({}), text: async () => '' };
-  }
-
-  if (url.includes('/rest/v1/rpc/write_fact')) {
-    return { ok: true, json: async () => 'fact-new-id', text: async () => '' };
+    return restResponse([]);
   }
 
   if (url.includes('/rest/v1/vtid_ledger')) {
-    return { ok: true, json: async () => [] };
+    return restResponse([]);
   }
 
   if (url.includes('/rest/v1/oasis_events')) {
-    return { ok: true, json: async () => ({ id: 'evt-1' }) };
+    return restResponse([{ id: 'evt-1' }], 201);
   }
 
   if (url.includes('/rest/v1/knowledge_base') || url.includes('/rest/v1/knowledge_hub')) {
-    return { ok: true, json: async () => [] };
+    return restResponse([]);
   }
 
   if (url.includes('perplexity.ai')) {
-    return {
-      ok: true,
-      json: async () => ({
-        choices: [{ message: { content: 'Web search result about Dragan.' } }],
-        citations: ['https://example.com'],
-      }),
-    };
+    return restResponse({
+      choices: [{ message: { content: 'Web search result about Dragan.' } }],
+      citations: ['https://example.com'],
+    });
   }
 
-  // Default: return empty success
-  return { ok: true, json: async () => ({}), text: async () => '' };
+  // Default: any other PostgREST read returns an empty row set; anything
+  // else gets an empty object.
+  if (url.includes('/rest/v1/')) {
+    return restResponse([]);
+  }
+  return restResponse({});
 });
 
 global.fetch = mockFetch as any;
@@ -272,13 +341,16 @@ describe('VTID-01225: Intelligence & Memory Stack E2E', () => {
         active_role: 'community',
       });
 
-      const routerDecision = computeRetrievalRouterDecision('Tell me about myself', {
+      // NOTE: "Tell me about myself" would match the teach_intent router rule
+      // (BOOTSTRAP-TEACH-BEFORE-REDIRECT, "tell me about" → knowledge_hub only,
+      // no memory_garden), so use a personal-recall phrasing instead.
+      const routerDecision = computeRetrievalRouterDecision('What do you remember about me?', {
         channel: 'orb',
       });
 
       const input: BuildContextPackInput = {
         lens,
-        query: 'Tell me about myself',
+        query: 'What do you remember about me?',
         channel: 'orb',
         thread_id: 'test-thread',
         turn_number: 1,
@@ -289,7 +361,8 @@ describe('VTID-01225: Intelligence & Memory Stack E2E', () => {
 
       const pack = await buildContextPack(input);
 
-      // Verify memory_items was also queried
+      // Verify memory_items was also queried (the memory-broker's EPISODIC
+      // ladder falls back to legacy memory_items when mem_episodes is empty)
       const itemsQueries = fetchCalls.filter(c => c.url.includes('memory_items') && c.method === 'GET');
       expect(itemsQueries.length).toBeGreaterThanOrEqual(1);
     });
@@ -355,9 +428,10 @@ describe('VTID-01225: Intelligence & Memory Stack E2E', () => {
       const pack = await buildContextPack(input);
       const llmContext = formatContextPackForLLM(pack);
 
-      // The LLM context should contain relationship graph
+      // The LLM context should contain the relationship graph. Since
+      // VTID-03145 the strings are user-centric ("User <edge>: <name> (<type>)")
+      // — the user's own name is not repeated, only the other side of each edge.
       expect(llmContext).toContain('<relationship_graph>');
-      expect(llmContext).toContain('Dragan Alexander');
       expect(llmContext).toContain('Mariia Maksina');
       expect(llmContext).toContain('fiancée');
     });
@@ -497,10 +571,13 @@ describe('VTID-01225: Intelligence & Memory Stack E2E', () => {
       expect(pack.relationship_context).toBeDefined();
       expect(pack.relationship_context!.length).toBeGreaterThan(0);
 
-      // Should contain human-readable relationship strings
+      // Should contain human-readable, user-centric relationship strings
+      // ("User <edge>: <name> (<type>)" — the broker's NETWORK block resolves
+      // the other side of each edge; the user's own name is not repeated).
       const relStrings = pack.relationship_context!.join(' ');
-      expect(relStrings).toContain('Dragan Alexander');
       expect(relStrings).toContain('Mariia Maksina');
+      expect(relStrings).toContain('Exafy');
+      expect(relStrings).toContain('fiancée');
     });
   });
 
@@ -515,13 +592,16 @@ describe('VTID-01225: Intelligence & Memory Stack E2E', () => {
         active_role: 'community',
       });
 
-      const routerDecision = computeRetrievalRouterDecision('Tell me about myself', {
+      // Personal-recall phrasing so the router includes memory_garden and the
+      // token count actually covers facts + relationships (teach-intent
+      // phrasings like "tell me about X" skip memory entirely).
+      const routerDecision = computeRetrievalRouterDecision('What do you remember about me?', {
         channel: 'orb',
       });
 
       const input: BuildContextPackInput = {
         lens,
-        query: 'Tell me about myself',
+        query: 'What do you remember about me?',
         channel: 'orb',
         thread_id: 'test-thread',
         turn_number: 1,

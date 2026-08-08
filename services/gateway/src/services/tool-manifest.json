@@ -1,7 +1,7 @@
 {
-  "generated_at": "2026-07-13T09:25:47.290Z",
+  "generated_at": "2026-07-20T09:46:17.624Z",
   "source": "reconciled",
-  "total": 594,
+  "total": 683,
   "tools": [
     {
       "name": "search_knowledge",
@@ -10549,6 +10549,1446 @@
       "risk": "read",
       "plan_domain": "C12 Dev Access, Simulator & Meta",
       "plan": "expansion-v2"
+    },
+    {
+      "name": "start_marketplace_discover_assistant",
+      "surface": "Marketplace",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "live",
+      "description": "Start a guided shopping conversation for a product, service, practitioner or diagnostic need; records the goal and returns the first clarifying step",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
+      "priority": "P0",
+      "risk": "write",
+      "plan_domain": "A17 Marketplace Discover Assistant orchestrators",
+      "plan": "marketplace-va-v3"
+    },
+    {
+      "name": "build_personalized_shopping_guide",
+      "surface": "Marketplace",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "live",
+      "description": "Convert a broad need into a concise recommendation path across products and services, grounded in the shopping agent",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "A17 Marketplace Discover Assistant orchestrators",
+      "plan": "marketplace-va-v3"
+    },
+    {
+      "name": "refine_marketplace_recommendations",
+      "surface": "Marketplace",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "live",
+      "description": "Update the current picks from conversational feedback (cheaper, no pills, at home, different brand)",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "A17 Marketplace Discover Assistant orchestrators",
+      "plan": "marketplace-va-v3"
+    },
+    {
+      "name": "explain_marketplace_recommendation",
+      "surface": "Marketplace",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "live",
+      "description": "The concise what-it-is / what-for / why-for-you / limits explanation of a current pick",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "A17 Marketplace Discover Assistant orchestrators",
+      "plan": "marketplace-va-v3"
+    },
+    {
+      "name": "complete_marketplace_selection",
+      "surface": "Marketplace",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "live",
+      "description": "Confirm the selected option and route it to the basket (two-step confirm; never charges)",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
+      "priority": "P0",
+      "risk": "confirm",
+      "plan_domain": "A17 Marketplace Discover Assistant orchestrators",
+      "plan": "marketplace-va-v3"
+    },
+    {
+      "name": "capture_shopping_goal",
+      "surface": "Marketplace",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "live",
+      "description": "Record what the user wants to achieve, solve, explore or purchase in the active guide",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
+      "priority": "P0",
+      "risk": "write",
+      "plan_domain": "A18 Shopping intent & preferences",
+      "plan": "marketplace-va-v3"
+    },
+    {
+      "name": "clarify_shopping_need",
+      "surface": "Marketplace",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "live",
+      "description": "Return the smallest set of missing criteria (budget, format, urgency, exclusions) still needed",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "A18 Shopping intent & preferences",
+      "plan": "marketplace-va-v3"
+    },
+    {
+      "name": "classify_marketplace_intent",
+      "surface": "Marketplace",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "live",
+      "description": "Determine whether the need maps to a product, service, diagnostic test, practitioner or combination",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "A18 Shopping intent & preferences",
+      "plan": "marketplace-va-v3"
+    },
+    {
+      "name": "extract_purchase_criteria",
+      "surface": "Marketplace",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Extract budget, location, urgency, format, priorities, exclusions and desired outcome from natural language",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "A18 Shopping intent & preferences",
+      "plan": "marketplace-va-v3"
+    },
+    {
+      "name": "save_marketplace_preferences",
+      "surface": "Marketplace",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "live",
+      "description": "Save reusable shopping preferences (dietary, values, exclusions, budget) with user permission",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
+      "priority": "P0",
+      "risk": "confirm",
+      "plan_domain": "A18 Shopping intent & preferences",
+      "plan": "marketplace-va-v3"
+    },
+    {
+      "name": "get_marketplace_preferences",
+      "surface": "Marketplace",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "live",
+      "description": "Retrieve saved shopping preferences relevant to the current request",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "A18 Shopping intent & preferences",
+      "plan": "marketplace-va-v3"
+    },
+    {
+      "name": "reset_marketplace_preferences",
+      "surface": "Marketplace",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "live",
+      "description": "Remove saved marketplace preferences after confirmation",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
+      "priority": "P0",
+      "risk": "confirm",
+      "plan_domain": "A18 Shopping intent & preferences",
+      "plan": "marketplace-va-v3"
+    },
+    {
+      "name": "exclude_marketplace_brand_or_category",
+      "surface": "Marketplace",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Persistently exclude a brand or category from future recommendations",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "confirm",
+      "plan_domain": "A18 Shopping intent & preferences",
+      "plan": "marketplace-va-v3"
+    },
+    {
+      "name": "get_marketplace_context",
+      "surface": "Marketplace",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "live",
+      "description": "Return the minimum relevant user context (saved preferences, budget, recent orders) for the current request",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
+      "priority": "P1",
+      "risk": "read",
+      "plan_domain": "A19 Personalization & transparency",
+      "plan": "marketplace-va-v3"
+    },
+    {
+      "name": "explain_personalization_basis",
+      "surface": "Marketplace",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Explain in plain language which stored information shaped a recommendation",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "read",
+      "plan_domain": "A19 Personalization & transparency",
+      "plan": "marketplace-va-v3"
+    },
+    {
+      "name": "dismiss_marketplace_recommendation",
+      "surface": "Marketplace",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "live",
+      "description": "Dismiss a recommended product or service so it is not proposed again",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
+      "priority": "P1",
+      "risk": "write",
+      "plan_domain": "A19 Personalization & transparency",
+      "plan": "marketplace-va-v3"
+    },
+    {
+      "name": "show_sponsored_status",
+      "surface": "Marketplace",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "State whether an item is sponsored, promoted or commission-bearing",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "read",
+      "plan_domain": "A19 Personalization & transparency",
+      "plan": "marketplace-va-v3"
+    },
+    {
+      "name": "explain_no_suitable_option",
+      "surface": "Marketplace",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Explain honestly when no appropriate marketplace option was found",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "read",
+      "plan_domain": "A19 Personalization & transparency",
+      "plan": "marketplace-va-v3"
+    },
+    {
+      "name": "discover_marketplace_options",
+      "surface": "Marketplace",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "live",
+      "description": "Unified search across products AND services for one stated need",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "A20 Unified discovery",
+      "plan": "marketplace-va-v3"
+    },
+    {
+      "name": "search_products_by_need",
+      "surface": "Marketplace",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "live",
+      "description": "Search products by purpose and outcome rather than exact product name",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "A20 Unified discovery",
+      "plan": "marketplace-va-v3"
+    },
+    {
+      "name": "search_services_by_need",
+      "surface": "Marketplace",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "live",
+      "description": "Search services (wellness, nutrition, therapy, labs) by desired outcome",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "A20 Unified discovery",
+      "plan": "marketplace-va-v3"
+    },
+    {
+      "name": "search_marketplace_by_values",
+      "surface": "Marketplace",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "live",
+      "description": "Filter products by dietary tags, certifications and value preferences",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "A20 Unified discovery",
+      "plan": "marketplace-va-v3"
+    },
+    {
+      "name": "search_marketplace_alternatives",
+      "surface": "Marketplace",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "live",
+      "description": "Find alternatives to a product the user dislikes or cannot use",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "A20 Unified discovery",
+      "plan": "marketplace-va-v3"
+    },
+    {
+      "name": "search_marketplace_by_budget",
+      "surface": "Marketplace",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Find options within a defined total budget across categories",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "A20 Unified discovery",
+      "plan": "marketplace-va-v3"
+    },
+    {
+      "name": "search_local_services",
+      "surface": "Marketplace",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Search services available near the user",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "A20 Unified discovery",
+      "plan": "marketplace-va-v3"
+    },
+    {
+      "name": "search_marketplace_by_availability",
+      "surface": "Marketplace",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Search by delivery date or appointment availability",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "A20 Unified discovery",
+      "plan": "marketplace-va-v3"
+    },
+    {
+      "name": "generate_top_marketplace_picks",
+      "surface": "Marketplace",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "live",
+      "description": "Return a small number of best-fit options with short per-pick rationales (never stages the cart silently)",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "A21 Guided recommendation",
+      "plan": "marketplace-va-v3"
+    },
+    {
+      "name": "recommend_marketplace_path",
+      "surface": "Marketplace",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "live",
+      "description": "Recommend whether to start with a product, service, diagnostic or combination for the stated goal",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "A21 Guided recommendation",
+      "plan": "marketplace-va-v3"
+    },
+    {
+      "name": "rerank_marketplace_options",
+      "surface": "Marketplace",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Re-rank current options when the user changes a priority",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "A21 Guided recommendation",
+      "plan": "marketplace-va-v3"
+    },
+    {
+      "name": "recommend_lower_cost_option",
+      "surface": "Marketplace",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "live",
+      "description": "Find a suitable less expensive alternative to a current pick",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "A21 Guided recommendation",
+      "plan": "marketplace-va-v3"
+    },
+    {
+      "name": "recommend_premium_option",
+      "surface": "Marketplace",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Find a higher-quality or more comprehensive alternative",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "A21 Guided recommendation",
+      "plan": "marketplace-va-v3"
+    },
+    {
+      "name": "recommend_non_product_alternative",
+      "surface": "Marketplace",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Suggest a service or non-purchase approach when a product is not the best fit",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "A21 Guided recommendation",
+      "plan": "marketplace-va-v3"
+    },
+    {
+      "name": "recommend_complete_solution",
+      "surface": "Marketplace",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Build a product-and-service combination that addresses one broader goal",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "A21 Guided recommendation",
+      "plan": "marketplace-va-v3"
+    },
+    {
+      "name": "explain_why_recommended",
+      "surface": "Marketplace",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "live",
+      "description": "Explain why the assistant selected this option for this user, from the recorded rationale",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "A22 Concise explanation",
+      "plan": "marketplace-va-v3"
+    },
+    {
+      "name": "summarize_product_for_user",
+      "surface": "Marketplace",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "live",
+      "description": "Personalized short summary: what it is, what for, why it may fit, key limits — never the full spec",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "A22 Concise explanation",
+      "plan": "marketplace-va-v3"
+    },
+    {
+      "name": "get_key_product_facts",
+      "surface": "Marketplace",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "live",
+      "description": "Only the most important facts: price, form, usage, availability, safety notes",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "A22 Concise explanation",
+      "plan": "marketplace-va-v3"
+    },
+    {
+      "name": "explain_how_to_use_product",
+      "surface": "Marketplace",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Practical use instructions (dosage, serving) without overwhelming detail",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "A22 Concise explanation",
+      "plan": "marketplace-va-v3"
+    },
+    {
+      "name": "explain_relevant_limitations",
+      "surface": "Marketplace",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Surface only the limitations relevant to this user",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "A22 Concise explanation",
+      "plan": "marketplace-va-v3"
+    },
+    {
+      "name": "explain_evidence_summary",
+      "surface": "Marketplace",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Concise description of evidence strength and uncertainty for a product or service claim",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "A22 Concise explanation",
+      "plan": "marketplace-va-v3"
+    },
+    {
+      "name": "compare_marketplace_options",
+      "surface": "Marketplace",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "live",
+      "description": "Compare up to three options on the criteria that matter to this user",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
+      "priority": "P1",
+      "risk": "read",
+      "plan_domain": "A23 Comparison & shortlist",
+      "plan": "marketplace-va-v3"
+    },
+    {
+      "name": "highlight_meaningful_differences",
+      "surface": "Marketplace",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Explain only the differences likely to affect the user's choice",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "read",
+      "plan_domain": "A23 Comparison & shortlist",
+      "plan": "marketplace-va-v3"
+    },
+    {
+      "name": "identify_best_value_option",
+      "surface": "Marketplace",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Determine the strongest value for the user's needs, not just the lowest price",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "read",
+      "plan_domain": "A23 Comparison & shortlist",
+      "plan": "marketplace-va-v3"
+    },
+    {
+      "name": "answer_product_question",
+      "surface": "Marketplace",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Answer one focused question about one product",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "read",
+      "plan_domain": "A23 Comparison & shortlist",
+      "plan": "marketplace-va-v3"
+    },
+    {
+      "name": "shortlist_marketplace_options",
+      "surface": "Marketplace",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "live",
+      "description": "Save products to the user's shortlist for later comparison",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
+      "priority": "P1",
+      "risk": "confirm",
+      "plan_domain": "A23 Comparison & shortlist",
+      "plan": "marketplace-va-v3"
+    },
+    {
+      "name": "view_marketplace_shortlist",
+      "surface": "Marketplace",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "live",
+      "description": "Read the current shortlist aloud",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
+      "priority": "P1",
+      "risk": "read",
+      "plan_domain": "A23 Comparison & shortlist",
+      "plan": "marketplace-va-v3"
+    },
+    {
+      "name": "remove_from_marketplace_shortlist",
+      "surface": "Marketplace",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "live",
+      "description": "Remove an option from the shortlist",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
+      "priority": "P1",
+      "risk": "confirm",
+      "plan_domain": "A23 Comparison & shortlist",
+      "plan": "marketplace-va-v3"
+    },
+    {
+      "name": "browse_diagnostic_tests",
+      "surface": "Marketplace",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Browse diagnostic services by type: blood, metabolomics, microbiome, genomics, hormones, longevity panels",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "A24 Diagnostics & health services",
+      "plan": "marketplace-va-v3"
+    },
+    {
+      "name": "find_test_by_health_goal",
+      "surface": "Marketplace",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Find diagnostic categories matching a stated goal without diagnosing",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "A24 Diagnostics & health services",
+      "plan": "marketplace-va-v3"
+    },
+    {
+      "name": "find_test_by_biomarker",
+      "surface": "Marketplace",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Search tests containing a named biomarker",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "A24 Diagnostics & health services",
+      "plan": "marketplace-va-v3"
+    },
+    {
+      "name": "get_test_details",
+      "surface": "Marketplace",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Biomarker list, sample method, preparation and result timeline for one test",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "A24 Diagnostics & health services",
+      "plan": "marketplace-va-v3"
+    },
+    {
+      "name": "check_home_collection_availability",
+      "surface": "Marketplace",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Check whether home sample collection is available for a test",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "A24 Diagnostics & health services",
+      "plan": "marketplace-va-v3"
+    },
+    {
+      "name": "order_home_test_kit",
+      "surface": "Marketplace",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Stage an eligible home test kit into the basket after confirmation",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "confirm",
+      "plan_domain": "A24 Diagnostics & health services",
+      "plan": "marketplace-va-v3"
+    },
+    {
+      "name": "book_lab_appointment",
+      "surface": "Marketplace",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Book a laboratory or sample-collection appointment",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "confirm",
+      "plan_domain": "A24 Diagnostics & health services",
+      "plan": "marketplace-va-v3"
+    },
+    {
+      "name": "get_ordered_test_status",
+      "surface": "Marketplace",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Track kit shipment, sample receipt, processing and result readiness",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "A24 Diagnostics & health services",
+      "plan": "marketplace-va-v3"
+    },
+    {
+      "name": "prepare_for_diagnostic_service",
+      "surface": "Marketplace",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Concise preparation checklist (fasting, timing, medication questions for a professional)",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "A24 Diagnostics & health services",
+      "plan": "marketplace-va-v3"
+    },
+    {
+      "name": "recommend_diagnostic_test",
+      "surface": "Marketplace",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Recommend suitable diagnostic categories for a stated information need, never a diagnosis",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "A24 Diagnostics & health services",
+      "plan": "marketplace-va-v3"
+    },
+    {
+      "name": "find_practitioner_by_specialty",
+      "surface": "Marketplace",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Find practitioners by specialty, goal and user preferences",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "read",
+      "plan_domain": "A25 Practitioner selection",
+      "plan": "marketplace-va-v3"
+    },
+    {
+      "name": "get_practitioner_credentials",
+      "surface": "Marketplace",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Relevant qualifications and verification status",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "read",
+      "plan_domain": "A25 Practitioner selection",
+      "plan": "marketplace-va-v3"
+    },
+    {
+      "name": "get_practitioner_availability",
+      "surface": "Marketplace",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Open appointment slots",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "read",
+      "plan_domain": "A25 Practitioner selection",
+      "plan": "marketplace-va-v3"
+    },
+    {
+      "name": "get_practitioner_pricing",
+      "surface": "Marketplace",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Session and package pricing",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "read",
+      "plan_domain": "A25 Practitioner selection",
+      "plan": "marketplace-va-v3"
+    },
+    {
+      "name": "compare_practitioners_for_user",
+      "surface": "Marketplace",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Compare a practitioner shortlist on the user's priorities",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "read",
+      "plan_domain": "A25 Practitioner selection",
+      "plan": "marketplace-va-v3"
+    },
+    {
+      "name": "book_practitioner_appointment",
+      "surface": "Marketplace",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Book an available appointment after confirmation",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "confirm",
+      "plan_domain": "A25 Practitioner selection",
+      "plan": "marketplace-va-v3"
+    },
+    {
+      "name": "build_marketplace_solution_plan",
+      "surface": "Marketplace",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Concise multi-step product and service plan for one goal",
+      "wired_in": [],
+      "priority": "P2",
+      "risk": "read",
+      "plan_domain": "A26 Bundles & plans",
+      "plan": "marketplace-va-v3"
+    },
+    {
+      "name": "create_diagnostic_and_consultation_bundle",
+      "surface": "Marketplace",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Pair a diagnostic service with suitable result interpretation",
+      "wired_in": [],
+      "priority": "P2",
+      "risk": "read",
+      "plan_domain": "A26 Bundles & plans",
+      "plan": "marketplace-va-v3"
+    },
+    {
+      "name": "check_bundle_compatibility",
+      "surface": "Marketplace",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Check whether bundle components logically work together, without duplication",
+      "wired_in": [],
+      "priority": "P2",
+      "risk": "read",
+      "plan_domain": "A26 Bundles & plans",
+      "plan": "marketplace-va-v3"
+    },
+    {
+      "name": "add_bundle_to_cart",
+      "surface": "Marketplace",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Stage all purchasable bundle items into the basket after confirmation",
+      "wired_in": [],
+      "priority": "P2",
+      "risk": "confirm",
+      "plan_domain": "A26 Bundles & plans",
+      "plan": "marketplace-va-v3"
+    },
+    {
+      "name": "save_marketplace_plan",
+      "surface": "Marketplace",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Save a marketplace plan to resume later",
+      "wired_in": [],
+      "priority": "P2",
+      "risk": "write",
+      "plan_domain": "A26 Bundles & plans",
+      "plan": "marketplace-va-v3"
+    },
+    {
+      "name": "check_product_suitability",
+      "surface": "Marketplace",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "live",
+      "description": "Check one product against saved preferences, exclusions and dietary needs",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
+      "priority": "P1",
+      "risk": "read",
+      "plan_domain": "A27 Suitability & compatibility",
+      "plan": "marketplace-va-v3"
+    },
+    {
+      "name": "check_dietary_compatibility",
+      "surface": "Marketplace",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Check vegan, vegetarian, gluten-free or other dietary requirements for a product",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "read",
+      "plan_domain": "A27 Suitability & compatibility",
+      "plan": "marketplace-va-v3"
+    },
+    {
+      "name": "check_cart_duplication",
+      "surface": "Marketplace",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "live",
+      "description": "Detect repeated or overlapping products in the basket",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
+      "priority": "P1",
+      "risk": "read",
+      "plan_domain": "A27 Suitability & compatibility",
+      "plan": "marketplace-va-v3"
+    },
+    {
+      "name": "check_delivery_restrictions",
+      "surface": "Marketplace",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Check country and shipping limitations for a product",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "read",
+      "plan_domain": "A27 Suitability & compatibility",
+      "plan": "marketplace-va-v3"
+    },
+    {
+      "name": "check_test_overlap",
+      "surface": "Marketplace",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Identify duplicated biomarkers across diagnostic packages",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "read",
+      "plan_domain": "A27 Suitability & compatibility",
+      "plan": "marketplace-va-v3"
+    },
+    {
+      "name": "check_service_prerequisites",
+      "surface": "Marketplace",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Identify referrals, preparation or eligibility requirements for a service",
+      "wired_in": [],
+      "priority": "P1",
+      "risk": "read",
+      "plan_domain": "A27 Suitability & compatibility",
+      "plan": "marketplace-va-v3"
+    },
+    {
+      "name": "compare_marketplace_prices",
+      "surface": "Marketplace",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Compare prices of equivalent options including reference prices",
+      "wired_in": [],
+      "priority": "P2",
+      "risk": "read",
+      "plan_domain": "A28 Pricing & value",
+      "plan": "marketplace-va-v3"
+    },
+    {
+      "name": "explain_price_difference",
+      "surface": "Marketplace",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Explain why two similar options are priced differently",
+      "wired_in": [],
+      "priority": "P2",
+      "risk": "read",
+      "plan_domain": "A28 Pricing & value",
+      "plan": "marketplace-va-v3"
+    },
+    {
+      "name": "review_shopping_budget",
+      "surface": "Marketplace",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "live",
+      "description": "Read the monthly shopping budget, current spend and remaining headroom",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
+      "priority": "P2",
+      "risk": "read",
+      "plan_domain": "A28 Pricing & value",
+      "plan": "marketplace-va-v3"
+    },
+    {
+      "name": "estimate_total_ownership_cost",
+      "surface": "Marketplace",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Show recurring or long-term cost rather than only the initial price",
+      "wired_in": [],
+      "priority": "P2",
+      "risk": "read",
+      "plan_domain": "A28 Pricing & value",
+      "plan": "marketplace-va-v3"
+    },
+    {
+      "name": "confirm_marketplace_selection",
+      "surface": "Marketplace",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "live",
+      "description": "Read back the exact selected option (name, price, key terms) and obtain explicit confirmation before any cart action",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
+      "priority": "P0",
+      "risk": "confirm",
+      "plan_domain": "A29 Cart confirmation & checkout handoff",
+      "plan": "marketplace-va-v3"
+    },
+    {
+      "name": "add_selected_option_to_cart",
+      "surface": "Marketplace",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "live",
+      "description": "Stage the confirmed option into the universal basket (never charges; screen handoff for payment)",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
+      "priority": "P0",
+      "risk": "confirm",
+      "plan_domain": "A29 Cart confirmation & checkout handoff",
+      "plan": "marketplace-va-v3"
+    },
+    {
+      "name": "add_shortlist_item_to_cart",
+      "surface": "Marketplace",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Stage an item from the shortlist into the basket after confirmation",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "confirm",
+      "plan_domain": "A29 Cart confirmation & checkout handoff",
+      "plan": "marketplace-va-v3"
+    },
+    {
+      "name": "review_cart_suitability",
+      "surface": "Marketplace",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "live",
+      "description": "Check duplicates and conflicts with saved preferences before checkout",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "A29 Cart confirmation & checkout handoff",
+      "plan": "marketplace-va-v3"
+    },
+    {
+      "name": "explain_cart_item",
+      "surface": "Marketplace",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "live",
+      "description": "Explain why a specific basket item is there (origin, rationale)",
+      "wired_in": [
+        "livekit",
+        "vertex"
+      ],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "A29 Cart confirmation & checkout handoff",
+      "plan": "marketplace-va-v3"
+    },
+    {
+      "name": "confirm_cart_total",
+      "surface": "Marketplace",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Read back total price and any recurring charges before the screen handoff",
+      "wired_in": [],
+      "priority": "P0",
+      "risk": "read",
+      "plan_domain": "A29 Cart confirmation & checkout handoff",
+      "plan": "marketplace-va-v3"
+    },
+    {
+      "name": "get_next_order_action",
+      "surface": "Marketplace",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Tell the user the next required step for an order (delivery, sample, appointment)",
+      "wired_in": [],
+      "priority": "P2",
+      "risk": "read",
+      "plan_domain": "A30 Post-purchase & follow-up",
+      "plan": "marketplace-va-v3"
+    },
+    {
+      "name": "submit_marketplace_review",
+      "surface": "Marketplace",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Record the user's rating of a purchased product or service after confirmation",
+      "wired_in": [],
+      "priority": "P2",
+      "risk": "confirm",
+      "plan_domain": "A30 Post-purchase & follow-up",
+      "plan": "marketplace-va-v3"
+    },
+    {
+      "name": "schedule_reorder_reminder",
+      "surface": "Marketplace",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Schedule an optional reorder reminder",
+      "wired_in": [],
+      "priority": "P2",
+      "risk": "write",
+      "plan_domain": "A30 Post-purchase & follow-up",
+      "plan": "marketplace-va-v3"
+    },
+    {
+      "name": "start_return_request",
+      "surface": "Marketplace",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Start a return process for an eligible order",
+      "wired_in": [],
+      "priority": "P2",
+      "risk": "write",
+      "plan_domain": "A30 Post-purchase & follow-up",
+      "plan": "marketplace-va-v3"
+    },
+    {
+      "name": "cancel_marketplace_order",
+      "surface": "Marketplace",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Cancel an eligible order after confirmation",
+      "wired_in": [],
+      "priority": "P2",
+      "risk": "confirm",
+      "plan_domain": "A30 Post-purchase & follow-up",
+      "plan": "marketplace-va-v3"
+    },
+    {
+      "name": "report_marketplace_issue",
+      "surface": "Marketplace",
+      "category": "community",
+      "role": [
+        "community"
+      ],
+      "status": "planned",
+      "description": "Report an order, product or service problem",
+      "wired_in": [],
+      "priority": "P2",
+      "risk": "write",
+      "plan_domain": "A30 Post-purchase & follow-up",
+      "plan": "marketplace-va-v3"
     }
   ]
 }

@@ -79,6 +79,10 @@ describe('registerAllActionExecutors', () => {
   // ---- boot ----------------------------------------------------------------
   describe('boot', () => {
     it('registers exactly 5 executors', () => {
+      // beforeEach's clearAllMocks wipes the beforeAll call history, so
+      // re-register here (idempotent — same keys are overwritten) to assert
+      // on the registration calls themselves.
+      registerAllActionExecutors();
       expect(mockRegister).toHaveBeenCalledTimes(5);
       expect(Object.keys(executors)).toHaveLength(5);
       expect(Object.keys(executors).sort()).toEqual([

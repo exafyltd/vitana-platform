@@ -28,7 +28,12 @@ const TRIGGERS: Array<{ kind: SocialIntentKind; patterns: RegExp }> = [
   { kind: 'interesting_events', patterns: /\b(events?|veranstaltung(en)?|meetups?|which events|welche events)\b/i },
   { kind: 'who_to_contact', patterns: /\b(who should i (contact|message|talk|invite|meet)|wen soll(te)? ich (kontaktieren|anschreiben|einladen|treffen))\b/i },
   { kind: 'community_changes', patterns: /\b(what changed|since yesterday|was hat sich (getan|geändert)|was ist passiert|what did i miss)\b/i },
-  { kind: 'person_activity', patterns: /\b(latest activit|recent activit|what (did|has) .{2,40} (do|done|been up to)|zuletzt gemacht|letzte[nr]? aktivit)\b/i },
+  // NOTE: "activit\w*"/"aktivit\w*" (not a bare word) — a trailing \b right
+  // after the truncated stem "activit"/"aktivit" never matches in practice
+  // because real phrasing continues the word ("activity", "aktivität"), so
+  // the boundary check always fails; \w* lets the alternative consume the
+  // rest of the word before the boundary is checked.
+  { kind: 'person_activity', patterns: /\b(latest activit\w*|recent activit\w*|what (did|has) .{2,40} (do|done|been up to)|zuletzt gemacht|letzte[nr]? aktivit\w*)\b/i },
   { kind: 'general_social', patterns: /\b(community|maxina|freund(e|in)?|friends?|people|leute|wichtige personen|important people|network|netzwerk|mission)\b/i },
 ];
 

@@ -15,6 +15,7 @@ import {
   LLM_SAFE_DEFAULTS,
   PROVIDER_FLAGSHIPS,
   VALID_STAGES,
+  VALID_PROVIDERS,
   type LLMStage,
 } from '../src/constants/llm-defaults';
 
@@ -60,19 +61,28 @@ describe('BOOTSTRAP-LLM-ROUTER constants', () => {
       expect(LLM_SAFE_DEFAULTS.classifier.primary_model).toBe('deepseek-reasoner');
     });
 
-    test('vision stage primary is vertex with gemini-3.1-pro', () => {
+    test('vision stage primary is vertex with gemini-3.1-pro-preview', () => {
+      // VTID-02690: the Gemini 3.1 flagship is only exposed as a preview
+      // model id — the router special-cases preview ids, so the safe default
+      // deliberately uses the `-preview` suffix.
       expect(LLM_SAFE_DEFAULTS.vision.primary_provider).toBe('vertex');
-      expect(LLM_SAFE_DEFAULTS.vision.primary_model).toBe('gemini-3.1-pro');
+      expect(LLM_SAFE_DEFAULTS.vision.primary_model).toBe('gemini-3.1-pro-preview');
     });
   });
 
   describe('PROVIDER_FLAGSHIPS table', () => {
     test('contains an entry for every supported provider', () => {
+      for (const provider of VALID_PROVIDERS) {
+        expect(PROVIDER_FLAGSHIPS[provider]).toBeTruthy();
+      }
       expect(PROVIDER_FLAGSHIPS.anthropic).toBe('claude-opus-4-7');
       expect(PROVIDER_FLAGSHIPS.openai).toBe('gpt-5');
-      expect(PROVIDER_FLAGSHIPS.vertex).toBe('gemini-3.1-pro');
+      expect(PROVIDER_FLAGSHIPS.vertex).toBe('gemini-3.1-pro-preview');
       expect(PROVIDER_FLAGSHIPS.deepseek).toBe('deepseek-reasoner');
       expect(PROVIDER_FLAGSHIPS.claude_subscription).toBe('claude-opus-4-7');
+      // VTID-03403: Bedrock's flagship is a cross-region inference profile id,
+      // overridable via BEDROCK_MODEL_ID (unset in the test environment).
+      expect(PROVIDER_FLAGSHIPS.bedrock).toBe('eu.anthropic.claude-sonnet-4-6');
     });
   });
 });

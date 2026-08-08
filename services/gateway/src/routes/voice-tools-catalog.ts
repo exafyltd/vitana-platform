@@ -41,7 +41,10 @@ interface ToolEntry {
   // (manifest-only phantom). The Voice Tools Catalog UI shows this as a
   // "Wired in" pill so operators don't mistake a planned tool for a live
   // one.
-  wired_in?: ('vertex' | 'livekit')[];
+  // BOOTSTRAP-NOVA-SONIC-VOICE: nova_sonic shares the gateway's canonical
+  // tool dispatcher with vertex — a tool wired for 'vertex' is reachable
+  // from Nova sessions too; 'nova_sonic' entries exist for explicitness.
+  wired_in?: ('vertex' | 'livekit' | 'nova_sonic')[];
 }
 
 interface ToolManifest {

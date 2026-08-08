@@ -50,6 +50,16 @@ export type GatewayI18nKey =
   | 'notif.post_like.body'
   | 'notif.post_comment.title'
   | 'notif.post_comment.body'
+  // Feature-announcement News Feed cards (BOOTSTRAP-FEATURE-ANNOUNCEMENTS) —
+  // title is a generic "New feature: {feature}" template; the body is the
+  // announcement's own per-locale description, not a catalog key (it's
+  // one-off editorial copy authored per announcement, not recurring UI chrome).
+  | 'notif.feature_announcement.title'
+  // Daily "Did You Know" tip about an EXISTING feature (BOOTSTRAP-DAILY-FEATURE-TIP)
+  // — distinct wording from feature_announcement above ("New feature: X"
+  // would be wrong for something that already exists). Body is the tip's own
+  // per-locale description, same one-off-copy convention as above.
+  | 'notif.feature_tip.title'
   // Daily pace check (claude/daily-pace-notifications)
   | 'notif.daily_pace.on_track.title'
   | 'notif.daily_pace.on_track.body'
@@ -119,7 +129,33 @@ export type GatewayI18nKey =
   // Autopilot recommendation identity (recommendation-identity work) — the
   // "Vitana empfiehlt" header shown on every AI-generated recommendation card
   // so the source is never rendered as a bare "AI" label.
-  | 'recommendation.vitana_label';
+  | 'recommendation.vitana_label'
+  // BOOTSTRAP-COMMUNITY-MARKETPLACE: seller-facing moderation outcome pushes.
+  | 'notif.marketplace_listing_approved.title'
+  | 'notif.marketplace_listing_approved.body'
+  | 'notif.marketplace_listing_rejected.title'
+  | 'notif.marketplace_listing_rejected.body'
+  | 'notif.marketplace_listing_removed.title'
+  | 'notif.marketplace_listing_removed.body'
+  // BOOTSTRAP-COMMUNITY-MARKETPLACE (Chunk 5): seller-facing "someone wants
+  // to buy/hire" push when a buyer sends the first contact message via the
+  // listing's CTA.
+  | 'notif.listing_interest.title'
+  | 'notif.listing_interest.body'
+  // BOOTSTRAP-NOVA-SONIC-VOICE: greeting AUDIO bridge — a short, near-instant
+  // TTS phrase spoken while the real (context-heavy) upstream greeting is
+  // still being generated, so the user hears Vitana immediately instead of
+  // silence. {date} is locale-formatted by the caller; {line} is one of a
+  // small rotating motivational-line pool below.
+  | 'orb.greeting_bridge.morning'
+  | 'orb.greeting_bridge.afternoon'
+  | 'orb.greeting_bridge.evening'
+  | 'orb.greeting_bridge.transition'
+  | 'orb.greeting_bridge.line_1'
+  | 'orb.greeting_bridge.line_2'
+  | 'orb.greeting_bridge.line_3'
+  | 'orb.greeting_bridge.line_4'
+  | 'orb.greeting_bridge.line_5';
 
 type LocaleCatalog = Record<GatewayI18nKey, string>;
 
@@ -156,6 +192,8 @@ const DE: LocaleCatalog = {
   'notif.post_like.body': '{name} gefällt dein Beitrag.',
   'notif.post_comment.title': 'Neuer Kommentar',
   'notif.post_comment.body': '{name} hat deinen Beitrag kommentiert.',
+  'notif.feature_announcement.title': 'Neues Feature: {feature}',
+  'notif.feature_tip.title': 'Wusstest du schon: {feature}',
   // Daily pace check
   'notif.daily_pace.on_track.title': 'Auf Kurs ✨',
   'notif.daily_pace.on_track.body': 'Du bist auf einem guten Weg. Schließ heute noch deinen Tagesplan ab — dein Ziel kommt näher.',
@@ -220,6 +258,23 @@ const DE: LocaleCatalog = {
   'priority.greeting.evening.named': 'Guten Abend, {name}. Bereit, wenn du es bist.',
   'priority.greeting.evening': 'Guten Abend. Bereit, wenn du es bist.',
   'recommendation.vitana_label': 'Vitana empfiehlt',
+  'notif.marketplace_listing_approved.title': 'Dein Angebot ist online',
+  'notif.marketplace_listing_approved.body': '„{title}" wurde geprüft und ist jetzt im Marktplatz sichtbar.',
+  'notif.marketplace_listing_rejected.title': 'Dein Angebot wurde abgelehnt',
+  'notif.marketplace_listing_rejected.body': '„{title}" konnte nicht veröffentlicht werden: {reason}',
+  'notif.marketplace_listing_removed.title': 'Dein Angebot wurde entfernt',
+  'notif.marketplace_listing_removed.body': '„{title}" wurde von einem Admin entfernt: {reason}',
+  'notif.listing_interest.title': 'Interesse an deinem Angebot',
+  'notif.listing_interest.body': 'Jemand hat Interesse an „{title}" gezeigt.',
+  'orb.greeting_bridge.morning': 'Guten Morgen! Heute ist der {date}. {line}',
+  'orb.greeting_bridge.afternoon': 'Guten Tag! Heute ist der {date}. {line}',
+  'orb.greeting_bridge.evening': 'Guten Abend! Heute ist der {date}. {line}',
+  'orb.greeting_bridge.transition': 'Lass mich kurz deine aktuellen Daten anschauen …',
+  'orb.greeting_bridge.line_1': 'Ein neuer Tag, eine neue Chance, an dir zu arbeiten.',
+  'orb.greeting_bridge.line_2': 'Kleine Schritte summieren sich zu großen Veränderungen.',
+  'orb.greeting_bridge.line_3': 'Dein zukünftiges Ich dankt dir für das, was du heute tust.',
+  'orb.greeting_bridge.line_4': 'Konstanz schlägt Perfektion — mach einfach weiter.',
+  'orb.greeting_bridge.line_5': 'Jeder Tag ist eine neue Gelegenheit, dich besser zu fühlen.',
 };
 
 const EN: LocaleCatalog = {
@@ -255,6 +310,8 @@ const EN: LocaleCatalog = {
   'notif.post_like.body': '{name} liked your post.',
   'notif.post_comment.title': 'New comment',
   'notif.post_comment.body': '{name} commented on your post.',
+  'notif.feature_announcement.title': 'New feature: {feature}',
+  'notif.feature_tip.title': 'Did you know: {feature}',
   // Daily pace check
   'notif.daily_pace.on_track.title': 'On track ✨',
   'notif.daily_pace.on_track.body': "You're moving well. Wrap up today's plan — your goal is getting closer.",
@@ -319,6 +376,23 @@ const EN: LocaleCatalog = {
   'priority.greeting.evening.named': 'Good evening, {name}. Ready when you are.',
   'priority.greeting.evening': 'Good evening. Ready when you are.',
   'recommendation.vitana_label': 'Vitana recommends',
+  'notif.marketplace_listing_approved.title': 'Your listing is live',
+  'notif.marketplace_listing_approved.body': '"{title}" has been reviewed and is now visible in the marketplace.',
+  'notif.marketplace_listing_rejected.title': 'Your listing was rejected',
+  'notif.marketplace_listing_rejected.body': '"{title}" could not be published: {reason}',
+  'notif.marketplace_listing_removed.title': 'Your listing was removed',
+  'notif.marketplace_listing_removed.body': '"{title}" was removed by an admin: {reason}',
+  'notif.listing_interest.title': 'Interest in your listing',
+  'notif.listing_interest.body': 'Someone is interested in "{title}".',
+  'orb.greeting_bridge.morning': 'Good morning! Today is {date}. {line}',
+  'orb.greeting_bridge.afternoon': 'Good afternoon! Today is {date}. {line}',
+  'orb.greeting_bridge.evening': 'Good evening! Today is {date}. {line}',
+  'orb.greeting_bridge.transition': "Let me pull up your latest data…",
+  'orb.greeting_bridge.line_1': "A new day, a new chance to invest in yourself.",
+  'orb.greeting_bridge.line_2': "Small steps add up to big changes.",
+  'orb.greeting_bridge.line_3': "Your future self will thank you for what you do today.",
+  'orb.greeting_bridge.line_4': "Consistency beats perfection — just keep going.",
+  'orb.greeting_bridge.line_5': "Every day is a new chance to feel a little better.",
 };
 
 // Draft locales — start as a copy of EN; replace with native strings as they

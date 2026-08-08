@@ -1,0 +1,94 @@
+name: Alert — ORB Session State Health
+
+# VTID-03485. Follow-up to VTID-03480, where `orb_session_state` did not exist
+# in production for ~2 months and four ORB features were silently inert.
+#
+# The in-process tracker added in services/gateway/src/services/orb/
+# orb-session-state.ts makes the failure *visible* (admin endpoint + a loud log
+# line). This workflow is the part that makes it *noticed* — the lesson from
+# VTID-03480 was precisely that `ok:false` in a payload nobody alerts on is not
+# detection.
+#
+# TRANSPORT: PostgREST over HTTPS, deliberately NOT `psql "$SUPABASE_DB_URL"`.
+# GitHub Actions cannot reach the Supabase pooler — the project has a network
+# allow-list and runner IPs are not on it:
+#
+#   psql: error: ... FATAL: (EADDRNOTALLOWED) address not in tenant allow_list
+#
+# ALERT-WELCOME-GREETING-HEALTH.yml, the workflow this one is modelled on, has
+# failed EVERY scheduled run for 6+ days on exactly that error. Building this
+# alert on the same transport would have produced a detector that cannot run —
+# the precise failure mode VTID-03480 is about. See
+# supabase/migrations/20260804080000_vtid_03486_ci_health_rpcs.sql.
+#
+# Three independent conditions, because they fail in different ways:
+#   1. The relation exists at all           <- the exact VTID-03480 root cause
+#   2. Writes are landing when there is traffic
+#   3. No ack reports ok:false
+
+on:
+  schedule:
+    - cron: '20 7 * * *'   # 09:20 CET daily, staggered off the greeting alert
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  health:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fetch ORB session-state health
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
+        run: |
+          set -euo pipefail
+          if [ -z "${SUPABASE_URL:-}" ] || [ -z "${SUPABASE_SERVICE_ROLE:-}" ]; then
+            echo "::error::SUPABASE_URL / SUPABASE_SERVICE_ROLE secrets are not set on this repo."
+            exit 1
+          fi
+          HTTP=$(curl -sS -o health.json -w '%{http_code}' \
+            -X POST "${SUPABASE_URL%/}/rest/v1/rpc/ci_orb_session_state_health" \
+            -H "apikey: $SUPABASE_SERVICE_ROLE" \
+            -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE" \
+            -H 'Content-Type: application/json' -d '{}')
+          if [ "$HTTP" != "200" ]; then
+            echo "::error::ci_orb_session_state_health RPC returned HTTP $HTTP. If 404, the function is missing — apply supabase/migrations/20260804080000_vtid_03486_ci_health_rpcs.sql."
+            head -c 500 health.json || true
+            exit 1
+          fi
+          cat health.json
+          echo "---"
+
+          TABLE_EXISTS=$(jq -r '.table_exists' health.json)
+          STARTS=$(jq -r '.session_starts_24h' health.json)
+          WRITES=$(jq -r '.state_writes_24h' health.json)
+          ACKS=$(jq -r '.acks_24h' health.json)
+          FAILED=$(jq -r '.acks_failed_24h' health.json)
+          echo "Last 24h — table_exists=$TABLE_EXISTS starts=$STARTS writes=$WRITES acks=$ACKS acks_failed=$FAILED"
+
+          # 1. The relation itself. This is the VTID-03480 root cause.
+          if [ "$TABLE_EXISTS" != "true" ]; then
+            echo "::error::orb_session_state does NOT exist in production. This is the VTID-03480 failure exactly: an authored-but-never-applied migration. Every ORB session-state helper is failing soft right now — continuity, audio-ready handshake, pending CTA and opener rotation are all inert. Apply supabase/migrations/20260606000000_DEV_COMHU_0503_orb_session_state.sql."
+            exit 1
+          fi
+
+          # 2. Writes landing — only meaningful when there was real traffic. A
+          # quiet night is not a fault; that distinction is what made the
+          # overnight ack gap on 2026-08-04 a false alarm at n=2.
+          if [ "$STARTS" -ge "5" ] && [ "$WRITES" -eq "0" ]; then
+            echo "::error::$STARTS ORB sessions started in the last 24h but ZERO rows were written to orb_session_state. Writes are failing silently (the helpers never throw). Check GET /api/v1/admin/orb-session-state-health for schema_missing and the failure reason."
+            exit 1
+          fi
+
+          # 3. `ok` in an audio_ready.acked event is the return of
+          # writeOrbSessionState(), NOT the client's readiness. Misreading it as
+          # client readiness is what let VTID-03480 hide for months. Any
+          # ok:false means the write path is broken again.
+          if [ "$ACKS" -gt "0" ] && [ "$FAILED" -gt "0" ]; then
+            echo "::error::$FAILED of $ACKS audio-ready acks in the last 24h reported ok:false. That flag is the writeOrbSessionState() return value, not client readiness — the session-state write path is failing again (VTID-03480 regression)."
+            exit 1
+          fi
+
+          echo "✓ Healthy: relation present, writes landing, no ok:false acks."

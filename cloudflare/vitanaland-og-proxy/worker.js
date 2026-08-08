@@ -51,10 +51,37 @@ function formatPrice(cents, currency) {
   }
 }
 
+// WhatsApp silently refuses to render og:image files larger than ~600 KB
+// (title + description still show, the thumbnail just never appears — the
+// exact "shared without an image" symptom). Facebook's limit is far higher
+// (8 MB), so WhatsApp is the binding constraint. Any candidate above this
+// is treated as unusable so we fall through to the next one.
+const MAX_OG_IMAGE_BYTES = 600_000;
+
+/**
+ * Rewrite a Supabase public-storage object URL to the storage image
+ * transformation endpoint, resized to a WhatsApp-safe 512×512.
+ * User-uploaded avatars are stored at original size (multi-MB phone
+ * photos are common) and would blow past MAX_OG_IMAGE_BYTES.
+ * `format=origin` stops Supabase from auto-serving WebP (negotiated via
+ * Accept), which WhatsApp doesn't reliably render.
+ * Returns null for anything that isn't a Supabase public object URL.
+ */
+function supabaseRenderUrl(url) {
+  if (!url || typeof url !== 'string') return null;
+  const m = url.match(
+    /^(https:\/\/[a-z0-9-]+\.supabase\.co)\/storage\/v1\/object\/public\/(.+)$/i,
+  );
+  if (!m) return null;
+  const path = m[2].split('?')[0];
+  return `${m[1]}/storage/v1/render/image/public/${path}` +
+    '?width=512&height=512&resize=cover&quality=80&format=origin';
+}
+
 /**
  * Walk a list of candidate image URLs and return the first one that
- * actually serves image bytes. Falls through to the supplied default
- * on any miss.
+ * actually serves image bytes crawlers will render. Falls through to
+ * the supplied default on any miss.
  *
  * Some legacy / third-party avatar hosts (Supabase signed URLs, certain
  * object-storage CDNs) answer HEAD with `application/octet-stream` or
@@ -62,6 +89,14 @@ function formatPrice(cents, currency) {
  * avoid silently downgrading those avatars to the branded default —
  * which then gets cached for 7d by WhatsApp et al. — we fall back to a
  * tiny `Range: bytes=0-0` GET when HEAD looks ambiguous.
+ *
+ * A candidate that serves image bytes but is larger than
+ * MAX_OG_IMAGE_BYTES is also rejected: WhatsApp fetches the image
+ * itself and silently drops oversized ones, so emitting it would cache
+ * an image-less preview for ~7 days. Size comes from Content-Length on
+ * HEAD, or the Content-Range total on the ranged-GET fallback; when
+ * neither is present we accept the candidate (can't tell, and dropping
+ * valid images is the worse failure).
  *
  * Returns the detected content-type so the caller can emit an accurate
  * `og:image:type`.
@@ -77,7 +112,17 @@ async function pickUsableImage(candidates, defaultImage) {
       if (method === 'GET') init.headers = { range: 'bytes=0-0' };
       const r = await fetch(url, init);
       const ct = (r.headers.get('content-type') || '').toLowerCase();
-      return { ok: r.ok, ct };
+      let size = null;
+      if (method === 'GET' && r.status === 206) {
+        // Ranged response: Content-Length is the 1-byte slice; the real
+        // size is the total in `Content-Range: bytes 0-0/<total>`.
+        const total = (r.headers.get('content-range') || '').split('/')[1];
+        if (total && /^\d+$/.test(total)) size = Number(total);
+      } else {
+        const len = r.headers.get('content-length');
+        if (len && /^\d+$/.test(len)) size = Number(len);
+      }
+      return { ok: r.ok, ct, size };
     } catch {
       return null;
     }
@@ -96,6 +141,7 @@ async function pickUsableImage(candidates, defaultImage) {
     }
 
     if (r && r.ok && r.ct.startsWith('image/')) {
+      if (r.size != null && r.size > MAX_OG_IMAGE_BYTES) continue;
       return { url, contentType: r.ct };
     }
   }
@@ -286,8 +332,18 @@ async function renderProfileOg(id, canonicalUrl, destinationUrl, config) {
   // matching MobileIdentityCard) — NOT straight to the branded hero — so an
   // avatar-less member still shares a personal-looking card. The branded
   // DEFAULT_IMAGE remains the last resort if DiceBear is unreachable.
+  //
+  // Avatars are stored at original upload size — multi-MB phone photos are
+  // common, and WhatsApp silently drops og:image files over ~600 KB (the
+  // "profile shared without an image" regression). So the FIRST candidate is
+  // the Supabase-transformed 512×512 rendition (~tens of KB); the raw
+  // avatar_url stays second for non-Supabase hosts or if the render endpoint
+  // is unavailable, guarded by pickUsableImage's size check.
   const autoAvatar = autoAvatarPngUrl(p.handle || p.display_name || p.user_id || id);
-  const picked = await pickUsableImage([p.avatar_url, autoAvatar], DEFAULT_IMAGE);
+  const picked = await pickUsableImage(
+    [supabaseRenderUrl(p.avatar_url), p.avatar_url, autoAvatar],
+    DEFAULT_IMAGE,
+  );
   const image = picked.url;
   const imageType = picked.contentType;
   // avatar_url is square (512×512); DEFAULT_IMAGE is landscape (1200×630).

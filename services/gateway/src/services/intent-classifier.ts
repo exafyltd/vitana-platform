@@ -1,51 +1,23 @@
 /**
  * VTID-01973: Intent kind classifier for the Vitana Intent Engine (P2-A).
  *
- * First-stage Gemini call that maps a free-form utterance to one of the
+ * First-stage LLM call that maps a free-form utterance to one of the
  * registered intent_kinds + a confidence score. The dispatcher hands off
  * to the kind-specific extractor only when confidence ≥ 0.7; below that,
  * ORB asks a clarifying question.
  *
- * BOOTSTRAP-FIND-MATCH-CLASSIFY-FIX: the original Vertex call used
- * gemini-2.0-flash with NO responseMimeType and a system-role
- * systemInstruction, and its only fallback was gated on
- * GOOGLE_GEMINI_API_KEY — an env var that is NOT configured on the gateway
- * (see index.ts). In production that combination returned confidence 0 for
- * EVERY utterance (verified against textbook examples), so the ORB
- * "find a match / post an activity" voice flow could never classify an
- * intent and bailed with "I can't do that right now" before posting.
- *
- * This now mirrors the proven-working matchmaker call shape: JSON mode
- * (responseMimeType), the prompt folded into the user turn (no
- * system-role systemInstruction), a model fallback chain that ends in the
- * known-good gemini-2.5-pro, and withGeminiLog telemetry so any future
- * regression is visible in gemini_call_log instead of silent.
+ * BOOTSTRAP-GEMINI-TO-CLAUDE: migrated off the Vertex Gemini fallback chain
+ * (gemini-2.5-flash → gemini-2.5-pro, plus a GOOGLE_GEMINI_API_KEY REST
+ * fallback that was never actually configured on the gateway) to Claude
+ * Sonnet 4.6 via the direct Anthropic API. withGeminiLog telemetry is kept
+ * (logs to the existing gemini_call_log table by feature+model) so any
+ * regression is still visible in the same dashboard.
  */
 
-import { VertexAI } from '@google-cloud/vertexai';
 import { withGeminiLog } from './gemini-call-log';
+import { callClaudeText, CLAUDE_SONNET_4_6 } from './claude-text-client';
 
-// Accept either name — CLAUDE.md documents GEMINI_API_KEY, older code used GOOGLE_GEMINI_API_KEY.
-const GEMINI_API_KEY = process.env.GOOGLE_GEMINI_API_KEY || process.env.GEMINI_API_KEY;
-const VERTEX_PROJECT = process.env.GOOGLE_CLOUD_PROJECT || process.env.GCP_PROJECT || 'lovable-vitana-vers1';
-const VERTEX_LOCATION = process.env.VERTEX_LOCATION || 'us-central1';
-// Use the model family proven to work on this Vertex project. The matchmaker
-// succeeds on gemini-2.5-pro; gemini-2.0-flash is never actually exercised
-// there (no fallback rows) and returned empty/errored for the classifier, so
-// we lead with 2.5-flash and fall back to the proven 2.5-pro. Both are
-// "thinking" models, so maxOutputTokens must leave room for reasoning BEFORE
-// the JSON (a 256-token budget made 2.5-pro emit an empty candidate).
-const CLASSIFY_MODELS = ['gemini-2.5-flash', 'gemini-2.5-pro'];
 const CLASSIFY_MAX_OUTPUT_TOKENS = 2048;
-
-let vertexAI: VertexAI | null = null;
-try {
-  if (VERTEX_PROJECT && VERTEX_LOCATION) {
-    vertexAI = new VertexAI({ project: VERTEX_PROJECT, location: VERTEX_LOCATION });
-  }
-} catch {
-  vertexAI = null;
-}
 
 export type IntentKind =
   | 'commercial_buy'
@@ -134,78 +106,42 @@ function parseClassifierResponse(raw: string): IntentClassification {
 }
 
 /**
- * Vertex call with JSON mode + model fallback. Returns the raw JSON text, or
- * '' when every model failed. Each attempt is recorded in gemini_call_log
- * (success / error / fallback) so silent breakage like the original
- * confidence-0 bug surfaces in telemetry.
+ * Claude call, JSON requested via prompt instructions (parsed leniently by
+ * extractJsonObject/parseClassifierResponse). Recorded in gemini_call_log
+ * (success/error) so silent breakage like the original confidence-0 bug
+ * surfaces in telemetry.
  */
-async function runVertexClassify(userText: string): Promise<string> {
-  if (!vertexAI) return '';
-  for (let i = 0; i < CLASSIFY_MODELS.length; i++) {
-    const modelName = CLASSIFY_MODELS[i];
-    try {
-      const raw = await withGeminiLog(
-        { feature: 'classifier', model: modelName },
-        async () => {
-          const model = vertexAI!.getGenerativeModel({
-            model: modelName,
-            generationConfig: { temperature: 0.1, maxOutputTokens: CLASSIFY_MAX_OUTPUT_TOKENS, topP: 0.8, responseMimeType: 'application/json' },
-          });
-          const response = await model.generateContent({
-            contents: [{ role: 'user', parts: [{ text: `${CLASSIFIER_SYSTEM_PROMPT}\n\nUtterance to classify:\n${userText}` }] }],
-          });
-          const candidate = response.response?.candidates?.[0];
-          const textPart = candidate?.content?.parts?.find((p: any) => 'text' in p);
-          const text = textPart ? (textPart as any).text : '';
-          if (!text) throw new Error(`empty Vertex response (finishReason=${candidate?.finishReason ?? 'unknown'})`);
-          return text as string;
-        },
-      );
-      if (raw) {
-        if (i > 0) console.warn(`[VTID-01973] classifier fell back to ${modelName}`);
-        return raw;
-      }
-    } catch (err: any) {
-      console.warn(`[VTID-01973] Vertex classifier model ${modelName} failed: ${err?.message}`);
-      // try the next model in the chain
-    }
+async function runClaudeClassify(userText: string): Promise<string> {
+  try {
+    const raw = await withGeminiLog(
+      { feature: 'classifier', model: CLAUDE_SONNET_4_6 },
+      async () => {
+        const text = await callClaudeText({
+          model: CLAUDE_SONNET_4_6,
+          system: CLASSIFIER_SYSTEM_PROMPT,
+          prompt: `Utterance to classify:\n${userText}`,
+          maxTokens: CLASSIFY_MAX_OUTPUT_TOKENS,
+          temperature: 0.1,
+        });
+        if (!text) throw new Error('empty Claude response');
+        return text;
+      },
+    );
+    return raw ?? '';
+  } catch (err: any) {
+    console.warn(`[VTID-01973] Claude classifier failed: ${err?.message}`);
+    return '';
   }
-  return '';
 }
 
 export async function classifyIntentKind(utterance: string): Promise<IntentClassification> {
   const trimmed = (utterance || '').trim();
   if (!trimmed) return { intent_kind: null, confidence: 0 };
 
-  // Primary: Vertex AI (JSON mode + model fallback chain).
-  const raw = await runVertexClassify(trimmed);
+  const raw = await runClaudeClassify(trimmed);
   if (raw) {
     const parsed = parseClassifierResponse(raw);
     if (parsed.intent_kind || parsed.confidence > 0) return parsed;
-  }
-
-  // Fallback: Gemini API key (only when configured — usually not on the gateway).
-  if (GEMINI_API_KEY) {
-    try {
-      const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{ parts: [{ text: `${CLASSIFIER_SYSTEM_PROMPT}\n\nUtterance to classify:\n${trimmed}` }] }],
-            generationConfig: { temperature: 0.1, maxOutputTokens: CLASSIFY_MAX_OUTPUT_TOKENS, responseMimeType: 'application/json' },
-          }),
-        }
-      );
-      if (response.ok) {
-        const data = await response.json() as any;
-        const rawApi = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-        if (rawApi) return parseClassifierResponse(rawApi);
-      }
-    } catch (err: any) {
-      console.warn(`[VTID-01973] Gemini API classifier failed: ${err.message}`);
-    }
   }
 
   // No backend available — return null kind so callers fall back to clarification.

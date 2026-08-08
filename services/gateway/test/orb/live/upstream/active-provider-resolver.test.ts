@@ -273,3 +273,19 @@ describe('L2.2a resolveActiveProviderForCaller — pure resolution policy', () =
     expect(withoutAgent.reason).toBe('pinned_until_agent_ready');
   });
 });
+
+// BOOTSTRAP-NOVA-SONIC-VOICE (Task 5) — Nova never changes the BROWSER transport.
+describe('nova_sonic global flag (BOOTSTRAP-NOVA-SONIC-VOICE)', () => {
+  it('reports requested=nova_sonic but keeps effectiveProvider=vertex (gateway WS transport)', () => {
+    const r = resolveActiveProviderForCaller({
+      globalActiveProvider: 'nova_sonic',
+      canary: { enabled: false },
+      livekitCredsValid: false,
+      agentReady: false,
+      identity: { userId: 'u1', tenantId: 't1' },
+    });
+    expect(r.requestedProvider).toBe('nova_sonic');
+    expect(r.effectiveProvider).toBe('vertex');
+    expect(r.reason).toBe('nova_gateway_transport');
+  });
+});

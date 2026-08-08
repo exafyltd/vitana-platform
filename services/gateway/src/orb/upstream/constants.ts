@@ -95,6 +95,16 @@ const MAX_CONSECUTIVE_MODEL_TURNS_FALLBACK = 3;
 // so far. See PR #743 for the non-destructive injection pattern.
 const MAX_CONSECUTIVE_TOOL_CALLS_FALLBACK = 5;
 
+// VTID-TOOLGUARD-FIX: extra consecutive tool calls allowed AFTER the guard
+// above starts firing before we stop feeding the model anything further
+// (see handleToolCall's hard-ceiling branch). Observed live (2026-07-28):
+// a Nova session kept calling tools well past the guard threshold (16 ->
+// 35+) without ever stopping, so the reworded guidance alone cannot be
+// assumed sufficient — this is the deterministic backstop. Not
+// policy-resolver-backed (unlike the cap above): it's a safety ceiling,
+// not a tuning knob operators need to adjust per-tenant.
+export const LOOP_GUARD_HARD_CEILING_EXTRA_CALLS = 10;
+
 // ---------------------------------------------------------------------------
 // Accessor functions — call these instead of importing the old `const`.
 // ---------------------------------------------------------------------------

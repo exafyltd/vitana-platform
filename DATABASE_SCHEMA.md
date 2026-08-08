@@ -116,6 +116,49 @@ CREATE TABLE personalization_audit (
 
 ---
 
+### orb_session_state
+**Purpose:** Short-lived, TTL'd cross-transport ORB session state, keyed by `(user_id, key)` (DEV-COMHU-0503)
+**Used by:**
+- `services/gateway/src/services/orb/orb-session-state.ts` (typed read/write/clear helpers)
+- `services/gateway/src/routes/orb-live.ts` (`POST /api/v1/orb/session/:id/audio-ready`, continuity, pending CTA)
+
+**Schema:**
+```sql
+CREATE TABLE orb_session_state (
+  user_id      UUID NOT NULL REFERENCES app_users(user_id) ON DELETE CASCADE,
+  key          TEXT NOT NULL,           -- see key values below
+  value        JSONB NOT NULL,
+  expires_at   TIMESTAMPTZ NOT NULL,
+  updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (user_id, key)
+);
+```
+
+**Key values:**
+| `key` | Written by | Effect when missing |
+|---|---|---|
+| `audio_ready_ack` | client audio-pipeline-ready handshake (ORB-4) | greeting falls back to a blind 3s timer and can be spoken before the client can play it — the user hears silence |
+| `continuity` | close/reopen resume (ORB-2+3) | every session looks "first-time"; no transcript/conversation resume |
+| `pending_cta` | autopilot CTA awaiting "yes" (ORB-5) | the confirmation answer has nothing to bind to |
+| `recent_openers` | wake-brief opener rotation (VTID-03301) | the same opener repeats every session |
+
+**⚠️ Operational history (VTID-03480):** the original migration
+(`20260606000000_DEV_COMHU_0503_orb_session_state.sql`) was authored but
+**never applied to production** — its own header said "Not executed from the
+sandbox." Because every helper in `orb-session-state.ts` fails soft (reads
+return `null`, writes return `ok:false` and never throw), all four features
+above were silently dead in production from 2026-06-06 until the migration
+was applied on 2026-08-03. The only outward symptom was
+`orb.session.audio_ready.acked` carrying `ok:false` on every session.
+**When adding a fail-soft table, add a health check that fails loudly —
+`ok:false` in a payload nobody alerts on is not detection.**
+
+**OASIS Events:**
+- `orb.session.audio_ready.acked` — `payload.ok` is the write result, NOT the client's readiness
+- `orb.session.continuity.persisted`
+
+---
+
 ## ⚠️ DEPRECATED / DO NOT USE
 
 ### VtidLedger (PascalCase)
@@ -1157,6 +1200,293 @@ WHERE `status='active'` for the future tick job.
 **Follow-up needed:** FIRING (push/chime delivery when `fires_at` passes) is
 not yet implemented — a cron/tick job analogous to `/reminders-tick` must be
 added to claim due rows and transition `active → fired`.
+
+---
+
+## VTID-02950 — Recommend & Earn (Business tab)
+
+Backs the owner's private "Business" segment (click/conversion/commission
+stats, `discover-recommendations.ts`) and, as of
+BOOTSTRAP-PUBLIC-BUSINESS-PROFILE, a public read-only storefront view for
+profile visitors (`discover-recommendations-public.ts`) — same table, two
+response shapes: the public endpoint drops all stats/earnings columns.
+**Migration:** `supabase/migrations/20260715120000_vtid_02950_recommendation_commissions.sql`
+
+### product_recommendations
+
+**Purpose:** One row per (user, product) a community member has recommended
+from Discover. Tracks clicks/conversions/commission earned for the owner's
+private dashboard; only `status='active'` rows are exposed to other users.
+
+```sql
+CREATE TABLE product_recommendations (
+  id                       UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id                UUID,
+  user_id                  UUID NOT NULL,
+  product_id               UUID NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+  merchant_id              UUID REFERENCES merchants(id) ON DELETE SET NULL,
+  sharing_link_id          UUID REFERENCES sharing_links(id) ON DELETE SET NULL,
+  status                   TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','disabled')),
+  click_count              INT NOT NULL DEFAULT 0,
+  conversion_count         INT NOT NULL DEFAULT 0,
+  commission_earned_minor  BIGINT NOT NULL DEFAULT 0,
+  commission_currency      CHAR(3) NOT NULL DEFAULT 'EUR',
+  created_at               TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at               TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (user_id, product_id)
+);
+```
+
+**Auth model:** RLS on, owner-select-only (`auth.uid() = user_id`) +
+service-role full access. **All gateway routes use the service-role client,
+bypassing RLS** — the route code's response-shaping (dropping stats fields
+for the public endpoint) is the actual privacy boundary, not RLS.
+
+---
+
+## Feature Announcement News Feed Cards (BOOTSTRAP-FEATURE-ANNOUNCEMENTS)
+
+Backs the "Brand New Feature" / "Did You Know" News Feed cards
+(vitana-v1 `src/components/home/FeatureAnnouncementCard.tsx`). One row = one
+admin-published announcement, shown to every member of its tenant until
+deactivated. Written only via the gateway's admin-only endpoint
+(`services/gateway/src/routes/admin-feature-announcements.ts`, mounted at
+`/api/v1/admin/feature-announcements`), which also fans out an
+in-app + push `feature_announcement` notification to every tenant member in
+their own locale.
+
+### feature_announcements
+
+```sql
+CREATE TABLE feature_announcements (
+  id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id      UUID NOT NULL,
+  variant        TEXT NOT NULL CHECK (variant IN ('brand-new-feature', 'did-you-know-feature')),
+  feature_title  JSONB NOT NULL,  -- { "en": "...", "de": "..." }
+  description    JSONB NOT NULL,  -- { "en": "...", "de": "..." }
+  deep_link      TEXT NOT NULL,
+  is_active      BOOLEAN NOT NULL DEFAULT TRUE,
+  target_user_ids UUID[],  -- NULL = whole tenant; set = staged test send to specific users
+  created_by     TEXT,
+  notified_at    TIMESTAMPTZ,
+  created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+```
+
+**Auth model:** RLS on. `SELECT` for any authenticated user whose
+`user_tenants` row matches `tenant_id` AND (`target_user_ids IS NULL` OR
+`auth.uid() = ANY(target_user_ids)`), AND `is_active = true`; `ALL` for
+`service_role` (mirrors `ai_provider_policies`). Frontend reads it directly
+via the Supabase client (same pattern as `profile_posts`/`media_uploads` in
+`useAllNewsFeed.ts`) — no gateway GET route needed for the card itself.
+
+### did_you_know_state
+
+```sql
+CREATE TABLE did_you_know_state (
+  tenant_id   UUID PRIMARY KEY,
+  last_index  INTEGER NOT NULL DEFAULT -1,
+  updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+```
+
+One row per tenant, tracking the index of the last `did-you-know-feature`
+tip published (from `services/gateway/src/data/feature-tips.ts`'s curated
+list) by `POST /api/v1/scheduled-notifications/daily-feature-tip`
+(BOOTSTRAP-DAILY-FEATURE-TIP, daily Cloud Scheduler job). Lets the rotation
+advance one tip per day without repeating back-to-back, wrapping to 0 once
+the list is exhausted.
+
+**Auth model:** RLS on, `ALL` for `service_role` only — internal cron
+state, never read by clients.
+
+### watcher_steps
+
+```sql
+CREATE TABLE watcher_steps (
+  id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  work_unit_kind TEXT NOT NULL,  -- vtid | execution | pr | session
+  work_unit_id   TEXT NOT NULL,
+  vtid           TEXT,           -- denormalized; NULL for ungoverned work
+  step           TEXT NOT NULL,  -- allocated|planned|queued|running|validated|pr_opened|ci|merged|deploying|verified|completed|failed|reverted|escalated|doc_updated|terminalized
+  outcome        TEXT NOT NULL DEFAULT 'unknown',  -- success | failure | skipped | unknown
+  actor          TEXT NOT NULL,  -- autopilot | worker-runner | claude-session | human | ci | unknown
+  evidence       JSONB NOT NULL DEFAULT '{}'::jsonb,
+  source         TEXT NOT NULL,  -- oasis_events | dev_autopilot_executions | session_api
+  source_ref     TEXT NOT NULL,
+  observed_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (source, source_ref, step)
+);
+```
+
+**VTID-03460 (Watcher Phase 1)** — normalized development-lifecycle timeline.
+Plan: `docs/WATCHER-AGENT-PLAN.md` (VTID-03454). One row per observed step,
+written by `services/gateway/src/services/watcher/watcher-observer.ts`.
+
+The `UNIQUE (source, source_ref, step)` constraint is load-bearing, not
+cosmetic: the observer deliberately rescans a 5-minute overlap window behind
+its cursor every tick (rows can commit with a `created_at` slightly behind
+one already read, and a strict `> cursor` scan would step over them and lose
+the step forever). The constraint is what makes that replay free — upserts
+use `ignoreDuplicates`, so a re-read is a no-op rather than a duplicate.
+
+**The observer emits ZERO OASIS events.** Its scan is a poll, and CLAUDE.md
+§6 is explicit that polling ≠ progress. Only Phase 3's "a reminder was
+raised" is a decision worth an event.
+
+**Sources:** `oasis_events` (allowlisted development topics only — see
+`services/gateway/src/services/watcher/normalizers.ts` for why an allowlist
+and not a prefix match), `dev_autopilot_executions` (status anchor/backstop),
+and `session_api` (push ingestion from Claude Code sessions).
+
+**Auth model:** RLS on, no policies — service_role only, same posture as
+`dev_autopilot_prompt_learnings`. Read via admin-gated
+`GET /api/v1/watcher/timeline`.
+
+### watcher_observer_state
+
+```sql
+CREATE TABLE watcher_observer_state (
+  source       TEXT PRIMARY KEY,
+  cursor_at    TIMESTAMPTZ NOT NULL,
+  last_run_at  TIMESTAMPTZ,
+  last_error   TEXT,
+  last_written INTEGER NOT NULL DEFAULT 0,
+  updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+```
+
+**VTID-03460** — one row per observer source, holding its scan cursor.
+`last_error` and `last_written` exist so a degraded observer is *visible*
+rather than silent (CLAUDE.md ALWAYS rule 10): a source that scans rows
+every tick but writes zero is the signature of a broken normalizer, and
+`GET /api/v1/watcher/health` surfaces exactly that.
+
+**Auth model:** RLS on, service_role only.
+
+### watcher_lessons
+
+```sql
+CREATE TABLE watcher_lessons (
+  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  stage             TEXT NOT NULL,  -- planning|execute|validate|ci|merge|deploy|verify|any
+  pattern_type      TEXT NOT NULL,  -- tsc_error|jest_failure|parse_error|out_of_scope|validation_other|ci_failure|deploy_failure|verification_failure|governance_violation|review_rejection
+  pattern_key       TEXT NOT NULL,  -- normalized signature, e.g. TS2307:cannot-find-module
+  scope             JSONB NOT NULL DEFAULT '{}'::jsonb,  -- {scanner?,service?,repo?,path_glob?}
+  lesson            TEXT NOT NULL,  -- the imperative text that gets injected
+  example_message   TEXT,
+  mitigation_note   TEXT,           -- human-authored upgrade; preferred over `lesson`
+  evidence_step_ids UUID[] NOT NULL DEFAULT '{}',
+  source_finding_id UUID,
+  source_execution_id UUID,
+  frequency         INTEGER NOT NULL DEFAULT 1,
+  confidence        REAL NOT NULL DEFAULT 0.5,
+  status            TEXT NOT NULL DEFAULT 'active',  -- active|muted|graduated
+  first_seen_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  last_seen_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (stage, pattern_type, pattern_key)
+);
+```
+
+**VTID-03461 (Watcher Phase 2)** — learned engineering memory, distilled from
+`watcher_steps` failures. Plan: `docs/WATCHER-AGENT-PLAN.md`.
+
+⚠️ **This table SUPERSEDES `dev_autopilot_prompt_learnings`, which its
+migration DROPS.** The old rows are migrated in first (as `stage='execute'`,
+`scope={scanner}`). Two learning stores feeding the same prompts is how they
+drift apart — one gets written, the other gets read, and nobody notices.
+
+Two things the old table could not do, and the reason for the new shape:
+- **`stage`** — every old row was implicitly execute-time, so nothing learned
+  at CI/deploy/verify had anywhere to live.
+- **`scope` jsonb** (replacing a flat `scanner` column) — the worker-runner
+  has no scanner, so it was structurally unable to read the old table at all.
+
+Read/written via `services/gateway/src/services/watcher/lessons-store.ts`
+(plus the repointed `dev-autopilot-planning.ts` / `dev-autopilot-execute.ts`
+call sites). **Every read is best-effort and returns `[]` on error** — the
+migration's deploy-order safety argument depends on that; if a lessons read
+ever becomes fatal, a deploy window where the table is momentarily absent
+would take planning and execution down with it.
+
+**Auth model:** RLS on, no policies — service_role only.
+
+### watcher_rules
+
+```sql
+CREATE TABLE watcher_rules (
+  rule_key    TEXT PRIMARY KEY,
+  source_ref  TEXT NOT NULL,   -- e.g. 'CLAUDE.md §16' — so a reminder can cite authority
+  stage       TEXT NOT NULL,
+  trigger     JSONB NOT NULL DEFAULT '{}'::jsonb,  -- {steps[],touches[],services[],actors[]}
+  reminder    TEXT NOT NULL,
+  severity    TEXT NOT NULL DEFAULT 'warn',  -- info|warn|block_candidate
+  enabled     BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+```
+
+**VTID-03461** — AUTHORED governance invariants, seeded from `CLAUDE.md`
+(~25 rules). Kept separate from `watcher_lessons` on purpose: a learned lesson
+with `frequency=1` is a guess, while "never dispatch EXEC-DEPLOY to prod
+post-cutover" is canon. They rank differently and age differently — rules are
+never auto-derived and never auto-muted.
+
+`severity='block_candidate'` does **not** block in v1. It marks a rule as a
+candidate should gating ever be enabled; a blocking watcher that is wrong once
+gets disabled forever.
+
+Adding a rule is an INSERT, not a code change (the seed migration uses
+`ON CONFLICT (rule_key) DO UPDATE`, so re-running is idempotent and a later
+migration can correct a rule's text).
+
+**Auth model:** RLS on, no policies — service_role only.
+
+### dev_autopilot_prompt_learnings — ❌ DROPPED (VTID-03461)
+
+Migrated into `watcher_lessons` and dropped by
+`supabase/migrations/20260731180000_VTID_03461_watcher_lessons_rules.sql`.
+Do not reference it. See `watcher_lessons` above.
+
+### watcher_reminder_feedback
+
+```sql
+CREATE TABLE watcher_reminder_feedback (
+  id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  reminder_id      TEXT NOT NULL,   -- 'rule:<rule_key>' | 'lesson:<uuid>'
+  kind             TEXT NOT NULL,   -- rule | lesson
+  work_unit_id     TEXT,
+  vtid             TEXT,
+  stage            TEXT,
+  outcome          TEXT NOT NULL,   -- success | failure | unknown
+  repeated_mistake BOOLEAN NOT NULL DEFAULT FALSE,
+  note             TEXT,
+  created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+```
+
+**VTID-03462 (Watcher Phase 3)** — the relevance signal that keeps
+`watcher_lessons` from becoming noise. Without it the lesson store only ever
+grows, the injected block fills with things that never mattered, and the
+worker learns to skim past it — at which point the tokens are still spent and
+the one reminder that would have helped is lost in the pile.
+
+`reminder_id` is deliberately **not** a foreign key: a lesson can be deleted
+or a rule renamed, and losing the historical feedback would erase the evidence
+for why something was muted.
+
+Phase 3 also adds three counters to `watcher_lessons`: `shown_count`,
+`helped_count`, `ignored_count`. `shown_count` is the denominator auto-mute
+needs — without it, "never helped" and "never actually injected" look
+identical, and a lesson would be muted for never having had the chance.
+
+**Rules are never auto-muted.** "Nobody violated this rule recently" is
+evidence the rule is working, not evidence it should be retired. Only learned
+lessons decay.
+
+**Auth model:** RLS on, no policies — service_role only.
 
 ---
 

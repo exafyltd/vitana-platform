@@ -5926,6 +5926,372 @@ async def dev_system_briefing(context: RunContext, limit: int | None = None) -> 
     return summarize(body)
 
 
+
+
+# --- MVA Marketplace Voice Assistant (35) -----------------------------------
+
+
+@function_tool
+async def start_marketplace_discover_assistant(context: RunContext, goal: str | None = None, budget_max_amount: float | None = None, exclusions: str | None = None) -> str:
+    """Start a guided marketplace conversation for a product, service, practitioner or diagnostic need."""
+    body = await _dispatch_with_directive(context, "start_marketplace_discover_assistant", {
+            "goal": goal,
+            "budget_max_amount": budget_max_amount,
+            "exclusions": exclusions,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def build_personalized_shopping_guide(context: RunContext, goal: str | None = None, budget_max_amount: float | None = None, max_items: float | None = None) -> str:
+    """Build a concise personalized recommendation set (max 3 options with rationales); adds nothing to the cart."""
+    body = await _dispatch_with_directive(context, "build_personalized_shopping_guide", {
+            "goal": goal,
+            "budget_max_amount": budget_max_amount,
+            "max_items": max_items,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def refine_marketplace_recommendations(context: RunContext, exclude: str | None = None, prefer: str | None = None, budget_max_amount: float | None = None) -> str:
+    """Update the current recommendations from conversational feedback (cheaper, exclusions, preferences)."""
+    body = await _dispatch_with_directive(context, "refine_marketplace_recommendations", {
+            "exclude": exclude,
+            "prefer": prefer,
+            "budget_max_amount": budget_max_amount,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def explain_marketplace_recommendation(context: RunContext, position: float | None = None, title: str | None = None, product_id: str | None = None) -> str:
+    """Explain one current pick: what it is, why chosen for this user, use, and relevant limitations."""
+    body = await _dispatch_with_directive(context, "explain_marketplace_recommendation", {
+            "position": position,
+            "title": title,
+            "product_id": product_id,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def complete_marketplace_selection(context: RunContext, position: float | None = None, title: str | None = None, product_id: str | None = None, confirm: bool | None = None) -> str:
+    """Confirm the chosen option and stage it into the basket (never charges). Call once without confirm first."""
+    body = await _dispatch_with_directive(context, "complete_marketplace_selection", {
+            "position": position,
+            "title": title,
+            "product_id": product_id,
+            "confirm": confirm,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def capture_shopping_goal(context: RunContext, goal: str, budget_max_amount: float | None = None, exclusions: str | None = None, urgency: str | None = None) -> str:
+    """Record what the user wants to achieve, solve, explore or purchase."""
+    body = await _dispatch_with_directive(context, "capture_shopping_goal", {
+            "goal": goal,
+            "budget_max_amount": budget_max_amount,
+            "exclusions": exclusions,
+            "urgency": urgency,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def clarify_shopping_need(context: RunContext) -> str:
+    """Get the smallest set of still-missing criteria for the recorded shopping goal."""
+    body = await _dispatch_with_directive(context, "clarify_shopping_need", {})
+    return summarize(body)
+
+
+@function_tool
+async def classify_marketplace_intent(context: RunContext, need: str | None = None) -> str:
+    """Determine whether a need maps to a product, service, diagnostic test, practitioner or combination."""
+    body = await _dispatch_with_directive(context, "classify_marketplace_intent", {
+            "need": need,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def save_marketplace_preferences(context: RunContext, budget_monthly_amount: float | None = None, dietary: str | None = None, values: str | None = None, exclusions: str | None = None, excluded_brands: str | None = None, excluded_categories: str | None = None, format: str | None = None) -> str:
+    """Save shopping preferences the user explicitly stated (budget, dietary, values, exclusions, format)."""
+    body = await _dispatch_with_directive(context, "save_marketplace_preferences", {
+            "budget_monthly_amount": budget_monthly_amount,
+            "dietary": dietary,
+            "values": values,
+            "exclusions": exclusions,
+            "excluded_brands": excluded_brands,
+            "excluded_categories": excluded_categories,
+            "format": format,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def get_marketplace_preferences(context: RunContext) -> str:
+    """Read the user's saved marketplace preferences."""
+    body = await _dispatch_with_directive(context, "get_marketplace_preferences", {})
+    return summarize(body)
+
+
+@function_tool
+async def reset_marketplace_preferences(context: RunContext, confirm: bool | None = None) -> str:
+    """Clear all saved marketplace preferences. Call once without confirm first."""
+    body = await _dispatch_with_directive(context, "reset_marketplace_preferences", {
+            "confirm": confirm,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def get_marketplace_context(context: RunContext) -> str:
+    """Minimum relevant shopping context: saved preferences, budget and spend, recent orders, active goal."""
+    body = await _dispatch_with_directive(context, "get_marketplace_context", {})
+    return summarize(body)
+
+
+@function_tool
+async def dismiss_marketplace_recommendation(context: RunContext, position: float | None = None, title: str | None = None, product_id: str | None = None) -> str:
+    """Dismiss a recommended product so it is not proposed again."""
+    body = await _dispatch_with_directive(context, "dismiss_marketplace_recommendation", {
+            "position": position,
+            "title": title,
+            "product_id": product_id,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def discover_marketplace_options(context: RunContext, need: str, budget_max_amount: float | None = None, limit: float | None = None) -> str:
+    """Unified marketplace search across products AND services for one stated need."""
+    body = await _dispatch_with_directive(context, "discover_marketplace_options", {
+            "need": need,
+            "budget_max_amount": budget_max_amount,
+            "limit": limit,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def search_products_by_need(context: RunContext, need: str, budget_max_amount: float | None = None, limit: float | None = None) -> str:
+    """Search products by purpose rather than product name, filtered against saved preferences."""
+    body = await _dispatch_with_directive(context, "search_products_by_need", {
+            "need": need,
+            "budget_max_amount": budget_max_amount,
+            "limit": limit,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def search_services_by_need(context: RunContext, need: str, service_types: str | None = None, limit: float | None = None) -> str:
+    """Search marketplace services (wellness, nutrition, therapy, labs) by desired outcome."""
+    body = await _dispatch_with_directive(context, "search_services_by_need", {
+            "need": need,
+            "service_types": service_types,
+            "limit": limit,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def search_marketplace_by_values(context: RunContext, dietary_tags: str | None = None, certifications: str | None = None, need: str | None = None, limit: float | None = None) -> str:
+    """Filter products by declared dietary tags and certifications (vegan, gluten-free, organic)."""
+    body = await _dispatch_with_directive(context, "search_marketplace_by_values", {
+            "dietary_tags": dietary_tags,
+            "certifications": certifications,
+            "need": need,
+            "limit": limit,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def search_marketplace_alternatives(context: RunContext, product_id: str | None = None, title: str | None = None, position: float | None = None, reason: str | None = None, different_brand: bool | None = None, limit: float | None = None) -> str:
+    """Find alternatives to a product the user dislikes or cannot use, in the same category."""
+    body = await _dispatch_with_directive(context, "search_marketplace_alternatives", {
+            "product_id": product_id,
+            "title": title,
+            "position": position,
+            "reason": reason,
+            "different_brand": different_brand,
+            "limit": limit,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def generate_top_marketplace_picks(context: RunContext, prompt: str, max_items: float | None = None) -> str:
+    """Return up to 3 best-fit product picks with short rationales, WITHOUT staging the cart."""
+    body = await _dispatch_with_directive(context, "generate_top_marketplace_picks", {
+            "prompt": prompt,
+            "max_items": max_items,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def recommend_marketplace_path(context: RunContext, goal: str | None = None) -> str:
+    """Recommend whether to start with a product, service/assessment, practitioner, or combination."""
+    body = await _dispatch_with_directive(context, "recommend_marketplace_path", {
+            "goal": goal,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def recommend_lower_cost_option(context: RunContext, product_id: str | None = None, title: str | None = None, position: float | None = None) -> str:
+    """Find a suitable cheaper alternative to a current pick or named product."""
+    body = await _dispatch_with_directive(context, "recommend_lower_cost_option", {
+            "product_id": product_id,
+            "title": title,
+            "position": position,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def explain_why_recommended(context: RunContext, product_id: str | None = None, title: str | None = None, position: float | None = None) -> str:
+    """Explain why an option was recommended, from the recorded rationale — never an algorithm score."""
+    body = await _dispatch_with_directive(context, "explain_why_recommended", {
+            "product_id": product_id,
+            "title": title,
+            "position": position,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def summarize_product_for_user(context: RunContext, product_id: str | None = None, title: str | None = None, position: float | None = None) -> str:
+    """Personalized SHORT product summary: what it is, what for, why it may fit, one limitation."""
+    body = await _dispatch_with_directive(context, "summarize_product_for_user", {
+            "product_id": product_id,
+            "title": title,
+            "position": position,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def get_key_product_facts(context: RunContext, product_id: str | None = None, title: str | None = None, position: float | None = None) -> str:
+    """Only the most important product facts: price, dosage, allergens, safety notes, availability."""
+    body = await _dispatch_with_directive(context, "get_key_product_facts", {
+            "product_id": product_id,
+            "title": title,
+            "position": position,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def compare_marketplace_options(context: RunContext, product_ids: str | None = None, titles: str | None = None) -> str:
+    """Compare up to 3 options on price, rating, availability and dietary fit — meaningful differences only."""
+    body = await _dispatch_with_directive(context, "compare_marketplace_options", {
+            "product_ids": product_ids,
+            "titles": titles,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def shortlist_marketplace_options(context: RunContext, product_id: str | None = None, title: str | None = None, position: float | None = None, all_picks: bool | None = None) -> str:
+    """Save one product (or all current picks) to the user's shortlist."""
+    body = await _dispatch_with_directive(context, "shortlist_marketplace_options", {
+            "product_id": product_id,
+            "title": title,
+            "position": position,
+            "all_picks": all_picks,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def view_marketplace_shortlist(context: RunContext, limit: float | None = None) -> str:
+    """Read the user's saved marketplace shortlist."""
+    body = await _dispatch_with_directive(context, "view_marketplace_shortlist", {
+            "limit": limit,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def remove_from_marketplace_shortlist(context: RunContext, product_id: str | None = None, title: str | None = None) -> str:
+    """Remove one product from the shortlist."""
+    body = await _dispatch_with_directive(context, "remove_from_marketplace_shortlist", {
+            "product_id": product_id,
+            "title": title,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def check_product_suitability(context: RunContext, product_id: str | None = None, title: str | None = None, position: float | None = None) -> str:
+    """Check one product against saved preferences using only declared product data."""
+    body = await _dispatch_with_directive(context, "check_product_suitability", {
+            "product_id": product_id,
+            "title": title,
+            "position": position,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def check_cart_duplication(context: RunContext) -> str:
+    """Detect repeated or overlapping products in the basket."""
+    body = await _dispatch_with_directive(context, "check_cart_duplication", {})
+    return summarize(body)
+
+
+@function_tool
+async def review_shopping_budget(context: RunContext) -> str:
+    """Read the monthly shopping budget, spend, remaining headroom, and whether the basket would exceed it."""
+    body = await _dispatch_with_directive(context, "review_shopping_budget", {})
+    return summarize(body)
+
+
+@function_tool
+async def confirm_marketplace_selection(context: RunContext, product_id: str | None = None, title: str | None = None, position: float | None = None) -> str:
+    """Read back the exact selected option (name, price, availability) before any cart action."""
+    body = await _dispatch_with_directive(context, "confirm_marketplace_selection", {
+            "product_id": product_id,
+            "title": title,
+            "position": position,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def add_selected_option_to_cart(context: RunContext, product_id: str | None = None, title: str | None = None, position: float | None = None, confirm: bool | None = None) -> str:
+    """Stage the confirmed selection into the basket (never charges). Pass confirm true only after the user's yes."""
+    body = await _dispatch_with_directive(context, "add_selected_option_to_cart", {
+            "product_id": product_id,
+            "title": title,
+            "position": position,
+            "confirm": confirm,
+        })
+    return summarize(body)
+
+
+@function_tool
+async def review_cart_suitability(context: RunContext) -> str:
+    """Check the basket for duplicates, preference conflicts, allergens and availability problems before checkout."""
+    body = await _dispatch_with_directive(context, "review_cart_suitability", {})
+    return summarize(body)
+
+
+@function_tool
+async def explain_cart_item(context: RunContext, product_id: str | None = None, title: str | None = None) -> str:
+    """Explain why a specific basket item is there (origin and recorded rationale)."""
+    body = await _dispatch_with_directive(context, "explain_cart_item", {
+            "product_id": product_id,
+            "title": title,
+        })
+    return summarize(body)
+
+
 # ---------------------------------------------------------------------------
 # Catalogue export — used by tests + libcst smoke
 # ---------------------------------------------------------------------------
@@ -6231,6 +6597,19 @@ def all_tool_names() -> list[str]:
         "dev_list_dev_users", "dev_grant_access", "dev_revoke_access", "dev_mint_token",
         "dev_open_hub_panel", "dev_run_simulator", "dev_journey_context",
         "dev_voice_catalog_stats", "dev_get_voice_tool_detail", "dev_system_briefing",
+        # MVA Marketplace Voice Assistant (35)
+        "start_marketplace_discover_assistant", "build_personalized_shopping_guide", "refine_marketplace_recommendations",
+        "explain_marketplace_recommendation", "complete_marketplace_selection", "capture_shopping_goal",
+        "clarify_shopping_need", "classify_marketplace_intent", "save_marketplace_preferences",
+        "get_marketplace_preferences", "reset_marketplace_preferences", "get_marketplace_context",
+        "dismiss_marketplace_recommendation", "discover_marketplace_options", "search_products_by_need",
+        "search_services_by_need", "search_marketplace_by_values", "search_marketplace_alternatives",
+        "generate_top_marketplace_picks", "recommend_marketplace_path", "recommend_lower_cost_option",
+        "explain_why_recommended", "summarize_product_for_user", "get_key_product_facts",
+        "compare_marketplace_options", "shortlist_marketplace_options", "view_marketplace_shortlist",
+        "remove_from_marketplace_shortlist", "check_product_suitability", "check_cart_duplication",
+        "review_shopping_budget", "confirm_marketplace_selection", "add_selected_option_to_cart",
+        "review_cart_suitability", "explain_cart_item",
     ]
 
 
