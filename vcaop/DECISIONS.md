@@ -98,3 +98,24 @@
   on a state the saga already unwound.
 - **Reconciler emits once per transition** (running→stuck), never per sweep —
   §6 "repetition ≠ signal".
+
+## 2026-08-08 — Commerce Mesh Phase 5 (VTID-03538), Tier-A decisions
+
+- **Transforms are named configuration, not generated executable code** — a
+  registry of reviewed deterministic functions referenced by name from the
+  manifest. Unknown names throw at normalization time (a drift signal), never
+  pass raw values silently. Generated "transformation code" that ships as
+  arbitrary executable text would be a supply-chain surface (threat model).
+- **The LLM proposer is a seam, not a dependency:** certification's only hard
+  dependency is the deterministic proposer. The mock LLM proposer clamps
+  model output to the contract (decided_by forced 'ai', confidence clamped)
+  — the real implementation must route through the gateway llm-router and is
+  blocked on runtime credentials (mock-first, runbook Sec. 0.8).
+- **Repair can shrink, never grow:** scopes and auth mechanism always copied
+  from the certified manifest; new partner actions never auto-added; removed
+  partner actions/fields are dropped with notes. Capability growth goes back
+  through onboarding + one-approval activation.
+- **Drift materiality is conservative by rule**, not scored: anything touching
+  a mapped field, auth, an action, a sensitive field, or a field becoming
+  required is material → human approval. Only clearly-additive benign change
+  is auto-repairable, and even that must pass full sandbox certification.
