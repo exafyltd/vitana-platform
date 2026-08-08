@@ -11,6 +11,46 @@
 
 ## Current position
 
+- **AI COMMERCE MESH — Phases 3+4 built (2026-08-08, VTID-03536 / VTID-03537):**
+  - **Phase 3 (`src/portal/`, VTID-03536):** `PartnerOnboardingService` — the
+    connect-business workflow over the Phase 2 factory+certification pipeline:
+    discover → (OpenAPI ingest | authorization_required when no spec) →
+    mapping preview (confidence + needs_review flags) → human
+    MappingDecisions (decided_by is ALWAYS the authenticated user, spoofing
+    ignored) → sandbox tests → approval_required|certified → THE one
+    activation approval (admin-only; `activateConnector` still refuses
+    uncertified — the portal adds orchestration, never a second gate) →
+    active, plus pause/resume/reauthorize (suspend until fresh credentials)/
+    revoke per the state machine. Framework-independent view models
+    (BLK-008 pattern): connection list, mapping preview, activation summary
+    stating exactly what is approved (capabilities, scopes, data read,
+    actions, events, human-gated actions, test results; fees honestly
+    "pending Phase 6"). Portal Express router `/api/v1/vcaop/portal/*` with
+    role authz (community denied; activation+revoke admin-only) and
+    tenant-isolation (foreign connection ≡ 404). Every transition emits an
+    OASIS-style event (ids/states only). 11 tests.
+  - **Phase 4 (`src/workflows/`, VTID-03537):** event normalization via
+    certified-manifest mappings (data minimization: unmapped partner fields
+    DROPPED and listed, never forwarded) + durable `WorkflowEngine`:
+    persisted-after-every-step state, resume-from-cursor, idempotent event
+    consumption (deterministic content-hash event ids), idempotent commands
+    (unique run idempotency keys — ALSO enforced at DB level), per-step
+    deterministic idempotency keys for downstream services, bounded
+    exponential backoff retry, per-step timeouts, per-step circuit breaker
+    with cooldown/half-open, saga compensation in reverse, DLQ + replay
+    (event entries replayable; run-failure entries resume-only — recovering a
+    compensated order is a NEW deliberate command, not an automatic retry),
+    stuck-run reconciliation emitting ONCE per transition. Cross-partner
+    order workflow e2e: order event → reserve inventory → merchant order →
+    invoice → commission → reward → notify; duplicate event ids dedup;
+    re-sent events with new ids still can't duplicate the run; invoice-outage
+    compensates the reservation + dead-letters. 13 tests. **DB:** 7 additive
+    models, migration `20260808_vcaop_mesh_workflows_0002` verified
+    up→down→up + cascade + idempotency-unique on ephemeral PG16; NOT applied
+    live (BLK-001). **Suite: 41/41 suites, 237/237 tests green.** Next:
+    Phase 5 (AI-assisted mapping/healing) or Phase 6 (commerce writes +
+    settlement); gateway mounting of the portal router + Prisma-backed
+    ConnectionRepository/WorkflowStore are the BLK-001-gated runtime steps.
 - **AI COMMERCE MESH — Phase 2 built (2026-08-08, VTID-03535):** Connector
   Factory core in `services/vcaop/src/factory/` + canonical model seed in
   `src/canonical/model.ts`. (1) **ConnectorManifest** (zod, versioned):

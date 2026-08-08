@@ -527,6 +527,120 @@ model ConnectorCertification {
   @@map("connector_certification")
 }
 
+// ============================================================================
+// COMMERCE MESH — Durable event workflows (VTID-03537, brief Sec. 9).
+// Additive. NormalizedEvent ids are deterministic content hashes — the
+// idempotent-consumption anchor. WorkflowRun.idempotency_key is unique — the
+// idempotent-command anchor. Canonical payloads are mapped fields only
+// (data minimization); dropped partner fields are listed, never stored.
+// ============================================================================
+
+model EventSubscription {
+  id           String   @id @default(cuid())
+  tenantId     String   @map("tenant_id")
+  connectorId  String   @map("connector_id")
+  eventKey     String   @map("event_key")
+  workflowName String   @map("workflow_name")
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  @@unique([tenantId, connectorId, eventKey, workflowName], map: "uq_event_subscription_route")
+  @@index([connectorId, eventKey, active], map: "idx_event_subscription_lookup")
+  @@map("event_subscription")
+}
+
+model NormalizedEvent {
+  id             String   @id // deterministic content hash — dedup anchor
+  tenantId       String   @map("tenant_id")
+  connectorId    String   @map("connector_id")
+  eventKey       String   @map("event_key")
+  entityType     String   @map("entity_type")
+  sourceNativeId String   @map("source_native_id")
+  correlationId  String   @map("correlation_id")
+  canonical      Json // mapped canonical fields ONLY
+  droppedFields  Json     @map("dropped_fields")
+  processed      Boolean  @default(false)
+  receivedAt     DateTime @default(now()) @map("received_at")
+
+  @@index([correlationId], map: "idx_normalized_event_correlation")
+  @@index([processed, receivedAt], map: "idx_normalized_event_backlog")
+  @@map("normalized_event")
+}
+
+model WorkflowDefinition {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  versions WorkflowVersion[]
+
+  @@map("workflow_definition")
+}
+
+model WorkflowVersion {
+  id           String   @id @default(cuid())
+  definitionId String   @map("definition_id")
+  version      String
+  steps        Json // declarative step metadata (keys, retries, timeouts, compensations)
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  definition WorkflowDefinition @relation(fields: [definitionId], references: [id], onDelete: Cascade)
+
+  @@unique([definitionId, version], map: "uq_workflow_version")
+  @@map("workflow_version")
+}
+
+model WorkflowRun {
+  id                String   @id @default(cuid())
+  definitionName    String   @map("definition_name")
+  definitionVersion String   @map("definition_version")
+  status            String // running|completed|compensated|failed|stuck
+  correlationId     String   @map("correlation_id")
+  tenantId          String   @map("tenant_id")
+  idempotencyKey    String   @unique @map("idempotency_key")
+  input             Json
+  cursor            Int      @default(0)
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  steps WorkflowStepRecord[]
+
+  @@index([status, updatedAt], map: "idx_workflow_run_reconciler")
+  @@index([correlationId], map: "idx_workflow_run_correlation")
+  @@index([tenantId, status], map: "idx_workflow_run_tenant_status")
+  @@map("workflow_run")
+}
+
+model WorkflowStepRecord {
+  id       String  @id @default(cuid())
+  runId    String  @map("run_id")
+  key      String
+  sequence Int     @default(0)
+  status   String // completed|failed|compensated|compensation_failed
+  attempts Int     @default(1)
+  result   Json?
+  error    String?
+
+  run WorkflowRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  @@index([runId, sequence], map: "idx_workflow_step_run_seq")
+  @@map("workflow_step")
+}
+
+model DeadLetterEvent {
+  id        String   @id @default(cuid())
+  reason    String
+  runId     String?  @map("run_id")
+  event     Json? // the normalized event (canonical fields only) when event-sourced
+  replayed  Boolean  @default(false)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([replayed, createdAt], map: "idx_dead_letter_backlog")
+  @@map("dead_letter_event")
+}
+
 // Sec. 4.6 — FTC-style affiliate disclosure; non-dismissible at checkout.
 model Disclosure {
   id          String    @id @default(cuid())

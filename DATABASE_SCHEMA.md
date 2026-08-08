@@ -1512,5 +1512,24 @@ workflow is not evidence).
 
 ---
 
+## Commerce Mesh — Durable workflow tables (VTID-03537, 2026-08-08)
+
+Additive Prisma migration `prisma/migrations/20260808_vcaop_mesh_workflows_0002/`
+(reversible; verified up→down→up + FK cascade + idempotency-key uniqueness on
+ephemeral Postgres 16). **NOT yet applied to any live database** — same gating
+as the factory tables above (vcaop BLK-001, VTID-03486 drift discipline).
+
+| Table | Purpose |
+|-------|---------|
+| `event_subscription` | Routes (tenant, connector, event_key) → workflow |
+| `normalized_event` | Canonicalized partner events; id is a deterministic content hash — the idempotent-consumption anchor; only mapped fields stored |
+| `workflow_definition` | Workflow identity |
+| `workflow_version` | Versioned declarative step metadata |
+| `workflow_run` | Durable run state; `idempotency_key` UNIQUE — the idempotent-command anchor; `(status, updated_at)` indexed for the stuck-run reconciler |
+| `workflow_step` | Per-step outcome (completed/failed/compensated/compensation_failed), attempts, result |
+| `dead_letter_event` | Dead-lettered events/runs with replay tracking |
+
+---
+
 **Remember:** This file is the SINGLE SOURCE OF TRUTH for table names.
 When in doubt, CHECK HERE FIRST!
