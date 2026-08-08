@@ -420,6 +420,9 @@ router.get(
           identityAllowed: isNovaSonicIdentityAllowed(novaCfg, identity),
           languageSupported: isNovaSonicLanguageSupported(lang),
           runtime,
+          // VTID-03501: keep the bench's reported reason honest about
+          // whether Nova is globally promoted or allowlisted.
+          globalEnabled: novaCfg.globalEnabled === true,
         },
       });
       return res.status(200).json({

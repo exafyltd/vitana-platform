@@ -85,6 +85,11 @@ export type SelectionReason =
   | 'env_explicit_nova_sonic'     // ORB_LIVE_PROVIDER=nova_sonic, all gates pass
   | 'system_config_nova_sonic'    // voice.active_provider=nova_sonic, all gates pass
   | 'nova_canary_allowlisted'     // enabled allowlisted canary lifts a vertex/default request
+  // VTID-03501 (GCP cutover build 4): Nova promoted globally via
+  // NOVA_SONIC_GLOBAL_ENABLED — every identity, not an allowlist. Reported
+  // separately from the canary reason so dashboards can tell a 4-user canary
+  // from the whole user base.
+  | 'nova_global_enabled'
   | 'nova_disabled'               // nova requested but disabled/not-ready → vertex
   | 'nova_not_allowlisted'        // nova gate on but identity not in allowlist → vertex
   | 'nova_language_unsupported'   // session language outside en/de/fr/es → vertex
@@ -159,6 +164,12 @@ export interface UpstreamSelectorContext {
     identityAllowed: boolean;
     languageSupported: boolean;
     runtime?: 'aws-ecs' | 'gcp-cloud-run' | 'unknown';
+    /**
+     * VTID-03501: true when Nova is promoted globally rather than by
+     * allowlist. Only affects the reported `reason`/`canary` labels — the
+     * gate itself is already expressed through `identityAllowed`.
+     */
+    globalEnabled?: boolean;
   };
 }
 
@@ -403,12 +414,17 @@ function evaluateNovaCanary(
   if (nova.runtime !== undefined && nova.runtime !== 'aws-ecs') return null;
   if (nova.languageSupported !== true) return null;
   if (nova.identityAllowed !== true) return null;
+  // VTID-03501: a globally-promoted session is NOT a canary session. Reporting
+  // `canary: true` for the whole user base would make every canary-scoped
+  // dashboard and alert read as if the rollout never widened — the population
+  // changed, so the label has to change with it.
+  const global = nova.globalEnabled === true;
   return {
     provider: 'nova_sonic',
     requested: null,
-    reason: 'nova_canary_allowlisted',
+    reason: global ? 'nova_global_enabled' : 'nova_canary_allowlisted',
     livekitReady: false,
-    canary: true,
+    canary: !global,
     novaReady: true,
   };
 }

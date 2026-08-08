@@ -18,7 +18,7 @@
  */
 
 import { Router, Request, Response } from 'express';
-import { notifyUser, notifyUserAsync, sendPushToUser, sendAppilixPush, TYPE_META } from '../services/notification-service';
+import { notifyUser, notifyUserAsync, sendPushToUser, sendAppilixPush, isSignedOutOnAllKnownDevices, TYPE_META } from '../services/notification-service';
 import { generatePersonalRecommendations } from '../services/recommendation-engine';
 import { LangCode, resolveLanguage } from '../services/recommendation-engine/analyzers/community-user-analyzer';
 import { tt, type GatewayI18nKey } from '../i18n/catalog';
@@ -56,6 +56,68 @@ function getTenantId(req: Request): string | null {
   return req.body?.tenant_id || process.env.DEFAULT_TENANT_ID || null;
 }
 
+/**
+ * Which of these users already received `type` recently — i.e. this run is a
+ * REPEAT for them and must send nothing (VTID-03487).
+ *
+ * Every scheduled fan-out in this file is driven by Cloud Scheduler with
+ * `--attempt-deadline=300s --max-retry-attempts=1`, and each one loops over the
+ * whole tenant synchronously before responding. Once the tenant grew past what
+ * fits in five minutes, Scheduler stopped seeing a 200, declared the run failed,
+ * and retried it — re-running the ENTIRE fan-out. Nothing was idempotent, so
+ * every user got the notification a second time.
+ *
+ * That is exactly what happened to the morning briefing on 2026-08-04: wave one
+ * ran 05:00–05:04, the deadline expired at 05:05:00, and wave two immediately
+ * re-sent all ~200 users. On 2026-08-03 the same job finished in three minutes,
+ * never timed out, and produced no duplicates — which is why this looked
+ * intermittent. Because the briefing picks a random greeting per send, the two
+ * copies read as "the same notification with two different wordings" rather
+ * than as an obvious duplicate.
+ *
+ * Uses a lookback WINDOW rather than a calendar-day boundary on purpose: these
+ * jobs are scheduled in Europe/Berlin while the DB stores UTC, so a midnight
+ * boundary would both mis-bucket around DST and fail to suppress a retry that
+ * straddles it. A window shorter than the job's own cadence suppresses the
+ * retry (minutes later) while never blocking the next legitimate run.
+ *
+ * Fails OPEN: if the lookup errors we return an empty set and send anyway. A
+ * missed briefing is worse than a duplicated one, and this guard is a safety
+ * net over the schedule, not the thing that decides who is eligible.
+ */
+async function findRecentlyNotified(
+  supa: any,
+  tenantId: string,
+  userIds: string[],
+  type: string,
+  withinHours: number,
+): Promise<Set<string>> {
+  const already = new Set<string>();
+  if (!userIds.length) return already;
+
+  const since = new Date(Date.now() - withinHours * 60 * 60 * 1000).toISOString();
+
+  // Chunked so a large tenant doesn't build an unbounded PostgREST `in.()` list.
+  const CHUNK = 500;
+  for (let i = 0; i < userIds.length; i += CHUNK) {
+    const chunk = userIds.slice(i, i + CHUNK);
+    const { data, error } = await supa
+      .from('user_notifications')
+      .select('user_id')
+      .eq('tenant_id', tenantId)
+      .eq('type', type)
+      .gte('created_at', since)
+      .in('user_id', chunk);
+
+    if (error) {
+      console.warn(`[Scheduled] ${type} idempotency lookup failed, sending anyway: ${error.message}`);
+      return new Set<string>();
+    }
+    for (const row of data || []) already.add(row.user_id);
+  }
+  return already;
+}
+
 // ── Helper: fan-out a localized notification across a user list ───────
 // Looks up each user's preferred locale (bulk), then dispatches the
 // notification with the title/body resolved per-user against the gateway
@@ -69,11 +131,26 @@ async function dispatchLocalized(
   bodyKey: GatewayI18nKey,
   data: Record<string, string>,
   bodyParams?: (userId: string) => Record<string, string | number>,
+  /**
+   * Suppress users who already got this type within this many hours
+   * (VTID-03487). Pass the job's own cadence minus a margin: ~20h for a daily
+   * job, ~144h (6d) for a weekly one. Guards against a Cloud Scheduler retry
+   * re-running the whole fan-out — see findRecentlyNotified().
+   */
+  minIntervalHours?: number,
 ): Promise<number> {
   const userIds = users.map((u) => u.user_id);
+  const already = minIntervalHours
+    ? await findRecentlyNotified(supa, tenantId, userIds, type, minIntervalHours)
+    : new Set<string>();
+  if (already.size) {
+    console.log(`[Scheduled] ${type} → skipping ${already.size} already notified within ${minIntervalHours}h`);
+  }
+
   const locales = await bulkGetUserLocales(supa, userIds);
   let dispatched = 0;
   for (const { user_id } of users) {
+    if (already.has(user_id)) continue;
     const lc = locales.get(user_id);
     const params = bodyParams ? bodyParams(user_id) : undefined;
     notifyUserAsync(
@@ -362,9 +439,29 @@ router.post('/morning-briefing', async (req: Request, res: Response) => {
   if (!supa) return res.status(503).json({ ok: false, error: 'Supabase not configured' });
 
   const users = await getActiveUsers(supa, tenantId);
+
+  // VTID-03487 — this is the fan-out that actually double-sent in production.
+  // The per-user body below is expensive (a recommendation generation plus a
+  // context gather each), so the whole loop outgrew Cloud Scheduler's 300s
+  // attempt deadline; Scheduler then retried and re-sent every user a second
+  // briefing, with a freshly randomized greeting so it read as a differently
+  // worded copy rather than an obvious duplicate.
+  //
+  // The check runs BEFORE any of that work, so a retry now costs one query and
+  // returns immediately instead of burning another five minutes and timing out
+  // again. 20h is under the 24h cadence: it suppresses today's retry and never
+  // blocks tomorrow's run.
+  const alreadyBriefed = await findRecentlyNotified(
+    supa, tenantId, users.map((u) => u.user_id), 'morning_briefing_ready', 20,
+  );
   let dispatched = 0;
+  let skippedDuplicate = 0;
 
   for (const { user_id } of users) {
+    if (alreadyBriefed.has(user_id)) {
+      skippedDuplicate++;
+      continue;
+    }
     try {
       // Generate fresh personal recommendations for this user
       await generatePersonalRecommendations(user_id, tenantId, { trigger_type: 'scheduled' });
@@ -395,8 +492,11 @@ router.post('/morning-briefing', async (req: Request, res: Response) => {
     }
   }
 
-  console.log(`[Scheduled] morning_briefing_ready → ${dispatched} users (personalized)`);
-  return res.status(200).json({ ok: true, dispatched });
+  console.log(
+    `[Scheduled] morning_briefing_ready → ${dispatched} users (personalized)` +
+    (skippedDuplicate ? `, ${skippedDuplicate} skipped as already briefed today` : ''),
+  );
+  return res.status(200).json({ ok: true, dispatched, skipped_duplicate: skippedDuplicate });
 });
 
 // =============================================================================
@@ -620,6 +720,8 @@ router.post('/diary-reminder', async (req: Request, res: Response) => {
     'notif.diary_reminder.title',
     'notif.diary_reminder.body',
     { url: '/diary' },
+    undefined,
+    20, // daily job — suppress a same-day Scheduler retry (VTID-03487)
   );
 
   console.log(`[Scheduled] daily_diary_reminder → ${dispatched} users`);
@@ -776,6 +878,8 @@ router.post('/weekly-digest', async (req: Request, res: Response) => {
     'notif.weekly_digest.title',
     'notif.weekly_digest.body',
     { url: '/community' },
+    undefined,
+    144, // weekly job — 6d window suppresses a retry, never next week (VTID-03487)
   );
 
   console.log(`[Scheduled] weekly_community_digest → ${dispatched} users`);
@@ -801,6 +905,8 @@ router.post('/weekly-summary', async (req: Request, res: Response) => {
     'notif.weekly_summary.title',
     'notif.weekly_summary.body',
     { url: '/dashboard' },
+    undefined,
+    144, // weekly job — 6d window suppresses a retry, never next week (VTID-03487)
   );
 
   console.log(`[Scheduled] weekly_activity_summary → ${dispatched} users`);
@@ -826,6 +932,8 @@ router.post('/weekly-reflection', async (req: Request, res: Response) => {
     'notif.weekly_reflection.title',
     'notif.weekly_reflection.body',
     { url: '/diary' },
+    undefined,
+    144, // weekly job — 6d window suppresses a retry, never next week (VTID-03487)
   );
 
   console.log(`[Scheduled] weekly_reflection_prompt → ${dispatched} users`);
@@ -1150,16 +1258,25 @@ router.post('/push-dispatch', async (req: Request, res: Response) => {
           ? Object.fromEntries(Object.entries(notif.data).map(([k, v]) => [k, String(v)]))
           : undefined,
       };
+      //
+      // VTID-03481: mirror notifyUser()'s Appilix suppression too. This cron is
+      // the path that delivers the trigger-written community fan-out — the one
+      // that produced "Neuer Beitrag" and "New post" on the SAME phone a minute
+      // apart, because two accounts had been signed in on it and Appilix still
+      // had both identities mapped to the device.
       let sent = 0;
       let appilixSent = false;
+      const appilixSuppressed = await isSignedOutOnAllKnownDevices(notif.user_id, supa);
       if (hasDeepLink) {
-        appilixSent = await sendAppilixPush(notif.user_id, pushPayload);
+        appilixSent = appilixSuppressed
+          ? false
+          : await sendAppilixPush(notif.user_id, pushPayload);
         if (!appilixSent) {
           sent = await sendPushToUser(notif.user_id, notif.tenant_id, pushPayload, supa);
         }
       } else {
         sent = await sendPushToUser(notif.user_id, notif.tenant_id, pushPayload, supa);
-        if (sent === 0) {
+        if (sent === 0 && !appilixSuppressed) {
           appilixSent = await sendAppilixPush(notif.user_id, pushPayload);
         }
       }
@@ -1467,17 +1584,23 @@ async function scheduleReminderFcmPush(
     // notification. Only fire Appilix when there's no native token, or as a
     // last resort when FCM reached zero devices (e.g. web-only token that
     // opens the browser, not the app).
+    //
+    // VTID-03481: only count devices this user still OWNS, and skip Appilix
+    // altogether once they are signed out on every known device — otherwise a
+    // reminder for the account that left a shared phone still buzzes it.
     let appilixSent = false;
+    const appilixSuppressed = await isSignedOutOnAllKnownDevices(row.user_id, supa);
     const { count: nativeMobileCount } = await supa
       .from('user_device_tokens')
       .select('*', { count: 'exact', head: true })
       .eq('user_id', row.user_id)
       .eq('tenant_id', row.tenant_id)
+      .is('revoked_at', null)
       .like('device_label', 'Appilix %');
-    if (!nativeMobileCount) {
+    if (!nativeMobileCount && !appilixSuppressed) {
       appilixSent = await sendAppilixPush(row.user_id, payload);
     }
-    if (fcmSent === 0 && !appilixSent) {
+    if (fcmSent === 0 && !appilixSent && !appilixSuppressed) {
       appilixSent = await sendAppilixPush(row.user_id, payload);
     }
     console.log(`[reminders-tick] FCM push for ${row.id}: fcm=${fcmSent} appilix=${appilixSent} nativeTokens=${nativeMobileCount || 0}`);

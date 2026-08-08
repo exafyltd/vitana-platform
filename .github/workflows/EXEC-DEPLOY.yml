@@ -543,9 +543,28 @@ jobs:
           # store (Supabase/Redis) lands. Other gateway endpoints lose
           # horizontal scaling but the current test load fits one
           # instance comfortably.
+          # VTID-03491: min-instances dropped 1 -> 0. Since the VTID-03419
+          # cutover (2026-07-27) this Cloud Run service has served ZERO
+          # production traffic — gateway.vitanaland.com resolves to the AWS
+          # ALB, and this service exists only as the standing rollback
+          # target. A pinned warm instance therefore bills 24/7 for traffic
+          # that never arrives (~$70-150/mo at us-central1 always-allocated
+          # CPU rates). Scale-to-zero keeps the service, its image, and its
+          # revision history fully intact and re-activatable; the only cost
+          # is a cold start on a rollback path we hope never to exercise,
+          # and a rollback already involves a DNS change whose propagation
+          # dwarfs a Cloud Run cold start.
+          #
+          # max-instances=1 is UNCHANGED and still load-bearing — see the
+          # VTID-02037 note above: ORB voice sessions live in an in-memory
+          # liveSessions Map and must not split across instances. If this
+          # service is ever restored to serving production traffic, revisit
+          # min-instances (the ~9.4s cold authenticated /orb/live/session/
+          # start measured on staging exceeds the widget's 8s abort — see
+          # STAGE-DEPLOY.yml's BOOTSTRAP-ORB-STAGING-WARM note).
           if [ "$CLOUD_RUN_SERVICE" = "gateway" ]; then
             DEPLOY_ARGS+=(--max-instances=1)
-            DEPLOY_ARGS+=(--min-instances=1)
+            DEPLOY_ARGS+=(--min-instances=0)
           fi
 
           # Canary mode: create the revision but route ZERO traffic to it.

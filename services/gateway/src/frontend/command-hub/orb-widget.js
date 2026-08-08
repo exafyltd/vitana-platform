@@ -145,13 +145,19 @@
     // The host uses this to auto-close the overlay after the guided-topic
     // teaching turn so the underlying drawer's next-step buttons are usable.
     onTurnComplete: null,
-    // BOOTSTRAP-ORB-LATENCY-PHASE3: transport selector. 'sse' (default,
-    // production path: POST-per-chunk up / SSE down) or 'ws' (single
-    // bidirectional WebSocket to /api/v1/orb/live/ws — one connection,
-    // binary-framed JSON both ways, no per-chunk HTTP overhead, no
-    // cross-instance 404 class). Opt-in via init({transport:'ws'}) or
-    // localStorage 'vtorb.transport'='ws' for staging verification.
-    transport: 'sse'
+    // VTID-03471 (L-04/L-05): transport selector. 'ws' (DEFAULT since
+    // VTID-03471: single bidirectional WebSocket to /api/v1/orb/live/ws —
+    // one connection, JSON both ways, no per-chunk HTTP overhead, no
+    // cross-instance 404 class) or 'sse' (the legacy path: SSE down +
+    // one authenticated POST per 64ms audio chunk, ~15.6 requests/sec).
+    //
+    // Resolution order, highest first (see _useWsTransport):
+    //   1. localStorage 'vtorb.transport' — 'ws'/'sse', a developer override
+    //   2. the per-tab fallback latch — set when a WS start actually failed
+    //   3. the server's answer from GET /api/v1/orb/live/transport
+    //      (FEATURE_ORB_WS_TRANSPORT_ENV) — the operator kill switch
+    //   4. this compiled default
+    transport: 'ws'
   };
 
   var _s = {
@@ -197,6 +203,17 @@
     greetingAudioReceived: false,
     greetingComplete: false,  // True after first turn_complete — mic opens only after this
     _audioReadySignaled: false, // DEV-COMHU-0504: audio-ready ack posted once per session
+
+    // VTID-03469: page-level audio unlock state. _gestureUnlockInstalled guards
+    // the one-time listener install; _audioUnlockedByGesture records that the
+    // playback context has been STARTED from a real user gesture at least once
+    // (iOS only permits later programmatic resume() after that has happened);
+    // _audioBlocked is true while chunks are being dropped because the context
+    // never unlocked, so the UI stops claiming Vitana is speaking.
+    _gestureUnlockInstalled: false,
+    _audioUnlockedByGesture: false,
+    _audioBlocked: false,
+    _audioBlockedTapHandler: null,
 
     // UI state
     voiceState: 'IDLE', // IDLE | LISTENING | THINKING | SPEAKING | MUTED
@@ -571,6 +588,144 @@
   }
 
   // ============================================================
+  // 4a-bis. PAGE-LEVEL FIRST-GESTURE AUDIO UNLOCK (VTID-03469)
+  // ============================================================
+  //
+  // Until this existed, the ONLY place the playback AudioContext was unlocked
+  // was inside _sessionStart(), which works only when _sessionStart is reached
+  // synchronously from a real user gesture (the FAB tap path:
+  // click → _show() → _sessionStart(), no await in between).
+  //
+  // The host does NOT always get there from a tap. vitana-v1's voice-first
+  // front door (useOrbFrontDoor) calls VitanaOrb.show() from a React useEffect
+  // right after login — zero user activation. On iPhone (Safari / WKWebView /
+  // Appilix) that context is created suspended, resume() outside a gesture is
+  // refused, _processQueue burns its 3s retry budget and DROPS the greeting,
+  // and yet the overlay still reads "Vitana spricht..." because the SPEAKING
+  // state is set when an audio_out message ARRIVES, not when it plays. Net
+  // effect reported from the field: "after login the orb shows Vitana talking
+  // but there is no speech; close it, start a new session, and audio works" —
+  // the second session works precisely because that one came from a tap.
+  //
+  // Fix: arm the context on the FIRST user interaction anywhere on the page,
+  // long before the front door fires. A password login is itself a tap in this
+  // same document, so by the time the overlay auto-opens the context has
+  // already been started once and later resume() calls are permitted.
+  //
+  // Note _preloadAlertClips() (called from init()) already creates
+  // _s.playbackCtx outside any gesture, so the context usually EXISTS and is
+  // merely suspended — the 1-sample silent buffer + resume() below is what
+  // actually starts it. Re-running on every gesture is deliberate and cheap:
+  // it also re-arms the context after an iOS auto-suspend.
+  var _GESTURE_EVENTS = ['pointerdown', 'touchend', 'mousedown', 'keydown'];
+
+  function _unlockPlaybackCtxFromGesture() {
+    try {
+      if (!_s.playbackCtx || _s.playbackCtx.state === 'closed') {
+        _s.playbackCtx = new (window.AudioContext || window.webkitAudioContext)();
+      }
+      var ctx = _s.playbackCtx;
+      // A 1-sample silent buffer is the canonical WebKit unlock: starting a
+      // BufferSource inside the gesture is what flips the context out of the
+      // "never started" state. resume() alone is not reliable on iOS.
+      var buf = ctx.createBuffer(1, 1, 22050);
+      var src = ctx.createBufferSource();
+      src.buffer = buf;
+      src.connect(ctx.destination);
+      src.start(0);
+      if (ctx.state === 'suspended' && ctx.resume) {
+        ctx.resume().then(function () {
+          if (!_s._audioUnlockedByGesture) {
+            _s._audioUnlockedByGesture = true;
+            console.log('[VTOrb] playback AudioContext unlocked by user gesture');
+          }
+        }).catch(function (e) {
+          console.warn('[VTOrb] gesture unlock resume rejected:', e && e.message);
+        });
+      } else if (ctx.state === 'running') {
+        _s._audioUnlockedByGesture = true;
+      }
+    } catch (e) {
+      console.warn('[VTOrb] gesture unlock failed:', e && e.message);
+    }
+  }
+
+  // Installed once at script load — NOT at init() — so a tap on the login
+  // screen counts even though init() only runs once auth has resolved.
+  // Listeners stay attached for the lifetime of the page (capture phase,
+  // passive where allowed) so every gesture re-arms the context; the handler
+  // is a no-op-cheap resume once the context is already running.
+  function _installGestureAudioUnlock() {
+    if (_s._gestureUnlockInstalled) return;
+    _s._gestureUnlockInstalled = true;
+    var handler = function () {
+      // Already running and previously gesture-started → nothing to do.
+      if (_s._audioUnlockedByGesture && _s.playbackCtx && _s.playbackCtx.state === 'running') return;
+      _unlockPlaybackCtxFromGesture();
+    };
+    _GESTURE_EVENTS.forEach(function (evt) {
+      try {
+        document.addEventListener(evt, handler, { capture: true, passive: true });
+      } catch (e) {
+        // Older WebViews without options-object support.
+        document.addEventListener(evt, handler, true);
+      }
+    });
+  }
+
+  // VTID-03469: the context never unlocked and we are throwing chunks away.
+  // Replace the false "Vitana spricht..." with the truth plus the single
+  // gesture that repairs it. Any tap re-enters _unlockPlaybackCtxFromGesture
+  // via the page-level listener above; this extra one-shot handler exists to
+  // drain the pipeline and restore the UI in the same turn.
+  function _announceAudioBlocked() {
+    if (_s._audioBlocked) return;
+    _s._audioBlocked = true;
+    var de = _cfg.lang && _cfg.lang.startsWith('de');
+    _setOrbState('paused');
+    _setStatus(de ? 'Tippe, um Vitana zu hören' : 'Tap anywhere to hear Vitana');
+    _updateUI();
+    var onTap = function () {
+      _unlockPlaybackCtxFromGesture();
+      // Give the resume() promise a tick, then re-enter the pipeline.
+      setTimeout(function () {
+        _clearAudioBlocked();
+        _signalAudioReady();
+        _processQueue();
+      }, 0);
+    };
+    _s._audioBlockedTapHandler = onTap;
+    try {
+      document.addEventListener('pointerdown', onTap, { capture: true, passive: true, once: true });
+    } catch (e) {
+      document.addEventListener('pointerdown', onTap, true);
+    }
+  }
+
+  function _clearAudioBlocked(skipUi) {
+    if (!_s._audioBlocked) return;
+    _s._audioBlocked = false;
+    var h = _s._audioBlockedTapHandler;
+    if (h) {
+      try { document.removeEventListener('pointerdown', h, true); } catch (e) { /* ignore */ }
+      _s._audioBlockedTapHandler = null;
+    }
+    if (skipUi) return; // teardown path — _show() will paint the next state
+    // voiceState was never changed by _announceAudioBlocked (only the visual
+    // state was), so it still describes where the session actually is.
+    var st = (_s.voiceState || 'LISTENING').toLowerCase();
+    if (st === 'muted') return; // mute owns the display
+    _setOrbState(st === 'speaking' ? 'speaking' : 'listening');
+    var de = _cfg.lang && _cfg.lang.startsWith('de');
+    if (st === 'speaking') {
+      _setStatus(de ? 'Vitana spricht...' : 'Vitana speaking...');
+    } else {
+      _setStatus(de ? 'Ich höre zu...' : 'Listening...');
+    }
+    _updateUI();
+  }
+
+  // ============================================================
   // 4b. DISCONNECT ALERT (BOOTSTRAP-ORB-DISCONNECT-ALERT
   //                       + BOOTSTRAP-ORB-MODERN-RECOVERY)
   //
@@ -688,15 +843,63 @@
     });
   }
 
-  // BOOTSTRAP-ORB-LATENCY-PHASE3: true when the WS transport is selected
-  // (init option, or the localStorage override used for staging testing).
+  // VTID-03471: the server's answer from GET /live/transport, or null until
+  // it arrives (or if it never does — the fetch is best-effort and the
+  // compiled default covers its absence).
+  var _serverTransport = null;
+
+  // VTID-03471: per-tab latch. Set when a WS session start FAILED and we fell
+  // back to SSE, so the rest of the tab's sessions don't each pay the 8s WS
+  // start budget before failing the same way. Deliberately sessionStorage
+  // (not localStorage): a network that blocks WebSocket upgrades is a
+  // property of where the user is right now, not a permanent verdict on
+  // their browser.
+  var _WS_FALLBACK_KEY = 'vtorb.wsFallback';
+
+  function _wsFallbackLatched() {
+    try {
+      return !!(window.sessionStorage && sessionStorage.getItem(_WS_FALLBACK_KEY));
+    } catch (e) { return _s._wsFallbackLatched === true; }
+  }
+
+  function _latchWsFallback(reason) {
+    _s._wsFallbackLatched = true;
+    try {
+      if (window.sessionStorage) sessionStorage.setItem(_WS_FALLBACK_KEY, reason || '1');
+    } catch (e) { /* storage blocked — the in-memory flag still holds for this page */ }
+    console.warn('[VTOrb] WS transport unavailable (' + reason + ') — falling back to SSE for this tab');
+  }
+
+  // VTID-03471: true when the WS transport should be used for the NEXT start.
+  // See the `transport` config comment for the resolution order.
   function _useWsTransport() {
     try {
       var o = window.localStorage && localStorage.getItem('vtorb.transport');
-      if (o === 'ws') return true;
+      if (o === 'ws') return true;   // developer override wins over everything
       if (o === 'sse') return false;
-    } catch (e) { /* storage blocked — fall through to config */ }
+    } catch (e) { /* storage blocked — fall through */ }
+    if (_wsFallbackLatched()) return false;
+    if (_serverTransport === 'ws') return true;
+    if (_serverTransport === 'sse') return false;
     return _cfg.transport === 'ws';
+  }
+
+  // VTID-03471: ask the gateway which transport it wants. Best-effort and
+  // non-blocking — if it fails or is slow, the compiled default stands and
+  // the user's first tap is not delayed by it.
+  function _fetchServerTransport() {
+    try {
+      fetch(_cfg.gw + '/api/v1/orb/live/transport', { method: 'GET' })
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (j) {
+          if (!j) return;
+          if (j.transport === 'ws' || j.transport === 'sse') {
+            _serverTransport = j.transport;
+            console.log('[VTOrb] Server transport preference: ' + _serverTransport);
+          }
+        })
+        .catch(function () { /* best-effort — compiled default stands */ });
+    } catch (e) { /* no fetch — compiled default stands */ }
   }
 
   // BOOTSTRAP-ORB-LATENCY-PHASE3: tear down the WS transport (idempotent).
@@ -1032,10 +1235,17 @@
         _s._resumeRetryStartedAt = 0;
         // Drop queued audio rather than leaving UI in a stuck state.
         _s.audioQueue.length = 0;
+        // VTID-03469: dropping chunks used to be entirely invisible — the
+        // overlay carried on showing "Vitana spricht..." (set on audio_out
+        // ARRIVAL, see the audio case in the message handler) while nothing
+        // was rendered. Say what actually happened and give the user the one
+        // gesture that fixes it.
+        _announceAudioBlocked();
         return;
       }
       ctx.resume().then(function () {
         _s._resumeRetryStartedAt = 0;
+        _clearAudioBlocked();
         // DEV-COMHU-0504: ctx just reached 'running' → pipeline now ready.
         _signalAudioReady();
         // Re-enter on next tick so any pending chunks drain.
@@ -1322,14 +1532,31 @@
           + ', conversation_id=' + (startPayload.conversation_id || '<new>'));
       }
 
-      // BOOTSTRAP-ORB-LATENCY-PHASE3: WebSocket transport branch. One
-      // bidirectional connection replaces POST /session/start + EventSource +
-      // a POST per 64ms audio chunk. Opt-in (default stays SSE) — see
-      // _useWsTransport(). Same start payload, same downstream message
-      // shapes, same _handleMessage.
+      // VTID-03471 (L-04/L-05): WebSocket transport branch — now the DEFAULT.
+      // One bidirectional connection replaces POST /session/start +
+      // EventSource + a POST per 64ms audio chunk. Same start payload, same
+      // downstream message shapes, same _handleMessage.
+      //
+      // If the WS start fails for a TRANSPORT reason (blocked upgrade,
+      // captive portal, corporate proxy that eats 101s, socket closed before
+      // the handshake completed), fall through to the SSE path rather than
+      // failing the session: an environment where WebSockets don't work is
+      // exactly where the legacy transport still does. The latch stops the
+      // rest of this tab's sessions from re-paying the 8s WS start budget.
+      //
+      // A server-side REJECTION (401 AUTH_TOKEN_INVALID and friends) is NOT a
+      // transport failure — SSE would be rejected identically — so those are
+      // rethrown for the caller's error handling instead of retried.
       if (_useWsTransport()) {
-        await _sessionStartWs(startPayload);
-        return;
+        try {
+          await _sessionStartWs(startPayload);
+          return;
+        } catch (wsErr) {
+          if (wsErr && wsErr.__vtOrbServerRejected) throw wsErr;
+          if (_s._userInitiatedStop || !_s.overlayVisible) throw wsErr;
+          _latchWsFallback((wsErr && wsErr.message) || 'ws_start_failed');
+          // fall through to the SSE path below, same startPayload
+        }
       }
 
       // VTID-01987: explicit 8s timeout. On Android WebView a fetch over a
@@ -1530,6 +1757,21 @@
           try { w.send(JSON.stringify(Object.assign({ type: 'start' }, startPayload))); } catch (e) { /* onclose covers */ }
           return;
         }
+        // VTID-03471: the gateway rejected the start (bad/expired JWT, origin
+        // not allowed, quota). Distinguish it from a transport failure: SSE
+        // would be rejected the same way, so the caller must NOT retry there.
+        if (msg.type === 'error' && !settled) {
+          clearTimeout(startTimer);
+          settled = true;
+          _s.ws = null;
+          try { w.close(); } catch (e) { /* noop */ }
+          var rejErr = new Error(msg.code || msg.message || 'WS session start rejected');
+          rejErr.__vtOrbServerRejected = true;
+          rejErr.code = msg.code || null;
+          rejErr.status = msg.status || null;
+          reject(rejErr);
+          return;
+        }
         if (msg.type === 'session_started' && !settled) {
           clearTimeout(startTimer);
           settled = true;
@@ -1613,6 +1855,9 @@
     // VTID-02710: stop the iOS ctx keep-alive (if it was still running because
     // the session ended before any audio arrived) before closing the ctx.
     _stopCtxKeepAlive();
+    // VTID-03469: drop the tap-to-unblock listener with the session. skipUi
+    // because the overlay is being torn down — _show() paints the next state.
+    _clearAudioBlocked(true);
 
     // Stop playback
     if (_s.playbackCtx) { _s.playbackCtx.close().catch(function () {}); _s.playbackCtx = null; }
@@ -1875,10 +2120,16 @@
               _s.preMuteState = 'LISTENING';
               _afterBeepStartMic();
             } else {
-              _setOrbState('listening');
               _s.voiceState = 'LISTENING';
-              _setStatus(_cfg.lang.startsWith('de') ? 'Ich höre zu...' : 'Listening...');
-              _playReadyBeep();
+              // VTID-03469: while audio is blocked the overlay is showing the
+              // tap-to-hear prompt. Overwriting it with "Listening..." here
+              // would hide the only instruction that repairs playback, and the
+              // beep below would be inaudible anyway — keep the prompt up.
+              if (!_s._audioBlocked) {
+                _setOrbState('listening');
+                _setStatus(_cfg.lang.startsWith('de') ? 'Ich höre zu...' : 'Listening...');
+                _playReadyBeep();
+              }
               _updateUI();
               // The beep is 200ms; defer mic-arm by 250ms so the audio-session
               // switch happens after the speaker has finished rendering it.
@@ -3523,6 +3774,10 @@
       // orb tap skips the 400-800ms context build on the
       // click-to-first-audio path. Anonymous = server-side no-op.
       _prewarmBootstrap();
+      // VTID-03471: resolve the server's transport preference (kill switch)
+      // in parallel with the prewarm. Unauthenticated, so anonymous sessions
+      // get it too.
+      _fetchServerTransport();
       console.log('[VTOrb] Initialized — gateway: ' + _cfg.gw + ', lang: ' + _cfg.lang + ', showFab: ' + _cfg.showFab + ', hasToken: ' + !!_cfg.token + ', forceAnonymous: ' + _cfg.forceAnonymous);
     },
 
@@ -3707,6 +3962,13 @@
       _updateUI();
     }
   };
+
+  // VTID-03469: arm the audio unlock at SCRIPT LOAD, not in init(). The host
+  // only calls init() once auth has resolved, which on the login flow is after
+  // the user has already tapped — and the auto-opening front door then starts a
+  // session with no gesture of its own. Installing here means the login tap
+  // itself starts the playback context.
+  _installGestureAudioUnlock();
 
 })(window);
 

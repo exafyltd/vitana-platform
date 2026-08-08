@@ -54,12 +54,36 @@ describe('WS tenant fallback — source-level wall', () => {
     expect(window).toContain('identity = { ...identity, tenant_id: resolvedTenant }');
   });
 
-  it('the WS session object is built from the (possibly-fallback-resolved) identity variable', () => {
+  it('the WS session start is handed the (possibly-fallback-resolved) identity variable', () => {
     // Guards against a future refactor reintroducing the bug by reading
     // result.identity directly somewhere downstream instead of the
     // fallback-resolved `identity` binding.
-    const idx = src.indexOf('isAnonymous: !identity?.user_id,');
+    //
+    // VTID-03471 moved WS session construction into the shared
+    // `handleLiveSessionStart` (see orb/live/session/ws-start-adapter.ts), so
+    // the thing to pin is no longer a field on a locally-built session object
+    // — it is that the adapter receives the fallback-resolved binding. The
+    // controller then re-applies the identical fallback in
+    // `resolveOrbIdentity` (orb-live.ts:~563), so the tenant survives even if
+    // this hand-off ever regressed. Two walls, same invariant.
+    const idx = src.indexOf('startLiveSessionForWs({');
     expect(idx).toBeGreaterThan(-1);
+    const window = src.slice(idx, idx + 400);
+    // `identity` here is the fallback-resolved binding destructured from
+    // clientSession — NOT `result.identity`.
+    expect(window).toContain('identity,');
+    expect(src).toContain('const { clientWs, identity } = clientSession;');
+  });
+
+  it('the shared controller re-applies the tenant fallback, so the WS hand-off is belt-and-braces', () => {
+    // VTID-03471: WS sessions now run through resolveOrbIdentity like SSE
+    // sessions do. That function carries the VTID-MEMORY-BRIDGE fallback, so
+    // a null-tenant JWT is repaired there too.
+    const idx = src.indexOf('async function resolveOrbIdentity(');
+    expect(idx).toBeGreaterThan(-1);
+    const window = src.slice(idx, idx + 900);
+    expect(window).toContain('if (!req.identity.tenant_id)');
+    expect(window).toContain('lookupPrimaryTenant(req.identity.user_id)');
   });
 });
 

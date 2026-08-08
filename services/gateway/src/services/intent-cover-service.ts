@@ -30,6 +30,8 @@ import { GoogleAuth } from 'google-auth-library';
 import path from 'node:path';
 import { promises as fs } from 'node:fs';
 import { createHash } from 'node:crypto';
+// VTID-03497: Titan seam. No-ops unless IMAGE_PROVIDER=bedrock.
+import { getImageProvider, generateTitanImage } from '../providers/titan-image';
 
 export type CoverTheme =
   | 'dance'
@@ -280,6 +282,31 @@ async function uploadFallbackCover(args: {
 }
 
 async function generateAiCover(theme: CoverTheme, gender: Gender): Promise<Buffer> {
+  // VTID-03497: Titan text-to-image when IMAGE_PROVIDER=bedrock. This is the
+  // SECOND Imagen consumer — CLAUDE.md's cutover changelog listed only
+  // cover-image-outpaint.ts, so a Titan build that covered outpainting alone
+  // would have left AI cover generation silently broken on a GCP shutdown.
+  // Default remains `vertex`; deploying this changes nothing.
+  if (getImageProvider() === 'bedrock') {
+    const result = await generateTitanImage({
+      prompt: buildCoverPrompt(theme, gender),
+      // 16:9, mapped by nearestTitanSize() to Titan's supported 1280x720.
+      width: 1600,
+      height: 900,
+    });
+    if (!result.ok) {
+      if (result.error === 'blocked') {
+        throw new CoverGenError('unsafe_prompt', result.message);
+      }
+      throw new CoverGenError('provider_failed', `titan ${result.error}: ${result.message}`);
+    }
+    console.log(
+      `[intent-cover] provider=bedrock model=${result.model} theme=${theme} ` +
+        `latency_ms=${result.upstream_ms}`,
+    );
+    return result.pngBytes;
+  }
+
   if (!VERTEX_PROJECT) throw new CoverGenError('provider_failed', 'gcp_project_unset');
 
   let token: string;

@@ -116,6 +116,49 @@ CREATE TABLE personalization_audit (
 
 ---
 
+### orb_session_state
+**Purpose:** Short-lived, TTL'd cross-transport ORB session state, keyed by `(user_id, key)` (DEV-COMHU-0503)
+**Used by:**
+- `services/gateway/src/services/orb/orb-session-state.ts` (typed read/write/clear helpers)
+- `services/gateway/src/routes/orb-live.ts` (`POST /api/v1/orb/session/:id/audio-ready`, continuity, pending CTA)
+
+**Schema:**
+```sql
+CREATE TABLE orb_session_state (
+  user_id      UUID NOT NULL REFERENCES app_users(user_id) ON DELETE CASCADE,
+  key          TEXT NOT NULL,           -- see key values below
+  value        JSONB NOT NULL,
+  expires_at   TIMESTAMPTZ NOT NULL,
+  updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (user_id, key)
+);
+```
+
+**Key values:**
+| `key` | Written by | Effect when missing |
+|---|---|---|
+| `audio_ready_ack` | client audio-pipeline-ready handshake (ORB-4) | greeting falls back to a blind 3s timer and can be spoken before the client can play it — the user hears silence |
+| `continuity` | close/reopen resume (ORB-2+3) | every session looks "first-time"; no transcript/conversation resume |
+| `pending_cta` | autopilot CTA awaiting "yes" (ORB-5) | the confirmation answer has nothing to bind to |
+| `recent_openers` | wake-brief opener rotation (VTID-03301) | the same opener repeats every session |
+
+**⚠️ Operational history (VTID-03480):** the original migration
+(`20260606000000_DEV_COMHU_0503_orb_session_state.sql`) was authored but
+**never applied to production** — its own header said "Not executed from the
+sandbox." Because every helper in `orb-session-state.ts` fails soft (reads
+return `null`, writes return `ok:false` and never throw), all four features
+above were silently dead in production from 2026-06-06 until the migration
+was applied on 2026-08-03. The only outward symptom was
+`orb.session.audio_ready.acked` carrying `ok:false` on every session.
+**When adding a fail-soft table, add a health check that fails loudly —
+`ok:false` in a payload nobody alerts on is not detection.**
+
+**OASIS Events:**
+- `orb.session.audio_ready.acked` — `payload.ok` is the write result, NOT the client's readiness
+- `orb.session.continuity.persisted`
+
+---
+
 ## ⚠️ DEPRECATED / DO NOT USE
 
 ### VtidLedger (PascalCase)

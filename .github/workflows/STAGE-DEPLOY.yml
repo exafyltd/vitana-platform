@@ -101,14 +101,28 @@ jobs:
             --cpu=1
             --timeout=300
             --max-instances=1
-            # BOOTSTRAP-ORB-STAGING-WARM: keep one warm instance. With
-            # min-instances=0 the gateway cold-starts, and an authenticated
-            # ORB /orb/live/session/start takes ~9.4s cold (vs ~4.4s warm) —
-            # past the widget's 8s AbortSignal.timeout, so the orb aborts and
-            # goes silent on the first open (proven by the e2e harness timing
-            # probe). One warm instance keeps session/start well under 8s,
-            # matching prod behavior.
-            --min-instances=1
+            # VTID-03508: scaled to zero for cost. This REVERSES
+            # BOOTSTRAP-ORB-STAGING-WARM, whose reasoning still stands and is
+            # kept here because it describes exactly what you will now see:
+            #
+            #   "With min-instances=0 the gateway cold-starts, and an
+            #    authenticated ORB /orb/live/session/start takes ~9.4s cold
+            #    (vs ~4.4s warm) — past the widget's 8s AbortSignal.timeout,
+            #    so the orb aborts and goes silent on the first open (proven
+            #    by the e2e harness timing probe)."
+            #
+            # That is a real, reproducible staging regression, accepted
+            # deliberately: a warm staging instance bills ~$69/mo around the
+            # clock to spare a first-open cold start on a preview environment.
+            # Everything except the first ORB open after idle is unaffected,
+            # and prod is on AWS (VTID-03419) so this cannot touch users.
+            #
+            # BEFORE testing ORB voice on staging, warm it first:
+            #   curl -s https://preview-gateway.vitanaland.com/alive >/dev/null
+            # then wait ~2s. Or restore the warm floor for a session:
+            #   gcloud run services update gateway-staging --min-instances=1 \
+            #     --region=us-central1 --project=lovable-vitana-vers1
+            --min-instances=0
           )
 
           # Env vars: VITANA_ENV is the load-bearing switch (P0.3). Anything else
