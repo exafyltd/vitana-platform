@@ -11,6 +11,9 @@ jest.mock('../../src/middleware/auth-supabase-jwt', () => ({
     // Reject all other endpoints
     return res.status(401).json({ ok: false, error: 'Unauthorized' });
   }),
+  // /nova/decision mounts optionalAuth at router load — without this the
+  // mocked module hands Express `undefined` and the whole suite fails to run.
+  optionalAuth: jest.fn((req, res, next) => next()),
 }));
 
 import voiceLabRouter from '../../src/routes/voice-lab';

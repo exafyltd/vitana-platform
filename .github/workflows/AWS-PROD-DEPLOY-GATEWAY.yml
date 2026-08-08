@@ -1,0 +1,417 @@
+# AWS-PROD-DEPLOY-GATEWAY — promote the gateway to the AWS Production ECS
+# service `vitana-gateway-awsdr` (VTID-03398, promotion mode VTID-03420).
+#
+# Since the VTID-03419 cutover, `gateway.vitanaland.com` is served by this
+# AWS stack — it is the canonical production for the gateway. This workflow
+# is the ONLY path that updates it, and it NEVER runs on push.
+#
+# Two modes (`deploy_mode` input):
+# - promote-staging (DEFAULT, VTID-03420): ship the EXACT ECR image the AWS
+#   staging service (`vitana-gateway`) is currently running — no rebuild.
+#   Staging and prod share the `vitana/gateway` ECR repo, so promotion is
+#   just re-registering staging's image on the awsdr task definition. The
+#   run verifies staging actually SERVES that commit over HTTP first
+#   (build-info — never ECS status fields), and the optional
+#   `expected_commit` input pins the promotion to the commit an operator
+#   was shown (the Command Hub PUBLISH button always sets it): if staging
+#   moved in between, the run fails before touching the service.
+# - rebuild-main: the original from-source path — build `main` HEAD, push,
+#   roll. Kept as the explicit fallback (e.g. staging is broken and a fix
+#   must ship directly), not the routine path.
+#
+# Design choices:
+# - workflow_dispatch ONLY, with a REQUIRED `reason` input. There is no
+#   `on: push` trigger of any kind — mirrors how GCP prod is gated
+#   post-cutover (CLAUDE.md §16: auto = staging, prod = deliberate manual
+#   action with a recorded reason). This is the single most important
+#   property of this file; do not add a push trigger.
+# - The existing `vitana-gateway-awsdr` task definition is PRESERVED: only
+#   the container image and the commit-stamp env vars (GIT_COMMIT_SHA /
+#   COMMIT_SHA / BUILD_INFO_MARKER) are replaced, same pattern as staging.
+#   In promote mode NOTHING else is taken from the staging task def — env
+#   vars/secrets stay the awsdr ones (the image is env-agnostic).
+# - Smoke gate mirrors AWS-STAGE-DEPLOY-GATEWAY.yml: /api/v1/admin/health
+#   must report env=production AND /api/v1/admin/build-info must report
+#   the deployed commit — otherwise the job fails loudly (CLAUDE.md §15).
+# - OASIS event + software_versions row are emitted best-effort via
+#   Supabase REST when SUPABASE_URL / SUPABASE_SERVICE_ROLE repo secrets
+#   exist, so the Command Hub CLOCK history sees AWS-DR prod deploys.
+#
+# Required repository secrets:
+#   AWS_PROD_ROLE_ARN — GitHub OIDC deploy role (see scripts/aws/README.md
+#   for the federation pattern; a dedicated role/trust-policy for this
+#   workflow still needs to be created by an operator with IAM admin
+#   rights — see docs/AWS-PRODUCTION-BUILD-LOG.md for the exact one-time
+#   setup commands. Deliberately NOT a static-key IAM user.)
+# Optional repository secrets (for OASIS/CLOCK visibility):
+#   SUPABASE_URL / SUPABASE_SERVICE_ROLE
+
+name: AWS Prod Deploy Gateway (ECS, DR)
+
+on:
+  workflow_dispatch:
+    inputs:
+      # BOOTSTRAP-NOVA-SONIC-VOICE: optional Nova canary levers. EMPTY inputs
+      # PRESERVE whatever NOVA_SONIC_* values the current task definition
+      # carries — a routine prod deploy never flips Nova state either way.
+      # Providing nova_sonic_enabled replaces the full Nova env block
+      # (enabled + pinned region/model + allowlists) on the new revision.
+      nova_sonic_enabled:
+        description: 'Set NOVA_SONIC_ENABLED (true/false; EMPTY = preserve current task-def state)'
+        required: false
+        default: ''
+      nova_canary_user_ids:
+        description: 'Nova canary user UUID allowlist (comma-separated; used only when nova_sonic_enabled is set)'
+        required: false
+        default: ''
+      nova_canary_tenant_ids:
+        description: 'Nova canary tenant UUID allowlist (comma-separated; used only when nova_sonic_enabled is set)'
+        required: false
+        default: ''
+      reason:
+        description: 'Reason for this AWS production gateway deploy — required'
+        required: true
+      deploy_mode:
+        description: 'promote-staging = ship the exact image AWS staging runs (default); rebuild-main = build main HEAD from source'
+        required: false
+        type: choice
+        options:
+          - promote-staging
+          - rebuild-main
+        default: 'promote-staging'
+      expected_commit:
+        description: 'promote-staging only: full commit SHA the operator expects staging to be serving — run fails if staging moved (set automatically by the Command Hub PUBLISH button)'
+        required: false
+        default: ''
+      staging_url:
+        description: 'AWS staging gateway URL used to verify what staging actually serves before promoting'
+        required: false
+        default: 'https://preview-aws-gateway.vitanaland.com'
+      gateway_url:
+        description: 'Public gateway URL for post-deploy verification (canonical hostname since VTID-03419)'
+        required: false
+        default: 'https://gateway.vitanaland.com'
+      aws_region:
+        description: 'AWS region'
+        required: false
+        default: 'eu-central-1'
+      ecr_repository:
+        description: 'ECR repository name for the gateway image'
+        required: false
+        default: 'vitana/gateway'
+      ecs_cluster:
+        description: 'ECS cluster name'
+        required: false
+        default: 'Vitana-ECS-Cluster'
+      ecs_service:
+        description: 'ECS service name'
+        required: false
+        default: 'vitana-gateway-awsdr'
+
+permissions:
+  contents: read
+  id-token: write # required for aws-actions/configure-aws-credentials OIDC
+
+concurrency:
+  group: aws-prod-deploy-gateway
+  cancel-in-progress: false
+
+jobs:
+  build-push-deploy:
+    runs-on: ubuntu-latest
+    env:
+      GATEWAY_URL: ${{ inputs.gateway_url }}
+      TARGET_AWS_REGION: ${{ inputs.aws_region }}
+      ECR_REPOSITORY: ${{ inputs.ecr_repository }}
+      ECS_CLUSTER: ${{ inputs.ecs_cluster }}
+      ECS_SERVICE: ${{ inputs.ecs_service }}
+      DEPLOY_REASON: ${{ inputs.reason }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve commit metadata + refresh BUILD_INFO
+        id: commit
+        run: |
+          SHORT="$(git rev-parse --short=12 HEAD)"
+          {
+            echo "sha=$GITHUB_SHA"
+            echo "short=$SHORT"
+          } >> "$GITHUB_OUTPUT"
+          {
+            echo "$GITHUB_SHA"
+            echo "Build: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          } > services/gateway/BUILD_INFO
+
+      - name: Configure AWS credentials (GitHub OIDC — no static keys)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_PROD_ROLE_ARN }}
+          aws-region: ${{ env.TARGET_AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Preflight — verify ECR repo + ECS service exist
+        run: |
+          set -e
+          if ! aws ecr describe-repositories --repository-names "${{ env.ECR_REPOSITORY }}" >/dev/null 2>&1; then
+            echo "::error::ECR repository '${{ env.ECR_REPOSITORY }}' not found."
+            exit 1
+          fi
+          if ! aws ecs describe-services --cluster "${{ env.ECS_CLUSTER }}" --services "${{ env.ECS_SERVICE }}" \
+               --query 'services[0].status' --output text 2>/dev/null | grep -q ACTIVE; then
+            echo "::error::ECS service '${{ env.ECS_SERVICE }}' not ACTIVE in cluster '${{ env.ECS_CLUSTER }}'. Services:"
+            aws ecs list-services --cluster "${{ env.ECS_CLUSTER }}" --output table
+            exit 1
+          fi
+          # Guardrail: this workflow must only ever touch the AWS-DR prod
+          # service, never the staging one. Refuse to run against
+          # 'vitana-gateway' (staging) even if someone passes it as an input.
+          if [ "${{ env.ECS_SERVICE }}" = "vitana-gateway" ]; then
+            echo "::error::Refusing to deploy — 'vitana-gateway' is the AWS STAGING service. This workflow targets 'vitana-gateway-awsdr' (prod DR) only."
+            exit 1
+          fi
+
+      # VTID-03420: decide WHAT ships. promote-staging resolves the exact
+      # image + commit AWS staging (`vitana-gateway`) is running and verifies
+      # staging actually serves it over HTTP; rebuild-main falls through to
+      # the build step below with this checkout's HEAD.
+      - name: Resolve deploy source (promote-staging vs rebuild-main)
+        id: source
+        env:
+          DEPLOY_MODE: ${{ inputs.deploy_mode || 'promote-staging' }}
+          EXPECTED_COMMIT: ${{ inputs.expected_commit }}
+          STAGING_URL: ${{ inputs.staging_url || 'https://preview-aws-gateway.vitanaland.com' }}
+        run: |
+          set -e
+          if [ "$DEPLOY_MODE" != "promote-staging" ]; then
+            echo "mode=rebuild-main" >> "$GITHUB_OUTPUT"
+            echo "sha=${{ steps.commit.outputs.sha }}" >> "$GITHUB_OUTPUT"
+            echo "short=${{ steps.commit.outputs.short }}" >> "$GITHUB_OUTPUT"
+            echo "image=" >> "$GITHUB_OUTPUT"
+            echo "Mode: rebuild-main — building ${{ steps.commit.outputs.short }} from source."
+            exit 0
+          fi
+
+          # 1) What does ECS say staging runs?
+          STAGING_TD=$(aws ecs describe-services --cluster "${{ env.ECS_CLUSTER }}" --services vitana-gateway \
+            --query 'services[0].taskDefinition' --output text)
+          IMAGE=$(aws ecs describe-task-definition --task-definition "$STAGING_TD" \
+            --query 'taskDefinition.containerDefinitions[0].image' --output text)
+          SHA=$(aws ecs describe-task-definition --task-definition "$STAGING_TD" \
+            --query 'taskDefinition.containerDefinitions[0].environment[?name==`GIT_COMMIT_SHA`].value | [0]' --output text)
+          echo "Staging task def: $STAGING_TD"
+          echo "Staging image:    $IMAGE"
+          echo "Staging commit:   $SHA"
+          case "$IMAGE" in
+            *"/${{ env.ECR_REPOSITORY }}:"*) ;;
+            *) echo "::error::Staging image '$IMAGE' is not from ECR repo '${{ env.ECR_REPOSITORY }}' — refusing to promote an ungoverned image."; exit 1 ;;
+          esac
+          if [ -z "$SHA" ] || [ "$SHA" = "None" ]; then
+            echo "::error::Staging task def has no GIT_COMMIT_SHA env var — cannot pin the promotion. Deploy staging via AWS-STAGE-DEPLOY-GATEWAY first."
+            exit 1
+          fi
+
+          # 2) Does staging actually SERVE that commit? (functional check —
+          # ECS state alone produced false greens during VTID-03419.)
+          LIVE=$(curl -fsS "$STAGING_URL/api/v1/admin/build-info" | jq -r '.git_commit // empty')
+          if [ "$LIVE" != "$SHA" ]; then
+            echo "::error::AWS staging serves commit '$LIVE' but its task def says '$SHA' — staging is mid-deploy or drifted. Retry when stable."
+            exit 1
+          fi
+
+          # 3) Operator pin: fail if staging moved since the PUBLISH click.
+          if [ -n "$EXPECTED_COMMIT" ] && [ "$EXPECTED_COMMIT" != "$SHA" ]; then
+            echo "::error::expected_commit=$EXPECTED_COMMIT but staging is serving $SHA — staging changed between the operator's confirmation and this run. Re-publish from the Command Hub."
+            exit 1
+          fi
+
+          {
+            echo "mode=promote-staging"
+            echo "sha=$SHA"
+            echo "short=$(echo "$SHA" | cut -c1-12)"
+            echo "image=$IMAGE"
+          } >> "$GITHUB_OUTPUT"
+          echo "Mode: promote-staging — shipping $IMAGE ($SHA) with NO rebuild."
+
+      - name: Build and push image (rebuild-main only)
+        id: build
+        if: ${{ (inputs.deploy_mode || 'promote-staging') == 'rebuild-main' }}
+        env:
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+        run: |
+          set -e
+          IMAGE="$REGISTRY/${{ env.ECR_REPOSITORY }}:${{ steps.source.outputs.short }}"
+          docker build -t "$IMAGE" -t "$REGISTRY/${{ env.ECR_REPOSITORY }}:awsdr-latest" services/gateway
+          docker push "$IMAGE"
+          docker push "$REGISTRY/${{ env.ECR_REPOSITORY }}:awsdr-latest"
+          echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
+          echo "Pushed $IMAGE"
+
+      - name: Register task-definition revision + roll the service
+        env:
+          NOVA_ENABLED_INPUT: ${{ inputs.nova_sonic_enabled }}
+          NOVA_USERS_INPUT: ${{ inputs.nova_canary_user_ids }}
+          NOVA_TENANTS_INPUT: ${{ inputs.nova_canary_tenant_ids }}
+        run: |
+          set -e
+          # VTID-03420: promote mode ships staging's image; rebuild mode ships
+          # the image built above.
+          IMAGE="${{ steps.source.outputs.image }}"
+          if [ -z "$IMAGE" ]; then IMAGE="${{ steps.build.outputs.image }}"; fi
+          if [ -z "$IMAGE" ]; then echo "::error::No image resolved from either mode."; exit 1; fi
+          SHA="${{ steps.source.outputs.sha }}"
+          SHORT="${{ steps.source.outputs.short }}"
+          TD_ARN=$(aws ecs describe-services --cluster "${{ env.ECS_CLUSTER }}" --services "${{ env.ECS_SERVICE }}" \
+            --query 'services[0].taskDefinition' --output text)
+          echo "Current task definition: $TD_ARN"
+          NEW_DEF=$(aws ecs describe-task-definition --task-definition "$TD_ARN" --query taskDefinition \
+            | jq --arg IMG "$IMAGE" --arg SHA "$SHA" --arg SHORT "$SHORT" '
+                .containerDefinitions[0].image = $IMG
+                | .containerDefinitions[0].environment |=
+                    ( [ .[] | select(.name | IN("GIT_COMMIT_SHA","COMMIT_SHA","BUILD_INFO_MARKER") | not) ]
+                      + [ {name:"GIT_COMMIT_SHA", value:$SHA},
+                          {name:"COMMIT_SHA", value:$SHA},
+                          {name:"BUILD_INFO_MARKER", value:$SHORT} ] )
+                | del(.taskDefinitionArn, .revision, .status, .requiresAttributes,
+                      .compatibilities, .registeredAt, .registeredBy, .deregisteredAt)')
+          # BOOTSTRAP-ORB-FASTSTART-DRIFT: pin the production feature flags that
+          # MUST be live on this stack, every deploy, unconditionally.
+          #
+          # Why this exists: the task def is otherwise carried forward verbatim
+          # (that is deliberate — see the header), so a flag that was never
+          # copied across the VTID-03419 GCP→AWS cutover stays missing forever.
+          # `FEATURE_ORB_FAST_START_ENV` was exactly that. Worse, the value is
+          # not a boolean: `isFeatureLive` maps 'staging-only' → `isStaging`, so
+          # even copying staging's value verbatim leaves the flag DEAD in prod.
+          # It must be the literal 'staging+prod' here.
+          #
+          # Consequence when it is missing: `shouldDeferWakeWork()` returns
+          # false, the ORB wake-brief/journey assembly runs INLINE on the
+          # session/start response, and a cold authenticated start measured
+          # 9.5s against the orb widget's 8s fetch abort — the first connect
+          # after login hung on "Verbinden..." with no retry. Anonymous
+          # sessions were unaffected (they skip wake-brief), which is why
+          # logged-out ORB looked healthy throughout.
+          #
+          # Only flags with MEASURED evidence for this stack belong here. Do not
+          # add one speculatively — a wrongly-enabled flag is a new outage, not
+          # a fix. Verify first via GET /api/v1/admin/feature-flags (admin) on
+          # both stacks and compare `live`, not merely whether the var is set.
+          #
+          # VTID-03504 adds FEATURE_ORB_BRAIN_CACHE_ENV on the same reasoning
+          # and with the same kind of evidence. `vitana_brain_orb_enabled` is
+          # TRUE in system_controls, so every ORB session builds its context
+          # through `buildBrainSystemInstructionCached` — which, with this flag
+          # off, was a passthrough: no TTL cache AND (until VTID-03504) no
+          # concurrent-build de-dupe. `warmBrainCache()` (the prewarm endpoint's
+          # whole purpose) was likewise a no-op, so /live/session/prewarm warmed
+          # only the legacy path the brain path never reads. Measured on prod
+          # 2026-08-05: orb.live.context.bootstrap ran a 2.0s p50 all day, then
+          # 17.4s p50 / 119.7s max between 14:14 and 14:22 UTC as one user's
+          # reconnects stacked builds on each other — and it degraded two
+          # uninvolved users on the same task. Turning this on restores the
+          # 5-min TTL reuse so a retry lands on a warm entry instead of paying
+          # a fresh ~4.4s build. Staleness contract is identical to the legacy
+          # VERTEX_BOOTSTRAP_CACHE that is already live here.
+          NEW_DEF=$(echo "$NEW_DEF" | jq '
+            .containerDefinitions[0].environment |=
+              ( [ .[] | select(.name | IN("FEATURE_ORB_FAST_START_ENV","FEATURE_ORB_BRAIN_CACHE_ENV") | not) ]
+                + [ {name:"FEATURE_ORB_FAST_START_ENV", value:"staging+prod"},
+                    {name:"FEATURE_ORB_BRAIN_CACHE_ENV", value:"staging+prod"} ] )')
+
+          # BOOTSTRAP-NOVA-SONIC-VOICE: only when explicitly requested, replace
+          # the Nova env block (region/model stay pinned — never inputs).
+          if [ -n "$NOVA_ENABLED_INPUT" ]; then
+            echo "Applying Nova canary env override: enabled=$NOVA_ENABLED_INPUT"
+            NEW_DEF=$(echo "$NEW_DEF" | jq \
+              --arg E "$NOVA_ENABLED_INPUT" --arg U "$NOVA_USERS_INPUT" --arg T "$NOVA_TENANTS_INPUT" '
+                .containerDefinitions[0].environment |=
+                  ( [ .[] | select(.name | IN("NOVA_SONIC_ENABLED","NOVA_SONIC_REGION","NOVA_SONIC_MODEL_ID",
+                                              "NOVA_SONIC_CANARY_USER_IDS","NOVA_SONIC_CANARY_TENANT_IDS") | not) ]
+                    + [ {name:"NOVA_SONIC_ENABLED", value:$E},
+                        {name:"NOVA_SONIC_REGION", value:"eu-north-1"},
+                        {name:"NOVA_SONIC_MODEL_ID", value:"amazon.nova-2-sonic-v1:0"},
+                        {name:"NOVA_SONIC_CANARY_USER_IDS", value:$U},
+                        {name:"NOVA_SONIC_CANARY_TENANT_IDS", value:$T} ] )')
+          fi
+          NEW_ARN=$(aws ecs register-task-definition --cli-input-json "$NEW_DEF" \
+            --query 'taskDefinition.taskDefinitionArn' --output text)
+          echo "Registered $NEW_ARN"
+          aws ecs update-service --cluster "${{ env.ECS_CLUSTER }}" --service "${{ env.ECS_SERVICE }}" \
+            --task-definition "$NEW_ARN" >/dev/null
+          echo "Waiting for service to stabilize (up to ~10 min)…"
+          aws ecs wait services-stable --cluster "${{ env.ECS_CLUSTER }}" --services "${{ env.ECS_SERVICE }}"
+          echo "Service stable on $NEW_ARN"
+
+      - name: Smoke — env=production + deployed commit live
+        run: |
+          set -e
+          URL="${{ env.GATEWAY_URL }}"
+          SHA="${{ steps.source.outputs.sha }}"
+          for i in 1 2 3 4 5 6; do
+            HEALTH=$(curl -fsS "$URL/api/v1/admin/health" 2>/dev/null || echo '')
+            BUILD=$(curl -fsS "$URL/api/v1/admin/build-info" 2>/dev/null || echo '')
+            ALIVE=$(curl -fsS -o /dev/null -w "%{http_code}" "$URL/alive" 2>/dev/null || echo '')
+            ENV=$(echo "$HEALTH" | jq -r '.env // empty')
+            COMMIT=$(echo "$BUILD" | jq -r '.git_commit // empty')
+            if [ "$ENV" = "production" ] && [ "$COMMIT" = "$SHA" ] && [ "$ALIVE" = "200" ]; then
+              echo "✓ env=production, git_commit=$COMMIT, /alive=200"
+              exit 0
+            fi
+            echo "Attempt $i: env='$ENV' commit='$COMMIT' alive='$ALIVE' (want production/$SHA/200) — retry in 15s"
+            sleep 15
+          done
+          echo "::error::Smoke failed — health/build-info/alive did not report env=production with the deployed commit"
+          exit 1
+
+      - name: Emit OASIS event + software_versions row (best-effort)
+        if: always()
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SVC: ${{ secrets.SUPABASE_SERVICE_ROLE }}
+          SHA: ${{ steps.source.outputs.sha }}
+          SHORT: ${{ steps.source.outputs.short }}
+          OUTCOME: ${{ job.status }}
+          REASON: ${{ inputs.reason }}
+        run: |
+          set +e
+          if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_SVC" ]; then
+            echo "::notice::SUPABASE_URL / SUPABASE_SERVICE_ROLE repo secrets not set — skipping OASIS/CLOCK emission (deploy itself unaffected)."
+            exit 0
+          fi
+          STATUS=$([ "$OUTCOME" = "success" ] && echo success || echo error)
+          TOPIC=$([ "$OUTCOME" = "success" ] && echo prod.deploy.completed || echo prod.deploy.failed)
+          curl -fsS -X POST "$SUPABASE_URL/rest/v1/software_versions" \
+            -H "Content-Type: application/json" -H "apikey: $SUPABASE_SVC" \
+            -H "Authorization: Bearer $SUPABASE_SVC" -H "Prefer: return=minimal" \
+            -d "$(jq -nc --arg sha "$SHA" --arg st "$STATUS" \
+              '{service:"vitana-gateway-aws-dr", git_commit:$sha, deploy_type:"normal", initiator:"agent", status:$st, environment:"production"}')" \
+            || echo "::warning::software_versions insert failed; continuing."
+          curl -fsS -X POST "$SUPABASE_URL/rest/v1/oasis_events" \
+            -H "Content-Type: application/json" -H "apikey: $SUPABASE_SVC" \
+            -H "Authorization: Bearer $SUPABASE_SVC" -H "Prefer: return=minimal" \
+            -d "$(jq -nc --arg sha "$SHA" --arg short "$SHORT" --arg st "$STATUS" --arg topic "$TOPIC" --arg reason "$REASON" '{
+              vtid: "VTID-03398",
+              topic: $topic,
+              service: "vitana-gateway-aws-dr",
+              role: "CICD",
+              model: "aws-prod-deploy",
+              status: $st,
+              message: ("AWS-PROD-DEPLOY-GATEWAY: " + $short + " (" + $reason + ")"),
+              metadata: { env: "production", platform: "aws-ecs-dr", git_commit: $sha, workflow: "AWS-PROD-DEPLOY-GATEWAY.yml", reason: $reason }
+            }')" || echo "::warning::oasis_events insert failed; continuing."
+
+      - name: Summary
+        if: success()
+        run: |
+          {
+            echo "## AWS Production (DR) gateway deploy"
+            echo "- Mode: ${{ steps.source.outputs.mode }}"
+            echo "- Image: \`${{ steps.source.outputs.image || steps.build.outputs.image }}\`"
+            echo "- Commit: \`${{ steps.source.outputs.sha }}\`"
+            echo "- Verified live at: ${{ env.GATEWAY_URL }}"
+            echo "- Reason: ${{ env.DEPLOY_REASON }}"
+            echo "- VTID: VTID-03398"
+          } >> "$GITHUB_STEP_SUMMARY"

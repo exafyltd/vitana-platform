@@ -140,7 +140,7 @@ describe('L1 selectUpstreamProvider — pure selection policy', () => {
     expect(d.livekitReady).toBe(false);
   });
 
-  it('9. unknown/garbage env value falls through to system_config', () => {
+  it('9. unknown/garbage env value pins to Vertex with a validation reason (BOOTSTRAP-NOVA-SONIC-VOICE)', () => {
     const d = selectUpstreamProvider(
       ctx({
         envProviderOverride: 'gemini-direct',
@@ -148,10 +148,10 @@ describe('L1 selectUpstreamProvider — pure selection policy', () => {
       }),
     );
     expect(d.provider).toBe('vertex');
-    expect(d.reason).toBe('system_config_vertex');
+    expect(d.reason).toBe('provider_invalid');
   });
 
-  it('9b. unknown env + unknown system_config → default', () => {
+  it('9b. unknown env value pins to Vertex regardless of system_config (BOOTSTRAP-NOVA-SONIC-VOICE)', () => {
     const d = selectUpstreamProvider(
       ctx({
         envProviderOverride: 'mistral',
@@ -161,7 +161,7 @@ describe('L1 selectUpstreamProvider — pure selection policy', () => {
     );
     expect(d.provider).toBe('vertex');
     expect(d.requested).toBeNull();
-    expect(d.reason).toBe('default');
+    expect(d.reason).toBe('provider_invalid');
   });
 
   it('10. whitespace + uppercase env values normalize', () => {
@@ -396,5 +396,142 @@ describe('L2.1 selectUpstreamProvider — canary gate', () => {
         }),
       ),
     ).not.toThrow();
+  });
+});
+
+// BOOTSTRAP-NOVA-SONIC-VOICE (Task 5) — Nova decision-table precedence.
+describe('Nova 2 Sonic selection (BOOTSTRAP-NOVA-SONIC-VOICE)', () => {
+  const novaAllPass = {
+    enabled: true,
+    identityAllowed: true,
+    languageSupported: true,
+    runtime: 'aws-ecs' as const,
+  };
+  const identity = { userId: 'user-1', tenantId: 'tenant-1' };
+
+  it('1. ORB_LIVE_PROVIDER=vertex is the emergency rollback — beats the Nova canary', () => {
+    const d = selectUpstreamProvider({
+      envProviderOverride: 'vertex',
+      nova: novaAllPass,
+      identity,
+    });
+    expect(d.provider).toBe('vertex');
+    expect(d.reason).toBe('env_explicit_vertex');
+  });
+
+  it('2. explicit nova_sonic selects Nova only when every gate passes', () => {
+    const d = selectUpstreamProvider({
+      envProviderOverride: 'nova_sonic',
+      nova: novaAllPass,
+      identity,
+    });
+    expect(d).toEqual(expect.objectContaining({
+      provider: 'nova_sonic',
+      requested: 'nova_sonic',
+      reason: 'env_explicit_nova_sonic',
+      novaReady: true,
+      canary: true,
+    }));
+  });
+
+  it('3. enabled allowlisted canary lifts a shared vertex DB flag', () => {
+    const d = selectUpstreamProvider({
+      envProviderOverride: undefined,
+      systemConfigActiveProvider: 'vertex',
+      nova: novaAllPass,
+      identity,
+    });
+    expect(d).toEqual(expect.objectContaining({
+      provider: 'nova_sonic',
+      reason: 'nova_canary_allowlisted',
+      canary: true,
+      novaReady: true,
+    }));
+  });
+
+  it('3b. canary also lifts the pure default (no signals at all)', () => {
+    const d = selectUpstreamProvider({ nova: novaAllPass, identity });
+    expect(d.provider).toBe('nova_sonic');
+    expect(d.reason).toBe('nova_canary_allowlisted');
+  });
+
+  it('4. each failed gate degrades an explicit request to Vertex with a typed reason', () => {
+    expect(selectUpstreamProvider({
+      envProviderOverride: 'nova_sonic',
+      nova: { ...novaAllPass, enabled: false },
+      identity,
+    })).toEqual(expect.objectContaining({ provider: 'vertex', reason: 'nova_disabled' }));
+
+    expect(selectUpstreamProvider({
+      envProviderOverride: 'nova_sonic',
+      nova: { ...novaAllPass, languageSupported: false },
+      identity,
+    })).toEqual(expect.objectContaining({ provider: 'vertex', reason: 'nova_language_unsupported' }));
+
+    expect(selectUpstreamProvider({
+      envProviderOverride: 'nova_sonic',
+      nova: { ...novaAllPass, identityAllowed: false },
+      identity,
+    })).toEqual(expect.objectContaining({ provider: 'vertex', reason: 'nova_not_allowlisted', canary: true }));
+
+    expect(selectUpstreamProvider({
+      envProviderOverride: 'nova_sonic',
+      nova: { ...novaAllPass, runtime: 'gcp-cloud-run' },
+      identity,
+    })).toEqual(expect.objectContaining({ provider: 'vertex', reason: 'nova_runtime_unsupported' }));
+
+    expect(selectUpstreamProvider({
+      envProviderOverride: 'nova_sonic',
+      identity,
+    })).toEqual(expect.objectContaining({ provider: 'vertex', reason: 'nova_disabled' }));
+  });
+
+  it('4b. failed canary gates fall through SILENTLY to the ordinary vertex reasons', () => {
+    expect(selectUpstreamProvider({
+      systemConfigActiveProvider: 'vertex',
+      nova: { ...novaAllPass, identityAllowed: false },
+      identity,
+    }).reason).toBe('system_config_vertex');
+    expect(selectUpstreamProvider({
+      nova: { ...novaAllPass, languageSupported: false },
+      identity,
+    }).reason).toBe('default');
+    expect(selectUpstreamProvider({
+      nova: { ...novaAllPass, runtime: 'gcp-cloud-run' },
+      identity,
+    }).reason).toBe('default');
+  });
+
+  it('5. LiveKit selection behavior is unchanged by the Nova context', () => {
+    const d = selectUpstreamProvider({
+      envProviderOverride: 'livekit',
+      livekitCredentials: { url: 'wss://x', apiKey: 'k', apiSecret: 's' },
+      canary: { enabled: true, allowedUsers: ['user-1'] },
+      nova: novaAllPass,
+      identity,
+    });
+    expect(d.provider).toBe('livekit');
+    expect(d.reason).toBe('canary_selected_livekit');
+  });
+
+  it('6. unknown provider strings pin to Vertex with a validation reason', () => {
+    const d = selectUpstreamProvider({
+      envProviderOverride: 'novasonic',
+      nova: novaAllPass,
+      identity,
+    });
+    expect(d.provider).toBe('vertex');
+    expect(d.reason).toBe('provider_invalid');
+    expect(d.error).toBeTruthy();
+  });
+
+  it('system_config nova_sonic routes through the same explicit gate', () => {
+    const d = selectUpstreamProvider({
+      systemConfigActiveProvider: 'nova_sonic',
+      nova: novaAllPass,
+      identity,
+    });
+    expect(d.provider).toBe('nova_sonic');
+    expect(d.reason).toBe('system_config_nova_sonic');
   });
 });

@@ -201,9 +201,31 @@ async function emitD49Event(
 
 /**
  * Generate deterministic hash for input verification
+ *
+ * BUGFIX: JSON.stringify(input, Object.keys(input).sort()) uses the
+ * *array* form of the replacer, which JS applies recursively — any
+ * nested object whose own keys aren't in that top-level key list gets
+ * collapsed to `{}`. In practice this silently dropped the entire
+ * contents of nested objects (e.g. `risk_window` in the input_hash
+ * computation), so the hash stopped reflecting the actual input and
+ * two mitigations generated from completely different risk windows
+ * could hash identically. A replacer *function* that sorts keys at
+ * every level fixes this while keeping the hash deterministic
+ * regardless of property insertion order.
  */
 function hashInput(input: unknown): string {
-  const str = JSON.stringify(input, Object.keys(input as object).sort());
+  const sortKeysReplacer = (_key: string, value: unknown): unknown => {
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+      return Object.keys(value as Record<string, unknown>)
+        .sort()
+        .reduce((sorted: Record<string, unknown>, k) => {
+          sorted[k] = (value as Record<string, unknown>)[k];
+          return sorted;
+        }, {});
+    }
+    return value;
+  };
+  const str = JSON.stringify(input, sortKeysReplacer);
   return createHash('sha256').update(str).digest('hex').substring(0, 16);
 }
 

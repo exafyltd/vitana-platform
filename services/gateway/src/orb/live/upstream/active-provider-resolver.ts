@@ -39,7 +39,7 @@
  * NEVER throws.
  */
 
-export type ActiveProviderName = 'vertex' | 'livekit';
+export type ActiveProviderName = 'vertex' | 'livekit' | 'nova_sonic';
 
 export type ResolutionReason =
   | 'default_vertex'              // globalActiveProvider=vertex
@@ -47,7 +47,12 @@ export type ResolutionReason =
   | 'canary_not_allowlisted'      // global=livekit + canary on + identity not in list
   | 'livekit_config_invalid'      // creds missing (URL / api key / api secret)
   | 'pinned_until_agent_ready'    // all canary gates pass BUT agent not enabled (L2.2a pin)
-  | 'livekit_all_gates_pass';     // effective=livekit
+  | 'livekit_all_gates_pass'      // effective=livekit
+  // BOOTSTRAP-NOVA-SONIC-VOICE: Nova is a GATEWAY-side upstream — the
+  // browser transport is identical to Vertex (gateway WS/SSE), so the
+  // frontend keeps `effectiveProvider='vertex'` and needs NO Nova branch.
+  // The gateway's own selector routes the upstream to Nova per-identity.
+  | 'nova_gateway_transport';
 
 export interface ResolverCanaryInput {
   enabled: boolean;
@@ -105,8 +110,26 @@ export function resolveActiveProviderForCaller(
   ctx: ResolverContext,
 ): ActiveProviderResolution {
   const requestedProvider: ActiveProviderName =
-    ctx.globalActiveProvider === 'livekit' ? 'livekit' : 'vertex';
+    ctx.globalActiveProvider === 'livekit'
+      ? 'livekit'
+      : ctx.globalActiveProvider === 'nova_sonic'
+        ? 'nova_sonic'
+        : 'vertex';
   const livekitReady = ctx.livekitCredsValid === true;
+
+  // BOOTSTRAP-NOVA-SONIC-VOICE: a global nova_sonic flag never changes the
+  // BROWSER transport — Nova sessions ride the same gateway WS/SSE the
+  // Vertex path uses, and the widget must not grow a Nova branch.
+  if (requestedProvider === 'nova_sonic') {
+    return {
+      requestedProvider,
+      effectiveProvider: 'vertex',
+      livekitReady,
+      canaryEligible: false,
+      agentReady: ctx.agentReady === true,
+      reason: 'nova_gateway_transport',
+    };
+  }
   const canaryEligible =
     ctx.canary?.enabled === true && isIdentityAllowlisted(ctx.canary, ctx.identity);
   const agentReady = ctx.agentReady === true;

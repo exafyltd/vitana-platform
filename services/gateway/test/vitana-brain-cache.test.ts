@@ -104,4 +104,67 @@ describe('vitana-brain-cache', () => {
     await new Promise((r) => setTimeout(r, 0));
     expect(brainCacheSize()).toBe(0);
   });
+
+  // VTID-03504 — the stampede guard must not depend on the caching flag.
+  describe('single-flight de-dupe is independent of ORB_BRAIN_CACHE', () => {
+    it('flag OFF → concurrent callers still share ONE in-flight build', async () => {
+      delete process.env[FLAG];
+      let resolve!: (v: unknown) => void;
+      mockBuild.mockImplementation(() => new Promise((r) => { resolve = r as (v: unknown) => void; }));
+
+      // Ten simultaneous starts — the shape of a widget reconnect storm.
+      const calls = Array.from({ length: 10 }, () => buildBrainSystemInstructionCached(baseInput));
+      resolve({ instruction: 'X', contextPack: {} });
+      const results = await Promise.all(calls);
+
+      expect(mockBuild).toHaveBeenCalledTimes(1);
+      expect(results.every((r) => r.instruction === 'X')).toBe(true);
+    });
+
+    it('flag OFF → the slot is released once the build settles (next call rebuilds)', async () => {
+      delete process.env[FLAG];
+      await buildBrainSystemInstructionCached(baseInput);
+      expect(brainCacheSize()).toBe(0);
+      await buildBrainSystemInstructionCached(baseInput);
+      expect(mockBuild).toHaveBeenCalledTimes(2);
+    });
+
+    it('flag OFF → a rejected build does not wedge the slot', async () => {
+      delete process.env[FLAG];
+      mockBuild.mockImplementationOnce(() => Promise.reject(new Error('boom')));
+      await expect(buildBrainSystemInstructionCached(baseInput)).rejects.toThrow('boom');
+      await new Promise((r) => setTimeout(r, 0));
+      expect(brainCacheSize()).toBe(0);
+      const r = await buildBrainSystemInstructionCached(baseInput);
+      expect(r.instruction).toBe('INSTR');
+    });
+
+    it('flag ON → a build outliving the TTL is joined, not duplicated', async () => {
+      process.env[FLAG] = 'staging+prod';
+      let t = 1000;
+      const now = () => t;
+      let resolve!: (v: unknown) => void;
+      mockBuild.mockImplementation(() => new Promise((r) => { resolve = r as (v: unknown) => void; }));
+
+      const first = buildBrainSystemInstructionCached(baseInput, { now });
+      t += 5 * 60 * 1000 + 1; // past the TTL, but the build has not finished
+      const second = buildBrainSystemInstructionCached(baseInput, { now });
+
+      resolve({ instruction: 'SLOW', contextPack: {} });
+      await Promise.all([first, second]);
+      expect(mockBuild).toHaveBeenCalledTimes(1);
+    });
+
+    it('concurrent callers for DIFFERENT users are not collapsed together', async () => {
+      delete process.env[FLAG];
+      const resolvers: Array<(v: unknown) => void> = [];
+      mockBuild.mockImplementation(() => new Promise((r) => { resolvers.push(r as (v: unknown) => void); }));
+
+      const a = buildBrainSystemInstructionCached(baseInput);
+      const b = buildBrainSystemInstructionCached({ ...baseInput, user_id: 'u2' });
+      expect(mockBuild).toHaveBeenCalledTimes(2);
+      resolvers.forEach((r) => r({ instruction: 'Y', contextPack: {} }));
+      await Promise.all([a, b]);
+    });
+  });
 });

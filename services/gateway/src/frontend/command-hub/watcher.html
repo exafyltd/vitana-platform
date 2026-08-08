@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Watcher · Vitana Command Hub</title>
+  <link rel="stylesheet" href="/command-hub/styles.css?v=20260731-watcher-panel" />
+  <link rel="stylesheet" href="/command-hub/watcher.css?v=20260731-watcher-panel" />
+</head>
+<body class="ch-body">
+  <header class="ch-header">
+    <a href="/command-hub/" class="ch-back">← Command Hub</a>
+    <h1>Watcher</h1>
+    <span id="w-status" class="ch-muted">Loading…</span>
+  </header>
+
+  <main class="w-main">
+    <!--
+      Observer health. Deliberately the first thing on the page: a Watcher
+      that has silently stopped recording looks identical to a quiet week,
+      and the whole point of the cursor's last_error / last_written fields is
+      that the difference is visible rather than inferred.
+    -->
+    <section class="w-section" aria-label="Observer health">
+      <h2>Observer</h2>
+      <div id="w-health">
+        <div class="w-loading">Loading observer health…</div>
+      </div>
+    </section>
+
+    <section class="w-section" aria-label="Timeline lookup">
+      <h2>Timeline</h2>
+      <p class="ch-muted">
+        Reconstruct what actually happened to one unit of work. A VTID spans
+        every execution, PR and session that carried it; a work-unit id is a
+        single execution or session in isolation.
+      </p>
+      <form id="w-timeline-form" class="w-form">
+        <label class="w-label" for="w-timeline-input">VTID or work-unit id</label>
+        <input id="w-timeline-input" class="w-input" type="text"
+               placeholder="VTID-03460 or an execution uuid" />
+        <button id="w-timeline-go" class="w-btn" type="submit">Load</button>
+      </form>
+      <div id="w-timeline" class="w-timeline"></div>
+    </section>
+
+    <section class="w-section" aria-label="Reminder preview">
+      <h2>What would be injected</h2>
+      <p class="ch-muted">
+        The exact ranked, budgeted block a prompt would receive at this stage.
+        Previewing here does <strong>not</strong> count as “shown”, so
+        browsing cannot move the auto-mute denominator.
+      </p>
+      <form id="w-remind-form" class="w-form">
+        <label class="w-label" for="w-remind-stage">Stage</label>
+        <select id="w-remind-stage" class="w-input">
+          <option value="planning">planning</option>
+          <option value="execute" selected>execute</option>
+          <option value="validate">validate</option>
+          <option value="ci">ci</option>
+          <option value="merge">merge</option>
+          <option value="deploy">deploy</option>
+          <option value="verify">verify</option>
+        </select>
+        <button id="w-remind-go" class="w-btn" type="submit">Preview</button>
+      </form>
+      <div id="w-remind" class="w-remind"></div>
+    </section>
+  </main>
+
+  <script src="/command-hub/watcher.js?v=20260731-watcher-panel"></script>
+</body>
+</html>

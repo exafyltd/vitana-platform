@@ -30,6 +30,7 @@ import { getAdaptationStatus } from './adaptation-applier';
 import { getUserRoutines } from './pattern-extractor';
 import { countActiveUsageDays } from './active-usage';
 import { buildJourneyV2Awareness } from './awareness-extensions';
+import { getJourneyState } from '../journey/user-journey-service';
 import type {
   UserAwareness,
   TenureStage,
@@ -97,6 +98,7 @@ export async function getAwarenessContext(
     userRoutines,
     activeUsageDays,
     sessionsTodayAndYesterday,
+    journeyState,
   ] = await Promise.all([
     safeGatherUserContext(userId, tenantId, supabase),
     fetchLastSessionInfo(userId).catch(() => null),
@@ -108,10 +110,15 @@ export async function getAwarenessContext(
     getUserRoutines(userId, 8).catch(() => []),
     countActiveUsageDays(userId).catch(() => 0),
     getSessionsTodayAndYesterday(userId, resolvedTz).catch(() => ({ today: [], yesterday_last: null })),
+    // Canonical day_in_journey — same source /api/v1/my-journey and the ORB
+    // greeting use (user_journey.started_at, pause/restart-aware). Falls back
+    // to raw days-since-signup math inside buildJourney() only when this is
+    // unavailable, instead of always re-deriving from uc.createdAt.
+    getJourneyState(supabase as any, userId).catch(() => null),
   ]);
 
   const tenure = buildTenure(userContext, activeUsageDays);
-  const journey = buildJourney(tenure.days_since_signup);
+  const journey = buildJourney(journeyState?.day_in_journey ?? tenure.days_since_signup);
   const community_signals = buildCommunitySignals(userContext);
 
   // Journey Conversation V2 (spec §3) — extension block derived AFTER the

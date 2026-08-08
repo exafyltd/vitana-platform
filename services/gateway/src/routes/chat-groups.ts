@@ -25,7 +25,7 @@ import {
   AuthenticatedRequest,
 } from '../middleware/auth-supabase-jwt';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
-import { notifyUserAsync } from '../services/notification-service';
+import { notifyUser } from '../services/notification-service';
 import { VITANA_BOT_USER_ID, isVitanaBot } from '../lib/vitana-bot';
 import { processConversationTurn } from '../services/conversation-client';
 import { emitOasisEvent } from '../services/oasis-event-service';
@@ -324,14 +324,23 @@ router.post('/:id/send', requireAuth, requireTenant, async (req: Request, res: R
     }
   }
 
-  fanoutGroupNotifications(
-    supabase,
-    groupId,
-    identity.user_id,
-    identity.tenant_id!,
-    fanoutBody,
-    data.id,
-  ).catch(err => console.warn('[ChatGroups] Fanout failed:', err.message));
+  // Awaited (not fire-and-forget) — Cloud Run can freeze/recycle the
+  // container the instant res.status(201) flushes, silently dropping any
+  // still-in-flight background promise (same failure mode confirmed live
+  // and fixed for daily-feature-tip; see scheduled-notifications.ts
+  // BOOTSTRAP-DAILY-FEATURE-TIP and notifyUser's caller in chat.ts /send).
+  try {
+    await fanoutGroupNotifications(
+      supabase,
+      groupId,
+      identity.user_id,
+      identity.tenant_id!,
+      fanoutBody,
+      data.id,
+    );
+  } catch (err: any) {
+    console.warn('[ChatGroups] Fanout failed:', err?.message || err);
+  }
 
   if (trimmed.length > 0 && VITANA_MENTION_RE.test(trimmed) && !isVitanaBot(identity.user_id)) {
     handleVitanaGroupMention(
@@ -535,27 +544,39 @@ async function fanoutGroupNotifications(
 
   const body = content.length > 100 ? content.slice(0, 97) + '...' : content;
 
-  for (const m of (members || []) as Array<{ user_id: string }>) {
-    if (m.user_id === senderId) continue;
-    if (isVitanaBot(m.user_id)) continue;
-    notifyUserAsync(
-      m.user_id,
-      tenantId,
-      'new_chat_message',
-      {
-        title: groupName,
-        body: `${senderName}: ${body}`,
-        data: {
-          type: 'new_group_message',
-          group_id: groupId,
-          sender_id: senderId,
-          sender_name: senderName,
-          message_id: messageId,
-          url: `/inbox/g/${groupId}`,
+  const recipients = (members || []).filter(
+    (m: { user_id: string }) => m.user_id !== senderId && !isVitanaBot(m.user_id),
+  ) as Array<{ user_id: string }>;
+
+  // Promise.allSettled so one bad member can't block the rest, and so the
+  // caller's await actually finishes before Cloud Run can freeze the
+  // container (see call site's comment for why fire-and-forget silently
+  // drops pushes here).
+  const results = await Promise.allSettled(
+    recipients.map((m) =>
+      notifyUser(
+        m.user_id,
+        tenantId,
+        'new_chat_message',
+        {
+          title: groupName,
+          body: `${senderName}: ${body}`,
+          data: {
+            type: 'new_group_message',
+            group_id: groupId,
+            sender_id: senderId,
+            sender_name: senderName,
+            message_id: messageId,
+            url: `/inbox/g/${groupId}`,
+          },
         },
-      },
-      supabase,
-    );
+        supabase,
+      ),
+    ),
+  );
+  const failed = results.filter((r) => r.status === 'rejected').length;
+  if (failed > 0) {
+    console.warn(`[ChatGroups] fanout: ${failed}/${results.length} notifyUser calls rejected`);
   }
 }
 
@@ -711,25 +732,33 @@ router.post('/:id/refanout-welcome', requireAuth, requireExafyAdmin, async (req:
       continue;
     }
 
-    notifyUserAsync(
-      m.user_id,
-      tenantId,
-      'new_chat_message',
-      {
-        title: groupName,
-        body: `Vitana: ${bodyPreview}`,
-        data: {
-          type: 'new_group_message',
-          group_id: groupId,
-          sender_id: welcome.sender_id,
-          sender_name: 'Vitana',
-          message_id: welcome.id,
-          idempotency_key: idemKey,
-          url: `/inbox/g/${groupId}`,
+    // Awaited (not fire-and-forget) — this loop already awaits a DB query
+    // per member above, so awaiting the push here doesn't change the
+    // endpoint's shape, and avoids the same Cloud Run freeze-after-response
+    // risk as the other notifyUserAsync call sites in this file.
+    try {
+      await notifyUser(
+        m.user_id,
+        tenantId,
+        'new_chat_message',
+        {
+          title: groupName,
+          body: `Vitana: ${bodyPreview}`,
+          data: {
+            type: 'new_group_message',
+            group_id: groupId,
+            sender_id: welcome.sender_id,
+            sender_name: 'Vitana',
+            message_id: welcome.id,
+            idempotency_key: idemKey,
+            url: `/inbox/g/${groupId}`,
+          },
         },
-      },
-      supabase,
-    );
+        supabase,
+      );
+    } catch (err: any) {
+      console.warn(`[ChatGroups] refanout-welcome notifyUser failed for ${m.user_id}:`, err?.message || err);
+    }
     fired++;
   }
 

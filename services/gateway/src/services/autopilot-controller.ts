@@ -652,6 +652,25 @@ export async function markInProgress(vtid: string, runId?: string): Promise<bool
     return false;
   }
 
+  // BUGFIX (test-coverage pass, VTID-01178 area): reject an invalid
+  // transition BEFORE performing side effects. Previously this function
+  // unconditionally called updateLedgerStatus(vtid, 'in_progress') for any
+  // existing run, then only validated the FSM transition afterwards inside
+  // transitionState(). For a run already past 'allocated'/'scheduled' —
+  // most importantly one already 'completed' or 'failed' — that meant a
+  // stray/duplicate markInProgress() call (retry, race, replayed event)
+  // would silently regress vtid_ledger.status back to 'in_progress' while
+  // is_terminal stayed true, producing an inconsistent terminal row. This
+  // violates the hard invariant "IF is_terminal=true THEN DO NOT MODIFY
+  // TASK". Bailing out here (matching the same isValidTransition check
+  // transitionState() already performs) makes the ledger write and the
+  // in-memory FSM agree, and costs nothing on the normal
+  // allocated/scheduled -> in_progress path.
+  if (!isValidTransition(run.state, 'in_progress')) {
+    console.error(`[VTID-01178] Rejecting markInProgress for ${vtid}: invalid transition ${run.state} -> in_progress`);
+    return false;
+  }
+
   // VTID-01190: HARD ENFORCEMENT - Verify spec exists and is valid before execution
   const specEnforcement = await enforceSpecRequirement(vtid);
   if (!specEnforcement.allowed) {

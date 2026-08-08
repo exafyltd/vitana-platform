@@ -496,3 +496,63 @@ export async function awaitAutopilotExecution(
   }
   return { ok: true, result: result.data };
 }
+
+// =============================================================================
+// VTID-03463 — Watcher reminders (Phase 4)
+// =============================================================================
+
+/**
+ * A single reminder as returned by GET /api/v1/watcher/remind.
+ * Mirrors the gateway's `Reminder` shape; duplicated rather than imported
+ * because worker-runner is a separate package with its own build.
+ */
+export interface WatcherReminder {
+  reminder_id: string;
+  kind: 'rule' | 'lesson';
+  text: string;
+  source: string;
+  severity: 'info' | 'warn' | 'block_candidate';
+}
+
+export interface WatcherReminderBundle {
+  block: string;
+  reminders: WatcherReminder[];
+  truncated: { dropped: number; reason?: string };
+}
+
+/**
+ * Fetch the ranked reminder block for a worker execution.
+ *
+ * This is the piece the worker-runner has never had. `dev_autopilot_prompt_
+ * learnings` was scoped by `scanner`, and the worker-runner has no scanner,
+ * so it was structurally unable to read any accumulated memory at all — it
+ * repeated every mistake the autopilot had already learned from.
+ *
+ * Best-effort by design: returns null on ANY failure. A worker execution must
+ * never be blocked, slowed past its own timeout, or failed because the
+ * Watcher is unavailable. The reminder is a bonus, never a dependency.
+ */
+export async function fetchWatcherReminders(
+  config: RunnerConfig,
+  ctx: { stage?: string; vtid?: string; domain?: string },
+): Promise<WatcherReminderBundle | null> {
+  const params = new URLSearchParams({
+    stage: ctx.stage || 'execute',
+    record_shown: 'true',
+    actor: 'worker-runner',
+  });
+  if (ctx.vtid) params.set('vtid', ctx.vtid);
+  if (ctx.domain) params.set('service', ctx.domain);
+
+  try {
+    const r = await gatewayRequest<{ ok: boolean; data?: WatcherReminderBundle }>(
+      config,
+      `/api/v1/watcher/remind?${params.toString()}`,
+      { method: 'GET' },
+    );
+    if (!r.ok || !r.data?.data) return null;
+    return r.data.data;
+  } catch {
+    return null;
+  }
+}

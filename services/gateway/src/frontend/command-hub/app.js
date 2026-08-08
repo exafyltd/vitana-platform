@@ -2778,6 +2778,7 @@ const NAVIGATION_CONFIG = [
             { "key": "self-healing",    "label": "Self-Healing",       "path": "/command-hub/voice/self-healing/" },
             { "key": "test-contracts",  "label": "Test Contracts",     "path": "/command-hub/voice/test-contracts/" },
             { "key": "livekit-test",    "label": "LiveKit Test Bench", "path": "/command-hub/voice/livekit-test/" },
+            { "key": "nova-sonic-test", "label": "Nova Sonic Test Bench", "path": "/command-hub/voice/nova-sonic-test/" },
             { "key": "orb-ui-monitor",  "label": "Orb UI Monitor",     "path": "/command-hub/voice/orb-ui-monitor/" }
         ]
     },
@@ -5787,6 +5788,24 @@ function renderHeader() {
     publishBtn.className = 'header-pill header-pill--neutral';
     publishBtn.textContent = 'PUBLISH';
     publishBtn.onclick = async () => {
+        // window.VitanaStaging.env starts null and is filled in asynchronously
+        // by refreshEnv() (command-hub-staging.js). A click that lands before
+        // that first resolution used to silently fall through to the legacy
+        // modal below even on the PRODUCTION Command Hub — which does not
+        // poll for the deploy actually landing, so PUBLISH would report
+        // "dispatched" immediately while CLOCK kept showing the old revision.
+        // Resolve env first (refreshEnv() is TTL-cached, so this is a no-op
+        // fetch on every click after the first) so the branch below is never
+        // taken on stale/unknown env.
+        if (window.VitanaStaging && typeof window.VitanaStaging.refreshEnv === 'function' && !window.VitanaStaging.env) {
+            publishBtn.disabled = true;
+            publishBtn.textContent = 'PUBLISH';
+            try {
+                await window.VitanaStaging.refreshEnv();
+            } finally {
+                publishBtn.disabled = false;
+            }
+        }
         const isProdCH = window.VitanaStaging && window.VitanaStaging.env === 'production';
         if (isProdCH) {
             state.publishFlow = {
@@ -7264,6 +7283,9 @@ function renderModuleContent(moduleKey, tab) {
         container.appendChild(renderTestContractsPanel());
     } else if (moduleKey === 'voice' && tab === 'livekit-test') {
         container.appendChild(renderLivekitTestView());
+    } else if (moduleKey === 'voice' && tab === 'nova-sonic-test') {
+        // DEV-COMHU-0514 / BOOTSTRAP-NOVA-SONIC-VOICE: Nova 2 Sonic test bench
+        container.appendChild(renderNovaSonicTestView());
     } else if (moduleKey === 'voice' && tab === 'orb-ui-monitor') {
         // Migrated from testing-qa/e2e — scheduled UI E2E test runs
         container.appendChild(renderOrbMonitorSection());
@@ -36691,6 +36713,58 @@ function renderTestingQuickRunButtons(type, buttons) {
 
 // ─── Testing & QA: Tab Render Functions ────────────────────────────────
 
+// BOOTSTRAP-TEST-COVERAGE: static phase summary, see docs/TEST_COVERAGE_PLAN.md
+// for the full narrative (bugs found, follow-ups surfaced per phase). Update
+// this array when a new phase completes.
+var GATEWAY_COVERAGE_PHASES = [
+    { phase: '1', name: 'Un-quarantine sweep', suites: 11, tests: null, bugs: 1, status: 'done' },
+    { phase: '2', name: 'Tenancy & RBAC', suites: 24, tests: 381, bugs: 0, status: 'done' },
+    { phase: '3', name: 'Memory & intelligence stack', suites: 22, tests: 625, bugs: 2, status: 'done' },
+    { phase: '5', name: 'Autopilot subsystem', suites: 16, tests: 676, bugs: 1, status: 'done' },
+    { phase: '6', name: 'Vitana Brain + awareness engines', suites: 15, tests: 689, bugs: 3, status: 'done' },
+    { phase: '7', name: 'Voice/ORB tools (Nova-prioritized)', suites: 26, tests: 765, bugs: 2, status: 'done' },
+    { phase: '8', name: 'Frontend domain logic (vitana-v1)', suites: null, tests: null, bugs: 0, status: 'pending' },
+    { phase: '9', name: 'Sibling services & packages', suites: null, tests: null, bugs: 0, status: 'pending' },
+    { phase: '10', name: 'Edge functions (vitana-v1)', suites: null, tests: null, bugs: 0, status: 'pending' },
+    { phase: '11', name: 'Coverage ratchet (make CI checks required)', suites: null, tests: null, bugs: 0, status: 'pending' },
+];
+
+function renderGatewayCoveragePhasesTable() {
+    var wrap = document.createElement('div');
+    wrap.style.marginBottom = '1.5rem';
+
+    var titleRow = document.createElement('div');
+    titleRow.style.cssText = 'display:flex;align-items:center;gap:0.75rem;margin-bottom:0.5rem;';
+    titleRow.innerHTML = '<h3 style="margin:0;">Coverage Bootstrap — Phase Structure</h3>' +
+        '<span class="status-badge status-active" style="font-size:0.75rem;">593 suites / 11,716 tests (gateway)</span>';
+    wrap.appendChild(titleRow);
+
+    var subtitle = document.createElement('p');
+    subtitle.className = 'section-subtitle';
+    subtitle.style.marginTop = 0;
+    subtitle.textContent = 'BOOTSTRAP-TEST-COVERAGE — full narrative (bugs found, findings surfaced per phase) in docs/TEST_COVERAGE_PLAN.md.';
+    wrap.appendChild(subtitle);
+
+    var table = document.createElement('table');
+    table.className = 'list-table';
+    table.innerHTML = '<thead><tr><th>Phase</th><th>Scope</th><th>Suites</th><th>Tests</th><th>Bugs Found</th><th>Status</th></tr></thead>';
+    var tbody = document.createElement('tbody');
+    GATEWAY_COVERAGE_PHASES.forEach(function (p) {
+        var row = document.createElement('tr');
+        row.innerHTML =
+            '<td style="font-weight:600;">' + escapeHtml(p.phase) + '</td>' +
+            '<td>' + escapeHtml(p.name) + '</td>' +
+            '<td style="text-align:center;">' + (p.suites == null ? '—' : p.suites) + '</td>' +
+            '<td style="text-align:center;">' + (p.tests == null ? '—' : p.tests) + '</td>' +
+            '<td style="text-align:center;' + (p.bugs > 0 ? 'color:#f59e0b;font-weight:600;' : '') + '">' + p.bugs + '</td>' +
+            '<td><span class="status-badge status-' + (p.status === 'done' ? 'active' : 'pending') + '">' + (p.status === 'done' ? 'Done' : 'Pending') + '</span></td>';
+        tbody.appendChild(row);
+    });
+    table.appendChild(tbody);
+    wrap.appendChild(table);
+    return wrap;
+}
+
 function renderTestingUnitView() {
     var container = document.createElement('div');
     container.style.padding = '1.5rem';
@@ -36705,6 +36779,12 @@ function renderTestingUnitView() {
         '<li><strong>Coverage:</strong> c8/istanbul</li>' +
         '<li><strong>CI:</strong> Runs automatically on Cloud Build</li></ul>';
     container.appendChild(info);
+
+    // BOOTSTRAP-TEST-COVERAGE: phase-by-phase breakdown of the gateway unit
+    // test coverage bootstrap project (docs/TEST_COVERAGE_PLAN.md). Static
+    // summary — updated as new phases land — so testers/reviewers can see
+    // what's covered without reading the full plan doc.
+    container.appendChild(renderGatewayCoveragePhasesTable());
 
     // Quick run buttons
     container.appendChild(renderTestingQuickRunButtons('unit', [
@@ -37565,6 +37645,334 @@ async function triggerLivekitHourlyTests(btn) {
         btn.textContent = 'Trigger Run';
         showToast('Network error: ' + (e.message || 'Unknown'), 'error');
     }
+}
+
+/**
+ * DEV-COMHU-0514 / BOOTSTRAP-NOVA-SONIC-VOICE: Nova 2 Sonic Test Bench.
+ *
+ * Lives at /command-hub/voice/nova-sonic-test/. Sibling of the LiveKit Test
+ * Bench, for the third voice provider (Bedrock amazon.nova-2-sonic-v1:0,
+ * eu-north-1). Three sections:
+ *
+ *   1. STATUS — /api/v1/orb/nova-sonic/health (config, readiness, canary
+ *      counts, typed issues). Secret-free by construction.
+ *   2. AUTOMATED TESTS — POST /api/v1/voice-lab/nova/tests/run. Offline
+ *      checks always run (config readiness, selector decision table,
+ *      protocol codec round-trips, voice mapping); the opt-in LIVE probe
+ *      opens a real Bedrock stream with the runtime task-role credentials
+ *      and measures connect / first-response latency. Recent runs listed
+ *      below the results.
+ *   3. MANUAL PERFORMANCE TEST — a per-identity decision probe
+ *      (GET /api/v1/voice-lab/nova/decision) answers "would MY next ORB
+ *      session ride Nova?", plus a live ORB session monitor (polling
+ *      /api/v1/voice-lab/live/sessions) so the operator can speak through
+ *      the production ORB widget and watch the session's turns/latency in
+ *      real time. Nova sessions additionally emit
+ *      orb.upstream.nova.connect_succeeded with connect_ms in OASIS.
+ *
+ * Unlike the LiveKit bench this page needs no separate media client — Nova
+ * rides the exact same gateway WS/SSE browser transport as Vertex, so the
+ * manual test IS the production ORB widget.
+ */
+function renderNovaSonicTestView() {
+    var container = document.createElement('div');
+    container.className = 'nova-sonic-test-view';
+    container.style.cssText = 'padding:24px;max-width:1100px;margin:0 auto;font-family:system-ui,-apple-system,sans-serif;color:#e5e7eb;';
+    var disposed = false;
+
+    container.innerHTML = '<h2 style="margin:0 0 4px;color:#f97316;">Nova 2 Sonic Test Bench</h2>'
+        + '<p style="color:#94a3b8;font-size:13px;margin:0 0 16px;">Test bench for the Nova 2 Sonic voice provider (Bedrock <code>amazon.nova-2-sonic-v1:0</code> in <code>eu-north-1</code>, AWS-staging canary). Automated checks validate configuration, selection gates and the wire protocol; the live probe opens a real Bedrock stream and measures latency. For manual tests, Nova uses the SAME browser transport as Vertex — speak through the ORB as an allowlisted canary user and watch the session below.</p>';
+
+    // ---- 1. STATUS ------------------------------------------------------
+    var statusPanel = document.createElement('div');
+    statusPanel.style.cssText = 'padding:12px;background:#0f172a;border-radius:8px;margin-bottom:16px;border:1px solid #334155;';
+    statusPanel.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">'
+        + '<span style="color:#94a3b8;font-size:11px;letter-spacing:0.05em;">PROVIDER STATUS</span>'
+        + '<button class="nst-status-refresh" style="padding:4px 10px;background:#334155;color:#e5e7eb;border:none;border-radius:4px;cursor:pointer;font-size:11px;">Refresh</button>'
+        + '</div>'
+        + '<div class="nst-status-grid" style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;">'
+        + '<div><span style="color:#94a3b8;font-size:11px;">ENABLED</span><br><span class="nst-enabled" style="font-weight:bold;color:#facc15;">…</span></div>'
+        + '<div><span style="color:#94a3b8;font-size:11px;">READY</span><br><span class="nst-ready" style="font-weight:bold;color:#facc15;">…</span></div>'
+        + '<div><span style="color:#94a3b8;font-size:11px;">MODEL @ REGION</span><br><span class="nst-model" style="font-weight:bold;color:#e5e7eb;font-size:12px;">…</span></div>'
+        + '<div><span style="color:#94a3b8;font-size:11px;">CANARY (users/tenants)</span><br><span class="nst-canary" style="font-weight:bold;color:#e5e7eb;">…</span></div>'
+        + '</div>'
+        + '<div class="nst-issues" style="display:none;margin-top:8px;padding:8px 10px;background:#3a1212;border-left:3px solid #ef4444;font-size:12px;color:#fecaca;border-radius:4px;"></div>';
+    container.appendChild(statusPanel);
+
+    function loadStatus() {
+        fetch('/api/v1/orb/nova-sonic/health', { headers: buildContextHeaders() })
+            .then(function (r) { return r.json(); })
+            .then(function (h) {
+                if (disposed) return;
+                var en = statusPanel.querySelector('.nst-enabled');
+                var rd = statusPanel.querySelector('.nst-ready');
+                var md = statusPanel.querySelector('.nst-model');
+                var cn = statusPanel.querySelector('.nst-canary');
+                var is = statusPanel.querySelector('.nst-issues');
+                en.textContent = h.enabled ? 'yes' : 'no';
+                en.style.color = h.enabled ? '#22c55e' : '#94a3b8';
+                rd.textContent = h.ready ? 'yes' : 'no';
+                rd.style.color = h.ready ? '#22c55e' : '#facc15';
+                md.textContent = (h.model || '?') + ' @ ' + (h.region || '?');
+                cn.textContent = (h.canary_user_count || 0) + ' / ' + (h.canary_tenant_count || 0);
+                if (h.issues && h.issues.length > 0) {
+                    is.style.display = 'block';
+                    is.textContent = 'Typed config issues: ' + h.issues.join(', ');
+                } else {
+                    is.style.display = 'none';
+                }
+            })
+            .catch(function () {
+                if (disposed) return;
+                statusPanel.querySelector('.nst-model').textContent = 'health endpoint unreachable';
+            });
+    }
+    statusPanel.querySelector('.nst-status-refresh').addEventListener('click', loadStatus);
+    loadStatus();
+
+    // ---- 2. AUTOMATED TESTS --------------------------------------------
+    var autoPanel = document.createElement('div');
+    autoPanel.style.cssText = 'padding:12px;background:#0f172a;border-radius:8px;margin-bottom:16px;border:1px solid #334155;';
+    autoPanel.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:8px;">'
+        + '<span style="color:#94a3b8;font-size:11px;letter-spacing:0.05em;">AUTOMATED TESTS</span>'
+        + '<div style="display:flex;align-items:center;gap:12px;">'
+        + '<label style="display:flex;align-items:center;gap:6px;font-size:12px;color:#e5e7eb;cursor:pointer;">'
+        + '<input type="checkbox" class="nst-live-probe" /> include live probes (real Nova + Vertex streams; measures and compares latency)'
+        + '</label>'
+        + '<button class="nst-run-btn" style="padding:8px 16px;background:#f97316;color:#0f172a;border:none;border-radius:6px;font-weight:bold;cursor:pointer;">Run Tests</button>'
+        + '</div></div>'
+        + '<div class="nst-run-summary" style="display:none;margin-bottom:8px;font-size:13px;"></div>'
+        + '<div class="nst-run-results"></div>'
+        + '<div class="nst-recent" style="margin-top:12px;"></div>';
+    container.appendChild(autoPanel);
+
+    function paintRun(summary) {
+        var sm = autoPanel.querySelector('.nst-run-summary');
+        var box = autoPanel.querySelector('.nst-run-results');
+        sm.style.display = 'block';
+        var color = summary.failed > 0 ? '#ef4444' : '#22c55e';
+        sm.innerHTML = '<span style="color:' + color + ';font-weight:bold;">'
+            + summary.passed + ' passed · ' + summary.failed + ' failed · ' + summary.skipped + ' skipped'
+            + '</span> <span style="color:#94a3b8;">(' + summary.duration_ms + ' ms, run ' + String(summary.run_id).slice(0, 8) + ')</span>';
+        var rows = '';
+        (summary.checks || []).forEach(function (c) {
+            var badge = c.status === 'pass' ? '<span style="color:#22c55e;font-weight:bold;">PASS</span>'
+                : c.status === 'skip' ? '<span style="color:#94a3b8;font-weight:bold;">SKIP</span>'
+                : '<span style="color:#ef4444;font-weight:bold;">FAIL</span>';
+            rows += '<tr>'
+                + '<td style="padding:6px 8px;border-bottom:1px solid #1e293b;">' + badge + '</td>'
+                + '<td style="padding:6px 8px;border-bottom:1px solid #1e293b;color:#e5e7eb;">' + c.label + '</td>'
+                + '<td style="padding:6px 8px;border-bottom:1px solid #1e293b;color:#94a3b8;font-family:monospace;font-size:11px;">' + c.duration_ms + ' ms</td>'
+                + '<td style="padding:6px 8px;border-bottom:1px solid #1e293b;color:#94a3b8;font-size:12px;">' + c.detail + '</td>'
+                + '</tr>';
+        });
+        box.innerHTML = '<table style="width:100%;border-collapse:collapse;font-size:13px;">'
+            + '<thead><tr>'
+            + '<th style="text-align:left;padding:6px 8px;color:#94a3b8;font-size:11px;">STATUS</th>'
+            + '<th style="text-align:left;padding:6px 8px;color:#94a3b8;font-size:11px;">CHECK</th>'
+            + '<th style="text-align:left;padding:6px 8px;color:#94a3b8;font-size:11px;">TIME</th>'
+            + '<th style="text-align:left;padding:6px 8px;color:#94a3b8;font-size:11px;">DETAIL</th>'
+            + '</tr></thead><tbody>' + rows + '</tbody></table>';
+    }
+
+    function loadRecentRuns() {
+        fetch('/api/v1/voice-lab/nova/tests/runs', { headers: buildContextHeaders() })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                if (disposed || !data.ok) return;
+                var rec = autoPanel.querySelector('.nst-recent');
+                if (!data.runs || data.runs.length === 0) { rec.innerHTML = ''; return; }
+                var items = data.runs.slice(0, 5).map(function (run) {
+                    var color = run.failed > 0 ? '#ef4444' : '#22c55e';
+                    return '<span style="display:inline-block;margin-right:12px;color:#94a3b8;font-size:11px;">'
+                        + new Date(run.started_at).toLocaleTimeString() + ' '
+                        + '<span style="color:' + color + ';font-weight:bold;">' + run.passed + '✓/' + run.failed + '✗</span>'
+                        + (run.live_probe_requested ? ' (live)' : '')
+                        + '</span>';
+                }).join('');
+                rec.innerHTML = '<span style="color:#94a3b8;font-size:11px;letter-spacing:0.05em;">RECENT RUNS (this instance)</span><br>' + items;
+            })
+            .catch(function () { /* recent runs are best-effort */ });
+    }
+
+    autoPanel.querySelector('.nst-run-btn').addEventListener('click', function () {
+        var btn = autoPanel.querySelector('.nst-run-btn');
+        var live = autoPanel.querySelector('.nst-live-probe').checked;
+        btn.disabled = true;
+        btn.textContent = live ? 'Running (live probe)…' : 'Running…';
+        fetch('/api/v1/voice-lab/nova/tests/run', {
+            method: 'POST',
+            headers: buildContextHeaders({ 'Content-Type': 'application/json' }),
+            body: JSON.stringify({ live: live, trigger: 'command-hub' }),
+        })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                if (disposed) return;
+                btn.disabled = false;
+                btn.textContent = 'Run Tests';
+                if (data.ok && data.summary) {
+                    paintRun(data.summary);
+                    loadRecentRuns();
+                    if (data.summary.failed > 0) {
+                        showToast('Nova tests: ' + data.summary.failed + ' check(s) failed', 'error');
+                    } else {
+                        showToast('Nova tests passed (' + data.summary.passed + ' checks)', 'success');
+                    }
+                } else {
+                    showToast('Nova tests failed: ' + (data.error || 'unknown'), 'error');
+                }
+            })
+            .catch(function (e) {
+                if (disposed) return;
+                btn.disabled = false;
+                btn.textContent = 'Run Tests';
+                showToast('Network error: ' + (e.message || 'Unknown'), 'error');
+            });
+    });
+    loadRecentRuns();
+
+    // ---- 3. MANUAL PERFORMANCE TEST ------------------------------------
+    var manualPanel = document.createElement('div');
+    manualPanel.style.cssText = 'padding:12px;background:#0f172a;border-radius:8px;margin-bottom:16px;border:1px solid #334155;';
+    manualPanel.innerHTML = '<span style="color:#94a3b8;font-size:11px;letter-spacing:0.05em;">MANUAL PERFORMANCE TEST</span>'
+        + '<p style="color:#94a3b8;font-size:12px;margin:8px 0 12px;">Step 1 — probe which provider YOUR identity would get. Step 2 — pick a language and hit <b>Connect &amp; Talk</b> to speak voice-to-voice right here; the live session appears below with turns and audio counters. Compare wake→first-audio feel and barge-in against a Vertex session. Nova sessions emit <code>orb.upstream.nova.connect_succeeded</code> (connect_ms) and <code>orb.live.upstream.usage</code> in OASIS Events.</p>'
+        + '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px;">'
+        + '<select class="nst-lang" style="padding:8px 10px;background:#1e293b;color:#e5e7eb;border:1px solid #334155;border-radius:4px;">'
+        + '<option value="en">English (canary)</option>'
+        + '<option value="de">Deutsch (canary)</option>'
+        + '<option value="fr">Français (canary)</option>'
+        + '<option value="es">Español (canary)</option>'
+        + '<option value="sr">Srpski (expected fallback → vertex)</option>'
+        + '</select>'
+        + '<button class="nst-decision-btn" style="padding:8px 16px;background:#2563eb;color:#fff;border:none;border-radius:6px;font-weight:bold;cursor:pointer;">Probe my provider decision</button>'
+        + '<button class="nst-talk-btn" style="padding:8px 18px;background:#f97316;color:#0f172a;border:none;border-radius:6px;font-weight:bold;cursor:pointer;">🎙 Connect &amp; Talk</button>'
+        + '<span class="nst-decision-out" style="font-size:13px;color:#94a3b8;"></span>'
+        + '</div>'
+        + '<div class="nst-talk-hint" style="display:none;margin-bottom:12px;padding:8px 10px;border-left:3px solid #f97316;background:#1e293b;font-size:12px;color:#e5e7eb;border-radius:4px;"></div>'
+        + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">'
+        + '<span style="color:#94a3b8;font-size:11px;letter-spacing:0.05em;">LIVE ORB SESSIONS (auto-refresh 5s)</span>'
+        + '<span class="nst-sessions-updated" style="color:#64748b;font-size:11px;">--</span>'
+        + '</div>'
+        + '<div class="nst-sessions"></div>';
+    container.appendChild(manualPanel);
+
+    manualPanel.querySelector('.nst-decision-btn').addEventListener('click', function () {
+        var lang = manualPanel.querySelector('.nst-lang').value;
+        var out = manualPanel.querySelector('.nst-decision-out');
+        out.textContent = 'probing…';
+        fetch('/api/v1/voice-lab/nova/decision?lang=' + encodeURIComponent(lang), { headers: buildContextHeaders() })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                if (disposed) return;
+                if (!data.ok) { out.textContent = 'probe failed: ' + (data.error || 'unknown'); return; }
+                var d = data.decision;
+                var color = d.provider === 'nova_sonic' ? '#22c55e' : '#facc15';
+                out.innerHTML = (data.authenticated ? '' : '<span style="color:#ef4444;">[not signed in] </span>')
+                    + 'your next session → <span style="color:' + color + ';font-weight:bold;">' + d.provider + '</span>'
+                    + ' <span style="color:#64748b;">(' + d.reason + ', runtime=' + data.runtime + ')</span>';
+            })
+            .catch(function (e) { if (!disposed) out.textContent = 'network error: ' + (e.message || 'unknown'); });
+    });
+
+    // Connect & Talk — open the PRODUCTION ORB voice overlay right here, in
+    // the selected language. This is the real transport (mic in, 24kHz audio
+    // out, barge-in); if this host has Nova enabled and your identity is
+    // canary-allowlisted, the session rides Nova — confirm with the decision
+    // probe, and watch the session appear in the table below.
+    manualPanel.querySelector('.nst-talk-btn').addEventListener('click', function () {
+        var hint = manualPanel.querySelector('.nst-talk-hint');
+        hint.style.display = 'block';
+        if (!window.VitanaOrb) {
+            hint.textContent = 'ORB widget not loaded on this page — refresh and try again.';
+            return;
+        }
+        var lang = manualPanel.querySelector('.nst-lang').value;
+        // HARD GATE: this is the NOVA bench — never open the mic on a session
+        // that would silently fall back to Vertex. Run the decision probe for
+        // the signed-in identity first and refuse loudly on any non-Nova
+        // answer, with the typed reason (wrong account on the allowlist,
+        // language fallback, Nova disabled on this host, …).
+        hint.style.borderLeftColor = '#f97316';
+        hint.textContent = 'Checking which provider YOUR identity gets…';
+        fetch('/api/v1/voice-lab/nova/decision?lang=' + encodeURIComponent(lang), { headers: buildContextHeaders() })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                if (disposed) return;
+                if (!data.ok) {
+                    hint.style.borderLeftColor = '#ef4444';
+                    hint.textContent = 'Decision probe failed (' + (data.error || 'unknown') + ') — refusing to start a session blind.';
+                    return;
+                }
+                var d = data.decision;
+                if (d.provider !== 'nova_sonic') {
+                    hint.style.borderLeftColor = '#ef4444';
+                    hint.innerHTML = '<b style="color:#ef4444;">NOT STARTING — your session would ride '
+                        + d.provider + '</b> (reason: <code>' + d.reason + '</code>'
+                        + (data.authenticated ? '' : ', not signed in')
+                        + ', runtime=' + data.runtime + '). '
+                        + 'This bench refuses to open a non-Nova session. Check that THIS login’s user id is on the canary allowlist and that Nova is enabled on this host.';
+                    return;
+                }
+                hint.style.borderLeftColor = '#22c55e';
+                hint.innerHTML = 'Decision: <b style="color:#22c55e;">nova_sonic</b> (' + d.reason + ') — starting Nova voice session in <b>' + lang + '</b>. '
+                    + 'Speak when the overlay shows <i>Listening</i>; close (X) to end. Session appears below within ~5s.';
+                try { window.VitanaOrb.setLang(lang); } catch (_) { /* keep default */ }
+                if (window.state && state.orb) { state.orb.overlayVisible = true; }
+                window.VitanaOrb.show();
+                loadSessions();
+            })
+            .catch(function (e) {
+                if (disposed) return;
+                hint.style.borderLeftColor = '#ef4444';
+                hint.textContent = 'Decision probe network error (' + (e.message || 'unknown') + ') — refusing to start a session blind.';
+            });
+    });
+
+    function loadSessions() {
+        fetch('/api/v1/voice-lab/live/sessions?status=active&limit=10', { headers: buildContextHeaders() })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                if (disposed) return;
+                manualPanel.querySelector('.nst-sessions-updated').textContent = new Date().toLocaleTimeString();
+                var box = manualPanel.querySelector('.nst-sessions');
+                var sessions = (data && data.sessions) || [];
+                if (sessions.length === 0) {
+                    box.innerHTML = '<div style="color:#64748b;font-size:12px;padding:8px;">No active ORB sessions. Open the ORB and start speaking to see one here.</div>';
+                    return;
+                }
+                var rows = sessions.map(function (s) {
+                    return '<tr>'
+                        + '<td style="padding:6px 8px;border-bottom:1px solid #1e293b;font-family:monospace;font-size:11px;color:#e5e7eb;">' + String(s.session_id || '').slice(0, 12) + '…</td>'
+                        + '<td style="padding:6px 8px;border-bottom:1px solid #1e293b;color:#22c55e;">' + (s.status || '?') + '</td>'
+                        + '<td style="padding:6px 8px;border-bottom:1px solid #1e293b;color:#94a3b8;">' + (s.turn_count != null ? s.turn_count : '?') + '</td>'
+                        + '<td style="padding:6px 8px;border-bottom:1px solid #1e293b;color:#94a3b8;">' + (s.duration_seconds != null ? s.duration_seconds + 's' : '--') + '</td>'
+                        + '<td style="padding:6px 8px;border-bottom:1px solid #1e293b;color:#94a3b8;font-size:11px;">' + (s.started_at ? new Date(s.started_at).toLocaleTimeString() : '--') + '</td>'
+                        + '</tr>';
+                }).join('');
+                box.innerHTML = '<table style="width:100%;border-collapse:collapse;font-size:13px;">'
+                    + '<thead><tr>'
+                    + '<th style="text-align:left;padding:6px 8px;color:#94a3b8;font-size:11px;">SESSION</th>'
+                    + '<th style="text-align:left;padding:6px 8px;color:#94a3b8;font-size:11px;">STATUS</th>'
+                    + '<th style="text-align:left;padding:6px 8px;color:#94a3b8;font-size:11px;">TURNS</th>'
+                    + '<th style="text-align:left;padding:6px 8px;color:#94a3b8;font-size:11px;">DURATION</th>'
+                    + '<th style="text-align:left;padding:6px 8px;color:#94a3b8;font-size:11px;">STARTED</th>'
+                    + '</tr></thead><tbody>' + rows + '</tbody></table>';
+            })
+            .catch(function () { /* session poll is best-effort */ });
+    }
+    loadSessions();
+    var sessionsTimer = setInterval(function () {
+        // Stop polling once this view is unmounted (renderApp re-mounts wipe
+        // the tree; a detached node means the operator navigated away).
+        if (disposed || !container.isConnected) {
+            disposed = true;
+            clearInterval(sessionsTimer);
+            return;
+        }
+        loadSessions();
+    }, 5000);
+
+    return container;
 }
 
 /**

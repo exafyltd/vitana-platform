@@ -20,13 +20,17 @@ describe('codebase-analyzer severity mapping', () => {
     ['HACK', 'high'],
     ['XXX', 'medium'],
   ])('should assign severity %s for type %s', async (type: string, expectedSeverity: string) => {
-    // Create a single file with one comment of the given type
+    // Create a single file with one comment of the given type.
+    // Use a subdirectory scan path (like the production defaults `services/`
+    // etc.) — the analyzer strips `basePath/` off grep output, so paths are
+    // reported relative to basePath, prefixed by the scan path.
     const fileContent = `// ${type}: test comment`;
-    const filePath = path.join(tmpDir, 'test.ts');
+    fs.mkdirSync(path.join(tmpDir, 'src'));
+    const filePath = path.join(tmpDir, 'src', 'test.ts');
     fs.writeFileSync(filePath, fileContent, 'utf-8');
 
     const result = await analyzeCodebase(tmpDir, {
-      scan_paths: ['.'],
+      scan_paths: ['src/'],
       exclude_paths: [],
       file_size_threshold_lines: 1000,
     });
@@ -36,7 +40,7 @@ describe('codebase-analyzer severity mapping', () => {
     const signal = result.signals[0];
     expect(signal.type).toBe('todo');
     expect(signal.severity).toBe(expectedSeverity);
-    expect(signal.file_path).toBe('test.ts');
+    expect(signal.file_path).toBe('src/test.ts');
   });
 
   it('should handle all four types simultaneously', async () => {

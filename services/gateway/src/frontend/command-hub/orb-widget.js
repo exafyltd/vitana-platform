@@ -17,8 +17,17 @@
 (function (window) {
   'use strict';
 
-  var _WIDGET_VERSION = '2026-06-01-devcomhu0503b-persist-continuity-on-disconnect';
+  var _WIDGET_VERSION = '2026-07-31-thinking-tone-fix';
   console.log('[VTOrb] Widget version: ' + _WIDGET_VERSION);
+
+  // BOOTSTRAP-NOVA-SONIC-VOICE: user live-test feedback 2026-07-28 — the
+  // model's natural speaking pace reads as "too slow" in playback. Applied
+  // uniformly to every streamed PCM chunk (all providers — Vertex, Nova),
+  // not a provider-specific TTS parameter (neither exposes one over the
+  // live bidirectional stream). +5% speed carries a proportional pitch
+  // rise via AudioBufferSourceNode.playbackRate — the same trick podcast
+  // apps use at 1.05x, imperceptible as "chipmunk" at this magnitude.
+  var _AUDIO_PLAYBACK_RATE = 1.05;
 
   // Prevent double-load
   if (window.VitanaOrb && window.VitanaOrb._loaded) return;
@@ -136,13 +145,19 @@
     // The host uses this to auto-close the overlay after the guided-topic
     // teaching turn so the underlying drawer's next-step buttons are usable.
     onTurnComplete: null,
-    // BOOTSTRAP-ORB-LATENCY-PHASE3: transport selector. 'sse' (default,
-    // production path: POST-per-chunk up / SSE down) or 'ws' (single
-    // bidirectional WebSocket to /api/v1/orb/live/ws — one connection,
-    // binary-framed JSON both ways, no per-chunk HTTP overhead, no
-    // cross-instance 404 class). Opt-in via init({transport:'ws'}) or
-    // localStorage 'vtorb.transport'='ws' for staging verification.
-    transport: 'sse'
+    // VTID-03471 (L-04/L-05): transport selector. 'ws' (DEFAULT since
+    // VTID-03471: single bidirectional WebSocket to /api/v1/orb/live/ws —
+    // one connection, JSON both ways, no per-chunk HTTP overhead, no
+    // cross-instance 404 class) or 'sse' (the legacy path: SSE down +
+    // one authenticated POST per 64ms audio chunk, ~15.6 requests/sec).
+    //
+    // Resolution order, highest first (see _useWsTransport):
+    //   1. localStorage 'vtorb.transport' — 'ws'/'sse', a developer override
+    //   2. the per-tab fallback latch — set when a WS start actually failed
+    //   3. the server's answer from GET /api/v1/orb/live/transport
+    //      (FEATURE_ORB_WS_TRANSPORT_ENV) — the operator kill switch
+    //   4. this compiled default
+    transport: 'ws'
   };
 
   var _s = {
@@ -188,6 +203,17 @@
     greetingAudioReceived: false,
     greetingComplete: false,  // True after first turn_complete — mic opens only after this
     _audioReadySignaled: false, // DEV-COMHU-0504: audio-ready ack posted once per session
+
+    // VTID-03469: page-level audio unlock state. _gestureUnlockInstalled guards
+    // the one-time listener install; _audioUnlockedByGesture records that the
+    // playback context has been STARTED from a real user gesture at least once
+    // (iOS only permits later programmatic resume() after that has happened);
+    // _audioBlocked is true while chunks are being dropped because the context
+    // never unlocked, so the UI stops claiming Vitana is speaking.
+    _gestureUnlockInstalled: false,
+    _audioUnlockedByGesture: false,
+    _audioBlocked: false,
+    _audioBlockedTapHandler: null,
 
     // UI state
     voiceState: 'IDLE', // IDLE | LISTENING | THINKING | SPEAKING | MUTED
@@ -562,6 +588,144 @@
   }
 
   // ============================================================
+  // 4a-bis. PAGE-LEVEL FIRST-GESTURE AUDIO UNLOCK (VTID-03469)
+  // ============================================================
+  //
+  // Until this existed, the ONLY place the playback AudioContext was unlocked
+  // was inside _sessionStart(), which works only when _sessionStart is reached
+  // synchronously from a real user gesture (the FAB tap path:
+  // click → _show() → _sessionStart(), no await in between).
+  //
+  // The host does NOT always get there from a tap. vitana-v1's voice-first
+  // front door (useOrbFrontDoor) calls VitanaOrb.show() from a React useEffect
+  // right after login — zero user activation. On iPhone (Safari / WKWebView /
+  // Appilix) that context is created suspended, resume() outside a gesture is
+  // refused, _processQueue burns its 3s retry budget and DROPS the greeting,
+  // and yet the overlay still reads "Vitana spricht..." because the SPEAKING
+  // state is set when an audio_out message ARRIVES, not when it plays. Net
+  // effect reported from the field: "after login the orb shows Vitana talking
+  // but there is no speech; close it, start a new session, and audio works" —
+  // the second session works precisely because that one came from a tap.
+  //
+  // Fix: arm the context on the FIRST user interaction anywhere on the page,
+  // long before the front door fires. A password login is itself a tap in this
+  // same document, so by the time the overlay auto-opens the context has
+  // already been started once and later resume() calls are permitted.
+  //
+  // Note _preloadAlertClips() (called from init()) already creates
+  // _s.playbackCtx outside any gesture, so the context usually EXISTS and is
+  // merely suspended — the 1-sample silent buffer + resume() below is what
+  // actually starts it. Re-running on every gesture is deliberate and cheap:
+  // it also re-arms the context after an iOS auto-suspend.
+  var _GESTURE_EVENTS = ['pointerdown', 'touchend', 'mousedown', 'keydown'];
+
+  function _unlockPlaybackCtxFromGesture() {
+    try {
+      if (!_s.playbackCtx || _s.playbackCtx.state === 'closed') {
+        _s.playbackCtx = new (window.AudioContext || window.webkitAudioContext)();
+      }
+      var ctx = _s.playbackCtx;
+      // A 1-sample silent buffer is the canonical WebKit unlock: starting a
+      // BufferSource inside the gesture is what flips the context out of the
+      // "never started" state. resume() alone is not reliable on iOS.
+      var buf = ctx.createBuffer(1, 1, 22050);
+      var src = ctx.createBufferSource();
+      src.buffer = buf;
+      src.connect(ctx.destination);
+      src.start(0);
+      if (ctx.state === 'suspended' && ctx.resume) {
+        ctx.resume().then(function () {
+          if (!_s._audioUnlockedByGesture) {
+            _s._audioUnlockedByGesture = true;
+            console.log('[VTOrb] playback AudioContext unlocked by user gesture');
+          }
+        }).catch(function (e) {
+          console.warn('[VTOrb] gesture unlock resume rejected:', e && e.message);
+        });
+      } else if (ctx.state === 'running') {
+        _s._audioUnlockedByGesture = true;
+      }
+    } catch (e) {
+      console.warn('[VTOrb] gesture unlock failed:', e && e.message);
+    }
+  }
+
+  // Installed once at script load — NOT at init() — so a tap on the login
+  // screen counts even though init() only runs once auth has resolved.
+  // Listeners stay attached for the lifetime of the page (capture phase,
+  // passive where allowed) so every gesture re-arms the context; the handler
+  // is a no-op-cheap resume once the context is already running.
+  function _installGestureAudioUnlock() {
+    if (_s._gestureUnlockInstalled) return;
+    _s._gestureUnlockInstalled = true;
+    var handler = function () {
+      // Already running and previously gesture-started → nothing to do.
+      if (_s._audioUnlockedByGesture && _s.playbackCtx && _s.playbackCtx.state === 'running') return;
+      _unlockPlaybackCtxFromGesture();
+    };
+    _GESTURE_EVENTS.forEach(function (evt) {
+      try {
+        document.addEventListener(evt, handler, { capture: true, passive: true });
+      } catch (e) {
+        // Older WebViews without options-object support.
+        document.addEventListener(evt, handler, true);
+      }
+    });
+  }
+
+  // VTID-03469: the context never unlocked and we are throwing chunks away.
+  // Replace the false "Vitana spricht..." with the truth plus the single
+  // gesture that repairs it. Any tap re-enters _unlockPlaybackCtxFromGesture
+  // via the page-level listener above; this extra one-shot handler exists to
+  // drain the pipeline and restore the UI in the same turn.
+  function _announceAudioBlocked() {
+    if (_s._audioBlocked) return;
+    _s._audioBlocked = true;
+    var de = _cfg.lang && _cfg.lang.startsWith('de');
+    _setOrbState('paused');
+    _setStatus(de ? 'Tippe, um Vitana zu hören' : 'Tap anywhere to hear Vitana');
+    _updateUI();
+    var onTap = function () {
+      _unlockPlaybackCtxFromGesture();
+      // Give the resume() promise a tick, then re-enter the pipeline.
+      setTimeout(function () {
+        _clearAudioBlocked();
+        _signalAudioReady();
+        _processQueue();
+      }, 0);
+    };
+    _s._audioBlockedTapHandler = onTap;
+    try {
+      document.addEventListener('pointerdown', onTap, { capture: true, passive: true, once: true });
+    } catch (e) {
+      document.addEventListener('pointerdown', onTap, true);
+    }
+  }
+
+  function _clearAudioBlocked(skipUi) {
+    if (!_s._audioBlocked) return;
+    _s._audioBlocked = false;
+    var h = _s._audioBlockedTapHandler;
+    if (h) {
+      try { document.removeEventListener('pointerdown', h, true); } catch (e) { /* ignore */ }
+      _s._audioBlockedTapHandler = null;
+    }
+    if (skipUi) return; // teardown path — _show() will paint the next state
+    // voiceState was never changed by _announceAudioBlocked (only the visual
+    // state was), so it still describes where the session actually is.
+    var st = (_s.voiceState || 'LISTENING').toLowerCase();
+    if (st === 'muted') return; // mute owns the display
+    _setOrbState(st === 'speaking' ? 'speaking' : 'listening');
+    var de = _cfg.lang && _cfg.lang.startsWith('de');
+    if (st === 'speaking') {
+      _setStatus(de ? 'Vitana spricht...' : 'Vitana speaking...');
+    } else {
+      _setStatus(de ? 'Ich höre zu...' : 'Listening...');
+    }
+    _updateUI();
+  }
+
+  // ============================================================
   // 4b. DISCONNECT ALERT (BOOTSTRAP-ORB-DISCONNECT-ALERT
   //                       + BOOTSTRAP-ORB-MODERN-RECOVERY)
   //
@@ -679,15 +843,63 @@
     });
   }
 
-  // BOOTSTRAP-ORB-LATENCY-PHASE3: true when the WS transport is selected
-  // (init option, or the localStorage override used for staging testing).
+  // VTID-03471: the server's answer from GET /live/transport, or null until
+  // it arrives (or if it never does — the fetch is best-effort and the
+  // compiled default covers its absence).
+  var _serverTransport = null;
+
+  // VTID-03471: per-tab latch. Set when a WS session start FAILED and we fell
+  // back to SSE, so the rest of the tab's sessions don't each pay the 8s WS
+  // start budget before failing the same way. Deliberately sessionStorage
+  // (not localStorage): a network that blocks WebSocket upgrades is a
+  // property of where the user is right now, not a permanent verdict on
+  // their browser.
+  var _WS_FALLBACK_KEY = 'vtorb.wsFallback';
+
+  function _wsFallbackLatched() {
+    try {
+      return !!(window.sessionStorage && sessionStorage.getItem(_WS_FALLBACK_KEY));
+    } catch (e) { return _s._wsFallbackLatched === true; }
+  }
+
+  function _latchWsFallback(reason) {
+    _s._wsFallbackLatched = true;
+    try {
+      if (window.sessionStorage) sessionStorage.setItem(_WS_FALLBACK_KEY, reason || '1');
+    } catch (e) { /* storage blocked — the in-memory flag still holds for this page */ }
+    console.warn('[VTOrb] WS transport unavailable (' + reason + ') — falling back to SSE for this tab');
+  }
+
+  // VTID-03471: true when the WS transport should be used for the NEXT start.
+  // See the `transport` config comment for the resolution order.
   function _useWsTransport() {
     try {
       var o = window.localStorage && localStorage.getItem('vtorb.transport');
-      if (o === 'ws') return true;
+      if (o === 'ws') return true;   // developer override wins over everything
       if (o === 'sse') return false;
-    } catch (e) { /* storage blocked — fall through to config */ }
+    } catch (e) { /* storage blocked — fall through */ }
+    if (_wsFallbackLatched()) return false;
+    if (_serverTransport === 'ws') return true;
+    if (_serverTransport === 'sse') return false;
     return _cfg.transport === 'ws';
+  }
+
+  // VTID-03471: ask the gateway which transport it wants. Best-effort and
+  // non-blocking — if it fails or is slow, the compiled default stands and
+  // the user's first tap is not delayed by it.
+  function _fetchServerTransport() {
+    try {
+      fetch(_cfg.gw + '/api/v1/orb/live/transport', { method: 'GET' })
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (j) {
+          if (!j) return;
+          if (j.transport === 'ws' || j.transport === 'sse') {
+            _serverTransport = j.transport;
+            console.log('[VTOrb] Server transport preference: ' + _serverTransport);
+          }
+        })
+        .catch(function () { /* best-effort — compiled default stands */ });
+    } catch (e) { /* no fetch — compiled default stands */ }
   }
 
   // BOOTSTRAP-ORB-LATENCY-PHASE3: tear down the WS transport (idempotent).
@@ -1023,10 +1235,17 @@
         _s._resumeRetryStartedAt = 0;
         // Drop queued audio rather than leaving UI in a stuck state.
         _s.audioQueue.length = 0;
+        // VTID-03469: dropping chunks used to be entirely invisible — the
+        // overlay carried on showing "Vitana spricht..." (set on audio_out
+        // ARRIVAL, see the audio case in the message handler) while nothing
+        // was rendered. Say what actually happened and give the user the one
+        // gesture that fixes it.
+        _announceAudioBlocked();
         return;
       }
       ctx.resume().then(function () {
         _s._resumeRetryStartedAt = 0;
+        _clearAudioBlocked();
         // DEV-COMHU-0504: ctx just reached 'running' → pipeline now ready.
         _signalAudioReady();
         // Re-enter on next tick so any pending chunks drain.
@@ -1067,6 +1286,7 @@
 
         var src = ctx.createBufferSource();
         src.buffer = buf;
+        src.playbackRate.value = _AUDIO_PLAYBACK_RATE;
         src.connect(ctx.destination);
 
         var now = ctx.currentTime;
@@ -1106,7 +1326,11 @@
           };
         })(src);
 
-        _s.lastScheduledEnd += buf.duration;
+        // buf.duration is the UNPLAYED-rate duration; at playbackRate>1 the
+        // chunk actually finishes sooner, so scheduling by buf.duration
+        // would leave audible gaps between chunks. Divide by the rate to
+        // keep back-to-back chunks gapless.
+        _s.lastScheduledEnd += buf.duration / _AUDIO_PLAYBACK_RATE;
         _s.audioPlaying = true;
         isFirstChunk = false;
       } catch (e) {
@@ -1308,14 +1532,31 @@
           + ', conversation_id=' + (startPayload.conversation_id || '<new>'));
       }
 
-      // BOOTSTRAP-ORB-LATENCY-PHASE3: WebSocket transport branch. One
-      // bidirectional connection replaces POST /session/start + EventSource +
-      // a POST per 64ms audio chunk. Opt-in (default stays SSE) — see
-      // _useWsTransport(). Same start payload, same downstream message
-      // shapes, same _handleMessage.
+      // VTID-03471 (L-04/L-05): WebSocket transport branch — now the DEFAULT.
+      // One bidirectional connection replaces POST /session/start +
+      // EventSource + a POST per 64ms audio chunk. Same start payload, same
+      // downstream message shapes, same _handleMessage.
+      //
+      // If the WS start fails for a TRANSPORT reason (blocked upgrade,
+      // captive portal, corporate proxy that eats 101s, socket closed before
+      // the handshake completed), fall through to the SSE path rather than
+      // failing the session: an environment where WebSockets don't work is
+      // exactly where the legacy transport still does. The latch stops the
+      // rest of this tab's sessions from re-paying the 8s WS start budget.
+      //
+      // A server-side REJECTION (401 AUTH_TOKEN_INVALID and friends) is NOT a
+      // transport failure — SSE would be rejected identically — so those are
+      // rethrown for the caller's error handling instead of retried.
       if (_useWsTransport()) {
-        await _sessionStartWs(startPayload);
-        return;
+        try {
+          await _sessionStartWs(startPayload);
+          return;
+        } catch (wsErr) {
+          if (wsErr && wsErr.__vtOrbServerRejected) throw wsErr;
+          if (_s._userInitiatedStop || !_s.overlayVisible) throw wsErr;
+          _latchWsFallback((wsErr && wsErr.message) || 'ws_start_failed');
+          // fall through to the SSE path below, same startPayload
+        }
       }
 
       // VTID-01987: explicit 8s timeout. On Android WebView a fetch over a
@@ -1444,7 +1685,38 @@
       _s.sessionId = null;
       _s.liveError = err.message;
       _setOrbState('error');
+
+      // BOOTSTRAP-ORB-FASTSTART-DRIFT: this used to end here — state flipped to
+      // 'error' (red aura) but the status text was never touched, so the label
+      // _show() set stayed on screen and the orb read "Verbinden..." FOREVER
+      // while nothing was in flight. Nothing retried either, so a start that
+      // merely ran slow became permanently dead: the user's only recovery was
+      // to close the overlay and reopen it (which worked, because the second
+      // attempt hit warm caches).
+      //
+      // That is precisely how a server-side regression surfaced as an
+      // "endlessly connecting" orb: cold authenticated session/start exceeded
+      // the 8s abort above, and every symptom the user saw after that was this
+      // handler lying about what was happening.
+      //
+      // Two fixes, both required: say something true, then actually recover.
+      _setStatus(
+        _cfg.lang.startsWith('de')
+          ? 'Verbindung fehlgeschlagen. Neuer Versuch...'
+          : "Couldn't connect. Retrying...",
+      );
       _updateUI();
+
+      // Hand to the existing recovery loop — it owns the retry budget, the
+      // offline check, and the eventual tap-to-reconnect fallback. Skipped
+      // when the user is deliberately leaving (X / overlay hidden), mirroring
+      // _announceDisconnect's guards, and when a reconnect is already in
+      // flight — _attemptReconnect's own _isReconnecting guard would drop the
+      // call anyway, but this keeps the intent explicit at the call site
+      // rather than resting on that ordering.
+      if (!_s._userInitiatedStop && _s.overlayVisible && !_s._isReconnecting) {
+        _attemptReconnect();
+      }
     }
   }
 
@@ -1483,6 +1755,21 @@
         if (msg.type === 'connected') {
           if (_s._userInitiatedStop || !_s.overlayVisible) return bail('overlay closed during connect');
           try { w.send(JSON.stringify(Object.assign({ type: 'start' }, startPayload))); } catch (e) { /* onclose covers */ }
+          return;
+        }
+        // VTID-03471: the gateway rejected the start (bad/expired JWT, origin
+        // not allowed, quota). Distinguish it from a transport failure: SSE
+        // would be rejected the same way, so the caller must NOT retry there.
+        if (msg.type === 'error' && !settled) {
+          clearTimeout(startTimer);
+          settled = true;
+          _s.ws = null;
+          try { w.close(); } catch (e) { /* noop */ }
+          var rejErr = new Error(msg.code || msg.message || 'WS session start rejected');
+          rejErr.__vtOrbServerRejected = true;
+          rejErr.code = msg.code || null;
+          rejErr.status = msg.status || null;
+          reject(rejErr);
           return;
         }
         if (msg.type === 'session_started' && !settled) {
@@ -1568,6 +1855,9 @@
     // VTID-02710: stop the iOS ctx keep-alive (if it was still running because
     // the session ended before any audio arrived) before closing the ctx.
     _stopCtxKeepAlive();
+    // VTID-03469: drop the tap-to-unblock listener with the session. skipUi
+    // because the overlay is being torn down — _show() paints the next state.
+    _clearAudioBlocked(true);
 
     // Stop playback
     if (_s.playbackCtx) { _s.playbackCtx.close().catch(function () {}); _s.playbackCtx = null; }
@@ -1656,7 +1946,8 @@
       case 'ready':
         _setOrbState('thinking');
         _s.voiceState = 'THINKING';
-        _setStatus(_cfg.lang.startsWith('de') ? 'Denkt nach...' : 'Thinking...');
+        var readyMsg = _buildThinkingQueue()[0];
+        _setStatus(_cfg.lang.startsWith('de') ? readyMsg.de : readyMsg.en);
         // Stuck guard: 15s timeout
         clearTimeout(_s.stuckGuardTimer);
         _s.stuckGuardTimer = setTimeout(function () {
@@ -1678,7 +1969,7 @@
         // Server signals model is processing (user speech detected or tool call running).
         // 300ms delay — just enough to skip if audio arrives almost immediately.
         // Previous 1.5s was too long: combined with Vertex VAD silence detection (~2s),
-        // total delay was ~4-5s before user saw "Thinking..." — felt broken.
+        // total delay was ~4-5s before user saw the opening status line — felt broken.
         _s.thinkingStartTime = Date.now();
         if (_s.voiceState === 'LISTENING' || _s.voiceState === 'IDLE') {
           clearTimeout(_s.thinkingDelayTimer);
@@ -1686,9 +1977,8 @@
             if (_s.voiceState === 'LISTENING' || _s.voiceState === 'IDLE') {
               _setOrbState('thinking');
               _s.voiceState = 'THINKING';
-              _setStatus(_cfg.lang.startsWith('de') ? 'Denkt nach...' : 'Thinking...');
               _updateUI();
-              _startThinkingProgress();
+              _startThinkingProgress(); // also sets the first status line immediately
             }
           }, 300);
         } else if (_s.voiceState === 'MUTED') {
@@ -1830,10 +2120,16 @@
               _s.preMuteState = 'LISTENING';
               _afterBeepStartMic();
             } else {
-              _setOrbState('listening');
               _s.voiceState = 'LISTENING';
-              _setStatus(_cfg.lang.startsWith('de') ? 'Ich höre zu...' : 'Listening...');
-              _playReadyBeep();
+              // VTID-03469: while audio is blocked the overlay is showing the
+              // tap-to-hear prompt. Overwriting it with "Listening..." here
+              // would hide the only instruction that repairs playback, and the
+              // beep below would be inaudible anyway — keep the prompt up.
+              if (!_s._audioBlocked) {
+                _setOrbState('listening');
+                _setStatus(_cfg.lang.startsWith('de') ? 'Ich höre zu...' : 'Listening...');
+                _playReadyBeep();
+              }
               _updateUI();
               // The beep is 200ms; defer mic-arm by 250ms so the audio-session
               // switch happens after the speaker has finished rendering it.
@@ -2181,6 +2477,35 @@
     var vadConfirm = 6;
     var vadInterruptSent = false;
 
+    // BOOTSTRAP-ORB-BARGEIN: pre-roll ring buffer (L-09 / C-09).
+    //
+    // THE BUG: while Vitana was speaking, this handler dropped every mic frame
+    // on the floor (`return; // Don't send audio while model speaking`) and
+    // only reacted after vadConfirm=6 frames — so the FIRST ~384ms of the
+    // user's interruption was destroyed, never sent upstream, and Nova never
+    // heard the beginning of what they said. Combined with the synthetic
+    // silence the gateway streams during playback, Nova literally could not
+    // hear the user, so its native barge-in never fired either.
+    //
+    // WHY NOT "just always forward the mic" (the audit's first suggestion):
+    // this file carries MEASURED evidence against that — see the vadThreshold
+    // comment above. Echo through AEC lands at 0.01-0.04 RMS, and a previous
+    // 0.015 threshold "triggered on echo, causing constant interruptions".
+    // Forwarding every frame during playback would feed that echo straight to
+    // Nova's server-side VAD and risk it interrupting ITSELF continuously —
+    // a worse regression than the bug being fixed. Validating that needs a
+    // real echo test on device, which is a separate piece of work.
+    //
+    // THE FIX that is safe today: keep the energy gate (so echo is still not
+    // forwarded), but stop DESTROYING the audio. Every frame captured during
+    // playback goes into this ring buffer; the moment VAD confirms real
+    // speech, the buffer is flushed upstream ahead of the live stream. The
+    // user's opening words arrive intact instead of being swallowed.
+    var preRollFrames = [];
+    // 8 frames ≈ 512ms at 1024 samples/16kHz — covers vadConfirm (6 frames
+    // ≈ 384ms) plus margin, and bounds memory to ~16KB of Int16 PCM.
+    var PRE_ROLL_MAX_FRAMES = 8;
+
     processor.onaudioprocess = function (e) {
       if (!_s.active) return;
       if (_s.voiceState === 'MUTED') return;
@@ -2198,6 +2523,11 @@
       // even though more audio is coming. The grace timer covers these gaps.
       var modelPlaying = _s.audioPlaying;
       if (modelPlaying) {
+        // BOOTSTRAP-ORB-BARGEIN: capture, don't discard. Encoding happens here
+        // so the flush below can replay the exact frames the user spoke.
+        preRollFrames.push(_encodeFrame(input));
+        if (preRollFrames.length > PRE_ROLL_MAX_FRAMES) preRollFrames.shift();
+
         if (rms > vadThreshold) {
           vadFrames++;
           if (vadFrames >= vadConfirm && !vadInterruptSent) {
@@ -2212,15 +2542,29 @@
             _s.audioPlaying = false;
             clearTimeout(_s.audioEndGraceTimer);
             _s.interruptPending = true;
-            _sendInterrupt();
+            var _interruptAck = _sendInterrupt();
+
+            // BOOTSTRAP-ORB-BARGEIN: flush the buffered speech upstream. THIS
+            // is the audio that used to be thrown away. It goes out ahead of
+            // the live stream so Nova receives the interruption from its first
+            // syllable — which is also what lets Nova's own barge-in engage,
+            // since sendEndOfTurn() is a documented no-op for Nova and never
+            // stopped it. audioPlaying is now false, so the next frame onward
+            // flows through the normal live path below.
+            _flushPreRollOrdered(preRollFrames, _interruptAck);
+            preRollFrames = [];
           }
         } else {
           vadFrames = 0;
         }
-        return; // Don't send audio while model speaking
+        // Still gated while Vitana speaks — deliberate, see the PRE_ROLL
+        // comment: forwarding sub-threshold frames would feed AEC echo to
+        // Nova's VAD. The difference is the audio is now buffered, not lost.
+        return;
       } else {
         vadFrames = 0;
         vadInterruptSent = false;
+        preRollFrames = [];
         // Record real user speech so the listening-idle nudge timer can
         // defer itself instead of beeping over the user mid-sentence.
         if (rms > vadThreshold) {
@@ -2241,15 +2585,7 @@
       // BOOTSTRAP-ORB-LATENCY-PHASE1: 500→200ms (see above).
       if (_s.lastAudioEndTime > 0 && (Date.now() - _s.lastAudioEndTime) < 200) return;
 
-      // Convert Float32 → Int16 PCM → base64
-      var pcm = new Int16Array(input.length);
-      for (var n = 0; n < input.length; n++) {
-        var s = Math.max(-1, Math.min(1, input[n]));
-        pcm[n] = s < 0 ? s * 0x8000 : s * 0x7FFF;
-      }
-      var u8 = new Uint8Array(pcm.buffer);
-      var b64 = btoa(String.fromCharCode.apply(null, u8));
-      _sendAudio(b64);
+      _sendAudio(_encodeFrame(input));
     };
 
     source.connect(processor);
@@ -2257,8 +2593,96 @@
     _s.captureProcessor = processor;
   }
 
+  /**
+   * Float32 mic frame → Int16 PCM → base64, the wire format the gateway
+   * expects (audio/pcm;rate=16000).
+   *
+   * BOOTSTRAP-ORB-BARGEIN: extracted from the capture handler so the barge-in
+   * pre-roll buffer stores already-encoded frames and can replay them
+   * byte-identically. Encoding at capture time also means the buffer holds a
+   * stable copy — `e.inputBuffer` is reused by the Web Audio graph, so
+   * retaining the raw Float32Array would alias into the next callback's data.
+   */
+  function _encodeFrame(input) {
+    var pcm = new Int16Array(input.length);
+    for (var n = 0; n < input.length; n++) {
+      var s = Math.max(-1, Math.min(1, input[n]));
+      pcm[n] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+    }
+    var u8 = new Uint8Array(pcm.buffer);
+    return btoa(String.fromCharCode.apply(null, u8));
+  }
+
+  /**
+   * BOOTSTRAP-ORB-BARGEIN (Codex review on #3006): ordered-send gate for the
+   * HTTP/SSE transport.
+   *
+   * On the DEFAULT transport (transport:'sse', orb-widget.js:154) every frame
+   * is its own fire-and-forget `fetch`, and so is the interrupt. There is no
+   * ordering guarantee between them. That breaks the pre-roll flush two ways:
+   *
+   *  1. If a buffered frame reaches the gateway BEFORE the interrupt is
+   *     processed, `session.isModelSpeaking` is still true and
+   *     live-session-controller.ts:2270 returns
+   *     `{dropped:true, reason:'model_speaking'}` — the exact audio this fix
+   *     exists to preserve, silently discarded server-side.
+   *  2. The burst of parallel POSTs has no mutual ordering, so surviving
+   *     frames can arrive scrambled, and live frames (fired immediately once
+   *     playback stops) can overtake the buffered ones entirely.
+   *
+   * While this is non-null, audio sends chain onto it instead of racing. It is
+   * armed at barge-in with the interrupt's own promise, so nothing is sent
+   * until the gateway has acknowledged the interrupt and ungated the mic, and
+   * it is cleared once drained so steady-state sending returns to parallel
+   * fire-and-forget (no added latency outside the barge-in window).
+   *
+   * The WS transport does not need this — a socket is ordered by definition.
+   */
+  var _httpSendChain = null;
+
   function _sendAudio(b64) {
-    if (!_s.sessionId || !_s.active) return;
+    if (!_s.sessionId || !_s.active) return Promise.resolve();
+    // Ordered window (HTTP only): append rather than race.
+    if (!_s.ws && _httpSendChain) {
+      _httpSendChain = _httpSendChain.then(function () {
+        return _sendAudioNow(b64);
+      });
+      return _httpSendChain;
+    }
+    return _sendAudioNow(b64);
+  }
+
+  /**
+   * BOOTSTRAP-ORB-BARGEIN: arm the ordered window. Buffered frames are sent
+   * strictly after `gate` resolves (the interrupt round-trip) and strictly in
+   * order; live frames captured meanwhile chain behind them via _sendAudio.
+   */
+  function _flushPreRollOrdered(frames, gate) {
+    if (!frames.length) return;
+    if (_s.ws) {
+      // Socket preserves order and the gateway's WS interrupt handler runs
+      // before subsequent frames — send directly.
+      for (var i = 0; i < frames.length; i++) _sendAudioNow(frames[i]);
+      return;
+    }
+    var chain = gate || Promise.resolve();
+    frames.forEach(function (f) {
+      chain = chain.then(function () { return _sendAudioNow(f); });
+    });
+    _httpSendChain = chain;
+    // Release the ordered window once this burst has drained, so normal
+    // parallel sending resumes. Guarded so a later barge-in that re-arms the
+    // chain isn't torn down by an older burst finishing.
+    var mine = chain;
+    chain.then(function () {
+      if (_httpSendChain === mine) _httpSendChain = null;
+    }, function () {
+      if (_httpSendChain === mine) _httpSendChain = null;
+    });
+  }
+
+  function _sendAudioNow(b64) {
+    if (!_s.sessionId || !_s.active) return Promise.resolve();
     // BOOTSTRAP-ORB-LATENCY-PHASE3: WS transport — one frame on the open
     // socket instead of a full HTTP request per 64ms chunk.
     if (_s.ws) {
@@ -2268,11 +2692,14 @@
           _s._audioSendFailCount = 0;
         } catch (e) { _registerAudioSendFailure(); }
       }
-      return; // never fall through to HTTP while WS transport owns the session
+      // never fall through to HTTP while WS transport owns the session
+      return Promise.resolve();
     }
     var headers = { 'Content-Type': 'application/json' };
     if (_cfg.token) headers['Authorization'] = 'Bearer ' + _cfg.token;
-    fetch(_cfg.gw + '/api/v1/orb/live/stream/send?session_id=' + _s.sessionId, {
+    // BOOTSTRAP-ORB-BARGEIN: the promise is RETURNED so the ordered-send gate
+    // can chain on it. Steady-state callers still ignore it (fire-and-forget).
+    return fetch(_cfg.gw + '/api/v1/orb/live/stream/send?session_id=' + _s.sessionId, {
       method: 'POST', headers: headers,
       body: JSON.stringify({ type: 'audio', data_b64: b64, mime: 'audio/pcm;rate=16000' })
     }).then(function (r) {
@@ -2373,18 +2800,22 @@
   }
 
   function _sendInterrupt() {
-    if (!_s.sessionId || !_s.active) return;
+    if (!_s.sessionId || !_s.active) return Promise.resolve();
     // BOOTSTRAP-ORB-LATENCY-PHASE3: WS transport branch.
     if (_s.ws) {
       try { if (_s.ws.readyState === 1) _s.ws.send(JSON.stringify({ type: 'interrupt' })); } catch (e) { /* noop */ }
-      return;
+      return Promise.resolve();
     }
     var headers = { 'Content-Type': 'application/json' };
     if (_cfg.token) headers['Authorization'] = 'Bearer ' + _cfg.token;
-    fetch(_cfg.gw + '/api/v1/orb/live/stream/send?session_id=' + _s.sessionId, {
+    // BOOTSTRAP-ORB-BARGEIN: RETURNED and resolved-on-settle so the pre-roll
+    // flush can wait for the gateway to actually ungate the mic
+    // (live-session-controller sets isModelSpeaking=false in this handler).
+    // Resolves even on failure — a dropped interrupt must not wedge the queue.
+    return fetch(_cfg.gw + '/api/v1/orb/live/stream/send?session_id=' + _s.sessionId, {
       method: 'POST', headers: headers,
       body: JSON.stringify({ type: 'interrupt' })
-    }).catch(function () {});
+    }).then(function () {}, function () {});
   }
 
   // ============================================================
@@ -2392,23 +2823,71 @@
   // ============================================================
 
   // Thinking progress: reassure user during long processing (memory search, slow network).
-  // Shows elapsed time and rotating messages so user knows it's still working.
+  // Warm, casual copy (VTID-03449) instead of technical wording; no visible elapsed-time
+  // counter — that drew attention to the wait instead of reassuring the user.
+  //
+  // VTID-03451 fix: a single fixed opener shown immediately on every turn (plus a
+  // narrative-ordered rotation that mostly kept the same 2nd message) made most real
+  // turns — which resolve well under the old 4s-to-first-rotation delay — show the
+  // exact same 1-2 lines every single time ("Let me think... / Checking what I
+  // remember..."). All lines now live in one pool, freshly shuffled per turn, with a
+  // guard against repeating the previous turn's opening line back-to-back.
+  var _THINKING_QUICK = [
+    { en: 'Let me think…', de: 'Lass mich kurz überlegen…' },
+    { en: 'Let me take a look…', de: 'Lass mich das kurz prüfen…' },
+    { en: 'One sec…', de: 'Eine Sekunde…' },
+    { en: 'Alright, hang on…', de: 'Alles klar, einen Moment…' },
+    { en: 'Let’s see…', de: 'Mal sehen…' },
+    { en: 'Give me a beat…', de: 'Kurz einen Moment…' }
+  ];
+  var _THINKING_PRIMARY = [
+    { en: 'Checking what I remember…', de: 'Ich schau nach, was ich weiß…' },
+    { en: 'Connecting the dots…', de: 'Ich verbinde die Punkte…' },
+    { en: 'Putting it all together…', de: 'Ich füg alles zusammen…' },
+    { en: 'Just making sure I get it right…', de: 'Ich will sichergehen, dass es passt…' },
+    { en: 'Almost ready ✨', de: 'Gleich fertig ✨' },
+    { en: 'Still with you…', de: 'Bin noch dabei…' },
+    { en: 'Got it — here we go!', de: 'Alles klar, es geht los!' }
+  ];
+  var _THINKING_ALTERNATES = [
+    { en: 'On it…', de: 'Bin dran…' },
+    { en: 'Give me a tiny moment…', de: 'Gib mir einen kleinen Moment…' },
+    { en: 'Let me look into that…', de: 'Ich schau mir das an…' },
+    { en: 'Doing a little detective work…', de: 'Ich spiel kurz Detektiv…' },
+    { en: 'Looking in the right places…', de: 'Ich schau an den richtigen Stellen…' },
+    { en: 'Still working my magic…', de: 'Ich zaubere noch…' },
+    { en: 'One more moment…', de: 'Noch ein Moment…' },
+    { en: 'Nearly there…', de: 'Fast geschafft…' }
+  ];
+  var _THINKING_ALL = _THINKING_QUICK.concat(_THINKING_PRIMARY, _THINKING_ALTERNATES);
+
+  function _shuffled(arr) {
+    var out = arr.slice();
+    for (var i = out.length - 1; i > 0; i--) {
+      var j = Math.floor(Math.random() * (i + 1));
+      var tmp = out[i]; out[i] = out[j]; out[j] = tmp;
+    }
+    return out;
+  }
+
+  // Builds this turn's rotation queue: every message shuffled fresh, with the
+  // first slot swapped away if it repeats the previous turn's opening line.
+  function _buildThinkingQueue() {
+    var queue = _shuffled(_THINKING_ALL);
+    if (queue.length > 1 && queue[0].en === _s.lastThinkingFirstMsg) {
+      var tmp = queue[0]; queue[0] = queue[1]; queue[1] = tmp;
+    }
+    _s.lastThinkingFirstMsg = queue[0].en;
+    return queue;
+  }
+
   function _startThinkingProgress() {
     clearInterval(_s.thinkingProgressTimer);
-    var messages_en = [
-      'Searching memory...',
-      'Still working on it...',
-      'Processing your request...',
-      'Almost there...',
-      'Taking a bit longer than usual...'
-    ];
-    var messages_de = [
-      'Durchsuche Erinnerungen...',
-      'Arbeite noch daran...',
-      'Verarbeite deine Anfrage...',
-      'Fast fertig...',
-      'Dauert etwas länger als üblich...'
-    ];
+    var isDe = _cfg.lang.startsWith('de');
+    var queue = _buildThinkingQueue();
+    // Show the first message immediately — most turns resolve before the first
+    // rotation tick, so this (not the interval) is what users actually see.
+    _setStatus(isDe ? queue[0].de : queue[0].en);
     var msgIndex = 0;
     _s.thinkingProgressTimer = setInterval(function () {
       if (_s.voiceState !== 'THINKING') {
@@ -2417,12 +2896,10 @@
         return;
       }
       var elapsed = Math.floor((Date.now() - _s.thinkingStartTime) / 1000);
-      var msgs = _cfg.lang.startsWith('de') ? messages_de : messages_en;
-      // Cycle through messages every 5 seconds
-      if (elapsed >= 5) msgIndex = Math.min(Math.floor((elapsed - 5) / 5) + 1, msgs.length - 1);
-      var text = msgs[msgIndex];
-      if (elapsed >= 10) text += ' (' + elapsed + 's)';
-      _setStatus(text);
+      // Cycle through messages every 4 seconds
+      msgIndex = Math.min(Math.floor(elapsed / 4), queue.length - 1);
+      var msg = queue[msgIndex];
+      _setStatus(isDe ? msg.de : msg.en);
     }, 3000);
   }
 
@@ -3297,6 +3774,10 @@
       // orb tap skips the 400-800ms context build on the
       // click-to-first-audio path. Anonymous = server-side no-op.
       _prewarmBootstrap();
+      // VTID-03471: resolve the server's transport preference (kill switch)
+      // in parallel with the prewarm. Unauthenticated, so anonymous sessions
+      // get it too.
+      _fetchServerTransport();
       console.log('[VTOrb] Initialized — gateway: ' + _cfg.gw + ', lang: ' + _cfg.lang + ', showFab: ' + _cfg.showFab + ', hasToken: ' + !!_cfg.token + ', forceAnonymous: ' + _cfg.forceAnonymous);
     },
 
@@ -3481,6 +3962,13 @@
       _updateUI();
     }
   };
+
+  // VTID-03469: arm the audio unlock at SCRIPT LOAD, not in init(). The host
+  // only calls init() once auth has resolved, which on the login flow is after
+  // the user has already tapped — and the auto-opening front door then starts a
+  // session with no gesture of its own. Installing here means the login tap
+  // itself starts the playback context.
+  _installGestureAudioUnlock();
 
 })(window);
 

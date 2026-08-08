@@ -39,35 +39,46 @@ jobs:
     runs-on: ubuntu-latest
     if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     steps:
-      - name: Install psql
-        run: sudo apt-get install -y postgresql-client > /dev/null 2>&1
-
+      # VTID-03492: was `psql "$SUPABASE_DB_URL"`, which cannot connect from
+      # GitHub Actions — the Supabase project has a network allow-list and
+      # runner IPs are not on it. Now an RPC over PostgREST/HTTPS, which is a
+      # separate edge service not subject to that allow-list. The assertions
+      # below are unchanged; only the transport moved.
       - name: Verify trigger structure
         env:
-          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
         run: |
           set -euo pipefail
+          if [ -z "${SUPABASE_URL:-}" ] || [ -z "${SUPABASE_SERVICE_ROLE:-}" ]; then
+            echo "::error::SUPABASE_URL / SUPABASE_SERVICE_ROLE secrets are not set on this repo."
+            exit 1
+          fi
+          HTTP=$(curl -sS -o health.json -w '%{http_code}' \
+            -X POST "${SUPABASE_URL%/}/rest/v1/rpc/ci_welcome_greeting_health" \
+            -H "apikey: $SUPABASE_SERVICE_ROLE" \
+            -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE" \
+            -H 'Content-Type: application/json' -d '{}')
+          if [ "$HTTP" != "200" ]; then
+            echo "::error::ci_welcome_greeting_health RPC returned HTTP $HTTP. If 404, apply supabase/migrations/20260804100000_vtid_03492_ci_health_rpcs_v2.sql."
+            head -c 500 health.json || true
+            exit 1
+          fi
+          cat health.json; echo
 
-          # Each check returns 'PASS' or a descriptive failure line.
-          OUTPUT=$(psql "$SUPABASE_DB_URL" -t -A -F '|' <<'EOF'
-          SELECT
-            CASE
-              WHEN NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'welcome_chat_on_primary_membership')
-                THEN 'FAIL: trigger welcome_chat_on_primary_membership missing'
-              WHEN (SELECT tgenabled FROM pg_trigger WHERE tgname = 'welcome_chat_on_primary_membership')::text != 'O'
-                THEN 'FAIL: trigger present but disabled (tgenabled=' || (SELECT tgenabled FROM pg_trigger WHERE tgname = 'welcome_chat_on_primary_membership')::text || ')'
-              WHEN NOT EXISTS (SELECT 1 FROM pg_proc WHERE proname = 'fire_welcome_chat_on_membership')
-                THEN 'FAIL: trigger function fire_welcome_chat_on_membership missing'
-              WHEN NOT (SELECT prosecdef FROM pg_proc WHERE proname = 'fire_welcome_chat_on_membership')
-                THEN 'FAIL: trigger function exists but is not SECURITY DEFINER'
-              WHEN (SELECT c.relname FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid WHERE t.tgname = 'welcome_chat_on_primary_membership') != 'user_tenants'
-                THEN 'FAIL: trigger attached to wrong table'
-              ELSE 'PASS'
-            END;
-          EOF
-          )
+          RESULT=PASS
+          if   [ "$(jq -r '.trigger_present' health.json)"  != "true" ]; then
+            RESULT='FAIL: trigger welcome_chat_on_primary_membership missing'
+          elif [ "$(jq -r '.trigger_enabled' health.json)"  != "true" ]; then
+            RESULT='FAIL: trigger present but disabled (tgenabled != O)'
+          elif [ "$(jq -r '.function_present' health.json)" != "true" ]; then
+            RESULT='FAIL: trigger function fire_welcome_chat_on_membership missing'
+          elif [ "$(jq -r '.function_secdef' health.json)"  != "true" ]; then
+            RESULT='FAIL: trigger function exists but is not SECURITY DEFINER'
+          elif [ "$(jq -r '.trigger_table' health.json)"    != "user_tenants" ]; then
+            RESULT="FAIL: trigger attached to wrong table ($(jq -r '.trigger_table' health.json))"
+          fi
 
-          RESULT=$(echo "$OUTPUT" | grep -v '^$' | tail -1)
           echo "Structural check: $RESULT"
           if [[ "$RESULT" != "PASS" ]]; then
             echo "::error::$RESULT"

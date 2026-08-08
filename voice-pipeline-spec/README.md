@@ -66,3 +66,24 @@ The scanner expects `spec.json` to remain valid JSON Schema 2020-12. Run `npm ru
 - `memory/orb_apology_loop_fix_VTID_02637.md` — reconnect-bucket suppression
 - `memory/agents_registry_shipped.md` — agents_registry table is where the LiveKit worker self-registers
 - `memory/project_voice_self_healing_loop.md` — Sentinel quarantine integration target
+
+## Nova 2 Sonic (BOOTSTRAP-NOVA-SONIC-VOICE)
+
+`nova_sonic` is a third top-level voice-to-voice provider (Bedrock
+`amazon.nova-2-sonic-v1:0`, `eu-north-1`, bidirectional HTTP/2). Two
+spec-reading rules:
+
+1. **`implementations: ["vertex"]` is a legacy label.** It denotes the
+   shared TypeScript *gateway* code path, not the Vertex vendor. Nova
+   sessions dispatch tools through the exact same canonical dispatcher
+   (`executeLiveApiTool` + the normalized session binding), so a tool
+   marked `vertex` is reachable from Nova sessions too. The scanner must
+   not demand a duplicate `nova_sonic` implementation tree.
+2. **Browser protocol unchanged.** Nova only swaps the gateway↔model leg;
+   the widget's WS/SSE contract (16 kHz PCM in, 24 kHz PCM out,
+   `input_transcript`/`audio`/`output_transcript`/`turn_complete`/
+   `interrupted` events) is identical across providers — locked by
+   `services/gateway/test/orb/live/session/upstream-provider-parity.test.ts`.
+
+See the `nova_sonic` object in `spec.json` for model/region/rotation/
+failure-category details.

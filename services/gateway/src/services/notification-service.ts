@@ -148,6 +148,16 @@ export const TYPE_META: Record<string, TypeMeta> = {
   complete_your_profile:       { channel: 'inapp',          priority: 'p2', category: 'system' },
   onboarding_step_completed:   { channel: 'inapp',          priority: 'p3', category: 'system' },
   weekly_activity_summary:     { channel: 'push_and_inapp', priority: 'p2', category: 'system' },
+  feature_announcement:        { channel: 'push_and_inapp', priority: 'p2', category: 'system' },
+  // BOOTSTRAP-COMMUNITY-MARKETPLACE: seller-facing moderation outcomes
+  marketplace_listing_approved: { channel: 'push_and_inapp', priority: 'p2', category: 'system' },
+  marketplace_listing_rejected: { channel: 'push_and_inapp', priority: 'p1', category: 'system' },
+  marketplace_listing_removed:  { channel: 'push_and_inapp', priority: 'p1', category: 'system' },
+  // BOOTSTRAP-COMMUNITY-MARKETPLACE (Chunk 5): buyer's first contact message
+  // on a listing — category 'chat' (not 'system') so it respects the same
+  // chat notification preference as new_chat_message, since it IS a chat
+  // message, just with listing-specific copy instead of the generic sender-name title.
+  listing_interest:            { channel: 'push_and_inapp', priority: 'p1', category: 'chat' },
   // Admin Companion (BOOTSTRAP-ADMIN-EE)
   admin_insight_urgent:        { channel: 'push_and_inapp', priority: 'p0', category: 'system' },
   admin_insight_action_needed: { channel: 'inapp',          priority: 'p1', category: 'system' },
@@ -248,50 +258,128 @@ export async function sendPushToUser(
   userId: string,
   tenantId: string,
   payload: NotificationPayload,
-  supabase: SupabaseClient<any, any, any>
+  supabase: SupabaseClient<any, any, any>,
+  opts?: { excludeAppilixTagged?: boolean }
 ): Promise<number> {
   const { data: tokens } = await supabase
     .from('user_device_tokens')
-    .select('fcm_token')
+    .select('fcm_token, device_label')
     .eq('user_id', userId)
-    .eq('tenant_id', tenantId);
+    .eq('tenant_id', tenantId)
+    // Only devices this user still OWNS (VTID-03481). A revoked row means the
+    // device was taken over by another account, or the user signed out on it —
+    // pushing there would buzz a phone that now belongs to someone else, which
+    // is how one device ended up receiving the same post notification once per
+    // account that had ever signed in on it.
+    .is('revoked_at', null);
 
   if (!tokens?.length) return 0;
 
+  // Tokens registered from inside the Appilix WebView (tagged "Appilix " by
+  // registerAppilixDevice()) can only be tapped safely via an Appilix-native
+  // push — a raw FCM push to that same device is what crashes the WebView
+  // (see the comment in notifyUser()). Callers that already tried Appilix
+  // and got no device pass excludeAppilixTagged so we don't repeat the
+  // crash-causing delivery on the very token Appilix just told us it can't
+  // reach.
+  const targets = opts?.excludeAppilixTagged
+    ? tokens.filter((t) => !t.device_label?.startsWith('Appilix '))
+    : tokens;
+
+  if (!targets.length) return 0;
+
   let sent = 0;
-  for (const { fcm_token } of tokens) {
+  for (const { fcm_token } of targets) {
     const ok = await sendPushNotification(fcm_token, payload);
     if (ok) {
       sent++;
     } else {
+      // FCM rejected the token as unregistered/invalid — it is dead for every
+      // owner, so revoke it outright rather than scoping to this user.
       await supabase
         .from('user_device_tokens')
-        .delete()
-        .eq('fcm_token', fcm_token);
+        .update({ revoked_at: new Date().toISOString(), revoked_reason: 'fcm_invalid' })
+        .eq('fcm_token', fcm_token)
+        .is('revoked_at', null);
     }
   }
   return sent;
 }
 
-// ── Appilix Native Push (Maxina Android app) ────────────────
+/**
+ * True when this user has device tokens on record but every one of them has
+ * been revoked — i.e. they are signed out on every device we know about.
+ *
+ * VTID-03481. Appilix push targets by user_identity, NOT by device token, and
+ * Appilix's own identity→device registry keeps stale mappings that we have no
+ * API to purge. So after two accounts have been used on one phone, an Appilix
+ * push addressed to the account that is no longer signed in STILL lands on that
+ * phone — in that account's language. Fixing the token table alone therefore
+ * would not have stopped the duplicate lock-screen notifications; this gate is
+ * what actually suppresses the second copy.
+ *
+ * Deliberately returns false when the user has NO rows at all: that is the
+ * legitimate legacy case (an iOS Appilix shell whose bridge never captured an
+ * FCM token) which depends on the user_identity fallback and must keep working.
+ */
+export async function isSignedOutOnAllKnownDevices(
+  userId: string,
+  supabase: SupabaseClient<any, any, any>
+): Promise<boolean> {
+  const { data, error } = await supabase
+    .from('user_device_tokens')
+    .select('revoked_at')
+    .eq('user_id', userId);
+
+  // On a query error, fail OPEN (deliver). A missed notification is worse than
+  // a duplicate one, and the token takeover already removes most duplicates.
+  if (error || !data?.length) return false;
+  return data.every((row: { revoked_at: string | null }) => row.revoked_at !== null);
+}
+
+// ── Appilix Native Push (Maxina iOS + Android apps) ──────────
 
 /**
- * Send push notification via the Appilix Push Notification API.
- * This delivers a native Android notification branded as "Maxina"
- * (not a Chrome browser notification).
+ * MAXINA is registered as TWO SEPARATE Appilix apps (confirmed on the
+ * Appilix dashboard: one card tagged "iOS", one tagged "Android" — same
+ * https://vitanaland.com source, but each has its OWN app_key/api_key and
+ * its own pool of registered devices/user_identity mappings). A push call
+ * with one platform's credentials only reaches devices registered under
+ * THAT app — sending only Android credentials silently no-ops for every
+ * iOS user (this is exactly what happened: Android delivery worked after
+ * APPILIX_APP_KEY/APPILIX_API_KEY were wired up, iOS stayed silent).
+ * sendAppilixPush() therefore fans out across every configured platform's
+ * credentials and succeeds if ANY of them delivers. Appilix returns HTTP
+ * 200 with status:false ("No devices...") for the platform a given user
+ * isn't on — that's an expected, harmless outcome of trying the other
+ * platform, not a real failure.
+ */
+function getAppilixCredentialSets(): Array<{ platform: string; appKey: string; apiKey: string }> {
+  const sets: Array<{ platform: string; appKey: string; apiKey: string }> = [];
+  if (process.env.APPILIX_APP_KEY && process.env.APPILIX_API_KEY) {
+    sets.push({ platform: 'android', appKey: process.env.APPILIX_APP_KEY, apiKey: process.env.APPILIX_API_KEY });
+  }
+  if (process.env.APPILIX_IOS_APP_KEY && process.env.APPILIX_IOS_API_KEY) {
+    sets.push({ platform: 'ios', appKey: process.env.APPILIX_IOS_APP_KEY, apiKey: process.env.APPILIX_IOS_API_KEY });
+  }
+  return sets;
+}
+
+/**
+ * Send push notification via the Appilix Push Notification API for ONE
+ * platform's credentials. This delivers a native notification branded as
+ * "Maxina" (not a Chrome browser notification).
  *
- * Requires APPILIX_APP_KEY and APPILIX_API_KEY env vars.
  * User identity is mapped via window.appilix_push_notification_user_identity
  * in the Appilix Custom JS (set to the Supabase user ID).
  */
-export async function sendAppilixPush(
+async function sendAppilixPushWithCredentials(
   userId: string,
-  payload: NotificationPayload
+  payload: NotificationPayload,
+  platform: string,
+  appKey: string,
+  apiKey: string
 ): Promise<boolean> {
-  const appKey = process.env.APPILIX_APP_KEY;
-  const apiKey = process.env.APPILIX_API_KEY;
-  if (!appKey || !apiKey) return false;
-
   try {
     // Appilix API does NOT decode open_link_url (confirmed by their support),
     // so that field must be sent raw. However, notification_title and
@@ -316,7 +404,7 @@ export async function sendAppilixPush(
     }
 
     console.log(
-      `[Appilix] push user=${userId.slice(0, 8)}… ` +
+      `[Appilix] push(${platform}) user=${userId.slice(0, 8)}… ` +
       `title=${JSON.stringify(payload.title)} ` +
       `body_len=${payload.body.length} ` +
       `open_link_url=${JSON.stringify(resolvedOpenLink ?? null)}`
@@ -331,12 +419,13 @@ export async function sendAppilixPush(
     const text = await res.text().catch(() => '');
 
     if (!res.ok) {
-      console.warn(`[Notifications] Appilix push failed (${res.status}):`, text);
+      console.warn(`[Notifications] Appilix(${platform}) push failed (${res.status}):`, text);
       return false;
     }
 
     // Appilix returns HTTP 200 with { status: false, message: "No devices..." }
-    // when delivery fails (e.g. no device registered for that user_identity).
+    // when delivery fails (e.g. no device registered for that user_identity —
+    // expected/harmless when this user isn't on this platform's app).
     // Parse the JSON body and treat status:false as failure so the log
     // accurately reflects what Appilix did.
     let parsed: { status?: boolean | string; message?: string } | null = null;
@@ -344,17 +433,35 @@ export async function sendAppilixPush(
     const ok = parsed?.status === true || parsed?.status === 'true';
     if (!ok) {
       console.warn(
-        `[Notifications] Appilix push DROPPED for user=${userId.slice(0, 8)}…: ` +
+        `[Notifications] Appilix(${platform}) push DROPPED for user=${userId.slice(0, 8)}…: ` +
         `${parsed?.message || text}`
       );
       return false;
     }
-    console.log(`[Notifications] Appilix push sent for user=${userId.slice(0, 8)}…`);
+    console.log(`[Notifications] Appilix(${platform}) push sent for user=${userId.slice(0, 8)}…`);
     return true;
   } catch (err: any) {
-    console.error('[Notifications] Appilix push error:', err.message || err);
+    console.error(`[Notifications] Appilix(${platform}) push error:`, err.message || err);
     return false;
   }
+}
+
+/**
+ * Public entry point — fans out across every configured Appilix platform
+ * (Android, iOS). Returns true if ANY platform's push actually delivered.
+ * A platform with no configured credentials is skipped, not attempted.
+ */
+export async function sendAppilixPush(
+  userId: string,
+  payload: NotificationPayload
+): Promise<boolean> {
+  const credentialSets = getAppilixCredentialSets();
+  if (credentialSets.length === 0) return false;
+
+  const results = await Promise.all(
+    credentialSets.map((c) => sendAppilixPushWithCredentials(userId, payload, c.platform, c.appKey, c.apiKey))
+  );
+  return results.some((sent) => sent === true);
 }
 
 // ── Dynamic Category Preference Check ────────────────────────
@@ -593,18 +700,32 @@ export async function notifyUser(
   let pushed = 0;
   let appilixSent = false;
   if (shouldSendPush) {
+    // VTID-03481: skip Appilix entirely for a user who is signed out on every
+    // device we know about. Appilix targets by user_identity and retains stale
+    // identity→device mappings we can't purge, so without this the account that
+    // LEFT a shared phone keeps pushing to it — the second, wrong-language copy
+    // of every notification.
+    const appilixSuppressed = await isSignedOutOnAllKnownDevices(userId, supabase);
+
     if (payload.data?.url) {
       // Notifications with deep-link URLs must go through Appilix first.
       // Appilix honors open_link_url on tap; FCM-delivered notifications
       // crash the Appilix WebView ("Something went wrong") because FCM
       // doesn't pass the URL to Appilix's native tap handler.
-      appilixSent = await sendAppilixPush(userId, payload);
+      appilixSent = appilixSuppressed ? false : await sendAppilixPush(userId, payload);
       if (!appilixSent) {
-        pushed = await sendPushToUser(userId, tenantId, payload, supabase);
+        // Appilix reported no device for this user (e.g. its client-side
+        // identity registration never took) — do NOT retry via raw FCM on
+        // an Appilix-tagged token, since that's the exact delivery path
+        // that crashes the WebView on tap. Only non-Appilix tokens (real
+        // browser web-push) are safe to fall back to here.
+        pushed = await sendPushToUser(userId, tenantId, payload, supabase, {
+          excludeAppilixTagged: true,
+        });
       }
     } else {
       pushed = await sendPushToUser(userId, tenantId, payload, supabase);
-      if (pushed === 0) {
+      if (pushed === 0 && !appilixSuppressed) {
         appilixSent = await sendAppilixPush(userId, payload);
       }
     }

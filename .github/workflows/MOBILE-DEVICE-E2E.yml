@@ -24,9 +24,9 @@ on:
   workflow_dispatch:
     inputs:
       url:
-        description: 'Frontend URL to test'
+        description: 'Frontend URL to test (the bare domain is the portal-selector — use /maxina for the actual app + login)'
         required: false
-        default: 'https://preview.vitanaland.com'
+        default: 'https://preview.vitanaland.com/maxina'
       flow:
         description: 'Flow to run'
         type: choice
@@ -41,7 +41,10 @@ jobs:
   ios-simulator:
     name: iOS Simulator (${{ inputs.device_name }})
     runs-on: macos-15
-    timeout-minutes: 40
+    # This runner class has shown 80-120s per sim-use `ui` call under load
+    # (heavy animated SPA), not sim-use's usual ~200-300ms — give a full
+    # smoke run (several observe/retry cycles) real headroom.
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
 
@@ -67,7 +70,11 @@ jobs:
           xcrun simctl bootstatus "$UDID" -b
           echo "udid=$UDID" >> "$GITHUB_OUTPUT"
 
-      - name: Preflight (sim-use doctor)
+      # Advisory only: on a loaded runner the probes can be slow and a false
+      # negative here must not kill the run — the flow step below fails
+      # loudly on its own if sim-use is genuinely unusable.
+      - name: Preflight (sim-use doctor, advisory)
+        continue-on-error: true
         run: cd e2e && npm run sim:doctor
 
       - name: Run device flow

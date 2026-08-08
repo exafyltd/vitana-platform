@@ -5,8 +5,8 @@
  * - POST /api/v1/voice-feedback/submit          - Submit a feedback report
  * - GET  /api/v1/voice-feedback/reports          - List user's own reports
  * - GET  /api/v1/voice-feedback/reports/:id      - Single report detail
- * - POST /api/v1/voice-feedback/reports/:id/approve  - Admin: approve → create Command Hub task
- * - POST /api/v1/voice-feedback/reports/:id/reject   - Admin: reject with reason
+ * - POST /api/v1/voice-feedback/reports/:id/approve  - Admin (requireAdminAuth): approve → create Command Hub task
+ * - POST /api/v1/voice-feedback/reports/:id/reject   - Admin (requireAdminAuth): reject with reason
  * - GET  /api/v1/voice-feedback/health           - Health check
  */
 
@@ -14,6 +14,7 @@ import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { createClient } from '@supabase/supabase-js';
 import { emitOasisEvent } from '../services/oasis-event-service';
+import { requireAdminAuth, AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
 
 const router = Router();
 
@@ -226,13 +227,8 @@ router.get('/reports/:id', async (req: Request, res: Response) => {
 /**
  * POST /reports/:id/approve — Admin: approve report and create Command Hub task
  */
-router.post('/reports/:id/approve', async (req: Request, res: Response) => {
+router.post('/reports/:id/approve', requireAdminAuth, async (req: AuthenticatedRequest, res: Response) => {
   console.log('[voice-feedback] POST /reports/:id/approve');
-
-  const token = getBearerToken(req);
-  if (!token) {
-    return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
-  }
 
   const serviceClient = getServiceClient();
   if (!serviceClient) {
@@ -319,13 +315,8 @@ router.post('/reports/:id/approve', async (req: Request, res: Response) => {
 /**
  * POST /reports/:id/reject — Admin: reject report with reason
  */
-router.post('/reports/:id/reject', async (req: Request, res: Response) => {
+router.post('/reports/:id/reject', requireAdminAuth, async (req: AuthenticatedRequest, res: Response) => {
   console.log('[voice-feedback] POST /reports/:id/reject');
-
-  const token = getBearerToken(req);
-  if (!token) {
-    return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
-  }
 
   const parsed = RejectReportSchema.safeParse(req.body);
   if (!parsed.success) {

@@ -69,10 +69,16 @@ describe('scoreSignal', () => {
     expect(s.auto_exec_eligible).toBe(false);
   });
 
-  it('marks medium-risk types eligible for auto-exec', () => {
+  it('marks medium-risk types ineligible for auto-exec (human review required)', () => {
     const s = scoreSignal(signal({ type: 'missing_tests' }));
     expect(s.risk_class).toBe('medium');
-    expect(s.auto_exec_eligible).toBe(true);
+    expect(s.auto_exec_eligible).toBe(false);
+  });
+
+  it('marks low-risk but trivial-impact signals ineligible for auto-exec', () => {
+    const s = scoreSignal(signal({ type: 'dead_code', severity: 'low' }));
+    expect(s.risk_class).toBe('low');
+    expect(s.auto_exec_eligible).toBe(false);
   });
 });
 

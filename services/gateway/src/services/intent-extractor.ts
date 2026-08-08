@@ -1,43 +1,24 @@
 /**
  * VTID-01973: Per-kind intent extractor (P2-A).
  *
- * Strategy pattern over five Gemini-driven extractors. After
+ * Strategy pattern over five LLM-driven extractors. After
  * intent-classifier.ts identifies the kind, this module produces the
  * kind-specific structured payload (kind_payload JSONB on user_intents).
  *
- * Same Vertex+Gemini fallback pattern as inline-fact-extractor.ts. JSON
- * mode, temp 0.1, low token budget.
+ * BOOTSTRAP-GEMINI-TO-CLAUDE: migrated off the Vertex Gemini fallback chain
+ * (gemini-2.5-flash → gemini-2.5-pro, plus an unconfigured Gemini API-key
+ * fallback) to Claude Sonnet 4.6 via the direct Anthropic API. JSON
+ * requested via prompt instructions, temp 0.1, low token budget.
  *
  * Returns { fields, confidence, missing_critical } so the dispatcher knows
  * whether to fire single-shot or fall back to multi-turn slot-fill.
  */
 
-import { VertexAI } from '@google-cloud/vertexai';
 import type { IntentKind } from './intent-classifier';
 import { withGeminiLog } from './gemini-call-log';
+import { callClaudeText, CLAUDE_SONNET_4_6 } from './claude-text-client';
 
-// Accept either name — CLAUDE.md documents GEMINI_API_KEY, older code used GOOGLE_GEMINI_API_KEY.
-const GEMINI_API_KEY = process.env.GOOGLE_GEMINI_API_KEY || process.env.GEMINI_API_KEY;
-const VERTEX_PROJECT = process.env.GOOGLE_CLOUD_PROJECT || process.env.GCP_PROJECT || 'lovable-vitana-vers1';
-const VERTEX_LOCATION = process.env.VERTEX_LOCATION || 'us-central1';
-// BOOTSTRAP-FIND-MATCH-CLASSIFY-FIX: same failure mode as the classifier — the
-// bare gemini-2.0-flash call (no JSON mode) returned empty/unparseable output on
-// the gateway and the only fallback was gated on an unset env var. Use JSON mode
-// + the model family proven to work on this Vertex project (2.5-flash → the
-// matchmaker-proven 2.5-pro), and log each attempt so silent breakage surfaces
-// in gemini_call_log. Both are "thinking" models, so the token budget must leave
-// room for reasoning before the JSON payload.
-const EXTRACT_MODELS = ['gemini-2.5-flash', 'gemini-2.5-pro'];
 const EXTRACT_MAX_OUTPUT_TOKENS = 2048;
-
-let vertexAI: VertexAI | null = null;
-try {
-  if (VERTEX_PROJECT && VERTEX_LOCATION) {
-    vertexAI = new VertexAI({ project: VERTEX_PROJECT, location: VERTEX_LOCATION });
-  }
-} catch {
-  vertexAI = null;
-}
 
 export interface ExtractedIntent {
   intent_kind: IntentKind;
@@ -239,63 +220,26 @@ export async function extractIntent(utterance: string, kind: IntentKind): Promis
   }
 
   const systemPrompt = SYSTEM_PROMPT_BY_KIND[kind];
-  const prompt = `${systemPrompt}\n\nUtterance to extract from:\n${trimmed}`;
+  const prompt = `Utterance to extract from:\n${trimmed}`;
 
-  // Primary: Vertex AI with JSON mode + model fallback chain.
-  if (vertexAI) {
-    for (let i = 0; i < EXTRACT_MODELS.length; i++) {
-      const modelName = EXTRACT_MODELS[i];
-      try {
-        const raw = await withGeminiLog(
-          { feature: 'extractor', model: modelName },
-          async () => {
-            const model = vertexAI!.getGenerativeModel({
-              model: modelName,
-              generationConfig: { temperature: 0.1, maxOutputTokens: EXTRACT_MAX_OUTPUT_TOKENS, topP: 0.8, responseMimeType: 'application/json' },
-            });
-            const response = await model.generateContent({
-              contents: [{ role: 'user', parts: [{ text: prompt }] }],
-            });
-            const candidate = response.response?.candidates?.[0];
-            const textPart = candidate?.content?.parts?.find((p: any) => 'text' in p);
-            const text = textPart ? (textPart as any).text : '';
-            if (!text) throw new Error(`empty Vertex response (finishReason=${candidate?.finishReason ?? 'unknown'})`);
-            return text as string;
-          },
-        );
-        if (raw) {
-          if (i > 0) console.warn(`[VTID-01973] extractor fell back to ${modelName} (kind=${kind})`);
-          return parseExtractorResponse(raw, kind);
-        }
-      } catch (err: any) {
-        console.warn(`[VTID-01973] Vertex extractor model ${modelName} failed (kind=${kind}): ${err?.message}`);
-        // try the next model in the chain
-      }
-    }
-  }
-
-  // Fallback: Gemini API key (only when configured — usually not on the gateway).
-  if (GEMINI_API_KEY) {
-    try {
-      const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{ parts: [{ text: prompt }] }],
-            generationConfig: { temperature: 0.1, maxOutputTokens: EXTRACT_MAX_OUTPUT_TOKENS, responseMimeType: 'application/json' },
-          }),
-        }
-      );
-      if (response.ok) {
-        const data = await response.json() as any;
-        const raw = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-        if (raw) return parseExtractorResponse(raw, kind);
-      }
-    } catch (err: any) {
-      console.warn(`[VTID-01973] Gemini API extractor failed (kind=${kind}): ${err.message}`);
-    }
+  try {
+    const raw = await withGeminiLog(
+      { feature: 'extractor', model: CLAUDE_SONNET_4_6 },
+      async () => {
+        const text = await callClaudeText({
+          model: CLAUDE_SONNET_4_6,
+          system: systemPrompt,
+          prompt,
+          maxTokens: EXTRACT_MAX_OUTPUT_TOKENS,
+          temperature: 0.1,
+        });
+        if (!text) throw new Error('empty Claude response');
+        return text;
+      },
+    );
+    if (raw) return parseExtractorResponse(raw, kind);
+  } catch (err: any) {
+    console.warn(`[VTID-01973] Claude extractor failed (kind=${kind}): ${err?.message}`);
   }
 
   return {
