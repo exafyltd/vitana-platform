@@ -11,6 +11,41 @@
 
 ## Current position
 
+- **AI COMMERCE MESH — Phase 2 built (2026-08-08, VTID-03535):** Connector
+  Factory core in `services/vcaop/src/factory/` + canonical model seed in
+  `src/canonical/model.ts`. (1) **ConnectorManifest** (zod, versioned):
+  connection types incl. mcp/openapi/graphql/webhook/edi_sftp, secret
+  REFERENCES only (validator hunts inline secret-shaped values anywhere in the
+  document), cross-ref checks, destructive-action rule (human-gated or
+  idempotency key — no third option), connection-state machine with legal
+  transitions. (2) **OpenAPI ingestion** → draft manifest: schemas/actions/
+  webhooks/auth extracted; canonical mapping proposals scored by a transparent
+  deterministic lexical model (camelCase-aware); sensitive fields flagged;
+  unmappable fields become warnings, never guesses. (3) **ConnectorFactory**
+  compiles a manifest into `GeneratedApiConnector extends BaseConnector` —
+  guardrails inherited by construction (proved by tests: default-deny without
+  a policy row, human-gate halts before the partner is reached, registration
+  human-gated), plus generated zod input/output validators (output failure =
+  drift signal), retry/timeout/idempotency handling, generated health check,
+  generated CONTRACT TESTS (happy path, idempotency dedup, invalid input
+  never reaches transport, auth-failure surfacing, bounded retry), and
+  read-only MCP tool declarations. (4) **Certification pipeline**: all
+  contract tests must pass against the sandbox AND no low-confidence or
+  sensitive AI mapping without a human MappingDecision → otherwise
+  `approval_required`; `activateConnector` refuses anything uncertified — no
+  override exists. (5) **Sandbox partner e2e**: synthetic sandbox-supplier
+  OpenAPI fixture ingested → compiled → certified (after a human mapping
+  approval) → activated → serves reads. (6) **DB**: 8 additive Prisma models
+  (`partner_tenant`, `integration_manifest`, `integration_version`,
+  `partner_capability`, `schema_source`, `schema_mapping`,
+  `mapping_decision`, `connector_certification`) + reversible migration
+  `20260808_vcaop_mesh_factory_0001` — **verified up→down→up + FK cascade on
+  ephemeral Postgres 16 in-session**; NOT applied live (BLK-001);
+  `prisma validate` clean; DATABASE_SCHEMA.md updated. **Suite: 37/37
+  suites, 213/213 tests green** (was 33/184 at Phase 0 baseline). Next:
+  Phase 3 (Partner Portal onboarding presenters/API) or Phase 4 (durable
+  workflows); marketplace-sync's six handwritten providers are the first
+  real re-expression candidates.
 - **AI COMMERCE MESH — Phase 1 built (2026-08-08, VTID-03533):** new
   `services/vcaop-mcp/` — the public MCP/OAuth gateway foundation (ADR-004),
   dev-only. MCP Streamable HTTP (official SDK, stateless JSON, fresh server

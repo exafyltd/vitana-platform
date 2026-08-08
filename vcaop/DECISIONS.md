@@ -48,3 +48,27 @@
   (the endpoints the gateway verifiably serves); catalog/cart/order reads
   throw `backend_unavailable` with an actionable message instead of inventing
   endpoint shapes. CI uses the synthetic `MemoryReadBackend` only.
+
+## 2026-08-08 — Commerce Mesh Phase 2 (VTID-03535), Tier-A decisions
+
+- **Mapping proposals are deterministic, not LLM calls.** The ingestion
+  pipeline scores partner→canonical field mappings with a transparent lexical
+  model (exact > token overlap > substring, camelCase-aware). An LLM proposer
+  can later feed *candidates* into the same MappingDecision review flow, but
+  certification must never depend on a model call — AI plans, deterministic
+  systems execute (ADR-005), and a certification gate that needs an API key
+  is a certification gate that silently stops running.
+- **Destructive manifest actions must be human-gated OR idempotency-keyed** —
+  schema-enforced in validateManifest, no third option. OpenAPI ingestion
+  defaults DELETE to destructive+human_gated and all writes to
+  idempotency_key; a human review may relax, the compiler never does.
+- **Generated connectors extend BaseConnector** rather than reimplementing
+  gate logic (ADR-002) — guardrail inheritance is proved by tests
+  (default-deny, human-gate halt before transport, human-gated registration).
+- **Output-validation failure is a drift signal**, surfaced as
+  `invalid_output` rather than passing unvalidated partner data downstream.
+- **Migration verified on ephemeral PG16 in-session** (initdb as unprivileged
+  user, up→down→up + FK cascade). Live apply deliberately NOT done: no dev DB
+  (BLK-001), and prod DDL via session tooling is not a Phase 2 action.
+- **zod added to services/vcaop** (house convention §10 mandates Zod; vcaop
+  previously had no validation dependency).

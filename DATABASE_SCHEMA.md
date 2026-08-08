@@ -1490,5 +1490,27 @@ lessons decay.
 
 ---
 
+## Commerce Mesh — Connector Factory tables (VTID-03535, 2026-08-08)
+
+Additive Prisma migration `prisma/migrations/20260808_vcaop_mesh_factory_0001/`
+(reversible; `down.sql` verified up→down→up on ephemeral Postgres 16).
+**NOT yet applied to any live database** — application is gated on the VCAOP
+dev environment (vcaop BLK-001) and must follow the working migration paths
+(VTID-03486/03492 lessons: verify the tables exist after applying; a green
+workflow is not evidence).
+
+| Table | Purpose |
+|-------|---------|
+| `partner_tenant` | A business connected (or connecting) to the Mesh; carries connection state |
+| `integration_manifest` | One connector per (partner, connector_id); points at the policy-engine provider row that gates every call |
+| `integration_version` | Immutable manifest versions (full JSON document + hash; secret REFERENCES only, never values) |
+| `partner_capability` | Declared read/action/event capabilities per manifest |
+| `schema_source` | Extracted partner schemas (fields + hash — the drift-detection anchor) |
+| `schema_mapping` | Versioned partner-field → canonical-field mappings with confidence + `sensitive` flag |
+| `mapping_decision` | Human approve/reject decisions on mappings (`decided_by` is a human reviewer id, never an AI identity) |
+| `connector_certification` | Certification runs: contract-test results, pending mappings, outcome |
+
+---
+
 **Remember:** This file is the SINGLE SOURCE OF TRUTH for table names.
 When in doubt, CHECK HERE FIRST!

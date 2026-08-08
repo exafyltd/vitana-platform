@@ -385,6 +385,148 @@ model MerchantRoute {
   @@map("merchant_route")
 }
 
+// ============================================================================
+// COMMERCE MESH — Connector Factory persistence (VTID-03535, ADR-002/003).
+// Additive to the VCAOP schema above. Manifests store secret REFERENCES only
+// (validated in services/vcaop/src/factory/manifest.ts before any row is
+// written). IntegrationVersion.document is the full manifest JSON — immutable
+// once a ConnectorCertification row marks it certified.
+// ============================================================================
+
+model PartnerTenant {
+  id           String   @id @default(cuid())
+  tenantId     String   @map("tenant_id")
+  name         String
+  status       String   @default("discovered") // CONNECTION_STATES (manifest.ts)
+  jurisdiction String?
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  manifests IntegrationManifest[]
+
+  @@index([tenantId], map: "idx_partner_tenant_tenant")
+  @@index([status], map: "idx_partner_tenant_status")
+  @@map("partner_tenant")
+}
+
+model IntegrationManifest {
+  id             String   @id @default(cuid())
+  partnerTenantId String  @map("partner_tenant_id")
+  connectorId    String   @map("connector_id") // kebab-case slug
+  providerId     String   @map("provider_id") // policy-engine provider row that gates every call
+  connectionType String   @map("connection_type") // mcp|openapi|oauth_api|rest|graphql|webhook|platform_install|scim|edi_sftp|browser|manual
+  riskLevel      String   @map("risk_level")
+  status         String   @default("discovered") // CONNECTION_STATES
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  partnerTenant PartnerTenant        @relation(fields: [partnerTenantId], references: [id], onDelete: Cascade)
+  versions      IntegrationVersion[]
+  capabilities  PartnerCapability[]
+
+  @@unique([partnerTenantId, connectorId], map: "uq_integration_manifest_partner_connector")
+  @@index([status], map: "idx_integration_manifest_status")
+  @@map("integration_manifest")
+}
+
+model IntegrationVersion {
+  id                  String   @id @default(cuid())
+  manifestId          String   @map("manifest_id")
+  version             String // semver
+  document            Json // full ConnectorManifest JSON — secret refs only, never values
+  documentHash        String   @map("document_hash")
+  certificationStatus String   @default("draft") @map("certification_status")
+  createdAt           DateTime @default(now()) @map("created_at")
+
+  manifest       IntegrationManifest      @relation(fields: [manifestId], references: [id], onDelete: Cascade)
+  schemaSources  SchemaSource[]
+  schemaMappings SchemaMapping[]
+  certifications ConnectorCertification[]
+
+  @@unique([manifestId, version], map: "uq_integration_version_manifest_version")
+  @@index([certificationStatus], map: "idx_integration_version_cert_status")
+  @@map("integration_version")
+}
+
+model PartnerCapability {
+  id          String   @id @default(cuid())
+  manifestId  String   @map("manifest_id")
+  key         String
+  kind        String // read|action|event
+  description String?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  manifest IntegrationManifest @relation(fields: [manifestId], references: [id], onDelete: Cascade)
+
+  @@index([manifestId], map: "idx_partner_capability_manifest")
+  @@map("partner_capability")
+}
+
+model SchemaSource {
+  id        String   @id @default(cuid())
+  versionId String   @map("version_id")
+  name      String
+  fields    Json // [{name,type,required,sensitive}]
+  hash      String // drift detection anchor
+  createdAt DateTime @default(now()) @map("created_at")
+
+  version IntegrationVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
+
+  @@index([versionId], map: "idx_schema_source_version")
+  @@map("schema_source")
+}
+
+model SchemaMapping {
+  id             String   @id @default(cuid())
+  versionId      String   @map("version_id")
+  sourceSchema   String   @map("source_schema")
+  sourceField    String   @map("source_field")
+  canonicalEntity String  @map("canonical_entity")
+  canonicalField String   @map("canonical_field")
+  transform      String?
+  confidence     Float
+  decidedBy      String   @map("decided_by") // ai|human
+  sensitive      Boolean  @default(false)
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  version   IntegrationVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
+  decisions MappingDecision[]
+
+  @@index([versionId], map: "idx_schema_mapping_version")
+  @@index([sensitive, confidence], map: "idx_schema_mapping_review_queue")
+  @@map("schema_mapping")
+}
+
+model MappingDecision {
+  id        String   @id @default(cuid())
+  mappingId String   @map("mapping_id")
+  decision  String // approve|reject
+  decidedBy String   @map("decided_by") // human reviewer id — never an AI identity
+  reason    String?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  mapping SchemaMapping @relation(fields: [mappingId], references: [id], onDelete: Cascade)
+
+  @@index([mappingId], map: "idx_mapping_decision_mapping")
+  @@map("mapping_decision")
+}
+
+model ConnectorCertification {
+  id              String   @id @default(cuid())
+  versionId       String   @map("version_id")
+  status          String // certified|approval_required|failed
+  testResults     Json     @map("test_results")
+  pendingMappings Json     @map("pending_mappings")
+  reasons         Json
+  certifiedBy     String?  @map("certified_by")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  version IntegrationVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
+
+  @@index([versionId, createdAt], map: "idx_connector_certification_version_time")
+  @@map("connector_certification")
+}
+
 // Sec. 4.6 — FTC-style affiliate disclosure; non-dismissible at checkout.
 model Disclosure {
   id          String    @id @default(cuid())
