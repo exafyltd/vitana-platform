@@ -461,6 +461,27 @@ describe('distillation is wired into the tick (VTID-03531)', () => {
     expect(rec.lessonUpdates[0].evidence_step_ids).toEqual(['old', 's0']);
   });
 
+  it('refreshes scope on recurrence so a scope-definition change self-heals', async () => {
+    // VTID-03534. Without this, a row written under an older scope definition
+    // is found by (stage, pattern_type, pattern_key), has frequency/evidence
+    // updated, and keeps its stale scope forever — so a scope fix applies
+    // only to patterns never seen before and every already-known pattern
+    // stays unreachable permanently. Raised in review of PR #3062.
+    const { client, rec } = fakeSupabase({
+      cursorAt: '2026-08-01T00:00:00.000Z',
+      eventPages: [[failedEvt('e12', '2026-08-01T01:00:00.000Z', 'error TS2307: cannot find module')]],
+      existingLesson: { id: 'L1', frequency: 3, evidence_step_ids: [] },
+    });
+    mockGetSupabase.mockReturnValue(client);
+
+    await observerTick();
+
+    expect(rec.lessonUpdates).toHaveLength(1);
+    // The distiller no longer scopes on the emitting service, so the stale
+    // {service: ...} must be overwritten with the current definition.
+    expect(rec.lessonUpdates[0].scope).toEqual({});
+  });
+
   it('counts every occurrence in a batch, not one per batch', async () => {
     // Three failures with the same signature really are three occurrences.
     // Counting the batch as a single recurrence undercounts the evidence and

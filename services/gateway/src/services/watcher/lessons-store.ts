@@ -121,6 +121,18 @@ export async function upsertLesson(input: {
           confidence: confidenceForFrequency(frequency),
           evidence_step_ids: merged,
           last_seen_at: now,
+          // Scope is refreshed on recurrence, not just on insert — VTID-03534.
+          //
+          // The distiller is the authority on what a lesson's retrieval scope
+          // should be, and that definition can change (it just did). Without
+          // this, a row written under the old definition is found by
+          // (stage, pattern_type, pattern_key), has its frequency and evidence
+          // updated, and keeps its stale scope forever — so a scope fix would
+          // only ever apply to patterns never seen before, silently leaving
+          // every already-known pattern unreachable for good. The 34 rows the
+          // VTID-03531 backfill produced are exactly those, and they cover the
+          // highest-frequency patterns, i.e. most of the value.
+          scope: input.scope ?? {},
           // The lesson TEXT is refreshed but the example is not: the first
           // example is as representative as the fiftieth, and churning it
           // would make the row look freshly-edited to a human reviewer on
