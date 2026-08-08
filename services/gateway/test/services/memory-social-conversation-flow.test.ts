@@ -223,7 +223,7 @@ beforeEach(() => {
 // ---------------------------------------------------------------------------
 
 describe('orchestrator × social — combined prompt block', () => {
-  it('person question: ONE sentinel block with personal memory + social context + person intelligence + goals + self-check', async () => {
+  it('person question: ONE sentinel block with personal memory + social context + person intelligence + self-check (VTID-03458: no unrelated goal content)', async () => {
     const result = await buildAssistantMemoryContext({
       ...BASE,
       message: 'Erzähl mir mehr über Mariia Maksina.',
@@ -238,8 +238,15 @@ describe('orchestrator × social — combined prompt block', () => {
 
     // Personal memory still present alongside social.
     expect(block).toContain('preferred_language: German');
-    expect(block).toContain('<user_goals>');
-    expect(block).toContain('Improve sleep quality');
+
+    // VTID-03458 regression: "tell me about Mariia" has zero relevance to
+    // Life Compass goals — the goals section must NOT be glued onto a
+    // person-intelligence reply (this is the same shape as the reported
+    // "send a message to Maria" bug, where a nutrition-index question got
+    // prepended to an unrelated reply). Goals are still LOADED (telemetry),
+    // just not rendered for this irrelevant turn.
+    expect(block).not.toContain('<user_goals>');
+    expect(block).not.toContain('Improve sleep quality');
 
     // Person intelligence for Mariia with relationship + shared context.
     expect(block).toContain('Person in focus — Mariia Maksina');

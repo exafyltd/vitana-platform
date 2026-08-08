@@ -176,7 +176,80 @@ const PROTECTED_PATH = 'services/gateway/src/frontend/command-hub/';
 //             drift detection, independent of the unreliable visibilitychange
 //             API). Mobile overheating fix; no pre-existing VTID covers it.
 //             Branch pattern: orb-widget-background-watchdog (for claude/orb-widget-background-watchdog branch)
-const ALLOWED_VTID_PATTERN = /DEV-COMHU-\d+|memory-orchestrator-mandatory|orb-widget-background-watchdog|VTID-03098|fix-vitana-overlay-audio|VTID-03087|VTID-02868|VTID-02867|VTID-02866|VTID-02865|VTID-02859|VTID-02858|VTID-02857|VTID-02856|VTID-02733|VTID-02710|VTID-02036|VTID-02035|VTID-02034|VTID-02032|VTID-02031|VTID-02029|VTID-02021|VTID-02020|VTID-01999|VTID-01981|VTID-01991|VTID-01987|VTID-01988|VTID-0302|VTID-0539|VTID-0541|VTID-0542|VTID-0600|VTID-0601|VTID-01001|VTID-01002|VTID-01003|VTID-01005|VTID-01006|VTID-01009|VTID-01010|VTID-01012|VTID-01013|VTID-01014|VTID-01015|VTID-01016|VTID-01017|VTID-01019|VTID-01021|VTID-01022|VTID-01025|VTID-01027|VTID-01028|VTID-01030|VTID-01034|VTID-0135|VTID-01037|VTID-01038|VTID-01039|VTID-01041|VTID-01042|VTID-01043|VTID-01044|VTID-01045|VTID-01049|VTID-01052|VTID-01055|VTID-01064|VTID-01066|VTID-01067|VTID-01069|VTID-01079|VTID-01086|VTID-01109|VTID-01111|VTID-01122|VTID-01150|VTID-01155|VTID-01156|VTID-01154|VTID-01168|VTID-01171|VTID-01172|VTID-01173|VTID-01174|VTID-01180|VTID-01181|VTID-01186|VTID-01188|VTID-01189|VTID-01194|VTID-01195|VTID-01196|VTID-01208|VTID-01209|VTID-01210|VTID-01211|VTID-01214|VTID-01216|VTID-01218A|VTID-01218B|VTID-01218E|VTID-01221|VTID-01225|VTID-01229|VTID-01260|VTID-ORBC|VTID-VOICE-INIT|SPEC-01|global-vtid-allocator|vtid-ledger-visibility|add-conversation-summary|editable-scheduled-card-title|unified-language-selector|fix-stt-abort-error|fix-tts-feedback|compact-cards-date-filter|gateway-me-context-api|delete-scheduled-tasks|fix-ghost-cards|security-audit-review|fix-vtid-board-mapping|orb-conversation-stream|orb-presence-layer|auto-growing-chatbox|memory-garden-ui-depth|debug-orb-memory|debug-command-hub-vtids|remove-deleted-task|runner-execution-bridge|gemini-live-multimodal-tts|remove-legacy-tasks-fetch|global-top-navigation|github-approvals-feed|approval-auto-deploy|wire-profile-modal-api|dev-users-access-toggle|agents-ui-orchestrator-apis|agents-control-plane-pipelines|autopilot-event-loop|add-arming-panel|replace-dev-identity-jwt|fix-validation|unified-spec-generation|infinite-scroll-list|fix-vtid-ledger-layout|fix-login-ui-update|command-hub-admin-screens|fetch-user-profile|document-agent-setup|task-pipeline-status-view|fix-live-ticker-formatting|fix-page-scrolling|document-operator-features|fix-duplicate-formatRelativeTime|unified-conversation-intelligence|sync-orb-autopilot|fix-fragmentation-integration|cognee-vitana-integration|vtid-01229-execution-pipeline-fix|vtid-orbc|clarify-oasis-user-identification|fix-vitana-voice-init/i;
+// BOOTSTRAP-PUBLISH-STALENESS-FIX: PUBLISH popover/legacy modal reported
+//             "dispatched" before the deploy actually landed — legacy modal
+//             now polls the same build-info/OASIS verify-loop the inline
+//             popover already used before calling onAfterPublish; fixes the
+//             VS.env race that could route a click into the non-polling
+//             modal; ACTIVE_REV_CACHE now invalidated on /publish too. No
+//             pre-existing VTID covers it. Branch:
+//             claude/command-hub-publish-refresh-5qpqu9
+// BOOTSTRAP-ORB-FASTSTART-DRIFT: failed-session-start recovery in
+//             orb-widget.js — _sessionStart's catch set the 'error' aura but
+//             never called _setStatus and never retried, so an aborted start
+//             left the overlay showing the "Verbinden..." label _show() had
+//             written, forever, with nothing in flight. That turned a merely
+//             slow backend (cold authenticated session/start measured 9.51s
+//             against the widget's 8s fetch abort, caused by
+//             FEATURE_ORB_FAST_START_ENV never being carried onto the AWS prod
+//             task def in the VTID-03419 cutover) into a permanent dead end;
+//             the user's only recovery was closing and reopening the overlay.
+//             It now reports the real failure and hands off to
+//             _attemptReconnect(). P0 live production report, 2026-07-31; no
+//             pre-existing VTID covers it. Same situation and same registration
+//             route as BOOTSTRAP-ORB-BARGEIN below.
+// BOOTSTRAP-ORB-BARGEIN: barge-in pre-roll in orb-widget.js — while Vitana
+//             spoke, the capture handler dropped every mic frame and only
+//             reacted after 6 VAD frames, so the first ~384ms of the user's
+//             interruption was destroyed and Nova never heard it (its native
+//             barge-in therefore never fired, and sendEndOfTurn() is a
+//             documented no-op for Nova). Frames are now buffered in a bounded
+//             ring and flushed upstream on confirmed speech. Audit finding
+//             L-09/C-09, 2026-07-30 Nova latency & conversation-flow audit; no
+//             pre-existing VTID covers it. Same situation and same registration
+//             pattern as BOOTSTRAP-ORB-BG-WATCHDOG above (also orb-widget.js).
+//             index.html is touched only to bump the ?v= cache-buster, which
+//             CLAUDE.md §16 requires for any Command Hub JS change.
+//             Branch pattern: orb-bargein-fix (for claude/orb-bargein-fix)
+// VTID-03440: gateway-jest quick-run wiring in Testing & QA > Unit Tests
+//             (fixes a silently-broken "Gateway Tests (Jest)" button) +
+//             Coverage Bootstrap phase-structure table on the same panel.
+//             Allocated via POST /api/v1/vtid/allocate. Branch:
+//             claude/vitanaland-test-coverage-rve6j3
+// VTID-03449: Warmer, non-technical ORB "thinking" status messages
+//             (orb-widget.js message arrays + rotation logic; index.html
+//             touched only to bump the ?v= cache-buster per CLAUDE.md §16).
+//             Allocated via the allocate_global_vtid Supabase RPC. Branch:
+//             claude/vitana-orb-status-messages-v0m1rs
+// VTID-03451: Follow-up to VTID-03449 — the fixed single opener shown on
+//             every turn (plus a narrative-ordered rotation biased toward
+//             the same 2nd message) made the status text repeat almost
+//             every turn since most responses resolve before the old
+//             4s-to-rotation delay. Merged every line into one pool,
+//             shuffled fresh per turn, added a cross-turn no-repeat guard
+//             on the first-shown line. Allocated via the
+//             allocate_global_vtid Supabase RPC. Branch:
+//             claude/orb-thinking-repetition-fix
+// VTID-03471: ORB voice transport default flips from SSE to the single
+//             WebSocket (L-04/L-05). Touches orb-widget.js (transport
+//             resolution + SSE fallback latch) and index.html (?v= bump).
+// VTID-03455: Follow-up to VTID-03451 — user feedback that one line in the
+//             merged pool ("Mmm, let me see…") read as too unserious.
+//             Swapped for a plain "Let me take a look…"; index.html touched
+//             only to bump the ?v= cache-buster per CLAUDE.md §16. Allocated
+//             via the allocate_global_vtid Supabase RPC. Branch:
+//             claude/vitana-orb-status-messages-v0m1rs
+// VTID-03469: ORB first voice session after login was silent on iPhone. The
+//             playback AudioContext was only unlocked inside _sessionStart(),
+//             which is in-gesture only on the FAB-tap path; vitana-v1's front
+//             door auto-opens the overlay from a React effect with no user
+//             activation, so on iOS the context stayed suspended and the
+//             greeting was dropped while the UI still showed "Vitana spricht".
+//             Adds a page-level first-gesture unlock plus an honest,
+//             tap-recoverable state when audio genuinely cannot play.
+//             Allocated via the allocate_global_vtid Supabase RPC. Branch:
+//             claude/vitana-mobile-audio-bug-pqckuv
+const ALLOWED_VTID_PATTERN = /DEV-COMHU-\d+|BOOTSTRAP-ORB-FASTSTART-DRIFT|BOOTSTRAP-ORB-BARGEIN|orb-bargein-fix|VTID-03471|VTID-03469|VTID-03455|VTID-03451|VTID-03449|VTID-03440|memory-orchestrator-mandatory|orb-widget-background-watchdog|BOOTSTRAP-PUBLISH-STALENESS-FIX|command-hub-publish-refresh|VTID-03098|fix-vitana-overlay-audio|VTID-03087|VTID-02868|VTID-02867|VTID-02866|VTID-02865|VTID-02859|VTID-02858|VTID-02857|VTID-02856|VTID-02733|VTID-02710|VTID-02036|VTID-02035|VTID-02034|VTID-02032|VTID-02031|VTID-02029|VTID-02021|VTID-02020|VTID-01999|VTID-01981|VTID-01991|VTID-01987|VTID-01988|VTID-0302|VTID-0539|VTID-0541|VTID-0542|VTID-0600|VTID-0601|VTID-01001|VTID-01002|VTID-01003|VTID-01005|VTID-01006|VTID-01009|VTID-01010|VTID-01012|VTID-01013|VTID-01014|VTID-01015|VTID-01016|VTID-01017|VTID-01019|VTID-01021|VTID-01022|VTID-01025|VTID-01027|VTID-01028|VTID-01030|VTID-01034|VTID-0135|VTID-01037|VTID-01038|VTID-01039|VTID-01041|VTID-01042|VTID-01043|VTID-01044|VTID-01045|VTID-01049|VTID-01052|VTID-01055|VTID-01064|VTID-01066|VTID-01067|VTID-01069|VTID-01079|VTID-01086|VTID-01109|VTID-01111|VTID-01122|VTID-01150|VTID-01155|VTID-01156|VTID-01154|VTID-01168|VTID-01171|VTID-01172|VTID-01173|VTID-01174|VTID-01180|VTID-01181|VTID-01186|VTID-01188|VTID-01189|VTID-01194|VTID-01195|VTID-01196|VTID-01208|VTID-01209|VTID-01210|VTID-01211|VTID-01214|VTID-01216|VTID-01218A|VTID-01218B|VTID-01218E|VTID-01221|VTID-01225|VTID-01229|VTID-01260|VTID-ORBC|VTID-VOICE-INIT|SPEC-01|global-vtid-allocator|vtid-ledger-visibility|add-conversation-summary|editable-scheduled-card-title|unified-language-selector|fix-stt-abort-error|fix-tts-feedback|compact-cards-date-filter|gateway-me-context-api|delete-scheduled-tasks|fix-ghost-cards|security-audit-review|fix-vtid-board-mapping|orb-conversation-stream|orb-presence-layer|auto-growing-chatbox|memory-garden-ui-depth|debug-orb-memory|debug-command-hub-vtids|remove-deleted-task|runner-execution-bridge|gemini-live-multimodal-tts|remove-legacy-tasks-fetch|global-top-navigation|github-approvals-feed|approval-auto-deploy|wire-profile-modal-api|dev-users-access-toggle|agents-ui-orchestrator-apis|agents-control-plane-pipelines|autopilot-event-loop|add-arming-panel|replace-dev-identity-jwt|fix-validation|unified-spec-generation|infinite-scroll-list|fix-vtid-ledger-layout|fix-login-ui-update|command-hub-admin-screens|fetch-user-profile|document-agent-setup|task-pipeline-status-view|fix-live-ticker-formatting|fix-page-scrolling|document-operator-features|fix-duplicate-formatRelativeTime|unified-conversation-intelligence|sync-orb-autopilot|fix-fragmentation-integration|cognee-vitana-integration|vtid-01229-execution-pipeline-fix|vtid-orbc|clarify-oasis-user-identification|fix-vitana-voice-init/i;
 
 function getChangedFiles() {
   try {

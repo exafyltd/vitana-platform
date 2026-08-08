@@ -74,7 +74,11 @@ describe('BOOTSTRAP-ORB-INSTRUCTION-BUDGET: raw-WS transports always omit the pr
     // The omitGreetingPolicy/surface/omitToolsProse positional tail of the
     // buildLiveSystemInstruction call. A revert to the transport-gated flag
     // (GEMINI_LIVE_USE_API_KEY) or to `undefined` re-opens the prod outage.
-    const tail = /omitGreetingPolicy[^]*?surface — unchanged[^]*?\n\s*(true|GEMINI_LIVE_USE_API_KEY|undefined|false),\n\s*\)\)\) as string/;
+    // VTID-03447 appended a further trailing `resolvedFirstName` argument
+    // after omitToolsProse (session.greetingFirstName), so the closing
+    // `))) as string` no longer sits immediately after the captured value —
+    // allow anything (comments + the new argument) in between.
+    const tail = /omitGreetingPolicy[^]*?surface — unchanged[^]*?\n\s*(true|GEMINI_LIVE_USE_API_KEY|undefined|false),\n[^]*?\)\)\) as string/;
     const m = src.match(tail);
     expect(m).not.toBeNull();
     expect(m![1]).toBe('true');

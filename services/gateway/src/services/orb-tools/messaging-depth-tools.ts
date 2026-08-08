@@ -904,7 +904,10 @@ export const tool_send_calendar_invite_in_chat: Handler = async (args, id, sb) =
           {
             title: senderName,
             body: content,
-            data: { type: 'new_chat_message', sender_id: id.user_id, url: `/inbox?peer=${id.user_id}` },
+            // Path-based, not query-string — Appilix's Android in-app browser
+            // silently fails to launch notification URLs containing a query
+            // string (see App.tsx's BOOTSTRAP-NOTIF-MESSENGER-DIAG comment).
+            data: { type: 'new_chat_message', sender_id: id.user_id, url: `/inbox/u/${id.user_id}` },
           },
           sb,
         );
@@ -1011,7 +1014,8 @@ async function sendCallInvite(
         {
           title: senderName,
           body: content,
-          data: { type: 'new_chat_message', sender_id: id.user_id, url: `/inbox?peer=${id.user_id}` },
+          // Path-based, not query-string — see the call_invite notify above.
+          data: { type: 'new_chat_message', sender_id: id.user_id, url: `/inbox/u/${id.user_id}` },
         },
         sb,
       );

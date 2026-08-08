@@ -30,6 +30,21 @@ const AUTH_NAMES = [
   // requireExafyAdmin: admin-role gate (middleware/auth-supabase-jwt) used by the
   // admin routes (notifications, orb-tools selfcheck). It IS auth.
   'requireExafyAdmin',
+  // requireAdminAuth: the module's own documented "requireAuth + requireExafyAdmin"
+  // convenience combinator (middleware/auth-supabase-jwt) — strictly STRONGER than
+  // either name already on this list, yet it was absent, so every route using it
+  // was reported as unauthenticated. 48 call sites across 8+ route files
+  // (admin-health, admin-intent-engine, admin-navigator, admin-users-lookup,
+  // awareness-config, media-hub, operator, orb-livekit). It IS auth.
+  'requireAdminAuth',
+  // requireSessionToken (routes/watcher.ts, VTID-03460): shared-bearer-secret gate
+  // on POST /api/v1/watcher/session-step. Its caller is a Claude Code session hook,
+  // not a logged-in human, so no JWT middleware on this list can apply. Same shape
+  // as requireScanToken above (already accepted here): compares the presented
+  // Bearer against a deployment-scoped secret and 401s on mismatch — and 503s when
+  // the secret is unset, so the endpoint is CLOSED by default rather than open.
+  // It IS auth.
+  'requireSessionToken',
 ];
 const ROUTE_PREFIX_RE = /^\s*router\.(get|post|put|patch|delete)\s*\(/;
 

@@ -78,9 +78,20 @@ describe('GET /api/v1/news-feed/top-performer', () => {
     expect(res.body.ok).toBe(true);
     expect(res.body.performer.user_id).toBe('a'); // bigger delta wins
     expect(res.body.performer.improvement).toBe(40);
-    // Exact Index scores must never be exposed.
-    expect(JSON.stringify(res.body)).not.toContain('540');
-    expect(JSON.stringify(res.body)).not.toContain('score_total');
+    // Exact Index scores must never be exposed. Strip the volatile timestamp
+    // before serializing: computed_at is generated at request time and its
+    // millisecond component can itself spell a score, which made this a real
+    // ~1-in-1000 CI flake (a run at 2026-07-30T11:51:03.540Z matched '540'
+    // and failed an unrelated PR). The leak we actually care about is a score
+    // in the payload fields, not digits in a clock reading.
+    const { computed_at, ...performerFields } = res.body.performer;
+    expect(computed_at).toEqual(expect.any(String));
+    const serialized = JSON.stringify({ ...res.body, performer: performerFields });
+    for (const score of ['500', '540', '600', '610']) {
+      expect(serialized).not.toContain(score);
+    }
+    expect(serialized).not.toContain('score_total');
+    expect(res.body.performer).not.toHaveProperty('score_total');
   });
 
   it('returns null when nobody opted in', async () => {

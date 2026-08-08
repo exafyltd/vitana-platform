@@ -228,9 +228,17 @@ export class GeminiApiKeyLiveClient implements UpstreamLiveClient {
 
       ws.on('open', async () => {
         try {
+          // The Vertex-shaped model path buildSetupMessage composes from
+          // projectId/location is discarded below (setup.model is overridden
+          // to the AI Studio catalog id), so satisfy its fail-loud guard with
+          // placeholders instead of requiring GCP identity on this transport.
           const envelope = options.customSetupMessage
             ? await Promise.resolve(options.customSetupMessage())
-            : buildSetupMessage(options);
+            : buildSetupMessage({
+                ...options,
+                projectId: options.projectId ?? 'ai-studio',
+                location: options.location ?? 'global',
+              });
           // Always override to AI Studio's own model catalog — the
           // envelope's model field is Vertex-shaped and Vertex's Live
           // model is not reachable through this endpoint (see file header).

@@ -22,6 +22,13 @@
  * the notification title wraps the resolved feature name in the gateway's
  * generic `notif.feature_announcement.title` catalog key, the body IS the
  * per-locale description directly (one-off editorial copy, not a catalog key).
+ *
+ * `deep_link` vs. the push's own deep link: `deep_link` is the CARD's own
+ * "Try it yourself" in-app button target (e.g. /home/compose) — it is NOT
+ * reused for the push notification. Tapping the push always lands on
+ * /home (the News Feed, where the card itself is pinned near the top) so
+ * the user sees the card before deciding to act on its CTA, rather than
+ * being skipped straight into the CTA's action.
  */
 
 import { Router, Request, Response } from 'express';
@@ -174,7 +181,17 @@ router.post('/', async (req: AuthenticatedRequest, res: Response) => {
       const payload: NotificationPayload = {
         title: tt('notif.feature_announcement.title', locale, { feature: pickLocale(feature_title, locale) }),
         body: pickLocale(description, locale),
-        data: { url: deep_link, entity_id: announcementId },
+        // Push tap lands on the News Feed (where the card itself lives) —
+        // deliberately NOT `deep_link`, which is the card's own "Try it
+        // yourself" in-app button target (e.g. /home/compose). Tapping the
+        // push should show the card first, not skip straight past it into
+        // whatever action the card's CTA performs.
+        //
+        // /home/notif, NOT /home: same feed, but deliberately excluded from
+        // useOrbFrontDoor's MAXINA_LANDING_ROUTES (vitana-v1) — a notification
+        // tap is a full page load there, which otherwise auto-opens the Orb
+        // front-door overlay on top of the card the push is about.
+        data: { url: '/home/notif', entity_id: announcementId },
       };
       notifyUsersAsync(userIds, tenant_id, 'feature_announcement', payload, supabase);
     }

@@ -183,7 +183,17 @@ function assembleTimeContext(input: SituationalAwarenessInput): TimeContext {
   // Get local time components
   let localTime: Date;
   try {
-    // Create a formatter for the timezone
+    // Create a formatter for the timezone.
+    // hourCycle is pinned to 'h23' and hour12 is OMITTED (not set to false):
+    // per the Intl.DateTimeFormat spec, an explicit hour12 value always wins
+    // over hourCycle and silences it entirely — so `hour12: false` alongside
+    // `hourCycle: 'h23'` makes hourCycle a no-op. hour12:false alone also
+    // doesn't guarantee a 00-23 range: some ICU builds resolve its implied
+    // hour cycle to 'h24', which formats midnight as "24" instead of "00"
+    // and silently corrupts `hour`/`minutes_since_midnight` for any local
+    // midnight. This is environment-dependent (varies by Node/ICU version),
+    // which is exactly what made a hour12-only fix pass locally but still
+    // fail in CI's runner.
     const formatter = new Intl.DateTimeFormat('en-US', {
       timeZone: timezone,
       year: 'numeric',
@@ -192,7 +202,7 @@ function assembleTimeContext(input: SituationalAwarenessInput): TimeContext {
       hour: '2-digit',
       minute: '2-digit',
       second: '2-digit',
-      hour12: false
+      hourCycle: 'h23'
     });
 
     // Parse the formatted date parts
@@ -869,7 +879,7 @@ export async function computeSituationalAwareness(
   const startTime = Date.now();
   const computedAt = new Date().toISOString();
 
-  console.log(`${LOG_PREFIX} Computing situational awareness for user ${input.user_id.substring(0, 8)}...`);
+  console.log(`${LOG_PREFIX} Computing situational awareness for user ${(input.user_id || '').substring(0, 8)}...`);
 
   try {
     // Assemble situation vector
@@ -1160,7 +1170,7 @@ export async function overrideSituation(
     clear_constraints?: boolean;
   }
 ): Promise<SituationOverrideResponse> {
-  console.log(`${LOG_PREFIX} Processing situation override for user ${userId.substring(0, 8)}...`);
+  console.log(`${LOG_PREFIX} Processing situation override for user ${(userId || '').substring(0, 8)}...`);
 
   try {
     // Build input with explicit overrides

@@ -2,7 +2,8 @@
  * Chat Messages API Routes — User-to-user direct messaging
  *
  * Endpoints:
- *   POST   /send               — Send a message to another user
+ *   POST   /send               — Send a message to another user (never triggers a Vitana reply)
+ *   POST   /vitana-reply       — Generate + await a Vitana bot reply (VTID-03470)
  *   GET    /conversation/:peer — Get messages between current user and peer (paginated)
  *   GET    /conversations      — List recent conversations (latest message per peer)
  *   POST   /read               — Mark messages from a peer as read
@@ -17,11 +18,27 @@ import {
   AuthenticatedRequest,
 } from '../middleware/auth-supabase-jwt';
 import { createClient } from '@supabase/supabase-js';
-import { notifyUserAsync } from '../services/notification-service';
+import { notifyUser } from '../services/notification-service';
 import { VITANA_BOT_USER_ID, isVitanaBot } from '../lib/vitana-bot';
 import { processConversationTurn } from '../services/conversation-client';
+import { tt } from '../i18n/catalog';
+import { getUserLocale } from '../i18n/server-locale';
 
 const router = Router();
+
+// VTID-03459/VTID-03470: per-user in-flight guard for POST /vitana-reply
+// (see below). Module-level because this route file is a singleton Express
+// router — safe within one instance, not distributed.
+//
+// Maps user_id -> the timestamp the in-flight call started. A plain Set
+// with no expiry was tried first and found live-testing to be unsafe: a
+// slow handleVitanaTextReply() call (memory-orchestrator retrieval can take
+// 30s+ under load) would hold the guard open for its full duration, and a
+// naive guard blocks a legitimate retry after a client-side timeout.
+// VITANA_REPLY_STALE_MS bounds how long a guard entry is honored before a
+// fresh request is allowed through again.
+const vitanaReplyInFlight = new Map<string, number>();
+const VITANA_REPLY_STALE_MS = 90_000;
 
 function getSupabase() {
   return createClient(
@@ -101,18 +118,20 @@ router.post('/send', requireAuth, requireTenant, async (req: Request, res: Respo
     return res.status(500).json({ ok: false, error: error.message });
   }
 
-  // VTID-CHAT-BRIDGE: If receiver is Vitana, generate a reply via the unified
-  // conversation intelligence layer and write it back to chat_messages.
-  // Skip the bot reply when the message is just an attachment with no text —
-  // there's no prompt to reply to.
-  if (isVitanaBot(receiver_id) && trimmedContent.length > 0) {
-    handleVitanaTextReply(
-      identity.user_id,
-      identity.tenant_id!,
-      trimmedContent,
-      supabase,
-    ).catch(err => console.warn('[Chat] Vitana text reply failed:', err.message));
-  } else if (!isVitanaBot(receiver_id)) {
+  // VTID-03470: /send no longer triggers the Vitana bot reply itself — it
+  // only ever inserts a message, for any receiver, bot or human. Generating
+  // the bot's reply used to happen here fire-and-forget, which silently lost
+  // replies under GCP Cloud Run's CPU throttling: a background promise is
+  // only guaranteed CPU while a request is in flight, and once /send
+  // responded, Cloud Run could freeze the promise before it finished writing
+  // the reply (confirmed live — the LLM call completed successfully per its
+  // own telemetry, but the chat_messages insert never happened). Callers
+  // that want a Vitana reply now explicitly call POST /vitana-reply (below)
+  // right after a successful send to the bot, and await it — that keeps the
+  // request (and therefore the CPU) alive for the reply's full duration,
+  // deterministically completing or surfacing an explicit error instead of
+  // silently vanishing. See vitana-v1's useGlobalMessages.ts for the caller.
+  if (!isVitanaBot(receiver_id)) {
     // BOOTSTRAP-NOTIF-CATEGORIES: Resolve the sender's display name so that the
     // push notification looks like a classic chat notification ("John Doe" as
     // the title, message body as the preview) rather than a generic "New message".
@@ -133,13 +152,8 @@ router.post('/send', requireAuth, requireTenant, async (req: Request, res: Respo
     }
 
     // Fire-and-forget push notification to the receiver (not for Vitana bot)
-    // BOOTSTRAP-NOTIF-CATEGORIES: Use /inbox?thread=<sender_id> so the Messages
-    // page deep-links into the conversation. The legacy `/messages/<id>` URL
-    // was redirected to `/inbox` by App.tsx, stripping the thread parameter.
-    // `&context=global` ensures the Messages page selects the global chat
-    // context on mount so the thread auto-opens regardless of the recipient's
-    // current context preference (otherwise a `tenant`-context user lands on
-    // /inbox without the thread being selected).
+    // BOOTSTRAP-NOTIF-CATEGORIES: Use /inbox/u/<sender_id> so the Messages
+    // page deep-links into the conversation (see the path-based url below).
     // Notification body: prefer text; for attachment-only messages show
     // "📎 <filename>" so the push isn't an empty bubble.
     const firstAttachmentName: string | null = attachments.length > 0
@@ -154,32 +168,129 @@ router.post('/send', requireAuth, requireTenant, async (req: Request, res: Respo
       }
     }
 
-    notifyUserAsync(
-      receiver_id,
-      identity.tenant_id!,
-      'new_chat_message',
-      {
-        title: senderName,
-        body: notifBody.length > 100 ? notifBody.slice(0, 97) + '...' : notifBody,
-        data: {
-          type: 'new_chat_message',
-          sender_id: identity.user_id,
-          sender_name: senderName,
-          message_id: data.id,
-          thread_id: identity.user_id,
-          // Path-based deep-link — query-string form (?recipient=…&context=global)
-          // silently fails in Appilix's Android in-app browser when launched from
-          // a notification tap (confirmed via BOOTSTRAP-NOTIF-MESSENGER-DIAG:
-          // diagnostic beacon never fired, no Cloud Run hit recorded). Path form
-          // launches cleanly because the URL has no special characters.
-          url: `/inbox/u/${identity.user_id}`,
-        },
-      },
-      supabase,
-    );
+    // BOOTSTRAP-COMMUNITY-MARKETPLACE (Chunk 5): "Message seller"/"Contact
+    // provider" CTAs send the first message through this same endpoint with
+    // content_data.cta_source='community_marketplace' — swap the generic
+    // "<sender name>: <text>" push for listing-specific copy so the seller
+    // sees "Someone is interested in <listing>" instead of an anonymous chat
+    // preview. Still writes a normal chat_messages row above; only the push
+    // notification's type/copy differs.
+    const listingTitle = typeof (metadata as any).listing_title === 'string'
+      ? (metadata as any).listing_title.slice(0, 120)
+      : null;
+    const isListingInterest = (metadata as any).cta_source === 'community_marketplace' && !!listingTitle;
+
+    let notifType = 'new_chat_message';
+    let notifTitle = senderName;
+    let notifBodyFinal = notifBody.length > 100 ? notifBody.slice(0, 97) + '...' : notifBody;
+    const notifData: Record<string, string> = {
+      type: 'new_chat_message',
+      sender_id: identity.user_id,
+      sender_name: senderName,
+      message_id: data.id,
+      thread_id: identity.user_id,
+      // Path-based deep-link — query-string form (?recipient=…&context=global)
+      // silently fails in Appilix's Android in-app browser when launched from
+      // a notification tap (confirmed via BOOTSTRAP-NOTIF-MESSENGER-DIAG:
+      // diagnostic beacon never fired, no Cloud Run hit recorded). Path form
+      // launches cleanly because the URL has no special characters.
+      url: `/inbox/u/${identity.user_id}`,
+    };
+
+    if (isListingInterest) {
+      const receiverLocale = await getUserLocale(supabase, receiver_id);
+      notifType = 'listing_interest';
+      notifTitle = tt('notif.listing_interest.title', receiverLocale);
+      notifBodyFinal = tt('notif.listing_interest.body', receiverLocale, { title: listingTitle! });
+      notifData.type = 'listing_interest';
+      notifData.listing_title = listingTitle!;
+      if (typeof (metadata as any).listing_id === 'string') {
+        notifData.listing_id = (metadata as any).listing_id;
+      }
+    }
+
+    // Awaited (not fire-and-forget) so the HTTP response below isn't sent
+    // until the push dispatch has actually finished — Cloud Run only
+    // guarantees CPU while a request is in flight, so a fire-and-forget
+    // promise here can get frozen/killed the instant res.status(201) flushes
+    // (same failure mode confirmed live and fixed for daily-feature-tip, see
+    // scheduled-notifications.ts BOOTSTRAP-DAILY-FEATURE-TIP). try/catch so a
+    // push failure never turns a successfully-sent chat message into a 500.
+    try {
+      await notifyUser(
+        receiver_id,
+        identity.tenant_id!,
+        notifType,
+        { title: notifTitle, body: notifBodyFinal, data: notifData },
+        supabase,
+      );
+    } catch (err: any) {
+      console.error('[Chat] Push notification dispatch failed:', err?.message || err);
+    }
   }
 
   return res.status(201).json({ ok: true, data });
+});
+
+// ── POST /vitana-reply — Explicitly generate + await a Vitana bot reply ──
+// VTID-03470: see the comment in /send above. This is AWAITED end-to-end by
+// the caller, so the request (and Cloud Run's CPU allocation for it) stays
+// alive for the reply's full duration — completion is deterministic, not a
+// race against the platform freezing a background promise. The reply is
+// still written to chat_messages exactly as before, so the existing
+// Supabase Realtime subscription in the frontend renders it with no other
+// client-side change required; the response body is a same-turn convenience,
+// not the only way the reply reaches the UI.
+
+router.post('/vitana-reply', requireAuth, requireTenant, async (req: Request, res: Response) => {
+  // impact-allow-no-oasis: this handler is a thin HTTP wrapper around
+  // handleVitanaTextReply() -> processConversationTurn()/processBrainTurn(),
+  // which already emit the real state-transition events for this turn
+  // (conversation.turn.received, conversation.model.called,
+  // conversation.turn.completed, brain.turn.received/processed) — see
+  // conversation-client.ts and vitana-brain.ts. Emitting a second event here
+  // would duplicate that telemetry, not add signal.
+  const { identity } = req as AuthenticatedRequest;
+  if (!identity) return res.status(401).json({ ok: false, error: 'unauthorized' });
+  if (!identity.tenant_id) return res.status(400).json({ ok: false, error: 'tenant_required' });
+
+  const { content } = req.body as { content?: unknown };
+  const trimmedContent = typeof content === 'string' ? content.trim() : '';
+  if (trimmedContent.length === 0) {
+    return res.status(400).json({ ok: false, error: 'content is required' });
+  }
+
+  // Same per-user in-flight guard used previously on /send (VTID-03459),
+  // now protecting this endpoint instead: a client-side double-invocation
+  // (e.g. a retry after a slow-but-still-running first call) gets a clear
+  // 409 rather than spawning a second concurrent LLM turn for the same user.
+  const now = Date.now();
+  const inFlightSince = vitanaReplyInFlight.get(identity.user_id);
+  if (inFlightSince !== undefined && now - inFlightSince < VITANA_REPLY_STALE_MS) {
+    return res.status(409).json({ ok: false, error: 'reply_in_progress' });
+  }
+  vitanaReplyInFlight.set(identity.user_id, now);
+
+  const supabase = getSupabase();
+  try {
+    const result = await handleVitanaTextReply(
+      identity.user_id,
+      identity.tenant_id,
+      trimmedContent,
+      supabase,
+    );
+    if (!result.ok) {
+      return res.status(502).json({ ok: false, error: result.error || 'vitana_reply_failed' });
+    }
+    return res.status(200).json({ ok: true, reply: result.reply });
+  } finally {
+    // Only clear the entry this call itself set — a very-late-finishing call
+    // must not clobber a fresher in-flight entry the staleness window let
+    // through in the meantime.
+    if (vitanaReplyInFlight.get(identity.user_id) === now) {
+      vitanaReplyInFlight.delete(identity.user_id);
+    }
+  }
 });
 
 // ── GET /conversation/:peerId — Messages between me and peer ─
@@ -370,7 +481,7 @@ async function handleVitanaTextReply(
   tenantId: string,
   userContent: string,
   supabase: ReturnType<typeof getSupabase>,
-): Promise<void> {
+): Promise<{ ok: boolean; reply?: string; error?: string }> {
   const startTime = Date.now();
 
   try {
@@ -405,8 +516,9 @@ async function handleVitanaTextReply(
     }
 
     if (!result.ok || !result.reply) {
-      console.warn(`[Chat] Vitana reply failed: ${result.error || 'empty reply'}`);
-      return;
+      const error = result.error || 'empty reply';
+      console.warn(`[Chat] Vitana reply failed: ${error}`);
+      return { ok: false, error };
     }
 
     // Write Vitana's reply to chat_messages
@@ -430,11 +542,14 @@ async function handleVitanaTextReply(
 
     if (error) {
       console.warn(`[Chat] Vitana reply write failed: ${error.message}`);
-    } else {
-      console.log(`[Chat] Vitana text reply written (${Date.now() - startTime}ms)`);
+      return { ok: false, error: error.message };
     }
+
+    console.log(`[Chat] Vitana text reply written (${Date.now() - startTime}ms)`);
+    return { ok: true, reply: result.reply };
   } catch (err: any) {
     console.error(`[Chat] Vitana text reply error: ${err.message}`);
+    return { ok: false, error: err.message };
   }
 }
 

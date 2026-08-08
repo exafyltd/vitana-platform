@@ -16,7 +16,7 @@
  */
 
 import type { NovaSonicConfig } from './nova-sonic-config';
-import { warmNovaSonicConnection } from './nova-sonic-live-client';
+import { warmNovaSonicConnection, warmNovaSonicModelExecution } from './nova-sonic-live-client';
 
 export interface NovaKeepWarmDeps {
   /** Injectable warm fn for tests; defaults to warmNovaSonicConnection. */
@@ -29,6 +29,17 @@ let keepWarmTimer: NodeJS.Timeout | null = null;
 
 export function isNovaKeepWarmRunning(): boolean {
   return keepWarmTimer !== null;
+}
+
+// BOOTSTRAP-NOVA-SONIC-VOICE (latency): a SEPARATE timer for the real
+// model-execution warm probe (warmNovaSonicModelExecution) — deliberately
+// not folded into the transport-only loop above so the two stay independent
+// (different interval, different failure mode, either can be disabled via
+// its own env var without touching the other).
+let modelWarmTimer: NodeJS.Timeout | null = null;
+
+export function isNovaModelWarmRunning(): boolean {
+  return modelWarmTimer !== null;
 }
 
 /**
@@ -73,5 +84,48 @@ export function stopNovaSonicKeepWarm(): void {
   if (keepWarmTimer) {
     clearTimeout(keepWarmTimer);
     keepWarmTimer = null;
+  }
+}
+
+/**
+ * Start the model-execution warm-up loop (real tiny inference round-trips,
+ * not the transport-only 4xx marker). Idempotent; disabled when
+ * `config.modelWarmMs <= 0`. Mirrors `startNovaSonicKeepWarm`'s shape
+ * exactly — same re-arm-after-await discipline, same unref'd timer.
+ */
+export function startNovaSonicModelWarm(config: NovaSonicConfig, deps: NovaKeepWarmDeps = {}): boolean {
+  if (modelWarmTimer) return true;
+  if (config.modelWarmMs <= 0) return false;
+  const warm = deps.warm ?? warmNovaSonicModelExecution;
+  const log = deps.log ?? ((line: string) => console.log(line));
+
+  const arm = () => {
+    modelWarmTimer = setTimeout(async () => {
+      try {
+        const ms = await warm(config);
+        if (ms === null) {
+          log('[BOOTSTRAP-NOVA-SONIC-VOICE] model-execution warm-up failed (will retry next interval)');
+        } else {
+          log(`[BOOTSTRAP-NOVA-SONIC-VOICE] model-execution warm-up ok ms=${ms}`);
+        }
+      } catch {
+        /* warm() never throws by contract; belt-and-braces only */
+      }
+      if (modelWarmTimer) {
+        modelWarmTimer = null;
+        arm();
+      }
+    }, config.modelWarmMs);
+    modelWarmTimer.unref?.();
+  };
+
+  arm();
+  return true;
+}
+
+export function stopNovaSonicModelWarm(): void {
+  if (modelWarmTimer) {
+    clearTimeout(modelWarmTimer);
+    modelWarmTimer = null;
   }
 }

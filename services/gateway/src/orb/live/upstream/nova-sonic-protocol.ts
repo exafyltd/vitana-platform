@@ -26,6 +26,8 @@ export interface NovaSessionStartOptions {
   maxTokens?: number;
   topP?: number;
   temperature?: number;
+  /** Server-side VAD sensitivity; AWS-recommended default MEDIUM. */
+  endpointingSensitivity?: 'HIGH' | 'MEDIUM' | 'LOW';
 }
 
 export function buildSessionStart(options: NovaSessionStartOptions = {}): NovaInputEvent {
@@ -36,6 +38,11 @@ export function buildSessionStart(options: NovaSessionStartOptions = {}): NovaIn
           maxTokens: options.maxTokens ?? 1024,
           topP: options.topP ?? 0.9,
           temperature: options.temperature ?? 0.7,
+        },
+        // Documented server-side VAD sensitivity (Nova 2 Sonic input-events
+        // reference); MEDIUM is AWS's recommended conversational default.
+        turnDetectionConfiguration: {
+          endpointingSensitivity: options.endpointingSensitivity ?? 'MEDIUM',
         },
       },
     },
@@ -225,11 +232,31 @@ export function buildSessionEnd(): NovaInputEvent {
 // ---------------------------------------------------------------------------
 
 /**
+ * Vertex/Gemini catalog entries that are provider-builtin directives, not
+ * function declarations — Nova has no equivalent, so they are skipped
+ * (silently dropping them is correct: the alternative is failing every
+ * session over a capability Nova simply doesn't offer).
+ */
+const VERTEX_BUILTIN_TOOL_KEYS = new Set([
+  'google_search',
+  'googleSearch',
+  'google_search_retrieval',
+  'googleSearchRetrieval',
+  'url_context',
+  'urlContext',
+  'code_execution',
+  'codeExecution',
+  'retrieval',
+]);
+
+/**
  * Convert the gateway's Gemini-shaped tool declarations into Nova
  * `toolSpec`s. Accepts either a flat `{name, description, parameters}` list
- * or the Vertex `{function_declarations: [...]}` wrapper. Throws on
- * duplicate tool names or malformed entries — a broken catalog must fail
- * BEFORE a paid stream opens, not stall mid-session.
+ * or the Vertex `{function_declarations: [...]}` wrapper. Vertex builtin
+ * directives (e.g. `{ google_search: {} }`) are skipped — they are not
+ * function declarations. Throws on duplicate tool names or malformed
+ * entries — a broken catalog must fail BEFORE a paid stream opens, not
+ * stall mid-session.
  */
 export function convertToolsToNovaSpecs(
   tools: ReadonlyArray<Record<string, unknown>>,
@@ -240,9 +267,13 @@ export function convertToolsToNovaSpecs(
       ?? (entry as { functionDeclarations?: unknown }).functionDeclarations;
     if (Array.isArray(fnDecls)) {
       flat.push(...(fnDecls as Array<Record<string, unknown>>));
-    } else {
-      flat.push(entry);
+      continue;
     }
+    const keys = Object.keys(entry);
+    if (!('name' in entry) && keys.length > 0 && keys.every((k) => VERTEX_BUILTIN_TOOL_KEYS.has(k))) {
+      continue;
+    }
+    flat.push(entry);
   }
 
   const seen = new Set<string>();
@@ -318,6 +349,13 @@ export class NovaOutputNormalizer {
     name: string;
     argsJson: string;
   } | null = null;
+  /**
+   * Dedupe guard for turnComplete: a turn's end can be signalled by BOTH the
+   * final ASSISTANT `contentEnd` (stopReason END_TURN) and a later
+   * `completionEnd` — emit exactly one turnComplete per turn. Reset when the
+   * next content block starts (new generation activity).
+   */
+  private turnCompleteEmitted = false;
 
   normalize(raw: unknown): NovaNormalizedEvent[] {
     const eventObj = (raw as { event?: Record<string, unknown> })?.event;
@@ -347,6 +385,9 @@ export class NovaOutputNormalizer {
         }
       }
       if (contentId) this.contentMeta.set(contentId, meta);
+      // New content block = new generation activity → the next END_TURN /
+      // completionEnd is a fresh turn boundary again.
+      this.turnCompleteEmitted = false;
       out.push({ kind: 'ignored', eventName: 'contentStart' });
     }
 
@@ -411,6 +452,23 @@ export class NovaOutputNormalizer {
         this.pendingToolUse = null;
       } else if (stopReason === 'INTERRUPTED') {
         out.push({ kind: 'interrupted' });
+      } else if (stopReason === 'END_TURN') {
+        // Nova signals end-of-turn on the FINAL output content block's
+        // contentEnd — completionEnd may not arrive until much later (or at
+        // teardown). Waiting only for completionEnd left isModelSpeaking
+        // stuck true after the greeting finished, so the gateway's 20s
+        // audio-stall watchdog killed healthy sessions (staging session
+        // live-3650deea: 1695 greeting chunks → stall_detected → local
+        // terminate). Scope to ASSISTANT blocks: USER (ASR) content blocks
+        // also carry END_TURN and must NOT complete the model's turn.
+        const ceId = (contentEnd.contentId as string) ?? (contentEnd.contentName as string) ?? '';
+        const ceMeta = this.contentMeta.get(ceId);
+        if (ceMeta?.role === 'ASSISTANT' && !this.turnCompleteEmitted) {
+          this.turnCompleteEmitted = true;
+          out.push({ kind: 'turnComplete' });
+        } else {
+          out.push({ kind: 'ignored', eventName: 'contentEnd' });
+        }
       } else {
         out.push({ kind: 'ignored', eventName: 'contentEnd' });
       }
@@ -419,7 +477,8 @@ export class NovaOutputNormalizer {
     const completionEnd = eventObj.completionEnd as Record<string, unknown> | undefined;
     if (completionEnd) {
       const stopReason = completionEnd.stopReason as string | undefined;
-      if (!stopReason || stopReason === 'END_TURN') {
+      if ((!stopReason || stopReason === 'END_TURN') && !this.turnCompleteEmitted) {
+        this.turnCompleteEmitted = true;
         out.push({ kind: 'turnComplete' });
       } else {
         out.push({ kind: 'ignored', eventName: 'completionEnd' });

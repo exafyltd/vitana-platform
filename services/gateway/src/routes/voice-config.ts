@@ -13,6 +13,8 @@
 
 import { Router, Request, Response } from 'express';
 import textToSpeech, { protos } from '@google-cloud/text-to-speech';
+// VTID-03495: Polly preview support (explicit `provider: 'polly'` only).
+import { synthesizePolly, POLLY_UNSUPPORTED_LANGS } from '../services/tts/polly';
 import { emitOasisEvent } from '../services/oasis-event-service';
 import {
   requireAuthWithTenant,
@@ -205,12 +207,40 @@ router.post(
     }
 
     const provider = body.provider || 'google_tts';
-    if (provider !== 'google_tts') {
+    if (provider !== 'google_tts' && provider !== 'polly') {
       return res.status(400).json({
         ok: false,
         error: `preview for provider '${provider}' not implemented yet`,
         vtid: VTID,
       });
+    }
+
+    // VTID-03495: Polly preview. Deliberately driven by the EXPLICIT `provider`
+    // body param and NOT by the TTS_PROVIDER env var — this endpoint exists so
+    // an operator can audition a specific provider/voice on demand, so honoring
+    // an ambient env switch here would make previews lie about what they played.
+    // Auditioning both sides is how the migration gets validated before flipping.
+    if (provider === 'polly') {
+      const pollyRate = clampRate(body.speaking_rate);
+      const result = await synthesizePolly({
+        text,
+        lang: body.language || 'en',
+        format: 'mp3',
+        speakingRate: pollyRate,
+      });
+      if (!result) {
+        return res.status(422).json({
+          ok: false,
+          error:
+            `Polly cannot synthesize language '${body.language || 'en'}'. ` +
+            `Unsupported: ${[...POLLY_UNSUPPORTED_LANGS].join(', ')}.`,
+          vtid: VTID,
+        });
+      }
+      res.setHeader('Content-Type', 'audio/mpeg');
+      res.setHeader('X-Vitana-Tts-Voice', result.voice);
+      res.setHeader('X-Vitana-Tts-Engine', result.engine);
+      return res.send(Buffer.from(result.audioB64, 'base64'));
     }
 
     const language = body.language || 'en';

@@ -101,14 +101,28 @@ jobs:
             --cpu=1
             --timeout=300
             --max-instances=1
-            # BOOTSTRAP-ORB-STAGING-WARM: keep one warm instance. With
-            # min-instances=0 the gateway cold-starts, and an authenticated
-            # ORB /orb/live/session/start takes ~9.4s cold (vs ~4.4s warm) —
-            # past the widget's 8s AbortSignal.timeout, so the orb aborts and
-            # goes silent on the first open (proven by the e2e harness timing
-            # probe). One warm instance keeps session/start well under 8s,
-            # matching prod behavior.
-            --min-instances=1
+            # VTID-03508: scaled to zero for cost. This REVERSES
+            # BOOTSTRAP-ORB-STAGING-WARM, whose reasoning still stands and is
+            # kept here because it describes exactly what you will now see:
+            #
+            #   "With min-instances=0 the gateway cold-starts, and an
+            #    authenticated ORB /orb/live/session/start takes ~9.4s cold
+            #    (vs ~4.4s warm) — past the widget's 8s AbortSignal.timeout,
+            #    so the orb aborts and goes silent on the first open (proven
+            #    by the e2e harness timing probe)."
+            #
+            # That is a real, reproducible staging regression, accepted
+            # deliberately: a warm staging instance bills ~$69/mo around the
+            # clock to spare a first-open cold start on a preview environment.
+            # Everything except the first ORB open after idle is unaffected,
+            # and prod is on AWS (VTID-03419) so this cannot touch users.
+            #
+            # BEFORE testing ORB voice on staging, warm it first:
+            #   curl -s https://preview-gateway.vitanaland.com/alive >/dev/null
+            # then wait ~2s. Or restore the warm floor for a session:
+            #   gcloud run services update gateway-staging --min-instances=1 \
+            #     --region=us-central1 --project=lovable-vitana-vers1
+            --min-instances=0
           )
 
           # Env vars: VITANA_ENV is the load-bearing switch (P0.3). Anything else
@@ -144,6 +158,22 @@ jobs:
             # gateway-staging — every intents/board call 404'd, so Find a
             # Partner / matches could not load on preview.vitanaland.com.
             "FEATURE_INTENT_ENGINE_A=true"
+            # VTID-03531 (Watcher Phase 3): turn reminder injection on, STAGING
+            # ONLY. Same --set-env-vars-REPLACES reason as every other flag in
+            # this list — a hand-set gcloud flag is wiped on the next deploy.
+            #
+            # Advisory by design: buildReminders() is wrapped in try/catch at
+            # both call sites (dev-autopilot-planning.ts,
+            # dev-autopilot-execute.ts) and a fault yields an empty string, so
+            # the worst case is the prompt it was already producing. It blocks
+            # nothing.
+            #
+            # NOT pinned in AWS-PROD-DEPLOY-GATEWAY.yml on purpose. That
+            # workflow's flag block is reserved for flags with MEASURED
+            # evidence for the prod stack, and says so — this is a feature
+            # activation, not an outage fix, so it graduates to prod through
+            # PUBLISH after staging shows real reminders being served.
+            "WATCHER_REMINDERS_ENABLED=true"
             # DEV-COMHU-0513 (ORB first-greeting latency): bake the fast-greeting
             # stack into the staging env so it PERSISTS across every STAGE-DEPLOY
             # (--set-env-vars REPLACES, so hand-set gcloud flags were wiped on the
@@ -158,6 +188,20 @@ jobs:
             "FEATURE_ORB_FAST_START_ENV=staging-only"
             "FEATURE_ORB_SAFE_FAST_GREETING_ENV=staging-only"
             "ORB_CONTEXT_READY_GATE_TIMEOUT_MS=300"
+            # BOOTSTRAP-NOVA-SONIC-VOICE: DISABLED (2026-07-28) — rejected on
+            # product grounds, not a bug. The bridge phrase is synthesized by
+            # Cloud TTS (a Neural2/Gemini-TTS voice, e.g. "Kore") which is
+            # NEVER the same voice as the real upstream (Nova Sonic's
+            # tina/lennart or Vertex Live's Callirrhoe, etc.) — every session
+            # would audibly switch voices mid-greeting. That's a worse UX than
+            # the silence it was meant to fill, and no TTS-based bridge can
+            # fix it (no standalone API can reproduce the live model's own
+            # voice). Left in code (feature-flagged, off) in case a same-voice
+            # approach is designed later — see greeting-audio-bridge.ts /
+            # greeting-bridge-tts.ts. The real latency fix is trimming the
+            # greeting-turn prefill payload (tool catalog / system
+            # instruction size), not masking the wait with a different voice.
+            "FEATURE_ORB_GREETING_TTS_BRIDGE_ENV=off"
             # NAV continuation / journey-mode experiments — bake into the staging
             # env so they PERSIST across every STAGE-DEPLOY (--set-env-vars
             # REPLACES, so a hand-set gcloud flag is wiped on the next push — the

@@ -25,9 +25,25 @@ describe('getNovaSonicConfig', () => {
         connectTimeoutMs: 15000,
         rotationAfterMs: 435000,
         keepWarmMs: 240000,
+        modelWarmMs: 90000,
+        maxTokens: 4096,
+        instructionChunkBytes: 4000,
+        endpointingSensitivity: 'HIGH',
         issues: [],
       }),
     );
+  });
+
+  it('maxTokens is env-tunable and invalid values are a typed issue', () => {
+    expect(
+      getNovaSonicConfig({ NOVA_SONIC_MAX_TOKENS: '8192' } as NodeJS.ProcessEnv).maxTokens,
+    ).toBe(8192);
+    const bad = getNovaSonicConfig({
+      NOVA_SONIC_ENABLED: 'true',
+      NOVA_SONIC_MAX_TOKENS: '0',
+    } as NodeJS.ProcessEnv);
+    expect(bad.issues).toContain('nova_max_tokens_invalid');
+    expect(bad.ready).toBe(false);
   });
 
   it('is ready when enabled with a clean environment', () => {
@@ -73,6 +89,7 @@ describe('getNovaSonicConfig', () => {
       NOVA_SONIC_CONNECT_TIMEOUT_MS: 'soon',
       NOVA_SONIC_ROTATION_AFTER_MS: '-5',
       NOVA_SONIC_KEEPWARM_MS: 'often',
+      NOVA_SONIC_MODEL_WARM_MS: 'soon',
     } as NodeJS.ProcessEnv);
     expect(cfg.ready).toBe(false);
     expect(cfg.issues).toEqual(
@@ -80,6 +97,7 @@ describe('getNovaSonicConfig', () => {
         'nova_connect_timeout_invalid',
         'nova_rotation_after_invalid',
         'nova_keepwarm_invalid',
+        'nova_model_warm_invalid',
       ]),
     );
   });
@@ -92,6 +110,79 @@ describe('getNovaSonicConfig', () => {
     expect(cfg.keepWarmMs).toBe(0);
     expect(cfg.ready).toBe(true);
     expect(cfg.issues).toEqual([]);
+  });
+
+  it('model-execution warm-up is env-tunable and accepts 0 as an explicit disable', () => {
+    expect(
+      getNovaSonicConfig({ NOVA_SONIC_MODEL_WARM_MS: '30000' } as NodeJS.ProcessEnv).modelWarmMs,
+    ).toBe(30000);
+    const disabled = getNovaSonicConfig({
+      NOVA_SONIC_ENABLED: 'true',
+      NOVA_SONIC_MODEL_WARM_MS: '0',
+    } as NodeJS.ProcessEnv);
+    expect(disabled.modelWarmMs).toBe(0);
+    expect(disabled.ready).toBe(true);
+    expect(disabled.issues).toEqual([]);
+  });
+
+  it('instruction chunk size is env-tunable and accepts 0 as an explicit disable', () => {
+    expect(
+      getNovaSonicConfig({
+        NOVA_SONIC_INSTRUCTION_CHUNK_BYTES: '8000',
+      } as NodeJS.ProcessEnv).instructionChunkBytes,
+    ).toBe(8000);
+    const disabled = getNovaSonicConfig({
+      NOVA_SONIC_ENABLED: 'true',
+      NOVA_SONIC_INSTRUCTION_CHUNK_BYTES: '0',
+    } as NodeJS.ProcessEnv);
+    expect(disabled.instructionChunkBytes).toBe(0);
+    expect(disabled.ready).toBe(true);
+    expect(disabled.issues).toEqual([]);
+  });
+
+  it('non-numeric instruction chunk size fails readiness with a typed issue', () => {
+    const bad = getNovaSonicConfig({
+      NOVA_SONIC_ENABLED: 'true',
+      NOVA_SONIC_INSTRUCTION_CHUNK_BYTES: 'lots',
+    } as NodeJS.ProcessEnv);
+    expect(bad.ready).toBe(false);
+    expect(bad.issues).toContain('nova_instruction_chunk_invalid');
+  });
+
+  it('defaults to HIGH — the ~1.75s MEDIUM pre-inference wait cannot fit a 2-3s target', () => {
+    // Regression guard for BOOTSTRAP-ORB-LATENCY-P0. MEDIUM was never a
+    // deliberate choice: it was nova-sonic-protocol's fallback leaking through
+    // because nothing wired this setting, while the session was separately
+    // asking for a 600ms window via vadSilenceMs that Nova ignores outright.
+    expect(getNovaSonicConfig({} as NodeJS.ProcessEnv).endpointingSensitivity).toBe('HIGH');
+  });
+
+  it('endpointing sensitivity is env-tunable (case-insensitive), incl. away from the default', () => {
+    // Lowercase input + a value that differs from the default, so this proves
+    // the env var is actually read rather than coincidentally matching it.
+    expect(
+      getNovaSonicConfig({
+        NOVA_SONIC_ENDPOINTING_SENSITIVITY: 'medium',
+      } as NodeJS.ProcessEnv).endpointingSensitivity,
+    ).toBe('MEDIUM');
+    const cfg = getNovaSonicConfig({
+      NOVA_SONIC_ENABLED: 'true',
+      NOVA_SONIC_ENDPOINTING_SENSITIVITY: 'LOW',
+    } as NodeJS.ProcessEnv);
+    expect(cfg.endpointingSensitivity).toBe('LOW');
+    expect(cfg.ready).toBe(true);
+    expect(cfg.issues).toEqual([]);
+  });
+
+  it('an invalid endpointing sensitivity fails readiness with a typed issue and keeps the safe default', () => {
+    const bad = getNovaSonicConfig({
+      NOVA_SONIC_ENABLED: 'true',
+      NOVA_SONIC_ENDPOINTING_SENSITIVITY: 'EXTREME',
+    } as NodeJS.ProcessEnv);
+    expect(bad.ready).toBe(false);
+    expect(bad.issues).toContain('nova_endpointing_sensitivity_invalid');
+    // Falls back to the safe DEFAULT, never to an operator's invalid value.
+    expect(bad.endpointingSensitivity).toBe('HIGH');
   });
 });
 
@@ -159,6 +250,9 @@ describe('buildNovaSonicHealthPayload', () => {
       supported_languages: ['en', 'de', 'fr', 'es'],
       canary_user_count: 0,
       canary_tenant_count: 0,
+      // VTID-03501: global promotion flag. Additive; false by default, so a
+      // clean disabled config still reports "nobody is on Nova".
+      global_enabled: false,
       issues: [],
     });
   });

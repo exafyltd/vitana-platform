@@ -138,6 +138,18 @@ describe('BOOTSTRAP-AWS-STAGING-VALIDATION: GeminiApiKeyLiveClient', () => {
       expect(sentSetup.setup.generation_config.response_modalities).toEqual(['AUDIO']);
     });
 
+    it('default builder works WITHOUT GCP projectId/location — AI Studio needs no GCP identity', async () => {
+      const socket = new MockSocket();
+      const client = new GeminiApiKeyLiveClient({ createSocket: () => socket });
+      await connectClient(client, socket, baseOptions({ projectId: undefined, location: undefined }));
+
+      expect(client.getState()).toBe('open');
+      const sentSetup = JSON.parse(socket.sent[0]);
+      // The Vertex-shaped path from placeholders is discarded — the AI Studio
+      // catalog id must be what actually goes on the wire.
+      expect(sentSetup.setup.model).toBe('models/gemini-2.5-flash-native-audio-latest');
+    });
+
     it('overrides the model from a customSetupMessage override too', async () => {
       const socket = new MockSocket();
       const client = new GeminiApiKeyLiveClient({ createSocket: () => socket });

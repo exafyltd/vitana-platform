@@ -128,11 +128,18 @@ Fans `extractPatternsForUser` (guide/pattern-extractor, VTID-01936 — previousl
 |-------|-------|
 | **Status** | `IMPLEMENTED` |
 | **Priority** | `P2` |
-| **Trigger** | Cron, daily 18:10 |
+| **Trigger** | Cron, hourly at :10 |
 | **Handler** | `runDailyLearningDigest` |
 
 **What it does:**
 The standalone half of the shared felt-learning detector (`conversation/new-facts-detector.ts`): notifies users who gained `memory_facts` in the last 24h but did not get the moment in a session (greeting-ledger `facts_learned` not spoken today, `learning_surfaced_v1` not stamped today). Localized via the gateway i18n catalog; silent when nothing new.
+
+Runs hourly rather than once daily at a fixed UTC time — a single fixed
+18:10 UTC fire delivered this "evening" push at the wrong local time for
+anyone not near UTC (e.g. ~2am for UTC+8). Each user is only notified
+during their own local 18:xx hour, gated per-user via `getUserTimezone` /
+`userLocalHour` (`daily-pace-service.ts`) — the same resolution the
+existing daily-pace-notifications automation uses.
 
 ---
 
@@ -184,11 +191,20 @@ Drains the fact-embedding backlog (96% of live facts were unembedded, blinding t
 |-------|-------|
 | **Status** | `IMPLEMENTED` |
 | **Priority** | `P1` |
-| **Trigger** | Cron, daily 5:05am |
+| **Trigger** | Cron, hourly at :35 |
 | **Handler** | `runUserModelSynthesis` |
 
 **What it does:**
 One LLM pass per active user (≥3 facts) connecting facts + routines + active goal + Vitana Index into a compact grounded narrative ("who is this person"), stored in `user_assistant_state` (`user_profile_narrative_v1`) and injected by the UserContextProfiler into the TTL-cached ORB bootstrap — synthesized understanding at zero added latency. Skips users whose inputs hash is unchanged.
+
+Runs hourly in batches of 25 (highest fact-count users first) with a hard
+4-minute per-run time budget, instead of one daily pass over every eligible
+user — a serial LLM-call loop bounded by a single synchronous HTTP request
+risked silently exceeding Cloud Scheduler's 300s `--attempt-deadline` as the
+eligible pool grew, with no partial-progress recovery. Any users not
+reached within the time budget are simply picked up on the next hourly
+pass; the inputs-hash skip keeps already-synthesized users a cheap no-op,
+so the batch naturally rotates to whoever is actually stale.
 
 ---
 

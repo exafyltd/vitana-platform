@@ -6,7 +6,11 @@
  * `Aoede`, …) must never be passed to Nova. Per the plan's language/voice
  * decision: feminine voices for the `vitana`, `sage`, and `mira` personas,
  * masculine voices for `devon` and `atlas`, per canary language:
- *   en → tiffany / matthew
+ *   en → tina / lennart   (user live-test verdict 2026-07-28: en's native
+ *                          `tiffany`/`matthew` sounded bad; `tina`/`lennart`
+ *                          — Nova's DE voices — sound good and are reused
+ *                          for EN content too, at the cost of a German
+ *                          accent on English speech)
  *   de → tina / lennart
  *   fr → ambre / florian
  *   es → lupe / carlos
@@ -21,7 +25,7 @@ import { isNovaSonicLanguageSupported } from '../upstream/nova-sonic-config';
 const MASCULINE_PERSONAS = new Set(['devon', 'atlas']);
 
 const NOVA_VOICES = {
-  en: { feminine: 'tiffany', masculine: 'matthew' },
+  en: { feminine: 'tina', masculine: 'lennart' },
   de: { feminine: 'tina', masculine: 'lennart' },
   fr: { feminine: 'ambre', masculine: 'florian' },
   es: { feminine: 'lupe', masculine: 'carlos' },
