@@ -22,6 +22,7 @@ import type { AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
 import {
   OBSERVER_TICK_MS,
   OVERLAP_MS,
+  distilBackfill,
   isObserverRunning,
   observerTick,
   writeSteps,
@@ -191,6 +192,41 @@ router.get('/health', requireAdminAuth, async (req: AuthenticatedRequest, res: R
       session_ingest_configured: !!process.env.WATCHER_SESSION_TOKEN,
       forced_tick: forced,
     },
+  });
+});
+
+// =============================================================================
+// POST /distil-backfill
+// =============================================================================
+
+/**
+ * Spend the failure history recorded before the distiller was wired up.
+ *
+ * Admin-gated and deliberate — see distilBackfill()'s own comment for why
+ * this is not automatic. `since` is required rather than defaulted: an
+ * unbounded backfill over a table that grows forever is the kind of endpoint
+ * that is harmless the day it ships and a problem a year later.
+ */
+router.post('/distil-backfill', requireAdminAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const since = String((req.body as { since?: unknown })?.since ?? '').trim();
+  if (!since) {
+    return res.status(400).json({ ok: false, error: 'MISSING_SINCE', message: 'since (ISO timestamp) is required' });
+  }
+  const parsed = new Date(since);
+  if (Number.isNaN(parsed.getTime())) {
+    return res.status(400).json({ ok: false, error: 'INVALID_SINCE', message: 'since must be a parseable ISO timestamp' });
+  }
+
+  const rawLimit = Number((req.body as { limit?: unknown })?.limit);
+  const result = await distilBackfill({
+    sinceIso: parsed.toISOString(),
+    limit: Number.isFinite(rawLimit) ? rawLimit : undefined,
+  });
+
+  return res.status(result.ok ? 200 : 500).json({
+    ok: result.ok,
+    data: { scanned: result.scanned, lessons: result.lessons },
+    error: result.error,
   });
 });
 

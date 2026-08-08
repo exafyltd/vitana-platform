@@ -96,7 +96,17 @@ export async function upsertLesson(input: {
       .maybeSingle();
 
     if (existing) {
-      const frequency = ((existing.frequency as number) || 1) + 1;
+      // Increment by the number of steps in THIS batch, not by one.
+      //
+      // Three CI failures with the same signature really are three
+      // occurrences, and frequency is the evidence that a lesson describes a
+      // real pattern rather than a one-off — undercounting it keeps genuine
+      // patterns in singleton quarantine longer than the data warrants. It
+      // also makes a historical backfill correct with no special case: one
+      // batch of 50 past failures yields frequency 50, exactly as if they had
+      // been observed live.
+      const occurrences = Math.max(1, (input.evidence_step_ids ?? []).length);
+      const frequency = ((existing.frequency as number) || 1) + occurrences;
       const prior = (existing.evidence_step_ids as string[]) || [];
       // Newest evidence last, de-duplicated, bounded. Unbounded growth would
       // turn a chronically recurring pattern's row into an ever-growing array
@@ -126,6 +136,7 @@ export async function upsertLesson(input: {
       return true;
     }
 
+    const firstSeenCount = Math.max(1, (input.evidence_step_ids ?? []).length);
     const { error } = await sb.from('watcher_lessons').insert({
       stage: input.stage,
       pattern_type: input.pattern_type,
@@ -133,6 +144,12 @@ export async function upsertLesson(input: {
       scope: input.scope ?? {},
       lesson: input.lesson.slice(0, 500),
       example_message: (input.example_message || '').slice(0, 500) || null,
+      // A pattern that arrives already-recurring (several occurrences in its
+      // very first batch — the normal case for a backfill) must not be filed
+      // as a singleton, or the quarantine withholds a lesson we already have
+      // ample evidence for.
+      frequency: firstSeenCount,
+      confidence: confidenceForFrequency(firstSeenCount),
       evidence_step_ids: (input.evidence_step_ids ?? []).slice(-MAX_EVIDENCE_IDS),
       source_finding_id: input.source_finding_id ?? null,
       source_execution_id: input.source_execution_id ?? null,

@@ -22,6 +22,7 @@ jest.mock('../src/lib/supabase', () => ({ getSupabase: () => mockGetSupabase() }
 import {
   observerTick,
   writeSteps,
+  distilBackfill,
   stopObserver,
 } from '../src/services/watcher/watcher-observer';
 
@@ -460,6 +461,46 @@ describe('distillation is wired into the tick (VTID-03531)', () => {
     expect(rec.lessonUpdates[0].evidence_step_ids).toEqual(['old', 's0']);
   });
 
+  it('counts every occurrence in a batch, not one per batch', async () => {
+    // Three failures with the same signature really are three occurrences.
+    // Counting the batch as a single recurrence undercounts the evidence and
+    // keeps a genuine pattern in singleton quarantine longer than the data
+    // warrants — and it is what makes a historical backfill correct with no
+    // special case.
+    const { client, rec } = fakeSupabase({
+      cursorAt: '2026-08-01T00:00:00.000Z',
+      eventPages: [[
+        failedEvt('e7', '2026-08-01T01:00:00.000Z', 'error TS2307: cannot find module a'),
+        failedEvt('e8', '2026-08-01T01:00:01.000Z', 'error TS2307: cannot find module b'),
+        failedEvt('e9', '2026-08-01T01:00:02.000Z', 'error TS2307: cannot find module c'),
+      ]],
+      existingLesson: { id: 'L1', frequency: 4, evidence_step_ids: [] },
+    });
+    mockGetSupabase.mockReturnValue(client);
+
+    await observerTick();
+
+    expect(rec.lessonUpdates[0].frequency).toBe(7);
+  });
+
+  it('files a pattern that arrives already-recurring as non-singleton', async () => {
+    const { client, rec } = fakeSupabase({
+      cursorAt: '2026-08-01T00:00:00.000Z',
+      eventPages: [[
+        failedEvt('e10', '2026-08-01T01:00:00.000Z', 'error TS2307: cannot find module a'),
+        failedEvt('e11', '2026-08-01T01:00:01.000Z', 'error TS2307: cannot find module b'),
+      ]],
+    });
+    mockGetSupabase.mockReturnValue(client);
+
+    await observerTick();
+
+    // Inserting at frequency 1 would put a pattern we have two independent
+    // observations of straight into quarantine.
+    expect(rec.lessonInserts[0].frequency).toBe(2);
+    expect(rec.lessonInserts[0].confidence).toBeGreaterThan(0.5);
+  });
+
   it('does not distil successful steps', async () => {
     const { client, rec } = fakeSupabase({
       cursorAt: '2026-08-01T00:00:00.000Z',
@@ -506,5 +547,88 @@ describe('distillation is wired into the tick (VTID-03531)', () => {
 
     const results = await observerTick();
     expect(results.find((r) => r.source === 'oasis_events')?.error).toBeUndefined();
+  });
+});
+
+/**
+ * VTID-03531 — historical backfill.
+ *
+ * The tick path only distils newly-inserted rows, which is what keeps it
+ * idempotent across the overlap rescan. The cost is that the 354 failure
+ * steps recorded BEFORE the distiller was wired up would never become memory
+ * — already present, so the rescan skips them forever. This spends that
+ * evidence once, deliberately.
+ */
+describe('distilBackfill (VTID-03531)', () => {
+  function storedFailure(id: string, message: string) {
+    return {
+      id,
+      work_unit_kind: 'vtid',
+      work_unit_id: 'VTID-01',
+      vtid: 'VTID-01',
+      step: 'ci',
+      outcome: 'failure',
+      actor: 'ci',
+      evidence: { message },
+      source: 'oasis_events',
+      source_ref: id,
+      observed_at: '2026-08-01T00:00:00.000Z',
+    };
+  }
+
+  function backfillSupabase(rows: unknown[]) {
+    const rec = { inserts: [] as Record<string, unknown>[] };
+    const client = {
+      from: (table: string) => {
+        if (table === 'watcher_steps') {
+          const b: Record<string, unknown> = {};
+          for (const m of ['select', 'eq', 'gte', 'order']) b[m] = () => b;
+          b.limit = async () => ({ data: rows, error: null });
+          return b;
+        }
+        if (table === 'watcher_lessons') {
+          return {
+            select: () => ({
+              eq: () => ({ eq: () => ({ eq: () => ({
+                maybeSingle: async () => ({ data: null, error: null }),
+              }) }) }),
+            }),
+            insert: async (row: Record<string, unknown>) => {
+              rec.inserts.push(row); return { error: null };
+            },
+          };
+        }
+        throw new Error(`unexpected table: ${table}`);
+      },
+    };
+    return { client, rec };
+  }
+
+  it('distils already-recorded failures and seeds frequency from real counts', async () => {
+    const { client, rec } = backfillSupabase([
+      storedFailure('h1', 'error TS2307: cannot find module a'),
+      storedFailure('h2', 'error TS2307: cannot find module b'),
+      storedFailure('h3', 'heap out of memory'),
+    ]);
+    mockGetSupabase.mockReturnValue(client);
+
+    const r = await distilBackfill({ sinceIso: '2026-07-01T00:00:00.000Z' });
+
+    expect(r.ok).toBe(true);
+    expect(r.scanned).toBe(3);
+    expect(r.lessons).toBe(2); // two distinct patterns
+
+    const ts = rec.inserts.find((l) => l.pattern_key === 'TS2307:cannot-find-module')!;
+    // Two historical occurrences must be filed as two, not as a singleton —
+    // otherwise the backfill produces lessons quarantine then withholds.
+    expect(ts.frequency).toBe(2);
+    expect(rec.inserts.find((l) => l.pattern_key === 'node:oom')!.frequency).toBe(1);
+  });
+
+  it('reports the error instead of throwing when the read fails', async () => {
+    mockGetSupabase.mockReturnValue(null);
+    const r = await distilBackfill({ sinceIso: '2026-07-01T00:00:00.000Z' });
+    expect(r.ok).toBe(false);
+    expect(r.lessons).toBe(0);
   });
 });

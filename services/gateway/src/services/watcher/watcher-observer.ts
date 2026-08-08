@@ -389,6 +389,54 @@ async function scanExecutions(sink: StoredStep[]): Promise<SourceTickResult> {
   return { source: SOURCE_EXECUTIONS, scanned: rows.length, written: w.written, cursor_at: next };
 }
 
+/**
+ * One-off distillation of failures ALREADY recorded in watcher_steps.
+ *
+ * The tick path deliberately distils only newly-inserted rows, which is what
+ * keeps it idempotent across the overlap rescan. The cost of that choice is
+ * that history recorded before the distiller was wired up (VTID-03531 — 354
+ * failure steps across three days) would never become memory at all: those
+ * rows are already present, so the rescan skips them forever and the system
+ * starts learning from a standing start while sitting on a pile of unused
+ * evidence.
+ *
+ * This exists to spend that evidence once. It is admin-triggered rather than
+ * automatic because the observer's contract is that backfill is a deliberate
+ * operation, not something a restart quietly performs.
+ *
+ * Safe to run more than once: distilBatch merges by pattern and upsertLesson
+ * is keyed on (stage, pattern_type, pattern_key). Re-running does inflate
+ * frequency for already-distilled patterns, though, so it is bounded by
+ * `sinceIso` and reports what it touched rather than running open-ended.
+ */
+export async function distilBackfill(opts: {
+  sinceIso: string;
+  limit?: number;
+}): Promise<{ ok: boolean; scanned: number; lessons: number; error?: string }> {
+  const sb = getSupabase();
+  if (!sb) return { ok: false, scanned: 0, lessons: 0, error: 'supabase unavailable' };
+
+  const limit = Math.min(Math.max(opts.limit ?? 1000, 1), 5000);
+  try {
+    const { data, error } = await sb
+      .from('watcher_steps')
+      .select('id, work_unit_kind, work_unit_id, vtid, step, outcome, actor, evidence, source, source_ref, observed_at')
+      .eq('outcome', 'failure')
+      .gte('observed_at', opts.sinceIso)
+      .order('observed_at', { ascending: true })
+      .limit(limit);
+
+    if (error) return { ok: false, scanned: 0, lessons: 0, error: error.message };
+
+    const rows = (data || []) as StoredStep[];
+    const lessons = await distilTick(rows);
+    return { ok: true, scanned: rows.length, lessons };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return { ok: false, scanned: 0, lessons: 0, error: message };
+  }
+}
+
 // =============================================================================
 // Tick
 // =============================================================================
