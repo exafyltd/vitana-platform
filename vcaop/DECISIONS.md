@@ -24,3 +24,77 @@
 | VER-001 | (none yet — guardrails layer has no third-party adapters) | — | 2026-06-04 | Connector/vendor verification begins at Layer CONN/RWD; deferred until those VTIDs. |
 | VER-003 | eBay Browse/Sell API + OAuth2 + eBay Partner Network (EPN) | not independently fetched this pass | 2026-06-08 | First real integration (affiliate-first). Built `EbayApiClient`/`EbayOAuthClient` + EPN link decorator behind the existing connector interfaces, **mock-only** (no live calls; `live` flag refuses without vault creds). Verify eBay developer docs + EPN terms and supply sandbox creds → wire live. Logged BLK-004. |
 | VER-002 | Amazon SP-API, eBay, Walmart, CJ (ApiConnector targets) | not independently fetched this pass | 2026-06-05 | Per Sec. 0.8 step 3: live SDK/auth model NOT re-verified against official docs in this environment (no confirmed outbound access to vendor docs; treat as unverified/gated). Built `ApiConnector` against a swappable `ApiClient` interface with **mock** provider stubs only — no live calls, none in CI. Real-vendor wiring + auth model verification is a runtime task; logged in BLOCKERS (BLK-002). |
+
+## 2026-08-08 — Commerce Mesh Phase 1 (VTID-03533), Tier-A decisions
+
+- **MCP SDK:** official `@modelcontextprotocol/sdk` ^1.30.0, Streamable HTTP in
+  stateless JSON mode (fresh `McpServer` + transport per request — no session
+  state, trivial horizontal scaling). Verified via MCP Inspector CLI against a
+  running local instance (initialize / tools/list / tools/call), 2026-08-08.
+- **Scope-filtered discovery via per-request registration:** tools whose scopes
+  the token lacks are simply not registered, so the SDK answers "Tool not
+  found" — an under-scoped client cannot enumerate the full tool surface.
+  A second scope check runs inside the call wrapper (defense in depth).
+- **Token verification seam:** `TokenVerifier` interface; dev/test impl is
+  HS256 against a spec-shaped test AS (secret via env, never committed). The
+  production JWKS/RS256 verifier is a drop-in behind the same interface once
+  the AS decision (BLK-007, Tier-B security) is approved. This service never
+  mints tokens. Revocation is checked on every request (`RevocationStore`).
+- **registerTool typing:** the SDK's generic inference over a dynamic
+  `ZodRawShape` (tools registered from a data registry, not literals) trips
+  TS2589; bound a narrow explicitly-typed view of `registerTool` rather than
+  loosening tsconfig or abandoning the declarative registry.
+- **GatewayReadBackend honesty:** only wallet/commissions/providers are wired
+  (the endpoints the gateway verifiably serves); catalog/cart/order reads
+  throw `backend_unavailable` with an actionable message instead of inventing
+  endpoint shapes. CI uses the synthetic `MemoryReadBackend` only.
+
+## 2026-08-08 — Commerce Mesh Phase 2 (VTID-03535), Tier-A decisions
+
+- **Mapping proposals are deterministic, not LLM calls.** The ingestion
+  pipeline scores partner→canonical field mappings with a transparent lexical
+  model (exact > token overlap > substring, camelCase-aware). An LLM proposer
+  can later feed *candidates* into the same MappingDecision review flow, but
+  certification must never depend on a model call — AI plans, deterministic
+  systems execute (ADR-005), and a certification gate that needs an API key
+  is a certification gate that silently stops running.
+- **Destructive manifest actions must be human-gated OR idempotency-keyed** —
+  schema-enforced in validateManifest, no third option. OpenAPI ingestion
+  defaults DELETE to destructive+human_gated and all writes to
+  idempotency_key; a human review may relax, the compiler never does.
+- **Generated connectors extend BaseConnector** rather than reimplementing
+  gate logic (ADR-002) — guardrail inheritance is proved by tests
+  (default-deny, human-gate halt before transport, human-gated registration).
+- **Output-validation failure is a drift signal**, surfaced as
+  `invalid_output` rather than passing unvalidated partner data downstream.
+- **Migration verified on ephemeral PG16 in-session** (initdb as unprivileged
+  user, up→down→up + FK cascade). Live apply deliberately NOT done: no dev DB
+  (BLK-001), and prod DDL via session tooling is not a Phase 2 action.
+- **zod added to services/vcaop** (house convention §10 mandates Zod; vcaop
+  previously had no validation dependency).
+
+## 2026-08-08 — Commerce Mesh Phases 3+4 (VTID-03536 / VTID-03537), Tier-A decisions
+
+- **Portal adds orchestration, never a second gate:** `approveActivation` calls
+  the Phase 2 `activateConnector`, which refuses uncertified manifests; the
+  admin approval alone can never activate anything. Activation + revoke are
+  admin-only (mirrors "human-task approvals are admin-only"); community denied.
+- **`decided_by` is the authenticated user, always** — the router ignores any
+  client-supplied reviewer id (spoof test pins it).
+- **Reauthorize = suspend until fresh credentials**, not a manifest-state
+  rewind — credential refresh is not a mapping change and must not re-open
+  the certification pipeline.
+- **Field NAMES in previews/events are metadata, not PII** (the ManualConnector
+  precedent: "references + field names" are the PII-free payload). Tests assert
+  no PII VALUES / vault refs / secret blocks instead of banning names.
+- **Effectively-once, not exactly-once:** deterministic content-hash event ids
+  (consumption dedup) + unique run idempotency keys (command dedup, ALSO a DB
+  unique constraint) + per-(run,step) idempotency keys for downstream services
+  + reconciliation. The engine never claims distributed exactly-once.
+- **Recovering a COMPENSATED run is a new deliberate command**, not an
+  automatic retry — `replayDeadLetter` only replays event entries; run-failure
+  entries direct the operator to `resume()`, and resume of a terminal run is a
+  no-op. An automatic un-compensate path would re-execute financial effects
+  on a state the saga already unwound.
+- **Reconciler emits once per transition** (running→stuck), never per sweep —
+  §6 "repetition ≠ signal".
