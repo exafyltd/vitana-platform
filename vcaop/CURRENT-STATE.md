@@ -11,6 +11,26 @@
 
 ## Current position
 
+- **AI COMMERCE MESH — Phase 1 built (2026-08-08, VTID-03533):** new
+  `services/vcaop-mcp/` — the public MCP/OAuth gateway foundation (ADR-004),
+  dev-only. MCP Streamable HTTP (official SDK, stateless JSON, fresh server
+  per request), OAuth 2.1 resource-server side behind a swappable
+  `TokenVerifier` (HS256 test AS today; production JWKS verifier lands with
+  BLK-007), RFC 9728 protected-resource metadata, 10 declarative read-only
+  tools (registry with per-tool scopes/risk/confirmation/idempotency/audit
+  declarations; NO generic passthrough tool per ADR-005), **scope-filtered
+  tool discovery** (unauthorized tool ≡ nonexistent tool), tenant+user
+  identity from token claims only, per-subject rate limiting, sanitized
+  audit events (`assertAuditSafe` on every emit), stable error codes.
+  Backends: `MemoryReadBackend` (synthetic fixtures, CI) +
+  `GatewayReadBackend` (dev wiring for the wallet/commissions/providers
+  endpoints the gateway actually serves; catalog/cart/order reads honestly
+  return `backend_unavailable` pending the Phase 2 canonical read-model
+  API). **Verified:** 5 suites/30 tests green; `tsc` clean; built server
+  boots; **MCP Inspector CLI validated** initialize + scope-filtered
+  tools/list + tools/call against a running local instance. vcaop baseline
+  re-run: still 33/33 suites, 184/184. **Not done (blocked):** public
+  exposure, real AS, ChatGPT/Claude live connector validation — BLK-006/007.
 - **AI COMMERCE MESH — Phase 0 complete (2026-08-08, VTID-03532):** VCAOP is
   being evolved into the Vitanaland AI Commerce Mesh (Connector Factory over
   versioned manifests, canonical commerce model, public multi-tenant MCP/OAuth

@@ -24,3 +24,27 @@
 | VER-001 | (none yet — guardrails layer has no third-party adapters) | — | 2026-06-04 | Connector/vendor verification begins at Layer CONN/RWD; deferred until those VTIDs. |
 | VER-003 | eBay Browse/Sell API + OAuth2 + eBay Partner Network (EPN) | not independently fetched this pass | 2026-06-08 | First real integration (affiliate-first). Built `EbayApiClient`/`EbayOAuthClient` + EPN link decorator behind the existing connector interfaces, **mock-only** (no live calls; `live` flag refuses without vault creds). Verify eBay developer docs + EPN terms and supply sandbox creds → wire live. Logged BLK-004. |
 | VER-002 | Amazon SP-API, eBay, Walmart, CJ (ApiConnector targets) | not independently fetched this pass | 2026-06-05 | Per Sec. 0.8 step 3: live SDK/auth model NOT re-verified against official docs in this environment (no confirmed outbound access to vendor docs; treat as unverified/gated). Built `ApiConnector` against a swappable `ApiClient` interface with **mock** provider stubs only — no live calls, none in CI. Real-vendor wiring + auth model verification is a runtime task; logged in BLOCKERS (BLK-002). |
+
+## 2026-08-08 — Commerce Mesh Phase 1 (VTID-03533), Tier-A decisions
+
+- **MCP SDK:** official `@modelcontextprotocol/sdk` ^1.30.0, Streamable HTTP in
+  stateless JSON mode (fresh `McpServer` + transport per request — no session
+  state, trivial horizontal scaling). Verified via MCP Inspector CLI against a
+  running local instance (initialize / tools/list / tools/call), 2026-08-08.
+- **Scope-filtered discovery via per-request registration:** tools whose scopes
+  the token lacks are simply not registered, so the SDK answers "Tool not
+  found" — an under-scoped client cannot enumerate the full tool surface.
+  A second scope check runs inside the call wrapper (defense in depth).
+- **Token verification seam:** `TokenVerifier` interface; dev/test impl is
+  HS256 against a spec-shaped test AS (secret via env, never committed). The
+  production JWKS/RS256 verifier is a drop-in behind the same interface once
+  the AS decision (BLK-007, Tier-B security) is approved. This service never
+  mints tokens. Revocation is checked on every request (`RevocationStore`).
+- **registerTool typing:** the SDK's generic inference over a dynamic
+  `ZodRawShape` (tools registered from a data registry, not literals) trips
+  TS2589; bound a narrow explicitly-typed view of `registerTool` rather than
+  loosening tsconfig or abandoning the declarative registry.
+- **GatewayReadBackend honesty:** only wallet/commissions/providers are wired
+  (the endpoints the gateway verifiably serves); catalog/cart/order reads
+  throw `backend_unavailable` with an actionable message instead of inventing
+  endpoint shapes. CI uses the synthetic `MemoryReadBackend` only.
