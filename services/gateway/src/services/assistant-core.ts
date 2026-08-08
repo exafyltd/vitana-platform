@@ -355,7 +355,7 @@ export async function processFrame(request: FrameProcessRequest): Promise<FrameP
     route: request.route,
     selectedId: request.selectedId,
     sizeBytes: frameSizeBytes,
-    model: GOOGLE_GEMINI_API_KEY ? 'gemini-pro-vision' : undefined
+    model: GOOGLE_GEMINI_API_KEY ? 'gemini-2.5-flash' : undefined
   });
 
   // Optional: Send to Gemini Vision API for analysis (stub)
@@ -423,7 +423,7 @@ async function analyzeFrameWithGemini(frameBase64: string, source: 'camera' | 's
   };
 
   const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro-vision:generateContent?key=${GOOGLE_GEMINI_API_KEY}`,
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GOOGLE_GEMINI_API_KEY}`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -548,7 +548,7 @@ async function transcribeAudioWithGemini(audioBase64: string): Promise<{
   };
 
   const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GOOGLE_GEMINI_API_KEY}`,
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GOOGLE_GEMINI_API_KEY}`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
