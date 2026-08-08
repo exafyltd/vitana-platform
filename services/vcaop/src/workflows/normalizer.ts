@@ -7,6 +7,7 @@
 import * as crypto from 'crypto';
 import { CanonicalEntityType } from '../canonical/model';
 import { ConnectorManifest } from '../factory/manifest';
+import { applyTransform } from '../factory/transforms';
 
 export interface NormalizedEventRecord {
   /** Deterministic id: hash of (connector, event key, native id) — the dedup anchor. */
@@ -43,7 +44,10 @@ export function normalizeEvent(
 
   for (const m of mappings) {
     if (m.source_field in raw.payload) {
-      canonical[m.canonical_field] = raw.payload[m.source_field];
+      const value = raw.payload[m.source_field];
+      // Named transforms from the certified manifest — unknown names throw
+      // (drift signal), never silently pass raw values through.
+      canonical[m.canonical_field] = m.transform ? applyTransform(m.transform, value) : value;
       mappedSources.add(m.source_field);
       entityType = m.canonical_entity;
     }

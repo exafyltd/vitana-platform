@@ -11,6 +11,40 @@
 
 ## Current position
 
+- **AI COMMERCE MESH — Phase 5 built (2026-08-08, VTID-03538):** AI-assisted
+  mapping + drift healing in `src/factory/`. (1) **Transform registry**
+  (`transforms.ts`): named deterministic transforms (cents_to_decimal,
+  epoch_seconds_to_iso, to_number, uppercase_currency, …) — generated
+  CONFIGURATION, not generated executable code; unknown names throw (drift
+  signal); the event normalizer now applies a mapping's transform, and
+  ingestion/repair propose transforms deterministically (price_cents →
+  *_amount, *_ts → *_at, currency casing). (2) **MappingProposer seam**
+  (`proposer.ts`): DeterministicMappingProposer is the default and the only
+  hard dependency of certification; MockLlmMappingProposer stands in for the
+  future llm-router-backed proposer (mock-first, Sec. 0.8 — no runtime LLM
+  credentials here) and its output is CLAMPED to the contract (decided_by
+  forced to 'ai', confidence clamped to [0,1]) so a hallucinating model can
+  never smuggle a human decision or over-confidence past the gates.
+  (3) **Drift detection** (`drift.ts`): certified manifest vs fresh
+  discovery → per-change materiality; conservative: removed/type-changed
+  MAPPED fields, auth changes, removed actions, new SENSITIVE fields, and
+  fields becoming required are material; added benign fields/schemas/actions
+  are non-material. (4) **Repair pipeline** (`repair.ts`): proposeRepair
+  (patch bump non-material / minor bump material; surviving mappings kept,
+  dropped mappings noted, new candidates re-proposed as ai-decided) →
+  testRepair (FULL certification pipeline in sandbox, no shortcuts) →
+  applyRepair (refuses uncertified; refuses material without human
+  approval; prior certified version never mutated — rollback target).
+  **Healing limits enforced structurally:** auth mechanism + scopes are
+  copied from the CERTIFIED manifest, never from discovery (no scope
+  expansion, no auth swap — partner auth drift lands as a
+  re-authorize-deliberately note); new partner actions are NOT auto-added
+  (capability growth is onboarding, not repair). (5) **healConnectorDrift**
+  ladder: detect → propose → sandbox-test → auto-apply non-material |
+  CONNECTOR_REPAIR_APPROVAL human task for material or sandbox-failing
+  repairs; silent on no-drift (repetition ≠ signal). 17 new tests; **suite
+  43/43 suites, 254/254 tests green.** Remaining: Phase 6 (commerce writes +
+  VTNA settlement, BLK-010) and Phase 7 (health attestations, BLK-009).
 - **AI COMMERCE MESH — Phases 3+4 built (2026-08-08, VTID-03536 / VTID-03537):**
   - **Phase 3 (`src/portal/`, VTID-03536):** `PartnerOnboardingService` — the
     connect-business workflow over the Phase 2 factory+certification pipeline:
