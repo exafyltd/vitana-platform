@@ -142,6 +142,7 @@ export type CicdEventType =
   // human in the loop, and "why did the system stop reminding us about X?"
   // needs an auditable answer.
   | 'vtid.decision.watcher.lesson_muted'
+  | 'vtid.decision.watcher.backfill'
   | 'cicd.github.create_pr.requested'
   | 'cicd.github.create_pr.succeeded'
   | 'cicd.github.create_pr.failed'
