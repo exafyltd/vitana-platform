@@ -150,6 +150,23 @@ router.get('/health', requireAdminAuth, async (req: AuthenticatedRequest, res: R
     else sources = data || [];
   }
 
+  // Whether ANY instance ticked recently, derived from the cursor rows.
+  //
+  // `isObserverRunning()` below is a PER-PROCESS flag, and the gateway runs
+  // more than one instance — so the instance answering this request is
+  // usually not the one holding the timer. Observed live: running=false while
+  // last_run_at was four seconds old. Reporting only the local flag makes a
+  // perfectly healthy observer look dead, which is the same class of lying
+  // health field as the hard-zero last_written (VTID-03473). Three tick
+  // intervals of slack absorbs a slow scan without flapping.
+  const lastRunAt = (sources as Array<{ last_run_at?: string | null }>)
+    .map((s) => (s.last_run_at ? Date.parse(s.last_run_at) : NaN))
+    .filter((t) => !Number.isNaN(t))
+    .sort((a, b) => b - a)[0];
+  const tickingRecently = lastRunAt !== undefined
+    ? Date.now() - lastRunAt < OBSERVER_TICK_MS * 3
+    : false;
+
   // Learned-memory counts. Reported because "the observer is healthy" and
   // "the Watcher is learning" are independent facts, and for the system's
   // first three days they diverged completely: 591 steps recorded against 0
@@ -180,7 +197,15 @@ router.get('/health', requireAdminAuth, async (req: AuthenticatedRequest, res: R
         env_var_present: envVar !== null,
         env_var_value: envVar,
         enabled_resolved: resolvedEnabled,
-        running: isObserverRunning(),
+        // `running` answers the question a reader is actually asking — is the
+        // observer ticking — so it reports the cross-instance derived value.
+        // The per-process timer flag is kept alongside it for diagnosis, but
+        // it is NOT the headline: it is false on every instance that does not
+        // happen to hold the timer, and the Command Hub panel renders this
+        // field directly.
+        running: tickingRecently,
+        running_this_instance: isObserverRunning(),
+        last_run_at: lastRunAt !== undefined ? new Date(lastRunAt).toISOString() : null,
         tick_ms: OBSERVER_TICK_MS,
         overlap_ms: OVERLAP_MS,
       },

@@ -209,6 +209,35 @@ describe('GET /api/v1/watcher/health', () => {
     expect(res.body.data.sources).toEqual(sources);
   });
 
+  it('reports running from cross-instance evidence, not the local timer flag', async () => {
+    // The gateway runs more than one instance and startObserver()'s timer is
+    // per-process, so the instance answering /health is usually NOT the one
+    // ticking. Observed live: running=false with last_run_at four seconds
+    // old. Reporting the local flag makes a healthy observer look dead —
+    // the same class of lying health field as the hard-zero last_written.
+    mockGetSupabase.mockReturnValue(stubSupabase({
+      data: [{ source: 'oasis_events', last_run_at: new Date().toISOString() }],
+    }));
+    const res = await request(buildApp()).get('/api/v1/watcher/health');
+    expect(res.body.data.observer.running).toBe(true);
+    expect(res.body.data.observer.last_run_at).not.toBeNull();
+    // The local timer flag is still reported, just no longer the headline.
+    expect(res.body.data.observer).toHaveProperty('running_this_instance');
+  });
+
+  it('reports running=false on a stale cursor even though the local timer flag is true', async () => {
+    // This is the discriminating case: isObserverRunning() is mocked TRUE for
+    // this suite, so a `running` of false can only have come from the cursor
+    // evidence. If `running` ever regresses to the per-process flag, this is
+    // the test that catches it.
+    mockGetSupabase.mockReturnValue(stubSupabase({
+      data: [{ source: 'oasis_events', last_run_at: new Date(Date.now() - 3600_000).toISOString() }],
+    }));
+    const res = await request(buildApp()).get('/api/v1/watcher/health');
+    expect(res.body.data.observer.running).toBe(false);
+    expect(res.body.data.observer.running_this_instance).toBe(true);
+  });
+
   it('reports learned-lesson counts alongside cursor health (VTID-03531)', async () => {
     // "The observer is healthy" and "the Watcher is learning" are independent
     // facts, and for three days they diverged completely — 591 steps recorded
