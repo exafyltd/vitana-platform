@@ -11,6 +11,27 @@
 
 ## Current position
 
+- **AI COMMERCE MESH — Phase 0 complete (2026-08-08, VTID-03532):** VCAOP is
+  being evolved into the Vitanaland AI Commerce Mesh (Connector Factory over
+  versioned manifests, canonical commerce model, public multi-tenant MCP/OAuth
+  gateway at `mcp.vitanaland.com`, durable workflows, AI-assisted integration
+  builder) per the 2026-08-08 user brief. Phase 0 deliverables:
+  `vcaop/MESH-PHASE0-REPORT.md` (verified current-state, implementation-gap
+  report, canonical-model proposal, threat model, migration/compatibility
+  plan) + `vcaop/adr/ADR-001…005` + new blockers BLK-006…010. **Test baseline
+  re-established on this branch: `services/vcaop` 33/33 suites, 184/184 tests
+  green; `tsc --noEmit` clean.** Verified live-gateway reality exceeds this
+  file's earlier records: marketplace-sync now has SIX handwritten provider
+  adapters (admitad, amazon, awin, cj, rakuten, shopify) + awin order/
+  conversion sync — these are the prime candidates for manifest re-expression
+  in Phase 2. Key decisions: extend VCAOP, never a second platform (ADR-001);
+  factory emits the existing `Connector` interface so guardrails are inherited
+  (ADR-002); versioned canonical envelope, read-models stay authoritative
+  (ADR-003); public MCP gateway is a NEW service, internal MCP stays internal
+  (ADR-004); AI plans / deterministic executes, no generic passthrough tool
+  (ADR-005). **Next: Phase 1 (public read-only MCP)** — new VTID at start;
+  resource-server + read tools built dev-only against a test AS
+  (BLK-006/007 gate public exposure).
 - **DISCOVER real purchasable catalog LIVE via Admitad (2026-06-29):** seeded 12
   curated, on-brand longevity/wellness products (8 AliExpress + 4 Bodylab24) into the
   `products` table, each `affiliate_url` = the LIVE cashback-allowed program gotolink
