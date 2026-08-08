@@ -72,3 +72,29 @@
   (BLK-001), and prod DDL via session tooling is not a Phase 2 action.
 - **zod added to services/vcaop** (house convention §10 mandates Zod; vcaop
   previously had no validation dependency).
+
+## 2026-08-08 — Commerce Mesh Phases 3+4 (VTID-03536 / VTID-03537), Tier-A decisions
+
+- **Portal adds orchestration, never a second gate:** `approveActivation` calls
+  the Phase 2 `activateConnector`, which refuses uncertified manifests; the
+  admin approval alone can never activate anything. Activation + revoke are
+  admin-only (mirrors "human-task approvals are admin-only"); community denied.
+- **`decided_by` is the authenticated user, always** — the router ignores any
+  client-supplied reviewer id (spoof test pins it).
+- **Reauthorize = suspend until fresh credentials**, not a manifest-state
+  rewind — credential refresh is not a mapping change and must not re-open
+  the certification pipeline.
+- **Field NAMES in previews/events are metadata, not PII** (the ManualConnector
+  precedent: "references + field names" are the PII-free payload). Tests assert
+  no PII VALUES / vault refs / secret blocks instead of banning names.
+- **Effectively-once, not exactly-once:** deterministic content-hash event ids
+  (consumption dedup) + unique run idempotency keys (command dedup, ALSO a DB
+  unique constraint) + per-(run,step) idempotency keys for downstream services
+  + reconciliation. The engine never claims distributed exactly-once.
+- **Recovering a COMPENSATED run is a new deliberate command**, not an
+  automatic retry — `replayDeadLetter` only replays event entries; run-failure
+  entries direct the operator to `resume()`, and resume of a terminal run is a
+  no-op. An automatic un-compensate path would re-execute financial effects
+  on a state the saga already unwound.
+- **Reconciler emits once per transition** (running→stuck), never per sweep —
+  §6 "repetition ≠ signal".
