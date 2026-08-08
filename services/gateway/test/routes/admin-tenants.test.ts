@@ -264,7 +264,8 @@ describe('admin-tenants routes', () => {
     expect(res.body.tenant.id).toBe('t9');
     expect(res.body.tenant.status).toBe('Empty');
     expect(res.body.tenant.members).toEqual([]);
-    expect(chainFor('tenants').eq).toHaveBeenCalledWith('id', 'slugged');
+    // tenants' PK column is tenant_id, not id (BOOTSTRAP-STAGING-BROKEN-INVESTIGATION)
+    expect(chainFor('tenants').eq).toHaveBeenCalledWith('tenant_id', 'slugged');
     expect(chainFor('tenants').eq).toHaveBeenCalledWith('slug', 'slugged');
   });
 
