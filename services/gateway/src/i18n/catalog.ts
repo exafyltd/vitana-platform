@@ -154,7 +154,19 @@ export type GatewayI18nKey =
   | 'orb.greeting_bridge.line_2'
   | 'orb.greeting_bridge.line_3'
   | 'orb.greeting_bridge.line_4'
-  | 'orb.greeting_bridge.line_5';
+  | 'orb.greeting_bridge.line_5'
+  // BOOTSTRAP-COMMUNITY-MARKETPLACE: seller-facing moderation outcome pushes.
+  | 'notif.marketplace_listing_approved.title'
+  | 'notif.marketplace_listing_approved.body'
+  | 'notif.marketplace_listing_rejected.title'
+  | 'notif.marketplace_listing_rejected.body'
+  | 'notif.marketplace_listing_removed.title'
+  | 'notif.marketplace_listing_removed.body'
+  // BOOTSTRAP-COMMUNITY-MARKETPLACE (Chunk 5): seller-facing "someone wants
+  // to buy/hire" push when a buyer sends the first contact message via the
+  // listing
+  | 'notif.listing_interest.title'
+  | 'notif.listing_interest.body';
 
 type LocaleCatalog = Record<GatewayI18nKey, string>;
 

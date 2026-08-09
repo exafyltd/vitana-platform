@@ -102,5 +102,13 @@
   "orb.greeting_bridge.line_2": "Mali koraci se sabiraju u velike promene.",
   "orb.greeting_bridge.line_3": "Tvoje buduće ja biće ti zahvalno za ono što uradiš danas.",
   "orb.greeting_bridge.line_4": "Doslednost pobeđuje savršenstvo — samo nastavi.",
-  "orb.greeting_bridge.line_5": "Svaki dan je nova prilika da se osećaš malo bolje."
+  "orb.greeting_bridge.line_5": "Svaki dan je nova prilika da se osećaš malo bolje.",
+  "notif.marketplace_listing_approved.title": "Tvoj oglas je objavljen",
+  "notif.marketplace_listing_approved.body": "„{title}\" je proveren i sada je vidljiv na tržištu.",
+  "notif.marketplace_listing_rejected.title": "Tvoj oglas je odbijen",
+  "notif.marketplace_listing_rejected.body": "„{title}\" nije mogao biti objavljen: {reason}",
+  "notif.marketplace_listing_removed.title": "Tvoj oglas je uklonjen",
+  "notif.marketplace_listing_removed.body": "Administrator je uklonio „{title}\": {reason}",
+  "notif.listing_interest.title": "Interesovanje za tvoj oglas",
+  "notif.listing_interest.body": "Neko je zainteresovan za „{title}\"."
 }

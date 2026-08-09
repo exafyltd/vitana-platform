@@ -120,9 +120,27 @@ describe('distilStep', () => {
     expect(d.pattern_type).toBe('deploy_failure');
   });
 
-  it('carries scanner/service into scope for retrieval', () => {
+  it('carries scanner into scope but NOT the emitting service (VTID-03534)', () => {
+    // This test previously asserted `{ scanner, service }` — it had encoded
+    // the bug as expected behaviour. scope is a RETRIEVAL filter and
+    // scopeMatches refuses a scoped lesson when the caller omits the key, but
+    // evidence.service is the EMITTING service (provenance), not a caller
+    // context. Including it made every learned lesson unreachable by all
+    // three consumers: the planner and executor never pass a service at all,
+    // and worker-runner passes its domain ('backend') against an emitter name
+    // ('worker-backend'). Measured in production: 34 lessons stored, 25
+    // injectable, 0 reachable.
     const d = distilStep(step({ evidence: { scanner: 'missing-tests-scanner-v1', service: 'gateway', message: 'x' } }))!;
-    expect(d.scope).toEqual({ scanner: 'missing-tests-scanner-v1', service: 'gateway' });
+    expect(d.scope).toEqual({ scanner: 'missing-tests-scanner-v1' });
+    expect(d.scope.service).toBeUndefined();
+  });
+
+  it('leaves scope empty — universal within the stage — when only a service is known', () => {
+    // The common case for an OASIS-sourced failure: the normalizer always
+    // populates evidence.service, and there is no scanner. Such a lesson must
+    // end up universal, not silently filtered out of every retrieval.
+    const d = distilStep(step({ evidence: { service: 'worker-orchestrator', message: 'boom' } }))!;
+    expect(d.scope).toEqual({});
   });
 
   it('produces imperative lesson text, not just the signature', () => {

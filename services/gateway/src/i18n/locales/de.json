@@ -102,5 +102,13 @@
   "orb.greeting_bridge.line_2": "Kleine Schritte summieren sich zu großen Veränderungen.",
   "orb.greeting_bridge.line_3": "Dein zukünftiges Ich dankt dir für das, was du heute tust.",
   "orb.greeting_bridge.line_4": "Konstanz schlägt Perfektion — mach einfach weiter.",
-  "orb.greeting_bridge.line_5": "Jeder Tag ist eine neue Gelegenheit, dich besser zu fühlen."
+  "orb.greeting_bridge.line_5": "Jeder Tag ist eine neue Gelegenheit, dich besser zu fühlen.",
+  "notif.marketplace_listing_approved.title": "Dein Angebot ist online",
+  "notif.marketplace_listing_approved.body": "„{title}\" wurde geprüft und ist jetzt im Marktplatz sichtbar.",
+  "notif.marketplace_listing_rejected.title": "Dein Angebot wurde abgelehnt",
+  "notif.marketplace_listing_rejected.body": "„{title}\" konnte nicht veröffentlicht werden: {reason}",
+  "notif.marketplace_listing_removed.title": "Dein Angebot wurde entfernt",
+  "notif.marketplace_listing_removed.body": "„{title}\" wurde von einem Admin entfernt: {reason}",
+  "notif.listing_interest.title": "Interesse an deinem Angebot",
+  "notif.listing_interest.body": "Jemand hat Interesse an „{title}\" gezeigt."
 }

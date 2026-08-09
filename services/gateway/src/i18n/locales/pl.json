@@ -102,5 +102,13 @@
   "orb.greeting_bridge.line_2": "Małe kroki składają się na wielkie zmiany.",
   "orb.greeting_bridge.line_3": "Twoje przyszłe ja podziękuje Ci za to, co zrobisz dzisiaj.",
   "orb.greeting_bridge.line_4": "Konsekwencja wygrywa z perfekcją — po prostu działaj dalej.",
-  "orb.greeting_bridge.line_5": "Każdy dzień to nowa szansa, żeby poczuć się trochę lepiej."
+  "orb.greeting_bridge.line_5": "Każdy dzień to nowa szansa, żeby poczuć się trochę lepiej.",
+  "notif.marketplace_listing_approved.title": "Twoje ogłoszenie jest online",
+  "notif.marketplace_listing_approved.body": "„{title}\" zostało sprawdzone i jest już widoczne na rynku.",
+  "notif.marketplace_listing_rejected.title": "Twoje ogłoszenie zostało odrzucone",
+  "notif.marketplace_listing_rejected.body": "„{title}\" nie mogło zostać opublikowane: {reason}",
+  "notif.marketplace_listing_removed.title": "Twoje ogłoszenie zostało usunięte",
+  "notif.marketplace_listing_removed.body": "Administrator usunął „{title}\": {reason}",
+  "notif.listing_interest.title": "Zainteresowanie Twoim ogłoszeniem",
+  "notif.listing_interest.body": "Ktoś jest zainteresowany „{title}\"."
 }

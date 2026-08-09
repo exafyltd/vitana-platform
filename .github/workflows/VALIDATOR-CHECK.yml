@@ -4,6 +4,25 @@ run-name: 'Validator Check [${{ github.head_ref || github.ref_name }}]'
 on:
   pull_request:
     types: [opened, edited, synchronize, reopened, ready_for_review]
+    # VTID-03525: scope the trigger to the surface this gate can actually judge.
+    #
+    # The workflow demands a VALIDATION_PROFILE and accepts exactly two —
+    # `command_hub_frontend` and `gateway_backend` — whose path-ownership guards
+    # admit only the trees below. It previously ran on EVERY pull request, so a
+    # PR touching .github/, scripts/, supabase/migrations/, another service, or
+    # docs/ outside docs/validation/ could not pass it under any profile: no
+    # VALIDATION_PROFILE -> exit 11, and any profile -> path-ownership violation.
+    #
+    # That never surfaced because the file was unparseable YAML and the workflow
+    # never started (see this VTID). Fixing the parse without scoping the trigger
+    # would put an unactionable red X on most PRs in this repo — which is how a
+    # governance gate gets muted a second time. Keep this list in step with the
+    # profile guards in the "Enforce Path Ownership Guard" step.
+    paths:
+      - 'services/gateway/src/**'
+      - 'services/gateway/dist/**'
+      - 'services/gateway/openapi/**'
+      - 'docs/validation/**'
 
 jobs:
   validate-pr:
@@ -74,24 +93,23 @@ jobs:
             exit 20
           fi
 
+          # VTID-03549: these guards previously used a multi-line awk program
+          # with a newline directly after `!(` — invalid awk syntax, so awk
+          # exited 1 and (under bash -e) the gate failed on EVERY PR it
+          # triggered on, regardless of content. grep -Ev expresses the same
+          # allowlist without the parse trap; it exits 1 when no violations
+          # remain, which is success here — hence `|| true`.
           if [ "$PROFILE" = "command_hub_frontend" ]; then
             # allow only the two command-hub frontend trees + docs/validation for evidence
-            awk '
-              !(
-                $0 ~ "^services/gateway/src/frontend/command-hub/" ||
-                $0 ~ "^services/gateway/dist/frontend/command-hub/" ||
-                $0 ~ "^docs/validation/"
-              )
-            ' /tmp/changed_files.txt > /tmp/violations.txt
+            grep -Ev '^(services/gateway/src/frontend/command-hub/|services/gateway/dist/frontend/command-hub/|docs/validation/)' \
+              /tmp/changed_files.txt > /tmp/violations.txt || true
           elif [ "$PROFILE" = "gateway_backend" ]; then
-            awk '
-              !(
-                $0 ~ "^services/gateway/src/" ||
-                $0 ~ "^services/gateway/dist/" ||
-                $0 ~ "^services/gateway/openapi/" ||
-                $0 ~ "^docs/validation/"
-              )
-            ' /tmp/changed_files.txt > /tmp/violations.txt
+            # services/gateway/test/ is allowlisted too (VTID-03549): the
+            # Acceptance Mapping Gate below REQUIRES TEST: tokens, and those
+            # jest suites live in services/gateway/test/ — a profile that
+            # forbids shipping the tests it demands can never be satisfied.
+            grep -Ev '^(services/gateway/src/|services/gateway/dist/|services/gateway/test/|services/gateway/openapi/|docs/validation/)' \
+              /tmp/changed_files.txt > /tmp/violations.txt || true
           else
             echo "REJECTED: unknown VALIDATION_PROFILE=$PROFILE"
             exit 21

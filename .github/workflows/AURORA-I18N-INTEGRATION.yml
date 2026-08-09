@@ -58,7 +58,14 @@ jobs:
           # aurora-client.ts). The service container is on 127.0.0.1, so this
           # works here and would be REFUSED against a real Aurora endpoint.
           AURORA_TEST_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/aurora_test?sslmode=disable
-        run: npx jest aurora-integration --ci 2>&1 | tee /tmp/aurora-jest.log
+        # set -o pipefail is MANDATORY here (VTID-03559). GitHub runs steps with
+        # `bash -e {0}` and NOT pipefail, so the pipeline's status is tee's — a
+        # jest run with failing tests exits 1, tee exits 0, and the step passes.
+        # The assertion below only checks that SOME test passed, so a suite that
+        # was half red would report the Aurora SQL as verified.
+        run: |
+          set -o pipefail
+          npx jest aurora-integration --ci 2>&1 | tee /tmp/aurora-jest.log
 
       # A skipped suite passes. Without this the job would go green on a
       # misconfigured service container and report the SQL as verified.

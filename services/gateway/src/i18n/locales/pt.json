@@ -102,5 +102,13 @@
   "orb.greeting_bridge.line_2": "Pequenos passos somam grandes mudanças.",
   "orb.greeting_bridge.line_3": "O teu eu do futuro vai agradecer-te o que fizeres hoje.",
   "orb.greeting_bridge.line_4": "A constância vale mais do que a perfeição — continua, simplesmente.",
-  "orb.greeting_bridge.line_5": "Cada dia é uma nova oportunidade para te sentires um pouco melhor."
+  "orb.greeting_bridge.line_5": "Cada dia é uma nova oportunidade para te sentires um pouco melhor.",
+  "notif.marketplace_listing_approved.title": "O teu anúncio está online",
+  "notif.marketplace_listing_approved.body": "«{title}» foi revisto e já está visível no mercado.",
+  "notif.marketplace_listing_rejected.title": "O teu anúncio foi rejeitado",
+  "notif.marketplace_listing_rejected.body": "«{title}» não pôde ser publicado: {reason}",
+  "notif.marketplace_listing_removed.title": "O teu anúncio foi removido",
+  "notif.marketplace_listing_removed.body": "Um administrador removeu «{title}»: {reason}",
+  "notif.listing_interest.title": "Interesse no teu anúncio",
+  "notif.listing_interest.body": "Alguém está interessado em «{title}»."
 }

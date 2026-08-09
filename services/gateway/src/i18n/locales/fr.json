@@ -102,5 +102,13 @@
   "orb.greeting_bridge.line_2": "Les petits pas font les grands changements.",
   "orb.greeting_bridge.line_3": "Le toi de demain te remerciera pour ce que tu fais aujourd'hui.",
   "orb.greeting_bridge.line_4": "La régularité vaut mieux que la perfection — continue, tout simplement.",
-  "orb.greeting_bridge.line_5": "Chaque jour est une nouvelle occasion de te sentir un peu mieux."
+  "orb.greeting_bridge.line_5": "Chaque jour est une nouvelle occasion de te sentir un peu mieux.",
+  "notif.marketplace_listing_approved.title": "Ton annonce est en ligne",
+  "notif.marketplace_listing_approved.body": "« {title} » a été vérifiée et est maintenant visible sur la place de marché.",
+  "notif.marketplace_listing_rejected.title": "Ton annonce a été refusée",
+  "notif.marketplace_listing_rejected.body": "« {title} » n’a pas pu être publiée : {reason}",
+  "notif.marketplace_listing_removed.title": "Ton annonce a été retirée",
+  "notif.marketplace_listing_removed.body": "Un administrateur a retiré « {title} » : {reason}",
+  "notif.listing_interest.title": "Intérêt pour ton annonce",
+  "notif.listing_interest.body": "Quelqu’un s’intéresse à « {title} »."
 }

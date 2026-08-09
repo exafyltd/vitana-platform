@@ -3,6 +3,7 @@ import express from 'express';
 import path from 'path';
 import fs from 'fs';
 import cors from 'cors';
+import compression from 'compression';
 
 const app = express();
 const PORT = process.env.PORT || 8080;
@@ -179,6 +180,10 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const discoverRecommendationsPublicRouter = require('./routes/discover-recommendations-public').default;
   // VTID-02000: Maxina admin marketplace routes
   const adminMarketplaceRouter = require('./routes/admin-marketplace').default;
+  // BOOTSTRAP-COMMUNITY-MARKETPLACE: peer-to-peer classifieds (seller + buyer API)
+  const communityMarketplaceRouter = require('./routes/community-marketplace').default;
+  // BOOTSTRAP-COMMUNITY-MARKETPLACE (Chunk 7): admin review queue (listings/reports/seller suspensions/categories)
+  const adminCommunityMarketplaceRouter = require('./routes/admin-community-marketplace').default;
   // VTID-02000: Internal scheduler-authed sync trigger (shared secret, no user JWT)
   const internalMarketplaceSyncRouter = require('./routes/internal-marketplace-sync').default;
   // VTID-02000: User limitations CRUD + impact counter
@@ -490,6 +495,18 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   // CORS setup - DEV-OASIS-0101
   setupCors(app);
   app.use(sseHeaders);
+
+  // Cloud Run does not gzip responses; compress everything except SSE streams,
+  // which must flush per-event and would sit in the compressor's buffer.
+  app.use(
+    compression({
+      filter: (req, res) => {
+        if ((req.headers.accept || '').includes('text/event-stream')) return false;
+        if (String(res.getHeader('Content-Type') || '').includes('text/event-stream')) return false;
+        return compression.filter(req, res);
+      },
+    })
+  );
 
   // VTID-01230: Raw body parser for Stripe Connect webhooks (MUST come BEFORE express.json())
   app.use('/api/v1/stripe/webhook', express.raw({ type: 'application/json' }));
@@ -1041,6 +1058,10 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   mountRouterSync(app, '/api/v1/public', publicProfileOgRouter, { owner: 'public-profile-og' });
   // VTID-02000: Maxina admin marketplace
   mountRouterSync(app, '/api/v1/admin/marketplace', adminMarketplaceRouter, { owner: 'admin-marketplace' });
+  // BOOTSTRAP-COMMUNITY-MARKETPLACE: peer-to-peer classifieds (seller + buyer API)
+  mountRouterSync(app, '/api/v1/community-marketplace', communityMarketplaceRouter, { owner: 'community-marketplace' });
+  // BOOTSTRAP-COMMUNITY-MARKETPLACE (Chunk 7): admin review queue
+  mountRouterSync(app, '/api/v1/admin/community-marketplace', adminCommunityMarketplaceRouter, { owner: 'admin-community-marketplace' });
   // BOOTSTRAP-CMDHUB-I18N-OPS: i18n operations (locale status + workflow dispatch)
   mountRouterSync(app, '/api/v1/admin/i18n-ops', adminI18nOpsRouter, { owner: 'admin-i18n-ops' });
   mountRouterSync(app, '/api/v1/internal/marketplace', internalMarketplaceSyncRouter, { owner: 'marketplace-sync' });

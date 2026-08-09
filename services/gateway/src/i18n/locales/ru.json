@@ -102,5 +102,13 @@
   "orb.greeting_bridge.line_2": "Маленькие шаги складываются в большие перемены.",
   "orb.greeting_bridge.line_3": "Твоё будущее «я» скажет тебе спасибо за то, что ты делаешь сегодня.",
   "orb.greeting_bridge.line_4": "Постоянство важнее совершенства — просто продолжай.",
-  "orb.greeting_bridge.line_5": "Каждый день — это новый шанс почувствовать себя чуть лучше."
+  "orb.greeting_bridge.line_5": "Каждый день — это новый шанс почувствовать себя чуть лучше.",
+  "notif.marketplace_listing_approved.title": "Твоё объявление опубликовано",
+  "notif.marketplace_listing_approved.body": "«{title}» проверено и теперь видно на маркетплейсе.",
+  "notif.marketplace_listing_rejected.title": "Твоё объявление отклонено",
+  "notif.marketplace_listing_rejected.body": "«{title}» не удалось опубликовать: {reason}",
+  "notif.marketplace_listing_removed.title": "Твоё объявление удалено",
+  "notif.marketplace_listing_removed.body": "Администратор удалил «{title}»: {reason}",
+  "notif.listing_interest.title": "Интерес к твоему объявлению",
+  "notif.listing_interest.body": "Кто-то заинтересовался «{title}»."
 }
