@@ -287,8 +287,8 @@ async function checkProfileComplete(ctx: CheckContext): Promise<string | null> {
 
   const { data: user } = await ctx.supabase
     .from('app_users')
-    .select('display_name, avatar_url')
-    .eq('id', ctx.userId)
+    .select('display_name, avatar_url:profile->>avatar_url')
+    .eq('user_id', ctx.userId)
     .maybeSingle();
 
   if (!user?.display_name || !user?.avatar_url) return null;

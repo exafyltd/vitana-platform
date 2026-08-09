@@ -385,6 +385,376 @@ model MerchantRoute {
   @@map("merchant_route")
 }
 
+// ============================================================================
+// COMMERCE MESH — Connector Factory persistence (VTID-03535, ADR-002/003).
+// Additive to the VCAOP schema above. Manifests store secret REFERENCES only
+// (validated in services/vcaop/src/factory/manifest.ts before any row is
+// written). IntegrationVersion.document is the full manifest JSON — immutable
+// once a ConnectorCertification row marks it certified.
+// ============================================================================
+
+model PartnerTenant {
+  id           String   @id @default(cuid())
+  tenantId     String   @map("tenant_id")
+  name         String
+  status       String   @default("discovered") // CONNECTION_STATES (manifest.ts)
+  jurisdiction String?
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  manifests IntegrationManifest[]
+
+  @@index([tenantId], map: "idx_partner_tenant_tenant")
+  @@index([status], map: "idx_partner_tenant_status")
+  @@map("partner_tenant")
+}
+
+model IntegrationManifest {
+  id              String   @id @default(cuid())
+  partnerTenantId String   @map("partner_tenant_id")
+  connectorId     String   @map("connector_id") // kebab-case slug
+  providerId      String   @map("provider_id") // policy-engine provider row that gates every call
+  connectionType  String   @map("connection_type") // mcp|openapi|oauth_api|rest|graphql|webhook|platform_install|scim|edi_sftp|browser|manual
+  riskLevel       String   @map("risk_level")
+  status          String   @default("discovered") // CONNECTION_STATES
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  partnerTenant PartnerTenant        @relation(fields: [partnerTenantId], references: [id], onDelete: Cascade)
+  versions      IntegrationVersion[]
+  capabilities  PartnerCapability[]
+
+  @@unique([partnerTenantId, connectorId], map: "uq_integration_manifest_partner_connector")
+  @@index([status], map: "idx_integration_manifest_status")
+  @@map("integration_manifest")
+}
+
+model IntegrationVersion {
+  id                  String   @id @default(cuid())
+  manifestId          String   @map("manifest_id")
+  version             String // semver
+  document            Json // full ConnectorManifest JSON — secret refs only, never values
+  documentHash        String   @map("document_hash")
+  certificationStatus String   @default("draft") @map("certification_status")
+  createdAt           DateTime @default(now()) @map("created_at")
+
+  manifest       IntegrationManifest      @relation(fields: [manifestId], references: [id], onDelete: Cascade)
+  schemaSources  SchemaSource[]
+  schemaMappings SchemaMapping[]
+  certifications ConnectorCertification[]
+
+  @@unique([manifestId, version], map: "uq_integration_version_manifest_version")
+  @@index([certificationStatus], map: "idx_integration_version_cert_status")
+  @@map("integration_version")
+}
+
+model PartnerCapability {
+  id          String   @id @default(cuid())
+  manifestId  String   @map("manifest_id")
+  key         String
+  kind        String // read|action|event
+  description String?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  manifest IntegrationManifest @relation(fields: [manifestId], references: [id], onDelete: Cascade)
+
+  @@index([manifestId], map: "idx_partner_capability_manifest")
+  @@map("partner_capability")
+}
+
+model SchemaSource {
+  id        String   @id @default(cuid())
+  versionId String   @map("version_id")
+  name      String
+  fields    Json // [{name,type,required,sensitive}]
+  hash      String // drift detection anchor
+  createdAt DateTime @default(now()) @map("created_at")
+
+  version IntegrationVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
+
+  @@index([versionId], map: "idx_schema_source_version")
+  @@map("schema_source")
+}
+
+model SchemaMapping {
+  id              String   @id @default(cuid())
+  versionId       String   @map("version_id")
+  sourceSchema    String   @map("source_schema")
+  sourceField     String   @map("source_field")
+  canonicalEntity String   @map("canonical_entity")
+  canonicalField  String   @map("canonical_field")
+  transform       String?
+  confidence      Float
+  decidedBy       String   @map("decided_by") // ai|human
+  sensitive       Boolean  @default(false)
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  version   IntegrationVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
+  decisions MappingDecision[]
+
+  @@index([versionId], map: "idx_schema_mapping_version")
+  @@index([sensitive, confidence], map: "idx_schema_mapping_review_queue")
+  @@map("schema_mapping")
+}
+
+model MappingDecision {
+  id        String   @id @default(cuid())
+  mappingId String   @map("mapping_id")
+  decision  String // approve|reject
+  decidedBy String   @map("decided_by") // human reviewer id — never an AI identity
+  reason    String?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  mapping SchemaMapping @relation(fields: [mappingId], references: [id], onDelete: Cascade)
+
+  @@index([mappingId], map: "idx_mapping_decision_mapping")
+  @@map("mapping_decision")
+}
+
+model ConnectorCertification {
+  id              String   @id @default(cuid())
+  versionId       String   @map("version_id")
+  status          String // certified|approval_required|failed
+  testResults     Json     @map("test_results")
+  pendingMappings Json     @map("pending_mappings")
+  reasons         Json
+  certifiedBy     String?  @map("certified_by")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  version IntegrationVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
+
+  @@index([versionId, createdAt], map: "idx_connector_certification_version_time")
+  @@map("connector_certification")
+}
+
+// ============================================================================
+// COMMERCE MESH — Durable event workflows (VTID-03537, brief Sec. 9).
+// Additive. NormalizedEvent ids are deterministic content hashes — the
+// idempotent-consumption anchor. WorkflowRun.idempotency_key is unique — the
+// idempotent-command anchor. Canonical payloads are mapped fields only
+// (data minimization); dropped partner fields are listed, never stored.
+// ============================================================================
+
+model EventSubscription {
+  id           String   @id @default(cuid())
+  tenantId     String   @map("tenant_id")
+  connectorId  String   @map("connector_id")
+  eventKey     String   @map("event_key")
+  workflowName String   @map("workflow_name")
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  @@unique([tenantId, connectorId, eventKey, workflowName], map: "uq_event_subscription_route")
+  @@index([connectorId, eventKey, active], map: "idx_event_subscription_lookup")
+  @@map("event_subscription")
+}
+
+model NormalizedEvent {
+  id             String   @id // deterministic content hash — dedup anchor
+  tenantId       String   @map("tenant_id")
+  connectorId    String   @map("connector_id")
+  eventKey       String   @map("event_key")
+  entityType     String   @map("entity_type")
+  sourceNativeId String   @map("source_native_id")
+  correlationId  String   @map("correlation_id")
+  canonical      Json // mapped canonical fields ONLY
+  droppedFields  Json     @map("dropped_fields")
+  processed      Boolean  @default(false)
+  receivedAt     DateTime @default(now()) @map("received_at")
+
+  @@index([correlationId], map: "idx_normalized_event_correlation")
+  @@index([processed, receivedAt], map: "idx_normalized_event_backlog")
+  @@map("normalized_event")
+}
+
+model WorkflowDefinition {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  versions WorkflowVersion[]
+
+  @@map("workflow_definition")
+}
+
+model WorkflowVersion {
+  id           String   @id @default(cuid())
+  definitionId String   @map("definition_id")
+  version      String
+  steps        Json // declarative step metadata (keys, retries, timeouts, compensations)
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  definition WorkflowDefinition @relation(fields: [definitionId], references: [id], onDelete: Cascade)
+
+  @@unique([definitionId, version], map: "uq_workflow_version")
+  @@map("workflow_version")
+}
+
+model WorkflowRun {
+  id                String   @id @default(cuid())
+  definitionName    String   @map("definition_name")
+  definitionVersion String   @map("definition_version")
+  status            String // running|completed|compensated|failed|stuck
+  correlationId     String   @map("correlation_id")
+  tenantId          String   @map("tenant_id")
+  idempotencyKey    String   @unique @map("idempotency_key")
+  input             Json
+  cursor            Int      @default(0)
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  steps WorkflowStepRecord[]
+
+  @@index([status, updatedAt], map: "idx_workflow_run_reconciler")
+  @@index([correlationId], map: "idx_workflow_run_correlation")
+  @@index([tenantId, status], map: "idx_workflow_run_tenant_status")
+  @@map("workflow_run")
+}
+
+model WorkflowStepRecord {
+  id       String  @id @default(cuid())
+  runId    String  @map("run_id")
+  key      String
+  sequence Int     @default(0)
+  status   String // completed|failed|compensated|compensation_failed
+  attempts Int     @default(1)
+  result   Json?
+  error    String?
+
+  run WorkflowRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  @@index([runId, sequence], map: "idx_workflow_step_run_seq")
+  @@map("workflow_step")
+}
+
+model DeadLetterEvent {
+  id        String   @id @default(cuid())
+  reason    String
+  runId     String?  @map("run_id")
+  event     Json? // the normalized event (canonical fields only) when event-sourced
+  replayed  Boolean  @default(false)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([replayed, createdAt], map: "idx_dead_letter_backlog")
+  @@map("dead_letter_event")
+}
+
+// ============================================================================
+// COMMERCE MESH — settlement + usage metering (VTID-03540, sandbox-only per
+// BLK-010) and consent/health isolation (VTID-03541, DORMANT per BLK-009).
+// Health tables carry their own access-policy note: service_role-only +
+// dedicated RLS at live-apply time; NEVER joined into general query paths.
+// ============================================================================
+
+model SettlementInstructionRecord {
+  id            String   @id // caller-supplied — the idempotency anchor
+  type          String
+  tenantId      String   @map("tenant_id")
+  fromAccount   String   @map("from_account")
+  toAccount     String   @map("to_account")
+  amountMinor   BigInt   @map("amount_minor")
+  ref           String?
+  memo          String?
+  receiptId     String?  @map("receipt_id")
+  configVersion String   @map("config_version")
+  status        String   @default("accepted") // accepted|settled|rejected
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  @@index([tenantId, createdAt], map: "idx_settlement_instruction_tenant_time")
+  @@index([status], map: "idx_settlement_instruction_status")
+  @@map("settlement_instruction")
+}
+
+model ConnectorUsageRecord {
+  id             String   @id @default(cuid())
+  tenantId       String   @map("tenant_id")
+  connectorId    String   @map("connector_id")
+  toolOrAction   String   @map("tool_or_action")
+  callerClientId String?  @map("caller_client_id")
+  outcome        String // ok|error|denied
+  durationMs     Int      @map("duration_ms")
+  occurredAt     DateTime @default(now()) @map("occurred_at")
+
+  @@index([tenantId, connectorId, occurredAt], map: "idx_connector_usage_tenant_connector_time")
+  @@map("connector_usage_record")
+}
+
+model ConsentGrantRecord {
+  id              String    @id @default(cuid())
+  tenantId        String    @map("tenant_id")
+  userId          String    @map("user_id")
+  grantee         String
+  purpose         String
+  permittedClaims Json      @map("permitted_claims")
+  validFrom       DateTime  @map("valid_from")
+  validTo         DateTime  @map("valid_to")
+  jurisdiction    String
+  rewardMinor     BigInt    @map("reward_minor")
+  status          String    @default("proposed") // proposed|active|revoked|expired
+  retentionUntil  DateTime? @map("retention_until")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  receipts     ConsentReceiptRecord[]
+  attestations HealthDataAttestationRecord[]
+  quotes       InsuranceQuoteRecord[]
+
+  @@index([userId, status], map: "idx_consent_grant_user_status")
+  @@index([grantee, status], map: "idx_consent_grant_grantee_status")
+  @@map("consent_grant")
+}
+
+model ConsentReceiptRecord {
+  id      String   @id @default(cuid())
+  grantId String   @map("grant_id")
+  kind    String // granted|revoked|attestation_issued|access_denied
+  detail  Json // metadata only — claim names/grantee/purpose, NEVER metric values
+  at      DateTime @default(now())
+
+  grant ConsentGrantRecord @relation(fields: [grantId], references: [id], onDelete: Restrict)
+
+  @@index([grantId, at], map: "idx_consent_receipt_grant_time")
+  @@map("consent_receipt")
+}
+
+model HealthDataAttestationRecord {
+  id               String    @id @default(cuid())
+  grantId          String    @map("grant_id")
+  claim            String
+  period           String
+  met              Boolean
+  confidence       Float
+  issuer           String    @default("Vitanaland")
+  rawDataDisclosed Boolean   @default(false) @map("raw_data_disclosed")
+  issuedAt         DateTime  @default(now()) @map("issued_at")
+  deletedAt        DateTime? @map("deleted_at") // revocation cascade marker
+
+  grant ConsentGrantRecord @relation(fields: [grantId], references: [id], onDelete: Cascade)
+
+  @@index([grantId], map: "idx_health_attestation_grant")
+  @@map("health_data_attestation")
+}
+
+model InsuranceQuoteRecord {
+  id            String    @id @default(cuid())
+  grantId       String    @map("grant_id")
+  insurer       String
+  product       String
+  premiumMinor  BigInt    @map("premium_minor")
+  discountBps   Int       @map("discount_bps")
+  basedOnClaims Json      @map("based_on_claims")
+  expiresAt     DateTime  @map("expires_at")
+  selectedAt    DateTime? @map("selected_at")
+  createdAt     DateTime  @default(now()) @map("created_at")
+
+  grant ConsentGrantRecord @relation(fields: [grantId], references: [id], onDelete: Cascade)
+
+  @@index([grantId], map: "idx_insurance_quote_grant")
+  @@map("insurance_quote")
+}
+
 // Sec. 4.6 — FTC-style affiliate disclosure; non-dismissible at checkout.
 model Disclosure {
   id          String    @id @default(cuid())

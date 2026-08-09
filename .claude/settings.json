@@ -34,14 +34,24 @@
             "statusMessage": "Watcher: recording session start..."
           }
         ]
-      }
-    ],
-    "Stop": [
+      },
       {
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"${CLAUDE_PROJECT_DIR:-/home/user/vitana-platform}/scripts/watcher/session-hook.sh\" stop",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-/home/user/vitana-platform}/.claude/hooks/session-start-gateway-setup.sh\"",
+            "timeout": 120,
+            "statusMessage": "Installing gateway dependencies..."
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-/home/user/vitana-platform}/scripts/watcher/session-hook.sh\" end",
             "timeout": 10,
             "statusMessage": "Watcher: reconciling session end..."
           }

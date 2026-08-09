@@ -14,3 +14,11 @@ export * as commerce from './commerce';
 export * as observability from './observability';
 export * as ui from './ui';
 export * as healing from './healing';
+// Commerce Mesh layers (Phases 2-7):
+export * as canonical from './canonical/model';
+export * as factory from './factory';
+export * as portal from './portal';
+export * as workflows from './workflows';
+export * as settlement from './settlement';
+// ⛔ health is DORMANT (BLK-009): library-only, never mounted/exposed.
+export * as health from './health';
