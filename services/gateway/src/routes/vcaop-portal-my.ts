@@ -54,7 +54,7 @@ function userEmail(req: Request): string | null {
 function tenantId(req: Request): string {
   return String((req as any).identity?.tenant_id || 'platform');
 }
-async function emitEvent(supabase: any, type: string, status: string, message: string, payload: Record<string, unknown>) {
+async function emitOasisEvent(supabase: any, type: string, status: string, message: string, payload: Record<string, unknown>) {
   try {
     await supabase.from('oasis_events').insert({
       id: randomUUID(), service: 'vcaop', source: 'vcaop-portal-my', type, topic: type, status, message,
@@ -87,7 +87,7 @@ async function latestVersion(supabase: any, manifestId: string) {
   return data ?? null;
 }
 
-async function transition(supabase: any, req: Request, res: Response, to: ConnectionState, eventType: string) {
+async function transitionAndEmitOasisEvent(supabase: any, req: Request, res: Response, to: ConnectionState, eventType: string) {
   const rec = await getOwnedManifest(supabase, req);
   if (!rec) return res.status(404).json({ ok: false, error: 'connection not found' });
   if (!canTransition(rec.status, to)) {
@@ -95,7 +95,7 @@ async function transition(supabase: any, req: Request, res: Response, to: Connec
   }
   const now = new Date().toISOString();
   await supabase.from('integration_manifest').update({ status: to, updated_at: now }).eq('id', rec.id);
-  await emitEvent(supabase, eventType, 'success', `connection ${rec.id}: ${rec.status} -> ${to}`, {
+  await emitOasisEvent(supabase, eventType, 'success', `connection ${rec.id}: ${rec.status} -> ${to}`, {
     connection_id: rec.id, from: rec.status, to, actor: userId(req), surface: 'merchant_self_service',
   });
   return res.json({ ok: true, data: { id: rec.id, state: to } });
@@ -172,7 +172,7 @@ router.post('/connections', async (req: Request, res: Response) => {
     }
   }
 
-  await emitEvent(supabase, 'vcaop.portal.connection.started', 'success', `connection ${manifestId} started (${initialState})`, {
+  await emitOasisEvent(supabase, 'vcaop.portal.connection.started', 'success', `connection ${manifestId} started (${initialState})`, {
     connection_id: manifestId, connector_id, provider_id, state: initialState, actor: owner, surface: 'merchant_self_service',
   });
   res.status(201).json({ ok: true, data: { id: manifestId, name, state: initialState } });
@@ -245,7 +245,7 @@ router.post('/connections/:id/mapping-decisions', async (req: Request, res: Resp
   if (decision === 'approve') {
     await supabase.from('schema_mapping').update({ decided_by: 'human' }).eq('id', mapping_id);
   }
-  await emitEvent(supabase, 'vcaop.portal.mapping.decided', 'success', `mapping ${mapping_id}: ${decision}`, {
+  await emitOasisEvent(supabase, 'vcaop.portal.mapping.decided', 'success', `mapping ${mapping_id}: ${decision}`, {
     connection_id: rec.id, mapping_id, decision, actor: userId(req), surface: 'merchant_self_service',
   });
   res.json({ ok: true, data: { mapping_id, decision } });
@@ -277,7 +277,7 @@ router.post('/connections/:id/sandbox-tests', async (req: Request, res: Response
   await supabase.from('integration_version').update({ certification_status: certStatus }).eq('id', version.id);
   const nextState: ConnectionState = certStatus === 'certified' ? 'certified' : 'approval_required';
   await supabase.from('integration_manifest').update({ status: nextState, updated_at: now }).eq('id', rec.id);
-  await emitEvent(supabase, 'vcaop.portal.sandbox_tests.completed', 'success', `connection ${rec.id}: ${certStatus}`, {
+  await emitOasisEvent(supabase, 'vcaop.portal.sandbox_tests.completed', 'success', `connection ${rec.id}: ${certStatus}`, {
     connection_id: rec.id, version: version.version, status: certStatus, pending: pending.length, actor: userId(req), surface: 'merchant_self_service',
   });
   res.json({ ok: true, data: { state: nextState, certification: certStatus, pending_review: pending } });
@@ -313,20 +313,20 @@ router.get('/connections/:id/activation-summary', async (req: Request, res: Resp
 // ===== Lifecycle (a merchant manages their own connection) =====
 router.post('/connections/:id/pause', async (req, res) => {
   const supabase = db(res); if (!supabase) return;
-  await transition(supabase, req, res, 'suspended', 'vcaop.portal.connection.paused');
+  await transitionAndEmitOasisEvent(supabase, req, res, 'suspended', 'vcaop.portal.connection.paused');
 });
 router.post('/connections/:id/resume', async (req, res) => {
   const supabase = db(res); if (!supabase) return;
-  await transition(supabase, req, res, 'active', 'vcaop.portal.connection.resumed');
+  await transitionAndEmitOasisEvent(supabase, req, res, 'active', 'vcaop.portal.connection.resumed');
 });
 router.post('/connections/:id/reauthorize', async (req, res) => {
   const supabase = db(res); if (!supabase) return;
-  await transition(supabase, req, res, 'suspended', 'vcaop.portal.connection.reauthorize_requested');
+  await transitionAndEmitOasisEvent(supabase, req, res, 'suspended', 'vcaop.portal.connection.reauthorize_requested');
 });
 // Irreversible for the connection — the owner may always sever their own integration.
 router.post('/connections/:id/revoke', async (req, res) => {
   const supabase = db(res); if (!supabase) return;
-  await transition(supabase, req, res, 'revoked', 'vcaop.portal.connection.revoked');
+  await transitionAndEmitOasisEvent(supabase, req, res, 'revoked', 'vcaop.portal.connection.revoked');
 });
 
 export default router;
