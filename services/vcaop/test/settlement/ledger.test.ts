@@ -15,10 +15,81 @@ const ledger = () => {
 };
 
 describe('settlement ledger', () => {
-  test('BLK-010 gate: refuses any non-sandbox config at construction', () => {
+  test('BLK-010 gate: refuses a non-sandbox config with no authorization record', () => {
     expect(
-      () => new SettlementLedger({ ...config, environment: 'production' as never }),
-    ).toThrow(/sandbox/);
+      () => new SettlementLedger({ ...config, environment: 'production' }),
+    ).toThrow(/live_authorization/);
+  });
+
+  test('BLK-010 gate: refuses an incomplete authorization record', () => {
+    expect(
+      () =>
+        new SettlementLedger({
+          ...config,
+          environment: 'production',
+          live_authorization: {
+            blocker: 'BLK-010',
+            authorized_by: '   ',
+            authorized_at: '2026-08-09',
+            reference: 'VTID-03548',
+          },
+        }),
+    ).toThrow(/live_authorization/);
+    expect(
+      () =>
+        new SettlementLedger({
+          ...config,
+          environment: 'production',
+          live_authorization: {
+            blocker: 'BLK-010',
+            authorized_by: 'platform owner',
+            authorized_at: 'not-a-date',
+            reference: 'VTID-03548',
+          },
+        }),
+    ).toThrow(/live_authorization/);
+    expect(
+      () =>
+        new SettlementLedger({
+          ...config,
+          environment: 'production',
+          live_authorization: {
+            blocker: 'BLK-000' as never,
+            authorized_by: 'platform owner',
+            authorized_at: '2026-08-09',
+            reference: 'VTID-03548',
+          },
+        }),
+    ).toThrow(/live_authorization/);
+  });
+
+  test('BLK-010 gate: accepts production with a complete recorded authorization (VTID-03548)', () => {
+    const l = new SettlementLedger({
+      ...config,
+      config_version: 'prod-v1',
+      environment: 'production',
+      live_authorization: {
+        blocker: 'BLK-010',
+        authorized_by: 'platform owner (d.stevanovic)',
+        authorized_at: '2026-08-09',
+        reference: 'VTID-03548 — BLK-010 resolution conversation',
+      },
+    });
+    l.fund('tenant-a:treasury', 1_000);
+    const receipt = l.settle({
+      id: 'prod-ins-1',
+      type: 'loyalty_reward',
+      tenantId: 'tenant-a',
+      from: 'tenant-a:treasury',
+      to: 'user:bob',
+      amount: 100,
+    });
+    expect(receipt.configVersion).toBe('prod-v1');
+    expect(l.reconcile().ok).toBe(true);
+  });
+
+  test('sandbox config still needs no authorization record', () => {
+    expect(() => new SettlementLedger(config)).not.toThrow();
   });
 
   test('fee-bearing transfer computes the fee HERE from versioned config', () => {
