@@ -399,6 +399,8 @@ model PartnerTenant {
   name         String
   status       String   @default("discovered") // CONNECTION_STATES (manifest.ts)
   jurisdiction String?
+  ownerUserId  String?  @map("owner_user_id") // VTID-03553: self-service owner
+  ownerEmail   String?  @map("owner_email")
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
 
@@ -406,6 +408,7 @@ model PartnerTenant {
 
   @@index([tenantId], map: "idx_partner_tenant_tenant")
   @@index([status], map: "idx_partner_tenant_status")
+  @@index([ownerUserId], map: "idx_partner_tenant_owner")
   @@map("partner_tenant")
 }
 
