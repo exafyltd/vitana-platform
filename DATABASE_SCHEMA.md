@@ -1767,5 +1767,74 @@ Related caps to keep in sync:
 
 ---
 
+## Commerce Mesh — Connector Factory tables (VTID-03535, 2026-08-08)
+
+Additive Prisma migration `prisma/migrations/20260808_vcaop_mesh_factory_0001/`
+(reversible; `down.sql` verified up→down→up on ephemeral Postgres 16).
+**NOT yet applied to any live database** — application is gated on the VCAOP
+dev environment (vcaop BLK-001) and must follow the working migration paths
+(VTID-03486/03492 lessons: verify the tables exist after applying; a green
+workflow is not evidence).
+
+| Table | Purpose |
+|-------|---------|
+| `partner_tenant` | A business connected (or connecting) to the Mesh; carries connection state |
+| `integration_manifest` | One connector per (partner, connector_id); points at the policy-engine provider row that gates every call |
+| `integration_version` | Immutable manifest versions (full JSON document + hash; secret REFERENCES only, never values) |
+| `partner_capability` | Declared read/action/event capabilities per manifest |
+| `schema_source` | Extracted partner schemas (fields + hash — the drift-detection anchor) |
+| `schema_mapping` | Versioned partner-field → canonical-field mappings with confidence + `sensitive` flag |
+| `mapping_decision` | Human approve/reject decisions on mappings (`decided_by` is a human reviewer id, never an AI identity) |
+| `connector_certification` | Certification runs: contract-test results, pending mappings, outcome |
+
+---
+
+## Commerce Mesh — Durable workflow tables (VTID-03537, 2026-08-08)
+
+Additive Prisma migration `prisma/migrations/20260808_vcaop_mesh_workflows_0002/`
+(reversible; verified up→down→up + FK cascade + idempotency-key uniqueness on
+ephemeral Postgres 16). **NOT yet applied to any live database** — same gating
+as the factory tables above (vcaop BLK-001, VTID-03486 drift discipline).
+
+| Table | Purpose |
+|-------|---------|
+| `event_subscription` | Routes (tenant, connector, event_key) → workflow |
+| `normalized_event` | Canonicalized partner events; id is a deterministic content hash — the idempotent-consumption anchor; only mapped fields stored |
+| `workflow_definition` | Workflow identity |
+| `workflow_version` | Versioned declarative step metadata |
+| `workflow_run` | Durable run state; `idempotency_key` UNIQUE — the idempotent-command anchor; `(status, updated_at)` indexed for the stuck-run reconciler |
+| `workflow_step` | Per-step outcome (completed/failed/compensated/compensation_failed), attempts, result |
+| `dead_letter_event` | Dead-lettered events/runs with replay tracking |
+
+---
+
+## Commerce Mesh — settlement + consent/health tables (VTID-03540 / VTID-03541, 2026-08-08)
+
+Two additive reversible migrations, both verified up→down→up on ephemeral
+Postgres 16; **neither applied to any live database** (BLK-001 + the gates
+below).
+
+`20260808_vcaop_mesh_settlement_0003` (VTID-03540 — sandbox instruments only
+until the BLK-010 legal/regulatory review):
+
+| Table | Purpose |
+|-------|---------|
+| `settlement_instruction` | VTNA settlement instructions; id is caller-supplied — the idempotency anchor; amounts computed by the deterministic ledger, never by an LLM |
+| `connector_usage_record` | Per-tenant/connector usage metering (tool calls, outcomes, latency) |
+
+`20260808_vcaop_mesh_health_0004` (VTID-03541 — **DORMANT layer, BLK-009**:
+authored for the independent privacy review to examine; do NOT apply live
+until it passes; at live-apply time these tables get service_role-only +
+dedicated RLS and are never joined into general query paths):
+
+| Table | Purpose |
+|-------|---------|
+| `consent_grant` | Purpose-bound grants (one grantee, one purpose, explicit claims, validity window, reward, retention/revocation status) |
+| `consent_receipt` | Append-only receipts (granted/revoked/attestation_issued/access_denied) — FK is RESTRICT so history survives its grant; detail is metadata only, never metric values |
+| `health_data_attestation` | Derived claims only (met/confidence); `raw_data_disclosed` defaults false; `deleted_at` marks the revocation cascade |
+| `insurance_quote` | Insurer quotes citing attestations under a grant |
+
+---
+
 **Remember:** This file is the SINGLE SOURCE OF TRUTH for table names.
 When in doubt, CHECK HERE FIRST!
