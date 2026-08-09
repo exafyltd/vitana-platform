@@ -46,3 +46,13 @@ ROUTE_MOUNT: services/gateway/src/routes/orb-live.ts — no new router.*() call
 added; see docs/validation/VTID-03557/acceptance.md for the full record
 FINAL_URL: wss://{gateway}/api/v1/orb/live/ws (pre-existing, unchanged)
 CURL_PROOF: N/A — no new HTTP endpoint (see VTID-03557's acceptance.md)
+
+OASIS_PROOF: this VTID (03556) emits no new OASIS event on its own —
+`compute-greeting-decision.ts` is pure prompt-text selection with no OASIS
+call. The `yes`/OASIS_PROOF pairing on this PR is earned by VTID-03557, which
+adds a new `orb.upstream.nova.premature_close_retry` event type (mirroring
+the existing `orb.upstream.nova.premature_close_fallback` from VTID-03502);
+see the `emitOasisEvent(...)` call added in `orb-live.ts`'s new Nova retry
+branch and `docs/validation/VTID-03557/acceptance.md` AC-1/AC-2. Recorded
+here too since the OASIS Traceability Gate resolves its target VTID from
+whichever VTID pattern appears first in the PR title.

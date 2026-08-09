@@ -86,3 +86,12 @@ FINAL_URL: wss://{gateway}/api/v1/orb/live/ws (pre-existing, unchanged)
 CURL_PROOF: N/A — no new HTTP endpoint; behavior change is internal to the
 Nova WS upstream close handler and is verified by the unit tests in AC-1/AC-2
 above, not by a curl against a route.
+
+OASIS_PROOF: new `orb.upstream.nova.premature_close_retry` event type,
+emitted from the new retry branch in `orb-live.ts`'s Nova `onClose` handler
+(mirrors the existing `orb.upstream.nova.premature_close_fallback` event
+VTID-03502 already emits on the fallback path). Fired via `emitOasisEvent()`
+with `session_id`, `provider: 'nova_sonic'`, `reason`, `status: 'warning'` —
+same shape/telemetry pattern as the neighboring fallback event so both can be
+compared on the same dashboard (retry-succeeded-silently vs.
+had-to-fall-back-to-Vertex).
