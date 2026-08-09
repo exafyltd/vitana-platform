@@ -181,6 +181,22 @@ export class UiAutomatorDriver {
     await this.adb(['shell', 'input', 'keyevent', '4']); // KEYCODE_BACK
   }
 
+  /**
+   * Swipe-scroll the screen (default: content moves up, i.e. scroll down).
+   * uiautomator dumps the current layout snapshot, not the full scrollable
+   * DOM — an element below the fold on a small AVD viewport genuinely isn't
+   * in the dump until scrolled into view, unlike a native accessibility
+   * tree walk that can see off-screen siblings.
+   */
+  async scroll({ direction = 'down', size } = {}) {
+    const { width, height } = size || (await this.screenSize());
+    const x = Math.round(width / 2);
+    const [y1, y2] = direction === 'down'
+      ? [Math.round(height * 0.75), Math.round(height * 0.25)]
+      : [Math.round(height * 0.25), Math.round(height * 0.75)];
+    await this.adb(['shell', 'input', 'swipe', String(x), String(y1), String(x), String(y2), '300']);
+  }
+
   async pressKeyevent(code) {
     await this.adb(['shell', 'input', 'keyevent', String(code)]);
   }
