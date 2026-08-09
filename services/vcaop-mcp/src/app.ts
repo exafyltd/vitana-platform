@@ -12,6 +12,8 @@ import { AuthContext } from './types';
 import { ALL_SCOPES } from './auth/scopes';
 import { RateLimiter } from './rate-limit';
 import { buildMcpServerForAuth, ServerDeps } from './server';
+import { AuthorizationServer } from './auth/authorization-server';
+import { buildAuthServerRouter } from './auth/auth-server-router';
 
 export interface AppOptions extends ServerDeps {
   verifier: TokenVerifier;
@@ -19,6 +21,8 @@ export interface AppOptions extends ServerDeps {
   resourceUrl: string;
   /** Authorization server issuer URL(s) for discovery metadata. */
   authorizationServers: string[];
+  /** BLK-007: embedded OAuth 2.1 AS — mounted when provided. */
+  authServer?: AuthorizationServer;
   rateLimiter?: RateLimiter;
 }
 
@@ -47,6 +51,12 @@ export function buildApp(opts: AppOptions): express.Express {
       resource_documentation: 'https://vitanaland.com',
     });
   });
+
+  // BLK-007: the embedded authorization server (metadata, DCR, authorize,
+  // token, jwks) — same origin as the resource, per its RFC 8414 metadata.
+  if (opts.authServer) {
+    app.use(buildAuthServerRouter(opts.authServer));
+  }
 
   const unauthorized = (res: Response, detail: string) => {
     res

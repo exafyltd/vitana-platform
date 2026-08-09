@@ -53,9 +53,17 @@ class FixtureMetrics implements VerifiedMetricSource {
   }
 }
 
+// N1 (re-review): the leak-guard assertion must be DETERMINISTIC. Two layers:
+// distinctive 5-digit sentinel values that occur nowhere in timestamps or
+// fixture metadata, and (in the assertion) UUID-shaped substrings stripped
+// first — random ids are hex and can otherwise contain any digit run.
+// 9 of 10 values exceed the 150-minute threshold → ratio 0.9 (met, high).
+const SENTINELS = [31337, 86423, 77351, 64289, 55173, 47251, 39163, 28351, 91733, 149];
+const stripUuids = (s: string) =>
+  s.replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g, '<uuid>');
 const activeMetrics = () =>
   new FixtureMetrics([
-    { metric: 'weekly_activity_minutes', period: '2026-Q2', provenance: 'device_measured', values: [180, 200, 160, 150, 90, 170, 155, 190, 165, 175] },
+    { metric: 'weekly_activity_minutes', period: '2026-Q2', provenance: 'device_measured', values: [...SENTINELS] },
   ]);
 
 function rig(metrics: FixtureMetrics = activeMetrics()) {
@@ -188,9 +196,12 @@ describe('derived attestations', () => {
     expect(att.confidence_band).toBe('high'); // F6: band, never the exact ratio
     expect((att as unknown as Record<string, unknown>).confidence).toBeUndefined();
     expect(att.raw_data_disclosed).toBe(false);
-    // No raw measurement can appear in the attestation or receipts.
-    const everything = JSON.stringify({ att, receipts: consents.listReceipts({ grantId: grant.id }) });
-    for (const raw of ['180', '200', '160', '90', '0.9']) expect(everything).not.toContain(raw);
+    // No raw measurement can appear in the attestation or receipts —
+    // UUID-shaped ids stripped first so the check cannot false-positive on
+    // random hex, and the sentinels cannot occur anywhere else.
+    const everything = stripUuids(JSON.stringify({ att, receipts: consents.listReceipts({ grantId: grant.id }) }));
+    for (const raw of SENTINELS) expect(everything).not.toContain(String(raw));
+    expect(everything).not.toContain('"confidence":'); // the exact ratio is gone by design
   });
 
   test('F12: AI-inferred, missing, and too-small windows are ONE indistinguishable refusal', async () => {
@@ -372,6 +383,57 @@ describe('quote exchange + reward settlement', () => {
     const denied = consents.listReceipts({ grantId: grant.id }).filter((r) => r.kind === 'quote_denied');
     expect(denied).toHaveLength(1);
     expect(denied[0].detail.reason).toBe('unknown_attestation');
+  });
+
+  test('N2: quote-surface probes and selection denials leave traces', async () => {
+    const { consents, attestations, exchange } = fullRig();
+    // Unknown grant id on the quote surface → probe log, same as consent surface.
+    expect(() =>
+      exchange.submitQuote({
+        grantId: 'no-such-grant',
+        insurer: INSURER,
+        product: 'x',
+        premiumMinorUnits: 1,
+        discountBps: 0,
+        attestationIds: [],
+      }),
+    ).toThrow(QuoteError);
+    expect(consents.listProbeAttempts().some((p) => p.attemptedGrantId === 'no-such-grant')).toBe(true);
+
+    // A denied selection is receipted with the accessor and reason.
+    const grant = consents.propose(grantInput());
+    consents.approve(grant.id, 'user-1');
+    const att = await attestations.issue(grant.id, 'weekly_activity_target_met', '2026-Q2', INSURER);
+    const quote = exchange.submitQuote({
+      grantId: grant.id,
+      insurer: INSURER,
+      product: 'vitality-life',
+      premiumMinorUnits: 4_900,
+      discountBps: 800,
+      attestationIds: [att.id],
+    });
+    const ledger = new SettlementLedger(
+      { config_version: 'sandbox-v1', environment: 'sandbox', network_fee_bps: 250, fee_account: 'platform:fees' },
+      now,
+    );
+    expect(() => exchange.selectQuote(quote.id, 'someone-else', ledger, 'tenant-a:treasury')).toThrow(/data subject/);
+    const denied = consents.listReceipts({ grantId: grant.id }).filter((r) => r.kind === 'quote_denied');
+    expect(denied.some((r) => r.detail.reason === 'not_owner' && r.detail.accessor === 'someone-else')).toBe(true);
+  });
+
+  test('N3: the probe log is bounded and truncates attacker-controlled ids', () => {
+    const { consents } = rig();
+    const longId = 'x'.repeat(500);
+    for (let i = 0; i < 1_100; i++) consents.noteProbe(i === 0 ? longId : `probe-${i}`, 'attacker');
+    const probes = consents.listProbeAttempts();
+    expect(probes.length).toBe(1_000); // bounded, oldest dropped
+    expect(probes.every((p) => p.attemptedGrantId.length <= 64)).toBe(true);
+    expect(probes.some((p) => p.attemptedGrantId === longId.slice(0, 64))).toBe(false); // the oldest was evicted
+  });
+
+  test('N4: a receipt cannot be recorded against a grant that does not exist', () => {
+    const { consents } = rig();
+    expect(() => consents.record('never-proposed', 'granted', {})).toThrow(/unknown grant/);
   });
 
   test('an expired quote cannot be selected', async () => {

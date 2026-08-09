@@ -131,9 +131,22 @@ export class ConsentRegistry {
     assertHealthActivation(activation);
   }
 
-  /** Internal + trusted-module receipt writer (attestation/quote services). */
+  /**
+   * Trusted-module receipt writer (attestation/quote services). N4: a receipt
+   * can only reference an EXISTING grant — parity with the DB foreign key, so
+   * in-memory history cannot be invented for grants that were never proposed.
+   */
   record(grantId: string, kind: ConsentReceiptKind, detail: ConsentReceipt['detail']): void {
+    if (!this.grants.has(grantId)) {
+      throw new ConsentError('invalid_grant', 'cannot record a receipt for an unknown grant');
+    }
     this.receipts.push({ id: randomUUID(), grantId, kind, at: this.now().toISOString(), detail });
+  }
+
+  /** N2: external access paths (e.g. the quote exchange) report unknown-grant
+   * probes here so enumeration attempts against ANY surface leave a trace. */
+  noteProbe(attemptedGrantId: string, accessor: string): void {
+    this.pushProbe(attemptedGrantId, accessor);
   }
 
   /** Cascade hook: called with the grant id on every successful revoke. */
@@ -252,9 +265,24 @@ export class ConsentRegistry {
   private mustGet(grantId: string, accessor: string): ConsentGrant {
     const grant = this.grants.get(grantId);
     if (!grant) {
-      this.probes.push({ attemptedGrantId: grantId, accessor, at: this.now().toISOString() });
+      this.pushProbe(grantId, accessor);
       throw new ConsentError('invalid_grant', 'unknown grant');
     }
     return grant;
+  }
+
+  /** N3: the probe log is bounded (oldest dropped) and attacker-controlled
+   * ids are truncated — a probe flood cannot exhaust memory, and the log
+   * stores nothing but the attempt itself. */
+  private static readonly MAX_PROBES = 1_000;
+  private pushProbe(attemptedGrantId: string, accessor: string): void {
+    this.probes.push({
+      attemptedGrantId: attemptedGrantId.slice(0, 64),
+      accessor: accessor.slice(0, 128),
+      at: this.now().toISOString(),
+    });
+    if (this.probes.length > ConsentRegistry.MAX_PROBES) {
+      this.probes.splice(0, this.probes.length - ConsentRegistry.MAX_PROBES);
+    }
   }
 }

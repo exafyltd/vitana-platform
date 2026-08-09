@@ -99,7 +99,13 @@ CREATE TRIGGER trg_consent_receipt_immutable
 
 -- F9: service_role-only isolation — RLS enabled, zero policies. These tables
 -- are reached exclusively through the health layer's own gates.
+-- N5 (re-review): FORCE so the table OWNER is bound too — isolation must not
+-- rest on connection-role discipline.
 ALTER TABLE "consent_grant" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "consent_grant" FORCE ROW LEVEL SECURITY;
 ALTER TABLE "consent_receipt" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "consent_receipt" FORCE ROW LEVEL SECURITY;
 ALTER TABLE "health_data_attestation" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "health_data_attestation" FORCE ROW LEVEL SECURITY;
 ALTER TABLE "insurance_quote" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "insurance_quote" FORCE ROW LEVEL SECURITY;

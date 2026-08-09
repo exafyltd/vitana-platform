@@ -74,13 +74,17 @@ export class QuoteExchange {
     validDays?: number;
   }): InsuranceQuote {
     const grant = this.consents.get(input.grantId);
-    if (!grant || grant.status !== 'active') {
-      throw new QuoteError('grant_not_active', 'quote requires an active consent grant');
-    }
     const deny = (code: QuoteError['code'], msg: string): never => {
       this.consents.record(input.grantId, 'quote_denied', { accessor: input.insurer, reason: code });
       throw new QuoteError(code, msg);
     };
+    if (!grant) {
+      // N2: an unknown grant id on the quote surface is an enumeration probe
+      // — trace it exactly like the consent surface does.
+      this.consents.noteProbe(input.grantId, input.insurer);
+      throw new QuoteError('grant_not_active', 'quote requires an active consent grant');
+    }
+    if (grant.status !== 'active') deny('grant_not_active', 'quote requires an active consent grant');
     if (grant.grantee !== input.insurer) deny('not_grantee', 'quote insurer does not match the grant grantee');
 
     const issued = new Map(this.attestations.listForGrant(input.grantId).map((a) => [a.id, a]));
@@ -135,11 +139,17 @@ export class QuoteExchange {
   ): { quote: InsuranceQuote; rewardReceipt: SettlementReceipt } {
     const quote = this.quotes.get(quoteId);
     if (!quote) throw new QuoteError('unknown_quote', 'unknown quote');
-    const grant = this.consents.get(quote.grantId);
-    if (!grant || grant.status !== 'active') throw new QuoteError('grant_not_active', 'grant no longer active');
-    if (grant.userId !== byUserId) throw new QuoteError('not_owner', 'only the data subject can select a quote');
+    // N2: selection denials are receipted too, wherever a grant is resolvable.
+    const deny = (code: QuoteError['code'], msg: string): never => {
+      this.consents.record(quote.grantId, 'quote_denied', { accessor: byUserId, reason: code, quote_id: quote.id });
+      throw new QuoteError(code, msg);
+    };
+    const maybeGrant = this.consents.get(quote.grantId);
+    if (!maybeGrant || maybeGrant.status !== 'active') deny('grant_not_active', 'grant no longer active');
+    const grant = maybeGrant!;
+    if (grant.userId !== byUserId) deny('not_owner', 'only the data subject can select a quote');
     if (this.now().getTime() > Date.parse(quote.expiresAt)) {
-      throw new QuoteError('quote_expired', 'quote has expired');
+      deny('quote_expired', 'quote has expired');
     }
 
     const instruction: SettlementInstruction = {
