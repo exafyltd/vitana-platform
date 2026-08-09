@@ -1528,6 +1528,48 @@ export function shouldFallbackToVertexOnNovaClose(args: {
     !args.alreadyFellBack
   );
 }
+
+/**
+ * VTID-03557: should a Nova stream that died before any audio get ONE fresh
+ * Nova retry before VTID-03502's Vertex fallback pins the session away from
+ * Nova for good?
+ *
+ * Evidence this targets: every measured "Premature close" failure is Node's
+ * own `ERR_STREAM_PREMATURE_CLOSE` (from `stream.finished()`), not our own
+ * timeout code (`classifyNovaError` routes a genuine local timeout to the
+ * distinct `nova_stream_timeout` code, never observed here) — meaning the far
+ * end (Bedrock, or a network hop to it) tore down the stream, not us.
+ * `NodeHttp2ConnectionManager.lease()` skips its pooled-session fast path for
+ * event-stream commands (`isEventStream` → `createIsolatedSession`), so every
+ * Nova connect already opens a genuinely fresh HTTP/2 session — a retry does
+ * not reuse whatever the first attempt hit. Fresh-connection resets shortly
+ * after open are common, transient infrastructure noise on any pooled/load-
+ * balanced backend; the standard mitigation is exactly this: one prompt retry
+ * before giving up on the preferred path.
+ *
+ * Same discriminator as `shouldFallbackToVertexOnNovaClose` (this predicate
+ * runs first, on the identical signature) but gated on a SEPARATE flag so the
+ * two compose into a two-strike policy: retry once, fall back to Vertex only
+ * if the retry ALSO dies before any audio. `alreadyRetried` therefore must be
+ * checked (and set) independently of `alreadyFellBack` — collapsing them
+ * would either skip the retry entirely or let the fallback retry forever.
+ */
+export function shouldRetryNovaOnPrematureClose(args: {
+  sessionActive: boolean;
+  initiatedLocally: boolean;
+  rotationInFlight: boolean;
+  audioOutChunks: number;
+  /** Guard against retrying more than once per session. */
+  alreadyRetried: boolean;
+}): boolean {
+  return (
+    args.sessionActive &&
+    !args.initiatedLocally &&
+    !args.rotationInFlight &&
+    args.audioOutChunks === 0 &&
+    !args.alreadyRetried
+  );
+}
 // VTID-03495: Polly seam for the /tts route. No-ops unless TTS_PROVIDER=polly.
 import { tryPollySynthesis } from '../services/tts/tts-provider';
 import { resolveNovaSonicVoice } from '../orb/live/voice/nova-sonic-voice';
@@ -7888,6 +7930,79 @@ async function connectToLiveAPI(
             });
             return;
           }
+          // VTID-03557: one fresh Nova retry BEFORE the VTID-03502 Vertex
+          // fallback below pins the session away from Nova. Every measured
+          // "Premature close" is Node's own stream-teardown error, not our
+          // code's timeout path, and each Nova connect already opens a brand
+          // new HTTP/2 session (event-stream commands skip the SDK's session
+          // pool) — so a retry is not replaying whatever the first attempt
+          // hit, it is a materially independent connection attempt. This is
+          // the standard mitigation for a transient reset at connection open.
+          //
+          // Runs on the identical signature as the fallback below, gated on
+          // its OWN flag (`_novaPrematureCloseRetried`) so the two compose as
+          // a two-strike policy: retry once, fall back to Vertex only if the
+          // retry ALSO dies before any audio. `attemptTransparentReconnect`
+          // reconnects via the normal provider-selection path, which still
+          // resolves to Nova here because `_novaFallbackToVertex` is not set
+          // yet — so this genuinely retries Nova, not a disguised Vertex hop.
+          const shouldRetryNova = shouldRetryNovaOnPrematureClose({
+            sessionActive: session.active,
+            initiatedLocally: closeEvent.initiatedLocally === true,
+            rotationInFlight,
+            audioOutChunks: session.audioOutChunks,
+            alreadyRetried: (session as any)._novaPrematureCloseRetried === true,
+          });
+
+          if (shouldRetryNova) {
+            console.warn(
+              `[VTID-03557] Nova stream for session ${session.sessionId} closed before any audio ` +
+                `(reason=${closeEvent.reason ?? 'unknown'}, audio_out=0) — retrying Nova once before ` +
+                `falling back to Vertex.`,
+            );
+            (session as any)._novaPrematureCloseRetried = true;
+            emitDiag(session, 'nova_premature_close_retry', {
+              provider: 'nova_sonic',
+              reason: closeEvent.reason ?? null,
+              audio_out: 0,
+            });
+            void emitOasisEvent({
+              type: 'orb.upstream.nova.premature_close_retry',
+              vtid: 'VTID-03557',
+              payload: {
+                session_id: session.sessionId,
+                provider: 'nova_sonic',
+                reason: closeEvent.reason ?? null,
+                status: 'warning',
+              } as any,
+            } as any).catch(() => { /* best-effort */ });
+
+            void attemptTransparentReconnect(
+              session,
+              onAudioResponse,
+              onTextResponse,
+              onError,
+              onTurnComplete,
+              onInterrupted,
+            ).then((ok) => {
+              if (!ok) {
+                // The retry itself never got a new connection attempted at
+                // all (e.g. session went inactive, or MAX_RECONNECTS hit) —
+                // this onClose handler will not fire again to pick up the
+                // Vertex fallback below, so surface the disconnect here
+                // rather than leaving the user in unexplained silence.
+                console.warn(
+                  `[VTID-03557] Nova retry reconnect failed outright for session ${session.sessionId}.`,
+                );
+                emitConnectionIssue(session, 'upstream_disconnected');
+              }
+            }).catch((e) => {
+              console.warn(`[VTID-03557] Nova retry reconnect threw: ${(e as Error).message}`);
+              emitConnectionIssue(session, 'upstream_disconnected');
+            });
+            return;
+          }
+
           // VTID-03502: premature-close-at-open fallback.
           //
           // Measured 2026-07-29 → 08-05: 10.2% of Nova sessions (6/59) die
@@ -7897,6 +8012,11 @@ async function connectToLiveAPI(
           // close reason (local_close 0/35, client_disconnect 0/13,
           // user_stop 0/3, nova_validation 0/1), which is what makes it a safe
           // discriminator rather than a heuristic.
+          //
+          // VTID-03557: by the time this fires, a fresh Nova retry has ALREADY
+          // failed the same way once (see above) — this is now strike two, so
+          // pinning to Vertex is the right call rather than retrying Nova
+          // indefinitely.
           //
           // Without this branch the code below emits connection_issue with
           // should_close:true and the user is simply left in silence — they
