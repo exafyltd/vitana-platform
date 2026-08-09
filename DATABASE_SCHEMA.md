@@ -1769,6 +1769,9 @@ Related caps to keep in sync:
 
 ## Commerce Mesh — Connector Factory tables (VTID-03535, 2026-08-08)
 
+**APPLIED to Supabase 2026-08-09 (VTID-03544, BLK-001 resolution)** — all 8
+tables live with RLS enabled (no policies → service_role only).
+
 Additive Prisma migration `prisma/migrations/20260808_vcaop_mesh_factory_0001/`
 (reversible; `down.sql` verified up→down→up on ephemeral Postgres 16).
 **NOT yet applied to any live database** — application is gated on the VCAOP
@@ -1790,6 +1793,9 @@ workflow is not evidence).
 ---
 
 ## Commerce Mesh — Durable workflow tables (VTID-03537, 2026-08-08)
+
+**APPLIED to Supabase 2026-08-09 (VTID-03544)** — all 7 tables live with RLS
+enabled (no policies → service_role only).
 
 Additive Prisma migration `prisma/migrations/20260808_vcaop_mesh_workflows_0002/`
 (reversible; verified up→down→up + FK cascade + idempotency-key uniqueness on
@@ -1814,7 +1820,8 @@ Two additive reversible migrations, both verified up→down→up on ephemeral
 Postgres 16; **neither applied to any live database** (BLK-001 + the gates
 below).
 
-`20260808_vcaop_mesh_settlement_0003` (VTID-03540 — sandbox instruments only
+`20260808_vcaop_mesh_settlement_0003` — **APPLIED to Supabase 2026-08-09
+(VTID-03544), RLS enabled** (VTID-03540 — sandbox instruments only
 until the BLK-010 legal/regulatory review):
 
 | Table | Purpose |
@@ -1822,10 +1829,18 @@ until the BLK-010 legal/regulatory review):
 | `settlement_instruction` | VTNA settlement instructions; id is caller-supplied — the idempotency anchor; amounts computed by the deterministic ledger, never by an LLM |
 | `connector_usage_record` | Per-tenant/connector usage metering (tool calls, outcomes, latency) |
 
-`20260808_vcaop_mesh_health_0004` (VTID-03541 — **DORMANT layer, BLK-009**:
-authored for the independent privacy review to examine; do NOT apply live
-until it passes; at live-apply time these tables get service_role-only +
-dedicated RLS and are never joined into general query paths):
+`20260808_vcaop_mesh_health_0004` — **APPLIED to Supabase 2026-08-09
+(VTID-03547) after the BLK-009 independent privacy review cycle** (round 1
+FAIL → 14 findings remediated → re-review PASS with required changes →
+N1–N5 fixed). As applied and verified live: RLS **with FORCE** on all four
+tables (owner bound too, zero policies → service_role only), and
+`consent_receipt` is append-only **by trigger**
+(`trg_consent_receipt_immutable` raises on UPDATE/DELETE, for every role).
+Attestations store a coarse `confidence_band` (low/medium/high), never the
+exact ratio, and issuance is unique per (grant_id, claim, period). Never
+join these tables into general query paths. The runtime layer additionally
+refuses to construct without a recorded BLK-009 activation
+(`assertHealthActivation`, services/vcaop/src/health/consent.ts):
 
 | Table | Purpose |
 |-------|---------|
