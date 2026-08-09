@@ -27,6 +27,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { OrbToolArgs, OrbToolIdentity, OrbToolResult } from '../orb-tools-shared';
 import { executeReportToSpecialist } from '../report-to-specialist-core';
+import { GATEWAY_LOCALES, type GatewayLocale } from '../../i18n/catalog';
 import {
   pickPersonaForKind,
   pickPersonaForKindForTenant,
@@ -388,11 +389,20 @@ export async function tool_list_my_tickets(
 // Settings (VTID-02772)
 // ---------------------------------------------------------------------------
 
-const SUPPORTED_LANGUAGES: Record<string, { full: string; name: string }> = {
+// VTID-03559: one entry per GATEWAY_LOCALES member, and a compile-time check
+// that it stays that way. `Record<GatewayLocale, ...>` makes tsc fail the build
+// if a locale is added to the catalog without a BCP-47 tag here — the previous
+// `Record<string, ...>` accepted a stale 4-entry map silently, which is how
+// fr/pt/ru/pl came to be rejected by voice while being offered in the app.
+const SUPPORTED_LANGUAGES: Record<GatewayLocale, { full: string; name: string }> = {
   de: { full: 'de-DE', name: 'German (Deutsch)' },
   en: { full: 'en-US', name: 'English' },
   es: { full: 'es-ES', name: 'Spanish (Español)' },
   sr: { full: 'sr-RS', name: 'Serbian (Srpski)' },
+  fr: { full: 'fr-FR', name: 'French (Français)' },
+  pt: { full: 'pt-PT', name: 'Portuguese (Português)' },
+  ru: { full: 'ru-RU', name: 'Russian (Русский)' },
+  pl: { full: 'pl-PL', name: 'Polish (Polski)' },
 };
 
 export async function tool_set_language(
@@ -405,11 +415,14 @@ export async function tool_set_language(
   }
   const raw = String(args.language ?? '').trim().toLowerCase();
   const short = raw.split('-')[0];
-  const lang = SUPPORTED_LANGUAGES[short];
+  const lang = SUPPORTED_LANGUAGES[short as GatewayLocale];
   if (!lang) {
     return {
       ok: false,
-      error: `Unsupported language "${raw}". Supported: de (German), en (English), es (Spanish), sr (Serbian).`,
+      error:
+        `Unsupported language "${raw}". Supported: ` +
+        GATEWAY_LOCALES.map((c) => `${c} (${SUPPORTED_LANGUAGES[c].name})`).join(', ') +
+        '.',
     };
   }
   try {
@@ -903,8 +916,14 @@ export const FEEDBACK_SETTINGS_TOOL_DECLARATIONS: Array<Record<string, unknown>>
       properties: {
         language: {
           type: 'string',
-          enum: ['de', 'en', 'es', 'sr'],
-          description: 'Target language code: de (German), en (English), es (Spanish), sr (Serbian).',
+          // VTID-03559: derived, never a literal. A hardcoded copy here meant
+          // fr/pt/ru/pl were selectable in the app's Language picker but
+          // REJECTED when asked for by voice — the one surface that advertises
+          // itself as the way to change language.
+          enum: [...GATEWAY_LOCALES],
+          description:
+            'Target language code: de (German), en (English), es (Spanish), sr (Serbian), ' +
+            'fr (French), pt (Portuguese), ru (Russian), pl (Polish).',
         },
       },
       required: ['language'],

@@ -1,0 +1,185 @@
+name: I18N-DB-SEED
+run-name: 'Seed DB content i18n [VTID: VTID-03515] locale=${{ inputs.locale || ''scheduled-check'' }} (${{ github.ref_name }})'
+
+# VTID-03515 — bring a language to full parity on DB-backed user-visible content
+# (`nav_catalog_i18n`, `journey_checklist_translations`).
+#
+# The whole "add language N+1" procedure is:
+#   1. INSERT the locale into `supported_locales` (status 'beta').
+#   2. Dispatch this workflow with that locale. It translates only what is
+#      missing or whose source changed, commits the artifacts, and (with
+#      apply=true) upserts them.
+#   3. When the parity check below is clean, flip the row to 'ga'.
+#
+# There is deliberately no step 4. Everything else — the DB constraint, the
+# gateway catalog's locale union, the checklist route's accepted values — reads
+# the registry rather than a hardcoded list.
+
+on:
+  workflow_dispatch:
+    inputs:
+      locale:
+        description: 'Comma-separated locale codes (must exist in supported_locales), or "all-ga" / "all"'
+        required: true
+        default: 'all'
+      surface:
+        description: 'Surface(s): nav-catalog, journey-checklist (blank = both)'
+        required: false
+        default: ''
+      apply:
+        description: 'Write the result to the database (false = artifacts only)'
+        required: true
+        default: 'false'
+        type: choice
+        options: ['false', 'true']
+      from_artifact:
+        description: 'Skip translation, replay the committed artifacts (no LLM spend)'
+        required: false
+        default: 'false'
+        type: choice
+        options: ['false', 'true']
+      curriculum:
+        description: 'Guided Journey curriculum version'
+        required: false
+        default: 'v2'
+  repository_dispatch:
+    # NO LANGUAGE LEFT BEHIND, for content that does not live in git.
+    #
+    # The curriculum (254 topics) and the Navigator catalog are edited in the
+    # admin UI and published to the database, so no push event ever fires and
+    # git-based propagation is blind to them.
+    #
+    # WIRED FROM THE GATEWAY (VTID-03522) —
+    # services/gateway/src/services/db-i18n/notify-source-changed.ts, called
+    # from publishChecklist()/rollbackChecklist() and from
+    # invalidateNavCatalogCache() (the choke point all four nav_catalog admin
+    # writes already pass through).
+    #
+    # The emitter coalesces bursts into one dispatch per 30s window and is
+    # fire-and-forget: it can never fail the publish that triggered it. When it
+    # DOES fail — GitHub outage, unset GITHUB_SAFE_MERGE_TOKEN — it logs
+    # DB_I18N_DISPATCH_FAILED and the change is picked up by the scheduled run
+    # below instead. So the guarantee degrades from immediate to next-morning,
+    # never to silence. Disable with DB_I18N_AUTO_PROPAGATE=off.
+    types: [db-i18n-source-changed]
+  schedule:
+    # Safety net behind the dispatch above, and the only mechanism for content
+    # changed by a route that forgets to fire it. Auto-propagates: a scheduled
+    # run that merely REPORTS drift leaves the languages behind until a human
+    # notices, which is the failure this whole system exists to remove.
+    - cron: '0 5 * * *'
+
+permissions:
+  contents: write
+
+concurrency:
+  # Keyed by locale, not just ref. Keying on the ref alone serializes every
+  # locale AND — because GitHub keeps only one PENDING run per group —
+  # SILENTLY CANCELS all but the last of a back-to-back multi-locale dispatch.
+  # That cost four locales' worth of translation on the frontend catalog work.
+  group: i18n-db-seed-${{ github.ref }}-${{ inputs.locale || 'scheduled' }}
+  cancel-in-progress: false
+
+jobs:
+  seed:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install gateway deps
+        working-directory: services/gateway
+        run: npm ci --no-audit --no-fund
+
+      # Automatic propagation for DB-backed content.
+      #
+      # This DOES spend on LLM calls and DOES write to the database, which is a
+      # deliberate reversal of the original read-only-cron stance. The reason:
+      # a check that only reports drift makes "no language left behind" depend
+      # on someone reading a cron log. Only units whose source_sha actually
+      # moved are translated, so a no-change run costs nothing and a one-topic
+      # edit costs one topic — the incremental bill is bounded by the edit, not
+      # by the catalog size, and that holds at 20+ languages.
+      - name: Propagate to every language (scheduled / dispatched)
+        if: github.event_name == 'schedule' || github.event_name == 'repository_dispatch'
+        working-directory: services/gateway
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
+          GOOGLE_GEMINI_API_KEY: ${{ secrets.GOOGLE_GEMINI_API_KEY }}
+        run: npm run i18n:db:seed -- --all --apply
+
+      # Runs after the propagation above, so it asserts the END state. Red here
+      # means at least one language is still behind and the run must be re-run.
+      - name: Verify no language is left behind
+        if: github.event_name == 'schedule' || github.event_name == 'repository_dispatch'
+        working-directory: services/gateway
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
+        run: npm run i18n:db:check
+
+      # continue-on-error so PARTIAL progress still reaches the commit step.
+      # The script exits non-zero if ANY unit failed validation, but it writes
+      # its artifacts as it goes — without this, a run that translated 250 of
+      # 254 topics would discard all 250. That exact loss happened on the
+      # frontend catalog expansion.
+      - name: Seed
+        id: seed
+        if: github.event_name == 'workflow_dispatch'
+        continue-on-error: true
+        working-directory: services/gateway
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
+          GOOGLE_GEMINI_API_KEY: ${{ secrets.GOOGLE_GEMINI_API_KEY }}
+        run: |
+          ARGS=""
+          case "${{ inputs.locale }}" in
+            all-ga) ARGS="--all-ga" ;;
+            all)    ARGS="--all" ;;
+            *)      ARGS="--locale=${{ inputs.locale }}" ;;
+          esac
+          [ -n "${{ inputs.surface }}" ] && ARGS="$ARGS --surface=${{ inputs.surface }}"
+          [ "${{ inputs.apply }}" = "true" ] && ARGS="$ARGS --apply"
+          [ "${{ inputs.from_artifact }}" = "true" ] && ARGS="$ARGS --from-artifact"
+          ARGS="$ARGS --curriculum=${{ inputs.curriculum }}"
+          echo "Running: npm run i18n:db:seed -- $ARGS"
+          npm run i18n:db:seed -- $ARGS
+
+      # always(), for the same reason: the translations that succeeded are the
+      # expensive part, and they are only durable once committed. Re-dispatching
+      # the same locale then drains only the remainder, because the source-hash
+      # stamps mark everything already done as current.
+      - name: Commit artifacts
+        if: always() && github.event_name != 'pull_request'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/db-i18n/ || true
+          if git diff --cached --quiet; then
+            echo "No artifact changes."
+            exit 0
+          fi
+          git commit -m "chore(i18n-db): seed ${{ inputs.locale }} DB content translations (VTID-03515)"
+          for i in 1 2 3 4 5; do
+            git pull --rebase origin ${{ github.ref_name }} || true
+            if git push origin HEAD:${{ github.ref_name }}; then exit 0; fi
+            echo "push attempt $i failed — backing off"
+            sleep $((5 * i))
+          done
+          echo "push failed after 5 attempts"; exit 1
+
+      # Report the seeder's verdict last, so a partial run is visibly red
+      # without having cost the work that did succeed.
+      - name: Fail if the seeder reported unfinished work
+        if: always() && steps.seed.outcome == 'failure'
+        run: |
+          echo "The seeder exited non-zero: some units failed validation or could not be applied."
+          echo "Whatever succeeded has been committed above. Re-dispatch the same locale to drain the rest."
+          exit 1

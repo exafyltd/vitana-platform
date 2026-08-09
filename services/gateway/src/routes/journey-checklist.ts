@@ -16,11 +16,14 @@ import {
   type ChecklistLocale,
 } from '../services/guided-journey/checklist-service';
 import { getUserLocale } from '../i18n/server-locale';
+import { GATEWAY_LOCALES } from '../i18n/catalog';
 
 const router = Router();
 const VTID = 'VTID-03277';
 
-const SUPPORTED_LOCALES: readonly ChecklistLocale[] = ['de', 'en', 'es', 'sr'];
+// Single source of truth — see i18n/catalog.ts. Re-listing the codes here is
+// how `?locale=fr` came to be rejected while French was otherwise supported.
+const SUPPORTED_LOCALES: readonly ChecklistLocale[] = GATEWAY_LOCALES;
 
 /** Resolve the curriculum locale: an explicit `?locale=` (the live UI language,
  *  authoritative) wins; otherwise fall back to the user's stored profile locale. */
