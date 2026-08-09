@@ -711,13 +711,24 @@ describe('GET /health', () => {
     expect(res.body.ok).toBe(true);
   });
 
-  it('reports degraded (still HTTP 200) when the loop is not running', async () => {
-    (getEventLoopStatus as jest.Mock).mockResolvedValue({ is_running: false, ok: true });
+  it('reports degraded (still HTTP 200) when the loop is enabled but not running', async () => {
+    // VTID-03401: degraded is reserved for a genuine stall — enabled but not
+    // running. A config-disarmed loop reports ok_governance_limited instead.
+    (getEventLoopStatus as jest.Mock).mockResolvedValue({ is_running: false, ok: true, config: { enabled: true } });
     const res = await request(app).get('/api/v1/autopilot/health');
     expect(res.status).toBe(200);
     expect(res.body.status).toBe('degraded');
     expect(res.body.ok).toBe(false);
     expect(res.body.reason).toMatch(/not running/);
+  });
+
+  it('reports ok_governance_limited (ok:true) when the loop is disarmed by config', async () => {
+    (getEventLoopStatus as jest.Mock).mockResolvedValue({ is_running: false, ok: true, config: { enabled: false } });
+    const res = await request(app).get('/api/v1/autopilot/health');
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe('ok_governance_limited');
+    expect(res.body.ok).toBe(true);
+    expect(res.body.note).toMatch(/idle by design/);
   });
 
   it('reports error status with the loop error message when the loop IS running but unhealthy', async () => {
@@ -736,7 +747,7 @@ describe('GET /health', () => {
     const res = await request(app).get('/api/v1/autopilot/health');
     expect(res.status).toBe(200);
     expect(res.body.status).toBe('error');
-    expect(res.body.reason).toBe('Event loop is not running — autopilot is inactive');
+    expect(res.body.reason).toBe('Event loop is enabled but not running — autopilot may have stalled');
   });
 
   it('degrades gracefully (does not 500) when getEventLoopStatus throws', async () => {

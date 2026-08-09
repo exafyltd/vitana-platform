@@ -552,17 +552,41 @@ Do NOT substitute an internal UUID under any circumstance.
   // VTID-03447: pin the user's real first name with the SAME structural
   // prominence as the Vitana ID header above, right next to it, so a model
   // that leans on loud/explicit headers (observed on Nova Sonic) has an
-  // equally loud "use THIS for greetings/address" signal instead of only
-  // the handle. Deliberately placed immediately after vitanaIdHeader and
-  // says outright: the handle is for ID questions only, never for address.
+  // equally loud "THIS is the name" signal instead of only the handle.
+  // Deliberately placed immediately after vitanaIdHeader and says outright:
+  // the handle is for ID questions only, never for address.
+  //
+  // VTID-03475: this header is a LOOKUP, NOT A GREETING INSTRUCTION. Its
+  // first version said "Greet them and address them by this name — 'Hi
+  // <Name>', 'Hallo <Name>'" and shipped two literal greeting templates at
+  // the very top of the prompt. Live symptom: EVERY ORB open — including
+  // three opens inside one minute — produced the same "Guten Tag <Name>! Ich
+  // freue mich, dich bei Vitanaland zu sehen." The header outranked (a) the
+  // per-turn opening directive, whose short-gap/reconnect rungs explicitly
+  // say "Do NOT say Hello or the user's name", (b) the RECONNECT SILENCE
+  // RULE, and (c) the FLEXIBLE WORDING rule ("never speak a fixed, memorised
+  // greeting — NEVER open two conversations with the same sentence").
+  //
+  // So: state the name, forbid the handle as address, and hand the
+  // greet/don't-greet decision back to the turn directive that owns it. No
+  // greeting exemplars here — a template at this prominence gets parroted.
   const nameHeader = resolvedFirstName && resolvedFirstName.trim()
     ? `=== AUTHORITATIVE USER NAME ===
 The user's first name is: ${resolvedFirstName.trim()}
-Greet them and address them by this name in conversation — "Hi ${resolvedFirstName.trim()}",
-"Hallo ${resolvedFirstName.trim()}", etc. Do NOT use their Vitana ID handle
-(from the block above) as a form of address — that handle exists only for
-answering "what is my handle/ID" questions, never for greetings or general
-conversation.
+This is a LOOKUP, not an instruction to greet. It tells you WHICH word to use
+IF you address the user by name — it does NOT tell you TO address them by
+name, and it is NOT a greeting to speak.
+
+Do NOT use their Vitana ID handle (from the block above) as a form of address
+— that handle exists only for answering "what is my handle/ID" questions,
+never for greetings or general conversation.
+
+Whether this turn opens with a greeting at all, whether it uses the name, and
+what it says are decided ONLY by the opening directive you are given for the
+turn and by the greeting rules below. If the directive says to speak a
+specific line, or not to use the user's name, or to stay silent, OBEY IT —
+this block never overrides it. Never open two conversations with the same
+sentence.
 ================================
 
 `

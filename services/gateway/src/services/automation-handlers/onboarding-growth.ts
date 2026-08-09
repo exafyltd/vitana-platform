@@ -50,7 +50,7 @@ async function runOrbGuidedOnboarding(ctx: AutomationContext) {
   // Check if user has an avatar
   const { data: profile } = await supabase
     .from('app_users')
-    .select('avatar_url')
+    .select('avatar_url:profile->>avatar_url')
     .eq('user_id', userId)
     .maybeSingle();
 

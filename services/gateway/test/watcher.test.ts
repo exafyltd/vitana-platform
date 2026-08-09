@@ -48,14 +48,19 @@ function buildApp() {
 }
 
 /** Minimal chainable stand-in for the supabase query builder. */
-function stubSupabase(result: { data?: unknown; error?: { message: string } | null }) {
+function stubSupabase(result: {
+  data?: unknown;
+  error?: { message: string } | null;
+  /** For head+count queries, e.g. /health's watcher_lessons totals. */
+  count?: number;
+}) {
   const chain: Record<string, unknown> = {};
-  for (const m of ['select', 'eq', 'order', 'limit']) {
+  for (const m of ['select', 'eq', 'gt', 'order', 'limit']) {
     chain[m] = jest.fn(() => chain);
   }
   // Awaiting the chain resolves to the result.
   (chain as { then: unknown }).then = (resolve: (v: unknown) => void) =>
-    resolve({ data: result.data ?? [], error: result.error ?? null });
+    resolve({ data: result.data ?? [], error: result.error ?? null, count: result.count ?? 0 });
   return { from: jest.fn(() => chain), __chain: chain };
 }
 
@@ -202,6 +207,53 @@ describe('GET /api/v1/watcher/health', () => {
     mockGetSupabase.mockReturnValue(stubSupabase({ data: sources }));
     const res = await request(buildApp()).get('/api/v1/watcher/health');
     expect(res.body.data.sources).toEqual(sources);
+  });
+
+  it('reports running from cross-instance evidence, not the local timer flag', async () => {
+    // The gateway runs more than one instance and startObserver()'s timer is
+    // per-process, so the instance answering /health is usually NOT the one
+    // ticking. Observed live: running=false with last_run_at four seconds
+    // old. Reporting the local flag makes a healthy observer look dead —
+    // the same class of lying health field as the hard-zero last_written.
+    mockGetSupabase.mockReturnValue(stubSupabase({
+      data: [{ source: 'oasis_events', last_run_at: new Date().toISOString() }],
+    }));
+    const res = await request(buildApp()).get('/api/v1/watcher/health');
+    expect(res.body.data.observer.running).toBe(true);
+    expect(res.body.data.observer.last_run_at).not.toBeNull();
+    // The local timer flag is still reported, just no longer the headline.
+    expect(res.body.data.observer).toHaveProperty('running_this_instance');
+  });
+
+  it('reports running=false on a stale cursor even though the local timer flag is true', async () => {
+    // This is the discriminating case: isObserverRunning() is mocked TRUE for
+    // this suite, so a `running` of false can only have come from the cursor
+    // evidence. If `running` ever regresses to the per-process flag, this is
+    // the test that catches it.
+    mockGetSupabase.mockReturnValue(stubSupabase({
+      data: [{ source: 'oasis_events', last_run_at: new Date(Date.now() - 3600_000).toISOString() }],
+    }));
+    const res = await request(buildApp()).get('/api/v1/watcher/health');
+    expect(res.body.data.observer.running).toBe(false);
+    expect(res.body.data.observer.running_this_instance).toBe(true);
+  });
+
+  it('reports learned-lesson counts alongside cursor health (VTID-03531)', async () => {
+    // "The observer is healthy" and "the Watcher is learning" are independent
+    // facts, and for three days they diverged completely — 591 steps recorded
+    // against 0 lessons, because the distiller had no call site. Cursor state
+    // alone could not show that, so /health has to report both.
+    mockGetSupabase.mockReturnValue(stubSupabase({ data: [], count: 7 }));
+    const res = await request(buildApp()).get('/api/v1/watcher/health');
+    expect(res.body.data.lessons).toEqual({ total: 7, injectable: 7 });
+  });
+
+  it('reports zeroed lesson counts rather than omitting them when nothing is learned', async () => {
+    mockGetSupabase.mockReturnValue(stubSupabase({ data: [], count: 0 }));
+    const res = await request(buildApp()).get('/api/v1/watcher/health');
+    // An absent field reads as "not measured"; an explicit 0 reads as
+    // "measured, and it is zero" — which is the alarming case.
+    expect(res.body.data.lessons).toEqual({ total: 0, injectable: 0 });
   });
 
   it('reports state_error instead of failing when the cursor table errors', async () => {
