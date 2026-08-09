@@ -337,24 +337,39 @@ router.get('/conversations', requireAuth, requireTenant, async (req: Request, re
 
   const supabase = getSupabase();
 
+  // The inbox is a scrollable list of every conversation the user has, not a
+  // "recent 50" digest — a 50 cap silently truncated the list for almost every
+  // active member (VTID-03493). Callers may narrow it; the ceiling only exists
+  // to stop a hand-crafted request asking for unbounded work.
+  const limit = Math.min(Number(req.query.limit) || 250, 500);
+
   // Server-side dedup: use DISTINCT ON to get latest message per peer in one query
   const { data, error } = await supabase.rpc('get_recent_conversations', {
     p_user_id: identity.user_id,
     p_tenant_id: identity.tenant_id,
-    p_limit: 50,
+    p_limit: limit,
   });
 
   if (error) {
     // Fallback to client-side dedup if RPC not available yet
     console.warn('[Chat] RPC get_recent_conversations failed, falling back:', error.message);
 
+    // This limit counts MESSAGES, but the dedup below collapses them to
+    // conversations — a chatty peer can eat hundreds of rows on its own. Pull
+    // a multiple of the requested conversation count so the fallback doesn't
+    // return a far shorter inbox than the RPC path it stands in for.
     const { data: fallbackData, error: fallbackErr } = await supabase
       .from('chat_messages')
       .select('*')
       .eq('tenant_id', identity.tenant_id)
       .or(`sender_id.eq.${identity.user_id},receiver_id.eq.${identity.user_id}`)
+      // DM rows only — mirrors the RPC. Group messages share this table with
+      // receiver_id NULL + group_id set, and would dedup to a peer_id of
+      // `undefined`, producing an inbox entry with no peer.
+      .not('receiver_id', 'is', null)
+      .is('group_id', null)
       .order('created_at', { ascending: false })
-      .limit(200);
+      .limit(Math.min(limit * 8, 2000));
 
     if (fallbackErr) {
       console.error('[Chat] Conversations list error:', fallbackErr);
