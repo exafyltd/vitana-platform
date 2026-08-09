@@ -19,14 +19,19 @@ import {
 } from '../../../../src/orb/live/upstream/nova-sonic-protocol';
 
 describe('input event builders — exact envelopes', () => {
-  it('sessionStart carries inference configuration', () => {
+  it('sessionStart carries inference + turn-detection configuration', () => {
     expect(buildSessionStart({ maxTokens: 2048, topP: 0.8, temperature: 0.5 })).toEqual({
       event: {
         sessionStart: {
           inferenceConfiguration: { maxTokens: 2048, topP: 0.8, temperature: 0.5 },
+          turnDetectionConfiguration: { endpointingSensitivity: 'MEDIUM' },
         },
       },
     });
+    expect(
+      (buildSessionStart({ endpointingSensitivity: 'LOW' }).event.sessionStart as Record<string, any>)
+        .turnDetectionConfiguration.endpointingSensitivity,
+    ).toBe('LOW');
   });
 
   it('promptStart configures 24kHz LPCM output + tools', () => {
@@ -156,6 +161,17 @@ describe('convertToolsToNovaSpecs', () => {
     expect(specs.map((s) => s.toolSpec.name)).toEqual(['a', 'b']);
   });
 
+  it('skips Vertex builtin directives (google_search etc.) — Nova has no equivalent', () => {
+    const specs = convertToolsToNovaSpecs([
+      { google_search: {} },
+      { function_declarations: [{ name: 'a', description: '', parameters: { type: 'object' } }] },
+      { googleSearch: {} },
+      { url_context: {} },
+      { code_execution: {} },
+    ]);
+    expect(specs.map((s) => s.toolSpec.name)).toEqual(['a']);
+  });
+
   it('rejects duplicate tool names and malformed schemas BEFORE a paid stream', () => {
     expect(() =>
       convertToolsToNovaSpecs([
@@ -246,6 +262,31 @@ describe('NovaOutputNormalizer', () => {
     expect(n.normalize({ event: { completionEnd: { stopReason: 'END_TURN' } } })).toEqual([
       { kind: 'turnComplete' },
     ]);
+  });
+
+  it('ASSISTANT contentEnd END_TURN → turnComplete without waiting for completionEnd', () => {
+    const n = new NovaOutputNormalizer();
+    n.normalize({ event: { contentStart: { contentId: 'a1', type: 'AUDIO', role: 'ASSISTANT' } } });
+    expect(
+      n.normalize({ event: { contentEnd: { contentId: 'a1', type: 'AUDIO', stopReason: 'END_TURN' } } }),
+    ).toEqual([{ kind: 'turnComplete' }]);
+    // A trailing completionEnd for the SAME turn is deduped — one turnComplete per turn.
+    expect(n.normalize({ event: { completionEnd: { stopReason: 'END_TURN' } } })).toEqual([
+      { kind: 'ignored', eventName: 'completionEnd' },
+    ]);
+    // Next turn's content resets the guard: its END_TURN fires again.
+    n.normalize({ event: { contentStart: { contentId: 'a2', type: 'AUDIO', role: 'ASSISTANT' } } });
+    expect(
+      n.normalize({ event: { contentEnd: { contentId: 'a2', type: 'AUDIO', stopReason: 'END_TURN' } } }),
+    ).toEqual([{ kind: 'turnComplete' }]);
+  });
+
+  it('USER (ASR) contentEnd END_TURN does NOT complete the model turn', () => {
+    const n = new NovaOutputNormalizer();
+    n.normalize({ event: { contentStart: { contentId: 'u1', type: 'TEXT', role: 'USER' } } });
+    expect(
+      n.normalize({ event: { contentEnd: { contentId: 'u1', type: 'TEXT', stopReason: 'END_TURN' } } }),
+    ).toEqual([{ kind: 'ignored', eventName: 'contentEnd' }]);
   });
 
   it('usageEvent.details.total → usage totals', () => {

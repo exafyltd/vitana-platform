@@ -120,8 +120,8 @@ router.get('/:id', async (req: Request, res: Response) => {
 
     const { id } = req.params;
 
-    // Try to find tenant by id (could be 'id' or 'tenant_id' column)
-    let tenantResult = await supabase.from('tenants').select('*').eq('id', id).single();
+    // tenants' PK column is `tenant_id`, not `id` — see admin_tenants schema note
+    let tenantResult = await supabase.from('tenants').select('*').eq('tenant_id', id).single();
 
     // If that fails, try slug as fallback
     if (tenantResult.error) {

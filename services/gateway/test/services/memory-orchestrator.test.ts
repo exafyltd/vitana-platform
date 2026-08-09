@@ -286,6 +286,28 @@ describe('buildAssistantMemoryContext', () => {
     }
   });
 
+  it('omits the goals section for a community-role turn unrelated to goals (VTID-03458)', async () => {
+    // Regression: "send a message to Maria" should never surface a
+    // nutrition-index goal question — goals are still LOADED (telemetry),
+    // just not rendered into the prompt for an irrelevant turn.
+    const result = await buildAssistantMemoryContext({
+      ...BASE_INPUT,
+      message: 'nein ich möchte eine nachricht an maria maxina versenden',
+    });
+    expect(result.telemetry.goals_loaded).toBe(1);
+    expect(result.memory_prompt_block).not.toContain('<user_goals>');
+    expect(result.memory_prompt_block).not.toContain('Improve sleep quality');
+  });
+
+  it('still renders the goals section for a community-role turn that is actually about goals/progress', async () => {
+    const result = await buildAssistantMemoryContext({
+      ...BASE_INPUT,
+      message: 'wie kann ich meinen Ernährungs-Index verbessern?',
+    });
+    expect(result.memory_prompt_block).toContain('<user_goals>');
+    expect(result.memory_prompt_block).toContain('Improve sleep quality');
+  });
+
   it('emits the context_built OASIS event with telemetry payload', async () => {
     await buildAssistantMemoryContext(BASE_INPUT);
     const call = mockedEmit.mock.calls.find(

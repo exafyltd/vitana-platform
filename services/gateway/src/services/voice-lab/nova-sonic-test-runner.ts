@@ -49,6 +49,7 @@ import {
   VERTEX_PROJECT_ID,
 } from '../../orb/live/config';
 import { VERTEX_LIVE_MODEL } from '../../orb/live/protocol';
+import { buildLiveApiTools } from '../../orb/live/tools/live-tool-catalog';
 
 export interface NovaTestCheck {
   key: string;
@@ -109,6 +110,18 @@ interface LiveProbeMetrics extends Record<string, number> {
   connect_ms: number;
   first_event_ms: number;
   first_audio_ms: number;
+  /**
+   * BOOTSTRAP-NOVA-SONIC-VOICE (per-turn latency follow-up): time from
+   * sending the SECOND text turn to its turn_complete. -1 when no second
+   * turn was requested. This is the number actually missing from
+   * production observability — voice.latency.measured has never captured
+   * a turn>0 sample in 25 days of history (100% of captured events are the
+   * single-turn CI smoke probe below), even though real users report 7-10s
+   * on turn 2+. This field exists to close that gap without waiting on
+   * real user traffic to happen to emit it.
+   */
+  second_turn_ms: number;
+  second_turn_first_audio_ms: number;
 }
 
 interface LiveProbeResult {
@@ -121,50 +134,150 @@ interface LiveProbeResult {
  * Provider-neutral live probe: register handlers, connect, send one short
  * text turn, and measure connect / first-event / first-audio latency. Used
  * identically for Nova and the Vertex baseline so the comparison is fair.
+ *
+ * When `secondTurnText` is supplied, a SECOND turn is sent immediately after
+ * the first turn_complete and timed separately (second_turn_ms /
+ * second_turn_first_audio_ms) — this is turn 2 exactly as a real
+ * conversation would produce it (same stream, same session, no reconnect),
+ * which is the metric actually missing from production telemetry.
  */
-async function probeLiveClient(
+/** 32ms of 16 kHz / 16-bit / mono PCM silence, base64 — one mic frame. */
+const SILENCE_FRAME_B64 = Buffer.alloc(1024).toString('base64');
+
+// Exported for tests only — the second-turn failure paths (stream closes /
+// errors / times out after turn 1, or sendTextTurn refuses because the
+// stream is not open) cannot be reached through runNovaSonicTestSuite
+// without opening a real paid Bedrock stream.
+export async function probeLiveClient(
   client: UpstreamLiveClient,
   connect: () => Promise<void>,
   closeReason: string,
   classifyFailure: (err: unknown) => string,
+  secondTurnText?: string,
 ): Promise<LiveProbeResult> {
   const t0 = Date.now();
   let connectMs = -1;
   let firstEventMs = -1;
   let firstAudioMs = -1;
+  let transcriptCount = 0;
+  let audioCount = 0;
+  const errorCodes: string[] = [];
+  let upstreamCloseReason: string | undefined;
+
+  // Second-turn state. turnPhase gates which counters onAudioOutput/
+  // onTurnComplete update, so the first turn's handlers don't also
+  // (mis)attribute the second turn's events.
+  let turnPhase: 'first' | 'second' = 'first';
+  let secondTurnStart = -1;
+  let secondTurnMs = -1;
+  let secondTurnFirstAudioMs = -1;
+  let firstTurnSettled = false;
+  let secondTurnSendFailed = false;
+  let allSettled = false;
 
   const done = new Promise<void>((resolve) => {
-    let settled = false;
-    const finish = () => { if (!settled) { settled = true; resolve(); } };
-    const timer = setTimeout(finish, PROBE_TIMEOUT_MS);
+    const finishAll = () => { if (!allSettled) { allSettled = true; resolve(); } };
+    const timer = setTimeout(finishAll, secondTurnText ? PROBE_TIMEOUT_MS * 2 : PROBE_TIMEOUT_MS);
     (timer as NodeJS.Timeout).unref?.();
+
     client.onTranscript(() => {
-      if (firstEventMs < 0) firstEventMs = Date.now() - t0;
+      transcriptCount++;
+      if (turnPhase === 'first' && firstEventMs < 0) firstEventMs = Date.now() - t0;
     });
     client.onAudioOutput(() => {
-      if (firstAudioMs < 0) firstAudioMs = Date.now() - t0;
-      if (firstEventMs < 0) firstEventMs = Date.now() - t0;
+      audioCount++;
+      if (turnPhase === 'first') {
+        if (firstAudioMs < 0) firstAudioMs = Date.now() - t0;
+        if (firstEventMs < 0) firstEventMs = Date.now() - t0;
+      } else if (secondTurnFirstAudioMs < 0) {
+        secondTurnFirstAudioMs = Date.now() - secondTurnStart;
+      }
     });
-    client.onTurnComplete(() => { clearTimeout(timer); finish(); });
-    client.onError(() => { clearTimeout(timer); finish(); });
-    client.onClose(() => { clearTimeout(timer); finish(); });
+    client.onTurnComplete(() => {
+      if (turnPhase === 'first') {
+        firstTurnSettled = true;
+        if (!secondTurnText) { clearTimeout(timer); finishAll(); return; }
+        // Fire the second turn from inside the completion handler so it
+        // rides the SAME open stream/session — no reconnect, matching a
+        // real multi-turn conversation exactly.
+        turnPhase = 'second';
+        secondTurnStart = Date.now();
+        // sendTextTurn returns false (never throws) when the stream is not
+        // open — ignoring the return value would hang until the timeout and
+        // then report a false pass, defeating the point of this probe.
+        if (!client.sendTextTurn(secondTurnText)) {
+          secondTurnSendFailed = true;
+          clearTimeout(timer);
+          finishAll();
+        }
+        return;
+      }
+      secondTurnMs = Date.now() - secondTurnStart;
+      clearTimeout(timer);
+      finishAll();
+    });
+    client.onError((e) => { errorCodes.push(e.code); clearTimeout(timer); finishAll(); });
+    client.onClose((e) => { upstreamCloseReason = e.reason; clearTimeout(timer); finishAll(); });
   });
 
   try {
     await connect();
     connectMs = Date.now() - t0;
     client.sendTextTurn('Say OK.');
+    // Stream mic-cadence silence alongside the text turn — production
+    // sessions always have the audio pipe flowing, and Nova's server-side
+    // turn detection expects it. 32ms frames, real-time pace.
+    const silenceTimer = setInterval(() => {
+      if (allSettled || client.getState() !== 'open') { clearInterval(silenceTimer); return; }
+      client.sendAudioChunk(SILENCE_FRAME_B64);
+    }, 32);
+    (silenceTimer as NodeJS.Timeout).unref?.();
     await done;
+    clearInterval(silenceTimer);
     await client.close(closeReason);
     if (firstEventMs < 0) {
+      const elapsed = Date.now() - t0;
+      const diag = [
+        `connect_ms=${connectMs}`,
+        `waited_ms=${elapsed - connectMs}`,
+        errorCodes.length ? `errors=${errorCodes.join('|')}` : 'errors=none',
+        `close_reason=${upstreamCloseReason ?? 'n/a'}`,
+        `transcripts=${transcriptCount} audio_chunks=${audioCount}`,
+      ].join(' ');
+      return { ok: false, failDetail: `stream opened but no model response — ${diag}` };
+    }
+    if (secondTurnText && !firstTurnSettled) {
+      return { ok: false, failDetail: 'first turn never completed — second turn was never sent' };
+    }
+    // A requested second turn that never completed MUST fail. Otherwise the
+    // probe built specifically to catch broken/slow follow-up turns reports
+    // a pass with second_turn_ms=-1 and the comparison checks downstream
+    // silently proceed on a turn that never happened.
+    if (secondTurnText && secondTurnMs < 0) {
+      const reason = secondTurnSendFailed
+        ? 'stream was not open when the second turn was submitted'
+        : errorCodes.length
+          ? `errors=${errorCodes.join('|')}`
+          : upstreamCloseReason
+            ? `stream closed (${upstreamCloseReason})`
+            : `no turn_complete within ${PROBE_TIMEOUT_MS * 2}ms`;
       return {
         ok: false,
-        failDetail: `stream opened (connect_ms=${connectMs}) but no model response within ${PROBE_TIMEOUT_MS / 1000}s`,
+        failDetail:
+          `second turn did not complete — ${reason}` +
+          ` (first turn ok: first_event_ms=${firstEventMs}` +
+          `, second_turn_first_audio_ms=${secondTurnFirstAudioMs < 0 ? 'n/a' : secondTurnFirstAudioMs})`,
       };
     }
     return {
       ok: true,
-      metrics: { connect_ms: connectMs, first_event_ms: firstEventMs, first_audio_ms: firstAudioMs },
+      metrics: {
+        connect_ms: connectMs,
+        first_event_ms: firstEventMs,
+        first_audio_ms: firstAudioMs,
+        second_turn_ms: secondTurnMs,
+        second_turn_first_audio_ms: secondTurnFirstAudioMs,
+      },
     };
   } catch (err) {
     await client.close(`${closeReason}_failed`).catch(() => { /* idempotent */ });
@@ -173,7 +286,99 @@ async function probeLiveClient(
 }
 
 function formatProbeMetrics(m: LiveProbeMetrics): string {
-  return `connect_ms=${m.connect_ms} first_event_ms=${m.first_event_ms} first_audio_ms=${m.first_audio_ms < 0 ? 'n/a' : m.first_audio_ms}`;
+  const base = `connect_ms=${m.connect_ms} first_event_ms=${m.first_event_ms} first_audio_ms=${m.first_audio_ms < 0 ? 'n/a' : m.first_audio_ms}`;
+  if (m.second_turn_ms < 0) return base;
+  return `${base} second_turn_ms=${m.second_turn_ms} second_turn_first_audio_ms=${m.second_turn_first_audio_ms < 0 ? 'n/a' : m.second_turn_first_audio_ms}`;
+}
+
+/**
+ * Payload-limit bisect: open a Nova stream with a specific envelope shape
+ * (system-instruction size, tool set), observe for async rejection events,
+ * close. A real ORB session sends a large instruction + the full live tool
+ * catalog — the minimal health probe passing while real sessions fail means
+ * one of those dimensions trips a Bedrock/Nova limit; this finds which.
+ */
+/** Request-supplied probe shape for remote bisecting (bounded by the route). */
+export interface NovaPayloadProbeSpec {
+  key: string;
+  /** System-instruction size in KB (filler text). 0/absent = tiny prompt. */
+  text_kb?: number;
+  /** Verbatim system-instruction text — takes precedence over text_kb.
+   *  Used to bisect provider content-filter rejections against real text. */
+  system_text?: string;
+  /** Chunk the instruction into textInput events of this many KB. */
+  chunk_kb?: number;
+  /** Number of small synthetic tools to declare. */
+  dummy_tools?: number;
+  /** Use the REAL buildLiveApiTools('authenticated') catalog. */
+  real_catalog?: boolean;
+  /** Truncate each tool description to this many chars (real catalog only). */
+  truncate_descriptions?: number;
+}
+
+async function probeNovaPayload(
+  cfg: ReturnType<typeof getNovaSonicConfig>,
+  shape: { systemInstruction: string; tools?: ReadonlyArray<Record<string, unknown>>; observeMs?: number; chunkBytes?: number },
+): Promise<{ ok: boolean; detail: string }> {
+  const client = new NovaSonicLiveClient({ config: cfg, voiceId: 'tina' });
+  const errorCodes: string[] = [];
+  const diagnostics: string[] = [];
+  let closeReason: string | undefined;
+  client.onError((e) => {
+    errorCodes.push(e.code);
+    if (e.diagnostic) diagnostics.push(e.diagnostic);
+  });
+  client.onClose((e) => { closeReason = e.reason; });
+  const t0 = Date.now();
+  try {
+    await client.connect({
+      model: cfg.modelId,
+      voiceName: 'tina',
+      responseModalities: ['audio'],
+      vadSilenceMs: 2000,
+      systemInstruction: shape.systemInstruction,
+      systemInstructionChunkBytes: shape.chunkBytes,
+      tools: shape.tools,
+      connectTimeoutMs: cfg.connectTimeoutMs,
+    });
+  } catch (err) {
+    const upstream = diagnostics.length > 0 ? ` upstream="${diagnostics.join(' | ')}"` : '';
+    return { ok: false, detail: `connect rejected: ${classifyNovaError(err)}${upstream}` };
+  }
+  const connectMs = Date.now() - t0;
+  // Async rejections (validation on promptStart/textInput) arrive on the
+  // response stream after connect resolves — observe before declaring pass.
+  // Stream silence during the window so the session looks like a real one
+  // (a probe that never sends audio would otherwise manufacture teardown
+  // validation errors unrelated to the payload under test).
+  const silenceTimer = setInterval(() => { client.sendAudioChunk(SILENCE_FRAME_B64); }, 32);
+  (silenceTimer as NodeJS.Timeout).unref?.();
+  await new Promise((resolve) => {
+    const t = setTimeout(resolve, shape.observeMs ?? 3_000);
+    (t as NodeJS.Timeout).unref?.();
+  });
+  clearInterval(silenceTimer);
+  await client.close('nova_payload_probe').catch(() => { /* idempotent */ });
+  if (errorCodes.length > 0) {
+    const upstream = diagnostics.length > 0 ? ` upstream="${diagnostics.join(' | ')}"` : '';
+    return { ok: false, detail: `stream rejected after connect (${connectMs}ms): ${errorCodes.join('|')} close=${closeReason ?? 'n/a'}${upstream}` };
+  }
+  return { ok: true, detail: `accepted (connect_ms=${connectMs}, no rejection within ${shape.observeMs ?? 3000}ms)` };
+}
+
+function buildDummyTools(count: number): Array<Record<string, unknown>> {
+  const tools: Array<Record<string, unknown>> = [];
+  for (let i = 0; i < count; i++) {
+    tools.push({
+      name: `bench_dummy_tool_${i}`,
+      description: `Synthetic bench tool #${i} — never called; exists to measure Nova toolConfiguration limits.`,
+      parameters: {
+        type: 'object',
+        properties: { query: { type: 'string', description: 'test parameter' } },
+      },
+    });
+  }
+  return tools;
 }
 
 const NOVA_ALL_PASS = {
@@ -184,9 +389,41 @@ const NOVA_ALL_PASS = {
 };
 const PROBE_IDENTITY = { userId: 'probe-user', tenantId: 'probe-tenant' };
 
+function payloadSpecToShape(spec: NovaPayloadProbeSpec): {
+  systemInstruction: string;
+  tools?: ReadonlyArray<Record<string, unknown>>;
+  chunkBytes?: number;
+} {
+  const systemInstruction = spec.system_text && spec.system_text.length > 0
+    ? spec.system_text
+    : spec.text_kb && spec.text_kb > 0
+      ? 'You are a bench probe. Context: ' + 'x'.repeat(spec.text_kb * 1024)
+      : PROBE_SYSTEM_INSTRUCTION;
+  let tools: ReadonlyArray<Record<string, unknown>> | undefined;
+  if (spec.real_catalog) {
+    let catalog = buildLiveApiTools('authenticated') as Array<Record<string, unknown>>;
+    if (spec.truncate_descriptions && spec.truncate_descriptions > 0) {
+      catalog = catalog.map((t) => ({
+        ...t,
+        description: String(t.description ?? '').slice(0, spec.truncate_descriptions),
+      }));
+    }
+    tools = catalog;
+  } else if (spec.dummy_tools && spec.dummy_tools > 0) {
+    tools = buildDummyTools(spec.dummy_tools);
+  }
+  return {
+    systemInstruction,
+    tools,
+    chunkBytes: spec.chunk_kb && spec.chunk_kb > 0 ? spec.chunk_kb * 1024 : undefined,
+  };
+}
+
 export async function runNovaSonicTestSuite(options: {
   live?: boolean;
   trigger?: string;
+  /** Remote bisect: replaces the default payload probes when provided. */
+  payloadProbes?: NovaPayloadProbeSpec[];
 } = {}): Promise<NovaTestRunSummary> {
   const startedAt = Date.now();
   const checks: NovaTestCheck[] = [];
@@ -289,10 +526,10 @@ export async function runNovaSonicTestSuite(options: {
     const ok =
       resolveNovaSonicVoice({ language: 'de', persona: 'vitana' }) === 'tina' &&
       resolveNovaSonicVoice({ language: 'de', persona: 'devon' }) === 'lennart' &&
-      resolveNovaSonicVoice({ language: 'en', persona: 'vitana' }) === 'tiffany' &&
+      resolveNovaSonicVoice({ language: 'en', persona: 'vitana' }) === 'tina' &&
       resolveNovaSonicVoice({ language: 'sr', persona: 'vitana' }) === null;
     return ok
-      ? { status: 'pass', detail: 'de→tina/lennart, en→tiffany, sr→null (fallback)' }
+      ? { status: 'pass', detail: 'de→tina/lennart, en→tina/lennart, sr→null (fallback)' }
       : { status: 'fail', detail: 'unexpected voice mapping' };
   }));
 
@@ -315,12 +552,12 @@ export async function runNovaSonicTestSuite(options: {
     }
     // Warm path, mirroring the boot prewarm real sessions benefit from.
     await prewarmNovaSonicBedrock(cfg);
-    const client = new NovaSonicLiveClient({ config: cfg, voiceId: 'tiffany' });
+    const client = new NovaSonicLiveClient({ config: cfg, voiceId: 'tina' });
     const result = await probeLiveClient(
       client,
       () => client.connect({
         model: cfg.modelId,
-        voiceName: 'tiffany',
+        voiceName: 'tina',
         responseModalities: ['audio'],
         vadSilenceMs: 2000,
         systemInstruction: PROBE_SYSTEM_INSTRUCTION,
@@ -328,11 +565,60 @@ export async function runNovaSonicTestSuite(options: {
       }),
       'nova_test_probe',
       (err) => classifyNovaError(err),
+      'What is the capital of France?',
     );
     if (!result.ok) return { status: 'fail', detail: result.failDetail ?? 'nova_stream_error' };
     novaMetrics = result.metrics!;
     return { status: 'pass', detail: formatProbeMetrics(result.metrics!), metrics: result.metrics };
   }));
+
+  // Payload-limit bisect — pinpoints why a REAL ORB session (large system
+  // instruction + full live tool catalog) can fail while the minimal probe
+  // passes. Only runs when the baseline Nova probe produced metrics.
+  const payloadShapes: Array<{ key: string; label: string; shape: Parameters<typeof probeNovaPayload>[1] }> =
+    options.payloadProbes && options.payloadProbes.length > 0
+      ? options.payloadProbes.map((spec) => ({
+          key: spec.key,
+          label: `Payload probe: ${spec.key}`,
+          shape: payloadSpecToShape(spec),
+        }))
+      : [
+    {
+      key: 'payload_text_32k',
+      label: 'Payload: 32KB system instruction, no tools',
+      shape: { systemInstruction: 'You are a bench probe. Context: ' + 'x'.repeat(32_000) },
+    },
+    {
+      key: 'payload_dummy_tools_100',
+      label: 'Payload: tiny instruction + 100 dummy tools',
+      shape: { systemInstruction: PROBE_SYSTEM_INSTRUCTION, tools: buildDummyTools(100) },
+    },
+    {
+      key: 'payload_real_catalog',
+      label: 'Payload: tiny instruction + REAL live tool catalog',
+      shape: {
+        systemInstruction: PROBE_SYSTEM_INSTRUCTION,
+        tools: buildLiveApiTools('authenticated') as ReadonlyArray<Record<string, unknown>>,
+      },
+    },
+    {
+      key: 'payload_real_catalog_plus_text',
+      label: 'Payload: 32KB instruction + REAL live tool catalog (session-shaped)',
+      shape: {
+        systemInstruction: 'You are a bench probe. Context: ' + 'x'.repeat(32_000),
+        tools: buildLiveApiTools('authenticated') as ReadonlyArray<Record<string, unknown>>,
+      },
+    },
+  ];
+  for (const p of payloadShapes) {
+    // (loop body below runs identically for default and request-supplied shapes)
+    checks.push(await runCheck(p.key, p.label, async () => {
+      if (!options.live) return { status: 'skip', detail: 'live probe not requested' };
+      if (!novaMetrics) return { status: 'skip', detail: 'baseline nova probe did not pass' };
+      const result = await probeNovaPayload(cfg, p.shape);
+      return { status: result.ok ? 'pass' : 'fail', detail: result.detail };
+    }));
+  }
 
   checks.push(await runCheck('vertex_baseline_probe', 'Vertex baseline: connect + first-response latency', async () => {
     if (!options.live) {
@@ -385,6 +671,7 @@ export async function runNovaSonicTestSuite(options: {
       }),
       'nova_bench_vertex_baseline',
       (err) => `vertex_probe_failed: ${((err as Error)?.message ?? 'unknown').slice(0, 120)}`,
+      'What is the capital of France?',
     );
     if (!result.ok) return { status: 'fail', detail: result.failDetail ?? 'vertex_probe_failed' };
     vertexMetrics = result.metrics!;

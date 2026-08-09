@@ -44,7 +44,7 @@ import {
 // the route handler too); the instruction builder calls it back across the
 // boundary. The function is pure (lang → string), so the round-trip is
 // safe.
-import { buildNavigatorPolicySection } from '../../../routes/orb-live';
+import { buildNavigatorPolicySection, MESSAGING_CONTRACT } from '../../../routes/orb-live';
 import { buildJourneyModesSection } from './journey-modes-prompt';
 import {
   BRAIN_OPENER_V2_START,
@@ -420,6 +420,25 @@ export function buildLiveSystemInstruction(
   // every authenticated prod session with the same code=1007. Only LiveKit
   // (which genuinely needs the prose) leaves this unset.
   omitToolsProse?: boolean,
+  // VTID-03447: the user's resolved spoken first name (via
+  // resolveSpokenFirstName() — memory_facts.user_name, then
+  // app_users.display_name), when already available on the session
+  // (session.greetingFirstName, populated by the greeting-facts prefetch in
+  // live-session-controller.ts). Null/undefined when not resolved yet — the
+  // header below degrades gracefully, same pattern as vitanaId.
+  //
+  // Root cause this closes: this WS path (shared by Vertex AND Nova Sonic)
+  // pins a loud, structural "=== AUTHORITATIVE USER VITANA ID ===" header at
+  // the top of the prompt, but the user's real name only ever appeared
+  // buried inside memory-fact bullet lists deep in bootstrapContext — never
+  // with the same structural prominence. Gemini is strong enough to infer
+  // "use the name fact for address" anyway; Nova Sonic is not, and falls
+  // back to the one loud, explicit identifier it has — the handle — greeting
+  // the user by their @vitana_id (e.g. "Dragan3") instead of their first
+  // name. orb-livekit.ts already solved the equivalent failure mode for its
+  // own transport under VTID-03014; this gives the shared WS path the same
+  // structural fix.
+  resolvedFirstName?: string | null,
 ): string {
   const languageNames: Record<string, string> = {
     'en': 'English',
@@ -530,6 +549,25 @@ Do NOT substitute an internal UUID under any circumstance.
 
 `;
 
+  // VTID-03447: pin the user's real first name with the SAME structural
+  // prominence as the Vitana ID header above, right next to it, so a model
+  // that leans on loud/explicit headers (observed on Nova Sonic) has an
+  // equally loud "use THIS for greetings/address" signal instead of only
+  // the handle. Deliberately placed immediately after vitanaIdHeader and
+  // says outright: the handle is for ID questions only, never for address.
+  const nameHeader = resolvedFirstName && resolvedFirstName.trim()
+    ? `=== AUTHORITATIVE USER NAME ===
+The user's first name is: ${resolvedFirstName.trim()}
+Greet them and address them by this name in conversation — "Hi ${resolvedFirstName.trim()}",
+"Hallo ${resolvedFirstName.trim()}", etc. Do NOT use their Vitana ID handle
+(from the block above) as a form of address — that handle exists only for
+answering "what is my handle/ID" questions, never for greetings or general
+conversation.
+================================
+
+`
+    : '';
+
   // Forwarding v2c: prepend IDENTITY LOCK to Vitana's prompt. The lock
   // exists in the DB (agent_personas.system_prompt) but Vitana's prompt is
   // built fresh in this function and never reads that DB row, so without
@@ -558,7 +596,7 @@ stop and re-anchor: "I'm Vitana." Then continue.
 
 `;
 
-  let instruction = `${roleHeader}${vitanaIdHeader}${VITANA_IDENTITY_LOCK}${voiceLiveConfig.base_identity || 'You are Vitana, an AI health companion assistant powered by Gemini Live.'}
+  let instruction = `${roleHeader}${vitanaIdHeader}${nameHeader}${VITANA_IDENTITY_LOCK}${voiceLiveConfig.base_identity || 'You are Vitana, an AI health companion assistant powered by Gemini Live.'}
 
 LANGUAGE: Respond ONLY in ${languageNames[lang] || 'English'}. Do NOT mix languages, do NOT switch to English, regardless of what other personas in the transcript said in other languages.
 
@@ -750,7 +788,19 @@ ${trimmedHistory}
   // VTID-NAV-01: Append the Vitana Navigator policy section so the model knows
   // when to consult the navigator, when to navigate directly, and when to
   // simply answer in voice without any tool call.
-  instruction += buildNavigatorPolicySection(lang);
+  //
+  // BOOTSTRAP-ORB-MESSAGING-CONTRACT-TRIM-FIX: MESSAGING_CONTRACT rides here,
+  // AFTER the navigator section, so it lands inside the scaffold tail that
+  // decomposeInstructionSections() (instruction-budget.ts) treats as
+  // PRESERVED — everything from the `=== VITANA NAVIGATOR —` marker to the
+  // end of the instruction is never trimmed by the aggregate budget guard.
+  // It used to be baked onto the tail of the bootstrap/memory context string
+  // instead, which made it the first thing both capBootstrapContext() and
+  // the R0 budget guard's 'bootstrap' drop-priority stripped for
+  // heavy-context users — silently deleting the "you MUST call
+  // resolve_recipient" contract and leaving the model to improvise instead
+  // of calling the messaging tools.
+  instruction += buildNavigatorPolicySection(lang) + MESSAGING_CONTRACT;
 
   // NAV_GUIDED_JOURNEY — teach Vitana the DECLARATIVE distinction between the
   // two views of "My Journey" (Guided/Einführung vs Full App/Vollversion) so it

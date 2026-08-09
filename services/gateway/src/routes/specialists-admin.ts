@@ -19,19 +19,21 @@
  *   PUT  /:key/kb                         replace KB scope bindings
  *   GET  /audit                           audit log (filterable)
  *   POST /:key/keywords                   replace handoff_keywords
+ *
+ * VTID-03498 (Aurora migration B1): all database access moved behind
+ * `services/specialists/specialists-repository.ts`. This file no longer
+ * imports supabase-js or constructs a client. HTTP behaviour is unchanged —
+ * the only difference is that a database error now reliably produces a 502
+ * instead of sometimes being swallowed into an empty result.
  */
 
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
-import { createClient } from '@supabase/supabase-js';
+import * as repo from '../services/specialists/specialists-repository';
+import { RepositoryError } from '../services/specialists/specialists-repository';
 
 const router = Router();
 const VTID = 'VTID-02047-PH5';
-
-function getServiceClient() {
-  return createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE!,
-    { auth: { persistSession: false, autoRefreshToken: false } });
-}
 
 function getBearerToken(req: Request): string | null {
   const h = req.headers.authorization;
@@ -51,15 +53,16 @@ function ensureAuth(req: Request, res: Response): string | null {
   return userId;
 }
 
-async function writeAudit(actorUserId: string, personaId: string | null, action: string, before: unknown, after: unknown) {
-  const supabase = getServiceClient();
-  await supabase.from('agent_audit_log').insert({
-    actor_user_id: actorUserId,
-    persona_id: personaId,
-    action,
-    before_state: before ?? null,
-    after_state: after ?? null,
-  });
+/**
+ * Translate a RepositoryError into the 502 these routes already returned for
+ * database failures. Anything else rethrows to the global error handler.
+ */
+function handleRepoError(err: unknown, res: Response): void {
+  if (err instanceof RepositoryError) {
+    res.status(502).json({ ok: false, error: err.message });
+    return;
+  }
+  throw err;
 }
 
 // ---------------------------------------------------------------------------
@@ -68,43 +71,40 @@ async function writeAudit(actorUserId: string, personaId: string | null, action:
 
 router.get('/', async (req: Request, res: Response) => {
   if (!ensureAuth(req, res)) return;
-  const supabase = getServiceClient();
-  const { data: personas, error } = await supabase
-    .from('agent_personas')
-    .select('*')
-    .order('key');
-  if (error) return res.status(502).json({ ok: false, error: error.message });
+  try {
+    const personas = await repo.listPersonas();
+    const [tools, kbs, conns] = await Promise.all([
+      repo.listAllToolBindings(),
+      repo.listAllKbBindings(),
+      repo.listAllConnections(),
+    ]);
 
-  // Tool bindings + KB bindings counts per persona
-  const { data: tools } = await supabase.from('agent_tool_bindings').select('persona_id, tool_key, enabled');
-  const { data: kbs } = await supabase.from('agent_kb_bindings').select('persona_id, kb_scope, enabled');
-  const { data: conns } = await supabase.from('agent_third_party_connections').select('persona_id, provider, status');
+    const enrich = personas.map(p => ({
+      ...p,
+      tool_bindings: tools.filter(t => t.persona_id === p.id),
+      kb_bindings: kbs.filter(k => k.persona_id === p.id),
+      connections: conns.filter(c => c.persona_id === p.id),
+    }));
 
-  const enrich = (personas ?? []).map(p => ({
-    ...p,
-    tool_bindings: (tools ?? []).filter((t: any) => t.persona_id === p.id),
-    kb_bindings: (kbs ?? []).filter((k: any) => k.persona_id === p.id),
-    connections: (conns ?? []).filter((c: any) => c.persona_id === p.id),
-  }));
-  return res.json({ ok: true, personas: enrich });
+    return res.json({ ok: true, personas: enrich });
+  } catch (e) { return handleRepoError(e, res); }
 });
 
 router.get('/:key', async (req: Request, res: Response) => {
   if (!ensureAuth(req, res)) return;
-  const supabase = getServiceClient();
-  const { data: persona, error } = await supabase
-    .from('agent_personas')
-    .select('*')
-    .eq('key', req.params.key)
-    .maybeSingle();
-  if (error || !persona) return res.status(404).json({ ok: false, error: 'NOT_FOUND' });
+  try {
+    const persona = await repo.getPersonaByKey(req.params.key);
+    if (!persona) return res.status(404).json({ ok: false, error: 'NOT_FOUND' });
 
-  const { data: tools } = await supabase.from('agent_tool_bindings').select('tool_key, enabled, bound_at').eq('persona_id', persona.id);
-  const { data: kbs } = await supabase.from('agent_kb_bindings').select('kb_scope, enabled, bound_at').eq('persona_id', persona.id);
-  const { data: conns } = await supabase.from('agent_third_party_connections').select('id, provider, status, last_check_at, created_at').eq('persona_id', persona.id);
-  const { data: versions } = await supabase.from('agent_persona_versions').select('version, change_note, created_at, created_by').eq('persona_id', persona.id).order('version', { ascending: false }).limit(20);
+    const [tools, kbs, conns, versions] = await Promise.all([
+      repo.listToolBindings(persona.id),
+      repo.listKbBindings(persona.id),
+      repo.listConnections(persona.id),
+      repo.listRecentVersions(persona.id, 20),
+    ]);
 
-  return res.json({ ok: true, persona, tool_bindings: tools ?? [], kb_bindings: kbs ?? [], connections: conns ?? [], versions: versions ?? [] });
+    return res.json({ ok: true, persona, tool_bindings: tools, kb_bindings: kbs, connections: conns, versions });
+  } catch (e) { return handleRepoError(e, res); }
 });
 
 // ---------------------------------------------------------------------------
@@ -139,18 +139,16 @@ router.post('/', async (req: Request, res: Response) => {
   if (!v.success) {
     return res.status(400).json({ ok: false, error: 'VALIDATION_FAILED', details: v.error.errors });
   }
-  const supabase = getServiceClient();
 
-  // Reject if key already taken (clearer than letting the unique constraint fail).
-  const { data: existing } = await supabase.from('agent_personas').select('id').eq('key', v.data.key).maybeSingle();
-  if (existing) {
-    return res.status(409).json({ ok: false, error: 'KEY_TAKEN', details: `Persona key '${v.data.key}' already exists.` });
-  }
+  try {
+    // Reject if key already taken (clearer than letting the unique constraint fail).
+    const existing = await repo.getPersonaFields(v.data.key, 'id');
+    if (existing) {
+      return res.status(409).json({ ok: false, error: 'KEY_TAKEN', details: `Persona key '${v.data.key}' already exists.` });
+    }
 
-  const { change_note, ...personaFields } = v.data;
-  const { data: created, error } = await supabase
-    .from('agent_personas')
-    .insert({
+    const { change_note, ...personaFields } = v.data;
+    const created = await repo.createPersona({
       ...personaFields,
       handles_kinds: personaFields.handles_kinds ?? [],
       handoff_keywords: personaFields.handoff_keywords ?? [],
@@ -161,24 +159,21 @@ router.post('/', async (req: Request, res: Response) => {
       version: 1,
       updated_by: userId,
       updated_at: new Date().toISOString(),
-    })
-    .select('*')
-    .single();
-  if (error || !created) return res.status(502).json({ ok: false, error: error?.message });
+    });
 
-  // Initial version snapshot so versions list isn't empty.
-  await supabase.from('agent_persona_versions').insert({
-    persona_id: created.id,
-    version: 1,
-    snapshot: created,
-    change_note: change_note ?? 'Initial creation',
-    created_by: userId,
-  });
+    // Initial version snapshot so versions list isn't empty.
+    await repo.insertPersonaVersion({
+      persona_id: created.id,
+      version: 1,
+      snapshot: created,
+      change_note: change_note ?? 'Initial creation',
+      created_by: userId,
+    });
 
-  // Audit
-  await writeAudit(userId, created.id, 'persona_create', null, created);
+    await repo.writeAudit(userId, created.id, 'persona_create', null, created);
 
-  return res.status(201).json({ ok: true, persona: created });
+    return res.status(201).json({ ok: true, persona: created });
+  } catch (e) { return handleRepoError(e, res); }
 });
 
 // ---------------------------------------------------------------------------
@@ -205,29 +200,25 @@ router.post('/tools', async (req: Request, res: Response) => {
   if (!v.success) {
     return res.status(400).json({ ok: false, error: 'VALIDATION_FAILED', details: v.error.errors });
   }
-  const supabase = getServiceClient();
 
-  const { data: existing } = await supabase.from('agent_tools').select('key').eq('key', v.data.key).maybeSingle();
-  if (existing) {
-    return res.status(409).json({ ok: false, error: 'KEY_TAKEN' });
-  }
+  try {
+    const existing = await repo.getToolKey(v.data.key);
+    if (existing) {
+      return res.status(409).json({ ok: false, error: 'KEY_TAKEN' });
+    }
 
-  const { data: created, error } = await supabase
-    .from('agent_tools')
-    .insert({
+    const created = await repo.createTool({
       key: v.data.key,
       display_name: v.data.display_name,
       description: v.data.description ?? null,
       input_schema: v.data.input_schema ?? {},
       blast_radius: v.data.blast_radius,
       enabled: v.data.enabled ?? true,
-    })
-    .select('*')
-    .single();
-  if (error || !created) return res.status(502).json({ ok: false, error: error?.message });
+    });
 
-  await writeAudit(userId, null, 'tool_register', null, created);
-  return res.status(201).json({ ok: true, tool: created });
+    await repo.writeAudit(userId, null, 'tool_register', null, created);
+    return res.status(201).json({ ok: true, tool: created });
+  } catch (e) { return handleRepoError(e, res); }
 });
 
 // ---------------------------------------------------------------------------
@@ -254,42 +245,34 @@ router.put('/:key', async (req: Request, res: Response) => {
   const v = PersonaUpdateSchema.safeParse(req.body);
   if (!v.success) return res.status(400).json({ ok: false, error: 'VALIDATION_FAILED', details: v.error.errors });
 
-  const supabase = getServiceClient();
-  const { data: existing, error: readErr } = await supabase
-    .from('agent_personas')
-    .select('*')
-    .eq('key', req.params.key)
-    .maybeSingle();
-  if (readErr || !existing) return res.status(404).json({ ok: false, error: 'NOT_FOUND' });
+  try {
+    const existing = await repo.getPersonaByKey(req.params.key);
+    if (!existing) return res.status(404).json({ ok: false, error: 'NOT_FOUND' });
 
-  // 1. Snapshot current version
-  await supabase.from('agent_persona_versions').insert({
-    persona_id: existing.id,
-    version: existing.version,
-    snapshot: existing,
-    change_note: v.data.change_note ?? null,
-    created_by: userId,
-  });
+    // 1. Snapshot current version
+    await repo.insertPersonaVersion({
+      persona_id: existing.id,
+      version: existing.version,
+      snapshot: existing,
+      change_note: v.data.change_note ?? null,
+      created_by: userId,
+    });
 
-  // 2. Apply update + bump version
-  const { change_note, ...patch } = v.data;
-  const { data: updated, error: upErr } = await supabase
-    .from('agent_personas')
-    .update({
+    // 2. Apply update + bump version
+    const { change_note, ...patch } = v.data;
+    void change_note;
+    const updated = await repo.updatePersona(existing.id, {
       ...patch,
       version: existing.version + 1,
       updated_by: userId,
       updated_at: new Date().toISOString(),
-    })
-    .eq('id', existing.id)
-    .select('*')
-    .single();
-  if (upErr || !updated) return res.status(502).json({ ok: false, error: upErr?.message });
+    });
 
-  // 3. Audit
-  await writeAudit(userId, existing.id, 'persona_edit', existing, updated);
+    // 3. Audit
+    await repo.writeAudit(userId, existing.id, 'persona_edit', existing, updated);
 
-  return res.json({ ok: true, persona: updated });
+    return res.json({ ok: true, persona: updated });
+  } catch (e) { return handleRepoError(e, res); }
 });
 
 // ---------------------------------------------------------------------------
@@ -298,16 +281,12 @@ router.put('/:key', async (req: Request, res: Response) => {
 
 router.get('/:key/versions', async (req: Request, res: Response) => {
   if (!ensureAuth(req, res)) return;
-  const supabase = getServiceClient();
-  const { data: persona } = await supabase.from('agent_personas').select('id').eq('key', req.params.key).maybeSingle();
-  if (!persona) return res.status(404).json({ ok: false, error: 'NOT_FOUND' });
-  const { data, error } = await supabase
-    .from('agent_persona_versions')
-    .select('*')
-    .eq('persona_id', persona.id)
-    .order('version', { ascending: false });
-  if (error) return res.status(502).json({ ok: false, error: error.message });
-  return res.json({ ok: true, versions: data ?? [] });
+  try {
+    const persona = await repo.getPersonaFields(req.params.key, 'id');
+    if (!persona) return res.status(404).json({ ok: false, error: 'NOT_FOUND' });
+    const versions = await repo.listVersions(persona.id);
+    return res.json({ ok: true, versions });
+  } catch (e) { return handleRepoError(e, res); }
 });
 
 router.post('/:key/rollback/:version', async (req: Request, res: Response) => {
@@ -315,41 +294,35 @@ router.post('/:key/rollback/:version', async (req: Request, res: Response) => {
   const targetVersion = parseInt(req.params.version, 10);
   if (!Number.isFinite(targetVersion)) return res.status(400).json({ ok: false, error: 'BAD_VERSION' });
 
-  const supabase = getServiceClient();
-  const { data: persona } = await supabase.from('agent_personas').select('*').eq('key', req.params.key).maybeSingle();
-  if (!persona) return res.status(404).json({ ok: false, error: 'NOT_FOUND' });
+  try {
+    const persona = await repo.getPersonaByKey(req.params.key);
+    if (!persona) return res.status(404).json({ ok: false, error: 'NOT_FOUND' });
 
-  const { data: snap } = await supabase
-    .from('agent_persona_versions')
-    .select('snapshot')
-    .eq('persona_id', persona.id)
-    .eq('version', targetVersion)
-    .maybeSingle();
-  if (!snap) return res.status(404).json({ ok: false, error: 'VERSION_NOT_FOUND' });
+    const snapshot = await repo.getVersionSnapshot(persona.id, targetVersion);
+    if (!snapshot) return res.status(404).json({ ok: false, error: 'VERSION_NOT_FOUND' });
 
-  // Snapshot current before rollback
-  await supabase.from('agent_persona_versions').insert({
-    persona_id: persona.id,
-    version: persona.version,
-    snapshot: persona,
-    change_note: `Auto-snapshot before rollback to v${targetVersion}`,
-    created_by: userId,
-  });
+    // Snapshot current before rollback
+    await repo.insertPersonaVersion({
+      persona_id: persona.id,
+      version: persona.version,
+      snapshot: persona,
+      change_note: `Auto-snapshot before rollback to v${targetVersion}`,
+      created_by: userId,
+    });
 
-  // Apply snapshot fields (skip id/version/timestamps)
-  const s = snap.snapshot as Record<string, unknown>;
-  const { id: _id, version: _v, created_at: _c, updated_at: _u, ...rest } = s;
-  void _id; void _v; void _c; void _u;
-  const { data: restored, error: upErr } = await supabase
-    .from('agent_personas')
-    .update({ ...rest, version: persona.version + 1, updated_by: userId, updated_at: new Date().toISOString() })
-    .eq('id', persona.id)
-    .select('*')
-    .single();
-  if (upErr || !restored) return res.status(502).json({ ok: false, error: upErr?.message });
+    // Apply snapshot fields (skip id/version/timestamps)
+    const { id: _id, version: _v, created_at: _c, updated_at: _u, ...rest } = snapshot;
+    void _id; void _v; void _c; void _u;
+    const restored = await repo.updatePersona(persona.id, {
+      ...rest,
+      version: persona.version + 1,
+      updated_by: userId,
+      updated_at: new Date().toISOString(),
+    });
 
-  await writeAudit(userId, persona.id, 'rollback', persona, restored);
-  return res.json({ ok: true, persona: restored, rolled_back_to: targetVersion });
+    await repo.writeAudit(userId, persona.id, 'rollback', persona, restored);
+    return res.json({ ok: true, persona: restored, rolled_back_to: targetVersion });
+  } catch (e) { return handleRepoError(e, res); }
 });
 
 // ---------------------------------------------------------------------------
@@ -358,10 +331,10 @@ router.post('/:key/rollback/:version', async (req: Request, res: Response) => {
 
 router.get('/tools', async (req: Request, res: Response) => {
   if (!ensureAuth(req, res)) return;
-  const supabase = getServiceClient();
-  const { data, error } = await supabase.from('agent_tools').select('*').order('blast_radius').order('key');
-  if (error) return res.status(502).json({ ok: false, error: error.message });
-  return res.json({ ok: true, tools: data ?? [] });
+  try {
+    const tools = await repo.listTools();
+    return res.json({ ok: true, tools });
+  } catch (e) { return handleRepoError(e, res); }
 });
 
 const KeyArraySchema = z.object({ keys: z.array(z.string()).max(100) });
@@ -371,21 +344,16 @@ router.put('/:key/tools', async (req: Request, res: Response) => {
   const v = KeyArraySchema.safeParse(req.body);
   if (!v.success) return res.status(400).json({ ok: false, error: 'VALIDATION_FAILED' });
 
-  const supabase = getServiceClient();
-  const { data: persona } = await supabase.from('agent_personas').select('id').eq('key', req.params.key).maybeSingle();
-  if (!persona) return res.status(404).json({ ok: false, error: 'NOT_FOUND' });
+  try {
+    const persona = await repo.getPersonaFields(req.params.key, 'id');
+    if (!persona) return res.status(404).json({ ok: false, error: 'NOT_FOUND' });
 
-  const { data: before } = await supabase.from('agent_tool_bindings').select('tool_key, enabled').eq('persona_id', persona.id);
+    const before = await repo.listToolBindings(persona.id);
+    await repo.replaceToolBindings(persona.id, v.data.keys, userId);
 
-  await supabase.from('agent_tool_bindings').delete().eq('persona_id', persona.id);
-  if (v.data.keys.length > 0) {
-    await supabase.from('agent_tool_bindings').insert(
-      v.data.keys.map(k => ({ persona_id: persona.id, tool_key: k, enabled: true, bound_by: userId }))
-    );
-  }
-
-  await writeAudit(userId, persona.id, 'tool_bind', before ?? [], v.data.keys.map(k => ({ tool_key: k, enabled: true })));
-  return res.json({ ok: true, bindings: v.data.keys });
+    await repo.writeAudit(userId, persona.id, 'tool_bind', before, v.data.keys.map(k => ({ tool_key: k, enabled: true })));
+    return res.json({ ok: true, bindings: v.data.keys });
+  } catch (e) { return handleRepoError(e, res); }
 });
 
 router.put('/:key/kb', async (req: Request, res: Response) => {
@@ -393,21 +361,16 @@ router.put('/:key/kb', async (req: Request, res: Response) => {
   const v = KeyArraySchema.safeParse(req.body);
   if (!v.success) return res.status(400).json({ ok: false, error: 'VALIDATION_FAILED' });
 
-  const supabase = getServiceClient();
-  const { data: persona } = await supabase.from('agent_personas').select('id').eq('key', req.params.key).maybeSingle();
-  if (!persona) return res.status(404).json({ ok: false, error: 'NOT_FOUND' });
+  try {
+    const persona = await repo.getPersonaFields(req.params.key, 'id');
+    if (!persona) return res.status(404).json({ ok: false, error: 'NOT_FOUND' });
 
-  const { data: before } = await supabase.from('agent_kb_bindings').select('kb_scope, enabled').eq('persona_id', persona.id);
+    const before = await repo.listKbBindings(persona.id);
+    await repo.replaceKbBindings(persona.id, v.data.keys);
 
-  await supabase.from('agent_kb_bindings').delete().eq('persona_id', persona.id);
-  if (v.data.keys.length > 0) {
-    await supabase.from('agent_kb_bindings').insert(
-      v.data.keys.map(s => ({ persona_id: persona.id, kb_scope: s, enabled: true }))
-    );
-  }
-
-  await writeAudit(userId, persona.id, 'kb_bind', before ?? [], v.data.keys.map(s => ({ kb_scope: s, enabled: true })));
-  return res.json({ ok: true, bindings: v.data.keys });
+    await repo.writeAudit(userId, persona.id, 'kb_bind', before, v.data.keys.map(s => ({ kb_scope: s, enabled: true })));
+    return res.json({ ok: true, bindings: v.data.keys });
+  } catch (e) { return handleRepoError(e, res); }
 });
 
 const KeywordsSchema = z.object({ keywords: z.array(z.string().max(200)).max(200) });
@@ -416,20 +379,20 @@ router.put('/:key/keywords', async (req: Request, res: Response) => {
   const userId = ensureAuth(req, res); if (!userId) return;
   const v = KeywordsSchema.safeParse(req.body);
   if (!v.success) return res.status(400).json({ ok: false, error: 'VALIDATION_FAILED' });
-  const supabase = getServiceClient();
-  const { data: existing } = await supabase.from('agent_personas').select('id, handoff_keywords').eq('key', req.params.key).maybeSingle();
-  if (!existing) return res.status(404).json({ ok: false, error: 'NOT_FOUND' });
 
-  const { data: updated, error } = await supabase
-    .from('agent_personas')
-    .update({ handoff_keywords: v.data.keywords, updated_by: userId, updated_at: new Date().toISOString() })
-    .eq('id', existing.id)
-    .select('id, key, handoff_keywords')
-    .single();
-  if (error || !updated) return res.status(502).json({ ok: false, error: error?.message });
+  try {
+    const existing = await repo.getPersonaFields(req.params.key, 'id, handoff_keywords');
+    if (!existing) return res.status(404).json({ ok: false, error: 'NOT_FOUND' });
 
-  await writeAudit(userId, existing.id, 'routing_rule_change', { handoff_keywords: existing.handoff_keywords }, { handoff_keywords: v.data.keywords });
-  return res.json({ ok: true, keywords: v.data.keywords });
+    await repo.updatePersona(
+      existing.id,
+      { handoff_keywords: v.data.keywords, updated_by: userId, updated_at: new Date().toISOString() },
+      'id, key, handoff_keywords',
+    );
+
+    await repo.writeAudit(userId, existing.id, 'routing_rule_change', { handoff_keywords: existing.handoff_keywords }, { handoff_keywords: v.data.keywords });
+    return res.json({ ok: true, keywords: v.data.keywords });
+  } catch (e) { return handleRepoError(e, res); }
 });
 
 // ---------------------------------------------------------------------------
@@ -449,39 +412,30 @@ async function updateVitanaPhrases(
   const v = PhrasesSchema.safeParse(req.body);
   if (!v.success) return res.status(400).json({ ok: false, error: 'VALIDATION_FAILED', details: v.error.errors });
 
-  const supabase = getServiceClient();
-  const { data: existing } = await supabase
-    .from('agent_personas')
-    .select('*')
-    .eq('key', 'vitana')
-    .maybeSingle();
-  if (!existing) return res.status(404).json({ ok: false, error: 'VITANA_NOT_FOUND' });
+  try {
+    const existing = await repo.getPersonaByKey('vitana');
+    if (!existing) return res.status(404).json({ ok: false, error: 'VITANA_NOT_FOUND' });
 
-  // Snapshot current version before mutating.
-  await supabase.from('agent_persona_versions').insert({
-    persona_id: existing.id,
-    version: existing.version,
-    snapshot: existing,
-    change_note: `Edit ${column} via admin endpoint`,
-    created_by: userId,
-  });
+    // Snapshot current version before mutating.
+    await repo.insertPersonaVersion({
+      persona_id: existing.id,
+      version: existing.version,
+      snapshot: existing,
+      change_note: `Edit ${column} via admin endpoint`,
+      created_by: userId,
+    });
 
-  const normalized = v.data.phrases.map(p => p.trim().toLowerCase()).filter(Boolean);
-  const { data: updated, error } = await supabase
-    .from('agent_personas')
-    .update({
+    const normalized = v.data.phrases.map(p => p.trim().toLowerCase()).filter(Boolean);
+    const updated = await repo.updatePersona(existing.id, {
       [column]: normalized,
       version: existing.version + 1,
       updated_by: userId,
       updated_at: new Date().toISOString(),
-    })
-    .eq('id', existing.id)
-    .select('*')
-    .single();
-  if (error || !updated) return res.status(502).json({ ok: false, error: error?.message });
+    });
 
-  await writeAudit(userId, existing.id, action, { [column]: (existing as Record<string, unknown>)[column] }, { [column]: normalized });
-  return res.json({ ok: true, phrases: normalized, version: updated.version });
+    await repo.writeAudit(userId, existing.id, action, { [column]: existing[column] }, { [column]: normalized });
+    return res.json({ ok: true, phrases: normalized, version: updated.version });
+  } catch (e) { return handleRepoError(e, res); }
 }
 
 router.put('/vitana/forward-phrases', (req, res) =>
@@ -508,44 +462,39 @@ router.patch('/:key/status', async (req: Request, res: Response) => {
   const v = StatusSchema.safeParse(req.body);
   if (!v.success) return res.status(400).json({ ok: false, error: 'VALIDATION_FAILED' });
 
-  const supabase = getServiceClient();
-  const { data: existing } = await supabase
-    .from('agent_personas')
-    .select('id, key, status, version')
-    .eq('key', key)
-    .maybeSingle();
-  if (!existing) return res.status(404).json({ ok: false, error: 'NOT_FOUND' });
+  try {
+    const existing = await repo.getPersonaFields(key, 'id, key, status, version');
+    if (!existing) return res.status(404).json({ ok: false, error: 'NOT_FOUND' });
 
-  const newStatus = v.data.enabled ? 'active' : 'disabled';
-  if (existing.status === newStatus) {
-    return res.json({ ok: true, key, status: newStatus, unchanged: true });
-  }
+    const newStatus = v.data.enabled ? 'active' : 'disabled';
+    if (existing.status === newStatus) {
+      return res.json({ ok: true, key, status: newStatus, unchanged: true });
+    }
 
-  const { data: full } = await supabase.from('agent_personas').select('*').eq('id', existing.id).maybeSingle();
-  await supabase.from('agent_persona_versions').insert({
-    persona_id: existing.id,
-    version: existing.version,
-    snapshot: full,
-    change_note: `Status toggle → ${newStatus}`,
-    created_by: userId,
-  });
+    const full = await repo.getPersonaById(existing.id);
+    await repo.insertPersonaVersion({
+      persona_id: existing.id,
+      version: existing.version,
+      snapshot: full,
+      change_note: `Status toggle → ${newStatus}`,
+      created_by: userId,
+    });
 
-  const { data: updated, error } = await supabase
-    .from('agent_personas')
-    .update({
-      status: newStatus,
-      version: existing.version + 1,
-      updated_by: userId,
-      updated_at: new Date().toISOString(),
-    })
-    .eq('id', existing.id)
-    .select('id, key, status, version')
-    .single();
-  if (error || !updated) return res.status(502).json({ ok: false, error: error?.message });
+    const updated = await repo.updatePersona(
+      existing.id,
+      {
+        status: newStatus,
+        version: existing.version + 1,
+        updated_by: userId,
+        updated_at: new Date().toISOString(),
+      },
+      'id, key, status, version',
+    );
 
-  await writeAudit(userId, existing.id, 'status_toggle',
-    { status: existing.status }, { status: newStatus });
-  return res.json({ ok: true, key, status: updated.status, version: updated.version });
+    await repo.writeAudit(userId, existing.id, 'status_toggle',
+      { status: existing.status }, { status: newStatus });
+    return res.json({ ok: true, key, status: updated.status, version: updated.version });
+  } catch (e) { return handleRepoError(e, res); }
 });
 
 // GET /context-preview?user_id=… — admin sandbox view of the shared
@@ -559,10 +508,10 @@ router.get('/context-preview', async (req: Request, res: Response) => {
     return res.status(400).json({ ok: false, error: 'BAD_USER_ID',
       message: 'user_id must be a UUID. Resolve from vitana_id via app_users if needed.' });
   }
-  const supabase = getServiceClient();
-  const { data, error } = await supabase.rpc('build_specialist_context', { p_user_id: userId });
-  if (error) return res.status(502).json({ ok: false, error: error.message });
-  return res.json({ ok: true, context: data ?? null });
+  try {
+    const context = await repo.buildSpecialistContext(userId);
+    return res.json({ ok: true, context });
+  } catch (e) { return handleRepoError(e, res); }
 });
 
 // ---------------------------------------------------------------------------
@@ -573,23 +522,18 @@ router.get('/audit', async (req: Request, res: Response) => {
   if (!ensureAuth(req, res)) return;
   const limit = Math.min(parseInt(String(req.query.limit ?? '100'), 10) || 100, 500);
   const personaKey = req.query.persona_key as string | undefined;
-  const supabase = getServiceClient();
 
-  let q = supabase
-    .from('agent_audit_log')
-    .select('id, actor_user_id, persona_id, action, before_state, after_state, ts')
-    .order('ts', { ascending: false })
-    .limit(limit);
-
-  if (personaKey) {
-    const { data: p } = await supabase.from('agent_personas').select('id').eq('key', personaKey).maybeSingle();
-    if (p) q = q.eq('persona_id', p.id);
-    else return res.json({ ok: true, audit: [] });
-  }
-
-  const { data, error } = await q;
-  if (error) return res.status(502).json({ ok: false, error: error.message });
-  return res.json({ ok: true, audit: data ?? [] });
+  try {
+    let personaId: string | undefined;
+    if (personaKey) {
+      const p = await repo.getPersonaFields(personaKey, 'id');
+      // Unknown persona key → empty result, not an error (preserved behaviour).
+      if (!p) return res.json({ ok: true, audit: [] });
+      personaId = p.id;
+    }
+    const audit = await repo.listAuditLog(limit, personaId);
+    return res.json({ ok: true, audit });
+  } catch (e) { return handleRepoError(e, res); }
 });
 
 void VTID;

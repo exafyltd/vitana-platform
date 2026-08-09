@@ -555,13 +555,35 @@ async function fetchKnowledgeHits(
 // =============================================================================
 
 /**
- * Fetch web search hits via Perplexity API
+ * VTID-03472: Fetch web search hits via Claude's native web_search tool
+ * (direct Anthropic API).
  *
- * GOVERNANCE REQUIREMENT (per Vitana standards):
- * - Web search MUST use Perplexity as the approved provider
- * - Must follow Ask/Research schemas with recency filters
- * - Must include citations in response
- * - Validator must verify citations are present
+ * Perplexity was the originally-approved provider (see fetchWebHitsPerplexity
+ * below) but PERPLEXITY_API_KEY has never been configured in staging or prod
+ * (confirmed via GET /api/v1/conversation/health → features.web_search:false
+ * on both, 2026-08-01) — every search_web call has silently returned zero
+ * hits since this path was built. This was masked for a long time because
+ * Vertex Live sessions ALSO get Google Search as a native BidiGenerateContent
+ * grounding directive ({ google_search: {} }, see live-tool-catalog.ts) —
+ * the model prefers that builtin over calling the search_web function tool,
+ * so the broken Perplexity path rarely fired. Nova Sonic sessions have no
+ * such native grounding (convertToolsToNovaSpecs strips Vertex builtins —
+ * nova-sonic-protocol.ts), so on Nova the ONLY web-search path IS this
+ * function tool, and it was always returning empty. Reported live: "check
+ * the internet for news about Mariia Maksina" on Nova → no results.
+ *
+ * IMPORTANT: an earlier version of this fix used Vertex AI (Gemini) grounding
+ * — WRONG. ORB voice moved off Vertex to Nova Sonic 5 days before this fix
+ * (2026-07-27), and GCP itself is being turned off entirely (2026-08-03,
+ * this coming Monday) — a Vertex dependency would have silently regressed
+ * back to this exact bug within days. Every LLM call on this platform now
+ * targets Anthropic. Claude's web_search is a genuine server-side tool (runs
+ * on Anthropic's infrastructure, not Bedrock's — Bedrock's tool-use
+ * framework does NOT relay to Anthropic's hosted search endpoint, confirmed
+ * against AWS docs before writing this), so it needs ANTHROPIC_API_KEY (the
+ * same env var llm-router.ts's `anthropic` adapter already reads), not
+ * Bedrock credentials. Falls back to Perplexity if that's ever configured;
+ * falls back further to empty (never GCP) if neither is available.
  */
 async function fetchWebHits(
   query: string,
@@ -569,6 +591,133 @@ async function fetchWebHits(
 ): Promise<{ hits: WebHit[]; latency_ms: number }> {
   const startTime = Date.now();
 
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (apiKey) {
+    try {
+      const Anthropic = (await import('@anthropic-ai/sdk')).default;
+      const client = new Anthropic({ apiKey });
+      const baseRequest = {
+        model: process.env.WEB_SEARCH_GROUNDING_MODEL || 'claude-haiku-4-5-20251001',
+        max_tokens: 1024,
+        // Belt-and-braces with tool_choice below: keep the instruction too,
+        // since it still shapes how Claude phrases the post-search summary.
+        system: 'You are a web search assistant. For every query, you MUST invoke the web_search tool at least once before responding — never answer from your own knowledge alone, even if you are confident. After searching, give a concise, factual summary of what you found.',
+        messages: [{ role: 'user' as const, content: query }],
+        tools: [{ type: 'web_search_20260209' as const, name: 'web_search' as const, max_uses: 3 }],
+      };
+      // Bound below orb-live.ts's 3000ms TOOL_TIMEOUT_MS for search_web —
+      // without this, a slow/stalled call outlives the voice-tool deadline:
+      // the model gets a timeout error instead of a result (or the
+      // Perplexity fallback), while the un-aborted request keeps running.
+      // Same budget as fetchWithTimeout()'s FETCH_TIMEOUT_MS.
+      const requestOptions = { timeout: CONTEXT_PACK_CONFIG.FETCH_TIMEOUT_MS };
+
+      let msg;
+      try {
+        // VTID-03472 follow-up #2: the system-prompt instruction alone was
+        // verified live on staging to still be insufficient — Haiku
+        // sometimes answers directly and skips web_search anyway. Force it
+        // structurally: tool_choice:'any' prefills the assistant turn so it
+        // MUST open with a tool call (the only tool offered is web_search).
+        // Anthropic's docs don't explicitly confirm or rule out tool_choice
+        // for server-side tools, so this is guarded by a fallback retry.
+        msg = await client.messages.create(
+          { ...baseRequest, tool_choice: { type: 'any' } },
+          requestOptions,
+        );
+      } catch (forcedError: any) {
+        console.warn(`[VTID-03472] tool_choice:any rejected by API (${forcedError.message}) — retrying without it`);
+        msg = await client.messages.create(baseRequest, requestOptions);
+      }
+      const hits = hitsFromClaudeCitations(msg.content, limit);
+      if (hits.length > 0) {
+        console.log(`[VTID-03472] Claude web_search returned ${hits.length} web hits for: ${query.substring(0, 50)}`);
+        return { hits, latency_ms: Date.now() - startTime };
+      }
+      console.warn('[VTID-03472] Claude web_search returned no citations — falling back to Perplexity');
+    } catch (error: any) {
+      console.error(`[VTID-03472] Claude web_search error: ${error.message} — falling back to Perplexity`);
+    }
+  } else {
+    console.warn('[VTID-03472] ANTHROPIC_API_KEY not configured — falling back to Perplexity');
+  }
+
+  return fetchWebHitsPerplexity(query, limit, startTime);
+}
+
+interface ClaudeWebSearchCitation {
+  type: string;
+  cited_text?: string;
+  title?: string | null;
+  url?: string;
+}
+interface ClaudeContentBlock {
+  type: string;
+  citations?: ClaudeWebSearchCitation[] | null;
+}
+
+/**
+ * Builds one WebHit per web-search citation Claude actually attached to its
+ * answer — cited_text/title/url come straight off the citation, so (unlike
+ * the old positional sentence-zip) each hit's source is the one that
+ * genuinely backs that claim, with zero extra parsing/alignment needed.
+ * Returns [] when the response carries no web_search_result_location
+ * citations (tool not invoked, or search found nothing) — matches the
+ * governance requirement that web search results must carry real citations.
+ */
+function hitsFromClaudeCitations(content: ClaudeContentBlock[], limit: number): WebHit[] {
+  const hits: WebHit[] = [];
+  for (const block of content) {
+    if (block.type !== 'text' || !block.citations) continue;
+    for (const c of block.citations) {
+      if (c.type !== 'web_search_result_location' || !c.cited_text) continue;
+      hits.push({
+        id: `web-${hits.length}`,
+        title: c.title || c.cited_text.substring(0, 80) + (c.cited_text.length > 80 ? '...' : ''),
+        snippet: c.cited_text.substring(0, CONTEXT_PACK_CONFIG.MAX_CONTENT_LENGTH),
+        url: c.url || 'https://www.google.com/search',
+        citation: c.url || '[Claude web search]',
+        relevance_score: 1 - hits.length * 0.1,
+      });
+      if (hits.length >= limit) break;
+    }
+    if (hits.length >= limit) break;
+  }
+  return hits.slice(0, CONTEXT_PACK_CONFIG.MAX_WEB_HITS);
+}
+
+/** Shared sentence-splitting formatter — same shape Perplexity always used. */
+function splitIntoWebHits(content: string, citations: string[], limit: number): WebHit[] {
+  const hits: WebHit[] = [];
+  const sentences = content.split(/\.\s+/).filter((s) => s.trim().length > 20);
+  for (let i = 0; i < Math.min(sentences.length, limit); i++) {
+    const sentence = sentences[i].trim();
+    if (sentence) {
+      hits.push({
+        id: `web-${i}`,
+        title: sentence.substring(0, 80) + (sentence.length > 80 ? '...' : ''),
+        snippet: sentence.substring(0, CONTEXT_PACK_CONFIG.MAX_CONTENT_LENGTH),
+        url: citations[i] || citations[0] || 'https://google.com/search',
+        citation: citations[i] || citations[0] || '[Google Search]',
+        relevance_score: 1 - i * 0.1,
+      });
+    }
+  }
+  return hits.slice(0, CONTEXT_PACK_CONFIG.MAX_WEB_HITS);
+}
+
+/**
+ * Fallback web search hits via Perplexity API — the originally-approved
+ * provider (per Vitana standards: must follow Ask/Research schemas with
+ * recency filters, must include citations). Kept as a fallback for when
+ * PERPLEXITY_API_KEY is configured; see fetchWebHits above for why Vertex
+ * grounding is now primary.
+ */
+async function fetchWebHitsPerplexity(
+  query: string,
+  limit: number,
+  startTime: number
+): Promise<{ hits: WebHit[]; latency_ms: number }> {
   const PERPLEXITY_API_KEY = process.env.PERPLEXITY_API_KEY;
   if (!PERPLEXITY_API_KEY) {
     console.warn('[VTID-01216] PERPLEXITY_API_KEY not configured - web search disabled');
@@ -615,31 +764,11 @@ async function fetchWebHits(
 
     const content = data.choices[0]?.message?.content || '';
     const citations = data.citations || [];
-
-    // Parse response into web hits
-    const hits: WebHit[] = [];
-    const sentences = content.split(/\.\s+/).filter(s => s.trim().length > 20);
-
-    for (let i = 0; i < Math.min(sentences.length, limit); i++) {
-      const sentence = sentences[i].trim();
-      if (sentence) {
-        hits.push({
-          id: `web-${i}`,
-          title: sentence.substring(0, 80) + (sentence.length > 80 ? '...' : ''),
-          snippet: sentence.substring(0, CONTEXT_PACK_CONFIG.MAX_CONTENT_LENGTH),
-          url: citations[i] || citations[0] || 'https://perplexity.ai',
-          citation: citations[i] || citations[0] || '[Perplexity AI]',
-          relevance_score: 1 - (i * 0.1),
-        });
-      }
-    }
+    const hits = splitIntoWebHits(content, citations, limit);
 
     console.log(`[VTID-01216] Perplexity returned ${hits.length} web hits for: ${query.substring(0, 50)}`);
 
-    return {
-      hits: hits.slice(0, CONTEXT_PACK_CONFIG.MAX_WEB_HITS),
-      latency_ms: Date.now() - startTime,
-    };
+    return { hits, latency_ms: Date.now() - startTime };
   } catch (error: any) {
     console.error(`[VTID-01216] Perplexity API error: ${error.message}`);
     return { hits: [], latency_ms: Date.now() - startTime };
@@ -695,13 +824,18 @@ async function checkToolHealth(): Promise<ToolHealthStatus[]> {
     last_checked: now,
   });
 
-  // Web Search via Perplexity
+  // Web Search — Claude web_search tool via direct Anthropic API (primary,
+  // VTID-03472) or Perplexity (fallback). Available if EITHER is configured.
+  // Never GCP/Vertex — decommissioned 2026-08-03.
   const PERPLEXITY_API_KEY = process.env.PERPLEXITY_API_KEY;
+  const hasAnthropic = !!process.env.ANTHROPIC_API_KEY;
   tools.push({
     name: 'web_search',
-    available: !!PERPLEXITY_API_KEY,
+    available: hasAnthropic || !!PERPLEXITY_API_KEY,
     last_checked: now,
-    error: PERPLEXITY_API_KEY ? undefined : 'PERPLEXITY_API_KEY not configured',
+    error: hasAnthropic || PERPLEXITY_API_KEY
+      ? undefined
+      : 'Neither ANTHROPIC_API_KEY nor PERPLEXITY_API_KEY configured',
   });
 
   return tools;

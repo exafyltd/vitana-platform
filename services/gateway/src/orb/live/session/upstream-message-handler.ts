@@ -38,6 +38,10 @@ import type { GeminiLiveSession } from '../../../routes/orb-live';
 import type { LatencyPhase } from '../latency-tracker';
 import type { MemoryIdentity } from '../../../services/orb-memory-bridge';
 import { writeSseEvent } from '../transport/sse-handler';
+// BOOTSTRAP-ORB-TOOL-CARRYOVER: keep an unconsumed tool result alive across a
+// stall-recovery reconnect so the rebuilt session continues instead of
+// resuming with no memory of what it was doing.
+import { recordPendingToolResult, clearPendingToolResults } from './pending-tool-results';
 // VTID-03245: never surface a raw tool failure to the model as a spoken
 // "system issues" — reshape failures into a graceful pivot (offer-integrity).
 import { graceToolResultForModel } from './tool-failure-grace';
@@ -50,6 +54,7 @@ import {
   getSilenceIdleThresholdMs,
   getSilenceKeepaliveIntervalMs,
   SILENCE_AUDIO_B64,
+  LOOP_GUARD_HARD_CEILING_EXTRA_CALLS,
 } from '../../upstream/constants';
 import { emitOasisEvent } from '../../../services/oasis-event-service';
 import { handleIdentityIntent } from '../../../services/identity-intent-handler';
@@ -62,6 +67,73 @@ import { addTurn as addSessionTurn } from '../../../services/session-memory-buff
 import { addTurnRedis } from '../../../services/redis-turn-buffer';
 import { getSupabase } from '../../../lib/supabase';
 import { VITANA_BOT_USER_ID } from '../../../lib/vitana-bot';
+
+/**
+ * BOOTSTRAP-NOVA-IDLE-KEEPALIVE: is this session on Amazon Nova Sonic?
+ *
+ * Exported for tests. Nova's Bedrock bidirectional stream terminates itself if
+ * it receives no audio/interactive content for ~295s ("Timed out waiting for
+ * audio bytes or interactive content"), so the synthetic PCM keepalive is a
+ * TRANSPORT REQUIREMENT there — unlike Vertex, where letting the stream idle is
+ * merely a way to end a runaway response loop. Anything that stops the
+ * keepalive must therefore check the provider first.
+ *
+ * Defaults to NOT-Nova when the field is absent, matching the `?? 'vertex'`
+ * fallback used elsewhere in this file, so the conservative existing behaviour
+ * is preserved for any session whose provider was never stamped.
+ */
+export function isNovaProvider(session: GeminiLiveSession): boolean {
+  return (session as any).upstreamProvider === 'nova_sonic';
+}
+
+/**
+ * BOOTSTRAP-CHAT-BRIDGE-RELIABILITY: write one voice-transcript turn into
+ * chat_messages so it shows up in the user's "Vitana" Inbox thread. This is
+ * the ONLY path that makes a voice conversation visible in chat history —
+ * previously a failed insert here was fire-and-forget with just a
+ * console.warn, so a transient DB/network blip silently and permanently
+ * dropped that turn from the user's history with no trace anywhere
+ * (reported as "I had several conversations with Vitana and none show up").
+ * Retries once, and emits a durable OASIS event on final failure so lost
+ * history is visible in telemetry instead of only a Cloud Run log line.
+ */
+export async function bridgeVoiceTranscript(
+  bridgeSupabase: NonNullable<ReturnType<typeof getSupabase>>,
+  row: {
+    tenant_id: string;
+    sender_id: string;
+    receiver_id: string;
+    content: string;
+    message_type: string;
+    metadata: Record<string, unknown>;
+    created_at: string;
+    read_at?: string;
+  },
+  direction: 'user_to_vitana' | 'vitana_to_user',
+  sessionId: string,
+): Promise<void> {
+  const MAX_ATTEMPTS = 2;
+  let lastError: string | undefined;
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    const { error } = await bridgeSupabase.from('chat_messages').insert(row);
+    if (!error) return;
+    lastError = error.message;
+    console.warn(`[VTID-CHAT-BRIDGE] ${direction} transcript write attempt ${attempt}/${MAX_ATTEMPTS} failed for session ${sessionId}: ${error.message}`);
+  }
+  emitOasisEvent({
+    vtid: 'BOOTSTRAP-CHAT-BRIDGE-RELIABILITY',
+    type: 'orb.chat_bridge.write_failed' as any,
+    source: 'orb-live-upstream-message-handler',
+    status: 'error',
+    message: `Voice transcript (${direction}) failed to bridge into chat_messages after ${MAX_ATTEMPTS} attempts — this turn will not appear in the user's Inbox`,
+    payload: {
+      orb_session_id: sessionId,
+      tenant_id: row.tenant_id,
+      direction,
+      error: lastError,
+    },
+  }).catch(() => { /* best-effort telemetry only, never let this throw into the voice pipeline */ });
+}
 
 /**
  * orb-live.ts-local helpers the handler body invokes. Future slices may
@@ -336,6 +408,18 @@ export function createUpstreamLiveMessageHandler(
             (session as any).suppressCurrentTurnAudio = false;
             (session as any).currentTurnAudioChunksDropped = 0;
 
+            // BOOTSTRAP-ORB-TOOL-CARRYOVER: a completed turn means the model
+            // consumed whatever tool results were outstanding, so they are no
+            // longer unfinished work. Clearing here (rather than at tool-send
+            // time) is the whole point: in the production stall the turn never
+            // completed, which is exactly when the carry-over must survive.
+            const clearedPending = clearPendingToolResults(session);
+            if (clearedPending > 0) {
+              console.log(
+                `[BOOTSTRAP-ORB-TOOL-CARRYOVER] Turn complete for ${session.sessionId} — cleared ${clearedPending} consumed tool result(s).`,
+              );
+            }
+
             // VTID-ANON-SIGNUP-INTENT + VTID-ANON-NUDGE: Detect signup intent and enforce turn limits.
             // CRITICAL: No client_content injections — those cause double responses.
             // All nudging is done via the system instruction (see buildAnonymousSystemInstruction).
@@ -396,12 +480,49 @@ export function createUpstreamLiveMessageHandler(
 
             // VTID-LOOPGUARD: If the model has responded too many times without user input,
             // pause the silence keepalive so Vertex's idle timeout stops the loop naturally.
-            if (session.consecutiveModelTurns > getMaxConsecutiveModelTurns() && !isGreetingTurn) {
+            //
+            // BOOTSTRAP-NOVA-IDLE-KEEPALIVE: this must NEVER run for Nova. The
+            // mechanism deliberately weaponises the provider's idle timeout to
+            // break a runaway loop — defensible on Vertex, fatal on Bedrock.
+            // Nova's idle deadline does not "idle the loop out", it TERMINATES
+            // THE STREAM ("Timed out waiting for audio bytes or interactive
+            // content ... less than 295 seconds"), killing the user's whole
+            // conversation. And the only re-arm site is inside the
+            // input_transcription handler below, so a user who then stays quiet
+            // never gets the keepalive back and the session dies deterministically
+            // ~295s after the last input. Stream rotation cannot save it either:
+            // rotationAfterMs defaults to 435_000, which is well past 295s.
+            //
+            // For Nova the PCM keepalive is TRANSPORT LIVENESS, not a
+            // conversation lever (audit C-30: keepalive and conversation
+            // semantics must not be conflated). Loop-breaking for Nova is
+            // handled by the tool/loop guards that act on the model rather than
+            // by starving the transport.
+            if (!isNovaProvider(session) && session.consecutiveModelTurns > getMaxConsecutiveModelTurns() && !isGreetingTurn) {
               console.warn(`[VTID-LOOPGUARD] Response loop detected for session ${session.sessionId}: ${session.consecutiveModelTurns} consecutive model turns without user speech — pausing silence keepalive`);
               if (session.silenceKeepaliveInterval) {
                 clearInterval(session.silenceKeepaliveInterval);
                 session.silenceKeepaliveInterval = undefined;
               }
+            } else if (isNovaProvider(session) && session.consecutiveModelTurns > getMaxConsecutiveModelTurns() && !isGreetingTurn) {
+              // Codex review on #3007: preserving the keepalive removed the ONLY
+              // brake on a response-only runaway loop (the hard ceiling in
+              // handleToolCall covers tool loops, not this). Log-only would have
+              // traded a disconnect for an unbounded loop. So take a Nova-safe
+              // action instead of starving the transport: stop forwarding the
+              // runaway turn's audio. Reuses the proven VTID-03143 flag, which
+              // auto-clears at turn_complete — and since this guard re-evaluates
+              // on every turn past the limit, it re-arms per turn for as long as
+              // the loop continues.
+              //
+              // HONEST LIMIT: this stops the user hearing the loop and stops the
+              // audio bandwidth. It does NOT stop Bedrock inference cost, because
+              // Nova has no working mid-turn stop (sendEndOfTurn() is a no-op).
+              // Cost containment needs the transparent-rotation fail-safe from the
+              // disconnect report (item 3) — replacing the stream is what actually
+              // ends a runaway generation. Tracked separately.
+              (session as any).suppressCurrentTurnAudio = true;
+              console.warn(`[VTID-LOOPGUARD] Response loop detected for session ${session.sessionId}: ${session.consecutiveModelTurns} consecutive model turns without user speech — keepalive PRESERVED and turn audio SUPPRESSED (nova_sonic: starving the transport would terminate the Bedrock stream at its ~295s idle deadline; suppression stops the runaway reaching the user but not Bedrock inference cost)`);
             }
 
             // VTID-CHAT-BRIDGE: Capture transcript text at turn scope for chat_messages bridge (below)
@@ -738,7 +859,9 @@ export function createUpstreamLiveMessageHandler(
                       if (driftCount >= 2 && session.upstreamWs) {
                         console.warn(`[VTID-02670] Forcing hard reconnect to re-anchor persona ${activePersonaForCheck}`);
                         (session as any)._personaSwapInFlight = true;
-                        try { session.upstreamWs.close(); } catch { /* ignore */ }
+                        // Nova item 6: deliberate reconnect to re-anchor the
+                        // persona, not a failure or a user stop.
+                        try { session.upstreamWs.close(1000, 'persona_drift_reanchor'); } catch { /* ignore */ }
                       }
                     }
                   }
@@ -801,7 +924,7 @@ export function createUpstreamLiveMessageHandler(
 
                 // User speech → chat_messages (sender=user, receiver=Vitana)
                 if (chatBridgeUserText.length > 0) {
-                  bridgeSupabase.from('chat_messages').insert({
+                  void bridgeVoiceTranscript(bridgeSupabase, {
                     tenant_id: bridgeTenantId,
                     sender_id: bridgeUserId,
                     receiver_id: VITANA_BOT_USER_ID,
@@ -809,15 +932,13 @@ export function createUpstreamLiveMessageHandler(
                     message_type: 'voice_transcript',
                     metadata: { ...bridgeMeta, direction: 'user_to_vitana' },
                     created_at: userMsgTime.toISOString(),
-                  }).then(({ error }) => {
-                    if (error) console.warn(`[VTID-CHAT-BRIDGE] User transcript write failed: ${error.message}`);
-                  });
+                  }, 'user_to_vitana', session.sessionId);
                 }
 
                 // Vitana speech → chat_messages (sender=Vitana, receiver=user)
                 // Pre-set read_at since user already heard this during the voice session
                 if (chatBridgeAssistantText.length > 0) {
-                  bridgeSupabase.from('chat_messages').insert({
+                  void bridgeVoiceTranscript(bridgeSupabase, {
                     tenant_id: bridgeTenantId,
                     sender_id: VITANA_BOT_USER_ID,
                     receiver_id: bridgeUserId,
@@ -826,9 +947,7 @@ export function createUpstreamLiveMessageHandler(
                     metadata: { ...bridgeMeta, direction: 'vitana_to_user', is_greeting: isGreetingTurn },
                     read_at: assistantMsgTime.toISOString(),
                     created_at: assistantMsgTime.toISOString(),
-                  }).then(({ error }) => {
-                    if (error) console.warn(`[VTID-CHAT-BRIDGE] Vitana transcript write failed: ${error.message}`);
-                  });
+                  }, 'vitana_to_user', session.sessionId);
                 }
               }
             }
@@ -865,36 +984,49 @@ export function createUpstreamLiveMessageHandler(
             // committed before the widget tears down the session.
             if (session.pendingNavigation) {
               const nav = session.pendingNavigation;
-              const directive = {
-                type: 'orb_directive',
-                directive: 'navigate',
-                screen_id: nav.screen_id,
-                route: nav.route,
-                title: nav.title,
-                reason: nav.reason,
-                vtid: 'VTID-NAV-01',
-              };
-              if (session.sseResponse) {
-                writeSseEvent(session.sseResponse, directive);
-              }
-              if ((session as any).clientWs && (session as any).clientWs.readyState === WebSocket.OPEN) {
-                try { ctx.deps.sendWsMessage((session as any).clientWs, directive); } catch (_e) { /* WS closed */ }
-              }
-              console.log(`[VTID-NAV-01] orb_directive dispatched: navigate to ${nav.screen_id} (${nav.route}) — session=${session.sessionId}`);
-              emitOasisEvent({
-                vtid: 'VTID-NAV-01',
-                type: 'orb.navigator.dispatched',
-                source: 'orb-live-ws',
-                status: 'info',
-                message: `dispatched navigate to ${nav.screen_id}`,
-                payload: {
-                  session_id: session.sessionId,
+              // BOOTSTRAP-NOVA-SONIC-VOICE-NAV-FIX: navigate_to_screen now
+              // flushes the orb_directive immediately at tool-call time
+              // (VTID-NAV-FAST) instead of waiting for turn_complete — Nova
+              // Sonic can take many seconds (observed 9968ms live,
+              // 2026-07-29) to close out a turn, which made the redirect
+              // feel broken even though the tool call itself succeeded in
+              // single-digit ms. Skip the duplicate send here; the pending
+              // state still exists so the extraction-force/memory-order
+              // logic above this block keeps working unchanged.
+              if (!session.navigationDirectiveSentImmediately) {
+                const directive = {
+                  type: 'orb_directive',
+                  directive: 'navigate',
                   screen_id: nav.screen_id,
                   route: nav.route,
-                  decision_source: nav.decision_source,
-                  drain_wait_ms: Date.now() - nav.requested_at,
-                },
-              }).catch(() => {});
+                  title: nav.title,
+                  reason: nav.reason,
+                  vtid: 'VTID-NAV-01',
+                };
+                if (session.sseResponse) {
+                  writeSseEvent(session.sseResponse, directive);
+                }
+                if ((session as any).clientWs && (session as any).clientWs.readyState === WebSocket.OPEN) {
+                  try { ctx.deps.sendWsMessage((session as any).clientWs, directive); } catch (_e) { /* WS closed */ }
+                }
+                console.log(`[VTID-NAV-01] orb_directive dispatched: navigate to ${nav.screen_id} (${nav.route}) — session=${session.sessionId}`);
+                emitOasisEvent({
+                  vtid: 'VTID-NAV-01',
+                  type: 'orb.navigator.dispatched',
+                  source: 'orb-live-ws',
+                  status: 'info',
+                  message: `dispatched navigate to ${nav.screen_id}`,
+                  payload: {
+                    session_id: session.sessionId,
+                    screen_id: nav.screen_id,
+                    route: nav.route,
+                    decision_source: nav.decision_source,
+                    drain_wait_ms: Date.now() - nav.requested_at,
+                  },
+                }).catch(() => {});
+              } else {
+                console.log(`[VTID-NAV-FAST] turn_complete for session ${session.sessionId}: navigate to ${nav.screen_id} already dispatched immediately at tool-call time — skipping duplicate send.`);
+              }
               // Clear pending so we don't re-dispatch on subsequent turns.
               // navigationDispatched stays TRUE so input audio stays gated until
               // the widget closes the connection.
@@ -950,11 +1082,10 @@ export function createUpstreamLiveMessageHandler(
                   session.isModelSpeaking = true;
                   // VTID-TOOLGUARD: Model produced audio — reset tool call counter
                   session.consecutiveToolCalls = 0;
-                  // VTID-01984 (R5): Vertex has spoken — upstream WS is healthy.
-                  // Once true, the audio-forwarding paths skip arming the
-                  // forwarding_no_ack watchdog so we never kill a healthy
-                  // session in the middle of Vertex computing a follow-up turn.
-                  session.vertexHasShownLife = true;
+                  // Nova item 5: model output — proves BOTH transport liveness
+                  // and that the model has responded on this turn.
+                  session.transportHasShownLife = true;
+                  session.modelRespondedThisTurn = true;
                   console.log(`[VTID-VOICE-INIT] Model started speaking for session ${session.sessionId} — mic audio gated`);
                   // Phase 1 W2: first TTS chunk forwarded to the client.
                   ctx.deps.markVoiceLatency(session, 'audio_out_first_chunk');
@@ -1114,12 +1245,12 @@ export function createUpstreamLiveMessageHandler(
               console.log(`[VTID-VOICE-INIT] Filtering greeting prompt from input transcription: "${inputTranscription.substring(0, 60)}..."`);
             } else {
               console.log(`[VTID-01219] Input transcription: ${inputTranscription}`);
-              // VTID-01984 (R5): Vertex's VAD fired and produced a transcription —
-              // upstream WS is demonstrably healthy. Mark life signal so subsequent
-              // user-audio chunks don't arm the forwarding_no_ack watchdog (which
-              // was destroying healthy sessions when first-turn inference exceeded
-              // 15 s). Real WS failures are still caught by native handlers.
-              session.vertexHasShownLife = true;
+              // Nova item 5: this is the USER's speech coming back as a
+              // transcription. It proves the socket works — it does NOT prove
+              // the model owes/produced anything. Transport liveness only;
+              // setting response liveness here is exactly the bug that let a
+              // stalled turn read as "alive" and skip recovery.
+              session.transportHasShownLife = true;
               // Phase 1 W2: first STT fragment of the turn = transcript_ready.
               // inputTranscriptBuffer is still empty until the append below, so
               // an empty buffer marks the leading fragment exactly once per turn.
@@ -1338,6 +1469,16 @@ export function createUpstreamLiveMessageHandler(
                 if (!sent) {
                   console.error(`[VTID-01224] function_response NOT sent for ${toolName} — WebSocket no longer open. Session ${session.sessionId} may be stalled.`);
                 }
+                // BOOTSTRAP-ORB-TOOL-CARRYOVER: remember this result until the
+                // model actually completes a turn with it. If the turn stalls
+                // and the stall watchdog forces a reconnect, this is what lets
+                // the rebuilt session continue instead of coming back amnesiac.
+                // Gated on `sent` on purpose — a result that never reached the
+                // model is not unfinished work, and replaying it would make her
+                // narrate something the user never triggered.
+                if (sent) {
+                  recordPendingToolResult(session, toolName, modelFacingResult.result);
+                }
 
                 // Emit OASIS event for tool execution
                 emitOasisEvent({
@@ -1431,12 +1572,30 @@ export interface UpstreamSessionHandlerContext {
   deps: UpstreamMessageHandlerDeps;
   /**
    * Provider-tuning knobs. `enableSilenceKeepalive` re-arms the PCM silence
-   * keepalive from the loop-guard paths (Vertex/Gemini need it; Nova does
-   * not — server turn detection keeps its stream alive without synthetic
-   * PCM).
+   * keepalive from the loop-guard paths — both Vertex AND Nova need it (see
+   * BOOTSTRAP-NOVA-SONIC-VOICE 2e89a41: Bedrock idle-kills a Nova stream
+   * after ~15s with no audio-frame input, same as Vertex's idle close).
+   *
+   * `ignoreModelSpeaking` / `silenceIntervalMs` / `idleThresholdMs` mirror
+   * `KeepaliveDeps` in `upstream-keepalive.ts` (the connect-time arm site)
+   * — the SAME tuning knobs, because this is a SECOND place that can (re-)
+   * create `session.silenceKeepaliveInterval`: the loop guard (below,
+   * `handleTurnComplete`) clears the interval to let a runaway response
+   * loop idle out, and `handleTranscript`'s re-arm below recreates it on
+   * the next user utterance. Nova's connect-time arm
+   * (`armUpstreamKeepalive(novaFacade, session, { ignoreModelSpeaking: true,
+   * silenceIntervalMs: 250, idleThresholdMs: 750 })`, orb-live.ts) is
+   * bypassed by this re-arm path — without passing the same knobs here, a
+   * Nova session that trips the loop guard and then resumes falls back to
+   * Vertex-only re-arm semantics (silence paused during model speech, 3s
+   * heartbeat cadence) and reproduces the exact END_TURN deadlock /
+   * idle-kill that b745775 / b27204f fixed at the connect-time site.
    */
   options?: {
     enableSilenceKeepalive?: boolean;
+    ignoreModelSpeaking?: boolean;
+    silenceIntervalMs?: number;
+    idleThresholdMs?: number;
   };
 }
 
@@ -1475,7 +1634,9 @@ export function handleAudioOutput(
   if (!session.isModelSpeaking) {
     session.isModelSpeaking = true;
     session.consecutiveToolCalls = 0;
-    session.vertexHasShownLife = true;
+    // Nova item 5: model output — transport AND response liveness.
+    session.transportHasShownLife = true;
+    session.modelRespondedThisTurn = true;
     console.log(`[VTID-VOICE-INIT] Model started speaking for session ${session.sessionId} — mic audio gated`);
     ctx.deps.markVoiceLatency(session, 'audio_out_first_chunk');
     ctx.deps.emitDiag(session, 'model_start_speaking');
@@ -1551,7 +1712,9 @@ export function handleTranscript(
       console.log(`[VTID-VOICE-INIT] Filtering greeting prompt from input transcription: "${inputTranscription.substring(0, 60)}..."`);
       return;
     }
-    session.vertexHasShownLife = true;
+    // Nova item 5: user speech — transport liveness only (see the paired
+    // site above; this is the same signal on the normalized event path).
+    session.transportHasShownLife = true;
     if (!session.inputTranscriptBuffer) {
       ctx.deps.markVoiceLatency(session, 'transcript_ready', { chars: inputTranscription.length });
     }
@@ -1563,22 +1726,28 @@ export function handleTranscript(
     session.consecutiveModelTurns = 0;
     session.consecutiveToolCalls = 0;
 
-    // Loop-guard re-arm of the PCM silence keepalive — provider-local:
-    // only providers that need synthetic silence (Vertex/Gemini) get it.
+    // Loop-guard re-arm of the PCM silence keepalive — providers that need
+    // synthetic silence at all get it (both Vertex and Nova; see the
+    // `options` doc comment above). Mirrors `armUpstreamKeepalive`'s tuning
+    // knobs so a Nova session that trips the loop guard and resumes gets
+    // the SAME cadence/ignoreModelSpeaking behavior as its connect-time arm
+    // — not the Vertex defaults, which would reproduce the END_TURN
+    // deadlock / 15s idle-kill (b745775 / b27204f) via this second re-arm
+    // path.
     if (
       ctx.options?.enableSilenceKeepalive
       && !session.silenceKeepaliveInterval
     ) {
       session.silenceKeepaliveInterval = setInterval(() => {
         if (ctx.client.getState() !== 'open' || !session.active) return;
-        if (session.isModelSpeaking) return;
+        if (session.isModelSpeaking && !ctx.options?.ignoreModelSpeaking) return;
         const idleMs = Date.now() - session.lastAudioForwardedTime;
-        if (idleMs >= getSilenceIdleThresholdMs()) {
+        if (idleMs >= (ctx.options?.idleThresholdMs ?? getSilenceIdleThresholdMs())) {
           try {
             ctx.client.sendAudioChunk(SILENCE_AUDIO_B64, 'audio/pcm;rate=16000');
           } catch (_e) { /* client closing */ }
         }
-      }, getSilenceKeepaliveIntervalMs());
+      }, ctx.options?.silenceIntervalMs ?? getSilenceKeepaliveIntervalMs());
     }
 
     ctx.deps.startResponseWatchdog(session, getTurnResponseTimeoutMs(), 'response_timeout');
@@ -1596,6 +1765,11 @@ export function handleTranscript(
   }
 
   // Output (assistant) transcript.
+  // Nova item 5: model output — a text-only turn (no audio) still means the
+  // model responded, so response liveness must be set here too, not only on
+  // the audio path.
+  session.transportHasShownLife = true;
+  session.modelRespondedThisTurn = true;
   const outputTranscription = event.text;
   if (session.navigationDispatched) {
     console.log(`[VTID-NAV-HOTFIX] Dropping post-nav output transcription: "${outputTranscription.substring(0, 60)}..."`);
@@ -1673,14 +1847,57 @@ export function handleToolCall(
       tools: toolNames,
       function_call_count: event.calls.length,
     }, 'warning').catch(() => { });
+
+    // VTID-TOOLGUARD-FIX: the guard previously sent {success:false, error:
+    // '...'} — a shape observed live (2026-07-28, session live-be473671...)
+    // to NOT stop the loop: Nova read it as "this tool failed" and kept
+    // trying other tools from its catalog (16 -> 35+ consecutive calls,
+    // never recovering). VTID-03245's graceToolResultForModel already
+    // established why: models don't reliably follow directives buried in
+    // an `error` field, only in a benign-looking `result`/speak_guidance
+    // payload (see tool-failure-grace.ts). Reuse that exact shape here
+    // instead of inventing a second, unproven one.
+    const loopGuardGuidance = JSON.stringify({
+      ok: false,
+      available: false,
+      tool: 'loop_guard',
+      speak_guidance:
+        'No more tool calls are needed right now. In ONE short, warm sentence, ' +
+        'answer the user directly using only the information you already have ' +
+        'from earlier tool results. Do NOT call any tool in this turn.',
+    });
     for (const fc of event.calls) {
       ctx.client.sendToolResult({
         callId: fc.id || randomUUID(),
         name: fc.name,
-        success: false,
-        output: '',
-        error: 'Tool loop guard: too many consecutive tool calls. Respond to the user now with the information already gathered from earlier tool results. Do not call any more tools in this turn.',
+        success: true,
+        output: loopGuardGuidance,
       });
+    }
+    // Nova item 5: the model has been handed results (here, guidance telling
+    // it to answer) — it owes output again, so response liveness resets.
+    session.modelRespondedThisTurn = false;
+
+    // VTID-TOOLGUARD-FIX: hard ceiling as a backstop in case the reworded
+    // guidance above still doesn't land — well above the normal threshold
+    // (getMaxConsecutiveToolCalls(), observed as 15) so it only fires for a
+    // genuinely runaway session, not a legitimate burst of tool use. Past
+    // this point we stop feeding the model anything further (even the
+    // graceful guidance) and just let its next turn_complete/silence
+    // handling take over, rather than paying for and re-triggering an
+    // unbounded stream of Bedrock/Vertex calls that have already proven not
+    // to break the loop.
+    const hardCeiling = getMaxConsecutiveToolCalls() + LOOP_GUARD_HARD_CEILING_EXTRA_CALLS;
+    if (session.consecutiveToolCalls > hardCeiling && !(session as any)._toolLoopGuardExhaustedEmitted) {
+      (session as any)._toolLoopGuardExhaustedEmitted = true;
+      console.error(`[VTID-TOOLGUARD] Tool call loop STILL not broken for session ${session.sessionId} after ${session.consecutiveToolCalls} consecutive calls (hard ceiling: ${hardCeiling}) — the model is not responding to loop-break guidance.`);
+      ctx.deps.emitLiveSessionEvent('orb.live.tool_loop_guard_activated', {
+        session_id: session.sessionId,
+        consecutive: session.consecutiveToolCalls,
+        tools: toolNames,
+        function_call_count: event.calls.length,
+        hard_ceiling_exceeded: true,
+      }, 'error').catch(() => { });
     }
     return;
   }
@@ -1750,6 +1967,17 @@ export function handleToolCall(
         });
         if (!sent) {
           console.error(`[VTID-01224] tool result NOT sent for ${toolName} — upstream client no longer open. Session ${session.sessionId} may be stalled.`);
+        } else {
+          // Nova item 5: result delivered — the model owes a response for this
+          // turn again. This is the exact live-3577c2fa shape: tool call at
+          // 15:05:40, result delivered, then silence. Without this reset the
+          // turn still reads "alive" from the pre-tool-call model audio.
+          session.modelRespondedThisTurn = false;
+        }
+        // BOOTSTRAP-ORB-TOOL-CARRYOVER: same contract as the Vertex send site —
+        // record only what actually reached the model, clear at turn_complete.
+        if (sent) {
+          recordPendingToolResult(session, toolName, modelFacingResult.result ?? '');
         }
 
         emitOasisEvent({
@@ -1783,6 +2011,9 @@ export function handleToolCall(
           output: '',
           error: err.message,
         });
+        // Nova item 5: a failed tool result is still a result — the model owes
+        // a response to it, so response liveness resets here too.
+        session.modelRespondedThisTurn = false;
       });
   }
 }
@@ -1813,6 +2044,12 @@ export function handleUpstreamError(
   event: UpstreamClientErrorEvent,
 ): void {
   console.error(`[BOOTSTRAP-NOVA-SONIC-VOICE] Upstream error for session ${ctx.session.sessionId}: code=${event.code} message=${event.message}`);
+  // Persist the bounded upstream detail (e.g. Nova's RAI/stream message) as
+  // a diag event — operator surface only; the user-facing error stays typed.
+  ctx.deps.emitDiag(ctx.session, 'upstream_error', {
+    code: event.code,
+    diagnostic: (event as { diagnostic?: string }).diagnostic ?? null,
+  });
   ctx.callbacks.onError(new Error(`${event.code}: ${event.message}`));
 }
 
@@ -1837,6 +2074,10 @@ export function handleTurnComplete(
 
   ctx.deps.clearResponseWatchdog(session);
   session.isModelSpeaking = false;
+  // Nova item 5: the turn is over — the model no longer owes output. The
+  // next turn must re-earn response liveness, otherwise a stall on turn N+1
+  // inherits turn N's "alive" and skips the watchdog.
+  session.modelRespondedThisTurn = false;
   session.turnCompleteAt = Date.now();
   console.log(`[VTID-VOICE-INIT] Model stopped speaking for session ${session.sessionId} — mic audio ungated (cooldown ${getPostTurnCooldownMs()}ms)`);
   ctx.deps.emitDiag(session, 'turn_complete');
@@ -1936,12 +2177,23 @@ export function handleTurnComplete(
   }
 
   // Loop guard: pause the silence keepalive so the provider idles the loop out.
-  if (session.consecutiveModelTurns > getMaxConsecutiveModelTurns() && !isGreetingTurn) {
+  // BOOTSTRAP-NOVA-IDLE-KEEPALIVE: never for Nova — see the identical guard in
+  // the raw-Gemini handler above for the full reasoning. Starving Bedrock of
+  // audio frames terminates the stream at its ~295s idle deadline instead of
+  // merely ending the loop.
+  if (!isNovaProvider(session) && session.consecutiveModelTurns > getMaxConsecutiveModelTurns() && !isGreetingTurn) {
     console.warn(`[VTID-LOOPGUARD] Response loop detected for session ${session.sessionId}: ${session.consecutiveModelTurns} consecutive model turns without user speech — pausing silence keepalive`);
     if (session.silenceKeepaliveInterval) {
       clearInterval(session.silenceKeepaliveInterval);
       session.silenceKeepaliveInterval = undefined;
     }
+  } else if (isNovaProvider(session) && session.consecutiveModelTurns > getMaxConsecutiveModelTurns() && !isGreetingTurn) {
+    // Codex review on #3007 — see the identical branch in the raw-Gemini handler
+    // above for the full reasoning. Nova-safe loop brake: suppress the runaway
+    // turn's audio rather than starving the Bedrock transport. Stops the user
+    // hearing it; does NOT stop inference cost (needs rotation, report item 3).
+    (session as any).suppressCurrentTurnAudio = true;
+    console.warn(`[VTID-LOOPGUARD] Response loop detected for session ${session.sessionId}: ${session.consecutiveModelTurns} consecutive model turns without user speech — keepalive PRESERVED and turn audio SUPPRESSED (nova_sonic: starving the transport would terminate the Bedrock stream at its ~295s idle deadline; suppression stops the runaway reaching the user but not Bedrock inference cost)`);
   }
 
   let chatBridgeUserText = '';
@@ -2227,7 +2479,7 @@ export function handleTurnComplete(
       const assistantMsgTime = new Date(userMsgTime.getTime() + 1);
 
       if (chatBridgeUserText.length > 0) {
-        bridgeSupabase.from('chat_messages').insert({
+        void bridgeVoiceTranscript(bridgeSupabase, {
           tenant_id: bridgeTenantId,
           sender_id: bridgeUserId,
           receiver_id: VITANA_BOT_USER_ID,
@@ -2235,13 +2487,11 @@ export function handleTurnComplete(
           message_type: 'voice_transcript',
           metadata: { ...bridgeMeta, direction: 'user_to_vitana' },
           created_at: userMsgTime.toISOString(),
-        }).then(({ error }) => {
-          if (error) console.warn(`[VTID-CHAT-BRIDGE] User transcript write failed: ${error.message}`);
-        });
+        }, 'user_to_vitana', session.sessionId);
       }
 
       if (chatBridgeAssistantText.length > 0) {
-        bridgeSupabase.from('chat_messages').insert({
+        void bridgeVoiceTranscript(bridgeSupabase, {
           tenant_id: bridgeTenantId,
           sender_id: VITANA_BOT_USER_ID,
           receiver_id: bridgeUserId,
@@ -2250,9 +2500,7 @@ export function handleTurnComplete(
           metadata: { ...bridgeMeta, direction: 'vitana_to_user', is_greeting: isGreetingTurn },
           read_at: assistantMsgTime.toISOString(),
           created_at: assistantMsgTime.toISOString(),
-        }).then(({ error }) => {
-          if (error) console.warn(`[VTID-CHAT-BRIDGE] Vitana transcript write failed: ${error.message}`);
-        });
+        }, 'vitana_to_user', session.sessionId);
       }
     }
   }
@@ -2278,36 +2526,46 @@ export function handleTurnComplete(
   // VTID-NAV: dispatch pending navigation AFTER memory/bridge/extraction.
   if (session.pendingNavigation) {
     const nav = session.pendingNavigation;
-    const directive = {
-      type: 'orb_directive',
-      directive: 'navigate',
-      screen_id: nav.screen_id,
-      route: nav.route,
-      title: nav.title,
-      reason: nav.reason,
-      vtid: 'VTID-NAV-01',
-    };
-    if (session.sseResponse) {
-      writeSseEvent(session.sseResponse, directive);
-    }
-    if ((session as any).clientWs && (session as any).clientWs.readyState === WebSocket.OPEN) {
-      try { ctx.deps.sendWsMessage((session as any).clientWs, directive); } catch (_e) { /* WS closed */ }
-    }
-    console.log(`[VTID-NAV-01] orb_directive dispatched: navigate to ${nav.screen_id} (${nav.route}) — session=${session.sessionId}`);
-    emitOasisEvent({
-      vtid: 'VTID-NAV-01',
-      type: 'orb.navigator.dispatched',
-      source: 'orb-live-ws',
-      status: 'info',
-      message: `dispatched navigate to ${nav.screen_id}`,
-      payload: {
-        session_id: session.sessionId,
+    // BOOTSTRAP-NOVA-SONIC-VOICE-NAV-FIX: see the raw handler's mirror of
+    // this block for the full rationale — navigate_to_screen already
+    // flushed the directive immediately at tool-call time when this flag
+    // is set, so skip the duplicate send (this is the path Nova sessions
+    // actually take: bindUpstreamSessionHandlers routes Nova through this
+    // handler, not the raw one above).
+    if (!session.navigationDirectiveSentImmediately) {
+      const directive = {
+        type: 'orb_directive',
+        directive: 'navigate',
         screen_id: nav.screen_id,
         route: nav.route,
-        decision_source: nav.decision_source,
-        drain_wait_ms: Date.now() - nav.requested_at,
-      },
-    }).catch(() => {});
+        title: nav.title,
+        reason: nav.reason,
+        vtid: 'VTID-NAV-01',
+      };
+      if (session.sseResponse) {
+        writeSseEvent(session.sseResponse, directive);
+      }
+      if ((session as any).clientWs && (session as any).clientWs.readyState === WebSocket.OPEN) {
+        try { ctx.deps.sendWsMessage((session as any).clientWs, directive); } catch (_e) { /* WS closed */ }
+      }
+      console.log(`[VTID-NAV-01] orb_directive dispatched: navigate to ${nav.screen_id} (${nav.route}) — session=${session.sessionId}`);
+      emitOasisEvent({
+        vtid: 'VTID-NAV-01',
+        type: 'orb.navigator.dispatched',
+        source: 'orb-live-ws',
+        status: 'info',
+        message: `dispatched navigate to ${nav.screen_id}`,
+        payload: {
+          session_id: session.sessionId,
+          screen_id: nav.screen_id,
+          route: nav.route,
+          decision_source: nav.decision_source,
+          drain_wait_ms: Date.now() - nav.requested_at,
+        },
+      }).catch(() => {});
+    } else {
+      console.log(`[VTID-NAV-FAST] turn_complete for session ${session.sessionId}: navigate to ${nav.screen_id} already dispatched immediately at tool-call time — skipping duplicate send.`);
+    }
     session.pendingNavigation = undefined;
   } else {
     console.log(`[VTID-NAV-DIAG] turn_complete for session ${session.sessionId}: NO pendingNavigation (navigationDispatched=${!!session.navigationDispatched}, consecutiveToolCalls=${session.consecutiveToolCalls}) — widget will transition to listening`);

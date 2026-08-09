@@ -40,6 +40,12 @@ export const RETRIEVAL_CONFIG = {
     memory_garden: 5,
     knowledge_hub: 0,
     web_search: 0,
+    // BOOTSTRAP-TEST-COVERAGE-FIX: calendar was missing from MIN_LIMITS/MAX_LIMITS,
+    // so the min/max clamp loop below computed Math.max(undefined, 20) === NaN,
+    // silently corrupting the documented "always 20" calendar limit on every
+    // decision. min=max=20 keeps the clamp a no-op, matching the hardcoded
+    // `calendar: 20` assignment's intent.
+    calendar: 20,
   } as Record<RetrievalSource, number>,
 
   /** Maximum limits per source */
@@ -47,6 +53,7 @@ export const RETRIEVAL_CONFIG = {
     memory_garden: 20,
     knowledge_hub: 15,
     web_search: 10,
+    calendar: 20,
   } as Record<RetrievalSource, number>,
 };
 

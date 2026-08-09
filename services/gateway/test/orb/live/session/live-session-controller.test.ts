@@ -988,7 +988,11 @@ describe('A8.2-complete: handleLiveStreamSend', () => {
       audioInChunks: 0,
       videoInFrames: 0,
       turn_count: 0,
-      vertexHasShownLife: true,
+      // Nova item 5: the fixture's intent is "don't arm the forwarding
+      // watchdog". That is now response liveness, not the old session-wide
+      // flag — transport liveness alone no longer suppresses it.
+      transportHasShownLife: true,
+      modelRespondedThisTurn: true,
       lastActivity: new Date(),
       lastTelemetryEmitTime: 0,
       lastAudioForwardedTime: 0,
@@ -1094,6 +1098,61 @@ describe('A8.2-complete: handleLiveStreamSend', () => {
     expect(res.json).toHaveBeenCalledWith({ ok: true });
   });
 
+  // Nova item 5 — the whole point of splitting the liveness flag.
+  //
+  // Prod trace live-3577c2fa: the user's speech was transcribed, a tool call
+  // fired, then the model went silent. The old session-wide flag was set by
+  // that transcription, so the forwarding watchdog was skipped and recovery
+  // never armed. Transport liveness must NOT suppress the watchdog.
+  it('arms the forwarding watchdog when only the USER has shown life (transport, not response)', async () => {
+    const watchdogSpy = jest.fn();
+    configureLiveSessionController(baseDeps({ startResponseWatchdog: watchdogSpy }));
+    liveSessions.set(
+      's-transport-only',
+      makeSession({
+        upstreamWs: { readyState: WS_OPEN },
+        transportHasShownLife: true, // user's transcription came back
+        modelRespondedThisTurn: false, // model owes output for this turn
+      }),
+    );
+    const req: any = {
+      query: { session_id: 's-transport-only' },
+      body: { type: 'audio', data_b64: 'AUDIO', mime: 'audio/pcm;rate=16000' },
+    };
+    await handleLiveStreamSend(req, makeRes());
+    expect(watchdogSpy).toHaveBeenCalled();
+    expect(watchdogSpy.mock.calls[0][2]).toBe('forwarding_no_ack');
+  });
+
+  it('skips the forwarding watchdog once the model has responded on this turn', async () => {
+    const watchdogSpy = jest.fn();
+    const diagSpy = jest.fn();
+    configureLiveSessionController(
+      baseDeps({ startResponseWatchdog: watchdogSpy, emitDiag: diagSpy }),
+    );
+    liveSessions.set(
+      's-model-responded',
+      makeSession({
+        upstreamWs: { readyState: WS_OPEN },
+        transportHasShownLife: true,
+        modelRespondedThisTurn: true,
+        audioInChunks: 199, // becomes 200 → hits the sampled diag branch
+      }),
+    );
+    const req: any = {
+      query: { session_id: 's-model-responded' },
+      body: { type: 'audio', data_b64: 'AUDIO', mime: 'audio/pcm;rate=16000' },
+    };
+    await handleLiveStreamSend(req, makeRes());
+    expect(watchdogSpy).not.toHaveBeenCalled();
+    // Provider-neutral reason — Nova sessions used to report 'vertex_alive'.
+    expect(diagSpy).toHaveBeenCalledWith(
+      expect.anything(),
+      'watchdog_skipped',
+      { reason: 'model_responded_this_turn' },
+    );
+  });
+
   it('silently returns ok:true for anonymous sessions past turn limit (VTID-ANON-NUDGE)', async () => {
     configureLiveSessionController(baseDeps());
     liveSessions.set('s1', makeSession({ isAnonymous: true, turn_count: 9 }));
@@ -1171,6 +1230,12 @@ describe('A8.2-complete: handleLiveStreamSend', () => {
       expect.stringContaining('"type":"interrupted"'),
     );
     expect(res.json).toHaveBeenCalledWith({ ok: true, was_speaking: true });
+    // VTID-VOICE-NOVA-BARGEIN: Nova's sendEndOfTurn() never reaches Bedrock,
+    // so the superseded generation can keep streaming audio after this
+    // interrupt. suppressCurrentTurnAudio (the same flag the greeting-reemit
+    // fix uses) must be set here so handleAudioOutput drops that zombie
+    // audio instead of forwarding it to the client.
+    expect((session as any).suppressCurrentTurnAudio).toBe(true);
   });
 
   it('falls back to body.session_id when query is empty', async () => {

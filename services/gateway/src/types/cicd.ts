@@ -135,6 +135,14 @@ export interface GovernanceEvaluation {
 
 // ==================== OASIS Events ====================
 export type CicdEventType =
+  // VTID-03462 (Watcher Phase 3): the ONLY event the Watcher emits.
+  // Its observer scans on a timer and deliberately emits nothing — polling is
+  // not progress (CLAUDE.md §6). An auto-mute is different: it permanently
+  // changes what every future planner/executor/worker prompt sees, with no
+  // human in the loop, and "why did the system stop reminding us about X?"
+  // needs an auditable answer.
+  | 'vtid.decision.watcher.lesson_muted'
+  | 'vtid.decision.watcher.backfill'
   | 'cicd.github.create_pr.requested'
   | 'cicd.github.create_pr.succeeded'
   | 'cicd.github.create_pr.failed'
@@ -932,7 +940,18 @@ export type CicdEventType =
   | 'dataset.extraction.completed'  // dataset-extraction cron finished one slice; metadata.rows / .target
   | 'finetune.training.completed'   // Vertex Custom Training job ended; metadata.job_id / .status / .target
   | 'auto_promote.proposed'         // auto-promoter chose to bump a staging tier; metadata.from / .to
-  | 'auto_promote.rejected';        // auto-promoter declined to bump; metadata.reason
+  | 'auto_promote.rejected'         // auto-promoter declined to bump; metadata.reason
+  // BOOTSTRAP-COMMUNITY-MARKETPLACE: peer-to-peer classifieds lifecycle events
+  | 'community_marketplace.listing.created'
+  | 'community_marketplace.listing.updated'
+  | 'community_marketplace.listing.status_changed'
+  | 'community_marketplace.listing.auto_escalated'
+  // BOOTSTRAP-COMMUNITY-MARKETPLACE (Chunk 7): admin review-queue decisions
+  | 'community_marketplace.admin.listing_reviewed'
+  | 'community_marketplace.admin.report_resolved'
+  | 'community_marketplace.admin.seller_suspended'
+  | 'community_marketplace.admin.seller_unsuspended'
+  | 'community_marketplace.admin.category_updated';
 
 export interface CicdOasisEvent {
   vtid: string;

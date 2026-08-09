@@ -8,6 +8,7 @@ import {
   NovaInputQueue,
   classifyNovaError,
   warmNovaSonicConnection,
+  warmNovaSonicModelExecution,
   __setSharedBedrockClientForTests,
   type NovaBedrockLike,
 } from '../../../../src/orb/live/upstream/nova-sonic-live-client';
@@ -37,7 +38,11 @@ class FakeResponseBody implements AsyncIterable<{ chunk?: { bytes?: Uint8Array }
   private done = false;
 
   feed(event: Record<string, unknown>): void {
-    const item = { chunk: { bytes: new TextEncoder().encode(JSON.stringify(event)) } };
+    this.feedRaw({ chunk: { bytes: new TextEncoder().encode(JSON.stringify(event)) } });
+  }
+
+  /** Push a raw stream item (e.g. a named exception union member). */
+  feedRaw(item: { chunk?: { bytes?: Uint8Array } }): void {
     const w = this.waiting.shift();
     if (w) w({ value: item, done: false });
     else this.buffer.push(item);
@@ -135,6 +140,10 @@ describe('NovaSonicLiveClient', () => {
     expect(events[3].event.textInput.content).toBe('You are Vitana.');
     expect(events[5].event.contentStart.type).toBe('AUDIO');
     expect(events[1].event.promptStart.audioOutputConfiguration.voiceId).toBe('tina');
+    // SYSTEM prompts use the documented non-interactive shape; the
+    // interactive:true form is reserved for cross-modal USER text turns.
+    expect(events[2].event.contentStart.role).toBe('SYSTEM');
+    expect(events[2].event.contentStart.interactive).toBe(false);
   });
 
   it('rejects a broken tool catalog BEFORE opening the stream', async () => {
@@ -232,6 +241,21 @@ describe('NovaSonicLiveClient', () => {
     expect(toolResult!.event.toolResult.content).toBe('{"ok":true}');
   });
 
+  it('sendToolResult wraps non-JSON-object outputs — Nova kills the stream on unparseable toolResult content', async () => {
+    const { client, body, sentEvents } = makeClient();
+    await client.connect(baseOptions());
+    body.feed({ event: { toolUse: { toolUseId: 'use-1', toolName: 't', content: '{}' } } });
+    await flush();
+    // Plain text output → wrapped in a JSON object.
+    client.sendToolResult({ callId: 'use-1', name: 't', success: true, output: 'All good, screen is Community.' });
+    // JSON array output → wrapped too (Nova wants an object).
+    client.sendToolResult({ callId: 'use-1', name: 't', success: true, output: '[1,2]' });
+    const events = await sentEvents();
+    const results = events.filter((e) => e.event.toolResult).map((e) => e.event.toolResult.content);
+    expect(JSON.parse(results[0])).toEqual({ result: 'All good, screen is Community.' });
+    expect(JSON.parse(results[1])).toEqual({ result: [1, 2] });
+  });
+
   it('sendToolResult without callId is a typed protocol error (no un-correlatable result)', async () => {
     const { client } = makeClient();
     const errors: any[] = [];
@@ -246,18 +270,29 @@ describe('NovaSonicLiveClient', () => {
     const closes: any[] = [];
     client.onClose((e) => closes.push(e));
     await client.connect(baseOptions());
+    client.sendAudioChunk('AAAA');
     body.end();
     await client.close('persona_swap');
     await client.close('persona_swap');
     const events = await sentEvents();
     const names = events.map(firstEventName);
-    expect(names.slice(-3)).toEqual(['promptEnd', 'sessionEnd'].length === 2
-      ? [names.at(-3)!, 'promptEnd', 'sessionEnd']
-      : names.slice(-3));
-    expect(names).toEqual(expect.arrayContaining(['promptEnd', 'sessionEnd']));
+    // Audio flowed, so teardown ends the audio block before prompt/session.
+    expect(names.slice(-3)).toEqual(['contentEnd', 'promptEnd', 'sessionEnd']);
     expect(closes).toHaveLength(1);
     expect(closes[0]).toEqual(expect.objectContaining({ initiatedLocally: true, reason: 'persona_swap' }));
     expect(client.getState()).toBe('closed');
+  });
+
+  it('close of a session that never sent audio omits the audio contentEnd (Nova rejects ending an empty block)', async () => {
+    const { client, body, sentEvents } = makeClient();
+    await client.connect(baseOptions());
+    body.end();
+    await client.close('done');
+    const events = await sentEvents();
+    const names = events.map(firstEventName);
+    expect(names.slice(-2)).toEqual(['promptEnd', 'sessionEnd']);
+    // The only contentEnd is the system text block's — none for audio.
+    expect(names.filter((n) => n === 'contentEnd')).toHaveLength(1);
   });
 
   it('SDK send failure maps to a typed error + single onClose; no raw AWS text in the thrown error', async () => {
@@ -379,6 +414,28 @@ describe('shared Bedrock client (latency: HTTP/2 session reuse)', () => {
   });
 });
 
+describe('named eventstream exception members', () => {
+  it('a validationException union member becomes a typed error, never a silent skip', async () => {
+    const { client, body } = makeClient();
+    const errors: string[] = [];
+    const diagnostics: Array<string | undefined> = [];
+    const closes: Array<string | undefined> = [];
+    client.onError((e) => { errors.push(e.code); diagnostics.push(e.diagnostic); });
+    client.onClose((e) => closes.push(e.reason));
+    await client.connect(baseOptions());
+
+    body.feedRaw({ validationException: { message: 'ValidationException: prompt exceeds limit' } } as any);
+    await flush();
+
+    expect(errors).toContain('nova_validation');
+    expect(closes).toEqual(['nova_validation']);
+    expect(client.getState()).toBe('closed');
+    // The upstream message is preserved on the diagnostic field (operator
+    // surfaces only) — the typed message itself stays generic.
+    expect(diagnostics).toContain('ValidationException: prompt exceeds limit');
+  });
+});
+
 describe('warmNovaSonicConnection (zero-cost connection warm)', () => {
   afterEach(() => {
     __setSharedBedrockClientForTests(null);
@@ -404,5 +461,80 @@ describe('warmNovaSonicConnection (zero-cost connection warm)', () => {
     };
     __setSharedBedrockClientForTests(shared);
     expect(await warmNovaSonicConnection(config)).toBeNull();
+  });
+});
+
+describe('warmNovaSonicModelExecution (BOOTSTRAP-NOVA-SONIC-VOICE latency: real model-execution warm-up)', () => {
+  afterEach(() => {
+    __setSharedBedrockClientForTests(null);
+  });
+
+  it('a real audio output means the model executor ran — returns latency, closes the probe session', async () => {
+    const body = new FakeResponseBody();
+    const closeSpy = jest.fn();
+    const shared: NovaBedrockLike = {
+      send: jest.fn(async () => ({ body })),
+      // NovaSonicLiveClient.close() only needs `send` per NovaBedrockLike;
+      // nothing else to inject — the probe's own client.close() drains its
+      // queue locally without another `send` call.
+    };
+    __setSharedBedrockClientForTests(shared);
+
+    const resultPromise = warmNovaSonicModelExecution(config);
+    // Let connect()'s internal send() resolve and the probe's sendTextTurn
+    // land, then simulate the model actually responding.
+    await flush();
+    body.feed({ event: { audioOutput: { content: 'QUJD' } } });
+
+    const ms = await resultPromise;
+    expect(typeof ms).toBe('number');
+    expect(shared.send).toHaveBeenCalledTimes(1);
+  });
+
+  it('a turn-complete with no audio still proves the executor ran — returns latency', async () => {
+    const body = new FakeResponseBody();
+    const shared: NovaBedrockLike = { send: jest.fn(async () => ({ body })) };
+    __setSharedBedrockClientForTests(shared);
+
+    const resultPromise = warmNovaSonicModelExecution(config);
+    await flush();
+    body.feed({ event: { completionEnd: { stopReason: 'END_TURN' } } });
+
+    expect(typeof (await resultPromise)).toBe('number');
+  });
+
+  it('a transport-level failure returns null, never throws', async () => {
+    const shared: NovaBedrockLike = {
+      send: jest.fn(async () => {
+        throw Object.assign(new Error('socket hang up'), { name: 'ModelStreamErrorException' });
+      }),
+    };
+    __setSharedBedrockClientForTests(shared);
+    expect(await warmNovaSonicModelExecution(config)).toBeNull();
+  });
+
+  it('a model error (e.g. validation) after connect returns null, never throws', async () => {
+    const body = new FakeResponseBody();
+    const shared: NovaBedrockLike = { send: jest.fn(async () => ({ body })) };
+    __setSharedBedrockClientForTests(shared);
+
+    const resultPromise = warmNovaSonicModelExecution(config);
+    await flush();
+    body.feedRaw({ validationException: { message: 'ValidationException: probe rejected' } } as any);
+
+    expect(await resultPromise).toBeNull();
+  });
+
+  it('never resolves before a real signal arrives, and times out to null if the model never responds', async () => {
+    jest.useFakeTimers();
+    const body = new FakeResponseBody();
+    const shared: NovaBedrockLike = { send: jest.fn(async () => ({ body })) };
+    __setSharedBedrockClientForTests(shared);
+
+    const resultPromise = warmNovaSonicModelExecution(config);
+    await jest.advanceTimersByTimeAsync(7_999);
+    await jest.advanceTimersByTimeAsync(1);
+    expect(await resultPromise).toBeNull();
+    jest.useRealTimers();
   });
 });

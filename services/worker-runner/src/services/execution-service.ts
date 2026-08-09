@@ -15,7 +15,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { randomUUID } from 'crypto';
 import { RunnerConfig, TaskDomain, ExecutionResult, PendingTask, RoutingResult } from '../types';
 import { validateLLMResponse, formatViolationsForReprompt } from './contract-validator';
-import { awaitAutopilotExecution } from './gateway-client';
+import { awaitAutopilotExecution, fetchWatcherReminders } from './gateway-client';
 
 const VTID = 'VTID-01200';
 
@@ -57,7 +57,7 @@ function initClaude(): boolean {
 /**
  * Build system prompt for the worker based on domain
  */
-function buildSystemPrompt(domain: TaskDomain): string {
+function buildSystemPrompt(domain: TaskDomain, watcherRemindersBlock?: string): string {
   const basePrompt = `You are a specialized worker agent in the Vitana platform. Your role is to execute development tasks within strict boundaries.
 
 ## CRITICAL RULES
@@ -76,6 +76,13 @@ function buildSystemPrompt(domain: TaskDomain): string {
 4. If the task is unclear or impossible, set ok=false and explain in error.
 
 5. Be concise and precise in your responses.`;
+
+  // VTID-03463 (Watcher Phase 4): ranked, budgeted reminders from prior runs
+  // and project canon. Appended to the BASE prompt, above the domain rules,
+  // so it applies whatever domain this task routes to. Empty when the Watcher
+  // is unreachable or the feature is off — in which case the prompt is
+  // byte-identical to before.
+  const remindersSection = watcherRemindersBlock ? `\n${watcherRemindersBlock}` : '';
 
   const domainPrompts: Record<TaskDomain, string> = {
     frontend: `
@@ -114,7 +121,7 @@ This task spans multiple domains. Analyze carefully and describe changes for eac
 Be explicit about which changes belong to which domain.`,
   };
 
-  return basePrompt + domainPrompts[domain];
+  return basePrompt + remindersSection + domainPrompts[domain];
 }
 
 /**
@@ -377,7 +384,24 @@ export async function executeTask(
   }
 
   try {
-    const systemPrompt = buildSystemPrompt(domain);
+    // VTID-03463: pull the Watcher's reminder block before building the
+    // prompt. Wrapped and null-tolerant — fetchWatcherReminders never throws
+    // and returns null on any failure, so a Watcher outage costs this
+    // execution nothing but the reminders themselves.
+    const watcherBundle = await fetchWatcherReminders(
+      config,
+      { stage: 'execute', vtid: task.vtid, domain },
+    );
+    if (watcherBundle && watcherBundle.reminders.length > 0) {
+      console.log(
+        `[${VTID}] Watcher: ${watcherBundle.reminders.length} reminder(s) injected for ${task.vtid}`
+        + (watcherBundle.truncated.dropped > 0
+          ? ` (${watcherBundle.truncated.dropped} withheld — ${watcherBundle.truncated.reason})`
+          : ''),
+      );
+    }
+
+    const systemPrompt = buildSystemPrompt(domain, watcherBundle?.block);
     const taskPrompt = buildTaskPrompt(task, routing, domain);
 
     try {

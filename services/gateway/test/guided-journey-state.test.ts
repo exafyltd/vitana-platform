@@ -15,6 +15,7 @@ import {
   getJourneyState,
   setJourneyMode,
   completePractice,
+  recordListenedSession,
 } from '../src/services/guided-journey/guided-journey-state';
 
 // ---------------------------------------------------------------------------
@@ -210,6 +211,33 @@ describe('guided-journey-state service', () => {
     expect(s.completedPracticeCount).toBe(60);
     expect(s.onboardingStatus).toBe('qualified');
     expect(s.qualifiedAt).toBe(FIXED_NOW);
+  });
+
+  // BOOTSTRAP-GUIDED-JOURNEY-SESSION-PERSIST — durable listened-session progress.
+  it('recordListenedSession advances current_session to session+1 and resumes in_progress', async () => {
+    const sb = makeFakeSupabase();
+    const s = await recordListenedSession(sb, 'user-1', 1, FIXED_NOW);
+    expect(s.currentSession).toBe(2); // listened session 1 → now on session 2
+    expect(s.onboardingStatus).toBe('in_progress');
+  });
+
+  it('recordListenedSession is monotonic — never rewinds on a replayed/older session', async () => {
+    const sb = makeFakeSupabase();
+    (sb.__store as Map<string, any>).set('user-5', {
+      ...defaultRow('user-5'),
+      onboarding_status: 'in_progress',
+      current_session: 6, // already reached session 5 (on 6)
+    });
+    const replayOlder = await recordListenedSession(sb, 'user-5', 2, FIXED_NOW);
+    expect(replayOlder.currentSession).toBe(6); // unchanged — no rewind
+    const advance = await recordListenedSession(sb, 'user-5', 6, FIXED_NOW);
+    expect(advance.currentSession).toBe(7); // listening session 6 → on session 7
+  });
+
+  it('recordListenedSession clamps a non-positive/NaN session to 1 (defensive)', async () => {
+    const sb = makeFakeSupabase();
+    const s = await recordListenedSession(sb, 'user-1', 0 as unknown as number, FIXED_NOW);
+    expect(s.currentSession).toBe(2); // treated as session 1 → on 2
   });
 });
 

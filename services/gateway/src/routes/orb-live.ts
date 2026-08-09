@@ -293,6 +293,8 @@ import { writeFact, getCurrentFacts } from '../services/memory-facts-service';
 import WebSocket, { WebSocketServer } from 'ws';
 import { GoogleAuth } from 'google-auth-library';
 import { Server as HttpServer, IncomingMessage } from 'http';
+import { startLiveSessionForWs } from '../orb/live/session/ws-start-adapter';
+import type { IncomingHttpHeaders } from 'http';
 import { parse as parseUrl } from 'url';
 // BOOTSTRAP-ORB-MOVE: Phase 2 (move-only) extracted constants + helpers.
 // Definitions previously inline in this file now live in the orb/ tree.
@@ -1054,14 +1056,29 @@ export interface GeminiLiveSession {
   // safe when the reason is 'forwarding_no_ack' — a model-response watchdog
   // must not be reset by user audio or we'd suppress legitimate stalls.
   responseWatchdogReason?: string;
-  // VTID-01984 (R5): true once Vertex has shown ANY sign of life on this
-  // session — first input_transcription, first model_start_speaking, or
-  // first audio_out chunk. The audio-forwarding paths skip the
-  // forwarding_no_ack watchdog entirely once this is true, because the
-  // upstream WS is demonstrably healthy and a 15-45 s "no ack" window is
-  // simply Vertex computing a response, not a stall. Native WS error /
-  // close handlers still catch real connection failures.
-  vertexHasShownLife?: boolean;
+  // Nova item 5 — liveness is TWO properties, and the old session-wide
+  // `vertexHasShownLife` conflated them, which is why a stalled turn read as
+  // "alive" and skipped recovery.
+  //
+  //   transportHasShownLife — the upstream socket works. An
+  //   input_transcription proves this (the provider received our audio and
+  //   answered), so it is a legitimate setter. Session-wide and never reset:
+  //   once a socket has carried traffic, it was real.
+  //
+  //   modelRespondedThisTurn — the model has produced output for THIS turn.
+  //   ONLY model output (audio out / output transcription) may set it, and it
+  //   resets at turn_complete and whenever a tool result is delivered (at
+  //   which point the model owes a response again). This is the property the
+  //   forwarding watchdog actually needs.
+  //
+  // In the live-3577c2fa trace the user's speech was transcribed at
+  // 15:05:35-38, a tool call fired at 15:05:40, then silence — a per-turn
+  // flag set by transcription would STILL have read "alive". Hence the split
+  // rather than merely resetting the old flag per turn. Named
+  // provider-neutrally because Nova sessions inherited the Vertex-era flag
+  // and reported `reason=vertex_alive` on a Nova session.
+  transportHasShownLife?: boolean;
+  modelRespondedThisTurn?: boolean;
   // VTID-LOOPGUARD: Consecutive model turns without user speech.
   // Detects response loops where model keeps elaborating without being asked.
   consecutiveModelTurns: number;
@@ -1095,6 +1112,14 @@ export interface GeminiLiveSession {
   // forwarding so Gemini doesn't start a new turn while the widget is closing.
   // Once true, the session is effectively in "closing for navigation" mode.
   navigationDispatched?: boolean;
+  // BOOTSTRAP-NOVA-SONIC-VOICE-NAV-FIX: set true when handleNavigateToScreen
+  // already wrote the orb_directive to the transport at tool-call time
+  // (VTID-NAV-FAST), instead of waiting for turn_complete to flush
+  // pendingNavigation. pendingNavigation stays populated either way (other
+  // turn_complete bookkeeping — forced fact extraction, memory bridge order
+  // — still reads it), but the turn_complete dispatch blocks must skip
+  // re-sending the same directive a second time when this is true.
+  navigationDirectiveSentImmediately?: boolean;
   // VTID-NAV: Current page URL the user is on when the orb session opened.
   // Used by navigator_consult to exclude the current screen from recommendations.
   current_route?: string;
@@ -1141,14 +1166,85 @@ export type { ClientContext } from '../orb/live/types';
 
 // VTID-SESSION-LEAK-FIX: Periodic sweep to purge zombie sessions.
 // Safety net in case SSE/WS close handlers miss cleanup (e.g. abrupt process kill).
-// Runs every 5 minutes, removes sessions older than 30 minutes.
+//
+// VTID-03510 — REAP ON IDLE, NOT ON AGE.
+// ---------------------------------------
+// The original sweep keyed purely off `createdAt`: anything older than 30 min
+// was killed, regardless of whether anyone was talking. Since `liveSessions`
+// owns the UPSTREAM Gemini Live WebSocket, and Gemini Live bills per second of
+// open stream, an abandoned session kept billing for the full 30 min (plus up
+// to one 5-min sweep interval).
+//
+// Measured 2026-08-06 over 7 days, from `vtid.live.session.stop`:
+//
+//   close reason                 sessions  avg turns  avg mins  % of billed mins
+//   expired_ttl                       132        0.0      32.4             97.5%
+//   superseded_by_new_session          60        0.1       1.6              2.3%
+//   (normal close)                     33        1.3       0.4              0.3%
+//
+// i.e. **97.5% of all billed Live minutes were sessions nobody ever spoke to**,
+// held open for half an hour each. Real conversation was 12 minutes a WEEK.
+//
+// `lastActivity` already existed on the session and is bumped on every inbound
+// audio chunk and tool call — the sweep simply never read it. There is even an
+// idle-based sweep already, but it runs over `wsClientSessions` (the client
+// socket map), not `liveSessions` (the upstream stream). That gap is the bug.
+//
+// Deliberately NOT keyed on audio-OUT: a model monologuing to a user who left
+// must still be reaped. That is exactly the VTID-03480 signature (model speaks,
+// user never hears it), and keeping the stream alive for it burns money while
+// hiding the fault. The distinct `idle_no_engagement` reason below keeps that
+// case *more* visible, not less — it separates "user walked away" from the old
+// undifferentiated `expired_ttl` bucket.
+const MAX_SESSION_AGE_MS = 30 * 60 * 1000;
+/** No inbound audio and no turns ever — user opened ORB and walked away. */
+const IDLE_NO_ENGAGEMENT_MS = Number(process.env.ORB_IDLE_NO_ENGAGEMENT_MS || 5 * 60 * 1000);
+/** Had a real conversation, then went quiet. More generous — they may be thinking. */
+const IDLE_AFTER_ENGAGEMENT_MS = Number(process.env.ORB_IDLE_AFTER_ENGAGEMENT_MS || 10 * 60 * 1000);
+
+/**
+ * VTID-03510: decide whether an idle live session should be reaped, and why.
+ *
+ * Extracted as a pure function (same rationale as VTID-03502's
+ * `shouldFallbackToVertexOnNovaClose`) because both directions are expensive:
+ * too aggressive cuts off a user mid-thought, too lax keeps paying for silence.
+ * Returning the REASON rather than a boolean is what keeps the saving
+ * measurable afterwards — collapsing these back into `expired_ttl` would make
+ * the fix invisible in exactly the telemetry that revealed the problem.
+ *
+ * @returns the close reason, or null to keep the session alive.
+ */
+export function classifyIdleSession(args: {
+  ageMs: number;
+  idleMs: number;
+  turnCount: number;
+  audioInChunks: number;
+}): 'expired_ttl' | 'idle_no_engagement' | 'idle_timeout' | null {
+  // Absolute backstop first, and it keeps its original reason string so any
+  // existing dashboard filtering on `expired_ttl` still means what it did.
+  if (args.ageMs > MAX_SESSION_AGE_MS) return 'expired_ttl';
+  const engaged = args.turnCount > 0 || args.audioInChunks > 0;
+  if (!engaged && args.idleMs > IDLE_NO_ENGAGEMENT_MS) return 'idle_no_engagement';
+  if (engaged && args.idleMs > IDLE_AFTER_ENGAGEMENT_MS) return 'idle_timeout';
+  return null;
+}
+
+// Sweep every 60s, not every 5 min: a 5-minute idle budget checked on a
+// 5-minute interval yields up to 10 minutes of actual billed idle.
 setInterval(() => {
-  const MAX_SESSION_AGE_MS = 30 * 60 * 1000;
   const now = Date.now();
   let purged = 0;
   for (const [sid, s] of liveSessions) {
-    if (now - s.createdAt.getTime() > MAX_SESSION_AGE_MS) {
-      if (s.upstreamWs) { try { s.upstreamWs.close(); } catch (_) { /* ignore */ } }
+    const closeReason = classifyIdleSession({
+      ageMs: now - s.createdAt.getTime(),
+      idleMs: now - s.lastActivity.getTime(),
+      turnCount: s.turn_count,
+      audioInChunks: s.audioInChunks,
+    });
+    if (closeReason) {
+      // Nova item 6: this is the abandoned-session sweep, not a user action —
+      // distinguish it from user_stop / client_disconnect in telemetry.
+      if (s.upstreamWs) { try { s.upstreamWs.close(1000, `zombie_sweep_${closeReason}`); } catch (_) { /* ignore */ } }
       // BOOTSTRAP-ORB-1007-AUDIT: emit session.stop so abandoned sessions
       // (client closed tab / mobile killed app mid-conversation) show up in
       // OASIS instead of just disappearing. Prior behaviour left a silent
@@ -1158,7 +1254,12 @@ setInterval(() => {
         user_id: s.identity?.user_id || null,
         tenant_id: s.identity?.tenant_id || null,
         transport: s.clientWs ? 'websocket' : 'sse',
-        reason: 'expired_ttl',
+        reason: closeReason,
+        // VTID-03510: idle_ms makes the saving auditable — it is the billed
+        // silence this sweep stopped paying for. Without it the only way to
+        // tell a 5-minute reap from a 32-minute one is duration_ms, which
+        // also includes the useful part of the session.
+        idle_ms: now - s.lastActivity.getTime(),
         audio_in_chunks: s.audioInChunks,
         audio_out_chunks: s.audioOutChunks,
         duration_ms: Date.now() - s.createdAt.getTime(),
@@ -1184,8 +1285,8 @@ setInterval(() => {
       purged++;
     }
   }
-  if (purged > 0) console.log(`[VTID-SESSION-TTL] Purged ${purged} expired sessions (remaining: ${liveSessions.size})`);
-}, 5 * 60 * 1000);
+  if (purged > 0) console.log(`[VTID-03510] Reaped ${purged} idle/expired live sessions (remaining: ${liveSessions.size})`);
+}, 60 * 1000);
 
 // =============================================================================
 // VTID-SESSION-LIMIT: Enforce single active ORB session per user
@@ -1206,7 +1307,8 @@ function terminateExistingSessionsForUser(userId: string, excludeSessionId?: str
 
     // Close upstream WebSocket
     if (existingSession.upstreamWs) {
-      try { existingSession.upstreamWs.close(); } catch (_e) { /* ignore */ }
+      // Nova item 6: replaced because the same user started a newer session.
+      try { existingSession.upstreamWs.close(1000, 'superseded_by_new_session'); } catch (_e) { /* ignore */ }
       existingSession.upstreamWs = null;
     }
 
@@ -1343,7 +1445,7 @@ import { classifyUpstreamClose } from '../orb/live/session/upstream-close-classi
 // VTID-03234 (report finding #3): restore the upstream ping + silence
 // keepalive that the VertexLiveClient refactor left unreachable (it lived in
 // the now-dead setup_complete branch of the message handler).
-import { armUpstreamKeepalive } from '../orb/live/session/upstream-keepalive';
+import { armUpstreamKeepalive, clearUpstreamKeepalive } from '../orb/live/session/upstream-keepalive';
 // VTID-03126 (Phase D.3): Live API voice resolver — externalizes the
 // LIVE_API_VOICES Record + adds telemetry on silent fallbacks.
 import { getLiveApiVoice } from '../orb/live/voice/live-api-voice';
@@ -1387,10 +1489,51 @@ import {
   getNovaSonicConfig,
   isNovaSonicIdentityAllowed,
   isNovaSonicLanguageSupported,
+  NOVA_SONIC_MODEL_ID,
 } from '../orb/live/upstream/nova-sonic-config';
+// BOOTSTRAP-NOVA-SONIC-VOICE: greeting AUDIO bridge — see the module doc in
+// greeting-audio-bridge.ts for why this exists (both Vertex and Nova now
+// take 5-8+s to first greeting audio; this fills the silence).
+import { buildGreetingBridgeText } from '../services/conversation/greeting-audio-bridge';
+import { synthesizeGreetingBridgeAudioPcm, GREETING_BRIDGE_PCM_SAMPLE_RATE_HZ } from '../services/tts/greeting-bridge-tts';
+
+/**
+ * VTID-03502: should a closed Nova stream fall back to Vertex?
+ *
+ * True only for the measured premature-close-at-open failure: the stream
+ * closed on its own before ANY audio was produced. `audioOutChunks === 0` is
+ * the discriminator because it is perfectly correlated with
+ * `nova_stream_error` across the canary window (6/6) and appears under no
+ * other close reason (local_close 0/35, client_disconnect 0/13, user_stop
+ * 0/3, nova_validation 0/1) — a mid-conversation drop always has audio out.
+ *
+ * Exported as a pure predicate so this decision is testable on its own rather
+ * than only through the Nova connect closure it is used in.
+ */
+export function shouldFallbackToVertexOnNovaClose(args: {
+  sessionActive: boolean;
+  /** We closed the stream ourselves (shutdown, swap, rotation) — not a failure. */
+  initiatedLocally: boolean;
+  /** A planned rotation owns its own reconnect; do not race it. */
+  rotationInFlight: boolean;
+  audioOutChunks: number;
+  /** Guard against a Vertex-side failure bouncing back and looping. */
+  alreadyFellBack: boolean;
+}): boolean {
+  return (
+    args.sessionActive &&
+    !args.initiatedLocally &&
+    !args.rotationInFlight &&
+    args.audioOutChunks === 0 &&
+    !args.alreadyFellBack
+  );
+}
+// VTID-03495: Polly seam for the /tts route. No-ops unless TTS_PROVIDER=polly.
+import { tryPollySynthesis } from '../services/tts/tts-provider';
 import { resolveNovaSonicVoice } from '../orb/live/voice/nova-sonic-voice';
 import { prewarmNovaSonicBedrock } from '../orb/live/upstream/nova-sonic-live-client';
-import { startNovaSonicKeepWarm } from '../orb/live/upstream/nova-sonic-keepwarm';
+import { sanitizeInstructionForNova } from '../orb/live/upstream/nova-instruction-sanitizer';
+import { startNovaSonicKeepWarm, startNovaSonicModelWarm } from '../orb/live/upstream/nova-sonic-keepwarm';
 import { createUpstreamClient } from '../orb/live/upstream/upstream-client-factory';
 import { bindUpstreamSessionHandlers } from '../orb/live/session/upstream-message-handler';
 import { createNovaWsFacade } from '../orb/live/upstream/nova-ws-facade';
@@ -1597,6 +1740,12 @@ if (googleAuth && VERTEX_PROJECT_ID) {
     // would put TLS/H2 setup back on the next user's critical path).
     const keepWarm = startNovaSonicKeepWarm(novaBootCfg);
     console.log(`[BOOTSTRAP-NOVA-SONIC-VOICE] Bedrock keep-warm ${keepWarm ? `enabled (every ${novaBootCfg.keepWarmMs}ms)` : 'disabled'}`);
+    // Latency fix: the transport ping above never touches the model
+    // executor. This second loop performs a real, tiny inference round-trip
+    // on a shorter cadence to keep Bedrock's Nova model executor itself
+    // warm — see warmNovaSonicModelExecution's doc comment for why.
+    const modelWarm = startNovaSonicModelWarm(novaBootCfg);
+    console.log(`[BOOTSTRAP-NOVA-SONIC-VOICE] Bedrock model-execution warm-up ${modelWarm ? `enabled (every ${novaBootCfg.modelWarmMs}ms)` : 'disabled'}`);
   }
 }
 
@@ -2278,6 +2427,45 @@ const VERTEX_BOOTSTRAP_CACHE = new Map<string, { at: number; value: {
 const VERTEX_BOOTSTRAP_CACHE_TTL_MS = 5 * 60_000;
 const VERTEX_BOOTSTRAP_CACHE_MAX_ENTRIES = 500;
 
+// VTID-03504: in-flight de-dupe for the legacy bootstrap, mirroring the fix in
+// `vitana-brain-cache.ts`. VERTEX_BOOTSTRAP_CACHE is a read-through cache that
+// is only WRITTEN once the work finishes, so N concurrent starts for the same
+// user all miss, all run the full fetch, and all compete — a textbook cache
+// stampede. The ORB's own reconnect loop generates exactly that traffic shape.
+// Keyed identically to the cache (tenant|user) so the two agree on identity.
+const VERTEX_BOOTSTRAP_INFLIGHT = new Map<string, Promise<{
+  contextPack?: ContextPack;
+  contextInstruction?: string;
+  latencyMs: number;
+  skippedReason?: string;
+}>>();
+
+// VTID-03504: upper bound on a single caller's wait. The underlying build is
+// NOT cancelled on timeout — it runs to completion and populates the cache, so
+// the retry that follows lands on a warm entry instead of starting a third
+// copy. What is bounded is how long a caller sits on it: an unbounded await
+// here is what let a degraded bootstrap hold the greeting for ~120s while the
+// widget's 8s budget had long since expired and fired another reconnect.
+const BOOTSTRAP_CALLER_TIMEOUT_MS = Number(process.env.ORB_BOOTSTRAP_CALLER_TIMEOUT_MS || 6000);
+
+/** VTID-03504: the "no memory available" shape, used as a fail-soft fallback. */
+function emptyMemoryContext(
+  userId: string,
+  tenantId: string,
+  error: string,
+): Awaited<ReturnType<typeof fetchMemoryContextWithIdentity>> {
+  return {
+    ok: false,
+    user_id: userId,
+    tenant_id: tenantId,
+    items: [],
+    summary: '',
+    formatted_context: '',
+    fetched_at: new Date().toISOString(),
+    error,
+  };
+}
+
 function storeVertexBootstrapCache(key: string, value: {
   contextPack?: ContextPack;
   contextInstruction?: string;
@@ -2318,6 +2506,51 @@ export async function buildBootstrapContextPack(
     return { ...cached.value, latencyMs: Date.now() - startTime };
   }
 
+  // VTID-03504: join an identical build already running for this user rather
+  // than starting a second one.
+  let work = VERTEX_BOOTSTRAP_INFLIGHT.get(bootstrapCacheKey);
+  if (work) {
+    console.log(`[VTID-03504] Bootstrap JOIN in-flight for session ${sessionId} (key ${bootstrapCacheKey})`);
+  } else {
+    work = buildBootstrapContextPackUncached(identity, sessionId, bootstrapCacheKey);
+    VERTEX_BOOTSTRAP_INFLIGHT.set(bootstrapCacheKey, work);
+    // Release the slot on settle, guarded on identity so a newer build that
+    // has already claimed the key is never evicted by an older one finishing.
+    const release = () => {
+      if (VERTEX_BOOTSTRAP_INFLIGHT.get(bootstrapCacheKey) === work) {
+        VERTEX_BOOTSTRAP_INFLIGHT.delete(bootstrapCacheKey);
+      }
+    };
+    work.then(release, release);
+  }
+
+  // Bound the caller's wait, not the build (see BOOTSTRAP_CALLER_TIMEOUT_MS).
+  // Degrading to "no memory preamble" is a real loss of personalization, and
+  // it is still strictly better than the alternative this replaces: a session
+  // that never greets at all because the client gave up first.
+  return withBootstrapTimeout(
+    work,
+    { latencyMs: Date.now() - startTime, skippedReason: 'bootstrap_timeout' },
+    `bootstrap(${sessionId})`,
+    BOOTSTRAP_CALLER_TIMEOUT_MS,
+  );
+}
+
+async function buildBootstrapContextPackUncached(
+  identity: SupabaseIdentity,
+  sessionId: string,
+  bootstrapCacheKey: string
+): Promise<{
+  contextPack?: ContextPack;
+  contextInstruction?: string;
+  latencyMs: number;
+  skippedReason?: string;
+}> {
+  const startTime = Date.now();
+  // The exported wrapper already rejected a missing tenant/user; restate it
+  // here so this function narrows the same way on its own.
+  const userId = identity.user_id as string;
+  const tenantId = identity.tenant_id as string;
   try {
     // VTID-01224: identity-scoped memory fetch so each user gets their own memory.
     // VTID-RECENT-TURNS: fetch the 3 most recent raw user utterances in parallel
@@ -2325,18 +2558,42 @@ export async function buildBootstrapContextPack(
     // hallucinating from aggregated facts.
     // BOOTSTRAP-HISTORY-AWARE-TIMELINE: also fetch the User Context Profile
     // (recent activity, routines, preferences) so the voice ORB is history-aware.
+    // VTID-03504: the profiler leg has capped its own stages since
+    // BOOTSTRAP-ORB-CONNECT-HANG, but these two had no bound at all — so the
+    // build's worst case was "however long Supabase takes", which under load
+    // was measured at 120s. Both fail soft to an empty result, which the
+    // formatting below already handles (it is the same shape a user with no
+    // memory items produces).
     const profilerEnabled = process.env.PROFILER_IN_ORB_INSTRUCTION !== 'false';
     const [memoryContext, recentTurns, profileResult] = await Promise.all([
-      fetchMemoryContextWithIdentity(
-        { user_id: identity.user_id, tenant_id: identity.tenant_id },
-        LIVE_CONTEXT_CONFIG.MAX_MEMORY_ITEMS
+      withBootstrapTimeout(
+        // The inner .catch keeps the ORIGINAL failure message on `error`,
+        // which becomes the caller-visible `skippedReason` below. Letting
+        // withBootstrapTimeout's own catch swallow it would report every
+        // memory failure as a bare 'timeout' and lose the cause — a
+        // regression this repo's tests correctly refuse ("never silence
+        // errors"). Only a genuine timeout says so.
+        fetchMemoryContextWithIdentity(
+          { user_id: userId, tenant_id: tenantId },
+          LIVE_CONTEXT_CONFIG.MAX_MEMORY_ITEMS
+        ).catch((err: any) => emptyMemoryContext(userId, tenantId, `error: ${err?.message || err}`)),
+        emptyMemoryContext(userId, tenantId, `error: bootstrap.fetchMemoryContext timed out after ${WS_BOOTSTRAP_STAGE_TIMEOUT_MS}ms`),
+        'bootstrap.fetchMemoryContext',
       ),
-      fetchRecentOrbUserTurns(
-        { user_id: identity.user_id, tenant_id: identity.tenant_id },
-        3
+      // Recent turns are one optional block of the preamble, so a failure here
+      // degrades to "no recent-turns block" rather than failing the whole
+      // bootstrap — matching how the profiler leg has always behaved. The
+      // cause is still logged by withBootstrapTimeout.
+      withBootstrapTimeout(
+        fetchRecentOrbUserTurns(
+          { user_id: userId, tenant_id: tenantId },
+          3
+        ),
+        [] as Awaited<ReturnType<typeof fetchRecentOrbUserTurns>>,
+        'bootstrap.fetchRecentTurns',
       ),
       profilerEnabled
-        ? getUserContextSummary(identity.user_id, { tenantId: identity.tenant_id })
+        ? getUserContextSummary(userId, { tenantId })
             .catch((err: any) => {
               console.warn(`[UserContextProfiler] voice bootstrap fetch failed: ${err?.message || err}`);
               return { summary: '', version: 0, cached: false, warnings: [] };
@@ -2613,6 +2870,19 @@ async function handleNavigate(
   session: GeminiLiveSession,
   args: Record<string, unknown>
 ): Promise<{ success: boolean; result: string; error?: string }> {
+  // VTID-03446: same-turn re-entry guard. A redirect directive has already
+  // been dispatched this session — the ORB overlay is on its way out. If
+  // the model (observed on Nova Sonic, which can chain a second tool call
+  // before ever emitting END_TURN — see the BOOTSTRAP-NOVA-SONIC-VOICE-NAV-FIX
+  // comment on handleNavigateToScreen below) tries to re-open the Navigator
+  // anyway, short-circuit instead of re-running consultNavigator and risking
+  // a second, deeper disambiguation question stacked on top of the first.
+  if (session.navigationDispatched) {
+    return {
+      success: true,
+      result: 'NAVIGATING_TO: (already in progress)\nA redirect is already underway from earlier in this turn. Do NOT ask another question or call navigate/navigate_to_screen again — just finish your sentence and stop.',
+    };
+  }
   // PR 1.B-4: lifted to services/orb-tools-shared.ts:tool_navigate. Both
   // pipelines now run the same consultNavigator + decision logic + directive
   // payload construction + OASIS emit chain. Vertex post-processes the
@@ -2803,6 +3073,13 @@ export async function handleNavigateToScreen(
   session: GeminiLiveSession,
   args: Record<string, unknown>
 ): Promise<{ success: boolean; result: string; error?: string }> {
+  // VTID-03446: same-turn re-entry guard — mirrors handleNavigate() above.
+  if (session.navigationDispatched) {
+    return {
+      success: true,
+      result: 'NAVIGATING_TO: (already in progress)\nA redirect is already underway from earlier in this turn. Do NOT ask another question or call navigate/navigate_to_screen again — just finish your sentence and stop.',
+    };
+  }
   // PR 1.B-5: lifted to services/orb-tools-shared.ts:tool_navigate_to_screen.
   // The shared module now enforces all 7 gates (anonymous, viewport,
   // mobile_route override, already-there dedup, OASIS error_kind events,
@@ -2868,10 +3145,49 @@ export async function handleNavigateToScreen(
     };
   }
 
-  // Vertex-only: set pendingNavigation + eagerly update current_route so
-  // turn_complete + get_current_screen see the fresh destination.
+  // BOOTSTRAP-NOVA-SONIC-VOICE-NAV-FIX: dispatch the orb_directive
+  // IMMEDIATELY, on the same tick the tool result is decided, instead of
+  // queuing pendingNavigation and waiting for the turn_complete handler to
+  // flush it. That deferred design was fine under Gemini (whose forced
+  // function-response continuation reaches turn_complete in tens to a few
+  // thousand ms — see historical drain_wait_ms of 19-2489ms in
+  // orb.navigator.dispatched telemetry), but Nova Sonic can take many
+  // seconds to close out the turn (observed live 2026-07-29, session
+  // live-cadd6787...: drain_wait_ms=9968 — Nova chained a SECOND tool call,
+  // end_teaching_session, before ever emitting END_TURN). A ~10s stall
+  // after asking Vitana to navigate reads as "navigation is broken" even
+  // though the tool call itself succeeded in 6ms. Mirrors the pattern
+  // handleNavigate() (the free-text `navigate` tool) already uses.
   if (result.directive && result.screen_id && result.route && result.title) {
     const reason = String(args.reason || 'navigate_to_screen tool call');
+    const directiveJson = JSON.stringify(result.directive);
+    if (session.sseResponse) {
+      try { session.sseResponse.write(`data: ${directiveJson}\n\n`); } catch (_e) { /* SSE closed */ }
+    }
+    if ((session as any).clientWs && (session as any).clientWs.readyState === 1 /* WebSocket.OPEN */) {
+      try { sendWsMessage((session as any).clientWs, result.directive); } catch (_e) { /* WS closed */ }
+    }
+    console.log(`[VTID-NAV-FAST] Immediate orb_directive dispatched: ${result.screen_id} (${result.route})`);
+    emitOasisEvent({
+      vtid: 'VTID-NAV-01',
+      type: 'orb.navigator.dispatched',
+      source: 'orb-live-ws',
+      status: 'info',
+      message: `dispatched navigate to ${result.screen_id}`,
+      payload: {
+        session_id: session.sessionId,
+        screen_id: result.screen_id,
+        route: result.route,
+        decision_source: 'direct',
+        drain_wait_ms: 0,
+      },
+    }).catch(() => {});
+
+    // pendingNavigation is still populated (unchanged from before this fix)
+    // so the turn_complete handler's forced-fact-extraction and memory
+    // bookkeeping keep working; navigationDirectiveSentImmediately tells
+    // that handler the directive was already flushed here, so it must
+    // skip re-sending it when the turn eventually completes.
     session.pendingNavigation = {
       screen_id: result.screen_id,
       route: result.route,
@@ -2881,6 +3197,7 @@ export async function handleNavigateToScreen(
       requested_at: Date.now(),
     };
     session.navigationDispatched = true;
+    session.navigationDirectiveSentImmediately = true;
 
     const isOverlay = result.entry_kind === 'overlay';
     if (!isOverlay) {
@@ -5947,6 +6264,41 @@ function sendFunctionResponseToLiveAPI(
   }
 }
 
+// Hard contract for tool-bound flows the LLM keeps skipping. Empirically
+// Gemini Live sometimes answers "I can't find that user" without ever
+// calling resolve_recipient — especially when the spoken phrase contains
+// a hint like "I think it's maria6". This block makes the binding
+// explicit at the system-instruction level (tool description alone wasn't
+// enough). Same pattern for navigation.
+//
+// BOOTSTRAP-ORB-MESSAGING-CONTRACT-TRIM-FIX: this used to be baked onto the
+// tail of the bootstrap/memory instruction string (generateMemoryEnhanced-
+// SystemInstruction's baseInstructionNoMemory/baseInstructionWithMemory).
+// That made it the LAST thing appended to the bootstrap text — which is
+// exactly the content both capBootstrapContext() (Phase A trailing-content
+// cap) and the R0 aggregate byte-budget guard's 'bootstrap' drop-priority
+// (instruction-budget.ts DROP_ORDER, dropped FIRST) trim away first for
+// heavy-context users (many memory facts, social context, calendar, journey
+// data). A "NON-NEGOTIABLE" contract that silently vanishes under budget
+// pressure is worse than none — the model then has no explicit instruction
+// to call resolve_recipient/send_chat_message and improvises an unrelated
+// answer instead (observed: user asked to message someone, got a reply
+// about unrelated holiday content, no tool call in the logs at all).
+// Fixed by moving it into the PRESERVED scaffold tail — appended together
+// with buildNavigatorPolicySection() below, which decomposeInstructionSections
+// (instruction-budget.ts) always classifies as 'scaffold' and never trims.
+export const MESSAGING_CONTRACT = `
+
+## MESSAGING & SHARING CONTRACT (NON-NEGOTIABLE)
+
+If the user mentions sending a message, sharing a link, texting, inviting, or telling someone something, you MUST:
+1. Call resolve_recipient(spoken_name) BEFORE saying anything about whether the recipient exists. The ONLY way to honestly say "I can't find that user" is to receive an empty candidates array from resolve_recipient. Do not infer absence from your own context — you do not have the user's contact list.
+2. If the spoken phrase contains a name AND a Vitana ID hint ("Maria, I think it's maria6"), pass the Vitana ID hint as spoken_name first; if that returns 0 candidates, retry with the name.
+3. After resolve_recipient returns, follow the readback contract from the tool description (read back, await explicit confirmation, then send_chat_message).
+4. AFTER send_chat_message returns ok:true (VTID-02969): briefly acknowledge ("Sent to @<vid>.") AND in the SAME turn offer the next action — but ONLY from the tool result's next_actions array. Read next_actions[0].label verbatim as the suggestion. If the array is empty, briefly acknowledge and let the user lead — do NOT invent a next action from your own knowledge. Example with next_actions: "Sent to @dragan_red. Next: <next_actions[0].label>. Want me to do that?" Example with empty array: "Sent to @dragan_red." When the user accepts, call activate_recommendation with next_actions[0].id.
+
+If the user asks to be shown a screen, list, or detail page, call navigate_to_screen — never claim a page doesn't exist without trying. The frontend handles routing; you handle the call.`;
+
 /**
  * VTID-NAV-01: Vitana Navigator policy section appended to every system
  * instruction. Teaches the model when to call navigator_consult,
@@ -6452,6 +6804,8 @@ async function connectToLiveAPI(
         }),
         languageSupported: isNovaSonicLanguageSupported(session.lang),
         runtime: __novaRuntime === 'aws-ecs' ? 'aws-ecs' : __novaRuntime,
+        // VTID-03501: labels the decision as global-promotion vs canary.
+        globalEnabled: __novaCfg.globalEnabled === true,
       },
     });
   } catch (e) {
@@ -6466,6 +6820,23 @@ async function connectToLiveAPI(
       canary: false,
     };
   }
+  // BOOTSTRAP-NOVA-IDLE-ROTATION: a session that already exhausted its Nova
+  // rotation attempts is pinned to Vertex for the remainder of its life. This
+  // has to be applied AFTER the selector (which is stateless and would happily
+  // hand back Nova again) and BEFORE `session.upstreamProvider` is recorded,
+  // so latency attribution and the connect branch below both see the pin.
+  // Loud, never silent — CLAUDE.md "Never allow silent model fallback".
+  if ((session as any)._novaFallbackToVertex && __upstreamDecision.provider === 'nova_sonic') {
+    console.warn(
+      `[BOOTSTRAP-NOVA-IDLE-ROTATION] Session ${session.sessionId} is pinned to Vertex after exhausting ` +
+        `Nova rotation attempts — overriding selector decision '${__upstreamDecision.provider}'.`,
+    );
+    __upstreamDecision = {
+      ...__upstreamDecision,
+      provider: 'vertex',
+      reason: 'nova_rotation_exhausted_fallback',
+    };
+  }
   console.log(
     `[VTID-02976] upstream provider selected: provider=${__upstreamDecision.provider}` +
       ` requested=${__upstreamDecision.requested ?? 'none'}` +
@@ -6473,6 +6844,13 @@ async function connectToLiveAPI(
       ` livekit_ready=${__upstreamDecision.livekitReady}` +
       ` canary=${__upstreamDecision.canary}`,
   );
+  // BOOTSTRAP-NOVA-SONIC-VOICE: record the resolved provider as soon as it's
+  // known, for every provider (not just Nova) — this is what the latency
+  // tracker correction sites and per-turn tracker construction read to
+  // attribute voice.latency.measured events correctly instead of assuming
+  // Vertex. (The later `session.upstreamProvider = 'nova_sonic'` deeper in
+  // the Nova branch is now redundant but harmless — left in place.)
+  session.upstreamProvider = __upstreamDecision.provider;
   // OASIS emission — every connect call emits a single `selected` event.
   // When the request was LiveKit but the path degraded (config invalid or
   // pinned_to_vertex_l1 or canary_not_allowlisted), also emit
@@ -6992,6 +7370,18 @@ async function connectToLiveAPI(
                         // ("user system instruction has 48787 tokens") —
                         // prod ORB stuck at "Verbinden…". Always omit here.
                         true,
+                        // VTID-03447: resolved spoken first name, when the
+                        // greeting-facts prefetch (live-session-controller.ts,
+                        // resolveSpokenFirstName) has already populated it on
+                        // the session. Gives this shared Vertex/Nova Sonic WS
+                        // path the same "AUTHORITATIVE USER NAME" structural
+                        // header orb-livekit.ts already has via VTID-03014 —
+                        // without it Nova Sonic falls back to greeting by the
+                        // Vitana ID handle (e.g. "Dragan3") instead of the
+                        // user's actual first name. Best-effort: null when
+                        // not yet resolved (feature flag off, or still
+                        // in-flight) — the header simply doesn't render.
+                        (session as any).greetingFirstName ?? null,
                       ))) as string
             }]
           },
@@ -7087,6 +7477,43 @@ async function connectToLiveAPI(
       const hasNavigateTool = toolNames.includes('navigate_to_screen');
       console.log(`[VTID-NAV-DIAG] Session ${session.sessionId}: mode=${toolMode} isAnonymous=${session.isAnonymous} hasIdentity=${!!session.identity} toolCount=${toolNames.length} hasNavigateTool=${hasNavigateTool} toolNames=[${toolNames.join(',')}]`);
 
+      // BOOTSTRAP-ORB-TOOL-CARRYOVER: if the previous upstream died while the
+      // model was acting on a tool result, carry that result into the rebuilt
+      // session so it continues instead of coming back with no memory of it.
+      //
+      // Injected here — at the single point BOTH the Vertex path and the Nova
+      // path read the envelope from — and injected REGARDLESS of
+      // `session.resumptionHandle`. That is deliberate and is the opposite of
+      // the `reconnectHistory` rule above: a resumption handle is a periodic
+      // CHECKPOINT, and in the production trace it was issued 8s BEFORE the
+      // tool call, so native resume rewinds to a point where the tool call
+      // never happened. A handle cannot restore something newer than itself.
+      try {
+        const pendingTools = getPendingToolResults(session);
+        if (pendingTools.length > 0) {
+          const resumeBlock = buildPendingToolResumeBlock(pendingTools);
+          const parts = (setupMessage.setup as any)?.system_instruction?.parts;
+          if (resumeBlock && Array.isArray(parts) && parts[0]) {
+            parts[0].text = `${parts[0].text ?? ''}${resumeBlock}`;
+            console.log(
+              `[BOOTSTRAP-ORB-TOOL-CARRYOVER] Session ${session.sessionId}: carried ${pendingTools.length} unconsumed tool result(s) ` +
+                `into the rebuilt instruction (${pendingTools.map((p) => p.toolName).join(',')}) — ` +
+                `has_resumption_handle=${!!session.resumptionHandle}.`,
+            );
+            emitDiag(session, 'pending_tool_results_carried', {
+              count: pendingTools.length,
+              tools: pendingTools.map((p) => p.toolName),
+              has_resumption_handle: !!session.resumptionHandle,
+            });
+          }
+        }
+      } catch (e) {
+        // Never let the carry-over break the handshake — a session that
+        // reconnects without its tool context is degraded; one that fails to
+        // reconnect at all is dead.
+        console.warn(`[BOOTSTRAP-ORB-TOOL-CARRYOVER] carry_error: ${(e as Error)?.message ?? String(e)}`);
+      }
+
       const setupPreview = JSON.stringify(setupMessage).substring(0, 800);
       console.log(`[VTID-01219] Sending setup message:`, setupPreview);
       console.log(`[VTID-01224] Setup includes: tools=${session.identity ? 3 : 0}, contextChars=${session.contextInstruction?.length || 0}`);
@@ -7111,44 +7538,107 @@ async function connectToLiveAPI(
     if (__upstreamDecision.provider === 'nova_sonic') {
       try {
         const novaCfg = getNovaSonicConfig(process.env);
+        // L-02: kick Bedrock transport preparation NOW — credential-chain
+        // resolution, SDK module load, and the pooled DNS/TCP/TLS/HTTP2 path
+        // — concurrently with context assembly below. None of that work
+        // depends on the system instruction, but it used to sit behind the
+        // envelope await purely because connect() is called after it.
+        //
+        // Deliberately NOT awaited: on a warm process this is a memoized
+        // no-op (boot prewarm + the keep-warm loop already populated the
+        // shared client), so awaiting could only ever add latency. The value
+        // is on the cold path — first session after a fresh task, or when
+        // boot prewarm failed — where connect() would otherwise pay the full
+        // credential/TLS cost serially after context assembly. connect()
+        // still resolves the client itself, so correctness does not depend
+        // on this finishing, or finishing first.
+        void prewarmNovaSonicBedrock(novaCfg).catch(() => false);
         const envelope = (await buildOrbVertexSetupEnvelope()) as { setup?: Record<string, any> };
         const setup = envelope.setup ?? {};
-        const novaSystemInstruction: string =
-          setup.system_instruction?.parts?.[0]?.text ?? '';
+        // Nova's RAI content filter rejects the stream over the IDENTITY
+        // LOCK block's impersonation-denial list (measured via bisect) —
+        // swap it for the Nova-safe equivalent. Vertex is untouched.
+        const { text: novaSystemInstruction, replaced: novaLockReplaced } =
+          sanitizeInstructionForNova(setup.system_instruction?.parts?.[0]?.text ?? '');
+        if (novaLockReplaced) {
+          emitDiag(session, 'nova_instruction_sanitized', { provider: 'nova_sonic', block: 'identity_lock' });
+        }
         const novaTools: Array<Record<string, unknown>> = Array.isArray(setup.tools)
           ? (setup.tools as Array<Record<string, unknown>>)
           : [];
         const novaPersona = ((session as any).activePersona as string) || 'vitana';
         const novaVoice =
-          resolveNovaSonicVoice({ language: session.lang || 'en', persona: novaPersona }) ?? 'tiffany';
+          resolveNovaSonicVoice({ language: session.lang || 'en', persona: novaPersona }) ?? 'tina';
+        // Stashed for the connect_failed OASIS payload — makes a rejected
+        // envelope diagnosable without server-log access.
+        (session as any)._novaInstructionChars = novaSystemInstruction.length;
+        (session as any)._novaToolEntryCount = novaTools.length;
 
         // Rotation (Bedrock caps a bidirectional stream at 8 minutes): open
         // the REPLACEMENT stream first (same connect path → same context/
         // history rebuild + persona voice re-resolution), switch the session
         // to it, then close the old stream. The browser WS/SSE stays
         // connected and no greeting replays (greetingSent remains true).
-        let rotateNovaStream: (() => Promise<void>) | null = null;
+        let rotateNovaStream: ((reason: NovaRotationReason) => Promise<void>) | null = null;
 
         const novaClient = createUpstreamClient('nova_sonic', {
           nova: {
             config: novaCfg,
             voiceId: novaVoice,
             onRotationDue: () => {
-              void rotateNovaStream?.();
+              void rotateNovaStream?.('provider_stream_rotation');
+            },
+            // BOOTSTRAP-NOVA-IDLE-ROTATION: the fail-safe. Fires only when
+            // input has genuinely stopped reaching Bedrock for ~240s, which
+            // in a healthy session never happens (the 250ms silence keepalive
+            // keeps the clock pinned). Same open-before-close swap as the
+            // wall-clock rotation — the only difference is why it ran.
+            onIdleDeadlineApproaching: ({ msSinceLastInput }) => {
+              console.warn(
+                `[BOOTSTRAP-NOVA-IDLE-ROTATION] Session ${session.sessionId} has accepted no input for ` +
+                  `${Math.round(msSinceLastInput / 1000)}s — approaching Bedrock's ~295s idle deadline. ` +
+                  `Rotating pre-emptively. If this fires in production the silence keepalive has stopped ` +
+                  `feeding frames; that is the real bug to chase, this is only the backstop.`,
+              );
+              emitDiag(session, 'nova_idle_deadline_approaching', {
+                provider: 'nova_sonic',
+                ms_since_last_input: msSinceLastInput,
+              });
+              void emitOasisEvent({
+                type: 'orb.upstream.nova.idle_deadline_approaching',
+                vtid: 'BOOTSTRAP-NOVA-IDLE-ROTATION',
+                payload: {
+                  session_id: session.sessionId,
+                  provider: 'nova_sonic',
+                  ms_since_last_input: msSinceLastInput,
+                } as any,
+              } as any).catch(() => { /* best-effort */ });
+              void rotateNovaStream?.('idle_deadline_failsafe');
             },
           },
         });
 
-        rotateNovaStream = async () => {
+        rotateNovaStream = async (reason: NovaRotationReason) => {
           if (!session.active) return;
+          // A wall-clock rotation and an idle fail-safe can in principle come
+          // due together; running two swaps concurrently would race two
+          // replacement streams onto one session.
+          if ((session as any)._novaRotationInFlight) {
+            emitDiag(session, 'nova_rotation_skipped', { provider: 'nova_sonic', reason, code: 'already_in_flight' });
+            return;
+          }
           (session as any)._novaRotationInFlight = true;
-          emitDiag(session, 'nova_rotation_started', { provider: 'nova_sonic' });
+          emitDiag(session, 'nova_rotation_started', { provider: 'nova_sonic', reason });
           void emitOasisEvent({
             type: 'orb.upstream.nova.rotation_started',
             vtid: 'BOOTSTRAP-NOVA-SONIC-VOICE',
-            payload: { session_id: session.sessionId, provider: 'nova_sonic', reason: 'provider_stream_rotation' } as any,
+            payload: { session_id: session.sessionId, provider: 'nova_sonic', reason } as any,
           } as any).catch(() => { /* best-effort */ });
-          try {
+
+          // One planned-rotation attempt. Returns true when the replacement
+          // stream is open and the session has been switched onto it.
+          const attemptSwap = async (attempt: number): Promise<boolean> => {
+            const before = ((session as any)._reconnectCount as number) || 0;
             const ok = await attemptTransparentReconnect(
               session,
               onAudioResponse,
@@ -7157,34 +7647,138 @@ async function connectToLiveAPI(
               onTurnComplete,
               onInterrupted,
             );
-            if (ok) {
-              // Planned rotation must not consume the failure-reconnect
-              // budget — refund the slot the reconnect helper just took.
-              (session as any)._reconnectCount = Math.max(0, ((session as any)._reconnectCount || 1) - 1);
-              await novaClient.close('provider_stream_rotation');
-              emitDiag(session, 'nova_rotation_succeeded', { provider: 'nova_sonic' });
+            // A PLANNED rotation must never consume the unplanned-failure
+            // reconnect budget — refund the slot whether or not the attempt
+            // succeeded. Rotation retries are bounded separately below, so
+            // refunding on failure cannot spin.
+            //
+            // Refund only what was actually SPENT: attemptTransparentReconnect
+            // returns false WITHOUT incrementing when it is already at
+            // MAX_RECONNECTS, so an unconditional decrement would erode the
+            // counter on every failed attempt and quietly hand the session
+            // more reconnect budget than the cap allows.
+            const after = ((session as any)._reconnectCount as number) || 0;
+            if (after > before) {
+              (session as any)._reconnectCount = Math.max(0, after - 1);
+            }
+            if (!ok) {
+              emitDiag(session, 'nova_rotation_attempt_failed', {
+                provider: 'nova_sonic',
+                reason,
+                attempt,
+                code: 'nova_rotation_failed',
+              });
+            }
+            return ok;
+          };
+
+          try {
+            let swapped = false;
+            for (let attempt = 1; attempt <= NOVA_ROTATION_MAX_ATTEMPTS && !swapped; attempt++) {
+              if (!session.active) break;
+              try {
+                swapped = await attemptSwap(attempt);
+              } catch (e) {
+                emitDiag(session, 'nova_rotation_attempt_failed', {
+                  provider: 'nova_sonic',
+                  reason,
+                  attempt,
+                  code: 'nova_rotation_failed',
+                  error: (e as Error).message,
+                });
+              }
+              if (!swapped && attempt < NOVA_ROTATION_MAX_ATTEMPTS) {
+                await new Promise((r) => setTimeout(r, NOVA_ROTATION_RETRY_BACKOFF_MS * attempt));
+              }
+            }
+
+            if (swapped) {
+              await novaClient.close(reason);
+              emitDiag(session, 'nova_rotation_succeeded', { provider: 'nova_sonic', reason });
               void emitOasisEvent({
                 type: 'orb.upstream.nova.rotation_succeeded',
                 vtid: 'BOOTSTRAP-NOVA-SONIC-VOICE',
-                payload: { session_id: session.sessionId, provider: 'nova_sonic' } as any,
+                payload: { session_id: session.sessionId, provider: 'nova_sonic', reason } as any,
               } as any).catch(() => { /* best-effort */ });
-            } else {
-              // Replacement failed — keep the old stream until its Bedrock
-              // deadline; its eventual close surfaces ONE typed issue via
-              // the close handler (rotation flag cleared below).
-              emitDiag(session, 'nova_rotation_failed', { provider: 'nova_sonic', code: 'nova_rotation_failed' });
-              void emitOasisEvent({
-                type: 'orb.upstream.nova.rotation_failed',
-                vtid: 'BOOTSTRAP-NOVA-SONIC-VOICE',
-                payload: { session_id: session.sessionId, provider: 'nova_sonic', code: 'nova_rotation_failed' } as any,
-              } as any).catch(() => { /* best-effort */ });
+              return;
             }
-          } catch (e) {
+
+            // Every Nova replacement attempt failed. For a wall-clock rotation
+            // the old stream still has ~45s; for the idle fail-safe it has
+            // ~55s — either way, riding it to the deadline drops the user.
+            // Fall back to Vertex, which has no equivalent idle-kill, rather
+            // than let the conversation die on a provider that cannot hold it.
+            // NEVER silent (CLAUDE.md "Never allow silent model fallback").
             emitDiag(session, 'nova_rotation_failed', {
               provider: 'nova_sonic',
+              reason,
               code: 'nova_rotation_failed',
-              error: (e as Error).message,
+              attempts: NOVA_ROTATION_MAX_ATTEMPTS,
             });
+            void emitOasisEvent({
+              type: 'orb.upstream.nova.rotation_failed',
+              vtid: 'BOOTSTRAP-NOVA-SONIC-VOICE',
+              payload: {
+                session_id: session.sessionId,
+                provider: 'nova_sonic',
+                reason,
+                code: 'nova_rotation_failed',
+                attempts: NOVA_ROTATION_MAX_ATTEMPTS,
+              } as any,
+            } as any).catch(() => { /* best-effort */ });
+
+            if (!session.active) return;
+            console.warn(
+              `[BOOTSTRAP-NOVA-IDLE-ROTATION] Nova rotation failed ${NOVA_ROTATION_MAX_ATTEMPTS}x for session ` +
+                `${session.sessionId} (reason=${reason}) — falling back to Vertex for the rest of this session.`,
+            );
+            // Pinned for the REST of the session, not just this attempt: if
+            // Nova could not give us a stream three times in a row, bouncing
+            // the next rotation back onto it would just repeat this.
+            (session as any)._novaFallbackToVertex = true;
+            emitDiag(session, 'nova_fallback_to_vertex', { provider: 'nova_sonic', reason });
+            void emitOasisEvent({
+              type: 'orb.upstream.nova.fallback_to_vertex',
+              vtid: 'BOOTSTRAP-NOVA-IDLE-ROTATION',
+              payload: { session_id: session.sessionId, from: 'nova_sonic', to: 'vertex', reason } as any,
+            } as any).catch(() => { /* best-effort */ });
+
+            let fellBack = false;
+            try {
+              fellBack = await attemptTransparentReconnect(
+                session,
+                onAudioResponse,
+                onTextResponse,
+                onError,
+                onTurnComplete,
+                onInterrupted,
+              );
+            } catch (e) {
+              emitDiag(session, 'nova_fallback_failed', {
+                provider: 'vertex',
+                reason,
+                error: (e as Error).message,
+              });
+            }
+            if (fellBack) {
+              await novaClient.close(`${reason}_vertex_fallback`);
+              emitDiag(session, 'nova_fallback_succeeded', { provider: 'vertex', reason });
+              void emitOasisEvent({
+                type: 'orb.upstream.nova.fallback_succeeded',
+                vtid: 'BOOTSTRAP-NOVA-IDLE-ROTATION',
+                payload: { session_id: session.sessionId, from: 'nova_sonic', to: 'vertex', reason } as any,
+              } as any).catch(() => { /* best-effort */ });
+            } else {
+              // Nothing left to try — keep the old Nova stream so the user
+              // gets whatever time remains before its deadline rather than
+              // being cut off now. Its close handler surfaces the typed issue.
+              emitDiag(session, 'nova_fallback_failed', { provider: 'vertex', reason, code: 'nova_fallback_failed' });
+              void emitOasisEvent({
+                type: 'orb.upstream.nova.fallback_failed',
+                vtid: 'BOOTSTRAP-NOVA-IDLE-ROTATION',
+                payload: { session_id: session.sessionId, from: 'nova_sonic', to: 'vertex', reason } as any,
+              } as any).catch(() => { /* best-effort */ });
+            }
           } finally {
             (session as any)._novaRotationInFlight = false;
           }
@@ -7208,20 +7802,65 @@ async function connectToLiveAPI(
             markVoiceLatency,
             finalizeVoiceTurnLatency,
           },
-          // Nova needs no synthetic PCM keepalive — server-side turn
-          // detection keeps its stream alive; rotation handles the 8-min cap.
-          options: { enableSilenceKeepalive: false },
+          // Nova NEEDS the synthetic PCM keepalive just like Vertex: Bedrock
+          // expects continuous audio-frame cadence and terminates an idle
+          // bidirectional stream after ~15s ("Premature close" — measured on
+          // staging session live-dedf85d5, exactly +15.0s after the last
+          // response event, with the widget's mic gated). The earlier
+          // assumption that server-side turn detection keeps the stream
+          // alive without input was wrong.
+          // ignoreModelSpeaking/silenceIntervalMs/idleThresholdMs: this
+          // loop-guard re-arm path (handleTranscript, triggered when the
+          // loop guard has paused-then-resumed the interval — see its doc
+          // comment) creates its OWN silenceKeepaliveInterval independent of
+          // the connect-time armUpstreamKeepalive() call below. Without
+          // passing the same Nova tuning here, a session that trips the loop
+          // guard mid-conversation and then resumes falls back to Vertex-only
+          // semantics and reproduces the b745775/b27204f END_TURN deadlock.
+          options: {
+            enableSilenceKeepalive: true,
+            ignoreModelSpeaking: true,
+            silenceIntervalMs: 250,
+            idleThresholdMs: 750,
+          },
         });
 
         // Close policy: diag always; on an unexpected close of an active,
         // non-rotating session, emit ONE typed connection issue (same dedupe
         // contract as the Vertex ws close handler).
+        /**
+         * VTID-03502: emit the localized connection_issue frame to whichever
+         * client transport this session uses. Extracted so the premature-close
+         * fallback can reach the same user-visible outcome when its Vertex
+         * reconnect ALSO fails — the one thing worse than a failed fallback is
+         * a failed fallback that says nothing.
+         */
+        const emitConnectionIssue = (s: typeof session, reason: string): void => {
+          if (s.connectionIssueEmitted) return;
+          s.connectionIssueEmitted = true;
+          const issueEvent = {
+            type: 'connection_issue',
+            reason,
+            message: getConnectionIssueMessage(s.lang || 'en'),
+            should_close: true,
+          };
+          if (s.sseResponse) {
+            try { s.sseResponse.write(`data: ${JSON.stringify(issueEvent)}\n\n`); } catch (_e) { /* ignore */ }
+          }
+          if (s.clientWs && s.clientWs.readyState === WebSocket.OPEN) {
+            try { s.clientWs.send(JSON.stringify(issueEvent)); } catch (_e) { /* ignore */ }
+          }
+        };
+
         novaClient.onClose((closeEvent) => {
           emitDiag(session, 'upstream_closed', {
             provider: 'nova_sonic',
             reason: closeEvent.reason ?? null,
             initiated_locally: closeEvent.initiatedLocally,
           });
+          // Stop feeding silence into a dead stream (mirrors the Vertex ws
+          // close handler's interval cleanup).
+          clearUpstreamKeepalive(session);
           if (session.upstreamClient === novaClient) {
             session.upstreamClient = null;
           }
@@ -7249,6 +7888,79 @@ async function connectToLiveAPI(
             });
             return;
           }
+          // VTID-03502: premature-close-at-open fallback.
+          //
+          // Measured 2026-07-29 → 08-05: 10.2% of Nova sessions (6/59) die
+          // exactly here with diagnostic "Premature close" — the bidirectional
+          // HTTP/2 stream closing before ANY audio moves. audio_out === 0 is
+          // perfectly correlated with that failure and appears under no other
+          // close reason (local_close 0/35, client_disconnect 0/13,
+          // user_stop 0/3, nova_validation 0/1), which is what makes it a safe
+          // discriminator rather than a heuristic.
+          //
+          // Without this branch the code below emits connection_issue with
+          // should_close:true and the user is simply left in silence — they
+          // cannot tell the session failed. Instead, pin the session to Vertex
+          // and reconnect transparently, reusing the exact machinery
+          // nova_rotation_exhausted_fallback already uses.
+          //
+          // Guarded on !_novaFallbackToVertex so a Vertex-side failure can
+          // never bounce back here and loop.
+          const novaDiedBeforeAnyAudio = shouldFallbackToVertexOnNovaClose({
+            sessionActive: session.active,
+            initiatedLocally: closeEvent.initiatedLocally === true,
+            rotationInFlight,
+            audioOutChunks: session.audioOutChunks,
+            alreadyFellBack: (session as any)._novaFallbackToVertex === true,
+          });
+
+          if (novaDiedBeforeAnyAudio) {
+            console.warn(
+              `[VTID-03502] Nova stream for session ${session.sessionId} closed before any audio ` +
+                `(reason=${closeEvent.reason ?? 'unknown'}, audio_out=0) — pinning to Vertex and reconnecting.`,
+            );
+            (session as any)._novaFallbackToVertex = true;
+            emitDiag(session, 'nova_premature_close_fallback', {
+              provider: 'nova_sonic',
+              reason: closeEvent.reason ?? null,
+              audio_out: 0,
+            });
+            void emitOasisEvent({
+              type: 'orb.upstream.nova.premature_close_fallback',
+              vtid: 'VTID-03502',
+              payload: {
+                session_id: session.sessionId,
+                from: 'nova_sonic',
+                to: 'vertex',
+                reason: closeEvent.reason ?? null,
+                status: 'warning',
+              } as any,
+            } as any).catch(() => { /* best-effort */ });
+
+            void attemptTransparentReconnect(
+              session,
+              onAudioResponse,
+              onTextResponse,
+              onError,
+              onTurnComplete,
+              onInterrupted,
+            ).then((ok) => {
+              if (!ok) {
+                // Reconnect failed too — fall through to the normal
+                // connection_issue path rather than leaving the user in
+                // silence with no signal at all.
+                console.warn(
+                  `[VTID-03502] Vertex fallback reconnect failed for session ${session.sessionId}.`,
+                );
+                emitConnectionIssue(session, 'upstream_disconnected');
+              }
+            }).catch((e) => {
+              console.warn(`[VTID-03502] Vertex fallback reconnect threw: ${(e as Error).message}`);
+              emitConnectionIssue(session, 'upstream_disconnected');
+            });
+            return;
+          }
+
           if (
             session.active &&
             !closeEvent.initiatedLocally &&
@@ -7281,6 +7993,14 @@ async function connectToLiveAPI(
           responseModalities: session.responseModalities.includes('audio') ? ['audio'] : ['text'],
           vadSilenceMs: session.vadSilenceMs,
           systemInstruction: novaSystemInstruction,
+          // VTID-VOICE-NOVA-ROTATION: without this, a rotation's rebuilt
+          // instruction (fresh-connect size + up to ~4000 chars of
+          // conversation-history fallback, since Nova has no native
+          // resumption) risked tripping Bedrock's nova_validation rejection
+          // on the single oversized textInput — silently abandoning the
+          // rotation and riding the old stream to its 8-minute hard
+          // disconnect. See nova-sonic-config.ts's instructionChunkBytes doc.
+          systemInstructionChunkBytes: novaCfg.instructionChunkBytes || undefined,
           tools: novaTools,
           connectTimeoutMs: novaCfg.connectTimeoutMs,
         });
@@ -7307,7 +8027,28 @@ async function connectToLiveAPI(
 
         // The ws-shaped facade lets every legacy upstreamWs call site
         // (greeting engine, nudges, input handlers, stop path) drive Nova.
-        resolve(createNovaWsFacade(novaClient) as unknown as WebSocket);
+        const novaFacade = createNovaWsFacade(novaClient) as unknown as WebSocket;
+        // Same keepalive the Vertex path arms after connect: Bedrock kills a
+        // bidirectional stream that goes ~15s without audio-frame input, so
+        // quiet pauses (mic gated, user thinking) need synthetic silence.
+        // ping() is a no-op on the facade; the silence leg does the work.
+        // ignoreModelSpeaking: Nova may not emit END_TURN until input audio
+        // flows, so silence must continue THROUGH model speech or the flag
+        // deadlocks the stream into the 15s idle kill.
+        // silenceIntervalMs 250 + idleThresholdMs 750: Nova's endpointer needs
+        // a CONTINUOUS real-time input stream — one 250ms frame per 250ms tick
+        // is gapless silence, exactly like a live mic streaming ambient quiet.
+        // The Vertex heartbeat cadence (250ms frame / 3s ≈ 8% duty) kept
+        // Bedrock from idle-killing but Nova still never concluded the
+        // greeting turn, so the gateway's own 20s audio-stall watchdog
+        // terminated healthy sessions (staging session live-bc3ac313).
+        armUpstreamKeepalive(novaFacade, session, {
+          sendAudioToLiveAPI,
+          ignoreModelSpeaking: true,
+          silenceIntervalMs: 250,
+          idleThresholdMs: 750,
+        });
+        resolve(novaFacade);
         return;
       } catch (err) {
         clearTimeout(connectionTimeout);
@@ -7319,6 +8060,11 @@ async function connectToLiveAPI(
             session_id: session.sessionId,
             provider: 'nova_sonic',
             error: (err as Error).message,
+            // Bounded upstream detail (operator surface) + envelope shape so
+            // a failure is diagnosable without CloudWatch access.
+            diagnostic: (err as { diagnostic?: string })?.diagnostic ?? null,
+            instruction_chars: (session as any)._novaInstructionChars ?? null,
+            tool_entry_count: (session as any)._novaToolEntryCount ?? null,
             status: 'error',
           } as any,
         } as any).catch(() => { /* best-effort */ });
@@ -7691,6 +8437,17 @@ async function connectToLiveAPI(
  */
 // A2 (orb-live-refactor): MAX_RECONNECTS lifted to orb/live/config.ts.
 import { MAX_RECONNECTS } from '../orb/live/config';
+// BOOTSTRAP-NOVA-IDLE-ROTATION: planned-rotation retry budget + reason type.
+import {
+  NOVA_ROTATION_MAX_ATTEMPTS,
+  NOVA_ROTATION_RETRY_BACKOFF_MS,
+  type NovaRotationReason,
+} from '../orb/live/config';
+// BOOTSTRAP-ORB-TOOL-CARRYOVER: unconsumed tool results survive a reconnect.
+import {
+  getPendingToolResults,
+  buildPendingToolResumeBlock,
+} from '../orb/live/session/pending-tool-results';
 
 // VTID-03273 Pillar B — how long before the server's GoAway deadline we
 // proactively rotate the connection. Small enough to overlap the warning
@@ -8369,6 +9126,23 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
   }
 
   const _wb = (session as any).wakeBriefDecision || null;
+  // BOOTSTRAP-NOVA-GREETING-CADENCE: `decideOpening`'s `wakeCadenceSkip` input
+  // was never populated at this call site — the rich B1 greeting-policy engine
+  // (greeting-policy.ts, `decideGreetingPolicyWithEvidence`) computes a skip
+  // verdict elsewhere but nothing forwarded it here, so `wakeCadenceSkip` was
+  // always `undefined` and rung 8 (override_v2) fired the wake-brief's
+  // selected line unconditionally on every fresh `session_id` — including a
+  // brand-new session opened seconds after the user's last one (observed live:
+  // every ORB re-open replayed a full proactive opener, "starts from scratch
+  // every time"). `_reconnectCount` only tracks transport-level reconnects
+  // WITHIN one session object, so a genuinely new session (the user closing
+  // and reopening ORB) always read isReconnect=false too. Close the gap with
+  // the same 'reconnect' bucket (<120s since last session, per
+  // temporal-bucket.ts) `decideGreetingPolicyWithEvidence` already treats as a
+  // forced skip — this was pre-existing on Vertex too, but Nova's slower
+  // per-connection setup and less stable mobile transport made re-opens (and
+  // thus the bug) far more frequent, which is why it surfaced now.
+  const _cadenceBucketPre = describeTimeSince(session.lastSessionInfo).bucket;
   const _openDecision = decideOpening({
     isAnonymous: !!session.isAnonymous,
     hasResumptionHandle: !!session.resumptionHandle,
@@ -8376,6 +9150,7 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
     wakeSelectedLine: _wb?.selectedContinuation?.userFacingLine ?? null,
     wakeSelectedKind: _wb?.selectedContinuation?.kind ?? null,
     lastOpenerLine: (session as any)._lastOpenerLine ?? null,
+    wakeCadenceSkip: _cadenceBucketPre === 'reconnect',
   });
   console.log(formatOpeningDecisionLog(session.sessionId, _openDecision));
   (session as any)._openingDecision = _openDecision;
@@ -8462,6 +9237,57 @@ function sendGreetingPromptToLiveAPI(ws: WebSocket, session: GeminiLiveSession):
       startResponseWatchdog(session, getGreetingResponseTimeoutMs(), 'greeting_timeout');
     }
     return true;
+  }
+}
+
+/**
+ * BOOTSTRAP-NOVA-SONIC-VOICE: greeting AUDIO bridge (SSE transport only —
+ * the SSE session/start path is what both the Nova bench and the majority
+ * of real Connect & Talk traffic use today).
+ *
+ * Synthesizes a short "Good morning! Today is <date>. <motivational line>.
+ * Let me pull up your latest data…" phrase via Cloud TTS (LINEAR16 @ 24kHz —
+ * same wire format as the real greeting audio) and writes it to the SSE
+ * stream BEFORE the real upstream connect is even initiated, so ordering is
+ * trivially correct: this function is awaited to completion, and the caller
+ * only opens the real (slow) upstream connection afterward. Feature-flagged
+ * (default off) and fully best-effort — any failure here (TTS unavailable,
+ * synthesis error, closed connection) is swallowed; it never blocks or
+ * breaks the real greeting path that follows.
+ *
+ * Skipped for anonymous sessions (their intro flow is untouched/different)
+ * and for reconnects (a mid-conversation reconnect doesn't need a fresh
+ * "today is..." — the real reconnect-recovery prompt handles that case).
+ */
+async function sendGreetingAudioBridge(session: GeminiLiveSession): Promise<void> {
+  if (!isFeatureLive('ORB_GREETING_TTS_BRIDGE')) return;
+  if (session.isAnonymous) return;
+  if (session.transcriptTurns.length > 0) return; // reconnect, not a fresh session
+  if (!session.sseResponse) return;
+
+  try {
+    const lang = session.lang || 'en';
+    const timezone = session.clientContext?.timezone || 'UTC';
+    const text = buildGreetingBridgeText({ lang, now: new Date(), timezone });
+    const bridgeAudio = await synthesizeGreetingBridgeAudioPcm(text, lang);
+    if (!bridgeAudio) {
+      emitDiag(session, 'greeting_bridge_skipped', { reason: 'synthesis_unavailable' });
+      return;
+    }
+    if (!session.sseResponse) return; // client disconnected while we were synthesizing
+    session.sseResponse.write(`data: ${JSON.stringify({
+      type: 'audio',
+      data_b64: bridgeAudio.audioB64,
+      // VTID-03495: rate comes from the synthesis result, not a constant —
+      // Polly PCM is 16kHz, Cloud TTS 24kHz. Hardcoding either plays the
+      // other at the wrong speed.
+      mime: `audio/pcm;rate=${bridgeAudio.sampleRateHz}`,
+      chunk_number: session.audioOutChunks++,
+      source: 'greeting_bridge',
+    })}\n\n`);
+    emitDiag(session, 'greeting_bridge_sent', { lang, chars: text.length });
+  } catch (err) {
+    console.warn('[GREETING-BRIDGE] Failed (non-fatal, real greeting proceeds normally):', (err as Error).message);
   }
 }
 
@@ -9009,12 +9835,19 @@ async function emitOrbSessionEnded(orbSessionId: string, conversationId: string,
 function startVoiceTurnLatency(session: GeminiLiveSession): void {
   if (session.latencyTracker) return; // turn already in flight
   session.latencyTurnIndex = (session.latencyTurnIndex || 0) + 1;
+  // BOOTSTRAP-NOVA-SONIC-VOICE: unlike the turn-0 establishment tracker,
+  // upstream selection has always resolved by the time a per-turn tracker
+  // starts (turn 0 IS the connect), so session.upstreamProvider is trustworthy
+  // here at construction time — no setProvider() correction needed later.
+  const provider = session.upstreamProvider === 'nova_sonic'
+    ? `nova_sonic/${NOVA_SONIC_MODEL_ID}`
+    : `vertex/${GEMINI_MODEL}`;
   const tracker = new LatencyTracker({
     session_id: session.sessionId,
     surface: 'voice',
     actor_id: session.identity?.user_id,
     turn: session.latencyTurnIndex,
-    provider: `vertex/${GEMINI_MODEL}`,
+    provider,
     transport: session.clientWs ? 'websocket' : 'sse',
   });
   session.latencyTracker = tracker;
@@ -9148,6 +9981,98 @@ function isPrivateIP(ip: string): boolean {
     ip.startsWith('127.') || ip.startsWith('10.') ||
     ip.startsWith('192.168.') || ip.startsWith('172.') ||
     ip.startsWith('fc') || ip.startsWith('fd') || ip.startsWith('fe80');
+}
+
+/**
+ * In-flight geo refreshes, keyed by IP, so N concurrent cold sessions from the
+ * same IP trigger ONE background lookup instead of N.
+ */
+const ipGeoInFlight = new Map<string, Promise<void>>();
+
+/**
+ * NON-BLOCKING geo resolution — the session-start hot path (BOOTSTRAP-ORB-LATENCY-P0).
+ *
+ * THE FIX: `geolocateIP` walks three providers SEQUENTIALLY, each with a 3s
+ * `AbortSignal.timeout` — up to **9 seconds** on a cold cache with upstreams
+ * rate-limiting (429 from ipapi.co / ip-api.com is the *common* case, per
+ * VTID-03251's own comments below). That await sat in `buildClientContext`,
+ * which `live-session-controller.ts` awaits before the live session is even
+ * created — so every cold voice session paid it before Nova/Vertex connection
+ * work began. It was the single largest contributor to "ORB takes 8-10s".
+ *
+ * City/country are enrichment, never a precondition for speech:
+ *   - The browser sends its own IANA timezone, and VTID-03250 already made
+ *     that WIN over geo-IP for time resolution — so the one field that
+ *     actually affects correctness does not need this call at all.
+ *   - city/country only decorate context; a session that starts without them
+ *     is strictly better than one that starts 9 seconds late.
+ *
+ * So: return whatever is cached (fresh OR stale — stale beats blocking, same
+ * reasoning VTID-03251 used for its fallback) and kick the refresh into the
+ * background for the *next* session. Never await the network here.
+ */
+function geolocateIPNonBlocking(ip: string): { city?: string; country?: string; timezone?: string } {
+  if (isPrivateIP(ip)) return {};
+  const cached = ipGeoCache.get(ip);
+  const isFresh = cached && Date.now() - cached.ts < IP_GEO_CACHE_TTL_MS;
+  if (!isFresh && !ipGeoInFlight.has(ip)) {
+    // Warm the cache for subsequent sessions. Deliberately un-awaited; a
+    // failure here can never affect the session that triggered it.
+    const refresh = geolocateIP(ip)
+      .catch(() => { /* geolocateIP already logs; never surface to the session */ })
+      .finally(() => { ipGeoInFlight.delete(ip); });
+    ipGeoInFlight.set(ip, refresh as Promise<void>);
+  }
+  if (cached?.data) {
+    const ageMin = Math.round((Date.now() - cached.ts) / 60000);
+    console.log(`[VTID-CONTEXT] geo cache ${isFresh ? 'hit' : `stale(${ageMin}m)`}: ${ip} → ${cached.data.city}, ${cached.data.country}`);
+    return cached.data;
+  }
+  console.log(`[VTID-CONTEXT] geo cold for ${ip} — starting session without it (refresh queued)`);
+  return {};
+}
+
+/**
+ * Hard ceiling on the ONE case where geo is still allowed to block: the client
+ * sent no IANA timezone and nothing is cached, so geo-IP is the only source of
+ * the user's local time. Small enough to stay inside the latency budget, and
+ * ~15x tighter than the 9s worst case this change replaced.
+ */
+const GEO_TIMEZONE_FALLBACK_MS = 600;
+
+/**
+ * Codex review (PR #3004): `buildClientContext` cannot go strictly cache-only
+ * yet. VTID-03250 made the gateway PREFER a browser-supplied timezone, but the
+ * client half of that — actually sending `client_timezone` — is still an
+ * undeployed patch for the separate vitana-v1 repo
+ * (`docs/patches/vitana-v1/VTID-03250-send-browser-timezone.md`, which calls
+ * itself "the piece that fixes mobile, where most testers are"). Verified: the
+ * string appears nowhere in vitana-v1's source. So for the main mobile widget,
+ * geo-IP is STILL the only timezone source, and returning `{}` on a cold cache
+ * would resurrect the exact defect VTID-03250/03251 fixed — a hallucinated
+ * local time ("8:30 PM" at 15:44). The cache is process-local too, so "the next
+ * session will be warm" is not guaranteed across Cloud Run/ECS instances.
+ *
+ * So: geo blocks ONLY when it is the sole possible source of timezone, and even
+ * then for at most {@link GEO_TIMEZONE_FALLBACK_MS}. Once vitana-v1 ships the
+ * client patch this path stops being reached in practice, and it can be deleted.
+ */
+async function awaitGeoForTimezone(ip: string): Promise<{ city?: string; country?: string; timezone?: string }> {
+  const inFlight = ipGeoInFlight.get(ip);
+  if (!inFlight) return {};
+  let timer: NodeJS.Timeout | undefined;
+  await Promise.race([
+    inFlight,
+    new Promise<void>((resolve) => {
+      timer = setTimeout(resolve, GEO_TIMEZONE_FALLBACK_MS);
+      (timer as NodeJS.Timeout).unref?.();
+    }),
+  ]);
+  if (timer) clearTimeout(timer);
+  const cached = ipGeoCache.get(ip);
+  if (cached?.data) return cached.data;
+  console.warn(`[VTID-CONTEXT] no client timezone and geo did not resolve within ${GEO_TIMEZONE_FALLBACK_MS}ms for ${ip}`);
+  return {};
 }
 
 async function geolocateIP(ip: string): Promise<{ city?: string; country?: string; timezone?: string }> {
@@ -9287,11 +10212,12 @@ export async function buildClientContext(req: Request): Promise<ClientContext> {
   const referrer = req.get('referer') || req.get('referrer') || undefined;
   const acceptLang = req.get('accept-language')?.split(',')[0]?.trim();
 
-  // Run geo lookup in parallel with UA parsing (geo is async, UA is sync)
-  const [geo, uaParsed] = await Promise.all([
-    geolocateIP(ip),
-    Promise.resolve(parseUserAgent(ua)),
-  ]);
+  // BOOTSTRAP-ORB-LATENCY-P0: geo is cache-or-nothing and NEVER awaited on the
+  // network. Previously this Promise.all awaited up to 9s of sequential
+  // provider calls before the live session could even be created. Both of
+  // these are now synchronous.
+  let geo = geolocateIPNonBlocking(ip);
+  const uaParsed = parseUserAgent(ua);
 
   // VTID-03250: prefer the browser's own IANA timezone (sent in the
   // session-start body / x-client-timezone header) over geo-IP, which
@@ -9301,6 +10227,14 @@ export async function buildClientContext(req: Request): Promise<ClientContext> {
     (req.body && (req.body.client_timezone || req.body.client_context?.timezone)) ||
     req.get('x-client-timezone') ||
     null;
+
+  // The single remaining case where geo may block, capped hard — see
+  // awaitGeoForTimezone. Clients that DO send their timezone (command-hub
+  // widget today; vitana-v1 once its patch ships) never reach this.
+  if (!clientTimezone && !geo.timezone && !isPrivateIP(ip)) {
+    geo = await awaitGeoForTimezone(ip);
+  }
+
   const resolvedTimezone = resolveSessionTimezone({
     clientTimezone,
     geoTimezone: geo.timezone ?? null,
@@ -9509,24 +10443,6 @@ async function generateMemoryEnhancedSystemInstruction(
   // Load text_chat personality config
   const textChatConfig = getPersonalityConfigSync('text_chat') as Record<string, any>;
 
-  // Hard contract for tool-bound flows the LLM keeps skipping. Empirically
-  // Gemini Live sometimes answers "I can't find that user" without ever
-  // calling resolve_recipient — especially when the spoken phrase contains
-  // a hint like "I think it's maria6". This block makes the binding
-  // explicit at the system-instruction level (tool description alone wasn't
-  // enough). Same pattern for navigation.
-  const MESSAGING_CONTRACT = `
-
-## MESSAGING & SHARING CONTRACT (NON-NEGOTIABLE)
-
-If the user mentions sending a message, sharing a link, texting, inviting, or telling someone something, you MUST:
-1. Call resolve_recipient(spoken_name) BEFORE saying anything about whether the recipient exists. The ONLY way to honestly say "I can't find that user" is to receive an empty candidates array from resolve_recipient. Do not infer absence from your own context — you do not have the user's contact list.
-2. If the spoken phrase contains a name AND a Vitana ID hint ("Maria, I think it's maria6"), pass the Vitana ID hint as spoken_name first; if that returns 0 candidates, retry with the name.
-3. After resolve_recipient returns, follow the readback contract from the tool description (read back, await explicit confirmation, then send_chat_message).
-4. AFTER send_chat_message returns ok:true (VTID-02969): briefly acknowledge ("Sent to @<vid>.") AND in the SAME turn offer the next action — but ONLY from the tool result's next_actions array. Read next_actions[0].label verbatim as the suggestion. If the array is empty, briefly acknowledge and let the user lead — do NOT invent a next action from your own knowledge. Example with next_actions: "Sent to @dragan_red. Next: <next_actions[0].label>. Want me to do that?" Example with empty array: "Sent to @dragan_red." When the user accepts, call activate_recommendation with next_actions[0].id.
-
-If the user asks to be shown a screen, list, or detail page, call navigate_to_screen — never claim a page doesn't exist without trying. The frontend handles routing; you handle the call.`;
-
   // Base instruction WITHOUT memory claims (used when memory is unavailable)
   // VTID-01225-READ-FIX: Always append memory_facts if available
   const baseInstructionNoMemory = `${textChatConfig.base_identity_no_memory || 'You are VITANA ORB, a voice-first multimodal assistant.'}
@@ -9538,7 +10454,7 @@ Context:
 - selectedId: ${session.selectedId || 'none'}
 
 Operating mode:
-${textChatConfig.operating_mode || '- Voice conversation is primary.\n- Always listening while ORB overlay is open.\n- Read-only: do not mutate system state.\n- Be concise, contextual, and helpful.'}${memoryFactsSection ? `\n- You have PERSISTENT MEMORY - you remember users across sessions.${memoryFactsSection}` : ''}${calendarSection}${MESSAGING_CONTRACT}`;
+${textChatConfig.operating_mode || '- Voice conversation is primary.\n- Always listening while ORB overlay is open.\n- Read-only: do not mutate system state.\n- Be concise, contextual, and helpful.'}${memoryFactsSection ? `\n- You have PERSISTENT MEMORY - you remember users across sessions.${memoryFactsSection}` : ''}${calendarSection}`;
 
   // Base instruction WITH memory claims (used when memory IS available)
   const baseInstructionWithMemory = `${textChatConfig.base_identity_with_memory || 'You are VITANA ORB, a voice-first multimodal assistant with persistent memory.'}
@@ -9552,7 +10468,7 @@ Context:
 Operating mode:
 ${textChatConfig.operating_mode || '- Voice conversation is primary.\n- Always listening while ORB overlay is open.\n- Read-only: do not mutate system state.\n- Be concise, contextual, and helpful.'}
 - You have PERSISTENT MEMORY - you remember users across sessions.
-- NEVER claim you cannot remember or that your memory resets.${memoryFactsSection}${calendarSection}${MESSAGING_CONTRACT}`;
+- NEVER claim you cannot remember or that your memory resets.${memoryFactsSection}${calendarSection}`;
 
   // VTID-01153: Try memory-indexer first (Mem0 OSS)
   // VTID-01186: Use effective identity for memory lookups
@@ -11839,6 +12755,10 @@ router.get('/debug/brain-instruction', requireAuthWithTenant, async (req: Authen
       has_social_context: instruction.includes('<social_context>'),
       has_self_check: instruction.includes('MANDATORY SELF-CHECK'),
       social_tool_declared: toolNames.includes('get_social_context'),
+      // BOOTSTRAP-NOVA-SONIC-VOICE: full=1 returns the instruction text
+      // itself (self-or-admin scoped above) so provider content-filter
+      // rejections (Nova RAI) can be bisected against the real text.
+      ...(req.query.full === '1' ? { instruction } : {}),
     });
   } catch (err: any) {
     return res.status(500).json({ ok: false, error: err.message });
@@ -12572,6 +13492,36 @@ router.post('/live/session/start', optionalAuth, async (req: AuthenticatedReques
 });
 
 /**
+ * VTID-03471 (L-04/L-05) — GET /live/transport
+ *
+ * Which client transport the gateway wants browsers to use for voice:
+ * `'ws'` (one bidirectional WebSocket) or `'sse'` (the legacy SSE downstream
+ * + one authenticated POST per 64ms audio frame).
+ *
+ * The widget compiles in `'ws'` as its default and calls this at init to let
+ * the server override it. That is the whole point of the endpoint: the
+ * widget is a static asset served by this gateway, so without it, backing
+ * the default out would mean a redeploy. With it, flipping
+ * `FEATURE_ORB_WS_TRANSPORT_ENV` to 'off' moves every new browser session
+ * back to SSE with no build.
+ *
+ * Deliberately unauthenticated and side-effect free — anonymous sessions are
+ * browser sessions too, and a kill switch that only reaches logged-in users
+ * is not a kill switch. Never emits OASIS (config read, not a transition).
+ */
+// public-route — deliberately unauthenticated: a transport kill switch that
+// only reaches logged-in users is not a kill switch (anonymous ORB sessions
+// are browser sessions too). Returns one boolean-ish string, reads no user
+// data, and mutates nothing.
+router.get('/live/transport', (_req: Request, res: Response) => {
+  // impact-allow-no-oasis — static config read on page load; no state change.
+  return res.status(200).json({
+    ok: true,
+    transport: isFeatureLive('ORB_WS_TRANSPORT') ? 'ws' : 'sse',
+  });
+});
+
+/**
  * BOOTSTRAP-ORB-LATENCY-PHASE2 — POST /live/session/prewarm
  *
  * Fire-and-forget bootstrap pre-warm for the Vertex session-start path.
@@ -12922,6 +13872,16 @@ router.get('/live/stream', optionalAuth, async (req: AuthenticatedRequest, res: 
     },
   });
 
+  // BOOTSTRAP-NOVA-SONIC-VOICE: greeting AUDIO bridge — synthesize + write a
+  // short filler phrase BEFORE opening the real (slow) upstream connection.
+  // Awaited deliberately: this guarantees the bridge audio is written to the
+  // SSE stream strictly before any real-greeting audio chunk could possibly
+  // arrive, with no extra buffering/sequencing machinery needed. Adds at
+  // most ~0.3-0.8s (TTS synthesis latency) ahead of a connect that otherwise
+  // takes 5-8+s to first audio — a clear net win, and feature-flagged so it
+  // can be disabled instantly if that tradeoff is ever wrong.
+  await sendGreetingAudioBridge(session);
+
   // VTID-01219: Connect to Vertex AI Live API WebSocket IN PARALLEL (non-blocking).
   // The ready event is already sent so the client gets instant visual + audio feedback
   // (chime) while this connection establishes in the background.
@@ -12947,6 +13907,14 @@ router.get('/live/stream', optionalAuth, async (req: AuthenticatedRequest, res: 
         // The greeting has no preceding user turn, so the per-turn tracker never
         // fires for it; this is the only place that closes turn 0.
         if (session.establishLatency) {
+          // BOOTSTRAP-NOVA-SONIC-VOICE: the tracker was constructed with a
+          // Vertex default before upstream selection ran (session.upstreamProvider
+          // is only known once connectToLiveAPI resolves) — correct it now so
+          // voice.latency.measured attributes the timeline to the provider that
+          // actually generated this audio.
+          if (session.upstreamProvider === 'nova_sonic') {
+            session.establishLatency.setProvider(`nova_sonic/${NOVA_SONIC_MODEL_ID}`);
+          }
           session.establishLatency.mark('audio_out_first_chunk', { source: 'greeting' });
           void session.establishLatency.finalize('success');
           session.establishLatency = null;
@@ -13056,6 +14024,11 @@ router.get('/live/stream', optionalAuth, async (req: AuthenticatedRequest, res: 
       emitLiveSessionEvent('orb.live.connection_failed', {
         session_id: sessionId,
         error: err.message,
+        // BOOTSTRAP-NOVA-SONIC-VOICE: bounded upstream detail attached by the
+        // Nova client's connect catch — operator surface only. Null on Vertex.
+        upstream_diagnostic: (err as { diagnostic?: string })?.diagnostic ?? null,
+        upstream_instruction_chars: (session as any)._novaInstructionChars ?? null,
+        upstream_tool_entry_count: (session as any)._novaToolEntryCount ?? null,
         vertex_project_id: VERTEX_PROJECT_ID || 'EMPTY',
       }, 'error').catch(() => {});
       // VTID-01959: voice self-healing dispatch (mode-gated; off by default).
@@ -13124,7 +14097,9 @@ router.get('/live/stream', optionalAuth, async (req: AuthenticatedRequest, res: 
     // VTID-01219: Close upstream WebSocket on client disconnect
     if (session.upstreamWs) {
       try {
-        session.upstreamWs.close();
+        // Nova item 6: the client's transport went away (tab closed, app
+        // backgrounded, mobile network lost) — not a deliberate stop.
+        session.upstreamWs.close(1000, 'client_disconnect');
       } catch (e) {
         // Ignore
       }
@@ -13250,6 +14225,41 @@ router.post('/tts', optionalAuth, async (req: AuthenticatedRequest, res: Respons
     voice_type: voiceType,
     text_length: text.length
   });
+
+  // VTID-03495: Polly first when configured. This MUST sit above the
+  // `!ttsClient` guard below — in a GCP-free environment the Cloud TTS client
+  // constructor fails and ttsClient stays null, so a Polly attempt placed
+  // after the guard would never run and this route would 503 despite Polly
+  // being available and healthy.
+  {
+    const __vcPolly = await getVoiceConfig();
+    const polly = await tryPollySynthesis({
+      text,
+      lang,
+      format: 'mp3',
+      speakingRate: __vcPolly.tts.speaking_rate,
+      callSite: 'orb-live-tts',
+    });
+    if (polly) {
+      await emitTtsEvent('vtid.tts.success', {
+        lang,
+        voice: polly.voice,
+        voice_type: 'Polly',
+        text_length: text.length,
+        audio_bytes: polly.audioB64.length,
+        mime_type: 'audio/mp3',
+        provider: 'polly',
+      });
+      return res.status(200).json({
+        ok: true,
+        audio_b64: polly.audioB64,
+        mime: 'audio/mp3',
+        voice: polly.voice,
+        voice_type: 'Polly',
+        lang,
+      });
+    }
+  }
 
   // Check if TTS client is available
   if (!ttsClient) {
@@ -13713,6 +14723,13 @@ export interface WsClientSession {
   // Request metadata for OASIS event telemetry
   userAgent: string | null;
   originUrl: string | null;
+  // VTID-03471: raw upgrade-request headers + the bearer token this socket
+  // authenticated with. Both are replayed into `handleLiveSessionStart` by
+  // `startLiveSessionForWs` so origin validation and the
+  // `AUTH_TOKEN_INVALID` re-auth guard see exactly what the HTTP transport
+  // would have seen.
+  upgradeHeaders: IncomingHttpHeaders;
+  authToken?: string;
 }
 
 // Track WebSocket client sessions.
@@ -13824,6 +14841,9 @@ async function handleWebSocketConnection(ws: WebSocket, req: IncomingMessage): P
     identity,  // VTID-01224: Server-verified identity
     userAgent: req.headers['user-agent'] || null,
     originUrl: (req.headers['origin'] || req.headers['referer'] || null) as string | null,
+    // VTID-03471: replayed into handleLiveSessionStart on the `start` frame.
+    upgradeHeaders: req.headers,
+    authToken: token,
   };
 
   wsClientSessions.set(sessionId, clientSession);
@@ -13998,7 +15018,12 @@ async function handleWsClientMessage(clientSession: WsClientSession, message: Ws
  * VTID-01222: Handle "start" message - Create Live API session
  */
 async function handleWsStartMessage(clientSession: WsClientSession, message: WsClientMessage): Promise<void> {
-  const { sessionId, clientWs, identity } = clientSession;
+  // VTID-03471: `sessionId` below is the LIVE session's id (minted by
+  // handleLiveSessionStart), not the `ws-<uuid>` socket id — those are two
+  // different keys now. `wsClientSessions` is keyed by the socket id;
+  // `liveSessions` by the live id.
+  const { clientWs, identity } = clientSession;
+  const wsClientSessionId = clientSession.sessionId;
 
   // Check if session already exists
   if (clientSession.liveSession && clientSession.liveSession.active) {
@@ -14006,298 +15031,67 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
     return;
   }
 
-  const clientRequestedLangWs = message.lang; // may be undefined
-  const responseModalities = message.response_modalities || ['audio', 'text'];
+  // VTID-03471 (L-04/L-05): the WS transport no longer runs its own fork of
+  // session start. Context bootstrap, wake-brief selection, journey guidance,
+  // guided-topic narration, fast-start deferral, the voice quota gate,
+  // session-limit termination and reconnect continuity all now come from the
+  // SAME `handleLiveSessionStart` the HTTP/SSE transport calls — see
+  // orb/live/session/ws-start-adapter.ts for why the fork was deleted rather
+  // than hand-patched. Everything below this call is WS-specific: binding the
+  // socket, opening the upstream Live connection, and the greeting handshake.
+  const startResult = await startLiveSessionForWs({
+    startMessage: message as unknown as Record<string, unknown>,
+    identity,
+    upgradeHeaders: clientSession.upgradeHeaders || {},
+    token: clientSession.authToken,
+  });
 
-  // VTID-01224: Build bootstrap context if authenticated
-  // VTID-01225: Added DEV_IDENTITY fallback for memory recall in dev-sandbox mode
-  let contextInstruction: string | undefined;
-  let contextPack: ContextPack | undefined;
-  let contextBootstrapLatencyMs: number | undefined;
-  let contextBootstrapSkippedReason: string | undefined;
+  const startedSessionId = typeof startResult.body?.session_id === 'string'
+    ? startResult.body.session_id
+    : null;
+  const liveSession = startedSessionId ? liveSessions.get(startedSessionId) : undefined;
 
-  // Determine effective identity for context bootstrap (same pattern as memory writes)
-  // Create a synthetic SupabaseIdentity for dev-sandbox mode
-  const devSandboxIdentity: SupabaseIdentity = {
-    user_id: DEV_IDENTITY.USER_ID,
-    tenant_id: DEV_IDENTITY.TENANT_ID,
-    role: DEV_IDENTITY.ACTIVE_ROLE,
-    email: 'dev-sandbox@vitana.local',
-    exafy_admin: false,
-    aud: 'authenticated',
-    exp: null,
-    iat: null
-  };
-  // JWT identity takes priority so each user builds their own memory.
-  // DEV_IDENTITY is fallback only when no JWT is present (anonymous/unauthenticated).
-  const effectiveBootstrapIdentity: SupabaseIdentity | null =
-    (identity && identity.tenant_id && identity.user_id)
-      ? identity
-      : isDevSandbox()
-        ? devSandboxIdentity
-        : null;
-
-  // Resolve language: use client-requested language, fall back to stored preference, then 'en'
-  let lang = normalizeLang(clientRequestedLangWs || 'en');
-  if (!clientRequestedLangWs && effectiveBootstrapIdentity?.user_id && effectiveBootstrapIdentity?.tenant_id) {
-    const storedLangWs = await withBootstrapTimeout(
-      getStoredLanguagePreference(effectiveBootstrapIdentity.tenant_id, effectiveBootstrapIdentity.user_id),
-      null,
-      'getStoredLanguagePreference',
+  if (startResult.status !== 200 || !startResult.body?.ok || !liveSession) {
+    // Surface the controller's own reason verbatim. The important case is
+    // 401 AUTH_TOKEN_INVALID: a socket holding an expired JWT now learns it
+    // must re-authenticate instead of silently continuing as anonymous.
+    const errCode = typeof startResult.body?.error === 'string' ? startResult.body.error : 'SESSION_START_FAILED';
+    console.warn(
+      `[VTID-03471] WS session start rejected for ${wsClientSessionId}: status=${startResult.status} error=${errCode}`,
     );
-    if (storedLangWs) {
-      lang = storedLangWs;
-      console.log(`[LANG-PREF] WS: Using stored language preference: ${lang} for user=${effectiveBootstrapIdentity.user_id.substring(0, 8)}...`);
-    }
+    sendWsMessage(clientWs, {
+      type: 'error',
+      code: errCode,
+      status: startResult.status,
+      message: typeof startResult.body?.message === 'string'
+        ? startResult.body.message
+        : 'Session start failed',
+    });
+    return;
   }
 
-  // Persist language preference (fire-and-forget)
-  if (effectiveBootstrapIdentity?.user_id && effectiveBootstrapIdentity?.tenant_id) {
-    persistLanguagePreference(effectiveBootstrapIdentity.tenant_id, effectiveBootstrapIdentity.user_id, lang);
-  }
+  // Bind the live session to this socket. The controller left `sseResponse`
+  // null (the SSE transport attaches it later on GET /live/stream); the WS
+  // transport instead carries every downstream frame on `clientWs`, which the
+  // forwarding code already branches on.
+  const sessionId = liveSession.sessionId;
+  const lang = liveSession.lang;
+  const responseModalities = liveSession.responseModalities;
+  const contextInstruction = liveSession.contextInstruction;
+  const contextPack = liveSession.contextPack;
+  const contextBootstrapLatencyMs = liveSession.contextBootstrapLatencyMs;
+  const contextBootstrapSkippedReason = liveSession.contextBootstrapSkippedReason;
 
-  console.log(`[VTID-01222] Starting Live API session: ${sessionId}, lang=${lang}`);
-
-  // VTID-01225-ROLE: Fetch real application role in parallel with context bootstrap
-  let activeRole: string | null = null;
-  // VTID-01224-FIX: Last session info for context-aware greeting
-  let wsLastSessionInfo: { time: string; wasFailure: boolean } | null = null;
-
-  if (effectiveBootstrapIdentity) {
-    const usingDevFallbackWs = effectiveBootstrapIdentity.user_id === DEV_IDENTITY.USER_ID;
-    console.log(`[VTID-01224] Building bootstrap context for session ${sessionId} user=${effectiveBootstrapIdentity.user_id.substring(0, 8)}...${usingDevFallbackWs ? ' (DEV_IDENTITY fallback)' : ''}`);
-
-    // Fetch role, context, and last session info in parallel for minimal latency.
-    // BOOTSTRAP-ORB-CONNECT-HANG: gated by withBootstrapTimeout so a hung
-    // call in this group can't stall the session open indefinitely — falls
-    // back to "no bootstrap context" and proceeds instead.
-    const [bootstrapResult, fetchedRole, fetchedWsSessionInfo, wsAutopilotOffer] = await withBootstrapTimeout(
-      Promise.all([
-        buildBootstrapContextPack(effectiveBootstrapIdentity, sessionId),
-        usingDevFallbackWs
-          ? Promise.resolve(DEV_IDENTITY.ACTIVE_ROLE)
-          : resolveEffectiveRole(effectiveBootstrapIdentity.user_id, effectiveBootstrapIdentity.tenant_id || ''),
-        fetchLastSessionInfo(effectiveBootstrapIdentity.user_id),
-        // VTID-03201: proactive Autopilot offer, fetched in parallel (no added
-        // critical-path latency). Appended only for community sessions below.
-        import('./autopilot-recommendations')
-          .then((m) => m.buildAutopilotOfferBlock(effectiveBootstrapIdentity.user_id))
-          .catch((err: any) => {
-            console.warn(`[VTID-03201] WS autopilot offer fetch failed: ${err?.message}`);
-            return '';
-          }),
-      ]),
-      [
-        { latencyMs: 0, skippedReason: 'bootstrap_timeout' },
-        usingDevFallbackWs ? DEV_IDENTITY.ACTIVE_ROLE : null,
-        null,
-        '',
-      ] as [
-        { contextPack?: ContextPack; contextInstruction?: string; latencyMs: number; skippedReason?: string },
-        string | null,
-        { time: string; wasFailure: boolean } | null,
-        string,
-      ],
-      'buildBootstrapContextPack+role+lastSession+autopilotOffer',
-    );
-    activeRole = fetchedRole;
-    wsLastSessionInfo = fetchedWsSessionInfo;
-
-    // VTID-ROLE-CMD-HUB: Command Hub is developer-only — override role
-    const wsRoute = typeof (message as any).current_route === 'string' ? (message as any).current_route : '';
-    if (wsRoute.startsWith('/command-hub') && (!activeRole || activeRole === 'community')) {
-      console.log(`[VTID-01225-ROLE] Overriding role to "developer" for Command Hub WS session (was: ${activeRole || 'null'})`);
-      activeRole = 'developer';
-    }
-
-    contextInstruction = bootstrapResult.contextInstruction;
-    contextPack = bootstrapResult.contextPack;
-    contextBootstrapLatencyMs = bootstrapResult.latencyMs;
-    contextBootstrapSkippedReason = bootstrapResult.skippedReason;
-
-    // VTID-03201: community WS sessions get the proactive Autopilot offer so
-    // Vitana raises it unprompted ("you have things waiting — want me to run
-    // through them?"). Empty string for users with nothing queued.
-    if (activeRole === 'community' && wsAutopilotOffer) {
-      contextInstruction = contextInstruction
-        ? `${contextInstruction}\n\n${wsAutopilotOffer}`
-        : wsAutopilotOffer;
-      console.log(`[VTID-03201] Autopilot proactive offer injected into WS session ${sessionId} (${wsAutopilotOffer.length} chars)`);
-    }
-
-    // BOOTSTRAP-ADMIN-EE: admin-role WS sessions get a proactive briefing too.
-    if (isAdminRole(activeRole) && effectiveBootstrapIdentity.tenant_id) {
-      try {
-        const briefing = await withBootstrapTimeout(
-          fetchAdminBriefingBlock(effectiveBootstrapIdentity.tenant_id, 3),
-          null,
-          'fetchAdminBriefingBlock',
-        );
-        if (briefing) {
-          contextInstruction = contextInstruction
-            ? `${contextInstruction}\n\n${briefing}`
-            : briefing;
-          emitOasisEvent({
-            vtid: 'BOOTSTRAP-ADMIN-EE',
-            type: 'admin.briefing.injected',
-            source: 'orb-live-ws',
-            status: 'info',
-            message: `Admin briefing injected into WS session ${sessionId}`,
-            payload: { session_id: sessionId, tenant_id: effectiveBootstrapIdentity.tenant_id, role: activeRole, chars: briefing.length },
-            actor_id: effectiveBootstrapIdentity.user_id,
-            actor_role: 'admin',
-            surface: 'orb',
-          }).catch(() => {});
-        }
-      } catch (err: any) {
-        console.warn(`[BOOTSTRAP-ADMIN-EE] WS briefing fetch failed: ${err?.message}`);
-      }
-    }
-
-    // VTID-01224: Emit OASIS telemetry for context bootstrap
-    if (bootstrapResult.skippedReason) {
-      emitOasisEvent({
-        vtid: 'VTID-01224',
-        type: 'orb.live.context.bootstrap.skipped',
-        source: 'orb-live-ws',
-        status: 'warning',
-        message: `Context bootstrap skipped: ${bootstrapResult.skippedReason}`,
-        payload: {
-          session_id: sessionId,
-          tenant_id: effectiveBootstrapIdentity.tenant_id,
-          user_id: effectiveBootstrapIdentity.user_id,
-          latency_ms: bootstrapResult.latencyMs,
-          reason: bootstrapResult.skippedReason,
-          using_dev_identity: !identity,
-        },
-      }).catch(() => { });
-    } else {
-      emitOasisEvent({
-        vtid: 'VTID-01224',
-        type: 'orb.live.context.bootstrap',
-        source: 'orb-live-ws',
-        status: 'info',
-        message: `Context bootstrap complete: ${bootstrapResult.latencyMs}ms${!identity ? ' (DEV_IDENTITY)' : ''}`,
-        payload: {
-          session_id: sessionId,
-          tenant_id: effectiveBootstrapIdentity.tenant_id,
-          user_id: effectiveBootstrapIdentity.user_id,
-          latency_ms: bootstrapResult.latencyMs,
-          memory_hits: contextPack?.memory_hits?.length || 0,
-          knowledge_hits: contextPack?.knowledge_hits?.length || 0,
-          context_chars: contextInstruction?.length || 0,
-          using_dev_identity: !identity,
-        },
-      }).catch(() => { });
-    }
-  } else {
-    contextBootstrapSkippedReason = 'unauthenticated';
-    console.log(`[VTID-01224] Skipping context bootstrap for ${sessionId}: unauthenticated`);
-
-    // Emit skip event
-    emitOasisEvent({
-      vtid: 'VTID-01224',
-      type: 'orb.live.context.bootstrap.skipped',
-      source: 'orb-live-ws',
-      status: 'info',
-      message: 'Context bootstrap skipped: unauthenticated',
-      payload: {
-        session_id: sessionId,
-        reason: 'unauthenticated',
-      },
-    }).catch(() => { });
-  }
-
-  // Create Gemini Live session with identity and context
-  // VTID-01225: Use effectiveBootstrapIdentity so memory writes also work in dev-sandbox
-  const liveSession: GeminiLiveSession = {
-    sessionId,
-    lang,
-    voiceStyle: message.voice_style,
-    responseModalities,
-    upstreamWs: null,
-    sseResponse: null,  // Not used for WebSocket clients
-    active: true,
-    createdAt: new Date(),
-    lastActivity: new Date(),
-    audioInChunks: 0,
-    audioInForwarded: 0, // VTID-VOICE-FWD: only ++ when a chunk is actually sent upstream
-    videoInFrames: 0,
-    audioOutChunks: 0,
-    // VTID-01224: Identity and context (use effective identity for dev-sandbox fallback)
-    identity: effectiveBootstrapIdentity || identity,
-    // VTID-01225-ROLE: Application-level role (community/admin/developer)
-    active_role: activeRole,
-    thread_id: sessionId,
-    turn_count: 0,
-    contextInstruction,
-    contextPack,
-    contextBootstrapLatencyMs,
-    contextBootstrapSkippedReason,
-    contextBootstrapBuiltAt: Date.now(),
-    // VTID-01225: Transcript accumulation for Cognee extraction
-    transcriptTurns: [],
-    outputTranscriptBuffer: '',
-    pendingEventLinks: [],
-    // VTID-01225-THROTTLE: Buffer for user input transcription (written once per turn)
-    inputTranscriptBuffer: '',
-    // VTID-VOICE-INIT: Echo prevention — not speaking at session start
-    isModelSpeaking: false,
-    // VTID-ECHO-COOLDOWN: No cooldown at session start
-    turnCompleteAt: 0,
-    // Conversation summary for greeting context (from client message)
-    conversationSummary: message.conversation_summary,
-    // VTID-STREAM-SILENCE: Track last audio forwarded for idle detection
-    lastAudioForwardedTime: Date.now(),
-    // Telemetry batching: emit at most once per 10s window
-    lastTelemetryEmitTime: 0,
-    // VTID-RESPONSE-DELAY: Per-session VAD from client or default
-    vadSilenceMs: message.vad_silence_ms && message.vad_silence_ms >= 500 && message.vad_silence_ms <= 3000
-      ? message.vad_silence_ms : getVadSilenceDurationMs(),
-    // VTID-AUDIO-READY: WebSocket path defers greeting until client sends audio_ready
-    greetingDeferred: true,
-    // VTID-STREAM-RECONNECT: Store client WS reference for transparent reconnection notifications
-    clientWs,
-    // VTID-01224-FIX: Last session info for context-aware greeting
-    lastSessionInfo: wsLastSessionInfo,
-    // VTID-LOOPGUARD: Track consecutive model turns for loop prevention
-    consecutiveModelTurns: 0,
-    // VTID-TOOLGUARD: Track consecutive tool calls for loop prevention
-    consecutiveToolCalls: 0,
-    // VTID-ANON: WS sessions with no JWT are anonymous
-    isAnonymous: !identity?.user_id,
-    // VTID-NAV: Current page + recent navigation history pushed by the host
-    // React Router via VTOrb.updateContext() and included in the WS start
-    // message. The consult service uses these for context-aware ranking.
-    current_route: typeof (message as any).current_route === 'string'
-      ? (message as any).current_route
-      : undefined,
-    recent_routes: Array.isArray((message as any).recent_routes)
-      ? ((message as any).recent_routes as any[])
-          .filter((r): r is string => typeof r === 'string')
-          .slice(0, 5)
-      : undefined,
-    // VTID-02789: mobile viewport flag plumbed from useIsMobile() in the
-    // frontend; drives mobile_route override + viewport_only block in
-    // handleNavigateToScreen. WS path mirrors the SSE path above.
-    is_mobile: typeof (message as any).is_mobile === 'boolean'
-      ? (message as any).is_mobile
-      : undefined,
-  };
-
-  // VTID-SESSION-LIMIT: Terminate existing sessions for this user (WS path)
-  // VTID-SESSION-LIMIT-FIX: Skip for dev-sandbox identity (same reason as SSE path)
-  const wsEffectiveUserId = (effectiveBootstrapIdentity || identity)?.user_id;
-  const wsIsDevIdentity = wsEffectiveUserId === DEV_IDENTITY.USER_ID;
-  if (wsEffectiveUserId && !wsIsDevIdentity) {
-    const wsTerminated = terminateExistingSessionsForUser(wsEffectiveUserId, sessionId);
-    if (wsTerminated > 0) {
-      console.log(`[VTID-SESSION-LIMIT] WS: Terminated ${wsTerminated} existing session(s) for user=${wsEffectiveUserId.substring(0, 8)}... before starting ${sessionId}`);
-    }
-  }
+  liveSession.clientWs = clientWs;
+  liveSession.sseResponse = null;
+  // VTID-AUDIO-READY: unchanged WS semantics — the greeting waits for the
+  // client's `audio_ready` frame (or the prebuffer/fallback timers below) so
+  // first words can't arrive before the browser's AudioContext is unlocked.
+  // The SSE transport has its own audio-ready POST route, so the controller
+  // leaves this false and the WS path opts in here.
+  liveSession.greetingDeferred = true;
 
   clientSession.liveSession = liveSession;
-  liveSessions.set(sessionId, liveSession);
 
   // Connect to Vertex AI Live API
   if (!googleAuth || !VERTEX_PROJECT_ID) {
@@ -14340,6 +15134,12 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
       // FIX: Send raw PCM for Web Audio API scheduled playback (eliminates gaps between chunks)
       (audioB64: string) => {
         if (liveSession.establishLatency) {
+          // BOOTSTRAP-NOVA-SONIC-VOICE: see the SSE audio handler's identical
+          // comment — the tracker's Vertex default needs correcting once
+          // upstream selection has actually resolved.
+          if (liveSession.upstreamProvider === 'nova_sonic') {
+            liveSession.establishLatency.setProvider(`nova_sonic/${NOVA_SONIC_MODEL_ID}`);
+          }
           liveSession.establishLatency.mark('audio_out_first_chunk', { source: 'greeting' });
           void liveSession.establishLatency.finalize('success');
           liveSession.establishLatency = null;
@@ -14490,6 +15290,10 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
         knowledge_hits: contextPack?.knowledge_hits?.length || 0,
         tools_enabled: !!identity,
       },
+      // VTID-03471: carry the conversation id the controller resolved, so a
+      // WS reconnect can send it back and resume the same conversation the
+      // way the SSE path already does.
+      conversation_id: startResult.body.conversation_id ?? null,
       meta: {
         lang,
         voice: getLiveApiVoice(lang),
@@ -14497,6 +15301,12 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
         audio_in_rate: 16000,
         audio_out_rate: 24000,
         authenticated: !!identity,
+        // VTID-03471: everything the HTTP start response returns — voice
+        // quota tier, wake-brief decision, and (critically) `context_status`,
+        // which tells the widget whether wake-brief/journey were deferred by
+        // fast start. The widget must not assume `wake_brief` is populated
+        // when this says 'pending'.
+        ...(startResult.body.meta || {}),
       }
     });
 
@@ -14667,12 +15477,13 @@ async function handleWsAudioMessage(clientSession: WsClientSession, message: WsC
       // WS and SSE transports stay in lockstep until Phase 3 collapses
       // them onto one adapter.
       if (!liveSession.isModelSpeaking) {
-        // VTID-01984 (R5): mirror of SSE-path gate — once Vertex has shown
-        // life, skip arming the forwarding_no_ack watchdog. Healthy WS does
-        // not need a 15-45 s heuristic to detect Vertex's compute window.
-        if (liveSession.vertexHasShownLife) {
+        // Nova item 5: mirror of the SSE-path gate — skip arming the
+        // forwarding_no_ack watchdog only while the model has already
+        // responded on THIS turn. Transport liveness (the user's own
+        // transcription) must not suppress recovery.
+        if (liveSession.modelRespondedThisTurn) {
           if (liveSession.audioInChunks % 200 === 0) {
-            emitDiag(liveSession, 'watchdog_skipped', { reason: 'vertex_alive' });
+            emitDiag(liveSession, 'watchdog_skipped', { reason: 'model_responded_this_turn' });
           }
         } else {
           const canSlide = !liveSession.responseWatchdogTimer
@@ -14799,6 +15610,16 @@ function handleWsInterruptMessage(clientSession: WsClientSession): void {
   // 1. Ungate mic audio so subsequent frames reach Gemini
   liveSession.isModelSpeaking = false;
 
+  // VTID-VOICE-NOVA-BARGEIN: Nova's sendEndOfTurn() is a documented no-op —
+  // Bedrock has no cancel-generation event, so the in-flight response keeps
+  // streaming audioOutput chunks after this interrupt (Vertex's turn_complete
+  // actually stops Gemini; Nova's does not). Reuse the same
+  // suppressCurrentTurnAudio flag the greeting-reemit fix already uses so any
+  // further chunks from the superseded generation are dropped instead of
+  // played over the user. Auto-clears on the next handleTurnComplete. Harmless
+  // no-op for Vertex, which already stops generating on its own.
+  (liveSession as any).suppressCurrentTurnAudio = true;
+
   // 2. Tell Gemini to stop generating by sending client_content.turn_complete
   if (liveSession.upstreamWs && liveSession.upstreamWs.readyState === WebSocket.OPEN) {
     sendEndOfTurn(liveSession.upstreamWs);
@@ -14849,7 +15670,8 @@ function handleWsStopSession(clientSession: WsClientSession): void {
     // Close upstream WebSocket
     if (liveSession.upstreamWs) {
       try {
-        liveSession.upstreamWs.close();
+        // Nova item 6: explicit stop_session control frame from the client.
+        liveSession.upstreamWs.close(1000, 'user_stop');
       } catch (e) {
         // Ignore
       }

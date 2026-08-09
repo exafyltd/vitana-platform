@@ -20,7 +20,7 @@ set -euo pipefail
 # ── Config ────────────────────────────────────────────────────
 PROJECT="${GCP_PROJECT_ID:-lovable-vitana-vers1}"
 REGION="${GCP_REGION:-us-central1}"
-GATEWAY_URL="${GATEWAY_URL:-https://vitana-gateway-q74ibpv6ia-uc.a.run.app}"
+GATEWAY_URL="${GATEWAY_URL:-https://gateway-q74ibpv6ia-uc.a.run.app}"
 TENANT_ID="${DEFAULT_TENANT_ID:-}"
 DELETE=false
 DRY_RUN=false
@@ -65,6 +65,97 @@ JOBS=(
   "AP-0510|upcoming-events-today|0 8 * * *|Europe/Berlin"
 )
 
+# ──────────────────────────────────────────────────────────────
+# Memory & Intelligence automations (VTID-01250 / BOOTSTRAP-MEMORY-
+# DAILY-LEARNING) — AP-0906 through AP-0913.
+#
+# ROOT CAUSE: these automations were registered in
+# automation-registry.ts with triggerType: 'cron' and real cron
+# expressions, but were NEVER added to this script. A registry
+# cronExpression is just descriptive metadata — it does not create a
+# Cloud Scheduler job by itself. Every execution of these automations,
+# ever, has trigger_type='manual' in automation_runs (confirmed via
+# direct query) — meaning no scheduler has ever invoked them, including
+# AP-0907 (Daily Learning Digest — the "I learned something new about
+# you today" push), which has zero runs in its entire history. That is
+# why users never see daily learning surfaced: nothing has ever run it
+# on a schedule.
+#
+# Schedules below are copied verbatim from automation-registry.ts's
+# triggerConfig.cronExpression comments. UTC (not Europe/Berlin): these
+# are backend batch/analytics jobs over all users' data, not a
+# single-user local-time notification slot — same reasoning as the
+# daily-recompute / daily-pace-notifications jobs further down this
+# file, which are also UTC.
+#
+# UPDATE (PR #2969 code review, chatgpt-codex-connector): AP-0907 and
+# AP-0911 were flagged and fixed before their jobs were ever created —
+#   - AP-0907 (Daily Learning Digest): was daily 18:10 UTC. A fixed UTC
+#     fire sends this user-facing "evening" push at the wrong local hour
+#     for anyone not near UTC (~2am for UTC+8). Now hourly; the handler
+#     itself resolves each user's real timezone and only notifies during
+#     their own local evening hour (mirrors daily-pace-notifications'
+#     per-user local-hour gate) — the UTC cron cadence is unchanged in
+#     spirit (still "backend sweep, not a notification slot"), the
+#     handler is what makes the delivery timezone-correct now.
+#   - AP-0911 (User Model Synthesis): was daily 5:05 UTC processing up to
+#     100 users serially through an LLM call each — a large eligible pool
+#     could exceed the 300s scheduler attempt-deadline and never
+#     complete (nor retry successfully). Now hourly with a smaller batch
+#     + a hard per-run time budget, so it always returns before the
+#     deadline; anything left over is picked up next hour.
+# ──────────────────────────────────────────────────────────────
+MEMORY_INTELLIGENCE_JOBS=(
+  "AP-0906|memory-routine-pattern-extraction|30 3 * * *|UTC"
+  "AP-0909|memory-relationship-graph-projection|50 3 * * *|UTC"
+  "AP-0908|memory-behavior-preference-inference|40 4 * * *|UTC"
+  "AP-0912|memory-health-correlation-insights|55 4 * * *|UTC"
+  "AP-0911|memory-user-model-synthesis|35 * * * *|UTC"
+  "AP-0913|memory-own-post-capture|15 * * * *|UTC"
+  "AP-0910|memory-embedding-backfill|25 * * * *|UTC"
+  "AP-0907|memory-daily-learning-digest|10 * * * *|UTC"
+)
+
+for JOB in "${MEMORY_INTELLIGENCE_JOBS[@]}"; do
+  IFS='|' read -r AP_ID NAME SCHEDULE TIMEZONE <<< "$JOB"
+  JOB_NAME="autopilot-${NAME}"
+  TARGET_URL="${GATEWAY_URL}/api/v1/automations/cron/${AP_ID}"
+
+  if $DELETE; then
+    echo "Deleting: $JOB_NAME"
+    if ! $DRY_RUN; then
+      gcloud scheduler jobs delete "$JOB_NAME" \
+        --project="$PROJECT" \
+        --location="$REGION" \
+        --quiet 2>/dev/null || echo "  (not found, skipping)"
+    fi
+  else
+    echo "Creating: $JOB_NAME → $AP_ID ($SCHEDULE $TIMEZONE)"
+    if ! $DRY_RUN; then
+      gcloud scheduler jobs delete "$JOB_NAME" \
+        --project="$PROJECT" \
+        --location="$REGION" \
+        --quiet 2>/dev/null || true
+
+      gcloud scheduler jobs create http "$JOB_NAME" \
+        --project="$PROJECT" \
+        --location="$REGION" \
+        --schedule="$SCHEDULE" \
+        --time-zone="$TIMEZONE" \
+        --uri="$TARGET_URL" \
+        --http-method=POST \
+        --headers="Content-Type=application/json" \
+        --message-body="{\"tenant_id\":\"$TENANT_ID\"}" \
+        --attempt-deadline=1800s \
+        --max-retry-attempts=1 \
+        --description="Autopilot $AP_ID: $NAME"
+    fi
+  fi
+done
+
+echo ""
+echo "Done. ${#MEMORY_INTELLIGENCE_JOBS[@]} memory-intelligence scheduler jobs processed."
+
 for JOB in "${JOBS[@]}"; do
   IFS='|' read -r AP_ID NAME SCHEDULE TIMEZONE <<< "$JOB"
   JOB_NAME="autopilot-${NAME}"
@@ -96,7 +187,7 @@ for JOB in "${JOBS[@]}"; do
         --http-method=POST \
         --headers="Content-Type=application/json" \
         --message-body="{\"tenant_id\":\"$TENANT_ID\"}" \
-        --attempt-deadline=300s \
+        --attempt-deadline=1800s \
         --max-retry-attempts=1 \
         --description="Autopilot $AP_ID: $NAME"
     fi
@@ -143,6 +234,8 @@ DIRECT_JOBS=(
 TENANT_DIRECT_JOBS=(
   "daily-recompute|0 2 * * *|UTC|/api/v1/scheduler/daily-recompute"
   "daily-pace-notifications|0 * * * *|UTC|/api/v1/scheduled-notifications/daily-pace-notifications"
+  # BOOTSTRAP-DAILY-FEATURE-TIP: automatic once-a-day "Did You Know" card.
+  "daily-feature-tip|0 17 * * *|UTC|/api/v1/scheduled-notifications/daily-feature-tip"
 )
 
 for JOB in "${TENANT_DIRECT_JOBS[@]}"; do

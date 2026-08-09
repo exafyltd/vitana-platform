@@ -27,6 +27,13 @@
 import { createClient } from '@supabase/supabase-js';
 import { GoogleAuth } from 'google-auth-library';
 import sharp from 'sharp';
+// VTID-03497: Titan seam. No-ops unless IMAGE_PROVIDER=bedrock.
+import {
+  getImageProvider,
+  nearestTitanSize,
+  outpaintTitanImage,
+  titanWhiteGenerates,
+} from '../providers/titan-image';
 
 const BUCKET = process.env.INTENT_COVERS_BUCKET ?? 'intent-covers';
 
@@ -189,14 +196,82 @@ async function composeCanvasAndMask(
 }
 
 /**
+ * VTID-03497 — Amazon Titan outpainting, used when IMAGE_PROVIDER=bedrock.
+ *
+ * Two adaptations Imagen does not need:
+ *
+ * 1. **Resize.** Titan accepts only a fixed set of dimensions and 1600x900 is
+ *    not one of them. We downscale canvas+mask to the nearest supported 16:9
+ *    (1280x720) and upscale the result back to 1600x900. The mask is resized
+ *    with `kernel: 'nearest'` so it stays strictly two-tone — a bilinear
+ *    resize would produce grey edge pixels, and a partially-grey mask makes
+ *    the seam between kept and generated regions non-deterministic.
+ *
+ * 2. **Mask polarity.** This module builds an Imagen-convention mask (WHITE =
+ *    generate, BLACK = keep). Titan is documented inverted, so we invert
+ *    unless `TITAN_OUTPAINT_MASK_POLARITY=white-generates` says otherwise.
+ *    UNVERIFIED against the live API — if outpaint output looks wrong (the
+ *    subject regenerated, margins preserved), this is the first thing to flip.
+ */
+async function callTitanOutpaint(canvasPng: Buffer, maskPng: Buffer): Promise<Buffer> {
+  const target = nearestTitanSize(OUT_W, OUT_H);
+
+  const canvasResized = await sharp(canvasPng)
+    .resize(target.width, target.height, { fit: 'fill' })
+    .png()
+    .toBuffer();
+
+  let maskResized = await sharp(maskPng)
+    .resize(target.width, target.height, { fit: 'fill', kernel: 'nearest' })
+    .png()
+    .toBuffer();
+
+  if (!titanWhiteGenerates()) {
+    // Imagen mask (white=generate) → Titan mask (black=generate).
+    maskResized = await sharp(maskResized).negate({ alpha: false }).png().toBuffer();
+  }
+
+  const result = await outpaintTitanImage({
+    imagePng: canvasResized,
+    maskPng: maskResized,
+    prompt: OUTPAINT_PROMPT,
+    width: target.width,
+    height: target.height,
+  });
+
+  if (!result.ok) {
+    if (result.error === 'blocked') {
+      throw new CoverOutpaintError('unsafe_prompt', result.message);
+    }
+    throw new CoverOutpaintError('provider_failed', `titan ${result.error}: ${result.message}`);
+  }
+
+  console.log(
+    `[cover-outpaint] provider=bedrock model=${result.model} ` +
+      `titan_size=${target.width}x${target.height} upscaled_to=${OUT_W}x${OUT_H} ` +
+      `latency_ms=${result.upstream_ms}`,
+  );
+
+  // Back up to the canonical canvas so an outpaint result is
+  // indistinguishable in size from a passthrough/crop result.
+  return sharp(result.pngBytes).resize(OUT_W, OUT_H, { fit: 'fill' }).png().toBuffer();
+}
+
+/**
  * Hit the Vertex Imagen capability model in outpaint mode.
  * Throws CoverOutpaintError on any provider/network failure so the
  * caller can fall back gracefully.
+ *
+ * VTID-03497: dispatches to Titan when IMAGE_PROVIDER=bedrock. Default
+ * remains `vertex` — deploying this changes nothing.
  */
 async function callImagenOutpaint(
   canvasPng: Buffer,
   maskPng: Buffer,
 ): Promise<Buffer> {
+  if (getImageProvider() === 'bedrock') {
+    return callTitanOutpaint(canvasPng, maskPng);
+  }
   if (!VERTEX_PROJECT) throw new CoverOutpaintError('provider_failed', 'gcp_project_unset');
 
   let token: string;

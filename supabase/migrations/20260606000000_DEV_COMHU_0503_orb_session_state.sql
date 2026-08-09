@@ -5,6 +5,17 @@
 --
 -- NOTE: written as a migration FILE by the autonomous run; apply via the normal
 -- Supabase migration flow. Not executed from the sandbox.
+--
+-- APPLIED 2026-08-03 under VTID-03480 — and NOT before. This file sat
+-- unapplied in production for ~2 months. Because every caller in
+-- services/gateway/src/services/orb/orb-session-state.ts fails soft (reads
+-- return null, writes return ok:false and never throw), nothing broke loudly:
+-- the ORB audio-ready handshake, close/reopen continuity, the pending
+-- autopilot CTA and wake-brief opener rotation were all silently inert.
+-- The only visible trace was `orb.session.audio_ready.acked` carrying
+-- ok:false on every single session. Verified after applying: that same
+-- event flipped to ok:true on the next live session, with no redeploy —
+-- the code had always been calling this table correctly.
 
 CREATE TABLE IF NOT EXISTS orb_session_state (
   user_id      UUID NOT NULL REFERENCES app_users(user_id) ON DELETE CASCADE,

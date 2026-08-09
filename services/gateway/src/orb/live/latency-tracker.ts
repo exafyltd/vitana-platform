@@ -84,6 +84,18 @@ export class LatencyTracker {
     return this.enabled;
   }
 
+  /**
+   * Correct the provider hint after construction. Upstream provider
+   * selection (Vertex vs Nova vs LiveKit) can resolve AFTER the tracker is
+   * created — e.g. the turn-0 establishment tracker is constructed before
+   * `connectToLiveAPI` picks an upstream — so the constructor's `provider`
+   * is a best-guess default, not a fact. Call this once the real provider
+   * is known, before `finalize()`.
+   */
+  setProvider(provider: string): void {
+    this.ctx.provider = provider;
+  }
+
   mark(phase: LatencyPhase, detail?: Record<string, unknown>): void {
     if (!this.enabled || this.finalized) return;
     this.marks.push({ phase, at_ms: Date.now(), detail });

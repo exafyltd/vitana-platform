@@ -106,7 +106,7 @@ export interface WorkerTaskResult {
   /** Per-attempt validation failures from the worker's retry loop. Populated
    * on both success (when earlier attempts failed) and final failure. The
    * prompt-gap feedback loop in dev-autopilot-execute.ts upserts these into
-   * dev_autopilot_prompt_learnings. */
+   * watcher_lessons (VTID-03461). */
   attempt_failures?: WorkerAttemptFailure[];
   error?: string;
   queue_row_id?: string;

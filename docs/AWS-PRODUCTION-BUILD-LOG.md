@@ -579,3 +579,120 @@ setup. Whatever Terraform project actually owns this infrastructure is
 not in this repo. A real fix (rename, or understanding why a
 `Environment=prod`-tagged, Terraform-managed target group serves staging
 traffic) should go through that IaC, not further hand-edits via aws-cli.
+
+### `vitana-autopilot-cdc` DMS task fixed (same day, after IAM grant)
+
+The user attached a scoped temporary inline policy
+(`vitana-dms-autopilot-fix-temp`, `dms:StartReplicationTask`/
+`StopReplicationTask` on the specific task ARN only) to
+`claude-staging-validation`, unblocking the fix diagnosed earlier the
+same day (§ above, "Root cause diagnosed").
+
+```bash
+aws dms start-replication-task \
+  --replication-task-arn arn:aws:dms:eu-central-1:472838866351:task:PASTVC7U6BBWJPD4YFTFDRLNCU \
+  --start-replication-task-type resume-processing --region eu-central-1
+```
+
+`resume-processing` reached `running` briefly (~60s) then failed again —
+**a different error than before**: `An internal WAL conversational
+protocol error has occurred`, not the original "Postgres apply or data
+error." Given the task's `RecoveryCheckpoint` dated back to 2026-07-22
+(the task had been dead ~2 days) and this same task had a prior "Slot
+does not exist" failure in its history (see the original diagnosis
+above), the working theory is the checkpoint's LSN position was no
+longer valid against the source's current replication slot state.
+
+Fell back to the documented plan: a clean restart, accepting loss of the
+one specific historical row update in exchange for restored currency.
+
+```bash
+aws dms start-replication-task \
+  --replication-task-arn arn:aws:dms:eu-central-1:472838866351:task:PASTVC7U6BBWJPD4YFTFDRLNCU \
+  --start-replication-task-type start-replication --region eu-central-1
+```
+
+Confirmed stable: `status=running`, zero new failure events, for 5+
+minutes post-restart (`aws dms describe-events --start-time
+<restart-timestamp>` returning only the "started" state-change event, no
+"failed" events). `aws dms describe-table-statistics` showed a fresh
+full-load pass completing cleanly (`TableState: Table completed`) as
+part of the restart. Both `vitana-autopilot-cdc` and
+`vitana-supabase-to-aurora` confirmed `running` with `LastFailureMessage:
+null`.
+
+**Residual gap, accepted not fixed:** the specific UPDATE that was stuck
+at the time of the original 2026-07-22 failure never replicated — CDC
+capture restarted from "now," not from the old position. This is a
+one-row historical drift on a DR replica, not an ongoing sync gap.
+
+Attempted to self-remove `vitana-dms-autopilot-fix-temp` after the fix
+(`iam:DeleteUserPolicy`) — blocked, same as the earlier
+`vitana-awsdr-oidc-setup-temp` self-revoke attempt. Both temporary
+policies are still attached to `claude-staging-validation` pending
+manual removal by an operator with IAM write access.
+
+---
+
+## Addendum (2026-07-28): VTID-03420 activation — missing GITHUB_SAFE_MERGE_TOKEN on AWS gateway
+
+After merging VTID-03420 (AWS staging→prod publish parity) and setting
+`PUBLISH_TARGET_CLOUD=aws` on `vitana-gateway-awsdr`, the first live
+PUBLISH click from the Command Hub failed:
+
+```
+Failed: GITHUB_SAFE_MERGE_TOKEN environment variable is not set
+```
+
+Root cause: `triggerWorkflow()` (`github-service.ts`) reads
+`process.env.GITHUB_SAFE_MERGE_TOKEN` when no per-call token override is
+given, and the new `publishAwsFlow()` path dispatches
+`AWS-PROD-DEPLOY-GATEWAY.yml` without one. This is not a regression in
+the new code — it's the **first** code path where the AWS-hosted gateway
+container itself calls the GitHub API (every prior AWS workflow dispatch
+in this build was done manually via the session's own PAT, or from the
+GCP gateway, which has this var set). The AWS gateway task definition
+had never needed a GitHub token before.
+
+Found an existing, already-populated secret —
+`vitana/github/token` (created 2026-07-16, `LastAccessedDate` present —
+confirmed non-empty via `list-secret-version-ids` per the diagnostic
+this document already established after the earlier empty-Google-Chat-
+secret incident, since `claude-staging-validation` cannot
+`GetSecretValue` on `vitana/*` directly) — and bound it:
+
+- `vitana-gateway-awsdr:9` — added `GITHUB_SAFE_MERGE_TOKEN` as a
+  `secrets` entry (`valueFrom` the full secret ARN), preserving all 6
+  existing secrets and all 29 env vars. Rolled the service; watched the
+  deployment via `describe-services` events end-to-end (new task started
+  → registered in target group → old task drained/stopped → single
+  deployment COMPLETED, zero `failedTasks`, no
+  `ResourceInitializationError`). Post-rollout `/alive` (200),
+  `/api/v1/admin/health` (`env=production`), and `/api/v1/admin/build-info`
+  (still `b1ce82c`) all re-verified.
+
+**Full VTID-03420 activation sequence, end to end:**
+1. Waited for AWS staging (`vitana-gateway`) to auto-deploy the merged
+   PR and converge (staging briefly served two commits mid-rollout —
+   normal ECS rolling-deploy behavior, confirmed by polling until 6/6
+   consecutive reads agreed).
+2. Dispatched `AWS-PROD-DEPLOY-GATEWAY.yml` with
+   `deploy_mode=promote-staging`, `expected_commit` pinned to the merge
+   commit — succeeded, simultaneously closing the pre-existing
+   staging/prod drift (`0c72cfc`/`53cfb71`) and shipping the new publish
+   code itself to prod.
+3. Registered `vitana-gateway-awsdr:8` adding `PUBLISH_TARGET_CLOUD=aws`
+   (one env var, verified 28→29, all secrets preserved) — rolled clean.
+4. First live PUBLISH click surfaced the missing-token gap above;
+   registered `:9` adding the token secret — rolled clean, verified.
+
+**Confirmed durable** (2026-07-29 safety-net check-in): by the next day
+`vitana-gateway-awsdr` had progressed to task-def revision **14** — i.e.
+at least one successful PUBLISH click landed after `:9` shipped, and the
+promotion path has been used routinely since without falling back to
+manual dispatch. Revision 14 carries forward both `PUBLISH_TARGET_CLOUD=aws`
+and the `GITHUB_SAFE_MERGE_TOKEN` secret binding, service stable
+(rollout `COMPLETED`, 1/1, zero failed tasks). Prod (`a8e770c…`, itself
+already 2 merges past the `b1ce82c` this addendum started from) trails
+staging (`0b9191c…`) by 3 further merges — the expected shape of
+staging-ahead-of-prod, not drift.
