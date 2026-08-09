@@ -1,0 +1,316 @@
+-- =============================================================================
+-- BOOTSTRAP — Guided Journey: German labels + short descriptions (My Journey)
+-- =============================================================================
+-- Bug: German users (the ~95% majority) saw the 90-session "Reise" catalog with
+-- every topic TITLE and SHORT DESCRIPTION in ENGLISH ("Mental Strength",
+-- "Build mental strength.", "Daily Diary", "Make memory practical.", ...).
+--
+-- Root cause: the curriculum is designed with DE as the authored source of truth
+-- (journey_checklist_topics + the published snapshot in journey_checklist_versions);
+-- non-DE locales are overlaid from journey_checklist_translations at read time
+-- (services/gateway/src/services/guided-journey/checklist-service.ts). For 'de'
+-- the overlay is intentionally skipped and the snapshot is served verbatim — but
+-- the snapshot's display_label / short_description were AUTHORED IN ENGLISH
+-- (the topic explanation_* fields were already German). So German users got the
+-- English source; en/es/sr were fine because their overlay rows exist.
+--
+-- Fix (data-only, no deploy): author the German display_label / short_description
+-- on both the source table AND the current published snapshot. The existing 'en'
+-- overlay rows (verified complete, 250/250) preserve English for English users;
+-- es/sr overlays are untouched. T251–T254 were already German and are left as-is.
+--
+-- Idempotent: re-running re-applies the same German strings.
+--
+-- impact-allow-solo-migration: pure content backfill (no schema change). The
+-- existing read path (checklist-service.ts → published snapshot, served
+-- verbatim for 'de') already consumes these columns unchanged; no gateway/
+-- worker code change is required.
+-- =============================================================================
+
+BEGIN;
+
+CREATE TEMP TABLE _de_labels (topic_id text PRIMARY KEY, label text, descr text) ON COMMIT DROP;
+
+INSERT INTO _de_labels (topic_id, label, descr) VALUES
+  ('T001', 'Was ist Vitanaland', 'Verstehe das Ökosystem, bevor es losgeht.'),
+  ('T002', 'Maxina Community', 'Verstehe das Ökosystem, bevor es losgeht.'),
+  ('T003', 'Vitana Assistentin', 'Lerne die Assistentin und die Sprachsteuerung kennen.'),
+  ('T004', 'ORB Sprache', 'Lerne die Assistentin und die Sprachsteuerung kennen.'),
+  ('T005', 'Meine Reise', '90 Sessions, freies Springen und Übungen einfach erklärt.'),
+  ('T006', 'Nutzungs-Sessions', '90 Sessions, freies Springen und Übungen einfach erklärt.'),
+  ('T007', 'Lebenskompass', 'Lege dein persönliches Zielsystem fest.'),
+  ('T008', 'Ziel wählen', 'Lege dein persönliches Zielsystem fest.'),
+  ('T009', 'Vitana Index', 'Lerne den Vitana Index früh kennen.'),
+  ('T010', 'Index verbessern', 'Lerne den Vitana Index früh kennen.'),
+  ('T011', 'Fünf Säulen', 'Das Gesundheitsmodell einfach erklärt.'),
+  ('T012', 'Schwächste Säule', 'Das Gesundheitsmodell einfach erklärt.'),
+  ('T013', 'Lebensqualität', 'Das Versprechen von mehr Lebensqualität.'),
+  ('T014', 'Gesundheit zuerst', 'Das Versprechen von mehr Lebensqualität.'),
+  ('T015', 'Datenschutz-Kontrolle', 'Sicherheit und Kontrolle für dich.'),
+  ('T016', 'Gedächtnis-Freigabe', 'Sicherheit und Kontrolle für dich.'),
+  ('T017', 'Profil-Grundlagen', 'Warum dein Profil wichtig ist.'),
+  ('T018', 'Vertrauenssignal', 'Warum dein Profil wichtig ist.'),
+  ('T019', 'Vitana fragen', 'Deine ersten Sprachbefehle.'),
+  ('T020', 'Bildschirm öffnen', 'Deine ersten Sprachbefehle.'),
+  ('T021', 'Täglicher Rhythmus', 'So sieht dein täglicher Einstieg aus.'),
+  ('T022', 'Erste Übung', 'So sieht dein täglicher Einstieg aus.'),
+  ('T023', 'Schlaf', 'Starte mit deiner Erholung.'),
+  ('T024', 'Schlaf erfassen', 'Starte mit deiner Erholung.'),
+  ('T025', 'Flüssigkeit', 'Ein schneller Gesundheits-Erfolg.'),
+  ('T026', 'Wasser erfassen', 'Ein schneller Gesundheits-Erfolg.'),
+  ('T027', 'Bewegung', 'Verbinde Bewegung mit Energie.'),
+  ('T028', 'Bewegung erfassen', 'Verbinde Bewegung mit Energie.'),
+  ('T029', 'Ernährung', 'Ernährung ganz einfach halten.'),
+  ('T030', 'Mahlzeit-Notiz', 'Ernährung ganz einfach halten.'),
+  ('T031', 'Mentale Stärke', 'Stärke deinen Geist.'),
+  ('T032', 'Eine-Minute-Reset', 'Stärke deinen Geist.'),
+  ('T033', 'Tägliches Tagebuch', 'Mach deine Erinnerungen nutzbar.'),
+  ('T034', 'Sprach-Tagebuch', 'Mach deine Erinnerungen nutzbar.'),
+  ('T035', 'Erinnerungen', 'Bleib dran und zieh es durch.'),
+  ('T036', 'Erinnerung setzen', 'Bleib dran und zieh es durch.'),
+  ('T037', 'Kalender', 'Mach aus Vorsätzen feste Termine.'),
+  ('T038', 'Aktion planen', 'Mach aus Vorsätzen feste Termine.'),
+  ('T039', 'Zukunftswege', 'Du wählst, wie tief du gehst.'),
+  ('T040', 'Business-Neugier', 'Du wählst, wie tief du gehst.'),
+  ('T041', 'Täglicher Ablauf', 'Etabliere deinen täglichen Ablauf.'),
+  ('T042', 'Autopilot testen', 'Etabliere deinen täglichen Ablauf.'),
+  ('T043', 'Erledigen oder verschieben', 'Etabliere deinen täglichen Ablauf.'),
+  ('T044', 'Home-Überblick', 'Home ist deine tägliche Schaltzentrale.'),
+  ('T045', 'Kontext-Tab', 'Home ist deine tägliche Schaltzentrale.'),
+  ('T046', 'KI-Feed einschätzen', 'Home ist deine tägliche Schaltzentrale.'),
+  ('T047', 'Index-Treiber', 'So wird dein Index konkret nutzbar.'),
+  ('T048', 'Säulen-Teilwerte', 'So wird dein Index konkret nutzbar.'),
+  ('T049', 'Treiber wählen', 'So wird dein Index konkret nutzbar.'),
+  ('T050', 'Schlaf-Trend', 'Vertiefe deine Erholung.'),
+  ('T051', 'Schlaf-Plan', 'Vertiefe deine Erholung.'),
+  ('T052', 'Schlafenszeit-Erinnerung', 'Vertiefe deine Erholung.'),
+  ('T053', 'Trink-Rhythmus', 'Verbinde deine täglichen Tracker.'),
+  ('T054', 'Ernährungsmuster', 'Verbinde deine täglichen Tracker.'),
+  ('T055', 'Bewegungsstil', 'Verbinde deine täglichen Tracker.'),
+  ('T056', 'Muster für mentale Balance', 'Verbinde innere Ruhe mit guten Entscheidungen.'),
+  ('T057', 'Atem- oder Meditations-Log', 'Verbinde innere Ruhe mit guten Entscheidungen.'),
+  ('T058', 'Stress-Einblick', 'Verbinde innere Ruhe mit guten Entscheidungen.'),
+  ('T059', 'Gesundheitswissen', 'Wissen aufbauen, ohne dich zu überfordern.'),
+  ('T060', 'Grenzen bei Beschwerden und Risiken', 'Wissen aufbauen, ohne dich zu überfordern.'),
+  ('T061', 'Grenze zu Fachleuten und Hilfe', 'Wissen aufbauen, ohne dich zu überfordern.'),
+  ('T062', 'Biomarker-Vorschau', 'Mehr Gesundheitsdaten sicher entdecken.'),
+  ('T063', 'Verbundene Apps', 'Mehr Gesundheitsdaten sicher entdecken.'),
+  ('T064', 'Später verbinden', 'Mehr Gesundheitsdaten sicher entdecken.'),
+  ('T065', 'Gesundheitspläne', 'Mach aus Gesundheit einen Plan.'),
+  ('T066', 'Service-Hub', 'Mach aus Gesundheit einen Plan.'),
+  ('T067', 'Plan-Schritt', 'Mach aus Gesundheit einen Plan.'),
+  ('T068', 'Gedächtnis-Überblick', 'Lerne das ganze Gedächtnis-System kennen.'),
+  ('T069', 'Was Vitana weiß', 'Lerne das ganze Gedächtnis-System kennen.'),
+  ('T070', 'Dreizehn Gedächtnis-Kategorien', 'Lerne das ganze Gedächtnis-System kennen.'),
+  ('T071', 'Erinnerung hinzufügen', 'Erinnerungen festhalten und finden.'),
+  ('T072', 'Gedächtnis-Zeitleiste', 'Erinnerungen festhalten und finden.'),
+  ('T073', 'Erinnerung abrufen', 'Erinnerungen festhalten und finden.'),
+  ('T074', 'Erinnerung korrigieren', 'Behalte die Kontrolle über dein Gedächtnis.'),
+  ('T075', 'Gedächtnis-Berechtigungen', 'Behalte die Kontrolle über dein Gedächtnis.'),
+  ('T076', 'Datenexport', 'Behalte die Kontrolle über dein Gedächtnis.'),
+  ('T077', 'Tagebuch-Serie und Belohnungen', 'Dein Tagebuch ist mehr als Schreiben.'),
+  ('T078', 'Foto-Tagebuch', 'Dein Tagebuch ist mehr als Schreiben.'),
+  ('T079', 'Säulen-Boost durchs Tagebuch', 'Dein Tagebuch ist mehr als Schreiben.'),
+  ('T080', 'Kalender-Agenda', 'So nutzt du den Kalender.'),
+  ('T081', 'Kalendereintrag erstellen', 'So nutzt du den Kalender.'),
+  ('T082', 'Termin verschieben', 'So nutzt du den Kalender.'),
+  ('T083', 'Posteingang-Überblick', 'Posteingang und Kommunikation kennenlernen.'),
+  ('T084', 'Posteingang-Tabs', 'Posteingang und Kommunikation kennenlernen.'),
+  ('T085', 'Sprachnotiz entwerfen', 'Posteingang und Kommunikation kennenlernen.'),
+  ('T086', 'Community-Hub', 'Vom Ich zur Gemeinschaft.'),
+  ('T087', 'Highlights und Ranglisten des Tages', 'Vom Ich zur Gemeinschaft.'),
+  ('T088', 'Globale und Community-Suche', 'Vom Ich zur Gemeinschaft.'),
+  ('T089', 'Feed-Tabs', 'Lerne den Feed kennen.'),
+  ('T090', 'Beitrag entwerfen', 'Lerne den Feed kennen.'),
+  ('T091', 'Sicher reagieren', 'Lerne den Feed kennen.'),
+  ('T092', 'Profil-Vorschau', 'Vertrauen ins Profil, bevor du Kontakt aufnimmst.'),
+  ('T093', 'Sichtbarkeit des öffentlichen Profils', 'Vertrauen ins Profil, bevor du Kontakt aufnimmst.'),
+  ('T094', 'QR-Code und Profil teilen', 'Vertrauen ins Profil, bevor du Kontakt aufnimmst.'),
+  ('T095', 'Match finden', 'Match finden als zentrales System.'),
+  ('T096', 'Match-Typen', 'Match finden als zentrales System.'),
+  ('T097', 'Warum dieses Match', 'Match finden als zentrales System.'),
+  ('T098', 'Match-Liste', 'So handelst du bei Matches.'),
+  ('T099', 'Matches suchen', 'So handelst du bei Matches.'),
+  ('T100', 'Verbinden oder ablehnen', 'So handelst du bei Matches.'),
+  ('T101', 'Aktivität posten', 'Aktivitäten suchen und offene Anfragen stellen.'),
+  ('T102', 'Treffen suchen', 'Aktivitäten suchen und offene Anfragen stellen.'),
+  ('T103', 'Absichts-Matches', 'Aktivitäten suchen und offene Anfragen stellen.'),
+  ('T104', 'Auf Match antworten', 'So funktioniert der Absichts-Kreislauf.'),
+  ('T105', 'Absicht teilen', 'So funktioniert der Absichts-Kreislauf.'),
+  ('T106', 'Absicht erfüllen', 'So funktioniert der Absichts-Kreislauf.'),
+  ('T107', 'Gruppen durchstöbern', 'Lerne Gruppen kennen.'),
+  ('T108', 'Gruppe speichern', 'Lerne Gruppen kennen.'),
+  ('T109', 'Gruppen-Entwurf', 'Lerne Gruppen kennen.'),
+  ('T110', 'Gruppen-Details', 'So funktioniert es in einer Gruppe.'),
+  ('T111', 'Gruppen-Chat', 'So funktioniert es in einer Gruppe.'),
+  ('T112', 'Mitglieder einladen', 'So funktioniert es in einer Gruppe.'),
+  ('T113', 'Challenges', 'Lerne Challenges kennen.'),
+  ('T114', 'Challenge-Fortschritt', 'Lerne Challenges kennen.'),
+  ('T115', 'Erfolg teilen', 'Lerne Challenges kennen.'),
+  ('T116', 'Events suchen', 'Entdecke Veranstaltungen.'),
+  ('T117', 'Event-Filter', 'Entdecke Veranstaltungen.'),
+  ('T118', 'Event speichern', 'Entdecke Veranstaltungen.'),
+  ('T119', 'Event-Details', 'Event-Details und Teilnahme.'),
+  ('T120', 'Kostenlose Zusage', 'Event-Details und Teilnahme.'),
+  ('T121', 'Ticket-Sicherheit', 'Event-Details und Teilnahme.'),
+  ('T122', 'Zum Kalender hinzufügen', 'Verbinde Events mit Planung und Matching.'),
+  ('T123', 'Event-Erinnerungen', 'Verbinde Events mit Planung und Matching.'),
+  ('T124', 'Teilnehmer-Matching', 'Verbinde Events mit Planung und Matching.'),
+  ('T125', 'Event erstellen', 'Erstelle Schritt für Schritt ein Event.'),
+  ('T126', 'Event-Grundlagen', 'Erstelle Schritt für Schritt ein Event.'),
+  ('T127', 'Event-Entwurf', 'Erstelle Schritt für Schritt ein Event.'),
+  ('T128', 'Treffen erstellen', 'Erstelle Schritt für Schritt ein Treffen.'),
+  ('T129', 'Aktivität, Ort und Zeit', 'Erstelle Schritt für Schritt ein Treffen.'),
+  ('T130', 'Mitglieder zum Treffen einladen', 'Erstelle Schritt für Schritt ein Treffen.'),
+  ('T131', 'Treffen-Details', 'So verwaltest du Treffen.'),
+  ('T132', 'Lokales Treffen', 'So verwaltest du Treffen.'),
+  ('T133', 'Treffen ändern', 'So verwaltest du Treffen.'),
+  ('T134', 'Live-Räume durchstöbern', 'Mach bei Live-Räumen mit.'),
+  ('T135', 'Als Zuhörer beitreten', 'Mach bei Live-Räumen mit.'),
+  ('T136', 'Sprechen oder chatten', 'Mach bei Live-Räumen mit.'),
+  ('T137', 'Live-Raum planen', 'So erstellst du einen Live-Raum.'),
+  ('T138', 'Raum-Thema und Beschreibung', 'So erstellst du einen Live-Raum.'),
+  ('T139', 'Sicher live gehen', 'So erstellst du einen Live-Raum.'),
+  ('T140', 'Live-Raum-Aufnahmen', 'Der Medien-Lebenszyklus im Live-Raum.'),
+  ('T141', 'Highlights und Momente', 'Der Medien-Lebenszyklus im Live-Raum.'),
+  ('T142', 'Raum-Zusammenfassungen', 'Der Medien-Lebenszyklus im Live-Raum.'),
+  ('T143', 'Media-Hub-Überblick', 'Der Media-Hub als eigener Bereich.'),
+  ('T144', 'Shorts ansehen', 'Der Media-Hub als eigener Bereich.'),
+  ('T145', 'Medien speichern oder merken', 'Der Media-Hub als eigener Bereich.'),
+  ('T146', 'Podcasts abspielen', 'Lerne Podcasts kennen.'),
+  ('T147', 'Audio-Leiste', 'Lerne Podcasts kennen.'),
+  ('T148', 'Podcast-Routine', 'Lerne Podcasts kennen.'),
+  ('T149', 'Musik abspielen', 'Lerne die Musik kennen.'),
+  ('T150', 'Fokus-Musik', 'Lerne die Musik kennen.'),
+  ('T151', 'Medien-Overlay', 'Lerne die Musik kennen.'),
+  ('T152', 'Short hochladen', 'So lädst du Medien hoch.'),
+  ('T153', 'Podcast hochladen', 'So lädst du Medien hoch.'),
+  ('T154', 'Veröffentlichungsrechte', 'So lädst du Medien hoch.'),
+  ('T155', 'Community-Rückblick', 'Schließe die Community-Grundlagen ab.'),
+  ('T156', 'Nächste soziale Aktion wählen', 'Schließe die Community-Grundlagen ab.'),
+  ('T157', 'Aus Vertrauen wird Chance', 'Schließe die Community-Grundlagen ab.'),
+  ('T158', 'Weg-Wahl', 'Öffne die optionale Business-Tür.'),
+  ('T159', 'Wirtschaftliche Einordnung', 'Öffne die optionale Business-Tür.'),
+  ('T160', 'Business-Interesse', 'Öffne die optionale Business-Tür.'),
+  ('T161', 'Entdecken-Überblick', 'Entdecken ist Suche, kein Verkauf.'),
+  ('T162', 'In Entdecken suchen', 'Entdecken ist Suche, kein Verkauf.'),
+  ('T163', 'Warum empfohlen', 'Entdecken ist Suche, kein Verkauf.'),
+  ('T164', 'Nahrungsergänzung und Produkte', 'Verstehe Produkte besser.'),
+  ('T165', 'Produkt-Details und Eignung', 'Verstehe Produkte besser.'),
+  ('T166', 'Speichern, Wunschliste oder Warenkorb', 'Verstehe Produkte besser.'),
+  ('T167', 'Wellness-Dienste', 'Entdecke Anbieter.'),
+  ('T168', 'Anbieter, Ärzte und Coaches', 'Entdecke Anbieter.'),
+  ('T169', 'Vertrauen ins Anbieter-Profil', 'Entdecke Anbieter.'),
+  ('T170', 'Universeller Warenkorb', 'Sicher einkaufen.'),
+  ('T171', 'Kaufregeln', 'Sicher einkaufen.'),
+  ('T172', 'Weg zur Rückerstattung', 'Sicher einkaufen.'),
+  ('T173', 'Wallet-Überblick', 'Wallet und Abo-Status verstehen.'),
+  ('T174', 'Guthaben, Prämien, Abos', 'Wallet und Abo-Status verstehen.'),
+  ('T175', 'Aktueller Plan und Abrechnung', 'Wallet und Abo-Status verstehen.'),
+  ('T176', 'Prämienprogramm', 'Die Wert-Ebenen deiner Wallet.'),
+  ('T177', 'Zahlungsmethoden', 'Die Wert-Ebenen deiner Wallet.'),
+  ('T178', 'Vitana Coin', 'Die Wert-Ebenen deiner Wallet.'),
+  ('T179', 'Teilen-Überblick', 'Teilen passiert nur mit deiner Zustimmung.'),
+  ('T180', 'Kanal-Verbindung', 'Teilen passiert nur mit deiner Zustimmung.'),
+  ('T181', 'Zustimmung zum Teilen', 'Teilen passiert nur mit deiner Zustimmung.'),
+  ('T182', 'Kampagnen-Grundlagen', 'Lerne Kampagnen kennen.'),
+  ('T183', 'Kampagnen-Entwurf erstellen', 'Lerne Kampagnen kennen.'),
+  ('T184', 'Verteilung und Zeitplan', 'Lerne Kampagnen kennen.'),
+  ('T185', 'Teilen-Statistiken', 'Feedback und Nachweis beim Teilen.'),
+  ('T186', 'Beitragsverlauf', 'Feedback und Nachweis beim Teilen.'),
+  ('T187', 'Prüfung der Datenfreigaben', 'Feedback und Nachweis beim Teilen.'),
+  ('T188', 'Mein-Business-Überblick', 'Der Business-Hub – ganz ohne Druck.'),
+  ('T189', 'Business-Weg prüfen', 'Der Business-Hub – ganz ohne Druck.'),
+  ('T190', 'Fähigkeiten-Übersicht', 'Der Business-Hub – ganz ohne Druck.'),
+  ('T191', 'Business-Beitrag', 'Verbinde dein Business mit Matching.'),
+  ('T192', 'Kunden finden', 'Verbinde dein Business mit Matching.'),
+  ('T193', 'Match-Liste', 'Verbinde dein Business mit Matching.'),
+  ('T194', 'Event als Asset', 'Events als Business-Bausteine.'),
+  ('T195', 'Event-Plan', 'Events als Business-Bausteine.'),
+  ('T196', 'Ticketverkauf', 'Events als Business-Bausteine.'),
+  ('T197', 'Service als Angebot', 'Services als Angebote verstehen.'),
+  ('T198', 'Ergebnis, Zielgruppe, Dauer, Preis', 'Services als Angebote verstehen.'),
+  ('T199', 'Service-Entwurf', 'Services als Angebote verstehen.'),
+  ('T200', 'Live-Vertrauen', 'Live-Räume als Vertrauens-Bausteine.'),
+  ('T201', 'Business-Live-Raum', 'Live-Räume als Vertrauens-Bausteine.'),
+  ('T202', 'Leute einladen', 'Live-Räume als Vertrauens-Bausteine.'),
+  ('T203', 'Medien als Asset', 'Medien als Business-Baustein.'),
+  ('T204', 'Content-Plan', 'Medien als Business-Baustein.'),
+  ('T205', 'Kampagne als Asset', 'Medien als Business-Baustein.'),
+  ('T206', 'Fakten-Bank', 'Whitepaper-Fakten erst bei echtem Interesse.'),
+  ('T207', '27-Billionen-Markt', 'Whitepaper-Fakten erst bei echtem Interesse.'),
+  ('T208', 'Einfache Zusammenfassung', 'Whitepaper-Fakten erst bei echtem Interesse.'),
+  ('T209', 'Zukunft der Arbeit', 'Wie KI die Arbeit für Macher verändert.'),
+  ('T210', 'Wandel der Jobs', 'Wie KI die Arbeit für Macher verändert.'),
+  ('T211', 'Mit KI verstärkte Fähigkeiten', 'Wie KI die Arbeit für Macher verändert.'),
+  ('T212', 'Marktgröße', 'Marktgrößen für Macher verstehen.'),
+  ('T213', 'Wellness-Wirtschaft', 'Marktgrößen für Macher verstehen.'),
+  ('T214', 'Branchen-Passung', 'Marktgrößen für Macher verstehen.'),
+  ('T215', 'Demografische Nachfrage', 'Verstehe die demografische Nachfrage.'),
+  ('T216', 'Markt des Älterwerdens', 'Verstehe die demografische Nachfrage.'),
+  ('T217', 'Nachfrage-Passung', 'Verstehe die demografische Nachfrage.'),
+  ('T218', 'Gig-Nachweis', 'Verstehe dezentrales Arbeiten.'),
+  ('T219', 'Gig-Economy', 'Verstehe dezentrales Arbeiten.'),
+  ('T220', 'Flexibel verdienen', 'Verstehe dezentrales Arbeiten.'),
+  ('T221', 'Angebots-Leiter', 'Bau deine erste Angebots-Leiter.'),
+  ('T222', 'Angebotsarten', 'Bau deine erste Angebots-Leiter.'),
+  ('T223', 'Erstes Angebot', 'Bau deine erste Angebots-Leiter.'),
+  ('T224', 'Verkaufen-und-Verdienen-Bestand', 'Lerne Verkaufen und Verdienen kennen.'),
+  ('T225', 'Reseller-Link', 'Lerne Verkaufen und Verdienen kennen.'),
+  ('T226', 'Provisions-Tracking', 'Lerne Verkaufen und Verdienen kennen.'),
+  ('T227', 'Werbe-Kanäle', 'Lerne Werbe-Kanäle kennen.'),
+  ('T228', 'Social-Media-Kanäle', 'Lerne Werbe-Kanäle kennen.'),
+  ('T229', 'Text zum Teilen', 'Lerne Werbe-Kanäle kennen.'),
+  ('T230', 'Kampagnen-Kennzahlen', 'So optimierst du Kampagnen.'),
+  ('T231', 'Reichweite, Klicks, Interaktion', 'So optimierst du Kampagnen.'),
+  ('T232', 'Eine Kampagne verbessern', 'So optimierst du Kampagnen.'),
+  ('T233', 'Kundenverwaltung', 'So organisierst du deine Kunden.'),
+  ('T234', 'Buchung, Kalender, Nachfassen', 'So organisierst du deine Kunden.'),
+  ('T235', 'Liefer-Checkliste', 'So organisierst du deine Kunden.'),
+  ('T236', 'Einnahmen und Auszahlungen', 'Lerne Einnahmen und Auszahlungen kennen.'),
+  ('T237', 'Ausstehend, verfügbar, Verlauf', 'Lerne Einnahmen und Auszahlungen kennen.'),
+  ('T238', 'Bereit zur Auszahlung', 'Lerne Einnahmen und Auszahlungen kennen.'),
+  ('T239', 'Marktplatz-Autopilot', 'Lerne den Marktplatz-Autopilot kennen.'),
+  ('T240', 'Chancen-Vorschläge', 'Lerne den Marktplatz-Autopilot kennen.'),
+  ('T241', 'Begründung und Rechte prüfen', 'Lerne den Marktplatz-Autopilot kennen.'),
+  ('T242', 'Verantwortungsvolle Empfehlungen', 'Sicherheit im Business.'),
+  ('T243', 'Keine falschen Versprechen', 'Sicherheit im Business.'),
+  ('T244', 'Vertrauens- und Sicherheits-Checkliste', 'Sicherheit im Business.'),
+  ('T245', 'Sieben-Tage-Business-Sprint', 'Mach aus Gelerntem einen Sprint.'),
+  ('T246', 'Vitanas nächster bester Schritt', 'Mach aus Gelerntem einen Sprint.'),
+  ('T247', 'Sprint-Kennzahl wählen', 'Mach aus Gelerntem einen Sprint.'),
+  ('T248', 'Abschluss', 'Schließe ab, ohne die Reise zu verlieren.'),
+  ('T249', 'Voller Modus', 'Schließe ab, ohne die Reise zu verlieren.'),
+  ('T250', 'Nächster Meilenstein', 'Schließe ab, ohne die Reise zu verlieren.');
+
+-- 1) Source of truth: journey_checklist_topics (drives any future re-publish).
+UPDATE journey_checklist_topics t
+SET display_label     = d.label,
+    short_description  = d.descr,
+    updated_at         = now()
+FROM _de_labels d
+WHERE t.topic_id = d.topic_id;
+
+-- 2) Live read: patch displayLabel/shortDescription inside the CURRENT published
+--    snapshot (what 'de' is served verbatim). Every other field (session,
+--    position, explanation[already German], vitanaVoiceScript, ...) is preserved.
+UPDATE journey_checklist_versions v
+SET snapshot = (
+  SELECT jsonb_agg(
+           CASE
+             WHEN d.topic_id IS NOT NULL
+               THEN e.elem || jsonb_build_object('displayLabel', d.label, 'shortDescription', d.descr)
+             ELSE e.elem
+           END
+           ORDER BY e.ord
+         )
+  FROM jsonb_array_elements(v.snapshot) WITH ORDINALITY AS e(elem, ord)
+  LEFT JOIN _de_labels d ON d.topic_id = e.elem->>'topicId'
+)
+WHERE v.is_current = true
+  AND v.curriculum_version = 'v2';
+
+INSERT INTO journey_checklist_audit (action, detail)
+VALUES ('seed', 'Translated 250 topic display_label/short_description to German (DE source-of-truth fix); patched current published snapshot.');
+
+COMMIT;

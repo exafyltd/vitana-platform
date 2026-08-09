@@ -38,6 +38,38 @@ const LESSON_WINDOW_DAYS = 14;
  */
 const SINGLETON_QUARANTINE_DAYS = 7;
 
+/** Cap on retained evidence ids per lesson. Newest win. */
+const MAX_EVIDENCE_IDS = 20;
+
+/**
+ * Confidence as a function of how often a pattern has recurred.
+ *
+ * Asymptotic toward 1.0 — a lesson seen 50 times is not 50x more certain than
+ * one seen 10 times — and deliberately capped below 1.0 so Phase 3's negative
+ * feedback always has somewhere to move it.
+ */
+export function confidenceForFrequency(frequency: number): number {
+  return Math.min(0.95, 0.5 + Math.log10(frequency + 1) * 0.35);
+}
+
+/**
+ * Write a distilled lesson, maturing it if the same pattern has been seen
+ * before.
+ *
+ * This is a read-then-write rather than a plain PostgREST upsert, and that is
+ * load-bearing: `frequency` has to INCREMENT on recurrence, and PostgREST
+ * cannot express `frequency = frequency + 1` in an upsert body. The original
+ * version here was a plain upsert, which left every lesson permanently at
+ * frequency 1 while refreshing `last_seen_at` on each recurrence — and
+ * `loadLessons` withholds a frequency-1 lesson until it is older than
+ * SINGLETON_QUARANTINE_DAYS. So the more often a pattern actually recurred,
+ * the more reliably its quarantine clock got reset, and it could never
+ * graduate into injection. A recurring failure was the one thing guaranteed
+ * never to be remembered. (VTID-03531)
+ *
+ * The extra round trip is affordable: distillation runs once per observer
+ * tick over the handful of steps newly inserted that tick, not per row.
+ */
 export async function upsertLesson(input: {
   stage: LessonStage;
   pattern_type: LessonPatternType;
@@ -51,25 +83,97 @@ export async function upsertLesson(input: {
 }): Promise<boolean> {
   const sb = getSupabase();
   if (!sb) return false;
+  const pattern_key = input.pattern_key.slice(0, 200);
   try {
     const now = new Date().toISOString();
-    const { error } = await sb.from('watcher_lessons').upsert(
-      {
-        stage: input.stage,
-        pattern_type: input.pattern_type,
-        pattern_key: input.pattern_key.slice(0, 200),
-        scope: input.scope ?? {},
-        lesson: input.lesson.slice(0, 500),
-        example_message: (input.example_message || '').slice(0, 500) || null,
-        evidence_step_ids: input.evidence_step_ids ?? [],
-        source_finding_id: input.source_finding_id ?? null,
-        source_execution_id: input.source_execution_id ?? null,
-        last_seen_at: now,
-      },
-      { onConflict: 'stage,pattern_type,pattern_key', ignoreDuplicates: false },
-    );
+
+    const { data: existing } = await sb
+      .from('watcher_lessons')
+      .select('id, frequency, evidence_step_ids')
+      .eq('stage', input.stage)
+      .eq('pattern_type', input.pattern_type)
+      .eq('pattern_key', pattern_key)
+      .maybeSingle();
+
+    if (existing) {
+      // Increment by the number of steps in THIS batch, not by one.
+      //
+      // Three CI failures with the same signature really are three
+      // occurrences, and frequency is the evidence that a lesson describes a
+      // real pattern rather than a one-off — undercounting it keeps genuine
+      // patterns in singleton quarantine longer than the data warrants. It
+      // also makes a historical backfill correct with no special case: one
+      // batch of 50 past failures yields frequency 50, exactly as if they had
+      // been observed live.
+      const occurrences = Math.max(1, (input.evidence_step_ids ?? []).length);
+      const frequency = ((existing.frequency as number) || 1) + occurrences;
+      const prior = (existing.evidence_step_ids as string[]) || [];
+      // Newest evidence last, de-duplicated, bounded. Unbounded growth would
+      // turn a chronically recurring pattern's row into an ever-growing array
+      // that every read then has to haul back.
+      const merged = [...new Set([...prior, ...(input.evidence_step_ids ?? [])])]
+        .slice(-MAX_EVIDENCE_IDS);
+
+      const { error } = await sb
+        .from('watcher_lessons')
+        .update({
+          frequency,
+          confidence: confidenceForFrequency(frequency),
+          evidence_step_ids: merged,
+          last_seen_at: now,
+          // Scope is refreshed on recurrence, not just on insert — VTID-03534.
+          //
+          // The distiller is the authority on what a lesson's retrieval scope
+          // should be, and that definition can change (it just did). Without
+          // this, a row written under the old definition is found by
+          // (stage, pattern_type, pattern_key), has its frequency and evidence
+          // updated, and keeps its stale scope forever — so a scope fix would
+          // only ever apply to patterns never seen before, silently leaving
+          // every already-known pattern unreachable for good. The 34 rows the
+          // VTID-03531 backfill produced are exactly those, and they cover the
+          // highest-frequency patterns, i.e. most of the value.
+          scope: input.scope ?? {},
+          // The lesson TEXT is refreshed but the example is not: the first
+          // example is as representative as the fiftieth, and churning it
+          // would make the row look freshly-edited to a human reviewer on
+          // every recurrence.
+          lesson: input.lesson.slice(0, 500),
+        })
+        .eq('id', existing.id as string);
+
+      if (error) {
+        console.warn(`${LOG_PREFIX} recurrence update failed:`, error.message);
+        return false;
+      }
+      return true;
+    }
+
+    const firstSeenCount = Math.max(1, (input.evidence_step_ids ?? []).length);
+    const { error } = await sb.from('watcher_lessons').insert({
+      stage: input.stage,
+      pattern_type: input.pattern_type,
+      pattern_key,
+      scope: input.scope ?? {},
+      lesson: input.lesson.slice(0, 500),
+      example_message: (input.example_message || '').slice(0, 500) || null,
+      // A pattern that arrives already-recurring (several occurrences in its
+      // very first batch — the normal case for a backfill) must not be filed
+      // as a singleton, or the quarantine withholds a lesson we already have
+      // ample evidence for.
+      frequency: firstSeenCount,
+      confidence: confidenceForFrequency(firstSeenCount),
+      evidence_step_ids: (input.evidence_step_ids ?? []).slice(-MAX_EVIDENCE_IDS),
+      source_finding_id: input.source_finding_id ?? null,
+      source_execution_id: input.source_execution_id ?? null,
+      last_seen_at: now,
+    });
+
     if (error) {
-      console.warn(`${LOG_PREFIX} upsert failed:`, error.message);
+      // A concurrent insert of the same pattern loses the race on the unique
+      // index. That is the system working — the winner recorded the lesson —
+      // so it is not worth logging as a fault.
+      if (error.code === '23505') return true;
+      console.warn(`${LOG_PREFIX} insert failed:`, error.message);
       return false;
     }
     return true;
@@ -97,10 +201,7 @@ export async function recordRecurrence(lessonId: string): Promise<void> {
       .maybeSingle();
     if (!data) return;
     const frequency = (data.frequency as number) + 1;
-    // Asymptotic toward 1.0 — a lesson seen 50 times is not 50x more certain
-    // than one seen 10 times, and letting confidence saturate at exactly 1.0
-    // would make it impossible for negative feedback to ever move it.
-    const confidence = Math.min(0.95, 0.5 + Math.log10(frequency + 1) * 0.35);
+    const confidence = confidenceForFrequency(frequency);
     await sb
       .from('watcher_lessons')
       .update({ frequency, confidence, last_seen_at: new Date().toISOString() })

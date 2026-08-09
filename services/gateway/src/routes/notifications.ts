@@ -43,6 +43,36 @@ router.post('/token', requireAuth, requireTenant, async (req: Request, res: Resp
   }
 
   const supabase = getSupabase();
+
+  // ── Device takeover (VTID-03481) ──────────────────────────────────────────
+  // An FCM token identifies a DEVICE INSTALLATION, not a (user, device) pair —
+  // FCM hands the token to whoever registered last, so exactly one account can
+  // own it at a time. This upsert's conflict target is (user_id, fcm_token),
+  // which means a token re-registered by a DIFFERENT account used to INSERT a
+  // second row instead of displacing the first. Combined with a sign-out that
+  // never removed the row, every account that had ever signed in on a device
+  // accumulated — and each one got its own copy of every fan-out notification,
+  // rendered in ITS OWN locale. That is the "same notification twice, once in
+  // German and once in English" bug: one phone, two accounts, two languages.
+  //
+  // So: revoke every OTHER account's claim on this device first, then take it.
+  // Order matters — user_device_tokens_one_active_owner allows only one active
+  // row per token, and doing this the other way round transiently violates it.
+  const { error: revokeError } = await supabase
+    .from('user_device_tokens')
+    .update({ revoked_at: new Date().toISOString(), revoked_reason: 'taken_over' })
+    .eq('fcm_token', fcm_token)
+    .neq('user_id', identity.user_id)
+    .is('revoked_at', null);
+
+  if (revokeError) {
+    // Don't take the device over on a half-applied state — the unique index
+    // would reject the upsert anyway, and silently leaving the previous owner
+    // active is exactly the duplicate-push bug.
+    console.error('[Notifications] Device takeover failed:', revokeError);
+    return res.status(500).json({ ok: false, error: revokeError.message });
+  }
+
   const { error } = await supabase
     .from('user_device_tokens')
     .upsert(
@@ -52,6 +82,9 @@ router.post('/token', requireAuth, requireTenant, async (req: Request, res: Resp
         fcm_token,
         device_label: device_label || null,
         updated_at: new Date().toISOString(),
+        // Re-claim after a previous sign-out/takeover on this same device.
+        revoked_at: null,
+        revoked_reason: null,
       },
       { onConflict: 'user_id,fcm_token' }
     );
@@ -59,6 +92,34 @@ router.post('/token', requireAuth, requireTenant, async (req: Request, res: Resp
   if (error) {
     console.error('[Notifications] Token upsert error:', error);
     return res.status(500).json({ ok: false, error: error.message });
+  }
+
+  // ── Prune this user's own stale tokens (VTID-03487) ───────────────────────
+  // Separate duplicate source from the cross-account one above: FCM rotates a
+  // token periodically and the client registers the NEW one, but the old row
+  // was never retired — so one account accumulated a token per rotation and
+  // sendPushToUser, which loops over every token it finds, delivered one push
+  // per stale row. Same language, so it reads as a plain double notification
+  // rather than the two-language pair. Found in production at up to EIGHT
+  // active tokens on a single account.
+  //
+  // The client re-registers on every app start (see pushNotifications.ts's
+  // refresh monitor), so a row untouched for 30 days belongs to an app that
+  // has not opened in a month — that is a dead token, not a second device.
+  // Scoped to the registering user and never touching the row just written,
+  // so the blast radius is one account and it self-heals as people open the
+  // app. Best-effort: a failure here must not fail the registration.
+  const staleCutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+  const { error: pruneError } = await supabase
+    .from('user_device_tokens')
+    .update({ revoked_at: new Date().toISOString(), revoked_reason: 'stale' })
+    .eq('user_id', identity.user_id)
+    .neq('fcm_token', fcm_token)
+    .lt('updated_at', staleCutoff)
+    .is('revoked_at', null);
+
+  if (pruneError) {
+    console.warn('[Notifications] Stale token prune failed:', pruneError.message);
   }
 
   res.json({ ok: true });
@@ -75,12 +136,19 @@ router.delete('/token', requireAuth, async (req: Request, res: Response) => {
     return res.status(400).json({ ok: false, error: 'fcm_token is required' });
   }
 
+  // Soft-revoke rather than DELETE (VTID-03481). The row is the only record
+  // that this user was once signed in on this device; the Appilix suppression
+  // in notification-service.ts needs it to tell "signed out on a device we
+  // know about" (→ don't push, the device now belongs to someone else) apart
+  // from "never registered a device token at all" (→ still needs the legacy
+  // Appilix user_identity fallback, e.g. an iOS shell that never captured one).
   const supabase = getSupabase();
   await supabase
     .from('user_device_tokens')
-    .delete()
+    .update({ revoked_at: new Date().toISOString(), revoked_reason: 'signed_out' })
     .eq('user_id', identity.user_id)
-    .eq('fcm_token', fcm_token);
+    .eq('fcm_token', fcm_token)
+    .is('revoked_at', null);
 
   res.json({ ok: true });
 });

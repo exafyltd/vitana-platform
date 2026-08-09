@@ -310,6 +310,39 @@ describe('Task Extractor - VTID-0532', () => {
       expect(response.body.capabilities.execution).toBe(true);  // Updated in VTID-0533
       expect(response.body.capabilities.worker_core_engine).toBe(true);  // Added in VTID-0534
     });
+
+    // VTID-01178 regression: a DISARMED loop (AUTOPILOT_LOOP_ENABLED=off →
+    // config.enabled=false) is idle by design, NOT a fault. Service Health must
+    // read it as healthy (ok_governance_limited), never a "down"/degraded alert.
+    it('reports ok_governance_limited (healthy) when the loop is intentionally disabled', async () => {
+      const eventLoop = jest.requireMock('../src/services/autopilot-event-loop') as any;
+      eventLoop.getEventLoopStatus.mockResolvedValueOnce({
+        ok: true,
+        is_running: false,
+        execution_armed: true,
+        config: { enabled: false },
+      });
+      const response = await request(app).get('/api/v1/autopilot/health').expect(200);
+      expect(response.body.ok).toBe(true);
+      expect(response.body.status).toBe('ok_governance_limited');
+      expect(response.body.reason).toBeUndefined();
+      expect(typeof response.body.note).toBe('string');
+    });
+
+    // The genuine fault: loop is ENABLED but not running (a stall) → degraded.
+    it('reports degraded when the loop is enabled but not running (real stall)', async () => {
+      const eventLoop = jest.requireMock('../src/services/autopilot-event-loop') as any;
+      eventLoop.getEventLoopStatus.mockResolvedValueOnce({
+        ok: true,
+        is_running: false,
+        execution_armed: true,
+        config: { enabled: true },
+      });
+      const response = await request(app).get('/api/v1/autopilot/health').expect(200);
+      expect(response.body.ok).toBe(false);
+      expect(response.body.status).toBe('degraded');
+      expect(response.body.reason).toMatch(/not running/i);
+    });
   });
 });
 

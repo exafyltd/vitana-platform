@@ -146,7 +146,7 @@ for JOB in "${MEMORY_INTELLIGENCE_JOBS[@]}"; do
         --http-method=POST \
         --headers="Content-Type=application/json" \
         --message-body="{\"tenant_id\":\"$TENANT_ID\"}" \
-        --attempt-deadline=300s \
+        --attempt-deadline=1800s \
         --max-retry-attempts=1 \
         --description="Autopilot $AP_ID: $NAME"
     fi
@@ -187,7 +187,7 @@ for JOB in "${JOBS[@]}"; do
         --http-method=POST \
         --headers="Content-Type=application/json" \
         --message-body="{\"tenant_id\":\"$TENANT_ID\"}" \
-        --attempt-deadline=300s \
+        --attempt-deadline=1800s \
         --max-retry-attempts=1 \
         --description="Autopilot $AP_ID: $NAME"
     fi

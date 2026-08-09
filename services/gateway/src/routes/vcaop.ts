@@ -84,14 +84,20 @@ router.post('/shop', async (req: Request, res: Response) => {
   const disclosureId = randomUUID();
   await supabase.from('disclosure').insert({ id: disclosureId, cart_order_id: cartId, kind: 'ftc_affiliate', text: FTC_DISCLOSURE, dismissible: false, shown_at: now, created_at: now });
 
+  // Build all rows first, then insert per-table batches (3 round-trips total
+  // instead of up to 3 per merchant). Insert order respects FK dependencies:
+  // merchant_route → commission_event → rewards_ledger.
   let total = 0;
   const earnings: any[] = [];
+  const routeRows: any[] = [];
+  const commissionRows: any[] = [];
+  const rewardRows: any[] = [];
   for (const m of merchants) {
     const mtotal = (m.items || []).reduce((s, i) => s + Number(i.qty) * Number(i.price), 0);
     total += mtotal;
     const subId = m.affiliateProgramId ? subIdFor(uid, m.affiliateProgramId) : null;
     const routeId = randomUUID();
-    await supabase.from('merchant_route').insert({
+    routeRows.push({
       id: routeId, cart_order_id: cartId, merchant: m.merchant, checkout_connector: m.checkoutConnector || 'ucp',
       affiliate_program_id: m.affiliateProgramId || null, sub_id: subId, line_items: m.items, status: 'routed', created_at: now, updated_at: now,
     });
@@ -100,16 +106,19 @@ router.post('/shop', async (req: Request, res: Response) => {
       const gross = +(mtotal * rate).toFixed(4);
       const reward = +(gross * 0.5).toFixed(4);
       const commissionId = randomUUID();
-      await supabase.from('commission_event').insert({
+      commissionRows.push({
         id: commissionId, affiliate_program_id: m.affiliateProgramId, sub_id: subId, user_id: uid, merchant: m.merchant,
         order_ref: routeId, gross_commission: gross, currency: 'EUR', status: 'pending', created_at: now, updated_at: now,
       });
-      await supabase.from('rewards_ledger').insert({
+      rewardRows.push({
         id: randomUUID(), user_id: uid, commission_event_id: commissionId, amount: reward, currency: 'EUR', state: 'pending', created_at: now, updated_at: now,
       });
       earnings.push({ merchant: m.merchant, affiliateProgramId: m.affiliateProgramId, subId, commissionId, projectedReward: reward });
     }
   }
+  await supabase.from('merchant_route').insert(routeRows);
+  if (commissionRows.length > 0) await supabase.from('commission_event').insert(commissionRows);
+  if (rewardRows.length > 0) await supabase.from('rewards_ledger').insert(rewardRows);
   await supabase.from('cart_order').update({ status: 'routed', total_amount: +total.toFixed(2), updated_at: now }).eq('id', cartId);
   await emitEvent(supabase, 'vcaop.commerce.shopped', 'success', `shop routed ${merchants.length} merchant(s)`, { cartOrderId: cartId, userId: uid });
 
@@ -226,24 +235,28 @@ router.post('/onboarding/batch', async (req: Request, res: Response) => {
   if (!isAdmin(req)) return res.status(403).json({ ok: false, error: 'forbidden' });
   const supabase = db(res); if (!supabase) return;
   const tenant = tenantId(req);
-  let ids: string[] = Array.isArray(req.body?.providerIds) ? req.body.providerIds : [];
-  if (ids.length === 0) {
-    const { data } = await supabase.from('provider').select('id');
-    ids = (data || []).map((p: any) => p.id);
-  }
+  const ids: string[] = Array.isArray(req.body?.providerIds) ? req.body.providerIds : [];
+  // One query for all requested providers (previously one select per id),
+  // then per-table batch inserts in FK order: provider_account →
+  // provisioning_job → human_task.
+  let providersQuery = supabase.from('provider').select('id,connector_mode,kyb_required');
+  if (ids.length > 0) providersQuery = providersQuery.in('id', ids);
+  const { data: provRows } = await providersQuery;
   const now = new Date().toISOString();
   let queued = 0, humanTasks = 0;
-  for (const pid of ids) {
-    const { data: prov } = await supabase.from('provider').select('id,connector_mode,kyb_required').eq('id', pid).maybeSingle();
-    if (!prov) continue;
+  const accountRows: any[] = [];
+  const jobRows: any[] = [];
+  const taskRows: any[] = [];
+  for (const prov of provRows || []) {
+    const pid = prov.id;
     const accountId = randomUUID();
-    await supabase.from('provider_account').insert({ id: accountId, tenant_id: tenant, provider_id: pid, status: 'discovered', created_at: now, updated_at: now });
+    accountRows.push({ id: accountId, tenant_id: tenant, provider_id: pid, status: 'discovered', created_at: now, updated_at: now });
     const jobId = randomUUID();
-    await supabase.from('provisioning_job').insert({ id: jobId, tenant_id: tenant, provider_account_id: accountId, status: 'queued', connector_tier: prov.connector_mode, created_at: now, updated_at: now });
+    jobRows.push({ id: jobId, tenant_id: tenant, provider_account_id: accountId, status: 'queued', connector_tier: prov.connector_mode, created_at: now, updated_at: now });
     const tasks: { type: string }[] = [{ type: 'IRREVERSIBLE_SUBMIT' }];
     if (prov.kyb_required) tasks.unshift({ type: 'KYB' });
     for (const t of tasks) {
-      await supabase.from('human_task').insert({
+      taskRows.push({
         id: randomUUID(), tenant_id: tenant, type: t.type, provider_id: pid, job_id: jobId, status: 'open',
         payload: { provider_id: pid, business_identity_ref: `business_identity:${tenant}`, fields_to_complete: ['legal_name', 'entity_type', 'registration_no'] },
         created_at: now, updated_at: now,
@@ -252,6 +265,9 @@ router.post('/onboarding/batch', async (req: Request, res: Response) => {
     }
     queued++;
   }
+  if (accountRows.length > 0) await supabase.from('provider_account').insert(accountRows);
+  if (jobRows.length > 0) await supabase.from('provisioning_job').insert(jobRows);
+  if (taskRows.length > 0) await supabase.from('human_task').insert(taskRows);
   await emitEvent(supabase, 'vcaop.onboarding.batch_kickoff', 'success', `batch onboard: ${queued} queued`, { tenant, queued, humanTasks });
   res.status(201).json({ ok: true, data: { queued, humanTasksCreated: humanTasks } });
 });

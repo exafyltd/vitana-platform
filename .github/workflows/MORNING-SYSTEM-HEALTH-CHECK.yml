@@ -48,8 +48,8 @@ jobs:
         with:
           fetch-depth: 200
 
-      - name: Install psql + jq
-        run: sudo apt-get install -y postgresql-client jq > /dev/null 2>&1
+      - name: Install jq
+        run: sudo apt-get install -y jq > /dev/null 2>&1
 
       - name: Init report
         run: |
@@ -101,94 +101,78 @@ jobs:
           echo "| 4 | Staging deploy freshness | $R | $D |" >> "$REPORT"
 
       # 5 — Supabase Postgres reachability
-      - name: '5. Supabase Postgres reachability'
+      # VTID-03492: steps 5-9 were five separate `psql "$SUPABASE_DB_URL"`
+      # calls. That transport cannot connect from GitHub Actions — the Supabase
+      # project has a network allow-list and runner IPs are not on it, so every
+      # one of these five rows had been reporting a connection error rather than
+      # a real health verdict. They now come from two PostgREST RPCs over HTTPS
+      # (a separate edge service, not subject to the DB allow-list) in a single
+      # step. Same five report rows, same pass/fail semantics.
+      - name: '5-9. Database health (reachability, VTID claims, OASIS, greeting trigger)'
         env:
-          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
         run: |
           set +e
-          OUT=$(psql "$SUPABASE_DB_URL" -t -A -c 'select 1;' 2>&1)
-          if [ "$(echo "$OUT" | tr -d ' \r\n')" = "1" ]; then R=PASS; D="ok"; else R=FAIL; D="$(echo "$OUT" | head -c 200)"; fi
-          echo "| 5 | Supabase Postgres reachability | $R | $D |" >> "$REPORT"
+          rpc() {
+            curl -sS -o "$2" -w '%{http_code}' \
+              -X POST "${SUPABASE_URL%/}/rest/v1/rpc/$1" \
+              -H "apikey: $SUPABASE_SERVICE_ROLE" \
+              -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE" \
+              -H 'Content-Type: application/json' -d '{}' 2>/dev/null
+          }
 
-      # 6 — VTID ledger orphaned-claim sanity
-      - name: '6. VTID ledger — no orphaned claims'
-        env:
-          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
-        run: |
-          set +e
-          OUT=$(psql "$SUPABASE_DB_URL" -t -A -c "select count(*) from vtid_ledger where status = 'in_progress' and claimed_by is not null and claim_expires_at < now();" 2>&1)
-          N=$(echo "$OUT" | tr -d ' \r\n')
+          SYS_HTTP=$(rpc ci_system_health sys.json)
+          GRT_HTTP=$(rpc ci_welcome_greeting_health grt.json)
+
+          # 5 — reachability. A 200 from the RPC proves the database answered.
+          if [ "$SYS_HTTP" = "200" ] && [ "$(jq -r '.db_ok' sys.json 2>/dev/null)" = "true" ]; then
+            echo "| 5 | Supabase Postgres reachability | PASS | ok (via PostgREST) |" >> "$REPORT"
+          else
+            echo "| 5 | Supabase Postgres reachability | FAIL | RPC HTTP $SYS_HTTP $(head -c 120 sys.json 2>/dev/null) |" >> "$REPORT"
+          fi
+
+          # 6 — VTID ledger orphaned-claim sanity
+          N=$(jq -r '.orphaned_claims' sys.json 2>/dev/null)
           if [[ "$N" =~ ^[0-9]+$ ]] && [ "$N" -eq 0 ]; then
-            R=PASS; D="0 orphaned claims"
+            echo "| 6 | VTID ledger orphaned-claim sanity | PASS | 0 orphaned claims |" >> "$REPORT"
           elif [[ "$N" =~ ^[0-9]+$ ]]; then
-            R=FAIL; D="$N task(s) stuck in_progress past claim_expires_at"
+            echo "| 6 | VTID ledger orphaned-claim sanity | FAIL | $N task(s) stuck in_progress past claim_expires_at |" >> "$REPORT"
           else
-            R=FAIL; D="query error: $(echo "$OUT" | head -c 200)"
+            echo "| 6 | VTID ledger orphaned-claim sanity | FAIL | query error (HTTP $SYS_HTTP) |" >> "$REPORT"
           fi
-          echo "| 6 | VTID ledger orphaned-claim sanity | $R | $D |" >> "$REPORT"
 
-      # 7 — OASIS events recency (system not silently stalled)
-      - name: '7. OASIS events recency (last 6h)'
-        env:
-          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
-        run: |
-          set +e
-          OUT=$(psql "$SUPABASE_DB_URL" -t -A -c "select count(*) from oasis_events where created_at > now() - interval '6 hours' and topic not like 'telemetry.%';" 2>&1)
-          N=$(echo "$OUT" | tr -d ' \r\n')
+          # 7 — OASIS events recency (non-telemetry only; polling is not progress)
+          N=$(jq -r '.oasis_events_6h' sys.json 2>/dev/null)
           if [[ "$N" =~ ^[0-9]+$ ]] && [ "$N" -gt 0 ]; then
-            R=PASS; D="$N event(s) in last 6h"
+            echo "| 7 | OASIS events recency | PASS | $N event(s) in last 6h |" >> "$REPORT"
           elif [[ "$N" =~ ^[0-9]+$ ]]; then
-            R=FAIL; D="zero non-telemetry OASIS events in 6h — pipeline may be stalled"
+            echo "| 7 | OASIS events recency | FAIL | zero non-telemetry OASIS events in 6h — pipeline may be stalled |" >> "$REPORT"
           else
-            R=FAIL; D="query error: $(echo "$OUT" | head -c 200)"
+            echo "| 7 | OASIS events recency | FAIL | query error (HTTP $SYS_HTTP) |" >> "$REPORT"
           fi
-          echo "| 7 | OASIS events recency | $R | $D |" >> "$REPORT"
 
-      # 8 — Welcome-greeting trigger, structural
-      - name: '8. Welcome-greeting trigger — structural'
-        env:
-          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
-        run: |
-          set +e
-          OUT=$(psql "$SUPABASE_DB_URL" -t -A <<'EOF' 2>&1
-          SELECT
-            CASE
-              WHEN NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'welcome_chat_on_primary_membership')
-                THEN 'FAIL: trigger missing'
-              WHEN (SELECT tgenabled FROM pg_trigger WHERE tgname = 'welcome_chat_on_primary_membership')::text != 'O'
-                THEN 'FAIL: trigger disabled'
-              ELSE 'PASS'
-            END;
-          EOF
-          )
-          LINE=$(echo "$OUT" | grep -v '^$' | tail -1)
-          if [ "$LINE" = "PASS" ]; then R=PASS; D="trigger present + enabled"; else R=FAIL; D="$LINE"; fi
-          echo "| 8 | Welcome-greeting trigger (structural) | $R | $D |" >> "$REPORT"
+          # 8 — Welcome-greeting trigger, structural
+          if [ "$GRT_HTTP" != "200" ]; then
+            echo "| 8 | Welcome-greeting trigger (structural) | FAIL | RPC HTTP $GRT_HTTP |" >> "$REPORT"
+          elif [ "$(jq -r '.trigger_present' grt.json)" != "true" ]; then
+            echo "| 8 | Welcome-greeting trigger (structural) | FAIL | trigger missing |" >> "$REPORT"
+          elif [ "$(jq -r '.trigger_enabled' grt.json)" != "true" ]; then
+            echo "| 8 | Welcome-greeting trigger (structural) | FAIL | trigger disabled |" >> "$REPORT"
+          else
+            echo "| 8 | Welcome-greeting trigger (structural) | PASS | trigger present + enabled |" >> "$REPORT"
+          fi
 
-      # 9 — Welcome-greeting trigger, behavioral (real traffic)
-      - name: '9. Welcome-greeting trigger — behavioral (24h)'
-        env:
-          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
-        run: |
-          set +e
-          OUT=$(psql "$SUPABASE_DB_URL" -t -A -F '|' <<'EOF' 2>&1
-          WITH w AS (SELECT now() - interval '24 hours' AS since)
-          SELECT
-            (SELECT COUNT(*) FROM public.app_users WHERE created_at >= (SELECT since FROM w) AND user_id <> '00000000-0000-0000-0000-000000000001'::uuid),
-            (SELECT COUNT(*) FROM public.app_users WHERE created_at >= (SELECT since FROM w) AND COALESCE(welcome_chat_sent, false) = false AND user_id <> '00000000-0000-0000-0000-000000000001'::uuid);
-          EOF
-          )
-          LINE=$(echo "$OUT" | grep -v '^$' | tail -1)
-          SIGNUPS=$(echo "$LINE" | cut -d'|' -f1 | tr -d ' \r')
-          UNFLAGGED=$(echo "$LINE" | cut -d'|' -f2 | tr -d ' \r')
+          # 9 — Welcome-greeting trigger, behavioral (real traffic)
+          SIGNUPS=$(jq -r '.signups_24h' grt.json 2>/dev/null)
+          UNFLAGGED=$(jq -r '.unflagged_24h' grt.json 2>/dev/null)
           if [[ "$SIGNUPS" =~ ^[0-9]+$ ]] && [[ "$UNFLAGGED" =~ ^[0-9]+$ ]] && [ "$UNFLAGGED" -eq 0 ]; then
-            R=PASS; D="$SIGNUPS signups/24h, 0 unflagged"
+            echo "| 9 | Welcome-greeting trigger (behavioral) | PASS | $SIGNUPS signups/24h, 0 unflagged |" >> "$REPORT"
           elif [[ "$UNFLAGGED" =~ ^[0-9]+$ ]]; then
-            R=FAIL; D="$UNFLAGGED of $SIGNUPS recent signups never greeted"
+            echo "| 9 | Welcome-greeting trigger (behavioral) | FAIL | $UNFLAGGED of $SIGNUPS recent signups never greeted |" >> "$REPORT"
           else
-            R=FAIL; D="query error: $(echo "$OUT" | head -c 200)"
+            echo "| 9 | Welcome-greeting trigger (behavioral) | FAIL | query error (HTTP $GRT_HTTP) |" >> "$REPORT"
           fi
-          echo "| 9 | Welcome-greeting trigger (behavioral) | $R | $D |" >> "$REPORT"
 
       # 10 — ORB Live voice: health + session-start smoke
       - name: '10. ORB Live voice — health + session start'

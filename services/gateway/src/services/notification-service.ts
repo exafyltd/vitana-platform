@@ -149,6 +149,15 @@ export const TYPE_META: Record<string, TypeMeta> = {
   onboarding_step_completed:   { channel: 'inapp',          priority: 'p3', category: 'system' },
   weekly_activity_summary:     { channel: 'push_and_inapp', priority: 'p2', category: 'system' },
   feature_announcement:        { channel: 'push_and_inapp', priority: 'p2', category: 'system' },
+  // BOOTSTRAP-COMMUNITY-MARKETPLACE: seller-facing moderation outcomes
+  marketplace_listing_approved: { channel: 'push_and_inapp', priority: 'p2', category: 'system' },
+  marketplace_listing_rejected: { channel: 'push_and_inapp', priority: 'p1', category: 'system' },
+  marketplace_listing_removed:  { channel: 'push_and_inapp', priority: 'p1', category: 'system' },
+  // BOOTSTRAP-COMMUNITY-MARKETPLACE (Chunk 5): buyer's first contact message
+  // on a listing — category 'chat' (not 'system') so it respects the same
+  // chat notification preference as new_chat_message, since it IS a chat
+  // message, just with listing-specific copy instead of the generic sender-name title.
+  listing_interest:            { channel: 'push_and_inapp', priority: 'p1', category: 'chat' },
   // Admin Companion (BOOTSTRAP-ADMIN-EE)
   admin_insight_urgent:        { channel: 'push_and_inapp', priority: 'p0', category: 'system' },
   admin_insight_action_needed: { channel: 'inapp',          priority: 'p1', category: 'system' },
@@ -249,29 +258,83 @@ export async function sendPushToUser(
   userId: string,
   tenantId: string,
   payload: NotificationPayload,
-  supabase: SupabaseClient<any, any, any>
+  supabase: SupabaseClient<any, any, any>,
+  opts?: { excludeAppilixTagged?: boolean }
 ): Promise<number> {
   const { data: tokens } = await supabase
     .from('user_device_tokens')
-    .select('fcm_token')
+    .select('fcm_token, device_label')
     .eq('user_id', userId)
-    .eq('tenant_id', tenantId);
+    .eq('tenant_id', tenantId)
+    // Only devices this user still OWNS (VTID-03481). A revoked row means the
+    // device was taken over by another account, or the user signed out on it —
+    // pushing there would buzz a phone that now belongs to someone else, which
+    // is how one device ended up receiving the same post notification once per
+    // account that had ever signed in on it.
+    .is('revoked_at', null);
 
   if (!tokens?.length) return 0;
 
+  // Tokens registered from inside the Appilix WebView (tagged "Appilix " by
+  // registerAppilixDevice()) can only be tapped safely via an Appilix-native
+  // push — a raw FCM push to that same device is what crashes the WebView
+  // (see the comment in notifyUser()). Callers that already tried Appilix
+  // and got no device pass excludeAppilixTagged so we don't repeat the
+  // crash-causing delivery on the very token Appilix just told us it can't
+  // reach.
+  const targets = opts?.excludeAppilixTagged
+    ? tokens.filter((t) => !t.device_label?.startsWith('Appilix '))
+    : tokens;
+
+  if (!targets.length) return 0;
+
   let sent = 0;
-  for (const { fcm_token } of tokens) {
+  for (const { fcm_token } of targets) {
     const ok = await sendPushNotification(fcm_token, payload);
     if (ok) {
       sent++;
     } else {
+      // FCM rejected the token as unregistered/invalid — it is dead for every
+      // owner, so revoke it outright rather than scoping to this user.
       await supabase
         .from('user_device_tokens')
-        .delete()
-        .eq('fcm_token', fcm_token);
+        .update({ revoked_at: new Date().toISOString(), revoked_reason: 'fcm_invalid' })
+        .eq('fcm_token', fcm_token)
+        .is('revoked_at', null);
     }
   }
   return sent;
+}
+
+/**
+ * True when this user has device tokens on record but every one of them has
+ * been revoked — i.e. they are signed out on every device we know about.
+ *
+ * VTID-03481. Appilix push targets by user_identity, NOT by device token, and
+ * Appilix's own identity→device registry keeps stale mappings that we have no
+ * API to purge. So after two accounts have been used on one phone, an Appilix
+ * push addressed to the account that is no longer signed in STILL lands on that
+ * phone — in that account's language. Fixing the token table alone therefore
+ * would not have stopped the duplicate lock-screen notifications; this gate is
+ * what actually suppresses the second copy.
+ *
+ * Deliberately returns false when the user has NO rows at all: that is the
+ * legitimate legacy case (an iOS Appilix shell whose bridge never captured an
+ * FCM token) which depends on the user_identity fallback and must keep working.
+ */
+export async function isSignedOutOnAllKnownDevices(
+  userId: string,
+  supabase: SupabaseClient<any, any, any>
+): Promise<boolean> {
+  const { data, error } = await supabase
+    .from('user_device_tokens')
+    .select('revoked_at')
+    .eq('user_id', userId);
+
+  // On a query error, fail OPEN (deliver). A missed notification is worse than
+  // a duplicate one, and the token takeover already removes most duplicates.
+  if (error || !data?.length) return false;
+  return data.every((row: { revoked_at: string | null }) => row.revoked_at !== null);
 }
 
 // ── Appilix Native Push (Maxina iOS + Android apps) ──────────
@@ -637,18 +700,32 @@ export async function notifyUser(
   let pushed = 0;
   let appilixSent = false;
   if (shouldSendPush) {
+    // VTID-03481: skip Appilix entirely for a user who is signed out on every
+    // device we know about. Appilix targets by user_identity and retains stale
+    // identity→device mappings we can't purge, so without this the account that
+    // LEFT a shared phone keeps pushing to it — the second, wrong-language copy
+    // of every notification.
+    const appilixSuppressed = await isSignedOutOnAllKnownDevices(userId, supabase);
+
     if (payload.data?.url) {
       // Notifications with deep-link URLs must go through Appilix first.
       // Appilix honors open_link_url on tap; FCM-delivered notifications
       // crash the Appilix WebView ("Something went wrong") because FCM
       // doesn't pass the URL to Appilix's native tap handler.
-      appilixSent = await sendAppilixPush(userId, payload);
+      appilixSent = appilixSuppressed ? false : await sendAppilixPush(userId, payload);
       if (!appilixSent) {
-        pushed = await sendPushToUser(userId, tenantId, payload, supabase);
+        // Appilix reported no device for this user (e.g. its client-side
+        // identity registration never took) — do NOT retry via raw FCM on
+        // an Appilix-tagged token, since that's the exact delivery path
+        // that crashes the WebView on tap. Only non-Appilix tokens (real
+        // browser web-push) are safe to fall back to here.
+        pushed = await sendPushToUser(userId, tenantId, payload, supabase, {
+          excludeAppilixTagged: true,
+        });
       }
     } else {
       pushed = await sendPushToUser(userId, tenantId, payload, supabase);
-      if (pushed === 0) {
+      if (pushed === 0 && !appilixSuppressed) {
         appilixSent = await sendAppilixPush(userId, payload);
       }
     }
