@@ -89,9 +89,13 @@ function makeFakeSupabase(opts: {
         return chain;
       }
       if (table === 'user_tenants') {
+        // getActiveUsers pages via .order().range() (BOOTSTRAP-PERF-PHASE1);
+        // a single page holding all members ends the loop (page < PAGE_SIZE).
         const chain: any = {};
         chain.select = () => chain;
         chain.eq = () => chain;
+        chain.order = () => chain;
+        chain.range = () => chain;
         return Object.assign(chain, {
           then: (resolve: any) => resolve({ data: opts.members, error: null }),
         });
