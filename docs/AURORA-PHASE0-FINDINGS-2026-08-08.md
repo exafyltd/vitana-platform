@@ -49,6 +49,58 @@ memory_items   memory_facts   user_intents
 `memory_items` and `memory_facts` are what CLAUDE.md §14 calls canonical
 infinite memory. On Aurora they are **empty**.
 
+### 2b. Root cause of the 7 — tested, and it is not what §5 first guessed (VTID-03550)
+
+The first draft of this document called a `pgvector` type-mapping failure "the
+obvious hypothesis." **Tested against production, that hypothesis is wrong as
+stated** — and the correction is what makes it actionable.
+
+Having a `vector` column does **not** predict failure. `mem_facts` carries
+`vector(1536)` across 12,136 rows and loaded fine. Dimension does not predict
+it either — `calendar_events` is `vector(1536)` and loaded fine.
+
+What predicts it exactly is **holding at least one non-null `vector` *or*
+`tsvector` value.** Across all 12 tables in the database that carry either
+type, the separation is clean with no exceptions:
+
+| table | populated vector/tsvector values | DMS |
+|---|---|---|
+| `mem_episodes` | 2748 `vector` | **errored** |
+| `memory_items` | 1062 `vector` | **errored** |
+| `memory_facts` | 662 `vector` | **errored** |
+| `products` | 325 `tsvector` | **errored** |
+| `knowledge_docs` | 297 `tsvector` | **errored** |
+| `user_intents` | 95 `vector` | **errored** |
+| `ai_memory` | 82 `vector` | **errored** |
+| `mem_facts` | 0 (column exists, all NULL) | loaded |
+| `calendar_events` | 0 (column exists, all NULL) | loaded |
+| `feedback_tickets` | 0 (column exists, all NULL) | loaded |
+| `memory_embeddings` | 0 (empty table) | loaded |
+| `community_listings` | 0 (empty table) | loaded |
+
+7 errored / 7 populated. 5 loaded / 5 unpopulated. **12 for 12.**
+
+Two things follow that the original hypothesis would have missed:
+
+1. **It is not only `pgvector`.** `knowledge_docs` has no vector column at all
+   — it fails on `tsvector`. A fix scoped to embeddings would have left it
+   broken and looked like a partial success.
+2. **It fails on the value, not the schema.** DMS created all 501 tables
+   happily; it dies when a row carrying one of these types has to be
+   serialised. So "the tables exist on Aurora" was never evidence of anything,
+   and a schema-level comparison would have reported these as fine.
+
+This is a DMS capability limit for extension and derived types, not a
+misconfiguration — there is no setting that makes it transfer a `vector`. That
+is why the recommendation below is dump/restore rather than repairing CDC.
+
+Reproduce:
+
+```sql
+select 'memory_items' t, count(*) rows, count(embedding) non_null from memory_items
+union all select 'mem_facts', count(*), count(embedding) from mem_facts;
+```
+
 ## 3. DMS validation was never switched on
 
 Every table reports `ValidationState: "Not enabled"`.
@@ -114,19 +166,29 @@ validation is off, that would not announce itself.
 
 ## Recommended next steps
 
+Revised after §2b (VTID-03550). The earlier list led with "root-cause the v3
+FATAL"; §2b makes that the wrong first move, because the failure is a DMS
+capability limit rather than a fault to repair.
+
 1. **Do not treat Aurora as a failover target** until §1–§3 are resolved.
-2. **Root-cause the `v3` FATAL.** It dies in 30s with no log line — start from
-   the DMS console's event list and the endpoint connection tests, since the
-   task log is empty.
-3. **Enable DMS validation** before any reload. Without it the next load is as
-   unverifiable as this one.
-4. **Investigate the 7 errored tables specifically.** They share a shape — large
-   and/or `vector`-typed (`memory_items`, `memory_facts`, `ai_memory`,
-   `mem_episodes` all carry embeddings). A `pgvector` type-mapping failure in
-   DMS is the obvious hypothesis and is worth testing first.
-5. **Consider dump/restore instead.** For a 199-user platform, `pg_dump` →
-   `pg_restore` with a short write freeze may be more trustworthy than repairing
-   CDC — and it sidesteps the `vector` mapping problem entirely.
+2. **Stop trying to repair DMS. Switch to `pg_dump`/`pg_restore`.** §2b shows
+   DMS cannot carry `vector` or `tsvector` values at all, so no amount of
+   endpoint or task tuning fixes the seven tables — and those seven include the
+   memory core. Native dump/restore handles both types, and at this data volume
+   (~110 MB across the affected tables, 199 users) a short write freeze is
+   cheap. `tsvector` columns are *derived* and should be recomputed on the
+   target rather than transferred at all.
+3. **Rehearse into a scratch database first**, not `vitana-aurora-prod`, and
+   diff row counts plus a sample of embedding values per table before trusting
+   it. The failure mode this whole document is about is a copy that was
+   believed current and never checked.
+4. **If any form of ongoing replication is kept**, enable DMS validation and
+   exclude the seven tables from the DMS task explicitly — an excluded table is
+   visibly absent, whereas today they are silently empty.
+5. **Root-cause the `v3` FATAL only if replication is kept.** It dies in 30s
+   with no log line; start from the DMS console event list and endpoint
+   connection tests, since the task log is empty. It is a lower priority than
+   it looked before §2b.
 
 ## Correction to earlier statements in this workstream
 
