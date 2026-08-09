@@ -93,24 +93,23 @@ jobs:
             exit 20
           fi
 
+          # VTID-03549: these guards previously used a multi-line awk program
+          # with a newline directly after `!(` — invalid awk syntax, so awk
+          # exited 1 and (under bash -e) the gate failed on EVERY PR it
+          # triggered on, regardless of content. grep -Ev expresses the same
+          # allowlist without the parse trap; it exits 1 when no violations
+          # remain, which is success here — hence `|| true`.
           if [ "$PROFILE" = "command_hub_frontend" ]; then
             # allow only the two command-hub frontend trees + docs/validation for evidence
-            awk '
-              !(
-                $0 ~ "^services/gateway/src/frontend/command-hub/" ||
-                $0 ~ "^services/gateway/dist/frontend/command-hub/" ||
-                $0 ~ "^docs/validation/"
-              )
-            ' /tmp/changed_files.txt > /tmp/violations.txt
+            grep -Ev '^(services/gateway/src/frontend/command-hub/|services/gateway/dist/frontend/command-hub/|docs/validation/)' \
+              /tmp/changed_files.txt > /tmp/violations.txt || true
           elif [ "$PROFILE" = "gateway_backend" ]; then
-            awk '
-              !(
-                $0 ~ "^services/gateway/src/" ||
-                $0 ~ "^services/gateway/dist/" ||
-                $0 ~ "^services/gateway/openapi/" ||
-                $0 ~ "^docs/validation/"
-              )
-            ' /tmp/changed_files.txt > /tmp/violations.txt
+            # services/gateway/test/ is allowlisted too (VTID-03549): the
+            # Acceptance Mapping Gate below REQUIRES TEST: tokens, and those
+            # jest suites live in services/gateway/test/ — a profile that
+            # forbids shipping the tests it demands can never be satisfied.
+            grep -Ev '^(services/gateway/src/|services/gateway/dist/|services/gateway/test/|services/gateway/openapi/|docs/validation/)' \
+              /tmp/changed_files.txt > /tmp/violations.txt || true
           else
             echo "REJECTED: unknown VALIDATION_PROFILE=$PROFILE"
             exit 21
