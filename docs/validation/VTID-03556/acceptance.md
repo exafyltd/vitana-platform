@@ -30,3 +30,19 @@ AC-5 — Gateway suite, typecheck, and build are unaffected
   See ./commands.log and ./outputs/ for captured results. `tsc --noEmit` reports the same 3
   pre-existing unrelated errors in src/index.ts present on main before this branch (confirmed via
   `git stash`), so this PR does not change the typecheck error count.
+
+---
+
+This VTID's own scope never touches `services/gateway/src/routes/**` (see
+above). The PR this VTID ships alongside also carries VTID-03557, which DOES
+touch `services/gateway/src/routes/orb-live.ts` — no new route is mounted by
+that change either (existing WS session handler, internal logic only); its
+own ROUTE_MOUNT/FINAL_URL/CURL_PROOF record lives in
+`docs/validation/VTID-03557/acceptance.md`. Recorded here too since the
+Route Mount Evidence Gate resolves its target VTID from whichever VTID
+pattern appears first in the PR title:
+
+ROUTE_MOUNT: services/gateway/src/routes/orb-live.ts — no new router.*() call
+added; see docs/validation/VTID-03557/acceptance.md for the full record
+FINAL_URL: wss://{gateway}/api/v1/orb/live/ws (pre-existing, unchanged)
+CURL_PROOF: N/A — no new HTTP endpoint (see VTID-03557's acceptance.md)

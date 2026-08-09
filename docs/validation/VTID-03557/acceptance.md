@@ -71,3 +71,18 @@ AC-6 — Gateway suite, typecheck, and build are unaffected
   TEST: npm test (633 suites / 12,314 passing) && npx tsc --noEmit (exit 0)
         && npm run build (exit 0)
   See ./commands.log and ./outputs/ for captured results.
+
+---
+
+No new route is mounted by this change — `services/gateway/src/routes/orb-live.ts`
+is touched only inside the existing Nova upstream connect/close handling for
+the already-mounted WS session path. Recorded per the Route Mount Evidence
+Gate, which fires on any change under `services/gateway/src/routes/**`
+regardless of whether a route was added:
+
+ROUTE_MOUNT: services/gateway/src/routes/orb-live.ts — no new router.*() call
+added; `attachOrbLiveWebSocketServer` (already mounted, unchanged mount site)
+FINAL_URL: wss://{gateway}/api/v1/orb/live/ws (pre-existing, unchanged)
+CURL_PROOF: N/A — no new HTTP endpoint; behavior change is internal to the
+Nova WS upstream close handler and is verified by the unit tests in AC-1/AC-2
+above, not by a curl against a route.
