@@ -191,8 +191,11 @@ cast failure) returns `NEW` and the notification is delivered — suppressing te
 noise is worth strictly less than one real member's notification going missing.
 
 **It is a seatbelt, not a permission slip.** It stops *notifications*; it does not
-keep test posts, comments, likes or chat messages out of the real feed. Writing to
-production as a test account is forbidden outright — see CLAUDE.md rules 31/32.
+keep test posts, comments, likes or chat messages out of the real feed. Creating
+community content as a test account is forbidden outright — **on every host, not
+just prod**: staging and per-PR preview frontends deliberately inherit the
+production Supabase project (only the gateway URL is overridden), so they write to
+these same tables. See CLAUDE.md rules 31/32.
 
 **Registering a new test account:**
 ```sql
