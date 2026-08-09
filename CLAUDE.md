@@ -691,7 +691,31 @@ false`**, and `/api/v1/orb/nova-sonic/health` gained `global_enabled`. Without
 those, every canary-scoped dashboard would keep reading "4 users" while Nova
 served the entire user base.
 
-### ⛔ DO NOT SET `NOVA_SONIC_GLOBAL_ENABLED=true` YET
+### Promotion gate: CLEARED 2026-08-09 (VTID-03560) — was ⛔ DO NOT SET
+
+**This section previously said "DO NOT SET `NOVA_SONIC_GLOBAL_ENABLED=true`
+YET".** The one condition it was waiting on — a runtime fallback so a Nova
+premature-close does not leave the user in silence — shipped as VTID-03502 and
+went live on AWS prod at **2026-08-08 08:49 UTC**. Promotion was authorised in
+conversation and executed under **VTID-03560**.
+
+**What has NOT changed: the underlying Nova failure is still unroot-caused.**
+Everything below about "Premature close" remains true. Promotion means ~10% of
+sessions now take a reconnect hop through Vertex instead of failing silently —
+it mitigates the symptom, it does not fix Nova. If you are here because voice
+is misbehaving, read the whole section; and note the flag is reversible with a
+single `AWS-PROD-DEPLOY-GATEWAY.yml` dispatch (`nova_sonic_global_enabled=false`),
+which restores the exact prior canary population with no allowlist edits.
+
+**Why it was promoted:** the Gemini API line is ORB voice — the Gemini Live
+stream, billed per second of open connection — and was the largest remaining
+GCP cost at $79.50 month-to-date vs. $3.75 for all text AI on Vertex. No
+Anthropic model has a speech-to-speech API, so Claude cannot replace this path;
+Nova Sonic is the only AWS route off it. Watch
+`orb.upstream.nova.premature_close_fallback` for the post-promotion failure
+rate — at canary scale it was 6 sessions in 7 days, and the whole point of
+VTID-03501's `canary: false` reporting is that this stays measurable once the
+population is everyone.
 
 Nova currently fails **10.2% of sessions** (6 of 59, measured 2026-07-29 →
 2026-08-05, spread evenly — a steady baseline, not a spike). All six carry the
