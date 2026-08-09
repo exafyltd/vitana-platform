@@ -18,7 +18,7 @@ const base = {
   sessionActive: true,
   initiatedLocally: false,
   rotationInFlight: false,
-  audioOutChunks: 0,
+  hasProducedAudio: false,
   alreadyRetried: false,
 };
 
@@ -28,8 +28,10 @@ describe('VTID-03557 shouldRetryNovaOnPrematureClose', () => {
   });
 
   it('does NOT fire once any audio has been produced', () => {
-    expect(shouldRetryNovaOnPrematureClose({ ...base, audioOutChunks: 1 })).toBe(false);
-    expect(shouldRetryNovaOnPrematureClose({ ...base, audioOutChunks: 293 })).toBe(false);
+    // Review fix: backed by transportHasShownLife, never the synthetic
+    // activation chime — see the sibling fallback test for the full
+    // rationale (both predicates share the same discriminator shape).
+    expect(shouldRetryNovaOnPrematureClose({ ...base, hasProducedAudio: true })).toBe(false);
   });
 
   it('does NOT fire when we closed the stream ourselves', () => {
@@ -53,7 +55,7 @@ describe('VTID-03557 shouldRetryNovaOnPrematureClose', () => {
       { sessionActive: false },
       { initiatedLocally: true },
       { rotationInFlight: true },
-      { audioOutChunks: 1 },
+      { hasProducedAudio: true },
       { alreadyRetried: true },
     ];
     for (const n of negations) {

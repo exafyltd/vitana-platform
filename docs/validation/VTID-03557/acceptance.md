@@ -74,6 +74,84 @@ AC-6 — Gateway suite, typecheck, and build are unaffected
 
 ---
 
+## Post-review fixes (automated Codex review, 2 findings, both confirmed real)
+
+**Finding 1 — the discriminator could be defeated by the activation chime.**
+Both `shouldFallbackToVertexOnNovaClose` (VTID-03502, already shipped) and
+this VTID's `shouldRetryNovaOnPrematureClose` took `audioOutChunks: number`
+and checked `=== 0`, backed by `session.audioOutChunks` — a counter also
+incremented by orb-live.ts's synthetic "activation chime" (instant-feedback
+audio sent to fill the 2-5s gap before real model audio) at 4 send sites
+(`flushPrebufferedGreeting`, the SSE connect flow, the WS `audio_ready`
+handler, and the WS fallback timer), all BEFORE any real audio, all tagged
+`source: 'activation_chime'`. Verified this is a real code path (not merely
+theoretical): the chime is gated on the client's `audio_ready` message,
+which is independent of upstream (Nova) connection health, so a premature
+close landing between connect and chime-dispatch would have read as
+"audio produced" and silently defeated BOTH predicates. Measured production
+data (15 real failures, 2026-08-01→08-09) showed `audio_out=0` in every
+case, meaning the race hadn't yet been observed live — but that is timing
+luck, not a code-level guarantee, which is why this needed a real fix
+rather than being dismissed as a false positive.
+
+Fix: both predicates' `audioOutChunks: number` parameter is renamed to
+`hasProducedAudio: boolean`, and both call sites now pass
+`session.transportHasShownLife === true` instead of `session.audioOutChunks`.
+`transportHasShownLife` is a pre-existing (Nova item 5, `upstream-message-
+handler.ts`), session-wide, never-reset flag set ONLY by genuine upstream
+traffic (real model audio, input transcription proving the provider
+answered) — never by the chime, which is a pure client-side synthetic send
+with no upstream involvement. Same "session-wide, not per-attempt"
+semantics as the old `audioOutChunks` check (deliberate — matches
+`shouldFallbackToVertexOnNovaClose`'s own "a mid-conversation drop always
+has audio out" design intent), just no longer poisonable by synthetic audio.
+  TEST: services/gateway/test/orb/nova-premature-close-retry.test.ts +
+        nova-premature-close-fallback.test.ts (updated for the renamed
+        `hasProducedAudio` field; same 15 cases, same pass/fail expectations)
+
+**Finding 2 — a successful reconnect never re-sent the greeting.**
+The measured "Premature close" failure's own signature is
+`greeting_sent=true`: the greeting PROMPT was already dispatched to the
+dead upstream connection before it closed (`sendGreetingPromptToLiveAPI`
+sets `session.greetingSent = true` synchronously on dispatch, not on
+confirmed delivery). That function silently no-ops whenever `greetingSent`
+is already true (its duplicate-greeting guard). Both this VTID's retry
+`.then((ok) => {...})` AND the pre-existing VTID-03502 fallback's
+`.then((ok) => {...})` handled `!ok` (reconnect failed outright) but did
+nothing on `ok === true` (reconnect succeeded) — so a successful reconnect,
+retry or fallback, opened a healthy new upstream connection that then sat
+waiting for a greeting that would never be sent, leaving the user in
+silence until an unrelated watchdog eventually intervened. This is a
+pre-existing gap in the already-shipped VTID-03502 code, not something this
+VTID introduced — found while verifying this VTID's own new retry code,
+and fixed in both places since they share the exact same bug shape and the
+same file/function.
+
+Fix: new `resendGreetingIfStuckAtZeroTurns(session, source)` helper
+(mirrors the existing VTID-GREETING-RECOVERY stall-recovery block a few
+hundred lines above, which handles the identical "greeting sent but the
+conversation never started" case on a different reconnect path — idle-stall
+detection — that the premature-close retry/fallback never reaches). Checks
+`session.turn_count === 0 && session.greetingSent`, and if so resets
+`greetingSent = false` + `greetingTurnIndex = undefined` and re-invokes
+`sendGreetingPromptToLiveAPI` on the new upstream connection. Wired into
+both the VTID-03557 retry's and the VTID-03502 fallback's `.then((ok) =>
+{...})` success branch.
+  TEST: not independently unit-tested — `resendGreetingIfStuckAtZeroTurns`
+        is a side-effecting internal helper (console.log, emitDiag,
+        sendGreetingPromptToLiveAPI), not a pure predicate, matching the
+        testability profile of the pre-existing VTID-GREETING-RECOVERY
+        block it mirrors (also inline, also not unit-tested in isolation).
+        Verified by direct code reading against the exact production
+        failure signature (greeting_sent=true, turn_count=0) recorded in
+        this file's root-cause section above.
+
+  RE-VERIFICATION: npm test (633 suites / 12,314 passing, same counts as
+  AC-6 — additive change, no regressions) && npx tsc --noEmit (exit 0) &&
+  npm run build (exit 0). See ./commands.log (updated) for the re-run.
+
+---
+
 No new route is mounted by this change — `services/gateway/src/routes/orb-live.ts`
 is touched only inside the existing Nova upstream connect/close handling for
 the already-mounted WS session path. Recorded per the Route Mount Evidence
