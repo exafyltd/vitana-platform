@@ -22,6 +22,7 @@ import type { AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
 import {
   OBSERVER_TICK_MS,
   OVERLAP_MS,
+  distilBackfill,
   isObserverRunning,
   observerTick,
   writeSteps,
@@ -149,6 +150,39 @@ router.get('/health', requireAdminAuth, async (req: AuthenticatedRequest, res: R
     else sources = data || [];
   }
 
+  // Whether ANY instance ticked recently, derived from the cursor rows.
+  //
+  // `isObserverRunning()` below is a PER-PROCESS flag, and the gateway runs
+  // more than one instance — so the instance answering this request is
+  // usually not the one holding the timer. Observed live: running=false while
+  // last_run_at was four seconds old. Reporting only the local flag makes a
+  // perfectly healthy observer look dead, which is the same class of lying
+  // health field as the hard-zero last_written (VTID-03473). Three tick
+  // intervals of slack absorbs a slow scan without flapping.
+  const lastRunAt = (sources as Array<{ last_run_at?: string | null }>)
+    .map((s) => (s.last_run_at ? Date.parse(s.last_run_at) : NaN))
+    .filter((t) => !Number.isNaN(t))
+    .sort((a, b) => b - a)[0];
+  const tickingRecently = lastRunAt !== undefined
+    ? Date.now() - lastRunAt < OBSERVER_TICK_MS * 3
+    : false;
+
+  // Learned-memory counts. Reported because "the observer is healthy" and
+  // "the Watcher is learning" are independent facts, and for the system's
+  // first three days they diverged completely: 591 steps recorded against 0
+  // lessons, because the distiller had no call site (VTID-03531). Cursor
+  // health alone could never have shown that — a reader has to be able to see
+  // that steps are going in AND lessons are coming out.
+  let lessons: { total: number; injectable: number } | null = null;
+  if (sb) {
+    const [all, mature] = await Promise.all([
+      sb.from('watcher_lessons').select('id', { count: 'exact', head: true }),
+      sb.from('watcher_lessons').select('id', { count: 'exact', head: true })
+        .eq('status', 'active').gt('frequency', 1),
+    ]);
+    lessons = { total: all.count ?? 0, injectable: mature.count ?? 0 };
+  }
+
   // Optional forced scan, so an operator can prove the observer works
   // without waiting out a tick interval.
   let forced: unknown = null;
@@ -163,17 +197,86 @@ router.get('/health', requireAdminAuth, async (req: AuthenticatedRequest, res: R
         env_var_present: envVar !== null,
         env_var_value: envVar,
         enabled_resolved: resolvedEnabled,
-        running: isObserverRunning(),
+        // `running` answers the question a reader is actually asking — is the
+        // observer ticking — so it reports the cross-instance derived value.
+        // The per-process timer flag is kept alongside it for diagnosis, but
+        // it is NOT the headline: it is false on every instance that does not
+        // happen to hold the timer, and the Command Hub panel renders this
+        // field directly.
+        running: tickingRecently,
+        running_this_instance: isObserverRunning(),
+        last_run_at: lastRunAt !== undefined ? new Date(lastRunAt).toISOString() : null,
         tick_ms: OBSERVER_TICK_MS,
         overlap_ms: OVERLAP_MS,
       },
       supabase_available: !!sb,
       state_error: stateError,
       sources,
+      lessons,
       observed_topic_count: observedTopics().length,
       session_ingest_configured: !!process.env.WATCHER_SESSION_TOKEN,
       forced_tick: forced,
     },
+  });
+});
+
+// =============================================================================
+// POST /distil-backfill
+// =============================================================================
+
+/**
+ * Spend the failure history recorded before the distiller was wired up.
+ *
+ * Admin-gated and deliberate — see distilBackfill()'s own comment for why
+ * this is not automatic. `since` is required rather than defaulted: an
+ * unbounded backfill over a table that grows forever is the kind of endpoint
+ * that is harmless the day it ships and a problem a year later.
+ */
+router.post('/distil-backfill', requireAdminAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const since = String((req.body as { since?: unknown })?.since ?? '').trim();
+  if (!since) {
+    return res.status(400).json({ ok: false, error: 'MISSING_SINCE', message: 'since (ISO timestamp) is required' });
+  }
+  const parsed = new Date(since);
+  if (Number.isNaN(parsed.getTime())) {
+    return res.status(400).json({ ok: false, error: 'INVALID_SINCE', message: 'since must be a parseable ISO timestamp' });
+  }
+
+  const rawLimit = Number((req.body as { limit?: unknown })?.limit);
+  const result = await distilBackfill({
+    sinceIso: parsed.toISOString(),
+    limit: Number.isFinite(rawLimit) ? rawLimit : undefined,
+  });
+
+  // This one DOES get an OASIS event, unlike /session-step.
+  //
+  // The distinction is the one CLAUDE.md section 6 draws. A session step is an
+  // observation — the observer's own scan is a poll, and "polling is not
+  // progress". A backfill is an operator DECISION that materially changes the
+  // memory every later prompt draws on, and it is not reconstructible from
+  // the lesson rows afterwards (an upserted lesson looks the same whether it
+  // came from a live tick or a backfill). If nobody records that someone ran
+  // it, a later reader cannot explain why frequencies jumped.
+  await emitOasisEvent({
+    vtid: WATCHER_VTID,
+    type: 'vtid.decision.watcher.backfill',
+    source: 'watcher',
+    status: result.ok ? 'info' : 'error',
+    message: result.ok
+      ? `Watcher distilled ${result.lessons} lesson(s) from ${result.scanned} historical failure step(s) since ${parsed.toISOString()}`
+      : `Watcher backfill failed: ${result.error}`,
+    payload: {
+      since: parsed.toISOString(),
+      scanned: result.scanned,
+      lessons: result.lessons,
+      error: result.error ?? null,
+    },
+  });
+
+  return res.status(result.ok ? 200 : 500).json({
+    ok: result.ok,
+    data: { scanned: result.scanned, lessons: result.lessons },
+    error: result.error,
   });
 });
 

@@ -44,9 +44,19 @@ import {
   type ExecutionRow,
   type OasisEventRow,
 } from './normalizers';
+import { distilBatch } from './distiller';
+import { upsertLesson } from './lessons-store';
 import type { SourceTickResult, WatcherStep } from './types';
 
 const LOG_PREFIX = '[watcher-observer]';
+
+/**
+ * A step as it came BACK from the database — same shape plus the assigned id.
+ * The id is what links a lesson to the evidence that produced it, so
+ * distillation has to run on the persisted row rather than on the in-memory
+ * WatcherStep that was sent.
+ */
+export type StoredStep = WatcherStep & { id: string };
 
 /** One tick per minute matches dev-autopilot-watcher's cadence. */
 export const OBSERVER_TICK_MS = 60_000;
@@ -150,30 +160,90 @@ async function writeCursor(
  */
 export async function writeSteps(
   steps: WatcherStep[],
-): Promise<{ ok: boolean; written: number; error?: string }> {
-  if (steps.length === 0) return { ok: true, written: 0 };
+): Promise<{ ok: boolean; written: number; inserted: StoredStep[]; error?: string }> {
+  if (steps.length === 0) return { ok: true, written: 0, inserted: [] };
   const sb = getSupabase();
-  if (!sb) return { ok: false, written: 0, error: 'supabase unavailable' };
+  if (!sb) return { ok: false, written: 0, inserted: [], error: 'supabase unavailable' };
 
   try {
-    const { error, count } = await sb
+    // `.select('id')` rather than `count: 'exact'` — VTID-03473.
+    //
+    // With ignoreDuplicates the upsert becomes ON CONFLICT DO NOTHING, and
+    // PostgREST returns no exact count for that, so `count` came back null and
+    // `count ?? 0` reported 0 on every successful write. Measured in
+    // production: 536 rows genuinely written, last_written stuck at 0.
+    //
+    // That is not cosmetic. last_written exists so that "this source scans
+    // every tick and writes nothing" is VISIBLE — the signature of a broken
+    // normalizer. Hard-zero means the health field reads identically whether
+    // the normalizer works perfectly or is completely dead, so the one
+    // diagnostic built to catch that failure was blind to it.
+    //
+    // Returning the inserted ids gives a true count: rows skipped by the
+    // conflict clause are simply absent from the response.
+    //
+    // The full row (not just the id) comes back because distillation runs on
+    // exactly this set — VTID-03531. Rows the conflict clause skipped were
+    // already distilled on the tick that first inserted them, so selecting
+    // only the genuinely-new rows is what makes distillation idempotent
+    // across the overlap rescan without needing a second dedupe pass.
+    const { data, error } = await sb
       .from('watcher_steps')
       .upsert(steps, {
         onConflict: 'source,source_ref,step',
         ignoreDuplicates: true,
-        count: 'exact',
-      });
+      })
+      .select('id, work_unit_kind, work_unit_id, vtid, step, outcome, actor, evidence, source, source_ref, observed_at');
 
     if (error) {
       console.error(`${LOG_PREFIX} write failed:`, error.message);
-      return { ok: false, written: 0, error: error.message };
+      return { ok: false, written: 0, inserted: [], error: error.message };
     }
-    return { ok: true, written: count ?? 0 };
+    const inserted = (Array.isArray(data) ? data : []) as StoredStep[];
+    return { ok: true, written: inserted.length, inserted };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.error(`${LOG_PREFIX} write threw:`, message);
-    return { ok: false, written: 0, error: message };
+    return { ok: false, written: 0, inserted: [], error: message };
   }
+}
+
+// =============================================================================
+// Distillation
+// =============================================================================
+
+/**
+ * Turn this tick's newly-recorded failures into watcher_lessons.
+ *
+ * This is the step that was missing until VTID-03531. Phase 2 built the
+ * distiller and the lessons store, both unit-tested, and nothing ever called
+ * them: `distilBatch` and `upsertLesson` had zero call sites outside tests.
+ * The observer accumulated 591 steps — including a large number of failures —
+ * against a permanently empty watcher_lessons table, so the Watcher recorded
+ * history it could never turn into memory. Every reminder it could serve came
+ * from the 25 hand-authored rules; nothing was ever learned from what
+ * actually happened, which is the entire point of the system.
+ *
+ * Runs once per tick over the union of both scans rather than per page, so a
+ * pattern appearing several times in one tick counts as ONE recurrence
+ * (distilBatch merges it) instead of inflating frequency by page count.
+ *
+ * Best-effort, like every other write here: a distillation failure is logged
+ * and never propagates, because nothing downstream may stall on the Watcher.
+ */
+export async function distilTick(steps: StoredStep[]): Promise<number> {
+  if (steps.length === 0) return 0;
+  const lessons = distilBatch(steps);
+  let written = 0;
+  for (const lesson of lessons) {
+    try {
+      if (await upsertLesson(lesson)) written++;
+    } catch (err) {
+      console.warn(`${LOG_PREFIX} distil failed for ${lesson.pattern_key}:`, err);
+    }
+  }
+  if (written > 0) console.log(`${LOG_PREFIX} distilled ${written} lesson(s)`);
+  return written;
 }
 
 // =============================================================================
@@ -199,7 +269,7 @@ function oasisTopicFilter(): string {
   return `topic.in.(${exact}),topic.like.vtid.stage.worker_*`;
 }
 
-async function scanOasisEvents(): Promise<SourceTickResult> {
+async function scanOasisEvents(sink: StoredStep[]): Promise<SourceTickResult> {
   const cursor = await readCursor(SOURCE_OASIS);
   const from = new Date(new Date(cursor).getTime() - OVERLAP_MS).toISOString();
 
@@ -246,6 +316,7 @@ async function scanOasisEvents(): Promise<SourceTickResult> {
       return { source: SOURCE_OASIS, scanned, written, cursor_at: cursor, error: w.error || 'write failed' };
     }
     written += w.written;
+    sink.push(...w.inserted);
 
     const lastTs = rows[rows.length - 1].created_at;
     if (lastTs > maxSeen) maxSeen = lastTs;
@@ -267,7 +338,7 @@ async function scanOasisEvents(): Promise<SourceTickResult> {
   return { source: SOURCE_OASIS, scanned, written, cursor_at: next };
 }
 
-async function scanExecutions(): Promise<SourceTickResult> {
+async function scanExecutions(sink: StoredStep[]): Promise<SourceTickResult> {
   const cursor = await readCursor(SOURCE_EXECUTIONS);
   const from = new Date(new Date(cursor).getTime() - OVERLAP_MS).toISOString();
 
@@ -307,6 +378,7 @@ async function scanExecutions(): Promise<SourceTickResult> {
       cursor_at: cursor, error: w.error || 'write failed',
     };
   }
+  sink.push(...w.inserted);
 
   // Never regress (see the events scan for why). This source is far lower
   // volume, but the same invariant has to hold or the two sources drift.
@@ -315,6 +387,54 @@ async function scanExecutions(): Promise<SourceTickResult> {
   await writeCursor(SOURCE_EXECUTIONS, next, w.written);
 
   return { source: SOURCE_EXECUTIONS, scanned: rows.length, written: w.written, cursor_at: next };
+}
+
+/**
+ * One-off distillation of failures ALREADY recorded in watcher_steps.
+ *
+ * The tick path deliberately distils only newly-inserted rows, which is what
+ * keeps it idempotent across the overlap rescan. The cost of that choice is
+ * that history recorded before the distiller was wired up (VTID-03531 — 354
+ * failure steps across three days) would never become memory at all: those
+ * rows are already present, so the rescan skips them forever and the system
+ * starts learning from a standing start while sitting on a pile of unused
+ * evidence.
+ *
+ * This exists to spend that evidence once. It is admin-triggered rather than
+ * automatic because the observer's contract is that backfill is a deliberate
+ * operation, not something a restart quietly performs.
+ *
+ * Safe to run more than once: distilBatch merges by pattern and upsertLesson
+ * is keyed on (stage, pattern_type, pattern_key). Re-running does inflate
+ * frequency for already-distilled patterns, though, so it is bounded by
+ * `sinceIso` and reports what it touched rather than running open-ended.
+ */
+export async function distilBackfill(opts: {
+  sinceIso: string;
+  limit?: number;
+}): Promise<{ ok: boolean; scanned: number; lessons: number; error?: string }> {
+  const sb = getSupabase();
+  if (!sb) return { ok: false, scanned: 0, lessons: 0, error: 'supabase unavailable' };
+
+  const limit = Math.min(Math.max(opts.limit ?? 1000, 1), 5000);
+  try {
+    const { data, error } = await sb
+      .from('watcher_steps')
+      .select('id, work_unit_kind, work_unit_id, vtid, step, outcome, actor, evidence, source, source_ref, observed_at')
+      .eq('outcome', 'failure')
+      .gte('observed_at', opts.sinceIso)
+      .order('observed_at', { ascending: true })
+      .limit(limit);
+
+    if (error) return { ok: false, scanned: 0, lessons: 0, error: error.message };
+
+    const rows = (data || []) as StoredStep[];
+    const lessons = await distilTick(rows);
+    return { ok: true, scanned: rows.length, lessons };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return { ok: false, scanned: 0, lessons: 0, error: message };
+  }
 }
 
 // =============================================================================
@@ -341,15 +461,27 @@ export async function observerTick(): Promise<SourceTickResult[]> {
     // volumes are tiny. Parallelism here would buy nothing and make the log
     // interleaving harder to read when a scan misbehaves.
     const results: SourceTickResult[] = [];
+    // Collects the rows both scans actually INSERTED this tick, so
+    // distillation sees each new step exactly once across both sources.
+    const inserted: StoredStep[] = [];
     for (const scan of [scanOasisEvents, scanExecutions]) {
       try {
-        results.push(await scan());
+        results.push(await scan(inserted));
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         console.error(`${LOG_PREFIX} scan threw:`, message);
         results.push({ source: scan.name, scanned: 0, written: 0, cursor_at: '', error: message });
       }
     }
+
+    // After both scans, never between them: one tick's worth of the same
+    // failure must count as one recurrence, not one per source.
+    try {
+      await distilTick(inserted);
+    } catch (err) {
+      console.error(`${LOG_PREFIX} distil threw:`, err);
+    }
+
     return results;
   } finally {
     tickInFlight = false;

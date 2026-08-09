@@ -19,8 +19,36 @@
 # this script looks for.
 #
 # Usage (wired in .claude/settings.json):
-#   session-hook.sh start
-#   session-hook.sh stop
+#   session-hook.sh start   # SessionStart
+#   session-hook.sh end     # SessionEnd   ('stop' accepted as a legacy alias)
+#
+# =============================================================================
+# HOOK CONTRACT — three corrections, VTID-03531
+# =============================================================================
+# The first version of this script got all three of these wrong. They were
+# caught in review of exafyltd/vitana-v1#969 and confirmed against
+# https://code.claude.com/docs/en/hooks before being fixed here.
+#
+# 1. THE SESSION ID ARRIVES ON STDIN, NOT IN THE ENVIRONMENT.
+#    There is no CLAUDE_SESSION_ID or CLAUDE_CODE_SESSION_ID env var — the
+#    documented hook input is a JSON object on stdin carrying session_id.
+#    Reading the env var meant this ALWAYS fell through to the adhoc-<sha>
+#    fallback, which merges unrelated sessions that share a commit and splits
+#    one session into two ids if it commits between start and end.
+#
+# 2. RECONCILIATION BELONGS ON SessionEnd, NOT Stop.
+#    Stop fires once per assistant RESPONSE — many times in a multi-turn
+#    session. SessionEnd fires once, when the session terminates. On Stop this
+#    posted a 'completed' row after every turn; and because watcher_steps is
+#    upserted with ignoreDuplicates, the FIRST write wins, so a dirty tree on
+#    turn one would permanently brand a session that ended perfectly clean as
+#    a failure. The timeline would have been actively wrong, not merely noisy.
+#
+# 3. NO UPSTREAM != EVERY COMMIT IS UNPUSHED.
+#    `git rev-list --count HEAD` with no upstream counts the entire reachable
+#    history, so a fresh clean branch reported thousands of unpushed commits
+#    and every reconciliation recorded a false failure. Observed live: 68
+#    "unpushed commits" on a branch with one real commit.
 #
 # =============================================================================
 # SAFETY CONTRACT — read before editing
@@ -38,25 +66,58 @@
 
 set -u
 
-ACTION="${1:-stop}"
+ACTION="${1:-end}"
 
 GATEWAY="${WATCHER_GATEWAY_URL:-${GATEWAY_URL:-https://gateway.vitanaland.com}}"
 TOKEN="${WATCHER_SESSION_TOKEN:-}"
-SESSION_ID="${CLAUDE_SESSION_ID:-${CLAUDE_CODE_SESSION_ID:-}}"
 
 # --- no-op guards ------------------------------------------------------------
+# Before reading stdin: with no token there is nothing to send, and consuming
+# the hook payload for no reason is pointless work.
 [ -n "$TOKEN" ] || exit 0
 [ -n "$GATEWAY" ] || exit 0
 
-# Without a session id there is no work_unit to attach steps to, and
-# inventing one would create orphan rows that never join up.
+REPO_DIR="${CLAUDE_PROJECT_DIR:-$(pwd)}"
+
+# --- hook input --------------------------------------------------------------
+# Guarded on `-t 0` so a human running this by hand from a terminal does not
+# hang waiting on a payload that will never come.
+HOOK_INPUT=''
+if [ ! -t 0 ]; then
+  HOOK_INPUT="$(cat 2>/dev/null || true)"
+fi
+
+# Extract a top-level string field from the hook JSON.
+#
+# jq when available, sed otherwise. The sed path is not decoration: hooks run
+# on machines we do not control, and making this script hard-depend on jq is
+# how it would silently stop firing on one. Session ids and reasons are
+# simple tokens, so the naive pattern is sufficient for these two fields.
+json_field() {
+  _jf_key="$1"
+  _jf_out=''
+  if command -v jq >/dev/null 2>&1; then
+    _jf_out="$(printf '%s' "$HOOK_INPUT" | jq -r --arg k "$_jf_key" '.[$k] // empty' 2>/dev/null || true)"
+  fi
+  if [ -z "$_jf_out" ]; then
+    _jf_out="$(printf '%s' "$HOOK_INPUT" \
+      | sed -n "s/.*\"${_jf_key}\"[[:space:]]*:[[:space:]]*\"\([^\"]*\)\".*/\1/p" \
+      | head -1)"
+  fi
+  printf '%s' "$_jf_out"
+}
+
+SESSION_ID="$(json_field session_id)"
+
+# Fallback only. Kept because a missing id would otherwise drop the step
+# entirely, and a coarse work_unit beats no record — but it is explicitly
+# marked adhoc- so nobody mistakes it for a real session id when reading the
+# timeline. See correction 1 above for why this used to be the ONLY path.
 if [ -z "$SESSION_ID" ]; then
-  SESSION_ID="$(git -C "${CLAUDE_PROJECT_DIR:-.}" rev-parse --short HEAD 2>/dev/null || echo '')"
+  SESSION_ID="$(git -C "$REPO_DIR" rev-parse --short HEAD 2>/dev/null || echo '')"
   [ -n "$SESSION_ID" ] || exit 0
   SESSION_ID="adhoc-${SESSION_ID}"
 fi
-
-REPO_DIR="${CLAUDE_PROJECT_DIR:-$(pwd)}"
 
 post_step() {
   # $1 step, $2 outcome, $3 ref, $4 evidence json
@@ -69,35 +130,49 @@ post_step() {
 }
 
 json_escape() {
-  # Keep it dependency-free: sed, not jq. Hooks run on machines we do not
-  # control, and a hard jq dependency would make this silently stop firing.
   printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' | tr -d '\n'
+}
+
+# Commits on this branch that are not yet on a remote.
+#
+# Prefers the configured upstream. With no upstream, falls back to the repo's
+# default remote branch rather than counting all of HEAD (correction 3). If
+# neither resolves, reports -1 = UNKNOWN — an honest "cannot tell" beats a
+# fabricated number that turns every clean session into a recorded failure.
+count_unpushed() {
+  if git -C "$REPO_DIR" rev-parse '@{u}' >/dev/null 2>&1; then
+    git -C "$REPO_DIR" rev-list --count '@{u}..HEAD' 2>/dev/null || echo 0
+    return
+  fi
+  for _base in \
+    "$(git -C "$REPO_DIR" symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null)" \
+    origin/main origin/master
+  do
+    [ -n "$_base" ] || continue
+    if git -C "$REPO_DIR" rev-parse --verify --quiet "$_base" >/dev/null 2>&1; then
+      git -C "$REPO_DIR" rev-list --count "${_base}..HEAD" 2>/dev/null || echo 0
+      return
+    fi
+  done
+  echo -1
 }
 
 case "$ACTION" in
   start)
     BRANCH="$(git -C "$REPO_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown)"
+    SOURCE="$(json_field source)"
     post_step running unknown session_start \
-      "{\"branch\":\"$(json_escape "$BRANCH")\"}"
+      "{\"branch\":\"$(json_escape "$BRANCH")\",\"source\":\"$(json_escape "${SOURCE:-unknown}")\"}"
     ;;
 
-  stop)
+  end|stop)
     # -------------------------------------------------------------------
     # End-of-session reconciliation
     # -------------------------------------------------------------------
-    # Three states worth distinguishing. Only the last one is a finding.
     DIRTY="$(git -C "$REPO_DIR" status --porcelain 2>/dev/null | wc -l | tr -d ' ')"
     BRANCH="$(git -C "$REPO_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown)"
-
-    # Commits on this branch not present on its upstream. `@{u}` fails when
-    # there is no upstream, which is itself the "never pushed" case.
-    if git -C "$REPO_DIR" rev-parse '@{u}' >/dev/null 2>&1; then
-      UNPUSHED="$(git -C "$REPO_DIR" rev-list --count '@{u}..HEAD' 2>/dev/null || echo 0)"
-      HAS_UPSTREAM=true
-    else
-      UNPUSHED="$(git -C "$REPO_DIR" rev-list --count HEAD 2>/dev/null || echo 0)"
-      HAS_UPSTREAM=false
-    fi
+    UNPUSHED="$(count_unpushed)"
+    REASON="$(json_field reason)"
 
     # Documentation specifically. A session that changed only code and left
     # it uncommitted is an ordinary work-in-progress; a session that changed
@@ -107,8 +182,10 @@ case "$ACTION" in
       | grep -cE '(CLAUDE\.md|DATABASE_SCHEMA\.md|docs/|\.md$)' || true)"
     DOCS_DIRTY="${DOCS_DIRTY:-0}"
 
-    EVIDENCE="{\"branch\":\"$(json_escape "$BRANCH")\",\"dirty_files\":${DIRTY},\"unpushed_commits\":${UNPUSHED},\"has_upstream\":${HAS_UPSTREAM},\"dirty_doc_files\":${DOCS_DIRTY}}"
+    EVIDENCE="{\"branch\":\"$(json_escape "$BRANCH")\",\"dirty_files\":${DIRTY},\"unpushed_commits\":${UNPUSHED},\"dirty_doc_files\":${DOCS_DIRTY},\"end_reason\":\"$(json_escape "${REASON:-unknown}")\"}"
 
+    # -1 is UNKNOWN, not "lots". Treating it as a failure signal would
+    # reintroduce correction 3 by a different route.
     if [ "${DIRTY}" -gt 0 ] || [ "${UNPUSHED}" -gt 0 ]; then
       # outcome=failure is deliberate and is the whole point: this row is
       # what a future session's reminder is distilled FROM. Recording it as
